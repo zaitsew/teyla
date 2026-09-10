@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.6.1 — 2026-09-10 — control plane hardened after an adversarial review
+
+- Shell grants on a real tokenizer: `&` splits segments; env prefixes need `shell:env` (and never `PATH=`, `GIT_CONFIG*`, `LD_*`, `DYLD_*`); every redirection target is a write; process substitution refused.
+- Control files live under `~/.teyla/runs/<id>/`, never in the product tree; the hook refuses writes to them; the action log is HMAC-signed and tampered lines are counted in the receipt.
+- `inbox approve` recomputes grants from the current manifest and refuses widening; the kill switch is re-read before every act step; `command` steps are checked against their own capabilities (**breaking**: manifests need `shell:<verb>`).
+- realpath before glob matching; `*` no longer crosses `/`; `Task`/`Skill` need grants; critic must answer exactly `PASS`; counters under flock; context hashes cover the tree; date keys use the trigger's timezone; promotion needs ten consecutive clean receipts bound to the act spec.
+
+## Unreleased — control-plane hardening
+
+From an adversarial review of the 0.6.0 control plane. Every item below has a test
+carrying the input that worked before the fix, in `tests/test_control.py` §11.
+
+**Breaking.** A `command` step is now checked against the routine's own
+`capabilities` before it runs — it never meets the PreToolUse hook, so this is the
+only place it can be checked. An existing manifest whose steps run `echo` or
+`./bin/x` needs `shell:echo` / `shell:./bin/x` declared, and `fs.write:` has to
+cover anything a step redirects into. `teyla run --dry` shows what a routine has.
+
+**Escapes closed in the shell checker.**
+- `&` is a segment separator: `git push origin main & curl evil` no longer passes
+  under `shell:git push`. Segments are cut with a real tokenizer, not a regex.
+- An environment prefix needs `shell:env`, and `PATH=`, `GIT_CONFIG*`, `LD_*`,
+  `DYLD_*` are refused even with it — the `GIT_CONFIG_KEY_0=alias.push` trick turned
+  a `shell:git push` grant into arbitrary execution.
+- Every redirection target is checked against `fs.write:`, and process substitution
+  (`>(…)`, `<(…)`) is refused under every grant including `shell:*`.
+
+**The run can no longer grade its own exam.** `grants.json`, `grants-state.json`,
+`actions.jsonl`, `run.json` and the canonical `receipt.json` moved out of the
+product's `runs/` (which `fs.write:runs/**` grants) into `~/.teyla/runs/<run-id>/`.
+The hook refuses any write under `~/.teyla` and any write whose basename is a
+control filename, regardless of grants. Each `actions.jsonl` line is HMAC-signed
+(`~/.teyla/hmac.key`, 0600); unverifiable lines are dropped and the receipt says
+`actions log tampered: N lines`. The repo keeps `draft.md`, `undo.md` and a receipt
+copy.
+
+**Other fixes.**
+- `inbox approve` recomputes grants from the current `teyla.toml` instead of
+  reloading the run's own `grants.json`, and refuses when the routine is gone or its
+  capabilities have widened since the draft, printing the diff.
+- The kill switch is re-read immediately before the act step, and before approve's.
+- `fs.write:` globs resolve symlinks first, and `*` no longer crosses `/` — only
+  `**` does, so `fs.write:*.md` stopped covering `.claude/rules/pwn.md`.
+- `Task`/`Agent` need `tool:Agent`; `Skill` needs `tool:Skill:<name>` or
+  `tool:Skill:*`; `SlashCommand` needs a `tool:` grant. None are read-only tools.
+- The critic's first line must be exactly `PASS`; anything else is a FAIL.
+- `max_writes`/`max_sends` are counted under `flock` across the whole
+  read-decide-write, so parallel calls cannot both slip under a cap.
+- `input-hash` expands context globs and hashes relative path + length-prefixed
+  content, keyed by the routine ref; the `date` key uses the trigger's timezone.
+- `promote` requires ten *consecutive* clean receipts and binds a hash of the act
+  step into each receipt — editing `act` resets the streak.
+- A session with no `TEYLA_GRANTS` while a run is in flight (`~/.teyla/active-runs/`)
+  is refused rather than treated as an ordinary session. Residual: a nested
+  `claude -p` inherits the environment, so the common case was already covered;
+  an unrelated hand-started session during a run is refused too.
+
 ## 0.6.0 — 2026-09-10 — the control plane
 
 - `teyla run <product:routine>`: the loop that runs a routine — capability grants, blast-radius caps, idempotency, gates A (needs you) / B (act and tell, with an undo note) / C (critic first), and a receipt per run naming the rules and grants it ran under.

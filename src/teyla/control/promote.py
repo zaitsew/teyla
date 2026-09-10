@@ -4,17 +4,24 @@ The manual sets the bar and this file only enforces it: a gate is earned by a ru
 of clean history, not granted because the routine has been fine lately. The
 evidence required here:
 
-* the **last 10 receipts at the routine's current gate**, and there must be ten —
-  a routine with four good runs has not shown you anything yet;
-* every one of them `ok` or `needs-you` (a `blocked`, `failed` run resets it);
-* every one of them with an inbox item that was **approved**, and approved
-  **without a `--note`**. A note means you had to say something, and a run you had
-  to correct is not a run that would have been safe unattended. That is the whole
-  test, and it is why `reject --note` writes a correction: the notes are the
-  signal.
+* **10 consecutive clean receipts at the routine's current gate**, counted back
+  from the newest and stopping dead at the first that is not clean. Consecutive
+  is the whole point: "10 of the last 40 were fine" is not a safety record, and
+  counting the last ten while ignoring the failure just before them was the same
+  mistake in a smaller window;
+* clean means `ok` or `needs-you` (a `blocked` or `failed` run ends the streak);
+* and an inbox item that was **approved without a `--note`**. A note means you had
+  to say something, and a run you had to correct is not a run that would have been
+  safe unattended. It is why `reject --note` writes a correction: the notes are
+  the signal.
+* every one of them run against **the act step as it is written now**. Each
+  receipt carries a hash of the act spec; a receipt whose hash differs was
+  evidence about a different step, and it ends the streak. Otherwise a routine
+  could bank ten harmless drafts, have its `act` rewritten to something else
+  entirely, and cash the streak in for gate B on runs that never exercised it.
 
-Refusal prints the evidence rather than the verdict. "9 of 10, one approved with a
-note on 2026-09-02" tells you what to do next; "refused" does not.
+Refusal prints the evidence rather than the verdict. "9 clean, then a failure on
+2026-09-02" tells you what to do next; "refused" does not.
 
 `--force` overrides, and records `forced: true` with the note in
 `~/.teyla/promotions.jsonl`. It exists because there are legitimate reasons to
@@ -31,38 +38,73 @@ WINDOW = 10
 CLEAN_OUTCOMES = ("ok", "needs-you")
 
 
-def evidence(ref: str, current_gate: str) -> dict:
-    """The last `WINDOW` receipts for `ref` at `current_gate`, each annotated with what
-    its inbox item says. Pure read — it decides nothing."""
+def _why_unclean(row: dict, act_hash: str | None) -> str | None:
+    """What disqualifies this receipt, or None if it is clean."""
+    if row["outcome"] not in CLEAN_OUTCOMES:
+        return f"outcome {row['outcome']}"
+    if row.get("tampered"):
+        return f"actions log tampered: {row['tampered']} lines"
+    if row["decision"] != "approved":
+        return f"inbox item {row['decision']}"
+    if row["note"]:
+        return f"approved with a note — {row['note']!r}"
+    if act_hash is not None and row.get("act_hash") != act_hash:
+        return (f"ran against a different `act` step (receipt {row.get('act_hash') or 'unrecorded'}, "
+                f"manifest now {act_hash})")
+    return None
+
+
+def evidence(ref: str, current_gate: str, act_hash: str | None = None) -> dict:
+    """The **trailing run of clean receipts** for `ref` at `current_gate`, newest last,
+    plus the receipt that ended it. Pure read — it decides nothing.
+
+    Walking backwards and stopping at the first unclean receipt is what makes the
+    streak consecutive. `act_hash`, when given, is the hash of the act step as the
+    manifest has it now; a receipt from a different act step ends the streak."""
     receipts = [r for r in S.receipts_for(ref) if r.get("gate") == current_gate]
     receipts = [r for r in receipts if not r.get("approved_from")]
-    window = receipts[-WINDOW:]
     items = S.fold_inbox()
-    rows = []
-    for r in window:
+
+    def annotate(r: dict) -> dict:
         item = items.get(r.get("run_id")) or {}
-        rows.append({
+        return {
             "run_id": r.get("run_id"),
             "ts": r.get("ts"),
             "outcome": r.get("outcome"),
             "decision": item.get("decision") or "(open)",
             "note": item.get("note"),
-        })
-    return {"ref": ref, "gate": current_gate, "total": len(receipts), "rows": rows}
+            "act_hash": r.get("act_hash"),
+            "tampered": r.get("actions_tampered") or 0,
+        }
+
+    streak: list[dict] = []
+    broke_at = None
+    for r in reversed(receipts):
+        row = annotate(r)
+        why = _why_unclean(row, act_hash)
+        if why is not None:
+            row["why"] = why
+            broke_at = row
+            break
+        streak.append(row)
+        if len(streak) >= WINDOW:
+            break
+    streak.reverse()
+    return {"ref": ref, "gate": current_gate, "total": len(receipts),
+            "rows": streak, "broke_at": broke_at, "act_hash": act_hash}
 
 
 def verdict(ev: dict) -> tuple[bool, list[str]]:
     rows = ev["rows"]
-    problems = []
+    problems: list[str] = []
     if len(rows) < WINDOW:
-        problems.append(f"only {len(rows)} receipt(s) at gate {ev['gate']}; {WINDOW} are required")
-    for r in rows:
-        if r["outcome"] not in CLEAN_OUTCOMES:
-            problems.append(f"{r['run_id']}: outcome {r['outcome']}")
-        elif r["decision"] != "approved":
-            problems.append(f"{r['run_id']}: inbox item {r['decision']}")
-        elif r["note"]:
-            problems.append(f"{r['run_id']}: approved with a note — {r['note']!r}")
+        problems.append(f"{len(rows)} consecutive clean receipt(s) at gate {ev['gate']}; "
+                        f"{WINDOW} are required")
+        broke = ev.get("broke_at")
+        if broke:
+            problems.append(f"the streak ends at {broke['run_id']} ({broke['ts']}): {broke['why']}")
+        elif ev.get("total", 0) > len(rows):
+            problems.append(f"{ev['total']} receipt(s) on file at this gate")
     return (not problems), problems
 
 
@@ -128,23 +170,32 @@ def cmd_promote(args) -> int:
         print(f"{routine.ref}: gate {target} acts on its own and the routine declares no `act` step.")
         return 1
 
-    ev = evidence(routine.ref, routine.gate)
+    from .engine import act_hash as act_hash_of
+    current_act = act_hash_of(routine)
+    ev = evidence(routine.ref, routine.gate, current_act)
     ok, problems = verdict(ev)
 
     print(f"{routine.ref}: gate {routine.gate} -> {target}")
-    print(f"evidence — last {WINDOW} receipts at gate {routine.gate} ({ev['total']} on file):")
+    print(f"evidence — consecutive clean receipts at gate {routine.gate}, newest last "
+          f"({ev['total']} on file, act {current_act}):")
     if not ev["rows"]:
         print("  (none)")
     for r in ev["rows"]:
         note = f"  note: {r['note']!r}" if r["note"] else ""
         print(f"  {r['ts']}  {r['run_id']:24} {str(r['outcome']):10} {r['decision']}{note}")
+    if ev.get("broke_at"):
+        b = ev["broke_at"]
+        print(f"  ── streak ends here ──")
+        print(f"  {b['ts']}  {b['run_id']:24} {b['why']}")
 
     if not ok and not getattr(args, "force", False):
         print("\nREFUSED — earned autonomy is not granted on request:")
         for p in problems:
             print(f"  - {p}")
         print(f"\nRun it at gate {routine.gate} until {WINDOW} consecutive receipts are clean and every")
-        print("inbox item was approved without a note, then try again. Override with --force.")
+        print("inbox item was approved without a note, then try again. Editing the `act` step")
+        print("resets the streak, because the evidence was about the step it replaced.")
+        print("Override with --force.")
         return 1
 
     manifest = pathlib.Path(routine.repo) / "teyla.toml"
@@ -161,7 +212,9 @@ def cmd_promote(args) -> int:
         "forced": bool(getattr(args, "force", False)),
         "note": getattr(args, "note", None),
         "problems": problems,
+        "act_hash": current_act,
         "evidence": ev["rows"],
+        "streak_broke_at": ev.get("broke_at"),
     })
     if not ok:
         print("\nFORCED. The evidence above did not support this; it is recorded in the promotion")

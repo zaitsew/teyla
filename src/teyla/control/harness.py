@@ -58,10 +58,15 @@ class StepResult:
 def step_env(base: dict | None, *, run_id: str, grants_path, run_dir, repo) -> dict:
     """The environment every step runs under. `TEYLA_GRANTS` is the one that matters:
     hook commands inherit the environment of the process that spawned the harness, so
-    setting it here is what arms the PreToolUse hook for this run and nothing else."""
+    setting it here is what arms the PreToolUse hook for this run and nothing else.
+
+    `TEYLA_RUN_ACTIVE` is the belt to that brace. A nested `claude -p` inherits this
+    environment and therefore stays governed; the marker under `~/.teyla/active-runs`
+    is what catches a child that arrives *without* it. See `hook.py`."""
     env = dict(base if base is not None else os.environ)
     env["TEYLA_RUN_ID"] = str(run_id)
     env["TEYLA_GRANTS"] = str(grants_path)
+    env["TEYLA_RUN_ACTIVE"] = "1"
     env["TEYLA_RUN_DIR"] = str(run_dir)
     env["TEYLA_REPO"] = str(repo)
     env["TEYLA_UNDO"] = str(pathlib.Path(run_dir) / "undo.md")

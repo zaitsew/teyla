@@ -8,3 +8,9 @@ fingerprints (both), xAI ladder corrected to Grok 4.6 → 4.5 with no third tier
 kept as sessions but excluded from human-turn metrics (Grok), Codex reasoning tokens not double-counted
 (Codex), compaction detection by `compact_boundary` subtype (Codex), README overclaims narrowed (both).
 Declined: dropping scaffold/products from the pitch (they are the "productize from day one" half of the method).
+
+2026-09-10: Grok 4.6 reviewed the control plane (0.6.0) adversarially — seven P1s (single `&` segments,
+env-prefix git aliases, redirection past fs.write, agent-writable grants and action log, approve
+reloading tampered grants, kill switch not re-checked before act) and nine P2s. All P1s and P2s
+8–16 fixed in 0.6.1 with an exploit test each; residual risks are listed in docs/CONTROL-PLANE.md.
+
