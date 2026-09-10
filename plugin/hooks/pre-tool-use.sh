@@ -5,18 +5,24 @@
 # There is no third answer here on purpose — "the hook broke" must never quietly
 # become "the tool ran".
 #
-# Three states, cheapest first, because this runs before *every* tool call and a
+# Four states, cheapest first, because this runs before *every* tool call and a
 # hook that costs a Python interpreter start on an ordinary session is a hook
 # people uninstall:
 #
 #   1. ~/.teyla/KILL exists      -> exit 2 with the reason. Pure sh, no python.
-#   2. TEYLA_GRANTS unset        -> exit 0, silently. Not a routine run.
-#   3. TEYLA_GRANTS set          -> hand the call to teyla.control.hook.
+#   2. TEYLA_GRANTS unset, and
+#      ~/.teyla/active-runs empty-> exit 0, silently. Not a routine run.
+#   3. TEYLA_GRANTS unset, but a
+#      run is in flight          -> hand it to python, which prunes dead markers and
+#                                   then refuses: a session with no grants while a
+#                                   run is running is a way out of that run.
+#   4. TEYLA_GRANTS set          -> hand the call to teyla.control.hook.
 #
-# Only state 3 starts python, and only state 3 fails closed: if the enforcement
+# Only states 3 and 4 start python, and only they fail closed: if the enforcement
 # code cannot be imported there, the call is refused rather than waved through,
 # because a run launched under grants with no working enforcement is exactly the
-# case the grants exist for. An ordinary session never reaches that branch.
+# case the grants exist for. An ordinary session on an idle machine never reaches
+# that branch and never pays for an interpreter.
 #
 # TEYLA_HOME overrides ~/.teyla (tests, second profiles).
 
@@ -31,7 +37,15 @@ if [ -f "$TEYLA_DIR/KILL" ]; then
     exit 2
 fi
 
-[ -n "${TEYLA_GRANTS:-}" ] || exit 0
+if [ -z "${TEYLA_GRANTS:-}" ]; then
+    # `ls -A` rather than a glob so a dotfile still counts, and so an unreadable
+    # directory reads as empty rather than as an error.
+    if [ -d "$TEYLA_DIR/active-runs" ] && [ -n "$(ls -A "$TEYLA_DIR/active-runs" 2>/dev/null)" ]; then
+        : # a run may be in flight — python decides, after pruning stale markers
+    else
+        exit 0
+    fi
+fi
 
 # The plugin ships inside the teyla repo, so its sources sit one level up. Used
 # only as a fallback, when teyla is not installed as a package on this machine.

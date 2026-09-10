@@ -7,21 +7,35 @@ to the model**, and any other non-zero is a non-blocking error. So every path
 below ends in exactly one of 0 or 2 — there is no third answer, and "the hook
 crashed" must not become "the tool ran".
 
-Three states, in order:
+Four states, in order:
 
 1. `~/.teyla/KILL` exists       -> exit 2, with the reason. Nothing else is read.
-2. `TEYLA_GRANTS` is not set    -> exit 0, silently. This is an ordinary session,
+2. `TEYLA_GRANTS` is not set,
+   and no run is in flight      -> exit 0, silently. This is an ordinary session,
                                    not a routine run, and the hook must be invisible.
-3. `TEYLA_GRANTS` is set        -> load the grants, decide, count, log, exit 0 or 2.
+3. `TEYLA_GRANTS` is not set,
+   but a run *is* in flight     -> exit 2. A session with no grants while a run is
+                                   running is not an ordinary session; it is a way
+                                   out of one. See "the nested session" below.
+4. `TEYLA_GRANTS` is set        -> load the grants, decide, count, log, exit 0 or 2.
 
-Fail closed inside state 3 and only there. If the grants file is unreadable or
+Fail closed inside state 4 and only there. If the grants file is unreadable or
 the payload will not parse, a run that was explicitly launched under grants gets
 its tool call blocked rather than waved through; an ordinary session, which
-never reaches state 3, is untouched by any of it.
+never reaches state 4, is untouched by any of it.
 
-Every decision — allow and deny alike — is appended to `actions.jsonl` beside
-the grants file. That file is what the receipt's "actions taken" is built from,
-so it has to record what was refused as much as what happened.
+**The nested session.** An agent under grants can spawn its own `claude -p`. That
+child inherits the environment, so it inherits `TEYLA_GRANTS` and stays governed —
+the common case is covered. What state 3 catches is the child that arrives without
+it: launched with a scrubbed environment, or through some other path into the same
+machine. It cannot distinguish that child from an unrelated session the human
+started while a routine happened to be running, so it refuses both and says why.
+That is the trade, and it is the safe side of it.
+
+Every decision — allow and deny alike — is appended to `actions.jsonl`, **HMAC
+signed** with a key under `~/.teyla` that no grant can reach. That file is what
+the receipt's "actions taken" is built from; unsigned, a run that could append to
+it could write its own history.
 """
 from __future__ import annotations
 
@@ -42,7 +56,7 @@ def _log(doc: dict, record: dict) -> None:
     if not path:
         return
     try:
-        S.append_jsonl(pathlib.Path(path), record)
+        S.append_signed_jsonl(pathlib.Path(path), record)
     except OSError:
         pass
 
@@ -58,6 +72,15 @@ def main(stdin=None, stderr=None) -> int:
 
     grants_path = os.environ.get("TEYLA_GRANTS")
     if not grants_path:
+        live = S.active_runs()
+        if live:
+            print("teyla: a run is active but this session has no grants.\n"
+                  f"  in flight: {', '.join(live)}\n"
+                  "  A tool call with no TEYLA_GRANTS while a routine is running cannot be told\n"
+                  "  apart from a routine escaping its own grants, so it is refused. Wait for the\n"
+                  "  run to finish, or stop it with: teyla kill on --reason \"...\"",
+                  file=stderr)
+            return EXIT_BLOCK
         return EXIT_ALLOW
 
     try:
@@ -77,21 +100,23 @@ def main(stdin=None, stderr=None) -> int:
     tool_name = payload.get("tool_name") or "?"
     tool_input = payload.get("tool_input") or {}
 
+    # The decision and the counter update happen under one lock. Two parallel tool
+    # calls both reading `writes: 4` and both deciding they were under a cap of 5 is
+    # how a cap leaks one call per race.
     state_path = doc.get("state")
-    st = G.read_state(state_path) if state_path else {"writes": 0, "sends": 0, "calls": 0, "denied": 0}
-
-    decision, why, delta = G.decide(tool_name, tool_input, doc, st)
-
-    st["calls"] = st.get("calls", 0) + 1
-    for k, v in delta.items():
-        st[k] = st.get(k, 0) + v
-    if decision == G.DENY:
-        st["denied"] = st.get("denied", 0) + 1
     if state_path:
-        try:
-            G.write_state(state_path, st)
-        except OSError:
-            pass
+        with G.state_transaction(state_path) as st:
+            decision, why, delta = G.decide(tool_name, tool_input, doc, st)
+            st["calls"] = st.get("calls", 0) + 1
+            for k, v in delta.items():
+                st[k] = st.get(k, 0) + v
+            if decision == G.DENY:
+                st["denied"] = st.get("denied", 0) + 1
+            counters = {"writes": st.get("writes", 0), "sends": st.get("sends", 0)}
+    else:
+        st = dict(G.ZERO_STATE)
+        decision, why, delta = G.decide(tool_name, tool_input, doc, st)
+        counters = {"writes": st.get("writes", 0), "sends": st.get("sends", 0)}
 
     _log(doc, {
         "ts": S.stamp(),
@@ -100,7 +125,7 @@ def main(stdin=None, stderr=None) -> int:
         "decision": decision,
         "reason": why,
         "detail": _detail(tool_name, tool_input),
-        "counters": {"writes": st.get("writes", 0), "sends": st.get("sends", 0)},
+        "counters": counters,
     })
 
     if decision == G.ALLOW:

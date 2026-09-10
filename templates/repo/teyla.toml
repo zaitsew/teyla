@@ -48,7 +48,12 @@ act = { kind = "command", run = "echo 'replace me: what happens after you approv
 # Capabilities, as `<scheme>:<value>`. Only what the routine was observed to
 # need — an unused capability is invisible in review until something uses it.
 # Schemes: fs.write:<glob>  shell:<verb>  net:<host>  send:<channel>  tool:<name>
-capabilities = ["fs.write:runs/**"]
+#
+# A `command` step is checked against these too, before it runs — it never meets
+# the PreToolUse hook, so this is the only place it can be checked. `shell:echo`
+# is what lets the two commands above run at all, and `fs.write:runs/**` is what
+# lets the act step redirect into $TEYLA_UNDO, which lives in the run directory.
+capabilities = ["fs.write:runs/**", "shell:echo"]
 
 # Enforced by code: max_minutes is a wall clock on every step; max_writes and
 # max_sends are counted by the PreToolUse hook and deny past the cap.
