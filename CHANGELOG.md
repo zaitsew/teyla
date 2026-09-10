@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased — control plane hardened again
+
+A second adversarial review, against the code 0.6.1 shipped. Every item has a test
+carrying the input that worked against the hardened version, in
+`tests/test_control.py` §12.
+
+**Breaking.** `inbox approve` now refuses *any* manifest change since the draft —
+a loosened cap and a narrowed capability list included, not only a widening — and
+`promote` resets the streak when `capabilities` or `caps` change, not only `act`.
+Interpreters, copiers and network clients (`python`, `sh`, `cp`, `tee`, `ln`,
+`curl`, `git -c`, …) need `shell:*`; a grant naming one of them is refused. And
+`shell:env` is an allowlist: `TEYLA_*`, `LANG`, `LC_*`, `TZ`, `NO_COLOR`,
+`PAGER=cat`, nothing else.
+
+- Newlines and carriage returns split Bash segments (`git push\ncurl evil` was one
+  granted segment); `#` is literal mid-token (`main#;curl evil` lexed to a push).
+- `shell:env` allowlisted, so `GIT_SSH_COMMAND=curl git push` and `HOME=runs git
+  push` are refused; `shell:*` documented as full trust, equivalent to no grants.
+- `Read`/`Grep`/`Glob`/`LS` refused on `~/.teyla/**` and on control basenames —
+  `~/.teyla/hmac.key` signs the action log the receipt is built from — and a Bash
+  command naming `.teyla` or `hmac` is refused case-insensitively, quotes stripped.
+- Receipts carry a `grants_hash` (capabilities + caps); `promote` and `approve`
+  both require it to match the current manifest.
+- `fs.write:*` is the repo root, not the filesystem: no relative glob leaves the
+  product repo, and reaching outside takes an absolute grant.
+- A bare `tool:Skill` grants no skill; control basenames match case-insensitively;
+  a `net:` grant is an exact host or `*.domain`, so a bare TLD matches nothing.
+
 ## 0.6.1 — 2026-09-10 — control plane hardened after an adversarial review
 
 - Shell grants on a real tokenizer: `&` splits segments; env prefixes need `shell:env` (and never `PATH=`, `GIT_CONFIG*`, `LD_*`, `DYLD_*`); every redirection target is a write; process substitution refused.

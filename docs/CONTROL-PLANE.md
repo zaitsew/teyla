@@ -137,14 +137,47 @@ evidence about this one.
   confined to one path segment and only `**` crossing `/`. `net:` hosts on
   WebFetch. `tool:` globs on MCP and other non-built-in tools — including
   `Task`/`Agent` and `Skill`, which are **not** free: a sub-agent needs
-  `tool:Agent`, a skill needs `tool:Skill:<name>` or `tool:Skill:*`. `send:` as a
-  budget spent by anything that looks like a send.
+  `tool:Agent`, a skill needs `tool:Skill:<name>` or `tool:Skill:*` (a bare
+  `tool:Skill` names no skill and grants none). `send:` as a budget spent by
+  anything that looks like a send.
+* **`fs.write:` never leaves the product repo.** A relative glob is matched
+  against the repo-relative path of the **resolved** target, so `fs.write:*` means
+  "any file in the repo root, no slash in it" and `fs.write:**` means "anywhere in
+  the repo" — neither is the filesystem. Writing outside the repo takes an
+  absolute grant, spelled out: `fs.write:/abs/path/**`.
+* **`net:` grants are an exact host or `*.domain`.** `net:example.com` is that
+  host and nothing else; `net:*.example.com` is it and its subdomains. A suffix of
+  one label matches nothing, so `net:com` and `net:*.com` grant nothing at all —
+  the old check accepted any host *ending in* the grant, which made a bare TLD a
+  grant for the whole internet. `net:*` is still the deliberate everything grant.
+* **No read of the control plane's own state.** `Read`/`Grep`/`Glob`/`LS` are
+  otherwise free, and that made `~/.teyla/hmac.key` — the key every action-log
+  line is signed with — readable by every run on the machine, which is a run that
+  can forge its own receipt. Those tools are refused on any path under `~/.teyla`
+  (resolved) and on any control basename, and a Bash command that *mentions*
+  `.teyla`, `hmac` or a control filename is refused too — case-insensitively, with
+  quotes and backslashes stripped first so `~/.te""yla/hm\ac.key` reads the same
+  as the plain spelling.
 * **`shell:` verbs on every segment of a Bash command**, where a segment is cut at
-  `;`, `|`, `&&`, `||` and a single `&`. Within a segment: an environment prefix
-  (`FOO=1 cmd`) needs `shell:env`, and `PATH=`, `GIT_CONFIG*`, `LD_*`, `DYLD_*`
-  are refused even then; process substitution (`>(…)`, `<(…)`) is refused under
-  every grant, `shell:*` included; and **every redirection target is checked
-  against `fs.write:`**, which was previously a hole.
+  `;`, `|`, `&&`, `||`, a single `&`, **and every newline or carriage return**
+  (a backslash-newline is a continuation and joins, as in a shell). `#` is an
+  ordinary character mid-token — `git push origin main#;curl …` is a push *and* a
+  curl, and only a segment that is entirely a comment is dropped. Within a
+  segment: an environment prefix (`FOO=1 cmd`) needs `shell:env`, and even then
+  only an **allowlist** of names — `TEYLA_*`, `LANG`, `LC_*`, `TZ`, `NO_COLOR`,
+  `PAGER=cat`. Everything else is refused, including `GIT_*` (`GIT_SSH_COMMAND`,
+  `GIT_CONFIG_KEY_0`), `HOME`, `SSH*`, `XDG_*`, `PATH`, `LD_*`, `DYLD_*`,
+  `PYTHON*`, `NODE_*`, `PERL*`, `RUBY*`, `BASH_ENV`, `ENV`, `IFS`, `CDPATH`.
+  Process substitution (`>(…)`, `<(…)`) is refused under every grant, `shell:*`
+  included; and **every redirection target is checked against `fs.write:`**.
+* **Dangerous verbs need `shell:*`.** `sh`, `bash`, `zsh`, `dash`, `fish`,
+  `python`, `node`, `deno`, `bun`, `perl`, `ruby`, `php`, `xargs`, `find`, `env`,
+  `eval`, `exec`, `source`, `tee`, `cp`, `mv`, `ln`, `install`, `dd`, `chmod`,
+  `chown`, `sudo`, `su`, `nohup`, `setsid`, `osascript`, `open`, `curl`, `wget`,
+  `nc`, `ssh`, `scp`, `rsync`, and `git` carrying `-c` / `--exec-path`. **A
+  `shell:python` grant is not enough** — naming an interpreter is a narrow-looking
+  grant for an unbounded capability, so allowing one takes `shell:*`, which this
+  document calls what it is: **full trust, equivalent to no grants at all**.
 * **`command` steps get that same check**, before they run. They never meet the
   hook, so the manifest's own `capabilities` are enforced against the command
   string by `teyla run` and by `inbox approve`. A step that redirects into
@@ -153,12 +186,18 @@ evidence about this one.
   the whole read-decide-write**, so parallel tool calls cannot both slip under a cap.
 * Every decision, allow and deny, appended to `actions.jsonl` **HMAC-signed**, and
   summarised in the receipt — including how many lines failed verification.
-* **`inbox approve`** recomputes grants from the current `teyla.toml`, and refuses
-  if the routine is gone or its capabilities have widened since the draft, printing
-  the difference. Narrowing is fine; you get the smaller list.
+* **`inbox approve`** recomputes grants from the current `teyla.toml` and refuses
+  unless the manifest still says what it said when the draft was written: the same
+  `act` step (by `act_hash`), the same capabilities and caps (by `grants_hash`,
+  with each cap also compared numerically so a loosened one is named). Widening,
+  loosening a cap, editing `act`, **and narrowing** all refuse, each printing the
+  difference. Narrowing used to be waved through, which hid two things: caps are
+  not capability strings and were never compared at all, and the `act` step a
+  draft was reviewed against could be swapped out before the approval ran.
 * **`promote`** requires ten *consecutive* clean receipts, counted back from the
   newest and stopping at the first that is not clean, each carrying a hash of the
-  act step as it is written now. Editing `act` resets the streak.
+  act step **and of the capability list and caps** as they are written now.
+  Editing `act`, `capabilities` or `caps` resets the streak.
 * **The critic's verdict** is read strictly: the first line must be exactly `PASS`.
   `PASS, though I could not check X` is a FAIL, and so is `**PASS**`.
 
@@ -171,11 +210,24 @@ the critic's PASS. Writing a usable `undo.md`.
   host it names, and nothing here inspects a payload. `send:` counts messages, not
   bytes over the wire. Grant `net:` to the narrowest host that works, and read a
   routine holding both `net:` and a broad read surface as capable of leaking it.
-* **A broad `shell:` grant.** Redirection is checked now, but a granted verb that
-  is itself an interpreter — `python`, `sh`, `perl` — or a copier such as `cp` or
-  `tee` can still write where a redirection would have been refused. `shell:*` is
-  arbitrary execution and should be read that way. The redirection check closes the
-  accident, not the intent.
+* **`shell:*`, and any grant that reaches an interpreter, is full trust.** Those
+  verbs are refused under a grant that names them, so reaching one now takes
+  `shell:*` — but `shell:*` itself is arbitrary execution, and a manifest holding
+  it has the capability list as documentation, not as enforcement. Read
+  `capabilities = ["shell:*"]` as *no grants at all*. The verb list closes the
+  accident (`shell:cp` looking narrow); it cannot close the intent.
+* **The run reads the whole repo.** `Read`/`Grep`/`Glob`/`LS` are refused on the
+  control plane's own state and on nothing else: every other file in the product
+  repo — and, for a relative or absolute path the tools accept, on this machine —
+  is readable by any run. There is no `fs.read:` scheme. Paired with a `net:`
+  grant that is what exfiltration looks like, and the pairing is the thing to
+  refuse in review.
+* **`ln`, and the gap between the check and the write.** The path a write is
+  checked against is resolved at decision time and opened by the tool afterwards;
+  a symlink created in between points the granted path somewhere else. `ln` is a
+  dangerous verb now, so making one takes `shell:*` — which closes the easy route
+  and not the race itself. Nothing here holds a lock between the check and the
+  open, and a `command` step or a `shell:*` run can still win it.
 * **The nested session.** An agent under grants can spawn its own `claude -p`. That
   child inherits the environment, so it inherits `TEYLA_GRANTS` and stays governed
   — the common case is covered. A child arriving *without* it is caught by
@@ -187,9 +239,12 @@ the critic's PASS. Writing a usable `undo.md`.
 * **`max_output_tokens`** is checked after the fact and flagged; it does not stop
   generation.
 * **The `Bash` control-file check is a substring test.** A command that names
-  `grants.json` or `~/.teyla` is refused, but a shell can reach a file in more ways
-  than a checker can enumerate. It is a coarse net over an already-narrow grant, not
-  a proof.
+  `grants.json`, `hmac`, `.teyla` or `~/.teyla` is refused — case-insensitively,
+  with quotes and backslashes stripped, and applied to the tokens joined back
+  together — but a shell can reach a file in more ways than a checker can
+  enumerate (a variable it built itself, a `cd`, `find -exec`). It is a coarse net
+  over an already-narrow grant, not a proof, and under `shell:*` it is the only
+  thing standing between the run and the signing key.
 
 ## Commands
 
@@ -203,10 +258,12 @@ teyla receipts <ref> [-n 10]
 ```
 
 `approve` runs the act step under grants **recomputed from the current
-`teyla.toml`**, and refuses if the routine is gone or its capabilities have
-widened since the draft — printing the difference so you can see what you would
-have been agreeing to. It used to copy the original run's `grants.json`, which
-sat in a directory the run could write. `reject --note` writes the note to the
+`teyla.toml`**, and refuses if the routine is gone or the manifest has changed at
+all since the draft — a widened capability, a loosened cap, an edited `act` step,
+or a narrowed capability list — printing the difference so you can see what you
+would have been agreeing to. The answer to every one of those is the same: re-run
+the routine and approve the fresh draft. It used to copy the original run's
+`grants.json`, which sat in a directory the run could write. `reject --note` writes the note to the
 repo's `.teyla/corrections.jsonl`, where the harvest finds it.
 `~/.teyla/inbox.jsonl` is append-only: an approval is a new record, not an edit.
 
