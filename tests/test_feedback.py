@@ -84,7 +84,7 @@ def test_open_issues_skips_non_broken_without_calling_gh(monkeypatch):
     calls = []
     monkeypatch.setattr("teyla.routines.subprocess.run", lambda *a, **k: calls.append(a))
     report = _report(checks=[
-        {"name": "meal logging", "status": "ok", "confirmed": "-", "age_days": "-", "verdict": "ok"},
+        {"name": "photo entry logging", "status": "ok", "confirmed": "-", "age_days": "-", "verdict": "ok"},
         {"name": "sync check", "status": "untested", "confirmed": "-", "age_days": "-", "verdict": "UNTESTED"},
     ])
     lines = open_issues([report])
@@ -96,7 +96,7 @@ def test_open_issues_formats_titles_for_broken_checks(monkeypatch, tmp_path):
     repo = tmp_path / "my-app"
     repo.mkdir()
     (repo / "teyla.toml").write_text(
-        '[product]\nname = "my-app"\n\n[[check]]\nname = "meal logging"\nhow = "app -> Log -> photo"\n'
+        '[product]\nname = "my-app"\n\n[[check]]\nname = "photo entry logging"\nhow = "app -> New -> photo"\n'
         'status = "broken"\nnote = "camera permission regressed"\n'
     )
 
@@ -118,12 +118,12 @@ def test_open_issues_formats_titles_for_broken_checks(monkeypatch, tmp_path):
     monkeypatch.setattr("teyla.routines.subprocess.run", fake_run)
 
     report = _report(repo=str(repo), checks=[
-        {"name": "meal logging", "status": "broken", "confirmed": "-", "age_days": "-", "verdict": "BROKEN"},
+        {"name": "photo entry logging", "status": "broken", "confirmed": "-", "age_days": "-", "verdict": "BROKEN"},
     ])
     lines = open_issues([report])
     assert len(lines) == 1
-    assert "[teyla] broken check: meal logging" not in lines[0]  # title goes in the gh call, not necessarily the log line
-    assert "meal logging" in lines[0]
+    assert "[teyla] broken check: photo entry logging" not in lines[0]  # title goes in the gh call, not necessarily the log line
+    assert "photo entry logging" in lines[0]
     assert "created" in lines[0]
 
 
@@ -131,7 +131,7 @@ def test_open_issues_never_duplicates_when_issue_already_exists(monkeypatch, tmp
     repo = tmp_path / "my-app"
     repo.mkdir()
     (repo / "teyla.toml").write_text(
-        '[product]\nname = "my-app"\n\n[[check]]\nname = "meal logging"\nhow = "x"\nstatus = "broken"\n'
+        '[product]\nname = "my-app"\n\n[[check]]\nname = "photo entry logging"\nhow = "x"\nstatus = "broken"\n'
     )
 
     created = []
@@ -143,7 +143,7 @@ def test_open_issues_never_duplicates_when_issue_already_exists(monkeypatch, tmp
         if cmd[:3] == ["gh", "repo", "view"]:
             r.returncode = 0; r.stdout = ""; r.stderr = ""
         elif cmd[:3] == ["gh", "issue", "list"]:
-            r.returncode = 0; r.stdout = '[{"title": "[teyla] broken check: meal logging"}]'; r.stderr = ""
+            r.returncode = 0; r.stdout = '[{"title": "[teyla] broken check: photo entry logging"}]'; r.stderr = ""
         elif cmd[:3] == ["gh", "issue", "create"]:
             created.append(cmd)
             r.returncode = 0; r.stdout = ""; r.stderr = ""
@@ -155,7 +155,7 @@ def test_open_issues_never_duplicates_when_issue_already_exists(monkeypatch, tmp
     monkeypatch.setattr("teyla.routines.subprocess.run", fake_run)
 
     report = _report(repo=str(repo), checks=[
-        {"name": "meal logging", "status": "broken", "confirmed": "-", "age_days": "-", "verdict": "BROKEN"},
+        {"name": "photo entry logging", "status": "broken", "confirmed": "-", "age_days": "-", "verdict": "BROKEN"},
     ])
     lines = open_issues([report])
     assert created == []

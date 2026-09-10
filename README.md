@@ -80,15 +80,15 @@ name = "my-app"
 usage = "./check.sh usage"          # optional command printing key=value counters
 
 [[routine]]                          # must run without the human
-name = "garmin-sync"
+name = "nightly-sync"
 kind = "launchd"                     # launchd | cron | pg_cron | github-actions | script
-label = "com.ironu.sync"             # launchd label / cron marker / workflow name
+label = "com.example.sync"             # launchd label / cron marker / workflow name
 every = "1d"                         # expected cadence: 15m, 1h, 1d, 7d
-log = "~/Library/Logs/ironu-sync.log" # optional; mtime = last run
+log = "~/Library/Logs/app-sync.log" # optional; mtime = last run
 
 [[check]]                            # the human tests by hand and confirms
-name = "meal logging from photo"
-how = "app → Log → photo → caption"
+name = "log an entry from a photo"
+how = "app → New → photo → caption"
 status = "broken"                    # ok | broken | untested
 confirmed = 2026-09-09               # date of last confirmation
 ```

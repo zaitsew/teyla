@@ -26,15 +26,15 @@ name = "my-app"
 usage = "./check.sh usage"
 
 [[routine]]
-name = "garmin-sync"
+name = "nightly-sync"
 kind = "launchd"
-label = "com.ironu.sync"
+label = "com.example.sync"
 every = "1d"
-log = "~/Library/Logs/ironu-sync.log"
+log = "~/Library/Logs/app-sync.log"
 
 [[check]]
-name = "meal logging from photo"
-how = "app -> Log -> photo -> caption"
+name = "log an entry from a photo"
+how = "app -> New -> photo -> caption"
 status = "broken"
 confirmed = 2026-09-09
 """
@@ -112,23 +112,23 @@ def test_parse_manifest_invalid_toml(tmp_path):
 # --- routine verdicts ---------------------------------------------------------
 
 def test_loaded_state_launchd_running():
-    out = loaded_state({"kind": "launchd", "label": "com.ironu.sync"},
-                        launchctl_output="1234\t0\tcom.ironu.sync\n5678\t0\tother.label\n")
+    out = loaded_state({"kind": "launchd", "label": "com.example.sync"},
+                        launchctl_output="1234\t0\tcom.example.sync\n5678\t0\tother.label\n")
     assert "pid 1234" in out
 
 
 def test_loaded_state_launchd_not_loaded():
-    out = loaded_state({"kind": "launchd", "label": "com.ironu.sync"}, launchctl_output="")
+    out = loaded_state({"kind": "launchd", "label": "com.example.sync"}, launchctl_output="")
     assert out == "not loaded"
 
 
 def test_loaded_state_cron_found():
-    out = loaded_state({"kind": "cron", "label": "ironu-sync"}, crontab_output="0 6 * * * /bin/ironu-sync\n")
+    out = loaded_state({"kind": "cron", "label": "app-sync"}, crontab_output="0 6 * * * /bin/app-sync\n")
     assert out == "in crontab"
 
 
 def test_loaded_state_cron_missing():
-    out = loaded_state({"kind": "cron", "label": "ironu-sync"}, crontab_output="0 6 * * * /bin/other\n")
+    out = loaded_state({"kind": "cron", "label": "app-sync"}, crontab_output="0 6 * * * /bin/other\n")
     assert out == "not in crontab"
 
 
@@ -204,7 +204,7 @@ def test_evaluate_and_summarize(tmp_path):
     now = dt.datetime(2026, 9, 9, tzinfo=dt.timezone.utc)
     report = evaluate(manifest, now=now)
     assert report["product"] == "my-app"
-    assert report["routines"][0]["name"] == "garmin-sync"
+    assert report["routines"][0]["name"] == "nightly-sync"
     assert report["checks"][0]["verdict"] == "BROKEN"
     n, m, k = summarize([report])
     assert m == 1  # the broken check

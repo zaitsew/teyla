@@ -44,7 +44,7 @@ there is one place to edit when a provider ships a tier.
 - A subagent that reads and summarises never needs the orchestrator model.
 - In Claude Code, pass `model:` **explicitly on every** `Agent` call. "Inherit"
   means the expensive default, and it is the largest waste in the measured data:
-  **65% of subagent calls inherited the top model, for boilerplate.**
+  **the majority of subagent calls typically inherit the top model, for boilerplate.**
 - In Codex, keep the top model for the interactive orchestrator; run `codex exec`
   fan-outs with a cheaper `-m`.
 
@@ -162,7 +162,7 @@ The project root is the directory you launch from; it keys the transcript store,
 the memory directory and the learnings file. **Keep it coarse; folders inside it
 are free.** A root per routine feels tidier and fragments all three. Measured on
 one machine: 22 roots, 785 MB, the top four holding 77 of 99 sessions, while
-fourteen others held five learnings files totalling eighteen lines. Each new root
+Each new root
 restarts accumulation at zero. Split roots only on boundaries that are **real** —
 data ownership, a legal line, a separate remote, different collaborators — never
 on taxonomy.
