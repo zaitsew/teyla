@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1 — 2026-09-10 — control plane hardened after an adversarial review
+
+- Shell grants on a real tokenizer: `&` splits segments; env prefixes need `shell:env` (and never `PATH=`, `GIT_CONFIG*`, `LD_*`, `DYLD_*`); every redirection target is a write; process substitution refused.
+- Control files live under `~/.teyla/runs/<id>/`, never in the product tree; the hook refuses writes to them; the action log is HMAC-signed and tampered lines are counted in the receipt.
+- `inbox approve` recomputes grants from the current manifest and refuses widening; the kill switch is re-read before every act step; `command` steps are checked against their own capabilities (**breaking**: manifests need `shell:<verb>`).
+- realpath before glob matching; `*` no longer crosses `/`; `Task`/`Skill` need grants; critic must answer exactly `PASS`; counters under flock; context hashes cover the tree; date keys use the trigger's timezone; promotion needs ten consecutive clean receipts bound to the act spec.
+
 ## Unreleased — control-plane hardening
 
 From an adversarial review of the 0.6.0 control plane. Every item below has a test
