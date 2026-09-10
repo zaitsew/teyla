@@ -427,6 +427,47 @@ budgets. A run that dies at 02:00 and is found at 09:00 costs you the night twic
 
 ---
 
+## 4b. Keeping it current — what runs without anyone remembering
+
+A tool that audits whether routines run has to be one. Teyla's own maintenance is two
+launchd agents, one hook and one command:
+
+| when | what | writes |
+|---|---|---|
+| daily 07:00 (`com.zaitsew.teyla.daily`) | `teyla update --quiet` then `teyla doctor --quiet` | `~/Library/Logs/teyla-daily.log`, `~/.teyla/doctor.summary` |
+| Monday 07:30 (`com.zaitsew.teyla.weekly`) | `monitor --days 7`, `routines`, `products`, `models` | `<ops>/startup/os/ai-dev/runs/<date>/` |
+| every session start (plugin hook) | prints `doctor.summary` if non-empty; if the last update check is older than a day, starts `teyla update --check` in the background | `~/.teyla/update-check.json` |
+| on demand | `teyla doctor` — the checklist with a fix per line; exit 1 when a FIX is pending | `~/.teyla/doctor.json` |
+
+`teyla update` decides how it was installed (uv tool, pipx, pip, or a git checkout) and
+upgrades the same way, from GitHub releases of the repo in `~/.teyla/config.toml`
+(`[update] repo`). Then, in a fresh process so the new code does the wiring:
+
+1. `policy sync` — the import line, the Codex/Grok symlinks, the Hermes section.
+2. `policy refresh` — the template shipped with the new version, merged into
+   `~/.agents/POLICY.md` with `git merge-file` against the template as last applied
+   (`~/.teyla/policy-base.md`). Your edits survive; a real conflict is written to
+   `~/.teyla/policy-merge-conflict.md`, your file is left alone, and doctor nags until you
+   run `teyla policy refresh --resolved`.
+3. `plugin refresh` — Claude Code loads a *copy* of the plugin under `~/.claude/plugins/cache`;
+   this brings that copy to the CLI's version, with or without the `claude` binary.
+4. `routine install --if-stale` — rewrites the wrappers only if they name a binary that moved.
+5. `doctor --quiet`.
+
+What it never does: edit a repo. Repos missing their `AGENTS.md ⇄ CLAUDE.md` pairing are a
+WARN in doctor with the `teyla policy sync-repo` command to run; that creates a file in
+someone's working tree and stays a human's call. Likewise `~/.claude/CLAUDE.md` is yours:
+Teyla adds one import line and otherwise reads it only to notice (advice A10, `policy ack`)
+when it changed without you.
+
+Different machines, different scope: absent harnesses and absent CLIs are INFO lines, not
+failures. A managed laptop with only the Claude Code desktop app and no `gh`, `codex` or
+`grok` is a valid install; doctor says what the second-opinion fallback is there.
+
+Releasing: `scripts/release.sh 0.7.1` bumps the three version strings (package, `__init__`,
+plugin), tags, pushes; the release workflow runs the tests, checks the tag matches, and
+publishes the GitHub release that every machine's `teyla update` sees.
+
 ## 5. Measuring
 
 Teyla reads the local session logs of every harness it finds — Claude Code, Codex,

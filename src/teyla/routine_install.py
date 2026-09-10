@@ -19,6 +19,60 @@ WRAPPER_PATH = pathlib.Path.home() / ".teyla" / "weekly.sh"
 LOG_PATH = pathlib.Path.home() / "Library" / "Logs" / "teyla-weekly.log"
 OUT_ROOT = pathlib.Path.home() / "ops" / "startup" / "os" / "ai-dev" / "runs"
 
+# The daily agent: `teyla update` (a newer release → install + re-wire) then `teyla doctor`,
+# whose one-line summary the session-start hook shows. 07:00 local, before the weekly one.
+DAILY_LABEL = "com.zaitsew.teyla.daily"
+DAILY_PLIST_PATH = pathlib.Path.home() / "Library" / "LaunchAgents" / f"{DAILY_LABEL}.plist"
+DAILY_WRAPPER_PATH = pathlib.Path.home() / ".teyla" / "daily.sh"
+DAILY_LOG_PATH = pathlib.Path.home() / "Library" / "Logs" / "teyla-daily.log"
+
+DAILY_PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{label}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>{wrapper}</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{path}</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>{log}</string>
+    <key>StandardErrorPath</key>
+    <string>{log}</string>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
+"""
+
+DAILY_WRAPPER_TEMPLATE = """#!/usr/bin/env bash
+# Written by `teyla routine install`. Daily: pull a newer Teyla release if there is one
+# (which re-wires policy, plugin and these wrappers), then refresh the doctor summary the
+# session-start hook shows. Exit status is doctor's: 0 clean, 1 something needs you.
+set -uo pipefail
+export PATH="{path}"
+
+echo "== $(date -u +%FT%TZ) teyla daily"
+TEYLA="{teyla_bin}"
+"$TEYLA" update --quiet
+# `update` may have replaced the binary in place; call it by name from here on.
+teyla doctor --quiet
+"""
+
 PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -72,9 +126,66 @@ def _teyla_bin() -> str:
     return os.path.abspath(sys.argv[0])
 
 
-def install() -> list[str]:
+def _wrapper_stale(path: pathlib.Path, teyla_bin: str) -> bool:
+    """True when the wrapper does not exist or names a teyla binary other than the current one."""
+    if not path.exists():
+        return True
+    for line in path.read_text().splitlines():
+        if line.startswith('TEYLA="'):
+            return line[len('TEYLA="'):-1] != teyla_bin
+    return True
+
+
+def _path_for_launchd(teyla_bin: str) -> str:
+    """A PATH launchd can use: the teyla binary's dir, uv/pipx homes, git, and the system dirs."""
+    home = pathlib.Path.home()
+    cands = [str(pathlib.Path(teyla_bin).parent), str(home / ".local" / "bin"),
+             "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+    seen, out = set(), []
+    for c in cands:
+        if c not in seen:
+            seen.add(c); out.append(c)
+    return ":".join(out)
+
+
+def is_stale() -> bool:
+    teyla_bin = _teyla_bin()
+    return (_wrapper_stale(WRAPPER_PATH, teyla_bin) or _wrapper_stale(DAILY_WRAPPER_PATH, teyla_bin)
+            or not PLIST_PATH.exists() or not DAILY_PLIST_PATH.exists())
+
+
+def _load(plist: pathlib.Path, label: str) -> str:
+    uid = os.getuid()
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"], capture_output=True, text=True)
+    r = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(plist)], capture_output=True, text=True)
+    if r.returncode == 0:
+        return f"loaded {label} via launchctl bootstrap gui/{uid}"
+    r2 = subprocess.run(["launchctl", "load", str(plist)], capture_output=True, text=True)
+    if r2.returncode == 0:
+        return f"loaded {label} via launchctl load (bootstrap failed, fell back)"
+    return f"NOT LOADED {label} — bootstrap: {r.stderr.strip()!r}; load: {r2.stderr.strip()!r}"
+
+
+def install(if_stale: bool = False) -> list[str]:
     lines = []
     teyla_bin = _teyla_bin()
+    if if_stale and not is_stale():
+        return ["routines current (wrappers name the current binary, both plists present)"]
+    path = _path_for_launchd(teyla_bin)
+
+    DAILY_WRAPPER_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DAILY_WRAPPER_PATH.write_text(DAILY_WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin, path=path))
+    DAILY_WRAPPER_PATH.chmod(0o755)
+    lines.append(f"wrote {DAILY_WRAPPER_PATH}")
+    DAILY_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DAILY_PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DAILY_PLIST_PATH.write_text(DAILY_PLIST_TEMPLATE.format(label=DAILY_LABEL, wrapper=DAILY_WRAPPER_PATH,
+                                                            log=DAILY_LOG_PATH, path=path))
+    lines.append(f"wrote {DAILY_PLIST_PATH}")
+    if sys.platform == "darwin":
+        lines.append(_load(DAILY_PLIST_PATH, DAILY_LABEL))
+    else:
+        lines.append("not macOS: add to cron yourself: 0 7 * * * bash " + str(DAILY_WRAPPER_PATH))
 
     WRAPPER_PATH.parent.mkdir(parents=True, exist_ok=True)
     WRAPPER_PATH.write_text(WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin))
@@ -87,41 +198,41 @@ def install() -> list[str]:
     PLIST_PATH.write_text(PLIST_TEMPLATE.format(label=LABEL, wrapper=WRAPPER_PATH, log=LOG_PATH))
     lines.append(f"wrote {PLIST_PATH}")
 
-    uid = os.getuid()
-    r = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(PLIST_PATH)], capture_output=True, text=True)
-    if r.returncode == 0:
-        lines.append(f"loaded via launchctl bootstrap gui/{uid}")
+    if sys.platform == "darwin":
+        lines.append(_load(PLIST_PATH, LABEL))
     else:
-        r2 = subprocess.run(["launchctl", "load", str(PLIST_PATH)], capture_output=True, text=True)
-        if r2.returncode == 0:
-            lines.append("loaded via launchctl load (bootstrap failed, fell back)")
-        else:
-            lines.append(f"NOT LOADED — bootstrap: {r.stderr.strip()!r}; load: {r2.stderr.strip()!r}")
-
-    lines.append(f"to remove: launchctl bootout gui/{uid} {PLIST_PATH}  &&  rm {PLIST_PATH}")
+        lines.append("not macOS: add to cron yourself: 30 7 * * 1 bash " + str(WRAPPER_PATH))
+    uid = os.getuid()
+    lines.append(f"to remove: launchctl bootout gui/{uid}/{LABEL}; launchctl bootout gui/{uid}/{DAILY_LABEL}; rm {PLIST_PATH} {DAILY_PLIST_PATH}")
     return lines
+
+
+def loaded(label: str) -> tuple[bool, str | None, str | None]:
+    """(loaded, pid, last exit) from `launchctl list`."""
+    if sys.platform != "darwin":
+        return False, None, None
+    r = subprocess.run(["launchctl", "list"], capture_output=True, text=True)
+    for line in r.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 3 and parts[2] == label:
+            return True, (parts[0] if parts[0] != "-" else None), parts[1]
+    return False, None, None
 
 
 def status() -> list[str]:
     lines = []
-    r = subprocess.run(["launchctl", "list"], capture_output=True, text=True)
-    found = None
-    for line in r.stdout.splitlines():
-        parts = line.split("\t")
-        if len(parts) >= 3 and parts[2] == LABEL:
-            found = parts
-            break
-    if found:
-        pid, exit_code = found[0], found[1]
-        lines.append(f"loaded: yes (pid {pid}, last exit {exit_code})" if pid != "-" else f"loaded: yes (last exit {exit_code})")
-    else:
-        lines.append("loaded: no")
-    lines.append(f"plist: {PLIST_PATH} ({'exists' if PLIST_PATH.exists() else 'missing'})")
-    lines.append(f"wrapper: {WRAPPER_PATH} ({'exists' if WRAPPER_PATH.exists() else 'missing'})")
-    if LOG_PATH.exists():
-        tail = LOG_PATH.read_text(errors="replace").splitlines()[-10:]
-        lines.append(f"last log lines ({LOG_PATH}):")
-        lines.extend(f"  {t}" for t in tail)
-    else:
-        lines.append(f"log: {LOG_PATH} (missing — has not run yet)")
+    teyla_bin = _teyla_bin()
+    for label, plist, wrapper, log in ((DAILY_LABEL, DAILY_PLIST_PATH, DAILY_WRAPPER_PATH, DAILY_LOG_PATH),
+                                       (LABEL, PLIST_PATH, WRAPPER_PATH, LOG_PATH)):
+        ok, pid, code = loaded(label)
+        lines.append(f"{label}: loaded: {'yes' if ok else 'no'}" + (f" (pid {pid})" if pid else "") + (f" (last exit {code})" if code else ""))
+        lines.append(f"  plist: {plist} ({'exists' if plist.exists() else 'missing'})")
+        stale = _wrapper_stale(wrapper, teyla_bin)
+        lines.append(f"  wrapper: {wrapper} ({'missing' if not wrapper.exists() else ('STALE — names another binary; run `teyla routine install`' if stale else 'current')})")
+        if log.exists():
+            tail = log.read_text(errors="replace").splitlines()[-6:]
+            lines.append(f"  last log lines ({log}):")
+            lines.extend(f"    {t}" for t in tail)
+        else:
+            lines.append(f"  log: {log} (missing — has not run yet)")
     return lines

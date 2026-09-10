@@ -220,3 +220,125 @@ def ack(note: str | None = None) -> str:
     ACK_PATH.write_text(json.dumps(record, indent=2) + "\n")
     detail = f"sha256={digest} date={today}" + (f" note={note!r}" if note else "")
     return f"recorded {CLAUDE_GLOBAL} -> {ACK_PATH}: {detail}"
+
+
+# ---------------------------------------------------------------------------
+# Template drift: keep ~/.agents/POLICY.md current across Teyla releases without
+# losing the owner's edits. Three-way merge: base (the template as last applied),
+# new (the template shipped with this version), local (the owner's file).
+
+BASE_PATH = HOME / ".teyla" / "policy-base.md"
+CONFLICT_PATH = HOME / ".teyla" / "policy-merge-conflict.md"
+
+
+def _owner_from(text: str) -> str | None:
+    import re
+    m = re.search(r"^Owner:\s*(.+?)\.\s*(?:Edit here.*)?$", text, re.M)
+    return m.group(1).strip() if m else None
+
+
+def render_template(owner: str | None = None) -> str:
+    import getpass
+    return TEMPLATE.read_text().replace("{{owner}}", owner or getpass.getuser())
+
+
+def refresh(dry: bool = False) -> list[str]:
+    """Merge template changes into ~/.agents/POLICY.md.
+
+    - no POLICY.md: nothing (sync creates it)
+    - no base recorded: record the current template as base, keep the owner's file as is,
+      report how far it differs
+    - base == new template: nothing changed upstream
+    - otherwise `git merge-file` local/base/new; clean → write, back up the old file, move
+      base forward; conflicts → write the marked-up merge to CONFLICT_PATH, leave POLICY.md
+      untouched, and let doctor nag until it is resolved (`teyla policy refresh --resolved`)
+    """
+    import datetime as _dt
+    import difflib
+    import shutil
+    import subprocess
+    import tempfile
+    if not POLICY.exists():
+        return ["no POLICY.md yet — run `teyla policy sync`"]
+    local = POLICY.read_text()
+    new = render_template(_owner_from(local))
+    if not BASE_PATH.exists():
+        n = sum(1 for l in difflib.unified_diff(new.splitlines(), local.splitlines(), lineterm="", n=0)
+                if l.startswith(("+", "-")) and not l.startswith(("+++", "---")))
+        if dry:
+            return [f"would record the current template as base ({n} line(s) differ locally; kept)"]
+        BASE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        BASE_PATH.write_text(new)
+        return [f"recorded template base at {BASE_PATH}; your file differs from it in {n} line(s), kept as is"]
+    base = BASE_PATH.read_text()
+    if base == new:
+        if CONFLICT_PATH.exists():
+            return [f"template unchanged; a merge conflict is still waiting in {CONFLICT_PATH}"]
+        return ["template unchanged since last refresh"]
+    if local == base:
+        if not dry:
+            _backup_policy()
+            POLICY.write_text(new); BASE_PATH.write_text(new)
+        return [f"{'would apply' if dry else 'applied'} template changes to {POLICY} (no local edits to keep)"]
+    git = shutil.which("git")
+    if not git:
+        return ["template changed but `git` is not available for a three-way merge — merge by hand"]
+    with tempfile.TemporaryDirectory() as td:
+        p = pathlib.Path(td)
+        (p / "local").write_text(local); (p / "base").write_text(base); (p / "new").write_text(new)
+        r = subprocess.run([git, "merge-file", "-p", "-L", "yours", "-L", "base", "-L", "teyla-template",
+                            str(p / "local"), str(p / "base"), str(p / "new")], capture_output=True, text=True)
+    if r.returncode < 0:
+        return [f"git merge-file failed: {r.stderr.strip()}"]
+    if r.returncode == 0:
+        if not dry:
+            _backup_policy()
+            POLICY.write_text(r.stdout); BASE_PATH.write_text(new)
+            if CONFLICT_PATH.exists():
+                CONFLICT_PATH.unlink()
+        return [f"{'would merge' if dry else 'merged'} template changes into {POLICY} (your edits kept)"]
+    if not dry:
+        CONFLICT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CONFLICT_PATH.write_text(r.stdout)
+    return [f"{r.returncode} conflict(s): template and your edits touch the same lines. "
+            f"{'Would write' if dry else 'Wrote'} the marked-up merge to {CONFLICT_PATH}; {POLICY} untouched. "
+            f"Resolve there, copy into {POLICY}, then `teyla policy refresh --resolved`"]
+
+
+def resolved() -> str:
+    """The owner says the conflict is resolved in POLICY.md: move base forward, drop the conflict file."""
+    if not POLICY.exists():
+        return "no POLICY.md"
+    BASE_PATH.write_text(render_template(_owner_from(POLICY.read_text())))
+    if CONFLICT_PATH.exists():
+        CONFLICT_PATH.unlink()
+    return f"base moved to the current template; {CONFLICT_PATH.name} removed"
+
+
+def _backup_policy() -> pathlib.Path:
+    import datetime as _dt
+    bak = POLICY.with_name(POLICY.name + ".bak-" + _dt.date.today().isoformat())
+    if not bak.exists():
+        bak.write_text(POLICY.read_text())
+    return bak
+
+
+def repos_status(root: pathlib.Path) -> list[tuple[str, str]]:
+    """For each git repo directly under root: ('ok'|'missing'|'differ'|'none', name)."""
+    out = []
+    if not root.is_dir():
+        return out
+    for d in sorted(root.iterdir()):
+        if not (d / ".git").exists():
+            continue
+        a, c = d / "AGENTS.md", d / "CLAUDE.md"
+        if a.exists() and c.exists():
+            if a.is_symlink() or c.is_symlink() or a.read_text() == c.read_text():
+                out.append(("ok", d.name))
+            else:
+                out.append(("differ", d.name))
+        elif a.exists() or c.exists():
+            out.append(("missing", d.name))
+        else:
+            out.append(("none", d.name))
+    return out

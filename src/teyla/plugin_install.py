@@ -256,9 +256,66 @@ def uninstall(name: str, *, plugins_dir: pathlib.Path | None = None, remove_cach
 
 # --- CLI -------------------------------------------------------------------------
 
+def refresh(*, plugins_dir: pathlib.Path | None = None, force: bool = False) -> list[str]:
+    """Bring the installed Claude Code plugin copy up to the version shipped with this package.
+
+    The harness loads a *copy* under ~/.claude/plugins/cache/<marketplace>/teyla/<version>/;
+    it never re-reads the marketplace on its own. After `teyla update` the CLI is new but the
+    hooks and skills in that copy are the old ones — until this runs. Works with or without
+    the `claude` binary: it rewrites the same registry rows `install()` writes."""
+    import teyla
+    plugins_dir = plugins_dir or PLUGINS_DIR
+    installed_path = plugins_dir / "installed_plugins.json"
+    installed = _load_json(installed_path)
+    plugins = installed.get("plugins", {})
+    keys = [k for k in plugins if k.split("@", 1)[0] == "teyla"]
+    if not keys:
+        return ["teyla plugin not installed — `teyla plugin install zaitsew/teyla` "
+                "(or `claude plugin marketplace add zaitsew/teyla && claude plugin install teyla@teyla`)"]
+    src = teyla.plugin_dir()
+    version = _load_json(src / ".claude-plugin" / "plugin.json").get("version") or "0.0.0"
+    lines = []
+    for key in keys:
+        rows = plugins[key]
+        row = rows[0] if rows else {}
+        if row.get("version") == version and not force:
+            lines.append(f"{key}: already {version}")
+            continue
+        marketplace_name = key.split("@", 1)[1]
+        cache_path = plugins_dir / "cache" / marketplace_name / "teyla" / version
+        bak = _backup(installed_path)
+        if bak:
+            lines.append(f"backed up {installed_path} -> {bak}")
+        if cache_path.exists():
+            shutil.rmtree(cache_path)
+        shutil.copytree(src, cache_path)
+        old = row.get("installPath")
+        if old and pathlib.Path(old).is_dir() and pathlib.Path(old) != cache_path:
+            shutil.rmtree(old, ignore_errors=True)
+        new_row = dict(row)
+        new_row.update({"installPath": str(cache_path), "version": version, "lastUpdated": _now(),
+                        "installedAt": row.get("installedAt") or _now(), "scope": row.get("scope", "user")})
+        plugins[key] = [new_row]
+        lines.append(f"{key}: {row.get('version') or '?'} -> {version} ({cache_path})")
+    _write_json(installed_path, installed)
+    return lines
+
+
+def installed_version(*, plugins_dir: pathlib.Path | None = None) -> str | None:
+    plugins_dir = plugins_dir or PLUGINS_DIR
+    installed = _load_json(plugins_dir / "installed_plugins.json") if (plugins_dir / "installed_plugins.json").exists() else {}
+    for k, rows in installed.get("plugins", {}).items():
+        if k.split("@", 1)[0] == "teyla" and rows:
+            return rows[0].get("version")
+    return None
+
+
 def cmd_plugin(args):
     if args.action == "install":
         for line in install(args.arg):
+            print(line)
+    elif args.action == "refresh":
+        for line in refresh(force=getattr(args, "force", False)):
             print(line)
     else:
         for line in uninstall(args.arg):
@@ -269,6 +326,7 @@ def register(sp):
     """Add `teyla plugin install|uninstall` to an argparse subparsers object."""
     q = sp.add_parser("plugin", help="install/uninstall a Claude Code plugin by hand-editing its registry (no `claude` CLI needed)")
     q.set_defaults(fn=cmd_plugin)
-    q.add_argument("action", choices=["install", "uninstall"])
-    q.add_argument("arg", help="install: a local path or owner/repo; uninstall: a plugin name or name@marketplace")
+    q.add_argument("action", choices=["install", "uninstall", "refresh"])
+    q.add_argument("arg", nargs="?", help="install: a local path or owner/repo; uninstall: a plugin name or name@marketplace; refresh: none")
+    q.add_argument("--force", action="store_true", help="refresh: re-copy even when the version already matches")
     return q

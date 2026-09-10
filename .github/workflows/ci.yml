@@ -8,5 +8,11 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv venv && uv pip install -e . pytest
       - run: .venv/bin/pytest -q
-      - run: .venv/bin/teyla doctor
-      - run: .venv/bin/teyla policy status || true
+      - name: clean-machine path — init, sync, then doctor must be clean
+        run: |
+          .venv/bin/teyla policy init --owner ci --claude-md
+          .venv/bin/teyla policy sync
+          .venv/bin/teyla policy refresh
+          .venv/bin/teyla plugin install .
+          .venv/bin/teyla plugin refresh
+          .venv/bin/teyla doctor

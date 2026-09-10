@@ -8,6 +8,7 @@
   teyla policy status|sync [--dry]                                the wiring into every harness
   teyla policy sync-repo <path>... [--prefer agents|claude]      AGENTS.md ⇄ CLAUDE.md in repos
   teyla policy ack [--note TEXT]                                  record acceptance of ~/.claude/CLAUDE.md's current hash
+  teyla policy refresh [--dry] [--resolved]                       three-way merge of template changes into ~/.agents/POLICY.md
   teyla harvest <path> [--project SLUG]                          tool spine + corrections for sessions touching a path
   teyla models [--days N] [--json] [--refresh]                   model ladder + price drift report
   teyla models --write-policy [--dry] [--drop-absent]             rewrite the ladder table in ~/.agents/POLICY.md
@@ -20,14 +21,16 @@
   teyla triggers [list|install|uninstall]                          clock triggers → LaunchAgents
   teyla promote <product:routine> --gate B|C                       earned autonomy on counted evidence
   teyla receipts <product:routine>                                 what ran, under which rules and grants
-  teyla doctor                                                   what teyla can see on this machine
+  teyla doctor [--quiet] [--json] [--refresh]                    what must be true here, and the fix for each thing that is not
+  teyla update [--check] [--force] [--wire] [--quiet]            newer release → install, then policy sync/refresh, plugin refresh, routines
   teyla products [path...]                                       real-usage counters from every repo's ./check.sh usage
   teyla routines [path...] [--json]                               routines + manual checks from every repo's teyla.toml
-  teyla routine install|status                                    Teyla's own weekly launchd routine
+  teyla routine install|status [--if-stale]                       Teyla's own daily (update+doctor) and weekly launchd routines
   teyla connectors [--days N] [--json]                             per-connector round-trips, read/write, empty-or-error rate; advice C1–C4
   teyla plugins [name|path] [--json]                              skill/rule/fact quality pass over a Claude Code plugin
   teyla plugin install <source>                                   install a plugin by hand-editing its registry (no `claude` CLI)
   teyla plugin uninstall <name>                                   reverse it
+  teyla plugin refresh [--force]                                  bring the installed plugin copy to this package's version
 """
 from __future__ import annotations
 
@@ -105,6 +108,13 @@ def cmd_policy(args):
     from . import policy
     if args.action == "init":
         print(policy.init(force=args.force, owner=args.owner, dry=args.dry))
+        from . import config
+        if not args.dry:
+            print(config.write(code_root=args.code_root, ops_root=args.ops_root, force=args.force))
+            if policy.POLICY.exists() and not policy.BASE_PATH.exists():
+                policy.BASE_PATH.parent.mkdir(parents=True, exist_ok=True)
+                policy.BASE_PATH.write_text(policy.render_template(args.owner))
+                print(f"recorded template base at {policy.BASE_PATH}")
         if args.claude_md:
             print(policy.init_claude_md(owner=args.owner, merge_rule=args.merge_rule, code_root=args.code_root,
                                          ops_root=args.ops_root, force=args.force, dry=args.dry))
@@ -122,6 +132,12 @@ def cmd_policy(args):
             print(policy.sync_repo(p, dry=args.dry, prefer=args.prefer))
     elif args.action == "ack":
         print(policy.ack(note=args.note))
+    elif args.action == "refresh":
+        if args.resolved:
+            print(policy.resolved())
+        else:
+            for line in policy.refresh(dry=args.dry):
+                print(line)
 
 
 def cmd_harvest(args):
@@ -134,21 +150,6 @@ def cmd_products(args):
     print(table(args.paths or None))
 
 
-def cmd_doctor(args):
-    from .adapters import claude_code, codex, grok, hermes
-    from . import policy
-    print(f"teyla {__version__}")
-    for mod in (claude_code, codex, grok, hermes):
-        root = getattr(mod, "DEFAULT_ROOT", None)
-        ok = root and os.path.exists(os.path.expanduser(root))
-        try:
-            n = len(mod.load()) if ok else 0
-        except Exception as e:  # noqa: BLE001
-            n = f"error: {e}"
-        print(f"{mod.NAME:12} {root or '-':40} {'found' if ok else 'absent':7} sessions: {n}")
-    print("policy:")
-    for k, v in policy.status().items():
-        print(f"  {k:14} {'ok' if v else ('not installed' if v is None else 'MISSING')}")
 
 
 def cmd_routines(args):
@@ -169,7 +170,7 @@ def cmd_routines(args):
 def cmd_routine(args):
     from . import routine_install
     if args.action == "install":
-        for line in routine_install.install():
+        for line in routine_install.install(if_stale=getattr(args, "if_stale", False)):
             print(line)
     elif args.action == "status":
         for line in routine_install.status():
@@ -195,7 +196,8 @@ def main(argv=None):
         if name == "corrections":
             q.add_argument("--cluster", action="store_true")
     q = sp.add_parser("policy"); q.set_defaults(fn=cmd_policy)
-    q.add_argument("action", choices=["init", "status", "sync", "sync-repo", "ack"]); q.add_argument("paths", nargs="*")
+    q.add_argument("action", choices=["init", "status", "sync", "sync-repo", "ack", "refresh"]); q.add_argument("paths", nargs="*")
+    q.add_argument("--resolved", action="store_true", help="refresh: the merge conflict is resolved in POLICY.md; move the base forward")
     q.add_argument("--dry", action="store_true"); q.add_argument("--force", action="store_true")
     q.add_argument("--owner", help="your name, written into POLICY.md (default: login name)")
     q.add_argument("--claude-md", action="store_true", help="init: also write ~/.claude/CLAUDE.md from the global template if absent")
@@ -205,8 +207,8 @@ def main(argv=None):
     q.add_argument("--prefer", choices=["agents", "claude"], help="sync-repo: when AGENTS.md and CLAUDE.md both exist and differ, keep this one and symlink the other to it")
     q.add_argument("--note", help="ack: free-text note recorded alongside the acknowledgement")
     q = sp.add_parser("harvest"); q.set_defaults(fn=cmd_harvest); q.add_argument("path"); q.add_argument("--project")
-    q = sp.add_parser("doctor"); q.set_defaults(fn=cmd_doctor)
-    from . import wiki, feedback, models, plugins, plugin_install, connectors, control
+    from . import wiki, feedback, models, plugins, plugin_install, connectors, control, doctor, update
+    doctor.register(sp); update.register(sp)
     wiki.register(sp); feedback.register(sp); models.register(sp)
     plugins.register(sp); plugin_install.register(sp); connectors.register(sp); control.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
@@ -215,6 +217,7 @@ def main(argv=None):
     q.add_argument("--issues", action="store_true", help="open one GitHub issue per BROKEN check (needs gh)")
     q = sp.add_parser("routine"); q.set_defaults(fn=cmd_routine)
     q.add_argument("action", choices=["install", "status"])
+    q.add_argument("--if-stale", action="store_true", help="install: only rewrite when a wrapper names a binary that moved or a plist is missing")
     q = sp.add_parser("scaffold"); q.set_defaults(fn=cmd_scaffold)
     q.add_argument("path")
     q.add_argument("--name", required=True)
