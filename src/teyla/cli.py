@@ -23,6 +23,8 @@
   teyla receipts <product:routine>                                 what ran, under which rules and grants
   teyla doctor [--quiet] [--json] [--refresh]                    what must be true here, and the fix for each thing that is not
   teyla update [--check] [--force] [--wire] [--quiet]            newer release → install, then policy sync/refresh, plugin refresh, routines
+  teyla platform [init|env-example] [--json] [--no-net]          the shared resources set up once, and the step for each missing one
+  teyla productize [path...] [--json] [--owner-steps]            what stands between each product and its second user
   teyla products [path...]                                       real-usage counters from every repo's ./check.sh usage
   teyla routines [path...] [--json]                               routines + manual checks from every repo's teyla.toml
   teyla routine install|status [--if-stale]                       Teyla's own daily (update+doctor) and weekly launchd routines
@@ -208,7 +210,9 @@ def main(argv=None):
     q.add_argument("--note", help="ack: free-text note recorded alongside the acknowledgement")
     q = sp.add_parser("harvest"); q.set_defaults(fn=cmd_harvest); q.add_argument("path"); q.add_argument("--project")
     from . import wiki, feedback, models, plugins, plugin_install, connectors, control, doctor, update
+    from . import platform as platform_mod, productize as productize_mod
     doctor.register(sp); update.register(sp)
+    platform_mod.register(sp); productize_mod.register(sp)
     wiki.register(sp); feedback.register(sp); models.register(sp)
     plugins.register(sp); plugin_install.register(sp); connectors.register(sp); control.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
