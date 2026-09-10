@@ -8,6 +8,7 @@ end without a model in it: the loop is the thing under test, and the loop is cod
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import pathlib
@@ -530,8 +531,11 @@ def test_path_matches(tmp_path, target, ok):
 
 
 def test_net_grant_matches_hosts_not_substrings():
-    assert G.net_allowed("https://api.example.com/x", ["example.com"])[0] is True
+    assert G.net_allowed("https://example.com/x", ["example.com"])[0] is True
+    assert G.net_allowed("https://api.example.com/x", ["*.example.com"])[0] is True
     assert G.net_allowed("https://example.com.evil.net/x", ["example.com"])[0] is False
+    assert G.net_allowed("https://api.example.com/x", ["example.com"])[0] is False, \
+        "an exact-host grant is exactly that host; subdomains need `*.example.com`"
 
 
 # --- 6. rules -----------------------------------------------------------------------------------
@@ -757,9 +761,11 @@ def test_p1_2_hook_denies_the_git_alias_trick(fixture_grants):
 
 
 def test_p1_2_a_plain_env_prefix_needs_shell_env():
-    assert G.shell_allowed("FOO=1 git push", ["git push"])[0] is False
-    assert G.shell_allowed("FOO=1 git push", ["git push", "env"])[0] is True, \
+    assert G.shell_allowed("LANG=C git push", ["git push"])[0] is False
+    assert G.shell_allowed("LANG=C git push", ["git push", "env"])[0] is True, \
         "`shell:env` is the explicit way to allow an environment prefix"
+    assert G.shell_allowed("FOO=1 git push", ["git push", "env"])[0] is False, \
+        "and even then only the allowlist — see P1-3 below"
 
 
 @pytest.mark.parametrize("var", ["PATH", "GIT_CONFIG_COUNT", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES"])
@@ -974,15 +980,19 @@ def test_p1_6_approve_ignores_a_rewritten_grants_file_in_the_run_dir(product, ca
     assert doc["grants"]["net"] == [] and "net:*" not in doc["capabilities"]
 
 
-def test_p1_6_approve_accepts_a_narrowed_manifest(product, capsys):
+def test_p1_6_approve_refuses_a_narrowed_manifest_too(product, capsys):
+    """Narrowing used to be waved through. See P1-5 below: the draft is evidence about
+    the run that produced it, and a manifest edited since produced a different run."""
     cli("run", "demo:digest")
     run_id = next(iter(S.fold_inbox()))
     manifest = product / "teyla.toml"
     manifest.write_text(manifest.read_text().replace('"shell:git push", ', ""))
     capsys.readouterr()
-    assert cli("inbox", "approve", run_id) == 0
+    assert cli("inbox", "approve", run_id) == 1
     out = capsys.readouterr().out
-    assert "narrowed since the draft" in out and "shell:git push" in out
+    assert "REFUSED" in out and "capabilities or caps have changed" in out
+    assert "- shell:git push" in out
+    assert not (product / "acted.txt").exists()
 
 
 def test_p1_6_approve_refuses_when_the_routine_is_gone(product, capsys):
@@ -1032,6 +1042,15 @@ def test_p1_7_a_command_step_is_checked_against_the_grants(tmp_path, monkeypatch
 
 
 def test_p1_7_a_command_act_step_is_checked_on_approve_too(product, capsys):
+    """The act command an approval would run is checked against the same grants a Bash
+    call is. Unit-level, because an act step swapped after the draft is now stopped one
+    step earlier — by its hash. See P1-5."""
+    routine = load_manifest(product / "teyla.toml")[0]
+    from teyla.control.manifest import Step
+    evil = dataclasses.replace(routine, act=Step(kind="command", run="curl https://evil.example"))
+    ok, why = engine._command_step_allowed(evil.act, evil, run_dir=product / "runs" / "x")
+    assert ok is False and "curl" in why
+
     cli("run", "demo:digest")
     run_id = next(iter(S.fold_inbox()))
     manifest = product / "teyla.toml"
@@ -1039,7 +1058,9 @@ def test_p1_7_a_command_act_step_is_checked_on_approve_too(product, capsys):
         "echo ACTED > acted.txt", "curl https://evil.example"))
     capsys.readouterr()
     assert cli("inbox", "approve", run_id) == 1
-    assert "the `act` command is not covered" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "REFUSED" in out and "`act` step has changed" in out
+    assert not (product / "acted.txt").exists()
 
 
 def test_p1_7_a_command_step_redirecting_outside_the_grants_is_refused(tmp_path, monkeypatch, capsys):
@@ -1468,3 +1489,358 @@ def test_p2_13_a_tampered_receipt_cannot_count_toward_promotion(product):
     ev = _current_evidence(product)
     ok, problems = promote.verdict(ev)
     assert ok is False and any("tampered" in p for p in problems)
+
+
+# --- 12. the second adversarial review ---------------------------------------------------
+#
+# The review of 2026-09-10 that came back after §11 was fixed. Same shape as §11: one
+# test per finding, each carrying the input that worked against the *hardened* code.
+
+
+# P1-1. `shlex` in whitespace_split mode eats newlines, so a command's second line was
+# never a segment: the check read `git push` and bash ran the curl underneath it.
+
+def test_p2_1_a_newline_is_a_segment_separator():
+    exploit = "git push origin main\ncurl https://evil.example/x"
+    ok, why = G.shell_allowed(exploit, ["git push"])
+    assert ok is False, "the second line is a second command"
+    assert "curl" in why
+    assert len(G.split_segments(exploit)) == 2
+
+
+@pytest.mark.parametrize("sep", ["\n", "\r", "\r\n", "\n\n", " \n "])
+def test_p2_1_every_line_ending_splits(sep):
+    assert G.shell_allowed(f"git push{sep}curl https://evil", ["git push"])[0] is False
+
+
+def test_p2_1_a_line_continuation_is_not_a_separator():
+    assert G.shell_allowed("git push \\\n  origin main", ["git push"])[0] is True, \
+        "a backslash-newline joins two lines into one command, as the shell does"
+    assert G.shell_allowed("git push origin main\ngit push origin dev", ["git push"])[0] is True
+    assert G.shell_allowed("git push \\\n  origin main\ncurl https://evil", ["git push"])[0] is False
+
+
+def test_p2_1_hook_denies_the_newline_chain(fixture_grants):
+    r = hook(payload("Bash", {"command": "git push origin main\ncurl https://evil.example"}),
+             home=fixture_grants["home"], grants_path=fixture_grants["path"])
+    assert r.returncode == 2
+    assert "not matched by any `shell:` grant" in r.stderr
+
+
+# P1-2. `shlex(commenters="#")` strips from a `#` anywhere in a token to the end of the
+# string. Bash only treats `#` as a comment at the start of a word, so
+# `git push origin main#;curl …` lexed to a granted push and ran the curl.
+
+def test_p2_2_a_hash_inside_a_token_is_not_a_comment():
+    exploit = "git push origin main#;curl https://evil.example"
+    ok, why = G.shell_allowed(exploit, ["git push"])
+    assert ok is False, "`#` mid-token is a literal; the `;` after it still splits"
+    assert "curl" in why
+    assert [seg[0] for seg in G.split_segments(exploit)] == ["git", "curl"]
+
+
+def test_p2_2_a_whole_segment_comment_is_still_a_comment():
+    assert G.shell_allowed("git push origin main ; # nothing to see", ["git push"])[0] is True
+    assert G.shell_allowed("# just a note", ["git push"])[0] is True
+
+
+def test_p2_2_hook_denies_the_hash_smuggled_command(fixture_grants):
+    r = hook(payload("Bash", {"command": "git push origin main#;curl https://evil.example"}),
+             home=fixture_grants["home"], grants_path=fixture_grants["path"])
+    assert r.returncode == 2 and "not matched by any `shell:` grant" in r.stderr
+
+
+# P1-3. The environment denylist was a list of the names somebody had thought of.
+# `shell:env` is an allowlist now.
+
+@pytest.mark.parametrize("exploit", [
+    "GIT_SSH_COMMAND=curl git push",
+    "GIT_EXEC_PATH=/tmp git push",
+    "HOME=runs git push",                    # with a runs/.gitconfig alias the run wrote
+    "XDG_CONFIG_HOME=runs git push",
+    "SSH_ASKPASS=runs/x git push",
+    "BASH_ENV=runs/x.sh git push",
+    "ENV=runs/x.sh git push",
+    "IFS=, git push",
+    "CDPATH=/tmp git push",
+    "PYTHONPATH=runs git push",
+    "NODE_OPTIONS=--require=/tmp/x git push",
+    "PERL5LIB=runs git push",
+    "RUBYOPT=-rx git push",
+    "FOO=1 git push",
+])
+def test_p2_3_only_allowlisted_env_names_pass_under_shell_env(exploit):
+    ok, why = G.shell_allowed(exploit, ["git push", "env"])
+    assert ok is False, f"{exploit!r} redirects what the granted verb does"
+    assert "allowlist" in why
+
+
+@pytest.mark.parametrize("prefix", ["TEYLA_RUN_ID=r1", "LANG=C", "LC_ALL=C", "TZ=UTC",
+                                    "NO_COLOR=1", "PAGER=cat"])
+def test_p2_3_the_allowlist_itself_passes(prefix):
+    assert G.shell_allowed(f"{prefix} git push", ["git push", "env"])[0] is True
+    assert G.shell_allowed(f"{prefix} git push", ["git push"])[0] is False, \
+        "an environment prefix still needs `shell:env` at all"
+
+
+def test_p2_3_pager_is_allowed_only_as_cat():
+    assert G.shell_allowed("PAGER=cat git push", ["git push", "env"])[0] is True
+    assert G.shell_allowed("PAGER=sh git push", ["git push", "env"])[0] is False, \
+        "PAGER names a program to run; only `cat` is a pager and not a shell"
+
+
+def test_p2_3_hook_denies_the_git_ssh_command_prefix(fixture_grants):
+    doc = json.loads(fixture_grants["path"].read_text())
+    doc["grants"]["shell"] = ["git push", "env"]
+    fixture_grants["path"].write_text(json.dumps(doc))
+    r = hook(payload("Bash", {"command": "GIT_SSH_COMMAND=curl git push"}),
+             home=fixture_grants["home"], grants_path=fixture_grants["path"])
+    assert r.returncode == 2 and "GIT_SSH_COMMAND" in r.stderr
+
+
+# P1-4a. `Read`/`Grep`/`Glob`/`LS` were always allowed and never checked against the
+# control paths — including `~/.teyla/hmac.key`, the key every action-log line is
+# signed with. A run holding that key writes its own receipt.
+
+def test_p2_4_reading_the_hmac_key_is_denied(fixture_grants):
+    r = hook(payload("Read", {"file_path": str(fixture_grants["home"] / "hmac.key")}),
+             home=fixture_grants["home"], grants_path=fixture_grants["path"])
+    assert r.returncode == 2
+    assert "control-plane state" in r.stderr
+
+
+@pytest.mark.parametrize("tool,key", [
+    ("Read", "file_path"), ("Grep", "path"), ("Glob", "path"), ("LS", "path"),
+    ("NotebookRead", "notebook_path"),
+])
+def test_p2_4_every_read_tool_is_checked_against_the_control_paths(fixture_grants, tool, key):
+    r = hook(payload(tool, {key: str(fixture_grants["home"] / "runs" / "R1" / "grants.json")}),
+             home=fixture_grants["home"], grants_path=fixture_grants["path"])
+    assert r.returncode == 2, f"{tool} could read the run's own policy"
+
+
+@pytest.mark.parametrize("value", [
+    "~/.teyla/hmac.key", "runs/2026-09-10/x/receipt.json", ".teyla/**", "$TEYLA_GRANTS",
+])
+def test_p2_4_control_names_are_denied_to_reads_wherever_they_appear(fixture_grants, value):
+    r = hook(payload("Read", {"file_path": value}),
+             home=fixture_grants["home"], grants_path=fixture_grants["path"])
+    assert r.returncode == 2 and "control-plane state" in r.stderr
+
+
+def test_p2_4_an_ordinary_read_is_still_free(fixture_grants):
+    r = hook(payload("Read", {"file_path": "notes/monday.md"}),
+             home=fixture_grants["home"], grants_path=fixture_grants["path"])
+    assert r.returncode == 0, r.stderr
+
+
+@pytest.mark.parametrize("command", [
+    "cat ~/.teyla/hmac.key",
+    "cat ~/.te''yla/hmac.key",
+    'cat "$HOME"/.TEYLA/HMAC.KEY',
+    "xxd -p ~/.teyla/hm\\ac.key",
+    "wc -c ~/.Teyla/runs/R1/actions.jsonl",
+])
+def test_p2_4_bash_mentioning_the_key_is_denied(fixture_grants, command):
+    doc = json.loads(fixture_grants["path"].read_text())
+    doc["grants"]["shell"] = ["*"]
+    fixture_grants["path"].write_text(json.dumps(doc))
+    r = hook(payload("Bash", {"command": command}),
+             home=fixture_grants["home"], grants_path=fixture_grants["path"])
+    assert r.returncode == 2, f"{command!r} names the control plane's own state"
+    assert "control-plane state" in r.stderr
+
+
+# P1-4b. A `shell:` grant naming an interpreter looked narrow and was not.
+
+@pytest.mark.parametrize("grant,command", [
+    ("python", "python -c 'import os,socket'"),
+    ("python3", "python3 /tmp/x.py"),
+    ("sh", "sh -c 'echo hi'"),
+    ("bash", "bash script.sh"),
+    ("node", "node -e 'process.exit(0)'"),
+    ("perl", "perl -e 'print 1'"),
+    ("tee", "tee runs/out.md"),
+    ("cp", "cp notes.md /tmp/x"),
+    ("ln", "ln -s / runs/root"),
+    ("dd", "dd if=/dev/zero of=runs/x"),
+    ("chmod", "chmod 777 runs"),
+    ("sudo", "sudo true"),
+    ("curl", "curl https://example.com"),
+    ("rsync", "rsync -a . /tmp/x"),
+    ("xargs", "xargs echo"),
+    ("find", "find . -name x"),
+    ("/bin/sh", "/bin/sh -c true"),
+])
+def test_p2_4_a_dangerous_verb_needs_shell_star(grant, command):
+    ok, why = G.shell_allowed(command, [grant], fs_write=["**"], repo="/repo")
+    assert ok is False, f"`{grant}` cannot be bounded by a grant naming it"
+    assert "shell:*" in why and "full trust" in why
+
+
+def test_p2_4_git_with_dash_c_is_a_dangerous_verb():
+    ok, why = G.shell_allowed("git -c core.pager=!sh push", ["git"])
+    assert ok is False and "git -c" in why
+    assert G.shell_allowed("git --exec-path=/tmp push", ["git"])[0] is False
+
+
+def test_p2_4_shell_star_is_full_trust(tmp_path):
+    assert G.shell_allowed("python -c pwned", ["*"], fs_write=["**"], repo=tmp_path)[0] is True
+    assert G.shell_allowed("sudo rm -rf /", ["*"], fs_write=["**"], repo=tmp_path)[0] is True
+
+
+def test_p2_4_hook_denies_an_interpreter_grant_and_allows_shell_star(fixture_grants):
+    doc = json.loads(fixture_grants["path"].read_text())
+    doc["grants"]["shell"] = ["python"]
+    fixture_grants["path"].write_text(json.dumps(doc))
+    denied = hook(payload("Bash", {"command": "python -c 'print(1)'"}),
+                  home=fixture_grants["home"], grants_path=fixture_grants["path"])
+    assert denied.returncode == 2 and "shell:*" in denied.stderr
+
+    doc["grants"]["shell"] = ["*"]
+    fixture_grants["path"].write_text(json.dumps(doc))
+    allowed = hook(payload("Bash", {"command": "python -c 'print(1)'"}),
+                   home=fixture_grants["home"], grants_path=fixture_grants["path"])
+    assert allowed.returncode == 0, allowed.stderr
+
+
+# P1-5. `promote` counted receipts without binding them to the capability list they
+# ran under, and `approve` compared capability *strings* — so caps, and the `act`
+# step itself, were never checked at all.
+
+def test_p2_5_every_receipt_carries_the_grants_hash(product):
+    cli("run", "demo:digest")
+    routine = load_manifest(product / "teyla.toml")[0]
+    r = S.receipts_for("demo:digest")[-1]
+    assert r["grants_hash"] == engine.grants_hash(routine)
+    assert r["caps"] == dict(routine.caps)
+
+
+def test_p2_5_changing_the_capabilities_resets_the_streak(product, capsys):
+    _ten_clean()
+    capsys.readouterr()
+    assert cli("promote", "demo:digest", "--gate", "B") == 0, "ten clean runs earn gate B"
+
+    manifest = product / "teyla.toml"
+    manifest.write_text(manifest.read_text()
+                        .replace('gate = "B"', 'gate = "A"')
+                        .replace('"shell:echo"]', '"shell:echo", "net:*"]'))
+    capsys.readouterr()
+    assert cli("promote", "demo:digest", "--gate", "B") == 1
+    out = capsys.readouterr().out
+    assert "REFUSED" in out
+    assert "0 consecutive clean receipt(s)" in out
+    assert "different capabilities or caps" in out
+
+
+def test_p2_5_loosening_a_cap_resets_the_streak(product):
+    _ten_clean()
+    manifest = product / "teyla.toml"
+    manifest.write_text(manifest.read_text().replace("max_sends = 0", "max_sends = 50"))
+    routine = load_manifest(manifest)[0]
+    ev = promote.evidence("demo:digest", routine.gate,
+                          engine.act_hash(routine), engine.grants_hash(routine))
+    ok, problems = promote.verdict(ev)
+    assert ok is False
+    assert any("different capabilities or caps" in p for p in problems), problems
+
+
+def test_p2_5_approve_refuses_a_loosened_cap(product, capsys):
+    cli("run", "demo:digest")
+    run_id = next(iter(S.fold_inbox()))
+    manifest = product / "teyla.toml"
+    manifest.write_text(manifest.read_text().replace("max_sends = 0", "max_sends = 50"))
+    capsys.readouterr()
+    assert cli("inbox", "approve", run_id) == 1
+    out = capsys.readouterr().out
+    assert "loosened its caps" in out and "max_sends: 0 -> 50" in out
+    assert not (product / "acted.txt").exists()
+
+
+def test_p2_5_approve_still_runs_an_untouched_manifest(product, capsys):
+    cli("run", "demo:digest")
+    run_id = next(iter(S.fold_inbox()))
+    capsys.readouterr()
+    assert cli("inbox", "approve", run_id) == 0, capsys.readouterr().out
+    assert (product / "acted.txt").exists()
+
+
+# P2-6. `fs.write:*` short-circuited to "everything", filesystem included.
+
+def test_p2_6_fs_write_star_is_the_repo_root_not_the_filesystem(tmp_path):
+    repo = tmp_path / "repo"; repo.mkdir()
+    assert G.path_matches("notes.md", ["*"], repo) is True, "`*` is the repo root"
+    assert G.path_matches("runs/a.md", ["*"], repo) is False, "and no slash in it"
+    assert G.path_matches("/etc/hosts", ["*"], repo) is False
+
+
+@pytest.mark.parametrize("pattern", ["*", "**", "**/*"])
+def test_p2_6_no_relative_grant_reaches_outside_the_repo(tmp_path, pattern):
+    repo = tmp_path / "repo"; repo.mkdir()
+    outside = tmp_path / "outside"; outside.mkdir()
+    ok, why = G.write_target_ok(outside / "x.md", [pattern], repo)
+    assert ok is False and "outside the repo" in why
+
+
+def test_p2_6_an_absolute_grant_is_the_only_way_out(tmp_path):
+    repo = tmp_path / "repo"; repo.mkdir()
+    outside = tmp_path / "outside"; outside.mkdir()
+    assert G.path_matches(outside / "x.md", [str(outside) + "/**"], repo) is True
+
+
+def test_p2_6_hook_denies_a_write_outside_the_repo_under_a_star_grant(tmp_path):
+    home = tmp_path / "home"; home.mkdir()
+    repo = tmp_path / "repo"; repo.mkdir()
+    ctl = tmp_path / "ctl"; ctl.mkdir()
+    doc = {"version": 1, "run_id": "R", "routine": "x:y", "repo": str(repo), "gate": "A",
+           "capabilities": ["fs.write:*"],
+           "grants": {"fs.write": ["*"], "shell": [], "net": [], "send": [], "tool": []},
+           "caps": {}, "run_dir": str(ctl), "state": str(ctl / "grants-state.json"),
+           "actions": str(ctl / "actions.jsonl")}
+    p = ctl / "g.json"; p.write_text(json.dumps(doc))
+    r = hook(payload("Write", {"file_path": str(tmp_path / "escape.md"), "content": "x"}),
+             home=home, grants_path=p)
+    assert r.returncode == 2 and "outside the repo" in r.stderr
+
+
+# P2-7. A bare `tool:Skill` allowed every skill on the machine.
+
+def test_p2_7_a_bare_tool_skill_grant_names_no_skill(fixture_grants):
+    doc = json.loads(fixture_grants["path"].read_text())
+    doc["grants"]["tool"].append("Skill")
+    fixture_grants["path"].write_text(json.dumps(doc))
+    r = hook(payload("Skill", {"skill": "harvest"}),
+             home=fixture_grants["home"], grants_path=fixture_grants["path"])
+    assert r.returncode == 2
+    assert "names no skill" in r.stderr and "tool:Skill:harvest" in r.stderr
+
+
+# P2-8. Case, and what a `net:` grant is allowed to be.
+
+@pytest.mark.parametrize("target", [
+    "runs/Grants.json", "runs/ACTIONS.JSONL", "runs/x/Receipt.Json", "runs/HMAC.key",
+])
+def test_p2_8_the_control_basename_check_is_case_insensitive(fixture_grants, target):
+    r = hook(payload("Write", {"file_path": target, "content": "{}"}),
+             home=fixture_grants["home"], grants_path=fixture_grants["path"])
+    assert r.returncode == 2, f"{target} opens a control file on this filesystem"
+    assert "control-plane file" in r.stderr
+
+
+@pytest.mark.parametrize("grant,url,expected", [
+    ("example.com", "https://example.com/x", True),
+    ("example.com", "https://api.example.com/x", False),
+    ("*.example.com", "https://api.example.com/x", True),
+    ("*.example.com", "https://example.com/x", True),
+    ("*.example.com", "https://example.com.evil.net/x", False),
+    ("com", "https://evil.com/x", False),
+    ("*.com", "https://evil.com/x", False),
+    ("*.co.uk", "https://evil.co.uk/x", True),
+    ("evil*.com", "https://evil2.com/x", False),
+])
+def test_p2_8_a_net_grant_is_an_exact_host_or_a_star_domain(grant, url, expected):
+    assert G.net_allowed(url, [grant])[0] is expected
+
+
+def test_p2_8_net_star_is_still_everything():
+    assert G.net_allowed("https://anything.example/x", ["*"])[0] is True

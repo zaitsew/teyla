@@ -215,6 +215,23 @@ def act_hash(routine: Routine) -> str:
     return hashlib.sha256(body).hexdigest()[:16]
 
 
+def grants_hash(routine: Routine) -> str:
+    """A hash of what the routine is allowed to do: its capabilities, sorted, plus
+    its caps. Bound into every receipt, next to `act_hash`.
+
+    Promotion is ten clean runs of *this* act step — and, now, ten clean runs under
+    *these* capabilities. Without this, a routine could bank its streak drafting
+    under `fs.write:runs/**`, add `net:*` and `max_sends = 50`, and cash the streak
+    in for gate B on the strength of runs that never had either. `inbox approve`
+    checks the same hash: the draft you read was produced under one capability list,
+    and acting on it under another is acting on grants nobody reviewed."""
+    body = json.dumps({
+        "capabilities": sorted(str(c) for c in routine.capabilities),
+        "caps": {k: routine.caps[k] for k in sorted(routine.caps)},
+    }, sort_keys=True, default=str).encode()
+    return hashlib.sha256(body).hexdigest()[:16]
+
+
 def _merge_tokens(*results) -> tuple[dict | None, float | None]:
     tokens: dict = {}
     cost = None
@@ -331,6 +348,7 @@ def run(ref: str, *, dry: bool = False, force: bool = False, repo=None, out=prin
         "product": routine.product, "repo": str(routine.repo), "gate": routine.gate,
         "rule_ids": R.ids(rules), "capabilities": list(routine.capabilities),
         "run_dir": str(run_dir), "control_dir": str(ctl_dir), "act_hash": act_hash(routine),
+        "grants_hash": grants_hash(routine), "caps": dict(routine.caps),
     }
 
     # A `command` step never meets the hook, so its command is checked here against the

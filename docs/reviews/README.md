@@ -14,3 +14,9 @@ env-prefix git aliases, redirection past fs.write, agent-writable grants and act
 reloading tampered grants, kill switch not re-checked before act) and nine P2s. All P1s and P2s
 8–16 fixed in 0.6.1 with an exploit test each; residual risks are listed in docs/CONTROL-PLANE.md.
 
+2026-09-10, pass 2: Grok 4.6 re-reviewed the hardened control plane — five new P1s (newline never a
+separator, `#` stripped mid-token, git's executable env vars, the HMAC key readable by the run,
+promotion not bound to capabilities) and four P2s. All fixed in 0.6.2 with exploit tests; the
+residual list in docs/CONTROL-PLANE.md now states that `shell:*` or any interpreter grant is full
+trust and that reads are unconfined.
+

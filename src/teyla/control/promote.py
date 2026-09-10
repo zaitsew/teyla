@@ -19,6 +19,13 @@ evidence required here:
   evidence about a different step, and it ends the streak. Otherwise a routine
   could bank ten harmless drafts, have its `act` rewritten to something else
   entirely, and cash the streak in for gate B on runs that never exercised it.
+* and every one of them run under **the capabilities and caps as they are written
+  now**. Each receipt carries a `grants_hash` over the sorted capability list plus
+  the caps; a receipt whose hash differs is evidence about a differently-armed
+  run, and it ends the streak too. The act step was only half of it: a routine
+  that banks ten clean drafts under `fs.write:runs/**` and then adds `net:*` and
+  `max_sends = 50` has ten receipts that say nothing about the thing being
+  promoted.
 
 Refusal prints the evidence rather than the verdict. "9 clean, then a failure on
 2026-09-02" tells you what to do next; "refused" does not.
@@ -38,7 +45,7 @@ WINDOW = 10
 CLEAN_OUTCOMES = ("ok", "needs-you")
 
 
-def _why_unclean(row: dict, act_hash: str | None) -> str | None:
+def _why_unclean(row: dict, act_hash: str | None, grants_hash: str | None = None) -> str | None:
     """What disqualifies this receipt, or None if it is clean."""
     if row["outcome"] not in CLEAN_OUTCOMES:
         return f"outcome {row['outcome']}"
@@ -51,16 +58,21 @@ def _why_unclean(row: dict, act_hash: str | None) -> str | None:
     if act_hash is not None and row.get("act_hash") != act_hash:
         return (f"ran against a different `act` step (receipt {row.get('act_hash') or 'unrecorded'}, "
                 f"manifest now {act_hash})")
+    if grants_hash is not None and row.get("grants_hash") != grants_hash:
+        return (f"ran under different capabilities or caps (receipt "
+                f"{row.get('grants_hash') or 'unrecorded'}, manifest now {grants_hash})")
     return None
 
 
-def evidence(ref: str, current_gate: str, act_hash: str | None = None) -> dict:
+def evidence(ref: str, current_gate: str, act_hash: str | None = None,
+             grants_hash: str | None = None) -> dict:
     """The **trailing run of clean receipts** for `ref` at `current_gate`, newest last,
     plus the receipt that ended it. Pure read — it decides nothing.
 
     Walking backwards and stopping at the first unclean receipt is what makes the
-    streak consecutive. `act_hash`, when given, is the hash of the act step as the
-    manifest has it now; a receipt from a different act step ends the streak."""
+    streak consecutive. `act_hash` and `grants_hash`, when given, are the act step
+    and the capability list as the manifest has them now; a receipt from a different
+    act step, or from a differently-armed run, ends the streak."""
     receipts = [r for r in S.receipts_for(ref) if r.get("gate") == current_gate]
     receipts = [r for r in receipts if not r.get("approved_from")]
     items = S.fold_inbox()
@@ -74,6 +86,7 @@ def evidence(ref: str, current_gate: str, act_hash: str | None = None) -> dict:
             "decision": item.get("decision") or "(open)",
             "note": item.get("note"),
             "act_hash": r.get("act_hash"),
+            "grants_hash": r.get("grants_hash"),
             "tampered": r.get("actions_tampered") or 0,
         }
 
@@ -81,7 +94,7 @@ def evidence(ref: str, current_gate: str, act_hash: str | None = None) -> dict:
     broke_at = None
     for r in reversed(receipts):
         row = annotate(r)
-        why = _why_unclean(row, act_hash)
+        why = _why_unclean(row, act_hash, grants_hash)
         if why is not None:
             row["why"] = why
             broke_at = row
@@ -91,7 +104,8 @@ def evidence(ref: str, current_gate: str, act_hash: str | None = None) -> dict:
             break
     streak.reverse()
     return {"ref": ref, "gate": current_gate, "total": len(receipts),
-            "rows": streak, "broke_at": broke_at, "act_hash": act_hash}
+            "rows": streak, "broke_at": broke_at, "act_hash": act_hash,
+            "grants_hash": grants_hash}
 
 
 def verdict(ev: dict) -> tuple[bool, list[str]]:
@@ -170,14 +184,15 @@ def cmd_promote(args) -> int:
         print(f"{routine.ref}: gate {target} acts on its own and the routine declares no `act` step.")
         return 1
 
-    from .engine import act_hash as act_hash_of
+    from .engine import act_hash as act_hash_of, grants_hash as grants_hash_of
     current_act = act_hash_of(routine)
-    ev = evidence(routine.ref, routine.gate, current_act)
+    current_grants = grants_hash_of(routine)
+    ev = evidence(routine.ref, routine.gate, current_act, current_grants)
     ok, problems = verdict(ev)
 
     print(f"{routine.ref}: gate {routine.gate} -> {target}")
     print(f"evidence — consecutive clean receipts at gate {routine.gate}, newest last "
-          f"({ev['total']} on file, act {current_act}):")
+          f"({ev['total']} on file, act {current_act}, grants {current_grants}):")
     if not ev["rows"]:
         print("  (none)")
     for r in ev["rows"]:
@@ -194,7 +209,8 @@ def cmd_promote(args) -> int:
             print(f"  - {p}")
         print(f"\nRun it at gate {routine.gate} until {WINDOW} consecutive receipts are clean and every")
         print("inbox item was approved without a note, then try again. Editing the `act` step")
-        print("resets the streak, because the evidence was about the step it replaced.")
+        print("resets the streak, because the evidence was about the step it replaced — and so")
+        print("does editing `capabilities` or `caps`, for the same reason.")
         print("Override with --force.")
         return 1
 
@@ -213,6 +229,7 @@ def cmd_promote(args) -> int:
         "note": getattr(args, "note", None),
         "problems": problems,
         "act_hash": current_act,
+        "grants_hash": current_grants,
         "evidence": ev["rows"],
         "streak_broke_at": ev.get("broke_at"),
     })
