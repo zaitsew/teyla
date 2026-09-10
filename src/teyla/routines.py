@@ -102,10 +102,22 @@ def parse_manifest(path: pathlib.Path) -> dict:
 
     routines = data.get("routine") or []
     for r in routines:
+        if _is_control_routine(r):
+            # A control-plane routine — Teyla runs this one itself rather than reporting
+            # on something scheduled elsewhere. Its real validation lives in
+            # teyla.control.manifest; here it only needs enough shape to appear as a row,
+            # so the two kinds of routine can sit in one file without either being
+            # rewritten. See docs/CONTROL-PLANE.md.
+            if "name" not in r:
+                raise ManifestError(f"{path}: [[routine]] with a `step` is missing required key 'name'")
+            r.setdefault("kind", "control")
+            r.setdefault("label", f"com.teyla.{product['name']}.{r['name']}")
+            r.setdefault("every", "1d")
+            continue
         for key in ("name", "kind", "label", "every"):
             if key not in r:
                 raise ManifestError(f"{path}: [[routine]] {r.get('name', '?')!r} missing required key {key!r}")
-        if r["kind"] not in ("launchd", "cron", "pg_cron", "github-actions", "script"):
+        if r["kind"] not in ("launchd", "cron", "pg_cron", "github-actions", "script", "control"):
             raise ManifestError(f"{path}: routine {r['name']!r} has unknown kind {r['kind']!r}")
         if r["every"] not in CADENCE:
             raise ManifestError(f"{path}: routine {r['name']!r} has unknown cadence {r['every']!r}")
@@ -119,6 +131,38 @@ def parse_manifest(path: pathlib.Path) -> dict:
             raise ManifestError(f"{path}: check {c['name']!r} has unknown status {c['status']!r}")
 
     return {"path": path, "repo": path.parent, "product": product, "routines": routines, "checks": checks}
+
+
+# --- control-plane routines ----------------------------------------------------
+#
+# `teyla.control` is the half that *runs* a routine. This file only needs two things
+# from it: to not choke on its manifest shape, and to show the last receipt outcome
+# next to the row. Both are done through narrow, failure-tolerant helpers rather than
+# a hard import, so `teyla routines` keeps working if the control plane is absent.
+
+def _is_control_routine(r: dict) -> bool:
+    return isinstance(r, dict) and isinstance(r.get("step"), dict)
+
+
+ON_DEMAND = "on demand"
+
+
+def last_receipt_outcomes() -> dict:
+    """`{"<product>:<routine>": "<outcome of its most recent receipt>"}`, or `{}`.
+
+    Never raises: a report that dies because a receipt log is malformed is worse than
+    a report with one column missing."""
+    try:
+        from .control.state import read_jsonl, receipts_path
+        rows = read_jsonl(receipts_path())
+    except Exception:  # noqa: BLE001 - a reporting nicety must never be fatal
+        return {}
+    out = {}
+    for r in rows:
+        ref = r.get("routine")
+        if ref:
+            out[ref] = r.get("outcome") or "?"
+    return out
 
 
 # --- routine loading detection ------------------------------------------------
@@ -143,6 +187,14 @@ def loaded_state(routine: dict, *, launchctl_output: str | None = None, crontab_
     """'loaded' status string for a routine row: pid/exit summary, 'not loaded', 'unknown'."""
     kind = routine["kind"]
     label = routine.get("label", "")
+
+    if kind == "control":
+        # A control-plane routine is "loaded" only if it has a clock trigger installed as
+        # a launchd agent. Anything else runs when something asks it to, which is not a
+        # state that can rot, so it reports `on demand` rather than a false `unknown`.
+        if (routine.get("trigger") or {}).get("type") != "clock":
+            return ON_DEMAND
+        kind = "launchd"
 
     if kind == "launchd":
         text = _launchctl_list() if launchctl_output is None else launchctl_output
@@ -200,6 +252,8 @@ def last_run(routine: dict) -> dt.datetime | None:
 
 def routine_verdict(routine: dict, loaded: str, run_at: dt.datetime | None, *, now: dt.datetime | None = None) -> str:
     now = now or dt.datetime.now(dt.timezone.utc)
+    if loaded == ON_DEMAND:
+        return "ok"
     if loaded in ("not loaded", "not in crontab"):
         return "NOT LOADED"
     if run_at is not None:
@@ -242,6 +296,8 @@ def evaluate(manifest: dict, *, now: dt.datetime | None = None) -> dict:
     now = now or dt.datetime.now(dt.timezone.utc)
     lc = _launchctl_list()
     ct = _crontab_l()
+    outcomes = last_receipt_outcomes()
+    product_name = manifest["product"].get("name", manifest["repo"].name)
 
     routine_rows = []
     for r in manifest["routines"]:
@@ -251,6 +307,7 @@ def evaluate(manifest: dict, *, now: dt.datetime | None = None) -> dict:
         routine_rows.append({
             "name": r["name"], "kind": r["kind"], "loaded": loaded,
             "last_run": run_at.isoformat() if run_at else "?", "verdict": verdict,
+            "last_receipt": outcomes.get(f"{product_name}:{r['name']}", "-"),
         })
 
     check_rows = []
@@ -337,9 +394,17 @@ def render_text(reports: list[dict]) -> str:
             lines.append("")
             continue
         if r["routines"]:
+            # The receipt column only appears when some routine here has one. A column of
+            # dashes on a repo with no control-plane routines is noise in every report.
+            show_receipt = any(row.get("last_receipt", "-") != "-" for row in r["routines"])
+            headers = ["name", "kind", "loaded", "last run", "verdict"]
             rows = [[_trunc(row["name"]), row["kind"], row["loaded"], row["last_run"], row["verdict"]]
                     for row in r["routines"]]
-            lines.extend(_table(["name", "kind", "loaded", "last run", "verdict"], rows))
+            if show_receipt:
+                headers.append("last receipt")
+                for row, src in zip(rows, r["routines"]):
+                    row.append(str(src.get("last_receipt", "-")))
+            lines.extend(_table(headers, rows))
         else:
             lines.append("  (no routines declared)")
         if r["checks"]:
