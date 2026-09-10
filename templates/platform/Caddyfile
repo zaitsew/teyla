@@ -1,0 +1,32 @@
+# /srv/Caddyfile — the shared reverse proxy.
+#
+# This file holds the global block and nothing else. Every product drops its own site
+# block at /srv/<product>/Caddyfile and it is imported here, so adding a product never
+# means editing a file two other products depend on.
+#
+# A product's block looks like:
+#
+#     <product>.example.com {
+#     	reverse_proxy <service>:<port>
+#     }
+#
+# where <service> is the compose service name on the shared `apps` network. Certificates
+# are issued automatically once DNS points at this box.
+
+{
+	email {$ACME_EMAIL}
+	# Uncomment while testing so a mistake does not burn the real rate limit:
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+(common) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
+import /srv/*/Caddyfile

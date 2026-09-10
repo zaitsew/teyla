@@ -1,0 +1,31 @@
+# Rendered into /srv/{{name}}/docker-compose.yml by the shared server's add-product.sh.
+#
+# Rules that make one box hold many products:
+#   - no published ports; the proxy reaches the service over the shared `apps` network
+#   - the image is pulled, not built on the server
+#   - every value comes from ./.env, which lives on the server at mode 600
+#   - a memory limit, so one product cannot take the box down for the others
+services:
+  {{name}}:
+    image: ghcr.io/{{owner}}/{{name}}:latest
+    container_name: {{name}}
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    expose:
+      - "{{port}}"
+    networks:
+      - apps
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:{{port}}/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  apps:
+    external: true

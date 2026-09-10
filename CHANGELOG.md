@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.8.0 — 2026-09-11 — productization
+
+The distance between "works for me" and "works for four people" is not a feature. It is
+six pieces of plumbing — a shared key instead of accounts, no `user_id`, a backend on the
+builder's laptop, no distribution path, an unmetered model key, no onboarding doc — each
+locally correct for someone with no second user, each a wall the moment there is one.
+
+- **`teyla platform`** — `~/.teyla/platform.toml` is the manifest of the resources bought
+  once and reused by every product: server, domain, identity provider, mail sender, Apple
+  API key, Play Console, model key, and one mode-0600 secrets file. It holds identifiers
+  and env-var *names*; the command reports which names are present and never a value.
+  Every missing resource prints the URL where it is created and the file and key where its
+  value goes. `init`, `env-example`, `--json`, `--no-net`; exits 1 while anything is missing.
+- **`teyla productize`** — a `[productize]` block in a repo's `teyla.toml` declares who it
+  serves and who it should serve. Eight requirements are checked against the target:
+  identity, tenancy, backend, distribution per platform, onboarding doc, secrets against
+  `.env.example`, cost cap, and — for `public` only — a platform mail sender. A per-device
+  app is exempt from the identity requirement; `family`/`testers` is deliberately an easier
+  bar than `public`. `--owner-steps` merges every product's owner blockers with the
+  platform's missing resources into one deduplicated numbered list, platform first.
+- **`templates/platform/`** — the shared server, set up once: `provision-droplet.sh`,
+  `setup-server.sh` (docker, ufw, unattended upgrades, a `deploy` user, one Caddy in front),
+  a `Caddyfile` that imports each product's own site block, `add-product.sh <name> <port>`,
+  and a ten-line runbook. A product is added by dropping a directory into `/srv`.
+- **`teyla scaffold --kind app|service`** now writes the `[productize]` block, a
+  `docs/GETTING-STARTED.md` addressed to a person who is not you, and `deploy/droplet/`
+  fragments. Other kinds are untouched.
+- **`docs/PRODUCTIZE.md`** — the method: why solo-built apps resist sharing, what to build
+  for N from day one, the platform cost table, how to productize an app that already
+  exists, and what changes at twenty users.
+
+
 ## 0.6.2 — 2026-09-10 — second hardening pass
 
 - Newlines split segments; `#` is not a comment mid-token; `shell:env` is an allowlist; the run cannot read `~/.teyla` or the HMAC key; interpreters, copy tools and network tools need an explicit `shell:*` (documented as full trust); receipts carry a grants hash and both `promote` and `inbox approve` require it unchanged; `fs.write:*` is the repo root only; `net:` is exact host or `*.domain`.

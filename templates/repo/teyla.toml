@@ -9,7 +9,7 @@ name = "{{name}}"
 # built-but-nobody-used-it detector — fill it in before you ship, not after.
 # usage = "./check.sh usage"
 
-
+{{productize}}
 # ---------------------------------------------------------------------------
 # A control-plane routine: Teyla runs this one itself.
 #

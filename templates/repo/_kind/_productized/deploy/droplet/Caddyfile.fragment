@@ -1,0 +1,6 @@
+# Rendered into /srv/{{name}}/Caddyfile and imported by the shared /srv/Caddyfile.
+# One site block, nothing global — the global block belongs to the server, not to a product.
+{{name}}.{{domain}} {
+	import common
+	reverse_proxy {{name}}:{{port}}
+}
