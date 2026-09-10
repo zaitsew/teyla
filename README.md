@@ -124,6 +124,54 @@ runs `teyla monitor`, `teyla routines` and `teyla products` and files the
 output under `~/ops/startup/os/ai-dev/runs/<date>/`. `teyla routine status`
 shows whether it is loaded and its last log lines.
 
+## Productizing
+
+An app built for one person fails to become an app for four in the same six ways every
+time: one shared key instead of accounts, no `user_id` on any table, a backend running on
+the builder's laptop, no distribution path off that laptop, the builder's own model key on
+someone else's device, and no page telling a newcomer what to do first. None of it is
+hard. All of it is invisible until somebody is waiting.
+
+Two commands. `teyla platform` is the resources you buy once and reuse for every product —
+a server, a domain, an identity provider, a mail sender, the Apple key, a secrets file —
+declared in `~/.teyla/platform.toml`, which holds identifiers and env-var *names* and never
+a value:
+
+```
+resource  state    what to do
+secrets   ok       ~/.config/teyla/platform.env 0600; 4/5 names present
+server    MISSING  provision it: bash .../provision-droplet.sh --yes (needs DIGITALOCEAN_ACCESS_TOKEN),
+                   then paste the IP as host = in ~/.teyla/platform.toml
+mail      MISSING  create the key at https://resend.com/api-keys -> paste as RESEND_API_KEY= in
+                   ~/.config/teyla/platform.env
+apple     ok       3 ids, 1 key(s), ~/ops/bin/testflight
+```
+
+Every missing row names the URL where the thing is created and the file and key where its
+value goes; the command exits 1 while anything is missing.
+
+`teyla productize` reads a `[productize]` block in each repo's `teyla.toml` — who it serves,
+who it should serve, platforms, identity, tenancy, backend, distribution, secrets, cost cap
+— and says what is in the way:
+
+```
+cellar    owner->family  7/7 met
+    [owner] internal TestFlight group - App Store Connect -> add two Apple IDs
+lang      owner->family  1/7 met  unmet: R1 identity=shared-key, R2 tenancy=single,
+                                        R3 backend=local-mac, R4 ios=none,
+                                        R5 onboarding_doc unset, R7 cost_cap unset (llm=app-key)
+    [agent] no per-user rows - add user_id + RLS, backfill existing rows to the owner
+```
+
+`--owner-steps` collapses every product *and* the platform into one numbered list of things
+only you can do, platform first, because one mail sender unblocks three products.
+`teyla scaffold --kind app` writes the block, a `docs/GETTING-STARTED.md` addressed to a
+person who is not you, and `deploy/droplet/` fragments for the shared server; the server
+itself is five scripts and a runbook in `templates/platform/`.
+
+The method — why this happens, what to build instead from the first commit, what the shared
+platform costs, and what changes at twenty users — is [`docs/PRODUCTIZE.md`](docs/PRODUCTIZE.md).
+
 ## The policy
 
 `templates/POLICY.md` is the one file every harness reads. Its spine:

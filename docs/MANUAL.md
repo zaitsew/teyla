@@ -603,6 +603,51 @@ must respect, it is committed.
 
 ---
 
+## 6b. Productizing — the distance between "works for me" and "works for you"
+
+Section 6 is about things built and never used. This one is about the thing used every day
+by exactly one person, which is a different failure and a more painful one: somebody wants
+it, and you cannot hand it over.
+
+Audit a handful of solo-built apps and the same six findings come back, none of them a
+mistake, each locally correct for someone with no second user:
+
+1. **One shared key instead of accounts.** Holding the string is being you. Nothing to give
+   a second person that is not also permission to be the first.
+2. **No `user_id` on any table.** Two people share one dataset. The most expensive to fix,
+   because the fix is a migration plus an auth change plus every query, on live data.
+3. **The backend on the builder's laptop.** It sleeps when the lid closes.
+4. **No distribution path.** Xcode, an unpacked extension, a sideloaded APK — all of them
+   "works on the developer's machine" wearing different hats.
+5. **The builder's model key on someone else's device**, unmetered and uncapped.
+6. **No onboarding doc.** The README is a build guide, written for the author.
+
+Sharing is a plumbing problem, and solo work never forces the plumbing. So do it on day
+one, when it is free: identity from the platform, `user_id` and row-level security from
+migration 0001, no backend on a laptop, model calls metered or brought by the user,
+a TestFlight build and a PWA the first week, config out of code, an onboarding doc before
+the first invite, and a `[[check]]` that says *a second user completed onboarding* — which
+stays `untested` until one actually has.
+
+Two commands hold this. **`teyla platform`** is the manifest of what you buy once and reuse
+forever — server, domain, identity provider, mail sender, Apple key, Play Console, model
+key, and one mode-0600 secrets file — and reports what is set up, what is missing, and for
+each missing thing the URL where it is created plus the file and key name where the value
+goes. It stores identifiers and env-var *names*; never a value. **`teyla productize`** reads
+a `[productize]` block in each repo's `teyla.toml` and checks eight requirements against the
+target: identity is not a shared key (unless the app is genuinely per-device), tenancy is
+not `single`, the backend is not a laptop, every declared platform has a real distribution
+path, the onboarding doc exists, every named secret is in an `.env.example`, a cost cap
+exists wherever your key pays for someone else's use, and — for a `public` target only — the
+platform can send mail to strangers.
+
+A `family` or `testers` target is deliberately easier than `public`: an internal TestFlight
+group and a PWA genuinely are enough for four people. `--owner-steps` merges every product's
+owner blockers with the platform's missing resources into one numbered list, platform first,
+because one mail sender unblocks three products at once.
+
+The full method, the cost table, and four worked case studies are in `docs/PRODUCTIZE.md`.
+
 ## 7. Prior art, and how Teyla differs
 
 Every piece of this exists somewhere, made well, by someone else. The combination
