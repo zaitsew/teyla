@@ -6,11 +6,18 @@ Local-first. Nothing leaves your machine. `--share` produces a redacted report: 
 
 ```bash
 uv tool install git+https://github.com/zaitsew/teyla      # or: pipx install git+https://github.com/zaitsew/teyla
-teyla doctor                         # which harness logs it can see, and whether the policy is wired
 teyla policy init --owner "Your Name" && teyla policy sync   # one POLICY.md → Claude Code, Codex, Grok, Hermes
+teyla plugin install zaitsew/teyla   # the Claude Code plugin (or: claude plugin marketplace add zaitsew/teyla)
+teyla routine install                # daily: update + doctor; weekly: monitor, routines, products, models
+teyla doctor                         # everything that must be true here, and the fix for each thing that is not
 teyla monitor --days 30              # the adoption report, with advice
-teyla feedback                       # one redacted file to send back to the maintainer
 ```
+
+After that it keeps itself current: `teyla update` (run daily by the routine, and at session
+start by the plugin hook on machines where launchd is off limits) installs a newer release,
+merges template changes into your `POLICY.md` three-way so your edits survive, refreshes the
+plugin copy Claude Code actually loads, and rewrites the launchd wrappers if the binary moved.
+`teyla doctor` is the checklist; its one-line summary shows at the next session start.
 
 No `uv`? `pipx install git+https://github.com/zaitsew/teyla`, or `git clone` and run `PYTHONPATH=src python3 -m teyla`. Python 3.11+, nothing else.
 

@@ -1,6 +1,6 @@
 [project]
 name = "teyla"
-version = "0.6.2"
+version = "0.7.0"
 description = "Teyla — an operating system for working with AI agents: adoption monitor, policy, routines, corrections that stick."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -31,6 +31,7 @@ packages = ["src/teyla"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "templates" = "teyla/templates"
+"plugin" = "teyla/plugin"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
