@@ -13,4 +13,6 @@ jobs:
           .venv/bin/teyla policy init --owner ci --claude-md
           .venv/bin/teyla policy sync
           .venv/bin/teyla policy refresh
+          .venv/bin/teyla plugin install .
+          .venv/bin/teyla plugin refresh
           .venv/bin/teyla doctor

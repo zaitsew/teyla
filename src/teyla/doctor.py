@@ -114,7 +114,9 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
                 out.append(_check("OK", "policy:ack", "global CLAUDE.md matches its acknowledgement"))
 
     # --- Claude Code plugin ----------------------------------------------------
-    if (pathlib.Path.home() / ".claude").exists():
+    claude_home = pathlib.Path.home() / ".claude"
+    claude_present = shutil.which("claude") or (claude_home / "projects").is_dir() or (claude_home / "plugins").is_dir()
+    if claude_present:
         pv = plugin_install.installed_version()
         if pv is None:
             out.append(_check("FIX", "plugin", "teyla plugin not installed in Claude Code",
@@ -124,7 +126,7 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
         else:
             out.append(_check("OK", "plugin", f"teyla@{pv} in Claude Code"))
     else:
-        out.append(_check("INFO", "plugin", "no ~/.claude — Claude Code absent"))
+        out.append(_check("INFO", "plugin", "Claude Code absent (no `claude`, no ~/.claude/projects or plugins)"))
 
     # --- routines ----------------------------------------------------------------
     if sys.platform == "darwin":
