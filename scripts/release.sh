@@ -10,8 +10,14 @@ cd "$(dirname "$0")/.."
 sed -i '' "s/^version = \".*\"/version = \"$v\"/" pyproject.toml
 sed -i '' "s/^__version__ = \".*\"/__version__ = \"$v\"/" src/teyla/__init__.py
 sed -i '' "s/\"version\": \".*\"/\"version\": \"$v\"/" plugin/.claude-plugin/plugin.json
+git checkout -q -b "release-$v"
 git add pyproject.toml src/teyla/__init__.py plugin/.claude-plugin/plugin.json
 git commit -q -m "release $v"
+git push -q -u origin "release-$v"
+# One PR per logical unit, merged not squashed — a release bump is a unit like any other.
+gh pr create --title "release $v" --body "Version bump only. The tag on the merge commit triggers the release workflow." >/dev/null
+gh pr merge --merge --delete-branch
+git checkout -q main && git pull -q --ff-only
 git tag -a "v$v" -m "$v"
-git push origin main "v$v"
-echo "pushed v$v — the release workflow publishes it"
+git push origin "v$v"
+echo "merged the bump and pushed v$v — the release workflow publishes it"
