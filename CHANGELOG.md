@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2 — 2026-09-10 — second hardening pass
+
+- Newlines split segments; `#` is not a comment mid-token; `shell:env` is an allowlist; the run cannot read `~/.teyla` or the HMAC key; interpreters, copy tools and network tools need an explicit `shell:*` (documented as full trust); receipts carry a grants hash and both `promote` and `inbox approve` require it unchanged; `fs.write:*` is the repo root only; `net:` is exact host or `*.domain`.
+
 ## Unreleased — control plane hardened again
 
 A second adversarial review, against the code 0.6.1 shipped. Every item has a test
