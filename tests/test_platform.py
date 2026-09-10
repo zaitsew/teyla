@@ -376,3 +376,13 @@ def test_no_secret_value_is_ever_shipped_in_the_template():
             assert value.strip().strip('"').isupper(), raw
     assert "{{owner}}" in text
     assert "sk-" not in text
+
+
+def test_secrets_empty_value_counts_as_unset(_home):
+    """`teyla platform env-example` writes `NAME=` lines; a pasted skeleton must not read as set up."""
+    import teyla.platform as pl
+    f = _home / ".config" / "teyla" / "platform.env"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("OPENAI_API_KEY=\nexport RESEND_API_KEY=\"\"\nDIGITALOCEAN_ACCESS_TOKEN=dop_v1_x\n")
+    f.chmod(0o600)
+    assert pl.env_names(f) == {"DIGITALOCEAN_ACCESS_TOKEN"}

@@ -100,8 +100,12 @@ def env_names(path: pathlib.Path) -> set[str]:
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
-        name = line.split("=", 1)[0].removeprefix("export ").strip()
-        if name:
+        name, _, value = line.partition("=")
+        name = name.removeprefix("export ").strip()
+        value = value.strip().strip('"').strip("'")
+        # A name with nothing after `=` is the skeleton `env-example` writes: not set.
+        # The value itself is looked at only for emptiness and never kept or printed.
+        if name and value:
             out.add(name)
     return out
 
