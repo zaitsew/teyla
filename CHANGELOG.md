@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 — 2026-09-10 — the control plane
+
+- `teyla run <product:routine>`: the loop that runs a routine — capability grants, blast-radius caps, idempotency, gates A (needs you) / B (act and tell, with an undo note) / C (critic first), and a receipt per run naming the rules and grants it ran under.
+- `teyla inbox`: the needs-you inbox; approve runs the act step under the same grants, reject files a correction candidate.
+- `teyla kill on|off`: a global kill switch honoured by the run engine and by the hook on every tool call.
+- `plugin/hooks/pre-tool-use.sh`: in a run, Claude Code may only use granted tools, shell verbs and write globs; every decision is logged to the receipt.
+- `teyla triggers`: clock triggers become LaunchAgents. `teyla promote`: a gate is raised only on ten clean approvals. `teyla receipts`.
+- Not built, and said so in docs/CONTROL-PLANE.md: event and webhook triggers, per-capability enforcement outside Claude Code, durable multi-step state; `shell:` grants can still write past `fs.write:` via redirection.
+
 ## 0.5.0 — 2026-09-09 — from the first corporate case study
 
 - `teyla connectors`: per connector — read/write split, empty-or-error rate, median and p95 calls between your turns, rediscovery share; advice C1–C4. Skill reads (`SKILL.md`) counted beside invocations.

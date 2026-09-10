@@ -14,6 +14,12 @@
   teyla models --write-prices                                     ~/.teyla/prices.json from models.dev
   teyla wiki init|status|lint|confirm <path> [slug]              the facts store as an LLM-maintained wiki
   teyla feedback [--days N] [--out FILE]                         one redacted file to send to the maintainer
+  teyla run <product:routine> [--dry] [--force]                  the run engine: grants, caps, gate A/B/C, receipt
+  teyla inbox [list|show|approve|reject]                          the needs-you inbox
+  teyla kill [on|off|status]                                       global kill switch
+  teyla triggers [list|install|uninstall]                          clock triggers → LaunchAgents
+  teyla promote <product:routine> --gate B|C                       earned autonomy on counted evidence
+  teyla receipts <product:routine>                                 what ran, under which rules and grants
   teyla doctor                                                   what teyla can see on this machine
   teyla products [path...]                                       real-usage counters from every repo's ./check.sh usage
   teyla routines [path...] [--json]                               routines + manual checks from every repo's teyla.toml
@@ -200,9 +206,9 @@ def main(argv=None):
     q.add_argument("--note", help="ack: free-text note recorded alongside the acknowledgement")
     q = sp.add_parser("harvest"); q.set_defaults(fn=cmd_harvest); q.add_argument("path"); q.add_argument("--project")
     q = sp.add_parser("doctor"); q.set_defaults(fn=cmd_doctor)
-    from . import wiki, feedback, models, plugins, plugin_install, connectors
+    from . import wiki, feedback, models, plugins, plugin_install, connectors, control
     wiki.register(sp); feedback.register(sp); models.register(sp)
-    plugins.register(sp); plugin_install.register(sp); connectors.register(sp)
+    plugins.register(sp); plugin_install.register(sp); connectors.register(sp); control.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
     q = sp.add_parser("routines"); q.set_defaults(fn=cmd_routines)
     q.add_argument("paths", nargs="*"); q.add_argument("--json", action="store_true")

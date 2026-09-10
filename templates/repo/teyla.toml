@@ -1,0 +1,77 @@
+# teyla.toml — what must run without you, and what only you can confirm.
+#
+# `teyla routines` reads this file. `teyla run` reads the routines in it that
+# declare a `step`. Both halves rot silently, which is why they live in one file.
+
+[product]
+name = "{{name}}"
+# A command printing key=value counters, read by `teyla products`. The
+# built-but-nobody-used-it detector — fill it in before you ship, not after.
+# usage = "./check.sh usage"
+
+
+# ---------------------------------------------------------------------------
+# A control-plane routine: Teyla runs this one itself.
+#
+#   teyla run {{name}}:example --dry     see the plan, create nothing
+#   teyla run {{name}}:example           draft -> gate A -> inbox
+#   teyla inbox list                     what is waiting for you
+#
+# Gate A is where every routine starts: it drafts, it stops, and nothing leaves
+# without you approving that exact version. Gate B and C are earned, from
+# receipts, via `teyla promote` — not chosen here. See docs/CONTROL-PLANE.md in
+# the teyla repo.
+# ---------------------------------------------------------------------------
+[[routine]]
+name = "example"
+gate = "A"
+idempotency = "date"                    # date | none | input-hash
+
+# Only `clock` triggers are built. Install one with
+# `teyla triggers install {{name}}:example`; until then this routine is manual.
+trigger = { type = "clock", at = "09:00", tz = "Europe/Madrid", days = "mon-fri" }
+
+# The draft step. `kind = "command"` runs a shell command and captures its
+# stdout as the draft. `kind = "agent"` calls a model instead:
+#   step = { kind = "agent", harness = "claude", skill = "digest-draft",
+#            prompt = "Draft today's digest.", context = ["runs/**", "NOTES.md"] }
+step = { kind = "command", run = "echo 'replace me: this is the draft this routine produces'" }
+
+# The act step. Optional at gate A — this is what `teyla inbox approve` runs
+# once you have read the draft. Required at gate B and C.
+#
+# Write the reversal of whatever you did to $TEYLA_UNDO. A run with no undo is
+# recorded as "NO UNDO AVAILABLE" in its receipt, and that is the fact that
+# decides whether this routine should ever be promoted off gate A.
+act = { kind = "command", run = "echo 'replace me: what happens after you approve'; echo 'replace me: the command that reverses it' > \"$TEYLA_UNDO\"" }
+
+# Capabilities, as `<scheme>:<value>`. Only what the routine was observed to
+# need — an unused capability is invisible in review until something uses it.
+# Schemes: fs.write:<glob>  shell:<verb>  net:<host>  send:<channel>  tool:<name>
+capabilities = ["fs.write:runs/**"]
+
+# Enforced by code: max_minutes is a wall clock on every step; max_writes and
+# max_sends are counted by the PreToolUse hook and deny past the cap.
+caps = { max_minutes = 10, max_writes = 20, max_sends = 0 }
+
+
+# ---------------------------------------------------------------------------
+# A legacy routine: scheduled somewhere else, reported on here.
+# kind = launchd | cron | pg_cron | github-actions | script
+# ---------------------------------------------------------------------------
+# [[routine]]
+# name = "nightly-sync"
+# kind = "launchd"
+# label = "com.example.sync"
+# every = "1d"                          # 15m | 1h | 1d | 7d
+# log = "~/Library/Logs/example-sync.log"
+
+
+# ---------------------------------------------------------------------------
+# A check: the half only a human can confirm, from the outside, today.
+# ---------------------------------------------------------------------------
+[[check]]
+name = "first-run check passes on a clean machine"
+how = "clone the repo, run ./check.sh, read what it says"
+status = "untested"                     # ok | broken | untested
+# confirmed = 2026-01-01
