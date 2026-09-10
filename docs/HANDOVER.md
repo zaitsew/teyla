@@ -31,3 +31,7 @@ practice came from, what `teyla` installs, and what has to be adapted by hand.
 
 What does **not** travel: the merge-approved list itself, the App Store release path, the
 personal product manifests, anything with a name in it.
+
+## Updating a second machine
+
+Once Teyla is on a machine, it maintains itself (`docs/MANUAL.md` §4b). The one manual step is the bootstrap from any version before 0.7.0; [`prompts/work-account-update.md`](../prompts/work-account-update.md) is the paste-able version of that step plus the verification.
