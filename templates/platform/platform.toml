@@ -1,0 +1,67 @@
+# ~/.teyla/platform.toml — the resources you set up once and reuse for every product.
+#
+# Identifiers and env-var NAMES only. No secret value ever goes in this file: the values
+# live in one mode-0600 file, named in [secrets] below. `teyla platform` reads the names
+# in that file and never a value.
+#
+#   teyla platform              what is set up, what is missing, the step for each
+#   teyla platform env-example  the secrets skeleton, names only
+#
+# Every section is optional. Absent means "not set up", which is a fine answer to start
+# from — the point of the table is to make the gap visible, not to demand it be filled.
+
+[owner]
+name = "{{owner}}"
+org = ""
+
+[secrets]
+file = "~/.config/teyla/platform.env"    # mode 600, KEY=value lines
+
+# The one always-on box. Long-running work that cannot live in a serverless function —
+# a poller, a queue worker, a scheduler — goes here, one docker-compose stack per product
+# under compose_root, all behind one reverse proxy. See the scripts next to this template.
+[server]
+provider = "digitalocean"                # digitalocean | hetzner | other | none
+name = "apps-1"
+host = ""                                # ip or dns name; empty until provisioned
+ssh_user = "deploy"
+compose_root = "/srv"                    # /srv/<product>/{docker-compose.yml,Caddyfile,.env}
+token_env = "DIGITALOCEAN_ACCESS_TOKEN"
+
+[domain]
+name = ""                                # e.g. example.com
+dns = "cloudflare"                       # cloudflare | other
+token_env = "CLOUDFLARE_API_TOKEN"
+pattern = "<product>.{domain}"
+
+# Accounts, per-user data and server-side functions. One organisation, one project per
+# product, so a product can be deleted without touching the others.
+[identity]
+provider = "supabase"                    # supabase | other | none
+org = ""                                 # organisation id
+access_token_env = "SUPABASE_ACCESS_TOKEN"
+
+# Sign-in codes and anything else the product sends. Without this, a sign-in link only
+# reaches inboxes that already belong to the project — which is why a second person
+# cannot get in.
+[mail]
+provider = "resend"                      # resend | mailgun | postmark | none
+key_env = "RESEND_API_KEY"
+from = ""
+
+# One App Store Connect API key for every app on this account. Never a password, never
+# the Xcode GUI, never an app-specific password.
+[apple]
+config = "~/.appstoreconnect/config.env" # ASC_KEY_ID / ASC_ISSUER_ID / ASC_TEAM_ID
+release_tool = "~/ops/bin/testflight"
+
+# Android. A PWA needs none of this and is the honest first answer; the Play Console is
+# a $25 account plus, for a personal account, a 14-day closed test before production.
+[android]
+play_console = false
+keystore = ""                            # upload keystore; back it up, it cannot be regenerated
+
+[llm]
+provider = "openai"
+key_env = "OPENAI_API_KEY"
+policy = "one project key per product, budget-capped in the provider dashboard"
