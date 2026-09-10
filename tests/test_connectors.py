@@ -24,9 +24,9 @@ def _write(path, lines):
 # ---------------------------------------------------------------------------
 
 def test_parse_mcp_tool_splits_on_first_double_underscore():
-    assert parse_mcp_tool("mcp__loco__loco_create_trip") == ("loco", "loco_create_trip")
-    assert parse_mcp_tool("mcp__ccd_session__dismiss_task") == ("ccd_session", "dismiss_task")
-    assert parse_mcp_tool("mcp__2d842789-b761__create_event") == ("2d842789-b761", "create_event")
+    assert parse_mcp_tool("mcp__myserver__create_item") == ("myserver", "create_item")
+    assert parse_mcp_tool("mcp__otherserver__dismiss_task") == ("otherserver", "dismiss_task")
+    assert parse_mcp_tool("mcp__calendar__create_event") == ("calendar", "create_event")
 
 
 def test_parse_mcp_tool_rejects_non_mcp_names():

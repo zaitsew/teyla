@@ -53,7 +53,7 @@ work" half.
 - `teyla routine install`: Teyla's own Monday 07:30 launchd weekly (monitor,
   routines, products, filed under the ops run-artifact layout). `teyla
   routine status` shows whether it is loaded and its last log lines.
-- `teyla.toml` added to seven private product repos from what was actually verified on this machine.
+- `teyla.toml` added to several private product repos from what was actually verified on this machine.
 
 ## 0.1.0 — 2026-09-09
 

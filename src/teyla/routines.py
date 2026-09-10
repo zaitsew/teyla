@@ -14,15 +14,15 @@ A repo declares both in one `teyla.toml` at its root:
     usage = "./check.sh usage"
 
     [[routine]]
-    name = "garmin-sync"
+    name = "nightly-sync"
     kind = "launchd"
-    label = "com.ironu.sync"
+    label = "com.example.sync"
     every = "1d"
-    log = "~/Library/Logs/ironu-sync.log"
+    log = "~/Library/Logs/app-sync.log"
 
     [[check]]
-    name = "meal logging from photo"
-    how = "app → Log → photo → caption"
+    name = "log an entry from a photo"
+    how = "app → New → photo → caption"
     status = "broken"
     confirmed = 2026-09-09
 
