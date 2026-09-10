@@ -8,8 +8,11 @@ say anything" answerable months later.
 Two decisions, and they are not symmetrical:
 
 **approve** runs the routine's `act` step under grants recomputed from the
-product's *current* `teyla.toml`, and refuses if that manifest now grants more
-than the draft ran under — printing the difference.
+product's *current* `teyla.toml`, and refuses unless that manifest still says
+exactly what it said when the draft was written: the same `act` step (by hash),
+the same capabilities and the same caps (by hash, and each cap compared
+numerically so a loosened one is named). Any difference is printed and the
+approval refused.
 
 It used to copy the original run's `grants.json` instead, on the reasoning that
 the thing you are approving is the run you actually read. That was right about
@@ -17,8 +20,15 @@ the intent and wrong about the file: `grants.json` sat in the run directory, and
 a routine holding `fs.write:runs/**` could write to it. Approving then replayed
 whatever the run had left there. Both halves are needed, so both are here: the
 grants come from the manifest (which the run cannot edit), and a manifest that
-has widened since the draft stops the approval rather than riding along with it.
-A manifest that has *narrowed* is fine — you get the smaller of the two.
+has changed since the draft stops the approval rather than riding along with it.
+
+Narrowing used to be waved through on the reasoning that fewer capabilities
+cannot hurt. Two things were wrong with that. The check was a set difference over
+capability *strings*, so `caps = { max_sends = 50 }` — not a capability string at
+all — went entirely unexamined; and the `act` step itself was never checked, so a
+draft you read could be acted on by a step rewritten after you read it. Both are
+bound by hash now, and the answer to a changed manifest is the same in either
+direction: re-run the routine and approve the fresh draft.
 
 **reject** records the note as a correction candidate in the product repo's
 `.teyla/corrections.jsonl` — the same file `/teyla:correct` writes. A rejection
@@ -138,6 +148,8 @@ def cmd_approve(args) -> int:
     # What the draft ran under, read from ~/.teyla/receipts.jsonl — the copy the run
     # had no way to write. Never from the `grants.json` or `receipt.json` sitting in
     # the product repo.
+    from .engine import act_hash as act_hash_of, grants_hash as grants_hash_of
+
     orig_receipt = S.receipt_for_run(args.id) or {}
     was = list(orig_receipt.get("capabilities") or item.get("capabilities") or [])
     now_caps = list(routine.capabilities)
@@ -152,6 +164,49 @@ def cmd_approve(args) -> int:
         print("  fresh draft is produced under the current manifest, then approve that.")
         return 1
     dropped = [c for c in was if c not in now_caps]
+
+    # The act step, by hash. The draft you read was produced to be acted on by the
+    # step the manifest declared at the time; a step edited since is a different act
+    # against the same approval.
+    was_act, now_act = orig_receipt.get("act_hash"), act_hash_of(routine)
+    if was_act != now_act:
+        print(f"REFUSED: {ref}'s `act` step has changed since this draft was written.")
+        print(f"  the draft was reviewed against act {was_act or '(unrecorded)'}")
+        print(f"  the manifest now declares act {now_act}: {routine.act.run or routine.act.prompt}")
+        print("\n  Re-run the routine so a fresh draft is produced against the current `act`,")
+        print("  then approve that.")
+        return 1
+
+    # The caps, numerically, so a loosened one is named rather than summarised as a
+    # hash mismatch. `max_sends = 0` becoming `max_sends = 50` is not a capability
+    # string and the old set-difference check never saw it.
+    was_limits = dict(orig_receipt.get("caps") or {})
+    now_limits = dict(routine.caps)
+    looser = [(k, was_limits.get(k), v) for k, v in now_limits.items()
+              if isinstance(v, int) and isinstance(was_limits.get(k), int) and v > was_limits[k]]
+    if looser:
+        print(f"REFUSED: {ref} has loosened its caps since this draft was written.")
+        for k, before, after in looser:
+            print(f"  {k}: {before} -> {after}")
+        print("\n  A cap is a grant with a number on it. Re-run the routine under the current")
+        print("  caps, then approve that draft.")
+        return 1
+
+    was_grants, now_grants = orig_receipt.get("grants_hash"), grants_hash_of(routine)
+    if was_grants != now_grants:
+        print(f"REFUSED: {ref}'s capabilities or caps have changed since this draft was written.")
+        print(f"  the draft ran under grants {was_grants or '(unrecorded)'}: "
+              f"{', '.join(was) or '(nothing)'} · {was_limits or '(defaults)'}")
+        print(f"  the manifest now says grants {now_grants}: "
+              f"{', '.join(now_caps) or '(nothing)'} · {now_limits or '(defaults)'}")
+        for c in dropped:
+            print(f"  - {c}")
+        for k, v in now_limits.items():
+            if was_limits.get(k) != v:
+                print(f"  ~ {k}: {was_limits.get(k)} -> {v}")
+        print("\n  Narrowing is refused too: the draft is evidence about the run that produced")
+        print("  it, and that run is not this one. Re-run the routine, then approve that draft.")
+        return 1
 
     when = S.now()
     run_id = S.new_run_id(when)
@@ -217,6 +272,7 @@ def cmd_approve(args) -> int:
         "product": routine.product, "repo": str(routine.repo), "gate": routine.gate,
         "rule_ids": R.ids(rules), "capabilities": list(doc.get("capabilities") or []),
         "run_dir": str(run_dir), "control_dir": str(ctl_dir), "act_hash": act_hash(routine),
+        "grants_hash": grants_hash_of(routine), "caps": dict(routine.caps),
         "approved_from": args.id, "undo_available": undo_available,
         "outcome": outcome, "summary": summary, "actions": actions, "action_counts": counts,
         "actions_tampered": tampered,
@@ -232,8 +288,6 @@ def cmd_approve(args) -> int:
 
     print(f"{outcome.upper()}: approved {args.id} -> act run {run_id}")
     print(f"  {summary}")
-    if dropped:
-        print(f"  narrowed since the draft (the smaller list applies): {', '.join(dropped)}")
     if tampered:
         print(f"  ACTIONS LOG TAMPERED: {tampered} line(s) failed their signature and were dropped.")
     print(f"  undo:    {run_dir / 'undo.md'}")

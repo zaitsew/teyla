@@ -55,6 +55,11 @@ CONTROL_BASENAMES = frozenset({
     "hmac.key", "KILL", "inbox.jsonl", "receipts.jsonl", "promotions.jsonl",
 })
 
+# Compared case-insensitively: this runs on a filesystem where `Grants.json` opens
+# `grants.json`, so a check that only knew one spelling was a check with a spelling
+# for a bypass.
+_CONTROL_BASENAMES_LOWER = frozenset(n.lower() for n in CONTROL_BASENAMES)
+
 
 def home() -> pathlib.Path:
     return pathlib.Path(os.environ.get("TEYLA_HOME") or (pathlib.Path.home() / ".teyla")).expanduser()
@@ -95,14 +100,15 @@ def hmac_key_path() -> pathlib.Path:
 
 
 def is_control_path(target) -> bool:
-    """True if writing `target` would touch the control plane's own state: anything
-    under `~/.teyla`, or anything whose basename is a control filename."""
+    """True if reading or writing `target` would touch the control plane's own state:
+    anything under `~/.teyla`, or anything whose basename is a control filename,
+    matched **case-insensitively** because the filesystem is."""
     try:
         p = pathlib.Path(str(target)).expanduser()
         real = pathlib.Path(os.path.realpath(str(p)))
     except (OSError, ValueError):
         return True  # unreadable path, treated as control: refuse rather than guess
-    if real.name in CONTROL_BASENAMES or p.name in CONTROL_BASENAMES:
+    if real.name.lower() in _CONTROL_BASENAMES_LOWER or p.name.lower() in _CONTROL_BASENAMES_LOWER:
         return True
     h = pathlib.Path(os.path.realpath(str(home())))
     for cand in (real, pathlib.Path(os.path.normpath(str(p.absolute())))):
