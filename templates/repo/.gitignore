@@ -1,0 +1,12 @@
+runs/
+!runs/.gitkeep
+.env
+.venv/
+node_modules/
+build/
+dist/
+*.log
+.DS_Store
+__pycache__/
+*.pyc
+.teyla/corrections.jsonl

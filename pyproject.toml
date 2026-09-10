@@ -1,0 +1,36 @@
+[project]
+name = "teyla"
+version = "0.5.0"
+description = "Teyla — an operating system for working with AI agents: adoption monitor, policy, routines, corrections that stick."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Ivan Zaitsev" }]
+keywords = ["claude-code", "codex", "agents", "ai-adoption", "observability", "routines"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.scripts]
+teyla = "teyla.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/zaitsew/teyla"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/teyla"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"templates" = "teyla/templates"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,54 @@
+# example.yml — reference routine manifest. Copy it, do not edit it.
+#
+# A routine is one repeatable unit of work with one artifact.
+
+# Stable identifier. lowercase-with-dashes, unique in this repo.
+routine: example-routine
+
+# ---------------------------------------------------------------------------
+# trigger — when this runs
+# ---------------------------------------------------------------------------
+trigger:
+  # schedule | manual | event
+  type: manual
+  # cron, for schedule triggers. Always set tz explicitly.
+  # at: "0 9 * * 1-5"
+  # tz: Europe/Madrid
+
+# ---------------------------------------------------------------------------
+# skill — the procedure this routine executes
+# ---------------------------------------------------------------------------
+# Name of a skill in .claude/skills/. Routines do not carry their own
+# procedure inline — that forks the procedure away from the skill.
+skill: example-skill
+
+# ---------------------------------------------------------------------------
+# scope — what this routine is allowed to be about
+# ---------------------------------------------------------------------------
+scope:
+  task: example
+  artifact: runs/{date}/output.md
+
+# ---------------------------------------------------------------------------
+# gate — human review before anything leaves the repo
+# ---------------------------------------------------------------------------
+gate:
+  # pre | post | none. `none` only for routines whose artifact never leaves
+  # the repo.
+  position: pre
+  surface: file
+
+# ---------------------------------------------------------------------------
+# capabilities — tools this routine may use
+# ---------------------------------------------------------------------------
+# List only tools actually observed in use. An unused capability is invisible
+# in review until something uses it.
+capabilities:
+  - Read
+  - Write
+
+# ---------------------------------------------------------------------------
+# done — how this routine knows it succeeded
+# ---------------------------------------------------------------------------
+done: >
+  TBD — fill in a one-sentence, checkable definition of done.

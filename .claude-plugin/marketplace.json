@@ -1,0 +1,8 @@
+{
+  "name": "teyla",
+  "owner": { "name": "Ivan Zaitsev" },
+  "metadata": { "description": "Teyla — routines, corrections that stick, adoption review. Local-first." },
+  "plugins": [
+    { "name": "teyla", "source": "./plugin", "description": "Harvest and adoption-review skills, /teyla:rule, /teyla:correct, correction-capture hook. No server." }
+  ]
+}

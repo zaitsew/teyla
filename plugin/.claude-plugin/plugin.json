@@ -1,0 +1,15 @@
+{
+  "name": "teyla",
+  "version": "0.1.0",
+  "description": "File-only Claude Code adoption toolkit: harvest skills from past sessions, run adoption reviews, and record rules and corrections straight into the repo. No server, no database, nothing leaves the machine.",
+  "author": {
+    "name": "Ivan Zaitsev"
+  },
+  "homepage": "https://github.com/zaitsew/teyla",
+  "keywords": [
+    "routines",
+    "corrections",
+    "rules",
+    "adoption"
+  ]
+}
