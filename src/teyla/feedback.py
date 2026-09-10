@@ -51,6 +51,16 @@ def _doctor_lines() -> list[str]:
             n = f"error: {type(e).__name__}"
         shown_root = _redact_home(os.path.expanduser(root)) if root else "-"
         lines.append(f"{mod.NAME:12} {shown_root:40} {'found' if ok else 'absent':7} sessions: {n}")
+    # The doctor checklist itself (levels, names, home-redacted detail; the fix column is
+    # left out — it can name a repo path). This is what tells the maintainer whether the
+    # install is actually wired on the reporting machine.
+    try:
+        from . import doctor
+        lines.append("")
+        for c in doctor.checks(refresh_update=False, scan_repos=False):
+            lines.append(f"{c['level']:4} {c['name']:22} {_redact_home(str(c['detail']))}")
+    except Exception as e:  # noqa: BLE001
+        lines.append(f"doctor: error: {type(e).__name__}")
     return lines
 
 
