@@ -5,8 +5,10 @@
 # - If ~/.teyla/doctor.summary is non-empty (doctor found something to fix or an
 #   update waiting), print it. Doctor writes it; this only reads it, so the hook
 #   costs nothing.
-# - If no update check happened in the last day and `teyla` is on PATH, start one
-#   in the background. This is the auto-update path on machines where launchd
+# - If no update check happened in the last day and `teyla` can be found — on PATH,
+#   or at ~/.local/bin/teyla (uv tool / pipx), since a GUI app inherits no shell PATH —
+#   start one in the background. teyla itself applies ~/.teyla/config.toml [env]
+#   (SSL_CERT_FILE, a proxy) at startup, so this needs no shell rc either. This is the auto-update path on machines where launchd
 #   agents cannot be installed (a managed laptop): every session start becomes a
 #   chance to notice a new release. The next session shows the result.
 #
@@ -26,9 +28,15 @@
     [ -n "$line" ] && echo "$line"
   fi
   stamp="$HOME/.teyla/update-check.json"
+  teyla_bin=""
   if command -v teyla >/dev/null 2>&1; then
+    teyla_bin="teyla"
+  elif [ -x "$HOME/.local/bin/teyla" ]; then
+    teyla_bin="$HOME/.local/bin/teyla"
+  fi
+  if [ -n "$teyla_bin" ]; then
     if [ ! -f "$stamp" ] || [ -n "$(find "$stamp" -mmin +1440 2>/dev/null)" ]; then
-      (nohup sh -c 'teyla update --check --quiet >/dev/null 2>&1; teyla doctor --quiet >/dev/null 2>&1' >/dev/null 2>&1 &)
+      (nohup sh -c "\"$teyla_bin\" update --check --quiet >/dev/null 2>&1; \"$teyla_bin\" doctor --quiet >/dev/null 2>&1" >/dev/null 2>&1 &)
     fi
   fi
 } 2>/dev/null

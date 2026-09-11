@@ -22,6 +22,7 @@
   teyla promote <product:routine> --gate B|C                       earned autonomy on counted evidence
   teyla receipts <product:routine>                                 what ran, under which rules and grants
   teyla doctor [--quiet] [--json] [--refresh]                    what must be true here, and the fix for each thing that is not
+  teyla config show | set KEY=VALUE                               ~/.teyla/config.toml, incl. [env] for launchd/hook runs
   teyla update [--check] [--force] [--wire] [--quiet]            newer release → install, then policy sync/refresh, plugin refresh, routines
   teyla platform [init|env-example] [--json] [--no-net]          the shared resources set up once, and the step for each missing one
   teyla productize [path...] [--json] [--owner-steps]            what stands between each product and its second user
@@ -186,6 +187,10 @@ def cmd_scaffold(args):
 
 
 def main(argv=None):
+    # ~/.teyla/config.toml [env] first: under launchd or the desktop app's session hook this is
+    # the only place SSL_CERT_FILE or a proxy can come from, and it must be set before any socket.
+    from . import config as _config
+    _config.apply_env()
     p = argparse.ArgumentParser(prog="teyla", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--version", action="version", version=__version__)
     sp = p.add_subparsers(dest="cmd", required=True)
@@ -211,7 +216,7 @@ def main(argv=None):
     q = sp.add_parser("harvest"); q.set_defaults(fn=cmd_harvest); q.add_argument("path"); q.add_argument("--project")
     from . import wiki, feedback, models, plugins, plugin_install, connectors, control, doctor, update
     from . import platform as platform_mod, productize as productize_mod
-    doctor.register(sp); update.register(sp)
+    doctor.register(sp); update.register(sp); _config.register(sp)
     platform_mod.register(sp); productize_mod.register(sp)
     wiki.register(sp); feedback.register(sp); models.register(sp)
     plugins.register(sp); plugin_install.register(sp); connectors.register(sp); control.register(sp)

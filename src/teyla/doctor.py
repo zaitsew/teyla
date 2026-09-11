@@ -133,11 +133,12 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
         for label, plist, wrapper in ((routine_install.DAILY_LABEL, routine_install.DAILY_PLIST_PATH, routine_install.DAILY_WRAPPER_PATH),
                                       (routine_install.LABEL, routine_install.PLIST_PATH, routine_install.WRAPPER_PATH)):
             ok, pid, code = routine_install.loaded(label)
-            stale = routine_install._wrapper_stale(wrapper, routine_install._teyla_bin())
+            stale = routine_install._wrapper_stale(wrapper, routine_install._teyla_bin(),
+                                                   routine_install.launchd_env(routine_install._teyla_bin()))
             if not plist.exists():
                 out.append(_check("FIX", f"routine:{label.rsplit('.', 1)[-1]}", "not installed", "teyla routine install"))
             elif stale:
-                out.append(_check("FIX", f"routine:{label.rsplit('.', 1)[-1]}", f"{wrapper.name} names a teyla binary that is not the current one", "teyla routine install"))
+                out.append(_check("FIX", f"routine:{label.rsplit('.', 1)[-1]}", f"{wrapper.name} names a teyla binary that is not the current one, or lacks the [env] in config.toml", "teyla routine install"))
             elif not ok:
                 out.append(_check("FIX", f"routine:{label.rsplit('.', 1)[-1]}", "plist exists but launchd has not loaded it", "teyla routine install"))
             else:
