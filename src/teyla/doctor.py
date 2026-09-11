@@ -61,6 +61,8 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     repo = rec.get("repo") or cfg["update"]["repo"]
     if rec.get("latest") is not None:
         out.append(_check("OK", "network", f"github.com reachable for {repo} — {facts}"))
+    elif rec.get("reachable"):
+        out.append(_check("WARN", "network", f"github.com reachable for {repo} but no release or v* tag found ({how}): {rec.get('note')} — {facts}"))
     else:
         hint = update.explain_tls_error(rec.get("note"))
         out.append(_check("FIX", "network", f"github.com UNREACHABLE for {repo} ({how}): {rec.get('note')} — {facts}",

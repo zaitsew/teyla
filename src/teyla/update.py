@@ -67,16 +67,25 @@ def python_executable_for(spec: str) -> str:
     return f"python{spec}"
 
 
+def _explicit_bundle() -> str | None:
+    for var in ("SSL_CERT_FILE", "SSL_CERT_DIR"):
+        if os.environ.get(var):
+            return var
+    return None
+
+
 def trust_source() -> str:
-    """One phrase for doctor: where TLS roots come from for Python's HTTPS here."""
+    """One phrase for doctor: where TLS roots come from for Python's HTTPS here. An explicit
+    SSL_CERT_FILE/SSL_CERT_DIR (possibly from config.toml [env]) wins over truststore: the
+    person who set it chose that bundle on purpose."""
+    var = _explicit_bundle()
+    if var:
+        return f"{var}={os.environ[var]}"
     try:
         import truststore  # noqa: F401
         return "truststore (OS trust store)"
     except ImportError:
         pass
-    for var in ("SSL_CERT_FILE", "SSL_CERT_DIR"):
-        if os.environ.get(var):
-            return f"{var}={os.environ[var]}"
     import ssl
     paths = ssl.get_default_verify_paths()
     return f"openssl default {paths.cafile or paths.capath or '(none found)'}"
@@ -84,6 +93,8 @@ def trust_source() -> str:
 
 def ssl_context():
     import ssl
+    if _explicit_bundle():
+        return ssl.create_default_context()
     try:
         import truststore
         return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -145,7 +156,14 @@ def install_method() -> tuple[str, pathlib.Path | None]:
 
 
 def latest_release(repo: str, timeout: int = 10) -> tuple[str | None, str]:
-    """(tag or None, note). Tries releases/latest, then tags."""
+    tag, note, _ = lookup_release(repo, timeout)
+    return tag, note
+
+
+def lookup_release(repo: str, timeout: int = 10) -> tuple[str | None, str, bool]:
+    """(tag or None, note, reachable). Tries releases/latest, then tags. `reachable` is True
+    when any request got an HTTP answer — a repo with no release yet is reachable, not down."""
+    reachable = False
     for url, key in ((f"https://api.github.com/repos/{repo}/releases/latest", "tag_name"),
                      (f"https://api.github.com/repos/{repo}/tags", None)):
         try:
@@ -153,20 +171,25 @@ def latest_release(repo: str, timeout: int = 10) -> tuple[str | None, str]:
                                                        "User-Agent": f"teyla/{__version__}"})
             with urllib.request.urlopen(req, timeout=timeout, context=ssl_context()) as r:
                 data = json.loads(r.read().decode())
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, OSError) as e:
+            reachable = True
+        except urllib.error.HTTPError as e:
+            reachable = True  # the server answered; 404 on releases/latest just means no release yet
+            note = f"{url.split('/')[-1]}: {e}"
+            continue
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError) as e:
             note = f"{url.split('/')[-1]}: {e}"
             continue
         if key:
             tag = data.get(key)
             if tag:
-                return tag, "releases/latest"
+                return tag, "releases/latest", True
         else:
             tags = [t.get("name") for t in data if isinstance(t, dict) and str(t.get("name", "")).startswith("v")]
             if tags:
                 tags.sort(key=_vtuple)
-                return tags[-1], "tags"
+                return tags[-1], "tags", True
         note = "no tags"
-    return None, note
+    return None, note, reachable
 
 
 FAIL_MAX_AGE_MIN = 15  # a failed lookup is retried after this long; only a success is good for max_age_hours
@@ -195,11 +218,11 @@ def check(repo: str | None = None, refresh: bool = True, max_age_hours: int = 24
                 return cached
         except (OSError, ValueError, KeyError):
             pass
-    tag, note = latest_release(repo)
+    tag, note, reachable = lookup_release(repo)
     method, root = install_method()
     rec = {"checked": now.isoformat(timespec="seconds"), "repo": repo, "installed": __version__,
            "latest": tag, "note": note, "method": method, "checkout": str(root) if root else None,
-           "newer": is_newer(tag, __version__),
+           "newer": is_newer(tag, __version__), "reachable": reachable,
            "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
            "python_pin": python_spec(cfg), "executable": sys.executable, "trust": trust_source(),
            "proxy": proxy_in_use(), "from_cache": False}
@@ -284,6 +307,19 @@ def cmd_update(args):
         hint = explain_tls_error(rec["note"])
         if hint:
             print(f"  → {hint}")
+        running = f"{sys.version_info.major}.{sys.version_info.minor}"
+        if args.force and rec["python_pin"] != running and method in ("uv-tool", "pipx"):
+            # The lookup failed *on this interpreter* and config pins another one. The latest tag
+            # is unknown, but the installed version's tag is: reinstall it on the pinned
+            # interpreter so the next check runs there. This is how a 3.13 install whose TLS
+            # verification rejects the proxy root gets to 3.12 without a working lookup.
+            tag = f"v{__version__}"
+            print(f"--force: reinstalling {tag} on python {rec['python_pin']} (lookup failed on {running}); "
+                  f"run `teyla update` again afterwards")
+            lines = upgrade(tag, repo, method, None, python=rec["python_pin"])
+            for line in lines:
+                print(line)
+            return 1 if any(line.startswith(("FAIL", "SKIP")) for line in lines) else 0
         return 1
     if args.check:
         state = "update available" if rec["newer"] else "up to date"
