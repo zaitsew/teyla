@@ -30,6 +30,12 @@ TLS-inspecting proxy, Claude Code as a desktop app only, `uv` from Homebrew.
 - **Failed update checks are cached 15 minutes, not 24 hours**, and every doctor line
   says "checked HH:MM" or "cached HH:MM, not retried" — so a fix is visible on the next
   run, and a stale failure is never mistaken for a fresh one.
+- **A3 exempts one-human-turn sessions on size alone.** One turn is already one logical
+  unit; a 20 MB autonomous run under an hour cannot be "split into one session per unit".
+  Long active hours or repeated compactions still qualify it.
+- **C2/C3 need 20 calls before computing a rate.** "100% of 1 calls" was a `[medium]` line
+  in both `connectors` and the report; one call is not a rate. C1 (percentiles) and C4
+  (explicitly about low volume) are unchanged.
 - **Session-start hook** finds `teyla` at `~/.local/bin/teyla` when the GUI app's PATH
   does not have it.
 
