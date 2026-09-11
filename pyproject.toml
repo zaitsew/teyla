@@ -1,6 +1,6 @@
 [project]
 name = "teyla"
-version = "0.9.0"
+version = "0.8.2"
 description = "Teyla — an operating system for working with AI agents: adoption monitor, policy, routines, corrections that stick."
 readme = "README.md"
 requires-python = ">=3.11"
