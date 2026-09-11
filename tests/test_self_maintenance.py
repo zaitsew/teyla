@@ -253,7 +253,8 @@ def test_doctor_all_clear_summary_is_empty():
 def test_config_env_applied_with_setdefault_semantics(_home, monkeypatch):
     config.CONFIG_PATH.write_text('code_root = "~/work"\n\n[env]\nSSL_CERT_FILE = "~/.teyla/ca.pem"\nHTTPS_PROXY = "http://127.0.0.1:9000"\n')
     monkeypatch.setenv("HOME", str(_home))  # `~` in [env] values expands against this home
-    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    # setenv first so teardown restores the original (absent) state; apply_env below sets it for real
+    monkeypatch.setenv("SSL_CERT_FILE", "placeholder"); del os.environ["SSL_CERT_FILE"]
     monkeypatch.setenv("HTTPS_PROXY", "http://shell-wins:1")
     applied = config.apply_env()
     assert applied == ["SSL_CERT_FILE"]
@@ -437,12 +438,14 @@ def test_update_force_reinstalls_on_the_pinned_interpreter_when_the_lookup_fails
     monkeypatch.setattr(update.shutil, "which", lambda name: f"/opt/bin/{name}")
     seen = []
     monkeypatch.setattr(update, "_run", lambda cmd, cwd=None: (seen.append(cmd), (0, ""))[1])
-    config.CONFIG_PATH.write_text('[update]\npython = "3.12"\n')
+    import sys
+    pin = "3.11" if f"{sys.version_info.major}.{sys.version_info.minor}" == "3.12" else "3.12"  # must differ from the runner
+    config.CONFIG_PATH.write_text(f'[update]\npython = "{pin}"\n')
     args = argparse.Namespace(check=False, force=False, wire=False, quiet=False)
     assert update.cmd_update(args) == 1 and not seen, "without --force: report and stop"
     out = capsys.readouterr().out
     assert "update.python=3.12" in out
     args.force = True
     assert update.cmd_update(args) == 0
-    assert seen[-1][:6] == ["/opt/bin/uv", "tool", "install", "--force", "--python", "3.12"]
+    assert seen[-1][:6] == ["/opt/bin/uv", "tool", "install", "--force", "--python", pin]
     assert seen[-1][6].endswith(f"@v{teyla.__version__}"), "the installed version's tag, since the latest is unknown"
