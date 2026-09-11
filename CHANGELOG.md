@@ -36,6 +36,11 @@ TLS-inspecting proxy, Claude Code as a desktop app only, `uv` from Homebrew.
 - **C2/C3 need 20 calls before computing a rate.** "100% of 1 calls" was a `[medium]` line
   in both `connectors` and the report; one call is not a rate. C1 (percentiles) and C4
   (explicitly about low volume) are unchanged.
+- **`policy init --claude-md` acknowledges the file it writes** (`policy ack`, with a note),
+  so A10 no longer fires for weeks on an edit Teyla itself made.
+- **`policy init` seeds `code_root`/`ops_root` from the Layout section** of an existing
+  `~/.agents/POLICY.md` or `~/.claude/CLAUDE.md` (`` `~/work/<repo>` ``) instead of the
+  `~/repos` constant; `--code-root`/`--ops-root` still win.
 - **Session-start hook** finds `teyla` at `~/.local/bin/teyla` when the GUI app's PATH
   does not have it.
 

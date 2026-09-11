@@ -112,6 +112,12 @@ def cmd_policy(args):
     if args.action == "init":
         print(policy.init(force=args.force, owner=args.owner, dry=args.dry))
         from . import config
+        # Roots: an explicit flag, else what an existing policy's Layout section says, else the default.
+        layout = policy.layout_roots()
+        args.code_root = args.code_root or layout.get("code_root") or "~/repos"
+        args.ops_root = args.ops_root or layout.get("ops_root") or "~/ops"
+        if layout:
+            print(f"layout from policy: code_root={layout.get('code_root', '-')} ops_root={layout.get('ops_root', '-')}")
         if not args.dry:
             print(config.write(code_root=args.code_root, ops_root=args.ops_root, force=args.force))
             if policy.POLICY.exists() and not policy.BASE_PATH.exists():
@@ -119,8 +125,13 @@ def cmd_policy(args):
                 policy.BASE_PATH.write_text(policy.render_template(args.owner))
                 print(f"recorded template base at {policy.BASE_PATH}")
         if args.claude_md:
-            print(policy.init_claude_md(owner=args.owner, merge_rule=args.merge_rule, code_root=args.code_root,
-                                         ops_root=args.ops_root, force=args.force, dry=args.dry))
+            msg = policy.init_claude_md(owner=args.owner, merge_rule=args.merge_rule, code_root=args.code_root,
+                                        ops_root=args.ops_root, force=args.force, dry=args.dry)
+            print(msg)
+            if msg.startswith("wrote"):
+                # Teyla wrote it, so Teyla acknowledges it: otherwise A10 fires for weeks on an
+                # edit Teyla itself made, and the fix depends on the owner remembering that.
+                print(policy.ack(note="written by `teyla policy init --claude-md`"))
         if args.ops_root_init:
             for line in policy.init_ops_root(args.ops_root, owner=args.owner, code_root=args.code_root, dry=args.dry):
                 print(line)
@@ -209,7 +220,8 @@ def main(argv=None):
     q.add_argument("--owner", help="your name, written into POLICY.md (default: login name)")
     q.add_argument("--claude-md", action="store_true", help="init: also write ~/.claude/CLAUDE.md from the global template if absent")
     q.add_argument("--merge-rule", help='init --claude-md: the merging sentence (default: "open the PR/MR, then stop")')
-    q.add_argument("--code-root", default="~/repos"); q.add_argument("--ops-root", default="~/ops")
+    q.add_argument("--code-root", help="init: where repos live (default: the Layout section of an existing POLICY.md/CLAUDE.md, else ~/repos)")
+    q.add_argument("--ops-root", help="init: the ops root (default: from the Layout section, else ~/ops)")
     q.add_argument("--ops-root-init", action="store_true", help="init: also create the ops root (CLAUDE.md, .claude/, wiki-ready, runs/ ignored)")
     q.add_argument("--prefer", choices=["agents", "claude"], help="sync-repo: when AGENTS.md and CLAUDE.md both exist and differ, keep this one and symlink the other to it")
     q.add_argument("--note", help="ack: free-text note recorded alongside the acknowledgement")

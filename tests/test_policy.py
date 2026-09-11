@@ -247,3 +247,45 @@ def test_ack_without_claude_md_records_none_hash():
     record = json.loads(policy.ACK_PATH.read_text())
     assert record["claude_md"]["sha256"] is None
     assert "note" not in record["claude_md"]
+
+
+# --- policy init: roots from the Layout section, and Teyla acks the CLAUDE.md it writes --------
+
+def test_layout_roots_reads_the_template_shape():
+    text = ("## Layout\n\n- `~/work/<repo>` — flat, one level, one directory per git repo\n"
+            "- `~/ops-here` — everything that is not a code repo: notes, plans, runs, the wiki\n")
+    assert policy.layout_roots([text]) == {"code_root": "~/work", "ops_root": "~/ops-here"}
+    assert policy.layout_roots(["no layout here"]) == {}
+    # POLICY.md wins over CLAUDE.md for a key both state; each file can fill in the other's gap
+    assert policy.layout_roots(["- `~/a/<repo>` x", "- `~/b/<repo>` y\n- `~/o` — everything that is not a code repo"]) == \
+        {"code_root": "~/a", "ops_root": "~/o"}
+
+
+def test_layout_roots_reads_the_files_on_disk(_isolated_paths):
+    assert policy.layout_roots() == {}
+    policy.POLICY.parent.mkdir(parents=True)
+    policy.POLICY.write_text("# P\n\n## Layout\n\n- `~/work/<repo>` — flat\n")
+    assert policy.layout_roots() == {"code_root": "~/work"}
+
+
+def test_policy_init_seeds_config_from_layout_and_acks_its_own_claude_md(_isolated_paths, monkeypatch, tmp_path, capsys):
+    from teyla import config
+    from teyla.cli import main
+    monkeypatch.setattr(config, "CONFIG_PATH", _isolated_paths / ".teyla" / "config.toml")
+    monkeypatch.setattr(config, "TEYLA_DIR", _isolated_paths / ".teyla")
+    monkeypatch.setattr(policy, "BASE_PATH", _isolated_paths / ".teyla" / "policy-base.md")
+    policy.POLICY.parent.mkdir(parents=True)
+    policy.POLICY.write_text("# P\nOwner: Ada.\n\n## Layout\n\n- `~/work/<repo>` — flat, one level\n")
+    rc = main(["policy", "init", "--owner", "Ada", "--claude-md"])
+    out = capsys.readouterr().out
+    assert "layout from policy: code_root=~/work" in out
+    assert config.load()["code_root"] == "~/work", "seeded from the policy's Layout, not the ~/repos constant"
+    assert "`~/work/<repo>`" in policy.CLAUDE_GLOBAL.read_text()
+    assert "recorded" in out and policy.ACK_PATH.exists()
+    rec = json.loads(policy.ACK_PATH.read_text())["claude_md"]
+    import hashlib
+    assert rec["sha256"] == hashlib.sha256(policy.CLAUDE_GLOBAL.read_bytes()).hexdigest()
+    assert "policy init --claude-md" in rec["note"]
+    # an explicit flag still wins over the layout
+    main(["policy", "init", "--owner", "Ada", "--code-root", "~/src", "--force"])
+    assert config.load()["code_root"] == "~/src"

@@ -134,6 +134,34 @@ def sync_repo(repo: str, dry=False, prefer: str | None = None) -> str:
 CLAUDE_GLOBAL = HOME / ".claude" / "CLAUDE.md"
 
 
+def layout_roots(texts: "list[str] | None" = None) -> dict:
+    """{code_root, ops_root} as the Layout section of an existing policy file declares them —
+    `~/.agents/POLICY.md` first, then `~/.claude/CLAUDE.md` — or {} for whatever is not stated.
+    The shape is the template's own: a line with `<root>/<repo>` names code_root; a line whose
+    root is followed by "everything that is not a code repo" names ops_root. `policy init`
+    seeds config.toml from this instead of a constant, so a laptop whose policy says code lives
+    in ~/work is not told "no git repos under ~/repos"."""
+    import re
+    if texts is None:
+        texts = []
+        for p in (POLICY, CLAUDE_GLOBAL):
+            try:
+                texts.append(p.read_text())
+            except OSError:
+                pass
+    out = {}
+    for text in texts:
+        if "code_root" not in out:
+            m = re.search(r"`(~/[^`\s]+)/<repo>`", text)
+            if m:
+                out["code_root"] = m.group(1)
+        if "ops_root" not in out:
+            m = re.search(r"`(~/[^`\s]+)`\s*[—-]+\s*everything that is not a code repo", text)
+            if m:
+                out["ops_root"] = m.group(1)
+    return out
+
+
 def init_claude_md(owner: str | None = None, merge_rule: str | None = None, code_root: str = "~/repos",
                    ops_root: str = "~/ops", force: bool = False, dry: bool = False) -> str:
     """Write ~/.claude/CLAUDE.md from templates/CLAUDE.global.md if it does not exist (or --force).
