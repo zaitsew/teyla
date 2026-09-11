@@ -21,6 +21,15 @@ TLS-inspecting proxy, Claude Code as a desktop app only, `uv` from Homebrew.
   context (honours `SSL_CERT_FILE`, which may now come from `[env]`). `update-check.json`
   records interpreter, pin and trust source; an unreachable GitHub prints the fix for the
   two proxy failure shapes.
+- **doctor `network`** — one line with the three facts that decide whether the update
+  source is reachable: proxy in use (env or system), trust source (`truststore`,
+  `SSL_CERT_FILE`, or OpenSSL's default bundle), interpreter and the version `update` pins.
+  "GitHub unreachable" is now a **FIX** on that line, with the fix for the proxy failure
+  shape it sees; `version` says "see network" as a WARN instead of an INFO filed next to
+  "grok absent". A pin that differs from the running interpreter is a WARN of its own.
+- **Failed update checks are cached 15 minutes, not 24 hours**, and every doctor line
+  says "checked HH:MM" or "cached HH:MM, not retried" — so a fix is visible on the next
+  run, and a stale failure is never mistaken for a fresh one.
 - **Session-start hook** finds `teyla` at `~/.local/bin/teyla` when the GUI app's PATH
   does not have it.
 
