@@ -6,10 +6,20 @@
 
 How the install happened decides how it is upgraded:
 
-    uv tool        ~/.local/share/uv/tools/teyla/...    uv tool install --force git+<repo>@<tag>
-    pipx           .../pipx/venvs/teyla/...             pipx install --force git+<repo>@<tag>
+    uv tool        ~/.local/share/uv/tools/teyla/...    uv tool install --force --python <X.Y> git+<repo>@<tag>
+    pipx           .../pipx/venvs/teyla/...             pipx install --force --python <exe> git+<repo>@<tag>
     checkout       <repo>/src/teyla/__init__.py + .git   git fetch + fast-forward merge of origin/main
     pip            anything else                          python -m pip install --upgrade git+<repo>@<tag>
+
+The interpreter is pinned on every self-install: `[update] python` from config if set, else
+the one running now. Without that, uv rebuilt the tool environment on its *default*
+interpreter and an install that had been moved to 3.12 (because 3.13's strict X.509
+verification rejects a corporate proxy's root CA) landed back on 3.13 after the very update
+it had just made possible.
+
+The GitHub call verifies TLS through `truststore` (the OS trust store: keychain, Windows
+store) when that package is importable, else through OpenSSL's default context, which honours
+SSL_CERT_FILE / SSL_CERT_DIR — and those may come from config.toml [env], applied at startup.
 
 Post-update, in order, each idempotent and each reported:
     policy sync         harness wiring (import line, symlinks, Hermes section)
@@ -36,6 +46,63 @@ import urllib.request
 from . import __version__, config
 
 CHECK_PATH = config.TEYLA_DIR / "update-check.json"
+
+
+# --- interpreter and trust: the two things a self-update must not lose -----------------
+
+def python_spec(cfg: dict | None = None) -> str:
+    """The interpreter to pin: `[update] python` from config, else the running one's X.Y."""
+    pinned = ((cfg or config.load()).get("update") or {}).get("python")
+    return str(pinned) if pinned else f"{sys.version_info.major}.{sys.version_info.minor}"
+
+
+def python_executable_for(spec: str) -> str:
+    """A concrete interpreter for pipx's --python: the running interpreter's base (outside the
+    venv) when it matches `spec`, else `python<spec>` for PATH lookup."""
+    running = f"{sys.version_info.major}.{sys.version_info.minor}"
+    if spec == running:
+        base = pathlib.Path(sys.base_prefix) / "bin" / f"python{running}"
+        if base.exists():
+            return str(base)
+    return f"python{spec}"
+
+
+def trust_source() -> str:
+    """One phrase for doctor: where TLS roots come from for Python's HTTPS here."""
+    try:
+        import truststore  # noqa: F401
+        return "truststore (OS trust store)"
+    except ImportError:
+        pass
+    for var in ("SSL_CERT_FILE", "SSL_CERT_DIR"):
+        if os.environ.get(var):
+            return f"{var}={os.environ[var]}"
+    import ssl
+    paths = ssl.get_default_verify_paths()
+    return f"openssl default {paths.cafile or paths.capath or '(none found)'}"
+
+
+def ssl_context():
+    import ssl
+    try:
+        import truststore
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except ImportError:
+        return ssl.create_default_context()
+
+
+def explain_tls_error(note: str | None) -> str | None:
+    """A hint for the two failure shapes a TLS-inspecting proxy produces, or None."""
+    if not note:
+        return None
+    if "Basic Constraints of CA cert not marked critical" in note:
+        return ("Python 3.13+ verifies X.509 strictly and rejects this proxy root CA no matter which bundle it is "
+                "handed; pin an older interpreter: teyla config set update.python=3.12 && teyla update --force")
+    if "CERTIFICATE_VERIFY_FAILED" in note:
+        return ("Python does not trust the certificate chain (git/curl may, via the OS keychain). Point it at a "
+                "bundle that includes the proxy's root CA: teyla config set env.SSL_CERT_FILE=/path/to/bundle.pem; "
+                "or pip install truststore into Teyla's environment")
+    return None
 
 
 def _vtuple(v: str) -> tuple:
@@ -71,7 +138,7 @@ def latest_release(repo: str, timeout: int = 10) -> tuple[str | None, str]:
         try:
             req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
                                                        "User-Agent": f"teyla/{__version__}"})
-            with urllib.request.urlopen(req, timeout=timeout) as r:
+            with urllib.request.urlopen(req, timeout=timeout, context=ssl_context()) as r:
                 data = json.loads(r.read().decode())
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, OSError) as e:
             note = f"{url.split('/')[-1]}: {e}"
@@ -108,7 +175,9 @@ def check(repo: str | None = None, refresh: bool = True, max_age_hours: int = 24
     method, root = install_method()
     rec = {"checked": now.isoformat(timespec="seconds"), "repo": repo, "installed": __version__,
            "latest": tag, "note": note, "method": method, "checkout": str(root) if root else None,
-           "newer": is_newer(tag, __version__)}
+           "newer": is_newer(tag, __version__),
+           "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+           "python_pin": python_spec(cfg), "executable": sys.executable, "trust": trust_source()}
     try:
         CHECK_PATH.parent.mkdir(parents=True, exist_ok=True)
         CHECK_PATH.write_text(json.dumps(rec, indent=2) + "\n")
@@ -122,19 +191,21 @@ def _run(cmd: list[str], cwd: pathlib.Path | None = None) -> tuple[int, str]:
     return r.returncode, (r.stdout + r.stderr).strip()
 
 
-def upgrade(tag: str, repo: str, method: str, checkout: pathlib.Path | None = None) -> list[str]:
+def upgrade(tag: str, repo: str, method: str, checkout: pathlib.Path | None = None,
+            python: str | None = None) -> list[str]:
     src = f"git+https://github.com/{repo}@{tag}"
+    spec = python or python_spec()
     lines = []
     if method == "uv-tool":
         uv = shutil.which("uv")
         if not uv:
             return ["FAIL: installed with uv but `uv` is not on PATH"]
-        rc, out = _run([uv, "tool", "install", "--force", src])
+        rc, out = _run([uv, "tool", "install", "--force", "--python", spec, src])
     elif method == "pipx":
         pipx = shutil.which("pipx")
         if not pipx:
             return ["FAIL: installed with pipx but `pipx` is not on PATH"]
-        rc, out = _run([pipx, "install", "--force", src])
+        rc, out = _run([pipx, "install", "--force", "--python", python_executable_for(spec), src])
     elif method == "checkout" and checkout:
         rc, out = _run(["git", "status", "--porcelain"], cwd=checkout)
         if rc != 0:
@@ -155,6 +226,8 @@ def upgrade(tag: str, repo: str, method: str, checkout: pathlib.Path | None = No
         rc, out = _run([sys.executable, "-m", "pip", "install", "--upgrade", src])
     if rc != 0:
         lines.append(f"FAIL: upgrade via {method}: {out[-800:]}")
+    elif method in ("uv-tool", "pipx"):
+        lines.append(f"installed {tag} via {method} on python {spec}")
     else:
         lines.append(f"installed {tag} via {method}")
     return lines
@@ -181,7 +254,11 @@ def cmd_update(args):
     rec = check(repo, refresh=True)
     method, root = rec["method"], rec.get("checkout")
     if rec["latest"] is None:
-        print(f"teyla {__version__} ({method}); could not reach GitHub for {repo}: {rec['note']}")
+        print(f"teyla {__version__} ({method}, python {rec['python']}, trust: {rec['trust']}); "
+              f"could not reach GitHub for {repo}: {rec['note']}")
+        hint = explain_tls_error(rec["note"])
+        if hint:
+            print(f"  → {hint}")
         return 1
     if args.check:
         state = "update available" if rec["newer"] else "up to date"
@@ -196,8 +273,8 @@ def cmd_update(args):
                 print(line)
         return 0
     tag = rec["latest"]
-    print(f"teyla {__version__} → {tag} via {method}")
-    lines = upgrade(tag, repo, method, pathlib.Path(root) if root else None)
+    print(f"teyla {__version__} → {tag} via {method} (python {rec['python_pin']})")
+    lines = upgrade(tag, repo, method, pathlib.Path(root) if root else None, python=rec["python_pin"])
     for line in lines:
         print(line)
     if any(line.startswith(("FAIL", "SKIP")) for line in lines):
