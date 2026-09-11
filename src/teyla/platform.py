@@ -232,7 +232,7 @@ def _check_domain(cfg, present, no_net):
                 f"{name} resolves{extra}")
 
 
-def _check_identity(cfg, present):
+def _check_identity(cfg, present, no_net=False):
     i = cfg.get("identity") or {}
     provider = i.get("provider", "none")
     path = secrets_file(cfg)
@@ -250,10 +250,29 @@ def _check_identity(cfg, present):
         return _row("identity", MISSING,
                     f"copy the org id from https://supabase.com/dashboard/organizations → org = in {PLATFORM_PATH}",
                     f"{tool} present, org unset")
-    extra = "" if token_env in present else f"; {token_env} not in {path}"
-    return _row("identity", OK if not extra else WARN,
-                "-" if not extra else f"create a token at https://supabase.com/dashboard/account/tokens → {token_env}= in {path}",
-                f"{tool} present, org {org}{extra}")
+    if token_env in present:
+        return _row("identity", OK, "-", f"{tool} present, org {org}, {token_env} set")
+    # The CLI keeps its own login (keychain or ~/.supabase/access-token); a token in the
+    # secrets file is only needed by scripts that cannot use the CLI. Logged-in CLI is enough.
+    if provider == "supabase" and _cli_logged_in(tool, no_net):
+        return _row("identity", OK, "-", f"{tool} present and logged in, org {org}")
+    return _row("identity", WARN,
+                f"`{tool} login`, or create a token at https://supabase.com/dashboard/account/tokens → {token_env}= in {path}",
+                f"{tool} present, org {org}; not logged in and {token_env} not in {path}")
+
+
+def _cli_logged_in(tool: str, no_net: bool = False) -> bool:
+    """True when the Supabase CLI has a stored login: the token file, or (when the network
+    is allowed) `projects list` succeeds. Never prints the token."""
+    if (pathlib.Path.home() / ".supabase" / "access-token").exists():
+        return True
+    if no_net:
+        return False
+    try:
+        r = subprocess.run([tool, "projects", "list", "--output", "json"], capture_output=True, text=True, timeout=15)
+        return r.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
 
 
 def _check_mail(cfg, present):
@@ -265,9 +284,13 @@ def _check_mail(cfg, present):
                     f"pick a sender (https://resend.com/signup — free tier is enough) → provider/from in {PLATFORM_PATH}, key as RESEND_API_KEY= in {path}",
                     "no mail sender: sign-in codes reach only your own inbox")
     key_env = m.get("key_env") or "RESEND_API_KEY"
+    sender_domain = (m.get("from") or "").rpartition("@")[2].strip()
+    where = {"resend": "https://resend.com/api-keys",
+             "mailgun": f"https://app.mailgun.com/mg/sending/{sender_domain or '<domain>'}/smtp-credentials (SMTP password for the domain)",
+             "postmark": "https://account.postmarkapp.com/servers (the server API token)"}.get(provider, f"the {provider} dashboard")
     if key_env not in present:
         return _row("mail", MISSING,
-                    f"create the key at https://resend.com/api-keys → paste as {key_env}= in {path}",
+                    f"create the key at {where} → paste as {key_env}= in {path}",
                     f"{provider}: {key_env} absent")
     sender = (m.get("from") or "").strip()
     if not sender:
@@ -328,6 +351,10 @@ def _check_llm(cfg, present):
     if provider in ("", "none"):
         return _row("llm", NA, "-", "no shared model provider declared")
     key_env = l.get("key_env") or "OPENAI_API_KEY"
+    # scope = "per-product": every product carries its own budget-capped key in its own
+    # .env (checked per repo by `teyla productize` R6); nothing shared is expected here.
+    if (l.get("scope") or "shared") == "per-product":
+        return _row("llm", OK, "-", f"{provider}, per-product keys (each repo's .env)" + (f"; policy: {l['policy']}" if l.get("policy") else ""))
     if key_env not in present:
         return _row("llm", MISSING,
                     f"create a project key at https://platform.openai.com/api-keys, cap its budget in the dashboard → {key_env}= in {path}",
@@ -346,7 +373,7 @@ def checks(cfg: dict | None = None, *, no_net: bool = False) -> list[dict]:
         _check_secrets(cfg, present, path),
         _check_server(cfg, no_net),
         _check_domain(cfg, present, no_net),
-        _check_identity(cfg, present),
+        _check_identity(cfg, present, no_net),
         _check_mail(cfg, present),
         _check_apple(cfg),
         _check_android(cfg),

@@ -63,5 +63,6 @@ keystore = ""                            # upload keystore; back it up, it canno
 
 [llm]
 provider = "openai"
+scope = "per-product"                    # per-product: each repo's .env carries its own capped key | shared: one key named below
 key_env = "OPENAI_API_KEY"
 policy = "one project key per product, budget-capped in the provider dashboard"
