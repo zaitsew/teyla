@@ -386,3 +386,29 @@ def test_secrets_empty_value_counts_as_unset(_home):
     f.write_text("OPENAI_API_KEY=\nexport RESEND_API_KEY=\"\"\nDIGITALOCEAN_ACCESS_TOKEN=dop_v1_x\n")
     f.chmod(0o600)
     assert pl.env_names(f) == {"DIGITALOCEAN_ACCESS_TOKEN"}
+
+
+def test_identity_accepts_cli_login_without_token(_home, monkeypatch):
+    import teyla.platform as pl
+    monkeypatch.setattr(pl.shutil, "which", lambda name: "/usr/local/bin/supabase")
+    (_home / ".supabase").mkdir(parents=True, exist_ok=True)
+    (_home / ".supabase" / "access-token").write_text("sbp_x")
+    r = pl._check_identity({"identity": {"provider": "supabase", "org": "org-1"}}, set(), no_net=True)
+    assert r["state"] == pl.OK and "logged in" in r["detail"]
+    (_home / ".supabase" / "access-token").unlink()
+    r = pl._check_identity({"identity": {"provider": "supabase", "org": "org-1"}}, set(), no_net=True)
+    assert r["state"] == pl.WARN and "login" in r["todo"]
+
+
+def test_llm_per_product_scope_needs_no_shared_key(_home):
+    import teyla.platform as pl
+    r = pl._check_llm({"llm": {"provider": "openai", "scope": "per-product"}}, set())
+    assert r["state"] == pl.OK and "per-product" in r["detail"]
+    r = pl._check_llm({"llm": {"provider": "openai"}}, set())
+    assert r["state"] == pl.MISSING
+
+
+def test_mail_step_names_the_providers_own_page(_home):
+    import teyla.platform as pl
+    r = pl._check_mail({"mail": {"provider": "mailgun", "key_env": "MAILGUN_SMTP_PASSWORD", "from": "noreply@mg.example.com"}}, set())
+    assert r["state"] == pl.MISSING and "app.mailgun.com/mg/sending/mg.example.com/smtp-credentials" in r["todo"]
