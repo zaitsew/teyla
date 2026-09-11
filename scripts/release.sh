@@ -7,6 +7,11 @@ v="${1:?version, e.g. 0.7.1}"
 cd "$(dirname "$0")/.."
 [ -z "$(git status --porcelain)" ] || { echo "working tree not clean"; exit 1; }
 [ "$(git rev-parse --abbrev-ref HEAD)" = main ] || { echo "release from main"; exit 1; }
+git pull -q --ff-only origin main
+cur=$(grep '^version = ' pyproject.toml | cut -d'"' -f2)
+# Refuse to go backwards: two sessions releasing on the same day must not undo each other.
+newest=$(printf '%s\n%s\n' "$cur" "$v" | sort -V | tail -1)
+[ "$newest" = "$v" ] && [ "$v" != "$cur" ] || { echo "main is already $cur; $v is not newer"; exit 1; }
 sed -i '' "s/^version = \".*\"/version = \"$v\"/" pyproject.toml
 sed -i '' "s/^__version__ = \".*\"/__version__ = \"$v\"/" src/teyla/__init__.py
 sed -i '' "s/\"version\": \".*\"/\"version\": \"$v\"/" plugin/.claude-plugin/plugin.json
