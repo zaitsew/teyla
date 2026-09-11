@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+Fixes from the second work-laptop feedback round (2026-09-11): a managed machine behind a
+TLS-inspecting proxy, Claude Code as a desktop app only, `uv` from Homebrew.
+
+- **`[env]` in `~/.teyla/config.toml`, and `teyla config show|set`.** The environment
+  Teyla cannot inherit — `SSL_CERT_FILE`, a proxy — is applied by every `teyla` process at
+  startup (setdefault: the shell wins) and written by `routine install` into both launchd
+  plists and both wrappers. The weekly plist and wrapper now carry `PATH` too (they did
+  not; Homebrew `uv` was invisible to them). Wrappers count as stale when their exported
+  env differs from config, so `update`'s `routine install --if-stale` regenerates them
+  with the adaptation instead of without it. `config.write(force=True)` keeps `[env]`.
+- **Session-start hook** finds `teyla` at `~/.local/bin/teyla` when the GUI app's PATH
+  does not have it.
+
 ## 0.8.0 — 2026-09-11 — productization
 
 The distance between "works for me" and "works for four people" is not a feature. It is

@@ -451,8 +451,27 @@ upgrades the same way, from GitHub releases of the repo in `~/.teyla/config.toml
    run `teyla policy refresh --resolved`.
 3. `plugin refresh` — Claude Code loads a *copy* of the plugin under `~/.claude/plugins/cache`;
    this brings that copy to the CLI's version, with or without the `claude` binary.
-4. `routine install --if-stale` — rewrites the wrappers only if they name a binary that moved.
+4. `routine install --if-stale` — rewrites the wrappers only if they name a binary that moved
+   or no longer carry the `[env]` block from config.
 5. `doctor --quiet`.
+
+**The environment none of this inherits.** launchd runs `/bin/bash daily.sh` with
+`PATH=/usr/bin:/bin:/usr/sbin:/sbin`; the desktop app's session hook runs `sh -c` from a
+GUI process; neither reads a shell rc. On a managed laptop behind a TLS-inspecting proxy
+that is the difference between a machine that self-maintains and one that has quietly
+stopped: `git` and `curl` verify through the keychain and work, Python verifies through
+OpenSSL's bundle and does not. So the environment Teyla needs lives in
+`~/.teyla/config.toml` and nowhere else:
+
+```
+teyla config set env.SSL_CERT_FILE=~/.teyla/ca-bundle.pem env.HTTPS_PROXY=http://127.0.0.1:9000
+teyla routine install
+```
+
+Every `teyla` process applies `[env]` at startup (a variable the shell already set wins),
+and `routine install` writes it, with `PATH`, into both plists and both wrappers. Because
+the generator reads config on every write, the update that regenerates those files keeps
+the adaptation instead of erasing it. `teyla config show` prints the effective file.
 
 What it never does: edit a repo. Repos missing their `AGENTS.md ⇄ CLAUDE.md` pairing are a
 WARN in doctor with the `teyla policy sync-repo` command to run; that creates a file in

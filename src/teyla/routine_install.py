@@ -46,9 +46,7 @@ DAILY_PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
     </dict>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>PATH</key>
-        <string>{path}</string>
-    </dict>
+{env_plist}    </dict>
     <key>StandardOutPath</key>
     <string>{log}</string>
     <key>StandardErrorPath</key>
@@ -64,8 +62,7 @@ DAILY_WRAPPER_TEMPLATE = """#!/usr/bin/env bash
 # (which re-wires policy, plugin and these wrappers), then refresh the doctor summary the
 # session-start hook shows. Exit status is doctor's: 0 clean, 1 something needs you.
 set -uo pipefail
-export PATH="{path}"
-
+{env_sh}
 echo "== $(date -u +%FT%TZ) teyla daily"
 TEYLA="{teyla_bin}"
 "$TEYLA" update --quiet
@@ -93,6 +90,9 @@ PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
         <key>Minute</key>
         <integer>30</integer>
     </dict>
+    <key>EnvironmentVariables</key>
+    <dict>
+{env_plist}    </dict>
     <key>StandardOutPath</key>
     <string>{log}</string>
     <key>StandardErrorPath</key>
@@ -107,7 +107,7 @@ WRAPPER_TEMPLATE = """#!/usr/bin/env bash
 # Written by `teyla routine install`. Runs Teyla's weekly checks and files
 # their output under the ops run-artifact layout for the Monday digest.
 set -uo pipefail
-
+{env_sh}
 TEYLA="{teyla_bin}"
 OUT_DIR="$HOME/ops/startup/os/ai-dev/runs/$(date +%F)"
 mkdir -p "$OUT_DIR"
@@ -126,11 +126,15 @@ def _teyla_bin() -> str:
     return os.path.abspath(sys.argv[0])
 
 
-def _wrapper_stale(path: pathlib.Path, teyla_bin: str) -> bool:
-    """True when the wrapper does not exist or names a teyla binary other than the current one."""
+def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | None = None) -> bool:
+    """True when the wrapper does not exist, names a teyla binary other than the current one, or
+    (when `env` is given) does not export exactly the environment config says it should."""
     if not path.exists():
         return True
-    for line in path.read_text().splitlines():
+    text = path.read_text()
+    if env is not None and _env_sh(env) not in text:
+        return True
+    for line in text.splitlines():
         if line.startswith('TEYLA="'):
             return line[len('TEYLA="'):-1] != teyla_bin
     return True
@@ -148,9 +152,38 @@ def _path_for_launchd(teyla_bin: str) -> str:
     return ":".join(out)
 
 
+def launchd_env(teyla_bin: str) -> dict[str, str]:
+    """The environment both agents run with: PATH first, then ~/.teyla/config.toml [env].
+    Regenerated from config on every install, so a variable added there (SSL_CERT_FILE for a
+    TLS-inspecting proxy, HTTPS_PROXY, ...) survives the update that rewrites these files —
+    the plist is the only place a launchd job can get it from, /bin/bash reads no rc."""
+    from . import config
+    env = {"PATH": _path_for_launchd(teyla_bin)}
+    for k, v in config.env_vars().items():
+        if k == "PATH":
+            env["PATH"] = v + ":" + env["PATH"]
+        else:
+            env[k] = v
+    return env
+
+
+def _xml(s: str) -> str:
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _env_plist(env: dict[str, str]) -> str:
+    return "".join(f"        <key>{_xml(k)}</key>\n        <string>{_xml(v)}</string>\n" for k, v in env.items())
+
+
+def _env_sh(env: dict[str, str]) -> str:
+    import shlex
+    return "\n".join(f"export {k}={shlex.quote(v)}" for k, v in env.items())
+
+
 def is_stale() -> bool:
     teyla_bin = _teyla_bin()
-    return (_wrapper_stale(WRAPPER_PATH, teyla_bin) or _wrapper_stale(DAILY_WRAPPER_PATH, teyla_bin)
+    env = launchd_env(teyla_bin)
+    return (_wrapper_stale(WRAPPER_PATH, teyla_bin, env) or _wrapper_stale(DAILY_WRAPPER_PATH, teyla_bin, env)
             or not PLIST_PATH.exists() or not DAILY_PLIST_PATH.exists())
 
 
@@ -170,17 +203,18 @@ def install(if_stale: bool = False) -> list[str]:
     lines = []
     teyla_bin = _teyla_bin()
     if if_stale and not is_stale():
-        return ["routines current (wrappers name the current binary, both plists present)"]
-    path = _path_for_launchd(teyla_bin)
+        return ["routines current (wrappers name the current binary and the configured env, both plists present)"]
+    env = launchd_env(teyla_bin)
+    env_plist, env_sh = _env_plist(env), _env_sh(env)
 
     DAILY_WRAPPER_PATH.parent.mkdir(parents=True, exist_ok=True)
-    DAILY_WRAPPER_PATH.write_text(DAILY_WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin, path=path))
+    DAILY_WRAPPER_PATH.write_text(DAILY_WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin, env_sh=env_sh))
     DAILY_WRAPPER_PATH.chmod(0o755)
     lines.append(f"wrote {DAILY_WRAPPER_PATH}")
     DAILY_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     DAILY_PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
     DAILY_PLIST_PATH.write_text(DAILY_PLIST_TEMPLATE.format(label=DAILY_LABEL, wrapper=DAILY_WRAPPER_PATH,
-                                                            log=DAILY_LOG_PATH, path=path))
+                                                            log=DAILY_LOG_PATH, env_plist=env_plist))
     lines.append(f"wrote {DAILY_PLIST_PATH}")
     if sys.platform == "darwin":
         lines.append(_load(DAILY_PLIST_PATH, DAILY_LABEL))
@@ -188,14 +222,14 @@ def install(if_stale: bool = False) -> list[str]:
         lines.append("not macOS: add to cron yourself: 0 7 * * * bash " + str(DAILY_WRAPPER_PATH))
 
     WRAPPER_PATH.parent.mkdir(parents=True, exist_ok=True)
-    WRAPPER_PATH.write_text(WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin))
+    WRAPPER_PATH.write_text(WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin, env_sh=env_sh))
     WRAPPER_PATH.chmod(0o755)
     lines.append(f"wrote {WRAPPER_PATH}")
 
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
-    PLIST_PATH.write_text(PLIST_TEMPLATE.format(label=LABEL, wrapper=WRAPPER_PATH, log=LOG_PATH))
+    PLIST_PATH.write_text(PLIST_TEMPLATE.format(label=LABEL, wrapper=WRAPPER_PATH, log=LOG_PATH, env_plist=env_plist))
     lines.append(f"wrote {PLIST_PATH}")
 
     if sys.platform == "darwin":

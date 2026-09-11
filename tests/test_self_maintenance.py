@@ -3,6 +3,7 @@ Every path is monkeypatched into tmp_path; GitHub is never reached (urlopen is s
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 
 import pytest
@@ -245,3 +246,61 @@ def test_doctor_all_clear_summary_is_empty():
     cs = [doctor._check("OK", "a", "fine"), doctor._check("INFO", "b", "absent")]
     assert doctor.summary_line(cs) == ""
     assert doctor.render(cs).endswith("all clear")
+
+
+# --- config [env]: the environment launchd and the session hook cannot inherit -------------
+
+def test_config_env_applied_with_setdefault_semantics(_home, monkeypatch):
+    config.CONFIG_PATH.write_text('code_root = "~/work"\n\n[env]\nSSL_CERT_FILE = "~/.teyla/ca.pem"\nHTTPS_PROXY = "http://127.0.0.1:9000"\n')
+    monkeypatch.setenv("HOME", str(_home))  # `~` in [env] values expands against this home
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.setenv("HTTPS_PROXY", "http://shell-wins:1")
+    applied = config.apply_env()
+    assert applied == ["SSL_CERT_FILE"]
+    assert os.environ["SSL_CERT_FILE"] == str(_home / ".teyla" / "ca.pem")
+    assert os.environ["HTTPS_PROXY"] == "http://shell-wins:1", "a variable the shell set is never overridden"
+
+
+def test_config_set_edits_one_key_and_keeps_the_rest(_home):
+    assert config.write(code_root="~/work").startswith("wrote")
+    assert config.set_value("env.SSL_CERT_FILE", "~/.teyla/ca.pem").startswith("set env.SSL_CERT_FILE")
+    assert config.set_value("update.python", "3.12").startswith("set")
+    assert config.set_value("code_root", "~/src").startswith("set")
+    c = config.load()
+    assert c["env"] == {"SSL_CERT_FILE": "~/.teyla/ca.pem"}
+    assert c["update"] == {"repo": "zaitsew/teyla", "channel": "release", "python": "3.12"}
+    assert c["code_root"] == "~/src" and c["ops_root"] == "~/ops"
+    assert config.set_value("env.SSL_CERT_FILE", None).startswith("unset")
+    assert config.load()["env"] == {}
+    assert config.set_value("nope.x", "1").startswith("unknown table")
+    assert config.set_value("bogus", "1").startswith("unknown key")
+    # --force rewrites roots but keeps the [env] block: it is the local adaptation
+    config.set_value("env.HTTPS_PROXY", "http://127.0.0.1:9000")
+    assert config.write(code_root="~/again", force=True).startswith("wrote")
+    c = config.load()
+    assert c["code_root"] == "~/again" and c["env"] == {"HTTPS_PROXY": "http://127.0.0.1:9000"}
+    assert "config.toml" in config.show()
+
+
+def test_routine_install_writes_config_env_into_both_plists_and_wrappers(_home, monkeypatch):
+    config.CONFIG_PATH.write_text('[env]\nSSL_CERT_FILE = "~/.teyla/ca.pem"\n')
+    monkeypatch.setenv("HOME", str(_home))
+    monkeypatch.setattr(routine_install, "_load", lambda plist, label: f"loaded {label}")
+    monkeypatch.setattr(routine_install, "_teyla_bin", lambda: "/opt/tools/bin/teyla")
+    lines = routine_install.install()
+    assert any(l.startswith("wrote") for l in lines)
+    ca = str(_home / ".teyla" / "ca.pem")
+    for plist in (routine_install.PLIST_PATH, routine_install.DAILY_PLIST_PATH):
+        text = plist.read_text()
+        assert "<key>PATH</key>" in text and "/opt/tools/bin" in text, f"{plist.name} must carry PATH"
+        assert f"<key>SSL_CERT_FILE</key>\n        <string>{ca}</string>" in text
+    for wrapper in (routine_install.WRAPPER_PATH, routine_install.DAILY_WRAPPER_PATH):
+        text = wrapper.read_text()
+        assert "export PATH=" in text and f"export SSL_CERT_FILE={ca}" in text
+    assert not routine_install.is_stale()
+    # a new [env] entry makes the wrappers stale, so `update`'s `routine install --if-stale` rewrites them
+    config.set_value("env.HTTPS_PROXY", "http://127.0.0.1:9000")
+    assert routine_install.is_stale()
+    routine_install.install(if_stale=True)
+    assert "HTTPS_PROXY" in routine_install.PLIST_PATH.read_text()
+    assert not routine_install.is_stale()
