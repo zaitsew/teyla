@@ -339,3 +339,58 @@ def test_explain_tls_error_names_the_two_proxy_shapes():
     assert update.explain_tls_error("tags: no network") is None
     assert "update.python=3.12" in update.explain_tls_error("[SSL: CERTIFICATE_VERIFY_FAILED] Basic Constraints of CA cert not marked critical")
     assert "SSL_CERT_FILE" in update.explain_tls_error("[SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate")
+
+
+# --- doctor: the update source being unreachable is a FIX, and a failure is not cached all day ----
+
+def test_doctor_unreachable_update_source_is_a_fix_with_network_facts(_home, monkeypatch):
+    def offline(req, timeout=10, context=None):
+        raise update.urllib.error.URLError("[SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate")
+    monkeypatch.setattr(update.urllib.request, "urlopen", offline)
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9000")
+    cs = doctor.checks(refresh_update=True, scan_repos=False)
+    by = {c["name"]: c for c in cs}
+    assert by["version"]["level"] == "WARN" and "see network" in by["version"]["detail"]
+    assert by["network"]["level"] == "FIX"
+    d = by["network"]["detail"]
+    assert "UNREACHABLE" in d and "via proxy http://127.0.0.1:9000" in d and "python 3." in d and "trust:" in d
+    assert "checked 20" in d and "not retried" not in d, "a fresh failure says when it was checked"
+    assert "SSL_CERT_FILE" in by["network"]["fix"]
+    assert "fix(es)" in doctor.summary_line(cs)
+    # second doctor without --refresh within 15 min: served from the cache and labelled so
+    cs2 = doctor.checks(refresh_update=False, scan_repos=False)
+    by2 = {c["name"]: c for c in cs2}
+    assert "cached" in by2["network"]["detail"] and "not retried" in by2["network"]["detail"]
+
+
+def test_failed_check_is_retried_after_fifteen_minutes_but_success_is_cached_a_day(_home, monkeypatch):
+    import datetime as dt
+    calls = []
+    def offline(req, timeout=10, context=None):
+        calls.append(1); raise update.urllib.error.URLError("no network")
+    monkeypatch.setattr(update.urllib.request, "urlopen", offline)
+    rec = update.check(refresh=True)
+    assert rec["latest"] is None and rec["from_cache"] is False
+    assert update.check(refresh=False)["from_cache"] is True and len(calls) == 2, "fresh failure served from cache"
+    old = json.loads(update.CHECK_PATH.read_text())
+    old["checked"] = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=16)).isoformat(timespec="seconds")
+    update.CHECK_PATH.write_text(json.dumps(old))
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: _Resp({"tag_name": "v0.0.1"}))
+    rec = update.check(refresh=False)
+    assert rec["latest"] == "v0.0.1" and rec["from_cache"] is False, "a 16-minute-old failure is retried"
+    old = json.loads(update.CHECK_PATH.read_text())
+    old["checked"] = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=20)).isoformat(timespec="seconds")
+    update.CHECK_PATH.write_text(json.dumps(old))
+    assert update.check(refresh=False)["from_cache"] is True, "a 20-hour-old success is still good"
+
+
+def test_doctor_network_ok_line_and_python_pin_drift(_home, monkeypatch):
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: _Resp({"tag_name": "v0.0.1"}))
+    monkeypatch.delenv("HTTPS_PROXY", raising=False); monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.setattr(update.urllib.request, "getproxies", lambda: {})
+    config.CONFIG_PATH.write_text('[update]\npython = "2.7"\n')
+    cs = doctor.checks(refresh_update=True, scan_repos=False)
+    by = {c["name"]: c for c in cs}
+    assert by["network"]["level"] == "OK" and "reachable" in by["network"]["detail"] and "no proxy" in by["network"]["detail"]
+    assert "update pins 2.7" in by["network"]["detail"]
+    assert by["network:python"]["level"] == "WARN" and "update.python=" in by["network:python"]["fix"]

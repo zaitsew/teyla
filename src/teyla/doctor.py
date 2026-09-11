@@ -39,12 +39,35 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     # --- version ---------------------------------------------------------------
     rec = update.check(refresh=refresh_update, max_age_hours=24)
     method = rec.get("method")
+    when = rec.get("checked", "")[:16]
+    how = f"cached {when}, not retried" if rec.get("from_cache") else f"checked {when}"
     if rec.get("latest") is None:
-        out.append(_check("INFO", "version", f"{__version__} ({method}); latest unknown — GitHub unreachable: {rec.get('note')}"))
+        out.append(_check("WARN", "version", f"{__version__} ({method}); latest unknown — see network ({how})"))
     elif rec.get("newer"):
         out.append(_check("FIX", "version", f"{__version__} installed, {rec['latest']} available ({method})", "teyla update"))
     else:
-        out.append(_check("OK", "version", f"{__version__} ({method}) is current; checked {rec.get('checked', '')[:16]}"))
+        out.append(_check("OK", "version", f"{__version__} ({method}) is current; {how}"))
+
+    # --- network: can this machine reach its own update source? -----------------------
+    # The one check every future update depends on. Proxy, trust store and interpreter are
+    # the three facts that decide it, and the three a managed laptop hides in places nothing
+    # under launchd or a GUI app reads; naming them here turns a debugging session into a glance.
+    py_running = f"{sys.version_info.major}.{sys.version_info.minor}"
+    pin = rec.get("python_pin") or update.python_spec(cfg)
+    proxy = rec.get("proxy") if "proxy" in rec else update.proxy_in_use()
+    trust = rec.get("trust") or update.trust_source()
+    facts = (f"{'via proxy ' + proxy if proxy else 'no proxy'}; trust: {trust}; "
+             f"python {rec.get('python') or py_running} ({method}, update pins {pin})")
+    repo = rec.get("repo") or cfg["update"]["repo"]
+    if rec.get("latest") is not None:
+        out.append(_check("OK", "network", f"github.com reachable for {repo} — {facts}"))
+    else:
+        hint = update.explain_tls_error(rec.get("note"))
+        out.append(_check("FIX", "network", f"github.com UNREACHABLE for {repo} ({how}): {rec.get('note')} — {facts}",
+                          hint or "check the proxy/VPN, then: teyla update --check   (retries now)"))
+    if pin != py_running:
+        out.append(_check("WARN", "network:python", f"running on python {py_running} but `[update] python` pins {pin}: the next update moves the install",
+                          f"teyla config set update.python={py_running}   (or teyla update --force to move now)"))
 
     # --- config --------------------------------------------------------------
     if config.CONFIG_PATH.exists():

@@ -91,6 +91,19 @@ def ssl_context():
         return ssl.create_default_context()
 
 
+def proxy_in_use() -> str | None:
+    """The HTTPS proxy urllib will use: environment first (HTTPS_PROXY / https_proxy, which on a
+    managed Mac an MDM profile may set outside any shell rc), then the system settings."""
+    for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"):
+        if os.environ.get(var):
+            return os.environ[var]
+    try:
+        p = urllib.request.getproxies()
+    except Exception:  # noqa: BLE001 — system config lookup is best effort
+        return None
+    return p.get("https") or p.get("http") or None
+
+
 def explain_tls_error(note: str | None) -> str | None:
     """A hint for the two failure shapes a TLS-inspecting proxy produces, or None."""
     if not note:
@@ -156,8 +169,16 @@ def latest_release(repo: str, timeout: int = 10) -> tuple[str | None, str]:
     return None, note
 
 
+FAIL_MAX_AGE_MIN = 15  # a failed lookup is retried after this long; only a success is good for max_age_hours
+
+
 def check(repo: str | None = None, refresh: bool = True, max_age_hours: int = 24) -> dict:
-    """Cached lookup of the latest release. Writes ~/.teyla/update-check.json."""
+    """Cached lookup of the latest release. Writes ~/.teyla/update-check.json.
+
+    A record served from the cache carries `from_cache: True` so doctor can say "cached, not
+    retried" instead of presenting a stale failure as a fresh one. A *failed* lookup is cached
+    for FAIL_MAX_AGE_MIN only: the check that gates every future update must not report a
+    fixed network as broken for the rest of the day."""
     cfg = config.load()
     repo = repo or cfg["update"]["repo"]
     now = _dt.datetime.now(_dt.timezone.utc)
@@ -165,9 +186,12 @@ def check(repo: str | None = None, refresh: bool = True, max_age_hours: int = 24
         try:
             cached = json.loads(CHECK_PATH.read_text())
             when = _dt.datetime.fromisoformat(cached["checked"])
-            if (now - when).total_seconds() < max_age_hours * 3600 and cached.get("repo") == repo:
+            age = (now - when).total_seconds()
+            limit = max_age_hours * 3600 if cached.get("latest") else FAIL_MAX_AGE_MIN * 60
+            if age < limit and cached.get("repo") == repo:
                 cached["installed"] = __version__
                 cached["newer"] = is_newer(cached.get("latest"), __version__)
+                cached["from_cache"] = True
                 return cached
         except (OSError, ValueError, KeyError):
             pass
@@ -177,7 +201,8 @@ def check(repo: str | None = None, refresh: bool = True, max_age_hours: int = 24
            "latest": tag, "note": note, "method": method, "checkout": str(root) if root else None,
            "newer": is_newer(tag, __version__),
            "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
-           "python_pin": python_spec(cfg), "executable": sys.executable, "trust": trust_source()}
+           "python_pin": python_spec(cfg), "executable": sys.executable, "trust": trust_source(),
+           "proxy": proxy_in_use(), "from_cache": False}
     try:
         CHECK_PATH.parent.mkdir(parents=True, exist_ok=True)
         CHECK_PATH.write_text(json.dumps(rec, indent=2) + "\n")
