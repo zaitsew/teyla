@@ -100,7 +100,8 @@ def load_models_dev_catalogue(refresh: bool = False) -> tuple[dict, str | None]:
         try:
             import urllib.request
             req = urllib.request.Request(MODELS_DEV_URL, headers={"User-Agent": "teyla-models/1"})
-            with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310 — opt-in, explicit --refresh only
+            from .update import ssl_context  # same trust store as the GitHub call (truststore / SSL_CERT_FILE)
+            with urllib.request.urlopen(req, timeout=20, context=ssl_context()) as r:  # noqa: S310 — opt-in, explicit --refresh only
                 data = json.loads(r.read().decode())
             MODELS_DEV_FALLBACK.parent.mkdir(parents=True, exist_ok=True)
             MODELS_DEV_FALLBACK.write_text(json.dumps(data))

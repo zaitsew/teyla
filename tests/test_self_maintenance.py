@@ -82,7 +82,7 @@ class _Resp:
 
 def test_check_hits_releases_then_caches(_home, monkeypatch):
     calls = []
-    def fake_urlopen(req, timeout=10):
+    def fake_urlopen(req, timeout=10, context=None):
         calls.append(req.full_url)
         return _Resp({"tag_name": "v9.9.9"})
     monkeypatch.setattr(update.urllib.request, "urlopen", fake_urlopen)
@@ -94,7 +94,7 @@ def test_check_hits_releases_then_caches(_home, monkeypatch):
 
 
 def test_check_falls_back_to_tags_and_survives_offline(_home, monkeypatch):
-    def fake_urlopen(req, timeout=10):
+    def fake_urlopen(req, timeout=10, context=None):
         if req.full_url.endswith("/releases/latest"):
             raise update.urllib.error.HTTPError(req.full_url, 404, "nf", {}, None)
         return _Resp([{"name": "v0.1.0"}, {"name": "v0.10.0"}, {"name": "v0.9.0"}])
@@ -102,7 +102,7 @@ def test_check_falls_back_to_tags_and_survives_offline(_home, monkeypatch):
     rec = update.check(refresh=True)
     assert rec["latest"] == "v0.10.0" and rec["note"] == "tags"
 
-    def offline(req, timeout=10):
+    def offline(req, timeout=10, context=None):
         raise update.urllib.error.URLError("no network")
     monkeypatch.setattr(update.urllib.request, "urlopen", offline)
     rec = update.check(refresh=True)
@@ -230,7 +230,7 @@ def test_plugin_refresh_when_not_installed(_home):
 # --- doctor --------------------------------------------------------------------------
 
 def test_doctor_names_fixes_and_writes_summary(_home, monkeypatch):
-    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10: _Resp({"tag_name": "v99.0.0"}))
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: _Resp({"tag_name": "v99.0.0"}))
     cs = doctor.checks(refresh_update=True, scan_repos=False)
     by = {c["name"]: c for c in cs}
     assert by["version"]["level"] == "FIX" and by["version"]["fix"] == "teyla update"
@@ -304,3 +304,38 @@ def test_routine_install_writes_config_env_into_both_plists_and_wrappers(_home, 
     routine_install.install(if_stale=True)
     assert "HTTPS_PROXY" in routine_install.PLIST_PATH.read_text()
     assert not routine_install.is_stale()
+
+
+# --- update pins the interpreter it runs on ------------------------------------------------
+
+def test_upgrade_passes_python_pin_to_uv_and_pipx(_home, monkeypatch):
+    import sys
+    seen = []
+    monkeypatch.setattr(update, "_run", lambda cmd, cwd=None: (seen.append(cmd), (0, ""))[1])
+    monkeypatch.setattr(update.shutil, "which", lambda name: f"/opt/bin/{name}")
+    running = f"{sys.version_info.major}.{sys.version_info.minor}"
+    lines = update.upgrade("v1.2.3", "o/r", "uv-tool")
+    assert seen[-1][:5] == ["/opt/bin/uv", "tool", "install", "--force", "--python"] and seen[-1][5] == running
+    assert lines == [f"installed v1.2.3 via uv-tool on python {running}"]
+    # [update] python in config wins over the running interpreter
+    config.CONFIG_PATH.write_text('[update]\npython = "3.12"\n')
+    assert update.python_spec() == "3.12"
+    update.upgrade("v1.2.3", "o/r", "uv-tool")
+    assert seen[-1][4:6] == ["--python", "3.12"]
+    update.upgrade("v1.2.3", "o/r", "pipx")
+    assert seen[-1][:3] == ["/opt/bin/pipx", "install", "--force"] and seen[-1][3] == "--python"
+    assert seen[-1][4] == "python3.12", "pipx wants an executable name, not a version spec"
+
+
+def test_check_records_interpreter_and_trust(_home, monkeypatch):
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: _Resp({"tag_name": "v0.0.1"}))
+    rec = update.check(refresh=True)
+    assert rec["python"].count(".") == 2 and rec["python_pin"] and rec["executable"]
+    assert rec["trust"].startswith(("truststore", "SSL_CERT_FILE=", "SSL_CERT_DIR=", "openssl default"))
+
+
+def test_explain_tls_error_names_the_two_proxy_shapes():
+    assert update.explain_tls_error(None) is None
+    assert update.explain_tls_error("tags: no network") is None
+    assert "update.python=3.12" in update.explain_tls_error("[SSL: CERTIFICATE_VERIFY_FAILED] Basic Constraints of CA cert not marked critical")
+    assert "SSL_CERT_FILE" in update.explain_tls_error("[SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate")

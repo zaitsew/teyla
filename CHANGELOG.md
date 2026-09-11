@@ -12,6 +12,15 @@ TLS-inspecting proxy, Claude Code as a desktop app only, `uv` from Homebrew.
   not; Homebrew `uv` was invisible to them). Wrappers count as stale when their exported
   env differs from config, so `update`'s `routine install --if-stale` regenerates them
   with the adaptation instead of without it. `config.write(force=True)` keeps `[env]`.
+- **`teyla update` pins the interpreter on every self-install** — `--python <X.Y>` for uv,
+  `--python <exe>` for pipx — from `[update] python` in config if set, else the one it is
+  running on. Before, uv rebuilt the tool on its default interpreter and an install moved
+  to 3.12 (3.13's strict X.509 rejects a proxy root CA whose Basic Constraints are not
+  critical) landed back on 3.13 after the very update it had enabled. The GitHub and
+  models.dev calls verify through `truststore` when importable, else OpenSSL's default
+  context (honours `SSL_CERT_FILE`, which may now come from `[env]`). `update-check.json`
+  records interpreter, pin and trust source; an unreachable GitHub prints the fix for the
+  two proxy failure shapes.
 - **Session-start hook** finds `teyla` at `~/.local/bin/teyla` when the GUI app's PATH
   does not have it.
 
