@@ -16,7 +16,10 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import os
+import pathlib
 import re
+import sys
 from collections import Counter, defaultdict
 from typing import TYPE_CHECKING
 
@@ -29,6 +32,61 @@ WRITE_RE = re.compile(r"create|update|post|send|comment|transition|delete|put|pa
 # "Rediscovery" tools: the agent re-deriving something stable (an id, a field map, a schema)
 # instead of using a cached fact. Same list backs the connectors table and advice rule C2.
 REDISCOVERY_RE = re.compile(r"list|search|get_fields|schema|transitions|lookup|find_user|resolve", re.I)
+
+
+# --- display names --------------------------------------------------------------------------
+# claude.ai connectors reach Claude Code as `mcp__<uuid>__<tool>`; the uuid means nothing to a
+# reader. The desktop app keeps the registry it used — `remoteMcpServersConfig: [{uuid, name,
+# url}]` — in its per-session config files, so the report joins against it. Read-only, and any
+# failure degrades to showing the raw id.
+
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+
+
+def _desktop_app_dirs() -> list[pathlib.Path]:
+    home = pathlib.Path.home()
+    if sys.platform == "darwin":
+        roots = [home / "Library" / "Application Support" / "Claude"]
+    elif os.name == "nt":
+        roots = [pathlib.Path(os.environ.get("APPDATA", home / "AppData" / "Roaming")) / "Claude"]
+    else:
+        roots = [home / ".config" / "Claude"]
+    return [r / "local-agent-mode-sessions" for r in roots]
+
+
+def connector_names(dirs: list[pathlib.Path] | None = None, max_files: int = 60) -> dict[str, str]:
+    """{server_id: display name} from the desktop app's connector registry copies. Newest files
+    first, at most `max_files`, so a machine with hundreds of sessions costs a few reads."""
+    names: dict[str, str] = {}
+    files = []
+    for d in (dirs if dirs is not None else _desktop_app_dirs()):
+        if not d.is_dir():
+            continue
+        try:
+            files += [p for p in d.glob("*/*/local_*.json") if p.is_file()]
+        except OSError:
+            continue
+    try:
+        files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    except OSError:
+        pass
+    for p in files[:max_files]:
+        try:
+            data = json.loads(p.read_text())
+        except (OSError, ValueError):
+            continue
+        for c in data.get("remoteMcpServersConfig") or []:
+            if isinstance(c, dict) and c.get("uuid") and c.get("name"):
+                names.setdefault(str(c["uuid"]), str(c["name"]))
+    return names
+
+
+def label(server: str, names: dict[str, str] | None) -> str:
+    """`Airtable (41dc7c58)` when the registry knows the id, else the id itself."""
+    name = (names or {}).get(server)
+    if name:
+        return f"{name} ({server[:8]})"
+    return server
 
 
 def parse_mcp_tool(name: str) -> tuple[str, str] | None:
@@ -91,9 +149,11 @@ def _percentile(values: list[float], pct: float) -> float | None:
     return s[f] + (s[c] - s[f]) * (k - f)
 
 
-def metrics(sessions: "list[Session]", days: int | None = None) -> dict:
+def metrics(sessions: "list[Session]", days: int | None = None, names: dict[str, str] | None = None) -> dict:
     """Per-connector (MCP server) usage across `sessions`. Reads only `Session.connector_calls`;
-    never surfaces tool arguments or raw results, names and a result classification only."""
+    never surfaces tool arguments or raw results, names and a result classification only.
+    `names` (default: the desktop app's registry) adds a `display` per connector and a top-level
+    `names` map so advice and tables can say "Airtable" instead of a uuid."""
     if days:
         cutoff = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
         sessions = [s for s in sessions if (s.first or "")[:19] >= cutoff]
@@ -105,6 +165,11 @@ def metrics(sessions: "list[Session]", days: int | None = None) -> dict:
             calls_by_server[c["server"]].append((s.sid, c["tool"], c["turn_index"], c["result"]))
             sessions_by_server[c["server"]].add(s.sid)
 
+    if names is None:
+        try:
+            names = connector_names()
+        except Exception:  # noqa: BLE001 — display names are decoration, never a failure
+            names = {}
     connectors = {}
     for server, calls in calls_by_server.items():
         n = len(calls)
@@ -121,6 +186,7 @@ def metrics(sessions: "list[Session]", days: int | None = None) -> dict:
             seg[(sid, turn_index)] += 1
         seg_sizes = sorted(seg.values())
         connectors[server] = dict(
+            display=label(server, names),
             sessions=len(sessions_by_server[server]),
             calls=n,
             read=n - write, write=write,
@@ -135,7 +201,8 @@ def metrics(sessions: "list[Session]", days: int | None = None) -> dict:
             rediscovery_share=round(rediscovery_calls / n, 3) if n else 0.0,
             rediscovery_top=rediscovery_tools.most_common(5),
         )
-    return dict(days=days, n_sessions=len(sessions), connectors=connectors)
+    return dict(days=days, n_sessions=len(sessions), connectors=connectors,
+                names={s: names[s] for s in connectors if s in names})
 
 
 # A rate needs a sample. C2 and C3 (shares of calls) are computed only for a connector with at
@@ -149,29 +216,30 @@ def advise(m: dict) -> list[dict]:
     as advise.py's A1-A11, so `teyla connectors` and `teyla monitor` findings read the same way."""
     F = []
     for server, c in (m.get("connectors") or {}).items():
+        shown = c.get("display") or server
         if c.get("calls"):
             enough = c["calls"] >= MIN_CALLS_FOR_RATE
             if (c.get("segment_p95") or 0) > 25:
                 F.append(dict(
-                    id="C1", severity="high", title=f"{server}: round-trip tail",
+                    id="C1", severity="high", title=f"{shown}: round-trip tail",
                     evidence=f"p95 {c['segment_p95']:.0f} calls per human turn (max {c.get('segment_max')}, "
                              f"median {c.get('segment_median')}) across {c.get('n_segments')} segments",
                     action="The agent searches blind — give that job a saved query or a facts file."))
             if enough and c.get("rediscovery_share", 0) > 0.4:
                 F.append(dict(
-                    id="C2", severity="medium", title=f"{server}: identity/lookup tools dominate",
+                    id="C2", severity="medium", title=f"{shown}: identity/lookup tools dominate",
                     evidence=f"{int(c['rediscovery_share']*100)}% of {c['calls']} calls are "
                              f"list/search/lookup/schema tools",
                     action="Cache person→id / field maps in a facts file."))
             empty_or_error = c.get("empty_rate", 0) + c.get("error_rate", 0)
             if enough and empty_or_error > 0.25:
                 F.append(dict(
-                    id="C3", severity="medium", title=f"{server}: high empty-or-error rate",
+                    id="C3", severity="medium", title=f"{shown}: high empty-or-error rate",
                     evidence=f"{int(empty_or_error*100)}% of {c['calls']} calls came back empty or errored",
                     action="Check the connector's search defaults; count only, cannot distinguish error from empty."))
             if c["calls"] < 10 and c.get("error_rate", 0) > 0.4:
                 F.append(dict(
-                    id="C4", severity="low", title=f"{server}: barely used and failing",
+                    id="C4", severity="low", title=f"{shown}: barely used and failing",
                     evidence=f"{c['calls']} calls, {int(c['error_rate']*100)}% errored",
                     action="Decide: invest or take it off the ladder."))
     order = {"high": 0, "medium": 1, "low": 2}
@@ -188,7 +256,8 @@ def render_table(m: dict) -> str:
          f"{'p50/turn':>9} {'p95/turn':>9}  top tools"]
     for server, c in rows:
         top = ", ".join(f"{t}×{n}" for t, n in c["top_tools"])
-        L.append(f"{server[:24]:24} {c['sessions']:5} {c['calls']:6} {c['write_share']*100:6.0f}% "
+        shown = c.get("display") or server
+        L.append(f"{shown[:24]:24} {c['sessions']:5} {c['calls']:6} {c['write_share']*100:6.0f}% "
                   f"{c['empty_rate']*100:6.0f}% {c['error_rate']*100:6.0f}% "
                   f"{c['segment_median'] or 0:9.1f} {c['segment_p95'] or 0:9.1f}  {top}")
         if c["rediscovery_top"]:

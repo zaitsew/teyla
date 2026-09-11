@@ -41,6 +41,10 @@ TLS-inspecting proxy, Claude Code as a desktop app only, `uv` from Homebrew.
 - **`policy init` seeds `code_root`/`ops_root` from the Layout section** of an existing
   `~/.agents/POLICY.md` or `~/.claude/CLAUDE.md` (`` `~/work/<repo>` ``) instead of the
   `~/repos` constant; `--code-root`/`--ops-root` still win.
+- **Connector display names.** `teyla connectors` and the C1–C4 advice lines say
+  `Airtable (41dc7c58)` instead of a truncated uuid, joined from the desktop app's own
+  connector registry (`remoteMcpServersConfig` in its local-agent-mode-sessions files).
+  Read-only; an unknown id is shown as before. `--json` carries `display` and `names`.
 - **Session-start hook** finds `teyla` at `~/.local/bin/teyla` when the GUI app's PATH
   does not have it.
 
