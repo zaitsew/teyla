@@ -132,7 +132,7 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
     if not path.exists():
         return True
     text = path.read_text()
-    if env is not None and _env_sh(env) not in text:
+    if env is not None and _env_block_of(text) != _env_sh(env):
         return True
     for line in text.splitlines():
         if line.startswith('TEYLA="'):
@@ -175,9 +175,21 @@ def _env_plist(env: dict[str, str]) -> str:
     return "".join(f"        <key>{_xml(k)}</key>\n        <string>{_xml(v)}</string>\n" for k, v in env.items())
 
 
+ENV_BEGIN, ENV_END = "# teyla-env begin (from ~/.teyla/config.toml; rewritten by `teyla routine install`)", "# teyla-env end"
+
+
 def _env_sh(env: dict[str, str]) -> str:
+    """The wrapper's env block, delimited so staleness compares the whole block: a removed
+    entry must count as a change, and a substring test would not see it."""
     import shlex
-    return "\n".join(f"export {k}={shlex.quote(v)}" for k, v in env.items())
+    return "\n".join([ENV_BEGIN, *(f"export {k}={shlex.quote(v)}" for k, v in env.items()), ENV_END])
+
+
+def _env_block_of(text: str) -> str | None:
+    a, b = text.find(ENV_BEGIN), text.find(ENV_END)
+    if a < 0 or b < 0 or b < a:
+        return None
+    return text[a:b + len(ENV_END)]
 
 
 def is_stale() -> bool:
@@ -256,13 +268,14 @@ def loaded(label: str) -> tuple[bool, str | None, str | None]:
 def status() -> list[str]:
     lines = []
     teyla_bin = _teyla_bin()
+    env = launchd_env(teyla_bin)
     for label, plist, wrapper, log in ((DAILY_LABEL, DAILY_PLIST_PATH, DAILY_WRAPPER_PATH, DAILY_LOG_PATH),
                                        (LABEL, PLIST_PATH, WRAPPER_PATH, LOG_PATH)):
         ok, pid, code = loaded(label)
         lines.append(f"{label}: loaded: {'yes' if ok else 'no'}" + (f" (pid {pid})" if pid else "") + (f" (last exit {code})" if code else ""))
         lines.append(f"  plist: {plist} ({'exists' if plist.exists() else 'missing'})")
-        stale = _wrapper_stale(wrapper, teyla_bin)
-        lines.append(f"  wrapper: {wrapper} ({'missing' if not wrapper.exists() else ('STALE — names another binary; run `teyla routine install`' if stale else 'current')})")
+        stale = _wrapper_stale(wrapper, teyla_bin, env)
+        lines.append(f"  wrapper: {wrapper} ({'missing' if not wrapper.exists() else ('STALE — names another binary or an outdated [env]; run `teyla routine install`' if stale else 'current')})")
         if log.exists():
             tail = log.read_text(errors="replace").splitlines()[-6:]
             lines.append(f"  last log lines ({log}):")

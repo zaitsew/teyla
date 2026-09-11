@@ -45,6 +45,12 @@ TLS-inspecting proxy, Claude Code as a desktop app only, `uv` from Homebrew.
   `Airtable (41dc7c58)` instead of a truncated uuid, joined from the desktop app's own
   connector registry (`remoteMcpServersConfig` in its local-agent-mode-sessions files).
   Read-only; an unknown id is shown as before. `--json` carries `display` and `names`.
+- **Review fixes (codex, GPT-5.6 Sol, cross-provider per POLICY §2):** `teyla update --force`
+  reinstalls the *installed* version on the pinned interpreter when the release lookup itself
+  fails on the current one (the pin could not bootstrap otherwise); an explicit
+  `SSL_CERT_FILE`/`SSL_CERT_DIR` wins over `truststore`; a removed `[env]` entry makes the
+  wrappers stale (the block is compared whole); `routine status` checks env too; a reachable
+  repo with no release is a WARN, not "UNREACHABLE".
 - **Session-start hook** finds `teyla` at `~/.local/bin/teyla` when the GUI app's PATH
   does not have it.
 

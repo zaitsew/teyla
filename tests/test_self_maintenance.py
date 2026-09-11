@@ -304,6 +304,12 @@ def test_routine_install_writes_config_env_into_both_plists_and_wrappers(_home, 
     routine_install.install(if_stale=True)
     assert "HTTPS_PROXY" in routine_install.PLIST_PATH.read_text()
     assert not routine_install.is_stale()
+    # removing an entry is a change too: the block is compared whole, not as a substring
+    config.set_value("env.HTTPS_PROXY", None)
+    assert routine_install.is_stale()
+    routine_install.install(if_stale=True)
+    assert "HTTPS_PROXY" not in routine_install.DAILY_WRAPPER_PATH.read_text() and not routine_install.is_stale()
+    assert any("current" in l for l in routine_install.status() if "wrapper:" in l)
 
 
 # --- update pins the interpreter it runs on ------------------------------------------------
@@ -324,7 +330,7 @@ def test_upgrade_passes_python_pin_to_uv_and_pipx(_home, monkeypatch):
     assert seen[-1][4:6] == ["--python", "3.12"]
     update.upgrade("v1.2.3", "o/r", "pipx")
     assert seen[-1][:3] == ["/opt/bin/pipx", "install", "--force"] and seen[-1][3] == "--python"
-    assert seen[-1][4] == "python3.12", "pipx wants an executable name, not a version spec"
+    assert seen[-1][4].endswith("python3.12"), "pipx wants an executable (name or path), not a version spec"
 
 
 def test_check_records_interpreter_and_trust(_home, monkeypatch):
@@ -394,3 +400,49 @@ def test_doctor_network_ok_line_and_python_pin_drift(_home, monkeypatch):
     assert by["network"]["level"] == "OK" and "reachable" in by["network"]["detail"] and "no proxy" in by["network"]["detail"]
     assert "update pins 2.7" in by["network"]["detail"]
     assert by["network:python"]["level"] == "WARN" and "update.python=" in by["network:python"]["fix"]
+
+
+def test_reachable_repo_without_a_release_is_not_unreachable(_home, monkeypatch):
+    def no_release(req, timeout=10, context=None):
+        if req.full_url.endswith("/releases/latest"):
+            raise update.urllib.error.HTTPError(req.full_url, 404, "nf", {}, None)
+        return _Resp([])
+    monkeypatch.setattr(update.urllib.request, "urlopen", no_release)
+    rec = update.check(refresh=True)
+    assert rec["latest"] is None and rec["reachable"] is True
+    by = {c["name"]: c for c in doctor.checks(refresh_update=False, scan_repos=False)}
+    assert by["network"]["level"] == "WARN" and "no release" in by["network"]["detail"]
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: (_ for _ in ()).throw(update.urllib.error.URLError("down")))
+    assert update.check(refresh=True)["reachable"] is False
+
+
+def test_explicit_ssl_cert_file_wins_over_truststore(_home, monkeypatch, tmp_path):
+    import ssl, sys, types
+    fake = types.ModuleType("truststore")
+    fake.SSLContext = lambda proto: "TRUSTSTORE"
+    monkeypatch.setitem(sys.modules, "truststore", fake)
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False); monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+    assert update.ssl_context() == "TRUSTSTORE" and update.trust_source().startswith("truststore")
+    bundle = tmp_path / "ca.pem"; bundle.write_text("")
+    monkeypatch.setenv("SSL_CERT_FILE", str(bundle))
+    assert isinstance(update.ssl_context(), ssl.SSLContext), "the bundle the person chose is used, not the OS store"
+    assert update.trust_source() == f"SSL_CERT_FILE={bundle}"
+
+
+def test_update_force_reinstalls_on_the_pinned_interpreter_when_the_lookup_fails(_home, monkeypatch, capsys):
+    import argparse
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: (_ for _ in ()).throw(
+        update.urllib.error.URLError("[SSL: CERTIFICATE_VERIFY_FAILED] Basic Constraints of CA cert not marked critical")))
+    monkeypatch.setattr(update, "install_method", lambda: ("uv-tool", None))
+    monkeypatch.setattr(update.shutil, "which", lambda name: f"/opt/bin/{name}")
+    seen = []
+    monkeypatch.setattr(update, "_run", lambda cmd, cwd=None: (seen.append(cmd), (0, ""))[1])
+    config.CONFIG_PATH.write_text('[update]\npython = "3.12"\n')
+    args = argparse.Namespace(check=False, force=False, wire=False, quiet=False)
+    assert update.cmd_update(args) == 1 and not seen, "without --force: report and stop"
+    out = capsys.readouterr().out
+    assert "update.python=3.12" in out
+    args.force = True
+    assert update.cmd_update(args) == 0
+    assert seen[-1][:6] == ["/opt/bin/uv", "tool", "install", "--force", "--python", "3.12"]
+    assert seen[-1][6].endswith(f"@v{teyla.__version__}"), "the installed version's tag, since the latest is unknown"
