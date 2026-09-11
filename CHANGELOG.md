@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 — 2026-09-11 — self-maintenance that survives a managed laptop
 
 Fixes from the second work-laptop feedback round (2026-09-11): a managed machine behind a
 TLS-inspecting proxy, Claude Code as a desktop app only, `uv` from Homebrew.
