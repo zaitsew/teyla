@@ -308,3 +308,29 @@ def test_c2_c3_not_emitted_below_the_call_floor():
     # C4 (barely used and failing) is about low volume by definition and keeps firing
     few = [dict(server="broken", tool="get_item", turn_index=i, result="error") for i in range(5)]
     assert {f["id"] for f in advise(metrics([_session("s3", few)]))} == {"C4"}
+
+
+# --- display names: the desktop app's registry turns a uuid into "Airtable" ------------------
+
+def test_connector_names_read_from_desktop_registry_and_label_rows(tmp_path):
+    from teyla.connectors import connector_names, label
+    d = tmp_path / "local-agent-mode-sessions"
+    f = d / "acc" / "sess" / "local_1.json"
+    f.parent.mkdir(parents=True)
+    f.write_text(json.dumps({"remoteMcpServersConfig": [
+        {"uuid": "41dc7c58-769c-4ebe-8ab6-0c1ebbcf9b4e", "name": "Airtable", "url": "https://mcp.airtable.com/mcp"},
+        {"uuid": "2f9c944c-3ca7-41a4-9427-dc04bf01d17c", "name": "Google Drive"},
+        {"name": "no uuid"}, "junk"]}))
+    (d / "acc" / "sess" / "local_broken.json").write_text("{not json")
+    names = connector_names([d, tmp_path / "absent"])
+    assert names == {"41dc7c58-769c-4ebe-8ab6-0c1ebbcf9b4e": "Airtable", "2f9c944c-3ca7-41a4-9427-dc04bf01d17c": "Google Drive"}
+    assert label("41dc7c58-769c-4ebe-8ab6-0c1ebbcf9b4e", names) == "Airtable (41dc7c58)"
+    assert label("loco", names) == "loco", "a stdio server already has a readable name"
+    calls = [dict(server="2f9c944c-3ca7-41a4-9427-dc04bf01d17c", tool="search_files", turn_index=0, result="ok") for _ in range(30)]
+    m = metrics([_session("s1", calls)], names=names)
+    c = m["connectors"]["2f9c944c-3ca7-41a4-9427-dc04bf01d17c"]
+    assert c["display"] == "Google Drive (2f9c944c)" and m["names"] == {"2f9c944c-3ca7-41a4-9427-dc04bf01d17c": "Google Drive"}
+    findings = advise(m)
+    assert findings and all(f["title"].startswith("Google Drive (2f9c944c):") for f in findings)
+    assert "Google Drive (2f9c944c)" in render_table(m)
+    assert connector_names([tmp_path / "absent"]) == {}
