@@ -138,26 +138,33 @@ def metrics(sessions: "list[Session]", days: int | None = None) -> dict:
     return dict(days=days, n_sessions=len(sessions), connectors=connectors)
 
 
+# A rate needs a sample. C2 and C3 (shares of calls) are computed only for a connector with at
+# least this many calls; "100% of 1 calls" is not a finding, it is one call. C1 keys off segment
+# percentiles and C4 is explicitly about low-volume connectors, so neither uses the floor.
+MIN_CALLS_FOR_RATE = 20
+
+
 def advise(m: dict) -> list[dict]:
     """C1-C4: the connector-shaped findings. Same {id, severity, title, evidence, action} shape
     as advise.py's A1-A11, so `teyla connectors` and `teyla monitor` findings read the same way."""
     F = []
     for server, c in (m.get("connectors") or {}).items():
         if c.get("calls"):
+            enough = c["calls"] >= MIN_CALLS_FOR_RATE
             if (c.get("segment_p95") or 0) > 25:
                 F.append(dict(
                     id="C1", severity="high", title=f"{server}: round-trip tail",
                     evidence=f"p95 {c['segment_p95']:.0f} calls per human turn (max {c.get('segment_max')}, "
                              f"median {c.get('segment_median')}) across {c.get('n_segments')} segments",
                     action="The agent searches blind — give that job a saved query or a facts file."))
-            if c.get("rediscovery_share", 0) > 0.4:
+            if enough and c.get("rediscovery_share", 0) > 0.4:
                 F.append(dict(
                     id="C2", severity="medium", title=f"{server}: identity/lookup tools dominate",
                     evidence=f"{int(c['rediscovery_share']*100)}% of {c['calls']} calls are "
                              f"list/search/lookup/schema tools",
                     action="Cache person→id / field maps in a facts file."))
             empty_or_error = c.get("empty_rate", 0) + c.get("error_rate", 0)
-            if empty_or_error > 0.25:
+            if enough and empty_or_error > 0.25:
                 F.append(dict(
                     id="C3", severity="medium", title=f"{server}: high empty-or-error rate",
                     evidence=f"{int(empty_or_error*100)}% of {c['calls']} calls came back empty or errored",

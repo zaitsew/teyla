@@ -190,16 +190,17 @@ def test_metrics_basic_shape_and_read_write_split():
 
 def test_metrics_person_lookup_heavy_connector_triggers_c2():
     # Mirrors the case study: a messaging connector where identity-resolution tools are most
-    # of the traffic. 10 calls, 6 are find_user/resolve (60% > the 40% C2 threshold).
+    # of the traffic. 20 calls (the MIN_CALLS_FOR_RATE floor), 12 are find_user/resolve
+    # (60% > the 40% C2 threshold).
     calls = []
-    for i in range(6):
+    for i in range(12):
         calls.append(dict(server="messaging", tool="find_user" if i % 2 == 0 else "resolve",
                            turn_index=i, result="ok"))
-    for i in range(4):
+    for i in range(8):
         calls.append(dict(server="messaging", tool="send_message", turn_index=i, result="ok"))
     m = metrics([_session("s1", calls)])
     c = m["connectors"]["messaging"]
-    assert c["calls"] == 10
+    assert c["calls"] == 20
     assert c["rediscovery_share"] > 0.4
     ids = {f["id"] for f in advise(m)}
     assert "C2" in ids
@@ -291,3 +292,19 @@ def test_register_wires_a_connectors_subcommand():
     assert args.days == 14
     assert args.project == "demo"
     assert callable(args.fn)
+
+
+# --- C2/C3 need a sample: no rate from one call ------------------------------------------------
+
+def test_c2_c3_not_emitted_below_the_call_floor():
+    from teyla.connectors import MIN_CALLS_FOR_RATE
+    one = [dict(server="registry", tool="list_connectors", turn_index=0, result="empty")]
+    ids = {f["id"] for f in advise(metrics([_session("s1", one)]))}
+    assert "C2" not in ids and "C3" not in ids, "100% of 1 calls is one call, not a rate"
+    # the same shape at the floor is a finding
+    many = [dict(server="registry", tool="list_connectors", turn_index=i, result="empty") for i in range(MIN_CALLS_FOR_RATE)]
+    ids = {f["id"] for f in advise(metrics([_session("s2", many)]))}
+    assert {"C2", "C3"} <= ids
+    # C4 (barely used and failing) is about low volume by definition and keeps firing
+    few = [dict(server="broken", tool="get_item", turn_index=i, result="error") for i in range(5)]
+    assert {f["id"] for f in advise(metrics([_session("s3", few)]))} == {"C4"}

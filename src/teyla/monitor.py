@@ -39,7 +39,12 @@ def metrics(sessions: list[Session], days: int | None = None) -> dict:
         skills.update(s.skills); tools.update(s.tools)
         if s.gov_edits:
             gov.append(dict(project=s.project, sid=s.sid[:8], day=s.day, edits=s.gov_edits))
-        if s.size > GIANT_BYTES or (s.active_hours or 0) > LONG_ACTIVE_HOURS or s.compactions >= 3:
+        # One human turn is already one logical unit: a big autonomous run cannot be "split into
+        # one session per unit", so size alone never makes it giant. It still counts when it ran
+        # for more active hours than a unit should, or compacted repeatedly — those are the
+        # shapes A3's advice actually addresses.
+        oversized = s.size > GIANT_BYTES and s.n_user > 1
+        if oversized or (s.active_hours or 0) > LONG_ACTIVE_HOURS or s.compactions >= 3:
             giant.append(dict(project=s.project, sid=s.sid[:8], day=s.day, mb=round(s.size / 1e6, 1), hours=s.hours,
                               active_hours=round(s.active_hours or 0, 2),
                               compactions=s.compactions, turns=s.n_user, out=s.tokens["output_tokens"]))

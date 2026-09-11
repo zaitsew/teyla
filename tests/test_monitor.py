@@ -186,3 +186,25 @@ def test_advise_a2_a4_fire_normally_when_not_connector_heavy(monkeypatch, tmp_pa
     assert "A12" not in ids
     assert "A2" in ids
     assert "A4" in ids
+
+
+# --- A3: one human turn is one logical unit — size alone cannot make it giant -----------------
+
+def test_giant_sessions_exempts_single_turn_session_on_size_alone():
+    s = _session("autonomous")
+    s.size = 20_000_000  # 20 MB, but one human turn, under an hour, no compactions
+    s.active_hours = 0.9
+    s.compactions = 0
+    s.user_turns = s.user_turns[:1]
+    assert s.n_user == 1
+    assert metrics([s])["giant_sessions"] == []
+
+
+def test_giant_sessions_keeps_single_turn_session_that_ran_long_or_compacted():
+    long_run = _session("long"); long_run.size = 20_000_000; long_run.active_hours = 13.0; long_run.compactions = 0
+    long_run.user_turns = long_run.user_turns[:1]
+    compacted = _session("compacted"); compacted.size = 500; compacted.active_hours = 0.5; compacted.compactions = 3
+    compacted.user_turns = compacted.user_turns[:1]
+    multi = _session("multi"); multi.size = 20_000_000; multi.active_hours = 0.9; multi.compactions = 0  # two turns
+    sids = {g["sid"] for g in metrics([long_run, compacted, multi])["giant_sessions"]}
+    assert sids == {"long", "compacte", "multi"}  # sids are cut to 8 chars; the two-turn 20 MB one is giant on size
