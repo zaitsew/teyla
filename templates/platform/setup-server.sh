@@ -90,15 +90,14 @@ EOF
   fi
 fi
 
-# The root stack: the proxy, plus every product's own compose file. `include:` means a
-# product is added by dropping a directory in, never by editing this file.
+# The root stack: the proxy, plus every product's own compose file. A fresh server has no
+# products yet, so this starts with no `include:` at all — a glob include with nothing to
+# match fails with "no such file", and that would mean Caddy never starts on a new box.
+# `add-product.sh` appends one explicit `include:` entry per product, idempotently.
 if [ ! -f "${COMPOSE_ROOT}/docker-compose.yml" ]; then
   cat > "${COMPOSE_ROOT}/docker-compose.yml" <<EOF
-# The shared stack. One proxy; one directory per product, each with its own
-# docker-compose.yml and Caddyfile. Add one with add-product.sh — never by hand.
-include:
-  - path: ${COMPOSE_ROOT}/*/docker-compose.yml
-
+# The shared stack. One proxy; add-product.sh appends one include: entry per product
+# below, each pointing at its own docker-compose.yml and Caddyfile. Never by hand.
 services:
   caddy:
     image: caddy:2-alpine
