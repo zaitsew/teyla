@@ -41,6 +41,7 @@ case "$NAME" in
 esac
 
 DEST="${COMPOSE_ROOT}/${NAME}"
+ROOT_COMPOSE="${COMPOSE_ROOT}/docker-compose.yml"
 render() {  # render <src> <dest> — never overwrites; a hand-edited file survives a re-run
   local src="$1" dst="$2"
   [ -f "$src" ] || { echo "  missing fragment: $src" >&2; return 1; }
@@ -49,10 +50,31 @@ render() {  # render <src> <dest> — never overwrites; a hand-edited file survi
   echo "  wrote $dst"
 }
 
+# add_include <compose-file> — make sure the root stack's `include:` list names this
+# product's compose file, exactly once. The first product on a fresh box has no
+# `include:` section at all (setup-server.sh deliberately leaves it out, so Caddy can
+# start with zero products); later products append to whatever is already there.
+add_include() {
+  local line="  - path: ${DEST}/docker-compose.yml"
+  [ -f "$ROOT_COMPOSE" ] || { echo "  missing root compose: $ROOT_COMPOSE" >&2; return 1; }
+  if grep -qF "$line" "$ROOT_COMPOSE"; then
+    echo "  already in ${ROOT_COMPOSE}'s include list"
+    return 0
+  fi
+  if grep -q '^include:' "$ROOT_COMPOSE"; then
+    awk -v line="$line" '{ print } /^include:/ && !a { print line; a=1 }' "$ROOT_COMPOSE" > "${ROOT_COMPOSE}.tmp"
+  else
+    awk -v line="$line" '/^services:/ && !a { print "include:"; print line; print ""; a=1 } { print }' "$ROOT_COMPOSE" > "${ROOT_COMPOSE}.tmp"
+  fi
+  mv "${ROOT_COMPOSE}.tmp" "$ROOT_COMPOSE"
+  echo "  added ${DEST}/docker-compose.yml to ${ROOT_COMPOSE}'s include list"
+}
+
 echo "== ${NAME} → ${DEST} (port ${PORT}, ${NAME}.${DOMAIN})"
 mkdir -p "$DEST"
 render "${FROM}/docker-compose.fragment.yml" "${DEST}/docker-compose.yml"
 render "${FROM}/Caddyfile.fragment"          "${DEST}/Caddyfile"
+add_include
 
 if [ ! -f "${DEST}/.env" ]; then
   if [ -f "${FROM}/.env.example" ]; then
