@@ -9,7 +9,7 @@ import pathlib
 import pytest
 
 import teyla
-from teyla import config, doctor, policy, update, routine_install, plugin_install
+from teyla import config, doctor, policy, update, routine_install, plugin_install, remind
 
 
 @pytest.fixture(autouse=True)
@@ -36,6 +36,7 @@ def _home(tmp_path, monkeypatch):
     monkeypatch.setattr(routine_install, "DAILY_PLIST_PATH", home / "LaunchAgents" / "daily.plist")
     monkeypatch.setattr(routine_install, "DAILY_WRAPPER_PATH", home / ".teyla" / "daily.sh")
     monkeypatch.setattr(plugin_install, "PLUGINS_DIR", home / ".claude" / "plugins")
+    monkeypatch.setattr(remind, "REMINDERS_PATH", home / ".teyla" / "reminders.toml")
     monkeypatch.delenv("TEYLA_REPO", raising=False)
     return home
 
@@ -246,6 +247,59 @@ def test_doctor_all_clear_summary_is_empty():
     cs = [doctor._check("OK", "a", "fine"), doctor._check("INFO", "b", "absent")]
     assert doctor.summary_line(cs) == ""
     assert doctor.render(cs).endswith("all clear")
+
+
+# --- remind: dated to-dos that surface through doctor ---------------------------------
+
+def test_remind_add_list_done_roundtrip(_home):
+    assert remind.load() == []
+    assert remind.add("renew the thing", "2027-03-11", how="run the script").startswith("added")
+    assert remind.add("second thing", "2026-10-01").startswith("added")
+    rs = remind.load()
+    assert [r["what"] for r in rs] == ["renew the thing", "second thing"]
+    assert rs[0]["how"] == "run the script" and rs[1]["how"] == ""
+    text = remind.render_list(rs, today=__import__("datetime").date(2026, 9, 12))
+    assert "renew the thing" in text and "run the script" in text and "2027-03-11" in text
+    assert remind.done(1).startswith("done: renew the thing")
+    assert [r["what"] for r in remind.load()] == ["second thing"]
+    assert remind.done(5).startswith("no reminder")
+
+
+def test_remind_add_rejects_a_bad_date(_home):
+    assert remind.add("x", "not-a-date").startswith("bad date")
+    assert remind.load() == []
+
+
+def test_remind_due_checks_warn_within_30_days_and_fix_once_overdue(_home):
+    import datetime as dt
+    today = dt.date(2026, 9, 12)
+    remind.add("expires soon", "2026-09-20", how="do the thing")            # +8d: WARN
+    remind.add("expires later", "2027-03-11", how="do the other thing")     # +180d: nothing
+    remind.add("already late", "2026-09-01", how="fix it now")              # -11d: FIX
+    remind.add("no fix recorded", "2026-09-05")                              # -7d: FIX, no how
+    rows = remind.due_checks(today=today)
+    by = {r["name"]: r for r in rows}
+    assert by["expires soon"]["level"] == "WARN" and by["expires soon"]["fix"] == "do the thing"
+    assert by["expires later"]["level"] == "OK", "tracked, but not due within 30 days — OK, not silence"
+    assert by["already late"]["level"] == "FIX" and "11d overdue" in by["already late"]["detail"]
+    assert by["already late"]["fix"] == "fix it now"
+    assert by["no fix recorded"]["level"] == "FIX" and by["no fix recorded"]["fix"] == "no fix recorded — teyla remind list"
+
+
+def test_doctor_surfaces_reminders_as_warn_and_fix(_home, monkeypatch):
+    import datetime as dt
+    today = dt.date.today()
+    soon = (today + dt.timedelta(days=10)).isoformat()
+    past = (today - dt.timedelta(days=3)).isoformat()
+    remind.add("apple secret expiring", soon, how="run the rotation script")
+    remind.add("overdue thing", past, how="handle it")
+    cs = doctor.checks(refresh_update=True, scan_repos=False)
+    by = {c["name"]: c for c in cs}
+    assert by["remind:apple secret expiring"]["level"] == "WARN"
+    assert by["remind:apple secret expiring"]["fix"] == "run the rotation script"
+    assert by["remind:overdue thing"]["level"] == "FIX"
+    assert by["remind:overdue thing"]["fix"] == "handle it"
+    assert any(c["level"] == "FIX" for c in cs)
 
 
 # --- config [env]: the environment launchd and the session hook cannot inherit -------------
