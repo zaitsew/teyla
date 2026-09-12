@@ -439,6 +439,10 @@ launchd agents, one hook and one command:
 | every session start (plugin hook) | prints `doctor.summary` if non-empty; if the last update check is older than a day, starts `teyla update --check` in the background | `~/.teyla/update-check.json` |
 | on demand | `teyla doctor` — the checklist with a fix per line; exit 1 when a FIX is pending | `~/.teyla/doctor.json` |
 
+A one-off fact with a deadline — a key that expires, a trial that ends — gets its own line:
+`teyla remind add "<what>" <YYYY-MM-DD> [--how "..."]`, folded into `teyla doctor` as OK
+until 30 days out, then WARN, then FIX once overdue, `how` printed as the fix.
+
 `teyla update` decides how it was installed (uv tool, pipx, pip, or a git checkout) and
 upgrades the same way, from GitHub releases of the repo in `~/.teyla/config.toml`
 (`[update] repo`). Then, in a fresh process so the new code does the wiring:

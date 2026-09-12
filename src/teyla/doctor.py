@@ -197,6 +197,11 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     if not shutil.which("codex") and not shutil.which("grok"):
         out.append(_check("INFO", "tools:second-opinion", "no second-provider CLI: policy §2 falls back to a fresh same-provider session"))
 
+    # --- reminders ---------------------------------------------------------------
+    from . import remind
+    for row in remind.due_checks():
+        out.append(_check(row["level"], f"remind:{row['name']}", row["detail"], row["fix"]))
+
     # --- repos under code_root ----------------------------------------------------
     if scan_repos:
         root = config.code_root(cfg)

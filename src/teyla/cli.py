@@ -22,6 +22,8 @@
   teyla promote <product:routine> --gate B|C                       earned autonomy on counted evidence
   teyla receipts <product:routine>                                 what ran, under which rules and grants
   teyla doctor [--quiet] [--json] [--refresh]                    what must be true here, and the fix for each thing that is not
+  teyla remind add "<what>" <YYYY-MM-DD> [--how "..."]            file a dated to-do; doctor WARNs within 30d, FIXes once overdue
+  teyla remind list | done <n>                                    everything pending; clear the n-th
   teyla config show | set KEY=VALUE                               ~/.teyla/config.toml, incl. [env] for launchd/hook runs
   teyla update [--check] [--force] [--wire] [--quiet]            newer release → install, then policy sync/refresh, plugin refresh, routines
   teyla platform [init|env-example] [--json] [--no-net]          the shared resources set up once, and the step for each missing one
@@ -226,12 +228,13 @@ def main(argv=None):
     q.add_argument("--prefer", choices=["agents", "claude"], help="sync-repo: when AGENTS.md and CLAUDE.md both exist and differ, keep this one and symlink the other to it")
     q.add_argument("--note", help="ack: free-text note recorded alongside the acknowledgement")
     q = sp.add_parser("harvest"); q.set_defaults(fn=cmd_harvest); q.add_argument("path"); q.add_argument("--project")
-    from . import wiki, feedback, models, plugins, plugin_install, connectors, control, doctor, update
+    from . import wiki, feedback, models, plugins, plugin_install, connectors, control, doctor, update, remind
     from . import platform as platform_mod, productize as productize_mod
     doctor.register(sp); update.register(sp); _config.register(sp)
     platform_mod.register(sp); productize_mod.register(sp)
     wiki.register(sp); feedback.register(sp); models.register(sp)
     plugins.register(sp); plugin_install.register(sp); connectors.register(sp); control.register(sp)
+    remind.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
     q = sp.add_parser("routines"); q.set_defaults(fn=cmd_routines)
     q.add_argument("paths", nargs="*"); q.add_argument("--json", action="store_true")
