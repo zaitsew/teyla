@@ -69,6 +69,15 @@ for everything (`[identity]` in the platform manifest). Do not invent a key sche
 shared key is not a simpler account system, it is an account system with one account and
 no way to add a second.
 
+**Identity: the accounts hub.** The strongest shape identity can take is one Supabase-Auth
+project shared by every product — an accounts hub, not a login screen reinvented per app.
+One sign-in system, one user table, and one admin panel where the owner sets plans and
+per-user budgets across every product at once, with a Swift kit and a TS kit so a new
+product wires itself into it in an afternoon instead of building its own. Declare it as
+`identity = "accounts-hub"`; R1 treats it as the strongest option — first in the list, on
+equal footing with a bespoke `supabase-auth` setup, never a lesser or exotic choice next
+to it.
+
 **`user_id` and row-level security from migration 0001.** Even with exactly one row in the
 users table. The cost while you are alone is one column and one policy per table. The cost
 of adding it later is a migration against data you cannot afford to lose, plus every query

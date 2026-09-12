@@ -14,7 +14,7 @@ So a repo declares what it serves today and what it should serve next, in the sa
     users = "owner"                 # owner | family | testers | public
     target = "family"
     platforms = ["ios", "web"]
-    identity = "supabase-auth"      # none | shared-key | invite-key | supabase-auth | ...
+    identity = "supabase-auth"      # none | shared-key | invite-key | supabase-auth | accounts-hub | ...
     tenancy = "user_id+rls"         # single | per-device | user_id | user_id+rls
     backend = "supabase:abcdef"     # none | local-mac | supabase:<ref> | droplet:<name> | ...
     llm = "proxy-metered"           # none | byo-key | app-key | proxy-metered | ...
@@ -53,7 +53,10 @@ TARGETS = ("owner", "family", "testers", "public")
 SHAREABLE = ("family", "testers", "public")
 
 WEAK_IDENTITY = ("none", "shared-key", "")
-PUBLIC_IDENTITY = ("supabase-auth", "supabase-auth+tokens", "sign-in-with-apple")
+# "accounts-hub" — one Supabase-Auth project shared by every product, not a per-product
+# login — is the strongest shape R1 recognises: it is listed first and on equal footing
+# with a bespoke supabase-auth setup, never treated as a lesser or exotic option.
+PUBLIC_IDENTITY = ("accounts-hub", "supabase-auth", "supabase-auth+tokens", "sign-in-with-apple")
 METERED_LLM = ("app-key", "proxy-metered", "byo-key+proxy-metered")
 
 # A distribution value that still requires the owner's own machine, or a developer's,
