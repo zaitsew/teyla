@@ -20,11 +20,15 @@ One or two sentences. What it does for the person reading, not what it is built 
 ## First five minutes
 
 1. Open the invite and accept it.
-2. Sign in with your email. A code arrives; type it in.
+2. Sign in with your email — or tap "continue without an account" if this app does not
+   need one. A code arrives; type it in.
 3. …the first thing worth doing in the app. One concrete action with a visible result.
 4. …the second.
 
 You are set up when: **…** — one sentence naming what they should see on screen.
+
+If the first screen shows sample or example data, it is labelled as an example and you
+can clear it in one tap — nothing you see before you sign in and add your own is yours.
 
 ## What it costs you
 

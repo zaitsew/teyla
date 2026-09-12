@@ -24,6 +24,8 @@ identity = "{identity}"
 tenancy = "{tenancy}"
 backend = "{backend}"
 llm = "{llm}"
+first_run = "{first_run}"
+sample_data = "{sample_data}"
 onboarding_doc = "{doc}"
 secrets = {secrets}
 cost_cap = "{cost_cap}"
@@ -36,7 +38,7 @@ cost_cap = "{cost_cap}"
 def repo(tmp_path, name="thing", *, target="family", platforms='["web"]', identity="supabase-auth",
          tenancy="user_id+rls", backend="supabase:abc", llm="none", doc="docs/GETTING-STARTED.md",
          secrets="[]", cost_cap="", distribution='web = "pwa"', env_example=None, blockers="",
-         make_doc=True, git=True) -> pathlib.Path:
+         first_run="sign-in+skip", sample_data="none", make_doc=True, git=True) -> pathlib.Path:
     d = tmp_path / name
     (d / "docs").mkdir(parents=True, exist_ok=True)
     if git:
@@ -49,6 +51,7 @@ def repo(tmp_path, name="thing", *, target="family", platforms='["web"]', identi
     (d / "teyla.toml").write_text(BASE.format(
         name=name, target=target, platforms=platforms, identity=identity, tenancy=tenancy,
         backend=backend, llm=llm, doc=doc, secrets=secrets, cost_cap=cost_cap,
+        first_run=first_run, sample_data=sample_data,
         distribution=distribution) + blockers)
     return d
 
@@ -230,6 +233,49 @@ def test_r7_cost_cap(tmp_path, llm, cap, met):
     assert reqs(d)["R7"]["met"] is met
 
 
+# --- R9 the first screen -------------------------------------------------------------
+
+@pytest.mark.parametrize("first_run,sample_data,met", [
+    ("sign-in", "none", True),
+    ("sign-in+skip", "labelled", True),
+    ("none", "none", False),
+    ("", "none", False),
+    ("sign-in", "unlabelled", False),
+    ("sign-in", "", False),
+    ("none", "unlabelled", False),
+    ("bogus", "none", False),
+    ("sign-in", "bogus", False),
+])
+def test_r9_first_screen(tmp_path, first_run, sample_data, met):
+    d = repo(tmp_path, first_run=first_run, sample_data=sample_data)
+    assert reqs(d)["R9"]["met"] is met
+
+
+def test_r9_names_which_part_is_unmet(tmp_path):
+    d = repo(tmp_path, first_run="none", sample_data="unlabelled")
+    r = reqs(d)["R9"]
+    assert r["met"] is False
+    assert "first_run=none" in r["detail"] and "sample_data=unlabelled" in r["detail"]
+
+
+def test_r9_missing_fields_are_unmet_with_a_clear_message(tmp_path):
+    d = repo(tmp_path, first_run="", sample_data="")
+    r = reqs(d)["R9"]
+    assert r["met"] is False
+    assert "first_run unset" in r["detail"] and "sample_data unset" in r["detail"]
+
+
+def test_r9_does_not_apply_to_testers(tmp_path):
+    d = repo(tmp_path, target="testers", first_run="none", sample_data="unlabelled")
+    assert "R9" not in reqs(d)
+
+
+def test_r9_applies_to_public(tmp_path):
+    d = repo(tmp_path, target="public", identity="supabase-auth", distribution='web = "vercel"',
+              first_run="none", sample_data="none")
+    assert reqs(d, mail_ready=True)["R9"]["met"] is False
+
+
 # --- the public bar -----------------------------------------------------------------
 
 def test_public_needs_real_accounts_and_a_store(tmp_path):
@@ -339,7 +385,7 @@ def test_cmd_productize_exit_codes_and_flags(tmp_path, monkeypatch, capsys):
     good = repo(tmp_path, "good")
     bad = repo(tmp_path, "bad", backend="local-mac")
     assert main(["productize", str(good)]) == 0
-    assert "1/1" not in capsys.readouterr().out       # 7 requirements, not 1
+    assert "1/1" not in capsys.readouterr().out       # 8 requirements (no R8: not public), not 1
     assert main(["productize", str(bad)]) == 1
     assert "R3 backend=local-mac" in capsys.readouterr().out
     main(["productize", str(bad), "--owner-steps"])
@@ -364,7 +410,7 @@ def test_scaffold_app_writes_the_productize_files(tmp_path, kind):
     # and it parses, with the declared onboarding doc actually present
     report = productize.evaluate(productize.parse(dest / "teyla.toml"))
     assert report["declared"] and report["target"] == "family"
-    assert {q["id"] for q in report["requirements"]} == {"R1", "R2", "R3", "R4", "R5", "R6", "R7"}
+    assert {q["id"] for q in report["requirements"]} == {"R1", "R2", "R3", "R4", "R5", "R6", "R7", "R9"}
     assert reqs(dest)["R5"]["met"] is True
 
 
@@ -392,7 +438,7 @@ def test_scaffolded_app_fragments_keep_the_server_placeholders(tmp_path):
 def test_productize_template_block_matches_the_documented_vocabulary():
     block = scaffold.PRODUCTIZE_BLOCK
     for key in ("users", "target", "platforms", "identity", "tenancy", "backend", "llm",
-                "onboarding_doc", "secrets", "cost_cap"):
+                "first_run", "sample_data", "onboarding_doc", "secrets", "cost_cap"):
         assert f"{key} =" in block
     assert "[productize.distribution]" in block
 
