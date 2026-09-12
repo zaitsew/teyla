@@ -657,12 +657,14 @@ forever — server, domain, identity provider, mail sender, Apple key, Play Cons
 key, and one mode-0600 secrets file — and reports what is set up, what is missing, and for
 each missing thing the URL where it is created plus the file and key name where the value
 goes. It stores identifiers and env-var *names*; never a value. **`teyla productize`** reads
-a `[productize]` block in each repo's `teyla.toml` and checks eight requirements against the
+a `[productize]` block in each repo's `teyla.toml` and checks nine requirements against the
 target: identity is not a shared key (unless the app is genuinely per-device), tenancy is
 not `single`, the backend is not a laptop, every declared platform has a real distribution
 path, the onboarding doc exists, every named secret is in an `.env.example`, a cost cap
-exists wherever your key pays for someone else's use, and — for a `public` target only — the
-platform can send mail to strangers.
+exists wherever your key pays for someone else's use; for a `public` target only, the
+platform can send mail to strangers; and for `family` and `public`, the app opens on a
+sign-in (skippable only when no account is truly needed) and never shows sample data as the
+user's own.
 
 A `family` or `testers` target is deliberately easier than `public`: an internal TestFlight
 group and a PWA genuinely are enough for four people. `--owner-steps` merges every product's

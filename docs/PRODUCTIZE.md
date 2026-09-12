@@ -193,6 +193,8 @@ identity = "supabase-auth"
 tenancy = "user_id+rls"
 backend = "supabase:<ref>"
 llm = "proxy-metered"
+first_run = "sign-in+skip"
+sample_data = "labelled"
 onboarding_doc = "docs/GETTING-STARTED.md"
 secrets = ["OPENAI_API_KEY"]
 cost_cap = "$5 per user against the house key, then bring your own"
@@ -207,7 +209,7 @@ who = "owner"
 how = "App Store Connect → TestFlight → add an external group, submit for beta review"
 ```
 
-Eight requirements are checked against the target:
+Nine requirements are checked against the target:
 
 | id | requirement | fails when |
 |---|---|---|
@@ -219,13 +221,36 @@ Eight requirements are checked against the target:
 | R6 | secrets | a name in `secrets` is in no `.env.example` (no file anywhere: a warning) |
 | R7 | cost_cap | empty while your key pays for other people's use |
 | R8 | mail | target is `public` and the platform has no mail sender |
+| R9 | first_run / sample_data | target is `family` or `public`, and `first_run` is `none` (or unset), or `sample_data` is `unlabelled` (or unset) |
 
 A `public` target raises the bar rather than adding rules: accounts must be real accounts,
 iOS/macOS must be external TestFlight or the App Store, Android must be Play, an extension
 must be in the store, and sign-in mail must work for strangers. A `family` or `testers`
 target is deliberately easier — an internal TestFlight group and a PWA genuinely are enough
 for four people, and pretending otherwise is how "share it with my family" becomes a
-quarter of work.
+quarter of work. R9 is narrower than the rest of the table on purpose: it checks `family`
+and `public` only, not `testers` — a handful of named people who already know they are
+looking at a preview are not the audience the first screen is for.
+
+### The first screen
+
+The owner's rule, set after testing his own apps: every product opens on a sign in / sign
+up screen. Where the product is usable without an account, that screen has an explicit
+skip (an ×, "continue without an account"); where it is not, there is no skip. After
+sign-in comes a short onboarding. Demo or sample data is never shown as if it were the
+user's own: it is labelled as an example and can be removed in one tap.
+
+Why: a tester who lands on someone else's sample trip does not know what the app is. The
+first screen is the one chance to say, before anything else, whose data this is and how to
+get your own — skip it and every screenshot, every walkthrough, every second person who
+opens the app has to guess.
+
+Two values carry the rule. `first_run` is `sign-in` (mandatory, no skip), `sign-in+skip`
+(the app is genuinely usable without an account, so the screen offers a way past it), or
+`none` — which is a legitimate value for a solo tool but never for a `family` or `public`
+target. `sample_data` is `none` (nothing canned ships at all), `labelled` (canned content
+is marked as an example and clears in one tap), or `unlabelled` — canned content that reads
+as the user's own, which is the exact state R9 exists to catch.
 
 ```
 cellar    owner→family  7/7 met

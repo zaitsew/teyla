@@ -71,6 +71,11 @@ backend = "none"                        # none | local-mac | supabase:<ref> | dr
                                         # vercel | github-pages
 llm = "none"                            # none | byo-key | app-key | proxy-metered |
                                         # byo-key+proxy-metered
+first_run = "none"                      # sign-in | sign-in+skip | none — the screen the
+                                        # app opens on; see "The first screen" in
+                                        # docs/PRODUCTIZE.md. Never "none" for family/public.
+sample_data = "unlabelled"              # none | labelled | unlabelled — canned content must
+                                        # never look like the user's own
 onboarding_doc = "docs/GETTING-STARTED.md"
 secrets = []                            # every name must appear in .env.example
 cost_cap = ""                           # required once your key pays for someone else's use

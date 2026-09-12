@@ -18,6 +18,8 @@ So a repo declares what it serves today and what it should serve next, in the sa
     tenancy = "user_id+rls"         # single | per-device | user_id | user_id+rls
     backend = "supabase:abcdef"     # none | local-mac | supabase:<ref> | droplet:<name> | ...
     llm = "proxy-metered"           # none | byo-key | app-key | proxy-metered | ...
+    first_run = "sign-in+skip"      # sign-in | sign-in+skip | none
+    sample_data = "labelled"        # none | labelled | unlabelled
     onboarding_doc = "docs/GETTING-STARTED.md"
     secrets = ["OPENAI_API_KEY"]
     cost_cap = "$5 per user, house key"
@@ -31,7 +33,7 @@ So a repo declares what it serves today and what it should serve next, in the sa
     who = "owner"
     how = "App Store Connect → TestFlight → add an external group, submit for beta review"
 
-`teyla productize [paths]` reads every such manifest under `code_root`, checks the seven
+`teyla productize [paths]` reads every such manifest under `code_root`, checks the nine
 requirements below against the declared target, and prints what is unmet. `--owner-steps`
 turns the whole set — plus whatever `teyla platform` says is missing — into one numbered
 list of things only the owner can do, platform first because those unblock several
@@ -62,6 +64,10 @@ METERED_LLM = ("app-key", "proxy-metered", "byo-key+proxy-metered")
 # A distribution value that still requires the owner's own machine, or a developer's,
 # to put the app on someone else's device.
 DEV_ONLY_DISTRIBUTION = ("none", "", "xcode", "apk-sideload")
+# R9 — the first screen (see docs/PRODUCTIZE.md, "The first screen"). Any value outside
+# these tuples — including unset — is unmet; the message names exactly which one.
+FIRST_RUN_OK = ("sign-in", "sign-in+skip")
+SAMPLE_DATA_OK = ("none", "labelled")
 # The public bar, per platform. `macos` deliberately does not accept `dmg-notarized`:
 # a notarized disk image you email to two people is a handover, not a distribution path.
 PUBLIC_DISTRIBUTION = {
@@ -213,6 +219,20 @@ def requirements(pz: dict, repo: pathlib.Path, *, target: str | None = None,
     if public:
         rows.append(_req("R8", "mail", bool(mail_ready),
                          "mail: no platform sender, so sign-in codes reach only your own inbox" if not mail_ready else "platform mail ready"))
+
+    # R9 — the first screen. Family and public only: a handful of named testers already
+    # know they are looking at a preview, so `testers` is exempt. Missing or unrecognised
+    # values are unmet, named plainly, never raised.
+    if target in ("family", "public"):
+        first_run = str(pz.get("first_run") or "")
+        sample_data = str(pz.get("sample_data") or "")
+        problems = []
+        if first_run not in FIRST_RUN_OK:
+            problems.append("first_run unset" if not first_run else f"first_run={first_run}")
+        if sample_data not in SAMPLE_DATA_OK:
+            problems.append("sample_data unset" if not sample_data else f"sample_data={sample_data}")
+        rows.append(_req("R9", "first_screen", not problems,
+                         ", ".join(problems) if problems else f"first_run={first_run}, sample_data={sample_data}"))
     return rows
 
 

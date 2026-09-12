@@ -164,6 +164,9 @@ lang      owner->family  1/7 met  unmet: R1 identity=shared-key, R2 tenancy=sing
     [agent] no per-user rows - add user_id + RLS, backfill existing rows to the owner
 ```
 
+It also checks the first screen: family and public products must open on a sign-in (skippable
+only when the app genuinely needs no account) and must never show sample data as the user's own.
+
 `--owner-steps` collapses every product *and* the platform into one numbered list of things
 only you can do, platform first, because one mail sender unblocks three products.
 `teyla scaffold --kind app` writes the block, a `docs/GETTING-STARTED.md` addressed to a
