@@ -104,6 +104,15 @@ def test_r1_identity(tmp_path, identity, met):
     assert reqs(d)["R1"]["met"] is met
 
 
+def test_r1_accounts_hub_is_the_strongest_public_identity(tmp_path):
+    """`accounts-hub` (one shared Supabase-Auth project for every product) is not a lesser
+    or exotic option next to a bespoke `supabase-auth` setup — it must clear the public bar
+    the same way, as R1's first-listed, equally strong choice."""
+    d = repo(tmp_path, target="public", identity="accounts-hub", platforms='["ios", "android"]',
+             distribution='ios = "app-store"\nandroid = "play"')
+    assert reqs(d, mail_ready=True)["R1"]["met"] is True
+
+
 def test_r1_exempt_for_a_per_device_app(tmp_path):
     d = repo(tmp_path, identity="none", tenancy="per-device")
     r = reqs(d)["R1"]
