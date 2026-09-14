@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.2 — 2026-09-15
+
+- **POLICY template §9 restored.** #39 re-synced the template from the trimmed live file
+  three minutes after #37 added §9 and dropped it; 0.10.1 shipped without it.
+- **`~/.teyla/routines/<product>.line` is written by the `teyla routines` command only**, not
+  by the library call the tests use — the suite had left two fixture products there.
+
 ## 0.10.1 — 2026-09-15 — the rollout's own two failures
 
 Both seen while 0.10.0 installed itself on the machine it was written on.
