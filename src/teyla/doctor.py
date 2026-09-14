@@ -32,7 +32,7 @@ def _check(level, name, detail, fix=None):
 
 def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     from . import policy, update, routine_install, plugin_install
-    from .adapters import claude_code, codex, grok, hermes
+    from .adapters import claude_code, codex, grok, hermes, cursor
     cfg = config.load()
     out = []
 
@@ -79,7 +79,7 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
                           "teyla policy init  (writes it)"))
 
     # --- harness stores --------------------------------------------------------
-    for mod in (claude_code, codex, grok, hermes):
+    for mod in (claude_code, codex, grok, hermes, cursor):
         root = getattr(mod, "DEFAULT_ROOT", None)
         ok = bool(root) and os.path.exists(os.path.expanduser(root))
         if not ok:
@@ -152,6 +152,22 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
             out.append(_check("OK", "plugin", f"teyla@{pv} in Claude Code"))
     else:
         out.append(_check("INFO", "plugin", "Claude Code absent (no `claude`, no ~/.claude/projects or plugins)"))
+
+    # --- the other harnesses: skills + hooks ------------------------------------------
+    from . import harness as _harness
+    for row in _harness.status():
+        if not row["present"]:
+            continue
+        missing = []
+        if row["skills"] != row["skills_total"]:
+            missing.append(f"skills {row['skills']}/{row['skills_total']}")
+        if row["hooks"] is False:
+            missing.append("hooks not wired")
+        if missing:
+            out.append(_check("FIX", f"harness:{row['harness']}", ", ".join(missing), "teyla harness sync"))
+        else:
+            out.append(_check("OK", f"harness:{row['harness']}", f"skills {row['skills']}/{row['skills_total']}"
+                              + (", hooks wired" if row["hooks"] else ", no hook mechanism")))
 
     # --- routines ----------------------------------------------------------------
     if sys.platform == "darwin":

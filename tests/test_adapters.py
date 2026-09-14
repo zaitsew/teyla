@@ -481,3 +481,69 @@ def test_capture_correction_hook_skips_harness_injected_prompts(tmp_path):
     assert not out.exists()
     run("no, don't use npm here, again: pnpm")
     assert out.exists() and json.loads(out.read_text().splitlines()[0])["text"].startswith("no, don't use npm")
+
+
+# --- cursor: one sqlite store, composers + bubbles ---------------------------------------------
+
+def _cursor_db(path, composers):
+    import sqlite3
+    con = sqlite3.connect(str(path))
+    con.execute("create table cursorDiskKV (key text primary key, value text)")
+    con.execute("create table ItemTable (key text primary key, value text)")
+    for cid, comp, bubbles in composers:
+        con.execute("insert into cursorDiskKV values (?, ?)", (f"composerData:{cid}", json.dumps(comp)))
+        for i, b in enumerate(bubbles):
+            con.execute("insert into cursorDiskKV values (?, ?)", (f"bubbleId:{cid}:b{i}", json.dumps(b)))
+    con.commit(); con.close()
+
+
+def test_cursor_sessions_from_state_vscdb(tmp_path):
+    from teyla.adapters import cursor
+    db = tmp_path / "state.vscdb"
+    comp = {"composerId": "c1", "name": "X outbound plan", "createdAt": 1787077425163, "lastUpdatedAt": 1787087300084,
+            "unifiedMode": "agent", "modelConfig": {"modelName": "grok-4.6"},
+            "workspaceIdentifier": {"id": "w", "uri": {"fsPath": "/Users/me/ops"}}, "contextTokensUsed": 141808}
+    bubbles = [
+        {"type": 1, "createdAt": "2026-08-18T18:23:45.247Z", "text": "I'm building routine X", "modelInfo": {"modelName": "grok-4.6"}},
+        {"type": 2, "createdAt": "2026-08-18T18:23:50.000Z", "text": "", "toolFormerData": {"name": "glob_file_search", "status": "completed"}},
+        {"type": 2, "createdAt": "2026-08-18T18:24:00.000Z", "text": "done"},
+        {"type": 1, "createdAt": "2026-08-18T18:30:00.000Z", "text": "no, not like that — again"},
+    ]
+    empty = {"composerId": "c2", "createdAt": 1787077425163, "lastUpdatedAt": 1787077425163, "modelConfig": {"modelName": "grok-4.6"}}
+    _cursor_db(db, [("c1", comp, bubbles), ("c2", empty, [])])
+    ss = {s.sid: s for s in cursor.load(root=str(db))}
+    s = ss["c1"]
+    assert s.harness == "cursor" and s.project == "/Users/me/ops" and s.cwd == "/Users/me/ops" and s.title == "X outbound plan"
+    assert s.first == "2026-08-18T18:23:45.163000+00:00" and s.last.startswith("2026-08-18T21:08:20")
+    assert dict(s.models) == {"grok-4.6": 1} and not s.usage
+    assert s.n_user == 2 and s.n_corr == 1 and s.assistant_turns == 2 and dict(s.tools) == {"glob_file_search": 1}
+    assert ss["c2"].n_user == 0 and ss["c2"].project == "?"
+
+
+def test_cursor_missing_or_foreign_store(tmp_path):
+    import pytest, sqlite3
+    from teyla.adapters import cursor
+    with pytest.raises(FileNotFoundError):
+        cursor.load(root=str(tmp_path / "nope.vscdb"))
+    other = tmp_path / "other.vscdb"
+    con = sqlite3.connect(str(other)); con.execute("create table ItemTable (key text, value text)"); con.commit(); con.close()
+    assert cursor.load(root=str(other)) == []
+
+
+def test_capture_correction_hook_reads_every_harness_shape_and_deduplicates(tmp_path):
+    import json, subprocess, pathlib
+    hook = pathlib.Path(__file__).resolve().parents[1] / "plugin" / "hooks" / "capture-correction.sh"
+    out = tmp_path / ".teyla" / "corrections.jsonl"
+
+    def run(payload):
+        subprocess.run(["sh", str(hook)], input=json.dumps(payload), text=True, check=True, cwd=tmp_path)
+
+    run({"hookEventName": "user_prompt_submit", "prompt": "don't do that", "workspaceRoot": str(tmp_path)})          # grok
+    run({"hook_event_name": "pre_llm_call", "tool_name": None, "cwd": str(tmp_path),
+         "extra": {"user_message": "wrong file, revert it", "is_first_turn": False}})                              # hermes
+    run({"prompt": "again: use pnpm", "cwd": str(tmp_path)})                                                       # claude / cursor
+    run({"prompt": "again: use pnpm", "cwd": str(tmp_path)})                                                       # grok re-delivering cursor's hook
+    run({"hook_event_name": "pre_llm_call", "extra": {"user_message": "fine, carry on"}, "cwd": str(tmp_path)})   # not a correction
+    recs = [json.loads(l) for l in out.read_text().splitlines()]
+    assert [r["text"] for r in recs] == ["don't do that", "wrong file, revert it", "again: use pnpm"]
+    assert all(r["cwd"] == str(tmp_path) for r in recs)
