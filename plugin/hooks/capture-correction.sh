@@ -3,6 +3,17 @@
 # might not notice mid-turn. Deliberately coarse — it is a broad net over
 # obvious correction phrasing, not a classifier, and it errs toward capturing.
 #
+# UserPromptSubmit: cheap correction-word heuristic, catching what the model
+# might not notice mid-turn. Deliberately coarse — it is a broad net over
+# obvious correction phrasing, not a classifier, and it errs toward capturing.
+#
+# Not every prompt is the human typing. Claude Code fires this hook for turns it
+# injects itself — a `<task-notification>` when a background subagent finishes, a
+# `<system-reminder>`, a `[SYSTEM NOTIFICATION …]`, a slash-command expansion, an
+# interrupted request, a continued-session summary — and their boilerplate ("it
+# will run again", "don't wait") matches the heuristic. Those are dropped first,
+# with the same list `teyla monitor` uses (`is_noise_turn` in src/teyla/adapters).
+#
 # One script for every harness. `teyla harness sync` copies it to ~/.teyla/hooks/ and
 # wires it as Cursor's beforeSubmitPrompt, Grok's UserPromptSubmit and Hermes's
 # pre_llm_call shell hook, so the prompt arrives under different keys: Claude Code
@@ -10,6 +21,7 @@
 # Hermes `extra.user_message`. Grok also loads ~/.cursor/hooks.json, so the same
 # prompt can arrive twice — a record equal to the last one within ten seconds is
 # not written again.
+#
 #
 # Silent by construction: UserPromptSubmit stdout is injected into the model's
 # context, so this hook never writes to stdout, match or no match. It also
@@ -36,19 +48,20 @@ prompt = pick(data)
 if not isinstance(prompt, str):
     sys.exit(0)
 
-# Not the human typing: the harness files subagent notifications, tool-result reminders,
-# slash-command wrappers, an interrupted request and a continued-session summary as user
-# prompts too. Same list as teyla.adapters.is_noise_turn; kept inline so the hook stays
-# import-free.
-head = prompt.lstrip()[:60]
-if head.startswith("<") and any(k in head for k in (
-        "system-reminder", "command-name", "command-message", "local-command",
-        "task-notification", "ci-monitor", "ide_")):
+# Harness-generated turns: not the human typing, never a correction. Same list as
+# teyla.adapters.is_noise_turn (NOISE_TAGS / NOISE_PREFIXES); kept inline so the hook
+# stays import-free.
+HARNESS_TAGS = ("task-notification", "system-reminder", "command-name", "command-message",
+                "local-command", "ci-monitor", "ide_")
+head = prompt.lstrip()
+if head.startswith(("[SYSTEM NOTIFICATION", "[Request interrupted",
+                    "This session is being continued from a previous conversation")):
     sys.exit(0)
-if head.startswith(("[Request interrupted", "This session is being continued from a previous conversation")):
+if head.startswith("<") and any(tag in head[:60] for tag in HARNESS_TAGS):
     sys.exit(0)
 
 cwd = data.get("cwd") or data.get("workspaceRoot") or data.get("workspace_root") or os.getcwd()
+
 
 PATTERNS = [
     r"\bdon\x27t\b",

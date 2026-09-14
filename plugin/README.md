@@ -72,7 +72,11 @@ swallowed silently rather than surfaced.
   over the raw prompt text (`don't`, `wrong`, `not like that`, `again`,
   `revert`, and the Russian equivalents `не так`, `неправильно`, `опять`). On a
   match, appends `{ts, cwd, text[:500]}` to `.teyla/corrections.jsonl` under
-  the repo the prompt was submitted in. Produces **no stdout**, match or not —
+  the repo the prompt was submitted in. Turns the harness injects as if the
+  user typed them — `<task-notification>` (a background subagent finished),
+  `<system-reminder>`, `[SYSTEM NOTIFICATION …]`, slash-command expansions —
+  are skipped before the heuristic runs; they are not corrections, and their
+  boilerplate matches it. Produces **no stdout**, match or not —
   `UserPromptSubmit` stdout is injected into the model's context, and a
   "logged your correction" note on every turn is exactly the kind of narration
   that gets a tool turned off.
