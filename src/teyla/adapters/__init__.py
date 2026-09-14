@@ -122,11 +122,22 @@ def text_of(content) -> str:
     return "\n".join(parts)
 
 
+# Harness-injected user turns that are not the human typing: tags the harness wraps around
+# tool output and events, plus the two bare-text shapes Claude Code files as user turns (an
+# interrupted request; the summary that opens a continued session). The plugin's
+# capture-correction hook applies the same list — a subagent's "done, but…" notification
+# was 35 of 35 captured "corrections" in one repo before it did.
+NOISE_TAGS = ("system-reminder", "command-name", "command-message", "local-command", "task-notification",
+              "ci-monitor", "ide_")
+NOISE_PREFIXES = ("[Request interrupted", "This session is being continued from a previous conversation")
+
+
 def is_noise_turn(txt: str) -> bool:
     """Harness-injected user turns that are not the human typing."""
     head = txt[:60]
-    return txt.startswith("<") and any(k in head for k in (
-        "system-reminder", "command-name", "local-command", "task-notification", "ci-monitor", "ide_"))
+    if txt.startswith("<") and any(k in head for k in NOISE_TAGS):
+        return True
+    return txt.startswith(NOISE_PREFIXES)
 
 
 def load_all(roots: dict | None = None) -> list[Session]:

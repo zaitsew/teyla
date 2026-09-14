@@ -6,6 +6,13 @@ import datetime as _dt
 import json
 
 
+
+def _harness_count(harness: str, n: int, batch: dict) -> str:
+    """`grok (10199, of which 10150 batch calls)`: a pipeline's one-shot calls are sessions in the
+    store, but reading the headline as ten thousand conversations would be wrong."""
+    b = batch.get(harness, 0)
+    return f"{harness} ({n}, of which {b} batch calls)" if b else f"{harness} ({n})"
+
 def _short(project: str) -> str:
     """Last path segment for cwd-style keys; the tail after the user prefix for Claude slugs."""
     import os, re
@@ -20,7 +27,7 @@ def _fmt(n):
 
 def markdown(m: dict, findings: list[dict], *, title="Teyla adoption report", include_samples=False, top_projects=15) -> str:
     L = [f"# {title}", "", f"Generated {_dt.date.today().isoformat()} · window: {m['days'] or 'all'} days · "
-         f"{m['n_sessions']} sessions · harnesses: {', '.join(f'{k} ({v})' for k, v in m['by_harness'].items()) or 'none found'}", ""]
+         f"{m['n_sessions']} sessions · harnesses: {', '.join(_harness_count(k, v, m.get('batch_by_harness', {})) for k, v in m['by_harness'].items()) or 'none found'}", ""]
     t = m["tokens"]
     L += ["## Headline", "", "| metric | value |", "|---|---|",
           f"| output tokens | {_fmt(t.get('output_tokens',0))} |",

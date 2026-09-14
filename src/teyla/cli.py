@@ -95,10 +95,17 @@ def cmd_sessions(args):
         print(f"{s.day:10} {s.harness:12} {s.sid[:8]:8} {s.size/1e6:5.1f} {s.hours or 0:5.1f} {s.n_user:5} {s.n_corr:4} {t['output_tokens']/1e3:5.0f}k {len(s.agents):6}  {s.project[:40]} · {(s.title or s.first_prompt)[:60].replace(chr(10),' ')}")
 
 
-def cmd_corrections(args):
-    ss = _sessions(args)
-    rows = [(s.day, s.project, s.sid[:8], t.text) for s in ss for t in s.user_turns if t.corr]
+def correction_rows(sessions):
+    """(day, project, sid, text) for every correction-shaped human turn. Batch sessions — a
+    pipeline calling `grok -p` a thousand times with the same brief — have no human turns to
+    cluster, and their prompt would otherwise top every list."""
+    rows = [(s.day, s.project, s.sid[:8], t.text) for s in sessions if not s.batch for t in s.user_turns if t.corr]
     rows.sort()
+    return rows
+
+
+def cmd_corrections(args):
+    rows = correction_rows(_sessions(args))
     if args.cluster:
         c = Counter(r[3].lower().strip()[:60] for r in rows)
         for k, n in c.most_common(40):

@@ -208,3 +208,18 @@ def test_giant_sessions_keeps_single_turn_session_that_ran_long_or_compacted():
     multi = _session("multi"); multi.size = 20_000_000; multi.active_hours = 0.9; multi.compactions = 0  # two turns
     sids = {g["sid"] for g in metrics([long_run, compacted, multi])["giant_sessions"]}
     assert sids == {"long", "compacte", "multi"}  # sids are cut to 8 chars; the two-turn 20 MB one is giant on size
+
+
+def test_batch_sessions_are_counted_but_never_clustered_as_corrections():
+    from teyla.cli import correction_rows
+    from teyla.report import _harness_count
+    a = _session("a")
+    b = _session("b"); b.harness = "grok"; b.batch = True
+    b.user_turns = [Turn("2026-01-01T00:00:00Z", "return only a json array, no prose. again.", True)]
+    rows = correction_rows([a, b])
+    assert [r[2] for r in rows] == ["a"]
+    m = metrics([a, b, b])
+    assert m["by_harness"] == {"claude-code": 1, "grok": 2}
+    assert m["batch_by_harness"] == {"grok": 2}
+    assert _harness_count("grok", 2, m["batch_by_harness"]) == "grok (2, of which 2 batch calls)"
+    assert _harness_count("claude-code", 1, m["batch_by_harness"]) == "claude-code (1)"

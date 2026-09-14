@@ -452,3 +452,32 @@ def test_hermes_missing_root_raises(tmp_path):
         assert False, "expected FileNotFoundError"
     except FileNotFoundError:
         pass
+
+
+def test_noise_turns_include_notifications_interrupts_and_continuations():
+    from teyla.adapters import is_noise_turn
+    assert is_noise_turn("<task-notification>\n<task-id>a1</task-id>\n<output>done, but don't…</output>")
+    assert is_noise_turn("<command-message>_gstack-command</command-message>\n<command-name>/ship</command-name>")
+    assert is_noise_turn("[Request interrupted by user for tool use]")
+    assert is_noise_turn("This session is being continued from a previous conversation that ran out of context. The summary…")
+    assert not is_noise_turn("don't do that again")
+    assert not is_noise_turn("<p>an html snippet the human pasted</p>")
+
+
+def test_capture_correction_hook_skips_harness_injected_prompts(tmp_path):
+    """The plugin hook applies the same noise list as is_noise_turn; the measured failure was
+    35 subagent notifications filed as corrections in one repo."""
+    import json, subprocess, pathlib
+    hook = pathlib.Path(__file__).resolve().parents[1] / "plugin" / "hooks" / "capture-correction.sh"
+    out = tmp_path / ".teyla" / "corrections.jsonl"
+
+    def run(prompt):
+        subprocess.run(["sh", str(hook)], input=json.dumps({"prompt": prompt, "cwd": str(tmp_path)}), text=True, check=True)
+
+    run("<task-notification>\n<task-id>x</task-id>\n<output>I could not do it again</output>\n</task-notification>")
+    run("[Request interrupted by user]")
+    run("This session is being continued from a previous conversation that ran out of context. Don't repeat.")
+    run("<command-message>_gstack-command</command-message>\n<command-name>/ship</command-name> revert")
+    assert not out.exists()
+    run("no, don't use npm here, again: pnpm")
+    assert out.exists() and json.loads(out.read_text().splitlines()[0])["text"].startswith("no, don't use npm")
