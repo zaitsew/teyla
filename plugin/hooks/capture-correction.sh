@@ -20,6 +20,18 @@ prompt = data.get("prompt")
 if not isinstance(prompt, str):
     sys.exit(0)
 
+# Not the human typing: the harness files subagent notifications, tool-result reminders,
+# slash-command wrappers, an interrupted request and a continued-session summary as user
+# prompts too. Same list as teyla.adapters.is_noise_turn; kept inline so the hook stays
+# import-free.
+head = prompt.lstrip()[:60]
+if head.startswith("<") and any(k in head for k in (
+        "system-reminder", "command-name", "command-message", "local-command",
+        "task-notification", "ci-monitor", "ide_")):
+    sys.exit(0)
+if head.startswith(("[Request interrupted", "This session is being continued from a previous conversation")):
+    sys.exit(0)
+
 cwd = data.get("cwd") or os.getcwd()
 
 PATTERNS = [

@@ -20,8 +20,11 @@ def metrics(sessions: list[Session], days: int | None = None) -> dict:
     by_harness = Counter(); by_day = defaultdict(Counter); cost = 0.0; cost_known = 0; cost_unknown = set()
     user_turns = corr = 0; agents = Counter(); giant = []; skills = Counter(); tools = Counter()
     corr_texts = []; gov = []
+    batch_by_harness = Counter()
     for s in sessions:
         by_harness[s.harness] += 1
+        if s.batch:
+            batch_by_harness[s.harness] += 1
         for model, u in s.usage.items():
             by_model[model].update(u); tok.update(u)
             c = cost_usd(model, u)
@@ -57,7 +60,7 @@ def metrics(sessions: list[Session], days: int | None = None) -> dict:
     m.update(dict(
         tokens=dict(tok), by_model={k: dict(v) for k, v in by_model.items()},
         by_project={p: {k: dict(v) for k, v in mm.items()} for p, mm in by_project.items()},
-        by_harness=dict(by_harness), by_day={d: dict(v) for d, v in sorted(by_day.items())},
+        by_harness=dict(by_harness), batch_by_harness=dict(batch_by_harness), by_day={d: dict(v) for d, v in sorted(by_day.items())},
         cost_estimate_usd=round(cost, 2), cost_models_unknown=sorted(cost_unknown),
         user_turns=user_turns, corrections=corr,
         correction_rate=round(corr / user_turns, 3) if user_turns else None,
