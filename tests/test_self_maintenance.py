@@ -278,6 +278,66 @@ def test_not_missed_before_the_first_due_minute_or_when_stamped(_home):
     assert routine_install.missed(routine_install.DAILY_LABEL, _local(2026, 9, 15, 9, 0)) is None
 
 
+def test_a_reinstall_does_not_hide_a_missed_run(_home, monkeypatch):
+    """`teyla update` rewrites the plists on every release; the weekly missed on Monday and
+    reinstalled Monday night must still read as missed — seen 2026-09-15."""
+    import datetime, os
+    marker = _home / "ran.txt"
+    plist, wrapper, log, stamp = _install_fake_job(_home, routine_install.LABEL, marker, installed_at=_local(2026, 9, 11, 16, 55))
+    assert routine_install.missed(routine_install.LABEL, _local(2026, 9, 14, 15, 30)) == _local(2026, 9, 14, 7, 30)
+    # a reinstall Monday 00:11 the next night: plist mtime is now after the due minute
+    later = _local(2026, 9, 15, 0, 11)
+    os.utime(plist, (later.timestamp(), later.timestamp()))
+    # without evidence of an earlier install this reads as "not yet due"...
+    assert routine_install.missed(routine_install.LABEL, later) is None
+    # ...but install() records the first install once, and then the miss is visible
+    stamp.with_suffix(".installed").write_text("2026-09-11T14:55:00Z\n")
+    assert routine_install.missed(routine_install.LABEL, later) == _local(2026, 9, 14, 7, 30)
+    # an earlier start is evidence too, even without the marker
+    stamp.with_suffix(".installed").unlink()
+    (stamp).write_text(_local(2026, 9, 7, 7, 30).astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") + "\n")
+    assert routine_install.missed(routine_install.LABEL, later) == _local(2026, 9, 14, 7, 30)
+
+
+def test_install_marks_first_install_once(_home, monkeypatch):
+    monkeypatch.setenv("HOME", str(_home))
+    monkeypatch.setattr(routine_install, "_load", lambda plist, label: f"loaded {label}")
+    monkeypatch.setattr(routine_install, "_teyla_bin", lambda: "/opt/tools/bin/teyla")
+    routine_install.install()
+    m = routine_install.STAMP_PATH.with_suffix(".installed")
+    first = m.read_text()
+    assert first.endswith("Z\n") and routine_install.DAILY_STAMP_PATH.with_suffix(".installed").exists()
+    routine_install.install()
+    assert m.read_text() == first
+
+
+def test_upgrade_retries_after_a_corrupt_uv_cache_and_restores_the_old_version(monkeypatch):
+    calls = []
+    def fake_run(cmd, cwd=None):
+        calls.append(cmd)
+        if cmd[1:3] == ["cache", "clean"]:
+            return 0, ""
+        if "@v0.10.0" in cmd[-1] and len([c for c in calls if "@v0.10.0" in c[-1]]) == 1:
+            return 1, "Git operation failed\nerror: unable to read sha1 file of src/teyla/platform.py"
+        return 0, "Installed 1 executable: teyla"
+    monkeypatch.setattr(update, "_run", fake_run)
+    monkeypatch.setattr(update.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else "/x/teyla")
+    lines = update.upgrade("v0.10.0", "zaitsew/teyla", "uv-tool", python="3.13")
+    assert any("uv cache clean teyla" in l for l in lines) and lines[-1].startswith("installed v0.10.0")
+    assert [c[1:3] for c in calls] == [["tool", "install"], ["cache", "clean"], ["tool", "install"]]
+    # a build that fails for another reason, with the binary gone, puts the installed version back
+    calls.clear()
+    def fail_run(cmd, cwd=None):
+        calls.append(cmd)
+        return (0, "ok") if f"@v{update.__version__}" in cmd[-1] else (1, "error: some other build failure")
+    monkeypatch.setattr(update, "_run", fail_run)
+    monkeypatch.setattr(update.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None)
+    monkeypatch.setattr(update.pathlib.Path, "home", classmethod(lambda cls: pathlib.Path("/nonexistent")))
+    lines = update.upgrade("v9.9.9", "zaitsew/teyla", "uv-tool", python="3.13")
+    assert any(l.startswith("restored ") for l in lines) and lines[-1].startswith("FAIL: upgrade via uv-tool")
+    assert calls[-1][-1].endswith(f"@v{update.__version__}")
+
+
 def test_catch_up_never_reruns_the_wrapper_that_called_it(_home, monkeypatch):
     marker = _home / "ran.txt"
     _install_fake_job(_home, routine_install.DAILY_LABEL, marker, installed_at=_local(2026, 9, 1, 7, 0))

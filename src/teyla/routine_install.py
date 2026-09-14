@@ -281,6 +281,8 @@ def install(if_stale: bool = False) -> list[str]:
         lines.append(_load(PLIST_PATH, LABEL))
     else:
         lines.append("not macOS: add to cron yourself: 30 7 * * 1 bash " + str(WRAPPER_PATH))
+    _mark_installed(DAILY_LABEL)
+    _mark_installed(LABEL)
     uid = os.getuid()
     lines.append(f"to remove: launchctl bootout gui/{uid}/{LABEL}; launchctl bootout gui/{uid}/{DAILY_LABEL}; rm {PLIST_PATH} {DAILY_PLIST_PATH}")
     return lines
@@ -323,17 +325,44 @@ def last_started(label: str) -> "datetime.datetime | None":
     return None
 
 
+def first_installed(label: str) -> "datetime.datetime | None":
+    """When this job was first installed: `~/.teyla/<job>.installed`, written once by
+    `install()` and never rewritten — a reinstall (every `teyla update` rewrites the wrappers)
+    must not look like a fresh schedule and hide a missed run. Before that file exists, the
+    earliest evidence wins: a previous start, else the plist's mtime."""
+    import datetime
+    plist, _, _, stamp = _job(label)
+    marker = stamp.with_suffix(".installed")
+    if marker.exists():
+        try:
+            return datetime.datetime.fromisoformat(marker.read_text().strip().replace("Z", "+00:00")).astimezone()
+        except ValueError:
+            pass
+    started = last_started(label)
+    if started is not None:
+        return started
+    return datetime.datetime.fromtimestamp(plist.stat().st_mtime).astimezone() if plist.exists() else None
+
+
+def _mark_installed(label: str) -> None:
+    import datetime
+    _, _, _, stamp = _job(label)
+    marker = stamp.with_suffix(".installed")
+    if not marker.exists():
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") + "\n")
+
+
 def missed(label: str, now: "datetime.datetime | None" = None) -> "datetime.datetime | None":
-    """The due time launchd skipped, or None. A job is missed when its plist existed before the
+    """The due time launchd skipped, or None. A job is missed when it was installed before the
     last due minute and nothing started it at or after that minute — the shape a laptop that
     was off at 07:30 leaves behind (asleep, launchd fires on wake; off, it does not fire at all)."""
-    import datetime
     plist, wrapper, _, _ = _job(label)
     if not plist.exists() or not wrapper.exists():
         return None
     due = last_due(label, now)
-    installed = datetime.datetime.fromtimestamp(plist.stat().st_mtime).astimezone()
-    if installed > due:
+    installed = first_installed(label)
+    if installed is not None and installed > due:
         return None  # the schedule has not had its first chance yet
     started = last_started(label)
     if started is not None and started >= due:

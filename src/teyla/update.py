@@ -240,6 +240,10 @@ def _run(cmd: list[str], cwd: pathlib.Path | None = None) -> tuple[int, str]:
     return r.returncode, (r.stdout + r.stderr).strip()
 
 
+def _uv_cache_corrupt(out: str) -> bool:
+    return "unable to read sha1 file" in out or "Could not reset index file" in out or "Git operation failed" in out
+
+
 def upgrade(tag: str, repo: str, method: str, checkout: pathlib.Path | None = None,
             python: str | None = None) -> list[str]:
     src = f"git+https://github.com/{repo}@{tag}"
@@ -250,6 +254,21 @@ def upgrade(tag: str, repo: str, method: str, checkout: pathlib.Path | None = No
         if not uv:
             return ["FAIL: installed with uv but `uv` is not on PATH"]
         rc, out = _run([uv, "tool", "install", "--force", "--python", spec, src])
+        if rc != 0 and _uv_cache_corrupt(out):
+            # uv's git checkout of the repo lost objects ("unable to read sha1 file"); seen
+            # 2026-09-15 on the 0.9.3 → 0.10.0 update. Clearing the cache entry and retrying
+            # once is the fix; nothing else is.
+            lines.append("uv's cached checkout of teyla is corrupt — `uv cache clean teyla`, then retrying")
+            _run([uv, "cache", "clean", "teyla"])
+            rc, out = _run([uv, "tool", "install", "--force", "--python", spec, src])
+        if rc != 0 and not shutil.which("teyla") and not (pathlib.Path.home() / ".local" / "bin" / "teyla").exists():
+            # `uv tool install --force` removes the old tool before the new build; a failed
+            # build therefore leaves no `teyla` at all — the daily wrapper, the session-start
+            # hook and doctor all go quiet. Put the installed version back first.
+            back = f"git+https://github.com/{repo}@v{__version__}"
+            rc2, out2 = _run([uv, "tool", "install", "--force", "--python", spec, back])
+            lines.append(f"{'restored' if rc2 == 0 else 'FAIL: could not restore'} {__version__} after the failed upgrade"
+                         + ("" if rc2 == 0 else f": {out2[-300:]}"))
     elif method == "pipx":
         pipx = shutil.which("pipx")
         if not pipx:
