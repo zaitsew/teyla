@@ -166,8 +166,15 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
                 out.append(_check("FIX", f"routine:{label.rsplit('.', 1)[-1]}", f"{wrapper.name} names a teyla binary that is not the current one, or lacks the [env] in config.toml", "teyla routine install"))
             elif not ok:
                 out.append(_check("FIX", f"routine:{label.rsplit('.', 1)[-1]}", "plist exists but launchd has not loaded it", "teyla routine install"))
+            elif routine_install.missed(label):
+                due = routine_install.missed(label)
+                out.append(_check("WARN", f"routine:{label.rsplit('.', 1)[-1]}",
+                                  f"loaded, but the run due {due:%Y-%m-%d %H:%M} did not start (the Mac was off or asleep at that minute; launchd does not fire late)",
+                                  "teyla routine catch-up"))
             else:
-                out.append(_check("OK", f"routine:{label.rsplit('.', 1)[-1]}", f"loaded" + (f", last exit {code}" if code not in (None, "0") else "")))
+                started = routine_install.last_started(label)
+                out.append(_check("OK", f"routine:{label.rsplit('.', 1)[-1]}", f"loaded" + (f", last exit {code}" if code not in (None, "0") else "")
+                                  + (f", last started {started:%Y-%m-%d %H:%M}" if started else ", not yet due")))
     else:
         out.append(_check("INFO", "routine", "not macOS: schedule ~/.teyla/daily.sh and weekly.sh with cron"))
 

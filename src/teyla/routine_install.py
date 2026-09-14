@@ -4,6 +4,15 @@ Installs a launchd agent that runs Teyla's own weekly checks (monitor,
 routines, products) unattended, writing into the ops run-artifact layout.
 This is Teyla eating its own dogfood: the tool that audits whether other
 routines are loaded needs to be a routine itself.
+
+A launchd StartCalendarInterval fires on the minute, or on the next wake if the Mac was
+asleep — and never, if the Mac was *off* at that minute. On a laptop that is the common
+case: the weekly installed on 2026-09-11 was due Monday 2026-09-14 07:30 and the Mac
+booted at 15:28, so `launchctl print` showed `runs = 0` while `doctor` said "loaded".
+`teyla routine catch-up` is the anacron half: each wrapper stamps `~/.teyla/<job>.last`
+when it starts, and catch-up runs any job whose stamp is older than its last due time.
+It is called by the daily wrapper (so a missed Monday runs on Tuesday) and by the
+plugin's session-start hook (so it runs the first time you open a session after a boot).
 """
 from __future__ import annotations
 
@@ -25,6 +34,17 @@ DAILY_LABEL = "com.zaitsew.teyla.daily"
 DAILY_PLIST_PATH = pathlib.Path.home() / "Library" / "LaunchAgents" / f"{DAILY_LABEL}.plist"
 DAILY_WRAPPER_PATH = pathlib.Path.home() / ".teyla" / "daily.sh"
 DAILY_LOG_PATH = pathlib.Path.home() / "Library" / "Logs" / "teyla-daily.log"
+
+# Written by each wrapper as its first line of work: "launchd (or catch-up) started me at".
+STAMP_PATH = pathlib.Path.home() / ".teyla" / "weekly.last"
+DAILY_STAMP_PATH = pathlib.Path.home() / ".teyla" / "daily.last"
+
+# What the plists say, kept here so catch-up and doctor compute "due" from the same numbers.
+# launchd Weekday: 0 = Sunday … 6 = Saturday; None = every day.
+SCHEDULE = {
+    DAILY_LABEL: dict(hour=7, minute=0, weekday=None),
+    LABEL: dict(hour=7, minute=30, weekday=1),
+}
 
 DAILY_PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -64,10 +84,16 @@ DAILY_WRAPPER_TEMPLATE = """#!/usr/bin/env bash
 set -uo pipefail
 {env_sh}
 echo "== $(date -u +%FT%TZ) teyla daily"
+date -u +%FT%TZ > "{stamp}"
+export TEYLA_IN_ROUTINE="{label}"
 TEYLA="{teyla_bin}"
 "$TEYLA" update --quiet
 # `update` may have replaced the binary in place; call it by name from here on.
 teyla doctor --quiet
+# Refresh ~/.teyla/routines/<product>.line, the one-liners the session-start hook shows.
+teyla routines >/dev/null 2>&1
+# A weekly that launchd skipped (the Mac was off at its minute) runs now instead of never.
+teyla routine catch-up --quiet
 """
 
 PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
@@ -108,6 +134,9 @@ WRAPPER_TEMPLATE = """#!/usr/bin/env bash
 # their output under the ops run-artifact layout for the Monday digest.
 set -uo pipefail
 {env_sh}
+echo "== $(date -u +%FT%TZ) teyla weekly"
+date -u +%FT%TZ > "{stamp}"
+export TEYLA_IN_ROUTINE="{label}"
 TEYLA="{teyla_bin}"
 OUT_DIR="$HOME/ops/startup/os/ai-dev/runs/$(date +%F)"
 mkdir -p "$OUT_DIR"
@@ -133,6 +162,9 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         return True
     text = path.read_text()
     if env is not None and _env_block_of(text) != _env_sh(env):
+        return True
+    if ".last" not in text:
+        # Written before catch-up existed: it never stamps, so a missed run could never be seen.
         return True
     for line in text.splitlines():
         if line.startswith('TEYLA="'):
@@ -220,7 +252,8 @@ def install(if_stale: bool = False) -> list[str]:
     env_plist, env_sh = _env_plist(env), _env_sh(env)
 
     DAILY_WRAPPER_PATH.parent.mkdir(parents=True, exist_ok=True)
-    DAILY_WRAPPER_PATH.write_text(DAILY_WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin, env_sh=env_sh))
+    DAILY_WRAPPER_PATH.write_text(DAILY_WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin, env_sh=env_sh,
+                                                                stamp=DAILY_STAMP_PATH, label=DAILY_LABEL))
     DAILY_WRAPPER_PATH.chmod(0o755)
     lines.append(f"wrote {DAILY_WRAPPER_PATH}")
     DAILY_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -234,7 +267,7 @@ def install(if_stale: bool = False) -> list[str]:
         lines.append("not macOS: add to cron yourself: 0 7 * * * bash " + str(DAILY_WRAPPER_PATH))
 
     WRAPPER_PATH.parent.mkdir(parents=True, exist_ok=True)
-    WRAPPER_PATH.write_text(WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin, env_sh=env_sh))
+    WRAPPER_PATH.write_text(WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin, env_sh=env_sh, stamp=STAMP_PATH, label=LABEL))
     WRAPPER_PATH.chmod(0o755)
     lines.append(f"wrote {WRAPPER_PATH}")
 
@@ -250,6 +283,88 @@ def install(if_stale: bool = False) -> list[str]:
         lines.append("not macOS: add to cron yourself: 30 7 * * 1 bash " + str(WRAPPER_PATH))
     uid = os.getuid()
     lines.append(f"to remove: launchctl bootout gui/{uid}/{LABEL}; launchctl bootout gui/{uid}/{DAILY_LABEL}; rm {PLIST_PATH} {DAILY_PLIST_PATH}")
+    return lines
+
+
+def _job(label: str) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path]:
+    """(plist, wrapper, log, stamp) for a label."""
+    if label == DAILY_LABEL:
+        return DAILY_PLIST_PATH, DAILY_WRAPPER_PATH, DAILY_LOG_PATH, DAILY_STAMP_PATH
+    return PLIST_PATH, WRAPPER_PATH, LOG_PATH, STAMP_PATH
+
+
+def last_due(label: str, now: "datetime.datetime | None" = None) -> "datetime.datetime":
+    """The most recent minute at which launchd should have started this job, in local time."""
+    import datetime
+    sched = SCHEDULE[label]
+    now = now or datetime.datetime.now().astimezone()
+    due = now.replace(hour=sched["hour"], minute=sched["minute"], second=0, microsecond=0)
+    if due > now:
+        due -= datetime.timedelta(days=1)
+    if sched["weekday"] is not None:
+        # launchd counts Sunday as 0; Python's weekday() counts Monday as 0.
+        want = (sched["weekday"] - 1) % 7
+        due -= datetime.timedelta(days=(due.weekday() - want) % 7)
+    return due
+
+
+def last_started(label: str) -> "datetime.datetime | None":
+    """When the job last started: the stamp its wrapper writes, else the log's mtime for a wrapper
+    written before stamps existed, else None (never)."""
+    import datetime
+    _, _, log, stamp = _job(label)
+    if stamp.exists():
+        try:
+            return datetime.datetime.fromisoformat(stamp.read_text().strip().replace("Z", "+00:00")).astimezone()
+        except ValueError:
+            pass
+    if log.exists() and log.stat().st_size > 0:
+        return datetime.datetime.fromtimestamp(log.stat().st_mtime).astimezone()
+    return None
+
+
+def missed(label: str, now: "datetime.datetime | None" = None) -> "datetime.datetime | None":
+    """The due time launchd skipped, or None. A job is missed when its plist existed before the
+    last due minute and nothing started it at or after that minute — the shape a laptop that
+    was off at 07:30 leaves behind (asleep, launchd fires on wake; off, it does not fire at all)."""
+    import datetime
+    plist, wrapper, _, _ = _job(label)
+    if not plist.exists() or not wrapper.exists():
+        return None
+    due = last_due(label, now)
+    installed = datetime.datetime.fromtimestamp(plist.stat().st_mtime).astimezone()
+    if installed > due:
+        return None  # the schedule has not had its first chance yet
+    started = last_started(label)
+    if started is not None and started >= due:
+        return None
+    return due
+
+
+def catch_up(dry: bool = False, now: "datetime.datetime | None" = None) -> list[str]:
+    """Run every job launchd skipped, daily first. Output goes to the job's own log, as it would
+    under launchd. The wrapper that is calling us (TEYLA_IN_ROUTINE) is never re-run."""
+    lines = []
+    calling = os.environ.get("TEYLA_IN_ROUTINE", "")
+    for label in (DAILY_LABEL, LABEL):
+        due = missed(label, now)
+        if due is None:
+            lines.append(f"{label}: on schedule")
+            continue
+        if label == calling:
+            lines.append(f"{label}: running now (this is it)")
+            continue
+        _, wrapper, log, _ = _job(label)
+        if dry:
+            lines.append(f"{label}: MISSED {due:%Y-%m-%d %H:%M} — would run {wrapper}")
+            continue
+        log.parent.mkdir(parents=True, exist_ok=True)
+        with open(log, "a") as fh:
+            fh.write(f"== catch-up: the run due {due:%Y-%m-%d %H:%M} did not start (Mac off or asleep); running now\n")
+            fh.flush()
+            r = subprocess.run(["/bin/bash", str(wrapper)], stdout=fh, stderr=subprocess.STDOUT, text=True,
+                               env={**os.environ, "TEYLA_IN_ROUTINE": label})
+        lines.append(f"{label}: MISSED {due:%Y-%m-%d %H:%M} — ran {wrapper.name} now, exit {r.returncode}, log {log}")
     return lines
 
 
@@ -276,6 +391,12 @@ def status() -> list[str]:
         lines.append(f"  plist: {plist} ({'exists' if plist.exists() else 'missing'})")
         stale = _wrapper_stale(wrapper, teyla_bin, env)
         lines.append(f"  wrapper: {wrapper} ({'missing' if not wrapper.exists() else ('STALE — names another binary or an outdated [env]; run `teyla routine install`' if stale else 'current')})")
+        started, due = last_started(label), last_due(label)
+        skipped = missed(label)
+        lines.append(f"  last started: {started:%Y-%m-%d %H:%M} · last due: {due:%Y-%m-%d %H:%M}" if started
+                     else f"  last started: never · last due: {due:%Y-%m-%d %H:%M}")
+        if skipped:
+            lines.append(f"  MISSED the run due {skipped:%Y-%m-%d %H:%M} (the Mac was off or asleep at that minute) — teyla routine catch-up")
         if log.exists():
             tail = log.read_text(errors="replace").splitlines()[-6:]
             lines.append(f"  last log lines ({log}):")
