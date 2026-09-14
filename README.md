@@ -93,7 +93,7 @@ usage = "./check.sh usage"          # optional command printing key=value counte
 name = "nightly-sync"
 kind = "launchd"                     # launchd | cron | pg_cron | github-actions | script
 label = "com.example.sync"             # launchd label / cron marker / workflow name
-every = "1d"                         # expected cadence: 15m, 1h, 1d, 7d
+every = "1d"                         # expected cadence: 15m, 1h, 1d, 7d, or any <n>m|h|d; a `script` routine may omit label and every
 log = "~/Library/Logs/app-sync.log" # optional; mtime = last run
 
 [[check]]                            # the human tests by hand and confirms
