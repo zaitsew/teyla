@@ -75,3 +75,12 @@ force-push.
 If you could not verify something, say so in the same sentence as the claim. If a
 subagent reports a fact a command could check, check it. Corrections to your own
 earlier claims go in plainly and once.
+
+## 9. "Did it run?" is answered from the record, not from the code
+
+When asked whether a product ran, works, or is up ("did it run this morning?",
+"why is there no build?"), start from `teyla routines <repo>` — the routine rows
+(loaded, last run, stale) and the manual checks — and the logs its `teyla.toml`
+names. Read code and git history only once the record shows something wrong and
+the cause is needed. Answered from the record it costs one command; answered by
+reading code it costs a session.
