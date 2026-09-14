@@ -46,6 +46,11 @@
   elif [ -x "$HOME/.local/bin/teyla" ]; then
     teyla_bin="$HOME/.local/bin/teyla"
   fi
+  if [ -z "$teyla_bin" ] && [ -f "$HOME/.teyla/config.toml" ]; then
+    # Teyla was set up here (config exists) but no binary answers: a failed
+    # `uv tool install --force` removes the old tool before building the new one.
+    echo "teyla: no \`teyla\` binary found although ~/.teyla/config.toml exists — reinstall: uv tool install --force git+https://github.com/zaitsew/teyla (or pipx)"
+  fi
   if [ -n "$teyla_bin" ]; then
     if [ ! -f "$stamp" ] || [ -n "$(find "$stamp" -mmin +1440 2>/dev/null)" ]; then
       (nohup sh -c "\"$teyla_bin\" update --check --quiet >/dev/null 2>&1; \"$teyla_bin\" doctor --quiet >/dev/null 2>&1; nice \"$teyla_bin\" routine catch-up --quiet >/dev/null 2>&1" >/dev/null 2>&1 &)
