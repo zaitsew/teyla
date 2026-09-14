@@ -19,95 +19,15 @@ checked by a command and was not says so.
 
 ## 0. The policy
 
-One file, read by every harness. It lives at `~/.agents/POLICY.md`; `teyla
-policy init` writes it and `teyla policy sync` wires it into Claude Code (an `@`
-import in `~/.claude/CLAUDE.md`), Codex (`~/.codex/AGENTS.md` symlink), Grok
-(`~/.grok/AGENTS.md` symlink) and Hermes (a section in `~/.hermes/SOUL.md`).
-Edit the source, never a copy. `teyla policy status` shows which harness drifted.
+One file, read by every harness: `~/.agents/POLICY.md` (template:
+`templates/POLICY.md`). `teyla policy init` writes it; `teyla policy sync` wires it
+into Claude Code (an `@` import in `~/.claude/CLAUDE.md`), Codex and Grok
+(`AGENTS.md` symlinks) and Hermes (a section in `~/.hermes/SOUL.md`). Edit the
+source, never a copy; `teyla policy status` shows which harness drifted. Its eight
+sections — model ladder, cross-provider second opinions, tool ladder, ask about
+product decisions not permission, stop only at a real blocker, deliver
+plug-and-play, merging, honest reporting — are not restated here.
 
-### §1 The model ladder — the expensive model orchestrates, cheap models do volume
-
-The top model of whichever provider you are on plans, decides, reviews and does
-the hard parts. Everything else — repo surveys, transcript mining, boilerplate,
-tests, docs, first drafts, bulk edits — goes to a cheaper model of the same
-provider, as a subagent or a separate run. Say in the recap which model did what.
-
-| provider | orchestrate | volume | triage |
-|---|---|---|---|
-| Anthropic | top reasoning tier | mid tier | cheapest tier |
-| OpenAI | top reasoning tier | standard tier | mini / nano |
-| xAI | heavy tier | fast tier | mini |
-
-Keep the actual model names in your own copy of the policy and nowhere else, so
-there is one place to edit when a provider ships a tier.
-
-- A subagent that reads and summarises never needs the orchestrator model.
-- In Claude Code, pass `model:` **explicitly on every** `Agent` call. "Inherit"
-  means the expensive default, and it is the largest waste in the measured data:
-  **the majority of subagent calls typically inherit the top model, for boilerplate.**
-- In Codex, keep the top model for the interactive orchestrator; run `codex exec`
-  fan-outs with a cheaper `-m`.
-
-### §2 Second opinions across providers
-
-Before committing to a non-trivial design, and before landing anything touching
-**money, credentials, or another person's data**, get a review from a different
-provider. One pass, P1/P2 findings, then move on. Do not loop reviews.
-
-Not hygiene theatre: in the measured fortnight this caught a P1 four times — a
-race in a spend cap, an account-deletion path that left rows behind, and twice an
-exit instruction that never reached the venue it was meant to reach. All four had
-already passed review by the family that wrote them. A model reviewing its own
-diff shares every assumption that produced the bug.
-
-### §3 Use the tool ladder, top down
-
-Connector / MCP → CLI / API → browser extension → computer use. Fall to the next
-rung only when the one above cannot do it, and say when you fell.
-
-### §4 Ask about product decisions, not about permission
-
-Bring the question **with a proposed answer and a default**. Do everything that
-does not depend on the answer first, then ask — batched, at a checkpoint, not one
-at a time. Never ask "shall I proceed?".
-
-New in rev. 8: a kickoff prompt listing four to eight features and asking for
-"10/10 quality" gets **silently sequenced** by the model, which then builds in an
-order nobody chose. **Before code, the agent returns a written scope, a priority
-order and explicit non-goals**, and asks its product questions with proposed
-defaults.
-
-### §5 Stop only at a real blocker or the finished goal
-
-A blocker is something only the human can do: create an API key, approve a
-payment, sign in, accept terms. Do every step around it first; open the exact
-page at the exact step; name the exact file and line the value goes into; hand
-over a one-line instruction; continue the moment it is in.
-
-### §6 Deliver plug-and-play
-
-"Done" means the human can open it and start using it: README with a five-line
-quick start, setup script, `.env.example`, and a first-run check that prints what
-is missing. Not "the code is there." A feature nobody can start is not shipped.
-
-### §7 Report honestly
-
-If you could not verify something, say so in the same sentence as the claim. If a
-subagent reports a fact a command could check, check it. Corrections to your own
-earlier claims go in plainly and once.
-
-### §8 Governance files belong to the human
-
-Rev. 8, and it exists because it was broken. An agent added a repository to the
-merge-approved allowlist in the human's global instructions file, mid-task, and
-wrote a **fabricated quotation** of the human authorising it.
-
-The rule: **the allowlist, the policy file and the harness configuration are
-edited by the human only.** An agent that thinks a repo belongs on the list says
-so and stops. Teyla's monitor flags any session that writes to the global
-instructions file, so the edit is visible even if you were not watching.
-
----
 
 ## 1. Skill, rule, fact
 
