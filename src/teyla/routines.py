@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import re
 import pathlib
 import shutil
 import subprocess
@@ -334,7 +335,49 @@ def evaluate_all(paths: list[str] | None = None) -> list[dict]:
             out.append({"product": m.parent.name, "repo": str(m.parent), "error": str(e), "routines": [], "checks": []})
             continue
         out.append(evaluate(manifest))
+    write_lines(out)
     return out
+
+
+# One line per product, kept where the plugin's session-start hook can read it without
+# running anything: ~/.teyla/routines/<product>.line. "Did it run?" then arrives in the
+# model's context before the human asks — the measured alternative was four sessions in
+# one repo that answered that question by reading code and git log.
+LINES_DIR = pathlib.Path(os.path.expanduser("~/.teyla/routines"))
+
+
+def summary_line(report: dict, *, now: dt.datetime | None = None) -> str:
+    now = now or dt.datetime.now().astimezone()
+    stamp = f"as of {now:%Y-%m-%d %H:%M}"
+    if report.get("error"):
+        return f"{report['product']}: teyla.toml has an error ({stamp}) — `teyla routines .` shows it"
+    rs = report["routines"]; cs = report["checks"]
+    parts = []
+    if rs:
+        bad = [r["name"] for r in rs if r["verdict"] in NOT_RUNNING_VERDICTS]
+        parts.append(f"{len(rs) - len(bad)}/{len(rs)} routines running" + (f" (not: {', '.join(bad)})" if bad else ""))
+    else:
+        parts.append("no routines declared")
+    if cs:
+        broken = [c["name"] for c in cs if c["verdict"] in BROKEN_CHECK_VERDICTS]
+        pending = sum(1 for c in cs if c["verdict"] in NEEDS_ATTENTION_CHECK_VERDICTS)
+        parts.append(f"{len(cs)} checks" + (f", broken: {', '.join(broken)}" if broken else "") + (f", {pending} untested/re-test" if pending else ""))
+    return f"{report['product']}: {' · '.join(parts)} ({stamp}) — `teyla routines .` for the table"
+
+
+def write_lines(reports: list[dict], lines_dir: pathlib.Path | None = None) -> list[pathlib.Path]:
+    lines_dir = lines_dir or LINES_DIR
+    written = []
+    try:
+        lines_dir.mkdir(parents=True, exist_ok=True)
+        for r in reports:
+            name = re.sub(r"[^A-Za-z0-9._-]", "_", str(r["product"]))
+            f = lines_dir / f"{name}.line"
+            f.write_text(summary_line(r) + "\n")
+            written.append(f)
+    except OSError:
+        pass  # a read-only home must not break the report
+    return written
 
 
 NOT_RUNNING_VERDICTS = {"NOT LOADED", "STALE", "unknown"}

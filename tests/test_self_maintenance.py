@@ -35,6 +35,10 @@ def _home(tmp_path, monkeypatch):
     monkeypatch.setattr(routine_install, "WRAPPER_PATH", home / ".teyla" / "weekly.sh")
     monkeypatch.setattr(routine_install, "DAILY_PLIST_PATH", home / "LaunchAgents" / "daily.plist")
     monkeypatch.setattr(routine_install, "DAILY_WRAPPER_PATH", home / ".teyla" / "daily.sh")
+    monkeypatch.setattr(routine_install, "LOG_PATH", home / "Logs" / "teyla-weekly.log")
+    monkeypatch.setattr(routine_install, "DAILY_LOG_PATH", home / "Logs" / "teyla-daily.log")
+    monkeypatch.setattr(routine_install, "STAMP_PATH", home / ".teyla" / "weekly.last")
+    monkeypatch.setattr(routine_install, "DAILY_STAMP_PATH", home / ".teyla" / "daily.last")
     monkeypatch.setattr(plugin_install, "PLUGINS_DIR", home / ".claude" / "plugins")
     monkeypatch.setattr(remind, "REMINDERS_PATH", home / ".teyla" / "reminders.toml")
     monkeypatch.delenv("TEYLA_REPO", raising=False)
@@ -199,11 +203,105 @@ def test_repos_status(tmp_path):
 def test_wrapper_stale_detects_moved_binary(_home):
     w = routine_install.WRAPPER_PATH
     w.parent.mkdir(parents=True, exist_ok=True)
-    w.write_text('#!/bin/bash\nTEYLA="/old/place/teyla"\n')
+    w.write_text('#!/bin/bash\ndate > ~/.teyla/weekly.last\nTEYLA="/old/place/teyla"\n')
     assert routine_install._wrapper_stale(w, "/new/place/teyla")
     assert not routine_install._wrapper_stale(w, "/old/place/teyla")
     assert routine_install._wrapper_stale(routine_install.DAILY_WRAPPER_PATH, "/x")
     assert routine_install.is_stale()
+    # a wrapper from before catch-up never stamps, so it is stale whatever binary it names
+    w.write_text('#!/bin/bash\nTEYLA="/old/place/teyla"\n')
+    assert routine_install._wrapper_stale(w, "/old/place/teyla")
+
+
+# --- catch-up: the run launchd skipped because the Mac was off ------------------------------
+
+def _local(y, m, d, hh, mm):
+    import datetime
+    return datetime.datetime(y, m, d, hh, mm).astimezone()
+
+
+def test_last_due_follows_the_plist_schedule():
+    # Tuesday 10:00 → the weekly was due Monday 07:30, the daily today 07:00
+    now = _local(2026, 9, 15, 10, 0)
+    assert routine_install.last_due(routine_install.LABEL, now) == _local(2026, 9, 14, 7, 30)
+    assert routine_install.last_due(routine_install.DAILY_LABEL, now) == _local(2026, 9, 15, 7, 0)
+    # Monday 06:59: the weekly was last due a week ago, the daily yesterday; at 07:00 sharp the daily is due now
+    now = _local(2026, 9, 14, 6, 59)
+    assert routine_install.last_due(routine_install.LABEL, now) == _local(2026, 9, 7, 7, 30)
+    assert routine_install.last_due(routine_install.DAILY_LABEL, now) == _local(2026, 9, 13, 7, 0)
+    assert routine_install.last_due(routine_install.DAILY_LABEL, _local(2026, 9, 14, 7, 0)) == _local(2026, 9, 14, 7, 0)
+
+
+def _install_fake_job(home, label, marker, *, installed_at):
+    import os
+    plist, wrapper, log, stamp = routine_install._job(label)
+    for f in (plist, wrapper):
+        f.parent.mkdir(parents=True, exist_ok=True)
+    wrapper.write_text(f'#!/bin/bash\ndate -u +%FT%TZ > "{stamp}"\necho ran-{label} >> "{marker}"\nTEYLA="/x/teyla"\n')
+    plist.write_text("<plist/>")
+    os.utime(plist, (installed_at.timestamp(), installed_at.timestamp()))
+    return plist, wrapper, log, stamp
+
+
+def test_missed_and_catch_up_run_the_skipped_weekly(_home, monkeypatch):
+    monkeypatch.delenv("TEYLA_IN_ROUTINE", raising=False)
+    marker = _home / "ran.txt"
+    # installed Friday 2026-09-11, due Monday 07:30, the Mac booted Monday 15:28: never started
+    _install_fake_job(_home, routine_install.LABEL, marker, installed_at=_local(2026, 9, 11, 16, 55))
+    now = _local(2026, 9, 14, 15, 30)
+    assert routine_install.missed(routine_install.LABEL, now) == _local(2026, 9, 14, 7, 30)
+    # the daily has no plist here → not a missed run, just not installed
+    assert routine_install.missed(routine_install.DAILY_LABEL, now) is None
+    lines = routine_install.catch_up(dry=True, now=now)
+    assert any("MISSED 2026-09-14 07:30" in l and "would run" in l for l in lines)
+    assert not marker.exists()
+    lines = routine_install.catch_up(now=now)
+    assert marker.read_text().strip() == f"ran-{routine_install.LABEL}"
+    assert any("ran weekly.sh now, exit 0" in l for l in lines)
+    assert "catch-up: the run due 2026-09-14 07:30" in routine_install.LOG_PATH.read_text()
+    # the wrapper stamped itself, so a second catch-up (or doctor) sees it as on schedule
+    assert routine_install.last_started(routine_install.LABEL) is not None
+    assert routine_install.missed(routine_install.LABEL) is None
+    assert routine_install.catch_up(dry=True, now=_local(2026, 9, 15, 9, 0))[1].endswith("on schedule")
+
+
+def test_not_missed_before_the_first_due_minute_or_when_stamped(_home):
+    marker = _home / "ran.txt"
+    plist, wrapper, log, stamp = _install_fake_job(_home, routine_install.DAILY_LABEL, marker,
+                                                   installed_at=_local(2026, 9, 14, 8, 0))
+    # installed after today's 07:00: the schedule has not had a chance yet
+    assert routine_install.missed(routine_install.DAILY_LABEL, _local(2026, 9, 14, 12, 0)) is None
+    # next morning at 09:00 with no stamp: missed
+    assert routine_install.missed(routine_install.DAILY_LABEL, _local(2026, 9, 15, 9, 0)) == _local(2026, 9, 15, 7, 0)
+    import datetime
+    stamp.write_text(_local(2026, 9, 15, 7, 0).astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") + "\n")
+    assert routine_install.missed(routine_install.DAILY_LABEL, _local(2026, 9, 15, 9, 0)) is None
+
+
+def test_catch_up_never_reruns_the_wrapper_that_called_it(_home, monkeypatch):
+    marker = _home / "ran.txt"
+    _install_fake_job(_home, routine_install.DAILY_LABEL, marker, installed_at=_local(2026, 9, 1, 7, 0))
+    monkeypatch.setenv("TEYLA_IN_ROUTINE", routine_install.DAILY_LABEL)
+    lines = routine_install.catch_up(now=_local(2026, 9, 15, 7, 1))
+    assert any("this is it" in l for l in lines) and not marker.exists()
+
+
+def test_doctor_warns_on_a_missed_run(_home, monkeypatch):
+    if not hasattr(routine_install, "loaded"):
+        return
+    monkeypatch.setattr(routine_install.sys, "platform", "darwin")
+    monkeypatch.setattr(routine_install, "loaded", lambda label: (True, None, "0"))
+    monkeypatch.setattr(routine_install, "_wrapper_stale", lambda *a, **k: False)
+    monkeypatch.setattr(routine_install, "missed",
+                        lambda label, now=None: _local(2026, 9, 14, 7, 30) if label == routine_install.LABEL else None)
+    monkeypatch.setattr(routine_install, "last_started", lambda label: _local(2026, 9, 14, 7, 0))
+    for f in (routine_install.PLIST_PATH, routine_install.DAILY_PLIST_PATH):
+        f.parent.mkdir(parents=True, exist_ok=True); f.write_text("<plist/>")
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: _Resp({"tag_name": "v0.0.0"}))
+    by = {c["name"]: c for c in doctor.checks(scan_repos=False)}
+    assert by["routine:weekly"]["level"] == "WARN" and by["routine:weekly"]["fix"] == "teyla routine catch-up"
+    assert "2026-09-14 07:30" in by["routine:weekly"]["detail"]
+    assert by["routine:daily"]["level"] == "OK" and "last started 2026-09-14 07:00" in by["routine:daily"]["detail"]
 
 
 # --- plugin refresh --------------------------------------------------------------------------

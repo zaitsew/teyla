@@ -291,3 +291,21 @@ def test_render_text_truncates_long_names_and_stays_aligned():
     kind_col = header.index("kind")
     for l in lines[idx + 1: idx + 3]:
         assert l[kind_col:kind_col + 6].strip() in ("script", "cron")
+
+
+# --- the one-line summary the session-start hook shows ---------------------------------------
+
+def test_summary_line_and_write_lines(tmp_path):
+    from teyla import routines
+    report = {"product": "frank", "repo": "/r/frank",
+              "routines": [{"name": "daily", "verdict": "ok"}, {"name": "gate", "verdict": "NOT LOADED"}],
+              "checks": [{"name": "gate shows drafts", "verdict": "UNTESTED"}, {"name": "send one", "verdict": "BROKEN"}]}
+    line = routines.summary_line(report)
+    assert line.startswith("frank: 1/2 routines running (not: gate) · 2 checks, broken: send one, 1 untested/re-test (as of ")
+    assert line.endswith("`teyla routines .` for the table")
+    err = routines.summary_line({"product": "loco", "repo": "/r/loco", "error": "bad status", "routines": [], "checks": []})
+    assert "teyla.toml has an error" in err
+    files = routines.write_lines([report, {"product": "a/b c", "repo": "", "routines": [], "checks": []}], tmp_path)
+    assert [f.name for f in files] == ["frank.line", "a_b_c.line"]
+    assert (tmp_path / "frank.line").read_text().rstrip() == line
+    assert "no routines declared" in (tmp_path / "a_b_c.line").read_text()

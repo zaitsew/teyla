@@ -30,7 +30,7 @@
   teyla productize [path...] [--json] [--owner-steps]            what stands between each product and its second user
   teyla products [path...]                                       real-usage counters from every repo's ./check.sh usage
   teyla routines [path...] [--json]                               routines + manual checks from every repo's teyla.toml
-  teyla routine install|status [--if-stale]                       Teyla's own daily (update+doctor) and weekly launchd routines
+  teyla routine install|status|catch-up [--if-stale] [--dry]     Teyla's own daily (update+doctor) and weekly launchd routines; catch-up runs what launchd skipped
   teyla connectors [--days N] [--json]                             per-connector round-trips, read/write, empty-or-error rate; advice C1–C4
   teyla plugins [name|path] [--json]                              skill/rule/fact quality pass over a Claude Code plugin
   teyla plugin install <source>                                   install a plugin by hand-editing its registry (no `claude` CLI)
@@ -185,6 +185,12 @@ def cmd_routines(args):
 
 def cmd_routine(args):
     from . import routine_install
+    if args.action == "catch-up":
+        lines = routine_install.catch_up(dry=args.dry)
+        if not args.quiet or any("MISSED" in l for l in lines):
+            for line in lines:
+                print(line)
+        return 0
     if args.action == "install":
         for line in routine_install.install(if_stale=getattr(args, "if_stale", False)):
             print(line)
@@ -240,8 +246,10 @@ def main(argv=None):
     q.add_argument("paths", nargs="*"); q.add_argument("--json", action="store_true")
     q.add_argument("--issues", action="store_true", help="open one GitHub issue per BROKEN check (needs gh)")
     q = sp.add_parser("routine"); q.set_defaults(fn=cmd_routine)
-    q.add_argument("action", choices=["install", "status"])
+    q.add_argument("action", choices=["install", "status", "catch-up"])
     q.add_argument("--if-stale", action="store_true", help="install: only rewrite when a wrapper names a binary that moved or a plist is missing")
+    q.add_argument("--dry", action="store_true", help="catch-up: say which runs launchd skipped, run nothing")
+    q.add_argument("--quiet", action="store_true", help="catch-up: print only when something was missed")
     q = sp.add_parser("scaffold"); q.set_defaults(fn=cmd_scaffold)
     q.add_argument("path")
     q.add_argument("--name", required=True)
