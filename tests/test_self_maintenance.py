@@ -273,7 +273,8 @@ def test_not_missed_before_the_first_due_minute_or_when_stamped(_home):
     assert routine_install.missed(routine_install.DAILY_LABEL, _local(2026, 9, 14, 12, 0)) is None
     # next morning at 09:00 with no stamp: missed
     assert routine_install.missed(routine_install.DAILY_LABEL, _local(2026, 9, 15, 9, 0)) == _local(2026, 9, 15, 7, 0)
-    stamp.write_text("2026-09-15T05:00:03Z\n")  # 07:00 CEST
+    import datetime
+    stamp.write_text(_local(2026, 9, 15, 7, 0).astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") + "\n")
     assert routine_install.missed(routine_install.DAILY_LABEL, _local(2026, 9, 15, 9, 0)) is None
 
 
