@@ -26,6 +26,8 @@ question: did Teyla run whenever it should have? Four findings, each with a fix 
   skips harness-injected prompts (same list as `is_noise_turn`, which gains
   `<command-message>`, `[Request interrupted`, and the continued-session summary); batch
   sessions are never clustered; the headline says `grok (10199, of which 10150 batch calls)`.
+  (PR #36, and #38 from a second session the same evening for the same bug; `tests/test_hooks.py`
+  runs the hook through `sh` with the exact notification shape.)
 - **Only Claude had the loop.** Policy was wired into Codex, Grok and Hermes; skills, hooks
   and Cursor were not. **`teyla harness sync`** (run by `teyla update`) renders the plugin's
   skills plus `teyla-rule` and `teyla-correct` into `~/.cursor/skills`, `~/.codex/skills`,
@@ -39,17 +41,6 @@ question: did Teyla run whenever it should have? Four findings, each with a fix 
   per-message tokens). The capture hook reads every harness's stdin shape and de-duplicates.
   `docs/HARNESSES.md` names the doc file each fact came from and what is not the same:
   session-start context injection is Claude-only.
-
-## Unreleased
-
-- **The `UserPromptSubmit` correction hook ignores harness-generated turns.** Claude Code
-  fires the hook for turns it injects itself — a `<task-notification>` when a background
-  subagent finishes, a `<system-reminder>`, a `[SYSTEM NOTIFICATION …]`, a slash-command
-  expansion — and their boilerplate ("it will run again", "don't wait") matched the
-  correction heuristic: on 2026-09-11 a subagent completion notice was recorded as a
-  correction. The hook now drops those before the heuristic runs, using the same tag list
-  `teyla monitor` uses to drop them from transcripts, and `tests/test_hooks.py` runs the
-  hook through `sh` with that exact notification shape.
 
 ## 0.9.0 — 2026-09-11 — self-maintenance that survives a managed laptop
 
