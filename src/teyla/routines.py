@@ -357,7 +357,6 @@ def evaluate_all(paths: list[str] | None = None) -> list[dict]:
             out.append({"product": m.parent.name, "repo": str(m.parent), "error": str(e), "routines": [], "checks": []})
             continue
         out.append(evaluate(manifest))
-    write_lines(out)
     return out
 
 

@@ -179,8 +179,9 @@ def cmd_products(args):
 
 
 def cmd_routines(args):
-    from .routines import evaluate_all, render_text, render_json, summarize, exit_code
+    from .routines import evaluate_all, render_text, render_json, summarize, exit_code, write_lines
     reports = evaluate_all(args.paths or None)
+    write_lines(reports)  # the one-liners the session-start hook shows; only the CLI writes them
     if getattr(args, "issues", False):
         from .routines import open_issues
         for line in open_issues(reports):
