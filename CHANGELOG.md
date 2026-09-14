@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.10.0 — 2026-09-15 — works when it is needed
+
+A review of three weeks of sessions (2026-08-24 → 09-14, 91 Claude Code sessions) asked one
+question: did Teyla run whenever it should have? Four findings, each with a fix here.
+
+- **The weekly never ran.** Installed Friday, due Monday 07:30; the Mac was off until
+  15:28, and launchd fires late only after *sleep*, never after a power-off — `launchctl
+  print` showed `runs = 0` while `doctor` said "loaded". Each wrapper now stamps
+  `~/.teyla/<job>.last` when it starts; **`teyla routine catch-up`** runs any job whose stamp
+  is older than its last due minute; the daily wrapper and the plugin's session-start hook
+  call it. `routine status` shows last started / last due; doctor says **MISSED** with the
+  due time instead of OK.
+- **"Did it run?" cost a session.** Seven sessions in frank, iron-u and loco asked whether a
+  product ran and answered by reading code and git log; none ran `teyla routines`. Two of
+  nine products errored out of `teyla routines` anyway (a `script` routine without a label,
+  a cadence of `5m`, a check whose status was a paragraph). Now: `teyla routines` writes one
+  line per product to `~/.teyla/routines/<product>.line` and the session-start hook prints it
+  when the cwd has a `teyla.toml`; POLICY **§9** says a status question is answered from the
+  record before code is read; `script` routines need only a name; `every` accepts any
+  `<n>m|h|d`; the status error names the allowed values.
+- **Every captured correction was noise.** 35 of 35 records in ops and 3 of 3 in iron-u
+  were `<task-notification>` blocks (a subagent finishing) that matched "again"/"don't";
+  `teyla corrections --cluster` opened with a Grok batch brief 2861 times. The capture hook
+  skips harness-injected prompts (same list as `is_noise_turn`, which gains
+  `<command-message>`, `[Request interrupted`, and the continued-session summary); batch
+  sessions are never clustered; the headline says `grok (10199, of which 10150 batch calls)`.
+- **Only Claude had the loop.** Policy was wired into Codex, Grok and Hermes; skills, hooks
+  and Cursor were not. **`teyla harness sync`** (run by `teyla update`) renders the plugin's
+  skills plus `teyla-rule` and `teyla-correct` into `~/.cursor/skills`, `~/.codex/skills`,
+  `~/.grok/skills`, `~/.hermes/skills/teyla`; wires the two hook scripts as Cursor's
+  `sessionStart`/`beforeSubmitPrompt`, Grok's `SessionStart`/`UserPromptSubmit`, Hermes's
+  `on_session_start`/`pre_llm_call`; `teyla policy sync` writes the policy as a Cursor user
+  skill (Cursor has no global rules file). **`teyla rule`** and **`teyla correct`** are the
+  slash commands as a CLI, so every harness's skill does the same write — a rule is mirrored
+  into `AGENTS.md` and, when `.cursor/rules/` exists, into a `.mdc`. A **Cursor session
+  adapter** reads `state.vscdb` (model, turns, tools, corrections; the store has no
+  per-message tokens). The capture hook reads every harness's stdin shape and de-duplicates.
+  `docs/HARNESSES.md` names the doc file each fact came from and what is not the same:
+  session-start context injection is Claude-only.
+
 ## Unreleased
 
 - **The `UserPromptSubmit` correction hook ignores harness-generated turns.** Claude Code
