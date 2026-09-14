@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.10.1 — 2026-09-15 — the rollout's own two failures
+
+Both seen while 0.10.0 installed itself on the machine it was written on.
+
+- **`teyla update` never leaves the machine without a binary.** uv's cached checkout of the
+  repo had lost objects ("unable to read sha1 file"); `uv tool install --force` had already
+  removed the old tool, so the daily wrapper, the session-start hook and doctor all went quiet.
+  A corrupt-cache failure now runs `uv cache clean teyla` and retries once; any other failure
+  that left no binary reinstalls the version that was running; the session-start hook says
+  "no teyla binary although ~/.teyla/config.toml exists" with the reinstall command.
+- **A reinstall cannot hide a missed run.** `routine catch-up` said "on schedule" for the
+  weekly that had just missed Monday, because `update` had rewritten the plist that night and
+  its mtime read as a fresh schedule. `install()` records the first install once in
+  `~/.teyla/<job>.installed`; an earlier start counts as evidence too.
+
 ## 0.10.0 — 2026-09-15 — works when it is needed
 
 A review of three weeks of sessions (2026-08-24 → 09-14, 91 Claude Code sessions) asked one
