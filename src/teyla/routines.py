@@ -59,6 +59,19 @@ CADENCE = {
     "1d": dt.timedelta(days=1),
     "7d": dt.timedelta(days=7),
 }
+_CADENCE_RE = re.compile(r"^(\d+)([mhd])$")
+
+
+def cadence(every: str) -> dt.timedelta | None:
+    """`every` as a timedelta: the four named buckets or any `<n>m|h|d` (a StartInterval of
+    300 s is `5m`, not "the nearest bucket"). None for `unscheduled` or anything else."""
+    if every in CADENCE:
+        return CADENCE[every]
+    m = _CADENCE_RE.match(str(every))
+    if not m:
+        return None
+    n, unit = int(m.group(1)), m.group(2)
+    return dt.timedelta(**{{"m": "minutes", "h": "hours", "d": "days"}[unit]: n})
 
 RECHECK_DAYS = 30
 
@@ -115,13 +128,19 @@ def parse_manifest(path: pathlib.Path) -> dict:
             r.setdefault("label", f"com.teyla.{product['name']}.{r['name']}")
             r.setdefault("every", "1d")
             continue
+        if r.get("kind") == "script":
+            # A script routine is often "a container with restart: unless-stopped" or "a health
+            # URL" — it has a `how`, no scheduler label and no cadence. Teyla still shows the row
+            # (verdict `unknown` unless a `log` is given) instead of refusing the whole product.
+            r.setdefault("label", r.get("name", "?"))
+            r.setdefault("every", "unscheduled")
         for key in ("name", "kind", "label", "every"):
             if key not in r:
                 raise ManifestError(f"{path}: [[routine]] {r.get('name', '?')!r} missing required key {key!r}")
         if r["kind"] not in ("launchd", "cron", "pg_cron", "github-actions", "script", "control"):
             raise ManifestError(f"{path}: routine {r['name']!r} has unknown kind {r['kind']!r}")
-        if r["every"] not in CADENCE:
-            raise ManifestError(f"{path}: routine {r['name']!r} has unknown cadence {r['every']!r}")
+        if cadence(r["every"]) is None and r["every"] != "unscheduled":
+            raise ManifestError(f"{path}: routine {r['name']!r} has unknown cadence {r['every']!r} — 15m, 1h, 1d, 7d, or any <n>m|h|d")
 
     checks = data.get("check") or []
     for c in checks:
@@ -129,7 +148,10 @@ def parse_manifest(path: pathlib.Path) -> dict:
             if key not in c:
                 raise ManifestError(f"{path}: [[check]] {c.get('name', '?')!r} missing required key {key!r}")
         if c["status"] not in ("ok", "broken", "untested"):
-            raise ManifestError(f"{path}: check {c['name']!r} has unknown status {c['status']!r}")
+            shown = str(c["status"])
+            shown = shown[:40] + "…" if len(shown) > 40 else shown
+            raise ManifestError(f"{path}: check {c['name']!r} has unknown status {shown!r} — status is exactly one of "
+                                f"ok, broken, untested; put what was seen in `note = \"...\"` and the date in `confirmed`")
 
     return {"path": path, "repo": path.parent, "product": product, "routines": routines, "checks": checks}
 
@@ -258,8 +280,8 @@ def routine_verdict(routine: dict, loaded: str, run_at: dt.datetime | None, *, n
     if loaded in ("not loaded", "not in crontab"):
         return "NOT LOADED"
     if run_at is not None:
-        cadence = CADENCE[routine["every"]]
-        if now - run_at > cadence * 2:
+        period = cadence(routine["every"])
+        if period is not None and now - run_at > period * 2:
             return "STALE"
         return "ok"
     if loaded == "unknown":

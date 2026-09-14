@@ -68,7 +68,7 @@ caps = { max_minutes = 10, max_writes = 20, max_sends = 0 }
 # name = "nightly-sync"
 # kind = "launchd"
 # label = "com.example.sync"
-# every = "1d"                          # 15m | 1h | 1d | 7d
+# every = "1d"                          # 15m | 1h | 1d | 7d | any <n>m|h|d (script routines may omit label and every)
 # log = "~/Library/Logs/example-sync.log"
 
 

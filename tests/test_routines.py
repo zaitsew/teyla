@@ -103,6 +103,62 @@ status = "kinda"
         parse_manifest(p)
 
 
+def test_parse_manifest_bad_check_status_names_the_allowed_values(tmp_path):
+    p = write(tmp_path, """
+[product]
+name = "x"
+[[check]]
+name = "c"
+how = "do a thing"
+status = "partially verified — link-opening confirmed on both platforms, but on the old address"
+""")
+    with pytest.raises(ManifestError) as e:
+        parse_manifest(p)
+    msg = str(e.value)
+    assert "ok, broken, untested" in msg and "note =" in msg and "…" in msg
+
+
+def test_any_n_m_h_d_cadence_is_accepted(tmp_path):
+    from teyla.routines import cadence
+    assert cadence("5m") == dt.timedelta(minutes=5) and cadence("12h") == dt.timedelta(hours=12)
+    assert cadence("7d") == dt.timedelta(days=7) and cadence("unscheduled") is None and cadence("weekly") is None
+    r = {"name": "agent", "kind": "launchd", "label": "x", "every": "5m"}
+    now = dt.datetime.now(dt.timezone.utc)
+    assert routine_verdict(r, "loaded", now - dt.timedelta(minutes=9), now=now) == "ok"
+    assert routine_verdict(r, "loaded", now - dt.timedelta(minutes=11), now=now) == "STALE"
+    p = write(tmp_path, """
+[product]
+name = "x"
+[[routine]]
+name = "agent"
+kind = "launchd"
+label = "com.x.agent"
+every = "5m"
+""")
+    assert parse_manifest(p)["routines"][0]["every"] == "5m"
+
+
+def test_script_routine_needs_only_a_name(tmp_path):
+    """guiri's backend is a container with restart: unless-stopped and a health URL — no
+    scheduler label, no cadence. The row is shown as unknown rather than the product refused."""
+    p = write(tmp_path, """
+[product]
+name = "guiri"
+[[routine]]
+name = "backend"
+kind = "script"
+how = "curl -fsS https://example.com/health"
+note = "a container, not a job"
+""")
+    m = parse_manifest(p)
+    r = m["routines"][0]
+    assert r["label"] == "backend" and r["every"] == "unscheduled"
+    assert routine_verdict(r, "unknown", None) == "unknown"
+    assert routine_verdict(r, "unknown", dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=400)) == "ok"
+    rep = evaluate(m)
+    assert rep["routines"][0]["verdict"] == "unknown"
+
+
 def test_parse_manifest_invalid_toml(tmp_path):
     p = write(tmp_path, "not toml [[[")
     with pytest.raises(ManifestError):
