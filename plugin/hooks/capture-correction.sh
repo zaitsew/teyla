@@ -3,6 +3,14 @@
 # might not notice mid-turn. Deliberately coarse — it is a broad net over
 # obvious correction phrasing, not a classifier, and it errs toward capturing.
 #
+# It only ever looks at what the human typed. UserPromptSubmit also fires for
+# turns the harness injects into the conversation as if they were user input —
+# a `<task-notification>` when a background subagent finishes, a
+# `<system-reminder>`, a `[SYSTEM NOTIFICATION …]`, a slash-command expansion —
+# and those routinely contain words like "again" or "don't". They are skipped
+# before the heuristic runs, with the same tag list `teyla monitor` uses to
+# drop them from transcripts (`is_noise_turn` in src/teyla/adapters).
+#
 # Silent by construction: UserPromptSubmit stdout is injected into the model's
 # context, so this hook never writes to stdout, match or no match. It also
 # never fails the session — every error path below still exits 0.
@@ -21,6 +29,15 @@ if not isinstance(prompt, str):
     sys.exit(0)
 
 cwd = data.get("cwd") or os.getcwd()
+
+# Harness-generated turns: not the human typing, never a correction.
+HARNESS_TAGS = ("task-notification", "system-reminder", "command-name",
+                "local-command", "ci-monitor", "ide_")
+head = prompt.lstrip()
+if head.startswith("[SYSTEM NOTIFICATION"):
+    sys.exit(0)
+if head.startswith("<") and any(tag in head[:60] for tag in HARNESS_TAGS):
+    sys.exit(0)
 
 PATTERNS = [
     r"\bdon\x27t\b",

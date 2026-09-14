@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **The `UserPromptSubmit` correction hook ignores harness-generated turns.** Claude Code
+  fires the hook for turns it injects itself — a `<task-notification>` when a background
+  subagent finishes, a `<system-reminder>`, a `[SYSTEM NOTIFICATION …]`, a slash-command
+  expansion — and their boilerplate ("it will run again", "don't wait") matched the
+  correction heuristic: on 2026-09-11 a subagent completion notice was recorded as a
+  correction. The hook now drops those before the heuristic runs, using the same tag list
+  `teyla monitor` uses to drop them from transcripts, and `tests/test_hooks.py` runs the
+  hook through `sh` with that exact notification shape.
+
 ## 0.9.0 — 2026-09-11 — self-maintenance that survives a managed laptop
 
 Fixes from the second work-laptop feedback round (2026-09-11): a managed machine behind a
