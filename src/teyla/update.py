@@ -25,6 +25,7 @@ Post-update, in order, each idempotent and each reported:
     policy sync         harness wiring (import line, symlinks, Hermes section)
     policy refresh      three-way merge of template changes into ~/.agents/POLICY.md
     plugin refresh      the Claude Code plugin cache copy, if the installed one is older
+    harness sync        the skills and hooks in Cursor, Codex, Grok and Hermes
     routine install     the launchd wrappers, if they point at a binary that moved
     doctor              the summary line the session hook shows
 
@@ -285,7 +286,7 @@ def post_update(quiet: bool = False) -> list[str]:
     """Runs in a fresh process so the *new* code does the wiring."""
     teyla = shutil.which("teyla") or sys.argv[0]
     lines = []
-    for args in (["policy", "sync"], ["policy", "refresh"], ["plugin", "refresh"], ["routine", "install", "--if-stale"],
+    for args in (["policy", "sync"], ["policy", "refresh"], ["plugin", "refresh"], ["harness", "sync"], ["routine", "install", "--if-stale"],
                  ["doctor", "--quiet"]):
         rc, out = _run([teyla, *args])
         head = f"$ teyla {' '.join(args)}"

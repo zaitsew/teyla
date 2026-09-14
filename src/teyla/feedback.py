@@ -40,9 +40,9 @@ def _redact_home(text: str) -> str:
 
 def _doctor_lines() -> list[str]:
     """Same shape as `teyla doctor`'s harness table, with the store path home-redacted."""
-    from .adapters import claude_code, codex, grok, hermes
+    from .adapters import claude_code, codex, grok, hermes, cursor
     lines = []
-    for mod in (claude_code, codex, grok, hermes):
+    for mod in (claude_code, codex, grok, hermes, cursor):
         root = getattr(mod, "DEFAULT_ROOT", None)
         ok = bool(root) and os.path.exists(os.path.expanduser(root))
         try:

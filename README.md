@@ -8,6 +8,7 @@ Local-first. Nothing leaves your machine. `--share` produces a redacted report: 
 uv tool install git+https://github.com/zaitsew/teyla      # or: pipx install git+https://github.com/zaitsew/teyla
 teyla policy init --owner "Your Name" && teyla policy sync   # one POLICY.md → Claude Code, Codex, Grok, Hermes
 teyla plugin install zaitsew/teyla   # the Claude Code plugin (or: claude plugin marketplace add zaitsew/teyla)
+teyla harness sync                   # the same skills and hooks in Cursor, Codex, Grok and Hermes
 teyla routine install                # daily: update + doctor; weekly: monitor, routines, products, models
 teyla doctor                         # everything that must be true here, and the fix for each thing that is not
 teyla monitor --days 30              # the adoption report, with advice
@@ -55,6 +56,8 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | `teyla models --write-prices` | `~/.teyla/prices.json` from the models.dev catalogue, tiered from the ladder; `pricing.py` prefers it over its built-in table when present |
 | `teyla run <product:routine>` | the control plane: grants, caps, idempotency, gates A/B/C, a receipt naming the rules the run obeyed — see [docs/CONTROL-PLANE.md](docs/CONTROL-PLANE.md) |
 | `teyla inbox` · `teyla kill` · `teyla triggers` · `teyla promote` · `teyla receipts` | the needs-you inbox, the kill switch, clock triggers as LaunchAgents, earned autonomy on ten clean approvals, the audit trail |
+| `teyla harness status\|sync` | the plugin's skills and hooks, and the policy, in Cursor, Codex, Grok and Hermes — see [docs/HARNESSES.md](docs/HARNESSES.md) |
+| `teyla rule "<sentence>" [--scope <glob>]` · `teyla correct "<what was wrong>"` | what `/teyla:rule` and `/teyla:correct` do, as a CLI every harness's skill can call |
 | `teyla doctor` | what Teyla can see on this machine |
 | `teyla remind add "<what>" <YYYY-MM-DD> [--how "..."]` \| `list` \| `done <n>` | dated to-dos only a human can act on (a key that expires, a trial that ends); `teyla doctor` shows each as OK, then WARN within 30 days, then FIX once overdue |
 

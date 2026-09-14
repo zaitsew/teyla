@@ -20,7 +20,8 @@ practice came from, what `teyla` installs, and what has to be adapted by hand.
 | **Skill / rule / fact split**; skills flat, routed by description; rules from corrections; facts beside the work | ops CLAUDE.md | `teyla policy init --ops-root-init` | — |
 | **`runs/` gitignored, `NOTES.md` committed** | ops CLAUDE.md | `--ops-root-init` | — |
 | **Harvest after the second manual run**; never a speculative skill | ops CLAUDE.md, harvest skill | plugin skill `harvest`, `teyla harvest` | — |
-| **Corrections → rules**: a correction said twice is a rule; capture hook; `/teyla:rule` | Teyla | plugin | mirror rules into AGENTS.md so Codex/Hermes obey them |
+| **Corrections → rules**: a correction said twice is a rule; capture hook; `/teyla:rule` | Teyla | plugin; `teyla rule` / `teyla correct` | `teyla rule` mirrors into AGENTS.md so Codex/Hermes/Grok/Cursor obey them |
+| **The same skills and hooks in every harness**: Cursor, Codex, Grok, Hermes | [docs/HARNESSES.md](HARNESSES.md) | `teyla harness sync` (run by `teyla update`) | a harness that is not installed is skipped; Hermes asks once per hook |
 | **Facts → wiki**: agent writes drafts, human confirms; stale after 90 days; inbox for the unfileable | Karpathy's LLM-wiki, Teyla | `teyla wiki init`, skill `wiki-pass` | the team's GitLab Wiki is a git repo of .md — same layout, MR as the review |
 | **Routines vs checks**: what must run without you vs what you confirm by hand, in `teyla.toml`; a weekly self-report | the "built, not used" finding | `teyla routines`, `teyla routine install` | routines under a corporate scheduler; the plugin's own `teyla.toml` |
 | **Session discipline**: one session per unit; split at 5 MB; status check-ins are scripts | advice A3, A4, A7; the retrospective | monitor | — |

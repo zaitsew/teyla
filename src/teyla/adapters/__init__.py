@@ -142,9 +142,9 @@ def is_noise_turn(txt: str) -> bool:
 
 def load_all(roots: dict | None = None) -> list[Session]:
     """Load sessions from every adapter that finds its store on this machine."""
-    from . import claude_code, codex, grok, hermes  # local import to keep adapters optional
+    from . import claude_code, codex, grok, hermes, cursor  # local import to keep adapters optional
     out: list[Session] = []
-    for mod in (claude_code, codex, grok, hermes):
+    for mod in (claude_code, codex, grok, hermes, cursor):
         try:
             out.extend(mod.load(**(roots or {}).get(mod.NAME, {})))
         except FileNotFoundError:
