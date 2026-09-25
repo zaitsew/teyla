@@ -569,3 +569,25 @@ def test_build_dir_holding_an_archive_is_review(tmp_path):
     (main / "build" / "App.xcarchive").mkdir(parents=True)
     rows = storage.artifacts(main, [], 14, sizes=False, now=time.time() + 30 * 86400)
     assert rows[0]["verdict"] == "REVIEW" and "xcarchive" in rows[0]["reason"]
+
+
+def test_rescue_does_not_split_a_record_on_u2028(tmp_path):
+    wt, main = tmp_path / "wt", tmp_path / "main"
+    rec = '{"a": "x y"}\n'
+    (wt / ".teyla").mkdir(parents=True); (wt / ".teyla" / "corrections.jsonl").write_text(rec, encoding="utf-8")
+    storage.rescue(str(wt), str(main))
+    assert (main / ".teyla" / "corrections.jsonl").read_text(encoding="utf-8") == rec
+
+
+def test_launch_agent_working_directory_without_slash_keeps_build(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    (main / ".gitignore").write_text("dist/\n")
+    _git(main, "add", ".gitignore"); _git(main, "commit", "-m", "ignore"); _git(main, "push")
+    (main / "dist").mkdir()
+    plist = f"<key>WorkingDirectory</key><string>{main}</string><string>dist/a</string>"
+    rows = storage.artifacts(main, [], 14, sizes=False, now=time.time() + 30 * 86400, launched=plist)
+    assert rows[0]["verdict"] == "KEEP"
+
+
+def test_xcuserdata_is_not_work():
+    assert storage._harmless("App.xcodeproj/xcuserdata/")
