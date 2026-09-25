@@ -14,12 +14,18 @@ What counts as SAFE is the rule in the owner's CLAUDE.md, applied mechanically:
 - **a worktree** is SAFE when it is clean (`git status --porcelain` empty), its HEAD is on a
   remote branch (`git branch -r --contains HEAD`), nothing has touched it for `idle_days`
   (`agent_idle_days` for a subagent's `.claude/worktrees/agent-*`, which nothing resumes),
-  no process has its working directory inside it, and it is not locked. It goes with
-  `git worktree remove` — never `rm` — and without `--force`, so git refuses anything the
-  check missed. The branch is kept.
+  no process has its working directory inside it, it is not locked, its own reflog points
+  at no commit that exists nowhere else, no other worktree lives inside it, and it holds no
+  git-ignored file that is not build output (`git worktree remove` deletes ignored files
+  even without `--force`: a `.env`, local notes). `.teyla/corrections.jsonl` is appended to
+  the main checkout's copy first. Every fact is checked again right before removal; the
+  tree goes with `git worktree remove` — never `rm` — and without `--force`. The branch is kept.
 - **a build directory** (`build`, `.build`, `.next`, `dist`, `target`, `DerivedData`, …) is
-  SAFE when git ignores it and its repo has been idle for `build_idle_days`. It is output
-  the next build writes again.
+  SAFE when git ignores it, tracks nothing inside it, it is not part of a nested clone, no
+  LaunchAgent names it, and its repo has been idle for `build_idle_days`. It is output the
+  next build writes again.
+
+When `lsof` cannot answer, nothing counts as unused and nothing is removed.
 
 Everything else is REVIEW or KEEP, with the command that would clear it: dependency trees
 (`node_modules`, `.venv`) break a routine that runs from them until reinstalled; package
@@ -53,6 +59,15 @@ DEPENDENCIES = {"node_modules", ".venv", "venv", "Pods"}
 # Never descended into while looking for the two sets above.
 _NO_DESCEND = {".git", ".claude", ".worktrees"} | REGENERABLE | DEPENDENCIES
 MAX_DEPTH = 4
+# Git-ignored entries a worktree may hold that are output, not work. `git worktree remove`
+# deletes ignored files without --force, so anything else ignored keeps the tree.
+HARMLESS_IGNORED = REGENERABLE | DEPENDENCIES | {"__pycache__", ".swiftpm", ".DS_Store", ".temp", ".cache", ".gradle", ".kotlin",
+                                                 "next-env.d.ts", ".eslintcache"}
+HARMLESS_SUFFIXES = (".xcodeproj", ".tsbuildinfo", ".pyc", ".xcworkspace")
+# Session-local permission grants, not work.
+HARMLESS_PATHS = {".claude/settings.local.json"}
+# Ignored, but work: moved into the main checkout's copy before the tree goes.
+RESCUE = ".teyla/corrections.jsonl"
 # Build/dependency rows smaller than this are counted, not listed, in the text report.
 SHOW_MIN = 50 * 1024 ** 2
 
@@ -116,17 +131,21 @@ def is_agent_worktree(path: str) -> bool:
     return p.name.startswith("agent-") and p.parent.name == "worktrees" and p.parent.parent.name == ".claude"
 
 
-def process_cwds() -> list[str]:
+def process_cwds() -> list[str] | None:
     """The working directory of every process this user can see. A directory some process
-    sits in is in use, whatever git says about it."""
+    sits in is in use, whatever git says about it. None when lsof could not answer: that
+    is "unknown", never "nothing is in use", and nothing is removed on it."""
     try:
         r = subprocess.run(["lsof", "-a", "-d", "cwd", "-Fn"], capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.TimeoutExpired):
-        return []
-    return sorted({os.path.realpath(line[1:]) for line in r.stdout.splitlines() if line.startswith("n/")})
+        return None
+    cwds = {os.path.realpath(line[1:]) for line in r.stdout.splitlines() if line.startswith("n/")}
+    return sorted(cwds) or None  # this process has a cwd; an empty answer is a failed one
 
 
-def _in_use(path: str, cwds: list[str]) -> bool:
+def _in_use(path: str, cwds: list[str] | None) -> bool:
+    if cwds is None:
+        return True
     real = os.path.realpath(path)
     return any(c == real or c.startswith(real + os.sep) for c in cwds)
 
@@ -152,6 +171,128 @@ def repos(root: pathlib.Path, extra: list[pathlib.Path] = ()) -> list[pathlib.Pa
 
 # --- worktrees --------------------------------------------------------------------
 
+def _harmless(entry: str) -> bool:
+    e = entry.rstrip("/")
+    if e in HARMLESS_PATHS:
+        return True
+    return any(part in HARMLESS_IGNORED or part.endswith(HARMLESS_SUFFIXES) for part in e.split("/"))
+
+
+def ignored_work(path: str) -> tuple[list[str], list[str]]:
+    """(ignored entries that are work, files to rescue). `git status` does not show ignored
+    files, and `git worktree remove` deletes them without --force: a `.env` holding a key,
+    `.teyla/corrections.jsonl`, local notes."""
+    rc, out = _git(path, "status", "--porcelain", "--ignored=matching", "--untracked-files=all")
+    if rc != 0:
+        return ["(git status failed)"], []
+    work, rescue = [], []
+    for line in out.splitlines():
+        if not line.startswith("!! "):
+            continue
+        entry = line[3:].strip().strip('"')
+        if _harmless(entry):
+            continue
+        if entry.rstrip("/") == ".teyla":
+            files = [str(p.relative_to(path)) for p in pathlib.Path(path, ".teyla").rglob("*") if p.is_file()]
+            if files and all(f == RESCUE for f in files):
+                rescue.append(RESCUE)
+                continue
+        if entry == RESCUE:
+            rescue.append(RESCUE)
+            continue
+        work.append(entry)
+    return work, rescue
+
+
+def _patch_ids(path: str, args: list[str], stdin: str | None = None) -> set[str] | None:
+    try:
+        show = subprocess.run(["git", "--no-optional-locks", "-C", path, *args], input=stdin,
+                              capture_output=True, text=True, timeout=300)
+        pid = subprocess.run(["git", "-C", path, "patch-id", "--stable"], input=show.stdout,
+                             capture_output=True, text=True, timeout=300)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if show.returncode != 0 or pid.returncode != 0:
+        return None
+    return {line.split()[0] for line in pid.stdout.splitlines() if line.strip()}
+
+
+def reflog_only_commits(path: str) -> bool:
+    """True when this worktree's own HEAD reflog points at work no branch, tag or remote
+    holds — a detached HEAD that committed and moved on. Removing the tree deletes that
+    reflog, the last reference to the commit. A commit whose change (patch-id) a remote
+    branch already carries is a superseded copy — reset and re-committed, rebased,
+    cherry-picked — not work; a merge or empty commit carries no change of its own."""
+    rc, out = _git(path, "reflog", "--format=%H", "-n", "500", "HEAD")
+    shas = sorted(set(out.split())) if rc == 0 else []
+    if not shas:
+        return False
+    try:
+        r = subprocess.run(["git", "--no-optional-locks", "-C", path, "rev-list", "--no-merges", "--stdin",
+                            "--not", "--remotes", "--branches", "--tags"],
+                           input="\n".join(shas) + "\n", capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired):
+        return True
+    if r.returncode != 0:
+        return True
+    orphans = r.stdout.split()
+    if not orphans:
+        return False
+    if len(orphans) > 100:
+        return True
+    rc, dates = _git(path, "show", "-s", "--format=%ct", *orphans)
+    try:
+        since = min(int(d) for d in dates.split()) - 30 * 86400
+    except ValueError:
+        return True
+    mine = _patch_ids(path, ["show", "--no-color", "--format=commit %H", *orphans])
+    theirs = _patch_ids(path, ["log", "-p", "--no-color", "--no-merges", "--format=commit %H", "--remotes",
+                               f"--since={since}"])
+    if mine is None or theirs is None:
+        return True
+    return bool(mine - theirs)
+
+
+def assess(path: str, cwds: list[str] | None, limit: int, others: list[str] = (), locked: bool = False,
+           now: float | None = None) -> dict:
+    """Everything that decides whether a worktree may go. `why` empty = SAFE."""
+    rc, gitdir = _git(path, "rev-parse", "--absolute-git-dir")
+    gitdir = gitdir.strip() if rc == 0 else ""
+    idle = _idle_days(path, *(os.path.join(gitdir, p) for p in ("index", "HEAD", os.path.join("logs", "HEAD")) if gitdir),
+                      now=now)
+    _, st = _git(path, "status", "--porcelain", "--untracked-files=all")
+    dirty = len([l for l in st.splitlines() if l.strip()])
+    _, on_remote = _git(path, "branch", "-r", "--contains", "HEAD")
+    pushed = bool(on_remote.strip())
+    work, rescue = ignored_work(path)
+    real = os.path.realpath(path) + os.sep
+    nested = [o for o in others if os.path.realpath(o).startswith(real)]
+    why = []
+    if not gitdir:
+        why.append("git cannot read it")
+    if locked:
+        why.append("locked")
+    if dirty:
+        why.append(f"{dirty} uncommitted change(s)")
+    if not pushed:
+        why.append("HEAD is on no remote branch")
+    if reflog_only_commits(path):
+        why.append("its reflog holds commits nothing else contains")
+    if nested:
+        why.append(f"{len(nested)} other worktree(s) inside it")
+    if work:
+        why.append("ignored files that are not build output: " + ", ".join(work[:4]) + (" …" if len(work) > 4 else ""))
+    if cwds is None:
+        why.append("could not check for processes (lsof failed)")
+    elif _in_use(path, cwds):
+        why.append("a process is working in it")
+    recent = idle < limit
+    if recent:
+        why.append(f"touched {idle:.1f}d ago (< {limit}d)")
+    return {"idle_days": round(idle, 1), "dirty": dirty, "pushed": pushed, "rescue": rescue, "why": why,
+            "only_recent": recent and len(why) == 1}
+
+
 def _parse_worktrees(text: str) -> list[dict]:
     out, cur = [], {}
     for line in text.splitlines() + [""]:
@@ -165,51 +306,34 @@ def _parse_worktrees(text: str) -> list[dict]:
     return out
 
 
-def worktrees(repo: pathlib.Path, cwds: list[str], idle_days: int, sizes: bool = True,
+def worktrees(repo: pathlib.Path, cwds: list[str] | None, idle_days: int, sizes: bool = True,
               now: float | None = None, agent_idle_days: int | None = None) -> list[dict]:
     """Every linked worktree of `repo` (the main checkout is not one), with a verdict."""
     rc, out = _git(repo, "worktree", "list", "--porcelain")
     if rc != 0:
         return []
+    listed = _parse_worktrees(out)
+    paths = [w["worktree"] for w in listed if w.get("worktree")]
     rows = []
-    for w in _parse_worktrees(out)[1:]:
+    for w in listed[1:]:
         path = w.get("worktree")
         if not path:
             continue
         row = {"kind": "worktree", "repo": repo.name, "main": str(repo), "path": path,
                "branch": str(w.get("branch", "")).removeprefix("refs/heads/") or "(detached)"}
         if w.get("prunable") or not os.path.isdir(path):
-            row.update(verdict="SAFE", reason="directory is gone; only git's record of it is left",
-                       action="prune", bytes=0)
+            # An unmounted volume or a path launchd may not read looks the same: report only.
+            row.update(verdict="REVIEW", reason="directory missing; if it is really gone: git -C "
+                       f"{repo} worktree prune", action="none", bytes=0, only_recent=False)
             rows.append(row)
             continue
-        gitdir = ""
-        try:
-            gitdir = pathlib.Path(path, ".git").read_text().split("gitdir:", 1)[1].strip()
-        except (OSError, IndexError):
-            pass
-        idle = _idle_days(path, os.path.join(gitdir, "index"), os.path.join(gitdir, "HEAD"),
-                          os.path.join(gitdir, "logs", "HEAD"), now=now)
-        _, st = _git(path, "status", "--porcelain")
-        dirty = len([l for l in st.splitlines() if l.strip()])
-        _, on_remote = _git(path, "branch", "-r", "--contains", "HEAD")
-        pushed = bool(on_remote.strip())
         limit = agent_idle_days if agent_idle_days is not None and is_agent_worktree(path) else idle_days
-        why = []
-        if w.get("locked"):
-            why.append("locked")
-        if dirty:
-            why.append(f"{dirty} uncommitted change(s)")
-        if not pushed:
-            why.append("HEAD is on no remote branch")
-        if _in_use(path, cwds):
-            why.append("a process is working in it")
-        recent = idle < limit
-        if recent:
-            why.append(f"touched {idle:.1f}d ago (< {limit}d)")
-        row.update(idle_days=round(idle, 1), dirty=dirty, pushed=pushed, only_recent=recent and len(why) == 1,
-                   verdict="KEEP" if why else "SAFE",
-                   reason="; ".join(why) or f"clean, on the remote, idle {idle:.0f}d",
+        a = assess(path, cwds, limit, others=[p for p in paths if p != path], locked=bool(w.get("locked")), now=now)
+        row.update({k: a[k] for k in ("idle_days", "dirty", "pushed", "rescue", "only_recent")},
+                   limit=limit, locked=bool(w.get("locked")),
+                   verdict="KEEP" if a["why"] else "SAFE",
+                   reason="; ".join(a["why"]) or (f"clean, on the remote, idle {a['idle_days']:.0f}d"
+                                                  + (f"; {RESCUE} is kept in the main checkout" if a["rescue"] else "")),
                    action="git worktree remove", bytes=du(path) if sizes else None)
         rows.append(row)
     return rows
@@ -224,6 +348,8 @@ def _find_dirs(repo: pathlib.Path) -> list[pathlib.Path]:
         depth = len(pathlib.Path(dirpath).parts) - base_depth
         keep = []
         for d in dirnames:
+            if os.path.exists(os.path.join(dirpath, d, ".git")):
+                continue  # a nested clone or worktree: its files are not this repo's to judge
             if d in REGENERABLE or d in DEPENDENCIES:
                 if not os.path.islink(os.path.join(dirpath, d)):  # a link points at someone else's data
                     found.append(pathlib.Path(dirpath, d))
@@ -243,13 +369,26 @@ def repo_idle_days(repo: pathlib.Path, now: float | None = None) -> float:
     return min(by_files, by_commit)
 
 
-def artifacts(repo: pathlib.Path, cwds: list[str], build_idle_days: int, sizes: bool = True,
-              now: float | None = None) -> list[dict]:
+def launch_references() -> str:
+    """The text of every LaunchAgent plist and Teyla wrapper: a build dir named in one is
+    something a routine runs, whatever the repo's git activity says."""
+    texts = []
+    for pat in (pathlib.Path.home() / "Library" / "LaunchAgents").glob("*.plist"), config.TEYLA_DIR.glob("*.sh"):
+        for p in pat:
+            try:
+                texts.append(p.read_text(errors="replace"))
+            except OSError:
+                pass
+    return "\n".join(texts)
+
+
+def artifacts(repo: pathlib.Path, cwds: list[str] | None, build_idle_days: int, sizes: bool = True,
+              now: float | None = None, launched: str = "") -> list[dict]:
     rows = []
     idle = repo_idle_days(repo, now=now)
     # A session in <repo>/.claude/worktrees/x is working in its own tree, not in this checkout.
     own = os.path.realpath(repo / ".claude" / "worktrees") + os.sep
-    in_use = _in_use(str(repo), [c for c in cwds if not c.startswith(own)])
+    in_use = _in_use(str(repo), None if cwds is None else [c for c in cwds if not c.startswith(own)])
     for d in _find_dirs(repo):
         rel = str(d.relative_to(repo))
         rc, _ = _git(repo, "check-ignore", "-q", rel)
@@ -260,8 +399,12 @@ def artifacts(repo: pathlib.Path, cwds: list[str], build_idle_days: int, sizes: 
         why = []
         if d.name in DEPENDENCIES:
             why.append("dependencies — a routine may run from them; reinstall to recreate")
+        elif cwds is None:
+            why.append("could not check for processes (lsof failed)")
         elif in_use:
             why.append("a process is working in the repo")
+        elif str(d) in launched:
+            why.append("a LaunchAgent or Teyla wrapper runs from it")
         elif idle < build_idle_days:
             why.append(f"repo active {idle:.1f}d ago (< {build_idle_days}d)")
         verdict = "SAFE" if not why else ("REVIEW" if d.name in DEPENDENCIES else "KEEP")
@@ -351,10 +494,11 @@ def scan(root: pathlib.Path | None = None, sizes: bool = True, cfg: dict | None 
     extra = [] if root else [config.ops_root(cfg)]
     root = root or config.code_root(cfg)
     cwds = process_cwds() if cwds is None else cwds
+    launched = launch_references()
     wt, art = [], []
     for repo in repos(root, extra):
         wt += worktrees(repo, cwds, s["idle_days"], sizes=sizes, now=now, agent_idle_days=s["agent_idle_days"])
-        art += artifacts(repo, cwds, s["build_idle_days"], sizes=sizes, now=now)
+        art += artifacts(repo, cwds, s["build_idle_days"], sizes=sizes, now=now, launched=launched)
     return {"root": str(root), "settings": s, "disk": disk(), "worktrees": wt, "artifacts": art}
 
 
@@ -413,30 +557,71 @@ def _log(line: str) -> None:
         pass
 
 
+def rescue(worktree: str, main: str) -> None:
+    """Append the worktree's `.teyla/corrections.jsonl` lines the main checkout lacks."""
+    src = pathlib.Path(worktree, RESCUE)
+    if not src.is_file():
+        return
+    dst = pathlib.Path(main, RESCUE)
+    have = set(dst.read_text(errors="replace").splitlines()) if dst.is_file() else set()
+    new = [l for l in src.read_text(errors="replace").splitlines() if l.strip() and l not in have]
+    if new:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        with dst.open("a") as fh:
+            fh.write("\n".join(new) + "\n")
+
+
+def _remove_worktree(r: dict) -> tuple[int, str]:
+    # The scan may be minutes old (du ran in between): decide again, on fresh facts.
+    cwds = process_cwds()
+    rc, out = _git(r["main"], "worktree", "list", "--porcelain")
+    listed = _parse_worktrees(out) if rc == 0 else []
+    me = next((w for w in listed if w.get("worktree") == r["path"]), None)
+    if me is None:
+        return 1, "no longer a registered worktree"
+    a = assess(r["path"], cwds, r["limit"], others=[w["worktree"] for w in listed if w.get("worktree") != r["path"]],
+               locked=bool(me.get("locked")))
+    if a["why"]:
+        return 1, "changed since the scan: " + "; ".join(a["why"])
+    try:
+        rescue(r["path"], r["main"])
+    except OSError as e:
+        return 1, f"could not keep {RESCUE}: {e}"
+    # No --force: git refuses a tree with changes the checks above missed.
+    return _git(r["main"], "worktree", "remove", r["path"], timeout=600)
+
+
+def _remove_build(r: dict) -> tuple[int, str]:
+    rel = os.path.relpath(r["path"], r["main"])
+    if os.path.islink(r["path"]):
+        return 1, "is a symlink"
+    if _git(r["main"], "check-ignore", "-q", rel)[0] != 0:
+        return 1, "no longer git-ignored"
+    rc, top = _git(r["path"], "rev-parse", "--show-toplevel")
+    if rc != 0 or os.path.realpath(top.strip()) != os.path.realpath(r["main"]):
+        return 1, "belongs to another repository"
+    rc, tracked = _git(r["main"], "ls-files", "--", rel)
+    if rc != 0 or tracked.strip():
+        return 1, "git tracks files inside it"
+    try:
+        shutil.rmtree(r["path"])
+        return 0, ""
+    except OSError as e:
+        return 1, str(e)
+
+
 def clean(rep: dict, apply: bool = False) -> list[str]:
     out = []
     for r in rep["worktrees"] + rep["artifacts"]:
         if r["verdict"] != "SAFE":
             continue
-        if r.get("bytes") is None and r.get("action") != "prune":
+        if r.get("bytes") is None:
             r["bytes"] = du(r["path"])  # sized here, not in the scan: only what goes is measured
         size = human(r.get("bytes"))
         if not apply:
             out.append(f"would remove {size:>6}  {r['path']}")
             continue
-        if r["kind"] == "worktree" and r["action"] == "prune":
-            rc, msg = _git(r["main"], "worktree", "prune")
-        elif r["kind"] == "worktree":
-            # No --force: if anything changed since the scan, git refuses and the tree stays.
-            rc, msg = _git(r["main"], "worktree", "remove", r["path"], timeout=600)
-        else:
-            rc2, _ = _git(r["main"], "check-ignore", "-q", os.path.relpath(r["path"], r["main"]))
-            if rc2 != 0:
-                out.append(f"skipped  {r['path']}: no longer git-ignored"); continue
-            try:
-                shutil.rmtree(r["path"]); rc, msg = 0, ""
-            except OSError as e:
-                rc, msg = 1, str(e)
+        rc, msg = _remove_worktree(r) if r["kind"] == "worktree" else _remove_build(r)
         if rc == 0:
             out.append(f"removed {size:>6}  {r['path']}")
             _log(f"removed {r.get('bytes') or 0} {r['kind']} {r['path']}")

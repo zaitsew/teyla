@@ -368,3 +368,115 @@ def test_wrapper_stale_flags_wrapper_missing_storage_clean(tmp_path, monkeypatch
 
 def test_daily_wrapper_template_runs_storage_clean_auto_quiet():
     assert "teyla storage clean --auto --quiet" in routine_install.DAILY_WRAPPER_TEMPLATE
+
+
+# --- what `git worktree remove` would destroy without complaint (review findings) ----------
+
+def _safe_row(tmp_path, code_root, wt, now):
+    rep = storage.scan(root=code_root, cfg=_cfg(tmp_path), cwds=[], now=now, sizes=False)
+    return rep, next(r for r in rep["worktrees"] if r["path"] == str(wt))
+
+
+def test_ignored_file_that_is_work_keeps_worktree(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    (main / ".gitignore").write_text(".env\nbuild/\n")
+    _git(main, "add", ".gitignore"); _git(main, "commit", "-m", "ignore"); _git(main, "push")
+    wt = tmp_path / "wt-feat"
+    _add_worktree(main, wt, "feat")
+    (wt / ".env").write_text("KEY=only-here\n")
+    (wt / "build").mkdir(); (wt / "build" / "out.o").write_text("x")
+    now = time.time()
+    _age_worktree(wt, _gitdir(wt), 5, now)
+    _, row = _safe_row(tmp_path, code_root, wt, now)
+    assert row["verdict"] == "KEEP"
+    assert row["reason"].endswith("not build output: .env")
+
+
+def test_corrections_are_rescued_into_the_main_checkout(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    (main / ".gitignore").write_text(".teyla/\n")
+    _git(main, "add", ".gitignore"); _git(main, "commit", "-m", "ignore"); _git(main, "push")
+    (main / ".teyla").mkdir(); (main / ".teyla" / "corrections.jsonl").write_text('{"a": 1}\n')
+    wt = tmp_path / "wt-feat"
+    _add_worktree(main, wt, "feat")
+    (wt / ".teyla").mkdir(); (wt / ".teyla" / "corrections.jsonl").write_text('{"a": 1}\n{"b": 2}\n')
+    now = time.time()
+    _age_worktree(wt, _gitdir(wt), 5, now)
+    rep, row = _safe_row(tmp_path, code_root, wt, now)
+    assert row["verdict"] == "SAFE", row["reason"]
+    lines = storage.clean(rep, apply=True)
+    assert any(l.startswith("removed") and str(wt) in l for l in lines), lines
+    assert not wt.exists()
+    assert (main / ".teyla" / "corrections.jsonl").read_text() == '{"a": 1}\n{"b": 2}\n'
+
+
+def test_dirty_worktree_nested_inside_keeps_the_outer_one(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    (main / ".git" / "info" / "exclude").write_text(".claude/worktrees/\n")
+    wt = tmp_path / "wt-feat"
+    _add_worktree(main, wt, "feat")
+    inner = wt / ".claude" / "worktrees" / "agent-abc"
+    inner.parent.mkdir(parents=True)
+    _git(main, "worktree", "add", "-b", "inner", str(inner))
+    (inner / "work.txt").write_text("unsaved\n")
+    now = time.time()
+    _age_worktree(wt, _gitdir(wt), 5, now)
+    _, row = _safe_row(tmp_path, code_root, wt, now)
+    assert row["verdict"] == "KEEP"
+    assert "inside it" in row["reason"]
+
+
+def test_detached_commit_only_in_reflog_keeps_worktree(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    wt = tmp_path / "wt-det"
+    _git(main, "worktree", "add", "--detach", str(wt), "origin/main")
+    (wt / "lost.txt").write_text("only here\n")
+    _git(wt, "add", "lost.txt"); _git(wt, "commit", "-m", "unpushed")
+    _git(wt, "checkout", "--detach", "origin/main")
+    now = time.time()
+    _age_worktree(wt, _gitdir(wt), 5, now)
+    _, row = _safe_row(tmp_path, code_root, wt, now)
+    assert row["verdict"] == "KEEP"
+    assert "reflog" in row["reason"]
+
+
+def test_build_dirs_inside_a_nested_clone_are_not_listed(tmp_path):
+    code_root, main, remote = _make_repo(tmp_path)
+    (main / ".gitignore").write_text("vendor/\ndist/\n")
+    _git(main, "add", ".gitignore"); _git(main, "commit", "-m", "ignore"); _git(main, "push")
+    _git(main, "clone", str(remote), "vendor/lib")
+    (main / "vendor" / "lib" / "dist").mkdir()
+    (main / "vendor" / "lib" / "dist" / "x.js").write_text("tracked elsewhere\n")
+    rows = storage.artifacts(main, [], 14, sizes=False, now=time.time() + 30 * 86400)
+    assert not any("vendor" in r["path"] for r in rows), rows
+
+
+def test_build_dir_a_launch_agent_runs_from_is_kept(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    (main / ".gitignore").write_text("build/\n")
+    _git(main, "add", ".gitignore"); _git(main, "commit", "-m", "ignore"); _git(main, "push")
+    (main / "build").mkdir()
+    rows = storage.artifacts(main, [], 14, sizes=False, now=time.time() + 30 * 86400,
+                             launched=f"<string>{main}/build/tool</string>")
+    assert rows[0]["verdict"] == "KEEP" and "LaunchAgent" in rows[0]["reason"]
+
+
+def test_lsof_failure_means_nothing_is_safe(tmp_path, monkeypatch):
+    code_root, main, _ = _make_repo(tmp_path)
+    wt = tmp_path / "wt-feat"
+    _add_worktree(main, wt, "feat")
+    now = time.time()
+    _age_worktree(wt, _gitdir(wt), 5, now)
+    monkeypatch.setattr(storage.subprocess, "run", _lsof_fails(storage.subprocess.run))
+    assert storage.process_cwds() is None
+    rep = storage.scan(root=code_root, cfg=_cfg(tmp_path), now=now, sizes=False)
+    row = next(r for r in rep["worktrees"] if r["path"] == str(wt))
+    assert row["verdict"] == "KEEP" and "lsof" in row["reason"]
+
+
+def _lsof_fails(real_run):
+    def run(cmd, *a, **kw):
+        if cmd and cmd[0] == "lsof":
+            raise subprocess.TimeoutExpired(cmd, 60)
+        return real_run(cmd, *a, **kw)
+    return run
