@@ -7,6 +7,11 @@
     channel = "release"            "release" (tags) or "main" (tip of main)
     python  = "3.12"               interpreter `teyla update` pins on every self-install
                                    (default: the one Teyla is running on right now)
+    [storage]
+    auto_clean      = false        the daily routine removes finished worktrees + idle build output
+    idle_days       = 3            a clean, pushed worktree untouched this long is finished
+    agent_idle_days = 1            the same for a subagent's <repo>/.claude/worktrees/agent-*
+    build_idle_days = 14           git-ignored build dirs of a repo idle this long are removed
     [env]
     SSL_CERT_FILE = "~/.teyla/ca-bundle.pem"
     HTTPS_PROXY   = "http://127.0.0.1:9000"
@@ -37,6 +42,9 @@ DEFAULTS = {
     "ops_root": "~/ops",
     "update": {"repo": "zaitsew/teyla", "channel": "release"},
     "env": {},
+    # `teyla storage`: auto_clean lets the daily routine remove finished worktrees (clean, on
+    # the remote, idle >= idle_days) and git-ignored build output of repos idle >= build_idle_days.
+    "storage": {"auto_clean": False, "idle_days": 3, "agent_idle_days": 1, "build_idle_days": 14},
 }
 
 

@@ -179,7 +179,7 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
             if not plist.exists():
                 out.append(_check("FIX", f"routine:{label.rsplit('.', 1)[-1]}", "not installed", "teyla routine install"))
             elif stale:
-                out.append(_check("FIX", f"routine:{label.rsplit('.', 1)[-1]}", f"{wrapper.name} names a teyla binary that is not the current one, or lacks the [env] in config.toml", "teyla routine install"))
+                out.append(_check("FIX", f"routine:{label.rsplit('.', 1)[-1]}", f"{wrapper.name} names a teyla binary that is not the current one, lacks the [env] in config.toml, or predates a step this release adds", "teyla routine install"))
             elif not ok:
                 out.append(_check("FIX", f"routine:{label.rsplit('.', 1)[-1]}", "plist exists but launchd has not loaded it", "teyla routine install"))
             elif routine_install.missed(label):
@@ -219,6 +219,12 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     out.append(_check("INFO", "tools", f"present: {', '.join(present) or '-'}; absent: {', '.join(absent) or '-'}"))
     if not shutil.which("codex") and not shutil.which("grok"):
         out.append(_check("INFO", "tools:second-opinion", "no second-provider CLI: policy §2 falls back to a fresh same-provider session"))
+
+    # --- storage: free space, and worktrees agents finished with ---------------------
+    if scan_repos:
+        from . import storage
+        for row in storage.doctor_checks(cfg):
+            out.append(_check(row["level"], row["name"], row["detail"], row["fix"]))
 
     # --- reminders ---------------------------------------------------------------
     from . import remind
