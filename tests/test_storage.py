@@ -480,3 +480,92 @@ def _lsof_fails(real_run):
             raise subprocess.TimeoutExpired(cmd, 60)
         return real_run(cmd, *a, **kw)
     return run
+
+
+# --- second review: what still passed as "already on the remote" or "build output" ---------
+
+def _detached(tmp_path, main, name="wt-det"):
+    wt = tmp_path / name
+    _git(main, "worktree", "add", "--detach", str(wt), "origin/main")
+    return wt
+
+
+def test_whitespace_only_amend_is_work(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    (main / "f.py").write_text("if x:\n    a()\n    b()\n")
+    _git(main, "add", "f.py"); _git(main, "commit", "-m", "f"); _git(main, "push")
+    wt = _detached(tmp_path, main)
+    (wt / "f.py").write_text("if x:\n    a()\nb()\n")
+    _git(wt, "commit", "-am", "f"); _git(wt, "checkout", "--detach", "origin/main")
+    assert storage.reflog_only_commits(str(wt))
+
+
+def test_merge_with_a_hand_resolution_is_work(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    for b, text in (("b1", "one\n"), ("b2", "two\n")):
+        _git(main, "checkout", "-q", "-b", b, "main")
+        (main / "c.txt").write_text(text)
+        _git(main, "add", "c.txt"); _git(main, "commit", "-m", b); _git(main, "push", "-u", "origin", b)
+    _git(main, "checkout", "-q", "main")
+    wt = tmp_path / "wt-merge"
+    _git(main, "worktree", "add", "--detach", str(wt), "origin/b1")
+    subprocess.run(["git", "merge", "origin/b2"], cwd=wt, capture_output=True)
+    (wt / "c.txt").write_text("one and two\n")
+    _git(wt, "commit", "-am", "resolved")
+    _git(wt, "checkout", "--detach", "origin/main")
+    assert storage.reflog_only_commits(str(wt))
+
+
+def test_a_copy_of_a_pushed_commit_is_not_work(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    wt = _detached(tmp_path, main)
+    (wt / "g.txt").write_text("g\n")
+    _git(wt, "add", "g.txt"); _git(wt, "commit", "-m", "g")
+    _git(wt, "push", "origin", "HEAD:refs/heads/g")
+    _git(wt, "commit", "--amend", "-m", "g, reworded")  # same change, different commit
+    _git(wt, "push", "-f", "origin", "HEAD:refs/heads/g2")
+    _git(wt, "checkout", "--detach", "origin/main")
+    _git(main, "fetch", "-q", "--prune")
+    _git(main, "push", "-q", "origin", ":refs/heads/g")  # the original is gone from the remote
+    _git(main, "fetch", "-q", "--prune")
+    assert not storage.reflog_only_commits(str(wt))
+
+
+def test_ignored_file_inside_a_tracked_build_dir_is_work(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    (main / ".gitignore").write_text("*.p12\n")
+    (main / "build").mkdir(); (main / "build" / "entitlements.plist").write_text("<plist/>\n")
+    _git(main, "add", "-A"); _git(main, "commit", "-m", "b"); _git(main, "push")
+    wt = tmp_path / "wt-feat"
+    _add_worktree(main, wt, "feat")
+    (wt / "build" / "signing.p12").write_text("secret")
+    work, _ = storage.ignored_work(str(wt))
+    assert work == ["build/signing.p12"]
+
+
+def test_rescue_keeps_records_apart(tmp_path):
+    wt, main = tmp_path / "wt", tmp_path / "main"
+    for p, text in ((wt, '{"b": 2}\n'), (main, '{"a": 1}')):
+        (p / ".teyla").mkdir(parents=True); (p / ".teyla" / "corrections.jsonl").write_text(text)
+    storage.rescue(str(wt), str(main))
+    assert (main / ".teyla" / "corrections.jsonl").read_text() == '{"a": 1}\n{"b": 2}\n'
+
+
+def test_worktree_mid_rebase_is_kept(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    wt = tmp_path / "wt-feat"
+    _add_worktree(main, wt, "feat")
+    (_gitdir(wt) / "rebase-merge").mkdir()
+    now = time.time()
+    _age_worktree(wt, _gitdir(wt), 5, now)
+    _, row = _safe_row(tmp_path, code_root, wt, now)
+    assert row["verdict"] == "KEEP" and "in progress" in row["reason"]
+
+
+def test_build_dir_holding_an_archive_is_review(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    (main / ".gitignore").write_text("build/\n")
+    _git(main, "add", ".gitignore"); _git(main, "commit", "-m", "ignore"); _git(main, "push")
+    (main / "build" / "App.xcarchive").mkdir(parents=True)
+    rows = storage.artifacts(main, [], 14, sizes=False, now=time.time() + 30 * 86400)
+    assert rows[0]["verdict"] == "REVIEW" and "xcarchive" in rows[0]["reason"]

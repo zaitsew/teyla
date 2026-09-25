@@ -175,7 +175,10 @@ def _harmless(entry: str) -> bool:
     e = entry.rstrip("/")
     if e in HARMLESS_PATHS:
         return True
-    return any(part in HARMLESS_IGNORED or part.endswith(HARMLESS_SUFFIXES) for part in e.split("/"))
+    # The entry's own name only: `--ignored=matching` lists an ignored directory as `build/`,
+    # so a listed `build/signing.p12` means build/ itself is tracked and that file is not output.
+    name = e.rsplit("/", 1)[-1]
+    return name in HARMLESS_IGNORED or name.endswith(HARMLESS_SUFFIXES)
 
 
 def ignored_work(path: str) -> tuple[list[str], list[str]]:
@@ -208,7 +211,8 @@ def _patch_ids(path: str, args: list[str], stdin: str | None = None) -> set[str]
     try:
         show = subprocess.run(["git", "--no-optional-locks", "-C", path, *args], input=stdin,
                               capture_output=True, text=True, timeout=300)
-        pid = subprocess.run(["git", "-C", path, "patch-id", "--stable"], input=show.stdout,
+        # --verbatim: --stable ignores whitespace, and indentation is meaning in Python or YAML.
+        pid = subprocess.run(["git", "-C", path, "patch-id", "--verbatim"], input=show.stdout,
                              capture_output=True, text=True, timeout=300)
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -217,18 +221,29 @@ def _patch_ids(path: str, args: list[str], stdin: str | None = None) -> set[str]
     return {line.split()[0] for line in pid.stdout.splitlines() if line.strip()}
 
 
+def _automatic_merge(path: str, sha: str) -> bool:
+    """True when the merge commit's tree is exactly what git merges on its own."""
+    rc, parents = _git(path, "rev-list", "--parents", "-n", "1", sha)
+    ps = parents.split()[1:]
+    if rc != 0 or len(ps) != 2:
+        return False
+    rc, tree = _git(path, "rev-parse", f"{sha}^{{tree}}")
+    rc2, merged = _git(path, "merge-tree", "--write-tree", ps[0], ps[1])
+    return rc == 0 and rc2 == 0 and merged.split()[:1] == tree.split()[:1]
+
+
 def reflog_only_commits(path: str) -> bool:
     """True when this worktree's own HEAD reflog points at work no branch, tag or remote
     holds — a detached HEAD that committed and moved on. Removing the tree deletes that
     reflog, the last reference to the commit. A commit whose change (patch-id) a remote
     branch already carries is a superseded copy — reset and re-committed, rebased,
-    cherry-picked — not work; a merge or empty commit carries no change of its own."""
-    rc, out = _git(path, "reflog", "--format=%H", "-n", "500", "HEAD")
+    cherry-picked — not work; a merge is work unless its tree is git's own automatic merge."""
+    rc, out = _git(path, "reflog", "--format=%H", "HEAD")  # all of it: git's own expiry bounds it
     shas = sorted(set(out.split())) if rc == 0 else []
     if not shas:
         return False
     try:
-        r = subprocess.run(["git", "--no-optional-locks", "-C", path, "rev-list", "--no-merges", "--stdin",
+        r = subprocess.run(["git", "--no-optional-locks", "-C", path, "rev-list", "--stdin",
                             "--not", "--remotes", "--branches", "--tags"],
                            input="\n".join(shas) + "\n", capture_output=True, text=True, timeout=120)
     except (OSError, subprocess.TimeoutExpired):
@@ -240,14 +255,22 @@ def reflog_only_commits(path: str) -> bool:
         return False
     if len(orphans) > 100:
         return True
+    rc, merges = _git(path, "rev-list", "--no-walk", "--merges", *orphans)
+    merges = set(merges.split()) if rc == 0 else set(orphans)
+    for m in merges:
+        if not _automatic_merge(path, m):
+            return True  # a conflict resolution or an edit in a merge is work
+    orphans = [o for o in orphans if o not in merges]
+    if not orphans:
+        return False
     rc, dates = _git(path, "show", "-s", "--format=%ct", *orphans)
     try:
         since = min(int(d) for d in dates.split()) - 30 * 86400
     except ValueError:
         return True
-    mine = _patch_ids(path, ["show", "--no-color", "--format=commit %H", *orphans])
-    theirs = _patch_ids(path, ["log", "-p", "--no-color", "--no-merges", "--format=commit %H", "--remotes",
-                               f"--since={since}"])
+    plain = ["--no-color", "--no-textconv", "--no-ext-diff", "--binary", "--format=commit %H"]
+    mine = _patch_ids(path, ["show", *plain, *orphans])
+    theirs = _patch_ids(path, ["log", "-p", *plain, "--no-merges", "--remotes", f"--since={since}"])
     if mine is None or theirs is None:
         return True
     return bool(mine - theirs)
@@ -265,6 +288,8 @@ def assess(path: str, cwds: list[str] | None, limit: int, others: list[str] = ()
     _, on_remote = _git(path, "branch", "-r", "--contains", "HEAD")
     pushed = bool(on_remote.strip())
     work, rescue = ignored_work(path)
+    busy = [n for n in ("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD",
+                        "BISECT_LOG", "sequencer") if gitdir and os.path.exists(os.path.join(gitdir, n))]
     real = os.path.realpath(path) + os.sep
     nested = [o for o in others if os.path.realpath(o).startswith(real)]
     why = []
@@ -272,6 +297,8 @@ def assess(path: str, cwds: list[str] | None, limit: int, others: list[str] = ()
         why.append("git cannot read it")
     if locked:
         why.append("locked")
+    if busy:
+        why.append(f"a git operation is in progress ({busy[0]})")
     if dirty:
         why.append(f"{dirty} uncommitted change(s)")
     if not pushed:
@@ -369,6 +396,21 @@ def repo_idle_days(repo: pathlib.Path, now: float | None = None) -> float:
     return min(by_files, by_commit)
 
 
+SHIPPED_SUFFIXES = (".xcarchive", ".dSYM", ".ipa", ".dmg", ".pkg", ".aab", ".apk")
+
+
+def _shipped(d: pathlib.Path) -> str:
+    """The first archive, symbol bundle or installer under `d` (three levels), or ''."""
+    base = len(d.parts)
+    for dirpath, dirnames, filenames in os.walk(d):
+        for n in dirnames + filenames:
+            if n.endswith(SHIPPED_SUFFIXES):
+                return n
+        if len(pathlib.Path(dirpath).parts) - base >= 3:
+            dirnames[:] = []
+    return ""
+
+
 def launch_references() -> str:
     """The text of every LaunchAgent plist and Teyla wrapper: a build dir named in one is
     something a routine runs, whatever the repo's git activity says."""
@@ -403,11 +445,13 @@ def artifacts(repo: pathlib.Path, cwds: list[str] | None, build_idle_days: int, 
             why.append("could not check for processes (lsof failed)")
         elif in_use:
             why.append("a process is working in the repo")
-        elif str(d) in launched:
-            why.append("a LaunchAgent or Teyla wrapper runs from it")
+        elif str(d) in launched or str(repo) + "/" in launched or os.path.realpath(repo) + "/" in launched:
+            why.append("a LaunchAgent or Teyla wrapper names this repo")
+        elif _shipped(d):
+            why.append(f"holds a shipped build ({_shipped(d)}): a rebuild is not the same file")
         elif idle < build_idle_days:
             why.append(f"repo active {idle:.1f}d ago (< {build_idle_days}d)")
-        verdict = "SAFE" if not why else ("REVIEW" if d.name in DEPENDENCIES else "KEEP")
+        verdict = "SAFE" if not why else ("REVIEW" if d.name in DEPENDENCIES or "shipped" in why[0] else "KEEP")
         row.update(verdict=verdict, reason="; ".join(why) or f"ignored build output, repo idle {idle:.0f}d",
                    action="rm (git-ignored)", bytes=du(d) if sizes else None)
         rows.append(row)
@@ -567,8 +611,9 @@ def rescue(worktree: str, main: str) -> None:
     new = [l for l in src.read_text(errors="replace").splitlines() if l.strip() and l not in have]
     if new:
         dst.parent.mkdir(parents=True, exist_ok=True)
+        lead = "\n" if dst.is_file() and dst.stat().st_size and not dst.read_bytes().endswith(b"\n") else ""
         with dst.open("a") as fh:
-            fh.write("\n".join(new) + "\n")
+            fh.write(lead + "\n".join(new) + "\n")
 
 
 def _remove_worktree(r: dict) -> tuple[int, str]:
@@ -603,6 +648,9 @@ def _remove_build(r: dict) -> tuple[int, str]:
     rc, tracked = _git(r["main"], "ls-files", "--", rel)
     if rc != 0 or tracked.strip():
         return 1, "git tracks files inside it"
+    for dirpath, dirnames, filenames in os.walk(r["path"]):
+        if ".git" in dirnames or ".git" in filenames:
+            return 1, f"holds a git repository ({os.path.relpath(dirpath, r['path'])})"
     try:
         shutil.rmtree(r["path"])
         return 0, ""
