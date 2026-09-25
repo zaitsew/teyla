@@ -1,5 +1,7 @@
 name: ci
-on: [push, pull_request]
+# POLICY §10: no Actions on push or PR — ./check.sh on the laptop is the gate.
+# Run by hand only (gh workflow run ci), for a clean-Linux check no laptop can do.
+on: workflow_dispatch
 jobs:
   test:
     runs-on: ubuntu-latest

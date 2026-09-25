@@ -1,7 +1,7 @@
 name: release
-on:
-  push:
-    tags: ["v*"]
+# POLICY §10: scripts/release.sh runs ./check.sh and creates the release from the laptop.
+# Kept only as a by-hand fallback: gh workflow run release --ref v<version>
+on: workflow_dispatch
 permissions:
   contents: write
 jobs:
