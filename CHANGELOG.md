@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.11.0 — 2026-09-25 — the disk agent work leaves behind
+
+Measured on the machine this was written on: 35 subagent worktrees under
+`<repo>/.claude/worktrees` held 20 GB, 33 of them clean and already pushed; 13 more under
+`~/.worktrees` held 9 GB; several iOS simulators were booted at once.
+
+- **`teyla storage`** reports disk free, every linked worktree with a verdict, git-ignored
+  build output, dependencies, caches with the command that clears each, booted simulators
+  and RAM by process. **`teyla storage clean`** is a dry run; `--apply` removes the SAFE
+  rows — worktrees with `git worktree remove` (no `--force`, branch kept), build dirs after
+  a re-check — and logs each to `~/.teyla/storage.log`. Dependencies, caches, transcripts,
+  simulators and Docker are reported, never removed.
+- **SAFE is strict.** A worktree goes only when it is clean, on a remote, idle (1 day for
+  a subagent's `agent-*`, 3 for a session's), unlocked, no process sits in it, no git
+  operation is in progress, no worktree is nested inside, it holds no ignored file that is
+  not build output, and its reflog holds no commit whose change no remote carries — all
+  re-checked right before removal. `.teyla/corrections.jsonl` is appended to the main
+  checkout's copy first. Two review rounds reproduced eight ways `git worktree remove`
+  loses data without `--force`; each is a test.
+- **`teyla config set storage.auto_clean=true`** lets the daily routine clean on its own;
+  off by default. `doctor` warns under 15% / 25 GB free and at five finished worktrees.
+- **No Actions on push, PR or tag** (POLICY §10). `./check.sh` is the gate;
+  `scripts/release.sh` runs it and creates the GitHub release from the laptop.
+
 ## 0.10.2 — 2026-09-15
 
 - **POLICY template §9 restored.** #39 re-synced the template from the trimmed live file
