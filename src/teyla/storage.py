@@ -61,7 +61,7 @@ _NO_DESCEND = {".git", ".claude", ".worktrees"} | REGENERABLE | DEPENDENCIES
 MAX_DEPTH = 4
 # Git-ignored entries a worktree may hold that are output, not work. `git worktree remove`
 # deletes ignored files without --force, so anything else ignored keeps the tree.
-HARMLESS_IGNORED = REGENERABLE | DEPENDENCIES | {"__pycache__", ".swiftpm", ".DS_Store", ".temp", ".cache", ".gradle", ".kotlin",
+HARMLESS_IGNORED = REGENERABLE | DEPENDENCIES | {"__pycache__", ".swiftpm", ".DS_Store", ".temp", ".cache", ".gradle", ".kotlin", "xcuserdata",
                                                  "next-env.d.ts", ".eslintcache"}
 HARMLESS_SUFFIXES = (".xcodeproj", ".tsbuildinfo", ".pyc", ".xcworkspace")
 # Session-local permission grants, not work.
@@ -411,6 +411,13 @@ def _shipped(d: pathlib.Path) -> str:
     return ""
 
 
+def _names(text: str, path: str) -> bool:
+    """`path` appears in `text` as a whole path: followed by /, <, a quote, whitespace or the end
+    (a plist's WorkingDirectory has no trailing slash)."""
+    import re
+    return re.search(re.escape(path) + r"(?=[/<\"'\s]|$)", text) is not None
+
+
 def launch_references() -> str:
     """The text of every LaunchAgent plist and Teyla wrapper: a build dir named in one is
     something a routine runs, whatever the repo's git activity says."""
@@ -445,7 +452,7 @@ def artifacts(repo: pathlib.Path, cwds: list[str] | None, build_idle_days: int, 
             why.append("could not check for processes (lsof failed)")
         elif in_use:
             why.append("a process is working in the repo")
-        elif str(d) in launched or str(repo) + "/" in launched or os.path.realpath(repo) + "/" in launched:
+        elif str(d) in launched or _names(launched, str(repo)) or _names(launched, os.path.realpath(repo)):
             why.append("a LaunchAgent or Teyla wrapper names this repo")
         elif _shipped(d):
             why.append(f"holds a shipped build ({_shipped(d)}): a rebuild is not the same file")
@@ -607,13 +614,14 @@ def rescue(worktree: str, main: str) -> None:
     if not src.is_file():
         return
     dst = pathlib.Path(main, RESCUE)
-    have = set(dst.read_text(errors="replace").splitlines()) if dst.is_file() else set()
-    new = [l for l in src.read_text(errors="replace").splitlines() if l.strip() and l not in have]
+    # Bytes, split on \n only: splitlines() also breaks on U+2028, which JSON allows inside a string.
+    have = set(dst.read_bytes().split(b"\n")) if dst.is_file() else set()
+    new = [l for l in src.read_bytes().split(b"\n") if l.strip() and l not in have]
     if new:
         dst.parent.mkdir(parents=True, exist_ok=True)
-        lead = "\n" if dst.is_file() and dst.stat().st_size and not dst.read_bytes().endswith(b"\n") else ""
-        with dst.open("a") as fh:
-            fh.write(lead + "\n".join(new) + "\n")
+        lead = b"\n" if dst.is_file() and dst.stat().st_size and not dst.read_bytes().endswith(b"\n") else b""
+        with dst.open("ab") as fh:
+            fh.write(lead + b"\n".join(new) + b"\n")
 
 
 def _remove_worktree(r: dict) -> tuple[int, str]:
