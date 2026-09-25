@@ -94,6 +94,8 @@ teyla doctor --quiet
 teyla routines >/dev/null 2>&1
 # A weekly that launchd skipped (the Mac was off at its minute) runs now instead of never.
 teyla routine catch-up --quiet
+# Finished worktrees and idle build output go, when storage.auto_clean is on; silent otherwise.
+teyla storage clean --auto --quiet
 """
 
 PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
@@ -165,6 +167,9 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         return True
     if ".last" not in text:
         # Written before catch-up existed: it never stamps, so a missed run could never be seen.
+        return True
+    if path == DAILY_WRAPPER_PATH and "storage clean" not in text:
+        # Written before `teyla storage`: the daily would never clean.
         return True
     for line in text.splitlines():
         if line.startswith('TEYLA="'):
