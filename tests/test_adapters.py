@@ -547,3 +547,195 @@ def test_capture_correction_hook_reads_every_harness_shape_and_deduplicates(tmp_
     recs = [json.loads(l) for l in out.read_text().splitlines()]
     assert [r["text"] for r in recs] == ["don't do that", "wrong file, revert it", "again: use pnpm"]
     assert all(r["cwd"] == str(tmp_path) for r in recs)
+
+
+# ---------------------------------------------------------------------------
+# batch (non-interactive) sessions: prompts written by a script or another agent
+# ---------------------------------------------------------------------------
+
+def test_claude_code_print_mode_is_batch(tmp_path):
+    # `claude -p` records entrypoint "sdk-cli"; its prompt is not a human turn, however
+    # correction-shaped the brief is ("Do not run any command, never ...").
+    root = tmp_path / "projects"
+    _write(str(root / "-Users-me-ops" / "p.jsonl"), [
+        {"type": "user", "timestamp": "2026-01-01T00:00:00Z", "entrypoint": "sdk-cli",
+         "message": {"role": "user", "content": "Review PR #313. Do not run any command, never edit files."}},
+    ])
+    _write(str(root / "-Users-me-ops" / "i.jsonl"), [
+        {"type": "user", "timestamp": "2026-01-01T00:00:00Z", "entrypoint": "cli",
+         "message": {"role": "user", "content": "no, don't do that"}},
+    ])
+    ss = {s.sid: s for s in claude_code.load(root=str(root))}
+    assert ss["p"].batch is True and ss["p"].n_user == 0 and ss["p"].n_corr == 0 and ss["p"].n_prompts == 1
+    assert ss["i"].batch is False and ss["i"].n_user == 1 and ss["i"].n_corr == 1
+
+
+def test_codex_exec_is_batch_and_injected_blocks_are_not_turns(tmp_path):
+    day = tmp_path / "sessions" / "2026" / "01" / "01"
+    _write(str(day / "rollout-2026-01-01T00-00-00-ex1.jsonl"), [
+        {"timestamp": "2026-01-01T00:00:00.000Z", "type": "session_meta",
+         "payload": {"session_id": "ex1", "cwd": "/r", "originator": "codex_exec", "source": "exec"}},
+        {"timestamp": "2026-01-01T00:00:01.000Z", "type": "response_item",
+         "payload": {"type": "message", "role": "user", "content": [
+             {"type": "input_text", "text": "<recommended_plugins>\nGmail\n</recommended_plugins>"}]}},
+        {"timestamp": "2026-01-01T00:00:02.000Z", "type": "response_item",
+         "payload": {"type": "message", "role": "user", "content": [
+             {"type": "input_text", "text": "You are a code reviewer. Do NOT run builds. Never edit."}]}},
+    ])
+    _write(str(day / "rollout-2026-01-01T00-00-00-tui.jsonl"), [
+        {"timestamp": "2026-01-01T00:00:00.000Z", "type": "session_meta",
+         "payload": {"session_id": "tui", "cwd": "/r", "originator": "codex_cli_rs", "source": "cli"}},
+        {"timestamp": "2026-01-01T00:00:01.000Z", "type": "response_item",
+         "payload": {"type": "message", "role": "user", "content": [
+             {"type": "input_text", "text": "<recommended_plugins>\nGmail\n</recommended_plugins>"}]}},
+        {"timestamp": "2026-01-01T00:00:02.000Z", "type": "response_item",
+         "payload": {"type": "message", "role": "user", "content": [
+             {"type": "input_text", "text": "no, try again"}]}},
+    ])
+    ss = {s.sid: s for s in codex.load(root=str(tmp_path / "sessions"), archive_root=str(tmp_path / "x"),
+                                       index_path=str(tmp_path / "x.jsonl"))}
+    assert ss["ex1"].batch is True and ss["ex1"].n_prompts == 1 and ss["ex1"].n_user == 0 and ss["ex1"].n_corr == 0
+    assert ss["tui"].batch is False and ss["tui"].n_user == 1 and ss["tui"].n_corr == 1
+
+
+def _grok_session(root, sid, prompts, prompt_context=None):
+    cwd_dir = root / "%2FUsers%2Fme%2Frepos%2Fdemo"
+    sess = cwd_dir / sid
+    os.makedirs(sess, exist_ok=True)
+    with open(cwd_dir / "prompt_history.jsonl", "a") as fh:
+        for i, p in enumerate(prompts):
+            fh.write(json.dumps({"timestamp": f"2026-01-01T00:0{i}:00Z", "session_id": sid,
+                                 "prompt": p, "is_bash": False}) + "\n")
+    with open(sess / "summary.json", "w") as fh:
+        json.dump({"info": {"id": sid, "cwd": "/Users/me/repos/demo"}, "created_at": "2026-01-01T00:00:00Z"}, fh)
+    if prompt_context is not None:
+        with open(sess / "prompt_context.json", "w") as fh:
+            json.dump(prompt_context, fh, indent=2)
+
+
+def test_grok_non_interactive_flag_decides_batch(tmp_path):
+    root = tmp_path / "sessions"
+    # grok -p with a follow-up prompt is still a script's run; a one-prompt TUI session is a human.
+    _grok_session(root, "headless", ["Return ONLY a JSON array", "again, no prose"], {"is_non_interactive": True})
+    _grok_session(root, "tui", ["no, don't"], {"is_non_interactive": False, "prompt_mode": "extend"})
+    _grok_session(root, "legacy", ["only prompt"])  # no prompt_context.json: one prompt means batch
+    ss = {s.sid: s for s in grok.load(root=str(root))}
+    assert ss["headless"].batch is True and ss["headless"].n_user == 0 and ss["headless"].n_corr == 0
+    assert ss["tui"].batch is False and ss["tui"].n_user == 1 and ss["tui"].n_corr == 1
+    assert ss["legacy"].batch is True
+
+
+def test_monitor_excludes_batch_prompts_from_corrections_and_advice(tmp_path):
+    # The shape of 27 Sep: a hundred `codex exec` reviews with correction-shaped briefs next to
+    # a handful of human turns. The rate is the humans' alone, and A5/A9 never see the briefs.
+    from teyla.advise import advise
+    from teyla.monitor import metrics
+    day = tmp_path / "sessions" / "2026" / "01" / "01"
+    for i in range(100):
+        _write(str(day / f"rollout-2026-01-01T00-00-00-ex{i}.jsonl"), [
+            {"timestamp": "2026-01-01T00:00:00.000Z", "type": "session_meta",
+             "payload": {"session_id": f"ex{i}", "cwd": "/r", "originator": "codex_exec", "source": "exec"}},
+            {"timestamp": "2026-01-01T00:00:02.000Z", "type": "response_item",
+             "payload": {"type": "message", "role": "user", "content": [
+                 {"type": "input_text", "text": "Do not run any command, do not use any tool."}]}},
+        ])
+    _write(str(day / "rollout-2026-01-01T00-00-00-me.jsonl"), [
+        {"timestamp": "2026-01-01T00:00:00.000Z", "type": "session_meta",
+         "payload": {"session_id": "me", "cwd": "/r", "source": "cli"}}] + [
+        {"timestamp": f"2026-01-01T00:00:{i:02d}.000Z", "type": "response_item",
+         "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": f"step {i}"}]}}
+        for i in range(60)])
+    ss = codex.load(root=str(tmp_path / "sessions"), archive_root=str(tmp_path / "x"), index_path=str(tmp_path / "x.jsonl"))
+    m = metrics(ss)
+    assert m["by_harness"] == {"codex": 101} and m["batch_by_harness"] == {"codex": 100}
+    assert m["user_turns"] == 60 and m["corrections"] == 0 and m["correction_samples"] == []
+    assert not [f for f in advise(m) if f["id"] in ("A5", "A9")]
+
+
+# ---------------------------------------------------------------------------
+# --days: files that cannot hold an in-window session are skipped on a stat, never parsed
+# ---------------------------------------------------------------------------
+
+import time as _time
+
+from teyla.adapters import since_epoch, stale
+
+_NOW = _time.time()
+_OLD = _NOW - 30 * 86400
+_NEW_TS = _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime(_NOW - 3600))
+_OLD_TS = _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime(_OLD))
+
+
+def _age(path, mtime):
+    os.utime(path, (mtime, mtime))
+
+
+def test_stale_is_conservative():
+    since = since_epoch(3)
+    assert since_epoch(None) is None and not stale(0, None)
+    assert stale(_OLD, since) and not stale(_NOW, since)
+    assert not stale(since - 60, since)  # inside the slack: kept, the caller filters on first
+
+
+def test_claude_code_skips_transcripts_last_written_before_the_window(tmp_path):
+    root = tmp_path / "projects"
+    for sid, ts in (("new", _NEW_TS), ("old", _OLD_TS)):
+        _write(str(root / "slug" / f"{sid}.jsonl"), [
+            {"type": "user", "timestamp": ts, "message": {"role": "user", "content": "hi"}}])
+    _age(root / "slug" / "old.jsonl", _OLD)
+    assert {s.sid for s in claude_code.load(root=str(root))} == {"new", "old"}
+    assert {s.sid for s in claude_code.load(root=str(root), since=since_epoch(3))} == {"new"}
+
+
+def test_codex_never_walks_date_buckets_older_than_the_window(tmp_path, monkeypatch):
+    root = tmp_path / "sessions"
+    new_day = _time.strftime("%Y/%m/%d", _time.gmtime(_NOW - 3600)).split("/")
+    for parts, sid, ts in ((["2020", "01", "01"], "old", "2020-01-01T00:00:00.000Z"), (new_day, "new", _NEW_TS)):
+        _write(str(root.joinpath(*parts) / f"rollout-x-{sid}.jsonl"), [
+            {"timestamp": ts, "type": "session_meta", "payload": {"session_id": sid, "cwd": "/r"}}])
+    walked = []
+    real_walk = os.walk
+    def spy(top, *a, **k):
+        for dirpath, dirnames, filenames in real_walk(top, *a, **k):
+            walked.append(os.path.relpath(dirpath, root))
+            yield dirpath, dirnames, filenames
+    monkeypatch.setattr(codex.os, "walk", spy)
+    ss = codex.load(root=str(root), archive_root=str(tmp_path / "x"), index_path=str(tmp_path / "x.jsonl"),
+                    since=since_epoch(3))
+    assert [s.sid for s in ss] == ["new"]
+    assert not any(w.startswith("2020") for w in walked)
+    assert codex._bucket_end(["2026", "12"]) > codex._bucket_end(["2026", "11", "30"])
+    assert codex._bucket_end(["archive"]) is None
+
+
+def test_grok_skips_old_containers_and_sessions_and_reads_only_their_prompts(tmp_path):
+    root = tmp_path / "sessions"
+    old_cwd = root / "%2Fold"
+    new_cwd = root / "%2Fnew"
+    for cwd, sid, ts in ((old_cwd, "o1", _OLD_TS), (new_cwd, "n-old", _OLD_TS), (new_cwd, "n-new", _NEW_TS)):
+        os.makedirs(cwd / sid, exist_ok=True)
+        with open(cwd / sid / "summary.json", "w") as fh:
+            json.dump({"created_at": ts}, fh)
+        with open(cwd / "prompt_history.jsonl", "a") as fh:
+            fh.write(json.dumps({"timestamp": ts, "session_id": sid, "prompt": "p"}) + "\n")
+            fh.write("not json but mentions n-new\n")
+    for p in (old_cwd / "o1" / "summary.json", new_cwd / "n-old" / "summary.json", old_cwd):
+        _age(p, _OLD)
+    assert {s.sid for s in grok.load(root=str(root))} == {"o1", "n-old", "n-new"}
+    ss = grok.load(root=str(root), since=since_epoch(3))
+    assert [s.sid for s in ss] == ["n-new"] and ss[0].n_prompts == 1
+    assert set(grok._prompts_by_session(str(new_cwd / "prompt_history.jsonl"), {"n-new"})) == {"n-new"}
+
+
+def test_grok_assistant_scan_matches_a_full_decode(tmp_path):
+    chat = tmp_path / "chat_history.jsonl"
+    _write(str(chat), [
+        {"type": "system", "content": "x" * 5000},
+        {"type": "user", "content": [{"type": "text", "text": 'mentions "assistant" and {"type":"assistant"}'}]},
+        {"content": "ok", "type": "assistant", "tool_calls": [{"name": "read_file"}]},
+        {"type": "tool", "content": "assistant " * 100},
+        {"type": "assistant", "content": "done"},
+    ])
+    with open(chat, "a") as fh:
+        fh.write('{"type": "assistant", broken\n')
+    assert [o.get("tool_calls") for o in grok._assistant_records(str(chat))] == [[{"name": "read_file"}], None]

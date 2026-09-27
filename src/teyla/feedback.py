@@ -122,10 +122,10 @@ def build(metrics_raw: dict, *, days: int, policy_status: dict, doctor_lines: li
 def render(days: int = 30) -> str:
     """Gather everything live from this machine and build the feedback document."""
     from . import policy
-    from .adapters import load_all
+    from .adapters import load_all, since_epoch
     from .monitor import metrics
 
-    sessions = [s for s in load_all() if not s.sidechain]
+    sessions = [s for s in load_all(since=since_epoch(days)) if not s.sidechain]
     m = metrics(sessions, days)
     return build(m, days=days, policy_status=policy.status(), doctor_lines=_doctor_lines(),
                  routines_summary=_routines_summary())

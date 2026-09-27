@@ -223,3 +223,25 @@ def test_batch_sessions_are_counted_but_never_clustered_as_corrections():
     assert m["batch_by_harness"] == {"grok": 2}
     assert _harness_count("grok", 2, m["batch_by_harness"]) == "grok (2, of which 2 batch calls)"
     assert _harness_count("claude-code", 1, m["batch_by_harness"]) == "claude-code (1)"
+
+
+def test_sessions_listing_shows_batch_instead_of_counting_its_prompt(monkeypatch, capsys):
+    import argparse
+    import datetime as dt
+    from teyla import cli
+    now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    a = _session("human-1")
+    b = _session("batch-1"); b.harness = "codex"; b.batch = True
+    b.user_turns = [Turn(now, "Do not run any command, do not use any tool.", True)]
+    for s in (a, b):
+        s.first = s.last = now
+    seen = {}
+    def fake_load_all(since=None):
+        seen["since"] = since
+        return [a, b]
+    monkeypatch.setattr(cli, "load_all", fake_load_all)
+    cli.cmd_sessions(argparse.Namespace(days=3, project=None, no_sidechain=True))
+    assert seen["since"] is not None  # the window reaches the adapters, so they can prune
+    rows = {l.split()[2]: l.split() for l in capsys.readouterr().out.splitlines()[1:]}
+    assert rows["human-1"][5:7] == ["2", "1"]      # turns, corr
+    assert rows["batch-1"][5:7] == ["batch", "-"]  # a script's brief is neither

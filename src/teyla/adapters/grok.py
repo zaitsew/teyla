@@ -31,13 +31,15 @@ import os
 import re
 import urllib.parse
 
-from . import CORRECTION_RE, AgentCall, Session, Turn
+from . import CORRECTION_RE, AgentCall, Session, Turn, stale
 
 NAME = "grok"
 GROK_HOME = os.environ.get("GROK_HOME") or os.path.expanduser("~/.grok")
 DEFAULT_ROOT = os.path.join(GROK_HOME, "sessions")
 
 _TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T")
+_SID_RE = re.compile(r'"session_id"\s*:\s*"([^"]+)"')
+_NON_INTERACTIVE_RE = re.compile(rb'"is_non_interactive"\s*:\s*(true|false)')
 
 
 def _load_json(path: str) -> dict:
@@ -48,12 +50,19 @@ def _load_json(path: str) -> dict:
         return {}
 
 
-def _prompts_by_session(prompt_history: str) -> dict:
+def _prompts_by_session(prompt_history: str, wanted: set | None = None) -> dict:
+    """{session_id: [(timestamp, prompt), ...]} from a cwd's prompt log. With `wanted`, lines of
+    other sessions are skipped on a substring test, before any JSON is decoded: a pipeline's log
+    runs to ten thousand lines, and a report window needs a handful of them."""
     by_sid: dict = {}
     if not os.path.isfile(prompt_history):
         return by_sid
     with open(prompt_history, errors="replace") as fh:
         for line in fh:
+            if wanted is not None:
+                m = _SID_RE.search(line)
+                if m is None or m.group(1) not in wanted:
+                    continue
             try:
                 o = json.loads(line)
             except Exception:
@@ -65,14 +74,44 @@ def _prompts_by_session(prompt_history: str) -> dict:
     return by_sid
 
 
+def _assistant_records(chat: str):
+    """The assistant records of a chat_history.jsonl. They are a small share of its bytes — the
+    system prompt, injected context and tool output are most of it — so the file is searched in
+    bytes for the word and only the lines holding it are decoded, instead of decoding them all."""
+    try:
+        with open(chat, "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return
+    i = data.find(b'"assistant"')
+    while i != -1:
+        start = data.rfind(b"\n", 0, i) + 1
+        end = data.find(b"\n", i)
+        if end == -1:
+            end = len(data)
+        try:
+            o = json.loads(data[start:end].decode("utf-8", "replace"))
+        except Exception:
+            o = None
+        if isinstance(o, dict) and o.get("type") == "assistant":
+            yield o
+        i = data.find(b'"assistant"', end)
+
+
 def _dir_size(path: str) -> int:
     total = 0
-    for dirpath, _dirnames, filenames in os.walk(path):
-        for name in filenames:
-            try:
-                total += os.path.getsize(os.path.join(dirpath, name))
-            except OSError:
-                pass
+    try:
+        with os.scandir(path) as it:
+            for e in it:
+                try:
+                    if e.is_dir(follow_symlinks=False):
+                        total += _dir_size(e.path)
+                    elif e.is_file(follow_symlinks=False):
+                        total += e.stat(follow_symlinks=False).st_size
+                except OSError:
+                    pass
+    except OSError:
+        pass
     return total
 
 
@@ -93,7 +132,21 @@ def _cwd_from_dotfile(path: str) -> str | None:
         return None
 
 
-def load(root: str = DEFAULT_ROOT, **kw) -> list[Session]:
+def _stale_session(path: str, since: float | None) -> bool:
+    """summary.json is written when the session starts and rewritten as it runs, and carries
+    `created_at` — so its mtime bounds the session's first timestamp from above. Without it,
+    the transcript or the directory itself stands in."""
+    if since is None:
+        return False
+    for name in ("summary.json", "chat_history.jsonl", ""):
+        try:
+            return stale(os.stat(os.path.join(path, name) if name else path).st_mtime, since)
+        except OSError:
+            continue
+    return True
+
+
+def load(root: str = DEFAULT_ROOT, since: float | None = None, **kw) -> list[Session]:
     if not os.path.isdir(root):
         raise FileNotFoundError(root)
     sessions = []
@@ -105,18 +158,33 @@ def load(root: str = DEFAULT_ROOT, **kw) -> list[Session]:
         if _is_session_dir(entry_path):
             # Newer layout: a hash-named session dir lives directly under root, cwd comes from
             # its own .cwd file (the dir name itself isn't a decodable path).
+            if _stale_session(entry_path, since):
+                continue
             cwd_guess = _cwd_from_dotfile(entry_path) or urllib.parse.unquote(entry)
             s = parse(entry_path, entry, cwd_guess, [])
             if s is not None:
                 sessions.append(s)
             continue
 
+        # A cwd container gains a subdirectory for every session started under it, so its own
+        # mtime is at least the start of its newest session: older than the window, nothing in
+        # it can be in the window — not even its prompt log, which is read only for kept sessions.
+        try:
+            if stale(os.stat(entry_path).st_mtime, since):
+                continue
+        except OSError:
+            continue
         cwd_guess = urllib.parse.unquote(entry)
-        prompts_by_sid = _prompts_by_session(os.path.join(entry_path, "prompt_history.jsonl"))
+        subs = []
         for sub in sorted(os.listdir(entry_path)):
             subpath = os.path.join(entry_path, sub)
-            if not os.path.isdir(subpath):
-                continue
+            if os.path.isdir(subpath) and not _stale_session(subpath, since):
+                subs.append((sub, subpath))
+        if not subs:
+            continue
+        prompts_by_sid = _prompts_by_session(os.path.join(entry_path, "prompt_history.jsonl"),
+                                             {sub for sub, _ in subs})
+        for sub, subpath in subs:
             sub_cwd_guess = _cwd_from_dotfile(subpath) or cwd_guess
             s = parse(subpath, sub, sub_cwd_guess, prompts_by_sid.get(sub, []))
             if s is not None:
@@ -146,30 +214,21 @@ def parse(subpath: str, sid: str, cwd_guess: str, prompts: list) -> Session | No
     ts_candidates = [v for src in (summary, signals) for v in src.values()
                       if isinstance(v, str) and _TS_RE.match(v)]
 
-    chat = os.path.join(subpath, "chat_history.jsonl")
-    if os.path.isfile(chat):
-        with open(chat, errors="replace") as fh:
-            for line in fh:
+    for o in _assistant_records(os.path.join(subpath, "chat_history.jsonl")):
+        s.assistant_turns += 1
+        for tc in o.get("tool_calls") or []:
+            if not isinstance(tc, dict):
+                continue
+            name = tc.get("name")
+            if not name:
+                continue
+            s.tools[name] += 1
+            if name == "spawn_subagent":
                 try:
-                    o = json.loads(line)
+                    args = json.loads(tc.get("arguments") or "{}")
                 except Exception:
-                    continue
-                if o.get("type") != "assistant":
-                    continue
-                s.assistant_turns += 1
-                for tc in o.get("tool_calls") or []:
-                    if not isinstance(tc, dict):
-                        continue
-                    name = tc.get("name")
-                    if not name:
-                        continue
-                    s.tools[name] += 1
-                    if name == "spawn_subagent":
-                        try:
-                            args = json.loads(tc.get("arguments") or "{}")
-                        except Exception:
-                            args = {}
-                        s.agents.append(AgentCall(None, "grok-subagent", args.get("description")))
+                    args = {}
+                s.agents.append(AgentCall(None, "grok-subagent", args.get("description")))
 
     for ts, prompt in sorted(prompts, key=lambda p: p[0] or ""):
         txt = (prompt or "").strip()
@@ -185,9 +244,28 @@ def parse(subpath: str, sid: str, cwd_guess: str, prompts: list) -> Session | No
 
     if not s.first:
         return None
-    # One-prompt sessions launched from scratch/temp dirs or by another program are batch calls
-    # (a Claude session consulting Grok, a pipeline using the CLI), not a human at the keyboard.
-    # monitor.py counts them and their tools but excludes their turns from correction metrics.
-    if len(s.user_turns) <= 1:
-        s.batch = True
+    s.batch = _is_batch(subpath, signals, len(s.user_turns))
     return s
+
+
+def _is_batch(subpath: str, signals: dict, n_prompts: int) -> bool:
+    """A `grok -p` call (a pipeline, or a Claude session consulting Grok) rather than a human at
+    the keyboard. prompt_context.json records it directly (`is_non_interactive`); without that
+    file, a session with at most one prompt is taken as batch. monitor.py counts batch sessions
+    and their tools but never their prompts as human turns."""
+    m = None
+    try:
+        # ~20 KB of prompt context with the flag near its end: scan the tail, then the whole file.
+        with open(os.path.join(subpath, "prompt_context.json"), "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - 2048))
+            m = _NON_INTERACTIVE_RE.search(fh.read())
+            if m is None and size > 2048:
+                fh.seek(0)
+                m = _NON_INTERACTIVE_RE.search(fh.read())
+    except OSError:
+        pass
+    if m:
+        return m.group(1) == b"true"
+    return max(n_prompts, signals.get("userMessageCount") or 0) <= 1

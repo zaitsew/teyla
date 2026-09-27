@@ -172,8 +172,8 @@ def claude_used_models_from_disk(days: int | None = 30) -> list[str]:
     """Anthropic model ids used in Claude Code sessions in the last `days` — a fresh scan via
     adapters.load_all(). Only call this standalone (`teyla models`); when a caller already has
     Sessions in hand (monitor.metrics()), build the list from those instead and pass it in."""
-    from .adapters import load_all
-    sessions = [s for s in load_all() if s.harness == "claude-code" and not s.sidechain]
+    from .adapters import load_all, since_epoch
+    sessions = [s for s in load_all(since=since_epoch(days)) if s.harness == "claude-code" and not s.sidechain]
     if days:
         cutoff = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
         sessions = [s for s in sessions if (s.first or "")[:19] >= cutoff]

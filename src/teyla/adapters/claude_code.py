@@ -7,7 +7,7 @@ import json
 import os
 import re
 
-from . import CORRECTION_RE, TOKEN_KEYS, AgentCall, Session, Turn, is_noise_turn, text_of
+from . import CORRECTION_RE, TOKEN_KEYS, AgentCall, Session, Turn, is_noise_turn, stale, text_of
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "claude-code"
@@ -18,6 +18,11 @@ REPO_HINT = "repos/"
 # session", not active work (a lunch break, a context switch, a session resumed days later).
 ACTIVE_GAP_CEILING_S = 30 * 60
 
+# `entrypoint` on each record says how the session was started. `sdk-cli` is `claude -p` /
+# `--print`: a script or another agent handing Claude one prompt, never a human at the keyboard.
+# (`cli` is the terminal, `claude-desktop` the app; both are interactive.)
+BATCH_ENTRYPOINTS = ("sdk-cli",)
+
 
 def _parse_ts(ts: str):
     try:
@@ -26,11 +31,19 @@ def _parse_ts(ts: str):
         return None
 
 
-def load(root: str = DEFAULT_ROOT, repo_names: list[str] | None = None) -> list[Session]:
+def load(root: str = DEFAULT_ROOT, repo_names: list[str] | None = None, since: float | None = None,
+         **kw) -> list[Session]:
     if not os.path.isdir(root):
         raise FileNotFoundError(root)
     sessions = []
     for f in sorted(glob.glob(os.path.join(root, "*", "*.jsonl"))):
+        # A transcript is appended to as the session runs: last written before the window means
+        # it started before the window too.
+        try:
+            if stale(os.stat(f).st_mtime, since):
+                continue
+        except OSError:
+            continue
         s = parse(f, repo_names)
         if s is not None:
             sessions.append(s)
@@ -63,6 +76,8 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                     active_prev = cur
             if o.get("cwd") and not s.cwd:
                 s.cwd = o["cwd"]
+            if o.get("entrypoint") in BATCH_ENTRYPOINTS:
+                s.batch = True
             if o.get("isSidechain"):
                 s.sidechain = True
             if t == "custom-title":

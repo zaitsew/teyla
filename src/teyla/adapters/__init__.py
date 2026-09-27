@@ -65,7 +65,8 @@ class Session:
     pr_links: int = 0
     repos: Counter = dataclasses.field(default_factory=Counter)
     gov_edits: int = 0     # tool calls that touched the global instructions file (~/.claude/CLAUDE.md)
-    batch: bool = False    # programmatic one-shot session (e.g. `grok -p` from a pipeline): counted, but its turns are not "human turns"
+    batch: bool = False    # non-interactive session (`claude -p`, `codex exec`, `grok -p` from a pipeline or
+                           # another agent): counted, but its prompts are machine-written, not human turns
     connector_calls: list = dataclasses.field(default_factory=list)  # [{server, tool, turn_index, result}] for every mcp__ tool call
     skills_read: Counter = dataclasses.field(default_factory=Counter)  # skill dir name -> Read-tool_use hits on its SKILL.md
 
@@ -87,12 +88,18 @@ class Session:
         return t
 
     @property
-    def n_user(self) -> int:
+    def n_prompts(self) -> int:
+        """Every prompt the session received, human or machine-written."""
         return len(self.user_turns)
 
     @property
+    def n_user(self) -> int:
+        """Human turns. A batch session has none: its prompt came from a script or another agent."""
+        return 0 if self.batch else len(self.user_turns)
+
+    @property
     def n_corr(self) -> int:
-        return sum(1 for u in self.user_turns if u.corr)
+        return 0 if self.batch else sum(1 for u in self.user_turns if u.corr)
 
     @property
     def first_prompt(self) -> str:
@@ -140,13 +147,34 @@ def is_noise_turn(txt: str) -> bool:
     return txt.startswith(NOISE_PREFIXES)
 
 
-def load_all(roots: dict | None = None) -> list[Session]:
-    """Load sessions from every adapter that finds its store on this machine."""
+# A report window (`--days N`) keeps sessions whose first timestamp is inside it. A file or
+# directory last written before the window opened cannot hold such a session, so adapters skip
+# it on a stat alone, before reading a byte. The slack absorbs clock and timezone skew between a
+# record's timestamp and the filesystem's mtime; pruning must never drop an in-window session.
+PRUNE_SLACK_S = 6 * 3600
+
+
+def since_epoch(days: int | None) -> float | None:
+    """The window's opening as a POSIX timestamp, or None for "all time"."""
+    if not days:
+        return None
+    return (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)).timestamp()
+
+
+def stale(mtime: float, since: float | None) -> bool:
+    """True when something last written at `mtime` is certainly older than the window."""
+    return since is not None and mtime < since - PRUNE_SLACK_S
+
+
+def load_all(roots: dict | None = None, since: float | None = None) -> list[Session]:
+    """Load sessions from every adapter that finds its store on this machine. `since` (a POSIX
+    timestamp, see `since_epoch`) lets adapters skip files that cannot hold a session starting
+    inside the window; callers still filter on `Session.first`."""
     from . import claude_code, codex, grok, hermes, cursor  # local import to keep adapters optional
     out: list[Session] = []
     for mod in (claude_code, codex, grok, hermes, cursor):
         try:
-            out.extend(mod.load(**(roots or {}).get(mod.NAME, {})))
+            out.extend(mod.load(since=since, **(roots or {}).get(mod.NAME, {})))
         except FileNotFoundError:
             continue
     return out
