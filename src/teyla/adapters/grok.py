@@ -74,14 +74,44 @@ def _prompts_by_session(prompt_history: str, wanted: set | None = None) -> dict:
     return by_sid
 
 
+def _assistant_records(chat: str):
+    """The assistant records of a chat_history.jsonl. They are a small share of its bytes — the
+    system prompt, injected context and tool output are most of it — so the file is searched in
+    bytes for the word and only the lines holding it are decoded, instead of decoding them all."""
+    try:
+        with open(chat, "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return
+    i = data.find(b'"assistant"')
+    while i != -1:
+        start = data.rfind(b"\n", 0, i) + 1
+        end = data.find(b"\n", i)
+        if end == -1:
+            end = len(data)
+        try:
+            o = json.loads(data[start:end].decode("utf-8", "replace"))
+        except Exception:
+            o = None
+        if isinstance(o, dict) and o.get("type") == "assistant":
+            yield o
+        i = data.find(b'"assistant"', end)
+
+
 def _dir_size(path: str) -> int:
     total = 0
-    for dirpath, _dirnames, filenames in os.walk(path):
-        for name in filenames:
-            try:
-                total += os.path.getsize(os.path.join(dirpath, name))
-            except OSError:
-                pass
+    try:
+        with os.scandir(path) as it:
+            for e in it:
+                try:
+                    if e.is_dir(follow_symlinks=False):
+                        total += _dir_size(e.path)
+                    elif e.is_file(follow_symlinks=False):
+                        total += e.stat(follow_symlinks=False).st_size
+                except OSError:
+                    pass
+    except OSError:
+        pass
     return total
 
 
@@ -184,30 +214,21 @@ def parse(subpath: str, sid: str, cwd_guess: str, prompts: list) -> Session | No
     ts_candidates = [v for src in (summary, signals) for v in src.values()
                       if isinstance(v, str) and _TS_RE.match(v)]
 
-    chat = os.path.join(subpath, "chat_history.jsonl")
-    if os.path.isfile(chat):
-        with open(chat, errors="replace") as fh:
-            for line in fh:
+    for o in _assistant_records(os.path.join(subpath, "chat_history.jsonl")):
+        s.assistant_turns += 1
+        for tc in o.get("tool_calls") or []:
+            if not isinstance(tc, dict):
+                continue
+            name = tc.get("name")
+            if not name:
+                continue
+            s.tools[name] += 1
+            if name == "spawn_subagent":
                 try:
-                    o = json.loads(line)
+                    args = json.loads(tc.get("arguments") or "{}")
                 except Exception:
-                    continue
-                if o.get("type") != "assistant":
-                    continue
-                s.assistant_turns += 1
-                for tc in o.get("tool_calls") or []:
-                    if not isinstance(tc, dict):
-                        continue
-                    name = tc.get("name")
-                    if not name:
-                        continue
-                    s.tools[name] += 1
-                    if name == "spawn_subagent":
-                        try:
-                            args = json.loads(tc.get("arguments") or "{}")
-                        except Exception:
-                            args = {}
-                        s.agents.append(AgentCall(None, "grok-subagent", args.get("description")))
+                    args = {}
+                s.agents.append(AgentCall(None, "grok-subagent", args.get("description")))
 
     for ts, prompt in sorted(prompts, key=lambda p: p[0] or ""):
         txt = (prompt or "").strip()

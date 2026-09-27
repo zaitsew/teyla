@@ -726,3 +726,16 @@ def test_grok_skips_old_containers_and_sessions_and_reads_only_their_prompts(tmp
     assert [s.sid for s in ss] == ["n-new"] and ss[0].n_prompts == 1
     assert set(grok._prompts_by_session(str(new_cwd / "prompt_history.jsonl"), {"n-new"})) == {"n-new"}
 
+
+def test_grok_assistant_scan_matches_a_full_decode(tmp_path):
+    chat = tmp_path / "chat_history.jsonl"
+    _write(str(chat), [
+        {"type": "system", "content": "x" * 5000},
+        {"type": "user", "content": [{"type": "text", "text": 'mentions "assistant" and {"type":"assistant"}'}]},
+        {"content": "ok", "type": "assistant", "tool_calls": [{"name": "read_file"}]},
+        {"type": "tool", "content": "assistant " * 100},
+        {"type": "assistant", "content": "done"},
+    ])
+    with open(chat, "a") as fh:
+        fh.write('{"type": "assistant", broken\n')
+    assert [o.get("tool_calls") for o in grok._assistant_records(str(chat))] == [[{"name": "read_file"}], None]
