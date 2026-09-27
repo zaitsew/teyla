@@ -8,9 +8,13 @@ session so far (not a per-turn delta). We keep the last such snapshot and attrib
 last model seen — if a session switches models mid-way the split is approximate, but this is a
 personal usage monitor, not a billing system.
 
-User turns are `response_item` records with `type: message, role: user`; injected
-`<environment_context>...</environment_context>` turns are filtered out (that is Codex's
-environment-context re-injection, not something the human typed).
+User turns are `response_item` records with `type: message, role: user`; injected turns that are
+one whole `<tag>...</tag>` block (`<environment_context>`, `<recommended_plugins>`,
+`<user_action>`, ...) are filtered out — Codex writes those, the human did not type them.
+
+`session_meta` carries `source` / `originator`: `exec` / `codex_exec` is `codex exec` (and
+`codex review`), a non-interactive run whose prompt a script or another agent wrote. Those
+sessions are `batch`: counted, but their prompts are not human turns.
 
 Subagents show up only when the model calls the `spawn_agent` tool (name may be namespaced,
 e.g. `collaboration.spawn_agent`) — its `task_name` argument becomes the AgentCall description.
@@ -24,6 +28,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import re
 
 from . import CORRECTION_RE, AgentCall, Session, Turn
 from ..connectors import classify_result, parse_mcp_tool
@@ -32,6 +37,16 @@ NAME = "codex"
 DEFAULT_ROOT = os.path.expanduser("~/.codex/sessions")
 DEFAULT_ARCHIVE_ROOT = os.path.expanduser("~/.codex/archived_sessions")
 DEFAULT_INDEX = os.path.expanduser("~/.codex/session_index.jsonl")
+
+
+BATCH_SOURCES = ("exec",)
+BATCH_ORIGINATORS = ("codex_exec",)
+_INJECTED_RE = re.compile(r"^<([a-z][a-z0-9_]*)>.*</\1>$", re.S)
+
+
+def is_injected(txt: str) -> bool:
+    """A user-role message that is a single harness-written `<tag>...</tag>` block."""
+    return txt.startswith("<environment_context>") or bool(_INJECTED_RE.match(txt))
 
 
 def _load_titles(index_path: str) -> dict:
@@ -109,6 +124,8 @@ def parse(f: str, titles: dict | None = None) -> Session | None:
                 if cwd:
                     s.cwd = cwd
                     s.project = cwd
+                if payload.get("source") in BATCH_SOURCES or payload.get("originator") in BATCH_ORIGINATORS:
+                    s.batch = True
 
             elif t == "turn_context":
                 model = payload.get("model")
@@ -133,7 +150,7 @@ def parse(f: str, titles: dict | None = None) -> Session | None:
                     if role == "assistant":
                         s.assistant_turns += 1
                     elif role == "user":
-                        if txt and not txt.startswith("<environment_context>"):
+                        if txt and not is_injected(txt):
                             s.user_turns.append(
                                 Turn(ts, txt[:1500], bool(CORRECTION_RE.search(txt[:600])))
                             )

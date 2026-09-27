@@ -38,6 +38,7 @@ GROK_HOME = os.environ.get("GROK_HOME") or os.path.expanduser("~/.grok")
 DEFAULT_ROOT = os.path.join(GROK_HOME, "sessions")
 
 _TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T")
+_NON_INTERACTIVE_RE = re.compile(rb'"is_non_interactive"\s*:\s*(true|false)')
 
 
 def _load_json(path: str) -> dict:
@@ -185,9 +186,28 @@ def parse(subpath: str, sid: str, cwd_guess: str, prompts: list) -> Session | No
 
     if not s.first:
         return None
-    # One-prompt sessions launched from scratch/temp dirs or by another program are batch calls
-    # (a Claude session consulting Grok, a pipeline using the CLI), not a human at the keyboard.
-    # monitor.py counts them and their tools but excludes their turns from correction metrics.
-    if len(s.user_turns) <= 1:
-        s.batch = True
+    s.batch = _is_batch(subpath, signals, len(s.user_turns))
     return s
+
+
+def _is_batch(subpath: str, signals: dict, n_prompts: int) -> bool:
+    """A `grok -p` call (a pipeline, or a Claude session consulting Grok) rather than a human at
+    the keyboard. prompt_context.json records it directly (`is_non_interactive`); without that
+    file, a session with at most one prompt is taken as batch. monitor.py counts batch sessions
+    and their tools but never their prompts as human turns."""
+    m = None
+    try:
+        # ~20 KB of prompt context with the flag near its end: scan the tail, then the whole file.
+        with open(os.path.join(subpath, "prompt_context.json"), "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - 2048))
+            m = _NON_INTERACTIVE_RE.search(fh.read())
+            if m is None and size > 2048:
+                fh.seek(0)
+                m = _NON_INTERACTIVE_RE.search(fh.read())
+    except OSError:
+        pass
+    if m:
+        return m.group(1) == b"true"
+    return max(n_prompts, signals.get("userMessageCount") or 0) <= 1

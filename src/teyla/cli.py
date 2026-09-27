@@ -97,7 +97,9 @@ def cmd_sessions(args):
     print(f"{'day':10} {'harness':12} {'sid':8} {'MB':>5} {'h':>5} {'turns':>5} {'corr':>4} {'out':>6} {'agents':>6}  project / title")
     for s in ss:
         t = s.tokens
-        print(f"{s.day:10} {s.harness:12} {s.sid[:8]:8} {s.size/1e6:5.1f} {s.hours or 0:5.1f} {s.n_user:5} {s.n_corr:4} {t['output_tokens']/1e3:5.0f}k {len(s.agents):6}  {s.project[:40]} · {(s.title or s.first_prompt)[:60].replace(chr(10),' ')}")
+        # A batch session (`claude -p`, `codex exec`, `grok -p`) has no human turns to count.
+        turns, corr = ("batch", "-") if s.batch else (s.n_user, s.n_corr)
+        print(f"{s.day:10} {s.harness:12} {s.sid[:8]:8} {s.size/1e6:5.1f} {s.hours or 0:5.1f} {turns:>5} {corr:>4} {t['output_tokens']/1e3:5.0f}k {len(s.agents):6}  {s.project[:40]} · {(s.title or s.first_prompt)[:60].replace(chr(10),' ')}")
 
 
 def correction_rows(sessions):

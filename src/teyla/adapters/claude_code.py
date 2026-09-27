@@ -18,6 +18,11 @@ REPO_HINT = "repos/"
 # session", not active work (a lunch break, a context switch, a session resumed days later).
 ACTIVE_GAP_CEILING_S = 30 * 60
 
+# `entrypoint` on each record says how the session was started. `sdk-cli` is `claude -p` /
+# `--print`: a script or another agent handing Claude one prompt, never a human at the keyboard.
+# (`cli` is the terminal, `claude-desktop` the app; both are interactive.)
+BATCH_ENTRYPOINTS = ("sdk-cli",)
+
 
 def _parse_ts(ts: str):
     try:
@@ -63,6 +68,8 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                     active_prev = cur
             if o.get("cwd") and not s.cwd:
                 s.cwd = o["cwd"]
+            if o.get("entrypoint") in BATCH_ENTRYPOINTS:
+                s.batch = True
             if o.get("isSidechain"):
                 s.sidechain = True
             if t == "custom-title":

@@ -65,7 +65,8 @@ class Session:
     pr_links: int = 0
     repos: Counter = dataclasses.field(default_factory=Counter)
     gov_edits: int = 0     # tool calls that touched the global instructions file (~/.claude/CLAUDE.md)
-    batch: bool = False    # programmatic one-shot session (e.g. `grok -p` from a pipeline): counted, but its turns are not "human turns"
+    batch: bool = False    # non-interactive session (`claude -p`, `codex exec`, `grok -p` from a pipeline or
+                           # another agent): counted, but its prompts are machine-written, not human turns
     connector_calls: list = dataclasses.field(default_factory=list)  # [{server, tool, turn_index, result}] for every mcp__ tool call
     skills_read: Counter = dataclasses.field(default_factory=Counter)  # skill dir name -> Read-tool_use hits on its SKILL.md
 
@@ -87,12 +88,18 @@ class Session:
         return t
 
     @property
-    def n_user(self) -> int:
+    def n_prompts(self) -> int:
+        """Every prompt the session received, human or machine-written."""
         return len(self.user_turns)
 
     @property
+    def n_user(self) -> int:
+        """Human turns. A batch session has none: its prompt came from a script or another agent."""
+        return 0 if self.batch else len(self.user_turns)
+
+    @property
     def n_corr(self) -> int:
-        return sum(1 for u in self.user_turns if u.corr)
+        return 0 if self.batch else sum(1 for u in self.user_turns if u.corr)
 
     @property
     def first_prompt(self) -> str:
