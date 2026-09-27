@@ -25,12 +25,12 @@ a human-readable title when a session doesn't already have one.
 """
 from __future__ import annotations
 
-import glob
+import datetime as _dt
 import json
 import os
 import re
 
-from . import CORRECTION_RE, AgentCall, Session, Turn
+from . import CORRECTION_RE, AgentCall, Session, Turn, stale
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "codex"
@@ -75,19 +75,60 @@ def _text_of(content) -> str:
 
 
 def load(root: str = DEFAULT_ROOT, archive_root: str = DEFAULT_ARCHIVE_ROOT,
-         index_path: str = DEFAULT_INDEX, **kw) -> list[Session]:
+         index_path: str = DEFAULT_INDEX, since: float | None = None, **kw) -> list[Session]:
     if not os.path.isdir(root):
         raise FileNotFoundError(root)
     titles = _load_titles(index_path)
-    files = sorted(glob.glob(os.path.join(root, "**", "rollout-*.jsonl"), recursive=True))
+    files = _rollouts(root, since)
     if os.path.isdir(archive_root):
-        files += sorted(glob.glob(os.path.join(archive_root, "**", "rollout-*.jsonl"), recursive=True))
+        files += _rollouts(archive_root, since)
     sessions = []
     for f in files:
         s = parse(f, titles)
         if s is not None:
             sessions.append(s)
     return sessions
+
+
+def _bucket_end(parts: list[str]) -> float | None:
+    """Latest POSIX time a YYYY[/MM[/DD]] bucket can cover, with a day of slack for the local
+    date in the path; None when the path is not a date bucket."""
+    try:
+        nums = [int(x) for x in parts]
+        if len(nums) == 1:
+            end = _dt.datetime(nums[0] + 1, 1, 1)
+        elif len(nums) == 2:
+            end = _dt.datetime(nums[0] + (nums[1] == 12), nums[1] % 12 + 1, 1)
+        elif len(nums) == 3:
+            end = _dt.datetime(*nums) + _dt.timedelta(days=1)
+        else:
+            return None
+    except ValueError:
+        return None
+    return (end + _dt.timedelta(days=1)).replace(tzinfo=_dt.timezone.utc).timestamp()
+
+
+def _rollouts(root: str, since: float | None) -> list[str]:
+    """rollout-*.jsonl under root, sorted. With a window, whole YYYY/MM/DD directories that end
+    before it are never walked, and a rollout last written before it is never opened."""
+    out = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        rel = os.path.relpath(dirpath, root)
+        prefix = [] if rel == "." else rel.split(os.sep)
+        if since is not None:
+            dirnames[:] = [d for d in dirnames
+                           if (end := _bucket_end(prefix + [d])) is None or not stale(end, since)]
+        for name in filenames:
+            if not (name.startswith("rollout-") and name.endswith(".jsonl")):
+                continue
+            f = os.path.join(dirpath, name)
+            try:
+                if stale(os.stat(f).st_mtime, since):
+                    continue
+            except OSError:
+                continue
+            out.append(f)
+    return sorted(out)
 
 
 def parse(f: str, titles: dict | None = None) -> Session | None:

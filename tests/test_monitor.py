@@ -235,10 +235,13 @@ def test_sessions_listing_shows_batch_instead_of_counting_its_prompt(monkeypatch
     b.user_turns = [Turn(now, "Do not run any command, do not use any tool.", True)]
     for s in (a, b):
         s.first = s.last = now
-    def fake_load_all():
+    seen = {}
+    def fake_load_all(since=None):
+        seen["since"] = since
         return [a, b]
     monkeypatch.setattr(cli, "load_all", fake_load_all)
     cli.cmd_sessions(argparse.Namespace(days=3, project=None, no_sidechain=True))
+    assert seen["since"] is not None  # the window reaches the adapters, so they can prune
     rows = {l.split()[2]: l.split() for l in capsys.readouterr().out.splitlines()[1:]}
     assert rows["human-1"][5:7] == ["2", "1"]      # turns, corr
     assert rows["batch-1"][5:7] == ["batch", "-"]  # a script's brief is neither

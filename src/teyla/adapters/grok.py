@@ -31,13 +31,14 @@ import os
 import re
 import urllib.parse
 
-from . import CORRECTION_RE, AgentCall, Session, Turn
+from . import CORRECTION_RE, AgentCall, Session, Turn, stale
 
 NAME = "grok"
 GROK_HOME = os.environ.get("GROK_HOME") or os.path.expanduser("~/.grok")
 DEFAULT_ROOT = os.path.join(GROK_HOME, "sessions")
 
 _TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T")
+_SID_RE = re.compile(r'"session_id"\s*:\s*"([^"]+)"')
 _NON_INTERACTIVE_RE = re.compile(rb'"is_non_interactive"\s*:\s*(true|false)')
 
 
@@ -49,12 +50,19 @@ def _load_json(path: str) -> dict:
         return {}
 
 
-def _prompts_by_session(prompt_history: str) -> dict:
+def _prompts_by_session(prompt_history: str, wanted: set | None = None) -> dict:
+    """{session_id: [(timestamp, prompt), ...]} from a cwd's prompt log. With `wanted`, lines of
+    other sessions are skipped on a substring test, before any JSON is decoded: a pipeline's log
+    runs to ten thousand lines, and a report window needs a handful of them."""
     by_sid: dict = {}
     if not os.path.isfile(prompt_history):
         return by_sid
     with open(prompt_history, errors="replace") as fh:
         for line in fh:
+            if wanted is not None:
+                m = _SID_RE.search(line)
+                if m is None or m.group(1) not in wanted:
+                    continue
             try:
                 o = json.loads(line)
             except Exception:
@@ -94,7 +102,21 @@ def _cwd_from_dotfile(path: str) -> str | None:
         return None
 
 
-def load(root: str = DEFAULT_ROOT, **kw) -> list[Session]:
+def _stale_session(path: str, since: float | None) -> bool:
+    """summary.json is written when the session starts and rewritten as it runs, and carries
+    `created_at` — so its mtime bounds the session's first timestamp from above. Without it,
+    the transcript or the directory itself stands in."""
+    if since is None:
+        return False
+    for name in ("summary.json", "chat_history.jsonl", ""):
+        try:
+            return stale(os.stat(os.path.join(path, name) if name else path).st_mtime, since)
+        except OSError:
+            continue
+    return True
+
+
+def load(root: str = DEFAULT_ROOT, since: float | None = None, **kw) -> list[Session]:
     if not os.path.isdir(root):
         raise FileNotFoundError(root)
     sessions = []
@@ -106,18 +128,33 @@ def load(root: str = DEFAULT_ROOT, **kw) -> list[Session]:
         if _is_session_dir(entry_path):
             # Newer layout: a hash-named session dir lives directly under root, cwd comes from
             # its own .cwd file (the dir name itself isn't a decodable path).
+            if _stale_session(entry_path, since):
+                continue
             cwd_guess = _cwd_from_dotfile(entry_path) or urllib.parse.unquote(entry)
             s = parse(entry_path, entry, cwd_guess, [])
             if s is not None:
                 sessions.append(s)
             continue
 
+        # A cwd container gains a subdirectory for every session started under it, so its own
+        # mtime is at least the start of its newest session: older than the window, nothing in
+        # it can be in the window — not even its prompt log, which is read only for kept sessions.
+        try:
+            if stale(os.stat(entry_path).st_mtime, since):
+                continue
+        except OSError:
+            continue
         cwd_guess = urllib.parse.unquote(entry)
-        prompts_by_sid = _prompts_by_session(os.path.join(entry_path, "prompt_history.jsonl"))
+        subs = []
         for sub in sorted(os.listdir(entry_path)):
             subpath = os.path.join(entry_path, sub)
-            if not os.path.isdir(subpath):
-                continue
+            if os.path.isdir(subpath) and not _stale_session(subpath, since):
+                subs.append((sub, subpath))
+        if not subs:
+            continue
+        prompts_by_sid = _prompts_by_session(os.path.join(entry_path, "prompt_history.jsonl"),
+                                             {sub for sub, _ in subs})
+        for sub, subpath in subs:
             sub_cwd_guess = _cwd_from_dotfile(subpath) or cwd_guess
             s = parse(subpath, sub, sub_cwd_guess, prompts_by_sid.get(sub, []))
             if s is not None:

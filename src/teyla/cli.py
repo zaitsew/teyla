@@ -51,14 +51,14 @@ import sys
 from collections import Counter
 
 from . import __version__
-from .adapters import load_all
+from .adapters import load_all, since_epoch
 from .advise import advise
 from .monitor import metrics
 from .report import markdown, to_json
 
 
 def _sessions(args):
-    ss = load_all()
+    ss = load_all(since=since_epoch(getattr(args, "days", None)))
     if getattr(args, "project", None):
         ss = [s for s in ss if args.project in s.project or (s.cwd and args.project in s.cwd)]
     if getattr(args, "no_sidechain", True):

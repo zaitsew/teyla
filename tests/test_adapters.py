@@ -651,3 +651,78 @@ def test_monitor_excludes_batch_prompts_from_corrections_and_advice(tmp_path):
     assert m["user_turns"] == 60 and m["corrections"] == 0 and m["correction_samples"] == []
     assert not [f for f in advise(m) if f["id"] in ("A5", "A9")]
 
+
+# ---------------------------------------------------------------------------
+# --days: files that cannot hold an in-window session are skipped on a stat, never parsed
+# ---------------------------------------------------------------------------
+
+import time as _time
+
+from teyla.adapters import since_epoch, stale
+
+_NOW = _time.time()
+_OLD = _NOW - 30 * 86400
+_NEW_TS = _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime(_NOW - 3600))
+_OLD_TS = _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime(_OLD))
+
+
+def _age(path, mtime):
+    os.utime(path, (mtime, mtime))
+
+
+def test_stale_is_conservative():
+    since = since_epoch(3)
+    assert since_epoch(None) is None and not stale(0, None)
+    assert stale(_OLD, since) and not stale(_NOW, since)
+    assert not stale(since - 60, since)  # inside the slack: kept, the caller filters on first
+
+
+def test_claude_code_skips_transcripts_last_written_before_the_window(tmp_path):
+    root = tmp_path / "projects"
+    for sid, ts in (("new", _NEW_TS), ("old", _OLD_TS)):
+        _write(str(root / "slug" / f"{sid}.jsonl"), [
+            {"type": "user", "timestamp": ts, "message": {"role": "user", "content": "hi"}}])
+    _age(root / "slug" / "old.jsonl", _OLD)
+    assert {s.sid for s in claude_code.load(root=str(root))} == {"new", "old"}
+    assert {s.sid for s in claude_code.load(root=str(root), since=since_epoch(3))} == {"new"}
+
+
+def test_codex_never_walks_date_buckets_older_than_the_window(tmp_path, monkeypatch):
+    root = tmp_path / "sessions"
+    new_day = _time.strftime("%Y/%m/%d", _time.gmtime(_NOW - 3600)).split("/")
+    for parts, sid, ts in ((["2020", "01", "01"], "old", "2020-01-01T00:00:00.000Z"), (new_day, "new", _NEW_TS)):
+        _write(str(root.joinpath(*parts) / f"rollout-x-{sid}.jsonl"), [
+            {"timestamp": ts, "type": "session_meta", "payload": {"session_id": sid, "cwd": "/r"}}])
+    walked = []
+    real_walk = os.walk
+    def spy(top, *a, **k):
+        for dirpath, dirnames, filenames in real_walk(top, *a, **k):
+            walked.append(os.path.relpath(dirpath, root))
+            yield dirpath, dirnames, filenames
+    monkeypatch.setattr(codex.os, "walk", spy)
+    ss = codex.load(root=str(root), archive_root=str(tmp_path / "x"), index_path=str(tmp_path / "x.jsonl"),
+                    since=since_epoch(3))
+    assert [s.sid for s in ss] == ["new"]
+    assert not any(w.startswith("2020") for w in walked)
+    assert codex._bucket_end(["2026", "12"]) > codex._bucket_end(["2026", "11", "30"])
+    assert codex._bucket_end(["archive"]) is None
+
+
+def test_grok_skips_old_containers_and_sessions_and_reads_only_their_prompts(tmp_path):
+    root = tmp_path / "sessions"
+    old_cwd = root / "%2Fold"
+    new_cwd = root / "%2Fnew"
+    for cwd, sid, ts in ((old_cwd, "o1", _OLD_TS), (new_cwd, "n-old", _OLD_TS), (new_cwd, "n-new", _NEW_TS)):
+        os.makedirs(cwd / sid, exist_ok=True)
+        with open(cwd / sid / "summary.json", "w") as fh:
+            json.dump({"created_at": ts}, fh)
+        with open(cwd / "prompt_history.jsonl", "a") as fh:
+            fh.write(json.dumps({"timestamp": ts, "session_id": sid, "prompt": "p"}) + "\n")
+            fh.write("not json but mentions n-new\n")
+    for p in (old_cwd / "o1" / "summary.json", new_cwd / "n-old" / "summary.json", old_cwd):
+        _age(p, _OLD)
+    assert {s.sid for s in grok.load(root=str(root))} == {"o1", "n-old", "n-new"}
+    ss = grok.load(root=str(root), since=since_epoch(3))
+    assert [s.sid for s in ss] == ["n-new"] and ss[0].n_prompts == 1
+    assert set(grok._prompts_by_session(str(new_cwd / "prompt_history.jsonl"), {"n-new"})) == {"n-new"}
+

@@ -267,8 +267,8 @@ def render_table(m: dict) -> str:
 
 
 def cmd_connectors(args):
-    from .adapters import load_all
-    ss = [s for s in load_all() if not s.sidechain]
+    from .adapters import load_all, since_epoch
+    ss = [s for s in load_all(since=since_epoch(getattr(args, "days", None))) if not s.sidechain]
     if getattr(args, "project", None):
         ss = [s for s in ss if args.project in s.project or (s.cwd and args.project in s.cwd)]
     m = metrics(ss, getattr(args, "days", None))

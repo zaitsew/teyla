@@ -7,7 +7,7 @@ import json
 import os
 import re
 
-from . import CORRECTION_RE, TOKEN_KEYS, AgentCall, Session, Turn, is_noise_turn, text_of
+from . import CORRECTION_RE, TOKEN_KEYS, AgentCall, Session, Turn, is_noise_turn, stale, text_of
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "claude-code"
@@ -31,11 +31,19 @@ def _parse_ts(ts: str):
         return None
 
 
-def load(root: str = DEFAULT_ROOT, repo_names: list[str] | None = None) -> list[Session]:
+def load(root: str = DEFAULT_ROOT, repo_names: list[str] | None = None, since: float | None = None,
+         **kw) -> list[Session]:
     if not os.path.isdir(root):
         raise FileNotFoundError(root)
     sessions = []
     for f in sorted(glob.glob(os.path.join(root, "*", "*.jsonl"))):
+        # A transcript is appended to as the session runs: last written before the window means
+        # it started before the window too.
+        try:
+            if stale(os.stat(f).st_mtime, since):
+                continue
+        except OSError:
+            continue
         s = parse(f, repo_names)
         if s is not None:
             sessions.append(s)
