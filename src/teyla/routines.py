@@ -26,7 +26,7 @@ A repo declares both in one `teyla.toml` at its root:
     status = "broken"
     confirmed = 2026-09-09
 
-`teyla routines [path...]` walks every git repo under ~/repos by default (or
+`teyla routines [path...]` walks every git repo under code_root by default (or
 the paths given), reads each `teyla.toml`, and reports whether the automated
 half is actually loaded and running on schedule, and whether the manual half
 is confirmed working and recent.
@@ -81,7 +81,7 @@ class ManifestError(ValueError):
 
 
 def find_manifests(paths: list[str] | None = None) -> list[pathlib.Path]:
-    """teyla.toml files: at the given paths, or one level under every git repo in ~/repos."""
+    """teyla.toml files: at the given paths, or one level under every git repo in code_root."""
     if paths:
         out = []
         for p in paths:
@@ -93,7 +93,8 @@ def find_manifests(paths: list[str] | None = None) -> list[pathlib.Path]:
             elif p.name == "teyla.toml" and p.exists():
                 out.append(p)
         return out
-    root = pathlib.Path.home() / "repos"
+    from . import config
+    root = config.code_root()
     if not root.is_dir():
         return []
     out = []
@@ -238,7 +239,9 @@ def loaded_state(routine: dict, *, launchctl_output: str | None = None, crontab_
         return "not in crontab"
 
     if kind == "github-actions":
-        if shutil.which("gh") is None:
+        from . import net
+        if shutil.which("gh") is None or not net.allowed():
+            # Safe mode: `gh run list` is a call to GitHub, and this runs unattended weekly.
             return "unknown"
         try:
             r = subprocess.run(

@@ -4,6 +4,10 @@
     teyla update --check    only report (and cache) whether a newer release exists
     teyla update --quiet    one line unless something changed or failed (for the daily routine)
 
+In safe mode (`safe.enabled`, TEYLA_SAFE=1) nothing here touches the network unless the
+command line says `--allow-network`; see net.py. The daily routine and the session hook
+never pass it, so a work laptop updates only when its owner runs `teyla update --allow-network`.
+
 How the install happened decides how it is upgraded:
 
     uv tool        ~/.local/share/uv/tools/teyla/...    uv tool install --force --python <X.Y> git+<repo>@<tag>
@@ -44,7 +48,7 @@ import sys
 import urllib.error
 import urllib.request
 
-from . import __version__, config
+from . import __version__, config, net
 
 CHECK_PATH = config.TEYLA_DIR / "update-check.json"
 
@@ -92,6 +96,20 @@ def trust_source() -> str:
     return f"openssl default {paths.cafile or paths.capath or '(none found)'}"
 
 
+def truststore_available() -> bool:
+    try:
+        import truststore  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+# `pip install 'teyla[work]'` is Teyla plus truststore: the OS keychain, which on a managed Mac
+# already holds the TLS-inspecting proxy's root CA, so no SSL_CERT_FILE has to be exported.
+WORK_EXTRA_HINT = ("behind a proxy without truststore: reinstall with the work extra so Python uses the OS "
+                   "keychain — uv tool install --force 'teyla[work] @ git+https://github.com/zaitsew/teyla'")
+
+
 def ssl_context():
     import ssl
     if _explicit_bundle():
@@ -126,7 +144,8 @@ def explain_tls_error(note: str | None) -> str | None:
     if "CERTIFICATE_VERIFY_FAILED" in note:
         return ("Python does not trust the certificate chain (git/curl may, via the OS keychain). Point it at a "
                 "bundle that includes the proxy's root CA: teyla config set env.SSL_CERT_FILE=/path/to/bundle.pem; "
-                "or pip install truststore into Teyla's environment")
+                "or install the work extra (truststore, the OS keychain): "
+                "uv tool install --force 'teyla[work] @ git+https://github.com/zaitsew/teyla'")
     return None
 
 
@@ -206,6 +225,8 @@ def check(repo: str | None = None, refresh: bool = True, max_age_hours: int = 24
     cfg = config.load()
     repo = repo or cfg["update"]["repo"]
     now = _dt.datetime.now(_dt.timezone.utc)
+    if not net.allowed(cfg):
+        return _offline_record(repo, cfg, now)
     if not refresh and CHECK_PATH.exists():
         try:
             cached = json.loads(CHECK_PATH.read_text())
@@ -235,6 +256,25 @@ def check(repo: str | None = None, refresh: bool = True, max_age_hours: int = 24
     return rec
 
 
+def _offline_record(repo: str, cfg: dict, now) -> dict:
+    """Safe mode: no lookup. The last record an explicit `--allow-network` run left, whatever its
+    age (marked `from_cache`), else a record that says nothing was asked. Never written back."""
+    method, root = install_method()
+    rec = {"checked": "", "repo": repo, "latest": None, "note": "safe mode: not checked", "reachable": None}
+    try:
+        cached = json.loads(CHECK_PATH.read_text())
+        if cached.get("repo") == repo:
+            rec = cached
+    except (OSError, ValueError):
+        pass
+    rec.update({"installed": __version__, "newer": is_newer(rec.get("latest"), __version__), "method": method,
+                "checkout": str(root) if root else None, "from_cache": bool(rec.get("checked")), "safe": True,
+                "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+                "python_pin": python_spec(cfg), "executable": sys.executable, "trust": trust_source(),
+                "proxy": proxy_in_use()})
+    return rec
+
+
 def _run(cmd: list[str], cwd: pathlib.Path | None = None) -> tuple[int, str]:
     r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
     return r.returncode, (r.stdout + r.stderr).strip()
@@ -244,9 +284,17 @@ def _uv_cache_corrupt(out: str) -> bool:
     return "unable to read sha1 file" in out or "Could not reset index file" in out or "Git operation failed" in out
 
 
+def install_source(repo: str, ref: str) -> str:
+    """What uv/pipx/pip install. With truststore importable here the install came with the
+    `work` extra (or had it added), and a plain `git+...` reinstall would drop it — the next
+    update check behind the proxy would then fail on the very release it just installed."""
+    url = f"git+https://github.com/{repo}@{ref}"
+    return f"teyla[work] @ {url}" if truststore_available() else url
+
+
 def upgrade(tag: str, repo: str, method: str, checkout: pathlib.Path | None = None,
             python: str | None = None) -> list[str]:
-    src = f"git+https://github.com/{repo}@{tag}"
+    src = install_source(repo, tag)
     spec = python or python_spec()
     lines = []
     if method == "uv-tool":
@@ -265,7 +313,7 @@ def upgrade(tag: str, repo: str, method: str, checkout: pathlib.Path | None = No
             # `uv tool install --force` removes the old tool before the new build; a failed
             # build therefore leaves no `teyla` at all — the daily wrapper, the session-start
             # hook and doctor all go quiet. Put the installed version back first.
-            back = f"git+https://github.com/{repo}@v{__version__}"
+            back = install_source(repo, f"v{__version__}")
             rc2, out2 = _run([uv, "tool", "install", "--force", "--python", spec, back])
             lines.append(f"{'restored' if rc2 == 0 else 'FAIL: could not restore'} {__version__} after the failed upgrade"
                          + ("" if rc2 == 0 else f": {out2[-300:]}"))
@@ -319,6 +367,8 @@ def post_update(quiet: bool = False) -> list[str]:
 def cmd_update(args):
     cfg = config.load()
     repo = cfg["update"]["repo"]
+    if not net.gate("`teyla update" + (" --check`" if args.check else "`"), cfg):
+        return 1
     rec = check(repo, refresh=True)
     method, root = rec["method"], rec.get("checkout")
     if rec["latest"] is None:
@@ -372,3 +422,4 @@ def register(sp):
     q.add_argument("--force", action="store_true", help="reinstall the latest release even if it is the current one")
     q.add_argument("--wire", action="store_true", help="when already current, still run the post-update steps")
     q.add_argument("--quiet", action="store_true")
+    q.add_argument("--allow-network", action="store_true", help="safe mode: allow this one run to reach GitHub")

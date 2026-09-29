@@ -11,7 +11,8 @@ Reads (read-only, local-first; presence only for credentials, never a value):
                              called from monitor.py; a fresh scan via adapters.load_all() when
                              called standalone as `teyla models`).
   5. Credentials/subscriptions (presence only) — env vars, ~/.codex/auth.json,
-     ~/.grok/auth.json keys, and the Claude Code keychain item's exit code.
+     ~/.grok/auth.json keys, and the Claude Code keychain item's exit code (in safe mode
+     env vars only: ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN, no keychain query).
 
 Everything here is read-only except `--write-policy` (rewrites the ladder table between the
 `<!-- ladder:start -->` / `<!-- ladder:end -->` markers in ~/.agents/POLICY.md, nothing else in
@@ -96,6 +97,9 @@ def load_models_dev_catalogue(refresh: bool = False) -> tuple[dict, str | None]:
         data = _read_json(MODELS_DEV_CACHE)
         if data is not None:
             return data, f"{MODELS_DEV_CACHE}" + (f" ({age:.1f}d old, stale)" if stale else "")
+    if stale and refresh:
+        from . import net
+        refresh = net.gate(f"fetching {MODELS_DEV_URL}")
     if stale and refresh:
         try:
             import urllib.request
@@ -186,8 +190,13 @@ def claude_used_models_from_disk(days: int | None = 30) -> list[str]:
 def credentials() -> dict:
     """provider -> bool. Presence only — never reads or returns a secret value."""
     cred = {"anthropic": False, "openai": False, "xai": False, "google": False}
+    from . import config
     if os.environ.get(PROVIDER_ENV["anthropic"]):
         cred["anthropic"] = True
+    elif config.safe_mode():
+        # No keychain query in safe mode: `security find-generic-password` names a credential
+        # item, and EDR on a managed Mac may flag exactly that. Presence by env var only.
+        cred["anthropic"] = bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"))
     else:
         try:
             r = subprocess.run(["security", "find-generic-password", "-s", "Claude Code-credentials"],
@@ -675,6 +684,7 @@ def register(sp):
     q.add_argument("--days", type=int, default=30, help="window for 'used in Claude Code' models (default: 30)")
     q.add_argument("--json", action="store_true")
     q.add_argument("--refresh", action="store_true", help="fetch models.dev/api.json if the local cache is missing/stale (opt-in network)")
+    q.add_argument("--allow-network", action="store_true", help="safe mode: allow --refresh to reach models.dev this once")
     q.add_argument("--write-policy", action="store_true", help="rewrite the ladder table in ~/.agents/POLICY.md, between the markers only")
     q.add_argument("--write-prices", action="store_true", help="write ~/.teyla/prices.json from the models.dev catalogue")
     q.add_argument("--dry", action="store_true", help="with --write-policy: print the diff, don't write")

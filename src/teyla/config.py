@@ -7,6 +7,12 @@
     channel = "release"            "release" (tags) or "main" (tip of main)
     python  = "3.12"               interpreter `teyla update` pins on every self-install
                                    (default: the one Teyla is running on right now)
+    [safe]
+    enabled = false                work mode (also env TEYLA_SAFE=1): no network, no self-update,
+                                   no repo code run, no hand-edited plugin registry — see safe_mode()
+    [products]
+    repos = ["teyla", "~/work/x"]  the only repos `teyla products` runs `./check.sh usage` in
+                                   (names under code_root, or paths); unset = every repo, outside safe mode
     [storage]
     auto_clean      = false        the daily routine removes finished worktrees + idle build output
     idle_days       = 3            a clean, pushed worktree untouched this long is finished
@@ -45,6 +51,8 @@ DEFAULTS = {
     # `teyla storage`: auto_clean lets the daily routine remove finished worktrees (clean, on
     # the remote, idle >= idle_days) and git-ignored build output of repos idle >= build_idle_days.
     "storage": {"auto_clean": False, "idle_days": 3, "agent_idle_days": 1, "build_idle_days": 14},
+    "safe": {"enabled": False},
+    "products": {"repos": []},
 }
 
 
@@ -95,6 +103,8 @@ def apply_env(cfg: dict | None = None) -> list[str]:
 
 
 def _toml_value(v) -> str:
+    if isinstance(v, (list, tuple)):
+        return "[" + ", ".join(_toml_value(x) for x in v) + "]"
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, (int, float)):
@@ -126,14 +136,36 @@ def write(code_root: str = "~/repos", ops_root: str = "~/ops", repo: str = "zait
         return f"exists: {p}"
     data = {"code_root": code_root, "ops_root": ops_root, "update": {"repo": repo, "channel": channel}}
     if p.exists():
-        # --force rewrites the roots and the update block; an existing [env] block is kept,
-        # it is exactly the local adaptation a rewrite must not erase.
-        old_env = _read(p).get("env")
-        if isinstance(old_env, dict) and old_env:
-            data["env"] = old_env
+        # --force rewrites the roots and the update block; [env], [safe], [products] and
+        # [storage] are kept: they are exactly the local adaptation a rewrite must not erase
+        # (a work laptop that loses `safe.enabled` here would self-update the next morning).
+        old = _read(p)
+        for table in ("env", "safe", "products", "storage"):
+            if isinstance(old.get(table), dict) and old[table]:
+                data[table] = old[table]
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(dump(data))
     return f"wrote {p}"
+
+
+def _coerce(default, value: str):
+    """A `config set` string as the type its default has: `safe.enabled=true` must be a TOML
+    boolean and `products.repos=a,b` a list, or every reader has to re-guess the string."""
+    if isinstance(default, bool):
+        low = value.strip().lower()
+        if low in ("1", "true", "yes", "on"):
+            return True
+        if low in ("0", "false", "no", "off"):
+            return False
+        return value
+    if isinstance(default, int):
+        try:
+            return int(value)
+        except ValueError:
+            return value
+    if isinstance(default, list):
+        return [x.strip() for x in value.split(",") if x.strip()]
+    return value
 
 
 def set_value(dotted: str, value: str | None, path: pathlib.Path | None = None) -> str:
@@ -155,6 +187,7 @@ def set_value(dotted: str, value: str | None, path: pathlib.Path | None = None) 
                 return f"{dotted} not set"
             del sub[key]
         else:
+            value = _coerce(DEFAULTS[table].get(key), value)
             sub[key] = value
     else:
         key = parts[0]
@@ -176,6 +209,44 @@ def show(path: pathlib.Path | None = None) -> str:
     cfg = load(p)
     head = f"# {p} ({'exists' if p.exists() else 'absent — defaults'})\n"
     return head + dump(cfg)
+
+
+def truthy(v) -> bool:
+    return v is True or str(v).strip().lower() in ("1", "true", "yes", "on")
+
+
+SAFE_ENV = "TEYLA_SAFE"
+SAFE_SUMMARY = "on (network off, no auto-update, no repo commands)"
+
+
+def safe_mode(cfg: dict | None = None) -> bool:
+    """Work mode: `[safe] enabled = true` in config.toml, or TEYLA_SAFE=1 in the environment.
+    The variable can only switch it on — a stray TEYLA_SAFE=0 in some shell must not undo
+    what the config file on a managed laptop says."""
+    if truthy(os.environ.get(SAFE_ENV, "")):
+        return True
+    return truthy(((cfg or load()).get("safe") or {}).get("enabled", False))
+
+
+def products_allowlist(cfg: dict | None = None) -> list[pathlib.Path]:
+    """`[products] repos` resolved to paths: a bare name is a directory under code_root, anything
+    with a slash or a `~` is a path."""
+    cfg = cfg or load()
+    raw = (cfg.get("products") or {}).get("repos") or []
+    if isinstance(raw, str):
+        raw = [x.strip() for x in raw.split(",") if x.strip()]
+    root = code_root(cfg)
+    return [(pathlib.Path(r).expanduser() if ("/" in r or r.startswith("~")) else root / r).resolve()
+            for r in (str(x) for x in raw)]
+
+
+def runs_root(cfg: dict | None = None) -> pathlib.Path:
+    """Where the weekly routine files its reports: the owner's existing
+    <ops_root>/startup/os/ai-dev/runs when that tree exists, else <ops_root>/runs — the
+    git-ignored directory `teyla policy init --ops-root-init` creates."""
+    ops = ops_root(cfg)
+    legacy = ops / "startup" / "os" / "ai-dev"
+    return legacy / "runs" if legacy.is_dir() else ops / "runs"
 
 
 def code_root(cfg: dict | None = None) -> pathlib.Path:

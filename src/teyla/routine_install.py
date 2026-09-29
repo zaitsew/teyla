@@ -26,7 +26,6 @@ LABEL = "com.zaitsew.teyla.weekly"
 PLIST_PATH = pathlib.Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
 WRAPPER_PATH = pathlib.Path.home() / ".teyla" / "weekly.sh"
 LOG_PATH = pathlib.Path.home() / "Library" / "Logs" / "teyla-weekly.log"
-OUT_ROOT = pathlib.Path.home() / "ops" / "startup" / "os" / "ai-dev" / "runs"
 
 # The daily agent: `teyla update` (a newer release → install + re-wire) then `teyla doctor`,
 # whose one-line summary the session-start hook shows. 07:00 local, before the weekly one.
@@ -87,7 +86,7 @@ echo "== $(date -u +%FT%TZ) teyla daily"
 date -u +%FT%TZ > "{stamp}"
 export TEYLA_IN_ROUTINE="{label}"
 TEYLA="{teyla_bin}"
-"$TEYLA" update --quiet
+{update_line}
 # `update` may have replaced the binary in place; call it by name from here on.
 teyla doctor --quiet
 # Refresh ~/.teyla/routines/<product>.line, the one-liners the session-start hook shows.
@@ -140,7 +139,7 @@ echo "== $(date -u +%FT%TZ) teyla weekly"
 date -u +%FT%TZ > "{stamp}"
 export TEYLA_IN_ROUTINE="{label}"
 TEYLA="{teyla_bin}"
-OUT_DIR="$HOME/ops/startup/os/ai-dev/runs/$(date +%F)"
+OUT_DIR="{runs_root}/$(date +%F)"
 mkdir -p "$OUT_DIR"
 
 "$TEYLA" monitor --days 7 --out "$OUT_DIR/monitor.md"
@@ -148,6 +147,22 @@ mkdir -p "$OUT_DIR"
 "$TEYLA" products > "$OUT_DIR/products.md" 2>&1
 "$TEYLA" models > "$OUT_DIR/models.md" 2>&1
 """
+
+
+UPDATE_LINE = '"$TEYLA" update --quiet'
+# Safe mode: the daily never self-updates. `teyla update` refuses without --allow-network
+# anyway (net.py), but a wrapper that does not even try is the one a reviewer can read.
+SAFE_UPDATE_LINE = "# safe mode: no self-update here; by hand: teyla update --allow-network"
+
+
+def _update_line() -> str:
+    from . import config
+    return SAFE_UPDATE_LINE if config.safe_mode() else UPDATE_LINE
+
+
+def _runs_root() -> str:
+    from . import config
+    return str(config.runs_root())
 
 
 def _teyla_bin() -> str:
@@ -170,6 +185,12 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         return True
     if path == DAILY_WRAPPER_PATH and "storage clean" not in text:
         # Written before `teyla storage`: the daily would never clean.
+        return True
+    if path == DAILY_WRAPPER_PATH and (UPDATE_LINE in text) != (_update_line() == UPDATE_LINE):
+        # Safe mode was switched on (or off) after the wrapper was written.
+        return True
+    if path == WRAPPER_PATH and f'OUT_DIR="{_runs_root()}/' not in text:
+        # Written with the hard-coded ~/ops path, or before ops_root changed in config.
         return True
     for line in text.splitlines():
         if line.startswith('TEYLA="'):
@@ -258,7 +279,8 @@ def install(if_stale: bool = False) -> list[str]:
 
     DAILY_WRAPPER_PATH.parent.mkdir(parents=True, exist_ok=True)
     DAILY_WRAPPER_PATH.write_text(DAILY_WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin, env_sh=env_sh,
-                                                                stamp=DAILY_STAMP_PATH, label=DAILY_LABEL))
+                                                                stamp=DAILY_STAMP_PATH, label=DAILY_LABEL,
+                                                                update_line=_update_line()))
     DAILY_WRAPPER_PATH.chmod(0o755)
     lines.append(f"wrote {DAILY_WRAPPER_PATH}")
     DAILY_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -272,7 +294,8 @@ def install(if_stale: bool = False) -> list[str]:
         lines.append("not macOS: add to cron yourself: 0 7 * * * bash " + str(DAILY_WRAPPER_PATH))
 
     WRAPPER_PATH.parent.mkdir(parents=True, exist_ok=True)
-    WRAPPER_PATH.write_text(WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin, env_sh=env_sh, stamp=STAMP_PATH, label=LABEL))
+    WRAPPER_PATH.write_text(WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin, env_sh=env_sh, stamp=STAMP_PATH, label=LABEL,
+                                                    runs_root=_runs_root()))
     WRAPPER_PATH.chmod(0o755)
     lines.append(f"wrote {WRAPPER_PATH}")
 
