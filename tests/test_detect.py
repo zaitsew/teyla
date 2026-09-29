@@ -296,3 +296,9 @@ def test_codex_records_the_text_a_turn_ended_on(tmp_path):
     s = codex.load(root=str(tmp_path / "sessions"), archive_root=str(tmp_path / "x"), index_path=str(tmp_path / "i"))[0]
     assert s.turn_ends == [("2026-09-21T10:00:04Z", "Fixed. Shall I open the PR?", "yes")]
     assert detect.is_permission_ask(*s.turn_ends[0][1:])
+
+
+def test_feedback_withholds_the_repo_an_actions_row_names():
+    from teyla.feedback import shareable_check
+    row = {"level": "WARN", "name": "actions:acme", "detail": ".github/workflows/ci.yml on: push", "fix": "x"}
+    assert shareable_check(row) == ("WARN", "actions", "(withheld)")
