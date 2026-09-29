@@ -128,5 +128,10 @@ def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
             F += _c.advise(cm)
     except Exception:  # noqa: BLE001 — connector advice is optional
         pass
+    try:
+        from . import grokcost as _g
+        F += _g.advise(m.get("grok_week"))
+    except Exception:  # noqa: BLE001 — Grok cost advice is optional
+        pass
     order = {"high": 0, "medium": 1, "low": 2}
     return sorted(F, key=lambda f: order[f["severity"]])

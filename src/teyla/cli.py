@@ -33,6 +33,7 @@
   teyla products [path...]                                       real-usage counters from every repo's ./check.sh usage
   teyla routines [path...] [--json]                               routines + manual checks from every repo's teyla.toml
   teyla routine install|status|catch-up [--if-stale] [--dry]     Teyla's own daily (update+doctor) and weekly launchd routines; catch-up runs what launchd skipped
+  teyla grok-cost [--last|--session ID] [--cwd PATH] [--days N] [--by project|session] [--json]   Grok CLI cost at list price
   teyla connectors [--days N] [--json]                             per-connector round-trips, read/write, empty-or-error rate; advice C1–C4
   teyla plugins [name|path] [--json]                              skill/rule/fact quality pass over a Claude Code plugin
   teyla plugin install <source>                                   install a plugin by hand-editing its registry (no `claude` CLI)
@@ -66,11 +67,22 @@ def _sessions(args):
     return ss
 
 
+def _grok_week():
+    """This week's Grok cost, for A13/A14. Not part of metrics(): it reads updates.jsonl of the
+    week's sessions, and the report window (--days) is not the week."""
+    from . import grokcost
+    try:
+        return grokcost.week()
+    except Exception:  # noqa: BLE001 — advisory only
+        return None
+
+
 def cmd_monitor(args):
     from . import policy
     from .monitor import redact
     ss = _sessions(args)
     m = metrics(ss, args.days)
+    m["grok_week"] = _grok_week()
     F = advise(m, policy.status())
     if args.share:
         m = redact(m); args.samples = False
@@ -84,6 +96,7 @@ def cmd_monitor(args):
 def cmd_advise(args):
     from . import policy
     m = metrics(_sessions(args), args.days)
+    m["grok_week"] = _grok_week()
     for f in advise(m, policy.status()):
         print(f"[{f['severity']}] {f['id']} {f['title']}\n    {f['evidence']}\n    → {f['action']}")
 
@@ -249,13 +262,13 @@ def main(argv=None):
     q.add_argument("--prefer", choices=["agents", "claude"], help="sync-repo: when AGENTS.md and CLAUDE.md both exist and differ, keep this one and symlink the other to it")
     q.add_argument("--note", help="ack: free-text note recorded alongside the acknowledgement")
     q = sp.add_parser("harvest"); q.set_defaults(fn=cmd_harvest); q.add_argument("path"); q.add_argument("--project")
-    from . import wiki, feedback, models, plugins, plugin_install, connectors, control, doctor, update, remind, rules, harness, storage
+    from . import grokcost, wiki, feedback, models, plugins, plugin_install, connectors, control, doctor, update, remind, rules, harness, storage
     from . import platform as platform_mod, productize as productize_mod
     doctor.register(sp); update.register(sp); _config.register(sp)
     platform_mod.register(sp); productize_mod.register(sp)
     wiki.register(sp); feedback.register(sp); models.register(sp)
     plugins.register(sp); plugin_install.register(sp); connectors.register(sp); control.register(sp)
-    remind.register(sp); rules.register(sp); harness.register(sp); storage.register(sp)
+    remind.register(sp); rules.register(sp); harness.register(sp); storage.register(sp); grokcost.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
     q = sp.add_parser("routines"); q.set_defaults(fn=cmd_routines)
     q.add_argument("paths", nargs="*"); q.add_argument("--json", action="store_true")
