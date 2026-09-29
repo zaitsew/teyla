@@ -309,6 +309,8 @@ def test_prose_stays_prose_and_commands_get_backticks():
     assert lines[2] == "2. plugin: missing → `teyla plugin install zaitsew/teyla`"
     assert lines[3] == "3. A1 t1 → Pass model: sonnet on every Agent call"
     assert [c["cmd"] for c in digest.candidates(fs, [], [])] == [False, True]
+    yaml_key = dict(id="A16", severity="high", title="t", action="Set `on:` to `workflow_dispatch:` only, commit and push.")
+    assert digest._step_of_advice(yaml_key["action"]) == ("Set on: to workflow_dispatch: only, commit and push", False)
 
 
 def test_manifests_are_discovered_under_config_code_root(tmp_path, monkeypatch):

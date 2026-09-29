@@ -171,16 +171,18 @@ def banner(items_text: str, seen_text: str | None) -> str:
 
 # --- digest -----------------------------------------------------------------------------------
 
-def _step_of_advice(action: str) -> tuple[str, bool]:
-    """(step, is_command): the first `backticked` span of an advice action is a command; without
-    one the action is prose — its first sentence, never dressed up as something to paste."""
-    m = re.search(r"`([^`]+)`", action or "")
-    if m:
-        return m.group(1), True
-    return _short(re.split(r"(?<=[.;])\s", action or "")[0].rstrip("."), 90), False
-
-
 _COMMAND_RE = re.compile(r"^(?:teyla|git|gh|uv|pipx|brew|chmod|bash|sh|launchctl|claude|codex|grok|~/|/|\./)(?:\s|$|/)")
+
+
+def _step_of_advice(action: str) -> tuple[str, bool]:
+    """(step, is_command): the first `backticked` span of an advice action that is a command
+    (A16's `on:` is a YAML key, not one); without one the action is prose — its first sentence,
+    backticks dropped, never dressed up as something to paste."""
+    for span in re.findall(r"`([^`]+)`", action or ""):
+        if _COMMAND_RE.match(span):
+            return span, True
+    first = re.split(r"(?<=[.;])\s", action or "")[0].rstrip(".").replace("`", "")
+    return _short(first, 90), False
 
 
 def _step_of_fix(fix: str | None) -> tuple[str, bool]:
