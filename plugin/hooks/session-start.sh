@@ -2,9 +2,15 @@
 # SessionStart: one or two lines of orientation, never a failure.
 #
 # - If .claude/rules/*.md exist in the current repo, print how many.
-# - If ~/.teyla/doctor.summary is non-empty (doctor found something to fix or an
-#   update waiting), print it. Doctor writes it; this only reads it, so the hook
-#   costs nothing.
+# - Print only what is NEW since the last session start: doctor and `teyla routines`
+#   precompute ~/.teyla/banner.items (key<TAB>text per thing that needs a human); the
+#   keys shown last time are in ~/.teyla/banner.seen. One awk call prints
+#   "teyla: new — …; N known (teyla doctor)", or nothing when nothing is new. The old
+#   one-liner (~/.teyla/doctor.summary) showed on 44 of 44 starts with the same items
+#   for 13 days and stopped being read. Without banner.items (a CLI older than this
+#   hook) the summary is printed as before.
+# - Once per weekly digest (~/.teyla/digest.md newer than ~/.teyla/digest.seen), print
+#   its headline: the top action of the week and its command.
 # - If ./teyla.toml names a product and the daily routine left a one-line routines
 #   summary for it (~/.teyla/routines/<product>.line), print that line: "did it run?"
 #   is then answered before the question is asked, and `teyla routines .` is named
@@ -29,9 +35,23 @@
     fi
   fi
   summary="$HOME/.teyla/doctor.summary"
-  if [ -s "$summary" ]; then
+  items="$HOME/.teyla/banner.items"
+  seen="$HOME/.teyla/banner.seen"
+  if [ -f "$items" ]; then
+    [ -f "$seen" ] || : > "$seen"
+    awk -F '\t' 'FILENAME == ARGV[1] { s[$1] = 1; next }
+      ($1 in s) { k++; next }
+      { n++; if (n <= 3) t = t (n > 1 ? "; " : "") $2 }
+      END { if (n) { l = "teyla: new — " t; if (n > 3) l = l " (+" n - 3 " more)"; if (k) l = l "; " k " known"; print l " (teyla doctor)" } }' "$seen" "$items"
+    cut -f1 "$items" > "$seen.tmp" && mv "$seen.tmp" "$seen"
+  elif [ -s "$summary" ]; then
     line=$(head -n 1 "$summary" 2>/dev/null)
     [ -n "$line" ] && echo "$line"
+  fi
+  digest="$HOME/.teyla/digest.md"
+  if [ -s "$digest" ] && { [ ! -f "$HOME/.teyla/digest.seen" ] || [ "$digest" -nt "$HOME/.teyla/digest.seen" ]; }; then
+    head -n 1 "$digest"
+    touch "$HOME/.teyla/digest.seen"
   fi
   if [ -f "teyla.toml" ]; then
     product=$(sed -n 's/^name *= *"\([^"]*\)".*/\1/p' teyla.toml 2>/dev/null | head -n 1)

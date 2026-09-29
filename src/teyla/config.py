@@ -12,6 +12,8 @@
     idle_days       = 3            a clean, pushed worktree untouched this long is finished
     agent_idle_days = 1            the same for a subagent's <repo>/.claude/worktrees/agent-*
     build_idle_days = 14           git-ignored build dirs of a repo idle this long are removed
+    [digest]
+    notify = true                  the weekly digest posts a macOS notification when written
     [env]
     SSL_CERT_FILE = "~/.teyla/ca-bundle.pem"
     HTTPS_PROXY   = "http://127.0.0.1:9000"
@@ -45,6 +47,8 @@ DEFAULTS = {
     # `teyla storage`: auto_clean lets the daily routine remove finished worktrees (clean, on
     # the remote, idle >= idle_days) and git-ignored build output of repos idle >= build_idle_days.
     "storage": {"auto_clean": False, "idle_days": 3, "agent_idle_days": 1, "build_idle_days": 14},
+    # `teyla digest --write` (the weekly routine) posts a macOS notification with its headline.
+    "digest": {"notify": True},
 }
 
 

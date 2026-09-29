@@ -18,7 +18,8 @@ After that it keeps itself current: `teyla update` (run daily by the routine, an
 start by the plugin hook on machines where launchd is off limits) installs a newer release,
 merges template changes into your `POLICY.md` three-way so your edits survive, refreshes the
 plugin copy Claude Code actually loads, and rewrites the launchd wrappers if the binary moved.
-`teyla doctor` is the checklist; its one-line summary shows at the next session start.
+`teyla doctor` is the checklist; what is *new* in it shows at the next session start, and
+once a week the digest names the three things worth doing (see [What gets read](#what-gets-read)).
 
 No `uv`? `pipx install git+https://github.com/zaitsew/teyla`, or `git clone` and run `PYTHONPATH=src python3 -m teyla`. Python 3.11+, nothing else.
 
@@ -60,6 +61,8 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | `teyla harness status\|sync` | the plugin's skills and hooks, and the policy, in Cursor, Codex, Grok and Hermes — see [docs/HARNESSES.md](docs/HARNESSES.md) |
 | `teyla rule "<sentence>" [--scope <glob>]` · `teyla correct "<what was wrong>"` | what `/teyla:rule` and `/teyla:correct` do, as a CLI every harness's skill can call |
 | `teyla doctor` | what Teyla can see on this machine |
+| `teyla digest [--write]` | the weekly digest: at most five lines — the top three actions across advice, doctor, routines and checks, each with its command, plus a streak note |
+| `teyla check <product> <check> ok\|broken [--note TEXT]` | confirm a manual check: sets `status` and today's `confirmed` in that product's `teyla.toml`, editing only those lines |
 | `teyla storage [--json]` · `teyla storage clean [--apply]` | the disk and RAM agent work holds: every worktree (SAFE = clean, on the remote, idle, no process in it — removed with `git worktree remove`, branch kept), git-ignored build output of idle repos, caches with the command that clears each, booted simulators. Dry run unless `--apply`; `teyla config set storage.auto_clean=true` lets the daily routine do it |
 | `teyla remind add "<what>" <YYYY-MM-DD> [--how "..."]` \| `list` \| `done <n>` | dated to-dos only a human can act on (a key that expires, a trial that ends); `teyla doctor` shows each as OK, then WARN within 30 days, then FIX once overdue |
 
@@ -126,11 +129,35 @@ It ends with one summary line — `N routines not running, M checks broken, K
 untested/re-test` — and exits 1 when `N + M > 0`, so a cron job can alert on
 it. `--json` gives the same shape as data.
 
+Confirming a check is one command — `teyla check frank "gate shows today's drafts" ok` (or
+`broken --note "what you saw"`) — which rewrites only that block's `status`/`confirmed`/`note`
+lines and keeps every comment. When a session starts in a repo whose check has been BROKEN
+or UNTESTED for more than 14 days (or was never confirmed), the product line names that command.
+
 `teyla routine install` writes and loads Teyla's own weekly launchd job
 (`~/Library/LaunchAgents/com.zaitsew.teyla.weekly.plist`, Monday 07:30) that
 runs `teyla monitor`, `teyla routines` and `teyla products` and files the
 output under `~/ops/startup/os/ai-dev/runs/<date>/`. `teyla routine status`
 shows whether it is loaded and its last log lines.
+
+## What gets read
+
+Measured in September 2026: four weekly reports written, none opened by any session; the
+session-start line showed the same "1 fix(es), 2 warning(s)" on 44 of 44 starts for 13 days.
+So:
+
+- **The banner shows only what changed.** `teyla doctor` and `teyla routines` precompute
+  `~/.teyla/banner.items`; the session-start hook compares it with what it showed last time
+  (`~/.teyla/banner.seen`, keyed by name and level) and prints
+  `teyla: new — frank routine daily NOT LOADED; 2 known (teyla doctor)`, or nothing. A WARN
+  that becomes a FIX is new again. Reminders appear on the day they fall due, the day after,
+  then weekly.
+- **The weekly digest is five lines.** The weekly routine runs `teyla digest --write`:
+  `~/.teyla/digest.md` with the top three actions — doctor FIX items, monitor advice,
+  routines not running, checks broken or untested for more than 14 days — each with its one
+  command, and a streak note when the same advice fired three weeks running. The next
+  session start shows its headline once; `teyla digest` prints it; on macOS a notification
+  says it was written (`teyla config set digest.notify=false` to stop that).
 
 ## Productizing
 

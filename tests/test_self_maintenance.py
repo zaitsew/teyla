@@ -203,7 +203,7 @@ def test_repos_status(tmp_path):
 def test_wrapper_stale_detects_moved_binary(_home):
     w = routine_install.WRAPPER_PATH
     w.parent.mkdir(parents=True, exist_ok=True)
-    w.write_text('#!/bin/bash\ndate > ~/.teyla/weekly.last\nTEYLA="/old/place/teyla"\n')
+    w.write_text('#!/bin/bash\ndate > ~/.teyla/weekly.last\nTEYLA="/old/place/teyla"\n"$TEYLA" digest --write\n')
     assert routine_install._wrapper_stale(w, "/new/place/teyla")
     assert not routine_install._wrapper_stale(w, "/old/place/teyla")
     assert routine_install._wrapper_stale(routine_install.DAILY_WRAPPER_PATH, "/x")
