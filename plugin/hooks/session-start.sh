@@ -56,9 +56,13 @@
   fi
   safe=""
   case "$TEYLA_SAFE" in 1|true|TRUE|True|yes|on) safe=1 ;; esac
-  if [ -z "$safe" ] && [ -f "$HOME/.teyla/config.toml" ] && \
-     sed -n '/^\[safe\]/,/^\[/p' "$HOME/.teyla/config.toml" 2>/dev/null | grep -Eq '^enabled *= *"?(true|1|yes|on)"?'; then
-    safe=1
+  if [ -z "$safe" ] && [ -n "$TEYLA_SAFE" ]; then
+    # Fail closed, as config.safe_mode() does: only an explicit false word leaves it off.
+    case "$TEYLA_SAFE" in 0|false|FALSE|False|no|off) ;; *) safe=1 ;; esac
+  fi
+  if [ -z "$safe" ] && [ -f "$HOME/.teyla/config.toml" ]; then
+    val=$(sed -n '/^\[safe\]/,/^\[/p' "$HOME/.teyla/config.toml" 2>/dev/null | sed -n 's/^enabled *= *//p' | head -n 1 | tr -d '" \r' | tr 'A-Z' 'a-z')
+    case "$val" in ""|false|0|no|off) ;; *) safe=1 ;; esac
   fi
   if [ -n "$teyla_bin" ]; then
     if [ -n "$safe" ]; then

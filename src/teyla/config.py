@@ -148,21 +148,31 @@ def write(code_root: str = "~/repos", ops_root: str = "~/ops", repo: str = "zait
     return f"wrote {p}"
 
 
+TRUE_WORDS = ("1", "true", "yes", "on")
+FALSE_WORDS = ("0", "false", "no", "off")
+
+
+class InvalidValue(ValueError):
+    pass
+
+
 def _coerce(default, value: str):
     """A `config set` string as the type its default has: `safe.enabled=true` must be a TOML
-    boolean and `products.repos=a,b` a list, or every reader has to re-guess the string."""
+    boolean and `products.repos=a,b` a list, or every reader has to re-guess the string.
+    A value that is not of that type raises InvalidValue: `safe.enabled=treu` stored as a
+    string read as false, and switched safe mode *off* (Codex review of #59, P2)."""
     if isinstance(default, bool):
         low = value.strip().lower()
-        if low in ("1", "true", "yes", "on"):
+        if low in TRUE_WORDS:
             return True
-        if low in ("0", "false", "no", "off"):
+        if low in FALSE_WORDS:
             return False
-        return value
+        raise InvalidValue(f"{value!r} is not a boolean: true or false")
     if isinstance(default, int):
         try:
             return int(value)
         except ValueError:
-            return value
+            raise InvalidValue(f"{value!r} is not a whole number") from None
     if isinstance(default, list):
         return [x.strip() for x in value.split(",") if x.strip()]
     return value
@@ -187,7 +197,10 @@ def set_value(dotted: str, value: str | None, path: pathlib.Path | None = None) 
                 return f"{dotted} not set"
             del sub[key]
         else:
-            value = _coerce(DEFAULTS[table].get(key), value)
+            try:
+                value = _coerce(DEFAULTS[table].get(key), value)
+            except InvalidValue as e:
+                return f"invalid {dotted}: {e}; nothing written"
             sub[key] = value
     else:
         key = parts[0]
@@ -223,9 +236,28 @@ def safe_mode(cfg: dict | None = None) -> bool:
     """Work mode: `[safe] enabled = true` in config.toml, or TEYLA_SAFE=1 in the environment.
     The variable can only switch it on — a stray TEYLA_SAFE=0 in some shell must not undo
     what the config file on a managed laptop says."""
-    if truthy(os.environ.get(SAFE_ENV, "")):
+    if _fail_closed(os.environ.get(SAFE_ENV)):
         return True
-    return truthy(((cfg or load()).get("safe") or {}).get("enabled", False))
+    return _fail_closed(((cfg or load()).get("safe") or {}).get("enabled"))
+
+
+def _fail_closed(v) -> bool:
+    """Absent or an explicit false word → off; true, or anything present that is neither
+    (`"treu"`, `2`, a list) → on. A typo must never be what turns a work laptop's safe mode off."""
+    if v is None or v is False:
+        return False
+    if v is True:
+        return True
+    low = str(v).strip().lower()
+    return low != "" and low not in FALSE_WORDS
+
+
+def safe_setting_invalid(cfg: dict | None = None):
+    """The raw `[safe] enabled` value when it is present but not a boolean, else None."""
+    v = ((cfg or load()).get("safe") or {}).get("enabled")
+    if v is None or isinstance(v, bool) or str(v).strip().lower() in TRUE_WORDS + FALSE_WORDS:
+        return None
+    return v
 
 
 def products_allowlist(cfg: dict | None = None) -> list[pathlib.Path]:
@@ -273,7 +305,7 @@ def cmd_config(args):
         k, v = a.split("=", 1)
         msg = set_value(k.strip(), v.strip() or None)
         print(msg)
-        if msg.startswith("unknown") or msg.endswith("not set") or "is not a table" in msg:
+        if msg.startswith(("unknown", "invalid")) or msg.endswith("not set") or "is not a table" in msg:
             rc = 1
     return rc
 
