@@ -510,3 +510,84 @@ def test_write_policy_on_a_home_policy_still_covers_every_provider(_home, monkey
     monkeypatch.setattr(models, "_cli_ids_by_provider", lambda used, days: {})
     models.write_policy()
     assert set(models.parse_ladder(policy.POLICY.read_text())) == {"anthropic", "openai", "xai"}
+
+
+# --- review of #59, round three: an unreadable config, and the control plane --------------
+
+BROKEN = 'code_root = "~/work"\n[env]\nSSL_CERT_FILE = "/unterminated\n[safe]\nenabled = false\n'
+
+
+def test_a_config_that_does_not_parse_forces_safe_mode_on(_home):
+    config.CONFIG_PATH.write_text(BROKEN)
+    assert config.safe_mode() and not net.allowed()
+    by = {c["name"]: c for c in doctor.checks(scan_repos=False)}
+    assert by["safe:setting"]["level"] == "FIX" and "does not parse" in by["safe:setting"]["detail"]
+    assert by["safe"]["detail"].startswith("on")
+
+
+def test_a_config_that_does_not_parse_is_never_rewritten(_home):
+    config.CONFIG_PATH.write_text(BROKEN)
+    assert config.set_value("safe.enabled", "true").startswith("invalid config")
+    assert cli.main(["config", "set", "products.repos=a"]) == 1
+    assert config.write(force=True).startswith("invalid config")
+    assert config.CONFIG_PATH.read_text() == BROKEN, "[env] and the roots must survive a typo"
+
+
+def _control_repo(tmp_path, monkeypatch):
+    from tests.test_control import MANIFEST
+    repos = tmp_path / "repos"
+    repo = repos / "demo"
+    repo.mkdir(parents=True)
+    (repo / "teyla.toml").write_text(MANIFEST)
+    monkeypatch.setenv("TEYLA_HOME", str(tmp_path / "teyla-home"))
+    monkeypatch.setenv("TEYLA_REPO_ROOTS", str(repos))
+    return repo
+
+
+def test_teyla_run_needs_allow_network_and_the_allowlist_in_safe_mode(_home, tmp_path, monkeypatch):
+    from teyla.control import engine
+    repo = _control_repo(tmp_path, monkeypatch)
+    safe_on()
+    out = []
+    assert engine.run("demo:digest", out=out.append) == 1
+    assert "REFUSED" in out[-1] and "--allow-network" in out[-1]
+    assert not (repo / "runs").exists(), "refused before anything was created"
+    net.allow_for_this_command()
+    out.clear()
+    assert engine.run("demo:digest", out=out.append) == 1 and "products" in out[-1]
+    config.set_value("products.repos", str(repo))
+    out.clear()
+    assert engine.run("demo:digest", out=out.append) == 0
+    assert not any("REFUSED" in line for line in out), "with both, the draft runs as before (gate A stops at the inbox)"
+
+
+def test_agent_steps_need_an_approved_provider_in_safe_mode(_home, tmp_path, monkeypatch):
+    from teyla.control import harness as H
+    repo = _control_repo(tmp_path, monkeypatch)
+    safe_on()
+    net.allow_for_this_command()
+    config.set_value("products.repos", str(repo))
+    policy.init(owner="Ann")
+    assert "not the work policy" in H.safe_refusal(repo, "claude")
+    policy.init(owner="Ann", work=True, force=True)
+    assert H.safe_refusal(repo, "claude") is None
+    assert "openai is not in the ladder" in H.safe_refusal(repo, "codex")
+    assert "xai" in H.safe_refusal(repo, "grok")
+    monkeypatch.setattr(H, "_run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("codex started")))
+    step = type("S", (), {"harness": "codex"})()
+    r = H.run_agent_step(step, cwd=repo, env={}, timeout_s=5, grants={}, caps={}, prompt="x")
+    assert not r.ok and "ladder" in r.error
+
+
+def test_triggers_are_not_installed_and_installed_ones_are_flagged_in_safe_mode(_home, tmp_path, monkeypatch):
+    from teyla.control import triggers
+    _control_repo(tmp_path, monkeypatch)
+    agents = tmp_path / "LaunchAgents"
+    agents.mkdir()
+    monkeypatch.setattr(triggers, "LAUNCH_AGENTS", agents)
+    safe_on()
+    ns = type("A", (), {"ref": "demo:digest", "no_load": True})()
+    assert triggers.cmd_install(ns) == 1 and not list(agents.iterdir())
+    (agents / "com.teyla.demo.digest.plist").write_text("<plist/>")
+    by = [c for c in doctor.checks(scan_repos=False) if c["name"] == "control:trigger"]
+    assert by and by[0]["level"] == "FIX" and "com.teyla.demo.digest" in by[0]["fix"]
