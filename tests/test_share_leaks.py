@@ -105,6 +105,7 @@ def build_machine(root: pathlib.Path) -> dict:
         # three failed calls to the uuid connector: advice C4 names it in its title
         _user(2, [_tool_result(f"u{i}", "boom", is_error=True) for i in range(3)]),
         _user(3, CORRECTION),
+        _user(3, CORRECTION),  # said twice: advice A9 (a repeating correction) fires
         # thirty calls to the stdio server inside one human turn: advice C1 names it
         _assistant(4, [_tool_use(f"s{i}", f"mcp__{STDIO_SERVER}__create_page", {"t": "zq"}) for i in range(30)]),
         _user(5, [_tool_result(f"s{i}") for i in range(30)]),
@@ -214,7 +215,7 @@ def test_fixture_is_real_the_unredacted_report_shows_the_canaries(machine):
     raw = machine["raw"]
     for c in ("zqprojslug", SID[:8], CONNECTOR_NAME, STDIO_SERVER, SKILL):
         assert c in raw, f"fixture broken: {c!r} not even in the unredacted report"
-    for fid in ("A3", "A7", "A10", "A13", "A14", "C1", "C4"):
+    for fid in ("A3", "A7", "A9", "A10", "A13", "A14", "C1", "C4"):
         assert f"] {fid} " in raw, f"fixture does not trigger {fid}"
     assert "zqgrokproj" in raw
 
@@ -230,7 +231,7 @@ def test_no_canary_in_shared_output(machine, which):
 def test_shared_output_still_carries_the_findings_under_pseudonyms(machine, which):
     text = machine[which]
     # A13/A14 (the week's Grok cost) are `teyla monitor`'s, not the feedback file's
-    for fid in ("A3", "A7", "A10", "C1", "C4") + (("A13", "A14") if which != "feedback" else ()):
+    for fid in ("A3", "A7", "A9", "A10", "C1", "C4") + (("A13", "A14") if which != "feedback" else ()):
         assert fid in text, f"{fid} missing from {which}: redaction must not drop the advice"
     for alias in ("p01", "c01", "c02", "s01"):
         assert alias in text, f"{alias} missing from {which}"
