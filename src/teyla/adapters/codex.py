@@ -30,7 +30,7 @@ import json
 import os
 import re
 
-from . import CORRECTION_RE, AgentCall, Session, Turn, stale
+from . import AgentCall, Session, Turn, human_text, is_correction, stale
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "codex"
@@ -41,12 +41,26 @@ DEFAULT_INDEX = os.path.expanduser("~/.codex/session_index.jsonl")
 
 BATCH_SOURCES = ("exec",)
 BATCH_ORIGINATORS = ("codex_exec",)
-_INJECTED_RE = re.compile(r"^<([a-z][a-z0-9_]*)>.*</\1>$", re.S)
+_BLOCK_RE = re.compile(r"\s*<([a-z][a-z0-9_-]*)(?:\s[^>]*)?>.*?</\1>\s*", re.S)
+
+
+def strip_injected(txt: str) -> str:
+    """The message minus the harness-written `<tag>...</tag>` blocks it opens with. Codex's
+    desktop app sends `<recommended_plugins>…</recommended_plugins>` and
+    `<environment_context>…</environment_context>` as one user message with two parts; the
+    0.11 test wanted a single block and let all 11 of them through as human turns in 2026-09.
+    `<in-app-browser-context>` (a hyphen) precedes a real question and is cut off it."""
+    pos = 0
+    while True:
+        m = _BLOCK_RE.match(txt, pos)
+        if not m:
+            return txt[pos:].strip()
+        pos = m.end()
 
 
 def is_injected(txt: str) -> bool:
-    """A user-role message that is a single harness-written `<tag>...</tag>` block."""
-    return txt.startswith("<environment_context>") or bool(_INJECTED_RE.match(txt))
+    """A user-role message made only of harness-written `<tag>...</tag>` blocks."""
+    return txt.startswith("<environment_context>") or not strip_injected(txt)
 
 
 def _load_titles(index_path: str) -> dict:
@@ -165,7 +179,12 @@ def parse(f: str, titles: dict | None = None) -> Session | None:
                 if cwd:
                     s.cwd = cwd
                     s.project = cwd
-                if payload.get("source") in BATCH_SOURCES or payload.get("originator") in BATCH_ORIGINATORS:
+                src = payload.get("source")
+                # `source` is a dict for a spawned agent — {"subagent": "review"} for `codex
+                # review`, {"subagent": {"thread_spawn": …}} for spawn_agent — and its prompt
+                # was written by the parent agent even when the parent was a person's session.
+                if (src in BATCH_SOURCES or payload.get("originator") in BATCH_ORIGINATORS
+                        or (isinstance(src, dict) and "subagent" in src)):
                     s.batch = True
 
             elif t == "turn_context":
@@ -191,10 +210,9 @@ def parse(f: str, titles: dict | None = None) -> Session | None:
                     if role == "assistant":
                         s.assistant_turns += 1
                     elif role == "user":
-                        if txt and not is_injected(txt):
-                            s.user_turns.append(
-                                Turn(ts, txt[:1500], bool(CORRECTION_RE.search(txt[:600])))
-                            )
+                        h = human_text(strip_injected(txt)) if txt else None
+                        if h:
+                            s.user_turns.append(Turn(ts, h[:1500], is_correction(h)))
                     # role == "developer": injected instructions/skill text, not a human turn.
                 elif ptype == "function_call":
                     name = (payload.get("name") or "").rsplit(".", 1)[-1]

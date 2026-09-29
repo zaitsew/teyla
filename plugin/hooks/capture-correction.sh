@@ -1,7 +1,9 @@
 #!/bin/sh
-# UserPromptSubmit: cheap correction-word heuristic, catching what the model
-# might not notice mid-turn. Deliberately coarse — it is a broad net over
-# obvious correction phrasing, not a classifier, and it errs toward capturing.
+# UserPromptSubmit: records correction-shaped prompts, catching what the model
+# might not notice mid-turn. The test is `teyla.adapters.is_correction` — the same
+# one `teyla monitor` counts with, tuned for precision: in 2026-09 the old broad
+# net filed 107 records of which about 3 were real corrections. Prompts from
+# `claude -p`, `grok -p` and `hermes -z` are skipped (`teyla.corrections.headless`).
 #
 # All of the logic is `teyla.corrections.hook_main` — the same code `teyla correct`
 # writes through — so there is one secret scrubber and one store, not a copy of each

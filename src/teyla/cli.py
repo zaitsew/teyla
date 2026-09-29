@@ -84,6 +84,8 @@ def cmd_monitor(args):
     m = metrics(ss, args.days)
     m["grok_week"] = _grok_week()
     F = advise(m, policy.status())
+    from .advise import mark_seen
+    mark_seen(F)
     if args.share:
         m = redact(m); args.samples = False
     out = to_json(m, F) if args.json else markdown(m, F, include_samples=args.samples)
@@ -97,8 +99,11 @@ def cmd_advise(args):
     from . import policy
     m = metrics(_sessions(args), args.days)
     m["grok_week"] = _grok_week()
-    for f in advise(m, policy.status()):
+    F = advise(m, policy.status())
+    for f in F:
         print(f"[{f['severity']}] {f['id']} {f['title']}\n    {f['evidence']}\n    → {f['action']}")
+    from .advise import mark_seen
+    mark_seen(F)
 
 
 def cmd_sessions(args):

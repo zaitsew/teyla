@@ -71,12 +71,12 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | A2 | >60% of output tokens on the orchestrate tier | route volume work down the ladder |
 | A3 | sessions >8 MB, >12 h, or ≥3 compactions | one session per logical unit; end it after the PR merges |
 | A4 | cache-read per output token >150× | shorter sessions, subagents for reading |
-| A5 | correction rate on human turns | cluster them; two occurrences = a rule |
+| A5 | correction rate on human turns (never a `claude -p`/`codex exec`/`grok -p`/`hermes -z` prompt, a retry after an API error, or a harness-injected turn) | cluster them; two occurrences = a rule |
 | A6 | many subagents, no review skill ever run | `/review`, `/codex review`, `/grok review` before money, keys, other people's data |
 | A7 | sessions launched from a parent directory | launch from the repo root |
 | A8 | a harness without the policy | `teyla policy sync` |
-| A9 | the same correction shape twice (fingerprints, no text in the report) | write the rule |
-| A10 | a session wrote to `~/.claude/CLAUDE.md` | diff it; the governance file is the human's |
+| A9 | the same correction shape twice (fingerprints, no text in the report; retries never count) | write the rule |
+| A10 | a session wrote to `~/.claude/CLAUDE.md`: [high] only for edits after your last `teyla policy ack`, with how many; never acked → one [medium], once per version of the file | diff it; the governance file is the human's; `teyla policy ack` after reviewing |
 | A11 | `teyla models` finds ladder/price drift | `teyla models --write-policy` |
 | A13 | one project is over half of the week's Grok list-price cost (and the week is over $10) | `teyla grok-cost --by session --cwd <path>`; split or cap the loop |
 | A14 | one Grok session cost over $10 | `teyla grok-cost --session <id>`; end long lanes at a merge |

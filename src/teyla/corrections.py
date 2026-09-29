@@ -395,12 +395,26 @@ def all_records(cfg: dict | None = None) -> list[tuple[str, dict]]:
 
 # --- the capture hook ---------------------------------------------------------------------
 
-# The hook's net: obvious correction phrasing, English and Russian. Coarse on purpose — it
-# records candidates for a human to promote, it does not decide anything.
-CAPTURE_RE = re.compile(
-    r"\bdon't\b|\bwrong\b|\bnot like that\b|\bagain\b|\brevert\b|не так|неправильно|опять",
-    re.I,
-)
+def headless(data: dict, env=None) -> bool:
+    """The prompt came from a script or another agent, not a person — the hook cannot see the
+    session's batch flag the monitor uses, so it reads what the harness leaves in reach:
+
+    - Claude Code sets CLAUDE_CODE_ENTRYPOINT for its hooks; `sdk-cli` is `claude -p`.
+    - Hermes one-shot (`hermes -z`) sets HERMES_YOLO_MODE and HERMES_ACCEPT_HOOKS and never
+      HERMES_INTERACTIVE (hermes-agent: hermes_cli/oneshot.py, cli.py).
+    - A prompt wrapped whole in `<user_query>…</user_query>` is the Cursor-compatible envelope
+      Grok hands ~/.cursor/hooks.json. 41 of the 107 records in 2026-09's correction files
+      were `claude -p`/`grok -p` review briefs in that envelope, and none was typed by a
+      person: in an interactive Grok session the same prompt also reaches Grok's own hook
+      unwrapped, so nothing a person types is lost by skipping the envelope.
+    """
+    env = os.environ if env is None else env
+    if str(env.get("CLAUDE_CODE_ENTRYPOINT") or "").startswith("sdk-"):
+        return True
+    if env.get("HERMES_YOLO_MODE") == "1" and env.get("HERMES_ACCEPT_HOOKS") == "1" and not env.get("HERMES_INTERACTIVE"):
+        return True
+    p = _pick(data) if isinstance(data, dict) else None
+    return isinstance(p, str) and p.lstrip().startswith("<user_query>")
 
 
 def _pick(d: dict):
@@ -415,14 +429,16 @@ def _pick(d: dict):
 
 
 def capture(data: dict, now: _dt.datetime | None = None, cfg: dict | None = None) -> pathlib.Path | None:
-    """What the UserPromptSubmit hook does with one payload. The file written, or None."""
-    from .adapters import is_noise_turn
+    """What the UserPromptSubmit hook does with one payload. The file written, or None. The
+    same classification as `teyla monitor` — `human_text` drops harness-injected turns and
+    retries, `is_correction` is the one matcher — so the hook and the report cannot disagree
+    about what a correction is."""
+    from .adapters import human_text, is_correction
     prompt = _pick(data) if isinstance(data, dict) else None
-    if not isinstance(prompt, str):
+    if not isinstance(prompt, str) or headless(data):
         return None
-    if is_noise_turn(prompt.lstrip()):
-        return None
-    if not CAPTURE_RE.search(prompt):
+    prompt = human_text(prompt.strip())
+    if not prompt or not is_correction(prompt):
         return None
     cwd = data.get("cwd") or data.get("workspaceRoot") or data.get("workspace_root") or os.getcwd()
     now = now or _dt.datetime.now(_dt.timezone.utc)

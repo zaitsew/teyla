@@ -36,7 +36,9 @@ def harvest(path: str, project: str | None = None, min_sessions: int = 2) -> str
             continue
         out += [f"## {s.day} {s.sid[:8]} ({s.project}) — {s.n_user} human turns, {sum(s.tools.values())} tool calls", "",
                 "tool spine: " + " → ".join(_spine(fp)), ""]
-        corr = [t.text[:300].replace("\n", " ") for t in s.user_turns if t.corr]
+        # A `claude -p` session's prompt was written by a script or another agent: no human
+        # corrected anything there, whatever words the brief uses.
+        corr = [] if s.batch else [t.text[:300].replace("\n", " ") for t in s.user_turns if t.corr]
         if corr:
             out += ["corrections:"] + [f"- {c}" for c in corr] + [""]
     out += _recorded(path)

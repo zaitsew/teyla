@@ -545,11 +545,11 @@ def test_capture_correction_hook_reads_every_harness_shape_and_deduplicates(tmp_
     run({"hookEventName": "user_prompt_submit", "prompt": "don't do that", "workspaceRoot": str(tmp_path)})          # grok
     run({"hook_event_name": "pre_llm_call", "tool_name": None, "cwd": str(tmp_path),
          "extra": {"user_message": "wrong file, revert it", "is_first_turn": False}})                              # hermes
-    run({"prompt": "again: use pnpm", "cwd": str(tmp_path)})                                                       # claude / cursor
-    run({"prompt": "again: use pnpm", "cwd": str(tmp_path)})                                                       # grok re-delivering cursor's hook
+    run({"prompt": "no, use pnpm here, not npm", "cwd": str(tmp_path)})                                                       # claude / cursor
+    run({"prompt": "no, use pnpm here, not npm", "cwd": str(tmp_path)})                                                       # grok re-delivering cursor's hook
     run({"hook_event_name": "pre_llm_call", "extra": {"user_message": "fine, carry on"}, "cwd": str(tmp_path)})   # not a correction
     recs = [json.loads(l) for l in out.read_text().splitlines()]
-    assert [r["text"] for r in recs] == ["don't do that", "wrong file, revert it", "again: use pnpm"]
+    assert [r["text"] for r in recs] == ["don't do that", "wrong file, revert it", "no, use pnpm here, not npm"]
     assert all(r["cwd"] == str(tmp_path) for r in recs)
 
 

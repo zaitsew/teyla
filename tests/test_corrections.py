@@ -207,7 +207,7 @@ def test_misc_records_are_per_directory(tmp_path):
 def test_capture_deduplicates_a_double_delivery(tmp_path):
     import datetime as dt
     now = dt.datetime(2026, 9, 29, 10, 0, 0, tzinfo=dt.timezone.utc)
-    payload = {"prompt": "again: use pnpm", "cwd": str(tmp_path)}
+    payload = {"prompt": "no, use pnpm here, not npm", "cwd": str(tmp_path)}
     assert corrections.capture(payload, now=now) is not None
     assert corrections.capture(payload, now=now + dt.timedelta(seconds=3)) is None
     assert corrections.capture(payload, now=now + dt.timedelta(seconds=30)) is not None

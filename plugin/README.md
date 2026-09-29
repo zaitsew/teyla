@@ -69,10 +69,12 @@ swallowed silently rather than surfaced.
   exist in the repo, prints a one-line count so it's visible without going to
   look. If `~/.agents/POLICY.md` exists, does nothing: Claude Code already
   imports it on its own, so there's nothing useful to add.
-- **`UserPromptSubmit`** (`hooks/capture-correction.sh`) — a cheap heuristic
-  over the raw prompt text (`don't`, `wrong`, `not like that`, `again`,
-  `revert`, and the Russian equivalents `не так`, `неправильно`, `опять`). On a
-  match, appends `{ts, cwd, text[:500]}` to `~/.teyla/corrections/<repo>-<hash>.jsonl`
+- **`UserPromptSubmit`** (`hooks/capture-correction.sh`) — the same
+  correction test `teyla monitor` counts with (`teyla.adapters.is_correction`:
+  pushback such as "wrong", "no, I mean…", "don't … at all", "you use too much…",
+  "не так", "я же говорил", "сделай сам"; not instructions like "don't forget
+  to…"), skipping retries and headless runs (`claude -p`, `grok -p` via the
+  `<user_query>` envelope, `hermes -z`). On a match, appends `{ts, cwd, text[:500]}` to `~/.teyla/corrections/<repo>-<hash>.jsonl`
   for the repo the prompt was submitted in (worktrees count as their main
   checkout), after `teyla.corrections.scrub` has replaced tokens, keys, JWTs,
   `password=`-style values and long base64/hex blobs with `[redacted]`. It runs

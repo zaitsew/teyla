@@ -431,6 +431,15 @@ at list prices; the share of output on orchestrate-tier models; subagent calls a
 how many inherited the top model; human turns and how many were
 correction-shaped; cache-read per output token; and the count of giant sessions.
 
+A human turn is what a person typed in an interactive session. Never counted: any prompt
+of a `claude -p`, `codex exec`/`codex review`/spawned Codex agent, `grok -p` or `hermes -z`
+session; harness-injected turns (`<task-notification>`, `<system-reminder>`-only turns,
+artifact comment relays, Codex's `<recommended_plugins>` preamble); and retries ("Try
+again", "continue") — bare, or right after an API error. "Correction-shaped" is one
+heuristic (`teyla.adapters.is_correction`, English and Russian) tuned for precision: an
+instruction such as "don't forget to deploy" is not a correction, "don't use GitHub
+Actions at all" and "you use too much GitHub Actions" are.
+
 ### The advice ids
 
 Each finding carries a severity, an evidence line with numbers, and one
@@ -446,7 +455,8 @@ imperative action. A finding you cannot trace to a number is noise.
 | **A6** | >50 agent calls, no review skill invoked | No pre-merge or cross-provider review (§0 §2). |
 | **A7** | Session cwd ends in `/repos` | Launched from the parent directory; transcripts land under the wrong project. |
 | **A8** | A harness missing the policy wiring | Run `teyla policy sync`. |
-| **A9** | The same correction shape (fingerprint) appears twice | Each is a rule nobody wrote down; the text stays local. |
+| **A9** | The same correction shape (fingerprint) appears twice | Each is a rule nobody wrote down; the text stays local. A retry ("Try again" after an API error) never counts. |
+| **A10** | A session wrote `~/.claude/CLAUDE.md` | [high] only for edits after the last `teyla policy ack`, with "N of M"; never acked → one [medium] asking you to review and ack, shown once per version of the file. |
 
 To act on a finding, promote it into a file: `/teyla:correct "<what was wrong>"`
 records the correction and proposes a rule; `/teyla:rule "<rule>" --scope <glob>`
