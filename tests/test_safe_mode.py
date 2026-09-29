@@ -362,7 +362,7 @@ def test_platform_probes_are_skipped_in_safe_mode(monkeypatch):
 # --- policy init --work ---------------------------------------------------------------
 
 def test_policy_init_work_writes_the_work_template_and_turns_safe_mode_on(_home, capsys):
-    assert cli.main(["policy", "init", "--work", "--owner", "Ann"]) is None
+    assert cli.main(["policy", "init", "--work", "--owner", "Ann"]) == 0
     text = policy.POLICY.read_text()
     assert policy.is_work(text) and "Owner: Ann." in text
     assert "`grok -p`" not in text and "Second opinions across providers" not in text
@@ -470,3 +470,43 @@ def test_policy_sync_rewrites_the_cursor_skill_after_switching_to_work(_home, mo
     assert policy.status()["cursor"] is False
     policy.sync()
     assert policy.is_work(skill.read_text()) and "`grok -p`" not in skill.read_text()
+
+
+# --- review of #59, round two ---------------------------------------------------------
+
+def test_policy_init_work_without_force_over_a_home_policy_exits_nonzero(_home, capsys):
+    policy.init(owner="Ann")
+    assert cli.main(["policy", "init", "--work", "--owner", "Ann"]) == 1
+    out, err = capsys.readouterr()
+    assert "FAILED — work policy" in err and "--force" in err
+    assert "safe mode on" in out and config.safe_mode(), "safe mode still goes on: it only ever does less"
+    assert not policy.is_work()
+
+
+def test_policy_init_work_exits_nonzero_when_safe_mode_cannot_be_written(_home, monkeypatch, capsys):
+    monkeypatch.setattr(config, "set_value", lambda *a, **k: "invalid safe.enabled: disk says no; nothing written")
+    assert cli.main(["policy", "init", "--work", "--owner", "Ann"]) == 1
+    out, err = capsys.readouterr()
+    assert "FAILED — safe mode" in err and "safe mode on" not in out
+    assert policy.is_work(), "the policy half still happened; only the failed step is reported"
+
+
+def test_write_policy_on_a_work_policy_updates_only_listed_providers(_home, monkeypatch, capsys):
+    policy.init(owner="Ann", work=True)
+    monkeypatch.setattr(models, "credentials", lambda: {"anthropic": True, "openai": True, "xai": True, "google": False})
+    monkeypatch.setattr(models, "_cli_ids_by_provider", lambda used, days: {"openai": ["gpt-x"], "xai": ["grok-x"]})
+    models.write_policy()
+    table = models.parse_ladder(policy.POLICY.read_text())
+    assert set(table) == {"anthropic"}, "a model refresh must not widen the approved-provider list"
+    assert cli.main(["models", "--write-policy", "--add-provider", "openai"]) == 0
+    assert "approved-provider list" in capsys.readouterr().out
+    assert set(models.parse_ladder(policy.POLICY.read_text())) == {"anthropic", "openai"}
+    assert cli.main(["models", "--write-policy", "--add-provider", "mistral"]) == 2
+
+
+def test_write_policy_on_a_home_policy_still_covers_every_provider(_home, monkeypatch):
+    policy.init(owner="Ann")
+    monkeypatch.setattr(models, "credentials", lambda: {"anthropic": True, "openai": True, "xai": True, "google": False})
+    monkeypatch.setattr(models, "_cli_ids_by_provider", lambda used, days: {})
+    models.write_policy()
+    assert set(models.parse_ladder(policy.POLICY.read_text())) == {"anthropic", "openai", "xai"}

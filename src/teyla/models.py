@@ -520,17 +520,19 @@ def absent_providers(credentials: dict, cli_ids_by_provider: dict) -> list[str]:
 
 
 def propose_ladder_rows(ladder: dict, models_dev: dict, cli_ids_by_provider: dict,
-                         credentials: dict | None = None, drop_absent: bool = False) -> dict:
+                         credentials: dict | None = None, drop_absent: bool = False,
+                         only: set | None = None) -> dict:
     """{provider: {"orchestrate": [...], "volume": [...], "triage": [...], "note": str}} — keeps
     every entry that still resolves to something; replaces one that resolves to nothing with the
     newest model of a keyword-guessed family, if any; otherwise leaves it as a manual TODO.
 
     With `drop_absent`, a provider in `absent_providers()` (no credential, no CLI cache) is left
-    out of the result entirely — `_render_ladder_table_text` then renders no row for it at all."""
+    out of the result entirely — `_render_ladder_table_text` then renders no row for it at all.
+    With `only`, providers outside that set get no row either (the work policy's allowlist)."""
     out = {}
     absent = set(absent_providers(credentials or {}, cli_ids_by_provider)) if drop_absent else set()
     for provider in PROVIDERS:
-        if provider in absent:
+        if provider in absent or (only is not None and provider not in only):
             continue
         rows = ladder.get(provider) or {"orchestrate": [], "volume": [], "triage": [], "note": ""}
         cli_ids = cli_ids_by_provider.get(provider, [])
@@ -575,11 +577,17 @@ def _render_ladder_table_text(rows_by_provider: dict, reviewed_date: str) -> str
 
 
 def write_policy(path: pathlib.Path | None = None, dry: bool = False, days: int = 30,
-                  claude_used_models: list[str] | None = None, drop_absent: bool = False) -> tuple[str, bool]:
+                  claude_used_models: list[str] | None = None, drop_absent: bool = False,
+                  add_providers: list[str] | None = None) -> tuple[str, bool]:
     """Rewrite the ladder table strictly between the markers in `path` (default ~/.agents/POLICY.md).
     Returns (unified diff, changed). Nothing outside the span between the marker lines is touched.
     `drop_absent` removes the row for any provider with no credential and no CLI cache; without
-    it those rows are kept as-is (call `absent_providers()` to warn about them instead)."""
+    it those rows are kept as-is (call `absent_providers()` to warn about them instead).
+
+    In a work-variant policy the ladder *is* the list of providers IT approved for this code, so
+    only rows already there are updated; a provider joins it only through `add_providers`
+    (`--add-provider`). Without that, a routine model refresh added OpenAI and xAI rows and
+    silently widened the allowlist (Codex review of #59)."""
     from . import policy as _policy
     target = path or _policy.POLICY
     text = target.read_text()
@@ -593,7 +601,10 @@ def write_policy(path: pathlib.Path | None = None, dry: bool = False, days: int 
     models_dev, _source = load_models_dev_catalogue(refresh=False)
     cli_ids = _cli_ids_by_provider(claude_used_models, days)
     cred = credentials()
-    proposed = propose_ladder_rows(ladder, models_dev, cli_ids, credentials=cred, drop_absent=drop_absent)
+    only = None
+    if _policy.is_work(text):
+        only = set(ladder) | set(add_providers or [])
+    proposed = propose_ladder_rows(ladder, models_dev, cli_ids, credentials=cred, drop_absent=drop_absent, only=only)
     new_block = _render_ladder_table_text(proposed, _dt.date.today().isoformat())
 
     new_text = text[:cs] + new_block + text[ce:]
@@ -656,7 +667,16 @@ def cmd_models(args):
     flags = drift(snap)
     if args.write_policy:
         drop_absent = getattr(args, "drop_absent", False)
-        diff, changed = write_policy(dry=args.dry, days=args.days, drop_absent=drop_absent)
+        add = [a.strip().lower() for a in (getattr(args, "add_provider", None) or [])]
+        unknown = [a for a in add if a not in PROVIDERS]
+        if unknown:
+            print(f"unknown provider(s) {', '.join(unknown)}; known: {', '.join(PROVIDERS)}")
+            return 2
+        from . import policy as _policy
+        if add and _policy.is_work():
+            print(f"adding {', '.join(PROVIDER_LABEL[a] for a in add)} to the approved-provider list in {_policy.POLICY}: "
+                  f"code from this machine may then go to {'it' if len(add) == 1 else 'them'}")
+        diff, changed = write_policy(dry=args.dry, days=args.days, drop_absent=drop_absent, add_providers=add)
         print(diff or "(no changes)")
         if changed:
             from . import policy as _policy
@@ -688,6 +708,9 @@ def register(sp):
     q.add_argument("--write-policy", action="store_true", help="rewrite the ladder table in ~/.agents/POLICY.md, between the markers only")
     q.add_argument("--write-prices", action="store_true", help="write ~/.teyla/prices.json from the models.dev catalogue")
     q.add_argument("--dry", action="store_true", help="with --write-policy: print the diff, don't write")
+    q.add_argument("--add-provider", action="append", metavar="PROVIDER",
+                    help="with --write-policy on a work policy: add this provider's row (anthropic, openai, xai) — "
+                         "it widens the list of providers IT approved; without it only existing rows are updated")
     q.add_argument("--drop-absent", action="store_true",
                     help="with --write-policy: remove ladder rows for providers with no credential and no CLI cache")
     return q

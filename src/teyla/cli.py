@@ -139,6 +139,7 @@ def cmd_corrections(args):
 
 def cmd_policy(args):
     from . import policy
+    failed: list[str] = []
     if args.action == "init":
         msg = policy.init(force=args.force, owner=args.owner, dry=args.dry, work=args.work)
         print(msg)
@@ -158,9 +159,22 @@ def cmd_policy(args):
                 policy.BASE_PATH.write_text(policy.render_template(args.owner or policy._owner_from(policy.POLICY.read_text())))
                 print(f"recorded template base at {policy.BASE_PATH}")
             if args.work:
-                print(config.set_value("safe.enabled", "true"))
-                print("safe mode on: no network without --allow-network, no self-update, no repo commands "
-                      "outside [products] repos, no hand-edited plugin registry — `teyla doctor` shows it")
+                # Safe mode goes on even when the policy step was refused: it only ever makes this
+                # machine do less. But the command succeeds only when both halves hold — a work
+                # laptop left on the home policy must not read "done" (Codex review of #59).
+                try:
+                    set_msg = config.set_value("safe.enabled", "true")
+                except OSError as e:
+                    set_msg = f"could not write {config.CONFIG_PATH}: {e}"
+                print(set_msg)
+                if not (set_msg.startswith("set ") and config.safe_mode()):
+                    failed.append(f"safe mode: {set_msg}")
+                else:
+                    print("safe mode on: no network without --allow-network, no self-update, no repo commands "
+                          "outside [products] repos, no hand-edited plugin registry — `teyla doctor` shows it")
+                if not policy.is_work():
+                    failed.append(f"work policy: {policy.POLICY} is still the home template ({msg}) — "
+                                  "rerun with --force to replace it (a dated backup is kept)")
         if args.claude_md:
             msg = policy.init_claude_md(owner=args.owner, merge_rule=args.merge_rule, code_root=args.code_root,
                                         ops_root=args.ops_root, force=args.force, dry=args.dry)
@@ -172,6 +186,11 @@ def cmd_policy(args):
         if args.ops_root_init:
             for line in policy.init_ops_root(args.ops_root, owner=args.owner, code_root=args.code_root, dry=args.dry):
                 print(line)
+        if failed:
+            for f in failed:
+                print(f"teyla policy init --work: FAILED — {f}", file=sys.stderr)
+            return 1
+        return 0
     elif args.action == "status":
         for k, v in policy.status().items():
             print(f"{k:14} {'ok' if v else ('not installed' if v is None else 'MISSING')}")
