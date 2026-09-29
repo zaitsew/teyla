@@ -624,7 +624,7 @@ def window_errors(days: int, home: pathlib.Path | None = None) -> list[dict]:
         if not err or err["kind"] not in ("quota", "auth") or err.get("ts") is None:
             continue
         out.append(dict(harness=_short(name), kind=err["kind"], day=f"{err['ts']:%Y-%m-%d}", message=err["message"],
-                        count=err.get("count", 1), still_failing=not (ok and ok > err["ts"]),
+                        count=err.get("count", 1), still_failing=not recovered(err, ok),
                         fix=_fix_for(name, err, None)))
     return out
 
