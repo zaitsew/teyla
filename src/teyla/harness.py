@@ -84,8 +84,9 @@ not yet a rule.
    teyla correct "<what was wrong>"
    ```
 
-   It appends `{ts, text, cwd}` to `.teyla/corrections.jsonl` in this repo — the same file
-   the capture hook writes — and prints how many are there.
+   It appends `{ts, text, cwd}` to this repo's file under `~/.teyla/corrections/` — the same
+   file the capture hook writes, outside the repo, secrets replaced by `[redacted]` — and
+   prints how many are there.
 2. Draft one candidate rule sentence and a scope glob from it, show both, and ask whether to
    promote it now with `teyla rule "<sentence>" --scope "<glob>"`. Do not promote on your
    own: two occurrences make a rule, one makes a note.

@@ -246,7 +246,7 @@ def init_ops_root(path: str, owner: str | None = None, code_root: str = "~/repos
         if dry:
             done.append(f"would update {gi}")
         else:
-            gi.write_text((gi.read_text() if gi.exists() else "") + "runs/\n.env\n.teyla/corrections.jsonl\n"); done.append(f"gitignore: runs/ in {gi}")
+            gi.write_text((gi.read_text() if gi.exists() else "") + "runs/\n.env\n.teyla/\n"); done.append(f"gitignore: runs/ in {gi}")
     rr = root / ".claude" / "rules" / "README.md"
     if not rr.exists():
         if dry:

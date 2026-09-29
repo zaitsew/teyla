@@ -3,7 +3,7 @@
   teyla monitor [--days N] [--json] [--samples] [--share] [--out FILE]   adoption report from local harness logs
   teyla advise  [--days N]                                       just the findings
   teyla sessions [--days N] [--project SUBSTR]                   one line per session
-  teyla corrections [--days N] [--project SUBSTR]                correction-shaped human turns, clustered
+  teyla corrections [--days N] [--project SUBSTR] [--recorded]   correction-shaped human turns, clustered; --recorded: the stored ones
   teyla policy init [--owner] [--claude-md] [--ops-root-init] [--dry]   POLICY.md, global CLAUDE.md, an ops root
   teyla policy status|sync [--dry]                                the wiring into every harness
   teyla policy sync-repo <path>... [--prefer agents|claude]      AGENTS.md ⇄ CLAUDE.md in repos
@@ -41,7 +41,7 @@
   teyla plugin refresh [--force]                                  bring the installed plugin copy to this package's version
   teyla harness status|sync [--dry]                               the same skills, hooks and policy in Cursor, Codex, Grok, Hermes
   teyla rule "<sentence>" [--scope <glob>]                        a rule into .claude/rules/, mirrored into AGENTS.md
-  teyla correct "<what was wrong>"                                a correction into .teyla/corrections.jsonl
+  teyla correct "<what was wrong>"                                a correction into ~/.teyla/corrections/<repo>.jsonl, secrets scrubbed
 """
 from __future__ import annotations
 
@@ -125,6 +125,17 @@ def correction_rows(sessions):
 
 
 def cmd_corrections(args):
+    if args.recorded:
+        # What `teyla correct`, the capture hook and inbox rejections stored — ~/.teyla/corrections/
+        # plus any pre-0.12 <repo>/.teyla/corrections.jsonl under code_root — not the transcripts.
+        from . import corrections
+        import datetime as dt
+        cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=args.days)).isoformat() if args.days else ""
+        for key, rec in corrections.all_records():
+            if str(rec.get("ts") or "") < cutoff or (args.project and args.project not in key + str(rec.get("cwd") or "")):
+                continue
+            print(f"{str(rec.get('ts') or '')[:10]} {key[:30]:30} {str(rec.get('text') or '')[:200].replace(chr(10), ' ')}")
+        return
     rows = correction_rows(_sessions(args))
     if args.cluster:
         c = Counter(r[3].lower().strip()[:60] for r in rows)
@@ -249,6 +260,7 @@ def main(argv=None):
             q.add_argument("--share", action="store_true", help="redact: pseudonymous projects, no session ids, no correction text")
         if name == "corrections":
             q.add_argument("--cluster", action="store_true")
+            q.add_argument("--recorded", action="store_true", help="the stored corrections (teyla correct, capture hook), not transcript turns")
     q = sp.add_parser("policy"); q.set_defaults(fn=cmd_policy)
     q.add_argument("action", choices=["init", "status", "sync", "sync-repo", "ack", "refresh"]); q.add_argument("paths", nargs="*")
     q.add_argument("--resolved", action="store_true", help="refresh: the merge conflict is resolved in POLICY.md; move the base forward")

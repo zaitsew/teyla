@@ -132,11 +132,12 @@ def text_of(content) -> str:
 # Harness-injected user turns that are not the human typing: tags the harness wraps around
 # tool output and events, plus the two bare-text shapes Claude Code files as user turns (an
 # interrupted request; the summary that opens a continued session). The plugin's
-# capture-correction hook applies the same list — a subagent's "done, but…" notification
+# capture-correction hook calls this same function — a subagent's "done, but…" notification
 # was 35 of 35 captured "corrections" in one repo before it did.
 NOISE_TAGS = ("system-reminder", "command-name", "command-message", "local-command", "task-notification",
               "ci-monitor", "ide_")
-NOISE_PREFIXES = ("[Request interrupted", "This session is being continued from a previous conversation")
+NOISE_PREFIXES = ("[Request interrupted", "This session is being continued from a previous conversation",
+                  "[SYSTEM NOTIFICATION")
 
 
 def is_noise_turn(txt: str) -> bool:

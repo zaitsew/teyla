@@ -14,8 +14,9 @@ A rule lands in `.claude/rules/<slug>.md` (frontmatter `globs:`), is mirrored in
 `## Rules` section of `AGENTS.md` when that is a real file (Codex, Hermes, Grok and Cursor
 read AGENTS.md; a symlink onto CLAUDE.md would write through and double the rule), and —
 only when the repo already has `.cursor/rules/` — into `.cursor/rules/<slug>.mdc`, Cursor's
-own scoped-rule shape. A correction is one JSON line in `.teyla/corrections.jsonl`, the
-same record the capture hook writes, plus a proposed rule sentence to promote or not.
+own scoped-rule shape. A correction is one JSON line in the repo's file under
+`~/.teyla/corrections/` (see corrections.py: outside the repo, secrets scrubbed), the same
+record the capture hook writes, plus a proposed rule sentence to promote or not.
 """
 from __future__ import annotations
 
@@ -121,19 +122,21 @@ def add_rule(repo: str | pathlib.Path, text: str, scope: str = "**", dry: bool =
 
 
 def record_correction(repo: str | pathlib.Path, text: str) -> list[str]:
+    from . import corrections
     repo = pathlib.Path(repo).expanduser().resolve()
     text = text.strip()
     if not text:
         return ["nothing to record: empty correction"]
-    f = repo / ".teyla" / "corrections.jsonl"
-    f.parent.mkdir(parents=True, exist_ok=True)
-    rec = {"ts": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"), "text": text[:500], "cwd": str(repo)}
-    with open(f, "a") as fh:
-        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    n = sum(1 for _ in open(f))
-    return [f"recorded in {f.relative_to(repo)} ({n} so far)",
-            "a correction is a data point, not yet a rule; if it has now happened twice, promote it:",
+    rec = {"ts": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"), "text": text, "cwd": str(repo)}
+    f = corrections.append(repo, rec)
+    n = len(corrections.records(repo))
+    shown = str(f).replace(str(pathlib.Path.home()), "~", 1)
+    out = [f"recorded in {shown} ({n} so far)"]
+    if corrections.scrub(text) != text:
+        out.append("something secret-shaped was replaced by [redacted] before writing")
+    out += ["a correction is a data point, not yet a rule; if it has now happened twice, promote it:",
             f'  teyla rule "<the constraint, one sentence>" --scope "<glob>"   (in {repo})']
+    return out
 
 
 def cmd_rule(args):
@@ -155,7 +158,7 @@ def register(sp):
     q.add_argument("--scope", default="**", help="path glob the rule loads for (default **)")
     q.add_argument("--repo", help="repo root (default: current directory)")
     q.add_argument("--dry", action="store_true")
-    q = sp.add_parser("correct", help="record a correction in .teyla/corrections.jsonl and say how to promote it")
+    q = sp.add_parser("correct", help="record a correction in ~/.teyla/corrections/<repo>.jsonl (scrubbed) and say how to promote it")
     q.set_defaults(fn=cmd_correct)
     q.add_argument("text", help="what was wrong, in the words it was said")
     q.add_argument("--repo", help="repo root (default: current directory)")
