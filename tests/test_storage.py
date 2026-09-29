@@ -591,3 +591,40 @@ def test_launch_agent_working_directory_without_slash_keeps_build(tmp_path):
 
 def test_xcuserdata_is_not_work():
     assert storage._harmless("App.xcodeproj/xcuserdata/")
+
+
+def test_doctor_never_reads_reflog_history(tmp_path, monkeypatch):
+    # doctor runs at session start; the reflog comparison is `git log -p` over every remote
+    # branch and took 200 s on a machine with 38 worktrees. It is for removal, not a count.
+    code_root, main, _ = _make_repo(tmp_path)
+    _add_worktree(main, tmp_path / "wt-a", "a")
+    monkeypatch.setattr(storage, "reflog_only_commits", lambda p: pytest.fail("doctor read the reflog"))
+    rows = storage.doctor_checks(_cfg(tmp_path))
+    assert rows[0]["name"] == "storage:disk"
+
+
+def test_remote_patch_ids_are_computed_once_per_repository(tmp_path, monkeypatch):
+    code_root, main, _ = _make_repo(tmp_path)
+    storage._REMOTE_PATCH_IDS.clear()
+    calls = []
+    real = storage._patch_ids
+    monkeypatch.setattr(storage, "_patch_ids", lambda path, args, stdin=None: calls.append(args[0]) or real(path, args, stdin))
+    plain = ["--format=commit %H"]
+    first = storage._remote_patch_ids(str(main), plain, 1000)
+    again = storage._remote_patch_ids(str(main), plain, 2000)   # a later `since` is covered
+    assert first == again and calls == ["log"]
+    storage._remote_patch_ids(str(main), plain, 500)             # an earlier one is not
+    assert calls == ["log", "log"]
+
+
+def test_remote_patch_ids_cache_misses_once_a_remote_ref_moves(tmp_path):
+    # Codex review P1: a remote branch deleted between the scan and the pre-removal re-check
+    # must not be answered from the cache.
+    code_root, main, _ = _make_repo(tmp_path)
+    storage._REMOTE_PATCH_IDS.clear()
+    plain = ["--format=commit %H"]
+    storage._remote_patch_ids(str(main), plain, 1000)
+    (main / "extra.txt").write_text("x\n")
+    _git(main, "add", "extra.txt"); _git(main, "commit", "-m", "extra"); _git(main, "push")
+    storage._remote_patch_ids(str(main), plain, 1000)
+    assert len(storage._REMOTE_PATCH_IDS) == 2
