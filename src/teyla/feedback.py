@@ -8,7 +8,10 @@ that file: what Teyla can see on this machine, the same redacted report `monitor
 
 Nothing in the output should identify the machine or the work: no session ids, no
 path under the home directory (home is rewritten to `~`, and `monitor.redact()`
-already turns project keys into p01..pNN and drops correction text and cwd paths).
+already turns project keys into p01..pNN, connectors into c01..cNN, non-public skills
+into s01..sNN, and drops correction text and cwd paths), no proxy, CA bundle or
+reminder text from doctor (`shareable_check`). tests/test_share_leaks.py is the
+guarantee: it plants canaries on a synthetic machine and greps every shared output.
 """
 from __future__ import annotations
 
@@ -32,10 +35,32 @@ QUESTIONS = [
 
 def _redact_home(text: str) -> str:
     """Replace every occurrence of the home directory with `~`, absolute or already-expanded."""
+    from .monitor import scrub_home
+    return scrub_home(text)
+
+
+# Doctor checks whose detail is about this machine's network or its owner, never about Teyla:
+# the proxy URL (credentials included, on some setups), the CA bundle path, config roots,
+# reminder text, repo and worktree names. Only their level and name travel.
+DETAIL_WITHHELD = ("network", "config", "remind", "platform", "repos", "storage")
+
+
+def shareable_check(c: dict) -> tuple[str, str, str]:
+    """(level, name, detail) of one doctor check, safe for the feedback file. The detail is
+    withheld for the DETAIL_WITHHELD families and for anything that looks like a URL, an
+    address or credentials ('@'), or a path under the home directory — whichever the check
+    family, since a detail's shape can change with a release and this must not. A reminder's
+    name is its text, so it is withheld too."""
+    name = str(c.get("name") or "")
+    family = name.split(":", 1)[0]
+    if family == "remind":
+        name = "remind"
+    detail = str(c.get("detail") or "")
     home = str(pathlib.Path.home())
-    if not home or home == "/":
-        return text
-    return text.replace(home, "~")
+    if (family in DETAIL_WITHHELD or "://" in detail or "@" in detail or "~" in detail
+            or (home not in ("", "/") and home in detail)):
+        detail = "(withheld)"
+    return str(c.get("level")), name, detail
 
 
 def _doctor_lines() -> list[str]:
@@ -51,14 +76,15 @@ def _doctor_lines() -> list[str]:
             n = f"error: {type(e).__name__}"
         shown_root = _redact_home(os.path.expanduser(root)) if root else "-"
         lines.append(f"{mod.NAME:12} {shown_root:40} {'found' if ok else 'absent':7} sessions: {n}")
-    # The doctor checklist itself (levels, names, home-redacted detail; the fix column is
-    # left out — it can name a repo path). This is what tells the maintainer whether the
-    # install is actually wired on the reporting machine.
+    # The doctor checklist itself (levels, names, and the detail where it is about Teyla, not
+    # the machine — see shareable_check; the fix column is left out, it can name a repo path).
+    # This is what tells the maintainer whether the install is actually wired here.
     try:
         from . import doctor
         lines.append("")
         for c in doctor.checks(refresh_update=False, scan_repos=False):
-            lines.append(f"{c['level']:4} {c['name']:22} {_redact_home(str(c['detail']))}")
+            level, name, detail = shareable_check(c)
+            lines.append(f"{level:4} {name:22} {detail}")
     except Exception as e:  # noqa: BLE001
         lines.append(f"doctor: error: {type(e).__name__}")
     return lines
