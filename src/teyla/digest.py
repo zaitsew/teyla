@@ -8,7 +8,7 @@ of 44 session starts since 09-16 with the same items for 13 days, so it stopped 
 
 **Banner.** `teyla doctor` and `teyla routines` write `~/.teyla/banner.items`, one
 `key<TAB>text` line per thing that needs a human: doctor WARN/FIX rows (key = level|name, so
-a WARN turning into a FIX is news), routines NOT LOADED/STALE and BROKEN checks from every
+a WARN turning into a FIX is news), routines not running (NOT LOADED/STALE/unknown) and BROKEN checks from every
 product, and reminders — those only on the day they fall due, the day after, and then once a
 week (the key carries the overdue week). The plugin's session-start hook compares the keys
 with `~/.teyla/banner.seen` (the keys it showed last time) in one awk call, prints
@@ -171,49 +171,57 @@ def banner(items_text: str, seen_text: str | None) -> str:
 
 # --- digest -----------------------------------------------------------------------------------
 
-def _step_of_advice(action: str) -> str:
-    """The command in an advice action (its first `backticked` span), else its first sentence."""
+def _step_of_advice(action: str) -> tuple[str, bool]:
+    """(step, is_command): the first `backticked` span of an advice action is a command; without
+    one the action is prose — its first sentence, never dressed up as something to paste."""
     m = re.search(r"`([^`]+)`", action or "")
     if m:
-        return m.group(1)
-    return _short(re.split(r"(?<=[.;])\s", action or "")[0].rstrip("."), 90)
+        return m.group(1), True
+    return _short(re.split(r"(?<=[.;])\s", action or "")[0].rstrip("."), 90), False
 
 
-def _step_of_fix(fix: str | None) -> str:
+_COMMAND_RE = re.compile(r"^(?:teyla|git|gh|uv|pipx|brew|chmod|bash|sh|launchctl|claude|codex|grok|~/|/|\./)(?:\s|$|/)")
+
+
+def _step_of_fix(fix: str | None) -> tuple[str, bool]:
     # doctor fixes often carry an alternative in parentheses after spaces: keep the first command.
     # Not truncated: a step is copied into a shell, and a command cut with "…" does not run.
-    return _clean(re.split(r"\s{2,}\(", fix or "")[0]) or "teyla doctor"
+    step = _clean(re.split(r"\s{2,}\(", fix or "")[0]) or "teyla doctor"
+    return step, bool(_COMMAND_RE.match(step))
 
 
 def candidates(findings: list[dict], doctor_checks: list[dict], reports: list[dict]) -> list[dict]:
     """Every action worth a line, ranked: doctor FIX, high advice, routines not running, broken
-    checks, medium advice, long-untested checks, low advice. Each: {id, text, step, rank}."""
+    checks, medium advice, long-untested checks, low advice. Each: {id, text, step, cmd, rank} —
+    `cmd` says whether `step` is a command to paste or a sentence to act on."""
     from . import routines
     out = []
     for c in doctor_checks:
         if c.get("level") == "FIX":
+            step, cmd = _step_of_fix(c.get("fix"))
             out.append(dict(rank=0, id=f"doctor:{c['name']}", text=_short(f"{c['name']}: {c.get('detail', '')}"),
-                            step=_step_of_fix(c.get("fix"))))
+                            step=step, cmd=cmd))
     sev_rank = {"high": 1, "medium": 4, "low": 6}
     for f in findings:
+        step, cmd = _step_of_advice(f.get("action", ""))
         out.append(dict(rank=sev_rank.get(f.get("severity"), 6), id=f["id"], text=_short(f"{f['id']} {f['title']}"),
-                        step=_step_of_advice(f.get("action", ""))))
+                        step=step, cmd=cmd))
     for r in reports:
         if r.get("error"):
             out.append(dict(rank=2, id=f"toml:{r['product']}", text=f"{r['product']}: teyla.toml has an error",
-                            step=f"teyla routines {r.get('repo') or '.'}"))
+                            step=f"teyla routines {r.get('repo') or '.'}", cmd=True))
             continue
         for row in r.get("routines") or []:
-            if row.get("verdict") in ("NOT LOADED", "STALE"):
+            if row.get("verdict") in routines.NOT_RUNNING_VERDICTS:  # `unknown` counts, as in `teyla routines`
                 out.append(dict(rank=2, id=f"routine:{r['product']}:{row['name']}",
                                 text=f"{r['product']} routine {row['name']} {row['verdict']}",
-                                step=f"teyla routines {r.get('repo') or '.'}"))
+                                step=f"teyla routines {r.get('repo') or '.'}", cmd=True))
         for c in routines.stale_checks(r):
             age = c.get("age_days")
             since = f"{age}d" if isinstance(age, int) else "never confirmed"
             out.append(dict(rank=3 if c["verdict"] == "BROKEN" else 5, id=f"check:{r['product']}:{c['name']}",
                             text=_short(f"{r['product']} check {c['name']} {c['verdict']} ({since})"),
-                            step=routines.confirm_command(r["product"], c["name"])))
+                            step=routines.confirm_command(r["product"], c["name"]), cmd=True))
     return sorted(out, key=lambda c: c["rank"])  # stable: ties keep input order
 
 
@@ -257,7 +265,7 @@ def build(findings: list[dict], doctor_checks: list[dict], reports: list[dict], 
         if len(top) > 1:
             head += f" (+{len(top) - 1} more: teyla digest)"
         lines = [_short(head, HEADLINE_MAX)]
-        lines += [f"{i}. {c['text']} → `{c['step']}`" for i, c in enumerate(top, 1)]
+        lines += [f"{i}. {c['text']} → " + (f"`{c['step']}`" if c.get("cmd") else c["step"]) for i, c in enumerate(top, 1)]
     long_runs = sorted(((n, aid) for aid, n in streaks(history, today).items() if n >= STREAK_WEEKS), reverse=True)
     if long_runs:
         names = ", ".join(f"{aid} ({n} weeks)" for n, aid in long_runs[:3])
@@ -292,6 +300,13 @@ def weekly_findings(days: int = 7) -> list[dict]:
     from .monitor import metrics
     ss = [s for s in load_all(since=since_epoch(days)) if not s.sidechain]
     m = metrics(ss, days)
+    try:
+        # The policy detectors (A15/A16) need their inputs; teyla.detect ships in a sibling PR,
+        # so the digest picks it up whenever it is present, in whichever order the two land.
+        from .detect import enrich
+        m = enrich(m)
+    except ImportError:
+        pass
     try:
         from .cli import _grok_week
         m["grok_week"] = _grok_week()

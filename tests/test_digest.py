@@ -231,7 +231,7 @@ def test_digest_top_three_across_sources_with_commands():
     lines, _ = digest.build(FINDINGS, DOCTOR, REPORTS, {}, today=dt.date(2026, 9, 28))
     assert lines[0] == "teyla weekly 2026-09-28: plugin: not installed → teyla plugin install zaitsew/teyla (+2 more: teyla digest)"
     assert lines[1:] == ["1. plugin: not installed → `teyla plugin install zaitsew/teyla`",
-                         "2. A1 Subagents inherit the parent model → `Pass model: sonnet (or haiku) on every Agent call that reads`",
+                         "2. A1 Subagents inherit the parent model → Pass model: sonnet (or haiku) on every Agent call that reads",
                          "3. frank routine gate NOT LOADED → `teyla routines /r/frank`"]
     cands = digest.candidates(FINDINGS, DOCTOR, REPORTS)
     assert [c["id"] for c in cands] == ["doctor:plugin", "A1", "routine:frank:gate", "check:frank:send one", "A3"]
@@ -290,3 +290,31 @@ def test_weekly_wrapper_writes_the_digest_and_an_old_one_is_stale(_home, monkeyp
     assert routine_install._wrapper_stale(w, "/x/teyla")
     w.write_text(routine_install.WRAPPER_TEMPLATE.format(teyla_bin="/x/teyla", env_sh="", stamp="/s.last", label="l"))
     assert not routine_install._wrapper_stale(w, "/x/teyla")
+
+
+def test_unknown_routines_count_as_not_running_in_banner_and_digest():
+    rep = {"product": "loco", "repo": "/r/loco", "checks": [],
+           "routines": [{"name": "health", "verdict": "unknown"}, {"name": "sync", "verdict": "ok"}]}
+    assert routines.problem_items(rep) == [("routine|loco|health|unknown", "loco routine health unknown")]
+    assert [c["id"] for c in digest.candidates([], [], [rep])] == ["routine:loco:health"]
+
+
+def test_prose_stays_prose_and_commands_get_backticks():
+    fs = [dict(id="A1", severity="high", title="t1", action="Pass model: sonnet on every Agent call."),
+          dict(id="A9", severity="high", title="t9", action="Add it with `teyla rule` and it stops.")]
+    checks = [doctor._check("FIX", "repos:x", "differ", "merge by hand, or teyla policy sync-repo <path>"),
+              doctor._check("FIX", "plugin", "missing", "teyla plugin install zaitsew/teyla   (or: …)")]
+    lines, _ = digest.build(fs, checks, [], {}, today=dt.date(2026, 9, 28))
+    assert lines[1] == "1. repos:x: differ → merge by hand, or teyla policy sync-repo <path>"
+    assert lines[2] == "2. plugin: missing → `teyla plugin install zaitsew/teyla`"
+    assert lines[3] == "3. A1 t1 → Pass model: sonnet on every Agent call"
+    assert [c["cmd"] for c in digest.candidates(fs, [], [])] == [False, True]
+
+
+def test_manifests_are_discovered_under_config_code_root(tmp_path, monkeypatch):
+    code = tmp_path / "work" / "code"
+    for name in ("a", "b"):
+        (code / name / ".git").mkdir(parents=True)
+    (code / "a" / "teyla.toml").write_text('[product]\nname = "a"\n')
+    monkeypatch.setattr(config, "load", lambda path=None: {**config.DEFAULTS, "code_root": str(code)})
+    assert routines.find_manifests() == [code / "a" / "teyla.toml"]

@@ -202,7 +202,7 @@ def cmd_routines(args):
     reports = evaluate_all(args.paths or None)
     write_lines(reports)  # the one-liners the session-start hook shows; only the CLI writes them
     from . import digest
-    digest.write_banner_items()  # routines NOT LOADED/STALE and broken checks reach the banner
+    digest.write_banner_items()  # routines not running and broken checks reach the banner
     if getattr(args, "issues", False):
         from .routines import open_issues
         for line in open_issues(reports):

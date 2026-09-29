@@ -81,7 +81,7 @@ class ManifestError(ValueError):
 
 
 def find_manifests(paths: list[str] | None = None) -> list[pathlib.Path]:
-    """teyla.toml files: at the given paths, or one level under every git repo in ~/repos."""
+    """teyla.toml files: at the given paths, or one level under every git repo in config code_root."""
     if paths:
         out = []
         for p in paths:
@@ -93,7 +93,8 @@ def find_manifests(paths: list[str] | None = None) -> list[pathlib.Path]:
             elif p.name == "teyla.toml" and p.exists():
                 out.append(p)
         return out
-    root = pathlib.Path.home() / "repos"
+    from . import config
+    root = config.code_root()  # ~/repos by default; a work laptop keeps code elsewhere
     if not root.is_dir():
         return []
     out = []
@@ -425,13 +426,13 @@ def summary_line(report: dict, *, now: dt.datetime | None = None) -> str:
 
 
 def problem_items(report: dict) -> list[tuple[str, str]]:
-    """(key, text) for the session-start banner: routines not running and broken checks. The key
+    """(key, text) for the session-start banner: routines not running (NOT_RUNNING_VERDICTS) and broken checks. The key
     is what "seen" is tracked by, so a routine that goes from STALE to NOT LOADED is news again."""
     if report.get("error"):
         return [(f"toml|{report['product']}", f"{report['product']} teyla.toml has an error")]
     out = []
     for r in report.get("routines") or []:
-        if r.get("verdict") in ("NOT LOADED", "STALE"):
+        if r.get("verdict") in NOT_RUNNING_VERDICTS:  # `unknown` included: nothing can say it runs
             out.append((f"routine|{report['product']}|{r['name']}|{r['verdict']}",
                         f"{report['product']} routine {r['name']} {r['verdict']}"))
     for c in report.get("checks") or []:
