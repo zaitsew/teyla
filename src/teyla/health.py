@@ -288,7 +288,7 @@ def errors_claude(home: pathlib.Path, since: float) -> dict:
     """{error, last_ok}: `isApiErrorMessage` records vs ordinary assistant records, from the
     tail of every transcript written in the window."""
     root = home / "projects"
-    newest_err, last_ok = None, None
+    newest_err, last_ok = None, {}
     if not root.is_dir():
         return {"error": None, "last_ok": None}
     for p in root.glob("*/*.jsonl"):
@@ -307,14 +307,19 @@ def errors_claude(home: pathlib.Path, since: float) -> dict:
             ts = _parse_ts(d.get("timestamp"))
             if ts is None or ts.timestamp() < since:
                 continue
+            # `claude -p` (entrypoint sdk-cli) and the desktop app sign in separately: a desktop
+            # session that worked says nothing about a `-p` routine that failed, so an error is
+            # weighed against later successes of its own entrypoint.
+            ep = d.get("entrypoint") or "?"
             if d.get("isApiErrorMessage"):
                 content = (d.get("message") or {}).get("content") or []
                 text = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
                 if newest_err is None or ts > newest_err["ts"]:
-                    newest_err = _err(ts, classify(text + " " + str(d.get("error") or "")), text, p.name)
-            elif last_ok is None or ts > last_ok:
-                last_ok = ts
-    return {"error": newest_err, "last_ok": last_ok}
+                    newest_err = dict(_err(ts, classify(text + " " + str(d.get("error") or "")), text, p.name), entrypoint=ep)
+            elif ep not in last_ok or ts > last_ok[ep]:
+                last_ok[ep] = ts
+    ok = last_ok.get(newest_err["entrypoint"]) if newest_err else max(last_ok.values(), default=None)
+    return {"error": newest_err, "last_ok": ok}
 
 
 def errors_codex(home: pathlib.Path, since: float) -> dict:
@@ -511,10 +516,11 @@ def offline(name: str, home: pathlib.Path | None = None, days: int = 7, sessions
         cutoff = _dt.datetime.fromtimestamp(since, _dt.timezone.utc).isoformat()[:19]
         recent = [s for s in sessions if (s.last or s.first or "") >= cutoff]
         row["sessions"] = {"interactive": sum(1 for s in recent if not s.batch), "batch": sum(1 for s in recent if s.batch)}
+        from .grokcost import project_of  # worktrees, ~/repos/<repo> and <repo>-grok-empty are <repo>
         by_proj: dict = {}
         for s in recent:
             if s.batch:
-                key = os.path.basename((s.cwd or s.project or "?").rstrip("/")) or "?"
+                key = project_of(s.cwd or s.project or "?")
                 by_proj[key] = by_proj.get(key, 0) + 1
         row["batch_top"] = max(by_proj.items(), key=lambda kv: kv[1]) if by_proj else None
     return verdict(name, row)

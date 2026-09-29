@@ -137,7 +137,7 @@ def _grok_log(home, events):
                                  "msg": msg, "ctx": ctx}) + "\n")
 
 
-def _fake_sessions(n_batch, project="/Users/me/repos/frank"):
+def _fake_sessions(n_batch, project="/private/tmp/frank-grok-empty"):  # Frank starts its grok children here
     last = NOW.isoformat()
     return [types.SimpleNamespace(batch=True, cwd=project, project=project, last=last, first=last) for _ in range(n_batch)] + \
         [types.SimpleNamespace(batch=False, cwd="/Users/me/ops", project="/Users/me/ops", last=last, first=last)]
@@ -197,6 +197,19 @@ def test_hermes_errors_skip_the_auxiliary_lane_and_read_the_last_assistant_row(h
     e = health.errors_hermes(home / ".hermes", time.time() - 7 * 86400)
     assert e["error"]["kind"] == "rate" and "429" in e["error"]["message"]
     assert e["last_ok"] < NOW - dt.timedelta(days=29)
+
+
+def test_claude_error_is_weighed_against_its_own_entrypoint(home):
+    # A `claude -p` routine (sdk-cli) failing to authenticate is not undone by the desktop app
+    # working an hour later: they sign in separately.
+    p = home / ".claude" / "projects" / "-Users-me-ops" / "e.jsonl"
+    rows = [{"type": "assistant", "entrypoint": "sdk-cli", "timestamp": _iso(NOW - dt.timedelta(hours=2)), "isApiErrorMessage": True,
+             "message": {"content": [{"type": "text", "text": "Failed to authenticate: OAuth session expired and could not be refreshed"}]}},
+            {"type": "assistant", "entrypoint": "claude-desktop", "timestamp": _iso(NOW - dt.timedelta(hours=1)),
+             "message": {"content": [{"type": "text", "text": "done"}]}}]
+    p.write_text("\n".join(json.dumps(r, separators=(",", ":")) for r in rows) + "\n")
+    e = health.errors_claude(home / ".claude", time.time() - 86400)
+    assert e["error"]["kind"] == "auth" and e["last_ok"] is None
 
 
 def test_claude_api_error_records(home):
