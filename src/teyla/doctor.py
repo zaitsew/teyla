@@ -272,10 +272,9 @@ def summary_line(cs: list[dict]) -> str:
 
 def write_state(cs: list[dict]) -> None:
     try:
-        config.TEYLA_DIR.mkdir(parents=True, exist_ok=True)
-        DOCTOR_JSON.write_text(json.dumps({"version": __version__, "at": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
-                                           "checks": cs}, indent=2) + "\n")
-        DOCTOR_SUMMARY.write_text(summary_line(cs) + "\n")
+        config.write_private(DOCTOR_JSON, json.dumps({"version": __version__, "at": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
+                                                      "checks": cs}, indent=2) + "\n")
+        config.write_private(DOCTOR_SUMMARY, summary_line(cs) + "\n")
     except OSError:
         pass
 

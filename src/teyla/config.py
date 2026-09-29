@@ -12,6 +12,9 @@
     idle_days       = 3            a clean, pushed worktree untouched this long is finished
     agent_idle_days = 1            the same for a subagent's <repo>/.claude/worktrees/agent-*
     build_idle_days = 14           git-ignored build dirs of a repo idle this long are removed
+    [corrections]
+    store = "home"                 "home": ~/.teyla/corrections/<repo-key>.jsonl (default);
+                                   "repo": <repo>/.teyla/corrections.jsonl, the pre-0.12 place
     [env]
     SSL_CERT_FILE = "~/.teyla/ca-bundle.pem"
     HTTPS_PROXY   = "http://127.0.0.1:9000"
@@ -45,7 +48,34 @@ DEFAULTS = {
     # `teyla storage`: auto_clean lets the daily routine remove finished worktrees (clean, on
     # the remote, idle >= idle_days) and git-ignored build output of repos idle >= build_idle_days.
     "storage": {"auto_clean": False, "idle_days": 3, "agent_idle_days": 1, "build_idle_days": 14},
+    # Where `teyla correct` and the capture hook keep corrections; see corrections.py for why
+    # the default is outside the repo.
+    "corrections": {"store": "home"},
 }
+
+
+def private_dir(d: pathlib.Path) -> pathlib.Path:
+    """mkdir -p `d` at 0700, and tighten it if it already exists with group/other bits.
+    ~/.teyla holds prompt excerpts, the update record (paths, proxy) and doctor output; on
+    the machine this was written on it was 0755 with every file 0644 — readable by any
+    other account on the Mac. Same user, same launchd agents: nothing Teyla runs needs more."""
+    d.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        if d.stat().st_mode & 0o077:
+            os.chmod(d, 0o700)
+    except OSError:
+        pass
+    return d
+
+
+def write_private(path: pathlib.Path, text: str) -> None:
+    """Write `text` to `path` as 0600, its directory 0700. An existing file is tightened too:
+    O_CREAT's mode only applies when the file is new."""
+    private_dir(path.parent)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.chmod(path, 0o600)
 
 
 def _read(p: pathlib.Path) -> dict:

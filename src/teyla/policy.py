@@ -273,8 +273,8 @@ def ack(note: str | None = None) -> str:
     record = {"claude_md": {"sha256": digest, "date": today}}
     if note:
         record["claude_md"]["note"] = note
-    ACK_PATH.parent.mkdir(parents=True, exist_ok=True)
-    ACK_PATH.write_text(json.dumps(record, indent=2) + "\n")
+    from . import config
+    config.write_private(ACK_PATH, json.dumps(record, indent=2) + "\n")
     detail = f"sha256={digest} date={today}" + (f" note={note!r}" if note else "")
     return f"recorded {CLAUDE_GLOBAL} -> {ACK_PATH}: {detail}"
 
