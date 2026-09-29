@@ -251,6 +251,9 @@ def test_refuses_what_is_not_recognisably_teylas(tmp_path):
     (home / ".hermes" / "SOUL.md").write_text("I am Hermes.\n\n## Operating policy\nMy own words now.\n")
     (home / "Library" / "LaunchAgents").mkdir(parents=True)
     (home / "Library" / "LaunchAgents" / "com.teyla.lookalike.plist").write_text("<plist>not a teyla run</plist>\n")
+    # a label and a `run` argument are not enough: the program must be teyla (Codex review P2)
+    (home / "Library" / "LaunchAgents" / "com.teyla.other.plist").write_text(
+        TRIGGER_PLIST.replace("com.teyla.demo.nightly", "com.teyla.other").replace("/x/bin/teyla", "/usr/bin/foo"))
     before = snapshot(home)
     out = teyla(env, "uninstall")
     assert snapshot(home) == before, out
@@ -274,3 +277,20 @@ def test_claude_md_import_line_the_owner_placed_is_removed_alone(tmp_path, monke
     steps[0].fn()
     assert p.read_text() == "# Mine\n\n\nMore of mine.\n"
     assert list((home / ".claude").glob("CLAUDE.md.bak-*"))
+
+
+def test_a_failed_step_is_reported_and_fails_the_command(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    owner_machine(home)
+    env = _env(tmp_path, with_claude=True)
+    teyla(env, "plugin", "install", str(REPO))
+    (tmp_path / "bin" / "claude").write_text('#!/bin/sh\necho "not logged in" >&2\nexit 3\n')
+    teyla(env, "harness", "sync")
+    r = subprocess.run([sys.executable, "-m", "teyla", "uninstall"], env=env, cwd=env["HOME"],
+                       capture_output=True, text=True, timeout=120)
+    assert r.returncode == 1, r.stdout
+    assert "FAILED  run claude plugin uninstall teyla@teyla: exit 3: not logged in" in r.stdout
+    assert "step(s) FAILED" in r.stdout
+    # the rest still ran
+    assert not (home / ".codex" / "skills" / "teyla-harvest").exists()

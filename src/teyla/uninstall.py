@@ -132,6 +132,19 @@ def _expand(path: str, home: pathlib.Path) -> pathlib.Path:
 
 # --- the plan ---------------------------------------------------------------------------------
 
+def _is_trigger_plist(p: pathlib.Path) -> bool:
+    """A `teyla triggers install` plist: its program is a `teyla` binary and its first argument
+    `run` (control.triggers.plist_for). The label alone proves nothing — anyone can name a job
+    com.teyla.*, and the label string would satisfy a text search for "teyla"."""
+    import plistlib
+    try:
+        args = plistlib.loads(p.read_bytes()).get("ProgramArguments") or []
+    except Exception:  # noqa: BLE001 — unreadable or not a plist: not recognisably ours
+        return False
+    return (len(args) >= 3 and isinstance(args[0], str) and os.path.basename(args[0]) == "teyla"
+            and args[1] == "run")
+
+
 def _launch_agents(home: pathlib.Path) -> list[Step]:
     steps = []
     agents = home / "Library" / "LaunchAgents"
@@ -139,12 +152,7 @@ def _launch_agents(home: pathlib.Path) -> list[Step]:
     labels = [(lbl, agents / f"{lbl}.plist") for lbl in ROUTINE_LABELS]
     if agents.is_dir():
         for p in sorted(agents.glob(f"{TRIGGER_PREFIX}*.plist")):
-            try:
-                text = p.read_text(errors="replace")
-            except OSError:
-                continue
-            # a `teyla triggers install` plist runs `<teyla> run <product:routine>`
-            if "<string>run</string>" in text and "teyla" in text:
+            if _is_trigger_plist(p):
                 labels.append((p.stem, p))
             else:
                 steps.append(Step("", p, "named like a Teyla trigger but does not run `teyla run`; not Teyla's"))
@@ -408,28 +416,37 @@ def plan(home: pathlib.Path | None = None, keep_data: bool = False) -> list[Step
             + _policy_links(home) + _claude_md(home) + _teyla_dir(home, keep_data) + _reports(home, cfg))
 
 
-def run(dry: bool = False, keep_data: bool = False, home: pathlib.Path | None = None) -> list[str]:
+def run(dry: bool = False, keep_data: bool = False, home: pathlib.Path | None = None) -> tuple[list[str], int]:
+    """(lines, failures). A step that raises, or a command that exits non-zero (`claude plugin
+    uninstall` unauthenticated, say), is a failure: reported with its output, counted, and the
+    remaining steps still run — one stuck piece must not strand the rest wired."""
     steps = plan(home, keep_data)
-    lines = []
+    lines, failed = [], 0
     for s in steps:
         if s.fn is not None and not dry:
             try:
-                s.fn()
-            except Exception as e:  # noqa: BLE001 — one failed step must not strand the rest
-                lines.append(f"FAILED  {s.target}: {type(e).__name__}: {e}")
+                res = s.fn()
+            except Exception as e:  # noqa: BLE001
+                res = (1, f"{type(e).__name__}: {e}")
+            if isinstance(res, tuple) and len(res) == 2 and isinstance(res[0], int) and res[0] != 0:
+                failed += 1
+                lines.append(f"FAILED  {s.verb} {s.target}: exit {res[0]}: {str(res[1]).strip()[-400:]}")
                 continue
         lines.append(s.line(dry))
     if not any(s.fn for s in steps):
         lines.insert(0, "nothing of Teyla's left to remove on this machine")
     lines.append("")
+    if failed:
+        lines.append(f"{failed} step(s) FAILED — fix what they name and run `teyla uninstall` again (it is idempotent)")
     lines.append("the teyla command itself: uv tool uninstall teyla   (or: pipx uninstall teyla)")
-    return lines
+    return lines, failed
 
 
 def cmd_uninstall(args):
-    for line in run(dry=args.dry, keep_data=args.keep_data):
+    lines, failed = run(dry=args.dry, keep_data=args.keep_data)
+    for line in lines:
         print(line)
-    return 0
+    return 1 if failed else 0
 
 
 def register(sp):
