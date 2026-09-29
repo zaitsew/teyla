@@ -124,7 +124,7 @@ _KINDS = (
     ("quota", re.compile(r"\b402\b|payment required|balance exhausted|insufficient_quota|usage limit|session limit|"
                          r"weekly limit|out of credits|credit balance|billing|quota", re.I)),
     ("auth", re.compile(r"\b401\b|unauthori[sz]ed|missing access_token|invalid_grant|refresh token|re-?authenticate|"
-                        r"relogin|not logged in|authentication|invalid api key|expired token", re.I)),
+                        r"relogin|not logged in|authenticat|invalid api key|expired token|session expired", re.I)),
     ("rate", re.compile(r"\b429\b|rate.?limit|too many requests|\b529\b|overloaded", re.I)),
     ("network", re.compile(r"ENOTFOUND|ECONNREFUSED|ECONNRESET|timed out|timeout|can't reach|could not resolve|"
                            r"network|connection (refused|reset|closed)|dns", re.I)),

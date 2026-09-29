@@ -48,6 +48,7 @@ def home(tmp_path, monkeypatch):
     ("xAI OAuth state is missing access_token. Re-authenticate with `hermes model`.", None, "auth"),
     ('xAI token refresh failed. Response: {"error":"invalid_grant"}', None, "auth"),
     ("unexpected status 401 Unauthorized: Missing bearer", None, "auth"),
+    ("Failed to authenticate: OAuth session expired and could not be refreshed", None, "auth"),
     ("API Error: 529 Overloaded.", None, "rate"),
     ("Too Many Requests", 429, "rate"),
     ("API Error: Can't reach the API server — check your internet or DNS (ENOTFOUND)", None, "network"),
