@@ -58,14 +58,34 @@ DEFAULTS = {
 }
 
 
+UNPARSEABLE = "unparseable"
+
+
+def parse_error(p: pathlib.Path | None = None) -> str | None:
+    """Why config.toml cannot be read, or None when it is absent or parses."""
+    p = p or CONFIG_PATH
+    if not p.exists():
+        return None
+    import tomllib
+    try:
+        tomllib.loads(p.read_text())
+    except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as e:
+        return str(e)
+    return None
+
+
 def _read(p: pathlib.Path) -> dict:
+    """The file's tables, or — when it exists and does not parse — a config whose only content
+    is a safe mode that cannot be read as off. Returning {} here made one stray quote in [env]
+    turn safe mode off: doctor then asked GitHub, routines ran gh, products ran every check.sh
+    (review of #59, P1). Fail closed, and let doctor say why."""
     if not p.exists():
         return {}
     import tomllib
     try:
         return tomllib.loads(p.read_text())
-    except (tomllib.TOMLDecodeError, OSError):
-        return {}
+    except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as e:
+        return {"safe": {"enabled": f"{UNPARSEABLE} {p.name}: {e}"}}
 
 
 def load(path: pathlib.Path | None = None) -> dict:
@@ -136,6 +156,9 @@ def write(code_root: str = "~/repos", ops_root: str = "~/ops", repo: str = "zait
     p = path or CONFIG_PATH
     if p.exists() and not force:
         return f"exists: {p}"
+    err = parse_error(p)
+    if err:
+        return f"invalid config: {p} does not parse ({err}); not rewritten — fix it by hand"
     data = {"code_root": code_root, "ops_root": ops_root, "update": {"repo": repo, "channel": channel}}
     if p.exists():
         # --force rewrites the roots and the update block; [env], [safe], [products] and
@@ -190,6 +213,11 @@ def set_value(dotted: str, value: str | None, path: pathlib.Path | None = None) 
     value None deletes the key. Only the file's own content is rewritten — defaults are
     not materialised into it, so a later release can still change a default."""
     p = path or CONFIG_PATH
+    err = parse_error(p)
+    if err:
+        # Rewriting from what _read() returns would keep one key and drop [env], the roots and
+        # [products] — the whole local adaptation — on top of a typo.
+        return f"invalid config: {p} does not parse ({err}); nothing written — fix it by hand"
     data = _read(p)
     parts = dotted.split(".", 1)
     if len(parts) == 2:

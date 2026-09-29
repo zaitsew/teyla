@@ -40,8 +40,12 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
 
     # --- safe mode: first, because it changes what every line below means --------
     out.append(_check("INFO", "safe", config.SAFE_SUMMARY if safe else "off"))
+    cfg_err = config.parse_error()
     bad_safe = config.safe_setting_invalid(cfg)
-    if bad_safe is not None:
+    if cfg_err:
+        out.append(_check("FIX", "safe:setting", f"{config.CONFIG_PATH} does not parse ({cfg_err}) — safe mode forced ON, "
+                          "every other setting ignored", "fix the file by hand, then: teyla config show"))
+    elif bad_safe is not None:
         out.append(_check("FIX", "safe:setting", f"[safe] enabled = {bad_safe!r} is not true or false — treated as ON",
                           "teyla config set safe.enabled=true   (or =false)"))
 
@@ -250,6 +254,12 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
             out.append(_check("OK", "control:hmac", "signing key present, mode 600"))
     else:
         out.append(_check("INFO", "control:hmac", "no signing key yet (created on first `teyla run`)"))
+    if safe:
+        from .control import triggers as _triggers
+        for plist in _triggers.installed_plists():
+            label = plist.stem
+            out.append(_check("FIX", "control:trigger", f"{plist.name} runs `teyla run` unattended; safe mode refuses it",
+                              f"launchctl bootout gui/{os.getuid()}/{label}; rm {plist}"))
     kill = config.TEYLA_DIR / "kill"
     if kill.exists():
         out.append(_check("WARN", "control:kill", "kill switch is ON — no routine acts", "teyla kill off"))
