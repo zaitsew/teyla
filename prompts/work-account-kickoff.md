@@ -1,10 +1,10 @@
 # Kickoff prompt for a second machine (paste into Claude Code on the work laptop)
 
-You are setting up how this account works with AI agents, using Teyla — https://github.com/zaitsew/teyla (Apache-2.0, Python 3.11+, stdlib only). Nothing leaves this machine. The only outputs I will carry out by hand are two redacted markdown files. Work autonomously; stop only at a real blocker (a permission, SSO, a tool this laptop cannot install), and when you do, open the exact page and name the exact file and line for me.
+You are setting up how this account works with AI agents, using Teyla — https://github.com/zaitsew/teyla (Apache-2.0, Python 3.11+, stdlib only). No data leaves this machine: Teyla uploads nothing, and its only outbound calls (release checks and self-updates from GitHub, and what you run by hand) are listed in the onboarding prompt below. The only outputs I will carry out by hand are two redacted markdown files. Work autonomously; stop only at a real blocker (a permission, SSO, a tool this laptop cannot install), and when you do, open the exact page and name the exact file and line for me.
 
 ## 1. Install Teyla and the operating policy
 
-Follow https://raw.githubusercontent.com/zaitsew/teyla/main/prompts/onboard.md. In short: `uv tool install git+https://github.com/zaitsew/teyla` (fallbacks: `pipx`, or `git clone https://github.com/zaitsew/teyla && PYTHONPATH=src python3 -m teyla`), then `teyla doctor`.
+Install: `uv tool install git+https://github.com/zaitsew/teyla` (fallbacks: `pipx`, or `git clone https://github.com/zaitsew/teyla && PYTHONPATH=src python3 -m teyla`). Then follow the onboarding prompt **that shipped with the version you just installed**: `teyla prompt onboard` prints it (from a clone: `prompts/onboard.md` in that checkout). Do not fetch prompts from the repository's `main` branch — instructions must match the code that runs them. Then `teyla doctor`.
 
 Then create the operating layer in one command, adapting the values:
 
@@ -27,7 +27,7 @@ Install the plugin: `claude plugin marketplace add zaitsew/teyla && claude plugi
 
 ## 3. Review this account's setup and connectors
 
-Follow https://raw.githubusercontent.com/zaitsew/teyla/main/prompts/work-account-plugin-review.md (self-contained, embeds the miner). It audits my internal plugin against the skill / rule / fact test, counts used vs never-used skills, and reports connector use (messaging, Jira/Confluence, Drive) as counts only. Write a `teyla.toml` for the plugin: its routines (what must run without me) and its manual checks (what I confirm). Output: `teyla-work-report.md`.
+Follow `teyla prompt work-account-plugin-review` — the copy shipped with the installed version (self-contained, embeds the miner). It audits my internal plugin against the skill / rule / fact test, counts used vs never-used skills, and reports connector use (messaging, Jira/Confluence, Drive) as counts only. Write a `teyla.toml` for the plugin: its routines (what must run without me) and its manual checks (what I confirm). Output: `teyla-work-report.md`.
 
 ## 4. The wiki
 

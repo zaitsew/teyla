@@ -2,7 +2,7 @@
 
 **A local-first toolkit and method for working with AI agents.** It measures how you actually use Claude Code, Codex, Grok and Hermes, tells you what to change, keeps one policy across all of them, turns repeated work into routines, and makes your corrections stick.
 
-Local-first. Nothing leaves your machine. `--share` produces a redacted report: pseudonymous projects, no session ids, no correction text.
+Local-first. No data leaves your machine — the only outbound calls are GitHub release checks and self-updates (listed in [`prompts/onboard.md`](prompts/onboard.md)). `--share` produces a redacted report: pseudonymous projects, connectors and private skills; no session ids, paths or correction text.
 
 ```bash
 uv tool install git+https://github.com/zaitsew/teyla      # or: pipx install git+https://github.com/zaitsew/teyla
@@ -22,7 +22,7 @@ plugin copy Claude Code actually loads, and rewrites the launchd wrappers if the
 
 No `uv`? `pipx install git+https://github.com/zaitsew/teyla`, or `git clone` and run `PYTHONPATH=src python3 -m teyla`. Python 3.11+, nothing else.
 
-**Handing it to a second machine:** [`docs/HANDOVER.md`](docs/HANDOVER.md) lists every practice that travels and what to adapt; [`prompts/work-account-kickoff.md`](prompts/work-account-kickoff.md) is the paste-able version; [`prompts/work-account-update.md`](prompts/work-account-update.md) updates a machine that already has Teyla and switches on its self-maintenance. **Handing it to an agent instead of a person:** paste [`prompts/onboard.md`](prompts/onboard.md) into Claude Code, Codex or Grok on the new machine. It installs, wires the policy, installs the plugin, runs the first review, and produces the feedback file. Corporate machines: nothing leaves the machine, every file Teyla writes is listed there with its undo.
+**Handing it to a second machine:** [`docs/HANDOVER.md`](docs/HANDOVER.md) lists every practice that travels and what to adapt; [`prompts/work-account-kickoff.md`](prompts/work-account-kickoff.md) is the paste-able version; [`prompts/work-account-update.md`](prompts/work-account-update.md) updates a machine that already has Teyla and switches on its self-maintenance. **Handing it to an agent instead of a person:** paste [`prompts/onboard.md`](prompts/onboard.md) into Claude Code, Codex or Grok on the new machine. It installs, wires the policy, installs the plugin, runs the first review, and produces the feedback file. Corporate machines: no data leaves the machine; every network call (release checks, the daily self-update) and every file Teyla writes are listed there, and `teyla uninstall --dry` lists what is on this machine (`teyla uninstall` reverses it). `teyla prompt onboard` prints the copy that shipped with the installed version.
 
 ## Why
 
@@ -60,6 +60,8 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | `teyla harness status\|sync` | the plugin's skills and hooks, and the policy, in Cursor, Codex, Grok and Hermes — see [docs/HARNESSES.md](docs/HARNESSES.md) |
 | `teyla rule "<sentence>" [--scope <glob>]` · `teyla correct "<what was wrong>"` | what `/teyla:rule` and `/teyla:correct` do, as a CLI every harness's skill can call |
 | `teyla doctor` | what Teyla can see on this machine |
+| `teyla uninstall [--dry] [--keep-data]` | every file Teyla wrote on this machine (`--dry`), then the undo: LaunchAgents unloaded, the policy import line, symlinks, Hermes sections, harness skills and hooks, the plugin, `~/.teyla`. Touches only what carries Teyla's marker, label or symlink target; keeps and lists `~/.agents/POLICY.md` and repo-level `.teyla/` and rules |
+| `teyla prompt [name]` | the paste-able prompts (onboard, work-account-kickoff, …) that shipped with the installed version |
 | `teyla storage [--json]` · `teyla storage clean [--apply]` | the disk and RAM agent work holds: every worktree (SAFE = clean, on the remote, idle, no process in it — removed with `git worktree remove`, branch kept), git-ignored build output of idle repos, caches with the command that clears each, booted simulators. Dry run unless `--apply`; `teyla config set storage.auto_clean=true` lets the daily routine do it |
 | `teyla remind add "<what>" <YYYY-MM-DD> [--how "..."]` \| `list` \| `done <n>` | dated to-dos only a human can act on (a key that expires, a trial that ends); `teyla doctor` shows each as OK, then WARN within 30 days, then FIX once overdue |
 
