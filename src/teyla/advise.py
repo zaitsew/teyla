@@ -129,7 +129,12 @@ def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
     from .detect import ASK_THRESHOLD_PER_WEEK
     if "ask-permission" in declared and weeks and max(weeks.values()) >= ASK_THRESHOLD_PER_WEEK:
         ex = (pa.get("examples") or [{}])[-1]
-        eg = f"; e.g. {ex.get('project')} {ex.get('sid')} {ex.get('day')}: \"{ex.get('ask')}\"" if ex.get("ask") not in (None, "—") else ""
+        # Redacted metrics have no `ask` (the agent's words) and no session id: say where, not what.
+        eg = ""
+        if ex.get("project"):
+            eg = f"; e.g. {ex['project']}" + (f" {ex['sid']}" if ex.get("sid") not in (None, "—") else "") + f" {ex.get('day', '')}"
+            if ex.get("ask"):
+                eg += f": \"{ex['ask']}\""
         F.append(dict(id="A15", severity="medium", title="Turns end by asking permission for the next step",
                       evidence=f"{pa.get('total', 0)} turn(s) ended with a permission question the human answered with a bare yes "
                                f"(per week: {', '.join(f'{w} {n}' for w, n in weeks.items())}; threshold {ASK_THRESHOLD_PER_WEEK}/week){eg}",
@@ -141,7 +146,7 @@ def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
         w0 = wt[0]
         F.append(dict(id="A16", severity="high", title="Workflows run on push, pull_request or schedule",
                       evidence=f"{len(wt)} workflow file(s) in {len(repos)} repo(s) ({', '.join(repos[:6])}); e.g. "
-                               f"{w0['repo']} {w0['file']} on: {', '.join(w0['triggers'])} ({w0['where']})",
+                               f"{w0['repo']}{' ' + w0['file'] if w0.get('file') else ''} on: {', '.join(w0['triggers'])} ({w0['where']})",
                       action="Set `on:` to `workflow_dispatch:` only (or delete the workflow), commit and push; "
                              "`teyla doctor` lists every file. The laptop's ./check.sh is the gate."))
     try:

@@ -120,10 +120,15 @@ def redact(m: dict) -> dict:
         g["project"] = alias.get(g["project"], "p??"); g["sid"] = "—"
     r["wrong_root"] = [dict(project=alias.get(w["project"], "p??"), sid="—", cwd="—") for w in r.get("wrong_root", [])]
     r["correction_samples"] = []
+    # A15's example quotes the agent's own words and A16's names a repo and a workflow file:
+    # the words go, the project keeps its pseudonym, repos become r01..rNN, files and paths go.
     for e in (r.get("permission_asks") or {}).get("examples", []):
-        e["project"] = alias.get(e["project"], "p??"); e["sid"] = "—"; e["ask"] = "—"
+        e["project"] = alias.get(e["project"], "p??"); e["sid"] = "—"; e.pop("ask", None)
     if r.get("workflow_triggers"):
-        r["workflow_triggers"] = [dict(repo="—", path="—", file="—", triggers=w["triggers"], where=w["where"])
+        ralias = {}
+        for w in r["workflow_triggers"]:
+            ralias.setdefault(w["repo"], f"r{len(ralias) + 1:02d}")
+        r["workflow_triggers"] = [dict(repo=ralias[w["repo"]], path=None, file=None, triggers=w["triggers"], where=w["where"])
                                   for w in r["workflow_triggers"]]
     r["correction_fingerprints"] = dict(Counter(fingerprint(t) for t in m.get("correction_samples", [])))
     r["redacted"] = True

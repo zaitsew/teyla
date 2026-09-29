@@ -225,14 +225,22 @@ def test_a16_fires_on_workflow_triggers_when_declared():
     assert not [f for f in advise(m) if f["id"] == "A16"]
 
 
-def test_redact_drops_ask_text_and_repo_names():
-    s = _s("a1", [("2026-09-21T10:00:00Z", "Want me to push the acme-project branch?", "yes")])
+def test_redact_drops_ask_text_and_pseudonymises_repos():
+    ends = [(f"2026-09-2{i}T10:00:00Z", "Want me to push the acme-project branch?", "yes") for i in range(1, 5)]
+    s = _s("a1acmesid", ends)
+    s.project = "-Users-me-repos-acme"
+    s.usage["claude-sonnet-5"] = Counter(output_tokens=10)
     m = metrics([s])
-    m["workflow_triggers"] = [dict(repo="acme", path="/r/acme", file=".github/workflows/ci.yml", triggers=["push"], where="x")]
+    m["workflow_triggers"] = [dict(repo="acme", path="/r/acme", file=".github/workflows/acme-deploy.yml", triggers=["push"], where="x")]
+    m["policy_detectors"] = ["ask-permission", "no-actions"]
+    raw = {f["id"]: f for f in advise(m)}
+    assert "acme-project" in raw["A15"]["evidence"] and "acme" in raw["A16"]["evidence"]
     r = redact(m)
-    blob = json.dumps(r)
-    assert "acme" not in blob
-    assert r["permission_asks"]["examples"][0]["ask"] == "—" and r["workflow_triggers"][0]["triggers"] == ["push"]
+    blob = json.dumps(r) + json.dumps(advise(r))
+    assert "acme" not in blob and "a1acmesid"[:8] not in blob
+    by = {f["id"]: f for f in advise(r)}
+    assert "e.g. p01 2026-09-24" in by["A15"]["evidence"] and '"' not in by["A15"]["evidence"]
+    assert "e.g. r01 on: push (x)" in by["A16"]["evidence"]
 
 
 # --- adapters record turn endings --------------------------------------------------------------
