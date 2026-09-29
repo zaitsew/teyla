@@ -117,6 +117,12 @@ def redact(m: dict) -> dict:
     for g in r.get("governance_edits", []):
         g["project"] = alias.get(g["project"], "p??"); g["sid"] = "—"
     r["wrong_root"] = [dict(project=alias.get(w["project"], "p??"), sid="—", cwd="—") for w in r.get("wrong_root", [])]
+    # Cloud sessions name repos, branches and session URLs: keep only the shape.
+    ralias: dict = {}
+    r["cloud_sessions"] = [dict(repo=ralias.setdefault(c.get("repo"), f"r{len(ralias)+1:02d}"), branch="—", session="—",
+                                commits=c.get("commits"), first=c.get("first"), last=c.get("last"), landed=c.get("landed"),
+                                pr=c.get("pr"), age_hours=c.get("age_hours"), slug=None, path=None, pr_url=None, labels=[])
+                           for c in m.get("cloud_sessions") or []]
     r["correction_samples"] = []
     r["correction_fingerprints"] = dict(Counter(fingerprint(t) for t in m.get("correction_samples", [])))
     r["redacted"] = True

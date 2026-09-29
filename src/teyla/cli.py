@@ -42,6 +42,8 @@
   teyla harness status|sync [--dry]                               the same skills, hooks and policy in Cursor, Codex, Grok, Hermes
   teyla rule "<sentence>" [--scope <glob>]                        a rule into .claude/rules/, mirrored into AGENTS.md
   teyla correct "<what was wrong>"                                a correction into .teyla/corrections.jsonl
+  teyla cloud check [repo...] [--json]                            what a cloud session would lack in each repo; exit 1 on a blocker
+  teyla cloud inbox [--days N]                                    cloud branches with no PR + open PRs labelled needs-mac
 """
 from __future__ import annotations
 
@@ -77,12 +79,23 @@ def _grok_week():
         return None
 
 
+def _cloud_sessions(days):
+    """Cloud sessions from `Claude-Session:` commit trailers, for A19 and the report section.
+    Not part of metrics(): it reads git, not transcripts, and may ask gh for PR state."""
+    from . import cloud
+    try:
+        return cloud.scan_sessions(days=days)
+    except Exception:  # noqa: BLE001 — advisory only
+        return []
+
+
 def cmd_monitor(args):
     from . import policy
     from .monitor import redact
     ss = _sessions(args)
     m = metrics(ss, args.days)
     m["grok_week"] = _grok_week()
+    m["cloud_sessions"] = _cloud_sessions(args.days)
     F = advise(m, policy.status())
     if args.share:
         m = redact(m); args.samples = False
@@ -97,6 +110,7 @@ def cmd_advise(args):
     from . import policy
     m = metrics(_sessions(args), args.days)
     m["grok_week"] = _grok_week()
+    m["cloud_sessions"] = _cloud_sessions(args.days)
     for f in advise(m, policy.status()):
         print(f"[{f['severity']}] {f['id']} {f['title']}\n    {f['evidence']}\n    → {f['action']}")
 
@@ -262,13 +276,14 @@ def main(argv=None):
     q.add_argument("--prefer", choices=["agents", "claude"], help="sync-repo: when AGENTS.md and CLAUDE.md both exist and differ, keep this one and symlink the other to it")
     q.add_argument("--note", help="ack: free-text note recorded alongside the acknowledgement")
     q = sp.add_parser("harvest"); q.set_defaults(fn=cmd_harvest); q.add_argument("path"); q.add_argument("--project")
-    from . import grokcost, wiki, feedback, models, plugins, plugin_install, connectors, control, doctor, update, remind, rules, harness, storage
+    from . import grokcost, wiki, feedback, models, plugins, plugin_install, connectors, control, doctor, update, remind, rules, harness, storage, cloud
     from . import platform as platform_mod, productize as productize_mod
     doctor.register(sp); update.register(sp); _config.register(sp)
     platform_mod.register(sp); productize_mod.register(sp)
     wiki.register(sp); feedback.register(sp); models.register(sp)
     plugins.register(sp); plugin_install.register(sp); connectors.register(sp); control.register(sp)
     remind.register(sp); rules.register(sp); harness.register(sp); storage.register(sp); grokcost.register(sp)
+    cloud.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
     q = sp.add_parser("routines"); q.set_defaults(fn=cmd_routines)
     q.add_argument("paths", nargs="*"); q.add_argument("--json", action="store_true")

@@ -254,6 +254,14 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
                                   "merge by hand, or teyla policy sync-repo <path> --prefer agents|claude"))
             if not missing and not differ:
                 out.append(_check("OK", "repos:agents-md", f"{len(rs)} repo(s) under {root}: AGENTS.md ⇄ CLAUDE.md consistent"))
+            # INFO, not WARN: an unprepared repo is a fact about where cloud work can finish, not
+            # a broken install — and a WARN here would sit in every session-start line for weeks.
+            try:
+                from . import cloud
+                c = cloud.doctor_check(cfg)
+                out.append(_check(c["level"], c["name"], c["detail"], c["fix"]))
+            except Exception as e:  # noqa: BLE001 — a readiness line must never take doctor down
+                out.append(_check("INFO", "cloud", f"readiness not computed: {e}"))
     return out
 
 
