@@ -315,7 +315,7 @@ def enrich(m: dict, cfg: dict | None = None, text: str | None = None) -> dict:
 #      no "which", no numbered menu;
 #   2. the step is not one the policy itself reserves for the human (BLOCKER_RE: keys,
 #      payments, merges, deploys to production, deletes, downloads, the governance files);
-#   3. the next human turn starts with a bare yes (AFFIRMATIVE_RE).
+#   3. the next human turn is a bare yes and nothing else (is_bare_yes).
 # A session that ends on the question is not counted: nobody answered, so nothing is known.
 
 PERMISSION_RE = re.compile(
@@ -333,14 +333,24 @@ BLOCKER_RE = re.compile(
     r"|CLAUDE\.md|POLICY\.md|ключ|пароль|оплат|удал|смерж|мерж|прод\b|деплой|задепло",
     re.I,
 )
-AFFIRMATIVE_RE = re.compile(
-    r"^\s*(?:yes|yep|yeah|yup|sure|proceed|go ahead|do it|please do|agreed?|sounds good|lgtm|ship it|run it"
-    r"|да|делай|конечно|ага|продолжай|согласен|запускай)(?!\w)",
-    re.I,
-)
-# "ok", "go" and "давай" open a yes as often as a redirect ("Okay, skip grok. So what…",
-# "Давай нагенерим больше вариантов" — both measured): they count only as the whole reply.
-SHORT_AFFIRMATIVE_RE = re.compile(r"^\s*(?:ok|okay|k|go|ок|окей|давай|го)[\s.!)]*$", re.I)
+# The whole reply must be a yes — words from this list and punctuation, nothing else.
+# "Yes, but don't push until CI is green" is a decision with a condition, not a nudge; a
+# prefix match counted it (Codex review of #60). "ok", "go" and "давай" open a redirect as
+# often as a yes ("Okay, skip grok…", "Давай нагенерим больше вариантов" — both measured),
+# so a reply is also rejected when anything but these words follows them.
+AFFIRMATIVE_WORDS = frozenset(
+    "yes yep yeah yup sure ok okay k proceed go ahead do it please agreed agree lgtm ship run continue sounds good "
+    "да давай делай ок окей конечно ага продолжай согласен запускай го пожалуйста вперёд вперед".split())
+FILLER_WORDS = frozenset("ahead it please good пожалуйста".split())
+
+
+def is_bare_yes(reply: str | None) -> bool:
+    if not reply or len(reply) > 60:
+        return False
+    words = re.findall(r"[^\W\d_]+", reply.lower())
+    return bool(words) and all(w in AFFIRMATIVE_WORDS for w in words) and any(w not in FILLER_WORDS for w in words)
+
+
 ASK_THRESHOLD_PER_WEEK = 3
 
 
@@ -361,7 +371,7 @@ def _question_sentence(par: str) -> str:
 
 def is_permission_ask(ending: str, reply: str | None) -> str | None:
     """The permission question when a turn ending + the human's reply match the §4 shape, else None."""
-    if not reply or not (AFFIRMATIVE_RE.match(reply) or SHORT_AFFIRMATIVE_RE.match(reply)):
+    if not is_bare_yes(reply):
         return None
     par = _last_paragraph(ending)
     if "?" not in par and "let me know" not in par.lower():

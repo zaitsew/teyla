@@ -142,8 +142,8 @@ def test_enrich_scans_only_when_declared(tmp_path, monkeypatch):
 # --- ask-permission -------------------------------------------------------------------------
 
 @pytest.mark.parametrize("ending,reply", [
-    ("All four PRs are green and pushed.\n\nWant me to push them?", "yes, push them"),
-    ("Первое вернёт половину прогона, второе снимет четверть отказов. Делать?", "да, делай"),
+    ("All four PRs are green and pushed.\n\nWant me to push them?", "yes, go ahead"),
+    ("Первое вернёт половину прогона, второе снимет четверть отказов. Делать?", "да, давай!"),
     ("The plan is in PLAN.md.\n\nProceed?", "go"),
     ("Tests pass locally.\n\nShould I open the PR now?", "Yes"),
     ("I found the leak in the cache layer. Let me know if you want me to fix it.", "yes please"),
@@ -168,6 +168,10 @@ def test_permission_asks_answered_with_a_bare_yes_count(ending, reply):
     ("Want me to run Grok on the same prompt now as the third vote?", "Okay, skip grok. So what is your top title"),
     ("Хотите, поправлю конфиг сам?", "Давай переавторизуемся с Grok"),
     ("Want me to push them?", None),
+    ("Want me to push them?", "Yes, but don't push until CI is green"),
+    ("Want me to push them?", "yes, push them and then open the PR for the other repo"),
+    ("Делать?", "да, но сначала покажи дифф"),
+    ("Want me to push them?", "please"),
     # no question at the end of the turn
     ("Want me to push them?\n\nPushed anyway; PR #12 is open.", "yes"),
     ("Done. All tests pass.", "yes"),
