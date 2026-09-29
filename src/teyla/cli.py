@@ -80,8 +80,9 @@ def _grok_week():
 def cmd_monitor(args):
     from . import policy
     from .monitor import redact
+    from .detect import enrich
     ss = _sessions(args)
-    m = metrics(ss, args.days)
+    m = enrich(metrics(ss, args.days))
     m["grok_week"] = _grok_week()
     F = advise(m, policy.status())
     if args.share:
@@ -95,7 +96,8 @@ def cmd_monitor(args):
 
 def cmd_advise(args):
     from . import policy
-    m = metrics(_sessions(args), args.days)
+    from .detect import enrich
+    m = enrich(metrics(_sessions(args), args.days))
     m["grok_week"] = _grok_week()
     for f in advise(m, policy.status()):
         print(f"[{f['severity']}] {f['id']} {f['title']}\n    {f['evidence']}\n    → {f['action']}")

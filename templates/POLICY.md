@@ -48,6 +48,7 @@ build, `/review` before a PR, `/qa` after a UI ships, `/spec` when intent is vag
 Bring the question with a proposed answer and a default. Do everything that does not
 depend on the answer first, then ask — batched, at a natural checkpoint. Never ask
 "shall I proceed?".
+<!-- teyla:detect ask-permission — `teyla monitor` counts turns that end by asking to proceed -->
 
 ## 5. Stop only at a real blocker or the finished goal
 

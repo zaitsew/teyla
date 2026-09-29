@@ -75,6 +75,8 @@ def metrics(sessions: list[Session], days: int | None = None) -> dict:
                     if s.cwd and s.cwd.rstrip("/").endswith("/repos")],
     ))
     m["models_drift"] = _models_drift(sessions, days)
+    from .detect import permission_ask_metrics
+    m["permission_asks"] = permission_ask_metrics(sessions)
     try:
         from . import connectors as _c
         m["connectors"] = _c.metrics(sessions)
@@ -118,6 +120,11 @@ def redact(m: dict) -> dict:
         g["project"] = alias.get(g["project"], "p??"); g["sid"] = "—"
     r["wrong_root"] = [dict(project=alias.get(w["project"], "p??"), sid="—", cwd="—") for w in r.get("wrong_root", [])]
     r["correction_samples"] = []
+    for e in (r.get("permission_asks") or {}).get("examples", []):
+        e["project"] = alias.get(e["project"], "p??"); e["sid"] = "—"; e["ask"] = "—"
+    if r.get("workflow_triggers"):
+        r["workflow_triggers"] = [dict(repo="—", path="—", file="—", triggers=w["triggers"], where=w["where"])
+                                  for w in r["workflow_triggers"]]
     r["correction_fingerprints"] = dict(Counter(fingerprint(t) for t in m.get("correction_samples", [])))
     r["redacted"] = True
     return r

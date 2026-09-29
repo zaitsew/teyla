@@ -661,3 +661,16 @@ def test_update_force_reinstalls_on_the_pinned_interpreter_when_the_lookup_fails
     assert update.cmd_update(args) == 0
     assert seen[-1][:6] == ["/opt/bin/uv", "tool", "install", "--force", "--python", pin]
     assert seen[-1][6].endswith(f"@v{teyla.__version__}"), "the installed version's tag, since the latest is unknown"
+
+
+def test_doctor_reports_the_policy_detectors_the_policy_declares(_home, monkeypatch):
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: _Resp({"tag_name": "v0.0.0"}))
+    policy.POLICY.parent.mkdir(parents=True, exist_ok=True)
+    policy.POLICY.write_text("# P\n## 10. GitHub Actions are off — the laptop is the gate\n<!-- teyla:detect no-such -->\n")
+    by = {}
+    for c in doctor.checks(scan_repos=False):
+        by.setdefault(c["name"], []).append(c)
+    levels = sorted(c["level"] for c in by["policy:detect"])
+    assert levels == ["OK", "WARN"]
+    assert any("active: no-actions" in c["detail"] for c in by["policy:detect"])
+    assert any("no-such" in c["detail"] for c in by["policy:detect"])

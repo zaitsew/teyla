@@ -7,7 +7,7 @@ import json
 import os
 import re
 
-from . import CORRECTION_RE, TOKEN_KEYS, AgentCall, Session, Turn, is_noise_turn, stale, text_of
+from . import CORRECTION_RE, TOKEN_KEYS, AgentCall, Session, Turn, is_noise_turn, stale, text_of, turn_end_candidate
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "claude-code"
@@ -55,6 +55,7 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
     s = Session(harness=NAME, project=slug, sid=os.path.basename(f)[:-6], path=f, size=os.path.getsize(f))
     pending_calls: dict = {}  # tool_use_id -> {server, tool, turn_index}, until its tool_result arrives
     active_prev = None  # last assistant/user timestamp seen, kept only to sum gaps — never a list
+    last_text = None  # (ts, text) of the agent's latest text block, until a tool call or a human turn follows
     with open(f, errors="replace") as fh:
         for line in fh:
             try:
@@ -98,8 +99,12 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                 u = m.get("usage") or {}
                 for k in TOKEN_KEYS:
                     s.usage[model][k] += u.get(k, 0) or 0
+                said = text_of(m.get("content"))
+                if said.strip():
+                    last_text = (ts, said)
                 for b in m.get("content") or []:
                     if isinstance(b, dict) and b.get("type") == "tool_use":
+                        last_text = None  # the turn went on after the text: it did not end there
                         name = b.get("name")
                         s.tools[name] += 1
                         inp = b.get("input", {}) or {}
@@ -134,6 +139,10 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                 txt = text_of(c).strip()
                 if not txt or o.get("isMeta") or is_noise_turn(txt):
                     continue
+                ending = turn_end_candidate(last_text[1]) if last_text else None
+                if ending:
+                    s.turn_ends.append((last_text[0], ending, txt[:200]))
+                last_text = None
                 s.user_turns.append(Turn(ts, txt[:1500], len(txt) < 800 and bool(CORRECTION_RE.search(txt))))
     s.active_hours = round(s.active_hours, 2)
     if not s.first:

@@ -121,6 +121,29 @@ def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
         F.append(dict(id="A11", severity="medium", title="Model ladder drift",
                       evidence=", ".join(f"{k}×{n}" for k, n in kinds.most_common()),
                       action="Run `teyla models --write-policy` to refresh the ladder in ~/.agents/POLICY.md from the current catalogues and credentials."))
+    # Policy detectors (teyla.detect): each fires only when ~/.agents/POLICY.md declares its
+    # rule — `teyla.detect.enrich` puts the declared ids in m["policy_detectors"].
+    declared = set(m.get("policy_detectors") or ())
+    pa = m.get("permission_asks") or {}
+    weeks = pa.get("by_week") or {}
+    from .detect import ASK_THRESHOLD_PER_WEEK
+    if "ask-permission" in declared and weeks and max(weeks.values()) >= ASK_THRESHOLD_PER_WEEK:
+        ex = (pa.get("examples") or [{}])[-1]
+        eg = f"; e.g. {ex.get('project')} {ex.get('sid')} {ex.get('day')}: \"{ex.get('ask')}\"" if ex.get("ask") not in (None, "—") else ""
+        F.append(dict(id="A15", severity="medium", title="Turns end by asking permission for the next step",
+                      evidence=f"{pa.get('total', 0)} turn(s) ended with a permission question the human answered with a bare yes "
+                               f"(per week: {', '.join(f'{w} {n}' for w, n in weeks.items())}; threshold {ASK_THRESHOLD_PER_WEEK}/week){eg}",
+                      action="POLICY §4: do the step and report it; ask only about a product decision (with a proposed default) "
+                             "or a real blocker. Say it once in the repo's rules if one repo keeps doing it."))
+    wt = m.get("workflow_triggers") or []
+    if "no-actions" in declared and wt:
+        repos = sorted({w["repo"] for w in wt})
+        w0 = wt[0]
+        F.append(dict(id="A16", severity="high", title="Workflows run on push, pull_request or schedule",
+                      evidence=f"{len(wt)} workflow file(s) in {len(repos)} repo(s) ({', '.join(repos[:6])}); e.g. "
+                               f"{w0['repo']} {w0['file']} on: {', '.join(w0['triggers'])} ({w0['where']})",
+                      action="Set `on:` to `workflow_dispatch:` only (or delete the workflow), commit and push; "
+                             "`teyla doctor` lists every file. The laptop's ./check.sh is the gate."))
     try:
         from . import connectors as _c
         cm = m.get("connectors")
