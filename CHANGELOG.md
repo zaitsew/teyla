@@ -12,7 +12,7 @@
 - **Reader.** `adapters/grok.session_costs` sums the usage of every `turn_completed` record in a
   session's `updates.jsonl`, streamed in bytes. It prunes by stat and directory name, opens
   `summary.json` only for sessions in the window, and never touches `chat_history.jsonl`: a week
-  of a 14,000-session store reads in about 0.6 s, `--last` in 0.06 s.
+  of a 14,000-session store reads in about a second, `--last` in 0.06 s.
 - **A13, A14** in `teyla monitor` / `teyla advise`: one project over half of the week's Grok
   cost (once the week is over $10), or a single Grok session over $10.
 
