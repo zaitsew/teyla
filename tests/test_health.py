@@ -175,6 +175,11 @@ def test_codex_limits_and_errors(home, monkeypatch):
     (day / "rollout-a.jsonl").write_text(json.dumps({"timestamp": _iso(NOW), "type": "event_msg",
                                                      "payload": {"type": "token_count", "info": None, "rate_limits": limits}}) + "\n")
     (home / ".codex" / "auth.json").write_text(json.dumps({"auth_mode": "chatgpt", "tokens": {"access_token": _jwt(NOW + dt.timedelta(days=3)), "refresh_token": SECRET}}))
+    # a newer "premium" record without windows does not hide the "codex" one
+    with open(day / "rollout-a.jsonl", "a") as fh:
+        fh.write(json.dumps({"timestamp": _iso(NOW + dt.timedelta(seconds=1)), "type": "event_msg", "payload": {
+            "type": "token_count", "rate_limits": {"limit_id": "premium", "primary": None, "secondary": None,
+                                                   "plan_type": None, "rate_limit_reached_type": None}}}) + "\n")
     row = health.offline("codex")
     assert row["level"] == "WARN" and "plus: 5h 32%, week 93%" in row["detail"]
     limits["rate_limit_reached_type"] = "secondary"

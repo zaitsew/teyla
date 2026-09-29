@@ -365,8 +365,11 @@ def errors_codex(home: pathlib.Path, since: float) -> dict:
                 if pl.get("type") == "token_count":
                     if last_ok is None or ts > last_ok:
                         last_ok = ts
-                        if pl.get("rate_limits"):
-                            limits = dict(pl["rate_limits"], at=ts)
+                    # Codex reports several limit ids ("codex", and "premium" with null windows);
+                    # the newest one that carries a window is the one that says how close it is.
+                    rl = pl.get("rate_limits") or {}
+                    if (rl.get("primary") or rl.get("secondary")) and (limits is None or ts > limits["at"]):
+                        limits = dict(rl, at=ts)
                 elif pl.get("type") == "error":
                     msg = pl.get("message") or json.dumps(pl)[:200]
                     if newest_err is None or ts > newest_err["ts"]:
