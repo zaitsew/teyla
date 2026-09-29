@@ -159,6 +159,10 @@ def test_grok_402_after_the_last_success_is_a_fix_naming_the_batch_project(home,
                      (NOW - dt.timedelta(hours=1), "shell.turn.inference_done", {})])
     row = health.offline("grok", sessions=[])
     assert row["level"] == "OK" and "later calls succeeded" in row["detail"]
+    # …but not a parallel call that finished a minute after the first 402
+    _grok_log(home, [(NOW - dt.timedelta(minutes=10), "shell.turn.inference_failed", fail),
+                     (NOW - dt.timedelta(minutes=9), "shell.turn.inference_done", {})])
+    assert health.offline("grok", sessions=[])["level"] == "FIX"
 
 
 def test_codex_limits_and_errors(home, monkeypatch):
@@ -177,6 +181,16 @@ def test_codex_limits_and_errors(home, monkeypatch):
     (day / "rollout-a.jsonl").write_text(json.dumps({"timestamp": _iso(NOW), "type": "event_msg",
                                                      "payload": {"type": "token_count", "rate_limits": limits}}) + "\n")
     assert health.offline("codex")["level"] == "FIX"
+    # a later turn that ended on the usage limit: the error Codex writes into task_complete
+    later = _iso(NOW + dt.timedelta(seconds=5))
+    (day / "rollout-b.jsonl").write_text(json.dumps({"timestamp": later, "type": "event_msg", "payload": {
+        "type": "task_complete", "turn_id": "t", "last_agent_message": None,
+        "error": {"message": "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit "
+                             "https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 11:20 PM.",
+                  "codex_error_info": "usage_limit_exceeded"}}}, separators=(",", ":")) + "\n")
+    row = health.offline("codex")
+    assert row["level"] == "FIX" and "quota: You've hit your usage limit" in row["detail"]
+    (day / "rollout-b.jsonl").unlink()
     # logs_2.sqlite ERROR rows; a model-list refresh timeout is noise
     con = sqlite3.connect(home / ".codex" / "logs_2.sqlite")
     con.execute("create table logs (id integer primary key, ts integer, ts_nanos integer, level text, target text, feedback_log_body text)")

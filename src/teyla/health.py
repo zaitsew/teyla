@@ -353,7 +353,7 @@ def errors_codex(home: pathlib.Path, since: float) -> dict:
     files.sort(reverse=True)
     for i, (_, p) in enumerate(files):
         for raw in _tail(p).splitlines():
-            if b'"token_count"' in raw or b'"type":"error"' in raw:
+            if b'"token_count"' in raw or b'"type":"error"' in raw or (b'"task_complete"' in raw and b'"error"' in raw):
                 try:
                     d = json.loads(raw)
                 except ValueError:
@@ -371,6 +371,14 @@ def errors_codex(home: pathlib.Path, since: float) -> dict:
                     msg = pl.get("message") or json.dumps(pl)[:200]
                     if newest_err is None or ts > newest_err["ts"]:
                         newest_err = _err(ts, classify(msg), msg, p.name)
+                elif pl.get("type") == "task_complete" and isinstance(pl.get("error"), dict):
+                    # A turn Codex ended on an error (0.153.4, 2026-09-29): {"message": "You've hit
+                    # your usage limit. … try again at 11:20 PM.", "codex_error_info": "usage_limit_exceeded"}
+                    er = pl["error"]
+                    msg = er.get("message") or str(er.get("codex_error_info") or "error")
+                    kind = "quota" if "usage_limit" in str(er.get("codex_error_info") or "") else classify(msg)
+                    if newest_err is None or ts > newest_err["ts"]:
+                        newest_err = _err(ts, kind, msg, p.name)
         if i >= 40 and last_ok is not None:
             break  # the newest forty rollouts settle "last success" and the current limits
     return {"error": newest_err, "last_ok": last_ok, "limits": limits}
@@ -526,6 +534,15 @@ def offline(name: str, home: pathlib.Path | None = None, days: int = 7, sessions
     return verdict(name, row)
 
 
+# Parallel batch calls finish out of order: a review that started before the limit can complete
+# seconds after another one hit it. A success counts as recovery only this long after the error.
+RECOVERY_MARGIN = _dt.timedelta(minutes=5)
+
+
+def recovered(err: dict | None, last_ok: _dt.datetime | None) -> bool:
+    return bool(err and err.get("ts") and last_ok and last_ok > err["ts"] + RECOVERY_MARGIN)
+
+
 def verdict(name: str, row: dict) -> dict:
     """level (OK/WARN/FIX), a one-line detail, and the fix."""
     parts, level, fix = [], "OK", None
@@ -554,7 +571,7 @@ def verdict(name: str, row: dict) -> dict:
     if err and a and not a.get("ok") and err.get("source") == "auth.json":
         err = None  # the auth line above already says it
     if err and err.get("ts"):
-        stale = ok is not None and ok > err["ts"]
+        stale = recovered(err, ok)
         n = f" ×{err['count']}" if err.get("count", 1) > 1 else ""
         parts.append(f"last error {err['ts']:%Y-%m-%d %H:%M}Z {err['kind']}{n}: {err['message'][:110]}"
                      + (f" (later calls succeeded, last {ok:%Y-%m-%d %H:%M}Z)" if stale else ""))
