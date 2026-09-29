@@ -19,6 +19,7 @@ import pathlib
 import shutil
 import stat
 import sys
+import time
 
 from . import __version__, config
 
@@ -86,8 +87,13 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
             out.append(_check("INFO", f"harness:{mod.NAME}", "absent on this machine"))
             continue
         try:
-            n = len(mod.load())
-            out.append(_check("OK", f"harness:{mod.NAME}", f"{root}: {n} session(s)"))
+            # The last week only: parsing every transcript ever written cost 30 s here, and
+            # "used this week" is the fact a reader of this line wants.
+            since = time.time() - 7 * 86400
+            cutoff = _dt.datetime.fromtimestamp(since, _dt.timezone.utc).isoformat()
+            # Adapters that cannot skip files by date still return everything; count by `last`.
+            n = sum(1 for x in mod.load(since=since) if (x.last or x.first or "") >= cutoff[:19])
+            out.append(_check("OK", f"harness:{mod.NAME}", f"{root}: {n} session(s) in the last 7 days"))
         except Exception as e:  # noqa: BLE001
             out.append(_check("WARN", f"harness:{mod.NAME}", f"{root}: adapter error: {e}"))
 

@@ -221,6 +221,25 @@ def _patch_ids(path: str, args: list[str], stdin: str | None = None) -> set[str]
     return {line.split()[0] for line in pid.stdout.splitlines() if line.strip()}
 
 
+# Every worktree of one repository shares its remote branches: `git log -p --remotes` over a
+# month of history is the expensive half of reflog_only_commits (200 s of a 240 s doctor run on
+# a machine with 38 worktrees), and it is the same answer for each of them. Keyed by the common
+# git dir; a result computed from an earlier `since` covers a later one.
+_REMOTE_PATCH_IDS: dict[str, tuple[int, set[str]]] = {}
+
+
+def _remote_patch_ids(path: str, plain: list[str], since: int) -> set[str] | None:
+    rc, common = _git(path, "rev-parse", "--git-common-dir")
+    key = os.path.realpath(os.path.join(path, common.strip())) if rc == 0 and common.strip() else None
+    hit = _REMOTE_PATCH_IDS.get(key) if key else None
+    if hit and hit[0] <= since:
+        return hit[1]
+    ids = _patch_ids(path, ["log", "-p", *plain, "--no-merges", "--remotes", f"--since={since}"])
+    if ids is not None and key:
+        _REMOTE_PATCH_IDS[key] = (since, ids)
+    return ids
+
+
 def _automatic_merge(path: str, sha: str) -> bool:
     """True when the merge commit's tree is exactly what git merges on its own."""
     rc, parents = _git(path, "rev-list", "--parents", "-n", "1", sha)
@@ -270,15 +289,18 @@ def reflog_only_commits(path: str) -> bool:
         return True
     plain = ["--no-color", "--no-textconv", "--no-ext-diff", "--binary", "--format=commit %H"]
     mine = _patch_ids(path, ["show", *plain, *orphans])
-    theirs = _patch_ids(path, ["log", "-p", *plain, "--no-merges", "--remotes", f"--since={since}"])
+    theirs = _remote_patch_ids(path, plain, since)
     if mine is None or theirs is None:
         return True
     return bool(mine - theirs)
 
 
 def assess(path: str, cwds: list[str] | None, limit: int, others: list[str] = (), locked: bool = False,
-           now: float | None = None) -> dict:
-    """Everything that decides whether a worktree may go. `why` empty = SAFE."""
+           now: float | None = None, deep: bool = True) -> dict:
+    """Everything that decides whether a worktree may go. `why` empty = SAFE.
+
+    `deep=False` skips the reflog comparison — the one check that reads history — for a count
+    that is only reported (doctor). Anything that removes a tree calls it with deep=True."""
     rc, gitdir = _git(path, "rev-parse", "--absolute-git-dir")
     gitdir = gitdir.strip() if rc == 0 else ""
     idle = _idle_days(path, *(os.path.join(gitdir, p) for p in ("index", "HEAD", os.path.join("logs", "HEAD")) if gitdir),
@@ -303,7 +325,7 @@ def assess(path: str, cwds: list[str] | None, limit: int, others: list[str] = ()
         why.append(f"{dirty} uncommitted change(s)")
     if not pushed:
         why.append("HEAD is on no remote branch")
-    if reflog_only_commits(path):
+    if deep and reflog_only_commits(path):
         why.append("its reflog holds commits nothing else contains")
     if nested:
         why.append(f"{len(nested)} other worktree(s) inside it")
@@ -334,7 +356,7 @@ def _parse_worktrees(text: str) -> list[dict]:
 
 
 def worktrees(repo: pathlib.Path, cwds: list[str] | None, idle_days: int, sizes: bool = True,
-              now: float | None = None, agent_idle_days: int | None = None) -> list[dict]:
+              now: float | None = None, agent_idle_days: int | None = None, deep: bool = True) -> list[dict]:
     """Every linked worktree of `repo` (the main checkout is not one), with a verdict."""
     rc, out = _git(repo, "worktree", "list", "--porcelain")
     if rc != 0:
@@ -355,7 +377,7 @@ def worktrees(repo: pathlib.Path, cwds: list[str] | None, idle_days: int, sizes:
             rows.append(row)
             continue
         limit = agent_idle_days if agent_idle_days is not None and is_agent_worktree(path) else idle_days
-        a = assess(path, cwds, limit, others=[p for p in paths if p != path], locked=bool(w.get("locked")), now=now)
+        a = assess(path, cwds, limit, others=[p for p in paths if p != path], locked=bool(w.get("locked")), now=now, deep=deep)
         row.update({k: a[k] for k in ("idle_days", "dirty", "pushed", "rescue", "only_recent")},
                    limit=limit, locked=bool(w.get("locked")),
                    verdict="KEEP" if a["why"] else "SAFE",
@@ -540,7 +562,7 @@ def disk(path: pathlib.Path | None = None) -> dict:
 
 
 def scan(root: pathlib.Path | None = None, sizes: bool = True, cfg: dict | None = None,
-         cwds: list[str] | None = None, now: float | None = None) -> dict:
+         cwds: list[str] | None = None, now: float | None = None, deep: bool = True) -> dict:
     s = settings(cfg)
     extra = [] if root else [config.ops_root(cfg)]
     root = root or config.code_root(cfg)
@@ -548,7 +570,7 @@ def scan(root: pathlib.Path | None = None, sizes: bool = True, cfg: dict | None 
     launched = launch_references()
     wt, art = [], []
     for repo in repos(root, extra):
-        wt += worktrees(repo, cwds, s["idle_days"], sizes=sizes, now=now, agent_idle_days=s["agent_idle_days"])
+        wt += worktrees(repo, cwds, s["idle_days"], sizes=sizes, now=now, agent_idle_days=s["agent_idle_days"], deep=deep)
         art += artifacts(repo, cwds, s["build_idle_days"], sizes=sizes, now=now, launched=launched)
     return {"root": str(root), "settings": s, "disk": disk(), "worktrees": wt, "artifacts": art}
 
@@ -698,7 +720,7 @@ def doctor_checks(cfg: dict | None = None) -> list[dict]:
     else:
         out.append({"level": "OK", "name": "storage:disk", "detail": f"{human(d['free'])} free ({d['free_fraction']:.0%})", "fix": None})
     s = settings(cfg)
-    rep = scan(sizes=False, cfg=cfg)
+    rep = scan(sizes=False, cfg=cfg, deep=False)
     n = sum(1 for r in rep["worktrees"] if r["verdict"] == "SAFE")
     if n >= 5 and not s["auto_clean"]:
         out.append({"level": "WARN", "name": "storage:worktrees",
