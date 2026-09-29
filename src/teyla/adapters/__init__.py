@@ -49,11 +49,13 @@ TOKEN_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_t
 # Typographic apostrophes a Mac and a phone type by default; the patterns spell them ASCII.
 _QUOTES = str.maketrans({"\u2019": "'", "\u2018": "'", "\u02bc": "'", "\u2032": "'"})
 
-# A retry is the human re-sending after an API error, not a correction and not a new turn:
+# A retry is the human re-sending after an API error, not a correction and not a new turn.
+# "proceed", "go on" and "keep going" are left out on purpose: after a plan they are a
+# decision, not a re-send.
 # 17 of 126 correction-shaped turns in 2026-09-01..29 were a bare "Try again" after
 # "API Error: Can't reach the API server", and A9's "repeats 13×" was that phrase.
 RETRY_RE = re.compile(
-    r"^(?:please[, ]+)?(?:try again|retry|try it again|again|continue|go on|keep going|carry on|resume|proceed|"
+    r"^(?:please[, ]+)?(?:try again|retry|try it again|again|continue|"
     r"продолжай|продолжи|ещё раз|еще раз|повтори|попробуй (?:ещё|еще) раз)(?:[\s,.!…]+(?:please|пожалуйста))?[\s.!…]*$",
     re.I,
 )

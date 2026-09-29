@@ -41,6 +41,8 @@ DEFAULT_INDEX = os.path.expanduser("~/.codex/session_index.jsonl")
 
 BATCH_SOURCES = ("exec",)
 BATCH_ORIGINATORS = ("codex_exec",)
+KNOWN_BLOCKS = {"environment_context", "recommended_plugins", "in-app-browser-context", "user_instructions",
+                "user_action", "turn_aborted", "user_shell_command"}
 _BLOCK_RE = re.compile(r"\s*<([a-z][a-z0-9_-]*)(?:\s[^>]*)?>.*?</\1>\s*", re.S)
 
 
@@ -49,13 +51,26 @@ def strip_injected(txt: str) -> str:
     desktop app sends `<recommended_plugins>…</recommended_plugins>` and
     `<environment_context>…</environment_context>` as one user message with two parts; the
     0.11 test wanted a single block and let all 11 of them through as human turns in 2026-09.
-    `<in-app-browser-context>` (a hyphen) precedes a real question and is cut off it."""
-    pos = 0
+    `<in-app-browser-context>` (a hyphen) precedes a real question and is cut off it.
+
+    A message made only of blocks is injected whatever the tags (0.11's rule, for any
+    number of blocks). Blocks in front of real text are cut only when Codex is known to
+    write them: a person who pastes `<config>…</config>` before a question keeps it."""
+    pos, blocks = 0, []
     while True:
         m = _BLOCK_RE.match(txt, pos)
         if not m:
-            return txt[pos:].strip()
+            break
+        blocks.append((m.group(1), pos, m.end()))
         pos = m.end()
+    if not txt[pos:].strip():
+        return ""
+    cut = 0
+    for tag, start, end in blocks:
+        if tag not in KNOWN_BLOCKS:
+            break
+        cut = end
+    return txt[cut:].strip()
 
 
 def is_injected(txt: str) -> bool:

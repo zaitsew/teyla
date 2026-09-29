@@ -311,6 +311,22 @@ def test_a10_changed_file_but_no_session_edit_after_the_ack_is_medium(tmp_path, 
     assert f["severity"] == "medium" and "changed since your ack" in f["title"]
 
 
+def test_a10_same_day_edits_are_named_not_counted_as_after_the_ack(tmp_path, monkeypatch):
+    _home(tmp_path, monkeypatch, "v2", ack={"sha256": hashlib.sha256(b"v1").hexdigest(), "date": "2026-09-20"})
+    [f] = _a10(metrics([_gov_session("2026-09-20")]))
+    assert f["severity"] == "medium" and "1 more on the ack day itself" in f["evidence"]
+
+
+def test_codex_keeps_a_pasted_block_in_front_of_a_real_question():
+    assert codex.strip_injected("<config>\na=1\n</config>\nwhy is this wrong?") == "<config>\na=1\n</config>\nwhy is this wrong?"
+    assert codex.strip_injected("<environment_context>x</environment_context>\n<config>a</config>\nq") == "<config>a</config>\nq"
+    assert codex.strip_injected("<anything>x</anything>") == ""
+
+
+def test_proceed_is_a_decision_not_a_retry():
+    assert human_text("proceed") == "proceed" and human_text("continue") is None
+
+
 def test_a10_acked_and_unchanged_is_silent(tmp_path, monkeypatch):
     _home(tmp_path, monkeypatch, "v1", ack={"sha256": hashlib.sha256(b"v1").hexdigest(), "date": "2026-09-25"})
     assert _a10(metrics([_gov_session("2026-09-14"), _gov_session("2026-09-25")])) == []

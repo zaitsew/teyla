@@ -68,8 +68,9 @@ def _a10(gov: list[dict]) -> list[dict]:
     asked for — ack had never been run, so every edit in the window counted, every week, and
     the finding stopped being read. Now:
       - acknowledged, file unchanged since: only edits after the ack day count;
-      - file changed since the ack: [high] for the edits on or after the ack day — those are
-        the unacknowledged ones — and the evidence says how many of the window's edits they are;
+      - file changed since the ack: [high] for the edits after the ack day — those are the
+        unacknowledged ones — and the evidence says how many of the window's edits they are
+        (same-day edits are named, not counted as after: the ack has no time of day);
       - never acknowledged: one [medium] asking for a review and an ack, shown once per
         version of the file (`mark_seen`), not a [high] every week.
     """
@@ -90,12 +91,17 @@ def _a10(gov: list[dict]) -> list[dict]:
             return []
         suffix = ""
     else:
-        after = [g for g in gov if acked_date and g["day"] >= acked_date]
+        # The ack records a day, not a time: an edit on that day may be before or after it,
+        # so it is counted apart and never alone makes the finding [high].
+        after = [g for g in gov if acked_date and g["day"] > acked_date]
+        same_day = [g for g in gov if acked_date and g["day"] == acked_date]
         suffix = f" — file changed since your ack on {acked_date}"
+        if same_day:
+            suffix += f"; {len(same_day)} more on the ack day itself"
         if not after:
             return [dict(id="A10", severity="medium", title="The global instructions file changed since your ack",
-                         evidence=f"no session in this window wrote it after the ack on {acked_date} "
-                                  f"({len(gov)} edit(s), all before){suffix}",
+                         evidence=f"no session in this window wrote it after the day of the ack "
+                                  f"({len(gov)} edit(s) in the window){suffix}",
                          action="Diff ~/.claude/CLAUDE.md; if the change is yours, run `teyla policy ack`.")]
     return [dict(id="A10", severity="high", title="A session edited the global instructions file",
                  evidence=f"{len(after)} of {len(gov)} session edit(s) to ~/.claude/CLAUDE.md came after your last "
