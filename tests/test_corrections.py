@@ -73,6 +73,12 @@ def test_scrub_removes_a_pem_block_even_cut_off_by_truncation():
     ("GITHUB_TOKEN=abc123", "GITHUB_TOKEN=[redacted]"),
     ("client_secret = s3cr3t;", "client_secret = [redacted];"),
     ("Authorization: Bearer abcdefghijklmnop1234", "Authorization: Bearer [redacted]"),
+    ("Authorization: Basic dXNlcjpodW50ZXIy", "Authorization: Basic [redacted]"),
+    ('{"password": "hunter2", "user": "me"}', '{"password": [redacted], "user": "me"}'),
+    ("gh auth login --token abc123def", "gh auth login --token [redacted]"),
+    ("machine api.example.com login me password hunter2", "machine api.example.com login me password [redacted]"),
+    ("clone https://me:hunter2@git.example.com/x.git", "clone https://[redacted]@git.example.com/x.git"),
+    ("use glpat-" + "abcdefghij0123456789", "use [redacted]"),
 ])
 def test_scrub_keeps_the_name_of_an_assignment_and_drops_the_value(text, want):
     assert corrections.scrub(text) == want
@@ -86,6 +92,9 @@ def test_scrub_keeps_the_name_of_an_assignment_and_drops_the_value(text, want):
     "session 46bca301-b4cf-4e94-8a5f-57b6f50b09ab again",
     "pwd: /Users/me/repos/teyla",
     "the model is claude-opus-5-5-20260601, wrong one",
+    "the token expired again, and the secret santa list is wrong",
+    "reset my password then retry",
+    "see https://github.com/zaitsew/teyla/pull/56 again",
 ])
 def test_scrub_leaves_ordinary_text_alone(text):
     assert corrections.scrub(text) == text
@@ -249,3 +258,63 @@ def test_write_private_makes_doctor_and_update_state_0600(tmp_path):
     p.chmod(0o644)
     config.write_private(p, "{}\n")
     assert stat.S_IMODE(p.stat().st_mode) == 0o600
+
+
+# --- review findings (Codex, 2026-09-29) ------------------------------------------------------
+
+def test_legacy_records_are_scrubbed_when_read(tmp_path):
+    repo = _repo(tmp_path / "r")
+    (repo / ".teyla").mkdir()
+    (repo / ".teyla" / "corrections.jsonl").write_text(json.dumps(_rec("old: password=hunter2")) + "\n")
+    assert [r["text"] for r in corrections.records(repo)] == ["old: password=[redacted]"]
+
+
+def test_repo_mode_refuses_a_symlinked_correction_file(tmp_path, _home):
+    """A repo could commit `.teyla/corrections.jsonl -> ~/.ssh/authorized_keys`; in repo mode the
+    write must not follow it (nor chmod the target)."""
+    repo = _repo(tmp_path / "r")
+    (_home / ".teyla").mkdir()
+    (_home / ".teyla" / "config.toml").write_text('[corrections]\nstore = "repo"\n')
+    target = tmp_path / "victim"; target.write_text("keep\n"); target.chmod(0o644)
+    (repo / ".teyla").mkdir(); (repo / ".teyla" / "corrections.jsonl").symlink_to(target)
+    with pytest.raises(OSError):
+        corrections.append(repo, _rec("wrong"))
+    assert target.read_text() == "keep\n" and stat.S_IMODE(target.stat().st_mode) == 0o644
+
+
+def test_repo_mode_rescue_goes_through_the_scrubber(tmp_path, _home):
+    from teyla import storage
+    (_home / ".teyla").mkdir()
+    (_home / ".teyla" / "config.toml").write_text('[corrections]\nstore = "repo"\n')
+    wt, main = tmp_path / "wt", tmp_path / "main"
+    main.mkdir(); (wt / ".teyla").mkdir(parents=True)
+    (wt / ".teyla" / "corrections.jsonl").write_text(json.dumps(_rec("token=abc123")) + "\n")
+    storage.rescue(str(wt), str(main))
+    assert "abc123" not in (main / ".teyla" / "corrections.jsonl").read_text()
+
+
+def test_a_torn_last_line_does_not_swallow_the_next_record(tmp_path):
+    repo = _repo(tmp_path / "r")
+    f = corrections.path_for(repo)
+    f.parent.mkdir(parents=True); f.write_text('{"ts": "2026-09-01T00:00:00+00:00", "text": "to')
+    corrections.append(repo, _rec("next"))
+    assert [r["text"] for r in corrections.records(repo)] == ["next"]
+
+
+def test_write_private_does_not_follow_a_symlink(tmp_path):
+    target = tmp_path / "victim"; target.write_text("keep\n")
+    (tmp_path / "t").mkdir(); (tmp_path / "t" / "doctor.json").symlink_to(target)
+    with pytest.raises(OSError):
+        config.write_private(tmp_path / "t" / "doctor.json", "{}\n")
+    assert target.read_text() == "keep\n"
+
+
+def test_a_worktree_of_a_separate_git_dir_repo_keys_to_its_main_checkout(tmp_path):
+    main = tmp_path / "code" / "app"; gitdir = tmp_path / "gitdirs" / "app.git"
+    main.parent.mkdir(parents=True); gitdir.parent.mkdir(parents=True)
+    _git("init", "-q", "-b", "main", "--separate-git-dir", gitdir, main)
+    _git("-C", main, "config", "core.worktree", main)
+    _git("-C", main, "-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "i")
+    wt = tmp_path / "wt"
+    _git("-C", main, "worktree", "add", "-q", "-b", "feat", wt)
+    assert corrections.path_for(wt) == corrections.path_for(main)

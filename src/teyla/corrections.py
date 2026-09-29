@@ -33,6 +33,7 @@ import json
 import os
 import pathlib
 import re
+import stat
 import sys
 
 LEGACY = pathlib.Path(".teyla") / "corrections.jsonl"
@@ -49,6 +50,7 @@ DEDUPE_S = 10
 _SECRET_RES = [
     # PEM blocks, including one cut off by truncation before its END line.
     re.compile(r"-----BEGIN [^\n-]*KEY[^\n-]*-----.*?(?:-----END [^\n-]*-----|\Z)", re.S),
+    re.compile(r"(?<=://)[^/\s:@]+:[^/\s@]+(?=@)"),            # https://user:password@host
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}"),                 # GitHub classic tokens
     re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"),              # GitHub fine-grained
     re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{16,}"),                # Anthropic
@@ -57,16 +59,24 @@ _SECRET_RES = [
     re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),               # AWS access key ids
     re.compile(r"\bxox[abposr]-[A-Za-z0-9\-]{10,}"),            # Slack
     re.compile(r"\bAIza[0-9A-Za-z_\-]{35}"),                    # Google API keys
+    re.compile(r"\b(?:glpat|glptt|gldt)-[A-Za-z0-9_\-]{16,}"),   # GitLab
+    re.compile(r"\b(?:hf|npm)_[A-Za-z0-9]{30,}"),               # Hugging Face, npm
+    re.compile(r"\bpypi-[A-Za-z0-9_\-]{40,}"),                  # PyPI
     re.compile(r"\beyJ[A-Za-z0-9_\-]{10,}(?:\.[A-Za-z0-9_\-]{4,}){0,2}"),  # JWTs
     re.compile(r"(?i)(?<=\bbearer )[A-Za-z0-9._~+/=\-]{16,}"),  # Authorization: Bearer …
+    re.compile(r"(?i)(?<=\bbasic )[A-Za-z0-9+/=]{12,}"),         # Authorization: Basic …
 ]
-# `password=hunter2`, `API_KEY: "…"`, `client_secret = x`: the name stays (it says what was
-# there), the value goes. `pwd` is deliberately absent — it is the shell command far more
-# often than a password.
-_ASSIGN_RE = re.compile(
-    r"(?i)\b([A-Za-z0-9_]*?(?:password|passwd|token|secret|api[_-]?key|access[_-]?key|private[_-]?key))"
-    r"(\s*[:=]\s*)(\"[^\"\n]*\"|'[^'\n]*'|[^\s,;'\"]+)"
-)
+# `password=hunter2`, `API_KEY: "…"`, `"client_secret": "x"`, `--token x`, `password x` (as in
+# .netrc): the name stays (it says what was there), the value goes. `pwd` is deliberately
+# absent — it is the shell command far more often than a password. The bare-space form is
+# limited to a `--flag value` or to `password`/`passwd` themselves: "the token expired" must
+# survive, "password hunter2" must not.
+_SECRET_NAME = r"[A-Za-z0-9_\-]*?(?:password|passwd|token|secret|api[_-]?key|access[_-]?key|private[_-]?key)"
+_VALUE = r"(\"[^\"\n]*\"|'[^'\n]*'|[^\s,;'\"}]+)"
+_ASSIGN_RE = re.compile(r"(?i)\b(" + _SECRET_NAME + r"[\"']?)(\s*[:=]\s*)" + _VALUE)
+_FLAG_RE = re.compile(r"(?i)((?<!\S)--" + _SECRET_NAME + r")(\s+)(?!\[redacted\])" + _VALUE)
+# `password hunter2`: only a value with a digit or a symbol in it — "reset my password then" is prose.
+_BARE_RE = re.compile(r"(?i)(\b(?:password|passwd))(\s+)(?!\[redacted\])(?=[^\s,;]*(?:\d|_|[^\s\w,;]))([^\s,;'\"}]+)")
 _HEX_RE = re.compile(r"\b[0-9a-fA-F]{40,}\b")
 _BLOB_RE = re.compile(r"[A-Za-z0-9+/_\-]{40,}={0,2}")
 
@@ -93,16 +103,19 @@ def scrub(text: str) -> str:
     for r in _SECRET_RES:
         text = r.sub(REDACTED, text)
     text = _ASSIGN_RE.sub(lambda m: m.group(1) + m.group(2) + REDACTED, text)
+    text = _FLAG_RE.sub(lambda m: m.group(1) + m.group(2) + REDACTED, text)
+    text = _BARE_RE.sub(lambda m: m.group(1) + m.group(2) + REDACTED, text)
     text = _HEX_RE.sub(REDACTED, text)
     return _BLOB_RE.sub(_blob, text)
 
 
 def scrub_record(rec: dict) -> dict:
-    """Every string value scrubbed; `text` truncated to MAX_TEXT after scrubbing (truncating
-    first could cut a key below the length its pattern needs, and leave the rest of it)."""
+    """Every string value but `ts` scrubbed — `cwd` too: the hook takes it from the payload —
+    and `text` truncated to MAX_TEXT after scrubbing (truncating first could cut a key below
+    the length its pattern needs, and leave the rest of it)."""
     out = {}
     for k, v in rec.items():
-        if isinstance(v, str) and k not in ("ts", "cwd"):
+        if isinstance(v, str) and k != "ts":
             v = scrub(v)
             if k in ("text", "draft_excerpt"):
                 v = v[:MAX_TEXT]
@@ -160,9 +173,23 @@ def find_repo(cwd) -> tuple[pathlib.Path | None, pathlib.Path | None]:
                 common = (gitdir / (gitdir / "commondir").read_text().strip()).resolve()
             except OSError:
                 return d, gitdir  # a submodule: its own repo, keyed by its own path
-            main = common.parent if common.name == ".git" else common
-            return main, common
+            return _main_of(common), common
     return None, None
+
+
+def _main_of(common: pathlib.Path) -> pathlib.Path:
+    """The main checkout of a git common dir: its parent when it is `<checkout>/.git`, else
+    `core.worktree` from its config (a `--separate-git-dir` repo), else the dir itself (bare)."""
+    if common.name == ".git":
+        return common.parent
+    try:
+        m = re.search(r"^\s*worktree\s*=\s*(.+?)\s*$", (common / "config").read_text(errors="replace"), re.M)
+        if m:
+            wt = pathlib.Path(m.group(1))
+            return (wt if wt.is_absolute() else common / wt).resolve()
+    except OSError:
+        pass
+    return common
 
 
 def repo_key(root: pathlib.Path | None) -> str:
@@ -240,12 +267,24 @@ def _private_dir(d: pathlib.Path) -> None:
 
 
 def _append_line(path: pathlib.Path, line: str) -> None:
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-    with os.fdopen(fd, "a", encoding="utf-8") as f:
-        f.write(line)
-    # O_CREAT's mode only applies to a new file; one an older version wrote is 0644.
-    if path.stat().st_mode & 0o077:
-        os.chmod(path, 0o600)
+    """Append one line, 0600. O_NOFOLLOW: in repo mode the path is inside a repo, and a
+    `.teyla/corrections.jsonl` symlink committed there must not redirect the write (or the
+    chmod) to another file. The mode is fixed on the descriptor before anything is written:
+    O_CREAT's mode only applies to a new file, and one an older version wrote is 0644."""
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise OSError(f"not a regular file: {path}")
+        if st.st_mode & 0o077:
+            os.fchmod(fd, 0o600)
+        data = line.encode("utf-8")
+        # A torn last line (a hook killed mid-write, a hand edit) must not swallow this record.
+        if st.st_size and os.pread(fd, 1, st.st_size - 1) != b"\n":
+            data = b"\n" + data
+        os.write(fd, data)
+    finally:
+        os.close(fd)
 
 
 def append(cwd, rec: dict, cfg: dict | None = None) -> pathlib.Path:
@@ -302,7 +341,8 @@ def _read(path: pathlib.Path) -> list[dict]:
             except ValueError:
                 continue
             if isinstance(rec, dict):
-                out.append(rec)
+                # Pre-0.12 files were written unscrubbed; nothing leaves this module raw.
+                out.append(scrub_record(rec))
     except OSError:
         pass
     return out

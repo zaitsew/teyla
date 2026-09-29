@@ -72,10 +72,15 @@ def write_private(path: pathlib.Path, text: str) -> None:
     """Write `text` to `path` as 0600, its directory 0700. An existing file is tightened too:
     O_CREAT's mode only applies when the file is new."""
     private_dir(path.parent)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(text)
-    os.chmod(path, 0o600)
+    # Mode fixed on the descriptor before the old content is truncated or the new written;
+    # O_NOFOLLOW so a symlink planted at the path cannot redirect the write.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        os.ftruncate(fd, 0)
+        os.write(fd, text.encode("utf-8"))
+    finally:
+        os.close(fd)
 
 
 def _read(p: pathlib.Path) -> dict:

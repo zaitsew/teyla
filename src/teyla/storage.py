@@ -635,27 +635,17 @@ def _log(line: str) -> None:
 
 
 def rescue(worktree: str, main: str) -> None:
-    """Keep the worktree's `.teyla/corrections.jsonl` lines the store lacks. Since 0.12 the
-    store is ~/.teyla/corrections/ (teyla/corrections.py), keyed by the main checkout, so the
-    lines are imported there, scrubbed; with `corrections.store = "repo"` they are appended
-    to the main checkout's file byte for byte, as before."""
+    """Keep the worktree's `.teyla/corrections.jsonl` records the store lacks. Since 0.12 the
+    store is ~/.teyla/corrections/ (teyla/corrections.py), keyed by the main checkout, and
+    every record goes in through its scrubber — with `corrections.store = "repo"` too, where
+    the store is the main checkout's own file: a raw copy would carry a pre-0.12 prompt's
+    secrets into it."""
     from . import corrections
     src = pathlib.Path(worktree, RESCUE)
     if not src.is_file():
         return
     # Bytes, split on \n only: splitlines() also breaks on U+2028, which JSON allows inside a string.
-    lines = src.read_bytes().split(b"\n")
-    if corrections.store_mode() == "home":
-        corrections.import_lines(main, lines)
-        return
-    dst = pathlib.Path(main, RESCUE)
-    have = set(dst.read_bytes().split(b"\n")) if dst.is_file() else set()
-    new = [l for l in lines if l.strip() and l not in have]
-    if new:
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        lead = b"\n" if dst.is_file() and dst.stat().st_size and not dst.read_bytes().endswith(b"\n") else b""
-        with dst.open("ab") as fh:
-            fh.write(lead + b"\n".join(new) + b"\n")
+    corrections.import_lines(main, src.read_bytes().split(b"\n"))
 
 
 def _remove_worktree(r: dict) -> tuple[int, str]:
