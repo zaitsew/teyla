@@ -1,6 +1,7 @@
 """monitor.metrics() shape + advise() A1 (subagent inherit) finding, built from hand-rolled Sessions."""
 from __future__ import annotations
 
+import json
 from collections import Counter
 
 from teyla.adapters import AgentCall, Session, Turn
@@ -245,3 +246,44 @@ def test_sessions_listing_shows_batch_instead_of_counting_its_prompt(monkeypatch
     rows = {l.split()[2]: l.split() for l in capsys.readouterr().out.splitlines()[1:]}
     assert rows["human-1"][5:7] == ["2", "1"]      # turns, corr
     assert rows["batch-1"][5:7] == ["batch", "-"]  # a script's brief is neither
+
+
+# --- redact(): connectors and skills get pseudonyms, the advice still reads them -----------
+
+def test_redact_pseudonymises_skills_except_public_ones_and_keeps_a6_honest():
+    from teyla.monitor import redact
+    sessions = [_session(f"s{i}", n_agents_inherit=1) for i in range(60)]
+    sessions[0].skills.update({"acme-internal-deploy": 3, "teyla:harvest": 1})
+    m = metrics(sessions)
+    r = redact(m)
+    assert set(r["skills"]) == {"s01", "teyla:harvest"}
+    a6 = [f for f in advise(r) if f["id"] == "A6"]
+    assert a6 and "acme" not in a6[0]["evidence"] and "s01" in a6[0]["evidence"]
+    # a private skill whose name says "review" still counts as a review skill: the answer is
+    # taken from the real names before they are hidden, so A6 does not fire falsely
+    sessions[0].skills.update({"acme-security-review": 1})
+    r = redact(metrics(sessions))
+    assert "A6" not in [f["id"] for f in advise(r)]
+    assert not any("acme" in k for k in r["skills"])
+
+
+def test_redact_gives_one_connector_one_alias_across_tools_and_table():
+    from teyla.monitor import redact
+    s = _session("s1")
+    s.tools["mcp__acme-jira__search_issues"] = 5
+    s.tools["mcp__acme-wiki__get_page"] = 1
+    s.connector_calls = [dict(server="acme-jira", tool="search_issues", turn_index=0, result="ok")] * 5 \
+        + [dict(server="acme-wiki", tool="get_page", turn_index=0, result="ok")]
+    r = redact(metrics([s]))
+    assert set(r["connectors"]["connectors"]) == {"c01", "c02"}
+    assert r["connectors"]["connectors"]["c01"]["calls"] == 5 and r["connectors"]["connectors"]["c01"]["display"] == "c01"
+    assert r["tools"]["mcp__c01__search_issues"] == 5 and r["tools"]["mcp__c02__get_page"] == 1
+    assert "acme" not in json.dumps(r)
+
+
+def test_redact_is_deterministic():
+    from teyla.monitor import redact
+    s = _session("s1")
+    s.skills.update({"b-skill": 1, "a-skill": 1})
+    m = metrics([s])
+    assert redact(m)["skills"] == redact(m)["skills"] == {"s01": 1, "s02": 1}

@@ -104,10 +104,63 @@ def fingerprint(text: str) -> str:
     return hashlib.sha1(_re.sub(r"\W+", " ", text.lower()).strip().encode()).hexdigest()[:10]
 
 
+# Skill names that may stay readable in a shared report: Teyla's own public skills and the
+# public built-ins every Claude Code install ships or Teyla's POLICY template names (§2, §3).
+# Anything else is a name somebody chose — an internal plugin's skill names say what the team
+# works on — so it becomes s01..sNN.
+PUBLIC_SKILLS = frozenset({
+    # Teyla's plugin and CLI skills, bare and namespaced
+    "adoption-review", "harvest", "wiki-pass", "correct", "rule",
+    "teyla:adoption-review", "teyla:harvest", "teyla:wiki-pass", "teyla:correct", "teyla:rule",
+    # Claude Code built-ins
+    "review", "security-review", "code-review", "init", "simplify", "loop", "schedule", "run",
+    "update-config", "keybindings-help", "claude-api", "fewer-permission-prompts", "compact",
+    # Anthropic's public document skills
+    "pdf", "docx", "xlsx", "pptx", "skill-creator",
+    # named by Teyla's POLICY template (§2 cross-provider review, §3 tool ladder)
+    "codex", "grok", "autoplan", "qa", "spec",
+})
+
+# A6 asks "was any review skill used?" — answered on the real names, before they are hidden.
+REVIEW_SKILL_WORDS = ("review", "codex", "grok")
+
+
+def scrub_home(text: str) -> str:
+    """Replace every occurrence of the home directory with `~`. The last line of defence for a
+    shareable text: the structural redaction below should already have removed every path."""
+    import pathlib
+    home = str(pathlib.Path.home())
+    if not home or home == "/":
+        return text
+    return text.replace(home, "~")
+
+
+def _ranked_alias(counts: dict, prefix: str, keep=frozenset()) -> dict:
+    """{name: pseudonym}, busiest first (ties by name, so a re-run gives the same aliases);
+    names in `keep` map to themselves."""
+    alias, i = {}, 0
+    for name in sorted(counts, key=lambda k: (-counts[k], str(k))):
+        if name in keep:
+            alias[name] = name
+        else:
+            i += 1
+            alias[name] = f"{prefix}{i:02d}"
+    return alias
+
+
 def redact(m: dict) -> dict:
-    """A copy of the metrics safe to share: projects become p01..pNN (ordered by output tokens),
-    correction text is dropped, cwd paths are dropped. Tool, skill and model names stay."""
+    """A copy of the metrics safe to share. Compute findings from THIS, never from the raw
+    metrics: advice evidence quotes projects, sessions and connectors, and whatever advise()
+    reads is what the report prints.
+
+    - projects become p01..pNN (ordered by output tokens); session ids and cwd paths are dropped
+    - MCP connectors (server ids and display names) become c01..cNN, in the connector table
+      and in `mcp__<server>__<tool>` tool names; the tool verb after the server stays
+    - skills become s01..sNN, except PUBLIC_SKILLS
+    - correction text is dropped; only its irreversible fingerprints stay
+    Model names and built-in tool names stay: they are the vocabulary the advice is written in."""
     import copy
+    from . import connectors as _c
     r = copy.deepcopy(m)
     order = sorted(r["by_project"], key=lambda p: -sum(u.get("output_tokens", 0) for u in r["by_project"][p].values()))
     alias = {p: f"p{i+1:02d}" for i, p in enumerate(order)}
@@ -117,6 +170,50 @@ def redact(m: dict) -> dict:
     for g in r.get("governance_edits", []):
         g["project"] = alias.get(g["project"], "p??"); g["sid"] = "—"
     r["wrong_root"] = [dict(project=alias.get(w["project"], "p??"), sid="—", cwd="—") for w in r.get("wrong_root", [])]
+    gw = r.get("grok_week")
+    if gw:
+        # Grok cost groups by grokcost.project_of(cwd), a repo name, while by_project is keyed by
+        # the cwd itself: join through project_of so the same project keeps the same pseudonym.
+        try:
+            from .grokcost import project_of
+            galias = {project_of(p): a for p, a in alias.items() if p.startswith("/")}
+        except Exception:  # noqa: BLE001 — a join is a nicety, the redaction is not
+            galias = {}
+        extra = {}
+
+        def _g(name):
+            # a Grok project with no token usage in this window is not in by_project: next alias
+            if name in galias:
+                return galias[name]
+            return extra.setdefault(name, f"p{len(alias) + len(extra) + 1:02d}")
+        top = gw.get("top_project")
+        gw["top_project"] = _g(top)
+        if isinstance(gw.get("top_session"), dict):
+            gw["top_session"] = dict(gw["top_session"], sid="—", project=_g(gw["top_session"].get("project")))
+
+    # connectors: one alias per MCP server, whether it shows up in the connector table, the tool
+    # counts, or both — the same server must not be c01 in one table and c03 in the next.
+    cm = r.get("connectors") or {}
+    calls = Counter({s: c.get("calls", 0) for s, c in (cm.get("connectors") or {}).items()})
+    for name, n in (m.get("tools") or {}).items():
+        parsed = _c.parse_mcp_tool(name or "")
+        if parsed and parsed[0] not in calls:
+            calls[parsed[0]] = 0
+    calias = _ranked_alias(calls, "c")
+    if cm:
+        cm["connectors"] = {calias[s]: dict(c, display=calias[s]) for s, c in (cm.get("connectors") or {}).items()}
+        cm["names"] = {}
+    tools = Counter()
+    for name, n in (r.get("tools") or {}).items():
+        parsed = _c.parse_mcp_tool(name or "")
+        tools[f"mcp__{calias[parsed[0]]}__{parsed[1]}" if parsed else name] += n
+    r["tools"] = dict(tools)
+
+    skills = {str(k): v for k, v in (m.get("skills") or {}).items()}
+    salias = _ranked_alias(skills, "s", keep=PUBLIC_SKILLS)
+    r["skills"] = {salias[k]: v for k, v in skills.items()}
+    r["review_skill_used"] = any(w in k for k in skills for w in REVIEW_SKILL_WORDS)
+
     r["correction_samples"] = []
     r["correction_fingerprints"] = dict(Counter(fingerprint(t) for t in m.get("correction_samples", [])))
     r["redacted"] = True
