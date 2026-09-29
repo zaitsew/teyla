@@ -36,6 +36,27 @@ HERMES_BLOCK_WORK = HERMES_BLOCK.replace(
     "get a second opinion from a fresh same-provider session before non-trivial designs; send code only to providers IT approved")
 
 
+def hermes_block() -> str:
+    """The section SOUL.md should carry for the installed policy's variant."""
+    return HERMES_BLOCK_WORK if is_work() else HERMES_BLOCK
+
+
+def _hermes_section(text: str) -> tuple[int, int] | None:
+    """(start, end) of Teyla's managed section in SOUL.md: from the HERMES_MARK heading to the
+    next `## ` heading or the end of the file, blank lines before it included."""
+    at = text.find(HERMES_MARK)
+    if at < 0:
+        return None
+    start = len(text[:at].rstrip("\n"))
+    nxt = text.find("\n## ", at + len(HERMES_MARK))
+    return start, (nxt + 1 if nxt >= 0 else len(text))
+
+
+def _hermes_current(text: str) -> bool:
+    span = _hermes_section(text)
+    return span is not None and text[span[0]:span[1]].strip() == hermes_block().strip()
+
+
 def is_work(text: str | None = None) -> bool:
     """Whether this POLICY.md text (default: the installed file) came from the work template."""
     if text is None:
@@ -96,7 +117,9 @@ def status() -> dict:
         p = TARGETS[h]
         st[h] = (p.resolve() == POLICY.resolve()) if p.exists() else (None if not p.parent.exists() else False)
     p = TARGETS["hermes"]
-    st["hermes"] = (HERMES_MARK in p.read_text()) if p.exists() else None
+    # Current, not merely present: after `policy init --work --force` a home-variant section
+    # still tells Hermes to send diffs to another provider (Codex review of #59, P1).
+    st["hermes"] = _hermes_current(p.read_text()) if p.exists() else None
     p = TARGETS.get("cursor")
     if p is not None:  # tests patch TARGETS without it
         if not p.parents[2].is_dir():
@@ -127,10 +150,19 @@ def sync(dry=False, owner: str | None = None) -> list[str]:
                 p.symlink_to(POLICY)
             done.append(f"symlinked {p} → {POLICY}")
     p = TARGETS["hermes"]
-    if p.exists() and HERMES_MARK not in p.read_text():
+    if p.exists() and not _hermes_current(p.read_text()):
+        text = p.read_text()
+        span = _hermes_section(text)
+        if span is None:
+            new_text, what = text.rstrip() + hermes_block(), "appended policy section to"
+        else:
+            # The section under HERMES_MARK is Teyla's: replaced whole, whatever variant it was.
+            rest = text[span[1]:]
+            new_text = text[:span[0]] + hermes_block().rstrip("\n") + "\n" + ("\n" + rest if rest else "")
+            what = "replaced the policy section in"
         if not dry:
-            p.write_text(p.read_text().rstrip() + (HERMES_BLOCK_WORK if is_work() else HERMES_BLOCK))
-        done.append(f"appended policy section to {p}")
+            p.write_text(new_text)
+        done.append(f"{what} {p}")
     p = TARGETS.get("cursor")
     if p is not None and p.parents[2].is_dir() and POLICY.exists() and not (p.exists() and p.read_text() == cursor_skill_text()):
         if not dry:

@@ -410,3 +410,63 @@ def test_doctor_shows_safe_line_and_stays_offline(_home, monkeypatch):
     assert by["version"]["level"] == "INFO" and "safe mode" in by["version"]["detail"]
     assert by["network"]["level"] == "INFO" and "teyla[work]" in by["network"]["fix"]
     assert any(line.split()[:3] == ["INFO", "safe", "on"] for line in doctor.render(cs).splitlines())
+
+
+# --- review of #59: fail closed, and no stale managed policy copies ------------------------
+
+def test_invalid_boolean_is_rejected_and_nothing_is_written(_home, capsys):
+    msg = config.set_value("safe.enabled", "treu")
+    assert msg.startswith("invalid safe.enabled") and not config.CONFIG_PATH.exists()
+    assert cli.main(["config", "set", "safe.enabled=treu"]) == 1
+    assert not config.CONFIG_PATH.exists()
+    assert config.set_value("storage.idle_days", "three").startswith("invalid")
+
+
+def test_unparseable_safe_value_fails_closed_and_doctor_names_it(_home, monkeypatch):
+    config.CONFIG_PATH.write_text('[safe]\nenabled = "treu"\n')
+    assert config.safe_mode(), "a typo must not switch safe mode off"
+    by = {c["name"]: c for c in doctor.checks(scan_repos=False)}
+    assert by["safe:setting"]["level"] == "FIX" and "safe.enabled=true" in by["safe:setting"]["fix"]
+    assert by["safe"]["detail"].startswith("on")
+    config.CONFIG_PATH.write_text('[safe]\nenabled = false\n')
+    assert not config.safe_mode() and config.safe_setting_invalid() is None
+    monkeypatch.setenv("TEYLA_SAFE", "treu")
+    assert config.safe_mode()
+    monkeypatch.setenv("TEYLA_SAFE", "0")
+    assert not config.safe_mode()
+
+
+def test_hook_fails_closed_on_an_unparseable_safe_value(_home):
+    config.CONFIG_PATH.write_text('[safe]\nenabled = "treu"\n')
+    calls = _run_hook(_home)
+    assert calls and not any(c.startswith("update") for c in calls)
+
+
+def test_policy_sync_replaces_a_home_hermes_section_after_switching_to_work(_home):
+    soul = policy.TARGETS["hermes"]
+    soul.parent.mkdir(parents=True)
+    soul.write_text("# Soul\n\nBe kind.\n")
+    policy.init(owner="Ann")
+    policy.sync()
+    soul.write_text(soul.read_text() + "\n## Mine\nkeep this\n")
+    assert "cross-provider" in soul.read_text() and policy.status()["hermes"] is True
+    policy.init(owner="Ann", work=True, force=True)
+    assert policy.status()["hermes"] is False, "a home-variant section is not wired for a work policy"
+    assert any("replaced the policy section" in l for l in policy.sync())
+    text = soul.read_text()
+    assert "cross-provider" not in text and "same-provider" in text
+    assert text.count(policy.HERMES_MARK) == 1 and "Be kind." in text and "## Mine\nkeep this" in text
+    assert policy.status()["hermes"] is True and policy.sync() == ["already in sync"]
+
+
+def test_policy_sync_rewrites_the_cursor_skill_after_switching_to_work(_home, monkeypatch):
+    skill = _home / ".cursor" / "skills" / "teyla-policy" / "SKILL.md"
+    skill.parent.parent.mkdir(parents=True)
+    monkeypatch.setitem(policy.TARGETS, "cursor", skill)
+    policy.init(owner="Ann")
+    policy.sync()
+    assert "`grok -p`" in skill.read_text()
+    policy.init(owner="Ann", work=True, force=True)
+    assert policy.status()["cursor"] is False
+    policy.sync()
+    assert policy.is_work(skill.read_text()) and "`grok -p`" not in skill.read_text()

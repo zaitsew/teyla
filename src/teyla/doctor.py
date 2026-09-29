@@ -40,6 +40,10 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
 
     # --- safe mode: first, because it changes what every line below means --------
     out.append(_check("INFO", "safe", config.SAFE_SUMMARY if safe else "off"))
+    bad_safe = config.safe_setting_invalid(cfg)
+    if bad_safe is not None:
+        out.append(_check("FIX", "safe:setting", f"[safe] enabled = {bad_safe!r} is not true or false — treated as ON",
+                          "teyla config set safe.enabled=true   (or =false)"))
 
     # --- version ---------------------------------------------------------------
     rec = update.check(refresh=refresh_update, max_age_hours=24)
