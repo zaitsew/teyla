@@ -131,6 +131,10 @@ def install_everything(env: dict, home: pathlib.Path) -> None:
     teyla(env, "routine", "install")
     (home / "Library" / "LaunchAgents" / "com.teyla.demo.nightly.plist").write_text(TRIGGER_PLIST)
     (home / "Library" / "Logs" / "com.teyla.demo.nightly.log").write_text("ran\n")
+    # the same, installed from a checkout's `python -m teyla`: argv[0] is .../teyla/__main__.py
+    (home / "Library" / "LaunchAgents" / "com.teyla.demo.hourly.plist").write_text(
+        TRIGGER_PLIST.replace("com.teyla.demo.nightly", "com.teyla.demo.hourly")
+                     .replace("/x/bin/teyla", "/x/teyla/src/teyla/__main__.py"))
     # what the capture hook and `teyla rule` leave in a repo
     (home / "repos" / "demo" / ".teyla").mkdir()
     (home / "repos" / "demo" / ".teyla" / "corrections.jsonl").write_text('{"text": "no"}\n')
@@ -170,6 +174,7 @@ def test_dry_lists_every_write_and_touches_nothing(machine):
     out = teyla(env, "uninstall", "--dry")
     assert snapshot(home) == mid, "--dry changed the machine"
     for needle in ("com.zaitsew.teyla.daily.plist", "com.zaitsew.teyla.weekly.plist", "com.teyla.demo.nightly.plist",
+                   "com.teyla.demo.hourly.plist",
                    ".claude/CLAUDE.md", ".codex/AGENTS.md", ".grok/AGENTS.md", ".hermes/SOUL.md", ".hermes/config.yaml",
                    ".cursor/hooks.json", ".grok/hooks/teyla.json", "teyla-policy", "teyla-harvest",
                    "installed_plugins.json[teyla@teyla]", "known_marketplaces.json[teyla]", f"{home}/.teyla",

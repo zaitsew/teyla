@@ -141,8 +141,11 @@ def _is_trigger_plist(p: pathlib.Path) -> bool:
         args = plistlib.loads(p.read_bytes()).get("ProgramArguments") or []
     except Exception:  # noqa: BLE001 — unreadable or not a plist: not recognisably ours
         return False
-    return (len(args) >= 3 and isinstance(args[0], str) and os.path.basename(args[0]) == "teyla"
-            and args[1] == "run")
+    prog = args[0] if args and isinstance(args[0], str) else ""
+    # triggers.teyla_bin(): the `teyla` on PATH, else sys.argv[0] — which under a checkout's
+    # `python -m teyla` is <checkout>/src/teyla/__main__.py
+    is_teyla = os.path.basename(prog) == "teyla" or prog.replace("\\", "/").endswith("/teyla/__main__.py")
+    return len(args) >= 3 and is_teyla and args[1] == "run"
 
 
 def _launch_agents(home: pathlib.Path) -> list[Step]:
