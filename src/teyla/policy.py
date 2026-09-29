@@ -309,6 +309,14 @@ def ack(note: str | None = None) -> str:
 
 BASE_PATH = HOME / ".teyla" / "policy-base.md"
 CONFLICT_PATH = HOME / ".teyla" / "policy-merge-conflict.md"
+# Safe mode: a template change arrives with an update the owner did not start, and POLICY.md is
+# what every harness obeys. So the merge is only proposed here; the owner diffs and applies it.
+PROPOSED_PATH = HOME / ".teyla" / "policy-proposed.md"
+
+
+def proposal_commands() -> str:
+    return (f"diff -u {POLICY} {PROPOSED_PATH}   then, to take it: "
+            f"cp {PROPOSED_PATH} {POLICY} && teyla policy refresh --resolved")
 
 
 def _owner_from(text: str) -> str | None:
@@ -359,6 +367,9 @@ def refresh(dry: bool = False) -> list[str]:
         if CONFLICT_PATH.exists():
             return [f"template unchanged; a merge conflict is still waiting in {CONFLICT_PATH}"]
         return ["template unchanged since last refresh"]
+    from . import config
+    if config.safe_mode():
+        return _propose(local, base, new, dry)
     if local == base:
         if not dry:
             _backup_policy()
@@ -389,14 +400,48 @@ def refresh(dry: bool = False) -> list[str]:
             f"Resolve there, copy into {POLICY}, then `teyla policy refresh --resolved`"]
 
 
+def _merge(local: str, base: str, new: str) -> tuple[str | None, int]:
+    """(merged text, conflict count) from `git merge-file`; (None, -1) without git."""
+    import shutil
+    import subprocess
+    import tempfile
+    if local == base:
+        return new, 0
+    git = shutil.which("git")
+    if not git:
+        return None, -1
+    with tempfile.TemporaryDirectory() as td:
+        p = pathlib.Path(td)
+        (p / "local").write_text(local); (p / "base").write_text(base); (p / "new").write_text(new)
+        r = subprocess.run([git, "merge-file", "-p", "-L", "yours", "-L", "base", "-L", "teyla-template",
+                            str(p / "local"), str(p / "base"), str(p / "new")], capture_output=True, text=True)
+    return (r.stdout, r.returncode) if r.returncode >= 0 else (None, -1)
+
+
+def _propose(local: str, base: str, new: str, dry: bool) -> list[str]:
+    merged, conflicts = _merge(local, base, new)
+    if merged is None:
+        merged, conflicts = new, 0  # no git: propose the template itself; the diff shows what it drops
+    if not dry:
+        PROPOSED_PATH.parent.mkdir(parents=True, exist_ok=True)
+        PROPOSED_PATH.write_text(merged)
+    what = f"with {conflicts} conflict(s) marked" if conflicts else "merged cleanly with your edits"
+    return [f"safe mode: the policy template changed; {'would propose' if dry else 'proposed'} the new {POLICY.name} "
+            f"({what}) in {PROPOSED_PATH} — {POLICY} untouched. Review: {proposal_commands()}"]
+
+
 def resolved() -> str:
-    """The owner says the conflict is resolved in POLICY.md: move base forward, drop the conflict file."""
+    """The owner says the conflict is resolved in POLICY.md (or took the safe-mode proposal):
+    move base forward, drop the conflict and proposal files."""
     if not POLICY.exists():
         return "no POLICY.md"
     BASE_PATH.write_text(render_template(_owner_from(POLICY.read_text())))
-    if CONFLICT_PATH.exists():
-        CONFLICT_PATH.unlink()
-    return f"base moved to the current template; {CONFLICT_PATH.name} removed"
+    removed = []
+    for p in (CONFLICT_PATH, PROPOSED_PATH):
+        if p.exists():
+            p.unlink()
+            removed.append(p.name)
+    return "base moved to the current template" + (f"; {', '.join(removed)} removed" if removed else "")
 
 
 def _backup_policy() -> pathlib.Path:

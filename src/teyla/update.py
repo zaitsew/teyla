@@ -8,12 +8,20 @@ In safe mode (`safe.enabled`, TEYLA_SAFE=1) nothing here touches the network unl
 command line says `--allow-network`; see net.py. The daily routine and the session hook
 never pass it, so a work laptop updates only when its owner runs `teyla update --allow-network`.
 
+What gets installed: the latest *published GitHub release* (never a bare `v*` tag), by the
+commit its tag resolves to (`git+<repo>@<sha>`), and only if the build then says
+`teyla --version` == that release — else the previous version is put back. Tag and sha are
+recorded in update-check.json and, after a verified install, in ~/.teyla/installed.json.
+
+    [update] pin     = "0.12.0" | "<sha>"   install exactly that, nothing newer (or older)
+    [update] channel = "release" | "none"   none: the daily routine never updates; by hand still works
+
 How the install happened decides how it is upgraded:
 
-    uv tool        ~/.local/share/uv/tools/teyla/...    uv tool install --force --python <X.Y> git+<repo>@<tag>
-    pipx           .../pipx/venvs/teyla/...             pipx install --force --python <exe> git+<repo>@<tag>
-    checkout       <repo>/src/teyla/__init__.py + .git   git fetch + fast-forward merge of origin/main
-    pip            anything else                          python -m pip install --upgrade git+<repo>@<tag>
+    uv tool        ~/.local/share/uv/tools/teyla/...    uv tool install --force --python <X.Y> git+<repo>@<sha>
+    pipx           .../pipx/venvs/teyla/...             pipx install --force --python <exe> git+<repo>@<sha>
+    checkout       <repo>/src/teyla/__init__.py + .git   never touched: the command to pull is printed
+    pip            anything else                          python -m pip install --upgrade git+<repo>@<sha>
 
 The interpreter is pinned on every self-install: `[update] python` from config if set, else
 the one running now. Without that, uv rebuilt the tool environment on its *default*
@@ -28,6 +36,7 @@ SSL_CERT_FILE / SSL_CERT_DIR — and those may come from config.toml [env], appl
 Post-update, in order, each idempotent and each reported:
     policy sync         harness wiring (import line, symlinks, Hermes section)
     policy refresh      three-way merge of template changes into ~/.agents/POLICY.md
+                        (safe mode: only proposed, in ~/.teyla/policy-proposed.md)
     plugin refresh      the Claude Code plugin cache copy, if the installed one is older
     harness sync        the skills and hooks in Cursor, Codex, Grok and Hermes
     routine install     the launchd wrappers, if they point at a binary that moved
@@ -42,6 +51,7 @@ import datetime as _dt
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -180,39 +190,92 @@ def latest_release(repo: str, timeout: int = 10) -> tuple[str | None, str]:
     return tag, note
 
 
-def lookup_release(repo: str, timeout: int = 10) -> tuple[str | None, str, bool]:
-    """(tag or None, note, reachable). Tries releases/latest, then tags. `reachable` is True
-    when any request got an HTTP answer — a repo with no release yet is reachable, not down."""
-    reachable = False
-    for url, key in ((f"https://api.github.com/repos/{repo}/releases/latest", "tag_name"),
-                     (f"https://api.github.com/repos/{repo}/tags", None)):
-        try:
-            req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
-                                                       "User-Agent": f"teyla/{__version__}"})
-            with urllib.request.urlopen(req, timeout=timeout, context=ssl_context()) as r:
-                data = json.loads(r.read().decode())
-            reachable = True
-        except urllib.error.HTTPError as e:
-            reachable = True  # the server answered; 404 on releases/latest just means no release yet
-            note = f"{url.split('/')[-1]}: {e}"
-            continue
-        except (urllib.error.URLError, TimeoutError, ValueError, OSError) as e:
-            note = f"{url.split('/')[-1]}: {e}"
-            continue
-        if key:
-            tag = data.get(key)
-            if tag:
-                return tag, "releases/latest", True
-        else:
-            tags = [t.get("name") for t in data if isinstance(t, dict) and str(t.get("name", "")).startswith("v")]
-            if tags:
-                tags.sort(key=_vtuple)
-                return tags[-1], "tags", True
-        note = "no tags"
-    return None, note, reachable
+def _get_json(url: str, timeout: int = 10):
+    req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
+                                               "User-Agent": f"teyla/{__version__}"})
+    with urllib.request.urlopen(req, timeout=timeout, context=ssl_context()) as r:
+        return json.loads(r.read().decode())
+
+
+def lookup_release(repo: str, timeout: int = 10, tag: str | None = None) -> tuple[str | None, str, bool]:
+    """(tag or None, note, reachable) of the latest published release — or of release `tag`,
+    when given. Only a release counts: a `v*` tag anyone with push access can create or move
+    is not something to install unattended. `reachable` is True when GitHub answered at all —
+    a repo with no release yet is reachable, not down."""
+    endpoint = f"releases/tags/{tag}" if tag else "releases/latest"
+    url = f"https://api.github.com/repos/{repo}/{endpoint}"
+    try:
+        data = _get_json(url, timeout)
+    except urllib.error.HTTPError as e:
+        return None, f"{endpoint}: {e}", True  # 404 just means no (such) release
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError) as e:
+        return None, f"{endpoint}: {e}", False
+    found = data.get("tag_name") if isinstance(data, dict) else None
+    if not found or data.get("draft"):
+        return None, f"{endpoint}: no published release", True
+    return found, endpoint, True
+
+
+def resolve_sha(repo: str, ref: str, timeout: int = 10) -> str | None:
+    """The commit a tag points at right now. Installing `@<sha>` instead of `@<tag>` means the
+    code that lands is the code that was looked up, even if the tag moves in between."""
+    try:
+        data = _get_json(f"https://api.github.com/repos/{repo}/commits/{ref}", timeout)
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+        return None
+    sha = data.get("sha") if isinstance(data, dict) else None
+    return sha if isinstance(sha, str) and _SHA_RE.match(sha) else None
+
+
+_SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
+
+
+def update_settings(cfg: dict | None = None) -> tuple[str, str | None]:
+    """(channel, pin). channel: "release" (default) or "none" (never updated by a routine or
+    the session hook; `teyla update` by hand still works). pin: a version (`0.12.0`, `v0.12.0`)
+    or a commit sha; updates then install exactly that and nothing newer."""
+    u = (cfg or config.load()).get("update") or {}
+    channel = str(u.get("channel") or "release").strip().lower()
+    pin = str(u.get("pin") or "").strip() or None
+    return channel, pin
+
+
+def pin_is_sha(pin: str) -> bool:
+    return bool(_SHA_RE.match(pin.lower())) and not re.match(r"^v?\d+(\.\d+)*$", pin)
+
+
+INSTALLED_PATH = config.TEYLA_DIR / "installed.json"
+
+
+def installed_sha() -> str | None:
+    """The commit this version was installed from, if `teyla update` installed it (it records
+    tag and sha after the version check passes). None for an install made any other way."""
+    try:
+        rec = json.loads(INSTALLED_PATH.read_text())
+    except (OSError, ValueError):
+        return None
+    return rec.get("sha") if rec.get("version") == __version__ else None
+
+
+def _record_installed(version: str, tag: str | None, sha: str) -> None:
+    try:
+        INSTALLED_PATH.parent.mkdir(parents=True, exist_ok=True)
+        INSTALLED_PATH.write_text(json.dumps({"version": version, "tag": tag, "sha": sha}, indent=2) + "\n")
+    except OSError:
+        pass
 
 
 FAIL_MAX_AGE_MIN = 15  # a failed lookup is retried after this long; only a success is good for max_age_hours
+
+
+def _wanted(tag: str | None, sha: str | None, pin: str | None) -> bool:
+    """Is there something to install? Unpinned: a newer release. Pinned: anything other than
+    exactly the pin — which may be older than what runs now; that is what freezing means."""
+    if not pin:
+        return is_newer(tag, __version__)
+    if tag:
+        return _vtuple(tag) != _vtuple(__version__)
+    return bool(sha) and sha != installed_sha()
 
 
 def check(repo: str | None = None, refresh: bool = True, max_age_hours: int = 24) -> dict:
@@ -224,6 +287,7 @@ def check(repo: str | None = None, refresh: bool = True, max_age_hours: int = 24
     fixed network as broken for the rest of the day."""
     cfg = config.load()
     repo = repo or cfg["update"]["repo"]
+    channel, pin = update_settings(cfg)
     now = _dt.datetime.now(_dt.timezone.utc)
     if not net.allowed(cfg):
         return _offline_record(repo, cfg, now)
@@ -233,18 +297,29 @@ def check(repo: str | None = None, refresh: bool = True, max_age_hours: int = 24
             when = _dt.datetime.fromisoformat(cached["checked"])
             age = (now - when).total_seconds()
             limit = max_age_hours * 3600 if cached.get("latest") else FAIL_MAX_AGE_MIN * 60
-            if age < limit and cached.get("repo") == repo:
+            if age < limit and cached.get("repo") == repo and cached.get("pin") == pin:
                 cached["installed"] = __version__
-                cached["newer"] = is_newer(cached.get("latest"), __version__)
+                cached["newer"] = _wanted(cached.get("latest"), cached.get("sha"), pin)
                 cached["from_cache"] = True
                 return cached
         except (OSError, ValueError, KeyError):
             pass
-    tag, note, reachable = lookup_release(repo)
+    if pin and pin_is_sha(pin):
+        # A sha pin names the commit itself; there is no release to look up, only the sha to
+        # confirm GitHub has (and to expand, when it was given short).
+        tag, sha = None, resolve_sha(repo, pin)
+        note, reachable = (f"pinned to commit {pin}", True) if sha else (f"commits/{pin}: not found or unreachable", False)
+    else:
+        want = None if not pin else (pin if pin.startswith("v") else f"v{pin}")
+        tag, note, reachable = lookup_release(repo, tag=want)
+        sha = resolve_sha(repo, tag) if tag else None
+        if tag and not sha:
+            note += f"; could not resolve {tag} to a commit"
     method, root = install_method()
     rec = {"checked": now.isoformat(timespec="seconds"), "repo": repo, "installed": __version__,
-           "latest": tag, "note": note, "method": method, "checkout": str(root) if root else None,
-           "newer": is_newer(tag, __version__), "reachable": reachable,
+           "latest": tag, "sha": sha, "pin": pin, "channel": channel,
+           "note": note, "method": method, "checkout": str(root) if root else None,
+           "newer": _wanted(tag, sha, pin), "reachable": reachable,
            "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
            "python_pin": python_spec(cfg), "executable": sys.executable, "trust": trust_source(),
            "proxy": proxy_in_use(), "from_cache": False}
@@ -267,7 +342,9 @@ def _offline_record(repo: str, cfg: dict, now) -> dict:
             rec = cached
     except (OSError, ValueError):
         pass
-    rec.update({"installed": __version__, "newer": is_newer(rec.get("latest"), __version__), "method": method,
+    channel, pin = update_settings(cfg)
+    rec.update({"installed": __version__, "newer": _wanted(rec.get("latest"), rec.get("sha"), pin), "method": method,
+                "pin": pin, "channel": channel,
                 "checkout": str(root) if root else None, "from_cache": bool(rec.get("checked")), "safe": True,
                 "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
                 "python_pin": python_spec(cfg), "executable": sys.executable, "trust": trust_source(),
@@ -292,60 +369,92 @@ def install_source(repo: str, ref: str) -> str:
     return f"teyla[work] @ {url}" if truststore_available() else url
 
 
-def upgrade(tag: str, repo: str, method: str, checkout: pathlib.Path | None = None,
-            python: str | None = None) -> list[str]:
-    src = install_source(repo, tag)
-    spec = python or python_spec()
-    lines = []
+def _installer(method: str, spec: str, src: str) -> list[str] | None:
+    """The install command for `method`, or None when its tool is missing."""
     if method == "uv-tool":
         uv = shutil.which("uv")
-        if not uv:
-            return ["FAIL: installed with uv but `uv` is not on PATH"]
-        rc, out = _run([uv, "tool", "install", "--force", "--python", spec, src])
-        if rc != 0 and _uv_cache_corrupt(out):
-            # uv's git checkout of the repo lost objects ("unable to read sha1 file"); seen
-            # 2026-09-15 on the 0.9.3 → 0.10.0 update. Clearing the cache entry and retrying
-            # once is the fix; nothing else is.
-            lines.append("uv's cached checkout of teyla is corrupt — `uv cache clean teyla`, then retrying")
-            _run([uv, "cache", "clean", "teyla"])
-            rc, out = _run([uv, "tool", "install", "--force", "--python", spec, src])
-        if rc != 0 and not shutil.which("teyla") and not (pathlib.Path.home() / ".local" / "bin" / "teyla").exists():
+        return [uv, "tool", "install", "--force", "--python", spec, src] if uv else None
+    if method == "pipx":
+        pipx = shutil.which("pipx")
+        return [pipx, "install", "--force", "--python", python_executable_for(spec), src] if pipx else None
+    return [sys.executable, "-m", "pip", "install", "--upgrade", src]
+
+
+def installed_version(method: str) -> str | None:
+    """`teyla --version` of what is on disk now, from a fresh process — the running one still
+    has the old code imported."""
+    if method in ("uv-tool", "pipx"):
+        exe = shutil.which("teyla") or str(pathlib.Path.home() / ".local" / "bin" / "teyla")
+        cmd = [exe, "--version"]
+    else:
+        cmd = [sys.executable, "-c", "import teyla; print(teyla.__version__)"]
+    try:
+        rc, out = _run(cmd)
+    except OSError:
+        return None
+    return out.strip().splitlines()[-1].strip() if rc == 0 and out.strip() else None
+
+
+def restore(repo: str, method: str, spec: str) -> list[str]:
+    """Put the version that was running back: by the commit it was installed from when
+    `teyla update` recorded one, else by its release tag."""
+    ref = installed_sha() or f"v{__version__}"
+    cmd = _installer(method, spec, install_source(repo, ref))
+    if cmd is None:
+        return [f"FAIL: could not restore {__version__}: no installer for {method}"]
+    rc, out = _run(cmd)
+    return [f"restored {__version__} ({ref})" if rc == 0 else f"FAIL: could not restore {__version__} ({ref}): {out[-300:]}"]
+
+
+def checkout_command(checkout: pathlib.Path) -> str:
+    return f"git -C {checkout} pull --ff-only && {sys.executable} -m pip install -q -e {checkout}"
+
+
+def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | None = None,
+            python: str | None = None, sha: str | None = None) -> list[str]:
+    """Install the release `tag` by its commit `sha`, then check `teyla --version` says `tag`.
+    No sha → nothing is installed: a tag alone can be moved between the lookup and the build."""
+    spec = python or python_spec()
+    label = tag or (sha or "?")[:12]
+    if method == "checkout":
+        # A git checkout is somebody's working tree: fast-forwarding it unattended to whatever
+        # origin/main holds is exactly the unpinned update this module exists to avoid.
+        return [f"SKIP: {checkout or 'this checkout'} is a git checkout; update it by hand: "
+                f"{checkout_command(checkout) if checkout else 'git pull --ff-only && pip install -e .'}"]
+    if not sha:
+        return [f"FAIL: could not resolve {label} to a commit on {repo}; not installing an unpinned ref"]
+    src = install_source(repo, sha)
+    cmd = _installer(method, spec, src)
+    if cmd is None:
+        return [f"FAIL: installed with {method} but `{'uv' if method == 'uv-tool' else method}` is not on PATH"]
+    lines = []
+    rc, out = _run(cmd)
+    if rc != 0 and method == "uv-tool" and _uv_cache_corrupt(out):
+        # uv's git checkout of the repo lost objects ("unable to read sha1 file"); seen
+        # 2026-09-15 on the 0.9.3 → 0.10.0 update. Clearing the cache entry and retrying
+        # once is the fix; nothing else is.
+        lines.append("uv's cached checkout of teyla is corrupt — `uv cache clean teyla`, then retrying")
+        _run([cmd[0], "cache", "clean", "teyla"])
+        rc, out = _run(cmd)
+    if rc != 0:
+        lines.append(f"FAIL: upgrade via {method}: {out[-800:]}")
+        if method == "uv-tool" and not shutil.which("teyla") and not (pathlib.Path.home() / ".local" / "bin" / "teyla").exists():
             # `uv tool install --force` removes the old tool before the new build; a failed
             # build therefore leaves no `teyla` at all — the daily wrapper, the session-start
             # hook and doctor all go quiet. Put the installed version back first.
-            back = install_source(repo, f"v{__version__}")
-            rc2, out2 = _run([uv, "tool", "install", "--force", "--python", spec, back])
-            lines.append(f"{'restored' if rc2 == 0 else 'FAIL: could not restore'} {__version__} after the failed upgrade"
-                         + ("" if rc2 == 0 else f": {out2[-300:]}"))
-    elif method == "pipx":
-        pipx = shutil.which("pipx")
-        if not pipx:
-            return ["FAIL: installed with pipx but `pipx` is not on PATH"]
-        rc, out = _run([pipx, "install", "--force", "--python", python_executable_for(spec), src])
-    elif method == "checkout" and checkout:
-        rc, out = _run(["git", "status", "--porcelain"], cwd=checkout)
-        if rc != 0:
-            return [f"FAIL: git status in {checkout}: {out}"]
-        if out.strip():
-            return [f"SKIP: {checkout} has uncommitted changes; pull by hand"]
-        rc, branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=checkout)
-        if branch.strip() != "main":
-            return [f"SKIP: {checkout} is on {branch.strip()}, not main; pull by hand"]
-        rc, out = _run(["git", "fetch", "--tags", "origin"], cwd=checkout)
-        if rc == 0:
-            rc, out = _run(["git", "merge", "--ff-only", "origin/main"], cwd=checkout)
-        if rc == 0:
-            lines.append(f"fast-forwarded {checkout} to origin/main")
-            rc, out2 = _run([sys.executable, "-m", "pip", "install", "-q", "-e", str(checkout)])
-            out = out2 if rc != 0 else out
-    else:
-        rc, out = _run([sys.executable, "-m", "pip", "install", "--upgrade", src])
-    if rc != 0:
-        lines.append(f"FAIL: upgrade via {method}: {out[-800:]}")
-    elif method in ("uv-tool", "pipx"):
-        lines.append(f"installed {tag} via {method} on python {spec}")
-    else:
-        lines.append(f"installed {tag} via {method}")
+            lines += restore(repo, method, spec)
+        return lines
+    if tag:
+        got = installed_version(method)
+        if got != tag.lstrip("v"):
+            # The commit built, but it is not the release it was looked up as (a moved tag, a
+            # mis-versioned build). Keep the version that was known to work.
+            lines.append(f"FAIL: installed {sha[:12]} reports version {got or '(none)'}, expected {tag.lstrip('v')} — restoring")
+            lines += restore(repo, method, spec)
+            return lines
+    _record_installed(tag.lstrip("v") if tag else (installed_version(method) or "?"), tag, sha)
+    on = f" on python {spec}" if method in ("uv-tool", "pipx") else ""
+    lines.append(f"installed {label} ({sha[:12]}) via {method}{on}")
     return lines
 
 
@@ -367,45 +476,55 @@ def post_update(quiet: bool = False) -> list[str]:
 def cmd_update(args):
     cfg = config.load()
     repo = cfg["update"]["repo"]
+    channel, pin = update_settings(cfg)
+    if channel not in ("release", "none"):
+        print(f"teyla: [update] channel = {channel!r} is not one of release, none — teyla config set update.channel=release")
+        return 1
+    if channel == "none" and os.environ.get("TEYLA_IN_ROUTINE") and not args.check:
+        if not args.quiet:
+            print("teyla: [update] channel = none — no automatic update; run `teyla update` by hand")
+        return 0
     if not net.gate("`teyla update" + (" --check`" if args.check else "`"), cfg):
         return 1
     rec = check(repo, refresh=True)
     method, root = rec["method"], rec.get("checkout")
-    if rec["latest"] is None:
-        print(f"teyla {__version__} ({method}, python {rec['python']}, trust: {rec['trust']}); "
-              f"could not reach GitHub for {repo}: {rec['note']}")
+    target = rec.get("latest") or (rec.get("sha") if pin else None)
+    pinned = f", pinned to {pin}" if pin else ""
+    if target is None:
+        print(f"teyla {__version__} ({method}, python {rec['python']}, trust: {rec['trust']}{pinned}); "
+              f"no release to install from {repo}: {rec['note']}")
         hint = explain_tls_error(rec["note"])
         if hint:
             print(f"  → {hint}")
         running = f"{sys.version_info.major}.{sys.version_info.minor}"
         if args.force and rec["python_pin"] != running and method in ("uv-tool", "pipx"):
-            # The lookup failed *on this interpreter* and config pins another one. The latest tag
-            # is unknown, but the installed version's tag is: reinstall it on the pinned
-            # interpreter so the next check runs there. This is how a 3.13 install whose TLS
-            # verification rejects the proxy root gets to 3.12 without a working lookup.
-            tag = f"v{__version__}"
-            print(f"--force: reinstalling {tag} on python {rec['python_pin']} (lookup failed on {running}); "
+            # The lookup failed *on this interpreter* and config pins another one. The latest
+            # release is unknown, but the installed version is: reinstall it (by the commit it
+            # came from, when recorded) on the pinned interpreter so the next check runs there.
+            # This is how a 3.13 install whose TLS verification rejects the proxy root gets to
+            # 3.12 without a working lookup.
+            print(f"--force: reinstalling {__version__} on python {rec['python_pin']} (lookup failed on {running}); "
                   f"run `teyla update` again afterwards")
-            lines = upgrade(tag, repo, method, None, python=rec["python_pin"])
+            lines = restore(repo, method, rec["python_pin"])
             for line in lines:
                 print(line)
             return 1 if any(line.startswith(("FAIL", "SKIP")) for line in lines) else 0
         return 1
     if args.check:
         state = "update available" if rec["newer"] else "up to date"
-        print(f"teyla {__version__} ({method}) — latest {rec['latest']} ({rec['note']}) — {state}")
+        print(f"teyla {__version__} ({method}) — {'pinned' if pin else 'latest'} {target} ({rec['note']}) — {state}")
         return 0
     if not rec["newer"] and not args.force:
         if not args.quiet:
-            print(f"teyla {__version__} ({method}) is the latest release ({rec['latest']}).")
+            print(f"teyla {__version__} ({method}) is the {'pinned' if pin else 'latest'} release ({target}).")
             print("post-update steps (--force to run them anyway):")
         if args.wire:
             for line in post_update(quiet=args.quiet):
                 print(line)
         return 0
-    tag = rec["latest"]
-    print(f"teyla {__version__} → {tag} via {method} (python {rec['python_pin']})")
-    lines = upgrade(tag, repo, method, pathlib.Path(root) if root else None, python=rec["python_pin"])
+    sha = rec.get("sha")
+    print(f"teyla {__version__} → {target}" + (f" ({sha[:12]})" if sha else "") + f" via {method} (python {rec['python_pin']}{pinned})")
+    lines = upgrade(rec.get("latest"), repo, method, pathlib.Path(root) if root else None, python=rec["python_pin"], sha=sha)
     for line in lines:
         print(line)
     if any(line.startswith(("FAIL", "SKIP")) for line in lines):

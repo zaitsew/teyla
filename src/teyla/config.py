@@ -4,7 +4,9 @@
     ops_root  = "~/ops"            the ops root (run artifacts, wiki)
     [update]
     repo    = "zaitsew/teyla"      GitHub repo `teyla update` pulls releases from
-    channel = "release"            "release" (tags) or "main" (tip of main)
+    channel = "release"            "release" (published GitHub releases) or "none" (no routine
+                                   ever updates; `teyla update` by hand still does)
+    pin     = "0.12.0"             freeze updates to exactly this release version or commit sha
     python  = "3.12"               interpreter `teyla update` pins on every self-install
                                    (default: the one Teyla is running on right now)
     [safe]
@@ -143,6 +145,11 @@ def write(code_root: str = "~/repos", ops_root: str = "~/ops", repo: str = "zait
         for table in ("env", "safe", "products", "storage"):
             if isinstance(old.get(table), dict) and old[table]:
                 data[table] = old[table]
+        # The same for a pin, an interpreter pin and channel = "none": a frozen update that
+        # silently thaws on `policy init --force` is not frozen.
+        for key in ("pin", "python", "channel"):
+            if isinstance(old.get("update"), dict) and old["update"].get(key):
+                data["update"][key] = old["update"][key]
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(dump(data))
     return f"wrote {p}"

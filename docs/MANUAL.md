@@ -364,15 +364,22 @@ A one-off fact with a deadline — a key that expires, a trial that ends — get
 until 30 days out, then WARN, then FIX once overdue, `how` printed as the fix.
 
 `teyla update` decides how it was installed (uv tool, pipx, pip, or a git checkout) and
-upgrades the same way, from GitHub releases of the repo in `~/.teyla/config.toml`
-(`[update] repo`). Then, in a fresh process so the new code does the wiring:
+upgrades the same way, from the latest *published* GitHub release of the repo in
+`~/.teyla/config.toml` (`[update] repo`) — never a bare `v*` tag. It installs the commit the
+release tag resolves to (`git+…@<sha>`), then checks that `teyla --version` is that release
+and puts the previous version back if not; tag and sha go into `update-check.json` and
+`~/.teyla/installed.json`. `teyla config set update.pin=0.12.0` (or a commit sha) freezes it
+to exactly that; `update.channel=none` keeps the daily routine from updating at all. A git
+checkout is never pulled: the command is printed. Then, in a fresh process so the new code
+does the wiring:
 
 1. `policy sync` — the import line, the Codex/Grok symlinks, the Hermes section.
 2. `policy refresh` — the template shipped with the new version, merged into
    `~/.agents/POLICY.md` with `git merge-file` against the template as last applied
    (`~/.teyla/policy-base.md`). Your edits survive; a real conflict is written to
    `~/.teyla/policy-merge-conflict.md`, your file is left alone, and doctor nags until you
-   run `teyla policy refresh --resolved`.
+   run `teyla policy refresh --resolved`. In safe mode nothing is merged: the result goes to
+   `~/.teyla/policy-proposed.md` and doctor prints the `diff -u` to review it.
 3. `plugin refresh` — Claude Code loads a *copy* of the plugin under `~/.claude/plugins/cache`;
    this brings that copy to the CLI's version, with or without the `claude` binary.
 4. `routine install --if-stale` — rewrites the wrappers only if they name a binary that moved

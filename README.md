@@ -15,7 +15,9 @@ teyla monitor --days 30              # the adoption report, with advice
 ```
 
 After that it keeps itself current: `teyla update` (run daily by the routine, and at session
-start by the plugin hook on machines where launchd is off limits) installs a newer release,
+start by the plugin hook on machines where launchd is off limits) installs a newer published
+release by its commit sha and checks the version it built (`update.pin` freezes it,
+`update.channel=none` stops the routine),
 merges template changes into your `POLICY.md` three-way so your edits survive, refreshes the
 plugin copy Claude Code actually loads, and rewrites the launchd wrappers if the binary moved.
 `teyla doctor` is the checklist; its one-line summary shows at the next session start.
