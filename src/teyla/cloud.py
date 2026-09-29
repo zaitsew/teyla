@@ -3,6 +3,7 @@ a repo, and what the cloud sessions that already ran left behind.
 
     teyla cloud check [<repo>...] [--json]     readiness per repo; exit 1 on any BLOCK
     teyla cloud inbox [--days N] [--json]      cloud branches with no PR + open PRs labelled needs-mac
+    teyla cloud prep <repo> [--dry] [--allow-public] [--fix-gitignore]   write what is missing (cloud_prep.py)
 
 Why this exists (measured 2026-09-29): all three cloud sessions in September left their work
 on a `claude/*` branch — unbuilt, no PR, unmerged — and a local session had to find, build,
@@ -306,13 +307,13 @@ def check_repo(repo, owners: set[str] | None = ..., net: bool = True) -> dict:
     top = [n for n in ("CLAUDE.md", "AGENTS.md", ".claude/CLAUDE.md") if (repo / n).is_file()]
     if not top:
         items.append(_item(BLOCK, "instructions", "no CLAUDE.md or AGENTS.md: a cloud session starts with no instructions",
-                           "write an AGENTS.md with the shipping rules and a CLAUDE.md that imports it (@AGENTS.md)"))
+                           f"teyla cloud prep {repo.name}  (AGENTS.md with the shipping section, CLAUDE.md importing it)"))
     else:
         links = [f"{n} → {os.readlink(repo / n)}" for n in ("CLAUDE.md", "AGENTS.md") if (repo / n).is_symlink()]
         detail = ", ".join(top) + (f" ({', '.join(links)})" if links else "")
         if "CLAUDE.md" not in top and ".claude/CLAUDE.md" not in top:
             items.append(_item(WARN, "instructions", f"{detail}: no CLAUDE.md; Claude Code reads AGENTS.md itself only "
-                               "from 2.1.277 and the cloud VM's version is unverified", "add a CLAUDE.md containing @AGENTS.md"))
+                               "from 2.1.277 and the cloud VM's version is unverified", f"teyla cloud prep {repo.name}  (adds a CLAUDE.md containing @AGENTS.md)"))
         else:
             items.append(_item(OK, "instructions", detail))
 
@@ -329,7 +330,7 @@ def check_repo(repo, owners: set[str] | None = ..., net: bool = True) -> dict:
         why = ("the repo carries its own cloud section, but the pointer still dangles there"
                if has_cloud_section else "those rules do not exist in a cloud VM")
         items.append(_item(lvl, "home-refs", f"{'; '.join(pointers)} defer to a home-directory policy file: {why}{tail}",
-                           "state the rule in the repo (the shipping section), and keep the pointer for local sessions only"))
+                           f"teyla cloud prep {repo.name}  (states the rules in the repo; the pointer can stay for local sessions)"))
     else:
         items.append(_item(OK, "home-refs", f"no instruction defers to a home-directory policy file{tail}"))
 
@@ -337,7 +338,7 @@ def check_repo(repo, owners: set[str] | None = ..., net: bool = True) -> dict:
     ignored = claude_ignored(repo)
     if ignored:
         items.append(_item(BLOCK, "gitignore", f"{', '.join(ignored)} git-ignored: repo settings, hooks and rules cannot be committed",
-                           "ignore only .claude/settings.local.json, .claude/launch.json and .claude/worktrees/ instead of .claude/ wholesale"))
+                           f"teyla cloud prep {repo.name} --fix-gitignore  (ignores only .claude/settings.local.json, launch.json, worktrees/)"))
     else:
         items.append(_item(OK, "gitignore", ".claude/settings.json, rules and hooks can be committed"))
 
@@ -347,9 +348,9 @@ def check_repo(repo, owners: set[str] | None = ..., net: bool = True) -> dict:
         items.append(_item(BLOCK, "shipping", "no cloud definition of done (branch pushed, PR open with the gate's output, "
                            f"`{DONE_STATE_LABEL}` label when a Mac step was skipped)"
                            + (f"; also missing: {', '.join(missing)}" if missing else ""),
-                           "add a shipping section to AGENTS.md: the rules and the cloud done state"))
+                           f"teyla cloud prep {repo.name}  (the Shipping section in AGENTS.md)"))
     elif missing:
-        items.append(_item(WARN, "shipping", f"missing in the repo: {', '.join(missing)}", "add them to the shipping section of AGENTS.md"))
+        items.append(_item(WARN, "shipping", f"missing in the repo: {', '.join(missing)}", f"teyla cloud prep {repo.name}"))
     else:
         items.append(_item(OK, "shipping", "PR per unit, merge-not-squash, no force-push and a done state are in the repo"))
 
@@ -361,7 +362,7 @@ def check_repo(repo, owners: set[str] | None = ..., net: bool = True) -> dict:
         lack = [(e, w) for e, w in (("SessionStart", "orientation"), ("Stop", "landing check")) if e not in events]
         if lack:
             items.append(_item(WARN, "hooks", "no " + " and no ".join(f"{e} hook ({w})" for e, w in lack) + " in .claude/settings.json",
-                               "a SessionStart hook that orients a cloud session, a Stop hook that blocks until the PR is open"))
+                               f"teyla cloud prep {repo.name}  (orientation at start, a Stop hook that blocks until the PR is open)"))
         else:
             items.append(_item(OK, "hooks", "SessionStart and Stop hooks in .claude/settings.json"))
 
@@ -373,10 +374,10 @@ def check_repo(repo, owners: set[str] | None = ..., net: bool = True) -> dict:
         items.append(_item(INFO, "merge-approved", f"not checked: {why}" + (f" (repo says {'/'.join(sorted(have))})" if have else "")))
     elif not have:
         items.append(_item(WARN, "merge-approved", f"no `merge-approved:` line; the owner's list says {want}",
-                           f"add `merge-approved: {want}` to the shipping section"))
+                           f"teyla cloud prep {repo.name}  (writes `merge-approved: {want}`)"))
     elif have != {want}:
         items.append(_item(BLOCK, "merge-approved", f"drift: the repo says {'/'.join(sorted(have))}, the owner's list says {want}",
-                           f"set the line to `merge-approved: {want}`; the owner's list is the source"))
+                           f"teyla cloud prep {repo.name}  (rewrites it to `merge-approved: {want}`; the owner's list is the source)"))
     else:
         items.append(_item(OK, "merge-approved", f"`merge-approved: {want}` matches the owner's list"))
 
@@ -409,7 +410,7 @@ def check_repo(repo, owners: set[str] | None = ..., net: bool = True) -> dict:
         if unlisted:
             items.append(_item(WARN, "secrets", f".env.example names {len(names)} variable(s); {len(unlisted)} not in {SECRETS_MANIFEST}: "
                                + ", ".join(unlisted[:8]) + ("…" if len(unlisted) > 8 else ""),
-                               f"list each name in {SECRETS_MANIFEST} with where it goes (API credentials, env var, or local only)"))
+                               f"teyla cloud prep {repo.name}  (lists each name in {SECRETS_MANIFEST} with where it goes)"))
         else:
             items.append(_item(OK, "secrets", f"all {len(names)} .env.example name(s) are in {SECRETS_MANIFEST}"))
 
@@ -676,6 +677,9 @@ def cmd_cloud(args):
         reports = check_all(args.paths or None, net=not args.no_net)
         print(json.dumps(reports, indent=2) if args.json else render_check(reports))
         return 1 if any(not r["ready"] for r in reports) else 0
+    if args.action == "prep":
+        from . import cloud_prep
+        return cloud_prep.cmd_prep(args)
     if args.action == "inbox":
         box = inbox(days=args.days or 14, repos=[pathlib.Path(p).expanduser() for p in args.paths] if args.paths else None)
         print(json.dumps(box, indent=2) if args.json else render_inbox(box))
@@ -684,10 +688,13 @@ def cmd_cloud(args):
 
 
 def register(sp):
-    q = sp.add_parser("cloud", help="cloud sessions: readiness per repo (check), and what they left behind (inbox)")
+    q = sp.add_parser("cloud", help="cloud sessions: readiness per repo (check), what they left behind (inbox), the files a repo needs (prep)")
     q.set_defaults(fn=cmd_cloud)
-    q.add_argument("action", choices=["check", "inbox"])
+    q.add_argument("action", choices=["check", "inbox", "prep"])
     q.add_argument("paths", nargs="*", help="repos (default: every git repo under code_root)")
     q.add_argument("--json", action="store_true")
     q.add_argument("--days", type=int, help="inbox: how far back to look for cloud commits (default 14)")
     q.add_argument("--no-net", action="store_true", help="check: do not ask gh for the repo's visibility")
+    q.add_argument("--dry", action="store_true", help="prep: print a unified diff of every file, write nothing")
+    q.add_argument("--allow-public", action="store_true", help="prep: write into a public repo (or one whose visibility gh cannot tell)")
+    q.add_argument("--fix-gitignore", action="store_true", help="prep: replace a wholesale `.claude/` ignore with the three narrow lines")

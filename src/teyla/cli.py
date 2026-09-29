@@ -44,6 +44,7 @@
   teyla correct "<what was wrong>"                                a correction into .teyla/corrections.jsonl
   teyla cloud check [repo...] [--json]                            what a cloud session would lack in each repo; exit 1 on a blocker
   teyla cloud inbox [--days N]                                    cloud branches with no PR + open PRs labelled needs-mac
+  teyla cloud prep <repo> [--dry] [--allow-public] [--fix-gitignore]   AGENTS.md shipping section, hooks, rules, setup doc for cloud sessions
 """
 from __future__ import annotations
 

@@ -61,6 +61,7 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | `teyla rule "<sentence>" [--scope <glob>]` · `teyla correct "<what was wrong>"` | what `/teyla:rule` and `/teyla:correct` do, as a CLI every harness's skill can call |
 | `teyla doctor` | what Teyla can see on this machine |
 | `teyla cloud check [repo...] [--json]` | what a cloud session (Claude Code on the web, `claude --cloud`) would lack in each repo — the VM clones the repo and nothing from your home directory: instructions that defer to a home-directory policy file, `.claude/` git-ignored, no shipping rules or cloud done state, no SessionStart/Stop hooks, a `merge-approved:` line missing or drifted from your list, Mac-only gate steps with no printed skip, secret names with no manifest, a public repo. BLOCK/WARN/OK per item, exit 1 on any BLOCK; `teyla doctor` shows `cloud-ready n/N repos` |
+| `teyla cloud prep <repo> [--dry] [--allow-public] [--fix-gitignore]` | writes what a cloud session needs into the repo, between `teyla:cloud` markers: a Shipping section in `AGENTS.md` (+ `@AGENTS.md` in `CLAUDE.md`), SessionStart/Stop hooks in `.claude/settings.json`, `.claude/rules/cloud.md`, `docs/cloud-setup.md`. See [Cloud sessions](#cloud-sessions) |
 | `teyla cloud inbox [--days N]` | what cloud sessions left for a local one: branches with `Claude-Session:` commits and no PR (with the `gh pr create` line), and open PRs labelled `needs-mac` |
 | `teyla storage [--json]` · `teyla storage clean [--apply]` | the disk and RAM agent work holds: every worktree (SAFE = clean, on the remote, idle, no process in it — removed with `git worktree remove`, branch kept), git-ignored build output of idle repos, caches with the command that clears each, booted simulators. Dry run unless `--apply`; `teyla config set storage.auto_clean=true` lets the daily routine do it |
 | `teyla remind add "<what>" <YYYY-MM-DD> [--how "..."]` \| `list` \| `done <n>` | dated to-dos only a human can act on (a key that expires, a trial that ends); `teyla doctor` shows each as OK, then WARN within 30 days, then FIX once overdue |
@@ -185,6 +186,52 @@ itself is five scripts and a runbook in `templates/platform/`.
 
 The method — why this happens, what to build instead from the first commit, what the shared
 platform costs, and what changes at twenty users — is [`docs/PRODUCTIZE.md`](docs/PRODUCTIZE.md).
+
+## Cloud sessions
+
+A cloud session (Claude Code on the web, `claude --cloud`, "Continue in the cloud" from the
+desktop app) runs on a Linux VM that clones the repo and nothing else. Your user `CLAUDE.md`,
+`POLICY.md`, skills, plugins (even ones the repo's settings declare), hooks and memory are not
+there; neither are codex, grok, Xcode or your keys. It does read the repo's `CLAUDE.md`,
+`.claude/rules/`, `.claude/skills/` and `.claude/settings.json` hooks, and it can push only to its
+own branch. Measured here: every cloud run of September 2026 ended on a pushed branch with no
+PR, and a local session had to find, build and merge it the next day.
+
+```bash
+teyla cloud check                     # every repo: what a cloud session would lack; exit 1 on a blocker
+teyla cloud prep ~/repos/app --dry    # the files it would write, as a diff
+teyla cloud prep ~/repos/app          # write them (private repos; --allow-public otherwise), then commit as a PR
+teyla cloud inbox                     # cloud branches with no PR, and PRs labelled needs-mac
+```
+
+`prep` writes plain files, because a cloud VM does not install plugins:
+
+- `AGENTS.md`: a Shipping section (one PR per logical unit, merge-not-squash, no force-push, no
+  Actions on push/PR when your policy says so, report honestly, ask about product decisions not
+  permission) and `merge-approved: yes|no`, derived from your MERGE-APPROVED list. `teyla cloud
+  check` fails when the line drifts from the list.
+- The cloud definition of done: the gate ran and its output is in the PR body, the branch is pushed,
+  a PR is open, and it carries the `needs-mac` label when a Mac-only step was skipped. Second opinion:
+  "same-provider review".
+- `.claude/settings.json`: a SessionStart hook that orients the session (branch, gate, what skips
+  without a Mac) and a Stop hook that sends it back once while work is unpushed or has no PR. Both
+  do nothing unless `CLAUDE_CODE_REMOTE=true`.
+- `docs/cloud-setup.md`: the setup script to paste into the claude.ai environment (uv and the repo's
+  dependencies, no secrets), and each secret name from `.env.example` with where it goes. HTTP API
+  keys go in the environment's API credentials (Pro/Max). Apple `.p8` keys never leave the Mac.
+
+Nothing personal is written: no home-directory paths, no other repo names, no list. The text is
+checked before any write. A repo that is public, or whose visibility `gh` cannot tell, is refused
+unless you pass `--allow-public`.
+
+**Cloud vs local.**
+- **Cloud:** well-specified work whose gate runs on Linux (SQL, Deno, web, Python, docs), parallel spikes,
+  and PR babysitting.
+- **Local, or Remote Control on the laptop:** anything that needs Xcode or a simulator, deploys, TestFlight
+  and App Store releases, launchd routines, cross-provider review with codex/grok, and the final merge of a
+  `needs-mac` PR.
+
+`teyla cloud inbox` and advice A19 are how the local half finds the cloud half's work.
 
 ## The policy
 
