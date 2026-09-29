@@ -25,16 +25,22 @@ PROJECT_FLOOR_USD = 10.0   # a $3 week where one project is 100% is not a findin
 SESSION_USD = 10.0
 
 _TMP_PREFIXES = ("/tmp", "/private/tmp", "/var/folders", "/private/var/folders")
+_EMPTY_SUFFIX = "-grok-empty"
 
 
 def project_of(cwd: str, home: str | None = None) -> str:
     """The name a cwd is grouped under: ~/.worktrees/<repo>/<branch>[/...] and
-    ~/repos/<repo>[/...] are <repo>; a temp directory is "tmp"; anything else under $HOME is its
-    first component (~/ops is "ops"); $HOME itself is "~"; a path outside $HOME stays as it is."""
+    ~/repos/<repo>[/...] are <repo>; a temp directory named <repo>-grok-empty is <repo> (Frank starts
+    its grok children in one, so they read no repo context) and any other temp directory is "tmp";
+    anything else under $HOME is its first component (~/ops is "ops"); $HOME itself is "~"; a path
+    outside $HOME stays as it is."""
     home = (home or os.path.expanduser("~")).rstrip("/")
     c = (cwd or "").rstrip("/")
     temps = _TMP_PREFIXES + (tempfile.gettempdir(),)
     if any(c == t or c.startswith(t + "/") for t in temps):
+        leaf = c.rsplit("/", 1)[-1]
+        if leaf.endswith(_EMPTY_SUFFIX) and len(leaf) > len(_EMPTY_SUFFIX):
+            return leaf[:-len(_EMPTY_SUFFIX)]
         return "tmp"
     if c == home:
         return "~"

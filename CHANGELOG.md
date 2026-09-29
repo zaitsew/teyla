@@ -8,7 +8,7 @@
   ends; `--session ID` does the same for one id. The default is the last 7 days by project,
   `--by session` the top 20, `--json` for either. Ranked by dollars (`costUsdTicks`, 1e10 = $1),
   never raw tokens: cached reads are most of them. Worktrees and `~/repos/<repo>` collapse to
-  `<repo>`, temp directories to `tmp`.
+  `<repo>`, a `<repo>-grok-empty` temp directory to `<repo>`, other temp directories to `tmp`.
 - **Reader.** `adapters/grok.session_costs` sums the usage of every `turn_completed` record in a
   session's `updates.jsonl`, streamed in bytes. It prunes by stat and directory name, opens
   `summary.json` only for sessions in the window, and never touches `chat_history.jsonl`: a week

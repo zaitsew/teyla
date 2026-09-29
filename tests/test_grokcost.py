@@ -52,7 +52,7 @@ def store(tmp_path, monkeypatch):
     _session(root, f"{home}/repos/frank", "aaaa1111-0000", 1, turns=(1.5, 2.5))
     _session(root, f"{home}/.worktrees/frank/lane-a", "aaaa2222-0000", 2, turns=(3.0,))
     _session(root, f"{home}/repos/loco", "bbbb1111-0000", 1, turns=(12.0,), title="big lane")
-    _session(root, "/private/var/folders/x/T/frank-grok-empty", "cccc1111-0000", 3, turns=(0.5,))
+    _session(root, "/private/tmp/claude-501/x/scratchpad/grok-empty", "cccc1111-0000", 3, turns=(0.5,))
     _session(root, f"{home}/repos/frank", "dddd1111-0000", 30, turns=(99.0,))          # outside the week
     _session(root, f"{home}/repos/frank", "eeee1111-0000", 0.1, turns=())             # errored, no usage
     return root
@@ -85,7 +85,8 @@ def test_project_of_collapses_worktrees_repos_and_temp():
     assert p("/Users/me/.worktrees/frank/lane-a/sub") == "frank"
     assert p("/Users/me/repos/frank") == "frank"
     assert p("/Users/me/repos/frank/.claude/worktrees/x") == "frank"
-    assert p("/private/var/folders/x/T/frank-grok-empty") == "tmp"
+    assert p("/private/var/folders/x/T/frank-grok-empty") == "frank"
+    assert p("/private/tmp/claude-501/x/scratchpad/grok-empty") == "tmp"
     assert p("/private/tmp/claude-501/scratch") == "tmp"
     assert p("/Users/me/ops/startup") == "ops"
     assert p("/opt/thing") == "/opt/thing"
