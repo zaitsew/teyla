@@ -72,14 +72,17 @@ def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
                       evidence=f"{m['corrections']} of {m['user_turns']} human turns look like corrections ({cr*100:.1f}%)",
                       action="Run `teyla corrections` to cluster them; every correction that appears twice becomes a rule in .claude/rules/ or AGENTS.md."))
     sk = m.get("skills") or {}
-    if total_sub > 50 and not any(any(w in (k or "") for w in ("review", "codex", "grok")) for k in sk):
+    # Redacted metrics carry the answer precomputed: their skill names are pseudonyms.
+    reviewed = m["review_skill_used"] if "review_skill_used" in m else \
+        any(any(w in (k or "") for w in ("review", "codex", "grok")) for k in sk)
+    if total_sub > 50 and not reviewed:
         F.append(dict(id="A6", severity="medium", title="No cross-provider or pre-merge review skill used",
                       evidence=f"skills invoked: {', '.join(list(sk)[:8]) or 'none'}",
                       action="Run /review before each PR and /codex or /grok review before anything touching money, credentials or other people's data (POLICY.md §2)."))
     wr = m.get("wrong_root") or []
     if wr:
         F.append(dict(id="A7", severity="low", title="Sessions launched from a parent directory",
-                      evidence=f"{len(wr)} sessions with cwd ending in /repos, e.g. {wr[0]['sid']} — transcripts and memory land under the wrong project",
+                      evidence=f"{len(wr)} sessions with cwd ending in /repos, e.g. {wr[0]['project']} {wr[0]['sid']} — transcripts and memory land under the wrong project",
                       action="Launch from the repo root (~/repos/<repo>), never from ~/repos."))
     if policy_status:
         # None means "harness not installed" (see policy.status()) — that is not a finding,
@@ -91,7 +94,9 @@ def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
                           action="Run `teyla policy sync` so Codex, Hermes, Grok and project AGENTS.md read the same POLICY.md."))
     # repeated corrections → rule candidates
     from .monitor import fingerprint
-    norm = Counter(fingerprint(t) for t in m.get("correction_samples") or [])
+    # Redacted metrics have no samples, only their fingerprints: count those instead.
+    norm = Counter(m["correction_fingerprints"]) if "correction_fingerprints" in m else \
+        Counter(fingerprint(t) for t in m.get("correction_samples") or [])
     rep = sorted(((n, fp) for fp, n in norm.items() if n >= 2), reverse=True)
     if rep:
         F.append(dict(id="A9", severity="medium", title="Corrections that repeat verbatim",
@@ -133,8 +138,10 @@ def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
         F.append(dict(id="A19", severity="high", title="Cloud work with no PR",
                       evidence=f"{len(stuck)} cloud branch(es) with commits and no PR after 24 h; oldest shown: "
                                f"{s0['repo']} {s0['branch']} — {s0['commits']} commit(s), last {s0['age_hours']:.0f} h ago",
-                      action=f"Open it: `{_cloud.open_pr_command(s0)}`, then build and review it in a local session; "
-                             "`teyla cloud inbox` lists the rest."))
+                      action=("Run `teyla cloud inbox` for each branch and its `gh pr create` line"
+                              if m.get("redacted") else
+                              f"Open it: `{_cloud.open_pr_command(s0)}`, then build and review it in a local session; "
+                              "`teyla cloud inbox` lists the rest.")))
     try:
         from . import connectors as _c
         cm = m.get("connectors")

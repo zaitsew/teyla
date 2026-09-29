@@ -2,7 +2,7 @@
 
 **A local-first toolkit and method for working with AI agents.** It measures how you actually use Claude Code, Codex, Grok and Hermes, tells you what to change, keeps one policy across all of them, turns repeated work into routines, and makes your corrections stick.
 
-Local-first. Nothing leaves your machine. `--share` produces a redacted report: pseudonymous projects, no session ids, no correction text.
+Local-first. Nothing leaves your machine. `--share` produces a redacted report: pseudonymous projects, connectors and private skills; no session ids, paths or correction text.
 
 ```bash
 uv tool install git+https://github.com/zaitsew/teyla      # or: pipx install git+https://github.com/zaitsew/teyla

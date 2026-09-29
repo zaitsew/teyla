@@ -365,3 +365,12 @@ def test_inbox_lists_needs_mac_prs(tmp_path, monkeypatch):
     box = cloud.inbox(days=None, repos=[r], gh=True)
     assert box["no_pr"] == []  # it has a PR now
     assert "acme/app#7" in cloud.render_inbox(box)
+
+
+def test_a19_under_share_names_no_branch(tmp_path):
+    s = {"repo": "app", "slug": "acme/app", "branch": "claude/x", "session": "session_X", "commits": 1, "landed": False,
+         "pr": "none", "age_hours": 30, "first": "2026-09-20", "last": "2026-09-20"}
+    m = monitor.redact(dict(monitor.metrics([], None), cloud_sessions=[s]))
+    f = next(f for f in advise_mod.advise(m) if f["id"] == "A19")
+    text = json.dumps(f)
+    assert "claude/x" not in text and "acme" not in text and "teyla cloud inbox" in f["action"]
