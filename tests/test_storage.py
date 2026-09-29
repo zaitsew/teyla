@@ -615,3 +615,16 @@ def test_remote_patch_ids_are_computed_once_per_repository(tmp_path, monkeypatch
     assert first == again and calls == ["log"]
     storage._remote_patch_ids(str(main), plain, 500)             # an earlier one is not
     assert calls == ["log", "log"]
+
+
+def test_remote_patch_ids_cache_misses_once_a_remote_ref_moves(tmp_path):
+    # Codex review P1: a remote branch deleted between the scan and the pre-removal re-check
+    # must not be answered from the cache.
+    code_root, main, _ = _make_repo(tmp_path)
+    storage._REMOTE_PATCH_IDS.clear()
+    plain = ["--format=commit %H"]
+    storage._remote_patch_ids(str(main), plain, 1000)
+    (main / "extra.txt").write_text("x\n")
+    _git(main, "add", "extra.txt"); _git(main, "commit", "-m", "extra"); _git(main, "push")
+    storage._remote_patch_ids(str(main), plain, 1000)
+    assert len(storage._REMOTE_PATCH_IDS) == 2

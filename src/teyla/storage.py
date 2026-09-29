@@ -224,13 +224,17 @@ def _patch_ids(path: str, args: list[str], stdin: str | None = None) -> set[str]
 # Every worktree of one repository shares its remote branches: `git log -p --remotes` over a
 # month of history is the expensive half of reflog_only_commits (200 s of a 240 s doctor run on
 # a machine with 38 worktrees), and it is the same answer for each of them. Keyed by the common
-# git dir; a result computed from an earlier `since` covers a later one.
-_REMOTE_PATCH_IDS: dict[str, tuple[int, set[str]]] = {}
+# git dir and by every remote-tracking ref's tip, so a ref deleted or force-pushed between the
+# scan and the re-check right before removal is a miss, never a stale answer. A result computed
+# from an earlier `since` covers a later one.
+_REMOTE_PATCH_IDS: dict[tuple[str, str], tuple[int, set[str]]] = {}
 
 
 def _remote_patch_ids(path: str, plain: list[str], since: int) -> set[str] | None:
     rc, common = _git(path, "rev-parse", "--git-common-dir")
-    key = os.path.realpath(os.path.join(path, common.strip())) if rc == 0 and common.strip() else None
+    rc2, tips = _git(path, "for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes")
+    key = ((os.path.realpath(os.path.join(path, common.strip())), tips)
+           if rc == 0 and rc2 == 0 and common.strip() else None)
     hit = _REMOTE_PATCH_IDS.get(key) if key else None
     if hit and hit[0] <= since:
         return hit[1]
