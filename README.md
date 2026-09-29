@@ -38,8 +38,9 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 
 | command | what you get |
 |---|---|
-| `teyla monitor [--days N] [--json]` | tokens by model and project, API-equivalent cost, orchestrator-tier share, subagent model mix, correction rate, cache-read ratio, giant sessions, governance-file edits, model ladder/price drift — plus advice A1–A11 |
+| `teyla monitor [--days N] [--json]` | tokens by model and project, API-equivalent cost, orchestrator-tier share, subagent model mix, correction rate, cache-read ratio, giant sessions, governance-file edits, model ladder/price drift — plus advice A1–A14 |
 | `teyla advise` | just the findings, each with the number that triggered it and one action |
+| `teyla grok-cost [--last\|--session ID] [--cwd PATH] [--days N] [--by project\|session] [--json]` | what Grok CLI sessions cost at list price, ranked by dollars not tokens. `--last --cwd <repo>` is the one line an orchestrator reads when a `grok -p` lane ends (cost, calls, tokens, cached %, tools, context, effort, title); the default is the last 7 days by project (worktrees and `~/repos/<repo>` collapse to `<repo>`, temp dirs to `tmp`); `--by session` is the top 20. `teyla monitor`/`advise` add A13/A14 |
 | `teyla sessions` / `teyla corrections --cluster` | one line per session; correction-shaped turns clustered into rule candidates |
 | `teyla policy init [--claude-md --ops-root-init]\|status\|sync\|sync-repo` | `~/.agents/POLICY.md` imported by `~/.claude/CLAUDE.md`, symlinked as `~/.codex/AGENTS.md` and `~/.grok/AGENTS.md`, appended to Hermes `SOUL.md`; `AGENTS.md ⇄ CLAUDE.md` in repos |
 | `teyla harvest <path>` | tool spines and corrections from every session that touched a path — the input to the harvest skill (skill = what was done the same way every time; everything else = candidate rules) |
@@ -77,6 +78,8 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | A9 | the same correction shape twice (fingerprints, no text in the report) | write the rule |
 | A10 | a session wrote to `~/.claude/CLAUDE.md` | diff it; the governance file is the human's |
 | A11 | `teyla models` finds ladder/price drift | `teyla models --write-policy` |
+| A13 | one project is over half of the week's Grok list-price cost (and the week is over $10) | `teyla grok-cost --by session --cwd <path>`; split or cap the loop |
+| A14 | one Grok session cost over $10 | `teyla grok-cost --session <id>`; end long lanes at a merge |
 
 Prices in `pricing.py` are a table you edit, or `~/.teyla/prices.json` (`teyla models --write-prices`) which overrides it when present. Cost is labelled "API-equivalent" because you may be on a subscription.
 

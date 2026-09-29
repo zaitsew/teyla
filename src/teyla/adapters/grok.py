@@ -18,18 +18,22 @@ directly under the sessions root, named by a hash rather than an encoded path, a
 `.cwd` file instead of leaning on its parent directory's name for the cwd. Both layouts are
 handled here; a `.cwd` file, when present, always wins over a name-derived guess.
 
-Grok does not expose per-message input/output token counts anywhere in these files (checked
-summary.json, signals.json and chat_history.jsonl — none of them carry a usage block), so
-`usage` is left empty rather than guessing from `contextTokensUsed` (a context-window snapshot,
-not cumulative spend). Tool-call names come from `chat_history.jsonl`'s assistant `tool_calls`,
+Token counts and cost are not in summary.json, signals.json or chat_history.jsonl, so
+`Session.usage` is left empty rather than guessing from `contextTokensUsed` (a context-window
+snapshot, not cumulative spend). They are in updates.jsonl: every `turn_completed` record carries
+`params.update.usage` (inputTokens, cachedReadTokens, outputTokens, modelCalls, costUsdTicks, ...).
+`session_costs()` below reads those, on a fast path of its own — it never opens chat_history.jsonl
+or walks the directory — and `teyla grok-cost` reports from it. Tool-call names come from `chat_history.jsonl`'s assistant `tool_calls`,
 which is the only place they're broken out by name.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import re
 import urllib.parse
+from typing import Iterator
 
 from . import CORRECTION_RE, AgentCall, Session, Turn, stale
 
@@ -269,3 +273,180 @@ def _is_batch(subpath: str, signals: dict, n_prompts: int) -> bool:
     if m:
         return m.group(1) == b"true"
     return max(n_prompts, signals.get("userMessageCount") or 0) <= 1
+
+
+# ---------------------------------------------------------------------------
+# Cost: what a session (or a week of them) billed at list price
+# ---------------------------------------------------------------------------
+
+TICKS_PER_USD = 1e10  # costUsdTicks; checked against grok's own total_cost_usd
+
+_TURN_DONE = b'"turn_completed"'
+_TURN_USAGE = b'"usage"'
+
+
+@dataclasses.dataclass
+class SessionCost:
+    sid: str
+    path: str
+    cwd: str
+    created: str            # summary.json created_at, ISO-8601
+    title: str = ""
+    model: str = ""
+    effort: str = ""
+    usd: float = 0.0        # list price, from costUsdTicks
+    calls: int = 0          # model calls
+    turns: int = 0          # turn_completed records that carried usage
+    input: int = 0          # inputTokens as grok reports it (cached reads included)
+    cached: int = 0
+    output: int = 0
+    reasoning: int = 0
+    tool_calls: int = 0
+    context: int = 0        # contextTokensUsed: the context window at the end of the session
+    compactions: int = 0
+    prs: int = 0
+
+    @property
+    def cached_pct(self) -> float:
+        return min(100.0, 100.0 * self.cached / self.input) if self.input else 0.0
+
+    @property
+    def day(self) -> str:
+        return self.created[:10]
+
+    def to_dict(self) -> dict:
+        d = dataclasses.asdict(self)
+        d["cached_pct"] = round(self.cached_pct, 1)
+        d["usd"] = round(self.usd, 4)
+        return d
+
+
+def read_usage(subpath: str) -> dict:
+    """Sum the `usage` of every `turn_completed` record in a session's updates.jsonl. Streamed in
+    bytes: a long session's file is megabytes of streamed chunks, and the two byte-string tests
+    keep json.loads for the few lines that carry a total. A turn that ended in an API error has no
+    usage block and adds nothing. Only the top-level block is summed — `modelUsage` inside it
+    repeats the same numbers per model."""
+    tot = dict(ticks=0, calls=0, turns=0, input=0, cached=0, output=0, reasoning=0)
+    try:
+        fh = open(os.path.join(subpath, "updates.jsonl"), "rb")
+    except OSError:
+        return tot
+    with fh:
+        for line in fh:
+            if _TURN_DONE not in line or _TURN_USAGE not in line:
+                continue
+            try:
+                u = json.loads(line)["params"]["update"]["usage"]
+            except Exception:
+                continue
+            if not isinstance(u, dict):
+                continue
+            tot["turns"] += 1
+            tot["ticks"] += u.get("costUsdTicks") or 0
+            tot["calls"] += u.get("modelCalls") or 0
+            tot["input"] += u.get("inputTokens") or 0
+            tot["cached"] += u.get("cachedReadTokens") or 0
+            tot["output"] += u.get("outputTokens") or 0
+            tot["reasoning"] += u.get("reasoningTokens") or 0
+    return tot
+
+
+def cwd_under(cwd: str, base: str) -> bool:
+    """`cwd` is `base` or a path below it."""
+    base = base.rstrip("/") or "/"
+    return cwd.rstrip("/") == base or cwd.startswith(base.rstrip("/") + "/")
+
+
+def _candidates(root: str, since: float | None, cwd: str | None, sid_prefix: str | None) -> Iterator[tuple]:
+    """(path, sid, cwd guess, summary mtime) for each session directory that might match. The
+    filters here are stats and names only: in a store of fourteen thousand sessions the week you
+    want is a few hundred, and a summary.json is opened only for those."""
+    if not os.path.isdir(root):
+        raise FileNotFoundError(root)
+    for entry in os.listdir(root):
+        ep = os.path.join(root, entry)
+        if not os.path.isdir(ep):
+            continue
+        if _is_session_dir(ep):  # newer layout: a session directly under the root
+            guess = _cwd_from_dotfile(ep) or urllib.parse.unquote(entry)
+            if sid_prefix and not entry.startswith(sid_prefix):
+                continue
+            yield ep, entry, guess, _mtime(os.path.join(ep, "summary.json"))
+            continue
+        guess = urllib.parse.unquote(entry)
+        if cwd and not cwd_under(guess, cwd):
+            continue
+        if since is not None and not sid_prefix and stale(_mtime(ep), since):
+            continue
+        try:
+            subs = os.listdir(ep)
+        except OSError:
+            continue
+        for sub in subs:
+            if sid_prefix and not sub.startswith(sid_prefix):
+                continue
+            sp = os.path.join(ep, sub)
+            if not os.path.isdir(sp):
+                continue
+            mt = _mtime(os.path.join(sp, "summary.json"))
+            if since is not None and not sid_prefix and stale(mt, since):
+                continue
+            yield sp, sub, _cwd_from_dotfile(sp) or guess, mt
+
+
+def _mtime(path: str) -> float:
+    try:
+        return os.stat(path).st_mtime
+    except OSError:
+        return 0.0
+
+
+def _cost_of(path: str, sid: str, cwd_guess: str) -> SessionCost | None:
+    summary = _load_json(os.path.join(path, "summary.json"))
+    created = summary.get("created_at")
+    if not isinstance(created, str):
+        return None
+    signals = _load_json(os.path.join(path, "signals.json"))
+    u = read_usage(path)
+    return SessionCost(
+        sid=sid, path=path, cwd=(summary.get("info") or {}).get("cwd") or cwd_guess, created=created,
+        title=(summary.get("generated_title") or summary.get("session_summary") or "").strip(),
+        model=summary.get("current_model_id") or signals.get("primaryModelId") or "",
+        effort=summary.get("reasoning_effort") or "",
+        usd=u["ticks"] / TICKS_PER_USD, calls=u["calls"], turns=u["turns"], input=u["input"],
+        cached=u["cached"], output=u["output"], reasoning=u["reasoning"],
+        tool_calls=signals.get("toolCallCount") or 0, context=signals.get("contextTokensUsed") or 0,
+        compactions=signals.get("compactionCount") or 0, prs=signals.get("prCreatedCount") or 0)
+
+
+def session_costs(root: str | None = None, since: float | None = None, cwd: str | None = None,
+                  session: str | None = None, last: bool = False) -> list[SessionCost]:
+    """Cost rows for sessions created at or after `since` (a POSIX timestamp), under `cwd`, or whose
+    id starts with `session`. With `last`, only the most recently written session that matches.
+    Sessions that never billed (an API error, a probe) are returned with zero cost; callers that
+    aggregate skip them."""
+    cands = _candidates(root or DEFAULT_ROOT, since, cwd, session)
+    if last:
+        cands = sorted(cands, key=lambda c: -c[3])
+    out = []
+    for path, sid, guess, _mt in cands:
+        c = _cost_of(path, sid, guess)
+        if c is None:
+            continue
+        if since is not None and _epoch(c.created) < since:
+            continue
+        if cwd and not cwd_under(c.cwd, cwd):
+            continue
+        out.append(c)
+        if last:
+            break
+    return out
+
+
+def _epoch(iso: str) -> float:
+    import datetime as _dt
+    try:
+        return _dt.datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
