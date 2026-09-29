@@ -154,8 +154,8 @@ def redact(m: dict) -> dict:
     reads is what the report prints.
 
     - projects become p01..pNN (ordered by output tokens); session ids and cwd paths are dropped
-    - MCP connectors (server ids and display names) become c01..cNN, in the connector table
-      and in `mcp__<server>__<tool>` tool names; the tool verb after the server stays
+    - MCP connectors (server ids and display names) become c01..cNN and their tool verbs
+      t01..tNN (per connector), in the connector table and in `mcp__<server>__<tool>` names
     - skills become s01..sNN, except PUBLIC_SKILLS
     - correction text is dropped; only its irreversible fingerprints stay
     Model names and built-in tool names stay: they are the vocabulary the advice is written in."""
@@ -200,13 +200,28 @@ def redact(m: dict) -> dict:
         if parsed and parsed[0] not in calls:
             calls[parsed[0]] = 0
     calias = _ranked_alias(calls, "c")
+    # Tool verbs too, per connector: an MCP server's verbs often carry its own name
+    # (`acme_get_trip`, `acme_whoami`), so a kept verb names the connector its alias hides.
+    # The advice needs none of them — C1–C4 read counts and shares computed before this point.
+    verbs = defaultdict(Counter)
+    for name, n in (m.get("tools") or {}).items():
+        parsed = _c.parse_mcp_tool(name or "")
+        if parsed:
+            verbs[parsed[0]][parsed[1]] += n
+    for s, c in (cm.get("connectors") or {}).items():
+        for t, n in list(c.get("top_tools") or []) + list(c.get("rediscovery_top") or []):
+            verbs[s][t] = max(verbs[s][t], n)
+    valias = {s: _ranked_alias(v, "t") for s, v in verbs.items()}
     if cm:
-        cm["connectors"] = {calias[s]: dict(c, display=calias[s]) for s, c in (cm.get("connectors") or {}).items()}
+        cm["connectors"] = {calias[s]: dict(c, display=calias[s],
+                                            top_tools=[(valias[s][t], n) for t, n in c.get("top_tools") or []],
+                                            rediscovery_top=[(valias[s][t], n) for t, n in c.get("rediscovery_top") or []])
+                            for s, c in (cm.get("connectors") or {}).items()}
         cm["names"] = {}
     tools = Counter()
     for name, n in (r.get("tools") or {}).items():
         parsed = _c.parse_mcp_tool(name or "")
-        tools[f"mcp__{calias[parsed[0]]}__{parsed[1]}" if parsed else name] += n
+        tools[f"mcp__{calias[parsed[0]]}__{valias[parsed[0]][parsed[1]]}" if parsed else name] += n
     r["tools"] = dict(tools)
 
     skills = {str(k): v for k, v in (m.get("skills") or {}).items()}

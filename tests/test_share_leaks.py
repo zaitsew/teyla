@@ -18,6 +18,7 @@ import datetime as dt
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -34,6 +35,8 @@ CONNECTOR_ID = "7eadbeef-1234-4abc-8def-0123456789ab"  # a claude.ai connector's
 CONNECTOR_NAME = "ZqConnectorName"
 CONNECTOR_URL = "https://zqconnector.example/mcp"
 STDIO_SERVER = "zqinternalserver"            # a non-uuid MCP server id: readable, so internal
+# MCP verbs often carry the server's own name, and can carry a project's: both must go too
+VERBS = ["zqverbserver_get_thing", "zqverbserver_whoami", "open_zqprojslug_board"]
 SKILL = "zqsecretskill"
 PROXY_USER, PROXY_PASS, PROXY_HOST = "zqproxyuser", "zqproxypass", "zqproxyhost.example"
 PROXY = f"http://{PROXY_USER}:{PROXY_PASS}@{PROXY_HOST}:3128"
@@ -48,7 +51,7 @@ GROK_SID = "zqsid003-0000"
 
 CANARIES = [
     SLUG, "zqprojslug", SID, SID[:8], SID_ROOT, SID_ROOT[:8], CWD, CWD_ROOT, "zqcwdcanary",
-    CONNECTOR_ID, CONNECTOR_ID[:8], CONNECTOR_NAME, CONNECTOR_URL, STDIO_SERVER, SKILL,
+    CONNECTOR_ID, CONNECTOR_ID[:8], CONNECTOR_NAME, CONNECTOR_URL, STDIO_SERVER, SKILL, "zqverbserver", *VERBS,
     PROXY, PROXY_USER, PROXY_PASS, PROXY_HOST, CA_BUNDLE, "zqcacerts", REMINDER, "zqreminder",
     REMINDER_HOW, CORRECTION, "zqcorrection", TITLE, FIRST_PROMPT, "zqhomeuser", "zqcoderoot",
     GROK_SID, GROK_SID[:8], "zqgrokproj", "zqgroktitle",
@@ -107,7 +110,7 @@ def build_machine(root: pathlib.Path) -> dict:
         _user(3, CORRECTION),
         _user(3, CORRECTION),  # said twice: advice A9 (a repeating correction) fires
         # thirty calls to the stdio server inside one human turn: advice C1 names it
-        _assistant(4, [_tool_use(f"s{i}", f"mcp__{STDIO_SERVER}__create_page", {"t": "zq"}) for i in range(30)]),
+        _assistant(4, [_tool_use(f"s{i}", f"mcp__{STDIO_SERVER}__{VERBS[i % 3]}", {"t": "zq"}) for i in range(30)]),
         _user(5, [_tool_result(f"s{i}") for i in range(30)]),
     ] + [{"type": "system", "subtype": "compact_boundary", "timestamp": _ts(6 + i)} for i in range(3)] + [
         _user(10, "and again, do it the other way"),
@@ -199,6 +202,7 @@ def machine(tmp_path_factory):
     env = build_machine(root)
     out = {
         "raw": _teyla(env, "monitor"),
+        "raw_json": _teyla(env, "monitor", "--json"),
         "share": _teyla(env, "monitor", "--share"),
         "share_json": _teyla(env, "monitor", "--share", "--json"),
         "share_samples": _teyla(env, "monitor", "--share", "--samples"),
@@ -215,6 +219,8 @@ def test_fixture_is_real_the_unredacted_report_shows_the_canaries(machine):
     raw = machine["raw"]
     for c in ("zqprojslug", SID[:8], CONNECTOR_NAME, STDIO_SERVER, SKILL):
         assert c in raw, f"fixture broken: {c!r} not even in the unredacted report"
+    for c in VERBS:  # tool names are in the JSON only
+        assert c in machine["raw_json"], f"fixture broken: {c!r} not even in the unredacted JSON"
     for fid in ("A3", "A7", "A9", "A10", "A13", "A14", "C1", "C4"):
         assert f"] {fid} " in raw, f"fixture does not trigger {fid}"
     assert "zqgrokproj" in raw
@@ -247,7 +253,10 @@ def test_share_json_findings_evidence_carries_only_pseudonyms(machine):
     assert "—" in ev["A7"] and "—" in ev["A10"]
     assert ev["C4"].startswith("c0") and ev["C1"].startswith("c0")
     assert data["metrics"]["connectors"]["names"] == {}
-    assert all(k.startswith("mcp__c0") for k in data["metrics"]["tools"] if k.startswith("mcp__"))
+    mcp = [k for k in data["metrics"]["tools"] if k.startswith("mcp__")]
+    assert mcp and all(re.fullmatch(r"mcp__c\d\d__t\d\d", k) for k in mcp), mcp
+    for c in data["metrics"]["connectors"]["connectors"].values():
+        assert all(re.fullmatch(r"t\d\d", t) for t, _ in c["top_tools"] + c["rediscovery_top"])
 
 
 def test_feedback_doctor_keeps_level_and_name_but_withholds_machine_detail(machine):

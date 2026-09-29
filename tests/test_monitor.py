@@ -277,7 +277,8 @@ def test_redact_gives_one_connector_one_alias_across_tools_and_table():
     r = redact(metrics([s]))
     assert set(r["connectors"]["connectors"]) == {"c01", "c02"}
     assert r["connectors"]["connectors"]["c01"]["calls"] == 5 and r["connectors"]["connectors"]["c01"]["display"] == "c01"
-    assert r["tools"]["mcp__c01__search_issues"] == 5 and r["tools"]["mcp__c02__get_page"] == 1
+    assert r["tools"]["mcp__c01__t01"] == 5 and r["tools"]["mcp__c02__t01"] == 1
+    assert r["connectors"]["connectors"]["c01"]["top_tools"] == [("t01", 5)]
     assert "acme" not in json.dumps(r)
 
 
