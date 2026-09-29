@@ -3,10 +3,6 @@
 # might not notice mid-turn. Deliberately coarse — it is a broad net over
 # obvious correction phrasing, not a classifier, and it errs toward capturing.
 #
-# UserPromptSubmit: cheap correction-word heuristic, catching what the model
-# might not notice mid-turn. Deliberately coarse — it is a broad net over
-# obvious correction phrasing, not a classifier, and it errs toward capturing.
-#
 # Not every prompt is the human typing. Claude Code fires this hook for turns it
 # injects itself — a `<task-notification>` when a background subagent finishes, a
 # `<system-reminder>`, a `[SYSTEM NOTIFICATION …]`, a slash-command expansion, an
@@ -15,13 +11,17 @@
 # with the same list `teyla monitor` uses (`is_noise_turn` in src/teyla/adapters).
 #
 # One script for every harness. `teyla harness sync` copies it to ~/.teyla/hooks/ and
-# wires it as Cursor's beforeSubmitPrompt, Grok's UserPromptSubmit and Hermes's
-# pre_llm_call shell hook, so the prompt arrives under different keys: Claude Code
-# and Cursor send `prompt`, Grok `prompt` in a camelCase envelope with `workspaceRoot`,
-# Hermes `extra.user_message`. Grok also loads ~/.cursor/hooks.json, so the same
-# prompt can arrive twice — a record equal to the last one within ten seconds is
-# not written again.
+# wires it as Cursor's beforeSubmitPrompt, Codex's and Grok's UserPromptSubmit and
+# Hermes's pre_llm_call shell hook, so the prompt arrives under different keys: Claude
+# Code, Codex and Cursor send `prompt`, Grok `prompt` in a camelCase envelope with
+# `workspaceRoot`, Hermes `extra.user_message`. Grok also loads ~/.cursor/hooks.json, so
+# the same prompt can arrive twice — a record equal to the last one within ten seconds
+# is not written again.
 #
+# Codex fires UserPromptSubmit for `codex exec` too, whose prompt a script or another
+# agent wrote (a review brief full of "don't"). Its payload names `transcript_path`, and
+# that rollout's first record says `"originator":"codex_exec"` (Codex 0.158.0-alpha.2.1,
+# 2026-09-29) — the same test the monitor's Codex adapter uses to call a session batch.
 #
 # Silent by construction: UserPromptSubmit stdout is injected into the model's
 # context, so this hook never writes to stdout, match or no match. It also
@@ -59,6 +59,16 @@ if head.startswith(("[SYSTEM NOTIFICATION", "[Request interrupted",
     sys.exit(0)
 if head.startswith("<") and any(tag in head[:60] for tag in HARNESS_TAGS):
     sys.exit(0)
+
+# A `codex exec` batch run: a script wrote this prompt, not a person.
+tp = data.get("transcript_path")
+if isinstance(tp, str) and tp:
+    try:
+        with open(tp, "rb") as fh:
+            if re.search(rb"\x22originator\x22\s*:\s*\x22codex_exec\x22", fh.read(8192)):
+                sys.exit(0)
+    except OSError:
+        pass
 
 cwd = data.get("cwd") or data.get("workspaceRoot") or data.get("workspace_root") or os.getcwd()
 
