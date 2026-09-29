@@ -582,6 +582,33 @@ def doctor_checks(sessions_by_harness: dict | None = None, home: pathlib.Path | 
     return [{"level": r["level"], "name": f"health:{r['harness']}", "detail": r["detail"], "fix": r["fix"]} for r in rows]
 
 
+def window_errors(days: int, home: pathlib.Path | None = None) -> list[dict]:
+    """For advice A18: each installed harness whose own records hold a quota/balance or auth
+    error in the last `days` days (or whose Codex rate limit is reached), and whether it is still
+    failing — no call succeeded after it."""
+    since = time.time() - days * 86400
+    out = []
+    for name in NAMES:
+        hdir = _home(name, home)
+        if not hdir.is_dir():
+            continue
+        try:
+            e = ERRORS[name](hdir, since)
+        except Exception:  # noqa: BLE001 — advice must never take the report down
+            continue
+        err, ok = e.get("error"), e.get("last_ok")
+        lim = e.get("limits") or {}
+        if lim.get("rate_limit_reached_type") and (err is None or err["kind"] not in ("quota", "auth")):
+            err = _err(lim.get("at"), "quota", f"usage limit reached ({lim['rate_limit_reached_type']})", "rate_limits")
+            ok = None
+        if not err or err["kind"] not in ("quota", "auth") or err.get("ts") is None:
+            continue
+        out.append(dict(harness=_short(name), kind=err["kind"], day=f"{err['ts']:%Y-%m-%d}", message=err["message"],
+                        count=err.get("count", 1), still_failing=not (ok and ok > err["ts"]),
+                        fix=_fix_for(name, err, None)))
+    return out
+
+
 # --- live ---------------------------------------------------------------------------------------
 
 def policy_marker(policy_path: pathlib.Path | None = None) -> str | None:

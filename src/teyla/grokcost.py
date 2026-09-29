@@ -169,12 +169,17 @@ def _one(c: grok.SessionCost, as_json: bool) -> int:
 
 # ---- the finding `teyla monitor` / `teyla advise` show -------------------------------------
 
-def week(days: int = 7, root: str | None = None) -> dict | None:
-    """The numbers advise() needs, or None when Grok is not on this machine or billed nothing."""
-    try:
-        rows = grok.session_costs(root=root, since=since_epoch(days))
-    except FileNotFoundError:
-        return None
+def week(days: int = 7, root: str | None = None, rows: list | None = None) -> dict | None:
+    """The numbers advise() needs, or None when Grok is not on this machine or billed nothing.
+    `rows` reuses cost rows already read for a longer window (the monitor's headless section)."""
+    if rows is not None:
+        since = since_epoch(days)
+        rows = [c for c in rows if grok._epoch(c.created) >= since]
+    else:
+        try:
+            rows = grok.session_costs(root=root, since=since_epoch(days))
+        except FileNotFoundError:
+            return None
     projects = by_project(rows)
     if not projects:
         return None

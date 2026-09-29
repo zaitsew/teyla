@@ -121,6 +121,29 @@ def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
         F.append(dict(id="A11", severity="medium", title="Model ladder drift",
                       evidence=", ".join(f"{k}×{n}" for k, n in kinds.most_common()),
                       action="Run `teyla models --write-policy` to refresh the ladder in ~/.agents/POLICY.md from the current catalogues and credentials."))
+    # A17: headless volume one project drives through one harness (monitor.headless). Named, so
+    # the loop that burnt a balance is found before the balance is gone, not after.
+    from .monitor import HEADLESS_PER_DAY
+    hot = [r for r in m.get("headless") or [] if r["per_day_7d"] > HEADLESS_PER_DAY or r.get("doubled")]
+    for r in hot[:3]:
+        cost = f", ${r['usd']:,.0f} {r['cost_note']}" if r["usd"] else f" ({r['cost_note']})"
+        why = (f"{r['per_day_7d']:g} headless calls/day over the last 7 days" if r["per_day_7d"] > HEADLESS_PER_DAY
+               else f"{r['calls_7d']} headless calls this week, {r['calls_prev_7d']} the week before")
+        F.append(dict(id="A17", severity="high" if r["per_day_7d"] > HEADLESS_PER_DAY and r.get("doubled") else "medium",
+                      title=f"{r['project']} drives {r['harness']} headless volume",
+                      evidence=f"{r['project']} → {r['harness']}: {why}; {r['calls']} in {r['window_days']} days{cost}",
+                      action=f"Check that {r['project']}'s routine means to call {r['harness']} this often: cap it, "
+                             "batch several items per call, or move it to a cheaper provider "
+                             f"({'`teyla grok-cost --by session --cwd <path>`' if r['harness'] == 'grok' else '`teyla sessions --project ' + r['project'] + '`'})."))
+    # A18: a harness answered quota/balance or auth errors (health.window_errors). Still failing
+    # is [high]: every routine on that harness is producing nothing.
+    for e in m.get("harness_errors") or []:
+        F.append(dict(id="A18", severity="high" if e["still_failing"] else "medium",
+                      title=f"{e['harness']} returned {'quota/balance' if e['kind'] == 'quota' else 'auth'} errors"
+                            + ("" if e["still_failing"] else " (recovered)"),
+                      evidence=f"last {e['day']}" + (f", ×{e['count']}" if e.get("count", 1) > 1 else "")
+                               + f": {e['message'][:140]}" + ("" if e["still_failing"] else " — later calls succeeded"),
+                      action=f"{e['fix']}; `teyla harness verify` shows every harness's state."))
     try:
         from . import connectors as _c
         cm = m.get("connectors")

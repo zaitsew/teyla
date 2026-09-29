@@ -40,6 +40,7 @@
   teyla plugin uninstall <name>                                   reverse it
   teyla plugin refresh [--force]                                  bring the installed plugin copy to this package's version
   teyla harness status|sync [--dry]                               the same skills, hooks and policy in Cursor, Codex, Grok, Hermes
+  teyla harness verify [--live] [--timeout S] [--json]           can each harness do work now; --live sends one line through each
   teyla rule "<sentence>" [--scope <glob>]                        a rule into .claude/rules/, mirrored into AGENTS.md
   teyla correct "<what was wrong>"                                a correction into .teyla/corrections.jsonl
 """
@@ -67,14 +68,43 @@ def _sessions(args):
     return ss
 
 
-def _grok_week():
+def _grok_week(rows=None):
     """This week's Grok cost, for A13/A14. Not part of metrics(): it reads updates.jsonl of the
     week's sessions, and the report window (--days) is not the week."""
     from . import grokcost
     try:
-        return grokcost.week()
+        return grokcost.week(rows=rows)
     except Exception:  # noqa: BLE001 — advisory only
         return None
+
+
+def _grok_rows(days):
+    """Grok list-price cost rows for the headless section's window (≤ 29 days), or None."""
+    from .adapters import grok
+    try:
+        return grok.session_costs(since=since_epoch(min(days or 29, 29)))
+    except Exception:  # noqa: BLE001 — advisory only
+        return None
+
+
+def _harness_errors(days):
+    """Quota/balance/auth errors each installed harness recorded in the window (A18)."""
+    from . import health
+    try:
+        return health.window_errors(days or 29)
+    except Exception:  # noqa: BLE001 — advisory only
+        return []
+
+
+def _extras(m, sessions, days):
+    """What monitor and advise add to metrics(): Grok's cost in the headless rows and this week's
+    Grok cost (one read of Grok's usage serves both), and the harness errors."""
+    from .monitor import headless
+    rows = _grok_rows(days)
+    if rows is not None:
+        m["headless"] = headless(sessions, days, grok_rows=rows)
+    m["grok_week"] = _grok_week(rows if (days or 29) >= 7 else None)
+    m["harness_errors"] = _harness_errors(days)
 
 
 def cmd_monitor(args):
@@ -82,7 +112,7 @@ def cmd_monitor(args):
     from .monitor import redact
     ss = _sessions(args)
     m = metrics(ss, args.days)
-    m["grok_week"] = _grok_week()
+    _extras(m, ss, args.days)
     F = advise(m, policy.status())
     if args.share:
         m = redact(m); args.samples = False
@@ -95,8 +125,9 @@ def cmd_monitor(args):
 
 def cmd_advise(args):
     from . import policy
-    m = metrics(_sessions(args), args.days)
-    m["grok_week"] = _grok_week()
+    ss = _sessions(args)
+    m = metrics(ss, args.days)
+    _extras(m, ss, args.days)
     for f in advise(m, policy.status()):
         print(f"[{f['severity']}] {f['id']} {f['title']}\n    {f['evidence']}\n    → {f['action']}")
 
