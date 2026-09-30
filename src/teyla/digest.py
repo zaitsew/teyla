@@ -174,14 +174,30 @@ def banner(items_text: str, seen_text: str | None) -> str:
 _COMMAND_RE = re.compile(r"^(?:teyla|git|gh|uv|pipx|brew|chmod|bash|sh|launchctl|claude|codex|grok|~/|/|\./)(?:\s|$|/)")
 
 
+# A command that acknowledges or accepts something is never pasteable on its own: the advice
+# says when (after the diff shows the edit is yours), and a digest line drops the "when".
+_ACK_RE = re.compile(r"^teyla\s+policy\s+ack\b")
+_CONDITION_RE = re.compile(r"\b(?:if|unless|when|whenever|once|after|only|provided)\b", re.I)
+
+
 def _step_of_advice(action: str) -> tuple[str, bool]:
     """(step, is_command): the first `backticked` span of an advice action that is a command
     (A16's `on:` is a YAML key, not one); without one the action is prose — its first sentence,
-    backticks dropped, never dressed up as something to paste."""
-    for span in re.findall(r"`([^`]+)`", action or ""):
-        if _COMMAND_RE.match(span):
-            return span, True
-    first = re.split(r"(?<=[.;])\s", action or "")[0].rstrip(".").replace("`", "")
+    backticks dropped, never dressed up as something to paste.
+
+    A span is skipped when the words before it, in its sentence, set a condition ("if the edit
+    is yours, run `teyla policy ack`") or when it is an ack: the line would say "run this" and
+    lose the "if" (review of #65, P1 — A10 became an unconditional `teyla policy ack`)."""
+    text = action or ""
+    for m in re.finditer(r"`([^`]+)`", text):
+        span = m.group(1)
+        if not _COMMAND_RE.match(span) or _ACK_RE.match(span):
+            continue
+        before = re.split(r"(?<=[.;])\s", text[:m.start()])[-1]
+        if _CONDITION_RE.search(before):
+            continue
+        return span, True
+    first = re.split(r"(?<=[.;])\s", text)[0].rstrip(".").replace("`", "")
     return _short(first, 90), False
 
 
@@ -189,6 +205,8 @@ def _step_of_fix(fix: str | None) -> tuple[str, bool]:
     # doctor fixes often carry an alternative in parentheses after spaces: keep the first command.
     # Not truncated: a step is copied into a shell, and a command cut with "…" does not run.
     step = _clean(re.split(r"\s{2,}\(", fix or "")[0]) or "teyla doctor"
+    if _ACK_RE.match(step):  # its parenthesis says "if you made or accepted the edit" (review of #65, P1)
+        return "diff the global CLAUDE.md, then acknowledge it only if the edit is yours", False
     return step, bool(_COMMAND_RE.match(step))
 
 
@@ -211,19 +229,20 @@ def candidates(findings: list[dict], doctor_checks: list[dict], reports: list[di
     for r in reports:
         if r.get("error"):
             out.append(dict(rank=2, id=f"toml:{r['product']}", text=f"{r['product']}: teyla.toml has an error",
-                            step=f"teyla routines {r.get('repo') or '.'}", cmd=True))
+                            step=f"teyla routines {routines._sh(r.get('repo') or '.')}", cmd=True))
             continue
         for row in r.get("routines") or []:
             if row.get("verdict") in routines.NOT_RUNNING_VERDICTS:  # `unknown` counts, as in `teyla routines`
                 out.append(dict(rank=2, id=f"routine:{r['product']}:{row['name']}",
                                 text=f"{r['product']} routine {row['name']} {row['verdict']}",
-                                step=f"teyla routines {r.get('repo') or '.'}", cmd=True))
+                                step=f"teyla routines {routines._sh(r.get('repo') or '.')}", cmd=True))
         for c in routines.stale_checks(r):
             age = c.get("age_days")
             since = f"{age}d" if isinstance(age, int) else "never confirmed"
             out.append(dict(rank=3 if c["verdict"] == "BROKEN" else 5, id=f"check:{r['product']}:{c['name']}",
                             text=_short(f"{r['product']} check {c['name']} {c['verdict']} ({since})"),
-                            step=routines.confirm_command(r["product"], c["name"]), cmd=True))
+                            step=routines.confirm_step(r["product"], c["name"]), cmd=False,
+                            brief="try it, then record the result (teyla digest has the commands)"))
     return sorted(out, key=lambda c: c["rank"])  # stable: ties keep input order
 
 
@@ -263,7 +282,7 @@ def build(findings: list[dict], doctor_checks: list[dict], reports: list[dict], 
     if not top:
         lines = [f"teyla weekly {today.isoformat()}: nothing needs you this week."]
     else:
-        head = f"teyla weekly {today.isoformat()}: {top[0]['text']} → {top[0]['step']}"
+        head = f"teyla weekly {today.isoformat()}: {top[0]['text']} → {top[0].get('brief', top[0]['step'])}"
         if len(top) > 1:
             head += f" (+{len(top) - 1} more: teyla digest)"
         lines = [_short(head, HEADLINE_MAX)]

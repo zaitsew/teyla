@@ -8,6 +8,7 @@ import os
 import pathlib
 import subprocess
 import time
+import tomllib
 
 import pytest
 
@@ -126,12 +127,13 @@ def test_product_line_names_the_confirm_command_for_stale_checks():
                       {"name": "log a photo", "verdict": "UNTESTED", "age_days": "-"},
                       {"name": "send one", "verdict": "BROKEN", "age_days": 19}]}
     line = routines.summary_line(rep)
-    assert 'broken >14d: send one (+1 more); after trying it: `teyla check frank "send one" ok|broken`' in line
+    assert 'broken >14d: send one (+1 more); after trying it: `teyla check frank "send one" ok` or, if it failed, `teyla check frank "send one" broken`' in line
+    assert "ok|broken" not in line
     assert line.endswith("`teyla routines .` for the table")
     rep["checks"] = [{"name": "fresh", "verdict": "UNTESTED", "age_days": 3}, {"name": "ok one", "verdict": "ok", "age_days": 90}]
     assert "teyla check" not in routines.summary_line(rep)
-    assert routines.confirm_command("frank", "gate shows today's drafts") == 'teyla check frank "gate shows today\'s drafts" ok|broken'
-    assert routines.confirm_command("frank", 'say "hi" $HOME') == "teyla check frank 'say \"hi\" $HOME' ok|broken"
+    assert routines.confirm_command("frank", "gate shows today's drafts") == 'teyla check frank "gate shows today\'s drafts" ok'
+    assert routines.confirm_command("frank", 'say "hi" $HOME', "broken") == "teyla check frank 'say \"hi\" $HOME' broken"
 
 
 # --- teyla check ---------------------------------------------------------------------------------
@@ -235,7 +237,9 @@ def test_digest_top_three_across_sources_with_commands():
                          "3. frank routine gate NOT LOADED → `teyla routines /r/frank`"]
     cands = digest.candidates(FINDINGS, DOCTOR, REPORTS)
     assert [c["id"] for c in cands] == ["doctor:plugin", "A1", "routine:frank:gate", "check:frank:send one", "A3"]
-    assert cands[3]["step"] == 'teyla check frank "send one" ok|broken' and cands[4]["step"] == "teyla sessions"
+    assert cands[3]["step"] == ('try it, then `teyla check frank "send one" ok` or, if it failed, '
+                                '`teyla check frank "send one" broken`')
+    assert cands[3]["cmd"] is False and "|" not in cands[3]["step"] and cands[4]["step"] == "teyla sessions"
 
 
 def test_digest_nothing_to_do_is_one_line():
@@ -320,3 +324,83 @@ def test_manifests_are_discovered_under_config_code_root(tmp_path, monkeypatch):
     (code / "a" / "teyla.toml").write_text('[product]\nname = "a"\n')
     monkeypatch.setattr(config, "load", lambda path=None: {**config.DEFAULTS, "code_root": str(code)})
     assert routines.find_manifests() == [code / "a" / "teyla.toml"]
+
+
+# --- review of #65 ------------------------------------------------------------------------------------
+
+def test_a10_digest_action_never_becomes_an_unconditional_ack():
+    from teyla import advise
+    a10 = "Diff that file now. The merge-approved list and standing rules are edited by you, never by an agent; " \
+          "if the edit is not yours, revert it — if the edit is yours, run `teyla policy ack`."
+    assert digest._step_of_advice(a10) == ("Diff that file now", False)
+    assert digest._step_of_advice("Then run `teyla policy ack`.")[1] is False  # an ack is never a pasteable step
+    assert digest._step_of_advice("run `teyla grok-cost --session <id>`; if that is long, cap it.")[1] is True
+    # the real advice text, so this follows advise.py if it is reworded
+    src = pathlib.Path(advise.__file__).read_text()
+    assert "run `teyla policy ack`" in src
+    f = dict(id="A10", severity="high", title="t", action=a10)
+    lines, _ = digest.build([f], [], [], {}, today=dt.date(2026, 9, 28))
+    assert "policy ack" not in "\n".join(lines)
+    fix = doctor._check("FIX", "policy:ack", "changed", "teyla policy ack   (if you made or accepted the edit)")
+    step, cmd = digest._step_of_fix(fix["fix"])
+    assert not cmd and "policy ack" not in step
+
+
+def test_repo_paths_with_spaces_are_quoted_in_both_branches():
+    repo = "/Users/ivan/Work Projects/demo"
+    rep_err = {"product": "demo", "repo": repo, "error": "bad toml"}
+    rep_run = {"product": "demo", "repo": repo, "routines": [{"name": "gate", "verdict": "NOT LOADED"}], "checks": []}
+    steps = [c["step"] for c in digest.candidates([], [], [rep_err, rep_run])]
+    assert steps == ['teyla routines "/Users/ivan/Work Projects/demo"'] * 2
+    assert digest.candidates([], [], [dict(rep_err, repo="/r/plain")])[0]["step"] == "teyla routines /r/plain"
+
+
+MULTI = """[product]
+name = "a"
+
+[[check]]
+name = "x"
+how = '''
+status = "keep these instructions"
+[not_a_table]
+confirmed = 2000-01-01
+'''
+"""
+
+
+def test_set_check_ignores_field_lookalikes_inside_multiline_strings(tmp_path):
+    p = tmp_path / "teyla.toml"
+    p.write_text(MULTI)
+    routines.set_check(p, "x", "ok", today=dt.date(2026, 9, 29))
+    new = p.read_text()
+    assert new.startswith(MULTI)  # the whole `how` survives byte for byte
+    assert new.endswith("'''\nstatus = \"ok\"\nconfirmed = 2026-09-29\n")
+    c = routines.parse_manifest(p)["checks"][0]
+    assert c["status"] == "ok" and "keep these instructions" in c["how"] and "confirmed = 2000-01-01" in c["how"]
+    assert [x for x in tomllib.loads(new)["check"]][0]["confirmed"] == dt.date(2026, 9, 29)
+
+
+def test_set_check_multiline_array_and_basic_multiline_string(tmp_path):
+    p = tmp_path / "teyla.toml"
+    p.write_text('[[check]]\nname = "x"\nhow = """\nsay \\"hi\\" \n[[check]]\nstatus = "no"\n"""\ntags = [\n  [1],\n  [2]\n]\n\n[[check]]\nname = "y"\n')
+    routines.set_check(p, "x", "broken", note="n", today=dt.date(2026, 9, 29))
+    got = tomllib.loads(p.read_text())["check"]
+    assert [c["name"] for c in got] == ["x", "y"] and got[0]["status"] == "broken" and got[0]["note"] == "n"
+    assert "status" not in got[1] and got[0]["tags"] == [[1], [2]] and 'status = "no"' in got[0]["how"]
+
+
+def test_set_check_refuses_rather_than_corrupt(tmp_path):
+    p = tmp_path / "teyla.toml"
+    src = '[[check]]\nname = "x"\nstatus = """\nuntested\n"""\n'
+    p.write_text(src)
+    with pytest.raises(routines.ManifestError, match="multiline"):
+        routines.set_check(p, "x", "ok")
+    assert p.read_text() == src
+    p.write_text('[[check]]\nname = "x"\nhow = "unterminated\n')
+    with pytest.raises(routines.ManifestError):
+        routines.set_check(p, "x", "ok")
+    # a confirmed date that would not be the one asked for is caught by the final comparison
+    p.write_text('[[check]]\nname = "x"\n"status" = "untested"\n')
+    with pytest.raises(routines.ManifestError):
+        routines.set_check(p, "x", "ok")
+    assert p.read_text() == '[[check]]\nname = "x"\n"status" = "untested"\n'

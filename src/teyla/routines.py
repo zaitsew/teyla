@@ -45,6 +45,7 @@ gate tell "nobody has tried this" apart from "this is provably failing".
 """
 from __future__ import annotations
 
+import copy
 import datetime as dt
 import os
 import re
@@ -395,8 +396,16 @@ def _sh(s: str) -> str:
     return f'"{s}"' if not re.search(r'["$`\\!]', s) else shlex.quote(s)
 
 
-def confirm_command(product: str, check_name: str) -> str:
-    return f"teyla check {_sh(product)} {_sh(check_name)} ok|broken"
+def confirm_command(product: str, check_name: str, status: str = "ok") -> str:
+    """One pasteable command. Never `ok|broken` in one line: pasted, that is a pipeline — Teyla
+    records ok and the shell then tries to run `broken` (review of #65, P2)."""
+    return f"teyla check {_sh(product)} {_sh(check_name)} {status}"
+
+
+def confirm_step(product: str, check_name: str) -> str:
+    """The digest step for a check: two separate commands, one per outcome."""
+    return (f"try it, then `{confirm_command(product, check_name, 'ok')}` or, if it failed, "
+            f"`{confirm_command(product, check_name, 'broken')}`")
 
 
 def summary_line(report: dict, *, now: dt.datetime | None = None) -> str:
@@ -421,7 +430,8 @@ def summary_line(report: dict, *, now: dt.datetime | None = None) -> str:
         c = stale[0]
         more = f" (+{len(stale) - 1} more)" if len(stale) > 1 else ""
         confirm = (f" — {c['verdict'].lower()} >{STALE_CHECK_DAYS}d: {_trunc(c['name'])}{more}; after trying it: "
-                   f"`{confirm_command(report['product'], c['name'])}`")
+                   f"`{confirm_command(report['product'], c['name'], 'ok')}` or, if it failed, "
+                   f"`{confirm_command(report['product'], c['name'], 'broken')}`")
     return f"{report['product']}: {' · '.join(parts)} ({stamp}){confirm} — `teyla routines .` for the table"
 
 
@@ -697,26 +707,81 @@ def _toml_str(s: str) -> str:
     return '"' + str(s).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+def _inside_value(lines: list[str]) -> list[bool]:
+    """inside[i]: does line i begin in the middle of a TOML value — a multiline string or a
+    multiline array? Such a line is text, never a table header or a `key = value` field (review
+    of #65, P1: a `how` that quoted `status = "..."` on its own line was eaten as the field).
+    One extra entry at the end: whether the file stops inside a value."""
+    inside, st, depth = [], None, 0
+    for line in lines:
+        inside.append(st is not None or depth > 0)
+        i, n = 0, len(line)
+        while i < n:
+            c = line[i]
+            if st is not None:
+                q = st[0]
+                if q == '"' and c == "\\":
+                    i += 2
+                elif line.startswith(st, i):
+                    while i < n and line[i] == q:  # a run of quotes: the last three close
+                        i += 1
+                    st = None
+                else:
+                    i += 1
+            elif c == "#":
+                break
+            elif line.startswith('"""', i) or line.startswith("'''", i):
+                st = line[i:i + 3]
+                i += 3
+            elif c == '"':
+                i += 1
+                while i < n and line[i] != '"':
+                    i += 2 if line[i] == "\\" else 1
+                i += 1
+            elif c == "'":
+                j = line.find("'", i + 1)
+                i = n if j < 0 else j + 1
+            else:
+                depth += (c == "[") - (c == "]")
+                i += 1
+    inside.append(st is not None or depth > 0)
+    return inside
+
+
 def set_check(path: pathlib.Path, check_name: str, status: str, *, note: str | None = None,
               today: dt.date | None = None) -> str:
     """Set one [[check]]'s status and confirmed date (and note) in place. Returns a one-line
-    result; raises ManifestError when the check is not there or the edit would not parse."""
+    result; raises ManifestError when the check is not there, when the edit cannot be made
+    safely, or when the result is not exactly the original plus the intended fields — and then
+    the file is left as it was."""
     if status not in ("ok", "broken", "untested"):
         raise ManifestError(f"status is ok, broken or untested — not {status!r}")
     today = today or dt.date.today()
     text = path.read_text()
+    try:
+        before = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as e:
+        raise ManifestError(f"{path}: does not parse ({e}); file left unchanged") from e
     lines = text.splitlines(keepends=True)
+    inside = _inside_value(lines)
+
+    def header(k):
+        return not inside[k] and _TABLE_RE.match(lines[k].rstrip("\n"))
+
+    def field(k):
+        return None if inside[k] else _KV_RE.match(lines[k].rstrip("\n"))
+
     # Find the block: a [[check]] header, then the lines up to the next table header.
     start = end = None
     i = 0
     while i < len(lines):
-        m = _TABLE_RE.match(lines[i].rstrip("\n"))
+        m = header(i)
         if m and lines[i].lstrip().startswith("[[") and m.group(1) == "check":
             j = i + 1
-            while j < len(lines) and not _TABLE_RE.match(lines[j].rstrip("\n")):
+            while j < len(lines) and not header(j):
                 j += 1
             for k in range(i + 1, j):
-                kv = _KV_RE.match(lines[k].rstrip("\n"))
+                kv = field(k)
                 if kv and kv.group(2) == "name":
                     try:
                         val = tomllib.loads(f"v = {kv.group(4)}")["v"]
@@ -730,7 +795,7 @@ def set_check(path: pathlib.Path, check_name: str, status: str, *, note: str | N
             continue
         i += 1
     if start is None:
-        names = [c.get("name") for c in (tomllib.loads(text).get("check") or [])]
+        names = [c.get("name") for c in (before.get("check") or [])]
         raise ManifestError(f"{path}: no [[check]] named {check_name!r}; there are: {', '.join(map(repr, names)) or 'none'}")
     want = {"status": _toml_str(status), "confirmed": today.isoformat()}
     if note is not None:
@@ -739,30 +804,45 @@ def set_check(path: pathlib.Path, check_name: str, status: str, *, note: str | N
     for k in range(start + 1, end):
         raw = lines[k]
         nl = "\n" if raw.endswith("\n") else ""
-        kv = _KV_RE.match(raw.rstrip("\n"))
+        kv = field(k)
         if not kv:
             continue
         last_kv = k
         key = kv.group(2)
         if key in want:
+            if inside[k + 1]:  # the old value runs on over later lines: replacing line k would leave them behind
+                raise ManifestError(f"{path}: `{key}` in that [[check]] is a multiline value; edit it by hand. File left unchanged")
             lines[k] = f"{kv.group(1)}{key}{kv.group(3)}{want[key]}{kv.group(5)}{nl}"
             seen_keys.add(key)
     missing = [k for k in ("status", "confirmed", "note") if k in want and k not in seen_keys]
     if missing:
-        indent = _KV_RE.match(lines[last_kv].rstrip("\n")).group(1) if last_kv > start else ""
-        if not lines[last_kv].endswith("\n"):
-            lines[last_kv] += "\n"
-        lines[last_kv + 1:last_kv + 1] = [f"{indent}{k} = {want[k]}\n" for k in missing]
+        # After the block's last line of content — which may end a multiline `how`, not start one.
+        tail = max((k for k in range(start, end)
+                    if inside[k] or (lines[k].strip() and not lines[k].lstrip().startswith("#"))), default=start)
+        if inside[tail + 1]:
+            raise ManifestError(f"{path}: cannot find where that [[check]] ends; edit it by hand. File left unchanged")
+        kv = field(last_kv) if last_kv > start else None
+        indent = kv.group(1) if kv else ""
+        if not lines[tail].endswith("\n"):
+            lines[tail] += "\n"
+        lines[tail + 1:tail + 1] = [f"{indent}{k} = {want[k]}\n" for k in missing]
     new = "".join(lines)
     try:
         parsed = tomllib.loads(new)
     except tomllib.TOMLDecodeError as e:
         raise ManifestError(f"{path}: the edit would not parse ({e}); file left unchanged") from e
-    hit = [c for c in parsed.get("check") or [] if c.get("name") == check_name]
-    if not hit or hit[0].get("status") != status:
-        raise ManifestError(f"{path}: the edit did not take; file left unchanged")
+    # The edit is right only if the file now says exactly what it said, plus these fields on this
+    # one check — nothing lost from a `how`, nothing landing inside a string.
+    expect = copy.deepcopy(before)
+    row = next(c for c in expect["check"] if c.get("name") == check_name)
+    row["status"], row["confirmed"] = status, today
+    if note is not None:
+        row["note"] = note
+    if parsed != expect:
+        raise ManifestError(f"{path}: the edit did not come out as intended (the file has multiline text or an "
+                            f"unusual layout there); file left unchanged — edit it by hand")
     path.write_text(new)
-    was = next((c.get("status") for c in tomllib.loads(text).get("check") or [] if c.get("name") == check_name), "?")
+    was = next((c.get("status") for c in before.get("check") or [] if c.get("name") == check_name), "?")
     return f"{check_name}: {was} -> {status}, confirmed {today.isoformat()} ({path})"
 
 
