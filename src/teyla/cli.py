@@ -83,8 +83,9 @@ def _grok_week():
 def cmd_monitor(args):
     from . import policy
     from .monitor import redact, scrub_home
+    from .detect import enrich
     ss = _sessions(args)
-    m = metrics(ss, args.days)
+    m = enrich(metrics(ss, args.days))
     m["grok_week"] = _grok_week()
     if args.share:
         # Redact before advising: findings quote projects, sessions and connectors in their
@@ -106,7 +107,8 @@ def cmd_monitor(args):
 
 def cmd_advise(args):
     from . import policy
-    m = metrics(_sessions(args), args.days)
+    from .detect import enrich
+    m = enrich(metrics(_sessions(args), args.days))
     m["grok_week"] = _grok_week()
     F = advise(m, policy.status())
     for f in F:

@@ -282,6 +282,11 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
         for row in storage.doctor_checks(cfg):
             out.append(_check(row["level"], row["name"], row["detail"], row["fix"]))
 
+    # --- policy detectors: the rules in POLICY.md that files can prove broken --------------
+    from . import detect
+    for row in detect.doctor_checks(cfg, scan_repos=scan_repos):
+        out.append(_check(row["level"], row["name"], row["detail"], row["fix"]))
+
     # --- reminders ---------------------------------------------------------------
     from . import remind
     for row in remind.due_checks():

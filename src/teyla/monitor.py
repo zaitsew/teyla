@@ -76,6 +76,8 @@ def metrics(sessions: list[Session], days: int | None = None) -> dict:
                     if s.cwd and s.cwd.rstrip("/").endswith("/repos")],
     ))
     m["models_drift"] = _models_drift(sessions, days)
+    from .detect import permission_ask_metrics
+    m["permission_asks"] = permission_ask_metrics(sessions)
     try:
         from . import connectors as _c
         m["connectors"] = _c.metrics(sessions)
@@ -231,6 +233,16 @@ def redact(m: dict) -> dict:
     r["review_skill_used"] = any(w in k for k in skills for w in REVIEW_SKILL_WORDS)
 
     r["correction_samples"] = []
+    # A15's example quotes the agent's own words and A16's names a repo and a workflow file:
+    # the words go, the project keeps its pseudonym, repos become r01..rNN, files and paths go.
+    for e in (r.get("permission_asks") or {}).get("examples", []):
+        e["project"] = alias.get(e["project"], "p??"); e["sid"] = "—"; e.pop("ask", None)
+    if r.get("workflow_triggers"):
+        ralias = {}
+        for w in r["workflow_triggers"]:
+            ralias.setdefault(w["repo"], f"r{len(ralias) + 1:02d}")
+        r["workflow_triggers"] = [dict(repo=ralias[w["repo"]], path=None, file=None, triggers=w["triggers"], where=w["where"])
+                                  for w in r["workflow_triggers"]]
     from .adapters import is_retry
     r["correction_fingerprints"] = dict(Counter(fingerprint(t) for t in m.get("correction_samples", [])
                                                 if not is_retry(t)))

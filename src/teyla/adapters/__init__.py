@@ -127,6 +127,10 @@ class Session:
                            # another agent): counted, but its prompts are machine-written, not human turns
     connector_calls: list = dataclasses.field(default_factory=list)  # [{server, tool, turn_index, result}] for every mcp__ tool call
     skills_read: Counter = dataclasses.field(default_factory=Counter)  # skill dir name -> Read-tool_use hits on its SKILL.md
+    # (ts, tail of the agent's last text, the human's next turn) for turns that ended on a
+    # question or an offer — the input to the ask-permission detector (teyla.detect). Only
+    # candidates are kept (TURN_END_HINT), and only their tails, so a long session costs little.
+    turn_ends: list = dataclasses.field(default_factory=list)
 
     # ---- derived ----
     @property
@@ -198,6 +202,17 @@ NOISE_TAGS = ("system-reminder", "command-name", "command-message", "local-comma
               "ci-monitor", "ide_", "artifact-view-context")
 NOISE_PREFIXES = ("[Request interrupted", "This session is being continued from a previous conversation",
                   "[SYSTEM NOTIFICATION", "[Artifact comment sent to Claude]")
+
+
+TURN_END_TAIL = 600
+
+
+def turn_end_candidate(text: str | None) -> str | None:
+    """The tail of an agent's final text when it could be asking something, else None."""
+    if not text:
+        return None
+    tail = text.strip()[-TURN_END_TAIL:]
+    return tail if ("?" in tail[-400:] or "let me know" in tail.lower()) else None
 
 
 def is_noise_turn(txt: str) -> bool:

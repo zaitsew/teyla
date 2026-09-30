@@ -7,7 +7,7 @@ import json
 import os
 import re
 
-from . import TOKEN_KEYS, AgentCall, Session, Turn, human_text, is_correction, stale, text_of
+from . import TOKEN_KEYS, AgentCall, Session, Turn, human_text, is_correction, is_retry, stale, text_of, turn_end_candidate
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "claude-code"
@@ -58,6 +58,7 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
     s = Session(harness=NAME, project=slug, sid=os.path.basename(f)[:-6], path=f, size=os.path.getsize(f))
     pending_calls: dict = {}  # tool_use_id -> {server, tool, turn_index}, until its tool_result arrives
     active_prev = None  # last assistant/user timestamp seen, kept only to sum gaps — never a list
+    last_text = None  # (ts, text) of the agent's latest text block, until a tool call or a human turn follows
     after_error = False  # the last assistant record was an API error
     with open(f, errors="replace") as fh:
         for line in fh:
@@ -105,8 +106,12 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                 u = m.get("usage") or {}
                 for k in TOKEN_KEYS:
                     s.usage[model][k] += u.get(k, 0) or 0
+                said = text_of(m.get("content"))
+                if said.strip():
+                    last_text = (ts, said)
                 for b in m.get("content") or []:
                     if isinstance(b, dict) and b.get("type") == "tool_use":
+                        last_text = None  # the turn went on after the text: it did not end there
                         name = b.get("name")
                         s.tools[name] += 1
                         inp = b.get("input", {}) or {}
@@ -147,6 +152,14 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                     continue
                 h = human_text(txt, after_error)
                 after_error = False
+                # A bare "continue" is a retry to the turn counts but an approval to A15: it
+                # still answers the question the agent ended on (review of the #60 merge).
+                reply = h if h is not None else (txt if is_retry(txt) else None)
+                if reply is not None:
+                    ending = turn_end_candidate(last_text[1]) if last_text else None
+                    if ending:
+                        s.turn_ends.append((last_text[0], ending, reply[:200]))
+                    last_text = None
                 if h is None:
                     continue
                 s.user_turns.append(Turn(ts, h[:1500], is_correction(h)))
