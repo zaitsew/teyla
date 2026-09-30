@@ -436,3 +436,15 @@ def test_stop_hook_on_the_default_branch_does_not_stop_with_unpushed_commits(tmp
     _git(r, "commit", "-q", "--allow-empty", "-m", "oops")
     res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
     assert res.returncode == 2 and "default branch main" in res.stderr and "git switch -c" in res.stderr
+
+
+@pytest.mark.parametrize("name", ["VITE_JWT", "PUBLIC_BEARER", "VITE_GITHUB_PAT", "NEXT_PUBLIC_JWT_SECRET", "GITHUB_PAT",
+                                  "WEBHOOK_HMAC"])
+def test_credential_words_beat_the_public_prefix(name):
+    # review of #71's fix, P1: JWT/BEARER/PAT names with a browser prefix were "config, not a secret".
+    assert "environment variable" not in cloud_prep.secret_destination(name)
+
+
+@pytest.mark.parametrize("name", ["NEXT_PUBLIC_PATH_PREFIX", "VITE_PATTERN"])
+def test_pat_is_a_word_not_a_substring(name):
+    assert "environment variable" in cloud_prep.secret_destination(name)

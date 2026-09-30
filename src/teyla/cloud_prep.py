@@ -201,7 +201,8 @@ _HOSTS = (("OPENAI", "api.openai.com"), ("ANTHROPIC", "api.anthropic.com"), ("XA
           ("GITHUB", "api.github.com"), ("STRIPE", "api.stripe.com"), ("DIGITALOCEAN", "api.digitalocean.com"),
           ("STRAVA", "www.strava.com"), ("X_BEARER", "api.x.com"), ("GOOGLE", "*.googleapis.com"))
 _APPLE = re.compile(r"(^|_)(ASC|APNS|APPLE|APP_STORE|P8|KEYCHAIN|SIGNING|MATCH|TESTFLIGHT)(_|$)")
-_SECRET = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASS|PWD|PRIVATE|CREDENTIAL|AUTH|DSN|SERVICE_ROLE|CERT|SESSION|COOKIE|SALT)", re.I)
+_SECRET = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASS|PWD|PRIVATE|CREDENTIAL|AUTH|DSN|SERVICE_ROLE|CERT|SESSION|COOKIE|SALT|JWT|BEARER|HMAC|"
+                     r"(^|_)PATS?(_|$))", re.I)  # JWT/BEARER/PAT: review of #71, P1 (VITE_GITHUB_PAT was "config")
 # A connection string carries its password and is not an HTTP API a proxy can sign for.
 _CONN = re.compile(r"(DSN|CONNECTION|(^|_)(DATABASE|DB|PG|POSTGRES|POSTGRESQL|MYSQL|MARIADB|MONGO|MONGODB|REDIS|"
                    r"VALKEY|KV|AMQP|RABBITMQ|RABBIT|KAFKA|NATS|MQ|BROKER|CELERY|SMTP|IMAP|FTP|SFTP|LDAP)(_|$))", re.I)
