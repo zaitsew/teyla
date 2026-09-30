@@ -120,6 +120,7 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
                           "teyla policy init  (writes it)"))
 
     # --- harness stores --------------------------------------------------------
+    loaded = {}
     for mod in (claude_code, codex, grok, hermes, cursor):
         root = getattr(mod, "DEFAULT_ROOT", None)
         ok = bool(root) and os.path.exists(os.path.expanduser(root))
@@ -132,10 +133,23 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
             since = time.time() - 7 * 86400
             cutoff = _dt.datetime.fromtimestamp(since, _dt.timezone.utc).isoformat()
             # Adapters that cannot skip files by date still return everything; count by `last`.
-            n = sum(1 for x in mod.load(since=since) if (x.last or x.first or "") >= cutoff[:19])
-            out.append(_check("OK", f"harness:{mod.NAME}", f"{root}: {n} session(s) in the last 7 days"))
+            recent = [x for x in mod.load(since=since) if (x.last or x.first or "") >= cutoff[:19]]
+            loaded[mod.NAME] = recent
+            nb = sum(1 for x in recent if x.batch)
+            out.append(_check("OK", f"harness:{mod.NAME}", f"{root}: {len(recent)} session(s) in the last 7 days"
+                              + (f" ({len(recent) - nb} interactive, {nb} batch)" if recent else "")))
         except Exception as e:  # noqa: BLE001
             out.append(_check("WARN", f"harness:{mod.NAME}", f"{root}: adapter error: {e}"))
+
+    # --- can each harness do work right now? -------------------------------------
+    # "wired" is not "working": on 2026-09-29 every Grok call answered 402 and Hermes had lost
+    # its xAI token while the lines above said OK. Version, auth, the newest quota/auth error
+    # the harness itself recorded, and its batch volume (health.py).
+    from . import health
+    try:
+        out += health.doctor_checks(loaded)
+    except Exception as e:  # noqa: BLE001 — never take doctor down
+        out.append(_check("WARN", "health", f"harness health check failed: {e}"))
 
     # --- policy wiring ----------------------------------------------------------
     st = policy.status()

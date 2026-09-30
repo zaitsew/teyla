@@ -100,7 +100,18 @@ scripts, which read every harness's stdin shape.
 ```
 teyla harness status          # present / policy / skills n/5 / hooks per harness
 teyla doctor | grep harness   # the same as OK/FIX lines
+teyla harness verify          # can each one work now: version, auth, last quota/auth error, 7-day volume
+teyla harness verify --live   # plus one real line through each, headless (a few tokens; never from a routine)
 ```
+
+"Wired" is not "working". On 2026-09-29 every line above said OK while every Grok call
+answered 402 "Grok Build usage balance exhausted", Hermes had lost its xAI access token and
+the `claude` CLI's OAuth session had expired (the desktop app signs in on its own).
+`harness verify` reads what each harness itself recorded — Grok's
+`logs/unified.jsonl`, Hermes's `auth.json` and `logs/errors.log`, Codex's `logs_2.sqlite`, rollout
+errors and `rate_limits` (plan, 5-hour and weekly use), Claude's `isApiErrorMessage` records and
+`claude auth status` — and prints the one command that fixes each. doctor carries the same as
+`health:<harness>` lines.
 
 Then, in each app, ask for something the skills cover ("run the adoption review", "make
 that a rule: never use npm here") and check that `~/.teyla/hooks/capture-correction.sh`

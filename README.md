@@ -72,6 +72,7 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | `teyla run <product:routine>` | the control plane: grants, caps, idempotency, gates A/B/C, a receipt naming the rules the run obeyed — see [docs/CONTROL-PLANE.md](docs/CONTROL-PLANE.md) |
 | `teyla inbox` · `teyla kill` · `teyla triggers` · `teyla promote` · `teyla receipts` | the needs-you inbox, the kill switch, clock triggers as LaunchAgents, earned autonomy on ten clean approvals, the audit trail |
 | `teyla harness status\|sync` | the plugin's skills and hooks, and the policy, in Cursor, Codex, Grok and Hermes — see [docs/HARNESSES.md](docs/HARNESSES.md) |
+| `teyla harness verify [--live]` | can each harness do work now: version, auth (shape and dates, never a secret), the newest quota/auth error it recorded, interactive vs batch sessions in 7 days; `--live` sends one line through `claude -p`, `codex exec`, `grok -p`, `hermes -z` and checks the policy reached it |
 | `teyla rule "<sentence>" [--scope <glob>]` · `teyla correct "<what was wrong>"` | what `/teyla:rule` and `/teyla:correct` do, as a CLI every harness's skill can call |
 | `teyla doctor` | what Teyla can see on this machine |
 | `teyla digest [--write]` | the weekly digest: at most five lines — the top three actions across advice, doctor, routines and checks, each with its command, plus a streak note |
