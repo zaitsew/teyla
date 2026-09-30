@@ -42,7 +42,7 @@ def _redact_home(text: str) -> str:
 # Doctor checks whose detail is about this machine's network or its owner, never about Teyla:
 # the proxy URL (credentials included, on some setups), the CA bundle path, config roots,
 # reminder text, repo and worktree names. Only their level and name travel.
-DETAIL_WITHHELD = ("network", "config", "remind", "platform", "repos", "storage")
+DETAIL_WITHHELD = ("network", "config", "remind", "platform", "repos", "storage", "actions")
 
 
 def shareable_check(c: dict) -> tuple[str, str, str]:
@@ -53,8 +53,9 @@ def shareable_check(c: dict) -> tuple[str, str, str]:
     name is its text, so it is withheld too."""
     name = str(c.get("name") or "")
     family = name.split(":", 1)[0]
-    if family == "remind":
-        name = "remind"
+    if family in ("remind", "actions"):
+        # a reminder's name is its text; an `actions:<repo>` row (teyla.detect) names a repo
+        name = family
     detail = str(c.get("detail") or "")
     home = str(pathlib.Path.home())
     if (family in DETAIL_WITHHELD or "://" in detail or "@" in detail or "~" in detail
@@ -149,10 +150,13 @@ def render(days: int = 30) -> str:
     """Gather everything live from this machine and build the feedback document."""
     from . import policy
     from .adapters import load_all, since_epoch
+    from .detect import enrich
     from .monitor import metrics
 
     sessions = [s for s in load_all(since=since_epoch(days)) if not s.sidechain]
-    m = metrics(sessions, days)
+    # enrich() carries the policy detectors' inputs, so A15/A16 reach the shared report the same
+    # way they reach `monitor --share`; build() redacts them (review of #60, P2).
+    m = enrich(metrics(sessions, days))
     return build(m, days=days, policy_status=policy.status(), doctor_lines=_doctor_lines(),
                  routines_summary=_routines_summary())
 

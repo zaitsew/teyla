@@ -165,27 +165,46 @@ def expected_merge_approved(slug: str | None, owners: set[str] | None) -> str | 
 
 # --- what the clone carries ---------------------------------------------------------
 
-def instruction_files(repo: pathlib.Path) -> list[tuple[str, str]]:
-    """(repo-relative name, text) for every instruction file a cloud session reads, each real
-    file once (AGENTS.md → CLAUDE.md symlinks are common and would double every finding)."""
-    seen, out = set(), []
+def _instruction_candidates(repo: pathlib.Path) -> list[pathlib.Path]:
     cands = [repo / "CLAUDE.md", repo / "AGENTS.md", repo / ".claude" / "CLAUDE.md"]
     rules = repo / ".claude" / "rules"
     if rules.is_dir():
         cands += sorted(rules.rglob("*.md"))
-    for p in cands:
-        if not p.is_file():
-            continue
+    # is_symlink() too: a dangling link (CLAUDE.md → a policy file only this Mac has) is not
+    # is_file(), and dropping it here hid it from external_instruction_links (review, P1).
+    return [p for p in cands if p.is_file() or p.is_symlink()]
+
+
+def _inside(repo: pathlib.Path, p: pathlib.Path) -> bool:
+    try:
+        p.resolve().relative_to(repo.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def external_instruction_links(repo: pathlib.Path) -> list[str]:
+    """Instruction files that are symlinks resolving outside the repo (e.g. CLAUDE.md →
+    ~/.claude/CLAUDE.md). A cloud clone gets a dangling link, so they carry nothing there
+    (review of #70, P1)."""
+    return [f"{p.relative_to(repo)} → {os.readlink(p)}" for p in _instruction_candidates(repo)
+            if p.is_symlink() and not _inside(repo, p)]
+
+
+def instruction_files(repo: pathlib.Path) -> list[tuple[str, str]]:
+    """(repo-relative name, text) for every instruction file a cloud session reads, each real
+    file once (AGENTS.md → CLAUDE.md symlinks are common and would double every finding).
+    A symlink that resolves outside the repo is not read: readiness is judged on what the
+    committed tree carries, and the clone does not carry its target (review of #70, P1)."""
+    repo = repo.resolve()
+    seen, out = set(), []
+    for p in _instruction_candidates(repo):
         real = p.resolve()
-        if real in seen:
+        if not _inside(repo, p) or not p.is_file() or real in seen:
             continue
         seen.add(real)
         # Name the real file: in a CLAUDE.md → AGENTS.md repo the line numbers are AGENTS.md's.
-        try:
-            name = str(real.relative_to(repo))
-        except ValueError:
-            name = str(p.relative_to(repo))
-        out.append((name, _read(p)))
+        out.append((str(real.relative_to(repo)), _read(p)))
     return out
 
 
@@ -229,11 +248,51 @@ def gate_script(repo: pathlib.Path) -> pathlib.Path | None:
     return None
 
 
+_NEGATED = re.compile(r"^(?:if|elif)\s+!|\[\[?\s+!\s|!=|\s-ne\s")
+
+
+def _enclosing_guard(lines: list[str], i: int, tool_guard: re.Pattern) -> bool:
+    """Is line i inside a branch that a guard test makes safe? Walks up from the line, skipping
+    blocks that closed before it (`fi` ... `if`), and reads the branch it is in: the `then`
+    branch of a positive test is guarded, so is the `else` (or a later `elif`) of a negated one
+    (`if ! command -v x; then skip; else x ...`). A step after a completed guarded block is not
+    (review of #70, P2)."""
+    depth = 0
+    holds = True  # does the next condition header up the chain hold on the way to line i?
+    for j in range(i - 1, max(-1, i - 16), -1):
+        prev = lines[j].strip()
+        if re.match(r"if\b.*;\s*fi\b", prev):
+            continue  # a whole block on one line: says nothing about line i
+        if re.match(r"fi\b", prev):
+            depth += 1
+        elif re.match(r"if\b", prev):
+            if depth:
+                depth -= 1
+                continue
+            if _cond_guards(prev, holds, tool_guard):
+                return True
+            holds = True  # an outer chain starts fresh
+        elif depth == 0 and re.match(r"elif\b", prev):
+            if _cond_guards(prev, holds, tool_guard):
+                return True
+            holds = False  # the earlier tests in this chain failed to get here
+        elif depth == 0 and re.match(r"else\b", prev):
+            holds = False
+    return False
+
+
+def _cond_guards(cond: str, holds: bool, tool_guard: re.Pattern) -> bool:
+    if not (tool_guard.search(cond) or _GENERIC_GUARD.search(cond)):
+        return False
+    return holds != bool(_NEGATED.search(cond))
+
+
 def mac_steps(text: str) -> list[dict]:
     """Every non-comment line of a gate script that runs a Mac-only tool, and whether it is
-    guarded: the line itself tests for the tool (`command -v swift && swift test`), or the
-    nearest `if`/`elif` above it (within 15 lines) tests for the tool, the platform or an Xcode
-    directory. A heuristic: it reads the shape a skip usually has, it does not run the script."""
+    guarded: the line itself tests for the tool (`command -v swift && swift test`), or an
+    `if`/`elif` whose branch it sits in (within 15 lines) tests for the tool, the platform or an
+    Xcode directory (see _enclosing_guard). A heuristic: it reads the shape a skip usually has,
+    it does not run the script."""
     lines = text.splitlines()
     out = []
     for i, line in enumerate(lines):
@@ -249,11 +308,7 @@ def mac_steps(text: str) -> list[dict]:
             tool_guard = re.compile(r"(?:command\s+-v|which|type|hash)\s+" + re.escape(tool.split()[0]) + r"\b")
             guarded = bool(tool_guard.search(line) or _GENERIC_GUARD.search(line))
             if not guarded:
-                for j in range(i - 1, max(-1, i - 16), -1):
-                    prev = lines[j].strip()
-                    if re.match(r"(?:if|elif)\b", prev):
-                        guarded = bool(tool_guard.search(prev) or _GENERIC_GUARD.search(prev))
-                        break
+                guarded = _enclosing_guard(lines, i, tool_guard)
             out.append({"tool": tool, "line": i + 1, "guarded": guarded})
     return out
 
@@ -304,8 +359,13 @@ def check_repo(repo, owners: set[str] | None = ..., net: bool = True) -> dict:
     items = []
 
     # 1. instructions at all
-    top = [n for n in ("CLAUDE.md", "AGENTS.md", ".claude/CLAUDE.md") if (repo / n).is_file()]
-    if not top:
+    top = [n for n in ("CLAUDE.md", "AGENTS.md", ".claude/CLAUDE.md") if (repo / n).is_file() and _inside(repo, repo / n)]
+    external = external_instruction_links(repo)
+    if external:
+        items.append(_item(BLOCK, "instructions", f"{', '.join(external)}: symlink(s) out of the repo; the cloud clone has a "
+                           "dangling link, so those rules do not exist there",
+                           "commit the text into the repo (a real AGENTS.md), and keep the link for local sessions only if at all"))
+    elif not top:
         items.append(_item(BLOCK, "instructions", "no CLAUDE.md or AGENTS.md: a cloud session starts with no instructions",
                            f"teyla cloud prep {repo.name}  (AGENTS.md with the shipping section, CLAUDE.md importing it)"))
     else:
@@ -541,12 +601,20 @@ def repo_sessions(repo: pathlib.Path, days: int | None = None) -> list[dict]:
     if not by:
         return []
     default = default_ref(repo)
+    # Landed means contained in exactly the default ref (origin/main), never a local `main` of
+    # the same short name that was merged and not pushed (review of #70, P2).
+    full = _git(repo, "rev-parse", "--symbolic-full-name", default, timeout=5)
+    default_full = full.stdout.strip() if full.returncode == 0 else ""
+    # default_ref() falls back to a local main when no remote default resolves; that is no
+    # evidence of landing, so only a remote-tracking ref counts (review, P2).
+    if not default_full.startswith("refs/remotes/"):
+        default_full = ""
     slug = origin_slug(repo)
     out = []
     for s in by.values():
         tip = s["shas"][0]  # git log is newest first
         refs = _git(repo, "for-each-ref", "--contains", tip, "--format=%(refname)", "refs/heads", "refs/remotes", timeout=10).stdout.split()
-        landed = any(_short_ref(x) == _short_ref(default) for x in refs)
+        landed = bool(default_full) and default_full in refs
         branch = _pick_branch(refs, default)
         out.append({"repo": repo.name, "path": str(repo), "slug": slug, "session": s["session"],
                     "branch": branch or (_short_ref(default) if landed else None), "commits": len(s["shas"]),

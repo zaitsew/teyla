@@ -169,7 +169,19 @@ def cmd_list(args) -> int:
     return 0
 
 
+def installed_plists() -> list[pathlib.Path]:
+    """Every control-plane trigger plist on this machine (com.teyla.<product>.<routine>)."""
+    return sorted(LAUNCH_AGENTS.glob("com.teyla.*.plist")) if LAUNCH_AGENTS.is_dir() else []
+
+
 def cmd_install(args) -> int:
+    from .. import config
+    if config.safe_mode():
+        # A trigger is `teyla run` under launchd: unattended, by construction without the
+        # --allow-network a run needs in safe mode. Installing one would only fail on a clock.
+        print("teyla triggers: safe mode is on — no unattended routine is installed; "
+              "run it by hand with `teyla run <ref> --allow-network`")
+        return 1
     from .engine import resolve
     routine = resolve(args.ref)
     if routine.trigger.type != "clock":

@@ -468,11 +468,13 @@ def test_capture_correction_hook_skips_harness_injected_prompts(tmp_path):
     """The plugin hook applies the same noise list as is_noise_turn; the measured failure was
     35 subagent notifications filed as corrections in one repo."""
     import json, subprocess, pathlib
+    import os, sys
     hook = pathlib.Path(__file__).resolve().parents[1] / "plugin" / "hooks" / "capture-correction.sh"
-    out = tmp_path / ".teyla" / "corrections.jsonl"
+    out = tmp_path / "teyla-home" / "corrections" / "misc.jsonl"
+    env = {**os.environ, "TEYLA_HOME": str(tmp_path / "teyla-home"), "TEYLA_PYTHON": sys.executable}
 
     def run(prompt):
-        subprocess.run(["sh", str(hook)], input=json.dumps({"prompt": prompt, "cwd": str(tmp_path)}), text=True, check=True)
+        subprocess.run(["sh", str(hook)], input=json.dumps({"prompt": prompt, "cwd": str(tmp_path)}), text=True, check=True, env=env)
 
     run("<task-notification>\n<task-id>x</task-id>\n<output>I could not do it again</output>\n</task-notification>")
     run("[Request interrupted by user]")
@@ -532,20 +534,22 @@ def test_cursor_missing_or_foreign_store(tmp_path):
 
 def test_capture_correction_hook_reads_every_harness_shape_and_deduplicates(tmp_path):
     import json, subprocess, pathlib
+    import os, sys
     hook = pathlib.Path(__file__).resolve().parents[1] / "plugin" / "hooks" / "capture-correction.sh"
-    out = tmp_path / ".teyla" / "corrections.jsonl"
+    out = tmp_path / "teyla-home" / "corrections" / "misc.jsonl"
+    env = {**os.environ, "TEYLA_HOME": str(tmp_path / "teyla-home"), "TEYLA_PYTHON": sys.executable}
 
     def run(payload):
-        subprocess.run(["sh", str(hook)], input=json.dumps(payload), text=True, check=True, cwd=tmp_path)
+        subprocess.run(["sh", str(hook)], input=json.dumps(payload), text=True, check=True, cwd=tmp_path, env=env)
 
     run({"hookEventName": "user_prompt_submit", "prompt": "don't do that", "workspaceRoot": str(tmp_path)})          # grok
     run({"hook_event_name": "pre_llm_call", "tool_name": None, "cwd": str(tmp_path),
          "extra": {"user_message": "wrong file, revert it", "is_first_turn": False}})                              # hermes
-    run({"prompt": "again: use pnpm", "cwd": str(tmp_path)})                                                       # claude / cursor
-    run({"prompt": "again: use pnpm", "cwd": str(tmp_path)})                                                       # grok re-delivering cursor's hook
+    run({"prompt": "no, use pnpm here, not npm", "cwd": str(tmp_path)})                                                       # claude / cursor
+    run({"prompt": "no, use pnpm here, not npm", "cwd": str(tmp_path)})                                                       # grok re-delivering cursor's hook
     run({"hook_event_name": "pre_llm_call", "extra": {"user_message": "fine, carry on"}, "cwd": str(tmp_path)})   # not a correction
     recs = [json.loads(l) for l in out.read_text().splitlines()]
-    assert [r["text"] for r in recs] == ["don't do that", "wrong file, revert it", "again: use pnpm"]
+    assert [r["text"] for r in recs] == ["don't do that", "wrong file, revert it", "no, use pnpm here, not npm"]
     assert all(r["cwd"] == str(tmp_path) for r in recs)
 
 

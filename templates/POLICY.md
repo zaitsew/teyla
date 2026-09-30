@@ -13,9 +13,9 @@ subagent or a separate run. Say in the recap which model did what.
 <!-- ladder:start — maintained by `teyla models --write-policy`; edit rows by hand if you must, keep the markers -->
 | provider | orchestrate / hardest tasks | volume work | throwaway / triage | note |
 |---|---|---|---|---|
-| Anthropic | Claude Fable 5.1 | Opus 5, Sonnet 5 | Haiku 4.5 | Fable inherits by default in subagents — always pass model: |
-| OpenAI | GPT-6 Astra | GPT-6 standard tier, GPT-5.6 Sol/Terra | GPT-5.6 Luna | Astra only as the interactive orchestrator |
-| xAI | Grok 4.6 | Grok 4.6, Grok 4.5 | — | on subscription: a cheap volume worker for ANY orchestrator via `grok -p` (research, summaries, bulk drafts) |
+| Anthropic | Claude Fable 5.1 | Opus 5.5, Sonnet 5.5 | Haiku 4.5 | Fable inherits by default in subagents — always pass model: |
+| OpenAI | GPT-6 Astra | GPT-6.1 Sol | GPT-6 Luna | Astra only as the interactive orchestrator |
+| xAI | Grok 4.7 | Grok 4.7, grok-4.7-build-fast | — | on subscription: a cheap volume worker for ANY orchestrator via `grok -p` (research, summaries, bulk drafts) |
 <!-- ladder:end -->
 
 - In Claude Code, pass `model:` explicitly on every `Agent` call; "inherit" means Fable.
@@ -48,6 +48,7 @@ build, `/review` before a PR, `/qa` after a UI ships, `/spec` when intent is vag
 Bring the question with a proposed answer and a default. Do everything that does not
 depend on the answer first, then ask — batched, at a natural checkpoint. Never ask
 "shall I proceed?".
+<!-- teyla:detect ask-permission — `teyla monitor` counts turns that end by asking to proceed -->
 
 ## 5. Stop only at a real blocker or the finished goal
 

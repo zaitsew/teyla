@@ -36,9 +36,12 @@ def harvest(path: str, project: str | None = None, min_sessions: int = 2) -> str
             continue
         out += [f"## {s.day} {s.sid[:8]} ({s.project}) — {s.n_user} human turns, {sum(s.tools.values())} tool calls", "",
                 "tool spine: " + " → ".join(_spine(fp)), ""]
-        corr = [t.text[:300].replace("\n", " ") for t in s.user_turns if t.corr]
+        # A `claude -p` session's prompt was written by a script or another agent: no human
+        # corrected anything there, whatever words the brief uses.
+        corr = [] if s.batch else [t.text[:300].replace("\n", " ") for t in s.user_turns if t.corr]
         if corr:
             out += ["corrections:"] + [f"- {c}" for c in corr] + [""]
+    out += _recorded(path)
     out += ["", "Next: the skill goes only what every session did the same way; everything that varied or was corrected goes to candidate-rules.md."]
     return "\n".join(out)
 
@@ -63,3 +66,16 @@ def _spine(fp: str, limit: int = 60) -> list[str]:
     if len(seq) > limit:
         seq = seq[:limit // 2] + ["…"] + seq[-limit // 2:]
     return seq
+
+
+def _recorded(path: str) -> list[str]:
+    """The corrections stored for the repo `path` is in (`teyla correct`, the capture hook, inbox
+    rejections): said on purpose, so they belong next to the ones mined from transcripts."""
+    from . import corrections
+    if not os.path.exists(path):
+        return []
+    recs = corrections.records(path if os.path.isdir(path) else os.path.dirname(path) or ".")
+    if not recs:
+        return []
+    return ["## recorded corrections for this repo", ""] + [
+        f"- {str(r.get('ts') or '')[:10]} {str(r.get('text') or '')[:300].replace(chr(10), ' ')}" for r in recs] + [""]

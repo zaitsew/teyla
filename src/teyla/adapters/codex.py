@@ -30,7 +30,7 @@ import json
 import os
 import re
 
-from . import CORRECTION_RE, AgentCall, Session, Turn, stale
+from . import AgentCall, Session, Turn, human_text, is_correction, is_retry, stale, turn_end_candidate
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "codex"
@@ -41,12 +41,41 @@ DEFAULT_INDEX = os.path.expanduser("~/.codex/session_index.jsonl")
 
 BATCH_SOURCES = ("exec",)
 BATCH_ORIGINATORS = ("codex_exec",)
-_INJECTED_RE = re.compile(r"^<([a-z][a-z0-9_]*)>.*</\1>$", re.S)
+KNOWN_BLOCKS = {"environment_context", "recommended_plugins", "in-app-browser-context", "user_instructions",
+                "user_action", "turn_aborted", "user_shell_command"}
+_BLOCK_RE = re.compile(r"\s*<([a-z][a-z0-9_-]*)(?:\s[^>]*)?>.*?</\1>\s*", re.S)
+
+
+def strip_injected(txt: str) -> str:
+    """The message minus the harness-written `<tag>...</tag>` blocks it opens with. Codex's
+    desktop app sends `<recommended_plugins>…</recommended_plugins>` and
+    `<environment_context>…</environment_context>` as one user message with two parts; the
+    0.11 test wanted a single block and let all 11 of them through as human turns in 2026-09.
+    `<in-app-browser-context>` (a hyphen) precedes a real question and is cut off it.
+
+    A message made only of blocks is injected whatever the tags (0.11's rule, for any
+    number of blocks). Blocks in front of real text are cut only when Codex is known to
+    write them: a person who pastes `<config>…</config>` before a question keeps it."""
+    pos, blocks = 0, []
+    while True:
+        m = _BLOCK_RE.match(txt, pos)
+        if not m:
+            break
+        blocks.append((m.group(1), pos, m.end()))
+        pos = m.end()
+    if not txt[pos:].strip():
+        return ""
+    cut = 0
+    for tag, start, end in blocks:
+        if tag not in KNOWN_BLOCKS:
+            break
+        cut = end
+    return txt[cut:].strip()
 
 
 def is_injected(txt: str) -> bool:
-    """A user-role message that is a single harness-written `<tag>...</tag>` block."""
-    return txt.startswith("<environment_context>") or bool(_INJECTED_RE.match(txt))
+    """A user-role message made only of harness-written `<tag>...</tag>` blocks."""
+    return txt.startswith("<environment_context>") or not strip_injected(txt)
 
 
 def _load_titles(index_path: str) -> dict:
@@ -139,6 +168,7 @@ def parse(f: str, titles: dict | None = None) -> Session | None:
     last_total_usage = None  # cumulative snapshot, keyed to current_model at the time it arrived
     last_usage_model = None
     pending_calls: dict = {}  # call_id -> {server, tool, turn_index}, until its function_call_output arrives
+    last_text = None  # (ts, text) of the latest assistant message, until a tool call or a human turn follows
     with open(f, errors="replace") as fh:
         for line in fh:
             line = line.strip()
@@ -165,7 +195,12 @@ def parse(f: str, titles: dict | None = None) -> Session | None:
                 if cwd:
                     s.cwd = cwd
                     s.project = cwd
-                if payload.get("source") in BATCH_SOURCES or payload.get("originator") in BATCH_ORIGINATORS:
+                src = payload.get("source")
+                # `source` is a dict for a spawned agent — {"subagent": "review"} for `codex
+                # review`, {"subagent": {"thread_spawn": …}} for spawn_agent — and its prompt
+                # was written by the parent agent even when the parent was a person's session.
+                if (src in BATCH_SOURCES or payload.get("originator") in BATCH_ORIGINATORS
+                        or (isinstance(src, dict) and "subagent" in src)):
                     s.batch = True
 
             elif t == "turn_context":
@@ -190,13 +225,24 @@ def parse(f: str, titles: dict | None = None) -> Session | None:
                     txt = _text_of(payload.get("content")).strip()
                     if role == "assistant":
                         s.assistant_turns += 1
+                        if txt:
+                            last_text = (ts, txt)
                     elif role == "user":
-                        if txt and not is_injected(txt):
-                            s.user_turns.append(
-                                Turn(ts, txt[:1500], bool(CORRECTION_RE.search(txt[:600])))
-                            )
+                        clean = strip_injected(txt).strip() if txt else ""
+                        h = human_text(clean) if clean else None
+                        # A bare "continue" is a retry to the turn counts but an approval to
+                        # A15 (review of the #60 merge).
+                        reply = h or (clean if clean and is_retry(clean) else None)
+                        if reply:
+                            ending = turn_end_candidate(last_text[1]) if last_text else None
+                            if ending:
+                                s.turn_ends.append((last_text[0], ending, reply[:200]))
+                            last_text = None
+                        if h:
+                            s.user_turns.append(Turn(ts, h[:1500], is_correction(h)))
                     # role == "developer": injected instructions/skill text, not a human turn.
                 elif ptype == "function_call":
+                    last_text = None  # the turn went on after the message: it did not end there
                     name = (payload.get("name") or "").rsplit(".", 1)[-1]
                     if name:
                         s.tools[name] += 1

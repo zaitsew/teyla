@@ -48,6 +48,10 @@ TITLE = "zqtitle of the session"
 FIRST_PROMPT = "zqfirstprompt please build it"
 CODE_ROOT = "~/zqcoderoot"
 GROK_SID = "zqsid003-0000"
+SID_ASK = "zqsid004-aaaa-4bbb-8ccc-dddddddddddd"
+ASK = "All green. Want me to push zqaskcanary now?"   # a permission ask: advice A15 counts it
+REPO = "zqrepocanary"                                  # a repo with a push-triggered workflow: A16
+WORKFLOW = "zqworkflowcanary.yml"
 
 CANARIES = [
     SLUG, "zqprojslug", SID, SID[:8], SID_ROOT, SID_ROOT[:8], CWD, CWD_ROOT, "zqcwdcanary",
@@ -55,6 +59,7 @@ CANARIES = [
     PROXY, PROXY_USER, PROXY_PASS, PROXY_HOST, CA_BUNDLE, "zqcacerts", REMINDER, "zqreminder",
     REMINDER_HOW, CORRECTION, "zqcorrection", TITLE, FIRST_PROMPT, "zqhomeuser", "zqcoderoot",
     GROK_SID, GROK_SID[:8], "zqgrokproj", "zqgroktitle",
+    SID_ASK, SID_ASK[:8], ASK, "zqaskcanary", REPO, WORKFLOW, "zqworkflowcanary",
 ]
 
 
@@ -123,6 +128,21 @@ def build_machine(root: pathlib.Path) -> dict:
         _user(20, "look around", cwd=CWD_ROOT),
         _assistant(21, [{"type": "text", "text": "ok"}]),
     ])
+
+    # --- three turns that end by asking permission and get a bare "yes": advice A15 quotes one
+    ask_recs = [_user(40, "fix the flaky test")]
+    for i in range(3):
+        ask_recs += [_assistant(41 + 2 * i, [{"type": "text", "text": ASK}]), _user(42 + 2 * i, "yes")]
+    _write_jsonl(home / ".claude" / "projects" / SLUG / f"{SID_ASK}.jsonl", ask_recs)
+
+    # --- the policy declares both detectors; a repo under code_root runs a workflow on push: A16
+    (home / ".agents").mkdir()
+    (home / ".agents" / "POLICY.md").write_text(
+        "# Policy\n<!-- teyla:detect no-actions -->\n<!-- teyla:detect ask-permission -->\n")
+    repo = home / "zqcoderoot" / REPO
+    (repo / ".git").mkdir(parents=True)
+    (repo / ".github" / "workflows").mkdir(parents=True)
+    (repo / ".github" / "workflows" / WORKFLOW).write_text("on: [push, workflow_dispatch]\njobs: {}\n")
 
     # --- one expensive Grok session: advice A13 (project share) and A14 (session cost) quote it
     import urllib.parse
@@ -221,8 +241,9 @@ def test_fixture_is_real_the_unredacted_report_shows_the_canaries(machine):
         assert c in raw, f"fixture broken: {c!r} not even in the unredacted report"
     for c in VERBS:  # tool names are in the JSON only
         assert c in machine["raw_json"], f"fixture broken: {c!r} not even in the unredacted JSON"
-    for fid in ("A3", "A7", "A9", "A10", "A13", "A14", "C1", "C4"):
+    for fid in ("A3", "A7", "A9", "A10", "A13", "A14", "A15", "A16", "C1", "C4"):
         assert f"] {fid} " in raw, f"fixture does not trigger {fid}"
+    assert "zqaskcanary" in raw and REPO in raw and WORKFLOW in raw
     assert "zqgrokproj" in raw
 
 
@@ -236,8 +257,9 @@ def test_no_canary_in_shared_output(machine, which):
 @pytest.mark.parametrize("which", ["share", "share_json", "feedback"])
 def test_shared_output_still_carries_the_findings_under_pseudonyms(machine, which):
     text = machine[which]
-    # A13/A14 (the week's Grok cost) are `teyla monitor`'s, not the feedback file's
-    for fid in ("A3", "A7", "A9", "A10", "C1", "C4") + (("A13", "A14") if which != "feedback" else ()):
+    # A13/A14 (the week's Grok cost) are `teyla monitor`'s, not the feedback file's;
+    # A15/A16 reach both, via detect.enrich (review of #60, P2)
+    for fid in ("A3", "A7", "A9", "A10", "C1", "C4", "A15", "A16") + (("A13", "A14") if which != "feedback" else ()):
         assert fid in text, f"{fid} missing from {which}: redaction must not drop the advice"
     for alias in ("p01", "c01", "c02", "s01"):
         assert alias in text, f"{alias} missing from {which}"
@@ -253,6 +275,10 @@ def test_share_json_findings_evidence_carries_only_pseudonyms(machine):
     assert "—" in ev["A7"] and "—" in ev["A10"]
     assert ev["C4"].startswith("c0") and ev["C1"].startswith("c0")
     assert data["metrics"]["connectors"]["names"] == {}
+    # A15 says where (a project pseudonym and a day), never what the agent wrote; A16 names r01
+    assert "Want me to" not in ev["A15"] and '"' not in ev["A15"] and "e.g. p0" in ev["A15"]
+    assert "e.g. r01 on: push" in ev["A16"]
+    assert all(e.keys() == {"project", "sid", "day"} for e in data["metrics"]["permission_asks"]["examples"])
     mcp = [k for k in data["metrics"]["tools"] if k.startswith("mcp__")]
     assert mcp and all(re.fullmatch(r"mcp__c\d\d__t\d\d", k) for k in mcp), mcp
     for c in data["metrics"]["connectors"]["connectors"].values():

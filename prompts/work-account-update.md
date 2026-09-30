@@ -47,6 +47,17 @@ resolve (a proxy or a mirror), and nothing below depends on you guessing.
 
 `teyla --version` must print 0.7.0 or newer before you continue.
 
+## 2b. Safe mode — on a managed work laptop, before anything else
+
+```
+teyla config set safe.enabled=true      # or: teyla policy init --work --force (work POLICY template + safe mode)
+teyla doctor | head -3                  # must show: safe  on (network off, no auto-update, no repo commands)
+```
+
+With it on, nothing below updates Teyla by itself: the daily routine and the session hook
+run doctor only, and an update is `teyla update --allow-network`, by hand, when I say so.
+Read "auto-update" in steps 3 and 7 as "manual update" then.
+
 ## 3. Wire everything the new version maintains
 
 ```
@@ -102,7 +113,7 @@ machine: <what is present: claude binary yes/no, launchd yes/no, gh/codex/grok y
 install: <method> <old version> → <new version>
 update --wire: <the lines it printed>
 doctor: <FIX count> <WARN count>; <paste>
-auto-update path: launchd daily | session-start hook
+auto-update path: launchd daily | session-start hook | none (safe mode: teyla update --allow-network by hand)
 feedback file: <path>
 blockers: <none | what only I can do, with the exact step>
 ```

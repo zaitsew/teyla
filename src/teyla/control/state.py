@@ -10,7 +10,7 @@ Three locations, and the split between them is deliberate:
     ~/.teyla/active-runs/<id>  one file per run in flight, holding its pid
     ~/.teyla/runs/<run-id>/    the run's **control** files — see below
     <repo>/runs/<date>/<routine>/<run-id>/   the run's readable artifacts
-    <repo>/.teyla/corrections.jsonl          rejections, as rule candidates
+    ~/.teyla/corrections/<repo-key>.jsonl    rejections, as rule candidates (teyla/corrections.py)
 
 Machine-wide state (the switch, the queue, the history) lives under `~/.teyla`
 because it spans products: one kill switch that only stops one repo is not a
@@ -500,15 +500,15 @@ def inbox_item(run_id: str) -> dict | None:
 
 def record_correction(repo, *, ref: str, run_id: str, note: str, draft_excerpt: str = "") -> pathlib.Path:
     """A rejection with a note is a candidate rule. It lands in the product repo's
-    `.teyla/corrections.jsonl` — the same file `/teyla:correct` writes — so it reaches
-    the harvest with everything else that was corrected by hand."""
-    path = pathlib.Path(repo) / ".teyla" / "corrections.jsonl"
-    append_jsonl(path, {
+    correction store — the same file `/teyla:correct` writes, scrubbed the same way (see
+    teyla/corrections.py) — so it reaches the harvest with everything else that was
+    corrected by hand."""
+    from .. import corrections
+    return corrections.append(repo, {
         "ts": stamp(),
         "source": "inbox-reject",
         "routine": ref,
         "run_id": run_id,
         "text": note,
-        "draft_excerpt": draft_excerpt[:500],
+        "draft_excerpt": draft_excerpt,
     })
-    return path
