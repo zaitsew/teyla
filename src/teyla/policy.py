@@ -301,7 +301,7 @@ def init_ops_root(path: str, owner: str | None = None, code_root: str = "~/repos
         if dry:
             done.append(f"would update {gi}")
         else:
-            gi.write_text((gi.read_text() if gi.exists() else "") + "runs/\n.env\n.teyla/corrections.jsonl\n"); done.append(f"gitignore: runs/ in {gi}")
+            gi.write_text((gi.read_text() if gi.exists() else "") + "runs/\n.env\n.teyla/\n"); done.append(f"gitignore: runs/ in {gi}")
     rr = root / ".claude" / "rules" / "README.md"
     if not rr.exists():
         if dry:
@@ -328,8 +328,8 @@ def ack(note: str | None = None) -> str:
     record = {"claude_md": {"sha256": digest, "date": today}}
     if note:
         record["claude_md"]["note"] = note
-    ACK_PATH.parent.mkdir(parents=True, exist_ok=True)
-    ACK_PATH.write_text(json.dumps(record, indent=2) + "\n")
+    from . import config
+    config.write_private(ACK_PATH, json.dumps(record, indent=2) + "\n")
     detail = f"sha256={digest} date={today}" + (f" note={note!r}" if note else "")
     return f"recorded {CLAUDE_GLOBAL} -> {ACK_PATH}: {detail}"
 

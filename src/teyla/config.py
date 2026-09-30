@@ -20,6 +20,9 @@
     idle_days       = 3            a clean, pushed worktree untouched this long is finished
     agent_idle_days = 1            the same for a subagent's <repo>/.claude/worktrees/agent-*
     build_idle_days = 14           git-ignored build dirs of a repo idle this long are removed
+    [corrections]
+    store = "home"                 "home": ~/.teyla/corrections/<repo-key>.jsonl (default);
+                                   "repo": <repo>/.teyla/corrections.jsonl, the pre-0.12 place
     [env]
     SSL_CERT_FILE = "~/.teyla/ca-bundle.pem"
     HTTPS_PROXY   = "http://127.0.0.1:9000"
@@ -53,6 +56,9 @@ DEFAULTS = {
     # `teyla storage`: auto_clean lets the daily routine remove finished worktrees (clean, on
     # the remote, idle >= idle_days) and git-ignored build output of repos idle >= build_idle_days.
     "storage": {"auto_clean": False, "idle_days": 3, "agent_idle_days": 1, "build_idle_days": 14},
+    # Where `teyla correct` and the capture hook keep corrections; see corrections.py for why
+    # the default is outside the repo.
+    "corrections": {"store": "home"},
     "safe": {"enabled": False},
     "products": {"repos": []},
 }
@@ -72,6 +78,49 @@ def parse_error(p: pathlib.Path | None = None) -> str | None:
     except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as e:
         return str(e)
     return None
+
+
+def private_dir(d: pathlib.Path) -> pathlib.Path:
+    """mkdir -p `d` at 0700, and tighten it if it already exists with group/other bits.
+    ~/.teyla holds prompt excerpts, the update record (paths, proxy) and doctor output; on
+    the machine this was written on it was 0755 with every file 0644 — readable by any
+    other account on the Mac. Same user, same launchd agents: nothing Teyla runs needs more."""
+    d.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        if d.stat().st_mode & 0o077:
+            os.chmod(d, 0o700)
+    except OSError:
+        pass
+    return d
+
+
+def write_all(fd: int, data: bytes) -> None:
+    """Write every byte of `data` to `fd`, then fsync. `os.write` may write fewer bytes than
+    asked — a full disk or quota — and says so only in its return value: an unchecked call
+    reported a half-written record as saved, and the worktree rescue then deleted the
+    original (review of #63, P1)."""
+    view = memoryview(data)
+    while view:
+        n = os.write(fd, view)
+        if n <= 0:
+            raise OSError(f"short write: {len(view)} bytes not written")
+        view = view[n:]
+    os.fsync(fd)
+
+
+def write_private(path: pathlib.Path, text: str) -> None:
+    """Write `text` to `path` as 0600, its directory 0700. An existing file is tightened too:
+    O_CREAT's mode only applies when the file is new."""
+    private_dir(path.parent)
+    # Mode fixed on the descriptor before the old content is truncated or the new written;
+    # O_NOFOLLOW so a symlink planted at the path cannot redirect the write.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        os.ftruncate(fd, 0)
+        write_all(fd, text.encode("utf-8"))
+    finally:
+        os.close(fd)
 
 
 def _read(p: pathlib.Path) -> dict:
@@ -163,11 +212,11 @@ def write(code_root: str = "~/repos", ops_root: str = "~/ops", repo: str = "zait
         return f"invalid config: {p} does not parse ({err}); not rewritten — fix it by hand"
     data = {"code_root": code_root, "ops_root": ops_root, "update": {"repo": repo, "channel": channel}}
     if p.exists():
-        # --force rewrites the roots and the update block; [env], [safe], [products] and
-        # [storage] are kept: they are exactly the local adaptation a rewrite must not erase
+        # --force rewrites the roots and the update block; [env], [safe], [products],
+        # [storage] and [corrections] are kept: they are exactly the local adaptation a rewrite must not erase
         # (a work laptop that loses `safe.enabled` here would self-update the next morning).
         old = _read(p)
-        for table in ("env", "safe", "products", "storage"):
+        for table in ("env", "safe", "products", "storage", "corrections"):
             if isinstance(old.get(table), dict) and old[table]:
                 data[table] = old[table]
         # The same for a pin, an interpreter pin and channel = "none": a frozen update that

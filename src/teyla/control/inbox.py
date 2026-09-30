@@ -31,7 +31,7 @@ bound by hash now, and the answer to a changed manifest is the same in either
 direction: re-run the routine and approve the fresh draft.
 
 **reject** records the note as a correction candidate in the product repo's
-`.teyla/corrections.jsonl` — the same file `/teyla:correct` writes. A rejection
+correction store (`~/.teyla/corrections/<repo-key>.jsonl`) — the same file `/teyla:correct` writes. A rejection
 with a reason is the raw material of a rule; a rejection without one is just a
 run that did not happen, and the `--note` is what decides which you have.
 """

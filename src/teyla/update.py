@@ -360,8 +360,7 @@ def check(repo: str | None = None, refresh: bool = True, max_age_hours: int = 24
            "python_pin": python_spec(cfg), "executable": sys.executable, "trust": trust_source(),
            "proxy": proxy_in_use(), "from_cache": False}
     try:
-        CHECK_PATH.parent.mkdir(parents=True, exist_ok=True)
-        CHECK_PATH.write_text(json.dumps(rec, indent=2) + "\n")
+        config.write_private(CHECK_PATH, json.dumps(rec, indent=2) + "\n")
     except OSError:
         pass
     return rec

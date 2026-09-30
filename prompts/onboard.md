@@ -53,7 +53,8 @@ data anywhere.
 | `~/.codex/AGENTS.md` (symlink) | `policy sync` | `rm ~/.codex/AGENTS.md` |
 | `~/.grok/AGENTS.md` (symlink) | `policy sync` | `rm ~/.grok/AGENTS.md` |
 | `~/.hermes/SOUL.md` (section appended) | `policy sync` | delete the `## Operating policy` section |
-| `<repo>/.teyla/corrections.jsonl` | the `/teyla:correct` plugin command, per repo | `rm -rf <repo>/.teyla` |
+| `~/.teyla/corrections/<repo>-<hash>.jsonl` | `/teyla:correct`, `teyla correct`, the capture hook | `rm ~/.teyla/corrections/<file>` |
+| `.teyla/` line in `<repo>/.git/info/exclude` | the same, when the repo has a `.teyla/` | delete the line |
 | `~/.teyla/weekly.sh` + a LaunchAgent | `teyla routine install` (only if run) | `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.zaitsew.teyla.weekly.plist && rm ~/Library/LaunchAgents/com.zaitsew.teyla.weekly.plist ~/.teyla/weekly.sh` |
 
 `teyla monitor --share`, `teyla feedback`, and `teyla harvest` all write only to a file you

@@ -17,8 +17,8 @@ What counts as SAFE is the rule in the owner's CLAUDE.md, applied mechanically:
   no process has its working directory inside it, it is not locked, its own reflog points
   at no commit that exists nowhere else, no other worktree lives inside it, and it holds no
   git-ignored file that is not build output (`git worktree remove` deletes ignored files
-  even without `--force`: a `.env`, local notes). `.teyla/corrections.jsonl` is appended to
-  the main checkout's copy first. Every fact is checked again right before removal; the
+  even without `--force`: a `.env`, local notes). A pre-0.12 `.teyla/corrections.jsonl` is
+  imported into the repo's correction store (~/.teyla/corrections/) first. Every fact is checked again right before removal; the
   tree goes with `git worktree remove` — never `rm` — and without `--force`. The branch is kept.
 - **a build directory** (`build`, `.build`, `.next`, `dist`, `target`, `DerivedData`, …) is
   SAFE when git ignores it, tracks nothing inside it, it is not part of a nested clone, no
@@ -386,7 +386,7 @@ def worktrees(repo: pathlib.Path, cwds: list[str] | None, idle_days: int, sizes:
                    limit=limit, locked=bool(w.get("locked")),
                    verdict="KEEP" if a["why"] else "SAFE",
                    reason="; ".join(a["why"]) or (f"clean, on the remote, idle {a['idle_days']:.0f}d"
-                                                  + (f"; {RESCUE} is kept in the main checkout" if a["rescue"] else "")),
+                                                  + (f"; {RESCUE} is kept in the correction store" if a["rescue"] else "")),
                    action="git worktree remove", bytes=du(path) if sizes else None)
         rows.append(row)
     return rows
@@ -635,19 +635,17 @@ def _log(line: str) -> None:
 
 
 def rescue(worktree: str, main: str) -> None:
-    """Append the worktree's `.teyla/corrections.jsonl` lines the main checkout lacks."""
+    """Keep the worktree's `.teyla/corrections.jsonl` records the store lacks. Since 0.12 the
+    store is ~/.teyla/corrections/ (teyla/corrections.py), keyed by the main checkout, and
+    every record goes in through its scrubber — with `corrections.store = "repo"` too, where
+    the store is the main checkout's own file: a raw copy would carry a pre-0.12 prompt's
+    secrets into it."""
+    from . import corrections
     src = pathlib.Path(worktree, RESCUE)
     if not src.is_file():
         return
-    dst = pathlib.Path(main, RESCUE)
     # Bytes, split on \n only: splitlines() also breaks on U+2028, which JSON allows inside a string.
-    have = set(dst.read_bytes().split(b"\n")) if dst.is_file() else set()
-    new = [l for l in src.read_bytes().split(b"\n") if l.strip() and l not in have]
-    if new:
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        lead = b"\n" if dst.is_file() and dst.stat().st_size and not dst.read_bytes().endswith(b"\n") else b""
-        with dst.open("ab") as fh:
-            fh.write(lead + b"\n".join(new) + b"\n")
+    corrections.import_lines(main, src.read_bytes().split(b"\n"))
 
 
 def _remove_worktree(r: dict) -> tuple[int, str]:

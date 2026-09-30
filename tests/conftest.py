@@ -1,12 +1,23 @@
-"""Every test starts outside safe mode and away from the real ~/.teyla/config.toml (and the
-update records beside it): config.load()
-is called from deep inside products, routines, models and doctor, and a work laptop with
-`[safe] enabled = true` (or TEYLA_SAFE=1 in the shell) would otherwise change what they do."""
+"""Suite-wide safety net. Every test starts outside safe mode and away from the real
+~/.teyla/config.toml (and the update records beside it): config.load() is called from deep
+inside products, routines, models and doctor, and a work laptop with `[safe] enabled = true`
+(or TEYLA_SAFE=1 in the shell) would otherwise change what they do.
+
+TEYLA_HOME points into a tmp dir for every test, so code that resolves ~/.teyla at call time
+(the correction store, the control plane) cannot write to the real one even when a test
+forgets to isolate HOME. On 2026-09-29 two hook tests that predate the store wrote five
+records into the real ~/.teyla/corrections/ before this existed. Tests that exercise
+HOME-based resolution unset it themselves."""
 from __future__ import annotations
 
 import pytest
 
 from teyla import config, net, update
+
+
+@pytest.fixture(autouse=True)
+def _teyla_home_in_tmp(tmp_path_factory, monkeypatch):
+    monkeypatch.setenv("TEYLA_HOME", str(tmp_path_factory.mktemp("teyla-home")))
 
 
 @pytest.fixture(autouse=True)

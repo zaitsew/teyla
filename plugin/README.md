@@ -1,8 +1,8 @@
 # teyla (plugin)
 
 A Claude Code plugin for the file-only half of Teyla: nothing here talks to a
-server or a database. Everything it reads and writes lives in the repo it runs
-in, in git. Nothing leaves the machine.
+server or a database. Rules live in the repo it runs in, in git; corrections live
+in `~/.teyla/corrections/`, outside every repo. Nothing leaves the machine.
 
 ## Install
 
@@ -53,8 +53,9 @@ a harness `teyla doctor` can read logs from, not one you can drive from a shell.
   rule into a `## Rules` section of `AGENTS.md`, but only if `AGENTS.md` is a
   real file in the repo (not a symlink onto `CLAUDE.md` or similar — mirroring
   into a symlink would write through it and double the rule).
-- **`/teyla:correct <what was wrong>`** — appends `{ts, text, cwd}` to
-  `.teyla/corrections.jsonl` in the current repo, then drafts a candidate rule
+- **`/teyla:correct <what was wrong>`** — runs `teyla correct`, which appends
+  `{ts, text, cwd}` to `~/.teyla/corrections/<repo>-<hash>.jsonl` (secrets
+  replaced by `[redacted]`), then drafts a candidate rule
   sentence and scope and asks whether to promote it with `/teyla:rule`. Never
   promotes on its own.
 
@@ -71,8 +72,12 @@ swallowed silently rather than surfaced.
 - **`UserPromptSubmit`** (`hooks/capture-correction.sh`) — a cheap heuristic
   over the raw prompt text (`don't`, `wrong`, `not like that`, `again`,
   `revert`, and the Russian equivalents `не так`, `неправильно`, `опять`). On a
-  match, appends `{ts, cwd, text[:500]}` to `.teyla/corrections.jsonl` under
-  the repo the prompt was submitted in. Turns the harness injects as if the
+  match, appends `{ts, cwd, text[:500]}` to `~/.teyla/corrections/<repo>-<hash>.jsonl`
+  for the repo the prompt was submitted in (worktrees count as their main
+  checkout), after `teyla.corrections.scrub` has replaced tokens, keys, JWTs,
+  `password=`-style values and long base64/hex blobs with `[redacted]`. It runs
+  the installed `teyla`'s own interpreter, or a `python3` that will not pop the
+  macOS developer-tools dialog; with neither, it records nothing. Turns the harness injects as if the
   user typed them — `<task-notification>` (a background subagent finished),
   `<system-reminder>`, `[SYSTEM NOTIFICATION …]`, slash-command expansions —
   are skipped before the heuristic runs; they are not corrections, and their
@@ -87,23 +92,30 @@ swallowed silently rather than surfaced.
 
 ## Where data goes
 
-Everything is repo-local and gitignored data, not committed source, mirroring
-the `runs/` convention in `~/ops/CLAUDE.md`:
+Corrections are kept outside the repo: they are raw prompt text, and a work
+repo that does not ignore `.teyla/` would commit them with the next
+`git add -A`. Everything else is repo-local, mirroring the `runs/` convention in
+`~/ops/CLAUDE.md`:
 
 | Path | Written by | Contents |
 |---|---|---|
-| `.teyla/corrections.jsonl` | `UserPromptSubmit` hook, `/teyla:correct` | one JSON object per line: `ts`, `text`, `cwd` |
+| `~/.teyla/corrections/<repo>-<hash>.jsonl` | `UserPromptSubmit` hook, `/teyla:correct` | one JSON object per line: `ts`, `text`, `cwd`; 0600, outside the repo |
 | `.claude/rules/<slug>.md` | `/teyla:rule`, or you, by hand | committed — rules are decisions, not data |
 | `AGENTS.md` (`## Rules` section) | `/teyla:rule`, when the file is real | committed, mirrors `.claude/rules/` |
 | `<path>/harvest-<date>/*` | `harvest` skill | proposals for a human to review and merge |
 | `runs/teyla/<date>.md` | `adoption-review` skill (via `teyla monitor`) | one monitor report per run |
 
-Add `.teyla/` and `runs/teyla/` to `.gitignore` in any repo where you don't
-want generated logs and reports committed — they're recoverable by rerunning,
-same as any other `runs/` directory.
+A pre-0.12 `<repo>/.teyla/corrections.jsonl` is still read (never moved or
+deleted), and the first time Teyla touches such a repo it adds `.teyla/` to
+`.git/info/exclude`. `teyla config set corrections.store=repo` keeps writing
+there instead of `~/.teyla/corrections/`; the exclude is added either way. Add
+`runs/teyla/` to `.gitignore` in any repo where you don't want generated reports
+committed.
 
 ## What it needs
 
-The `teyla` CLI (`pip install -e .` from this repo, or however it ends up
-packaged) for `harvest` and `monitor`. `python3` on `PATH` for the hooks —
-if it's missing, the hooks just do nothing, same as any other failure mode.
+The `teyla` CLI (`uv tool install git+https://github.com/zaitsew/teyla`, or
+`pip install -e .` from this repo) for `harvest`, `monitor`, `/teyla:correct`
+and the capture hook: the secret scrubber and the correction store are in it,
+and without them the hook writes nothing rather than an unscrubbed prompt. If
+it's missing, the hooks just do nothing, same as any other failure mode.
