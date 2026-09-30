@@ -1,8 +1,89 @@
 # Changelog
 
-## Unreleased
+## 0.13.0 — 2026-09-30 — safe at work, true in every harness, useful in the cloud
 
-- **Model generation.** `pricing.PRICES` prices claude-opus-5-5, claude-sonnet-5-5, claude-haiku-4-5, claude-fable-5-1, gpt-6.1-sol, gpt-6-luna, grok-4.7 and grok-4.7-build-fast (rates from the models.dev catalogue; build-fast is the Grok CLI's stated 2x of grok-4.7); older rows stay so old transcripts still price. gpt-6-astra's cache rates corrected. The `templates/POLICY.md` ladder now names the current generation.
+Measured on the machine this was written on, before the sprint:
+- `teyla doctor` took 242 s, 211 of them in one `git log -p` per worktree; 0.12 brought it to
+  8.4 s (#56), and `teyla monitor --days 3` from 21–29 s to about 2 s (#55).
+- The correction rate over 29 days read 8.4%; with batch prompts and retries no longer counted
+  as human turns it is 3.9% (#68). The capture hook had filed 107 records in September, about
+  3 of them real corrections; 509 of 520 September Codex sessions were `codex exec`.
+- Four weekly reports were written in September and none was opened; the session-start line
+  showed the same "1 fix(es), 2 warning(s)" on 44 of 44 starts for 13 days.
+- The no-Actions rule was broken three times in September (accounts twice, loco once) until the
+  Actions quota hit 100%; the new scan flags 16 workflow files in 10 repos.
+- frank drove 455 `grok -p` calls a day; 0 of 18 repos were ready for a cloud session.
+
+Every PR below had one GPT-6.1 Sol review of its own diff at merge time, and one of each fix;
+21 P1s were found and fixed before merging.
+
+### Safe at work
+
+- **Safe mode** (#59). `teyla config set safe.enabled=true`, `TEYLA_SAFE=1` or
+  `teyla policy init --work`: no network unless the typed command says `--allow-network`, no
+  self-update from the hook or the daily routine, `check.sh` only in `products.repos`, plugin
+  changes printed as `claude plugin …` commands, no keychain query, `teyla run`, triggers and
+  agent steps gated. A config that does not parse or cannot be read turns safe mode **on**, and
+  is never rewritten. `templates/POLICY.work.md` lists approved providers only.
+- **Updates install a published release, by commit, verified** (#64). A draft release
+  is not a release; every install forces a reinstall and checks the commit the installer
+  recorded; a build that reports the wrong version or commit is rolled back to the commit that
+  was running. `update.pin` (a version or a sha) and `update.channel=none`.
+- **Corrections leave the repo** (#63): `~/.teyla/corrections/<repo>-<hash>.jsonl`, 0600 in a
+  0700 `~/.teyla`, secrets scrubbed (long tokens, `KEY=value` assignments, `.netrc`-style passwords), written
+  in full or not at all. An older in-repo `.teyla/` gets an
+  `info/exclude` line on first touch.
+- **`teyla uninstall [--dry] [--keep-data]`** (#67) reverses every write Teyla makes —
+  LaunchAgents, the policy import line, symlinks, Hermes sections, harness skills and hooks
+  (Codex's included), the plugin, `~/.teyla` — touching only what carries Teyla's marker, label
+  or symlink target. `prompts/onboard.md` lists every network call and every file with its undo.
+
+### True in every harness
+
+- **Codex hooks and Hermes orientation** (#61). `teyla harness sync` wires Codex's SessionStart
+  and UserPromptSubmit in `~/.codex/hooks.json`, keeping a user's handlers in a shared group;
+  Hermes gets the orientation on its first turn. `codex exec` prompts are never corrections.
+  `harness status` shows whether Codex and Hermes approved the hooks.
+- **`teyla harness verify [--live]`** (#66): can each harness do work now — version, auth shape
+  and dates, the newest quota or auth error still unresolved, interactive vs batch sessions;
+  `--live` sends one line through each and checks the policy reached it.
+- **Numbers you can act on** (#68). Batch sessions are never human turns (Hermes `oneshot`
+  included), retries are not corrections, one matcher for the hook and the report; A9 no
+  longer tops out on "Try again"; A10 compares the dates governance files were written with
+  the ack date.
+- **Headless spend** (#69): calls a day per harness and project with their cost; **A17** when
+  one project drives more than 200 a day or doubles week over week, **A18** for quota, balance
+  or auth errors. Under `--share` advice is computed from redacted metrics.
+- **Policy detectors** (#60): a POLICY.md marker switches on a check that files or transcripts
+  can prove broken — `no-actions` (workflows on push, pull_request or schedule, in the working
+  tree and on `origin/HEAD`; doctor and **A16**) and `ask-permission` (turns ending on a
+  permission question answered with a bare yes; **A15**).
+- **A digest that gets read** (#65): the session-start banner shows only what is new; the
+  weekly routine writes a five-line digest (`teyla digest`) with the top three actions and
+  their commands; `teyla check <product> <check> ok|broken` confirms a manual check in place.
+- **Model generation** (#72): prices and the POLICY ladder for opus-5-5, sonnet-5-5,
+  haiku-4-5, fable-5-1, gpt-6.1-sol, gpt-6-luna, grok-4.7 and grok-4.7-build-fast.
+
+### Useful in the cloud
+
+- **`teyla cloud check`** (#70): per repo, what a cloud session would lack — instructions that
+  defer to a home-directory file (a symlink out of the repo blocks), `.claude/` ignored, no
+  shipping rules or hooks, a `merge-approved:` line that drifts from the owner's list, Mac-only
+  gate steps with no skip, secrets with no manifest. `teyla cloud inbox` and **A19**: branches
+  with `Claude-Session:` commits and no PR after 24 h, landed only when on the remote default.
+- **`teyla cloud prep`** (#71) writes what a repo needs for that: an AGENTS.md shipping section
+  with the `merge-approved` line, SessionStart/Stop hooks gated on the remote environment (the
+  Stop hook fails closed on unpushed work), rules and a setup doc that labels every secret name
+  by where it may live. Every write stays inside the repo; public repos get no private data.
+
+## 0.12.0 — 2026-09-29
+
+- **`teyla doctor`: 242 s → 8.4 s** (#56): doctor counts finished worktrees without the reflog
+  comparison (removal still runs it), the remote half is computed once per repository, and the
+  harness lines count only the last 7 days of sessions.
+- **Batch prompts are not human turns** (#55): `claude -p`, `codex exec` and `grok -p` sessions
+  are counted but their prompts are not; `--days` reads only the window (`monitor --days 3`:
+  21–29 s → about 2 s).
 - **`teyla grok-cost`** reports what Grok CLI sessions cost at list price. `--last --cwd <repo>`
   prints one line for the newest session under a path (cost, model calls, input with cached %,
   output, tool calls, context, effort, title) — what an orchestrator runs when a `grok -p` lane
