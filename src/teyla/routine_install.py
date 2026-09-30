@@ -155,9 +155,16 @@ UPDATE_LINE = '"$TEYLA" update --quiet'
 SAFE_UPDATE_LINE = "# safe mode: no self-update here; by hand: teyla update --allow-network"
 
 
+NONE_UPDATE_LINE = "# [update] channel = none: no self-update here; by hand: teyla update"
+
+
 def _update_line() -> str:
     from . import config
-    return SAFE_UPDATE_LINE if config.safe_mode() else UPDATE_LINE
+    if config.safe_mode():
+        return SAFE_UPDATE_LINE
+    if str((config.load().get("update") or {}).get("channel") or "release").strip().lower() == "none":
+        return NONE_UPDATE_LINE
+    return UPDATE_LINE
 
 
 def _runs_root() -> str:
