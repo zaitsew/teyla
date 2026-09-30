@@ -22,7 +22,9 @@ def test_w1_counts_only_expensive_sessions_with_no_outcome():
             _row(sid="cheap0000000", usd=3.0), _row(sid="batch0000000", usd=60.0, batch=True),
             _row(sid="norepo000000", usd=30.0)]
     verdict = {"idle00000000": False, "shipped00000": True, "cheap0000000": False, "norepo000000": None}
-    F = spend.findings(rows, outcome_of=lambda r: verdict[r["sid"]])
+    coverage = []
+    F = spend.findings(rows, outcome_of=lambda r: verdict[r["sid"]], coverage=coverage)
+    assert coverage == ["W1: 1 session(s) over $15 had no repo to check ($30)"]
     w1 = [f for f in F if f["id"] == "W1"]
     assert len(w1) == 1 and w1[0]["usd"] == 40.0
     assert "idle0000" in w1[0]["evidence"] and "shipped" not in w1[0]["evidence"]

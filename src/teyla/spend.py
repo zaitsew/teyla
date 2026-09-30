@@ -233,10 +233,12 @@ def _money(x: float) -> str:
     return f"${x:,.0f}" if x >= 10 else f"${x:,.2f}"
 
 
-def findings(rows: list[dict], actions: list[dict] | None = None, outcome_of=outcome) -> list[dict]:
+def findings(rows: list[dict], actions: list[dict] | None = None, outcome_of=outcome,
+             coverage: list[str] | None = None) -> list[dict]:
     """The waste findings, largest first: {id, usd, title, evidence, fix, cmd}. `usd` is None for
-    W8, whose cost is minutes, not tokens."""
+    W8, whose cost is minutes, not tokens. What a rule could not check is appended to `coverage`."""
     F = []
+    coverage = [] if coverage is None else coverage
     for rid, harness_ok, fix in (
         ("W1", lambda h: h != "grok",
          "before a long session ends without a commit, write its handoff (memory file or draft PR); "
@@ -245,12 +247,18 @@ def findings(rows: list[dict], actions: list[dict] | None = None, outcome_of=out
          "POLICY §1 for Grok lanes: a file manifest, --max-turns, and paste-only fixes applied by hand; "
          "`teyla grok-cost --by session`"),
     ):
-        idle = []
+        idle, unknown = [], []
         for r in rows:
             if not harness_ok(r["harness"]) or r["batch"] or r["usd"] < W1_USD:
                 continue
-            if outcome_of(r) is False:
+            verdict = outcome_of(r)
+            if verdict is False:
                 idle.append(r)
+            elif verdict is None:
+                unknown.append(r)
+        if unknown:
+            coverage.append(f"{rid}: {len(unknown)} session(s) over {_money(W1_USD)} had no repo to check "
+                            f"({_money(sum(r['usd'] for r in unknown))})")
         if idle:
             total = sum(r["usd"] for r in idle)
             F.append(dict(id=rid, usd=total, cmd=False, fix=fix,
@@ -297,7 +305,8 @@ def report(days: int = 7, rows=None, actions=None, with_actions: bool = True) ->
     rows = session_rows(days) if rows is None else rows
     if actions is None and with_actions:
         actions = actions_usage()
-    F = findings(rows, actions)
+    coverage: list[str] = []
+    F = findings(rows, actions, coverage=coverage)
     by_harness, by_model = Counter(), Counter()
     for r in rows:
         by_harness[r["harness"]] += r["usd"]
@@ -307,7 +316,7 @@ def report(days: int = 7, rows=None, actions=None, with_actions: bool = True) ->
     waste = sum(f["usd"] for f in F if f["usd"])
     return dict(days=days, total_usd=total, sub_usd=sum(r["sub_usd"] for r in rows), waste_usd=waste,
                 by_harness=dict(by_harness.most_common()), by_model=dict(by_model.most_common()),
-                findings=F, actions=actions, top_sessions=rows[:5], sessions=len(rows))
+                findings=F, actions=actions, top_sessions=rows[:5], sessions=len(rows), coverage=coverage)
 
 
 def summary_line(rep: dict) -> str:
@@ -320,7 +329,7 @@ def summary_line(rep: dict) -> str:
 def render(rep: dict) -> str:
     L = [f"teyla spend — last {rep['days']} days, API list price (a subscription bills differently)", "",
          f"total {_money(rep['total_usd'])} over {rep['sessions']} sessions  ·  "
-         + "  ·  ".join(f"{h} {_money(v)}" for h, v in rep["by_harness"].items())
+         + "  ·  ".join(f"{h} {_money(v)}" for h, v in rep["by_harness"].items() if v >= 0.01)
          + (f"  ·  of which subagents {_money(rep['sub_usd'])}" if rep["sub_usd"] else ""),
          "by model: " + ", ".join(f"{m} {_money(v)}" for m, v in list(rep["by_model"].items())[:6]), ""]
     if rep["findings"]:
@@ -332,6 +341,7 @@ def render(rep: dict) -> str:
         L.append("waste: nothing over the thresholds")
     if rep.get("actions") is None:
         L.append("  W8 GitHub Actions: not checked (no gh, no network, or safe mode)")
+    L += [f"  {c}" for c in rep.get("coverage") or []]
     L += ["", NOT_COVERED, "", "top sessions:"]
     L += [f"  {_money(r['usd']):>7}  {r['harness']:<11} {_who(r)}" for r in rep["top_sessions"]]
     return "\n".join(L)
