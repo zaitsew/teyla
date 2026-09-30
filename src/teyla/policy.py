@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 
 HOME = pathlib.Path.home()
 POLICY = HOME / ".agents" / "POLICY.md"
@@ -172,6 +173,10 @@ def sync(dry=False, owner: str | None = None) -> list[str]:
     return done or ["already in sync"]
 
 
+# CLAUDE.md that pulls AGENTS.md in: `@AGENTS.md` on a line of its own.
+IMPORT_RE = re.compile(r"^@AGENTS\.md\s*$", re.M)
+
+
 def sync_repo(repo: str, dry=False, prefer: str | None = None) -> str:
     """Give a repo an AGENTS.md if it only has CLAUDE.md (or vice versa).
 
@@ -185,6 +190,8 @@ def sync_repo(repo: str, dry=False, prefer: str | None = None) -> str:
     if a.exists() and c.exists():
         if a.is_symlink() or c.is_symlink():
             return f"{r.name}: already linked"
+        if IMPORT_RE.search(c.read_text()):
+            return f"{r.name}: already linked (CLAUDE.md imports @AGENTS.md)"
         a_lines, c_lines = a.read_text().splitlines(), c.read_text().splitlines()
         if a_lines == c_lines:
             if not dry:
@@ -503,7 +510,11 @@ def repos_status(root: pathlib.Path) -> list[tuple[str, str]]:
             continue
         a, c = d / "AGENTS.md", d / "CLAUDE.md"
         if a.exists() and c.exists():
-            if a.is_symlink() or c.is_symlink() or a.read_text() == c.read_text():
+            # ok = one source of truth: a symlink, identical text, or CLAUDE.md that imports
+            # AGENTS.md (`@AGENTS.md` on a line of its own — what `teyla cloud prep` writes, and
+            # what a repo with Claude-only lines needs). Claude Code expands the import, so the two
+            # files cannot drift; comparing their text would flag exactly the layout we recommend.
+            if a.is_symlink() or c.is_symlink() or a.read_text() == c.read_text() or IMPORT_RE.search(c.read_text()):
                 out.append(("ok", d.name))
             else:
                 out.append(("differ", d.name))
