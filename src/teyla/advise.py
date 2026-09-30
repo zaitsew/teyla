@@ -91,7 +91,9 @@ def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
                           action="Run `teyla policy sync` so Codex, Hermes, Grok and project AGENTS.md read the same POLICY.md."))
     # repeated corrections → rule candidates
     from .monitor import fingerprint
-    norm = Counter(fingerprint(t) for t in m.get("correction_samples") or [])
+    # A redacted copy (`--share`) has no sample text, only these fingerprints.
+    norm = Counter(m["correction_fingerprints"]) if "correction_fingerprints" in m else \
+        Counter(fingerprint(t) for t in m.get("correction_samples") or [])
     rep = sorted(((n, fp) for fp, n in norm.items() if n >= 2), reverse=True)
     if rep:
         F.append(dict(id="A9", severity="medium", title="Corrections that repeat verbatim",

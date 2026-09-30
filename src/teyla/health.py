@@ -667,9 +667,15 @@ def window_errors(days: int, home: pathlib.Path | None = None) -> list[dict]:
             continue
         err, ok = e.get("error"), e.get("last_ok")
         lim = e.get("limits") or {}
-        if lim.get("rate_limit_reached_type") and (err is None or err["kind"] not in ("quota", "auth")):
-            err = _err(lim.get("at"), "quota", f"usage limit reached ({lim['rate_limit_reached_type']})", "rate_limits")
-            ok = None
+        rt = lim.get("rate_limit_reached_type")
+        now = time.time()
+        live = {"primary": _window_live(lim.get("primary") or {}, now), "secondary": _window_live(lim.get("secondary") or {}, now)}
+        # A limit event newer than the recorded error is the current state, even when an old quota
+        # error was already cleared by a success in between (review of #69, P2); only a success
+        # after the limit event clears it. A snapshot whose window has reset is history.
+        if (rt and lim.get("at") and live.get(str(rt), any(live.values()))
+                and (err is None or err["kind"] not in ("quota", "auth") or err.get("ts") is None or lim["at"] > err["ts"])):
+            err = _err(lim["at"], "quota", f"usage limit reached ({rt})", "rate_limits")
         if not err or err["kind"] not in ("quota", "auth") or err.get("ts") is None:
             continue
         out.append(dict(harness=_short(name), kind=err["kind"], day=f"{err['ts']:%Y-%m-%d}", message=err["message"],

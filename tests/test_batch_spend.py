@@ -133,3 +133,75 @@ def test_share_redacts_headless_project_names():
     m["headless"] = headless(ss, 29, now=dt.datetime.now(dt.timezone.utc))
     r = redact(m)
     assert [h["project"] for h in r["headless"]] == ["h01"] and "frank" not in json.dumps(r["headless"])
+
+
+def test_a18_a_later_unrelated_error_does_not_hide_a_quota_failure(tmp_path, monkeypatch):
+    """Grok answered 402, then a connection reset; no call succeeded. Still failing (review of #69, P2;
+    already resolved by the #66 merge, this pins it for A18)."""
+    home = tmp_path / "home"
+    (home / ".grok" / "logs").mkdir(parents=True)
+    monkeypatch.delenv("CODEX_HOME", raising=False); monkeypatch.delenv("GROK_HOME", raising=False)
+    now = dt.datetime.now(dt.timezone.utc)
+    rec = lambda h, ctx: {"ts": (now - dt.timedelta(hours=h)).isoformat(), "msg": "shell.turn.inference_failed", "ctx": ctx}  # noqa: E731
+    (home / ".grok" / "logs" / "unified.jsonl").write_text("\n".join(json.dumps(r) for r in [
+        rec(3, {"status_code": 402, "message": "API error (status 402 Payment Required): balance exhausted"}),
+        rec(1, {"message": "connection reset by peer"})]) + "\n")
+    [row] = health.window_errors(7, home=home)
+    assert row["harness"] == "grok" and row["kind"] == "quota" and row["still_failing"]
+
+
+def test_a18_a_limit_event_newer_than_a_cleared_quota_error_is_still_failing(tmp_path, monkeypatch):
+    """Old quota error, a success, then Codex reports the limit reached again: exhausted now, not
+    "recovered" because the old error's kind matched (review of #69, P2)."""
+    home = tmp_path / "home"
+    (home / ".codex" / "sessions").mkdir(parents=True)
+    monkeypatch.delenv("CODEX_HOME", raising=False); monkeypatch.delenv("GROK_HOME", raising=False)
+    now = dt.datetime.now(dt.timezone.utc)
+    at = lambda h: (now - dt.timedelta(hours=h)).isoformat()  # noqa: E731
+    win = {"primary": {"used_percent": 100.0}, "secondary": {"used_percent": 60.0}, "plan_type": "plus"}
+    day = home / ".codex" / "sessions" / f"{now:%Y}" / f"{now:%m}" / f"{now:%d}"
+    day.mkdir(parents=True)
+    (day / "rollout-x.jsonl").write_text("\n".join(json.dumps(r, separators=(",", ":")) for r in [  # compact: the scan greps bytes
+        {"timestamp": at(5), "type": "event_msg", "payload": {"type": "error", "message": "You've hit your usage limit."}},
+        {"timestamp": at(3), "type": "event_msg", "payload": {"type": "token_count", "rate_limits": dict(win, primary={"used_percent": 20.0})}},
+        {"timestamp": at(1), "type": "event_msg", "payload": {"type": "token_count", "rate_limits": dict(win, rate_limit_reached_type="primary")}},
+    ]) + "\n")
+    [row] = health.window_errors(7, home=home)
+    assert row["message"] == "usage limit reached (primary)" and row["still_failing"]
+
+
+def test_doubling_needs_the_floor_in_the_previous_week():
+    [r] = headless(_many("codex", "/private/tmp/a", 100, 1), 29, now=NOW)  # 100 this week, none before
+    assert (r["calls_7d"], r["calls_prev_7d"]) == (100, 0) and not r["doubled"]
+    [r] = headless(_many("codex", "/private/tmp/a", 200, 1) + _many("codex", "/private/tmp/a", 100, 10), 29, now=NOW)
+    assert r["doubled"]
+
+
+def test_a_cost_known_for_some_calls_is_marked_partial():
+    ss = (_many("codex", "/private/tmp/a", 1, 1, usage={"gpt-6-astra": {"output_tokens": 100_000}})
+          + _many("codex", "/private/tmp/a", 9, 2, usage={}))          # no usage: cost unknown
+    [r] = headless(ss, 29, now=NOW)
+    assert r["usd"] > 0 and r["cost_partial"] and r["cost_note"] == "API-equivalent, partial: 1 of 10 calls costed"
+    ss = _many("codex", "/private/tmp/a", 3, 1, usage={"gpt-6-astra": {"output_tokens": 100_000}})
+    [r] = headless(ss, 29, now=NOW)
+    assert not r["cost_partial"] and r["cost_note"] == "API-equivalent"
+
+
+def test_share_does_not_leak_a17_project_names_or_paths(monkeypatch, capsys):
+    """`teyla monitor --share` advises from the redacted metrics: A17's title, evidence and action
+    name the project driving the volume (review of #69, P1). A path outside $HOME is its own name."""
+    import argparse
+    from teyla import cli, policy
+    canary = "/srv/zqcwdcanary/zqprojslug"
+    ss = _many("grok", canary, 1500, 1) + _many("grok", canary, 100, 10)
+    monkeypatch.setattr(cli, "_sessions", lambda a: ss)
+    monkeypatch.setattr(cli, "_extras", lambda m, s, d: m.update(headless=headless(s, d, now=NOW), grok_week=None, harness_errors=[]))
+    monkeypatch.setattr(policy, "status", lambda: {})
+    run = lambda **kw: (cli.cmd_monitor(argparse.Namespace(days=29, project=None, no_sidechain=True, samples=False,  # noqa: E731
+                                                          out=None, **kw)), capsys.readouterr().out)[1]
+    raw = run(share=False, json=True)
+    assert "zqprojslug" in raw and '"A17"' in raw       # the canary is reachable without --share
+    for as_json in (False, True):
+        out = run(share=True, json=as_json)
+        assert "zq" not in out and "h01" in out
+    assert '"A17"' in run(share=True, json=True)         # the finding stays, only its names go

@@ -95,7 +95,7 @@ def metrics(sessions: list[Session], days: int | None = None) -> dict:
 # pricing.cost_usd. Where neither exists the row says "calls, tokens unknown", never $0.
 
 HEADLESS_PER_DAY = 200       # A17: one project driving more headless calls a day than this
-HEADLESS_DOUBLING_FLOOR = 100  # A17: "doubled week over week" only counts from this many calls a week
+HEADLESS_DOUBLING_FLOOR = 100  # A17: "doubled week over week" only counts from this many calls in the previous week
 
 
 def headless(sessions: list[Session], days: int | None, grok_rows: list | None = None,
@@ -128,13 +128,14 @@ def headless(sessions: list[Session], days: int | None, grok_rows: list | None =
             continue
         if s.usage:
             r["tokens_known"] += 1
+            unpriced = False
             for model, u in s.usage.items():
                 c = cost_usd(model, u)
                 if c is None:
-                    r["unpriced_models"].add(model)
+                    r["unpriced_models"].add(model); unpriced = True
                 else:
                     r["usd"] += c
-            if not r["unpriced_models"]:
+            if not unpriced:  # per session: one unpriced call must not un-price the ones before it
                 r["priced"] += 1
     out = []
     for r in rows.values():
@@ -147,9 +148,15 @@ def headless(sessions: list[Session], days: int | None, grok_rows: list | None =
             r["cost_note"] = "no list price for " + ", ".join(sorted(r["unpriced_models"]))
         else:
             r["cost_note"] = "list price" if r["harness"] == "grok" else "API-equivalent"
+        # A cost known for only some of the calls is a floor, not the total (review of #69, P2).
+        r["cost_partial"] = bool(r["tokens_known"]) and r["priced"] < r["calls"]
+        if r["cost_partial"]:
+            r["cost_note"] += f", partial: {r['priced']} of {r['calls']} calls costed"
         r["unpriced_models"] = sorted(r["unpriced_models"])
         r["usd"] = round(r["usd"], 2)
-        r["doubled"] = r["calls_7d"] >= HEADLESS_DOUBLING_FLOOR and span >= 14 and r["calls_7d"] >= 2 * r["calls_prev_7d"]
+        # The floor is the baseline: 100 calls this week after none last week is a start, not a doubling
+        # (review of #69, P2).
+        r["doubled"] = r["calls_prev_7d"] >= HEADLESS_DOUBLING_FLOOR and span >= 14 and r["calls_7d"] >= 2 * r["calls_prev_7d"]
         out.append(r)
     return sorted(out, key=lambda r: (-r["calls"], r["harness"], r["project"]))
 

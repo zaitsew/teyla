@@ -113,9 +113,12 @@ def cmd_monitor(args):
     ss = _sessions(args)
     m = metrics(ss, args.days)
     _extras(m, ss, args.days)
-    F = advise(m, policy.status())
     if args.share:
+        # Redact before advising: findings quote projects, sessions and connectors in their
+        # evidence, and computed from the raw metrics they would carry the real names out
+        # (review of #69, P1: A17 named the project that drives the volume).
         m = redact(m); args.samples = False
+    F = advise(m, policy.status())
     out = to_json(m, F) if args.json else markdown(m, F, include_samples=args.samples)
     if args.out:
         open(args.out, "w").write(out); print(f"wrote {args.out}")
