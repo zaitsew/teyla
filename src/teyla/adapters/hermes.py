@@ -30,7 +30,7 @@ import json
 import os
 import sqlite3
 
-from . import CORRECTION_RE, AgentCall, Session, Turn
+from . import AgentCall, Session, Turn, human_text, is_correction
 
 NAME = "hermes"
 DEFAULT_ROOT = os.path.expanduser("~/.hermes/state.db")
@@ -109,10 +109,10 @@ def _session_from_row(con: sqlite3.Connection, row: sqlite3.Row) -> Session | No
                 if m["tool_name"]:
                     s.tools[m["tool_name"]] += 1
             elif role == "user":
-                txt = (m["content"] or "").strip()
+                txt = human_text((m["content"] or "").strip())
                 if txt:
                     ts = _iso(m["timestamp"])
-                    s.user_turns.append(Turn(ts, txt[:1500], bool(CORRECTION_RE.search(txt[:600]))))
+                    s.user_turns.append(Turn(ts, txt[:1500], is_correction(txt)))
             # role == "system": the injected system prompt, not a human turn.
     except sqlite3.OperationalError:
         pass
@@ -131,4 +131,22 @@ def _session_from_row(con: sqlite3.Connection, row: sqlite3.Row) -> Session | No
     except sqlite3.OperationalError:
         pass
 
+    s.batch = is_batch(row, len(s.user_turns))
     return s
+
+
+# Installed Hermes records `hermes -z` (one-shot) with source "oneshot": always batch,
+# whatever the prompt count (review of #68, P1). Older builds wrote it as "cli", the same as
+# `hermes chat`, so the source could not tell them apart; what can is that a one-shot session
+# has exactly one prompt. As for Grok without its flag, a CLI session with at most one user
+# message is taken as batch; the desktop app and the messaging gateways are people.
+BATCH_SOURCES = ("cli",)
+ALWAYS_BATCH_SOURCES = ("oneshot",)
+
+
+def is_batch(row, n_prompts: int) -> bool:
+    try:
+        source = row["source"]
+    except (IndexError, KeyError):
+        return False
+    return source in ALWAYS_BATCH_SOURCES or (source in BATCH_SOURCES and n_prompts <= 1)

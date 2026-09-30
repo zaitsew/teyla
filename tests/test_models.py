@@ -413,3 +413,17 @@ def test_render_json_shape():
     assert set(out) == {"snapshot", "drift"}
     assert out["snapshot"] is snap
     assert out["drift"] is flags
+
+
+def test_current_generation_ids_are_priced_and_tiered(monkeypatch, tmp_path):
+    monkeypatch.setattr(pricing, "OVERRIDE_PATH", tmp_path / "no-prices.json")
+    want = {"claude-opus-5-5": "volume", "claude-sonnet-5-5": "volume", "claude-haiku-4-5": "triage",
+            "claude-fable-5-1": "orchestrate", "gpt-6.1-sol": "volume", "gpt-6-astra": "orchestrate",
+            "gpt-6-luna": "triage", "grok-4.7": "orchestrate", "grok-4.7-build-fast": "volume"}
+    for mid, tier in want.items():
+        assert pricing.lookup(mid) is not None, mid
+        assert pricing.tier(mid) == tier, mid
+    # a dated variant resolves to its family; build-fast is not priced as plain grok-4.7
+    assert pricing.lookup("claude-haiku-4-5-20251001") == pricing.PRICES["claude-haiku-4-5"]
+    assert pricing.PRICES["grok-4.7-build-fast"][0] == 2 * pricing.PRICES["grok-4.7"][0]
+    assert pricing.cost_usd("claude-opus-5-5", {"input_tokens": 1_000_000, "output_tokens": 1_000_000}) == 24.0

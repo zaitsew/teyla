@@ -1,38 +1,31 @@
 ---
-description: Record a correction into .teyla/corrections.jsonl, then propose a rule to promote it
+description: Record a correction (scrubbed, outside the repo) with `teyla correct`, then propose a rule to promote it
 argument-hint: <what was wrong>
 ---
 
 Record this correction: $ARGUMENTS
 
-## 1. Append the record
+## 1. Record it
 
-Append one JSON line to `.teyla/corrections.jsonl` in the current repo (create
-the `.teyla/` directory if it doesn't exist). The record has exactly three
-fields: `ts` (UTC ISO-8601, seconds precision), `text` (the argument text
-above, verbatim — do not tidy it or generalize it), and `cwd` (this session's
-working directory).
+Run `teyla correct` with the argument text above, verbatim — do not tidy it or
+generalize it. Pass it through a quoted heredoc so quotes and newlines survive:
 
 ```sh
-mkdir -p .teyla
-python3 - "$PWD" <<'PY'
-import json, sys, datetime, pathlib
-cwd = sys.argv[1]
-text = """$ARGUMENTS"""
-rec = {
-    "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
-    "text": text,
-    "cwd": cwd,
-}
-with open(pathlib.Path(cwd) / ".teyla" / "corrections.jsonl", "a") as f:
-    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-PY
+teyla correct "$(cat <<'TEYLA_EOF'
+<the argument text, verbatim>
+TEYLA_EOF
+)"
 ```
 
-(Substitute the actual argument text for `$ARGUMENTS` when you run this — don't
-rely on shell interpolation inside the heredoc to do it for you if the text
-contains quotes or newlines; write the Python literal carefully or pass the
-text through argv instead.)
+It appends `{ts, text, cwd}` to this repo's file under `~/.teyla/corrections/`
+— outside the repo, so it can never be committed, with tokens, keys and
+`password=`-style values replaced by `[redacted]` — and prints the file and how
+many corrections it holds.
+
+If `teyla` is not installed (`command -v teyla || ls ~/.local/bin/teyla`), do
+not write the record some other way: say it was not recorded and that
+`uv tool install git+https://github.com/zaitsew/teyla` makes this command work.
+A hand-written copy would skip the secret scrubber.
 
 ## 2. Propose a rule
 
