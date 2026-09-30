@@ -16,6 +16,8 @@ def _no_real_config(tmp_path, monkeypatch):
     # update.py records what `teyla update` installed; a test must never write the real one.
     monkeypatch.setattr(update, "CHECK_PATH", tmp_path / "conftest-update-check.json")
     monkeypatch.setattr(update, "INSTALLED_PATH", tmp_path / "conftest-installed.json")
+    # ...nor read the provenance of whatever `teyla` this interpreter has installed.
+    monkeypatch.setattr(update, "_dist_commit", lambda: None)
     net.allow_for_this_command(False)
     yield
     net.allow_for_this_command(False)

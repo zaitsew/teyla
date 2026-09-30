@@ -18,10 +18,10 @@ recorded in update-check.json and, after a verified install, in ~/.teyla/install
 
 How the install happened decides how it is upgraded:
 
-    uv tool        ~/.local/share/uv/tools/teyla/...    uv tool install --force --python <X.Y> git+<repo>@<sha>
+    uv tool        ~/.local/share/uv/tools/teyla/...    uv tool install --force --python <X.Y> --reinstall git+<repo>@<sha>
     pipx           .../pipx/venvs/teyla/...             pipx install --force --python <exe> git+<repo>@<sha>
     checkout       <repo>/src/teyla/__init__.py + .git   never touched: the command to pull is printed
-    pip            anything else                          python -m pip install --upgrade git+<repo>@<sha>
+    pip            anything else                          python -m pip install --force-reinstall git+<repo>@<sha>
 
 The interpreter is pinned on every self-install: `[update] python` from config if set, else
 the one running now. Without that, uv rebuilt the tool environment on its *default*
@@ -247,14 +247,48 @@ def pin_is_sha(pin: str) -> bool:
 INSTALLED_PATH = config.TEYLA_DIR / "installed.json"
 
 
+# Run in a fresh interpreter: the commit uv/pip/pipx recorded for the installed `teyla`
+# distribution (PEP 610 direct_url.json, `vcs_info.commit_id`), or nothing.
+_COMMIT_PROBE = ("import json, importlib.metadata as m\n"
+                 "try:\n    d = json.loads(m.distribution('teyla').read_text('direct_url.json') or '{}')\n"
+                 "except Exception:\n    d = {}\n"
+                 "print((d.get('vcs_info') or {}).get('commit_id') or '')")
+
+
+def _as_sha(text: str | None) -> str | None:
+    s = (text or "").strip().lower()
+    return s if _SHA_RE.match(s) else None
+
+
+def same_commit(a: str | None, b: str | None) -> bool:
+    """A pin may be a short sha; the installer records the full one."""
+    a, b = _as_sha(a), _as_sha(b)
+    return bool(a and b) and (a.startswith(b) or b.startswith(a))
+
+
+def _dist_commit() -> str | None:
+    """The commit the running `teyla` was installed from, as its installer recorded it."""
+    try:
+        from importlib import metadata
+        d = json.loads(metadata.distribution("teyla").read_text("direct_url.json") or "{}")
+    except Exception:  # noqa: BLE001 — no distribution (PYTHONPATH run), no or bad direct_url.json
+        return None
+    return _as_sha((d.get("vcs_info") or {}).get("commit_id")) if isinstance(d, dict) else None
+
+
 def installed_sha() -> str | None:
-    """The commit this version was installed from, if `teyla update` installed it (it records
-    tag and sha after the version check passes). None for an install made any other way."""
+    """The commit the running version was installed from: what its installer recorded
+    (direct_url.json), else what `teyla update` recorded after a verified install of this
+    version. None when neither knows — a pin then counts as not met: the same version number
+    says nothing about which commit it was built from (review of #64, P1)."""
+    found = _dist_commit()
+    if found:
+        return found
     try:
         rec = json.loads(INSTALLED_PATH.read_text())
     except (OSError, ValueError):
         return None
-    return rec.get("sha") if rec.get("version") == __version__ else None
+    return _as_sha(rec.get("sha")) if rec.get("version") == __version__ else None
 
 
 def _record_installed(version: str, tag: str | None, sha: str) -> None:
@@ -273,9 +307,11 @@ def _wanted(tag: str | None, sha: str | None, pin: str | None) -> bool:
     exactly the pin — which may be older than what runs now; that is what freezing means."""
     if not pin:
         return is_newer(tag, __version__)
-    if tag:
-        return _vtuple(tag) != _vtuple(__version__)
-    return bool(sha) and sha != installed_sha()
+    if tag and not sha:
+        return _vtuple(tag) != _vtuple(__version__)  # nothing to compare commits with; install would refuse anyway
+    # By commit, never by version: a build of main that says 0.12.0 is not release v0.12.0,
+    # and an install whose commit is unknown is not known to be the pin (review of #64, P1).
+    return bool(sha) and not same_commit(installed_sha(), sha)
 
 
 def check(repo: str | None = None, refresh: bool = True, max_age_hours: int = 24) -> dict:
@@ -371,13 +407,16 @@ def install_source(repo: str, ref: str) -> str:
 
 def _installer(method: str, spec: str, src: str) -> list[str] | None:
     """The install command for `method`, or None when its tool is missing."""
+    # Every install names one exact commit, and it must land even when that commit carries the
+    # version already installed: pip's --upgrade then keeps what is there, and uv may reuse its
+    # build. So always reinstall (review of #64, P1). pipx --force recreates the venv already.
     if method == "uv-tool":
         uv = shutil.which("uv")
-        return [uv, "tool", "install", "--force", "--python", spec, src] if uv else None
+        return [uv, "tool", "install", "--force", "--python", spec, "--reinstall", src] if uv else None
     if method == "pipx":
         pipx = shutil.which("pipx")
         return [pipx, "install", "--force", "--python", python_executable_for(spec), src] if pipx else None
-    return [sys.executable, "-m", "pip", "install", "--upgrade", src]
+    return [sys.executable, "-m", "pip", "install", "--force-reinstall", src]
 
 
 def installed_version(method: str) -> str | None:
@@ -393,6 +432,25 @@ def installed_version(method: str) -> str | None:
     except OSError:
         return None
     return out.strip().splitlines()[-1].strip() if rc == 0 and out.strip() else None
+
+
+def installed_commit(method: str) -> str | None:
+    """The commit of what is on disk now, from a fresh process in the install's own interpreter
+    (for uv/pipx, the `python` beside the resolved `teyla` entry point). None when unknown."""
+    if method in ("uv-tool", "pipx"):
+        exe = shutil.which("teyla") or str(pathlib.Path.home() / ".local" / "bin" / "teyla")
+        bindir = pathlib.Path(exe).resolve().parent
+        py = next((c for c in (bindir / "python", bindir / "python.exe", bindir / "python3") if c.exists()), None)
+        if py is None:
+            return None
+        cmd = [str(py), "-c", _COMMIT_PROBE]
+    else:
+        cmd = [sys.executable, "-c", _COMMIT_PROBE]
+    try:
+        rc, out = _run(cmd)
+    except OSError:
+        return None
+    return _as_sha(out.strip().splitlines()[-1]) if rc == 0 and out.strip() else None
 
 
 def restore(repo: str, method: str, spec: str) -> list[str]:
@@ -444,15 +502,24 @@ def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | No
             # hook and doctor all go quiet. Put the installed version back first.
             lines += restore(repo, method, spec)
         return lines
-    if tag:
-        got = installed_version(method)
-        if got != tag.lstrip("v"):
-            # The commit built, but it is not the release it was looked up as (a moved tag, a
-            # mis-versioned build). Keep the version that was known to work.
-            lines.append(f"FAIL: installed {sha[:12]} reports version {got or '(none)'}, expected {tag.lstrip('v')} — restoring")
-            lines += restore(repo, method, spec)
-            return lines
-    _record_installed(tag.lstrip("v") if tag else (installed_version(method) or "?"), tag, sha)
+    got = installed_version(method)
+    if (got != tag.lstrip("v")) if tag else not got:
+        # The commit built, but it is not the release it was looked up as (a moved tag, a
+        # mis-versioned build) — or, for a sha pin, it does not run at all (review of #64, P2).
+        # Keep the version that was known to work.
+        want = f", expected {tag.lstrip('v')}" if tag else ""
+        lines.append(f"FAIL: installed {sha[:12]} reports version {got or '(none)'}{want} — restoring")
+        lines += restore(repo, method, spec)
+        return lines
+    landed = installed_commit(method)
+    if landed and not same_commit(landed, sha):
+        # The installer kept another build of the same version; recording `sha` would make the
+        # pin look met forever (review of #64, P1). Unknown provenance is accepted: the forced
+        # reinstall of one exact commit is what guarantees it, the probe only double-checks.
+        lines.append(f"FAIL: asked for {sha[:12]} but the installed build is {landed[:12]} — restoring")
+        lines += restore(repo, method, spec)
+        return lines
+    _record_installed(got, tag, landed or sha)
     on = f" on python {spec}" if method in ("uv-tool", "pipx") else ""
     lines.append(f"installed {label} ({sha[:12]}) via {method}{on}")
     return lines

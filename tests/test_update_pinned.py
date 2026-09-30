@@ -175,6 +175,67 @@ def test_pin_to_a_sha_installs_that_commit_once(_home, monkeypatch):
     assert next(c for c in ran if c[1:3] == ["tool", "install"])[-1].endswith(f"@{SHA}")
 
 
+def test_every_installer_reinstalls_the_exact_commit(monkeypatch):
+    # review of #64, P1: `pip install --upgrade` keeps an installed build of the same version.
+    monkeypatch.setattr(update.shutil, "which", lambda name: f"/opt/bin/{name}")
+    assert "--force-reinstall" in update._installer("pip", "3.12", "src")
+    assert "--reinstall" in update._installer("uv-tool", "3.12", "src")
+
+
+def _pip_installer(monkeypatch, version: str | None, commit: str):
+    """Stub a pip install: `import teyla` reports `version` (None: it fails), the installed
+    distribution's direct_url.json says `commit`."""
+    ran = []
+
+    def run(cmd, cwd=None):
+        ran.append(cmd)
+        if cmd[-1] == update._COMMIT_PROBE:
+            return 0, commit
+        if "print(teyla.__version__)" in cmd[-1]:
+            return (0, version) if version else (1, "ImportError")
+        return 0, "ok"
+    monkeypatch.setattr(update, "_run", run)
+    monkeypatch.setattr(update, "install_method", lambda: ("pip", None))
+    monkeypatch.setattr(update, "post_update", lambda quiet=False: ["(post-update stubbed)"])
+    return ran
+
+
+def test_a_sha_pin_that_did_not_land_is_rolled_back_not_recorded(_home, monkeypatch, capsys):
+    # review of #64, P1: the installer kept another build; recording the pin would freeze that.
+    config.set_value("update.pin", SHA)
+    github(monkeypatch, {}, {SHA: SHA})
+    ran = _pip_installer(monkeypatch, __version__, "e" * 40)
+    assert update.cmd_update(args()) == 1
+    out = capsys.readouterr().out
+    assert f"asked for {SHA[:12]} but the installed build is {'e' * 12}" in out and "restored" in out
+    assert not update.INSTALLED_PATH.exists()
+    assert ran[-1][-1].endswith(f"@v{__version__}"), "the running version goes back"
+
+
+def test_a_sha_pin_that_does_not_run_is_rolled_back(_home, monkeypatch, capsys):
+    # review of #64, P2: a build whose version probe fails is not a successful install.
+    config.set_value("update.pin", SHA)
+    github(monkeypatch, {}, {SHA: SHA})
+    _pip_installer(monkeypatch, None, SHA)
+    assert update.cmd_update(args()) == 1
+    out = capsys.readouterr().out
+    assert "reports version (none)" in out and "restored" in out
+    assert not update.INSTALLED_PATH.exists()
+
+
+def test_a_version_pin_is_met_by_the_release_commit_not_the_version_number(_home, monkeypatch):
+    # review of #64, P1: a build of main that says the pinned version is not that release.
+    config.set_value("update.pin", __version__)
+    tag = f"v{__version__}"
+    github(monkeypatch, {tag: {"tag_name": tag}}, {tag: SHA})
+    monkeypatch.setattr(update, "_dist_commit", lambda: "e" * 40)
+    assert update.check(refresh=True)["newer"], "same version, another commit: install the release"
+    monkeypatch.setattr(update, "_dist_commit", lambda: None)
+    assert update.check(refresh=True)["newer"], "unknown provenance does not meet a pin"
+    monkeypatch.setattr(update, "_dist_commit", lambda: SHA)
+    assert not update.check(refresh=True)["newer"]
+
+
 def test_doctor_shows_the_pin(_home, monkeypatch):
     config.set_value("update.pin", "0.1.0")
     github(monkeypatch, {"v0.1.0": {"tag_name": "v0.1.0"}}, {"v0.1.0": SHA})
@@ -252,3 +313,20 @@ def test_outside_safe_mode_policy_refresh_still_merges(_home, tmp_path, monkeypa
     t.write_text("Owner: {{owner}}. Edit here.\n\n## A\none, upstream\n")
     assert policy.refresh()[0].startswith("applied")
     assert "one, upstream" in policy.POLICY.read_text() and not policy.PROPOSED_PATH.exists()
+
+
+def test_safe_mode_a_failing_merge_proposes_nothing(_home, tmp_path, monkeypatch):
+    # review of #64, P2: `git merge-file` erroring (255, empty stdout) is not "255 conflicts".
+    import subprocess
+    t = _template(tmp_path, monkeypatch)
+    t.write_text("Owner: {{owner}}. Edit here.\n\n## A\none\n")
+    policy.init(owner="Ann")
+    policy.refresh()
+    policy.POLICY.write_text(policy.POLICY.read_text() + "\nmy edit\n")
+    t.write_text("Owner: {{owner}}. Edit here.\n\n## A\none, upstream\n")
+    policy.PROPOSED_PATH.write_text("an earlier proposal\n")
+    config.set_value("safe.enabled", "true")
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 255, "", "fatal: boom"))
+    lines = policy.refresh()
+    assert "failed: fatal: boom" in lines[0] and "nothing proposed" in lines[0]
+    assert policy.PROPOSED_PATH.read_text() == "an earlier proposal\n"

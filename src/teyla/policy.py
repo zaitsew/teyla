@@ -432,26 +432,35 @@ def refresh(dry: bool = False) -> list[str]:
             f"Resolve there, copy into {POLICY}, then `teyla policy refresh --resolved`"]
 
 
-def _merge(local: str, base: str, new: str) -> tuple[str | None, int]:
-    """(merged text, conflict count) from `git merge-file`; (None, -1) without git."""
+def _merge(local: str, base: str, new: str) -> tuple[str | None, int, str]:
+    """(merged text, conflict count, error) from `git merge-file`; (None, -1, "") without git,
+    (None, -1, stderr) when git failed."""
     import shutil
     import subprocess
     import tempfile
     if local == base:
-        return new, 0
+        return new, 0, ""
     git = shutil.which("git")
     if not git:
-        return None, -1
+        return None, -1, ""
     with tempfile.TemporaryDirectory() as td:
         p = pathlib.Path(td)
         (p / "local").write_text(local); (p / "base").write_text(base); (p / "new").write_text(new)
         r = subprocess.run([git, "merge-file", "-p", "-L", "yours", "-L", "base", "-L", "teyla-template",
                             str(p / "local"), str(p / "base"), str(p / "new")], capture_output=True, text=True)
-    return (r.stdout, r.returncode) if r.returncode >= 0 else (None, -1)
+    # git merge-file exits with the conflict count, capped at 127; above that (255 and the like,
+    # with empty stdout) is an error, not a merge — proposing its stdout would offer an empty
+    # POLICY.md to copy over the real one (review of #64, P2).
+    if 0 <= r.returncode <= 127:
+        return r.stdout, r.returncode, ""
+    return None, -1, (r.stderr.strip() or f"exit {r.returncode}")
 
 
 def _propose(local: str, base: str, new: str, dry: bool) -> list[str]:
-    merged, conflicts = _merge(local, base, new)
+    merged, conflicts, err = _merge(local, base, new)
+    if err:
+        return [f"safe mode: the policy template changed but `git merge-file` failed: {err}; "
+                f"nothing proposed, {POLICY} and any earlier {PROPOSED_PATH.name} untouched"]
     if merged is None:
         merged, conflicts = new, 0  # no git: propose the template itself; the diff shows what it drops
     if not dry:

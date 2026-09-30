@@ -670,4 +670,4 @@ def test_update_force_reinstalls_on_the_pinned_interpreter_when_the_lookup_fails
     args.force = True
     assert update.cmd_update(args) == 0
     assert seen[-1][:6] == ["/opt/bin/uv", "tool", "install", "--force", "--python", pin]
-    assert seen[-1][6].endswith(f"@v{teyla.__version__}"), "the installed version's tag, since the latest is unknown"
+    assert seen[-1][-1].endswith(f"@v{teyla.__version__}"), "the installed version's tag, since the latest is unknown"
