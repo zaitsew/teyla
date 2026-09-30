@@ -198,8 +198,15 @@ def test_repos_status(tmp_path):
         for f in files:
             (d / f).write_text(f"# {name} {f}\n")
     (root / "notrepo").mkdir()
+    # a CLAUDE.md that imports AGENTS.md is one source of truth, not a difference — with or
+    # without Claude-only lines after the import
+    for name, claude in (("e", "@AGENTS.md\n"), ("f", "<!-- teyla:cloud-import:start -->\n@AGENTS.md\n<!-- teyla:cloud-import:end -->\n\nClaude-only note.\n")):
+        d = root / name; (d / ".git").mkdir(parents=True)
+        (d / "AGENTS.md").write_text("# guide\n")
+        (d / "CLAUDE.md").write_text(claude)
     st = dict((n, s) for s, n in policy.repos_status(root))
-    assert st == {"a": "missing", "b": "differ", "c": "none", "d": "missing"}
+    assert st == {"a": "missing", "b": "differ", "c": "none", "d": "missing", "e": "ok", "f": "ok"}
+    assert "already linked" in policy.sync_repo(str(root / "e"))
 
 
 # --- routine staleness ------------------------------------------------------------------
