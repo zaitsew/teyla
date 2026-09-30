@@ -31,7 +31,7 @@ bound by hash now, and the answer to a changed manifest is the same in either
 direction: re-run the routine and approve the fresh draft.
 
 **reject** records the note as a correction candidate in the product repo's
-`.teyla/corrections.jsonl` — the same file `/teyla:correct` writes. A rejection
+correction store (`~/.teyla/corrections/<repo-key>.jsonl`) — the same file `/teyla:correct` writes. A rejection
 with a reason is the raw material of a rule; a rejection without one is just a
 run that did not happen, and the `--note` is what decides which you have.
 """
@@ -206,6 +206,15 @@ def cmd_approve(args) -> int:
                 print(f"  ~ {k}: {was_limits.get(k)} -> {v}")
         print("\n  Narrowing is refused too: the draft is evidence about the run that produced")
         print("  it, and that run is not this one. Re-run the routine, then approve that draft.")
+        return 1
+
+    # Safe mode refuses before anything is created or recorded. Refused later, inside the
+    # step, the item was already marked approved, so the retry with --allow-network found
+    # "already approve" and the act never ran (review of #59, P2). run_act checks again.
+    why_safe = H.safe_refusal(routine.repo, routine.act.harness if routine.act.kind == "agent" else None)
+    if why_safe:
+        print(f"REFUSED: {why_safe}")
+        print(f"  {args.id} stays pending.")
         return 1
 
     when = S.now()

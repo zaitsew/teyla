@@ -79,7 +79,7 @@ def markdown(m: dict, findings: list[dict], *, title="Teyla adoption report", in
     if include_samples and m.get("correction_samples"):
         L += ["", "## Correction-shaped turns (samples)", ""] + [f"- {s.replace(chr(10),' ')[:160]}" for s in m["correction_samples"][:30]]
     L += ["", "---", "_Teyla · aggregates computed locally from harness session logs; nothing was sent anywhere._"
-          + (" _Redacted: projects are pseudonyms, no session ids, no correction text._" if m.get("redacted") else
+          + (" _Redacted: projects (p01…), connectors (c01…) and non-public skills (s01…) are pseudonyms; no session ids, no paths, no correction text._" if m.get("redacted") else
              " _Not redacted: project names and session ids are shown; use --share for a shareable version._")]
     return "\n".join(L) + "\n"
 

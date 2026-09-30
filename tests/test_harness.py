@@ -157,10 +157,12 @@ def test_rule_skips_a_symlinked_agents_md_and_fills_cursor_rules_when_present(tm
     assert mdc.read_text().endswith("- Never use npm here, always pnpm.\n")
 
 
-def test_correct_records_a_line_and_says_how_to_promote(tmp_path):
+def test_correct_records_a_line_and_says_how_to_promote(tmp_path, monkeypatch):
+    monkeypatch.setenv("TEYLA_HOME", str(tmp_path / "th"))
     repo = tmp_path / "repo"; repo.mkdir()
     out = rules.record_correction(repo, "no, the gate opens at 14:30 not 14:00")
-    rec = json.loads((repo / ".teyla" / "corrections.jsonl").read_text())
+    assert not (repo / ".teyla").exists()
+    rec = json.loads((tmp_path / "th" / "corrections" / "misc.jsonl").read_text())
     assert rec["text"].startswith("no, the gate") and rec["cwd"] == str(repo.resolve()) and rec["ts"].endswith("+00:00")
     assert out[0].endswith("(1 so far)") and any("teyla rule" in l for l in out)
 
@@ -185,6 +187,43 @@ def test_codex_hooks_keep_a_users_groups_and_leave_invalid_json_alone(home):
     assert any(l.startswith("codex:") and "not valid JSON" in l for l in lines)
     assert p.read_text() == "{not json"
     assert {r["harness"]: r for r in harness.status(home=home)}["codex"]["hooks"] is False
+
+
+def test_codex_sync_keeps_a_users_handler_that_shares_a_group_with_ours(home):
+    # (review of #61, P1) a user's handler grouped next to Teyla's must survive sync, and a
+    # group left empty by removing ours is dropped
+    p = home / ".codex" / "hooks.json"
+    theirs = {"type": "command", "command": "/x/mine.sh"}
+    old = str(harness.HOOKS_DIR / "session-start.sh") + " --codex"
+    p.write_text(json.dumps({"hooks": {
+        "SessionStart": [{"matcher": "startup", "hooks": [theirs, {"type": "command", "command": old}]}],
+        "UserPromptSubmit": [{"hooks": [{"type": "command", "command": str(harness.HOOKS_DIR / "capture-correction.sh")}]}]}}))
+    harness.sync(home=home)
+    d = json.loads(p.read_text())["hooks"]
+    assert d["SessionStart"][0] == {"matcher": "startup", "hooks": [theirs]}
+    assert len(d["SessionStart"]) == 2 and d["SessionStart"][1]["hooks"][0]["command"] == old
+    assert len(d["UserPromptSubmit"]) == 1
+    assert harness.sync(home=home) == ["in sync: cursor, codex, grok, hermes"]
+    tr = {r["harness"]: r for r in harness.status(home=home)}["codex"]["trust"]
+    assert tr["total"] == 2  # the user's handler is not counted as Teyla's
+
+
+def test_hermes_auto_accept_is_a_top_level_true_key_not_a_substring(home):
+    # (review of #61, P2)
+    harness.sync(home=home)
+    cfg = home / ".hermes" / "config.yaml"
+    base = cfg.read_text()
+
+    def approved(extra):
+        cfg.write_text(base + extra)
+        return {r["harness"]: r for r in harness.status(home=home)}["hermes"]["trust"]["approved"]
+
+    assert approved("# hooks_auto_accept: true\n") == 0
+    assert approved("agent:\n  hooks_auto_accept: true\n") == 0
+    assert approved("hooks_auto_accept: false\n") == 0
+    assert approved("hooks_auto_accept: true\n") == 3
+    assert approved("hooks_auto_accept: yes  # on\n") == 3
+    assert approved("hooks_auto_accept: 'on'\n") == 3
 
 
 def test_codex_hook_hash_matches_what_codex_computed():

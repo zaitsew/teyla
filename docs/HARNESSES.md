@@ -115,7 +115,9 @@ errors and `rate_limits` (plan, 5-hour and weekly use), Claude's `isApiErrorMess
 
 Then, in each app, ask for something the skills cover ("run the adoption review", "make
 that a rule: never use npm here") and check that `~/.teyla/hooks/capture-correction.sh`
-wrote to `.teyla/corrections.jsonl` after a "no, not like that". Codex and Hermes each ask
-once before a hook runs (see "Approval" above); `teyla harness status` shows whether they
-have been approved. In Codex and Hermes, ask "what did the teyla line at the start say?" —
-the model saw it if the orientation reached it.
+appended to `~/.teyla/corrections/<repo>-<hash>.jsonl` after a "no, not like that"
+(`teyla corrections --recorded` lists them). The hook runs the installed `teyla`'s own
+interpreter; with no `teyla` installed it records nothing. Codex and Hermes each ask once
+before a hook runs (see "Approval" above); `teyla harness status` shows whether they have
+been approved. In Codex and Hermes, ask "what did the teyla line at the start say?" — the
+model saw it if the orientation reached it.
