@@ -284,11 +284,35 @@ AUTH = {"claude-code": auth_claude, "codex": auth_codex, "grok": auth_grok, "her
 
 # --- errors and the last success --------------------------------------------------------------
 
+class _Errs:
+    """The newest error and, separately, the newest quota/auth one. An unrelated newer error (a
+    local filesystem ERROR, a 529) must not hide an unresolved quota/auth failure (review of #66,
+    P2), so the caller picks with `pick` once it knows the last success."""
+
+    def __init__(self):
+        self.newest = None
+        self.hard = None
+
+    def add(self, err: dict) -> None:
+        if err.get("ts") is None:
+            return
+        if self.newest is None or err["ts"] >= self.newest["ts"]:
+            self.newest = err
+        if err["kind"] in ("quota", "auth") and (self.hard is None or err["ts"] >= self.hard["ts"]):
+            self.hard = err
+
+    def pick(self, last_ok: _dt.datetime | None) -> dict | None:
+        # The quota/auth failure wins until a success clears it; once cleared, the newest error
+        # (a rate limit still needs saying) is the one to show.
+        if self.hard and not recovered(self.hard, last_ok):
+            return self.hard
+        return self.newest
+
 def errors_claude(home: pathlib.Path, since: float) -> dict:
     """{error, last_ok}: `isApiErrorMessage` records vs ordinary assistant records, from the
     tail of every transcript written in the window."""
     root = home / "projects"
-    newest_err, last_ok = None, {}
+    errs, last_ok = _Errs(), {}
     if not root.is_dir():
         return {"error": None, "last_ok": None}
     for p in root.glob("*/*.jsonl"):
@@ -314,16 +338,20 @@ def errors_claude(home: pathlib.Path, since: float) -> dict:
             if d.get("isApiErrorMessage"):
                 content = (d.get("message") or {}).get("content") or []
                 text = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
-                if newest_err is None or ts > newest_err["ts"]:
-                    newest_err = dict(_err(ts, classify(text + " " + str(d.get("error") or "")), text, p.name), entrypoint=ep)
+                errs.add(dict(_err(ts, classify(text + " " + str(d.get("error") or "")), text, p.name), entrypoint=ep))
             elif ep not in last_ok or ts > last_ok[ep]:
                 last_ok[ep] = ts
-    ok = last_ok.get(newest_err["entrypoint"]) if newest_err else max(last_ok.values(), default=None)
-    return {"error": newest_err, "last_ok": ok}
+    hard = errs.hard
+    if hard and not recovered(hard, last_ok.get(hard["entrypoint"])):
+        err = hard
+    else:
+        err = errs.newest
+    ok = last_ok.get(err["entrypoint"]) if err else max(last_ok.values(), default=None)
+    return {"error": err, "last_ok": ok}
 
 
 def errors_codex(home: pathlib.Path, since: float) -> dict:
-    newest_err, last_ok, limits = None, None, None
+    errs, last_ok, limits = _Errs(), None, None
     db = home / "logs_2.sqlite"
     if db.exists():
         try:
@@ -338,8 +366,7 @@ def errors_codex(home: pathlib.Path, since: float) -> dict:
             # A model-list refresh timing out is noise; a failed turn is not.
             if kind == "network" and "list_models" in (body or ""):
                 continue
-            newest_err = _err(_parse_ts(ts), kind, body or "", "logs_2.sqlite")
-            break
+            errs.add(_err(_parse_ts(ts), kind, body or "", "logs_2.sqlite"))
     sessions = home / "sessions"
     files = []
     if sessions.is_dir():
@@ -372,23 +399,21 @@ def errors_codex(home: pathlib.Path, since: float) -> dict:
                         limits = dict(rl, at=ts)
                 elif pl.get("type") == "error":
                     msg = pl.get("message") or json.dumps(pl)[:200]
-                    if newest_err is None or ts > newest_err["ts"]:
-                        newest_err = _err(ts, classify(msg), msg, p.name)
+                    errs.add(_err(ts, classify(msg), msg, p.name))
                 elif pl.get("type") == "task_complete" and isinstance(pl.get("error"), dict):
                     # A turn Codex ended on an error (0.153.4, 2026-09-29): {"message": "You've hit
                     # your usage limit. … try again at 11:20 PM.", "codex_error_info": "usage_limit_exceeded"}
                     er = pl["error"]
                     msg = er.get("message") or str(er.get("codex_error_info") or "error")
                     kind = "quota" if "usage_limit" in str(er.get("codex_error_info") or "") else classify(msg)
-                    if newest_err is None or ts > newest_err["ts"]:
-                        newest_err = _err(ts, kind, msg, p.name)
+                    errs.add(_err(ts, kind, msg, p.name))
         if i >= 40 and last_ok is not None:
             break  # the newest forty rollouts settle "last success" and the current limits
-    return {"error": newest_err, "last_ok": last_ok, "limits": limits}
+    return {"error": errs.pick(last_ok), "last_ok": last_ok, "limits": limits}
 
 
 def errors_grok(home: pathlib.Path, since: float) -> dict:
-    newest_err, last_ok, n_err = None, None, 0
+    errs, last_ok, n_err = _Errs(), None, 0
     for raw in _tail(home / "logs" / "unified.jsonl", 8 * 1024 * 1024).splitlines():
         if b"shell.turn.inference_" not in raw:
             continue
@@ -404,26 +429,26 @@ def errors_grok(home: pathlib.Path, since: float) -> dict:
         elif d.get("msg") == "shell.turn.inference_failed":
             ctx = d.get("ctx") or {}
             n_err += 1
-            if newest_err is None or ts >= newest_err["ts"]:
-                newest_err = _err(ts, classify(ctx.get("message", ""), ctx.get("status_code")),
-                                  ctx.get("message") or f"status {ctx.get('status_code')}", "logs/unified.jsonl")
-    if newest_err:
-        newest_err["count"] = n_err
-    return {"error": newest_err, "last_ok": last_ok}
+            errs.add(_err(ts, classify(ctx.get("message", ""), ctx.get("status_code")),
+                          ctx.get("message") or f"status {ctx.get('status_code')}", "logs/unified.jsonl"))
+    err = errs.pick(last_ok)
+    if err:
+        err["count"] = n_err
+    return {"error": err, "last_ok": last_ok}
 
 
 _LOG_LINE = re.compile(rb"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+) (ERROR|WARNING|CRITICAL) (\S+): (.*)$")
 
 
 def errors_hermes(home: pathlib.Path, since: float) -> dict:
-    newest_err, last_ok = None, None
+    errs, last_ok = _Errs(), None
     try:
         d = json.loads((home / "auth.json").read_text())
         for prov, st in (d.get("providers") or {}).items():
             e = (st or {}).get("last_auth_error") or {}
             ts = _parse_ts(e.get("at"))
             if ts and ts.timestamp() >= since:
-                newest_err = _err(ts, "auth", f"{prov}: {e.get('message', e.get('code', ''))}", "auth.json")
+                errs.add(_err(ts, "auth", f"{prov}: {e.get('message', e.get('code', ''))}", "auth.json"))
     except (OSError, ValueError, AttributeError):
         pass
     for raw in _tail(home / "logs" / "errors.log").splitlines():
@@ -435,8 +460,8 @@ def errors_hermes(home: pathlib.Path, since: float) -> dict:
         if kind in ("other", "network") or "Auxiliary" in text or "auxiliary" in m.group(3).decode():
             continue  # the auxiliary lane's fallbacks are not the chat model failing
         ts = _parse_ts(m.group(1).decode())
-        if ts and ts.timestamp() >= since and (newest_err is None or ts > newest_err["ts"]):
-            newest_err = _err(ts, kind, text, "logs/errors.log")
+        if ts and ts.timestamp() >= since:
+            errs.add(_err(ts, kind, text, "logs/errors.log"))
     db = home / "state.db"
     if db.exists():
         try:
@@ -446,7 +471,7 @@ def errors_hermes(home: pathlib.Path, since: float) -> dict:
             last_ok = _parse_ts(t)
         except sqlite3.Error:
             pass
-    return {"error": newest_err, "last_ok": last_ok}
+    return {"error": errs.pick(last_ok), "last_ok": last_ok}
 
 
 ERRORS = {"claude-code": errors_claude, "codex": errors_codex, "grok": errors_grok, "hermes": errors_hermes}
@@ -546,8 +571,17 @@ def recovered(err: dict | None, last_ok: _dt.datetime | None) -> bool:
     return bool(err and err.get("ts") and last_ok and last_ok > err["ts"] + RECOVERY_MARGIN)
 
 
-def verdict(name: str, row: dict) -> dict:
-    """level (OK/WARN/FIX), a one-line detail, and the fix."""
+def _window_live(w: dict, now: float) -> bool:
+    """A recorded window still counts only until its own reset: a 100% snapshot whose `resets_at`
+    has passed is history, not a limit (review of #66, P2)."""
+    r = w.get("resets_at")
+    return not (isinstance(r, (int, float)) and r <= now)
+
+
+def verdict(name: str, row: dict, live_ok: bool = False) -> dict:
+    """level (OK/WARN/FIX), a one-line detail, and the fix. `live_ok`: a live call just succeeded,
+    which supersedes every historical availability failure (auth record, limit snapshot, logged
+    error) but not a broken install (review of #66, P2)."""
     parts, level, fix = [], "OK", None
     parts.append(row.get("version") or (f"no `{BINARY[name]}` on PATH" if not row.get("binary") else "version ?"))
     if row.get("version_error"):
@@ -556,18 +590,30 @@ def verdict(name: str, row: dict) -> dict:
     a = row.get("auth") or {}
     parts.append(("auth ok: " if a.get("ok") else "AUTH: ") + a.get("detail", "?"))
     if a and not a.get("ok"):
-        level, fix = "FIX", fix or a.get("fix")
+        if live_ok:
+            parts[-1] += " (a live call succeeded anyway)"
+        else:
+            level, fix = "FIX", fix or a.get("fix")
     lim = row.get("limits")
     if lim:
+        now = time.time()
         p, s = (lim.get("primary") or {}), (lim.get("secondary") or {})
-        pct = [x for x in (p.get("used_percent"), s.get("used_percent")) if isinstance(x, (int, float))]
-        fmt = lambda v: f"{v:g}%" if isinstance(v, (int, float)) else "?"  # noqa: E731
-        text = f"{lim.get('plan_type') or 'plan ?'}: 5h {fmt(p.get('used_percent'))}, week {fmt(s.get('used_percent'))}"
-        if s.get("resets_at"):
+        pl, sl = _window_live(p, now), _window_live(s, now)
+        pct = [x for x, on in ((p.get("used_percent"), pl), (s.get("used_percent"), sl)) if on and isinstance(x, (int, float))]
+        fmt = lambda v, on=True: (f"{v:g}%" if isinstance(v, (int, float)) else "?") + ("" if on else " (window reset)")  # noqa: E731
+        text = f"{lim.get('plan_type') or 'plan ?'}: 5h {fmt(p.get('used_percent'), pl)}, week {fmt(s.get('used_percent'), sl)}"
+        if s.get("resets_at") and sl:
             text += f" (resets {_dt.datetime.fromtimestamp(s['resets_at']):%a %d %b %H:%M})"
         parts.append(text)
-        if lim.get("rate_limit_reached_type") or (pct and max(pct) >= 100):
-            level, fix = "FIX", fix or "Codex usage limit reached — wait for the reset above"
+        # `rate_limit_reached_type` names the window that is full; it goes stale with that window.
+        rt = lim.get("rate_limit_reached_type")
+        reached = bool(rt) and {"primary": pl, "secondary": sl}.get(str(rt), pl or sl)
+        if reached or (pct and max(pct) >= 100):
+            if live_ok:
+                level, fix = ("WARN" if level == "OK" else level), fix
+                parts.append("limit snapshot says full, but a live call succeeded")
+            else:
+                level, fix = "FIX", fix or "Codex usage limit reached — wait for the reset above"
         elif pct and max(pct) >= 90 and level == "OK":
             level = "WARN"
     err, ok = row.get("error"), row.get("last_ok")
@@ -577,10 +623,13 @@ def verdict(name: str, row: dict) -> dict:
         stale = recovered(err, ok)
         n = f" ×{err['count']}" if err.get("count", 1) > 1 else ""
         parts.append(f"last error {err['ts']:%Y-%m-%d %H:%M}Z {err['kind']}{n}: {err['message'][:110]}"
-                     + (f" (later calls succeeded, last {ok:%Y-%m-%d %H:%M}Z)" if stale else ""))
-        if not stale and err["kind"] in ("quota", "auth"):
+                     + (f" (later calls succeeded, last {ok:%Y-%m-%d %H:%M}Z)" if stale else
+                        " (superseded: a live call succeeded)" if live_ok else ""))
+        if stale or live_ok:
+            pass
+        elif err["kind"] in ("quota", "auth"):
             level, fix = "FIX", fix or _fix_for(name, err, row.get("batch_top"))
-        elif not stale and err["kind"] == "rate" and level == "OK":
+        elif err["kind"] == "rate" and level == "OK":
             level, fix = "WARN", _fix_for(name, err, row.get("batch_top"))
     elif ok:
         parts.append(f"last success {ok:%Y-%m-%d %H:%M}Z")
@@ -648,7 +697,17 @@ LIVE_PROMPT = ("Reply with one line and nothing else: the title of section 7 of 
                "If your instructions contain no such policy, reply NO-POLICY.")
 
 
-def live_command(name: str, binary: str, prompt: str = LIVE_PROMPT) -> list[str]:
+# Hermes's SOUL.md carries a summary of the policy and a reference to POLICY.md, not section 7's
+# heading (policy.sync); forbidding file reads would make correct wiring answer NO-POLICY (review
+# of #66, P2).
+LIVE_PROMPT_HERMES = ("Reply with one line and nothing else: the title of section 7 of the operating policy your "
+                      "instructions refer to (the heading text after \"7.\"). You may read the policy file your "
+                      "instructions point to, but use no other tool. "
+                      "If your instructions contain no such policy, reply NO-POLICY.")
+
+
+def live_command(name: str, binary: str, prompt: str | None = None) -> list[str]:
+    prompt = prompt or (LIVE_PROMPT_HERMES if name == "hermes" else LIVE_PROMPT)
     if name == "claude-code":
         return [binary, "-p", prompt, "--model", "haiku", "--max-turns", "2"]
     if name == "codex":
@@ -720,8 +779,10 @@ def verify(live_run: bool = False, timeout: int = 120, home: pathlib.Path | None
         marker = policy_marker()
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
             lives = list(ex.map(lambda n: live(n, timeout=timeout, marker=marker), names))
-        for r, lv in zip(rows, lives):
+        for n, r, lv in zip(names, rows, lives):
             r["live"] = lv
+            if lv.get("result") == "ok":
+                verdict(n, r, live_ok=True)  # a confirmed success supersedes history (review of #66, P2)
     return rows
 
 
