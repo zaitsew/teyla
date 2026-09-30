@@ -1,6 +1,7 @@
 """The shared operating policy: one file, wired into every harness.
 
-    ~/.agents/POLICY.md                 the source of truth (template in templates/POLICY.md)
+    ~/.agents/POLICY.md                 the source of truth (template in templates/POLICY.md, or
+                                        templates/POLICY.work.md with `teyla policy init --work`)
     ~/.claude/CLAUDE.md                 gets an `@~/.agents/POLICY.md` import line
     ~/.codex/AGENTS.md                  symlink → POLICY.md        (Codex global instructions)
     ~/.grok/AGENTS.md                   symlink → POLICY.md        (Grok CLI global rules)
@@ -18,6 +19,11 @@ import pathlib
 HOME = pathlib.Path.home()
 POLICY = HOME / ".agents" / "POLICY.md"
 TEMPLATE = __import__("teyla").templates_dir() / "POLICY.md"
+# The work variant: no cross-provider review and no `grok -p` volume worker, because on a work
+# laptop both send the employer's code to a vendor IT never approved. A POLICY.md says which
+# variant it is by the marker line, so `refresh` keeps merging from the template it came from.
+TEMPLATE_WORK = __import__("teyla").templates_dir() / "POLICY.work.md"
+WORK_MARKER = "<!-- teyla-template: work"
 IMPORT_LINE = "@~/.agents/POLICY.md"
 HERMES_MARK = "## Operating policy"
 HERMES_BLOCK = f"""
@@ -25,6 +31,41 @@ HERMES_BLOCK = f"""
 {HERMES_MARK}
 Follow ~/.agents/POLICY.md — read it at session start. Short form: the most capable model orchestrates and cheaper models do volume work; get a cross-provider second opinion before non-trivial designs; use connectors before CLIs before browser before computer use; ask about product decisions with a proposed default, never ask for permission to proceed; stop only at a real blocker (a key, a payment, a sign-in) and then open the exact page and name the exact file; deliver plug-and-play (README, setup, .env.example, first-run check); say when something is unverified.
 """
+HERMES_BLOCK_WORK = HERMES_BLOCK.replace(
+    "get a cross-provider second opinion before non-trivial designs",
+    "get a second opinion from a fresh same-provider session before non-trivial designs; send code only to providers IT approved")
+
+
+def hermes_block() -> str:
+    """The section SOUL.md should carry for the installed policy's variant."""
+    return HERMES_BLOCK_WORK if is_work() else HERMES_BLOCK
+
+
+def _hermes_section(text: str) -> tuple[int, int] | None:
+    """(start, end) of Teyla's managed section in SOUL.md: from the HERMES_MARK heading to the
+    next `## ` heading or the end of the file, blank lines before it included."""
+    at = text.find(HERMES_MARK)
+    if at < 0:
+        return None
+    start = len(text[:at].rstrip("\n"))
+    nxt = text.find("\n## ", at + len(HERMES_MARK))
+    return start, (nxt + 1 if nxt >= 0 else len(text))
+
+
+def _hermes_current(text: str) -> bool:
+    span = _hermes_section(text)
+    return span is not None and text[span[0]:span[1]].strip() == hermes_block().strip()
+
+
+def is_work(text: str | None = None) -> bool:
+    """Whether this POLICY.md text (default: the installed file) came from the work template."""
+    if text is None:
+        text = POLICY.read_text() if POLICY.exists() else ""
+    return WORK_MARKER in text
+
+
+def template_path(work: bool = False) -> pathlib.Path:
+    return TEMPLATE_WORK if work else TEMPLATE
 
 TARGETS = {
     "claude-code": HOME / ".claude" / "CLAUDE.md",
@@ -48,19 +89,22 @@ def cursor_skill_text() -> str:
     return CURSOR_HEAD + POLICY.read_text()
 
 
-def init(force=False, owner: str | None = None, dry: bool = False) -> str:
-    """Write ~/.agents/POLICY.md from the template, with {{owner}} filled in (defaults to the
-    login name). `dry` reports what would happen and touches nothing on disk — not even
-    ~/.agents/ itself."""
-    import getpass
+def init(force=False, owner: str | None = None, dry: bool = False, work: bool = False) -> str:
+    """Write ~/.agents/POLICY.md from the template (`work`: the work variant), with {{owner}}
+    filled in (defaults to the login name). `dry` reports what would happen and touches nothing
+    on disk — not even ~/.agents/ itself. --force over an existing file keeps a dated backup."""
     if POLICY.exists() and not force:
+        if work and not is_work():
+            return (f"exists: {POLICY} (from the home template: it sends diffs to other providers) — "
+                    f"`teyla policy init --work --force` replaces it with the work template, keeping a dated backup")
         return f"exists: {POLICY}"
     if dry:
-        return f"would write {POLICY}"
+        return f"would write {POLICY}" + (" from the work template" if work else "")
+    if POLICY.exists():
+        _backup_policy()
     POLICY.parent.mkdir(parents=True, exist_ok=True)
-    text = TEMPLATE.read_text().replace("{{owner}}", owner or getpass.getuser())
-    POLICY.write_text(text)
-    return f"wrote {POLICY}"
+    POLICY.write_text(render_template(owner, work=work))
+    return f"wrote {POLICY}" + (" from the work template" if work else "")
 
 
 def status() -> dict:
@@ -73,7 +117,9 @@ def status() -> dict:
         p = TARGETS[h]
         st[h] = (p.resolve() == POLICY.resolve()) if p.exists() else (None if not p.parent.exists() else False)
     p = TARGETS["hermes"]
-    st["hermes"] = (HERMES_MARK in p.read_text()) if p.exists() else None
+    # Current, not merely present: after `policy init --work --force` a home-variant section
+    # still tells Hermes to send diffs to another provider (Codex review of #59, P1).
+    st["hermes"] = _hermes_current(p.read_text()) if p.exists() else None
     p = TARGETS.get("cursor")
     if p is not None:  # tests patch TARGETS without it
         if not p.parents[2].is_dir():
@@ -104,10 +150,19 @@ def sync(dry=False, owner: str | None = None) -> list[str]:
                 p.symlink_to(POLICY)
             done.append(f"symlinked {p} → {POLICY}")
     p = TARGETS["hermes"]
-    if p.exists() and HERMES_MARK not in p.read_text():
+    if p.exists() and not _hermes_current(p.read_text()):
+        text = p.read_text()
+        span = _hermes_section(text)
+        if span is None:
+            new_text, what = text.rstrip() + hermes_block(), "appended policy section to"
+        else:
+            # The section under HERMES_MARK is Teyla's: replaced whole, whatever variant it was.
+            rest = text[span[1]:]
+            new_text = text[:span[0]] + hermes_block().rstrip("\n") + "\n" + ("\n" + rest if rest else "")
+            what = "replaced the policy section in"
         if not dry:
-            p.write_text(p.read_text().rstrip() + HERMES_BLOCK)
-        done.append(f"appended policy section to {p}")
+            p.write_text(new_text)
+        done.append(f"{what} {p}")
     p = TARGETS.get("cursor")
     if p is not None and p.parents[2].is_dir() and POLICY.exists() and not (p.exists() and p.read_text() == cursor_skill_text()):
         if not dry:
@@ -294,9 +349,13 @@ def _owner_from(text: str) -> str | None:
     return m.group(1).strip() if m else None
 
 
-def render_template(owner: str | None = None) -> str:
+def render_template(owner: str | None = None, work: bool | None = None) -> str:
+    """The shipped template with the owner filled in. `work` None: the variant the installed
+    POLICY.md came from, so a work policy is never merged against the home template."""
     import getpass
-    return TEMPLATE.read_text().replace("{{owner}}", owner or getpass.getuser())
+    if work is None:
+        work = is_work()
+    return template_path(work).read_text().replace("{{owner}}", owner or getpass.getuser())
 
 
 def refresh(dry: bool = False) -> list[str]:

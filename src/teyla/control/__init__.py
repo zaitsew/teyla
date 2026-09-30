@@ -123,6 +123,8 @@ def register(sp):
     q.add_argument("--dry", action="store_true", help="print the plan — run id, key, grants, rules, steps — and create nothing")
     q.add_argument("--force", action="store_true", help="run even though a receipt already exists for this idempotency key")
     q.add_argument("--repo", help="skip the product search and read this repo's teyla.toml")
+    q.add_argument("--allow-network", action="store_true",
+                   help="safe mode: let this one run execute its steps (the product must also be in products.repos)")
 
     q = sp.add_parser("inbox", help="the queue of runs that stopped at a gate")
     q.set_defaults(fn=cmd_inbox, inbox_action="list", all=False, id=None, note=None)
@@ -136,6 +138,9 @@ def register(sp):
         a.add_argument("id")
         if name in ("approve", "reject"):
             a.add_argument("--note", help="what was wrong; a rejection with a note becomes a rule candidate")
+        if name == "approve":
+            a.add_argument("--allow-network", action="store_true",
+                           help="safe mode: let the act step run (the product must also be in products.repos)")
 
     q = sp.add_parser("kill", help="the kill switch: teyla run refuses and every tool call is denied")
     q.set_defaults(fn=cmd_kill, action="status", reason=None)

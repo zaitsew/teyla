@@ -17,6 +17,11 @@ plainly rather than burying:
     grok     `grok -p --output-format plain --deny ...` — a deny list derived from
              the ungranted schemes. Coarser still.
 
+Safe mode (`safe.enabled`, TEYLA_SAFE=1) is checked here, at the lowest level, so a draft, an
+act step approved from the inbox and a critic all meet it: a step runs only when the command
+line carried --allow-network and the product's repo is in `[products] repos`; an agent step
+also needs its provider in the work POLICY.md's ladder — the list of providers IT approved.
+
 Only Claude Code gets per-capability enforcement. For the other two the grant list
 is an intent, and the sandbox flag is the enforcement. Do not read a `send:`-free
 manifest as proof a Codex step could not send.
@@ -168,7 +173,42 @@ def _run(argv, *, cwd, env, timeout_s, stdin_text=None) -> tuple[int | None, str
     return proc.returncode, proc.stdout or "", proc.stderr or "", time.monotonic() - t0, None
 
 
+HARNESS_PROVIDER = {"claude": "anthropic", "codex": "openai", "grok": "xai"}
+
+
+def safe_refusal(repo, harness: str | None = None) -> str | None:
+    """Why safe mode refuses a step in `repo` (with `harness`, an agent step), or None."""
+    from .. import config, net
+    if not config.safe_mode():
+        return None
+    if not net.allowed():
+        return ("safe mode is on: a routine step runs repo commands or a model CLI, so it needs "
+                "`teyla run <ref> --allow-network`, typed by hand")
+    try:
+        here = pathlib.Path(repo).resolve()
+    except (OSError, TypeError):
+        here = None
+    if here not in config.products_allowlist():
+        return (f"safe mode is on and {repo} is not in [products] repos — "
+                f"teyla config set products.repos=<name>,... to allow its commands")
+    if harness is not None:
+        from .. import policy
+        from ..models import parse_ladder
+        provider = HARNESS_PROVIDER.get(harness, harness)
+        text = policy.POLICY.read_text() if policy.POLICY.exists() else ""
+        if not policy.is_work(text):
+            return (f"safe mode is on and {policy.POLICY} is not the work policy, so no provider is "
+                    f"approved for {harness!r} steps — teyla policy init --work --force")
+        if provider not in parse_ladder(text):
+            return (f"safe mode is on and {provider} is not in the ladder of {policy.POLICY} "
+                    f"(the providers approved for this code) — the {harness!r} step is refused")
+    return None
+
+
 def run_command_step(step, *, cwd, env, timeout_s) -> StepResult:
+    why = safe_refusal(cwd)
+    if why:
+        return StepResult(ok=False, error=why, argv=["/bin/sh", "-c"])
     argv = ["/bin/sh", "-c", step.run]
     rc, out, err, dur, error = _run(argv, cwd=cwd, env=env, timeout_s=timeout_s)
     return StepResult(
@@ -181,6 +221,9 @@ def run_command_step(step, *, cwd, env, timeout_s) -> StepResult:
 def run_agent_step(step, *, cwd, env, timeout_s, grants: dict, caps: dict, prompt: str,
                    out_path=None) -> StepResult:
     harness = step.harness
+    why = safe_refusal(cwd, harness)
+    if why:
+        return StepResult(ok=False, error=why)
     binary = shutil.which(harness)
     if binary is None:
         return StepResult(
