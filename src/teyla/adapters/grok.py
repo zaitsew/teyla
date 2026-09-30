@@ -35,7 +35,7 @@ import re
 import urllib.parse
 from typing import Iterator
 
-from . import CORRECTION_RE, AgentCall, Session, Turn, stale
+from . import AgentCall, Session, Turn, human_text, is_correction, stale
 
 NAME = "grok"
 GROK_HOME = os.environ.get("GROK_HOME") or os.path.expanduser("~/.grok")
@@ -235,10 +235,10 @@ def parse(subpath: str, sid: str, cwd_guess: str, prompts: list) -> Session | No
                 s.agents.append(AgentCall(None, "grok-subagent", args.get("description")))
 
     for ts, prompt in sorted(prompts, key=lambda p: p[0] or ""):
-        txt = (prompt or "").strip()
+        txt = human_text((prompt or "").strip())
         if not txt:
             continue
-        s.user_turns.append(Turn(ts, txt[:1500], bool(CORRECTION_RE.search(txt[:600]))))
+        s.user_turns.append(Turn(ts, txt[:1500], is_correction(txt)))
         if ts:
             ts_candidates.append(ts)
 

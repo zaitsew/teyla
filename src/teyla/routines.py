@@ -26,7 +26,7 @@ A repo declares both in one `teyla.toml` at its root:
     status = "broken"
     confirmed = 2026-09-09
 
-`teyla routines [path...]` walks every git repo under ~/repos by default (or
+`teyla routines [path...]` walks every git repo under code_root by default (or
 the paths given), reads each `teyla.toml`, and reports whether the automated
 half is actually loaded and running on schedule, and whether the manual half
 is confirmed working and recent.
@@ -45,6 +45,7 @@ gate tell "nobody has tried this" apart from "this is provably failing".
 """
 from __future__ import annotations
 
+import copy
 import datetime as dt
 import os
 import re
@@ -81,7 +82,7 @@ class ManifestError(ValueError):
 
 
 def find_manifests(paths: list[str] | None = None) -> list[pathlib.Path]:
-    """teyla.toml files: at the given paths, or one level under every git repo in ~/repos."""
+    """teyla.toml files: at the given paths, or one level under every git repo in config code_root."""
     if paths:
         out = []
         for p in paths:
@@ -93,7 +94,8 @@ def find_manifests(paths: list[str] | None = None) -> list[pathlib.Path]:
             elif p.name == "teyla.toml" and p.exists():
                 out.append(p)
         return out
-    root = pathlib.Path.home() / "repos"
+    from . import config
+    root = config.code_root()  # ~/repos by default; a work laptop keeps code elsewhere
     if not root.is_dir():
         return []
     out = []
@@ -238,7 +240,9 @@ def loaded_state(routine: dict, *, launchctl_output: str | None = None, crontab_
         return "not in crontab"
 
     if kind == "github-actions":
-        if shutil.which("gh") is None:
+        from . import net
+        if shutil.which("gh") is None or not net.allowed():
+            # Safe mode: `gh run list` is a call to GitHub, and this runs unattended weekly.
             return "unknown"
         try:
             r = subprocess.run(
@@ -367,6 +371,45 @@ def evaluate_all(paths: list[str] | None = None) -> list[dict]:
 LINES_DIR = pathlib.Path(os.path.expanduser("~/.teyla/routines"))
 
 
+# A BROKEN or UNTESTED check left alone this long gets its one-command confirmation named in
+# the product line. Measured 2026-09-29: 26 of 30 checks untested, 2 broken for 19 days, while
+# the line said "N untested" every session — a count names no next step.
+STALE_CHECK_DAYS = 14
+
+
+def stale_checks(report: dict) -> list[dict]:
+    """BROKEN, then UNTESTED, check rows confirmed more than STALE_CHECK_DAYS ago — or never
+    (no `confirmed` date: nobody can say it was ever looked at)."""
+    def old(c):
+        age = c.get("age_days")
+        return not isinstance(age, int) or age > STALE_CHECK_DAYS
+    rows = report.get("checks") or []
+    return ([c for c in rows if c.get("verdict") == "BROKEN" and old(c)]
+            + [c for c in rows if c.get("verdict") == "UNTESTED" and old(c)])
+
+
+def _sh(s: str) -> str:
+    """Shell-quote for a line a human copies: double quotes read better than shlex's
+    'today'"'"'s' and are exact whenever the text holds none of " $ ` \\ !."""
+    import shlex
+    s = str(s)
+    if re.fullmatch(r"[A-Za-z0-9._/:@+-]+", s):
+        return s
+    return f'"{s}"' if not re.search(r'["$`\\!]', s) else shlex.quote(s)
+
+
+def confirm_command(product: str, check_name: str, status: str = "ok") -> str:
+    """One pasteable command. Never `ok|broken` in one line: pasted, that is a pipeline — Teyla
+    records ok and the shell then tries to run `broken` (review of #65, P2)."""
+    return f"teyla check {_sh(product)} {_sh(check_name)} {status}"
+
+
+def confirm_step(product: str, check_name: str) -> str:
+    """The digest step for a check: two separate commands, one per outcome."""
+    return (f"try it, then `{confirm_command(product, check_name, 'ok')}` or, if it failed, "
+            f"`{confirm_command(product, check_name, 'broken')}`")
+
+
 def summary_line(report: dict, *, now: dt.datetime | None = None) -> str:
     now = now or dt.datetime.now().astimezone()
     stamp = f"as of {now:%Y-%m-%d %H:%M}"
@@ -383,10 +426,35 @@ def summary_line(report: dict, *, now: dt.datetime | None = None) -> str:
         broken = [c["name"] for c in cs if c["verdict"] in BROKEN_CHECK_VERDICTS]
         pending = sum(1 for c in cs if c["verdict"] in NEEDS_ATTENTION_CHECK_VERDICTS)
         parts.append(f"{len(cs)} checks" + (f", broken: {', '.join(broken)}" if broken else "") + (f", {pending} untested/re-test" if pending else ""))
-    return f"{report['product']}: {' · '.join(parts)} ({stamp}) — `teyla routines .` for the table"
+    confirm = ""
+    stale = stale_checks(report)
+    if stale:
+        c = stale[0]
+        more = f" (+{len(stale) - 1} more)" if len(stale) > 1 else ""
+        confirm = (f" — {c['verdict'].lower()} >{STALE_CHECK_DAYS}d: {_trunc(c['name'])}{more}; after trying it: "
+                   f"`{confirm_command(report['product'], c['name'], 'ok')}` or, if it failed, "
+                   f"`{confirm_command(report['product'], c['name'], 'broken')}`")
+    return f"{report['product']}: {' · '.join(parts)} ({stamp}){confirm} — `teyla routines .` for the table"
+
+
+def problem_items(report: dict) -> list[tuple[str, str]]:
+    """(key, text) for the session-start banner: routines not running (NOT_RUNNING_VERDICTS) and broken checks. The key
+    is what "seen" is tracked by, so a routine that goes from STALE to NOT LOADED is news again."""
+    if report.get("error"):
+        return [(f"toml|{report['product']}", f"{report['product']} teyla.toml has an error")]
+    out = []
+    for r in report.get("routines") or []:
+        if r.get("verdict") in NOT_RUNNING_VERDICTS:  # `unknown` included: nothing can say it runs
+            out.append((f"routine|{report['product']}|{r['name']}|{r['verdict']}",
+                        f"{report['product']} routine {r['name']} {r['verdict']}"))
+    for c in report.get("checks") or []:
+        if c.get("verdict") == "BROKEN":
+            out.append((f"check|{report['product']}|{c['name']}|BROKEN", f"{report['product']} check {_trunc(c['name'])} BROKEN"))
+    return out
 
 
 def write_lines(reports: list[dict], lines_dir: pathlib.Path | None = None) -> list[pathlib.Path]:
+    """<product>.line (the product line) and <product>.problems (banner items, key<TAB>text) per report."""
     lines_dir = lines_dir or LINES_DIR
     written = []
     try:
@@ -396,9 +464,19 @@ def write_lines(reports: list[dict], lines_dir: pathlib.Path | None = None) -> l
             f = lines_dir / f"{name}.line"
             f.write_text(summary_line(r) + "\n")
             written.append(f)
+            items = problem_items(r)
+            prob = lines_dir / f"{name}.problems"
+            if items:
+                prob.write_text("".join(f"{_clean(k)}\t{_clean(t)}\n" for k, t in items))
+            elif prob.exists():
+                prob.unlink()
     except OSError:
         pass  # a read-only home must not break the report
     return written
+
+
+def _clean(s: str) -> str:
+    return re.sub(r"[\t\r\n]+", " ", str(s))
 
 
 NOT_RUNNING_VERDICTS = {"NOT LOADED", "STALE", "unknown"}
@@ -588,3 +666,214 @@ def open_issues(results: list[dict]) -> list[str]:
             else:
                 lines.append(f"{r['product']}: FAILED to create issue for {c['name']!r}")
     return lines
+
+
+# --- `teyla check <product> <check> ok|broken` --------------------------------------------
+#
+# Confirming a check used to mean opening teyla.toml, finding the block, editing two lines by
+# hand. 26 of 30 checks were never confirmed. This is the one command: it rewrites only the
+# `status`, `confirmed` (and, with --note, `note`) lines of that one [[check]] block — every
+# other byte of the file, comments included, stays as it was.
+
+_TABLE_RE = re.compile(r"^\s*\[\[?\s*([A-Za-z0-9_.-]+)\s*\]\]?\s*(?:#.*)?$")
+_KV_RE = re.compile(r"""^(\s*)([A-Za-z0-9_-]+)(\s*=\s*)("(?:[^"\\]|\\.)*"|'[^']*'|[^\s#]+)(.*)$""")
+
+
+def find_product(product: str, *, cwd: pathlib.Path | None = None) -> pathlib.Path | None:
+    """The teyla.toml of a product: a path to a repo or a teyla.toml, else the manifest whose
+    [product] name (or repo directory name) is `product` — the current directory first, then
+    every repo under code_root."""
+    p = pathlib.Path(product).expanduser()
+    if p.name == "teyla.toml" and p.is_file():
+        return p
+    if p.is_dir() and (p / "teyla.toml").is_file():
+        return p / "teyla.toml"
+    from . import config
+    cands = [(cwd or pathlib.Path.cwd()) / "teyla.toml"]
+    root = config.code_root()
+    if root.is_dir():
+        cands += [d / "teyla.toml" for d in sorted(root.iterdir()) if (d / "teyla.toml").is_file()]
+    for m in cands:
+        if not m.is_file():
+            continue
+        try:
+            name = (tomllib.loads(m.read_text()).get("product") or {}).get("name")
+        except (tomllib.TOMLDecodeError, OSError):
+            name = None
+        if product in (name, m.parent.name):
+            return m
+    return None
+
+
+def _toml_str(s: str) -> str:
+    return '"' + str(s).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _inside_value(lines: list[str]) -> list[bool]:
+    """inside[i]: does line i begin in the middle of a TOML value — a multiline string or a
+    multiline array? Such a line is text, never a table header or a `key = value` field (review
+    of #65, P1: a `how` that quoted `status = "..."` on its own line was eaten as the field).
+    One extra entry at the end: whether the file stops inside a value."""
+    inside, st, depth = [], None, 0
+    for line in lines:
+        inside.append(st is not None or depth > 0)
+        i, n = 0, len(line)
+        while i < n:
+            c = line[i]
+            if st is not None:
+                q = st[0]
+                if q == '"' and c == "\\":
+                    i += 2
+                elif line.startswith(st, i):
+                    while i < n and line[i] == q:  # a run of quotes: the last three close
+                        i += 1
+                    st = None
+                else:
+                    i += 1
+            elif c == "#":
+                break
+            elif line.startswith('"""', i) or line.startswith("'''", i):
+                st = line[i:i + 3]
+                i += 3
+            elif c == '"':
+                i += 1
+                while i < n and line[i] != '"':
+                    i += 2 if line[i] == "\\" else 1
+                i += 1
+            elif c == "'":
+                j = line.find("'", i + 1)
+                i = n if j < 0 else j + 1
+            else:
+                depth += (c == "[") - (c == "]")
+                i += 1
+    inside.append(st is not None or depth > 0)
+    return inside
+
+
+def set_check(path: pathlib.Path, check_name: str, status: str, *, note: str | None = None,
+              today: dt.date | None = None) -> str:
+    """Set one [[check]]'s status and confirmed date (and note) in place. Returns a one-line
+    result; raises ManifestError when the check is not there, when the edit cannot be made
+    safely, or when the result is not exactly the original plus the intended fields — and then
+    the file is left as it was."""
+    if status not in ("ok", "broken", "untested"):
+        raise ManifestError(f"status is ok, broken or untested — not {status!r}")
+    today = today or dt.date.today()
+    text = path.read_text()
+    try:
+        before = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as e:
+        raise ManifestError(f"{path}: does not parse ({e}); file left unchanged") from e
+    lines = text.splitlines(keepends=True)
+    inside = _inside_value(lines)
+
+    def header(k):
+        return not inside[k] and _TABLE_RE.match(lines[k].rstrip("\n"))
+
+    def field(k):
+        return None if inside[k] else _KV_RE.match(lines[k].rstrip("\n"))
+
+    # Find the block: a [[check]] header, then the lines up to the next table header.
+    start = end = None
+    i = 0
+    while i < len(lines):
+        m = header(i)
+        if m and lines[i].lstrip().startswith("[[") and m.group(1) == "check":
+            j = i + 1
+            while j < len(lines) and not header(j):
+                j += 1
+            for k in range(i + 1, j):
+                kv = field(k)
+                if kv and kv.group(2) == "name":
+                    try:
+                        val = tomllib.loads(f"v = {kv.group(4)}")["v"]
+                    except tomllib.TOMLDecodeError:
+                        val = None
+                    if val == check_name:
+                        start, end = i, j
+            if start is not None:
+                break
+            i = j
+            continue
+        i += 1
+    if start is None:
+        names = [c.get("name") for c in (before.get("check") or [])]
+        raise ManifestError(f"{path}: no [[check]] named {check_name!r}; there are: {', '.join(map(repr, names)) or 'none'}")
+    want = {"status": _toml_str(status), "confirmed": today.isoformat()}
+    if note is not None:
+        want["note"] = _toml_str(note)
+    seen_keys, last_kv = set(), start
+    for k in range(start + 1, end):
+        raw = lines[k]
+        nl = "\n" if raw.endswith("\n") else ""
+        kv = field(k)
+        if not kv:
+            continue
+        last_kv = k
+        key = kv.group(2)
+        if key in want:
+            if inside[k + 1]:  # the old value runs on over later lines: replacing line k would leave them behind
+                raise ManifestError(f"{path}: `{key}` in that [[check]] is a multiline value; edit it by hand. File left unchanged")
+            lines[k] = f"{kv.group(1)}{key}{kv.group(3)}{want[key]}{kv.group(5)}{nl}"
+            seen_keys.add(key)
+    missing = [k for k in ("status", "confirmed", "note") if k in want and k not in seen_keys]
+    if missing:
+        # After the block's last line of content — which may end a multiline `how`, not start one.
+        tail = max((k for k in range(start, end)
+                    if inside[k] or (lines[k].strip() and not lines[k].lstrip().startswith("#"))), default=start)
+        if inside[tail + 1]:
+            raise ManifestError(f"{path}: cannot find where that [[check]] ends; edit it by hand. File left unchanged")
+        kv = field(last_kv) if last_kv > start else None
+        indent = kv.group(1) if kv else ""
+        if not lines[tail].endswith("\n"):
+            lines[tail] += "\n"
+        lines[tail + 1:tail + 1] = [f"{indent}{k} = {want[k]}\n" for k in missing]
+    new = "".join(lines)
+    try:
+        parsed = tomllib.loads(new)
+    except tomllib.TOMLDecodeError as e:
+        raise ManifestError(f"{path}: the edit would not parse ({e}); file left unchanged") from e
+    # The edit is right only if the file now says exactly what it said, plus these fields on this
+    # one check — nothing lost from a `how`, nothing landing inside a string.
+    expect = copy.deepcopy(before)
+    row = next(c for c in expect["check"] if c.get("name") == check_name)
+    row["status"], row["confirmed"] = status, today
+    if note is not None:
+        row["note"] = note
+    if parsed != expect:
+        raise ManifestError(f"{path}: the edit did not come out as intended (the file has multiline text or an "
+                            f"unusual layout there); file left unchanged — edit it by hand")
+    path.write_text(new)
+    was = next((c.get("status") for c in before.get("check") or [] if c.get("name") == check_name), "?")
+    return f"{check_name}: {was} -> {status}, confirmed {today.isoformat()} ({path})"
+
+
+def cmd_check(args) -> int:
+    path = find_product(args.product)
+    if path is None:
+        print(f"no teyla.toml for product {args.product!r} (here or under code_root); pass the repo path instead")
+        return 1
+    try:
+        print(set_check(path, args.check, args.status, note=args.note))
+    except ManifestError as e:
+        print(str(e))
+        return 1
+    # Refresh this product's session-start line and banner items now, not at tomorrow's daily.
+    try:
+        report = evaluate(parse_manifest(path))
+        write_lines([report])
+        from . import digest
+        digest.write_banner_items()
+    except Exception:  # noqa: BLE001 — the edit is done; a stale one-liner is not a failure
+        pass
+    return 0
+
+
+def register_check(sp):
+    q = sp.add_parser("check", help="confirm a manual check: set its status and today's date in the product's teyla.toml")
+    q.set_defaults(fn=cmd_check)
+    q.add_argument("product", help="the [product] name, the repo directory name, or a path to the repo / teyla.toml")
+    q.add_argument("check", help="the [[check]] name, exactly as in teyla.toml")
+    q.add_argument("status", choices=["ok", "broken", "untested"])
+    q.add_argument("--note", help='what was seen, e.g. --note "photo upload times out on 5G"')
+    return q

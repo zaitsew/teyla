@@ -2,7 +2,7 @@
 
 **A local-first toolkit and method for working with AI agents.** It measures how you actually use Claude Code, Codex, Grok and Hermes, tells you what to change, keeps one policy across all of them, turns repeated work into routines, and makes your corrections stick.
 
-Local-first. Nothing leaves your machine. `--share` produces a redacted report: pseudonymous projects, no session ids, no correction text.
+Local-first. No data leaves your machine — the only outbound calls are GitHub release checks and self-updates (listed in [`prompts/onboard.md`](prompts/onboard.md)). `--share` produces a redacted report: pseudonymous projects, connectors and private skills; no session ids, paths or correction text.
 
 ```bash
 uv tool install git+https://github.com/zaitsew/teyla      # or: pipx install git+https://github.com/zaitsew/teyla
@@ -15,14 +15,28 @@ teyla monitor --days 30              # the adoption report, with advice
 ```
 
 After that it keeps itself current: `teyla update` (run daily by the routine, and at session
-start by the plugin hook on machines where launchd is off limits) installs a newer release,
+start by the plugin hook on machines where launchd is off limits) installs a newer published
+release by its commit sha and checks the version it built (`update.pin` freezes it,
+`update.channel=none` stops the routine),
 merges template changes into your `POLICY.md` three-way so your edits survive, refreshes the
 plugin copy Claude Code actually loads, and rewrites the launchd wrappers if the binary moved.
-`teyla doctor` is the checklist; its one-line summary shows at the next session start.
+`teyla doctor` is the checklist; what is *new* in it shows at the next session start, and
+once a week the digest names the three things worth doing (see [What gets read](#what-gets-read)).
+
+**On a work laptop** (a managed Mac, a TLS-inspecting proxy, the employer's code in every transcript), switch on safe mode first:
+
+```bash
+uv tool install "teyla[work] @ git+https://github.com/zaitsew/teyla"   # [work] = truststore: the OS keychain holds the proxy's root CA
+teyla policy init --work --owner "Your Name" && teyla policy sync     # approved providers only, same-provider reviews; sets safe.enabled=true
+teyla config set products.repos=<repo>,<repo>                          # the only repos whose ./check.sh usage Teyla may run
+teyla doctor                                                           # first line: safe: on (network off, no auto-update, no repo commands)
+```
+
+Safe mode (`teyla config set safe.enabled=true`, or `TEYLA_SAFE=1`): nothing reaches the network unless you pass `--allow-network` to the command you typed (`teyla update --allow-network`); the session hook and the daily routine never update Teyla; `teyla products` runs `check.sh` only in `products.repos`; `routines --issues` is refused; `teyla plugin install|refresh` print the `claude plugin ...` commands instead of editing Claude Code's plugin registry; no keychain query.
 
 No `uv`? `pipx install git+https://github.com/zaitsew/teyla`, or `git clone` and run `PYTHONPATH=src python3 -m teyla`. Python 3.11+, nothing else.
 
-**Handing it to a second machine:** [`docs/HANDOVER.md`](docs/HANDOVER.md) lists every practice that travels and what to adapt; [`prompts/work-account-kickoff.md`](prompts/work-account-kickoff.md) is the paste-able version; [`prompts/work-account-update.md`](prompts/work-account-update.md) updates a machine that already has Teyla and switches on its self-maintenance. **Handing it to an agent instead of a person:** paste [`prompts/onboard.md`](prompts/onboard.md) into Claude Code, Codex or Grok on the new machine. It installs, wires the policy, installs the plugin, runs the first review, and produces the feedback file. Corporate machines: nothing leaves the machine, every file Teyla writes is listed there with its undo.
+**Handing it to a second machine:** [`docs/HANDOVER.md`](docs/HANDOVER.md) lists every practice that travels and what to adapt; [`prompts/work-account-kickoff.md`](prompts/work-account-kickoff.md) is the paste-able version; [`prompts/work-account-update.md`](prompts/work-account-update.md) updates a machine that already has Teyla and switches on its self-maintenance. **Handing it to an agent instead of a person:** paste [`prompts/onboard.md`](prompts/onboard.md) into Claude Code, Codex or Grok on the new machine. It installs, wires the policy, installs the plugin, runs the first review, and produces the feedback file. Corporate machines: no data leaves the machine; every network call (release checks, the daily self-update) and every file Teyla writes are listed there, and `teyla uninstall --dry` lists what is on this machine (`teyla uninstall` reverses it). `teyla prompt onboard` prints the copy that shipped with the installed version.
 
 ## Why
 
@@ -38,14 +52,14 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 
 | command | what you get |
 |---|---|
-| `teyla monitor [--days N] [--json]` | tokens by model and project, API-equivalent cost, orchestrator-tier share, subagent model mix, correction rate, cache-read ratio, giant sessions, governance-file edits, model ladder/price drift — plus advice A1–A14 |
+| `teyla monitor [--days N] [--json]` | tokens by model and project, API-equivalent cost, orchestrator-tier share, subagent model mix, correction rate, cache-read ratio, giant sessions, governance-file edits, model ladder/price drift — plus advice A1–A16 |
 | `teyla advise` | just the findings, each with the number that triggered it and one action |
 | `teyla grok-cost [--last\|--session ID] [--cwd PATH] [--days N] [--by project\|session] [--json]` | what Grok CLI sessions cost at list price, ranked by dollars not tokens. `--last --cwd <repo>` is the one line an orchestrator reads when a `grok -p` lane ends (cost, calls, tokens, cached %, tools, context, effort, title); the default is the last 7 days by project (worktrees and `~/repos/<repo>` collapse to `<repo>`, a `<repo>-grok-empty` temp dir to `<repo>`, other temp dirs to `tmp`); `--by session` is the top 20. `teyla monitor`/`advise` add A13/A14 |
 | `teyla sessions` / `teyla corrections --cluster` | one line per session; correction-shaped turns clustered into rule candidates |
 | `teyla policy init [--claude-md --ops-root-init]\|status\|sync\|sync-repo` | `~/.agents/POLICY.md` imported by `~/.claude/CLAUDE.md`, symlinked as `~/.codex/AGENTS.md` and `~/.grok/AGENTS.md`, appended to Hermes `SOUL.md`; `AGENTS.md ⇄ CLAUDE.md` in repos |
 | `teyla harvest <path>` | tool spines and corrections from every session that touched a path — the input to the harvest skill (skill = what was done the same way every time; everything else = candidate rules) |
 | `teyla scaffold <path> --name X --kind cli\|app\|service\|ios` | a repo born plug-and-play |
-| `teyla products` | real-usage counters from every repo's `./check.sh usage` — the "built, not used" detector |
+| `teyla products` | real-usage counters from every repo's `./check.sh usage` — the "built, not used" detector; `products.repos` in config limits which repos' code it runs |
 | `teyla routines [path...] \| --json` | is the automated half actually running, is the manual half actually confirmed working — from every repo's `teyla.toml` |
 | `teyla routine install\|status` | Teyla's own Monday 07:30 launchd weekly (monitor, routines, products) |
 | `teyla routines [--issues]` | every product's `teyla.toml`: routines that must run without you (loaded? last run? stale?) and manual checks you confirm (ok / broken / untested / re-test); `--issues` opens a GitHub issue per broken check |
@@ -60,6 +74,10 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | `teyla harness status\|sync` | the plugin's skills and hooks, and the policy, in Cursor, Codex, Grok and Hermes — see [docs/HARNESSES.md](docs/HARNESSES.md) |
 | `teyla rule "<sentence>" [--scope <glob>]` · `teyla correct "<what was wrong>"` | what `/teyla:rule` and `/teyla:correct` do, as a CLI every harness's skill can call |
 | `teyla doctor` | what Teyla can see on this machine |
+| `teyla digest [--write]` | the weekly digest: at most five lines — the top three actions across advice, doctor, routines and checks, each with its command, plus a streak note |
+| `teyla check <product> <check> ok\|broken [--note TEXT]` | confirm a manual check: sets `status` and today's `confirmed` in that product's `teyla.toml`, editing only those lines |
+| `teyla uninstall [--dry] [--keep-data]` | every file Teyla wrote on this machine (`--dry`), then the undo: LaunchAgents unloaded, the policy import line, symlinks, Hermes sections, harness skills and hooks, the plugin, `~/.teyla`. Touches only what carries Teyla's marker, label or symlink target; keeps and lists `~/.agents/POLICY.md` and repo-level `.teyla/` and rules |
+| `teyla prompt [name]` | the paste-able prompts (onboard, work-account-kickoff, …) that shipped with the installed version |
 | `teyla storage [--json]` · `teyla storage clean [--apply]` | the disk and RAM agent work holds: every worktree (SAFE = clean, on the remote, idle, no process in it — removed with `git worktree remove`, branch kept), git-ignored build output of idle repos, caches with the command that clears each, booted simulators. Dry run unless `--apply`; `teyla config set storage.auto_clean=true` lets the daily routine do it |
 | `teyla remind add "<what>" <YYYY-MM-DD> [--how "..."]` \| `list` \| `done <n>` | dated to-dos only a human can act on (a key that expires, a trial that ends); `teyla doctor` shows each as OK, then WARN within 30 days, then FIX once overdue |
 
@@ -71,15 +89,36 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | A2 | >60% of output tokens on the orchestrate tier | route volume work down the ladder |
 | A3 | sessions >8 MB, >12 h, or ≥3 compactions | one session per logical unit; end it after the PR merges |
 | A4 | cache-read per output token >150× | shorter sessions, subagents for reading |
-| A5 | correction rate on human turns | cluster them; two occurrences = a rule |
+| A5 | correction rate on human turns (never a `claude -p`/`codex exec`/`grok -p`/`hermes -z` prompt, a retry after an API error, or a harness-injected turn) | cluster them; two occurrences = a rule |
 | A6 | many subagents, no review skill ever run | `/review`, `/codex review`, `/grok review` before money, keys, other people's data |
 | A7 | sessions launched from a parent directory | launch from the repo root |
 | A8 | a harness without the policy | `teyla policy sync` |
-| A9 | the same correction shape twice (fingerprints, no text in the report) | write the rule |
-| A10 | a session wrote to `~/.claude/CLAUDE.md` | diff it; the governance file is the human's |
+| A9 | the same correction shape twice (fingerprints, no text in the report; retries never count) | write the rule |
+| A10 | a session wrote to `~/.claude/CLAUDE.md`: [high] only for edits after your last `teyla policy ack`, with how many; never acked → one [medium], once per version of the file | diff it; the governance file is the human's; `teyla policy ack` after reviewing |
 | A11 | `teyla models` finds ladder/price drift | `teyla models --write-policy` |
 | A13 | one project is over half of the week's Grok list-price cost (and the week is over $10) | `teyla grok-cost --by session --cwd <path>`; split or cap the loop |
 | A14 | one Grok session cost over $10 | `teyla grok-cost --session <id>`; end long lanes at a merge |
+| A15 | ≥3 turns in a week ended with the agent asking permission for the next step and the human answering a bare "yes" (only when POLICY.md declares `ask-permission`) | do the step and report it; ask only about product decisions or real blockers |
+| A16 | a workflow runs on push, pull_request or schedule (only when POLICY.md declares `no-actions`) | `on: workflow_dispatch` only; `teyla doctor` lists every file |
+
+### Policy detectors
+
+A rule in POLICY.md that nobody measures holds until the first busy week: the no-Actions rule
+was broken three times in September 2026 while it sat in every harness's context. Rules that
+files or transcripts can prove broken get a detector, and **the policy declares which run** —
+a user whose POLICY.md lacks the rule is never nagged about it:
+
+```markdown
+<!-- teyla:detect no-actions -->
+```
+
+anywhere in `~/.agents/POLICY.md` switches that detector on. An id Teyla does not know is a
+`teyla doctor` WARN, never silently ignored. Built in:
+
+| id | on by | checks | reported by |
+|---|---|---|---|
+| `no-actions` | the marker, or a heading like `## 10. GitHub Actions are off` | `.github/workflows/*.yml\|yaml` of every git repo under `code_root` and `ops_root` — in the working tree and on `origin/HEAD`, and says which — for `on:` push / pull_request / pull_request_target / schedule (string, list and map forms) | `teyla doctor` (`actions:<repo>` WARN with the file and the fix), advice A16 |
+| `ask-permission` | the marker (in the template's §4), or the §4 wording "not about permission" | Claude Code and Codex turns whose last paragraph asks permission for one step ("Want me to push them?", "Делать?") that the human answered with a bare yes; choices ("A or B?"), blockers (keys, payments, merges, deploys, deletes) and real answers do not count | advice A15 |
 
 Prices in `pricing.py` are a table you edit, or `~/.teyla/prices.json` (`teyla models --write-prices`) which overrides it when present. Cost is labelled "API-equivalent" because you may be on a subscription.
 
@@ -126,11 +165,36 @@ It ends with one summary line — `N routines not running, M checks broken, K
 untested/re-test` — and exits 1 when `N + M > 0`, so a cron job can alert on
 it. `--json` gives the same shape as data.
 
+Confirming a check is one command — `teyla check frank "gate shows today's drafts" ok` (or
+`broken --note "what you saw"`) — which rewrites only that block's `status`/`confirmed`/`note`
+lines and keeps every comment. When a session starts in a repo whose check has been BROKEN
+or UNTESTED for more than 14 days (or was never confirmed), the product line names that command.
+
 `teyla routine install` writes and loads Teyla's own weekly launchd job
 (`~/Library/LaunchAgents/com.zaitsew.teyla.weekly.plist`, Monday 07:30) that
 runs `teyla monitor`, `teyla routines` and `teyla products` and files the
-output under `~/ops/startup/os/ai-dev/runs/<date>/`. `teyla routine status`
+output under `<ops_root>/runs/<date>/` (or `<ops_root>/startup/os/ai-dev/runs/` where that
+tree exists). `teyla routine status`
 shows whether it is loaded and its last log lines.
+
+## What gets read
+
+Measured in September 2026: four weekly reports written, none opened by any session; the
+session-start line showed the same "1 fix(es), 2 warning(s)" on 44 of 44 starts for 13 days.
+So:
+
+- **The banner shows only what changed.** `teyla doctor` and `teyla routines` precompute
+  `~/.teyla/banner.items`; the session-start hook compares it with what it showed last time
+  (`~/.teyla/banner.seen`, keyed by name and level) and prints
+  `teyla: new — frank routine daily NOT LOADED; 2 known (teyla doctor)`, or nothing. A WARN
+  that becomes a FIX is new again. Reminders appear on the day they fall due, the day after,
+  then weekly.
+- **The weekly digest is five lines.** The weekly routine runs `teyla digest --write`:
+  `~/.teyla/digest.md` with the top three actions — doctor FIX items, monitor advice,
+  routines not running, checks broken or untested for more than 14 days — each with its one
+  command, and a streak note when the same advice fired three weeks running. The next
+  session start shows its headline once; `teyla digest` prints it; on macOS a notification
+  says it was written (`teyla config set digest.notify=false` to stop that).
 
 ## Productizing
 
@@ -200,9 +264,9 @@ platform costs, and what changes at twenty users — is [`docs/PRODUCTIZE.md`](d
 `plugin/` is a Claude Code plugin with no server behind it:
 
 - `/teyla:rule <sentence> [--scope glob]` → `.claude/rules/<slug>.md` (+ mirrored into `AGENTS.md`)
-- `/teyla:correct <what was wrong>` → `.teyla/corrections.jsonl`, then proposes the rule
+- `/teyla:correct <what was wrong>` → `~/.teyla/corrections/<repo>-<hash>.jsonl` (outside the repo, 0600, secrets replaced by `[redacted]`), then proposes the rule
 - skills: **harvest** (sessions → skill draft + candidate rules + routine manifest + a done-test *question*), **adoption-review** (`teyla monitor` → three concrete edits), and **wiki-pass** (this session's facts → wiki pages as a PR you confirm or correct; see [docs/WIKI.md](docs/WIKI.md))
-- a `UserPromptSubmit` hook that captures correction-shaped prompts silently
+- a `UserPromptSubmit` hook that captures correction-shaped prompts silently, into the same store (it needs the `teyla` CLI installed: the scrubber lives there, and with no scrubber nothing is written). `teyla corrections --recorded` lists what was stored; `teyla config set corrections.store=repo` keeps the pre-0.12 in-repo file instead. Either way `.teyla/` is added to the repo's `.git/info/exclude`, so an agent's `git add -A` cannot commit it
 
 ```bash
 claude plugin marketplace add zaitsew/teyla    # or a local path: claude plugin marketplace add ~/repos/teyla

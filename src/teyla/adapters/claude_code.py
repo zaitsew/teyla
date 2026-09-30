@@ -7,7 +7,7 @@ import json
 import os
 import re
 
-from . import CORRECTION_RE, TOKEN_KEYS, AgentCall, Session, Turn, is_noise_turn, stale, text_of
+from . import TOKEN_KEYS, AgentCall, Session, Turn, human_text, is_correction, is_retry, stale, text_of, turn_end_candidate
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "claude-code"
@@ -20,8 +20,11 @@ ACTIVE_GAP_CEILING_S = 30 * 60
 
 # `entrypoint` on each record says how the session was started. `sdk-cli` is `claude -p` /
 # `--print`: a script or another agent handing Claude one prompt, never a human at the keyboard.
-# (`cli` is the terminal, `claude-desktop` the app; both are interactive.)
-BATCH_ENTRYPOINTS = ("sdk-cli",)
+# (`cli` is the terminal, `claude-desktop` the app; both are interactive.) The Agent SDKs
+# stamp their own `sdk-*` value; only `sdk-cli` and `claude-desktop` were seen on the machine
+# this was written on (233 of 233 transcripts in 2026-09 were `claude-desktop`), so the
+# prefix, not a list, decides — a new SDK must not make its prompts human turns.
+BATCH_ENTRYPOINT_PREFIX = "sdk-"
 
 
 def _parse_ts(ts: str):
@@ -55,6 +58,8 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
     s = Session(harness=NAME, project=slug, sid=os.path.basename(f)[:-6], path=f, size=os.path.getsize(f))
     pending_calls: dict = {}  # tool_use_id -> {server, tool, turn_index}, until its tool_result arrives
     active_prev = None  # last assistant/user timestamp seen, kept only to sum gaps — never a list
+    last_text = None  # (ts, text) of the agent's latest text block, until a tool call or a human turn follows
+    after_error = False  # the last assistant record was an API error
     with open(f, errors="replace") as fh:
         for line in fh:
             try:
@@ -76,7 +81,7 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                     active_prev = cur
             if o.get("cwd") and not s.cwd:
                 s.cwd = o["cwd"]
-            if o.get("entrypoint") in BATCH_ENTRYPOINTS:
+            if str(o.get("entrypoint") or "").startswith(BATCH_ENTRYPOINT_PREFIX):
                 s.batch = True
             if o.get("isSidechain"):
                 s.sidechain = True
@@ -92,19 +97,30 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                         s.repos[r] += 1
             if t == "assistant":
                 m = o.get("message", {})
+                # `isApiErrorMessage`: a synthetic "API Error: Can't reach the API server" turn.
+                # The human's next "Try again" is a retry, not a turn (see adapters.is_retry).
+                after_error = bool(o.get("isApiErrorMessage"))
                 s.assistant_turns += 1
                 model = m.get("model", "?")
                 s.models[model] += 1
                 u = m.get("usage") or {}
                 for k in TOKEN_KEYS:
                     s.usage[model][k] += u.get(k, 0) or 0
+                said = text_of(m.get("content"))
+                if said.strip():
+                    last_text = (ts, said)
                 for b in m.get("content") or []:
                     if isinstance(b, dict) and b.get("type") == "tool_use":
+                        last_text = None  # the turn went on after the text: it did not end there
                         name = b.get("name")
                         s.tools[name] += 1
                         inp = b.get("input", {}) or {}
                         if _touches_governance(name, inp):
                             s.gov_edits += 1
+                            # The write's own date, not the session's start: A10 compares it with
+                            # the ack day (review of #68, P2).
+                            if ts and ts[:10] not in s.gov_days:
+                                s.gov_days.append(ts[:10])
                         if name in ("Agent", "Task"):
                             s.agents.append(AgentCall(inp.get("model"), inp.get("subagent_type"), inp.get("description")))
                         elif name == "Skill":
@@ -132,9 +148,21 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                                                        turn_index=call["turn_index"], result=result))
                     continue
                 txt = text_of(c).strip()
-                if not txt or o.get("isMeta") or is_noise_turn(txt):
+                if not txt or o.get("isMeta"):
                     continue
-                s.user_turns.append(Turn(ts, txt[:1500], len(txt) < 800 and bool(CORRECTION_RE.search(txt))))
+                h = human_text(txt, after_error)
+                after_error = False
+                # A bare "continue" is a retry to the turn counts but an approval to A15: it
+                # still answers the question the agent ended on (review of the #60 merge).
+                reply = h if h is not None else (txt if is_retry(txt) else None)
+                if reply is not None:
+                    ending = turn_end_candidate(last_text[1]) if last_text else None
+                    if ending:
+                        s.turn_ends.append((last_text[0], ending, reply[:200]))
+                    last_text = None
+                if h is None:
+                    continue
+                s.user_turns.append(Turn(ts, h[:1500], is_correction(h)))
     s.active_hours = round(s.active_hours, 2)
     if not s.first:
         return None

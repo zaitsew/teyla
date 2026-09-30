@@ -224,7 +224,10 @@ def test_reject_with_a_note_becomes_a_correction_candidate(product, capsys):
     capsys.readouterr()
     assert cli("inbox", "reject", run_id, "--note", "opened with a question again") == 0
     assert "correction candidate" in capsys.readouterr().out
-    rows = S.read_jsonl(product / ".teyla" / "corrections.jsonl")
+    from teyla import corrections
+    assert not (product / ".teyla" / "corrections.jsonl").exists(), "outside the product repo since 0.12"
+    rows = S.read_jsonl(corrections.path_for(product))
+    assert corrections.path_for(product).is_relative_to(S.home())
     assert len(rows) == 1
     assert rows[0]["text"] == "opened with a question again"
     assert rows[0]["routine"] == "demo:digest"
@@ -237,7 +240,9 @@ def test_reject_without_a_note_records_nothing_to_learn_from(product, capsys):
     capsys.readouterr()
     assert cli("inbox", "reject", run_id) == 0
     assert "No --note given" in capsys.readouterr().out
+    from teyla import corrections
     assert not (product / ".teyla" / "corrections.jsonl").exists()
+    assert not corrections.path_for(product).exists()
 
 
 def test_gate_b_acts_and_writes_an_undo(tmp_path, monkeypatch, capsys):
