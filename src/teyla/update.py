@@ -484,7 +484,10 @@ def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | No
     if not sha:
         return [f"FAIL: could not resolve {label} to a commit on {repo}; not installing an unpinned ref"]
     src = install_source(repo, sha)
-    before = installed_sha()  # what to roll back to, read before the installer replaces it
+    # What to roll back to, frozen before the installer replaces direct_url.json. The tag
+    # fallback is frozen too: when the running build's commit is unknown, re-reading it after
+    # the install found the rejected build's commit (review of #64, P1).
+    before = installed_sha() or f"v{__version__}"
     cmd = _installer(method, spec, src)
     if cmd is None:
         return [f"FAIL: installed with {method} but `{'uv' if method == 'uv-tool' else method}` is not on PATH"]

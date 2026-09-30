@@ -351,3 +351,23 @@ def test_rollback_goes_to_the_commit_that_was_running_not_the_rejected_one(_home
     assert update.cmd_update(args()) == 1
     assert "restored" in capsys.readouterr().out
     assert ran[-1][-1].endswith("@" + "c" * 40), "back to the commit that was running"
+
+
+def test_rollback_with_an_unknown_running_commit_goes_to_the_tag(_home, monkeypatch, capsys):
+    # review of #64's second fix, P1: with no commit known before the install, restore()
+    # re-read direct_url.json afterwards and reinstalled the rejected build.
+    config.set_value("update.pin", SHA)
+    github(monkeypatch, {}, {SHA: SHA})
+    ran = _pip_installer(monkeypatch, None, SHA)
+    running = {"commit": None}
+    monkeypatch.setattr(update, "_dist_commit", lambda: running["commit"])
+    real_run = update._run
+
+    def run(cmd, cwd=None):
+        rc, out = real_run(cmd, cwd)
+        if cmd[-1].endswith(f"@{SHA}"):
+            running["commit"] = SHA
+        return rc, out
+    monkeypatch.setattr(update, "_run", run)
+    assert update.cmd_update(args()) == 1
+    assert ran[-1][-1].endswith(f"@v{__version__}"), "the running version's tag, not the rejected commit"
