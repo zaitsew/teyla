@@ -79,14 +79,18 @@ def _grok_week():
 
 def cmd_monitor(args):
     from . import policy
-    from .monitor import redact
+    from .monitor import redact, scrub_home
     ss = _sessions(args)
     m = metrics(ss, args.days)
     m["grok_week"] = _grok_week()
-    F = advise(m, policy.status())
     if args.share:
+        # Redact before advising: findings quote projects, sessions and connectors in their
+        # evidence, and computed from the raw metrics they would carry the real names out.
         m = redact(m); args.samples = False
+    F = advise(m, policy.status())
     out = to_json(m, F) if args.json else markdown(m, F, include_samples=args.samples)
+    if args.share:
+        out = scrub_home(out)
     if args.out:
         open(args.out, "w").write(out); print(f"wrote {args.out}")
     else:
@@ -257,7 +261,7 @@ def main(argv=None):
         q.add_argument("--days", type=int); q.add_argument("--project")
         if name == "monitor":
             q.add_argument("--json", action="store_true"); q.add_argument("--samples", action="store_true"); q.add_argument("--out")
-            q.add_argument("--share", action="store_true", help="redact: pseudonymous projects, no session ids, no correction text")
+            q.add_argument("--share", action="store_true", help="redact: pseudonymous projects, connectors and skills; no session ids, paths or correction text")
         if name == "corrections":
             q.add_argument("--cluster", action="store_true")
             q.add_argument("--recorded", action="store_true", help="the stored corrections (teyla correct, capture hook), not transcript turns")
