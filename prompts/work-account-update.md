@@ -103,8 +103,8 @@ either the rule count, the doctor summary, or nothing (when all is clear). Repor
 teyla feedback --days 14 --out ~/Downloads/teyla-feedback-$(date +%F).md
 ```
 
-It is redacted (pseudonymous projects, no text, no paths) and now includes the doctor
-checklist, so I can see whether the install is wired here. Tell me where the file is.
+It is redacted (pseudonymous projects, connectors and private skills; no text, no paths;
+no proxy, CA bundle or reminder detail) and includes the doctor checklist, so I can see whether the install is wired here. Tell me where the file is.
 
 ## 7. Report
 

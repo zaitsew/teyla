@@ -533,6 +533,28 @@ def test_a_config_that_does_not_parse_is_never_rewritten(_home):
     assert config.CONFIG_PATH.read_text() == BROKEN, "[env] and the roots must survive a typo"
 
 
+def test_a_config_behind_an_unreadable_directory_forces_safe_mode_on(_home, monkeypatch, tmp_path):
+    # Path.exists() is False when stat is refused, so an exists() precheck read this as "no
+    # config": safe mode off, network allowed (review of #59, round four, P1).
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    (locked / "config.toml").write_text("[safe]\nenabled = true\n")
+    monkeypatch.setattr(config, "CONFIG_PATH", locked / "config.toml")
+    locked.chmod(0o000)
+    try:
+        if os.access(locked, os.R_OK | os.X_OK):
+            pytest.skip("running as a user that ignores directory permissions")
+        assert config.safe_mode() and not net.allowed()
+        assert config.parse_error() is not None
+    finally:
+        locked.chmod(0o755)
+
+
+def test_a_missing_config_is_still_safe_mode_off(_home):
+    assert not config.CONFIG_PATH.exists()
+    assert config.parse_error() is None and not config.safe_mode()
+
+
 def _control_repo(tmp_path, monkeypatch):
     from tests.test_control import MANIFEST
     repos = tmp_path / "repos"
@@ -559,6 +581,26 @@ def test_teyla_run_needs_allow_network_and_the_allowlist_in_safe_mode(_home, tmp
     out.clear()
     assert engine.run("demo:digest", out=out.append) == 0
     assert not any("REFUSED" in line for line in out), "with both, the draft runs as before (gate A stops at the inbox)"
+
+
+def test_a_refused_approval_leaves_the_item_pending(_home, tmp_path, monkeypatch):
+    # Refused inside the act step, the approval was recorded anyway and the retry with
+    # --allow-network said "already approve" (review of #59, round four, P2).
+    from teyla.control import engine, inbox, state as S
+    repo = _control_repo(tmp_path, monkeypatch)
+    safe_on()
+    config.set_value("products.repos", str(repo))
+    net.allow_for_this_command()
+    assert engine.run("demo:digest", out=lambda *_: None) == 0
+    [rid] = [k for k, v in S.fold_inbox().items() if not v.get("decision")]
+    net.allow_for_this_command(False)
+    args = type("A", (), {"id": rid, "note": None})()
+    assert inbox.cmd_approve(args) == 1
+    assert not S.inbox_item(rid).get("decision"), "refused, so still pending"
+    assert not (repo / "acted.txt").exists()
+    net.allow_for_this_command()
+    assert inbox.cmd_approve(args) == 0
+    assert S.inbox_item(rid)["decision"] == "approved" and (repo / "acted.txt").exists()
 
 
 def test_agent_steps_need_an_approved_provider_in_safe_mode(_home, tmp_path, monkeypatch):

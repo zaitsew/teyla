@@ -64,11 +64,11 @@ UNPARSEABLE = "unparseable"
 def parse_error(p: pathlib.Path | None = None) -> str | None:
     """Why config.toml cannot be read, or None when it is absent or parses."""
     p = p or CONFIG_PATH
-    if not p.exists():
-        return None
     import tomllib
     try:
         tomllib.loads(p.read_text())
+    except FileNotFoundError:
+        return None
     except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as e:
         return str(e)
     return None
@@ -78,12 +78,14 @@ def _read(p: pathlib.Path) -> dict:
     """The file's tables, or — when it exists and does not parse — a config whose only content
     is a safe mode that cannot be read as off. Returning {} here made one stray quote in [env]
     turn safe mode off: doctor then asked GitHub, routines ran gh, products ran every check.sh
-    (review of #59, P1). Fail closed, and let doctor say why."""
-    if not p.exists():
-        return {}
+    (review of #59, P1). Fail closed, and let doctor say why. Only a file that is really not
+    there reads as {}: Path.exists() is False when stat itself is refused (a 0000 parent
+    directory), which made an unreadable config look absent — safe mode off (review, P1)."""
     import tomllib
     try:
         return tomllib.loads(p.read_text())
+    except FileNotFoundError:
+        return {}
     except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as e:
         return {"safe": {"enabled": f"{UNPARSEABLE} {p.name}: {e}"}}
 
