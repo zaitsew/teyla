@@ -6,8 +6,9 @@ practice came from, what `teyla` installs, and what has to be adapted by hand.
 
 | practice | origin | installed by | adapt at work |
 |---|---|---|---|
+| **Safe mode**: no network without `--allow-network`, no self-update, no repo code outside `products.repos`, no hand-edited plugin registry | the 2026-09-29 work-laptop audit | `teyla policy init --work` (or `teyla config set safe.enabled=true`) | on first; `teyla doctor` shows `safe: on`; update by hand with `teyla update --allow-network` |
 | **The model ladder**: the top model orchestrates, cheaper tiers do volume, say which model did what | POLICY §1 | `teyla policy init` → `~/.agents/POLICY.md` | delete providers you do not have; name the top tier your org licenses |
-| **Second opinion across providers** before designs and anything touching money, keys, people's data | POLICY §2 | POLICY.md | Codex via ChatGPT desktop or `codex exec`; if only Claude exists, a fresh Claude session with the diff and no context |
+| **Second opinion across providers** before designs and anything touching money, keys, people's data | POLICY §2 | POLICY.md | `policy init --work` writes the work variant: a fresh same-provider session, and code goes only to providers IT approved |
 | **Tool ladder**: connector → CLI → browser → computer use, say when you fell | POLICY §3 | POLICY.md | corporate connectors (messaging, Jira/Confluence, Drive) come first; computer use may be disallowed |
 | **Ask with a default, never for permission** | POLICY §4 | POLICY.md | — |
 | **Blocker protocol**: do everything around it, open the exact page, name the file and line | POLICY §5 | POLICY.md | SSO pages instead of API-key pages |

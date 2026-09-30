@@ -89,23 +89,27 @@ def test_check_hits_releases_then_caches(_home, monkeypatch):
     calls = []
     def fake_urlopen(req, timeout=10, context=None):
         calls.append(req.full_url)
-        return _Resp({"tag_name": "v9.9.9"})
+        return _Resp({"tag_name": "v9.9.9", "sha": "a" * 40})
     monkeypatch.setattr(update.urllib.request, "urlopen", fake_urlopen)
     rec = update.check(refresh=True)
     assert rec["latest"] == "v9.9.9" and rec["newer"] is True and rec["note"] == "releases/latest"
-    assert update.CHECK_PATH.exists()
+    assert rec["sha"] == "a" * 40 and calls[-1].endswith("/commits/v9.9.9"), "the tag is resolved to its commit"
+    assert json.loads(update.CHECK_PATH.read_text())["sha"] == "a" * 40
     rec2 = update.check(refresh=False)
-    assert rec2["latest"] == "v9.9.9" and len(calls) == 1, "second call served from the cache"
+    assert rec2["latest"] == "v9.9.9" and len(calls) == 2, "second call served from the cache"
 
 
-def test_check_falls_back_to_tags_and_survives_offline(_home, monkeypatch):
+def test_check_never_falls_back_to_tags_and_survives_offline(_home, monkeypatch):
+    urls = []
     def fake_urlopen(req, timeout=10, context=None):
+        urls.append(req.full_url)
         if req.full_url.endswith("/releases/latest"):
             raise update.urllib.error.HTTPError(req.full_url, 404, "nf", {}, None)
         return _Resp([{"name": "v0.1.0"}, {"name": "v0.10.0"}, {"name": "v0.9.0"}])
     monkeypatch.setattr(update.urllib.request, "urlopen", fake_urlopen)
     rec = update.check(refresh=True)
-    assert rec["latest"] == "v0.10.0" and rec["note"] == "tags"
+    assert rec["latest"] is None and rec["reachable"] is True and not rec["newer"]
+    assert not any(u.endswith("/tags") for u in urls), "a bare v* tag is never an update source"
 
     def offline(req, timeout=10, context=None):
         raise update.urllib.error.URLError("no network")
@@ -203,7 +207,8 @@ def test_repos_status(tmp_path):
 def test_wrapper_stale_detects_moved_binary(_home):
     w = routine_install.WRAPPER_PATH
     w.parent.mkdir(parents=True, exist_ok=True)
-    w.write_text('#!/bin/bash\ndate > ~/.teyla/weekly.last\nTEYLA="/old/place/teyla"\n')
+    w.write_text('#!/bin/bash\ndate > ~/.teyla/weekly.last\nTEYLA="/old/place/teyla"\n'
+                 f'OUT_DIR="{routine_install._runs_root()}/$(date +%F)"\n')
     assert routine_install._wrapper_stale(w, "/new/place/teyla")
     assert not routine_install._wrapper_stale(w, "/old/place/teyla")
     assert routine_install._wrapper_stale(routine_install.DAILY_WRAPPER_PATH, "/x")
@@ -317,14 +322,17 @@ def test_upgrade_retries_after_a_corrupt_uv_cache_and_restores_the_old_version(m
         calls.append(cmd)
         if cmd[1:3] == ["cache", "clean"]:
             return 0, ""
-        if "@v0.10.0" in cmd[-1] and len([c for c in calls if "@v0.10.0" in c[-1]]) == 1:
+        if cmd[-1] == "--version":
+            return 0, "0.10.0"
+        if SHA in cmd[-1] and len([c for c in calls if SHA in c[-1]]) == 1:
             return 1, "Git operation failed\nerror: unable to read sha1 file of src/teyla/platform.py"
         return 0, "Installed 1 executable: teyla"
+    SHA = "b" * 40
     monkeypatch.setattr(update, "_run", fake_run)
     monkeypatch.setattr(update.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else "/x/teyla")
-    lines = update.upgrade("v0.10.0", "zaitsew/teyla", "uv-tool", python="3.13")
+    lines = update.upgrade("v0.10.0", "zaitsew/teyla", "uv-tool", python="3.13", sha=SHA)
     assert any("uv cache clean teyla" in l for l in lines) and lines[-1].startswith("installed v0.10.0")
-    assert [c[1:3] for c in calls] == [["tool", "install"], ["cache", "clean"], ["tool", "install"]]
+    assert [c[1:3] for c in calls] == [["tool", "install"], ["cache", "clean"], ["tool", "install"], ["--version"]]
     # a build that fails for another reason, with the binary gone, puts the installed version back
     calls.clear()
     def fail_run(cmd, cwd=None):
@@ -333,8 +341,8 @@ def test_upgrade_retries_after_a_corrupt_uv_cache_and_restores_the_old_version(m
     monkeypatch.setattr(update, "_run", fail_run)
     monkeypatch.setattr(update.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None)
     monkeypatch.setattr(update.pathlib.Path, "home", classmethod(lambda cls: pathlib.Path("/nonexistent")))
-    lines = update.upgrade("v9.9.9", "zaitsew/teyla", "uv-tool", python="3.13")
-    assert any(l.startswith("restored ") for l in lines) and lines[-1].startswith("FAIL: upgrade via uv-tool")
+    lines = update.upgrade("v9.9.9", "zaitsew/teyla", "uv-tool", python="3.13", sha=SHA)
+    assert lines[0].startswith("FAIL: upgrade via uv-tool") and lines[-1].startswith("restored ")
     assert calls[-1][-1].endswith(f"@v{update.__version__}")
 
 
@@ -530,18 +538,20 @@ def test_routine_install_writes_config_env_into_both_plists_and_wrappers(_home, 
 def test_upgrade_passes_python_pin_to_uv_and_pipx(_home, monkeypatch):
     import sys
     seen = []
-    monkeypatch.setattr(update, "_run", lambda cmd, cwd=None: (seen.append(cmd), (0, ""))[1])
+    monkeypatch.setattr(update, "_run", lambda cmd, cwd=None: (0, "1.2.3") if cmd[-1] == "--version" else (seen.append(cmd), (0, ""))[1])
     monkeypatch.setattr(update.shutil, "which", lambda name: f"/opt/bin/{name}")
     running = f"{sys.version_info.major}.{sys.version_info.minor}"
-    lines = update.upgrade("v1.2.3", "o/r", "uv-tool")
+    sha = "c" * 40
+    lines = update.upgrade("v1.2.3", "o/r", "uv-tool", sha=sha)
     assert seen[-1][:5] == ["/opt/bin/uv", "tool", "install", "--force", "--python"] and seen[-1][5] == running
-    assert lines == [f"installed v1.2.3 via uv-tool on python {running}"]
+    assert seen[-1][-1].endswith(f"@{sha}"), "installed by commit, not by tag"
+    assert lines == [f"installed v1.2.3 (cccccccccccc) via uv-tool on python {running}"]
     # [update] python in config wins over the running interpreter
     config.CONFIG_PATH.write_text('[update]\npython = "3.12"\n')
     assert update.python_spec() == "3.12"
-    update.upgrade("v1.2.3", "o/r", "uv-tool")
+    update.upgrade("v1.2.3", "o/r", "uv-tool", sha=sha)
     assert seen[-1][4:6] == ["--python", "3.12"]
-    update.upgrade("v1.2.3", "o/r", "pipx")
+    update.upgrade("v1.2.3", "o/r", "pipx", sha=sha)
     assert seen[-1][:3] == ["/opt/bin/pipx", "install", "--force"] and seen[-1][3] == "--python"
     assert seen[-1][4].endswith("python3.12"), "pipx wants an executable (name or path), not a version spec"
 
@@ -590,7 +600,7 @@ def test_failed_check_is_retried_after_fifteen_minutes_but_success_is_cached_a_d
     monkeypatch.setattr(update.urllib.request, "urlopen", offline)
     rec = update.check(refresh=True)
     assert rec["latest"] is None and rec["from_cache"] is False
-    assert update.check(refresh=False)["from_cache"] is True and len(calls) == 2, "fresh failure served from cache"
+    assert update.check(refresh=False)["from_cache"] is True and len(calls) == 1, "fresh failure served from cache"
     old = json.loads(update.CHECK_PATH.read_text())
     old["checked"] = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=16)).isoformat(timespec="seconds")
     update.CHECK_PATH.write_text(json.dumps(old))
@@ -624,7 +634,7 @@ def test_reachable_repo_without_a_release_is_not_unreachable(_home, monkeypatch)
     rec = update.check(refresh=True)
     assert rec["latest"] is None and rec["reachable"] is True
     by = {c["name"]: c for c in doctor.checks(refresh_update=False, scan_repos=False)}
-    assert by["network"]["level"] == "WARN" and "no release" in by["network"]["detail"]
+    assert by["network"]["level"] == "WARN" and "no published release" in by["network"]["detail"]
     monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: (_ for _ in ()).throw(update.urllib.error.URLError("down")))
     assert update.check(refresh=True)["reachable"] is False
 
@@ -660,7 +670,7 @@ def test_update_force_reinstalls_on_the_pinned_interpreter_when_the_lookup_fails
     args.force = True
     assert update.cmd_update(args) == 0
     assert seen[-1][:6] == ["/opt/bin/uv", "tool", "install", "--force", "--python", pin]
-    assert seen[-1][6].endswith(f"@v{teyla.__version__}"), "the installed version's tag, since the latest is unknown"
+    assert seen[-1][-1].endswith(f"@v{teyla.__version__}"), "the installed version's tag, since the latest is unknown"
 
 
 def test_doctor_reports_the_policy_detectors_the_policy_declares(_home, monkeypatch):

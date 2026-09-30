@@ -3,8 +3,8 @@
   teyla monitor [--days N] [--json] [--samples] [--share] [--out FILE]   adoption report from local harness logs
   teyla advise  [--days N]                                       just the findings
   teyla sessions [--days N] [--project SUBSTR]                   one line per session
-  teyla corrections [--days N] [--project SUBSTR]                correction-shaped human turns, clustered
-  teyla policy init [--owner] [--claude-md] [--ops-root-init] [--dry]   POLICY.md, global CLAUDE.md, an ops root
+  teyla corrections [--days N] [--project SUBSTR] [--recorded]   correction-shaped human turns, clustered; --recorded: the stored ones
+  teyla policy init [--owner] [--work] [--claude-md] [--ops-root-init] [--dry]   POLICY.md, global CLAUDE.md, an ops root
   teyla policy status|sync [--dry]                                the wiring into every harness
   teyla policy sync-repo <path>... [--prefer agents|claude]      AGENTS.md ⇄ CLAUDE.md in repos
   teyla policy ack [--note TEXT]                                  record acceptance of ~/.claude/CLAUDE.md's current hash
@@ -27,6 +27,7 @@
   teyla storage [--json] [--no-sizes]                             disk and RAM held by agent work: worktrees, build output, caches
   teyla storage clean [--apply] [--auto]                          remove finished worktrees and idle build output (dry run by default)
   teyla config show | set KEY=VALUE                               ~/.teyla/config.toml, incl. [env] for launchd/hook runs
+  teyla config set safe.enabled=true                              work mode: no network (--allow-network per command), no self-update
   teyla update [--check] [--force] [--wire] [--quiet]            newer release → install, then policy sync/refresh, plugin refresh, routines
   teyla platform [init|env-example] [--json] [--no-net]          the shared resources set up once, and the step for each missing one
   teyla productize [path...] [--json] [--owner-steps]            what stands between each product and its second user
@@ -41,7 +42,9 @@
   teyla plugin refresh [--force]                                  bring the installed plugin copy to this package's version
   teyla harness status|sync [--dry]                               the same skills, hooks and policy in Cursor, Codex, Grok, Hermes
   teyla rule "<sentence>" [--scope <glob>]                        a rule into .claude/rules/, mirrored into AGENTS.md
-  teyla correct "<what was wrong>"                                a correction into .teyla/corrections.jsonl
+  teyla correct "<what was wrong>"                                a correction into ~/.teyla/corrections/<repo>.jsonl, secrets scrubbed
+  teyla prompt [name]                                             the prompts shipped with this version (onboard, …); none: list them
+  teyla uninstall [--dry] [--keep-data]                           undo every write Teyla made here; --dry lists every file it wrote
 """
 from __future__ import annotations
 
@@ -96,6 +99,10 @@ def cmd_monitor(args):
         open(args.out, "w").write(out); print(f"wrote {args.out}")
     else:
         sys.stdout.write(out)
+    # Only after the report was delivered: an unwritable --out must not silence the
+    # never-acknowledged A10 on the next run (review of #68, P2).
+    from .advise import mark_seen
+    mark_seen(F)
 
 
 def cmd_advise(args):
@@ -103,8 +110,11 @@ def cmd_advise(args):
     from .detect import enrich
     m = enrich(metrics(_sessions(args), args.days))
     m["grok_week"] = _grok_week()
-    for f in advise(m, policy.status()):
+    F = advise(m, policy.status())
+    for f in F:
         print(f"[{f['severity']}] {f['id']} {f['title']}\n    {f['evidence']}\n    → {f['action']}")
+    from .advise import mark_seen
+    mark_seen(F)
 
 
 def cmd_sessions(args):
@@ -131,6 +141,17 @@ def correction_rows(sessions):
 
 
 def cmd_corrections(args):
+    if args.recorded:
+        # What `teyla correct`, the capture hook and inbox rejections stored — ~/.teyla/corrections/
+        # plus any pre-0.12 <repo>/.teyla/corrections.jsonl under code_root — not the transcripts.
+        from . import corrections
+        import datetime as dt
+        cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=args.days)).isoformat() if args.days else ""
+        for key, rec in corrections.all_records():
+            if str(rec.get("ts") or "") < cutoff or (args.project and args.project not in key + str(rec.get("cwd") or "")):
+                continue
+            print(f"{str(rec.get('ts') or '')[:10]} {key[:30]:30} {str(rec.get('text') or '')[:200].replace(chr(10), ' ')}")
+        return
     rows = correction_rows(_sessions(args))
     if args.cluster:
         c = Counter(r[3].lower().strip()[:60] for r in rows)
@@ -144,8 +165,10 @@ def cmd_corrections(args):
 
 def cmd_policy(args):
     from . import policy
+    failed: list[str] = []
     if args.action == "init":
-        print(policy.init(force=args.force, owner=args.owner, dry=args.dry))
+        msg = policy.init(force=args.force, owner=args.owner, dry=args.dry, work=args.work)
+        print(msg)
         from . import config
         # Roots: an explicit flag, else what an existing policy's Layout section says, else the default.
         layout = policy.layout_roots()
@@ -155,10 +178,29 @@ def cmd_policy(args):
             print(f"layout from policy: code_root={layout.get('code_root', '-')} ops_root={layout.get('ops_root', '-')}")
         if not args.dry:
             print(config.write(code_root=args.code_root, ops_root=args.ops_root, force=args.force))
-            if policy.POLICY.exists() and not policy.BASE_PATH.exists():
+            if policy.POLICY.exists() and (not policy.BASE_PATH.exists() or msg.startswith("wrote")):
+                # A freshly written policy is the template itself; its base must be that same
+                # template, or the first refresh after `--work --force` merges the home one back in.
                 policy.BASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-                policy.BASE_PATH.write_text(policy.render_template(args.owner))
+                policy.BASE_PATH.write_text(policy.render_template(args.owner or policy._owner_from(policy.POLICY.read_text())))
                 print(f"recorded template base at {policy.BASE_PATH}")
+            if args.work:
+                # Safe mode goes on even when the policy step was refused: it only ever makes this
+                # machine do less. But the command succeeds only when both halves hold — a work
+                # laptop left on the home policy must not read "done" (Codex review of #59).
+                try:
+                    set_msg = config.set_value("safe.enabled", "true")
+                except OSError as e:
+                    set_msg = f"could not write {config.CONFIG_PATH}: {e}"
+                print(set_msg)
+                if not (set_msg.startswith("set ") and config.safe_mode()):
+                    failed.append(f"safe mode: {set_msg}")
+                else:
+                    print("safe mode on: no network without --allow-network, no self-update, no repo commands "
+                          "outside [products] repos, no hand-edited plugin registry — `teyla doctor` shows it")
+                if not policy.is_work():
+                    failed.append(f"work policy: {policy.POLICY} is still the home template ({msg}) — "
+                                  "rerun with --force to replace it (a dated backup is kept)")
         if args.claude_md:
             msg = policy.init_claude_md(owner=args.owner, merge_rule=args.merge_rule, code_root=args.code_root,
                                         ops_root=args.ops_root, force=args.force, dry=args.dry)
@@ -170,6 +212,11 @@ def cmd_policy(args):
         if args.ops_root_init:
             for line in policy.init_ops_root(args.ops_root, owner=args.owner, code_root=args.code_root, dry=args.dry):
                 print(line)
+        if failed:
+            for f in failed:
+                print(f"teyla policy init --work: FAILED — {f}", file=sys.stderr)
+            return 1
+        return 0
     elif args.action == "status":
         for k, v in policy.status().items():
             print(f"{k:14} {'ok' if v else ('not installed' if v is None else 'MISSING')}")
@@ -203,6 +250,10 @@ def cmd_products(args):
 
 def cmd_routines(args):
     from .routines import evaluate_all, render_text, render_json, summarize, exit_code, write_lines
+    if getattr(args, "issues", False):
+        from . import net
+        if not net.gate("`teyla routines --issues` (it calls GitHub through gh)"):
+            return 1
     reports = evaluate_all(args.paths or None)
     write_lines(reports)  # the one-liners the session-start hook shows; only the CLI writes them
     if getattr(args, "issues", False):
@@ -233,6 +284,21 @@ def cmd_routine(args):
             print(line)
 
 
+def cmd_prompt(args):
+    """Print a prompt shipped with this installed version; without a name, list them."""
+    from . import prompts_dir
+    d = prompts_dir()
+    names = sorted(p.stem for p in d.glob("*.md"))
+    if not args.name:
+        print("\n".join(names))
+        return 0
+    if args.name not in names:
+        print(f"no prompt {args.name!r}; one of: {', '.join(names)}", file=sys.stderr)
+        return 1
+    sys.stdout.write((d / f"{args.name}.md").read_text())
+    return 0
+
+
 def cmd_scaffold(args):
     from .scaffold import scaffold
     for line in scaffold(args.path, name=args.name, kind=args.kind, license=args.license):
@@ -255,11 +321,13 @@ def main(argv=None):
             q.add_argument("--share", action="store_true", help="redact: pseudonymous projects, connectors and skills; no session ids, paths or correction text")
         if name == "corrections":
             q.add_argument("--cluster", action="store_true")
+            q.add_argument("--recorded", action="store_true", help="the stored corrections (teyla correct, capture hook), not transcript turns")
     q = sp.add_parser("policy"); q.set_defaults(fn=cmd_policy)
     q.add_argument("action", choices=["init", "status", "sync", "sync-repo", "ack", "refresh"]); q.add_argument("paths", nargs="*")
     q.add_argument("--resolved", action="store_true", help="refresh: the merge conflict is resolved in POLICY.md; move the base forward")
     q.add_argument("--dry", action="store_true"); q.add_argument("--force", action="store_true")
     q.add_argument("--owner", help="your name, written into POLICY.md (default: login name)")
+    q.add_argument("--work", action="store_true", help="init: the work-laptop policy (approved providers only, same-provider reviews) and safe mode on")
     q.add_argument("--claude-md", action="store_true", help="init: also write ~/.claude/CLAUDE.md from the global template if absent")
     q.add_argument("--merge-rule", help='init --claude-md: the merging sentence (default: "open the PR/MR, then stop")')
     q.add_argument("--code-root", help="init: where repos live (default: the Layout section of an existing POLICY.md/CLAUDE.md, else ~/repos)")
@@ -274,22 +342,29 @@ def main(argv=None):
     platform_mod.register(sp); productize_mod.register(sp)
     wiki.register(sp); feedback.register(sp); models.register(sp)
     plugins.register(sp); plugin_install.register(sp); connectors.register(sp); control.register(sp)
-    remind.register(sp); rules.register(sp); harness.register(sp); storage.register(sp); grokcost.register(sp)
+    remind.register(sp); rules.register(sp); harness.register(sp); storage.register(sp)
+    from . import uninstall as uninstall_mod
+    uninstall_mod.register(sp); grokcost.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
     q = sp.add_parser("routines"); q.set_defaults(fn=cmd_routines)
     q.add_argument("paths", nargs="*"); q.add_argument("--json", action="store_true")
     q.add_argument("--issues", action="store_true", help="open one GitHub issue per BROKEN check (needs gh)")
+    q.add_argument("--allow-network", action="store_true", help="safe mode: allow gh for this one run")
     q = sp.add_parser("routine"); q.set_defaults(fn=cmd_routine)
     q.add_argument("action", choices=["install", "status", "catch-up"])
     q.add_argument("--if-stale", action="store_true", help="install: only rewrite when a wrapper names a binary that moved or a plist is missing")
     q.add_argument("--dry", action="store_true", help="catch-up: say which runs launchd skipped, run nothing")
     q.add_argument("--quiet", action="store_true", help="catch-up: print only when something was missed")
+    q = sp.add_parser("prompt", help="print a paste-able prompt shipped with this version (onboard, work-account-kickoff, ...)")
+    q.set_defaults(fn=cmd_prompt); q.add_argument("name", nargs="?")
     q = sp.add_parser("scaffold"); q.set_defaults(fn=cmd_scaffold)
     q.add_argument("path")
     q.add_argument("--name", required=True)
     q.add_argument("--kind", choices=["cli", "app", "service", "ios"], default="cli")
     q.add_argument("--license", choices=["apache", "mit", "none"], default="apache")
     args = p.parse_args(argv)
+    from . import net
+    net.allow_for_this_command(getattr(args, "allow_network", False))
     return args.fn(args)
 
 

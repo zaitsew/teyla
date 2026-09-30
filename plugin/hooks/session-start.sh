@@ -17,6 +17,9 @@
 #   so this needs no shell rc either. This is the auto-update path on machines where
 #   launchd agents cannot be installed (a managed laptop): every session start becomes
 #   a chance to notice a new release. The next session shows the result.
+# - Safe mode (`[safe] enabled = true` in ~/.teyla/config.toml, or TEYLA_SAFE=1): no update
+#   check at all — only doctor and catch-up, which are offline in safe mode — and the
+#   once-a-day test uses doctor.json's age, since update-check.json is never refreshed then.
 #
 # Every failure here is silently swallowed and exit 0 always wins: a broken
 # hook must never break someone's session start.
@@ -51,8 +54,23 @@
     # `uv tool install --force` removes the old tool before building the new one.
     echo "teyla: no \`teyla\` binary found although ~/.teyla/config.toml exists — reinstall: uv tool install --force git+https://github.com/zaitsew/teyla (or pipx)"
   fi
+  safe=""
+  case "$TEYLA_SAFE" in 1|true|TRUE|True|yes|on) safe=1 ;; esac
+  if [ -z "$safe" ] && [ -n "$TEYLA_SAFE" ]; then
+    # Fail closed, as config.safe_mode() does: only an explicit false word leaves it off.
+    case "$TEYLA_SAFE" in 0|false|FALSE|False|no|off) ;; *) safe=1 ;; esac
+  fi
+  if [ -z "$safe" ] && [ -f "$HOME/.teyla/config.toml" ]; then
+    val=$(sed -n '/^\[safe\]/,/^\[/p' "$HOME/.teyla/config.toml" 2>/dev/null | sed -n 's/^enabled *= *//p' | head -n 1 | tr -d '" \r' | tr 'A-Z' 'a-z')
+    case "$val" in ""|false|0|no|off) ;; *) safe=1 ;; esac
+  fi
   if [ -n "$teyla_bin" ]; then
-    if [ ! -f "$stamp" ] || [ -n "$(find "$stamp" -mmin +1440 2>/dev/null)" ]; then
+    if [ -n "$safe" ]; then
+      stamp="$HOME/.teyla/doctor.json"
+      if [ ! -f "$stamp" ] || [ -n "$(find "$stamp" -mmin +1440 2>/dev/null)" ]; then
+        (nohup sh -c "\"$teyla_bin\" doctor --quiet >/dev/null 2>&1; nice \"$teyla_bin\" routine catch-up --quiet >/dev/null 2>&1" >/dev/null 2>&1 &)
+      fi
+    elif [ ! -f "$stamp" ] || [ -n "$(find "$stamp" -mmin +1440 2>/dev/null)" ]; then
       (nohup sh -c "\"$teyla_bin\" update --check --quiet >/dev/null 2>&1; \"$teyla_bin\" doctor --quiet >/dev/null 2>&1; nice \"$teyla_bin\" routine catch-up --quiet >/dev/null 2>&1" >/dev/null 2>&1 &)
     fi
   fi

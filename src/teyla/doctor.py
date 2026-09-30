@@ -36,16 +36,49 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     from .adapters import claude_code, codex, grok, hermes, cursor
     cfg = config.load()
     out = []
+    safe = config.safe_mode(cfg)
+
+    # --- safe mode: first, because it changes what every line below means --------
+    out.append(_check("INFO", "safe", config.SAFE_SUMMARY if safe else "off"))
+    cfg_err = config.parse_error()
+    bad_safe = config.safe_setting_invalid(cfg)
+    if cfg_err:
+        out.append(_check("FIX", "safe:setting", f"{config.CONFIG_PATH} does not parse ({cfg_err}) — safe mode forced ON, "
+                          "every other setting ignored", "fix the file by hand, then: teyla config show"))
+    elif bad_safe is not None:
+        out.append(_check("FIX", "safe:setting", f"[safe] enabled = {bad_safe!r} is not true or false — treated as ON",
+                          "teyla config set safe.enabled=true   (or =false)"))
 
     # --- version ---------------------------------------------------------------
     rec = update.check(refresh=refresh_update, max_age_hours=24)
     method = rec.get("method")
     when = rec.get("checked", "")[:16]
     how = f"cached {when}, not retried" if rec.get("from_cache") else f"checked {when}"
-    if rec.get("latest") is None:
+    channel, upin = update.update_settings(cfg)
+    if upin or channel != "release":
+        bad = channel not in ("release", "none")
+        out.append(_check("FIX" if bad else "INFO", "update",
+                          f"channel {channel}" + (" (unknown: release or none)" if bad else "")
+                          + (f", pinned to {upin}" if upin else "")
+                          + (" — the daily routine never updates" if channel == "none" else ""),
+                          "teyla config set update.channel=release" if bad else
+                          ("teyla config set update.pin=   (unpins)" if upin else None)))
+    if safe:
+        # Doctor never passes --allow-network: it runs from the hook and the daily routine.
+        known = f"; {rec['latest']} was the latest at {when}" if rec.get("latest") else ""
+        out.append(_check("FIX" if rec.get("newer") else "INFO", "version",
+                          f"{__version__} ({method}); update checks off in safe mode{known}",
+                          "teyla update --allow-network   (when you choose to)"))
+    elif upin and rec.get("sha") and not rec.get("latest"):
+        state = "not installed yet" if rec.get("newer") else "installed"
+        out.append(_check("FIX" if rec.get("newer") else "OK", "version",
+                          f"{__version__} ({method}); pinned commit {rec['sha'][:12]} {state}; {how}",
+                          "teyla update" if rec.get("newer") else None))
+    elif rec.get("latest") is None:
         out.append(_check("WARN", "version", f"{__version__} ({method}); latest unknown — see network ({how})"))
     elif rec.get("newer"):
-        out.append(_check("FIX", "version", f"{__version__} installed, {rec['latest']} available ({method})", "teyla update"))
+        out.append(_check("FIX", "version", f"{__version__} installed, {rec['latest']} "
+                          + ("pinned" if upin else "available") + f" ({method})", "teyla update"))
     else:
         out.append(_check("OK", "version", f"{__version__} ({method}) is current; {how}"))
 
@@ -60,14 +93,20 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     facts = (f"{'via proxy ' + proxy if proxy else 'no proxy'}; trust: {trust}; "
              f"python {rec.get('python') or py_running} ({method}, update pins {pin})")
     repo = rec.get("repo") or cfg["update"]["repo"]
-    if rec.get("latest") is not None:
+    # truststore reads the OS keychain, where MDM puts the proxy's root CA; without it (and
+    # without SSL_CERT_FILE) Python 3.13 behind Zscaler fails every HTTPS call.
+    tls_fix = update.WORK_EXTRA_HINT if (proxy and not update.truststore_available()
+                                          and not update._explicit_bundle()) else None
+    if safe:
+        out.append(_check("INFO", "network", f"not probed (safe mode) — {facts}", tls_fix))
+    elif rec.get("latest") is not None or rec.get("sha"):
         out.append(_check("OK", "network", f"github.com reachable for {repo} — {facts}"))
     elif rec.get("reachable"):
-        out.append(_check("WARN", "network", f"github.com reachable for {repo} but no release or v* tag found ({how}): {rec.get('note')} — {facts}"))
+        out.append(_check("WARN", "network", f"github.com reachable for {repo} but no published release found ({how}): {rec.get('note')} — {facts}"))
     else:
         hint = update.explain_tls_error(rec.get("note"))
         out.append(_check("FIX", "network", f"github.com UNREACHABLE for {repo} ({how}): {rec.get('note')} — {facts}",
-                          hint or "check the proxy/VPN, then: teyla update --check   (retries now)"))
+                          hint or tls_fix or "check the proxy/VPN, then: teyla update --check   (retries now)"))
     if pin != py_running:
         out.append(_check("WARN", "network:python", f"running on python {py_running} but `[update] python` pins {pin}: the next update moves the install",
                           f"teyla config set update.python={py_running}   (or teyla update --force to move now)"))
@@ -116,6 +155,9 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
         if policy.CONFLICT_PATH.exists():
             out.append(_check("FIX", "policy:template", f"merge conflict waiting in {policy.CONFLICT_PATH}",
                               f"resolve, copy into {policy.POLICY}, then: teyla policy refresh --resolved"))
+        elif policy.PROPOSED_PATH.exists():
+            out.append(_check("FIX", "policy:template", f"a template change is proposed in {policy.PROPOSED_PATH} "
+                              "(safe mode merges nothing into POLICY.md by itself)", policy.proposal_commands()))
         elif not policy.BASE_PATH.exists():
             out.append(_check("FIX", "policy:template", "no template base recorded; future template changes cannot be merged",
                               "teyla policy refresh"))
@@ -151,9 +193,11 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
         pv = plugin_install.installed_version()
         if pv is None:
             out.append(_check("FIX", "plugin", "teyla plugin not installed in Claude Code",
+                              "claude plugin marketplace add zaitsew/teyla && claude plugin install teyla@teyla" if safe else
                               "teyla plugin install zaitsew/teyla   (or: claude plugin marketplace add zaitsew/teyla && claude plugin install teyla@teyla)"))
         elif pv != __version__:
-            out.append(_check("FIX", "plugin", f"installed copy is {pv}, CLI is {__version__}", "teyla plugin refresh"))
+            out.append(_check("FIX", "plugin", f"installed copy is {pv}, CLI is {__version__}",
+                              "claude plugin marketplace update teyla && claude plugin update teyla@teyla" if safe else "teyla plugin refresh"))
         else:
             out.append(_check("OK", "plugin", f"teyla@{pv} in Claude Code"))
     else:
@@ -185,7 +229,7 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
             if not plist.exists():
                 out.append(_check("FIX", f"routine:{label.rsplit('.', 1)[-1]}", "not installed", "teyla routine install"))
             elif stale:
-                out.append(_check("FIX", f"routine:{label.rsplit('.', 1)[-1]}", f"{wrapper.name} names a teyla binary that is not the current one, lacks the [env] in config.toml, or predates a step this release adds", "teyla routine install"))
+                out.append(_check("FIX", f"routine:{label.rsplit('.', 1)[-1]}", f"{wrapper.name} names a teyla binary that is not the current one, lacks the [env] in config.toml, does not match safe mode or ops_root, or predates a step this release adds", "teyla routine install"))
             elif not ok:
                 out.append(_check("FIX", f"routine:{label.rsplit('.', 1)[-1]}", "plist exists but launchd has not loaded it", "teyla routine install"))
             elif routine_install.missed(label):
@@ -210,6 +254,12 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
             out.append(_check("OK", "control:hmac", "signing key present, mode 600"))
     else:
         out.append(_check("INFO", "control:hmac", "no signing key yet (created on first `teyla run`)"))
+    if safe:
+        from .control import triggers as _triggers
+        for plist in _triggers.installed_plists():
+            label = plist.stem
+            out.append(_check("FIX", "control:trigger", f"{plist.name} runs `teyla run` unattended; safe mode refuses it",
+                              f"launchctl bootout gui/{os.getuid()}/{label}; rm {plist}"))
     kill = config.TEYLA_DIR / "kill"
     if kill.exists():
         out.append(_check("WARN", "control:kill", "kill switch is ON — no routine acts", "teyla kill off"))
@@ -277,10 +327,9 @@ def summary_line(cs: list[dict]) -> str:
 
 def write_state(cs: list[dict]) -> None:
     try:
-        config.TEYLA_DIR.mkdir(parents=True, exist_ok=True)
-        DOCTOR_JSON.write_text(json.dumps({"version": __version__, "at": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
-                                           "checks": cs}, indent=2) + "\n")
-        DOCTOR_SUMMARY.write_text(summary_line(cs) + "\n")
+        config.write_private(DOCTOR_JSON, json.dumps({"version": __version__, "at": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
+                                                      "checks": cs}, indent=2) + "\n")
+        config.write_private(DOCTOR_SUMMARY, summary_line(cs) + "\n")
     except OSError:
         pass
 
