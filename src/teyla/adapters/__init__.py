@@ -79,6 +79,10 @@ def is_correction(txt: str) -> bool:
         return False
     return bool(CORRECTION_RE.search(t))
 TOKEN_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
+# The part of cache_creation_input_tokens written with the 1-hour TTL (Claude Code writes all of its
+# cache that way). It is a subset, not a fifth bucket: pricing.cost_usd bills it at 2x input instead
+# of the 5-minute write price. Kept out of TOKEN_KEYS so token totals do not count it twice.
+CACHE_1H_KEY = "cache_creation_1h_input_tokens"
 
 
 @dataclasses.dataclass
@@ -109,6 +113,10 @@ class Session:
     sidechain: bool = False
     models: Counter = dataclasses.field(default_factory=Counter)
     usage: dict = dataclasses.field(default_factory=lambda: defaultdict(Counter))  # model -> Counter(TOKEN_KEYS)
+    # The subagents' share of `usage` (already included in it): model -> Counter(TOKEN_KEYS). Claude
+    # Code keeps each subagent in <session>/subagents/*.jsonl; their spend belongs to the session
+    # that spawned them.
+    sub_usage: dict = dataclasses.field(default_factory=lambda: defaultdict(Counter))
     tools: Counter = dataclasses.field(default_factory=Counter)
     skills: Counter = dataclasses.field(default_factory=Counter)
     agents: list = dataclasses.field(default_factory=list)
@@ -174,6 +182,7 @@ class Session:
     def to_dict(self) -> dict:
         d = dataclasses.asdict(self)
         d["usage"] = {m: dict(c) for m, c in self.usage.items()}
+        d["sub_usage"] = {m: dict(c) for m, c in self.sub_usage.items()}
         d["models"] = dict(self.models); d["tools"] = dict(self.tools); d["skills"] = dict(self.skills); d["repos"] = dict(self.repos)
         d["skills_read"] = dict(self.skills_read)
         d["hours"] = self.hours; d["tokens"] = dict(self.tokens); d["n_user"] = self.n_user; d["n_corr"] = self.n_corr

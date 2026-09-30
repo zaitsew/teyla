@@ -14,18 +14,22 @@ import pathlib
 
 PRICES = {
     # model prefix: (input, cache_write, cache_read, output, tier, verified)  — USD per 1M tokens
-    # Anthropic, per finout.io / tminusai.com 2026-09 (not from the vendor page): verify before quoting.
-    # Current generation (2026-09-30), input/cache_write/cache_read/output from the models.dev catalogue.
-    "claude-fable-5-1": (10.0, 12.5, 0.25, 50.0, "orchestrate", False),
-    "claude-opus-5-5": (4.0, 5.0, 0.2, 20.0, "volume", False),
-    "claude-sonnet-5-5": (2.0, 2.5, 0.2, 10.0, "volume", False),
-    "claude-haiku-4-5": (1.0, 1.25, 0.1, 5.0, "triage", False),
+    # cache_write is the 5-minute TTL price (1.25x input); a 1-hour write costs 2x input and is
+    # priced from `input` in cost_usd, not from this column.
+    # Anthropic: input/output checked 2026-09-30 against the claude-api skill's price table (cached
+    # 2026-09-25) and its prompt-caching page (reads $0.25 on Fable 5.1, $0.20 on Opus 5.5 and
+    # Sonnet 5.5, 0.1x input elsewhere; writes 1.25x / 2x).
+    "claude-fable-5-1": (10.0, 12.5, 0.25, 50.0, "orchestrate", True),
+    "claude-opus-5-5": (4.0, 5.0, 0.2, 20.0, "volume", True),
+    "claude-sonnet-5-5": (2.0, 2.5, 0.2, 10.0, "volume", True),
+    "claude-haiku-4-5": (1.0, 1.25, 0.1, 5.0, "triage", True),
     # Previous generations stay so old transcripts still price.
-    "claude-fable-5": (10.0, 12.5, 0.25, 50.0, "orchestrate", False),
-    "claude-opus-5": (5.0, 6.25, 0.5, 25.0, "volume", False),
-    "claude-opus-4": (5.0, 6.25, 0.5, 25.0, "volume", False),
-    "claude-sonnet-5": (2.0, 2.5, 0.2, 10.0, "volume", False),
-    "claude-sonnet-4": (3.0, 3.75, 0.3, 15.0, "volume", False),
+    # Fable 5's reads were 0.1x input: the $0.25 read rate arrived with Fable 5.1.
+    "claude-fable-5": (10.0, 12.5, 1.0, 50.0, "orchestrate", True),
+    "claude-opus-5": (5.0, 6.25, 0.5, 25.0, "volume", True),
+    "claude-opus-4": (5.0, 6.25, 0.5, 25.0, "volume", True),
+    "claude-sonnet-5": (2.0, 2.5, 0.2, 10.0, "volume", True),
+    "claude-sonnet-4": (3.0, 3.75, 0.3, 15.0, "volume", True),
     "claude-haiku-4": (1.0, 1.25, 0.1, 5.0, "triage", False),
     # OpenAI, per cloudzero / layer3labs 2026-09
     # Current generation, from the models.dev catalogue (base tier; the >272k-context surcharge is not modelled).
@@ -97,5 +101,9 @@ def cost_usd(model: str, usage: dict) -> float | None:
     if not p:
         return None
     i, cw, cr, o = p[:4]
-    return (usage.get("input_tokens", 0) * i + usage.get("cache_creation_input_tokens", 0) * cw
+    written = usage.get("cache_creation_input_tokens", 0)
+    # The 1-hour share of the writes (adapters.CACHE_1H_KEY) bills at 2x input; the rest at the
+    # 5-minute rate. Claude Code writes only 1-hour cache, so pricing it at 1.25x under-counted.
+    hour = min(usage.get("cache_creation_1h_input_tokens", 0), written)
+    return (usage.get("input_tokens", 0) * i + (written - hour) * cw + hour * 2 * i
             + usage.get("cache_read_input_tokens", 0) * cr + usage.get("output_tokens", 0) * o) / 1e6
