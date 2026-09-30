@@ -16,6 +16,11 @@ classifiers = [
 ]
 dependencies = []
 
+[project.optional-dependencies]
+# A managed laptop behind a TLS-inspecting proxy: truststore makes Python use the OS keychain,
+# where MDM installs the proxy's root CA, so no SSL_CERT_FILE has to be exported anywhere.
+work = ["truststore>=0.9"]
+
 [project.scripts]
 teyla = "teyla.cli:main"
 
@@ -32,6 +37,7 @@ packages = ["src/teyla"]
 [tool.hatch.build.targets.wheel.force-include]
 "templates" = "teyla/templates"
 "plugin" = "teyla/plugin"
+"prompts" = "teyla/prompts"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

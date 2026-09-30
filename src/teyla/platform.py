@@ -363,6 +363,9 @@ def _check_llm(cfg, present):
 
 
 def checks(cfg: dict | None = None, *, no_net: bool = False) -> list[dict]:
+    from . import net
+    # Safe mode: the ssh, DNS and Supabase probes are network calls like any other (net.py).
+    no_net = no_net or not net.allowed()
     cfg = cfg if cfg is not None else load()
     if not cfg:
         return [_row("platform.toml", MISSING, f"teyla platform init --owner \"Your Name\"  (writes {PLATFORM_PATH})",
@@ -425,7 +428,11 @@ def cmd_platform(args):
     if action == "env-example":
         print(env_example(), end="")
         return 0
-    rows = checks(no_net=getattr(args, "no_net", False))
+    from . import net
+    no_net = getattr(args, "no_net", False)
+    if not no_net and not net.gate("probing the server, domain and identity provider"):
+        no_net = True
+    rows = checks(no_net=no_net)
     if getattr(args, "json", False):
         print(json.dumps(to_json(rows), indent=2))
     else:
@@ -442,4 +449,5 @@ def register(sp):
     q.add_argument("--force", action="store_true", help="init: overwrite an existing manifest")
     q.add_argument("--json", action="store_true")
     q.add_argument("--no-net", action="store_true", help="skip the ssh and DNS probes")
+    q.add_argument("--allow-network", action="store_true", help="safe mode: run the ssh and DNS probes this once")
     return q

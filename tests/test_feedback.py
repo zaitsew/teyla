@@ -31,7 +31,7 @@ def _session(sid, cwd="/Users/alice/repos/demo-project"):
 def _fake_metrics():
     # One giant session so giant_sessions carries a project + sid that redact() must strip,
     # and one correction-shaped turn so correction_samples must not survive either.
-    sessions = [_session(f"s{i}") for i in range(3)]
+    sessions = [_session(f"sidzz{i}") for i in range(3)]
     sessions[0].size = 9_000_000  # over GIANT_BYTES -> lands in giant_sessions
     return metrics(sessions)
 
@@ -48,7 +48,7 @@ def test_build_contains_no_session_ids():
     m = _fake_metrics()
     out = build(m, days=30, policy_status={}, doctor_lines=[])
     for i in range(3):
-        assert f"s{i}" not in out.replace("sessions", "").replace("session", "")
+        assert f"sidzz{i}" not in out
 
 
 def test_build_contains_no_correction_text():
@@ -160,3 +160,24 @@ def test_open_issues_never_duplicates_when_issue_already_exists(monkeypatch, tmp
     lines = open_issues([report])
     assert created == []
     assert "already exists" in lines[0]
+
+
+# --- doctor detail in the feedback file ----------------------------------------------------
+
+def test_shareable_check_withholds_machine_detail(monkeypatch, tmp_path):
+    from teyla.feedback import shareable_check
+    monkeypatch.setenv("HOME", str(tmp_path))
+    c = lambda name, detail: {"level": "OK", "name": name, "detail": detail, "fix": "x"}
+    assert shareable_check(c("network", "no proxy; trust: truststore")) == ("OK", "network", "(withheld)")
+    assert shareable_check(c("config", "code_root=~/work")) == ("OK", "config", "(withheld)")
+    assert shareable_check(c("remind:renew the acme cert", "due soon")) == ("OK", "remind", "(withheld)")
+    assert shareable_check(c("platform:1password", "ok"))[2] == "(withheld)"
+    assert shareable_check(c("repos:agents-md", "acme-billing differs"))[2] == "(withheld)"
+    # whatever the family, a URL, an '@' or a home path is withheld
+    assert shareable_check(c("version", "see https://proxy.acme"))[2] == "(withheld)"
+    assert shareable_check(c("plugin", "user:pw@proxy:8080"))[2] == "(withheld)"
+    assert shareable_check(c("control:hmac", f"{tmp_path}/.teyla/hmac.key mode 0o644"))[2] == "(withheld)"
+    # what is about Teyla itself stays
+    assert shareable_check(c("plugin", "teyla@0.11.0 in Claude Code"))[2] == "(withheld)"  # '@' is '@'
+    assert shareable_check(c("policy:codex", "wired")) == ("OK", "policy:codex", "wired")
+    assert shareable_check(c("routine:daily", "loaded, last started 2026-09-28 09:00"))[2].startswith("loaded")

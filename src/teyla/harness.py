@@ -43,6 +43,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import shutil
 import stat
 
@@ -94,8 +95,9 @@ not yet a rule.
    teyla correct "<what was wrong>"
    ```
 
-   It appends `{ts, text, cwd}` to `.teyla/corrections.jsonl` in this repo — the same file
-   the capture hook writes — and prints how many are there.
+   It appends `{ts, text, cwd}` to this repo's file under `~/.teyla/corrections/` — the same
+   file the capture hook writes, outside the repo, secrets replaced by `[redacted]` — and
+   prints how many are there.
 2. Draft one candidate rule sentence and a scope glob from it, show both, and ask whether to
    promote it now with `teyla rule "<sentence>" --scope "<glob>"`. Do not promote on your
    own: two occurrences make a rule, one makes a note.
@@ -207,7 +209,7 @@ def _cursor_hooks(existing: dict | None) -> dict:
     d.setdefault("version", 1)
     hooks = dict(d.get("hooks") or {})
     for event, script in (("sessionStart", "session-start.sh"), ("beforeSubmitPrompt", "capture-correction.sh")):
-        entries = [e for e in (hooks.get(event) or []) if not str(e.get("command", "")).startswith(str(HOOKS_DIR))]
+        entries = [e for e in (hooks.get(event) or []) if not str(e.get("command", "")).startswith(str(HOOKS_DIR) + "/")]
         entries.append({"command": str(HOOKS_DIR / script), "type": "command", "timeout": 5})
         hooks[event] = entries
     d["hooks"] = hooks
@@ -218,9 +220,27 @@ CODEX_DESCRIPTION = ("Entries whose command is under ~/.teyla/hooks/ are written
                      "delete those entries (or this file, if nothing else is in it) to undo.")
 
 
+def _is_teyla_handler(handler) -> bool:
+    return isinstance(handler, dict) and str(handler.get("command", "")).startswith(str(HOOKS_DIR) + "/")
+
+
 def _is_teyla_group(group) -> bool:
-    return isinstance(group, dict) and any(str(h.get("command", "")).startswith(str(HOOKS_DIR))
-                                           for h in (group.get("hooks") or []) if isinstance(h, dict))
+    return isinstance(group, dict) and any(_is_teyla_handler(h) for h in (group.get("hooks") or []))
+
+
+def _without_teyla(groups) -> list:
+    """`groups` minus Teyla's handlers. A user's handler that shares a group with ours stays in
+    that group (matcher and other keys kept); a group is dropped only once it is left empty
+    (review of #61, P1)."""
+    out = []
+    for g in groups or []:
+        if not _is_teyla_group(g):
+            out.append(g)
+            continue
+        rest = [h for h in g["hooks"] if not _is_teyla_handler(h)]
+        if rest:
+            out.append({**g, "hooks": rest})
+    return out
 
 
 def _codex_hooks(existing: dict | None) -> dict:
@@ -232,7 +252,7 @@ def _codex_hooks(existing: dict | None) -> dict:
     hooks = dict(d.get("hooks") or {})
     for event, command in (("SessionStart", f"{HOOKS_DIR / 'session-start.sh'} --codex"),
                            ("UserPromptSubmit", str(HOOKS_DIR / "capture-correction.sh"))):
-        groups = [g for g in (hooks.get(event) or []) if not _is_teyla_group(g)]
+        groups = _without_teyla(hooks.get(event))
         groups.append({"hooks": [{"type": "command", "command": command, "timeout": 5}]})
         hooks[event] = groups
     d["hooks"] = hooks
@@ -398,6 +418,8 @@ def _codex_trust(h: Harness) -> tuple[int, int, list[str]]:
             if not _is_teyla_group(group):
                 continue
             for hi, handler in enumerate(group.get("hooks") or []):
+                if not _is_teyla_handler(handler):
+                    continue  # a user's handler in a shared group is not ours to count (review of #61)
                 total += 1
                 rec = state.get(f"{h.hooks_path}:{_CODEX_EVENT_LABELS[event]}:{gi}:{hi}") or {}
                 want = codex_hook_hash(event, handler, group.get("matcher"))
@@ -424,14 +446,35 @@ def _hermes_pairs() -> list[tuple[str, str]]:
     return pairs
 
 
+_HERMES_TRUTHY = {"1", "true", "yes", "on"}  # agent/shell_hooks.py `_TRUTHY`
+
+
+def _hermes_auto_accept(text: str) -> bool:
+    """Is `hooks_auto_accept` set, as a top-level key, to what Hermes reads as true? A commented
+    line or a nested key of the same name does not count (review of #61, P2). No YAML dependency:
+    only an unindented `key: value` line is looked at, and the last one wins, as in YAML loaders."""
+    val = None
+    for line in text.splitlines():
+        m = re.match(r"hooks_auto_accept\s*:\s*(.*)$", line)
+        if not m:
+            continue
+        v = re.sub(r"\s+#.*$", "", m.group(1)).strip()  # trailing comment
+        quoted = len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'"
+        if quoted:
+            v = v[1:-1]
+        v = v.strip().lower()
+        # Hermes: a YAML bool as is, a string if it is truthy; a bare 1 is an int, so not.
+        val = v in _HERMES_TRUTHY - {"1"} or (quoted and v == "1")
+    return bool(val)
+
+
 def _hermes_trust(h: Harness) -> tuple[int, int, list[str]]:
     """Hermes asks once per (event, command) on a TTY and records the answer in
     ~/.hermes/shell-hooks-allowlist.json (`{"approvals": [{event, command, …}]}`); a non-TTY
     run (the desktop app, `hermes -z`) skips an unapproved hook (hermes-agent 0.20.4
     agent/shell_hooks.py `_is_allowlisted`, `_prompt_and_record`)."""
     try:
-        cfg = (h.home / "config.yaml").read_text()
-        if "hooks_auto_accept: true" in cfg:
+        if _hermes_auto_accept((h.home / "config.yaml").read_text()):
             n = len(_hermes_pairs())
             return n, n, []
     except OSError:

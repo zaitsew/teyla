@@ -15,6 +15,12 @@ import pathlib
 PRICES = {
     # model prefix: (input, cache_write, cache_read, output, tier, verified)  — USD per 1M tokens
     # Anthropic, per finout.io / tminusai.com 2026-09 (not from the vendor page): verify before quoting.
+    # Current generation (2026-09-30), input/cache_write/cache_read/output from the models.dev catalogue.
+    "claude-fable-5-1": (10.0, 12.5, 0.25, 50.0, "orchestrate", False),
+    "claude-opus-5-5": (4.0, 5.0, 0.2, 20.0, "volume", False),
+    "claude-sonnet-5-5": (2.0, 2.5, 0.2, 10.0, "volume", False),
+    "claude-haiku-4-5": (1.0, 1.25, 0.1, 5.0, "triage", False),
+    # Previous generations stay so old transcripts still price.
     "claude-fable-5": (10.0, 12.5, 0.25, 50.0, "orchestrate", False),
     "claude-opus-5": (5.0, 6.25, 0.5, 25.0, "volume", False),
     "claude-opus-4": (5.0, 6.25, 0.5, 25.0, "volume", False),
@@ -22,12 +28,21 @@ PRICES = {
     "claude-sonnet-4": (3.0, 3.75, 0.3, 15.0, "volume", False),
     "claude-haiku-4": (1.0, 1.25, 0.1, 5.0, "triage", False),
     # OpenAI, per cloudzero / layer3labs 2026-09
-    "gpt-6-astra": (10.0, 10.0, 2.5, 50.0, "orchestrate", False),
+    # Current generation, from the models.dev catalogue (base tier; the >272k-context surcharge is not modelled).
+    "gpt-6-astra": (10.0, 12.5, 1.0, 50.0, "orchestrate", False),
+    "gpt-6.1-sol": (2.0, 2.5, 0.1, 10.0, "volume", False),
+    "gpt-6-luna": (0.1, 0.125, 0.01, 0.5, "triage", False),
+    # Previous generations stay so old transcripts still price.
     "gpt-5.6-sol": (4.0, 4.0, 1.0, 20.0, "volume", False),
     "gpt-5.6-terra": (2.0, 2.0, 0.5, 12.0, "volume", False),
     "gpt-5.6-luna": (0.2, 0.2, 0.05, 1.2, "triage", False),
     "gpt-5.5": (5.0, 5.0, 1.25, 30.0, "volume", False),
     # xAI, per mem0 / layer3labs 2026-09 (single public tier)
+    # Current: grok-4.7 from models.dev. grok-4.7-build-fast is "2x the price" per the Grok CLI's own
+    # model cache, so every rate doubled here (derived, not read from a price page). Needs its own row:
+    # lookup() is a prefix match and would otherwise price it as grok-4.7.
+    "grok-4.7": (2.0, 2.0, 0.5, 6.0, "orchestrate", False),
+    "grok-4.7-build-fast": (4.0, 4.0, 1.0, 12.0, "volume", False),
     "grok-4.5": (2.0, 2.0, 0.5, 6.0, "volume", False),
     "grok-4.6": (2.0, 2.0, 0.5, 6.0, "orchestrate", False),
 }
