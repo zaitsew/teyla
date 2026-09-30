@@ -20,3 +20,15 @@ def plugin_dir():
         if (cand / ".claude-plugin" / "plugin.json").exists():
             return cand
     raise FileNotFoundError("teyla plugin directory not found")
+
+
+def prompts_dir():
+    """The paste-able prompts: inside the installed package, or the repo root from a checkout.
+    Shipped with the code so an agent follows the prompt that matches the installed version,
+    never whatever `main` says today."""
+    import pathlib
+    here = pathlib.Path(__file__).resolve().parent
+    for cand in (here / "prompts", here.parents[1] / "prompts"):
+        if (cand / "onboard.md").is_file():
+            return cand
+    raise FileNotFoundError("teyla prompts directory not found")
