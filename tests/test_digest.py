@@ -289,10 +289,12 @@ def test_weekly_wrapper_writes_the_digest_and_an_old_one_is_stale(_home, monkeyp
     monkeypatch.setattr(routine_install, "WRAPPER_PATH", _home / ".teyla" / "weekly.sh")
     assert '"$TEYLA" digest --write' in routine_install.WRAPPER_TEMPLATE
     w = routine_install.WRAPPER_PATH
-    w.write_text(routine_install.WRAPPER_TEMPLATE.format(teyla_bin="/x/teyla", env_sh="", stamp="/s.last", label="l")
+    w.write_text(routine_install.WRAPPER_TEMPLATE.format(teyla_bin="/x/teyla", env_sh="", stamp="/s.last", label="l",
+                                                          runs_root=routine_install._runs_root())
                  .replace('"$TEYLA" digest --write\n', ""))
     assert routine_install._wrapper_stale(w, "/x/teyla")
-    w.write_text(routine_install.WRAPPER_TEMPLATE.format(teyla_bin="/x/teyla", env_sh="", stamp="/s.last", label="l"))
+    w.write_text(routine_install.WRAPPER_TEMPLATE.format(teyla_bin="/x/teyla", env_sh="", stamp="/s.last", label="l",
+                                                          runs_root=routine_install._runs_root()))
     assert not routine_install._wrapper_stale(w, "/x/teyla")
 
 

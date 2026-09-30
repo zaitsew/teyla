@@ -145,9 +145,11 @@ def test_rule_skips_a_symlinked_agents_md_and_fills_cursor_rules_when_present(tm
     assert mdc.read_text().endswith("- Never use npm here, always pnpm.\n")
 
 
-def test_correct_records_a_line_and_says_how_to_promote(tmp_path):
+def test_correct_records_a_line_and_says_how_to_promote(tmp_path, monkeypatch):
+    monkeypatch.setenv("TEYLA_HOME", str(tmp_path / "th"))
     repo = tmp_path / "repo"; repo.mkdir()
     out = rules.record_correction(repo, "no, the gate opens at 14:30 not 14:00")
-    rec = json.loads((repo / ".teyla" / "corrections.jsonl").read_text())
+    assert not (repo / ".teyla").exists()
+    rec = json.loads((tmp_path / "th" / "corrections" / "misc.jsonl").read_text())
     assert rec["text"].startswith("no, the gate") and rec["cwd"] == str(repo.resolve()) and rec["ts"].endswith("+00:00")
     assert out[0].endswith("(1 so far)") and any("teyla rule" in l for l in out)

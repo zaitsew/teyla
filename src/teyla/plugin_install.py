@@ -34,6 +34,15 @@ cache path only if it finds one; it never invents a format. See `_find_hash_mani
                                        plugins may still be sourced from the same marketplace,
                                        and re-adding it is idempotent anyway.
 
+Safe mode (`safe.enabled`, TEYLA_SAFE=1) edits no registry file: a managed laptop may restrict
+marketplaces through Claude Code's own settings, and a hand-written registry row goes around
+that. install/refresh/uninstall then print the `claude plugin ...` (or in-app `/plugin ...`)
+commands to run instead, and nothing is cloned.
+
+Every `rmtree` here is of a path under ~/.claude/plugins/cache, checked first: an
+`installPath` read from installed_plugins.json, or a version string read from a cloned
+plugin.json, is data, and `"../../.."` in either must not become a recursive delete.
+
 Both back up the two registry files first, to `<file>.bak-<date>` (once per day, so re-running
 the same day does not pile up backups), and both are idempotent: installing the same source
 twice, or uninstalling something already gone, changes nothing further and prints what it
@@ -63,6 +72,34 @@ _NOT_A_HASH_MANIFEST = {"known_marketplaces.json", "installed_plugins.json",
 
 class InstallError(ValueError):
     pass
+
+
+def _inside(root: pathlib.Path, path) -> bool:
+    try:
+        pathlib.Path(path).resolve().relative_to(pathlib.Path(root).resolve())
+    except ValueError:
+        return False
+    return pathlib.Path(path).resolve() != pathlib.Path(root).resolve()
+
+
+def _rmtree_in_cache(plugins_dir: pathlib.Path, path) -> bool:
+    """rmtree `path` only if it lies strictly inside `<plugins_dir>/cache`. False = refused."""
+    if not _inside(plugins_dir / "cache", path):
+        return False
+    shutil.rmtree(path, ignore_errors=True)
+    return True
+
+
+def _safe() -> bool:
+    from . import config
+    return config.safe_mode()
+
+
+def _claude_commands(*cmds: str) -> list[str]:
+    head = "safe mode: the plugin registry is not edited by hand. Run instead"
+    if shutil.which("claude"):
+        return [head + ":"] + [f"  claude {c}" for c in cmds]
+    return [head + " (no `claude` on PATH — type them in a Claude Code session):"] + [f"  /{c}" for c in cmds]
 
 
 def _now() -> str:
@@ -113,6 +150,9 @@ def resolve_source(source: str, *, marketplaces_dir: pathlib.Path) -> tuple[path
     if p.is_dir():
         return p.resolve(), {"source": "directory", "path": str(p.resolve())}
     if GITHUB_SHORTHAND_RE.match(source):
+        from . import net
+        if not net.allowed():
+            raise InstallError(net.refusal(f"cloning {source}"))
         if shutil.which("git") is None:
             raise InstallError(f"{source!r} looks like a GitHub repo but no `git` binary is on PATH; "
                                 f"clone it by hand and pass the local path to `teyla plugin install` instead")
@@ -158,7 +198,26 @@ def _hash_tree(plugin_dir: pathlib.Path) -> dict:
 
 # --- install / uninstall --------------------------------------------------------
 
+def safe_install_commands(source: str) -> list[str]:
+    """The `claude plugin` commands that do what install() would, for safe mode. A local
+    marketplace names its plugins; a GitHub one is not cloned to find out, so the repo name is
+    assumed for both the marketplace and the plugin (true of zaitsew/teyla)."""
+    p = pathlib.Path(source).expanduser()
+    manifest = p / ".claude-plugin" / "marketplace.json"
+    if p.is_dir() and manifest.exists():
+        m = _load_json(manifest)
+        mkt = m.get("name") or p.name
+        names = [e["name"] for e in m.get("plugins") or [] if e.get("name")] or [p.name]
+        src = str(p.resolve())
+    else:
+        mkt = source.rstrip("/").split("/")[-1]
+        names, src = [mkt], source
+    return _claude_commands(f"plugin marketplace add {src}", *(f"plugin install {n}@{mkt}" for n in names))
+
+
 def install(source: str, *, plugins_dir: pathlib.Path | None = None) -> list[str]:
+    if _safe():
+        return safe_install_commands(source)
     plugins_dir = plugins_dir or PLUGINS_DIR
     known_path = plugins_dir / "known_marketplaces.json"
     installed_path = plugins_dir / "installed_plugins.json"
@@ -198,8 +257,10 @@ def install(source: str, *, plugins_dir: pathlib.Path | None = None) -> list[str
         plugin_dir = (local_root / entry.get("source", "./")).resolve()
         version = _load_json(plugin_dir / ".claude-plugin" / "plugin.json").get("version") or "0.0.0"
         cache_path = cache_dir / marketplace_name / plugin_name / version
+        if not _inside(cache_dir, cache_path):
+            raise InstallError(f"{marketplace_name}/{plugin_name}/{version} resolves outside {cache_dir} — refusing")
         if cache_path.exists():
-            shutil.rmtree(cache_path)
+            _rmtree_in_cache(plugins_dir, cache_path)
         shutil.copytree(plugin_dir, cache_path)
         lines.append(f"copied {plugin_dir} -> {cache_path}")
 
@@ -226,6 +287,8 @@ def install(source: str, *, plugins_dir: pathlib.Path | None = None) -> list[str
 
 
 def uninstall(name: str, *, plugins_dir: pathlib.Path | None = None, remove_cache: bool = True) -> list[str]:
+    if _safe():
+        return _claude_commands(f"plugin uninstall {name}")
     plugins_dir = plugins_dir or PLUGINS_DIR
     installed_path = plugins_dir / "installed_plugins.json"
     installed = _load_json(installed_path)
@@ -247,8 +310,10 @@ def uninstall(name: str, *, plugins_dir: pathlib.Path | None = None, remove_cach
             for row in rows:
                 p = row.get("installPath")
                 if p and pathlib.Path(p).is_dir():
-                    shutil.rmtree(p)
-                    lines.append(f"removed {p}")
+                    if _rmtree_in_cache(plugins_dir, p):
+                        lines.append(f"removed {p}")
+                    else:
+                        lines.append(f"kept {p}: installPath is not under {plugins_dir / 'cache'}; remove it by hand if it is yours")
 
     _write_json(installed_path, installed)
     return lines
@@ -274,6 +339,12 @@ def refresh(*, plugins_dir: pathlib.Path | None = None, force: bool = False) -> 
                 "(or `claude plugin marketplace add zaitsew/teyla && claude plugin install teyla@teyla`)"]
     src = teyla.plugin_dir()
     version = _load_json(src / ".claude-plugin" / "plugin.json").get("version") or "0.0.0"
+    if _safe():
+        stale = [k for k in keys if (plugins[k] or [{}])[0].get("version") != version or force]
+        if not stale:
+            return [f"{k}: already {version}" for k in keys]
+        mkts = sorted({k.split("@", 1)[1] for k in stale})
+        return _claude_commands(*(f"plugin marketplace update {m}" for m in mkts), *(f"plugin update {k}" for k in stale))
     lines = []
     for key in keys:
         rows = plugins[key]
@@ -286,12 +357,16 @@ def refresh(*, plugins_dir: pathlib.Path | None = None, force: bool = False) -> 
         bak = _backup(installed_path)
         if bak:
             lines.append(f"backed up {installed_path} -> {bak}")
+        if not _inside(plugins_dir / "cache", cache_path):
+            lines.append(f"{key}: {cache_path} resolves outside {plugins_dir / 'cache'} — skipped")
+            continue
         if cache_path.exists():
-            shutil.rmtree(cache_path)
+            _rmtree_in_cache(plugins_dir, cache_path)
         shutil.copytree(src, cache_path)
         old = row.get("installPath")
         if old and pathlib.Path(old).is_dir() and pathlib.Path(old) != cache_path:
-            shutil.rmtree(old, ignore_errors=True)
+            if not _rmtree_in_cache(plugins_dir, old):
+                lines.append(f"{key}: kept old installPath {old} — not under {plugins_dir / 'cache'}")
         new_row = dict(row)
         new_row.update({"installPath": str(cache_path), "version": version, "lastUpdated": _now(),
                         "installedAt": row.get("installedAt") or _now(), "scope": row.get("scope", "user")})

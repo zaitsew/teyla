@@ -392,7 +392,14 @@ def test_ignored_file_that_is_work_keeps_worktree(tmp_path):
     assert row["reason"].endswith("not build output: .env")
 
 
-def test_corrections_are_rescued_into_the_main_checkout(tmp_path):
+def _repo_mode(monkeypatch, tmp_path):
+    """`corrections.store = "repo"`: the pre-0.12 place, where rescue appends byte for byte."""
+    th = tmp_path / "teyla-home-repo-mode"; th.mkdir()
+    (th / "config.toml").write_text('[corrections]\nstore = "repo"\n')
+    monkeypatch.setenv("TEYLA_HOME", str(th))
+
+
+def test_corrections_are_rescued_into_the_store(tmp_path):
     code_root, main, _ = _make_repo(tmp_path)
     (main / ".gitignore").write_text(".teyla/\n")
     _git(main, "add", ".gitignore"); _git(main, "commit", "-m", "ignore"); _git(main, "push")
@@ -407,7 +414,9 @@ def test_corrections_are_rescued_into_the_main_checkout(tmp_path):
     lines = storage.clean(rep, apply=True)
     assert any(l.startswith("removed") and str(wt) in l for l in lines), lines
     assert not wt.exists()
-    assert (main / ".teyla" / "corrections.jsonl").read_text() == '{"a": 1}\n{"b": 2}\n'
+    from teyla import corrections
+    assert (main / ".teyla" / "corrections.jsonl").read_text() == '{"a": 1}\n', "the legacy file is left as it was"
+    assert corrections.records(main) == [{"a": 1}, {"b": 2}]
 
 
 def test_dirty_worktree_nested_inside_keeps_the_outer_one(tmp_path):
@@ -543,7 +552,8 @@ def test_ignored_file_inside_a_tracked_build_dir_is_work(tmp_path):
     assert work == ["build/signing.p12"]
 
 
-def test_rescue_keeps_records_apart(tmp_path):
+def test_rescue_keeps_records_apart(tmp_path, monkeypatch):
+    _repo_mode(monkeypatch, tmp_path)
     wt, main = tmp_path / "wt", tmp_path / "main"
     for p, text in ((wt, '{"b": 2}\n'), (main, '{"a": 1}')):
         (p / ".teyla").mkdir(parents=True); (p / ".teyla" / "corrections.jsonl").write_text(text)
@@ -571,12 +581,23 @@ def test_build_dir_holding_an_archive_is_review(tmp_path):
     assert rows[0]["verdict"] == "REVIEW" and "xcarchive" in rows[0]["reason"]
 
 
-def test_rescue_does_not_split_a_record_on_u2028(tmp_path):
+def test_rescue_does_not_split_a_record_on_u2028(tmp_path, monkeypatch):
+    _repo_mode(monkeypatch, tmp_path)
     wt, main = tmp_path / "wt", tmp_path / "main"
     rec = '{"a": "x y"}\n'
     (wt / ".teyla").mkdir(parents=True); (wt / ".teyla" / "corrections.jsonl").write_text(rec, encoding="utf-8")
     storage.rescue(str(wt), str(main))
     assert (main / ".teyla" / "corrections.jsonl").read_text(encoding="utf-8") == rec
+
+
+def test_rescue_into_the_store_keeps_a_u2028_record_whole_and_scrubs_it(tmp_path):
+    from teyla import corrections
+    wt, main = tmp_path / "wt", tmp_path / "main"
+    main.mkdir()
+    rec = '{"text": "x y password=hunter2"}\n'
+    (wt / ".teyla").mkdir(parents=True); (wt / ".teyla" / "corrections.jsonl").write_text(rec, encoding="utf-8")
+    storage.rescue(str(wt), str(main))
+    assert corrections.records(main) == [{"text": "x y password=[redacted]"}]
 
 
 def test_launch_agent_working_directory_without_slash_keeps_build(tmp_path):

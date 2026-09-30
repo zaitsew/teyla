@@ -34,6 +34,89 @@ def _current_claude_md_sha() -> str | None:
         return None
 
 
+A10_SEEN = "a10-seen.json"
+A10_UNACKED = "The global instructions file was edited and never acknowledged"
+
+
+def _a10_seen_sha() -> str | None:
+    try:
+        return json.loads((pathlib.Path.home() / ".teyla" / A10_SEEN).read_text()).get("sha256")
+    except Exception:
+        return None
+
+
+def mark_seen(findings: list[dict]) -> None:
+    """After a report showed the never-acknowledged A10, remember the file's hash so the next
+    report does not repeat it while ~/.claude/CLAUDE.md stays the same. The CLI calls this;
+    advise() itself stays read-only."""
+    if not any(f["id"] == "A10" and f["title"] == A10_UNACKED for f in findings):
+        return
+    sha = _current_claude_md_sha()
+    if not sha:
+        return
+    from . import config
+    try:
+        config.write_private(pathlib.Path.home() / ".teyla" / A10_SEEN, json.dumps({"sha256": sha}) + "\n")
+    except OSError:
+        pass
+
+
+def _a10(gov: list[dict]) -> list[dict]:
+    """Sessions that wrote ~/.claude/CLAUDE.md, judged against `teyla policy ack`.
+
+    Weeks 2026-09-15, 09-21 and 09-28 each opened with an A10 [high] for edits the owner had
+    asked for — ack had never been run, so every edit in the window counted, every week, and
+    the finding stopped being read. Now:
+      - acknowledged, file unchanged since: only edits after the ack day count;
+      - file changed since the ack: [high] for the edits after the ack day — those are the
+        unacknowledged ones — and the evidence says how many of the window's edits they are
+        (same-day edits are named, not counted as after: the ack has no time of day);
+      - never acknowledged: one [medium] asking for a review and an ack, shown once per
+        version of the file (`mark_seen`), not a [high] every week.
+    """
+    acked_sha, acked_date = _ack_info()
+    current_sha = _current_claude_md_sha()
+    last = lambda g: f"{g[-1]['project']} {g[-1]['sid']} {g[-1]['day']}"
+    if not acked_sha:
+        if current_sha and current_sha == _a10_seen_sha():
+            return []
+        return [dict(id="A10", severity="medium", title=A10_UNACKED,
+                     evidence=f"{len(gov)} session(s) wrote to ~/.claude/CLAUDE.md, e.g. {last(gov)}; "
+                              f"`teyla policy ack` has never been run, so none of them can be told apart from an edit you asked for",
+                     action="Run `teyla policy ack` after reviewing ~/.claude/CLAUDE.md; from then on only "
+                            "edits after the ack are flagged. Shown once until the file changes.")]
+    # Compare the days the writes happened on, not the day the session started: a session begun
+    # before the ack and resumed after it wrote after it (review of #68, P2). Metrics written
+    # before `days` existed fall back to the start day.
+    days = lambda g: g.get("days") or [g["day"]]
+    is_after = lambda g: bool(acked_date) and any(d > acked_date for d in days(g))
+    is_same_day = lambda g: bool(acked_date) and any(d == acked_date for d in days(g))
+    if current_sha and current_sha == acked_sha:
+        after = [g for g in gov if is_after(g)]
+        if not after:
+            return []
+        suffix = ""
+    else:
+        # The ack records a day, not a time: an edit on that day may be before or after it,
+        # so it is counted apart and never alone makes the finding [high].
+        after = [g for g in gov if is_after(g)]
+        same_day = [g for g in gov if is_same_day(g) and not is_after(g)]
+        suffix = f" — file changed since your ack on {acked_date}"
+        if same_day:
+            suffix += f"; {len(same_day)} more on the ack day itself"
+        if not after:
+            return [dict(id="A10", severity="medium", title="The global instructions file changed since your ack",
+                         evidence=f"no session in this window wrote it after the day of the ack "
+                                  f"({len(gov)} edit(s) in the window){suffix}",
+                         action="Diff ~/.claude/CLAUDE.md; if the change is yours, run `teyla policy ack`.")]
+    return [dict(id="A10", severity="high", title="A session edited the global instructions file",
+                 evidence=f"{len(after)} of {len(gov)} session edit(s) to ~/.claude/CLAUDE.md came after your last "
+                          f"`teyla policy ack` ({acked_date}), e.g. {last(after)}{suffix}",
+                 action="Diff that file now. The merge-approved list and standing rules are edited by you, "
+                        "never by an agent; if the edit is not yours, revert it — if the edit is yours, "
+                        "run `teyla policy ack`.")]
+
+
 def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
     F = []
     sub = m.get("subagents") or {}
@@ -92,11 +175,15 @@ def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
             F.append(dict(id="A8", severity="medium", title="Policy not wired into every harness",
                           evidence="missing: " + ", ".join(missing),
                           action="Run `teyla policy sync` so Codex, Hermes, Grok and project AGENTS.md read the same POLICY.md."))
-    # repeated corrections → rule candidates
+    # repeated corrections → rule candidates. A retry is never one: the "repeats 13×" that
+    # topped A9 on 2026-09-21 was "Try again" after an API outage. The adapters no longer
+    # count retries; the filter here also covers a metrics JSON written before they did.
+    from .adapters import is_retry
     from .monitor import fingerprint
-    # Redacted metrics have no samples, only their fingerprints: count those instead.
+    # Redacted metrics have no samples, only their fingerprints: count those instead
+    # (redact() drops retries from them too).
     norm = Counter(m["correction_fingerprints"]) if "correction_fingerprints" in m else \
-        Counter(fingerprint(t) for t in m.get("correction_samples") or [])
+        Counter(fingerprint(t) for t in m.get("correction_samples") or [] if not is_retry(t))
     rep = sorted(((n, fp) for fp, n in norm.items() if n >= 2), reverse=True)
     if rep:
         F.append(dict(id="A9", severity="medium", title="Corrections that repeat verbatim",
@@ -104,28 +191,41 @@ def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
                       action="Each of these is a rule nobody wrote down. Add it with /teyla:rule (or a line in .claude/rules/) and it stops recurring."))
     gov = m.get("governance_edits") or []
     if gov:
-        acked_sha, acked_date = _ack_info()
-        current_sha = _current_claude_md_sha()
-        evidence_suffix = ""
-        fire_gov = gov
-        if acked_sha and current_sha and current_sha == acked_sha:
-            # Acknowledged and unchanged since: only edits after the ack date are new findings.
-            fire_gov = [g for g in gov if acked_date and g["day"] > acked_date]
-        elif acked_sha and current_sha and current_sha != acked_sha:
-            evidence_suffix = f" — file changed since your ack on {acked_date}"
-        if fire_gov:
-            F.append(dict(id="A10", severity="high", title="A session edited the global instructions file",
-                          evidence=f"{len(fire_gov)} session(s) wrote to ~/.claude/CLAUDE.md, e.g. "
-                                   f"{fire_gov[-1]['project']} {fire_gov[-1]['sid']} {fire_gov[-1]['day']}{evidence_suffix}",
-                          action="Diff that file now. The merge-approved list and standing rules are edited by you, "
-                                 "never by an agent; if the edit is not yours, revert it — if the edit is yours, "
-                                 "run `teyla policy ack`."))
+        F += _a10(gov)
     drift = m.get("models_drift") or []
     if drift:
         kinds = Counter(f["flag"] for f in drift)
         F.append(dict(id="A11", severity="medium", title="Model ladder drift",
                       evidence=", ".join(f"{k}×{n}" for k, n in kinds.most_common()),
                       action="Run `teyla models --write-policy` to refresh the ladder in ~/.agents/POLICY.md from the current catalogues and credentials."))
+    # Policy detectors (teyla.detect): each fires only when ~/.agents/POLICY.md declares its
+    # rule — `teyla.detect.enrich` puts the declared ids in m["policy_detectors"].
+    declared = set(m.get("policy_detectors") or ())
+    pa = m.get("permission_asks") or {}
+    weeks = pa.get("by_week") or {}
+    from .detect import ASK_THRESHOLD_PER_WEEK
+    if "ask-permission" in declared and weeks and max(weeks.values()) >= ASK_THRESHOLD_PER_WEEK:
+        ex = (pa.get("examples") or [{}])[-1]
+        # Redacted metrics have no `ask` (the agent's words) and no session id: say where, not what.
+        eg = ""
+        if ex.get("project"):
+            eg = f"; e.g. {ex['project']}" + (f" {ex['sid']}" if ex.get("sid") not in (None, "—") else "") + f" {ex.get('day', '')}"
+            if ex.get("ask"):
+                eg += f": \"{ex['ask']}\""
+        F.append(dict(id="A15", severity="medium", title="Turns end by asking permission for the next step",
+                      evidence=f"{pa.get('total', 0)} turn(s) ended with a permission question the human answered with a bare yes "
+                               f"(per week: {', '.join(f'{w} {n}' for w, n in weeks.items())}; threshold {ASK_THRESHOLD_PER_WEEK}/week){eg}",
+                      action="POLICY §4: do the step and report it; ask only about a product decision (with a proposed default) "
+                             "or a real blocker. Say it once in the repo's rules if one repo keeps doing it."))
+    wt = m.get("workflow_triggers") or []
+    if "no-actions" in declared and wt:
+        repos = sorted({w["repo"] for w in wt})
+        w0 = wt[0]
+        F.append(dict(id="A16", severity="high", title="Workflows run on push, pull_request or schedule",
+                      evidence=f"{len(wt)} workflow file(s) in {len(repos)} repo(s) ({', '.join(repos[:6])}); e.g. "
+                               f"{w0['repo']}{' ' + w0['file'] if w0.get('file') else ''} on: {', '.join(w0['triggers'])} ({w0['where']})",
+                      action="Set `on:` to `workflow_dispatch:` only (or delete the workflow), commit and push; "
+                             "`teyla doctor` lists every file. The laptop's ./check.sh is the gate."))
     try:
         from . import connectors as _c
         cm = m.get("connectors")
