@@ -316,3 +316,94 @@ def test_doctor_checks_one_line_per_installed_harness(home, monkeypatch):
     assert [r["name"] for r in rows] == ["health:claude", "health:codex", "health:grok"]
     assert all(set(r) == {"level", "name", "detail", "fix"} for r in rows)
     assert "7d:" not in rows[2]["detail"]  # doctor's harness:grok line already counts sessions
+
+
+# --- review of #66 --------------------------------------------------------------------------------
+
+def _codex_rollout(home, records):
+    day = home / ".codex" / "sessions" / f"{NOW:%Y}" / f"{NOW:%m}" / f"{NOW:%d}"
+    day.mkdir(parents=True, exist_ok=True)
+    (day / "rollout-r.jsonl").write_text("\n".join(json.dumps(r, separators=(",", ":")) for r in records) + "\n")
+
+
+def _codex_home(home, monkeypatch):
+    monkeypatch.setattr(health, "find_binary", lambda n: None)
+    (home / ".codex" / "auth.json").write_text(json.dumps(
+        {"auth_mode": "chatgpt", "tokens": {"access_token": _jwt(NOW + dt.timedelta(days=3)), "refresh_token": SECRET}}))
+
+
+def test_an_expired_limit_snapshot_is_history_not_a_fix(home, monkeypatch):
+    _codex_home(home, monkeypatch)
+    win = lambda used, resets: {"used_percent": used, "window_minutes": 300, "resets_at": resets}  # noqa: E731
+    rec = lambda lim: {"timestamp": _iso(NOW), "type": "event_msg", "payload": {"type": "token_count", "rate_limits": lim}}  # noqa: E731
+    gone = int(time.time()) - 60
+    _codex_rollout(home, [rec({"limit_id": "codex", "primary": win(100.0, gone), "secondary": win(40.0, int(time.time()) + 86400),
+                               "plan_type": "plus", "rate_limit_reached_type": "primary"})])
+    row = health.offline("codex")
+    assert row["level"] == "OK" and "window reset" in row["detail"]
+    # the same snapshot with the window still open is the limit
+    _codex_rollout(home, [rec({"limit_id": "codex", "primary": win(100.0, int(time.time()) + 600), "secondary": win(40.0, int(time.time()) + 86400),
+                               "plan_type": "plus", "rate_limit_reached_type": "primary"})])
+    assert health.offline("codex")["level"] == "FIX"
+
+
+def test_an_unrelated_newer_error_does_not_hide_an_unresolved_quota_failure(home, monkeypatch):
+    _codex_home(home, monkeypatch)
+    quota = {"timestamp": _iso(NOW - dt.timedelta(minutes=30)), "type": "event_msg", "payload": {
+        "type": "task_complete", "error": {"message": "You've hit your usage limit.", "codex_error_info": "usage_limit_exceeded"}}}
+    _codex_rollout(home, [quota])
+    con = sqlite3.connect(home / ".codex" / "logs_2.sqlite")
+    con.execute("create table logs (id integer primary key, ts integer, ts_nanos integer, level text, target text, feedback_log_body text)")
+    con.execute("insert into logs (ts, ts_nanos, level, target, feedback_log_body) values (?,0,'ERROR','m',?)",
+                (int(time.time()) - 60, "failed to write /tmp/x: No space left on device"))
+    con.commit(); con.close()
+    row = health.offline("codex")
+    assert row["error"]["kind"] == "quota" and row["level"] == "FIX"
+    # a success more than the recovery margin after the failure still clears it
+    ok = {"timestamp": _iso(NOW - dt.timedelta(minutes=10)), "type": "event_msg", "payload": {"type": "token_count", "rate_limits": None}}
+    _codex_rollout(home, [quota, ok])
+    row = health.offline("codex")
+    assert row["level"] == "OK" and "later calls succeeded" not in row["detail"] and row["error"]["kind"] == "other"
+
+
+def test_an_unrelated_newer_error_does_not_hide_a_claude_auth_failure(home):
+    p = home / ".claude" / "projects" / "-Users-me-ops" / "e.jsonl"
+    err = lambda ts, text: {"type": "assistant", "entrypoint": "sdk-cli", "timestamp": _iso(ts), "isApiErrorMessage": True,  # noqa: E731
+                            "message": {"content": [{"type": "text", "text": text}]}}
+    p.write_text("\n".join(json.dumps(r, separators=(",", ":")) for r in [
+        err(NOW - dt.timedelta(hours=2), "Failed to authenticate: OAuth session expired"),
+        err(NOW - dt.timedelta(hours=1), "something odd happened")]) + "\n")
+    assert health.errors_claude(home / ".claude", time.time() - 86400)["error"]["kind"] == "auth"
+
+
+def test_a_live_success_supersedes_historical_failures(home, monkeypatch, tmp_path):
+    _codex_home(home, monkeypatch)
+    _codex_rollout(home, [{"timestamp": _iso(NOW), "type": "event_msg", "payload": {
+        "type": "task_complete", "error": {"message": "You've hit your usage limit.", "codex_error_info": "usage_limit_exceeded"}}}])
+    assert health.offline("codex")["level"] == "FIX"
+    monkeypatch.setattr(health, "NAMES", ["codex"])
+    monkeypatch.setattr(health, "offline", lambda n, home=None, **kw: health.verdict(n, {
+        "harness": "codex", "installed": True, "binary": "codex", "version": "1", "auth": {"ok": True, "detail": "x"},
+        "error": {"ts": NOW, "kind": "quota", "message": "usage limit", "source": "s"}, "last_ok": None, "limits": None}))
+    monkeypatch.setattr(health, "live", lambda n, timeout=120, marker=None: {"harness": "codex", "result": "ok", "secs": 1, "detail": "Merging", "policy": "yes"})
+    monkeypatch.setattr(health, "policy_marker", lambda: "Merging")
+    monkeypatch.setattr(health, "find_binary", lambda n: "codex")
+    from teyla.adapters import codex as codex_adapter
+    monkeypatch.setattr(codex_adapter, "load", lambda since=None: [])
+    rows = health.verify(live_run=True)
+    assert rows[0]["level"] == "OK" and rows[0]["fix"] is None and "superseded" in rows[0]["detail"]
+    assert health.cmd_verify(types.SimpleNamespace(live=True, timeout=5, json=False)) == 0
+    # without the live probe the same history is a FIX and exits 1
+    assert health.verify(live_run=False)[0]["level"] == "FIX"
+
+
+def test_a_live_success_does_not_hide_a_broken_install():
+    row = health.verdict("codex", {"harness": "codex", "installed": True, "binary": "codex", "version": None,
+                                   "version_error": "boom", "auth": {"ok": True, "detail": "x"}}, live_ok=True)
+    assert row["level"] == "FIX"
+
+
+def test_hermes_live_prompt_may_read_the_policy_file():
+    cmd = health.live_command("hermes", "hermes")
+    assert "do not read any file" not in cmd[-1].lower() and "you may read the policy file" in cmd[-1].lower()
+    assert "do not read any file" in health.live_command("codex", "codex")[-1].lower()
