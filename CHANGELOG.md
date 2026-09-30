@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **The weekly routine moves from Monday 07:30 to Friday 20:45** (local time), so the waste digest
+  lands at the end of the week. The whole weekly moves, so there is one digest, not two. The plist
+  is now filled from `SCHEDULE`, and `teyla routine install --if-stale` (run by `teyla update`)
+  rewrites an installed plist whose schedule differs, so an existing Monday install picks up the
+  change on the next update. A weekly the Mac missed still runs from the daily wrapper, on Saturday.
+
 ## 0.13.1 — 2026-09-30
 
 - **Hermes hooks are recognised after Hermes rewrites its config.** Installing 0.13.0 on the

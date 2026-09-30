@@ -61,7 +61,7 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | `teyla scaffold <path> --name X --kind cli\|app\|service\|ios` | a repo born plug-and-play |
 | `teyla products` | real-usage counters from every repo's `./check.sh usage` — the "built, not used" detector; `products.repos` in config limits which repos' code it runs |
 | `teyla routines [path...] \| --json` | is the automated half actually running, is the manual half actually confirmed working — from every repo's `teyla.toml` |
-| `teyla routine install\|status` | Teyla's own Monday 07:30 launchd weekly (monitor, routines, products) |
+| `teyla routine install\|status` | Teyla's own Friday 20:45 launchd weekly (monitor, routines, products) |
 | `teyla routines [--issues]` | every product's `teyla.toml`: routines that must run without you (loaded? last run? stale?) and manual checks you confirm (ok / broken / untested / re-test); `--issues` opens a GitHub issue per broken check |
 | `teyla routine install\|status` | Teyla's own weekly LaunchAgent: monitor + routines + products reports into a dated folder |
 | `teyla wiki init\|status\|lint\|confirm` | the facts store as an LLM-maintained wiki: the agent writes pages, you confirm or correct; works unchanged as a GitLab Wiki |
@@ -178,7 +178,7 @@ lines and keeps every comment. When a session starts in a repo whose check has b
 or UNTESTED for more than 14 days (or was never confirmed), the product line names that command.
 
 `teyla routine install` writes and loads Teyla's own weekly launchd job
-(`~/Library/LaunchAgents/com.zaitsew.teyla.weekly.plist`, Monday 07:30) that
+(`~/Library/LaunchAgents/com.zaitsew.teyla.weekly.plist`, Friday 20:45) that
 runs `teyla monitor`, `teyla routines` and `teyla products` and files the
 output under `<ops_root>/runs/<date>/` (or `<ops_root>/startup/os/ai-dev/runs/` where that
 tree exists). `teyla routine status`
