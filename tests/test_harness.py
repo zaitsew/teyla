@@ -265,3 +265,28 @@ def test_hermes_trust_is_read_from_its_allowlist(home):
     cfg = home / ".hermes" / "config.yaml"
     cfg.write_text(cfg.read_text() + "hooks_auto_accept: true\n")
     assert {r["harness"]: r for r in harness.status(home=home)}["hermes"]["trust"]["approved"] == 3
+
+
+def test_hermes_hooks_are_recognised_after_hermes_strips_the_markers(home):
+    # Hermes 0.21.5 rewrote config.yaml on update: Teyla's marker comments and the quotes went,
+    # the entries stayed. sync said "add these entries by hand" and doctor "hooks not wired".
+    harness.sync(home=home)
+    cfg = home / ".hermes" / "config.yaml"
+    rewritten = "\n".join(l.replace('"', "") for l in cfg.read_text().splitlines() if not l.lstrip().startswith("#")) + "\n"
+    cfg.write_text(rewritten)
+    assert harness.sync(home=home) == ["in sync: cursor, codex, grok, hermes"]
+    assert {r["harness"]: r for r in harness.status(home=home)}["hermes"]["hooks"] is True
+    assert cfg.read_text() == rewritten
+
+
+def test_hermes_unmarked_block_missing_one_entry_names_only_that_entry(home):
+    harness.sync(home=home)
+    cfg = home / ".hermes" / "config.yaml"
+    text = "\n".join(l.replace('"', "") for l in cfg.read_text().splitlines()
+                     if not l.lstrip().startswith("#") and "--context-json" not in l) + "\n"
+    text = text.replace("      timeout: 5\n      timeout: 5\n", "      timeout: 5\n")
+    cfg.write_text(text)
+    lines = harness.sync(home=home)
+    hermes = [l for l in lines if l.startswith("hermes:")]
+    assert len(hermes) == 1 and "--context-json" in hermes[0] and "capture-correction" not in hermes[0]
+    assert {r["harness"]: r for r in harness.status(home=home)}["hermes"]["hooks"] is False
