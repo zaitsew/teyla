@@ -400,8 +400,8 @@ def headless(data: dict, env=None) -> bool:
     session's batch flag the monitor uses, so it reads what the harness leaves in reach:
 
     - Claude Code sets CLAUDE_CODE_ENTRYPOINT for its hooks; `sdk-cli` is `claude -p`.
-    - Hermes one-shot (`hermes -z`) sets HERMES_YOLO_MODE and HERMES_ACCEPT_HOOKS and never
-      HERMES_INTERACTIVE (hermes-agent: hermes_cli/oneshot.py, cli.py).
+    - Hermes one-shot (`hermes -z`) sets HERMES_SINGLE_QUERY_SESSION=1, and HERMES_YOLO_MODE and
+      HERMES_ACCEPT_HOOKS without HERMES_INTERACTIVE (unless launched from an interactive Hermes) (hermes-agent: hermes_cli/oneshot.py, cli.py).
     - A prompt wrapped whole in `<user_query>…</user_query>` is the Cursor-compatible envelope
       Grok hands ~/.cursor/hooks.json. 41 of the 107 records in 2026-09's correction files
       were `claude -p`/`grok -p` review briefs in that envelope, and none was typed by a
@@ -410,6 +410,10 @@ def headless(data: dict, env=None) -> bool:
     """
     env = os.environ if env is None else env
     if str(env.get("CLAUDE_CODE_ENTRYPOINT") or "").startswith("sdk-"):
+        return True
+    # A `hermes -z` child launched from an interactive Hermes inherits HERMES_INTERACTIVE=1, so
+    # the single-query flag is checked first (review of #68, P2).
+    if env.get("HERMES_SINGLE_QUERY_SESSION") == "1":
         return True
     if env.get("HERMES_YOLO_MODE") == "1" and env.get("HERMES_ACCEPT_HOOKS") == "1" and not env.get("HERMES_INTERACTIVE"):
         return True

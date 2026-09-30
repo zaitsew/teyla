@@ -85,16 +85,22 @@ def _a10(gov: list[dict]) -> list[dict]:
                               f"`teyla policy ack` has never been run, so none of them can be told apart from an edit you asked for",
                      action="Run `teyla policy ack` after reviewing ~/.claude/CLAUDE.md; from then on only "
                             "edits after the ack are flagged. Shown once until the file changes.")]
+    # Compare the days the writes happened on, not the day the session started: a session begun
+    # before the ack and resumed after it wrote after it (review of #68, P2). Metrics written
+    # before `days` existed fall back to the start day.
+    days = lambda g: g.get("days") or [g["day"]]
+    is_after = lambda g: bool(acked_date) and any(d > acked_date for d in days(g))
+    is_same_day = lambda g: bool(acked_date) and any(d == acked_date for d in days(g))
     if current_sha and current_sha == acked_sha:
-        after = [g for g in gov if acked_date and g["day"] > acked_date]
+        after = [g for g in gov if is_after(g)]
         if not after:
             return []
         suffix = ""
     else:
         # The ack records a day, not a time: an edit on that day may be before or after it,
         # so it is counted apart and never alone makes the finding [high].
-        after = [g for g in gov if acked_date and g["day"] > acked_date]
-        same_day = [g for g in gov if acked_date and g["day"] == acked_date]
+        after = [g for g in gov if is_after(g)]
+        same_day = [g for g in gov if is_same_day(g) and not is_after(g)]
         suffix = f" — file changed since your ack on {acked_date}"
         if same_day:
             suffix += f"; {len(same_day)} more on the ack day itself"

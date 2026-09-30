@@ -112,6 +112,10 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                         inp = b.get("input", {}) or {}
                         if _touches_governance(name, inp):
                             s.gov_edits += 1
+                            # The write's own date, not the session's start: A10 compares it with
+                            # the ack day (review of #68, P2).
+                            if ts and ts[:10] not in s.gov_days:
+                                s.gov_days.append(ts[:10])
                         if name in ("Agent", "Task"):
                             s.agents.append(AgentCall(inp.get("model"), inp.get("subagent_type"), inp.get("description")))
                         elif name == "Skill":

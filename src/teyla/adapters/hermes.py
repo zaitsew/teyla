@@ -135,12 +135,13 @@ def _session_from_row(con: sqlite3.Connection, row: sqlite3.Row) -> Session | No
     return s
 
 
-# `hermes -z` (one-shot) writes its session with source "cli", the same as `hermes chat`
-# (hermes-agent's hermes_cli/oneshot.py builds its AIAgent with platform="cli"), so the source
-# cannot tell them apart. What can: a one-shot session has exactly one prompt. As for Grok
-# without its flag, a CLI session with at most one user message is taken as batch; the
-# desktop app and the messaging gateways are people.
+# Installed Hermes records `hermes -z` (one-shot) with source "oneshot": always batch,
+# whatever the prompt count (review of #68, P1). Older builds wrote it as "cli", the same as
+# `hermes chat`, so the source could not tell them apart; what can is that a one-shot session
+# has exactly one prompt. As for Grok without its flag, a CLI session with at most one user
+# message is taken as batch; the desktop app and the messaging gateways are people.
 BATCH_SOURCES = ("cli",)
+ALWAYS_BATCH_SOURCES = ("oneshot",)
 
 
 def is_batch(row, n_prompts: int) -> bool:
@@ -148,4 +149,4 @@ def is_batch(row, n_prompts: int) -> bool:
         source = row["source"]
     except (IndexError, KeyError):
         return False
-    return source in BATCH_SOURCES and n_prompts <= 1
+    return source in ALWAYS_BATCH_SOURCES or (source in BATCH_SOURCES and n_prompts <= 1)

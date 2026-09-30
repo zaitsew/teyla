@@ -121,6 +121,8 @@ class Session:
     pr_links: int = 0
     repos: Counter = dataclasses.field(default_factory=Counter)
     gov_edits: int = 0     # tool calls that touched the global instructions file (~/.claude/CLAUDE.md)
+    gov_days: list = dataclasses.field(default_factory=list)  # the distinct UTC dates those writes happened on —
+                           # not the session's start day: a resumed session writes days after it began
     batch: bool = False    # non-interactive session (`claude -p`, `codex exec`, `grok -p` from a pipeline or
                            # another agent): counted, but its prompts are machine-written, not human turns
     connector_calls: list = dataclasses.field(default_factory=list)  # [{server, tool, turn_index, result}] for every mcp__ tool call

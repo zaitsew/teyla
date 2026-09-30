@@ -330,3 +330,61 @@ def test_proceed_is_a_decision_not_a_retry():
 def test_a10_acked_and_unchanged_is_silent(tmp_path, monkeypatch):
     _home(tmp_path, monkeypatch, "v1", ack={"sha256": hashlib.sha256(b"v1").hexdigest(), "date": "2026-09-25"})
     assert _a10(metrics([_gov_session("2026-09-14"), _gov_session("2026-09-25")])) == []
+
+
+# --- review of #68 ------------------------------------------------------------------------------
+
+def test_hermes_oneshot_source_is_batch_whatever_the_prompt_count(tmp_path):
+    """Installed Hermes records `hermes -z` with source "oneshot" (review of #68, P1)."""
+    db = tmp_path / "state.db"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE sessions (id TEXT, source TEXT, model TEXT, cwd TEXT, git_repo_root TEXT, session_key TEXT,"
+                " title TEXT, started_at REAL, ended_at REAL, last_activity_at REAL, input_tokens INTEGER,"
+                " output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER)")
+    con.execute("CREATE TABLE messages (session_id TEXT, role TEXT, content TEXT, tool_name TEXT, timestamp REAL)")
+    for sid in ("o1", "o2"):
+        con.execute("INSERT INTO sessions VALUES (?,'oneshot','m','/r',NULL,NULL,NULL,1790000000,1790000100,NULL,0,0,0,0)", (sid,))
+    con.execute("INSERT INTO messages VALUES ('o1', 'user', 'that is wrong, redo it', NULL, 1790000001)")
+    for i in (1, 2):  # a second prompt does not make it a person
+        con.execute("INSERT INTO messages VALUES ('o2', 'user', ?, NULL, ?)", (f"that is wrong {i}", 1790000000 + i))
+    con.commit(); con.close()
+    ss = {s.sid: s for s in hermes.load(root=str(db))}
+    assert all(s.batch and s.n_user == 0 and s.n_corr == 0 for s in ss.values())
+
+
+def test_hook_skips_a_single_query_child_of_an_interactive_hermes(tmp_path):
+    """`hermes -z` launched from interactive Hermes inherits HERMES_INTERACTIVE=1 (review of #68, P2)."""
+    from teyla.corrections import headless
+    assert headless({"prompt": "that is wrong"}, env={"HERMES_SINGLE_QUERY_SESSION": "1", "HERMES_INTERACTIVE": "1"})
+    assert not headless({"prompt": "that is wrong"}, env={"HERMES_INTERACTIVE": "1"})
+
+
+def test_a10_uses_the_day_of_the_write_not_the_day_the_session_started(tmp_path, monkeypatch):
+    """Started 09-18, acked 09-20, resumed and wrote the file 09-23: an edit after the ack
+    (review of #68, P2). Without the write's own date it read as "no edit after the ack"."""
+    _home(tmp_path, monkeypatch, "v2", ack={"sha256": hashlib.sha256(b"v1").hexdigest(), "date": "2026-09-20"})
+    root = tmp_path / "projects"
+    _write(str(root / "-Users-me-ops" / "s.jsonl"), [
+        {"type": "user", "timestamp": "2026-09-18T10:00:00Z", "entrypoint": "cli",
+         "message": {"role": "user", "content": "start"}},
+        {"type": "assistant", "timestamp": "2026-09-23T10:00:00Z",
+         "message": {"model": "m", "role": "assistant", "content": [
+             {"type": "tool_use", "id": "t1", "name": "Edit", "input": {"file_path": str(tmp_path / ".claude" / "CLAUDE.md")}}]}}])
+    [f] = _a10(metrics(claude_code.load(root=str(root))))
+    assert f["severity"] == "high" and "1 of 1 session edit(s)" in f["evidence"]
+
+
+def test_monitor_marks_a10_seen_only_after_the_report_is_written(tmp_path, monkeypatch):
+    """An unwritable --out must not silence the never-acknowledged A10 next time (review of #68, P2)."""
+    import argparse
+    from teyla import cli
+    _home(tmp_path, monkeypatch, "v1")
+    monkeypatch.setattr(cli, "_sessions", lambda args: [_gov_session("2026-09-14")])
+    monkeypatch.setattr(cli, "_grok_week", lambda: None)
+    args = argparse.Namespace(days=None, share=False, json=False, samples=False, out=str(tmp_path / "nope" / "r.md"))
+    with pytest.raises(OSError):
+        cli.cmd_monitor(args)
+    assert not (tmp_path / ".teyla").exists() or not list((tmp_path / ".teyla").glob("*seen*"))
+    args.out = str(tmp_path / "r.md")
+    cli.cmd_monitor(args)
+    assert list((tmp_path / ".teyla").glob("*seen*")), "delivered, so now it is marked seen"

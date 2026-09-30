@@ -84,8 +84,6 @@ def cmd_monitor(args):
     m = metrics(ss, args.days)
     m["grok_week"] = _grok_week()
     F = advise(m, policy.status())
-    from .advise import mark_seen
-    mark_seen(F)
     if args.share:
         m = redact(m); args.samples = False
     out = to_json(m, F) if args.json else markdown(m, F, include_samples=args.samples)
@@ -93,6 +91,10 @@ def cmd_monitor(args):
         open(args.out, "w").write(out); print(f"wrote {args.out}")
     else:
         sys.stdout.write(out)
+    # Only after the report was delivered: an unwritable --out must not silence the
+    # never-acknowledged A10 on the next run (review of #68, P2).
+    from .advise import mark_seen
+    mark_seen(F)
 
 
 def cmd_advise(args):
