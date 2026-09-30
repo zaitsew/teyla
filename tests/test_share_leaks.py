@@ -257,9 +257,9 @@ def test_no_canary_in_shared_output(machine, which):
 @pytest.mark.parametrize("which", ["share", "share_json", "feedback"])
 def test_shared_output_still_carries_the_findings_under_pseudonyms(machine, which):
     text = machine[which]
-    # A13/A14 (the week's Grok cost) are `teyla monitor`'s, not the feedback file's
-    # A15/A16 need the policy detectors' inputs, which `teyla monitor` gathers (detect.enrich)
-    for fid in ("A3", "A7", "A9", "A10", "C1", "C4") + (("A13", "A14", "A15", "A16") if which != "feedback" else ()):
+    # A13/A14 (the week's Grok cost) are `teyla monitor`'s, not the feedback file's;
+    # A15/A16 reach both, via detect.enrich (review of #60, P2)
+    for fid in ("A3", "A7", "A9", "A10", "C1", "C4", "A15", "A16") + (("A13", "A14") if which != "feedback" else ()):
         assert fid in text, f"{fid} missing from {which}: redaction must not drop the advice"
     for alias in ("p01", "c01", "c02", "s01"):
         assert alias in text, f"{alias} missing from {which}"

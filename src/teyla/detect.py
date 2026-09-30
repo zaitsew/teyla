@@ -146,7 +146,9 @@ def workflow_triggers(text: str) -> list[str]:
             if not s.strip():
                 continue
             ind = len(s) - len(s.lstrip())
-            if ind == 0:
+            if ind == 0 and not s.startswith("-"):
+                # Next top-level key ends the block. A sequence at the key's own indentation
+                # (`on:` then `- push`) is valid YAML and stays in (review of #60, P2).
                 break
             if indent is None:
                 indent = ind
@@ -187,9 +189,12 @@ def repos(cfg: dict | None = None) -> list[pathlib.Path]:
     return out
 
 
-def _git(repo: pathlib.Path, *args: str, stdin: str | None = None) -> str | None:
+def _git(repo: pathlib.Path, *args: str, stdin: str | None = None) -> bytes | None:
+    # Bytes, not text: text mode turns CRLF into LF, and cat-file --batch declares blob sizes in
+    # the original bytes, so every offset after a CRLF file drifted (review of #60, P2).
     try:
-        r = subprocess.run(["git", "-C", str(repo), *args], input=stdin, capture_output=True, text=True, timeout=10)
+        r = subprocess.run(["git", "-C", str(repo), *args], input=stdin.encode() if stdin is not None else None,
+                           capture_output=True, timeout=10)
     except (OSError, subprocess.SubprocessError):
         return None
     return r.stdout if r.returncode == 0 else None
@@ -201,13 +206,13 @@ def _default_branch_workflows(repo: pathlib.Path) -> dict[str, str] | None:
     listing = _git(repo, "ls-tree", "--name-only", "origin/HEAD", "--", ".github/workflows/")
     if listing is None:
         return None
-    paths = [p for p in listing.splitlines() if p.endswith((".yml", ".yaml"))]
+    paths = [p for p in listing.decode(errors="replace").splitlines() if p.endswith((".yml", ".yaml"))]
     if not paths:
         return {}
     raw = _git(repo, "cat-file", "--batch", stdin="".join(f"origin/HEAD:{p}\n" for p in paths))
     if raw is None:
         return {}
-    out, pos, data = {}, 0, raw.encode()
+    out, pos, data = {}, 0, raw
     for p in paths:
         nl = data.find(b"\n", pos)
         if nl < 0:

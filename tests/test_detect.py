@@ -49,6 +49,8 @@ def test_doctor_rows_for_unknown_marker_and_no_policy(tmp_path):
     ("on:\n  push:\n    branches: [main]\n  workflow_dispatch:\n\njobs:\n  a: {}\n", ["push", "workflow_dispatch"]),
     ('"on":\n  schedule:\n    - cron: "0 6 * * 1"   # Mondays\n  workflow_dispatch:\n', ["schedule", "workflow_dispatch"]),
     ("on:\n  - pull_request_target\n  - issues\n", ["pull_request_target", "issues"]),
+    ("on:\n- push\n- pull_request\njobs:\n  a: {}\n", ["push", "pull_request"]),  # (review of #60, P2)
+    ("on:\n- push\n\njobs:\n- x\n", ["push"]),
     ("on: {push: {branches: [main]}, workflow_dispatch: {}}\n", ["push", "workflow_dispatch"]),
     ("on:\n  # push: disabled per POLICY §10\n  workflow_dispatch:\n", ["workflow_dispatch"]),
     ("on: workflow_dispatch # manual only\n", ["workflow_dispatch"]),
@@ -116,6 +118,26 @@ def test_scan_says_which_copy_declares_the_trigger(tmp_path):
     assert "actions:clean" not in by
     # Without the rule in the policy nothing is scanned and nothing is said.
     assert detect.doctor_checks(cfg, text="# no such rule\n") == []
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
+def test_scan_reads_default_branch_blobs_by_byte_size_even_with_crlf(tmp_path):
+    # `cat-file --batch` declares blob sizes in original bytes; reading its output as text turned
+    # CRLF into LF and skipped the file after a CRLF one (review of #60, P2).
+    wf = ".github/workflows/"
+    manual = "on: workflow_dispatch\r\n" + "# comment\r\n" * 60
+    clone = _repo_with_origin(tmp_path, "crlf", {wf + "a-manual.yml": "", wf + "b-nightly.yml": "on:\n  schedule:\n    - cron: '0 1 * * *'\n"}, {})
+    seed = tmp_path / "seed" / "crlf"
+    (seed / wf / "a-manual.yml").write_bytes(manual.encode())
+    _git(seed, "add", "-A"); _git(seed, "commit", "-qm", "crlf")
+    _git(seed, "push", "-q", str(tmp_path / "bare" / "crlf.git"), "HEAD:main")
+    _git(clone, "fetch", "-q", "origin")
+    _git(clone, "reset", "-q", "--hard", "origin/main")
+    (clone / wf / "b-nightly.yml").unlink()  # only the default branch still declares it
+    remote = detect._default_branch_workflows(clone)
+    assert remote[wf + "a-manual.yml"] == manual and "schedule" in remote[wf + "b-nightly.yml"]
+    scan = detect.scan_workflows({"code_root": str(tmp_path / "code"), "ops_root": str(tmp_path / "no-ops")})
+    assert [(f["file"], f["where"]) for f in scan["findings"]] == [(wf + "b-nightly.yml", "default branch only")]
 
 
 def test_scan_without_origin_and_clean_ok_row(tmp_path):

@@ -150,10 +150,13 @@ def render(days: int = 30) -> str:
     """Gather everything live from this machine and build the feedback document."""
     from . import policy
     from .adapters import load_all, since_epoch
+    from .detect import enrich
     from .monitor import metrics
 
     sessions = [s for s in load_all(since=since_epoch(days)) if not s.sidechain]
-    m = metrics(sessions, days)
+    # enrich() carries the policy detectors' inputs, so A15/A16 reach the shared report the same
+    # way they reach `monitor --share`; build() redacts them (review of #60, P2).
+    m = enrich(metrics(sessions, days))
     return build(m, days=days, policy_status=policy.status(), doctor_lines=_doctor_lines(),
                  routines_summary=_routines_summary())
 
