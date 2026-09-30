@@ -7,7 +7,7 @@ import json
 import os
 import re
 
-from . import TOKEN_KEYS, AgentCall, Session, Turn, human_text, is_correction, stale, text_of, turn_end_candidate
+from . import TOKEN_KEYS, AgentCall, Session, Turn, human_text, is_correction, is_retry, stale, text_of, turn_end_candidate
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "claude-code"
@@ -152,12 +152,16 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                     continue
                 h = human_text(txt, after_error)
                 after_error = False
+                # A bare "continue" is a retry to the turn counts but an approval to A15: it
+                # still answers the question the agent ended on (review of the #60 merge).
+                reply = h if h is not None else (txt if is_retry(txt) else None)
+                if reply is not None:
+                    ending = turn_end_candidate(last_text[1]) if last_text else None
+                    if ending:
+                        s.turn_ends.append((last_text[0], ending, reply[:200]))
+                    last_text = None
                 if h is None:
                     continue
-                ending = turn_end_candidate(last_text[1]) if last_text else None
-                if ending:
-                    s.turn_ends.append((last_text[0], ending, h[:200]))
-                last_text = None
                 s.user_turns.append(Turn(ts, h[:1500], is_correction(h)))
     s.active_hours = round(s.active_hours, 2)
     if not s.first:

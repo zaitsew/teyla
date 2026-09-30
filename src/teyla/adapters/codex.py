@@ -30,7 +30,7 @@ import json
 import os
 import re
 
-from . import AgentCall, Session, Turn, human_text, is_correction, stale, turn_end_candidate
+from . import AgentCall, Session, Turn, human_text, is_correction, is_retry, stale, turn_end_candidate
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "codex"
@@ -228,12 +228,17 @@ def parse(f: str, titles: dict | None = None) -> Session | None:
                         if txt:
                             last_text = (ts, txt)
                     elif role == "user":
-                        h = human_text(strip_injected(txt)) if txt else None
-                        if h:
+                        clean = strip_injected(txt).strip() if txt else ""
+                        h = human_text(clean) if clean else None
+                        # A bare "continue" is a retry to the turn counts but an approval to
+                        # A15 (review of the #60 merge).
+                        reply = h or (clean if clean and is_retry(clean) else None)
+                        if reply:
                             ending = turn_end_candidate(last_text[1]) if last_text else None
                             if ending:
-                                s.turn_ends.append((last_text[0], ending, h[:200]))
+                                s.turn_ends.append((last_text[0], ending, reply[:200]))
                             last_text = None
+                        if h:
                             s.user_turns.append(Turn(ts, h[:1500], is_correction(h)))
                     # role == "developer": injected instructions/skill text, not a human turn.
                 elif ptype == "function_call":

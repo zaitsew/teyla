@@ -320,6 +320,37 @@ def test_codex_records_the_text_a_turn_ended_on(tmp_path):
     assert detect.is_permission_ask(*s.turn_ends[0][1:])
 
 
+@pytest.mark.parametrize("reply", ["continue", "продолжай"])
+def test_a_bare_continue_still_answers_the_ask_in_both_adapters(tmp_path, reply):
+    # review of the #60 merge with #68: human_text drops a bare "continue" as a retry, and the
+    # turn end went with it — A15 lost every approval phrased that way.
+    assert detect.is_permission_ask("Fixed.\n\nWant me to push it?", reply)
+    f = tmp_path / "projects" / "slug" / "s.jsonl"
+    _write(str(f), [
+        _cc("2026-09-21T10:00:00Z", "user", "fix the build"),
+        _cc("2026-09-21T10:00:08Z", "assistant", [{"type": "text", "text": "Fixed.\n\nWant me to push it?"}]),
+        _cc("2026-09-21T10:02:00Z", "user", reply),
+    ])
+    s = claude_code.load(root=str(tmp_path / "projects"))[0]
+    assert s.turn_ends == [("2026-09-21T10:00:08Z", "Fixed.\n\nWant me to push it?", reply)]
+    assert all(t.text != reply for t in s.user_turns), "still not a human turn"
+
+    root = tmp_path / "sessions" / "2026" / "09" / "21"
+
+    def msg(ts, role, text):
+        kind = "input_text" if role == "user" else "output_text"
+        return {"timestamp": ts, "type": "response_item",
+                "payload": {"type": "message", "role": role, "content": [{"type": kind, "text": text}]}}
+    _write(str(root / "rollout-2026-09-21T10-00-00-x.jsonl"), [
+        {"timestamp": "2026-09-21T10:00:00Z", "type": "session_meta", "payload": {"id": "x", "cwd": "/r/demo"}},
+        msg("2026-09-21T10:00:01Z", "user", "fix it"),
+        msg("2026-09-21T10:00:04Z", "assistant", "Fixed. Shall I open the PR?"),
+        msg("2026-09-21T10:00:05Z", "user", reply),
+    ])
+    c = codex.load(root=str(tmp_path / "sessions"), archive_root=str(tmp_path / "x"), index_path=str(tmp_path / "i"))[0]
+    assert c.turn_ends == [("2026-09-21T10:00:04Z", "Fixed. Shall I open the PR?", reply)]
+
+
 def test_feedback_withholds_the_repo_an_actions_row_names():
     from teyla.feedback import shareable_check
     row = {"level": "WARN", "name": "actions:acme", "detail": ".github/workflows/ci.yml on: push", "fix": "x"}
