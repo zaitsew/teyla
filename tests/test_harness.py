@@ -187,6 +187,43 @@ def test_codex_hooks_keep_a_users_groups_and_leave_invalid_json_alone(home):
     assert {r["harness"]: r for r in harness.status(home=home)}["codex"]["hooks"] is False
 
 
+def test_codex_sync_keeps_a_users_handler_that_shares_a_group_with_ours(home):
+    # (review of #61, P1) a user's handler grouped next to Teyla's must survive sync, and a
+    # group left empty by removing ours is dropped
+    p = home / ".codex" / "hooks.json"
+    theirs = {"type": "command", "command": "/x/mine.sh"}
+    old = str(harness.HOOKS_DIR / "session-start.sh") + " --codex"
+    p.write_text(json.dumps({"hooks": {
+        "SessionStart": [{"matcher": "startup", "hooks": [theirs, {"type": "command", "command": old}]}],
+        "UserPromptSubmit": [{"hooks": [{"type": "command", "command": str(harness.HOOKS_DIR / "capture-correction.sh")}]}]}}))
+    harness.sync(home=home)
+    d = json.loads(p.read_text())["hooks"]
+    assert d["SessionStart"][0] == {"matcher": "startup", "hooks": [theirs]}
+    assert len(d["SessionStart"]) == 2 and d["SessionStart"][1]["hooks"][0]["command"] == old
+    assert len(d["UserPromptSubmit"]) == 1
+    assert harness.sync(home=home) == ["in sync: cursor, codex, grok, hermes"]
+    tr = {r["harness"]: r for r in harness.status(home=home)}["codex"]["trust"]
+    assert tr["total"] == 2  # the user's handler is not counted as Teyla's
+
+
+def test_hermes_auto_accept_is_a_top_level_true_key_not_a_substring(home):
+    # (review of #61, P2)
+    harness.sync(home=home)
+    cfg = home / ".hermes" / "config.yaml"
+    base = cfg.read_text()
+
+    def approved(extra):
+        cfg.write_text(base + extra)
+        return {r["harness"]: r for r in harness.status(home=home)}["hermes"]["trust"]["approved"]
+
+    assert approved("# hooks_auto_accept: true\n") == 0
+    assert approved("agent:\n  hooks_auto_accept: true\n") == 0
+    assert approved("hooks_auto_accept: false\n") == 0
+    assert approved("hooks_auto_accept: true\n") == 3
+    assert approved("hooks_auto_accept: yes  # on\n") == 3
+    assert approved("hooks_auto_accept: 'on'\n") == 3
+
+
 def test_codex_hook_hash_matches_what_codex_computed():
     # `codex app-server` hooks/list, Codex 0.153.4, 2026-09-29: this handler in a scratch
     # CODEX_HOME/hooks.json reported currentHash sha256:e21d99f3…cf00.
