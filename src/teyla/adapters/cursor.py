@@ -35,7 +35,7 @@ import json
 import os
 import sqlite3
 
-from . import CORRECTION_RE, Session, Turn
+from . import Session, Turn, human_text, is_correction
 
 NAME = "cursor"
 DEFAULT_ROOT = os.path.expanduser("~/Library/Application Support/Cursor/User/globalStorage/state.vscdb")
@@ -96,9 +96,9 @@ def parse(key: str, value, con: sqlite3.Connection, root: str) -> Session | None
         t = b.get("type")
         ts = b.get("createdAt") if isinstance(b.get("createdAt"), str) else None
         if t == 1:
-            txt = (b.get("text") or "").strip()
+            txt = human_text((b.get("text") or "").strip())
             if txt:
-                s.user_turns.append(Turn(ts, txt[:1500], len(txt) < 800 and bool(CORRECTION_RE.search(txt))))
+                s.user_turns.append(Turn(ts, txt[:1500], is_correction(txt)))
         elif t == 2:
             s.assistant_turns += 1
             tool = (b.get("toolFormerData") or {}).get("name")

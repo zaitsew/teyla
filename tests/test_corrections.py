@@ -216,10 +216,10 @@ def test_misc_records_are_found_again_when_the_path_itself_was_scrubbed(tmp_path
     """review of #63, P2: the stored cwd is scrubbed, so lookup goes by a key of the raw one."""
     d = tmp_path / "token=abc123"; d.mkdir()
     other = tmp_path / "token=xyz789"; other.mkdir()
-    assert corrections.capture({"prompt": "again: use pnpm", "cwd": str(d)}) is not None
+    assert corrections.capture({"prompt": "no, use pnpm", "cwd": str(d)}) is not None
     assert corrections.capture({"prompt": "wrong dir", "cwd": str(other)}) is not None
     recs = corrections.records(d)
-    assert [r["text"] for r in recs] == ["again: use pnpm"]
+    assert [r["text"] for r in recs] == ["no, use pnpm"]
     assert "abc123" not in json.dumps(recs) and "abc123" not in corrections.path_for(d).read_text()
 
 
@@ -238,7 +238,7 @@ def test_append_survives_a_short_write(tmp_path, monkeypatch):
 def test_capture_deduplicates_a_double_delivery(tmp_path):
     import datetime as dt
     now = dt.datetime(2026, 9, 29, 10, 0, 0, tzinfo=dt.timezone.utc)
-    payload = {"prompt": "again: use pnpm", "cwd": str(tmp_path)}
+    payload = {"prompt": "no, use pnpm here, not npm", "cwd": str(tmp_path)}
     assert corrections.capture(payload, now=now) is not None
     assert corrections.capture(payload, now=now + dt.timedelta(seconds=3)) is None
     assert corrections.capture(payload, now=now + dt.timedelta(seconds=30)) is not None

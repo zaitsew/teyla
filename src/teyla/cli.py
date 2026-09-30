@@ -96,14 +96,21 @@ def cmd_monitor(args):
         open(args.out, "w").write(out); print(f"wrote {args.out}")
     else:
         sys.stdout.write(out)
+    # Only after the report was delivered: an unwritable --out must not silence the
+    # never-acknowledged A10 on the next run (review of #68, P2).
+    from .advise import mark_seen
+    mark_seen(F)
 
 
 def cmd_advise(args):
     from . import policy
     m = metrics(_sessions(args), args.days)
     m["grok_week"] = _grok_week()
-    for f in advise(m, policy.status()):
+    F = advise(m, policy.status())
+    for f in F:
         print(f"[{f['severity']}] {f['id']} {f['title']}\n    {f['evidence']}\n    → {f['action']}")
+    from .advise import mark_seen
+    mark_seen(F)
 
 
 def cmd_sessions(args):

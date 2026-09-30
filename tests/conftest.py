@@ -18,6 +18,11 @@ from teyla import config, net, update
 @pytest.fixture(autouse=True)
 def _teyla_home_in_tmp(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("TEYLA_HOME", str(tmp_path_factory.mktemp("teyla-home")))
+    # The capture hook skips headless runs by these (corrections.headless); a suite started
+    # from `claude -p` or `hermes -z` would otherwise see every hook test record nothing.
+    for var in ("CLAUDE_CODE_ENTRYPOINT", "HERMES_YOLO_MODE", "HERMES_ACCEPT_HOOKS", "HERMES_INTERACTIVE",
+                "HERMES_SINGLE_QUERY_SESSION"):
+        monkeypatch.delenv(var, raising=False)
 
 
 @pytest.fixture(autouse=True)
