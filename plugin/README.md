@@ -1,8 +1,11 @@
 # teyla (plugin)
 
 A Claude Code plugin for the file-only half of Teyla: nothing here talks to a
-server or a database. Rules live in the repo it runs in, in git; corrections live
-in `~/.teyla/corrections/`, outside every repo. Nothing leaves the machine.
+server or a database, and nothing is uploaded. Rules live in the repo it runs in, in git;
+corrections live in `~/.teyla/corrections/`, outside every repo. The one outbound call: when
+the `teyla` CLI is installed, the session-start hook starts a background `teyla update --check`
+(a GitHub release lookup) at most once a day, never in safe mode. `teyla uninstall` removes the
+plugin with the rest.
 
 ## Install
 

@@ -43,6 +43,8 @@
   teyla harness status|sync [--dry]                               the same skills, hooks and policy in Cursor, Codex, Grok, Hermes
   teyla rule "<sentence>" [--scope <glob>]                        a rule into .claude/rules/, mirrored into AGENTS.md
   teyla correct "<what was wrong>"                                a correction into ~/.teyla/corrections/<repo>.jsonl, secrets scrubbed
+  teyla prompt [name]                                             the prompts shipped with this version (onboard, …); none: list them
+  teyla uninstall [--dry] [--keep-data]                           undo every write Teyla made here; --dry lists every file it wrote
 """
 from __future__ import annotations
 
@@ -280,6 +282,21 @@ def cmd_routine(args):
             print(line)
 
 
+def cmd_prompt(args):
+    """Print a prompt shipped with this installed version; without a name, list them."""
+    from . import prompts_dir
+    d = prompts_dir()
+    names = sorted(p.stem for p in d.glob("*.md"))
+    if not args.name:
+        print("\n".join(names))
+        return 0
+    if args.name not in names:
+        print(f"no prompt {args.name!r}; one of: {', '.join(names)}", file=sys.stderr)
+        return 1
+    sys.stdout.write((d / f"{args.name}.md").read_text())
+    return 0
+
+
 def cmd_scaffold(args):
     from .scaffold import scaffold
     for line in scaffold(args.path, name=args.name, kind=args.kind, license=args.license):
@@ -323,7 +340,9 @@ def main(argv=None):
     platform_mod.register(sp); productize_mod.register(sp)
     wiki.register(sp); feedback.register(sp); models.register(sp)
     plugins.register(sp); plugin_install.register(sp); connectors.register(sp); control.register(sp)
-    remind.register(sp); rules.register(sp); harness.register(sp); storage.register(sp); grokcost.register(sp)
+    remind.register(sp); rules.register(sp); harness.register(sp); storage.register(sp)
+    from . import uninstall as uninstall_mod
+    uninstall_mod.register(sp); grokcost.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
     q = sp.add_parser("routines"); q.set_defaults(fn=cmd_routines)
     q.add_argument("paths", nargs="*"); q.add_argument("--json", action="store_true")
@@ -334,6 +353,8 @@ def main(argv=None):
     q.add_argument("--if-stale", action="store_true", help="install: only rewrite when a wrapper names a binary that moved or a plist is missing")
     q.add_argument("--dry", action="store_true", help="catch-up: say which runs launchd skipped, run nothing")
     q.add_argument("--quiet", action="store_true", help="catch-up: print only when something was missed")
+    q = sp.add_parser("prompt", help="print a paste-able prompt shipped with this version (onboard, work-account-kickoff, ...)")
+    q.set_defaults(fn=cmd_prompt); q.add_argument("name", nargs="?")
     q = sp.add_parser("scaffold"); q.set_defaults(fn=cmd_scaffold)
     q.add_argument("path")
     q.add_argument("--name", required=True)

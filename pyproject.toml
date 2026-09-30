@@ -37,6 +37,7 @@ packages = ["src/teyla"]
 [tool.hatch.build.targets.wheel.force-include]
 "templates" = "teyla/templates"
 "plugin" = "teyla/plugin"
+"prompts" = "teyla/prompts"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
