@@ -651,6 +651,39 @@ def doctor_checks(sessions_by_harness: dict | None = None, home: pathlib.Path | 
     return [{"level": r["level"], "name": f"health:{r['harness']}", "detail": r["detail"], "fix": r["fix"]} for r in rows]
 
 
+def window_errors(days: int, home: pathlib.Path | None = None) -> list[dict]:
+    """For advice A18: each installed harness whose own records hold a quota/balance or auth
+    error in the last `days` days (or whose Codex rate limit is reached), and whether it is still
+    failing — no call succeeded after it."""
+    since = time.time() - days * 86400
+    out = []
+    for name in NAMES:
+        hdir = _home(name, home)
+        if not hdir.is_dir():
+            continue
+        try:
+            e = ERRORS[name](hdir, since)
+        except Exception:  # noqa: BLE001 — advice must never take the report down
+            continue
+        err, ok = e.get("error"), e.get("last_ok")
+        lim = e.get("limits") or {}
+        rt = lim.get("rate_limit_reached_type")
+        now = time.time()
+        live = {"primary": _window_live(lim.get("primary") or {}, now), "secondary": _window_live(lim.get("secondary") or {}, now)}
+        # A limit event newer than the recorded error is the current state, even when an old quota
+        # error was already cleared by a success in between (review of #69, P2); only a success
+        # after the limit event clears it. A snapshot whose window has reset is history.
+        if (rt and lim.get("at") and live.get(str(rt), any(live.values()))
+                and (err is None or err["kind"] not in ("quota", "auth") or err.get("ts") is None or lim["at"] > err["ts"])):
+            err = _err(lim["at"], "quota", f"usage limit reached ({rt})", "rate_limits")
+        if not err or err["kind"] not in ("quota", "auth") or err.get("ts") is None:
+            continue
+        out.append(dict(harness=_short(name), kind=err["kind"], day=f"{err['ts']:%Y-%m-%d}", message=err["message"],
+                        count=err.get("count", 1), still_failing=not recovered(err, ok),
+                        fix=_fix_for(name, err, None)))
+    return out
+
+
 # --- live ---------------------------------------------------------------------------------------
 
 def policy_marker(policy_path: pathlib.Path | None = None) -> str | None:

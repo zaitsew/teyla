@@ -52,7 +52,7 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 
 | command | what you get |
 |---|---|
-| `teyla monitor [--days N] [--json]` | tokens by model and project, API-equivalent cost, orchestrator-tier share, subagent model mix, correction rate, cache-read ratio, giant sessions, governance-file edits, model ladder/price drift — plus advice A1–A16 |
+| `teyla monitor [--days N] [--json]` | tokens by model and project, API-equivalent cost, orchestrator-tier share, subagent model mix, correction rate, cache-read ratio, giant sessions, governance-file edits, model ladder/price drift, headless calls per day by harness and project with their cost — plus advice A1–A18 |
 | `teyla advise` | just the findings, each with the number that triggered it and one action |
 | `teyla grok-cost [--last\|--session ID] [--cwd PATH] [--days N] [--by project\|session] [--json]` | what Grok CLI sessions cost at list price, ranked by dollars not tokens. `--last --cwd <repo>` is the one line an orchestrator reads when a `grok -p` lane ends (cost, calls, tokens, cached %, tools, context, effort, title); the default is the last 7 days by project (worktrees and `~/repos/<repo>` collapse to `<repo>`, a `<repo>-grok-empty` temp dir to `<repo>`, other temp dirs to `tmp`); `--by session` is the top 20. `teyla monitor`/`advise` add A13/A14 |
 | `teyla sessions` / `teyla corrections --cluster` | one line per session; correction-shaped turns clustered into rule candidates |
@@ -101,6 +101,8 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | A14 | one Grok session cost over $10 | `teyla grok-cost --session <id>`; end long lanes at a merge |
 | A15 | ≥3 turns in a week ended with the agent asking permission for the next step and the human answering a bare "yes" (only when POLICY.md declares `ask-permission`) | do the step and report it; ask only about product decisions or real blockers |
 | A16 | a workflow runs on push, pull_request or schedule (only when POLICY.md declares `no-actions`) | `on: workflow_dispatch` only; `teyla doctor` lists every file |
+| A17 | one project drives more than 200 headless calls a day through one harness (7-day average), or its headless calls doubled week over week (from 100 a week) — `claude -p`, `codex exec`, `grok -p` | check the routine means to call that often: cap it, batch items per call, or move it to a cheaper provider; the report's "Headless calls" table has calls/day and cost per harness and project |
+| A18 | a harness recorded quota/balance or auth errors in the window (Grok 402 "usage balance exhausted", Hermes "missing access_token", `claude -p` "OAuth session expired", a Codex rate limit reached) — [high] while no later call succeeded | the exact fix (`hermes model`, `claude auth login`, top up); `teyla harness verify` |
 
 ### Policy detectors
 

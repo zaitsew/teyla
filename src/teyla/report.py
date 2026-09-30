@@ -43,6 +43,20 @@ def markdown(m: dict, findings: list[dict], *, title="Teyla adoption report", in
         L.append("Nothing to flag in this window.")
     for f in findings:
         L += [f"- **[{f['severity']}] {f['id']} {f['title']}** — {f['evidence']}", f"  → {f['action']}"]
+    hl = m.get("headless") or []
+    if hl:
+        span = hl[0]["window_days"]
+        L += ["", "## Headless calls by harness and project", "",
+              "One headless call is one `claude -p`, `codex exec` or `grok -p` session a script or another agent started. "
+              "Cost is list price where the harness records it (Grok: costUsdTicks) or API-equivalent from tokens; "
+              "where neither exists it says so instead of $0.", "",
+              f"| harness | project | calls/day, 7d | calls/day, {span}d | last 7d | 7d before | {span}d | cost, {span}d |",
+              "|---|---|---|---|---|---|---|---|"]
+        for h in hl[:top_projects]:
+            cost = f"${h['usd']:,.2f} ({h['cost_note']})" if h["usd"] else h["cost_note"]
+            prev = str(h["calls_prev_7d"]) if span >= 14 else "-"
+            L.append(f"| {h['harness']} | {h['project']} | {h['per_day_7d']:g} | {h['per_day_window']:g} | {h['calls_7d']}"
+                     f"{' ↑2×' if h.get('doubled') else ''} | {prev} | {h['calls']} | {cost} |")
     L += ["", "## By model", "", "| model | output | cache read | cache write | input |", "|---|---|---|---|---|"]
     for model, u in sorted(m["by_model"].items(), key=lambda kv: -kv[1].get("output_tokens", 0)):
         L.append(f"| {model} | {_fmt(u.get('output_tokens',0))} | {_fmt(u.get('cache_read_input_tokens',0))} | {_fmt(u.get('cache_creation_input_tokens',0))} | {_fmt(u.get('input_tokens',0))} |")
