@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Model generation.** `pricing.PRICES` prices claude-opus-5-5, claude-sonnet-5-5, claude-haiku-4-5, claude-fable-5-1, gpt-6.1-sol, gpt-6-luna, grok-4.7 and grok-4.7-build-fast (rates from the models.dev catalogue; build-fast is the Grok CLI's stated 2x of grok-4.7); older rows stay so old transcripts still price. gpt-6-astra's cache rates corrected. The `templates/POLICY.md` ladder now names the current generation.
 - **`teyla grok-cost`** reports what Grok CLI sessions cost at list price. `--last --cwd <repo>`
   prints one line for the newest session under a path (cost, model calls, input with cached %,
   output, tool calls, context, effort, title) — what an orchestrator runs when a `grok -p` lane
