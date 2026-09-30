@@ -290,3 +290,13 @@ def test_hermes_unmarked_block_missing_one_entry_names_only_that_entry(home):
     hermes = [l for l in lines if l.startswith("hermes:")]
     assert len(hermes) == 1 and "--context-json" in hermes[0] and "capture-correction" not in hermes[0]
     assert {r["harness"]: r for r in harness.status(home=home)}["hermes"]["hooks"] is False
+
+
+def test_hermes_parser_ignores_nested_commands_and_reads_a_commented_header():
+    # Codex review: an `examples:` list inside a foreign entry is not a hook; `hooks: # x` is.
+    cmds = harness._hermes_pairs()
+    nested = "hooks:\n  on_session_start:\n    - command: /x/guard.sh\n      examples:\n" + "".join(
+        f"        - command: {c}\n" for _, c in cmds)
+    assert set(harness._hermes_missing(nested)) == set(cmds)
+    header = "hooks: # mine\n" + "".join(f"  {e}:\n    - command: {c}\n      timeout: 5\n" for e, c in cmds)
+    assert harness._hermes_missing(header) == []

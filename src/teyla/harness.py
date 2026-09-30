@@ -298,15 +298,15 @@ def _hermes_present_pairs(text: str) -> set[tuple[str, str]]:
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         if not line.startswith(" "):
-            inside = line.rstrip() == "hooks:"
+            inside = line.split("#", 1)[0].rstrip() == "hooks:"
             event = None
             continue
         if not inside:
             continue
-        s = line.strip()
-        if s.endswith(":") and not s.startswith("-") and len(line) - len(line.lstrip()) == 2:
-            event = s[:-1]
-        elif s.startswith("- command:") and event:
+        s, indent = line.split(" #", 1)[0].strip(), len(line) - len(line.lstrip())
+        if indent == 2:  # an event key; anything deeper is inside an entry, not a hook
+            event = s[:-1] if s.endswith(":") and not s.startswith("-") else None
+        elif indent == 4 and s.startswith("- command:") and event:
             pairs.add((event, s.split(":", 1)[1].strip().strip("\"'")))
     return pairs
 
