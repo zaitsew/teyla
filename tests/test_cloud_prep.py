@@ -142,6 +142,63 @@ def test_invalid_settings_json_refuses_and_writes_nothing(tmp_path):
     assert _tree(r) == before
 
 
+# Only AGENTS.md/CLAUDE.md were checked; a symlinked .claude/, settings file, doc or .gitignore
+# made prep write outside the repo (review of #71, P1). (.gitignore goes through the same check;
+# git itself no longer reads a symlinked .gitignore, so prep never gets to rewrite one.)
+@pytest.mark.parametrize("link,is_dir,fix", [(".claude", True, False), (".claude/settings.json", False, False),
+                                             ("docs", True, False), ("docs/cloud-setup.md", False, False),
+                                             (".claude/rules", True, False)])
+def test_a_destination_symlinked_out_of_the_repo_is_refused_before_any_write(tmp_path, link, is_dir, fix):
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    target = outside / ("dir" if is_dir else "file")
+    if is_dir:
+        target.mkdir()
+    r = _repo(tmp_path, {"AGENTS.md": "# a\n"})
+    (r / link).parent.mkdir(parents=True, exist_ok=True)
+    (r / link).symlink_to(target)  # the file targets dangle on purpose: a link to where a write would land
+    before, before_out = _tree(r), _tree(outside)
+    rc, out = _prep(r, fix_gitignore=fix)
+    assert rc == 1 and "resolves out of the repo" in out[0], out
+    assert _tree(r) == before and _tree(outside) == before_out
+
+
+def test_a_symlink_inside_the_repo_is_fine(tmp_path):
+    r = _repo(tmp_path, {"AGENTS.md": "# a\n", "shared/.keep": ""})
+    (r / "docs").symlink_to(r / "shared")
+    rc, out = _prep(r)
+    assert rc == 0, out
+    assert "teyla:cloud:start" in (r / "shared" / "cloud-setup.md").read_text()
+
+
+def test_apply_checks_every_destination_again_before_the_first_write(tmp_path):
+    r = _repo(tmp_path, {"AGENTS.md": "# a\n"})
+    p = cloud_prep.plan(r, owners=OWNERS, policy_text=POLICY)
+    (tmp_path / "elsewhere").mkdir()
+    (r / "docs").symlink_to(tmp_path / "elsewhere")  # moved between plan and apply
+    before = _tree(r)
+    with pytest.raises(cloud_prep.Refused):
+        cloud_prep.apply(p)
+    assert _tree(r) == before and list((tmp_path / "elsewhere").iterdir()) == []
+
+
+# An unmarked `merge-approved: yes` survived prep writing `no`, and check still reported drift
+# (review of #71, P2): refuse and name the lines.
+def test_a_conflicting_merge_line_outside_the_section_is_refused_with_its_location(tmp_path):
+    r = _repo(tmp_path, {"AGENTS.md": "# a\n\nmerge-approved: yes\n", ".claude/rules/ship.md": "x\n- merge-approved: no\n"})
+    before = _tree(r)
+    rc, out = _prep(r, owners={"acme/other"})
+    assert rc == 1 and "AGENTS.md:3" in out[0] and "ship.md" not in out[0], out
+    assert _tree(r) == before
+    rc, out = _prep(r)  # the owner list says yes: AGENTS.md agrees, the rules file does not
+    assert rc == 1 and ".claude/rules/ship.md:2" in out[0] and "AGENTS.md:3" not in out[0], out
+    (r / ".claude/rules/ship.md").write_text("x\n")
+    rc, out = _prep(r)
+    assert rc == 0, out
+    rc, out = _prep(r, owners={"acme/other"})  # a line inside the generated section is prep's to rewrite
+    assert rc == 1 and "AGENTS.md:3" in out[0]
+
+
 def test_hand_written_hook_script_is_not_touched(tmp_path):
     r = _repo(tmp_path, {cloud_prep.STOP_HOOK: "#!/bin/sh\necho mine\n"})
     rc, out = _prep(r)
@@ -203,6 +260,15 @@ def test_the_guard_catches_what_it_is_for():
     assert cloud_prep.leaks("this is acme/app, $HOME/.local/bin", OWNERS, "acme/app") == []
 
 
+@pytest.mark.parametrize("policy,want", [("**No CI on `push` or `pull_request`.** Test workflows are dispatch only.", True),
+                                         ("No CI on\n  push or PR", True), ("Deploy on push to main.", False)])
+def test_no_actions_rule_is_read_from_the_policy_wording(tmp_path, policy, want):
+    # The owner's policy says "No CI on `push` or `pull_request`"; it was not recognised (review of #71, P2).
+    p = cloud_prep.plan(_repo(tmp_path), owners=OWNERS, policy_text=policy)
+    agents = next(new for rel, _o, new, _x in p["changes"] if rel == "AGENTS.md")
+    assert ("No GitHub Actions on push or pull_request" in agents) is want
+
+
 def test_no_actions_rule_only_when_the_owner_policy_says_so(tmp_path):
     a = cloud_prep.shipping_section("yes", "./check.sh", no_actions=True)
     b = cloud_prep.shipping_section("no", None, no_actions=False)
@@ -213,9 +279,23 @@ def test_no_actions_rule_only_when_the_owner_policy_says_so(tmp_path):
 
 @pytest.mark.parametrize("name,want", [("ASC_KEY_ID", "local only"), ("APNS_KEY_ID", "local only"),
                                        ("OPENAI_API_KEY", "host api.openai.com"), ("SUPABASE_URL", "environment variable"),
-                                       ("MY_SERVICE_TOKEN", "fill in")])
+                                       ("MY_SERVICE_TOKEN", "fill in"), ("NODE_ENV", "environment variable"),
+                                       ("NEXT_PUBLIC_SITE_URL", "environment variable"), ("OPENAI_MODEL", "environment variable")])
 def test_secret_destinations(name, want):
     assert want in cloud_prep.secret_destination(name)
+
+
+# Credential-bearing or unknown names were labelled "environment variable", which the doc says
+# every user of the environment can read (review of #71, P1).
+@pytest.mark.parametrize("name,want", [("DATABASE_URL", "local only"), ("REDIS_URL", "local only"), ("AMQP_URL", "local only"),
+                                       ("SUPABASE_DB_URL", "local only"), ("CELERY_BROKER_URL", "local only"),
+                                       ("SENTRY_DSN", "local only"), ("SUPABASE_SERVICE_ROLE", "API credentials"),
+                                       ("MY_DB_PASSWORD", "local only"), ("APP_SECRET", "API credentials"),
+                                       ("WEBHOOK_CREDENTIAL", "API credentials"),
+                                       ("APP_URL", "decide by hand"), ("SOMETHING_ELSE", "decide by hand")])
+def test_credential_shaped_and_unknown_names_are_never_plain_config(name, want):
+    got = cloud_prep.secret_destination(name)
+    assert want in got and "environment variable (config" not in got, got
 
 
 def test_setup_script_is_valid_bash_and_survives_missing_files(tmp_path):
@@ -321,3 +401,38 @@ def test_stop_hook_blocks_until_pushed_and_a_pr_exists(tmp_path):
     # told once, never trapped: the second stop in a row goes through whatever the state
     (r / "y.txt").write_text("more")
     assert _run(r, cloud_prep.STOP_HOOK, path=NO_GH, stdin='{"stop_hook_active": true}').returncode == 0
+
+
+def test_stop_hook_fails_closed_without_a_base_ref(tmp_path):
+    # No origin/HEAD and no origin/main: `rev-list` failed, `|| echo 0` read that as "no work",
+    # and committed work was allowed to stop (review of #71, P1).
+    r = _landed_repo(tmp_path)
+    _git(r, "update-ref", "-d", "refs/remotes/origin/HEAD")
+    _git(r, "update-ref", "-d", "refs/remotes/origin/main")
+    (r / "x.txt").write_text("work")
+    _git(r, "add", "-A")
+    _git(r, "commit", "-q", "-m", "work")
+    res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
+    assert res.returncode == 2 and "not on the remote" in res.stderr, res.stderr
+
+    _git(r, "push", "-q", "-u", "origin", "claude/brave-x")
+    _git(r, "update-ref", "-d", "refs/remotes/origin/main")  # the push fetched nothing back, but be sure
+    res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
+    assert res.returncode == 2 and "Could not compare claude/brave-x with origin/main" in res.stderr, res.stderr
+
+
+def test_stop_hook_counts_commits_on_no_remote_even_without_an_upstream(tmp_path):
+    r = _landed_repo(tmp_path)
+    _git(r, "commit", "-q", "--allow-empty", "-m", "work")
+    _git(r, "push", "-q", "origin", "claude/brave-x")  # pushed, but no upstream set
+    _git(r, "commit", "-q", "--allow-empty", "-m", "more")
+    res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
+    assert res.returncode == 2 and "1 commit(s) on claude/brave-x are not on the remote" in res.stderr, res.stderr
+
+
+def test_stop_hook_on_the_default_branch_does_not_stop_with_unpushed_commits(tmp_path):
+    r = _landed_repo(tmp_path)
+    _git(r, "checkout", "-q", "main")
+    _git(r, "commit", "-q", "--allow-empty", "-m", "oops")
+    res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
+    assert res.returncode == 2 and "default branch main" in res.stderr and "git switch -c" in res.stderr

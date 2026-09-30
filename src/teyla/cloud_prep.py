@@ -45,7 +45,9 @@ STOP_HOOK = ".claude/hooks/teyla-cloud-stop.sh"
 GITIGNORE_LINES = (".claude/settings.local.json", ".claude/launch.json", ".claude/worktrees/")
 _WHOLESALE = {".claude", ".claude/", "/.claude", "/.claude/", ".claude/*", "/.claude/*", ".claude/**", "/.claude/**"}
 
-_NO_ACTIONS = re.compile(r"No GitHub Actions|GitHub Actions are off", re.I)
+# The owner's policy says it three ways today; "No CI on `push` or `pull_request`" was missed
+# and the Shipping section silently dropped the rule (review of #71, P2).
+_NO_ACTIONS = re.compile(r"No GitHub Actions|GitHub Actions are off|No CI on\s+`?push`?\s+or\s+`?(pull_request|PR)\b", re.I)
 
 
 class Refused(Exception):
@@ -132,22 +134,32 @@ cd "${{CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || exit 0
 [ "$branch" = "HEAD" ] && exit 0
 base=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)
-[ "$branch" = "${{base#origin/}}" ] && exit 0
 if [ -n "$(git status --porcelain 2>/dev/null | head -1)" ]; then
   echo "Uncommitted changes on $branch: run {g}, commit, push, and open the PR before you stop." >&2
   exit 2
 fi
-ahead=$(git rev-list --count "$base..HEAD" 2>/dev/null || echo 0)
-[ "$ahead" = 0 ] && exit 0
-if git rev-parse --abbrev-ref --symbolic-full-name '@{{u}}' >/dev/null 2>&1; then
-  unpushed=$(git rev-list --count '@{{u}}..HEAD' 2>/dev/null || echo "$ahead")
-else
-  unpushed=$ahead
-fi
-if [ "$unpushed" != 0 ]; then
-  echo "$unpushed commit(s) on $branch are not on the remote: git push -u origin $branch, then open the PR (gh pr create --fill) before you stop." >&2
+# Unpushed = commits on no remote branch at all, asked before any "nothing to do" shortcut: a
+# missing base ref used to count as 0 ahead and let committed, unpushed work stop (review of
+# #71, P1). A question git cannot answer fails closed.
+if ! unpushed=$(git rev-list --count HEAD --not --remotes 2>/dev/null); then
+  echo "Could not tell whether $branch is pushed (git rev-list failed). Push it (git push -u origin $branch) and open the PR before you stop." >&2
   exit 2
 fi
+if [ "$unpushed" != 0 ]; then
+  if [ "$branch" = "${{base#origin/}}" ]; then
+    echo "$unpushed commit(s) on the default branch $branch are not on the remote, and this session cannot push to it: move them to a branch (git switch -c claude/<name>), push that, and open the PR before you stop." >&2
+  else
+    echo "$unpushed commit(s) on $branch are not on the remote: git push -u origin $branch, then open the PR (gh pr create --fill) before you stop." >&2
+  fi
+  exit 2
+fi
+[ "$branch" = "${{base#origin/}}" ] && exit 0
+if ! git rev-parse --verify --quiet "$base^{{commit}}" >/dev/null 2>&1 || \
+   ! ahead=$(git rev-list --count "$base..HEAD" 2>/dev/null); then
+  echo "Could not compare $branch with $base (the base ref is missing here), so whether it needs a PR is unknown. Open the PR (gh pr create --fill) or name the branch in your last message." >&2
+  exit 2
+fi
+[ "$ahead" = 0 ] && exit 0
 if command -v gh >/dev/null 2>&1; then
   state=$(gh pr view "$branch" --json state --jq .state 2>/dev/null) || state=""
   case "$state" in OPEN|MERGED) exit 0 ;; esac
@@ -180,23 +192,37 @@ def rules_section() -> str:
 
 # Where each kind of secret goes. HTTP APIs: the claude.ai environment's "API credentials" on
 # Pro/Max (a proxy attaches them for the named host; the VM never sees the value). Apple keys:
-# never in the cloud. Config that is not secret: an environment variable.
+# never in the cloud. Config that is not secret: an environment variable — which every user of
+# the environment can read, so a name earns that label only from an allowlist; anything unknown
+# is decided by hand (review of #71, P1: DATABASE_URL and SUPABASE_SERVICE_ROLE were "config").
 _HOSTS = (("OPENAI", "api.openai.com"), ("ANTHROPIC", "api.anthropic.com"), ("XAI", "api.x.ai"),
           ("SUPABASE", "api.supabase.com / <ref>.supabase.co"), ("CLOUDFLARE", "api.cloudflare.com"),
           ("TELEGRAM", "api.telegram.org"), ("MAILGUN", "api.mailgun.net"), ("RESEND", "api.resend.com"),
           ("GITHUB", "api.github.com"), ("STRIPE", "api.stripe.com"), ("DIGITALOCEAN", "api.digitalocean.com"),
           ("STRAVA", "www.strava.com"), ("X_BEARER", "api.x.com"), ("GOOGLE", "*.googleapis.com"))
 _APPLE = re.compile(r"(^|_)(ASC|APNS|APPLE|APP_STORE|P8|KEYCHAIN|SIGNING|MATCH|TESTFLIGHT)(_|$)")
-_SECRET = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASS|PRIVATE|CREDENTIAL|AUTH)", re.I)
+_SECRET = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASS|PWD|PRIVATE|CREDENTIAL|AUTH|DSN|SERVICE_ROLE|CERT|SESSION|COOKIE|SALT)", re.I)
+# A connection string carries its password and is not an HTTP API a proxy can sign for.
+_CONN = re.compile(r"(DSN|CONNECTION|(^|_)(DATABASE|DB|PG|POSTGRES|POSTGRESQL|MYSQL|MARIADB|MONGO|MONGODB|REDIS|"
+                   r"VALKEY|KV|AMQP|RABBITMQ|RABBIT|KAFKA|NATS|MQ|BROKER|CELERY|SMTP|IMAP|FTP|SFTP|LDAP)(_|$))", re.I)
+_PLAIN_EXACT = {"PORT", "HOST", "NODE_ENV", "ENV", "ENVIRONMENT", "APP_ENV", "LOG_LEVEL", "DEBUG", "TZ", "LANG", "CI"}
+_PLAIN_PREFIX = ("NEXT_PUBLIC_", "VITE_", "EXPO_PUBLIC_", "REACT_APP_", "PUBLIC_")  # shipped to every browser anyway
+_PLAIN_SUFFIX = ("_PORT", "_REGION", "_LOG_LEVEL", "_ENV", "_MODEL", "_TIMEOUT", "_DEBUG", "_LOCALE")
 
 
 def secret_destination(name: str) -> str:
-    if _APPLE.search(name.upper()):
+    up = name.upper()
+    if _APPLE.search(up):
         return "local only: Apple keys never go to the cloud"
-    if not _SECRET.search(name):
+    if _CONN.search(up):
+        return "local only: a connection string carries its password (decide by hand; never an environment variable)"
+    host = next((h for k, h in _HOSTS if up.startswith(k)), None)
+    if _SECRET.search(up):
+        return f"API credentials, host {host}" if host else "API credentials, host: the API it is sent to (fill in)"
+    if (up in _PLAIN_EXACT or up.startswith(_PLAIN_PREFIX) or up.endswith(_PLAIN_SUFFIX)
+            or (host and re.fullmatch(r"[A-Z0-9]+_(BASE_)?URL", up))):
         return "environment variable (config, not a secret)"
-    host = next((h for k, h in _HOSTS if name.upper().startswith(k)), None)
-    return f"API credentials, host {host}" if host else "API credentials, host: the API it is sent to (fill in)"
+    return "decide by hand: a secret (API credentials or local only) unless you know it is plain config"
 
 
 def setup_script(repo: pathlib.Path, gate_text: str) -> list[str]:
@@ -246,7 +272,8 @@ def setup_doc(repo: pathlib.Path, names: list[str], gate: str | None, tools: lis
               "- **API credentials**: claude.ai → the environment → API credentials (Pro/Max). A proxy attaches the value "
               "for the named host; the VM never sees it. Team/Enterprise plans do not have this yet: keep those steps local.",
               "- **environment variable**: the environment's variables. Every user of the environment can read them, so config only.",
-              "- **local only**: stays on the Mac.", "",
+              "- **local only**: stays on the Mac.",
+              "- **decide by hand**: a name teyla cannot classify. Treat it as a secret until you know it is plain config.", "",
               "| name | where it goes |", "|---|---|"] + [f"| `{n}` | {secret_destination(n)} |" for n in names]
     else:
         L.append("`.env.example` names none.")
@@ -340,6 +367,38 @@ def leaks(text: str, owners: set[str] | None, slug: str | None) -> list[str]:
 
 # --- plan, diff, write -------------------------------------------------------------------
 
+def _inside(repo: pathlib.Path, path: pathlib.Path) -> None:
+    """Refuse a destination that resolves out of the repo: a symlinked `.claude/`, settings file,
+    doc or .gitignore would otherwise make prep write into someone else's tree (review of #71,
+    P1). `resolve()` follows every symlinked parent and a dangling link to where it points."""
+    real = path.resolve()
+    if real != repo and repo not in real.parents:
+        try:
+            rel = path.relative_to(repo)
+        except ValueError:
+            rel = path.name
+        raise Refused(f"{rel} resolves out of the repo (a symlink); nothing written")
+
+
+def _conflicting_merge_lines(repo: pathlib.Path, merge: str) -> list[str]:
+    """`file:line` of every `merge-approved:` line outside the generated section that disagrees
+    with the owner's list. Prep rewrites only its own section, so such a line would survive and
+    `teyla cloud check` would still report drift (review of #71, P2): refuse and name them."""
+    out = []
+    for name, text in cloud.instruction_files(repo):
+        inside = False
+        for i, line in enumerate(text.splitlines(), 1):
+            if line.startswith("<!-- teyla:cloud:start"):
+                inside = True
+            elif line.strip() == END:
+                inside = False
+            elif not inside:
+                m = cloud._MERGE_LINE.match(line)
+                if m and m.group(1).lower() != merge:
+                    out.append(f"{name}:{i}")
+    return out
+
+
 def plan(repo, owners: set[str] | None = ..., policy_text: str | None = None, fix_gitignore: bool = False) -> dict:
     """{"changes": [(rel, old|None, new, executable)], "notes": [...]} — nothing written."""
     repo = pathlib.Path(repo).expanduser().resolve()
@@ -359,6 +418,7 @@ def plan(repo, owners: set[str] | None = ..., policy_text: str | None = None, fi
     generated = {}  # what this run authored, by file: the only text the privacy guard judges
 
     def put(rel_path: pathlib.Path, new: str, executable=False):
+        _inside(repo, rel_path)
         old = cloud._read(rel_path) if rel_path.exists() else None
         if old != new:
             changes.append((str(rel_path.relative_to(repo)), old, new, executable))
@@ -370,6 +430,10 @@ def plan(repo, owners: set[str] | None = ..., policy_text: str | None = None, fi
     for p in (a, c):
         if p.is_symlink() and repo not in p.resolve().parents:
             raise Refused(f"{p.name} is a symlink out of the repo; nothing written")
+    conflicts = _conflicting_merge_lines(repo, merge)
+    if conflicts:
+        raise Refused(f"merge-approved: {merge} is what the owner's list says, but {', '.join(conflicts)} says otherwise "
+                      "outside the generated section; fix those lines by hand, nothing written")
     a_real, c_real = a.resolve() if a.exists() else None, c.resolve() if c.exists() else None
     if a_real and c_real and a_real == c_real:
         put(a_real, replace_section(cloud._read(a_real), section))  # one file, two names: no import needed
@@ -429,6 +493,8 @@ def diff(p: dict) -> str:
 
 
 def apply(p: dict) -> list[str]:
+    for rel, *_ in p["changes"]:  # again, all before the first write: the tree may have moved since plan()
+        _inside(p["repo"], p["repo"] / rel)
     done = []
     for rel, old, new, executable in p["changes"]:
         f = p["repo"] / rel
@@ -460,7 +526,10 @@ def prep(repo, dry=False, allow_public=False, fix_gitignore=False, owners=..., p
         return 1, out + [f"refused: {repo.name} is {'public' if vis == 'public' else 'of unknown visibility (no gh, safe mode, or no GitHub origin), so treated as public'}. "
                          "These files carry the shipping policy and the merge-approved flag: re-run with --allow-public "
                          "to write them anyway, or --dry to read them first"]
-    out += apply(p)
+    try:
+        out += apply(p)
+    except Refused as e:
+        return 1, out + [f"refused: {e}"]
     out += ["", "next: commit these on a branch and open the PR; paste docs/cloud-setup.md §1 into the claude.ai environment; "
                 "create the needs-mac label once (§3)"]
     return 0, out
