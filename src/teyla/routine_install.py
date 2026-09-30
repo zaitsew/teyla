@@ -88,6 +88,9 @@ export TEYLA_IN_ROUTINE="{label}"
 TEYLA="{teyla_bin}"
 {update_line}
 # `update` may have replaced the binary in place; call it by name from here on.
+# A session over $250 in the last day or Actions past 80% of the included minutes: a notification
+# and a banner line (doctor, next, writes the banner). Silent otherwise.
+teyla spend --alert
 teyla doctor --quiet
 # Refresh ~/.teyla/routines/<product>.line, the one-liners the session-start hook shows.
 teyla routines >/dev/null 2>&1
@@ -192,6 +195,9 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         return True
     if ".last" not in text:
         # Written before catch-up existed: it never stamps, so a missed run could never be seen.
+        return True
+    if path == DAILY_WRAPPER_PATH and "spend --alert" not in text:
+        # Written before `teyla spend`: the daily would never alert on a spend spike.
         return True
     if path == DAILY_WRAPPER_PATH and "storage clean" not in text:
         # Written before `teyla storage`: the daily would never clean.
