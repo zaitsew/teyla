@@ -300,3 +300,10 @@ def test_hermes_parser_ignores_nested_commands_and_reads_a_commented_header():
     assert set(harness._hermes_missing(nested)) == set(cmds)
     header = "hooks: # mine\n" + "".join(f"  {e}:\n    - command: {c}\n      timeout: 5\n" for e, c in cmds)
     assert harness._hermes_missing(header) == []
+
+
+def test_hermes_parser_reads_indentless_sequences():
+    # Codex review: yaml.safe_dump writes `  event:` then `  - command:` at the same indent.
+    cmds = harness._hermes_pairs()
+    text = "hooks:\n" + "".join(f"  {e}:\n  - command: {c}\n    timeout: 5\n" for e, c in cmds)
+    assert harness._hermes_missing(text) == []

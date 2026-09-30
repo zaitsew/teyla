@@ -292,8 +292,10 @@ def hermes_block() -> str:
 def _hermes_present_pairs(text: str) -> set[tuple[str, str]]:
     """(event, command) of every hook under the top-level `hooks:` block, whatever the quoting.
     Hermes 0.21.5 rewrites config.yaml on update: comments (Teyla's markers) and quotes go, the
-    entries stay — so Teyla recognises its hooks by what they run, as it does for Codex."""
-    pairs, event, inside = set(), None, False
+    entries stay — so Teyla recognises its hooks by what they run, as it does for Codex. An
+    event's entries are the list items at the indent of its first item (indented or YAML's
+    indentless style); a `- command:` nested deeper is inside an entry, not a hook."""
+    pairs, event, item_indent, inside = set(), None, None, False
     for line in text.splitlines():
         if not line.strip() or line.lstrip().startswith("#"):
             continue
@@ -304,9 +306,14 @@ def _hermes_present_pairs(text: str) -> set[tuple[str, str]]:
         if not inside:
             continue
         s, indent = line.split(" #", 1)[0].strip(), len(line) - len(line.lstrip())
-        if indent == 2:  # an event key; anything deeper is inside an entry, not a hook
-            event = s[:-1] if s.endswith(":") and not s.startswith("-") else None
-        elif indent == 4 and s.startswith("- command:") and event:
+        if indent == 2 and not s.startswith("-"):
+            event, item_indent = (s[:-1] if s.endswith(":") else None), None
+            continue
+        if not event or not s.startswith("- "):
+            continue
+        if item_indent is None:
+            item_indent = indent
+        if indent == item_indent and s.startswith("- command:"):
             pairs.add((event, s.split(":", 1)[1].strip().strip("\"'")))
     return pairs
 
