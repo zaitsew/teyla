@@ -79,6 +79,14 @@ def test_scrub_removes_a_pem_block_even_cut_off_by_truncation():
     ("machine api.example.com login me password hunter2", "machine api.example.com login me password [redacted]"),
     ("clone https://me:hunter2@git.example.com/x.git", "clone https://[redacted]@git.example.com/x.git"),
     ("use glpat-" + "abcdefghij0123456789", "use [redacted]"),
+    # review of #63, P1: `}` inside an unquoted value is part of it; only a closing brace stays.
+    ("PASSWORD=abC}123 again", "PASSWORD=[redacted] again"),
+    ("password hunt}er2 again", "password [redacted] again"),
+    ("{token=abc123}", "{token=[redacted]}"),
+    # review of #63, P1: a quoted .netrc password, escaped quotes included.
+    ('machine h login me password "hunter2"', "machine h login me password [redacted]"),
+    ('machine h login me password "hun\\"ter 2" x', "machine h login me password [redacted] x"),
+    ('API_KEY="ab\\"cd" again', "API_KEY=[redacted] again"),
 ])
 def test_scrub_keeps_the_name_of_an_assignment_and_drops_the_value(text, want):
     assert corrections.scrub(text) == want
@@ -202,6 +210,29 @@ def test_misc_records_are_per_directory(tmp_path):
     corrections.append(a, _rec("in a", cwd=str(a.resolve())))
     corrections.append(b, _rec("in b", cwd=str(b.resolve())))
     assert [r["text"] for r in corrections.records(a)] == ["in a"]
+
+
+def test_misc_records_are_found_again_when_the_path_itself_was_scrubbed(tmp_path):
+    """review of #63, P2: the stored cwd is scrubbed, so lookup goes by a key of the raw one."""
+    d = tmp_path / "token=abc123"; d.mkdir()
+    other = tmp_path / "token=xyz789"; other.mkdir()
+    assert corrections.capture({"prompt": "no, use pnpm", "cwd": str(d)}) is not None
+    assert corrections.capture({"prompt": "wrong dir", "cwd": str(other)}) is not None
+    recs = corrections.records(d)
+    assert [r["text"] for r in recs] == ["no, use pnpm"]
+    assert "abc123" not in json.dumps(recs) and "abc123" not in corrections.path_for(d).read_text()
+
+
+def test_append_survives_a_short_write(tmp_path, monkeypatch):
+    """review of #63, P1: os.write may write fewer bytes than asked; all of them must land."""
+    import os as _os
+    real = _os.write
+    monkeypatch.setattr(_os, "write", lambda fd, b: real(fd, bytes(b[:3])))
+    f = corrections.append(tmp_path, _rec("the whole record, not three bytes of it"))
+    config.write_private(tmp_path / "t" / "doctor.json", '{"ok": true}\n')
+    monkeypatch.undo()
+    assert json.loads(f.read_text())["text"] == "the whole record, not three bytes of it"
+    assert (tmp_path / "t" / "doctor.json").read_text() == '{"ok": true}\n'
 
 
 def test_capture_deduplicates_a_double_delivery(tmp_path):

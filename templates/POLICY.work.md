@@ -3,38 +3,39 @@
 Read by Claude Code, Codex, Hermes, Grok CLI, Cursor and Zed. One file, one policy.
 Owner: {{owner}}. Edit here, never in a copy.
 
+<!-- teyla-template: work — code on this machine goes only to AI providers IT approved for it -->
+
 ## 1. The model ladder — expensive model orchestrates, cheap models do volume
 
-The top model of your provider plans, decides, reviews and does the genuinely hard
+The top model of an approved provider plans, decides, reviews and does the genuinely hard
 parts. Everything else — repo surveys, transcript mining, boilerplate, tests, docs,
 first drafts, bulk edits — goes to a cheaper model of the same provider, as a
 subagent or a separate run. Say in the recap which model did what.
 
+Code, diffs, logs and transcripts from this machine go only to providers IT has approved
+for this code. A provider with a CLI installed here is not approved by that fact; add its
+row below only when it is.
+
 <!-- ladder:start — maintained by `teyla models --write-policy`; edit rows by hand if you must, keep the markers -->
 | provider | orchestrate / hardest tasks | volume work | throwaway / triage | note |
 |---|---|---|---|---|
-| Anthropic | Claude Fable 5.1 | Opus 5.5, Sonnet 5.5 | Haiku 4.5 | Fable inherits by default in subagents — always pass model: |
-| OpenAI | GPT-6 Astra | GPT-6.1 Sol | GPT-6 Luna | Astra only as the interactive orchestrator |
-| xAI | Grok 4.7 | Grok 4.7, grok-4.7-build-fast | — | on subscription: a cheap volume worker for ANY orchestrator via `grok -p` (research, summaries, bulk drafts) |
+| Anthropic | Claude Fable 5.1 | Opus 5, Sonnet 5 | Haiku 4.5 | Fable inherits by default in subagents — always pass model: |
 <!-- ladder:end -->
 
 - In Claude Code, pass `model:` explicitly on every `Agent` call; "inherit" means Fable.
-- In Codex, `model = "gpt-6-astra"` is for the interactive orchestrator only; run
-  `codex exec` fan-outs with a cheaper `-m`.
 - When a provider ships a new tier, update the row here, nowhere else.
 
-## 2. Second opinions across providers
+## 2. Second opinions from a fresh session
 
 Before committing to a non-trivial design, and before landing anything that touches
-money, credentials, or another person's data, get a review from a different provider:
-`/codex review` or `/grok review` from Claude; `claude -p` from Codex. One pass, P1/P2
-findings, then move on. Do not loop reviews. A review covers only the diff it saw: a
-commit after the review means review again, or merge what was reviewed and put the
-rest in its own PR.
+money, credentials, or another person's data, get a second opinion from a fresh session
+of the same harness: only the diff and the question, no prior context, labelled a
+same-provider review. One pass, P1/P2 findings, then move on. Do not loop reviews. A
+review covers only the diff it saw: a commit after the review means review again, or
+merge what was reviewed and put the rest in its own PR.
 
-If no second provider's CLI exists on this machine, open a fresh session of the same
-harness with only the diff and the question, and label the result a same-provider
-review. It catches less; a skipped review catches nothing.
+Never send a diff to a provider that is not in the ladder above for a review — not
+`/codex review`, not `/grok review`, not a paste into a chat app.
 
 ## 3. Use the tool ladder, top down
 

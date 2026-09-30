@@ -72,11 +72,19 @@ _SECRET_RES = [
 # limited to a `--flag value` or to `password`/`passwd` themselves: "the token expired" must
 # survive, "password hunter2" must not.
 _SECRET_NAME = r"[A-Za-z0-9_\-]*?(?:password|passwd|token|secret|api[_-]?key|access[_-]?key|private[_-]?key)"
-_VALUE = r"(\"[^\"\n]*\"|'[^'\n]*'|[^\s,;'\"}]+)"
+# A quoted value honours backslash escapes (`"ab\"cd"` is one value, as netrc reads it) and
+# runs to the end of the line when its closing quote was cut off. An unquoted value may hold
+# `}` — `PASSWORD=abC}123` is one password — and only braces at its very end are left, as
+# the close of `{token=abc}` (review of #63, P1: excluding `}` outright kept `}123`).
+_QUOTED = r"\"(?:[^\"\\\n]|\\.)*\"?|'(?:[^'\\\n]|\\.)*'?"
+_BARE = r"[^\s,;'\"]+?(?=\}*(?:[\s,;'\"]|\Z))"
+_VALUE = r"(" + _QUOTED + r"|" + _BARE + r")"
 _ASSIGN_RE = re.compile(r"(?i)\b(" + _SECRET_NAME + r"[\"']?)(\s*[:=]\s*)" + _VALUE)
 _FLAG_RE = re.compile(r"(?i)((?<!\S)--" + _SECRET_NAME + r")(\s+)(?!\[redacted\])" + _VALUE)
-# `password hunter2`: only a value with a digit or a symbol in it — "reset my password then" is prose.
-_BARE_RE = re.compile(r"(?i)(\b(?:password|passwd))(\s+)(?!\[redacted\])(?=[^\s,;]*(?:\d|_|[^\s\w,;]))([^\s,;'\"}]+)")
+# `password hunter2`: only a value with a digit or a symbol in it — "reset my password then" is
+# prose. A quoted value always goes: `password "hunter2"` is valid .netrc (review of #63, P1).
+_BARE_RE = re.compile(r"(?i)(\b(?:password|passwd))(\s+)(?!\[redacted\])"
+                      r"(" + _QUOTED + r"|(?=[^\s,;]*(?:\d|_|[^\s\w,;]))" + _BARE + r")")
 _HEX_RE = re.compile(r"\b[0-9a-fA-F]{40,}\b")
 _BLOB_RE = re.compile(r"[A-Za-z0-9+/_\-]{40,}={0,2}")
 
@@ -199,6 +207,19 @@ def repo_key(root: pathlib.Path | None) -> str:
     return f"{name}-{hashlib.sha1(str(root).encode()).hexdigest()[:8]}"
 
 
+def cwd_key(cwd) -> str:
+    """Sixteen hex of a hash of the resolved `cwd`. misc.jsonl holds every non-repo directory,
+    and `records()` keeps one directory's by comparing paths — but the stored `cwd` is
+    scrubbed, so `/tmp/token=abc123` was kept as `/tmp/token=[redacted]` and never matched its
+    own directory again (review of #63, P2). The key is taken before scrubbing and matched
+    instead; sixteen hex stays below every pattern `scrub()` has."""
+    try:
+        p = str(pathlib.Path(cwd).expanduser().resolve())
+    except (OSError, RuntimeError, TypeError, ValueError):
+        p = str(cwd)
+    return hashlib.sha256(p.encode("utf-8", "surrogatepass")).hexdigest()[:16]
+
+
 def path_for(cwd, cfg: dict | None = None) -> pathlib.Path:
     """The file a correction typed in `cwd` is appended to."""
     root, _ = find_repo(cwd)
@@ -282,7 +303,8 @@ def _append_line(path: pathlib.Path, line: str) -> None:
         # A torn last line (a hook killed mid-write, a hand edit) must not swallow this record.
         if st.st_size and os.pread(fd, 1, st.st_size - 1) != b"\n":
             data = b"\n" + data
-        os.write(fd, data)
+        from . import config
+        config.write_all(fd, data)
     finally:
         os.close(fd)
 
@@ -292,6 +314,10 @@ def append(cwd, rec: dict, cfg: dict | None = None) -> pathlib.Path:
     mode = store_mode(cfg)
     path = path_for(cwd, cfg)
     _touch_legacy(cwd, mode)
+    # Only a misc record needs the key (see cwd_key); a repo store's records stay as they were,
+    # so a legacy file and its imported copy still count once.
+    if find_repo(cwd)[0] is None and isinstance(rec.get("cwd"), str) and "cwd_key" not in rec:
+        rec = {**rec, "cwd_key": cwd_key(rec["cwd"])}
     if mode == "home":
         _private_dir(teyla_home())
         _private_dir(path.parent)
@@ -354,12 +380,17 @@ def records(cwd, cfg: dict | None = None) -> list[dict]:
     mode = store_mode(cfg)
     _touch_legacy(cwd, mode)
     root, _ = find_repo(cwd)
+    here = str(pathlib.Path(cwd).expanduser().resolve())
+    key, scrubbed_here = cwd_key(here), scrub(here)
     files = [path_for(cwd, cfg)] + legacy_paths(cwd)
     seen, out = set(), []
     for f in dict.fromkeys(files):
         for rec in _read(f):
-            if root is None and rec.get("cwd") and rec["cwd"] != str(pathlib.Path(cwd).expanduser().resolve()):
-                continue  # misc.jsonl holds every non-repo directory; keep this one's
+            # misc.jsonl holds every non-repo directory; keep this one's. A record written
+            # before `cwd_key` existed is matched on its (scrubbed) path.
+            if root is None and rec.get("cwd"):
+                if (rec["cwd_key"] != key) if rec.get("cwd_key") else (rec["cwd"] != scrubbed_here):
+                    continue
             k = json.dumps(rec, sort_keys=True, ensure_ascii=False)
             if k not in seen:
                 seen.add(k); out.append(rec)
@@ -446,7 +477,8 @@ def capture(data: dict, now: _dt.datetime | None = None, cfg: dict | None = None
         return None
     cwd = data.get("cwd") or data.get("workspaceRoot") or data.get("workspace_root") or os.getcwd()
     now = now or _dt.datetime.now(_dt.timezone.utc)
-    rec = scrub_record({"ts": now.isoformat(timespec="seconds"), "cwd": cwd, "text": prompt})
+    raw = {"ts": now.isoformat(timespec="seconds"), "cwd": cwd, "text": prompt}
+    rec = scrub_record(raw)
     path = path_for(cwd, cfg)
     try:
         last = _read(path)[-1]
@@ -455,7 +487,8 @@ def capture(data: dict, now: _dt.datetime | None = None, cfg: dict | None = None
                 return None
     except (IndexError, KeyError, ValueError, TypeError):
         pass
-    return append(cwd, rec, cfg)
+    # The raw record: append() scrubs it, and needs the unscrubbed cwd for its key.
+    return append(cwd, raw, cfg)
 
 
 def hook_main(stream=None) -> None:

@@ -322,6 +322,13 @@ def run(ref: str, *, dry: bool = False, force: bool = False, repo=None, out=prin
         out(f"  rules       {', '.join(R.ids(rules)) or '(none matched this scope)'}")
         return 0
 
+    # Safe mode refuses before anything is created; every step checks again (harness.py), so
+    # an act step approved later from the inbox meets the same rule.
+    why = H.safe_refusal(routine.repo)
+    if why:
+        out(f"REFUSED: {why}")
+        return 1
+
     run_dir.mkdir(parents=True, exist_ok=True)
     ctl_dir = S.control_run_dir(run_id)
     ctl_dir.mkdir(parents=True, exist_ok=True)
