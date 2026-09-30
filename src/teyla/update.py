@@ -453,10 +453,12 @@ def installed_commit(method: str) -> str | None:
     return _as_sha(out.strip().splitlines()[-1]) if rc == 0 and out.strip() else None
 
 
-def restore(repo: str, method: str, spec: str) -> list[str]:
+def restore(repo: str, method: str, spec: str, before: str | None = None) -> list[str]:
     """Put the version that was running back: by the commit it was installed from when
-    `teyla update` recorded one, else by its release tag."""
-    ref = installed_sha() or f"v{__version__}"
+    `teyla update` recorded one, else by its release tag. After an install, pass `before`
+    (installed_sha() read *before* the installer ran): by then direct_url.json describes the
+    build being rejected, and restoring "what is installed" reinstalled it (review of #64, P1)."""
+    ref = before or installed_sha() or f"v{__version__}"
     cmd = _installer(method, spec, install_source(repo, ref))
     if cmd is None:
         return [f"FAIL: could not restore {__version__}: no installer for {method}"]
@@ -482,6 +484,7 @@ def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | No
     if not sha:
         return [f"FAIL: could not resolve {label} to a commit on {repo}; not installing an unpinned ref"]
     src = install_source(repo, sha)
+    before = installed_sha()  # what to roll back to, read before the installer replaces it
     cmd = _installer(method, spec, src)
     if cmd is None:
         return [f"FAIL: installed with {method} but `{'uv' if method == 'uv-tool' else method}` is not on PATH"]
@@ -500,7 +503,7 @@ def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | No
             # `uv tool install --force` removes the old tool before the new build; a failed
             # build therefore leaves no `teyla` at all — the daily wrapper, the session-start
             # hook and doctor all go quiet. Put the installed version back first.
-            lines += restore(repo, method, spec)
+            lines += restore(repo, method, spec, before)
         return lines
     got = installed_version(method)
     if (got != tag.lstrip("v")) if tag else not got:
@@ -509,7 +512,7 @@ def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | No
         # Keep the version that was known to work.
         want = f", expected {tag.lstrip('v')}" if tag else ""
         lines.append(f"FAIL: installed {sha[:12]} reports version {got or '(none)'}{want} — restoring")
-        lines += restore(repo, method, spec)
+        lines += restore(repo, method, spec, before)
         return lines
     landed = installed_commit(method)
     if landed and not same_commit(landed, sha):
@@ -517,7 +520,7 @@ def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | No
         # pin look met forever (review of #64, P1). Unknown provenance is accepted: the forced
         # reinstall of one exact commit is what guarantees it, the probe only double-checks.
         lines.append(f"FAIL: asked for {sha[:12]} but the installed build is {landed[:12]} — restoring")
-        lines += restore(repo, method, spec)
+        lines += restore(repo, method, spec, before)
         return lines
     _record_installed(got, tag, landed or sha)
     on = f" on python {spec}" if method in ("uv-tool", "pipx") else ""

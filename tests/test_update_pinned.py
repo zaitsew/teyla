@@ -330,3 +330,24 @@ def test_safe_mode_a_failing_merge_proposes_nothing(_home, tmp_path, monkeypatch
     lines = policy.refresh()
     assert "failed: fatal: boom" in lines[0] and "nothing proposed" in lines[0]
     assert policy.PROPOSED_PATH.read_text() == "an earlier proposal\n"
+
+
+def test_rollback_goes_to_the_commit_that_was_running_not_the_rejected_one(_home, monkeypatch, capsys):
+    # review of #64's fix, P1: after the install, direct_url.json describes the new build, so
+    # "restore what is installed" reinstalled the build being rejected.
+    config.set_value("update.pin", SHA)
+    github(monkeypatch, {}, {SHA: SHA})
+    ran = _pip_installer(monkeypatch, None, SHA)
+    running = {"commit": "c" * 40}
+    monkeypatch.setattr(update, "_dist_commit", lambda: running["commit"])
+    real_run = update._run
+
+    def run(cmd, cwd=None):
+        rc, out = real_run(cmd, cwd)
+        if cmd[-1].endswith(f"@{SHA}"):
+            running["commit"] = SHA  # the installer replaced the distribution
+        return rc, out
+    monkeypatch.setattr(update, "_run", run)
+    assert update.cmd_update(args()) == 1
+    assert "restored" in capsys.readouterr().out
+    assert ran[-1][-1].endswith("@" + "c" * 40), "back to the commit that was running"
