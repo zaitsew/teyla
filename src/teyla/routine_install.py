@@ -7,11 +7,12 @@ routines are loaded needs to be a routine itself.
 
 A launchd StartCalendarInterval fires on the minute, or on the next wake if the Mac was
 asleep — and never, if the Mac was *off* at that minute. On a laptop that is the common
-case: the weekly installed on 2026-09-11 was due Monday 2026-09-14 07:30 and the Mac
-booted at 15:28, so `launchctl print` showed `runs = 0` while `doctor` said "loaded".
+case: the weekly installed on 2026-09-11 was due Monday 2026-09-14 07:30 (the schedule then;
+it now fires Fridays 20:45) and the Mac booted at 15:28, so `launchctl print` showed
+`runs = 0` while `doctor` said "loaded".
 `teyla routine catch-up` is the anacron half: each wrapper stamps `~/.teyla/<job>.last`
 when it starts, and catch-up runs any job whose stamp is older than its last due time.
-It is called by the daily wrapper (so a missed Monday runs on Tuesday) and by the
+It is called by the daily wrapper (so a Friday run the Mac missed runs Saturday at 07:00) and by the
 plugin's session-start hook (so it runs the first time you open a session after a boot).
 """
 from __future__ import annotations
@@ -42,7 +43,7 @@ DAILY_STAMP_PATH = pathlib.Path.home() / ".teyla" / "daily.last"
 # launchd Weekday: 0 = Sunday … 6 = Saturday; None = every day.
 SCHEDULE = {
     DAILY_LABEL: dict(hour=7, minute=0, weekday=None),
-    LABEL: dict(hour=7, minute=30, weekday=1),
+    LABEL: dict(hour=20, minute=45, weekday=5),  # Fridays 20:45 local; one weekly, so one digest
 }
 
 DAILY_PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
@@ -114,11 +115,11 @@ PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
     <key>StartCalendarInterval</key>
     <dict>
         <key>Weekday</key>
-        <integer>1</integer>
+        <integer>{weekday}</integer>
         <key>Hour</key>
-        <integer>7</integer>
+        <integer>{hour}</integer>
         <key>Minute</key>
-        <integer>30</integer>
+        <integer>{minute}</integer>
     </dict>
     <key>EnvironmentVariables</key>
     <dict>
@@ -135,7 +136,7 @@ PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 
 WRAPPER_TEMPLATE = """#!/usr/bin/env bash
 # Written by `teyla routine install`. Runs Teyla's weekly checks and files
-# their output under the ops run-artifact layout for the Monday digest.
+# their output under the ops run-artifact layout for the Friday digest.
 set -uo pipefail
 {env_sh}
 echo "== $(date -u +%FT%TZ) teyla weekly"
@@ -269,11 +270,25 @@ def _env_block_of(text: str) -> str | None:
     return text[a:b + len(ENV_END)]
 
 
+def _plist_schedule_stale(plist: pathlib.Path, label: str) -> bool:
+    """True when the plist on disk fires at a time other than SCHEDULE[label] (or cannot be read):
+    a plist written before the weekly moved (Monday 07:30 → Friday 20:45) names a wrapper that is
+    current, so only the schedule itself tells that it needs rewriting."""
+    import plistlib
+    try:
+        got = plistlib.loads(plist.read_bytes()).get("StartCalendarInterval")
+    except Exception:
+        return True
+    want = {k.capitalize(): v for k, v in SCHEDULE[label].items() if v is not None}
+    return got != want
+
+
 def is_stale() -> bool:
     teyla_bin = _teyla_bin()
     env = launchd_env(teyla_bin)
     return (_wrapper_stale(WRAPPER_PATH, teyla_bin, env) or _wrapper_stale(DAILY_WRAPPER_PATH, teyla_bin, env)
-            or not PLIST_PATH.exists() or not DAILY_PLIST_PATH.exists())
+            or not PLIST_PATH.exists() or not DAILY_PLIST_PATH.exists()
+            or _plist_schedule_stale(PLIST_PATH, LABEL))
 
 
 def _load(plist: pathlib.Path, label: str) -> str:
@@ -292,7 +307,7 @@ def install(if_stale: bool = False) -> list[str]:
     lines = []
     teyla_bin = _teyla_bin()
     if if_stale and not is_stale():
-        return ["routines current (wrappers name the current binary and the configured env, both plists present)"]
+        return ["routines current (wrappers name the current binary and the configured env, both plists present, the weekly's schedule as configured)"]
     env = launchd_env(teyla_bin)
     env_plist, env_sh = _env_plist(env), _env_sh(env)
 
@@ -321,13 +336,15 @@ def install(if_stale: bool = False) -> list[str]:
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
-    PLIST_PATH.write_text(PLIST_TEMPLATE.format(label=LABEL, wrapper=WRAPPER_PATH, log=LOG_PATH, env_plist=env_plist))
+    PLIST_PATH.write_text(PLIST_TEMPLATE.format(label=LABEL, wrapper=WRAPPER_PATH, log=LOG_PATH, env_plist=env_plist,
+                                                **SCHEDULE[LABEL]))
     lines.append(f"wrote {PLIST_PATH}")
 
     if sys.platform == "darwin":
         lines.append(_load(PLIST_PATH, LABEL))
     else:
-        lines.append("not macOS: add to cron yourself: 30 7 * * 1 bash " + str(WRAPPER_PATH))
+        w = SCHEDULE[LABEL]
+        lines.append(f"not macOS: add to cron yourself: {w['minute']} {w['hour']} * * {w['weekday']} bash " + str(WRAPPER_PATH))
     _mark_installed(DAILY_LABEL)
     _mark_installed(LABEL)
     uid = os.getuid()
@@ -403,7 +420,7 @@ def _mark_installed(label: str) -> None:
 def missed(label: str, now: "datetime.datetime | None" = None) -> "datetime.datetime | None":
     """The due time launchd skipped, or None. A job is missed when it was installed before the
     last due minute and nothing started it at or after that minute — the shape a laptop that
-    was off at 07:30 leaves behind (asleep, launchd fires on wake; off, it does not fire at all)."""
+    was off at its due minute leaves behind (asleep, launchd fires on wake; off, it does not fire at all)."""
     plist, wrapper, _, _ = _job(label)
     if not plist.exists() or not wrapper.exists():
         return None
@@ -464,7 +481,7 @@ def status() -> list[str]:
                                        (LABEL, PLIST_PATH, WRAPPER_PATH, LOG_PATH)):
         ok, pid, code = loaded(label)
         lines.append(f"{label}: loaded: {'yes' if ok else 'no'}" + (f" (pid {pid})" if pid else "") + (f" (last exit {code})" if code else ""))
-        lines.append(f"  plist: {plist} ({'exists' if plist.exists() else 'missing'})")
+        lines.append(f"  plist: {plist} ({'missing' if not plist.exists() else ('STALE — fires at another time than the schedule; run `teyla routine install`' if label == LABEL and _plist_schedule_stale(plist, label) else 'exists')})")
         stale = _wrapper_stale(wrapper, teyla_bin, env)
         lines.append(f"  wrapper: {wrapper} ({'missing' if not wrapper.exists() else ('STALE — names another binary or an outdated [env]; run `teyla routine install`' if stale else 'current')})")
         started, due = last_started(label), last_due(label)
