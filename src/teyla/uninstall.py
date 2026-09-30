@@ -12,6 +12,7 @@ Derived from the writers, not from memory; each line below names the module that
     ~/.cursor/skills/teyla-policy/SKILL.md                            policy.sync      remove (generated-by marker)
     ~/.{cursor,codex,grok}/skills/*/SKILL.md, ~/.hermes/skills/teyla/  harness.sync     remove (generated-by marker)
     ~/.cursor/hooks.json         entries running ~/.teyla/hooks/*    harness.sync     edit: drop those entries
+    ~/.codex/hooks.json          handlers running ~/.teyla/hooks/*   harness.sync     edit: drop those handlers
     ~/.grok/hooks/teyla.json                                          harness.sync     remove
     the Claude Code plugin teyla@<marketplace>                        plugin_install / `claude plugin install`
                                  `claude plugin uninstall` + `marketplace remove` when `claude` exists,
@@ -284,7 +285,7 @@ def _skills(home: pathlib.Path) -> list[Step]:
 
 def _hooks(home: pathlib.Path) -> list[Step]:
     steps = []
-    hooks_dir = str(home / ".teyla" / "hooks")
+    hooks_dir = str(home / ".teyla" / "hooks") + "/"  # the boundary: ~/.teyla/hooks-mine/ is not ours
     cur = home / ".cursor" / "hooks.json"
     if cur.is_file():
         try:
@@ -302,6 +303,40 @@ def _hooks(home: pathlib.Path) -> list[Step]:
                 else:
                     cur.write_text(json.dumps(d, indent=2) + "\n")
             steps.append(Step("edit", cur, "drop the entries that run ~/.teyla/hooks/* (the file goes if nothing else is left)", edit_cursor))
+    # ~/.codex/hooks.json (#61): the same shape as Claude Code's. Only Teyla's handlers go; a
+    # user's handler in a shared group keeps its group, and the file goes only when nothing
+    # but Teyla's own description is left.
+    cx = home / ".codex" / "hooks.json"
+    if cx.is_file():
+        try:
+            data = json.loads(cx.read_text())
+        except ValueError:
+            data = None
+        our_h = lambda h: isinstance(h, dict) and str(h.get("command", "")).startswith(hooks_dir)
+        groups_of = lambda d: [g for v in (d.get("hooks") or {}).values() for g in (v or []) if isinstance(g, dict)]
+        if isinstance(data, dict) and any(our_h(h) for g in groups_of(data) for h in (g.get("hooks") or [])):
+            def edit_codex():
+                d = json.loads(cx.read_text())
+                hooks = {}
+                for event, groups in (d.get("hooks") or {}).items():
+                    kept = []
+                    for g in groups or []:
+                        hs = g.get("hooks") if isinstance(g, dict) else None
+                        if not isinstance(hs, list):
+                            kept.append(g)
+                            continue
+                        rest = [h for h in hs if not our_h(h)]
+                        if rest:
+                            kept.append(g if len(rest) == len(hs) else {**g, "hooks": rest})
+                    if kept:
+                        hooks[event] = kept
+                d["hooks"] = hooks
+                from .harness import CODEX_DESCRIPTION
+                if not hooks and all(k == "hooks" or (k == "description" and v == CODEX_DESCRIPTION) for k, v in d.items()):
+                    cx.unlink()
+                else:
+                    cx.write_text(json.dumps(d, indent=2) + "\n")
+            steps.append(Step("edit", cx, "drop the Codex hook handlers that run ~/.teyla/hooks/* (the file goes if nothing else is left)", edit_codex))
     grok = home / ".grok" / "hooks" / "teyla.json"
     if grok.is_file():
         try:

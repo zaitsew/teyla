@@ -373,3 +373,40 @@ def test_a_failed_cache_deletion_keeps_the_registry_row_so_a_rerun_retries(tmp_p
     lines, failed = uninstall.run(home=home)
     assert failed == 0 and not cache.exists()
     assert json.loads(reg.read_text())["plugins"] == {}
+
+
+def test_codex_hooks_lose_only_teylas_handlers(tmp_path):
+    # #61 wires ~/.codex/hooks.json; uninstall (#67) predates it. A user's handler that shares a
+    # group with Teyla's stays, with its matcher; a file with only Teyla's left goes.
+    from teyla import harness, uninstall
+    home = tmp_path
+    ours = str(home / ".teyla" / "hooks" / "capture-correction.sh")
+    cx = home / ".codex" / "hooks.json"
+    cx.parent.mkdir(parents=True)
+    cx.write_text(json.dumps({"description": harness.CODEX_DESCRIPTION, "hooks": {
+        "UserPromptSubmit": [{"matcher": "*", "hooks": [{"type": "command", "command": ours},
+                                                        {"type": "command", "command": "/usr/local/bin/mine"}]}],
+        "SessionStart": [{"hooks": [{"type": "command", "command": ours + " --codex"}]}]}}))
+    [step] = [s for s in uninstall._hooks(home) if s.target == str(cx)]
+    step.fn()
+    assert json.loads(cx.read_text())["hooks"] == {
+        "UserPromptSubmit": [{"matcher": "*", "hooks": [{"type": "command", "command": "/usr/local/bin/mine"}]}]}
+    cx.write_text(json.dumps({"description": harness.CODEX_DESCRIPTION, "hooks": {
+        "SessionStart": [{"hooks": [{"type": "command", "command": ours}]}]}}))
+    [step] = [s for s in uninstall._hooks(home) if s.target == str(cx)]
+    step.fn()
+    assert not cx.exists()
+
+
+def test_a_sibling_hooks_directory_is_not_teylas(tmp_path):
+    # review of the #61 merge, P1: startswith("~/.teyla/hooks") also matched ~/.teyla/hooks-mine/.
+    from teyla import harness, uninstall
+    ours = str(tmp_path / ".teyla" / "hooks" / "capture-correction.sh")
+    mine = str(tmp_path / ".teyla" / "hooks-mine" / "check.sh")
+    cx = tmp_path / ".codex" / "hooks.json"
+    cx.parent.mkdir(parents=True)
+    cx.write_text(json.dumps({"description": harness.CODEX_DESCRIPTION, "hooks": {"UserPromptSubmit": [
+        {"hooks": [{"type": "command", "command": ours}, {"type": "command", "command": mine}]}]}}))
+    [step] = [s for s in uninstall._hooks(tmp_path) if s.target == str(cx)]
+    step.fn()
+    assert json.loads(cx.read_text())["hooks"]["UserPromptSubmit"] == [{"hooks": [{"type": "command", "command": mine}]}]

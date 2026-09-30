@@ -4,24 +4,34 @@ Hermes that the Claude Code plugin gives Claude.
 What each harness reads, verified on this machine on 2026-09-14 against the harness's own
 on-disk docs (Cursor 3.19.7 `~/.cursor/skills-cursor/*/SKILL.md`; Grok CLI 1.0.0
 `~/.grok/docs/user-guide/`; Hermes 0.20.4 `~/.hermes/hermes-agent/website/docs`; Codex 0.153.4
-`codex --help` and `~/.codex/skills`):
+`codex --help` and `~/.codex/skills`). Codex hooks were re-checked on 2026-09-29 by running
+`codex exec` (0.153.4 from npm, 0.158.0-alpha.2.1 inside the ChatGPT app) against a scratch
+CODEX_HOME holding a hooks.json:
 
   harness  policy                               skills                         hooks
   cursor   no global rules file; per-repo       ~/.cursor/skills/<name>/       ~/.cursor/hooks.json
            AGENTS.md; a user skill carries        SKILL.md (name, description,   {version:1, hooks:{sessionStart,
            ~/.agents/POLICY.md                    disable-model-invocation)      beforeSubmitPrompt: [{command}]}}
-  codex    ~/.codex/AGENTS.md → POLICY.md       ~/.codex/skills/<name>/        none (only `notify`)
-           (policy.py)                            SKILL.md
+  codex    ~/.codex/AGENTS.md → POLICY.md       ~/.codex/skills/<name>/        ~/.codex/hooks.json
+           (policy.py)                            SKILL.md                       {description?, hooks:{SessionStart,
+                                                                                 UserPromptSubmit:[{hooks:[…]}]}}
   grok     ~/.grok/AGENTS.md → POLICY.md        ~/.grok/skills/<name>/         ~/.grok/hooks/*.json
            (policy.py); also reads               SKILL.md (also scans           {hooks:{SessionStart,
            AGENTS.md/CLAUDE.md per directory      ~/.claude and ~/.cursor)       UserPromptSubmit:[{hooks:[…]}]}}
   hermes   ~/.hermes/SOUL.md section            ~/.hermes/skills/<category>/   `hooks:` block in ~/.hermes/config.yaml
-           (policy.py); AGENTS.md per repo        <name>/SKILL.md                (on_session_start, pre_llm_call)
+           (policy.py); AGENTS.md per repo        <name>/SKILL.md                (on_session_start, pre_llm_call ×2)
 
 Hook scripts are one copy each in ~/.teyla/hooks/ — the plugin's own session-start.sh and
 capture-correction.sh, which already read every harness's stdin shape (`prompt`, `text`,
 `user_message`, Hermes's `extra.user_message`) and de-duplicate, since Grok also loads
-~/.cursor/hooks.json. Skills are rendered from the plugin's SKILL.md files with `/teyla:rule`
+~/.cursor/hooks.json. session-start.sh takes `--codex` (skip `codex exec` batch runs) and
+`--context-json` (Hermes: the orientation as `{"context": …}` on the first turn only).
+
+Codex parses hooks.json strictly — an unknown top-level key (anything but `description` and
+`hooks`) makes it skip the whole file with "failed to parse hooks config" — so Teyla's marker
+there is the command path under ~/.teyla/hooks/ plus the file's `description`, not a comment.
+Codex runs a new or changed hook only after the user trusts it once ("Hooks need review" at
+startup, or `/hooks`); until then it is skipped silently, `codex exec` included. Skills are rendered from the plugin's SKILL.md files with `/teyla:rule`
 and `/teyla:correct` replaced by the CLI (`teyla rule`, `teyla correct`), and carry a
 "generated from" line; edits go in the plugin source, and the next sync overwrites the copy.
 
@@ -33,6 +43,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import shutil
 import stat
 
@@ -108,7 +119,7 @@ def harnesses(home: pathlib.Path | None = None) -> dict[str, Harness]:
     return {
         "cursor": Harness("cursor", h / ".cursor", h / ".cursor" / "skills", h / ".cursor" / "hooks.json", "cursor",
                           app="/Applications/Cursor.app"),
-        "codex": Harness("codex", h / ".codex", h / ".codex" / "skills"),
+        "codex": Harness("codex", h / ".codex", h / ".codex" / "skills", h / ".codex" / "hooks.json", "codex"),
         "grok": Harness("grok", h / ".grok", h / ".grok" / "skills", h / ".grok" / "hooks" / "teyla.json", "grok"),
         "hermes": Harness("hermes", h / ".hermes", h / ".hermes" / "skills" / "teyla", h / ".hermes" / "config.yaml", "hermes"),
     }
@@ -198,9 +209,52 @@ def _cursor_hooks(existing: dict | None) -> dict:
     d.setdefault("version", 1)
     hooks = dict(d.get("hooks") or {})
     for event, script in (("sessionStart", "session-start.sh"), ("beforeSubmitPrompt", "capture-correction.sh")):
-        entries = [e for e in (hooks.get(event) or []) if not str(e.get("command", "")).startswith(str(HOOKS_DIR))]
+        entries = [e for e in (hooks.get(event) or []) if not str(e.get("command", "")).startswith(str(HOOKS_DIR) + "/")]
         entries.append({"command": str(HOOKS_DIR / script), "type": "command", "timeout": 5})
         hooks[event] = entries
+    d["hooks"] = hooks
+    return d
+
+
+CODEX_DESCRIPTION = ("Entries whose command is under ~/.teyla/hooks/ are written by `teyla harness sync`; "
+                     "delete those entries (or this file, if nothing else is in it) to undo.")
+
+
+def _is_teyla_handler(handler) -> bool:
+    return isinstance(handler, dict) and str(handler.get("command", "")).startswith(str(HOOKS_DIR) + "/")
+
+
+def _is_teyla_group(group) -> bool:
+    return isinstance(group, dict) and any(_is_teyla_handler(h) for h in (group.get("hooks") or []))
+
+
+def _without_teyla(groups) -> list:
+    """`groups` minus Teyla's handlers. A user's handler that shares a group with ours stays in
+    that group (matcher and other keys kept); a group is dropped only once it is left empty
+    (review of #61, P1)."""
+    out = []
+    for g in groups or []:
+        if not _is_teyla_group(g):
+            out.append(g)
+            continue
+        rest = [h for h in g["hooks"] if not _is_teyla_handler(h)]
+        if rest:
+            out.append({**g, "hooks": rest})
+    return out
+
+
+def _codex_hooks(existing: dict | None) -> dict:
+    """~/.codex/hooks.json with Teyla's SessionStart and UserPromptSubmit groups present, every other
+    group kept. Codex's shape is Claude Code's (`{hooks: {Event: [{matcher?, hooks: [{type, command,
+    timeout}]}]}}`); plain SessionStart stdout reaches the model as `hooks.additional_context`."""
+    d = dict(existing or {})
+    d.setdefault("description", CODEX_DESCRIPTION)
+    hooks = dict(d.get("hooks") or {})
+    for event, command in (("SessionStart", f"{HOOKS_DIR / 'session-start.sh'} --codex"),
+                           ("UserPromptSubmit", str(HOOKS_DIR / "capture-correction.sh"))):
+        groups = _without_teyla(hooks.get(event))
+        groups.append({"hooks": [{"type": "command", "command": command, "timeout": 5}]})
+        hooks[event] = groups
     d["hooks"] = hooks
     return d
 
@@ -226,6 +280,11 @@ def hermes_block() -> str:
         "  pre_llm_call:",
         f'    - command: "{HOOKS_DIR / "capture-correction.sh"}"',
         "      timeout: 5",
+        # on_session_start's output is ignored; a pre_llm_call hook's `{"context": …}` is added
+        # to the user message (hermes-agent 0.20.4 agent/shell_hooks.py). --context-json prints
+        # the orientation on the first turn only.
+        f'    - command: "{HOOKS_DIR / "session-start.sh"} --context-json"',
+        "      timeout: 5",
         HERMES_END,
     ]) + "\n"
 
@@ -248,6 +307,21 @@ def _sync_hooks(h: Harness, dry: bool) -> list[str]:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(json.dumps(want, indent=2) + "\n")
         return [f"cursor: {'would write' if dry else 'wrote'} sessionStart + beforeSubmitPrompt into {p}"]
+    if h.hooks_kind == "codex":
+        existing = None
+        if p.exists():
+            try:
+                existing = json.loads(p.read_text())
+            except ValueError:
+                return [f"codex: {p} is not valid JSON — not touched; add the two entries by hand (teyla harness status shows them)"]
+        want = _codex_hooks(existing)
+        if existing == want:
+            return []
+        if not dry:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps(want, indent=2) + "\n")
+        return [f"codex: {'would write' if dry else 'wrote'} SessionStart + UserPromptSubmit into {p} — "
+                "open Codex once and trust them (\"Hooks need review\" → Trust, or /hooks); until then Codex skips them"]
     if h.hooks_kind == "grok":
         want = json.dumps(_grok_hooks(), indent=2) + "\n"
         if p.exists() and p.read_text() == want:
@@ -284,16 +358,151 @@ def hooks_wired(h: Harness) -> bool | None:
     p = h.hooks_path
     if not p.exists():
         return False
-    if h.hooks_kind == "cursor":
+    if h.hooks_kind in ("cursor", "codex"):
+        merge = _cursor_hooks if h.hooks_kind == "cursor" else _codex_hooks
         try:
-            return json.loads(p.read_text()) == _cursor_hooks(json.loads(p.read_text()))
-        except ValueError:
+            d = json.loads(p.read_text())
+            return d == merge(d)
+        except (ValueError, AttributeError, TypeError):
             return False
     if h.hooks_kind == "grok":
         return p.read_text() == json.dumps(_grok_hooks(), indent=2) + "\n"
     if h.hooks_kind == "hermes":
         return hermes_block() in p.read_text()
     return None
+
+
+# --- trust: has the person approved the hooks in the harness itself? -------------------------
+#
+# Codex and Hermes both refuse to run a hook nobody approved, and neither says so in a batch
+# run. "wired" without "approved" is a hook that never fires, so status reports both.
+
+# Codex's trust-event label for each hook event (the `hook_event_key_label` in
+# codex-rs/hooks/src/engine/discovery.rs, visible in `hooks/list` keys).
+_CODEX_EVENT_LABELS = {"SessionStart": "session_start", "UserPromptSubmit": "user_prompt_submit"}
+
+
+def codex_hook_hash(event: str, handler: dict, matcher: str | None = None) -> str:
+    """The `currentHash` Codex compares with `[hooks.state."<key>"].trusted_hash` in config.toml:
+    sha256 of the compact, key-sorted JSON of {event_name, matcher?, hooks: [normalized handler]}
+    (codex-rs/hooks/src/engine/discovery.rs `hook_hash` → codex-rs/config/src/fingerprint.rs
+    `version_for_toml`). Reproduced against `codex app-server` `hooks/list` 0.153.4 on
+    2026-09-29, and a config.toml carrying it made `codex exec` run the hook without
+    --dangerously-bypass-hook-trust."""
+    import hashlib
+    h = {"type": handler.get("type", "command"), "command": handler["command"],
+         "timeout": handler.get("timeout", 600), "async": bool(handler.get("async", False))}
+    if handler.get("statusMessage"):
+        h["statusMessage"] = handler["statusMessage"]
+    ident = {"event_name": _CODEX_EVENT_LABELS.get(event, event), "hooks": [h]}
+    if matcher is not None:
+        ident["matcher"] = matcher
+    blob = json.dumps(ident, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return "sha256:" + hashlib.sha256(blob.encode()).hexdigest()
+
+
+def _codex_trust(h: Harness) -> tuple[int, int, list[str]]:
+    """(approved, total, states) for Teyla's own entries in ~/.codex/hooks.json."""
+    import tomllib
+    try:
+        d = json.loads(h.hooks_path.read_text())
+    except (OSError, ValueError):
+        return 0, 0, []
+    try:
+        state = (tomllib.loads((h.home / "config.toml").read_text()).get("hooks") or {}).get("state") or {}
+    except (OSError, ValueError):
+        state = {}
+    approved, total, states = 0, 0, []
+    for event in _CODEX_EVENT_LABELS:
+        for gi, group in enumerate((d.get("hooks") or {}).get(event) or []):
+            if not _is_teyla_group(group):
+                continue
+            for hi, handler in enumerate(group.get("hooks") or []):
+                if not _is_teyla_handler(handler):
+                    continue  # a user's handler in a shared group is not ours to count (review of #61)
+                total += 1
+                rec = state.get(f"{h.hooks_path}:{_CODEX_EVENT_LABELS[event]}:{gi}:{hi}") or {}
+                want = codex_hook_hash(event, handler, group.get("matcher"))
+                if rec.get("enabled") is False:
+                    states.append(f"{event} disabled")
+                elif rec.get("trusted_hash") == want:
+                    approved += 1
+                elif rec.get("trusted_hash"):
+                    states.append(f"{event} modified since trusted")
+                else:
+                    states.append(f"{event} untrusted")
+    return approved, total, states
+
+
+def _hermes_pairs() -> list[tuple[str, str]]:
+    """(event, command) for every hook in hermes_block(), as Hermes's allowlist records them."""
+    pairs, event = [], None
+    for line in hermes_block().splitlines():
+        s = line.strip()
+        if s.endswith(":") and not s.startswith(("-", "#")) and s != "hooks:":
+            event = s[:-1]
+        elif s.startswith("- command:"):
+            pairs.append((event, s.split(":", 1)[1].strip().strip('"')))
+    return pairs
+
+
+_HERMES_TRUTHY = {"1", "true", "yes", "on"}  # agent/shell_hooks.py `_TRUTHY`
+
+
+def _hermes_auto_accept(text: str) -> bool:
+    """Is `hooks_auto_accept` set, as a top-level key, to what Hermes reads as true? A commented
+    line or a nested key of the same name does not count (review of #61, P2). No YAML dependency:
+    only an unindented `key: value` line is looked at, and the last one wins, as in YAML loaders."""
+    val = None
+    for line in text.splitlines():
+        m = re.match(r"hooks_auto_accept\s*:\s*(.*)$", line)
+        if not m:
+            continue
+        v = re.sub(r"\s+#.*$", "", m.group(1)).strip()  # trailing comment
+        quoted = len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'"
+        if quoted:
+            v = v[1:-1]
+        v = v.strip().lower()
+        # Hermes: a YAML bool as is, a string if it is truthy; a bare 1 is an int, so not.
+        val = v in _HERMES_TRUTHY - {"1"} or (quoted and v == "1")
+    return bool(val)
+
+
+def _hermes_trust(h: Harness) -> tuple[int, int, list[str]]:
+    """Hermes asks once per (event, command) on a TTY and records the answer in
+    ~/.hermes/shell-hooks-allowlist.json (`{"approvals": [{event, command, …}]}`); a non-TTY
+    run (the desktop app, `hermes -z`) skips an unapproved hook (hermes-agent 0.20.4
+    agent/shell_hooks.py `_is_allowlisted`, `_prompt_and_record`)."""
+    try:
+        if _hermes_auto_accept((h.home / "config.yaml").read_text()):
+            n = len(_hermes_pairs())
+            return n, n, []
+    except OSError:
+        pass
+    try:
+        approvals = json.loads((h.home / "shell-hooks-allowlist.json").read_text()).get("approvals") or []
+    except (OSError, ValueError, AttributeError):
+        approvals = []
+    seen = {(a.get("event"), a.get("command")) for a in approvals if isinstance(a, dict)}
+    pairs = _hermes_pairs()
+    missing = [f"{e} not approved" for e, c in pairs if (e, c) not in seen]
+    return len(pairs) - len(missing), len(pairs), missing
+
+
+def hooks_trust(h: Harness) -> tuple[int, int, list[str]] | None:
+    """(approved, total, what is not) for harnesses that gate hooks on consent; None otherwise
+    (Cursor and Grok run a configured hook without asking)."""
+    if h.hooks_kind == "codex":
+        return _codex_trust(h)
+    if h.hooks_kind == "hermes":
+        return _hermes_trust(h)
+    return None
+
+
+TRUST_HOWTO = {
+    "codex": "open Codex (`codex` in a terminal) → \"Hooks need review\" → Trust all, or /hooks",
+    "hermes": "run `hermes` in a terminal once and approve each hook (`hermes hooks list` shows which)",
+}
 
 
 # --- status / sync ---------------------------------------------------------------------------
@@ -310,8 +519,10 @@ def status(home: pathlib.Path | None = None) -> list[dict]:
                      if _skill_path(h, s).exists() and _skill_path(h, s).read_text() == render_skill(src, name))
         scripts = all((HOOKS_DIR / s).exists() for s in HOOK_SCRIPTS)
         wired = hooks_wired(h)
+        trust = hooks_trust(h) if wired else None
         out.append(dict(harness=name, present=True, policy=pol.get(name), skills=skills, skills_total=len(skill_names()),
-                        hooks=(wired and scripts) if wired is not None else None, hooks_path=str(h.hooks_path) if h.hooks_path else None))
+                        hooks=(wired and scripts) if wired is not None else None, hooks_path=str(h.hooks_path) if h.hooks_path else None,
+                        trust=None if trust is None else {"approved": trust[0], "total": trust[1], "missing": trust[2]}))
     return out
 
 
@@ -323,7 +534,12 @@ def render_status(rows: list[dict]) -> str:
             continue
         pol = {True: "wired", False: "NOT WIRED", None: "-"}[r.get("policy")]
         hooks = {True: "wired", False: "NOT WIRED", None: "n/a"}[r.get("hooks")]
+        tr = r.get("trust")
+        if tr and tr["total"]:
+            hooks += f", approved {tr['approved']}/{tr['total']}" if tr["approved"] == tr["total"] else f", NOT APPROVED {tr['approved']}/{tr['total']}"
         lines.append(f"{r['harness']:8} {'yes':8} {pol:8} {r['skills']}/{r['skills_total']:<6} {hooks}" + (f"  ({r['hooks_path']})" if r.get("hooks_path") else ""))
+        if tr and tr["approved"] < tr["total"]:
+            lines.append(f"{'':8} {'':8} {'':8} {'':8} → {TRUST_HOWTO.get(r['harness'], 'approve them in the harness')}")
     return "\n".join(lines)
 
 

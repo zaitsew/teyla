@@ -216,9 +216,17 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
             missing.append("hooks not wired")
         if missing:
             out.append(_check("FIX", f"harness:{row['harness']}", ", ".join(missing), "teyla harness sync"))
+        elif (tr := row.get("trust")) and tr["approved"] < tr["total"]:
+            # Wired but never approved: the harness skips the hook silently (Codex's trust
+            # review, Hermes's first-use consent), so "wired" alone would be a false OK.
+            out.append(_check("WARN", f"harness:{row['harness']}",
+                              f"skills {row['skills']}/{row['skills_total']}, hooks wired but not approved "
+                              f"({tr['approved']}/{tr['total']}: {', '.join(tr['missing'])}) — they do not run",
+                              _harness.TRUST_HOWTO.get(row["harness"])))
         else:
             out.append(_check("OK", f"harness:{row['harness']}", f"skills {row['skills']}/{row['skills_total']}"
-                              + (", hooks wired" if row["hooks"] else ", no hook mechanism")))
+                              + (", hooks wired" if row["hooks"] else ", no hook mechanism")
+                              + (", approved" if row.get("trust") else "")))
 
     # --- routines ----------------------------------------------------------------
     if sys.platform == "darwin":

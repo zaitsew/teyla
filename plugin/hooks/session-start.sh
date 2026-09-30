@@ -29,8 +29,54 @@
 #
 # Every failure here is silently swallowed and exit 0 always wins: a broken
 # hook must never break someone's session start.
+#
+# One script for every harness; the argument says which caller it is, because the
+# harnesses differ in how the orientation lines reach the model:
+#
+#   (none)            Claude Code SessionStart, Cursor sessionStart, Grok SessionStart,
+#                     Hermes on_session_start. Plain stdout. Claude Code injects it into the
+#                     model's context; the other three ignore it (see docs/HARNESSES.md).
+#   --codex           Codex SessionStart (~/.codex/hooks.json). Codex also injects plain
+#                     stdout, as a developer message tagged `hooks.additional_context`
+#                     (verified with `codex exec` 0.153.4 and 0.158.0-alpha.2.1 on
+#                     2026-09-29). The JSON payload on stdin names `transcript_path`; a
+#                     rollout whose session_meta says `"originator":"codex_exec"` is a
+#                     `codex exec` batch run (a script wrote its prompt): it gets nothing,
+#                     neither the lines (no person reads them) nor the background check
+#                     (509 of 520 Codex sessions in September 2026 were batch).
+#   --context-json    Hermes pre_llm_call. Hermes ignores what on_session_start prints, but
+#                     injects `{"context": "..."}` from a pre_llm_call shell hook into the
+#                     user message (hermes-agent 0.20.4 agent/shell_hooks.py
+#                     `_parse_response`; website/docs/user-guide/features/hooks.md). It
+#                     fires every turn, so this mode prints only when the payload says
+#                     `"is_first_turn": true`, and prints only the orientation: the
+#                     background update/catch-up is on_session_start's job, and two
+#                     starters racing on one stale stamp would run two updates.
+#
+# Only --codex and --context-json read stdin: the other callers may leave it open, and a
+# `cat` waiting on it would outlive the 5-second hook timeout.
 
-{
+mode="${1:-}"
+payload=""
+if [ "$mode" = "--codex" ] || [ "$mode" = "--context-json" ]; then
+  payload=$(cat 2>/dev/null)
+fi
+
+if [ "$mode" = "--context-json" ]; then
+  case "$payload" in
+    *'"is_first_turn": true'*|*'"is_first_turn":true'*) ;;
+    *) exit 0 ;;
+  esac
+fi
+
+if [ "$mode" = "--codex" ]; then
+  transcript=$(printf '%s' "$payload" | sed -n 's/.*"transcript_path" *: *"\([^"]*\)".*/\1/p' 2>/dev/null)
+  if [ -n "$transcript" ] && [ -f "$transcript" ] && head -c 8192 "$transcript" 2>/dev/null | grep -q '"originator" *: *"codex_exec"'; then
+    exit 0
+  fi
+fi
+
+orientation() {
   if [ -d ".claude/rules" ]; then
     count=$(find ".claude/rules" -maxdepth 1 -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
     if [ -n "$count" ] && [ "$count" -gt 0 ] 2>/dev/null; then
@@ -62,6 +108,18 @@
       echo "teyla: $(head -n 1 "$HOME/.teyla/routines/$product.line")"
     fi
   fi
+}
+
+if [ "$mode" = "--context-json" ]; then
+  text=$(orientation 2>/dev/null)
+  if [ -n "$text" ]; then
+    printf '%s' "$text" | python3 -c 'import json, sys; print(json.dumps({"context": sys.stdin.read().strip()}))' 2>/dev/null
+  fi
+  exit 0
+fi
+
+{
+  orientation
   stamp="$HOME/.teyla/update-check.json"
   teyla_bin=""
   if command -v teyla >/dev/null 2>&1; then

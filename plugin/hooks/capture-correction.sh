@@ -27,6 +27,11 @@
 # different keys per harness — `teyla harness sync` wires this one script into Cursor,
 # Grok and Hermes too; `teyla.corrections._pick` reads every shape.
 #
+# Codex fires UserPromptSubmit for `codex exec` too, whose prompt a script or another
+# agent wrote (a review brief full of "don't"); `teyla.corrections.headless` reads the
+# rollout at `transcript_path` and skips it when its first record says
+# `"originator":"codex_exec"` (Codex 0.158.0-alpha.2.1, 2026-09-29).
+#
 # Silent by construction: UserPromptSubmit stdout is injected into the model's
 # context, so this hook never writes to stdout, match or no match. It also
 # never fails the session — every error path below still exits 0.

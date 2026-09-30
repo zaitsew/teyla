@@ -448,6 +448,17 @@ def headless(data: dict, env=None) -> bool:
         return True
     if env.get("HERMES_YOLO_MODE") == "1" and env.get("HERMES_ACCEPT_HOOKS") == "1" and not env.get("HERMES_INTERACTIVE"):
         return True
+    # Codex fires UserPromptSubmit for `codex exec` too: a script or another agent wrote that
+    # prompt. Its rollout (transcript_path) opens with `"originator":"codex_exec"` — the same
+    # test the monitor's Codex adapter uses to call a session batch (#61).
+    tp = data.get("transcript_path") if isinstance(data, dict) else None
+    if isinstance(tp, str) and tp:
+        try:
+            with open(tp, "rb") as fh:
+                if re.search(rb'"originator"\s*:\s*"codex_exec"', fh.read(8192)):
+                    return True
+        except OSError:
+            pass
     p = _pick(data) if isinstance(data, dict) else None
     return isinstance(p, str) and p.lstrip().startswith("<user_query>")
 
