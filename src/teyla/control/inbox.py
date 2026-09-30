@@ -208,6 +208,15 @@ def cmd_approve(args) -> int:
         print("  it, and that run is not this one. Re-run the routine, then approve that draft.")
         return 1
 
+    # Safe mode refuses before anything is created or recorded. Refused later, inside the
+    # step, the item was already marked approved, so the retry with --allow-network found
+    # "already approve" and the act never ran (review of #59, P2). run_act checks again.
+    why_safe = H.safe_refusal(routine.repo, routine.act.harness if routine.act.kind == "agent" else None)
+    if why_safe:
+        print(f"REFUSED: {why_safe}")
+        print(f"  {args.id} stays pending.")
+        return 1
+
     when = S.now()
     run_id = S.new_run_id(when)
     run_dir = S.run_dir_for(routine.repo, routine.name, run_id, when)
