@@ -15,10 +15,23 @@ teyla monitor --days 30              # the adoption report, with advice
 ```
 
 After that it keeps itself current: `teyla update` (run daily by the routine, and at session
-start by the plugin hook on machines where launchd is off limits) installs a newer release,
+start by the plugin hook on machines where launchd is off limits) installs a newer published
+release by its commit sha and checks the version it built (`update.pin` freezes it,
+`update.channel=none` stops the routine),
 merges template changes into your `POLICY.md` three-way so your edits survive, refreshes the
 plugin copy Claude Code actually loads, and rewrites the launchd wrappers if the binary moved.
 `teyla doctor` is the checklist; its one-line summary shows at the next session start.
+
+**On a work laptop** (a managed Mac, a TLS-inspecting proxy, the employer's code in every transcript), switch on safe mode first:
+
+```bash
+uv tool install "teyla[work] @ git+https://github.com/zaitsew/teyla"   # [work] = truststore: the OS keychain holds the proxy's root CA
+teyla policy init --work --owner "Your Name" && teyla policy sync     # approved providers only, same-provider reviews; sets safe.enabled=true
+teyla config set products.repos=<repo>,<repo>                          # the only repos whose ./check.sh usage Teyla may run
+teyla doctor                                                           # first line: safe: on (network off, no auto-update, no repo commands)
+```
+
+Safe mode (`teyla config set safe.enabled=true`, or `TEYLA_SAFE=1`): nothing reaches the network unless you pass `--allow-network` to the command you typed (`teyla update --allow-network`); the session hook and the daily routine never update Teyla; `teyla products` runs `check.sh` only in `products.repos`; `routines --issues` is refused; `teyla plugin install|refresh` print the `claude plugin ...` commands instead of editing Claude Code's plugin registry; no keychain query.
 
 No `uv`? `pipx install git+https://github.com/zaitsew/teyla`, or `git clone` and run `PYTHONPATH=src python3 -m teyla`. Python 3.11+, nothing else.
 
@@ -45,7 +58,7 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | `teyla policy init [--claude-md --ops-root-init]\|status\|sync\|sync-repo` | `~/.agents/POLICY.md` imported by `~/.claude/CLAUDE.md`, symlinked as `~/.codex/AGENTS.md` and `~/.grok/AGENTS.md`, appended to Hermes `SOUL.md`; `AGENTS.md ⇄ CLAUDE.md` in repos |
 | `teyla harvest <path>` | tool spines and corrections from every session that touched a path — the input to the harvest skill (skill = what was done the same way every time; everything else = candidate rules) |
 | `teyla scaffold <path> --name X --kind cli\|app\|service\|ios` | a repo born plug-and-play |
-| `teyla products` | real-usage counters from every repo's `./check.sh usage` — the "built, not used" detector |
+| `teyla products` | real-usage counters from every repo's `./check.sh usage` — the "built, not used" detector; `products.repos` in config limits which repos' code it runs |
 | `teyla routines [path...] \| --json` | is the automated half actually running, is the manual half actually confirmed working — from every repo's `teyla.toml` |
 | `teyla routine install\|status` | Teyla's own Monday 07:30 launchd weekly (monitor, routines, products) |
 | `teyla routines [--issues]` | every product's `teyla.toml`: routines that must run without you (loaded? last run? stale?) and manual checks you confirm (ok / broken / untested / re-test); `--issues` opens a GitHub issue per broken check |
@@ -129,7 +142,8 @@ it. `--json` gives the same shape as data.
 `teyla routine install` writes and loads Teyla's own weekly launchd job
 (`~/Library/LaunchAgents/com.zaitsew.teyla.weekly.plist`, Monday 07:30) that
 runs `teyla monitor`, `teyla routines` and `teyla products` and files the
-output under `~/ops/startup/os/ai-dev/runs/<date>/`. `teyla routine status`
+output under `<ops_root>/runs/<date>/` (or `<ops_root>/startup/os/ai-dev/runs/` where that
+tree exists). `teyla routine status`
 shows whether it is loaded and its last log lines.
 
 ## Productizing
