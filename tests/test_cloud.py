@@ -157,6 +157,30 @@ def test_symlinked_instructions_are_read_once_and_named_by_the_real_file(tmp_pat
     assert "CLAUDE.md:" not in item["detail"]
 
 
+def test_symlink_out_of_the_repo_does_not_count_and_blocks(tmp_path):
+    """review of #70, P1: CLAUDE.md -> a home-directory policy carries nothing in a cloud clone."""
+    outside = tmp_path / "elsewhere" / "policy.md"
+    outside.parent.mkdir()
+    outside.write_text(PREPARED_AGENTS)
+    r = _prepared(tmp_path, files={"AGENTS.md": "# app\n"})
+    (r / "CLAUDE.md").unlink()
+    (r / "CLAUDE.md").symlink_to(outside)
+    assert cloud.instruction_files(r) == [("AGENTS.md", "# app\n")]
+    rep = cloud.check_repo(r, owners=set(), net=False)
+    by = _by(rep)
+    assert by["instructions"]["level"] == "BLOCK" and "CLAUDE.md" in by["instructions"]["detail"]
+    assert by["shipping"]["level"] == "BLOCK"  # the outside rules were not counted toward readiness
+    assert not rep["ready"]
+
+
+def test_only_an_external_symlink_is_not_an_instruction_file(tmp_path):
+    outside = tmp_path / "policy.md"
+    outside.write_text("rules\n")
+    r = _repo(tmp_path)
+    (r / "AGENTS.md").symlink_to(outside)
+    assert _by(cloud.check_repo(r, owners=set(), net=False))["instructions"]["level"] == "BLOCK"
+
+
 @pytest.mark.parametrize("line,level", [("merge-approved: yes", "OK"), ("merge-approved: no", "BLOCK"), ("", "WARN")])
 def test_merge_approved_line_against_the_owner_list(tmp_path, _home, line, level):
     (_home / ".claude" / "CLAUDE.md").write_text(OWNER_MD)
@@ -215,6 +239,21 @@ def test_gate_guarded_but_silent_warns(tmp_path):
     silent = "#!/bin/sh\nif command -v xcodebuild >/dev/null; then\n  xcodebuild build\nfi\n"
     item = _by(cloud.check_repo(_prepared(tmp_path, files={"check.sh": silent}), owners=set(), net=False))["gate"]
     assert item["level"] == "WARN" and "no skip is printed" in item["detail"]
+
+
+def test_step_after_a_completed_guarded_block_is_not_guarded():
+    """review of #70, P2: the guard search must not cross `fi`."""
+    gate = ("if command -v xcodebuild >/dev/null; then\n  xcodebuild build\nelse\n  echo skipped here: ios\nfi\n"
+            "xcodebuild test\n")
+    assert [(s["line"], s["guarded"]) for s in cloud.mac_steps(gate) if s["line"] > 1] == [(2, True), (6, False)]
+
+
+def test_else_of_a_positive_guard_is_unguarded_but_else_of_a_negated_one_is_guarded():
+    pos = "if command -v xcodebuild; then\n  echo have\nelse\n  xcodebuild test\nfi\n"
+    neg = "if ! command -v xcodebuild; then\n  echo skipped here: ios\nelse\n  xcodebuild test\nfi\n"
+    step = lambda text: [s for s in cloud.mac_steps(text) if s["line"] == 4][0]["guarded"]  # noqa: E731
+    assert step(pos) is False
+    assert step(neg) is True
 
 
 def test_secret_names_need_a_manifest_and_values_never_show(tmp_path):
@@ -299,6 +338,15 @@ def test_sessions_found_from_trailers_across_remote_refs(tmp_path):
     assert by["session_OPEN22"]["pr"] == "unknown"  # gh not asked
     assert by["session_LANDED1"]["landed"] and by["session_LANDED1"]["pr"] == "landed"
     assert by["session_OPEN22"]["age_hours"] == pytest.approx(9 * 24 + 2, abs=0.1)
+
+
+def test_local_main_does_not_make_a_session_landed(tmp_path):
+    """review of #70, P2: merged into local main but not pushed is not landed on origin/main."""
+    r = _session_repo(tmp_path)
+    _git(r, "merge", "-q", "--no-ff", "-m", "local merge", "origin/claude/brave-x")
+    by = {s["session"]: s for s in cloud.scan_sessions([r], gh=False, now=NOW)}
+    assert not by["session_OPEN22"]["landed"] and by["session_OPEN22"]["pr"] == "unknown"
+    assert by["session_LANDED1"]["landed"]
 
 
 def test_days_window_excludes_old_sessions(tmp_path):
