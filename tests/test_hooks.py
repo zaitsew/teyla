@@ -64,7 +64,8 @@ def test_human_correction_is_recorded_silently(tmp_path):
     assert len(rows) == 1
     assert rows[0]["cwd"] == str(tmp_path)
     assert rows[0]["text"].startswith("no, don't")
-    assert set(rows[0]) == {"ts", "cwd", "text"}
+    # cwd_key: a misc record is looked up by a hash of its unscrubbed cwd (review of #63, P2).
+    assert set(rows[0]) == {"ts", "cwd", "text", "cwd_key"}
 
 
 def test_plain_prompt_without_correction_words_is_not_recorded(tmp_path):

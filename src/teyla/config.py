@@ -68,6 +68,20 @@ def private_dir(d: pathlib.Path) -> pathlib.Path:
     return d
 
 
+def write_all(fd: int, data: bytes) -> None:
+    """Write every byte of `data` to `fd`, then fsync. `os.write` may write fewer bytes than
+    asked — a full disk or quota — and says so only in its return value: an unchecked call
+    reported a half-written record as saved, and the worktree rescue then deleted the
+    original (review of #63, P1)."""
+    view = memoryview(data)
+    while view:
+        n = os.write(fd, view)
+        if n <= 0:
+            raise OSError(f"short write: {len(view)} bytes not written")
+        view = view[n:]
+    os.fsync(fd)
+
+
 def write_private(path: pathlib.Path, text: str) -> None:
     """Write `text` to `path` as 0600, its directory 0700. An existing file is tightened too:
     O_CREAT's mode only applies when the file is new."""
@@ -78,7 +92,7 @@ def write_private(path: pathlib.Path, text: str) -> None:
     try:
         os.fchmod(fd, 0o600)
         os.ftruncate(fd, 0)
-        os.write(fd, text.encode("utf-8"))
+        write_all(fd, text.encode("utf-8"))
     finally:
         os.close(fd)
 
