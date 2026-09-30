@@ -7,7 +7,7 @@ import json
 import os
 import re
 
-from . import CACHE_1H_KEY, TOKEN_KEYS, AgentCall, Session, Turn, human_text, is_correction, is_retry, stale, text_of, turn_end_candidate
+from . import CACHE_1H_KEY, ERROR_LOOP, HANDOFF_CONTEXT, LONG_CONTEXT, TOKEN_KEYS, AgentCall, Session, Turn, human_text, is_correction, is_retry, stale, text_of, turn_end_candidate
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "claude-code"
@@ -66,6 +66,22 @@ def _add_usage(target: dict, per_message: dict) -> None:
                 target[model][k] += v
 
 
+def _add_reread(target, per_message: dict) -> None:
+    for model, row in per_message.values():
+        ctx = row["input_tokens"] + row["cache_read_input_tokens"] + row["cache_creation_input_tokens"]
+        if ctx > LONG_CONTEXT:
+            target[model] += ctx - HANDOFF_CONTEXT
+
+
+# ~/repos/<name>/… or ~/.worktrees/<name>/<branch>/… inside a tool call's path or command.
+_REPO_PATH_RE = re.compile(r"/(?:repos|\.worktrees)/([A-Za-z0-9._-]+)")
+
+
+def _touched(inp: dict) -> list[str]:
+    text = " ".join(str(inp.get(k) or "") for k in ("file_path", "path", "command", "notebook_path"))
+    return [r for r in _REPO_PATH_RE.findall(text) if r not in (".", "..")]
+
+
 def _subagent_usage(f: str) -> dict:
     """model -> token row for every message in <session>/subagents/*.jsonl, one row per message id."""
     per_message: dict = {}
@@ -99,6 +115,8 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
     # 2.85x over 2026-09 (102M vs 36M tokens). Usage is keyed by message id, the last record wins
     # (in subagent files the records of one message carry growing counts).
     per_message: dict = {}
+    failed_in_a_row = 0  # tool results that came back is_error, since the last one that did not
+    loop_keys: set = set()
     with open(f, errors="replace") as fh:
         for line in fh:
             try:
@@ -144,6 +162,8 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                 if key not in per_message:
                     s.assistant_turns += 1
                     s.models[model] += 1
+                    if failed_in_a_row >= ERROR_LOOP:
+                        loop_keys.add(key)
                 per_message[key] = (model, _usage_row(m.get("usage") or {}))
                 said = text_of(m.get("content"))
                 if said.strip():
@@ -154,6 +174,7 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                         name = b.get("name")
                         s.tools[name] += 1
                         inp = b.get("input", {}) or {}
+                        s.touched_repos.update(_touched(inp))
                         if _touches_governance(name, inp):
                             s.gov_edits += 1
                             # The write's own date, not the session's start: A10 compares it with
@@ -176,6 +197,8 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                 m = o.get("message", {})
                 c = m.get("content")
                 if isinstance(c, list) and any(isinstance(b, dict) and b.get("type") == "tool_result" for b in c):
+                    results = [b for b in c if isinstance(b, dict) and b.get("type") == "tool_result"]
+                    failed_in_a_row = failed_in_a_row + 1 if all(b.get("is_error") for b in results) else 0
                     for b in c:
                         if not (isinstance(b, dict) and b.get("type") == "tool_result"):
                             continue
@@ -206,9 +229,12 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
     if not s.first:
         return None
     _add_usage(s.usage, per_message)
+    _add_usage(s.loop_usage, {k: v for k, v in per_message.items() if k in loop_keys})
+    _add_reread(s.reread_excess, per_message)
     subs = _subagent_usage(f)
     _add_usage(s.usage, subs)
     _add_usage(s.sub_usage, subs)
+    _add_reread(s.reread_excess, subs)
     return s
 
 

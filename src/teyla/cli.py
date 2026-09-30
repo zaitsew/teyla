@@ -399,6 +399,8 @@ def main(argv=None):
     from . import digest as digest_mod, routines as routines_mod
     digest_mod.register(sp); routines_mod.register_check(sp)
     cloud.register(sp)
+    from . import spend as spend_mod
+    spend_mod.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
     q = sp.add_parser("routines"); q.set_defaults(fn=cmd_routines)
     q.add_argument("paths", nargs="*"); q.add_argument("--json", action="store_true")

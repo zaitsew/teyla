@@ -84,6 +84,14 @@ TOKEN_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_t
 # of the 5-minute write price. Kept out of TOKEN_KEYS so token totals do not count it twice.
 CACHE_1H_KEY = "cache_creation_1h_input_tokens"
 
+# W2 (teyla.spend): a message whose context (uncached + cache read + cache write) is past
+# LONG_CONTEXT re-reads everything above HANDOFF_CONTEXT, which is about where a fresh session
+# started from a handoff note begins (system prompt, tools, instructions, the note).
+LONG_CONTEXT = 250_000
+HANDOFF_CONTEXT = 50_000
+# W6: this many failed tool calls in a row make the next messages a failed loop.
+ERROR_LOOP = 3
+
 
 @dataclasses.dataclass
 class Turn:
@@ -117,6 +125,14 @@ class Session:
     # Code keeps each subagent in <session>/subagents/*.jsonl; their spend belongs to the session
     # that spawned them.
     sub_usage: dict = dataclasses.field(default_factory=lambda: defaultdict(Counter))
+    # Inputs of the spend review (teyla.spend), Claude Code only for now:
+    # model -> context tokens re-read past the handoff point, summed over messages whose context
+    # was over LONG_CONTEXT (W2); model -> usage of messages sent after 3+ failed tool calls in a
+    # row (W6); repos named in tool-call paths (~/repos/<name>, ~/.worktrees/<name>/…), which is
+    # where a session started in a non-repo directory did its work (W1).
+    reread_excess: Counter = dataclasses.field(default_factory=Counter)
+    loop_usage: dict = dataclasses.field(default_factory=lambda: defaultdict(Counter))
+    touched_repos: Counter = dataclasses.field(default_factory=Counter)
     tools: Counter = dataclasses.field(default_factory=Counter)
     skills: Counter = dataclasses.field(default_factory=Counter)
     agents: list = dataclasses.field(default_factory=list)
@@ -183,6 +199,8 @@ class Session:
         d = dataclasses.asdict(self)
         d["usage"] = {m: dict(c) for m, c in self.usage.items()}
         d["sub_usage"] = {m: dict(c) for m, c in self.sub_usage.items()}
+        d["loop_usage"] = {m: dict(c) for m, c in self.loop_usage.items()}
+        d["reread_excess"] = dict(self.reread_excess); d["touched_repos"] = dict(self.touched_repos)
         d["models"] = dict(self.models); d["tools"] = dict(self.tools); d["skills"] = dict(self.skills); d["repos"] = dict(self.repos)
         d["skills_read"] = dict(self.skills_read)
         d["hours"] = self.hours; d["tokens"] = dict(self.tokens); d["n_user"] = self.n_user; d["n_corr"] = self.n_corr

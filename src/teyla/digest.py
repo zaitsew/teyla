@@ -19,9 +19,9 @@ and nothing at all when nothing is new, then records the current keys as seen. T
 digest is where known items come back.
 
 **Digest.** The weekly routine runs `teyla digest --write`: `~/.teyla/digest.md`, at most
-five lines — a headline, the top three actions across monitor advice, doctor FIX rows,
-routines not running and checks BROKEN/UNTESTED for more than 14 days, each with its one
-command, and a streak note when the same advice has fired three weeks running (advice ids
+six lines — a headline, the week's spend and waste (`teyla spend`), the top three actions
+across monitor advice, spend waste findings, doctor FIX rows, routines not running and checks
+BROKEN/UNTESTED for more than 14 days, each with its one command or fix, and a streak note when the same advice has fired three weeks running (advice ids
 per ISO week are kept in `~/.teyla/digest-history.json`). The session-start hook prints the
 headline once, at the first session after it was written; `teyla digest` prints the file. On
 macOS a notification is posted when it is written (`teyla config set digest.notify=false`
@@ -121,6 +121,22 @@ def routine_items(lines_dir: pathlib.Path | None = None) -> list[tuple[str, str]
     return out
 
 
+def spend_items(today: _dt.date | None = None) -> list[tuple[str, str]]:
+    """Today's `teyla spend --alert` lines (the daily routine writes them before doctor runs)."""
+    from . import spend
+    today = (today or _dt.date.today()).isoformat()
+    try:
+        lines = spend.alerts_path().read_text().splitlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        day, _, text = line.partition("\t")
+        if day == today and text:
+            out.append((f"spend|{day}|{_short(text, 40)}", f"spend: {text}"))
+    return out
+
+
 def _doctor_checks_on_disk() -> list[dict]:
     from . import doctor
     try:
@@ -135,6 +151,7 @@ def write_banner_items(checks: list[dict] | None = None, today: _dt.date | None 
     items = doctor_items(_doctor_checks_on_disk() if checks is None else checks)
     items += routine_items()
     items += reminder_items(today=today)
+    items += spend_items(today)
     p = banner_items_path()
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -274,11 +291,14 @@ STREAK_WEEKS = 3
 
 
 def build(findings: list[dict], doctor_checks: list[dict], reports: list[dict], history: dict,
-          today: _dt.date | None = None) -> tuple[list[str], dict]:
-    """(digest lines — at most five —, the updated history)."""
+          today: _dt.date | None = None, spend_rep: dict | None = None) -> tuple[list[str], dict]:
+    """(digest lines — at most six —, the updated history). `spend_rep` is `teyla spend`'s week:
+    its summary is a line of its own and its waste findings compete for the top three."""
+    from . import spend
     today = today or _dt.date.today()
     history = update_history(history, [f["id"] for f in findings], today)
-    top = candidates(findings, doctor_checks, reports)[:3]
+    extra = spend.digest_candidates(spend_rep) if spend_rep else []
+    top = sorted(candidates(findings, doctor_checks, reports) + extra, key=lambda c: c["rank"])[:3]
     if not top:
         lines = [f"teyla weekly {today.isoformat()}: nothing needs you this week."]
     else:
@@ -286,12 +306,16 @@ def build(findings: list[dict], doctor_checks: list[dict], reports: list[dict], 
         if len(top) > 1:
             head += f" (+{len(top) - 1} more: teyla digest)"
         lines = [_short(head, HEADLINE_MAX)]
+        if spend_rep:
+            lines.append(spend.summary_line(spend_rep))
         lines += [f"{i}. {c['text']} → " + (f"`{c['step']}`" if c.get("cmd") else c["step"]) for i, c in enumerate(top, 1)]
     long_runs = sorted(((n, aid) for aid, n in streaks(history, today).items() if n >= STREAK_WEEKS), reverse=True)
     if long_runs:
         names = ", ".join(f"{aid} ({n} weeks)" for n, aid in long_runs[:3])
         lines.append(f"streak: {names} running — the advice is not landing; make it a rule, or change what it measures.")
-    return lines[:5], history
+    if not top and spend_rep:
+        lines.append(spend.summary_line(spend_rep))
+    return lines[:6], history
 
 
 def notify(headline: str, cfg: dict | None = None) -> bool:
@@ -337,7 +361,8 @@ def weekly_findings(days: int = 7) -> list[dict]:
 
 
 def write(findings: list[dict] | None = None, doctor_checks: list[dict] | None = None,
-          reports: list[dict] | None = None, today: _dt.date | None = None, notify_now: bool = True) -> list[str]:
+          reports: list[dict] | None = None, today: _dt.date | None = None, notify_now: bool = True,
+          spend_rep: dict | None = None) -> list[str]:
     from . import routines
     findings = weekly_findings() if findings is None else findings
     doctor_checks = _doctor_checks_on_disk() if doctor_checks is None else doctor_checks
@@ -346,7 +371,7 @@ def write(findings: list[dict] | None = None, doctor_checks: list[dict] | None =
         history = json.loads(history_path().read_text())
     except (OSError, ValueError):
         history = {}
-    lines, history = build(findings, doctor_checks, reports, history, today)
+    lines, history = build(findings, doctor_checks, reports, history, today, spend_rep)
     p = digest_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("\n".join(lines) + "\n")
@@ -358,7 +383,12 @@ def write(findings: list[dict] | None = None, doctor_checks: list[dict] | None =
 
 def cmd_digest(args) -> int:
     if args.write:
-        for line in write(notify_now=not args.no_notify):
+        try:
+            from . import spend
+            spend_rep = spend.report(7)
+        except Exception:  # noqa: BLE001 — the digest must still be written when spend cannot read
+            spend_rep = None
+        for line in write(notify_now=not args.no_notify, spend_rep=spend_rep):
             print(line)
         print(f"wrote {digest_path()}")
         return 0
