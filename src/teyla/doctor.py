@@ -6,8 +6,9 @@ command exists that repairs it and doctor names it. Absent harnesses and absent 
 INFO, never failures: the work laptop has Claude Code only and no `gh`, and that is a
 different tool scope, not a broken install.
 
-Writes ~/.teyla/doctor.json (full) and ~/.teyla/doctor.summary (one line) so the
-session-start hook can show "teyla: 2 fix(es) pending" without running Python.
+Writes ~/.teyla/doctor.json (full), ~/.teyla/doctor.summary (one line, kept for hooks
+installed before the banner existed) and ~/.teyla/banner.items, from which the session-start
+hook shows only what is new since the last session (teyla.digest) without running Python.
 Exit status: 1 if any FIX, else 0.
 """
 from __future__ import annotations
@@ -332,6 +333,9 @@ def write_state(cs: list[dict]) -> None:
         config.write_private(DOCTOR_SUMMARY, summary_line(cs) + "\n")
     except OSError:
         pass
+    # The session-start banner shows what is new since the last session, from this file.
+    from . import digest
+    digest.write_banner_items(cs)
 
 
 def render(cs: list[dict], quiet: bool = False) -> str:

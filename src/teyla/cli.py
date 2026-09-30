@@ -33,6 +33,8 @@
   teyla productize [path...] [--json] [--owner-steps]            what stands between each product and its second user
   teyla products [path...]                                       real-usage counters from every repo's ./check.sh usage
   teyla routines [path...] [--json]                               routines + manual checks from every repo's teyla.toml
+  teyla check <product> <check> ok|broken [--note TEXT]            confirm a manual check: status + today's date in its teyla.toml
+  teyla digest [--write] [--no-notify]                            the weekly digest: the top three actions, each with its command
   teyla routine install|status|catch-up [--if-stale] [--dry]     Teyla's own daily (update+doctor) and weekly launchd routines; catch-up runs what launchd skipped
   teyla grok-cost [--last|--session ID] [--cwd PATH] [--days N] [--by project|session] [--json]   Grok CLI cost at list price
   teyla connectors [--days N] [--json]                             per-connector round-trips, read/write, empty-or-error rate; advice C1–C4
@@ -256,6 +258,8 @@ def cmd_routines(args):
             return 1
     reports = evaluate_all(args.paths or None)
     write_lines(reports)  # the one-liners the session-start hook shows; only the CLI writes them
+    from . import digest
+    digest.write_banner_items()  # routines not running and broken checks reach the banner
     if getattr(args, "issues", False):
         from .routines import open_issues
         for line in open_issues(reports):
@@ -345,6 +349,8 @@ def main(argv=None):
     remind.register(sp); rules.register(sp); harness.register(sp); storage.register(sp)
     from . import uninstall as uninstall_mod
     uninstall_mod.register(sp); grokcost.register(sp)
+    from . import digest as digest_mod, routines as routines_mod
+    digest_mod.register(sp); routines_mod.register_check(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
     q = sp.add_parser("routines"); q.set_defaults(fn=cmd_routines)
     q.add_argument("paths", nargs="*"); q.add_argument("--json", action="store_true")

@@ -20,6 +20,8 @@
     idle_days       = 3            a clean, pushed worktree untouched this long is finished
     agent_idle_days = 1            the same for a subagent's <repo>/.claude/worktrees/agent-*
     build_idle_days = 14           git-ignored build dirs of a repo idle this long are removed
+    [digest]
+    notify = true                  the weekly digest posts a macOS notification when written
     [corrections]
     store = "home"                 "home": ~/.teyla/corrections/<repo-key>.jsonl (default);
                                    "repo": <repo>/.teyla/corrections.jsonl, the pre-0.12 place
@@ -61,6 +63,8 @@ DEFAULTS = {
     "corrections": {"store": "home"},
     "safe": {"enabled": False},
     "products": {"repos": []},
+    # `teyla digest --write` (the weekly routine) posts a macOS notification with its headline.
+    "digest": {"notify": True},
 }
 
 
@@ -216,7 +220,7 @@ def write(code_root: str = "~/repos", ops_root: str = "~/ops", repo: str = "zait
         # [storage] and [corrections] are kept: they are exactly the local adaptation a rewrite must not erase
         # (a work laptop that loses `safe.enabled` here would self-update the next morning).
         old = _read(p)
-        for table in ("env", "safe", "products", "storage", "corrections"):
+        for table in ("env", "safe", "products", "storage", "corrections", "digest"):
             if isinstance(old.get(table), dict) and old[table]:
                 data[table] = old[table]
         # The same for a pin, an interpreter pin and channel = "none": a frozen update that

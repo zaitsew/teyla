@@ -354,9 +354,9 @@ launchd agents, one hook and one command:
 
 | when | what | writes |
 |---|---|---|
-| daily 07:00 (`com.zaitsew.teyla.daily`) | `teyla update --quiet` then `teyla doctor --quiet` | `~/Library/Logs/teyla-daily.log`, `~/.teyla/doctor.summary` |
-| Monday 07:30 (`com.zaitsew.teyla.weekly`) | `monitor --days 7`, `routines`, `products`, `models` | `<ops>/startup/os/ai-dev/runs/<date>/` |
-| every session start (plugin hook) | prints `doctor.summary` if non-empty; if the last update check is older than a day, starts `teyla update --check` in the background | `~/.teyla/update-check.json` |
+| daily 07:00 (`com.zaitsew.teyla.daily`) | `teyla update --quiet` then `teyla doctor --quiet` | `~/Library/Logs/teyla-daily.log`, `~/.teyla/doctor.summary`, `~/.teyla/banner.items` |
+| Monday 07:30 (`com.zaitsew.teyla.weekly`) | `monitor --days 7`, `routines`, `products`, `models`, then `digest --write` | `<ops>/startup/os/ai-dev/runs/<date>/`, `~/.teyla/digest.md` |
+| every session start (plugin hook) | prints what is new in `banner.items` since the last start (nothing when nothing is), and the digest headline once per week; if the last update check is older than a day, starts `teyla update --check` in the background | `~/.teyla/update-check.json` |
 | on demand | `teyla doctor` — the checklist with a fix per line; exit 1 when a FIX is pending | `~/.teyla/doctor.json` |
 
 A one-off fact with a deadline — a key that expires, a trial that ends — gets its own line:

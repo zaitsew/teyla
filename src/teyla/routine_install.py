@@ -146,6 +146,9 @@ mkdir -p "$OUT_DIR"
 "$TEYLA" routines > "$OUT_DIR/routines.md" 2>&1
 "$TEYLA" products > "$OUT_DIR/products.md" 2>&1
 "$TEYLA" models > "$OUT_DIR/models.md" 2>&1
+# The reports above had no reader (4 written in 2026-09, 0 opened): the digest is the five lines
+# that are read — the session-start hook shows its headline once, and a notification says it exists.
+"$TEYLA" digest --write
 """
 
 
@@ -192,6 +195,9 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         return True
     if path == DAILY_WRAPPER_PATH and "storage clean" not in text:
         # Written before `teyla storage`: the daily would never clean.
+        return True
+    if path == WRAPPER_PATH and "digest --write" not in text:
+        # Written before `teyla digest`: the weekly would never write the digest.
         return True
     if path == DAILY_WRAPPER_PATH and (UPDATE_LINE in text) != (_update_line() == UPDATE_LINE):
         # Safe mode was switched on (or off) after the wrapper was written.
