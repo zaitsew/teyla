@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.13.1 — 2026-09-30
+
+- **Hermes hooks are recognised after Hermes rewrites its config.** Installing 0.13.0 on the
+  machine this was written on: Hermes 0.21.5 had rewritten `~/.hermes/config.yaml` on update,
+  dropping Teyla's marker comments and the quotes but keeping the entries, so `harness sync`
+  asked for all of them by hand and doctor said "hooks not wired". Teyla now reads the
+  (event, command) pairs under `hooks:`, as it does for Codex, and names only what is missing (#75).
+
 ## 0.13.0 — 2026-09-30 — safe at work, true in every harness, useful in the cloud
 
 Measured on the machine this was written on, before the sprint:
