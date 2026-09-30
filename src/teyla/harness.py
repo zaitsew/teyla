@@ -289,6 +289,40 @@ def hermes_block() -> str:
     ]) + "\n"
 
 
+def _hermes_present_pairs(text: str) -> set[tuple[str, str]]:
+    """(event, command) of every hook under the top-level `hooks:` block, whatever the quoting.
+    Hermes 0.21.5 rewrites config.yaml on update: comments (Teyla's markers) and quotes go, the
+    entries stay — so Teyla recognises its hooks by what they run, as it does for Codex. An
+    event's entries are the list items at the indent of its first item (indented or YAML's
+    indentless style); a `- command:` nested deeper is inside an entry, not a hook."""
+    pairs, event, item_indent, inside = set(), None, None, False
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line.startswith(" "):
+            inside = line.split("#", 1)[0].rstrip() == "hooks:"
+            event = None
+            continue
+        if not inside:
+            continue
+        s, indent = line.split(" #", 1)[0].strip(), len(line) - len(line.lstrip())
+        if indent == 2 and not s.startswith("-"):
+            event, item_indent = (s[:-1] if s.endswith(":") else None), None
+            continue
+        if not event or not s.startswith("- "):
+            continue
+        if item_indent is None:
+            item_indent = indent
+        if indent == item_indent and s.startswith("- command:"):
+            pairs.add((event, s.split(":", 1)[1].strip().strip("\"'")))
+    return pairs
+
+
+def _hermes_missing(text: str) -> list[tuple[str, str]]:
+    have = _hermes_present_pairs(text)
+    return [pair for pair in _hermes_pairs() if pair not in have]
+
+
 def _sync_hooks(h: Harness, dry: bool) -> list[str]:
     if not h.hooks_kind:
         return []
@@ -340,8 +374,17 @@ def _sync_hooks(h: Harness, dry: bool) -> list[str]:
                 return []
             new = text[:start] + hermes_block() + text[end:]
         elif any(line.startswith("hooks:") for line in text.splitlines()):
-            return [f"hermes: {p} already has a top-level `hooks:` block — add these entries to it by hand:\n"
-                    + "\n".join("    " + l for l in hermes_block().splitlines()[1:-1])]
+            missing = _hermes_missing(text)
+            if not missing:
+                return []  # Teyla's entries are there without their markers (Hermes rewrote the file)
+            lines, last = [], None
+            for event, cmd in missing:
+                if event != last:
+                    lines.append(f"  {event}:")
+                    last = event
+                lines += [f'    - command: "{cmd}"', "      timeout: 5"]
+            return [f"hermes: {p} already has a top-level `hooks:` block — add these entries under it by hand:\n"
+                    + "\n".join("    " + l for l in lines)]
         else:
             new = text.rstrip("\n") + "\n\n" + hermes_block()
         if not dry:
@@ -368,7 +411,8 @@ def hooks_wired(h: Harness) -> bool | None:
     if h.hooks_kind == "grok":
         return p.read_text() == json.dumps(_grok_hooks(), indent=2) + "\n"
     if h.hooks_kind == "hermes":
-        return hermes_block() in p.read_text()
+        text = p.read_text()
+        return hermes_block() in text or not _hermes_missing(text)
     return None
 
 
