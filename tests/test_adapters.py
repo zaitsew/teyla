@@ -54,6 +54,74 @@ def test_claude_code_basic(tmp_path):
     assert s.tools["Bash"] == 1
 
 
+def _reply(ts, mid, out, model="claude-fable-5-1", blocks=None, cache_1h=0):
+    usage = {"input_tokens": 10, "output_tokens": out, "cache_read_input_tokens": 0,
+             "cache_creation_input_tokens": cache_1h,
+             "cache_creation": {"ephemeral_1h_input_tokens": cache_1h, "ephemeral_5m_input_tokens": 0}}
+    return {"type": "assistant", "timestamp": ts,
+            "message": {"id": mid, "role": "assistant", "model": model, "usage": usage,
+                        "content": blocks or [{"type": "text", "text": "ok"}]}}
+
+
+def test_claude_code_counts_a_split_message_once(tmp_path):
+    """One reply with a text block and two tool calls is three records carrying the same id and
+    usage; summing per record counted output 2.85x over 2026-09."""
+    root = tmp_path / "projects"
+    f = root / "-Users-me-repos-demo" / "sess1.jsonl"
+    _write(str(f), [
+        {"type": "user", "timestamp": "2026-01-01T00:00:00Z", "message": {"role": "user", "content": "go"}},
+        _reply("2026-01-01T00:00:05Z", "msg_1", 300),
+        _reply("2026-01-01T00:00:05Z", "msg_1", 300, blocks=[{"type": "tool_use", "name": "Bash", "input": {}}]),
+        _reply("2026-01-01T00:00:05Z", "msg_1", 300, blocks=[{"type": "tool_use", "name": "Read", "input": {}}]),
+        _reply("2026-01-01T00:00:09Z", "msg_2", 40),
+    ])
+    s = claude_code.load(root=str(root))[0]
+    assert s.tokens["output_tokens"] == 340
+    assert s.tokens["input_tokens"] == 20
+    assert s.assistant_turns == 2 and s.models["claude-fable-5-1"] == 2
+    assert s.tools["Bash"] == 1 and s.tools["Read"] == 1  # every block's tool call still counts
+
+
+def test_claude_code_folds_subagent_transcripts_into_the_session(tmp_path):
+    root = tmp_path / "projects"
+    f = root / "-Users-me-repos-demo" / "sess1.jsonl"
+    _write(str(f), [
+        {"type": "user", "timestamp": "2026-01-01T00:00:00Z", "message": {"role": "user", "content": "go"}},
+        _reply("2026-01-01T00:00:05Z", "msg_1", 100),
+    ])
+    sub = root / "-Users-me-repos-demo" / "sess1" / "subagents" / "agent-a1.jsonl"
+    _write(str(sub), [
+        _reply("2026-01-01T00:00:06Z", "msg_s1", 5, model="claude-sonnet-5-5"),
+        _reply("2026-01-01T00:00:07Z", "msg_s1", 700, model="claude-sonnet-5-5"),  # later record, grown count
+    ])
+    sessions = claude_code.load(root=str(root))
+    assert len(sessions) == 1  # a subagent file is not a session of its own
+    s = sessions[0]
+    assert s.usage["claude-sonnet-5-5"]["output_tokens"] == 700
+    assert s.sub_usage["claude-sonnet-5-5"]["output_tokens"] == 700
+    assert s.tokens["output_tokens"] == 800
+    assert "claude-fable-5-1" not in s.sub_usage
+
+
+def test_one_hour_cache_writes_price_at_twice_input():
+    from teyla import pricing
+    five_min = pricing.cost_usd("claude-opus-5-5", {"cache_creation_input_tokens": 1_000_000})
+    one_hour = pricing.cost_usd("claude-opus-5-5", {"cache_creation_input_tokens": 1_000_000,
+                                                   "cache_creation_1h_input_tokens": 1_000_000})
+    assert five_min == 5.0 and one_hour == 8.0
+
+
+def test_claude_code_keeps_the_one_hour_share_of_cache_writes(tmp_path):
+    root = tmp_path / "projects"
+    f = root / "-Users-me-repos-demo" / "sess1.jsonl"
+    _write(str(f), [
+        {"type": "user", "timestamp": "2026-01-01T00:00:00Z", "message": {"role": "user", "content": "go"}},
+        _reply("2026-01-01T00:00:05Z", "msg_1", 1, cache_1h=5000),
+    ])
+    s = claude_code.load(root=str(root))[0]
+    assert s.usage["claude-fable-5-1"]["cache_creation_1h_input_tokens"] == 5000
+
+
 def test_claude_code_filters_noise_turns(tmp_path):
     root = tmp_path / "projects"
     f = root / "slug" / "sess2.jsonl"

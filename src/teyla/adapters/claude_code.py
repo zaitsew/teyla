@@ -7,7 +7,7 @@ import json
 import os
 import re
 
-from . import TOKEN_KEYS, AgentCall, Session, Turn, human_text, is_correction, is_retry, stale, text_of, turn_end_candidate
+from . import CACHE_1H_KEY, TOKEN_KEYS, AgentCall, Session, Turn, human_text, is_correction, is_retry, stale, text_of, turn_end_candidate
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "claude-code"
@@ -53,6 +53,40 @@ def load(root: str = DEFAULT_ROOT, repo_names: list[str] | None = None, since: f
     return sessions
 
 
+def _usage_row(u: dict) -> dict:
+    row = {k: u.get(k, 0) or 0 for k in TOKEN_KEYS}
+    row[CACHE_1H_KEY] = ((u.get("cache_creation") or {}).get("ephemeral_1h_input_tokens") or 0)
+    return row
+
+
+def _add_usage(target: dict, per_message: dict) -> None:
+    for model, row in per_message.values():
+        for k, v in row.items():
+            if v:
+                target[model][k] += v
+
+
+def _subagent_usage(f: str) -> dict:
+    """model -> token row for every message in <session>/subagents/*.jsonl, one row per message id."""
+    per_message: dict = {}
+    for sf in sorted(glob.glob(os.path.join(f[:-len(".jsonl")], "subagents", "*.jsonl"))):
+        try:
+            fh = open(sf, errors="replace")
+        except OSError:
+            continue
+        with fh:
+            for n, line in enumerate(fh):
+                try:
+                    o = json.loads(line)
+                except Exception:
+                    continue
+                if o.get("type") != "assistant":
+                    continue
+                m = o.get("message", {})
+                per_message[(sf, m.get("id") or n)] = (m.get("model", "?"), _usage_row(m.get("usage") or {}))
+    return per_message
+
+
 def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
     slug = os.path.basename(os.path.dirname(f))
     s = Session(harness=NAME, project=slug, sid=os.path.basename(f)[:-6], path=f, size=os.path.getsize(f))
@@ -60,6 +94,11 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
     active_prev = None  # last assistant/user timestamp seen, kept only to sum gaps — never a list
     last_text = None  # (ts, text) of the agent's latest text block, until a tool call or a human turn follows
     after_error = False  # the last assistant record was an API error
+    # Claude Code writes one record per content block: a reply with text and three tool calls is
+    # four records, each carrying the same message id and usage. Summing per record counted output
+    # 2.85x over 2026-09 (102M vs 36M tokens). Usage is keyed by message id, the last record wins
+    # (in subagent files the records of one message carry growing counts).
+    per_message: dict = {}
     with open(f, errors="replace") as fh:
         for line in fh:
             try:
@@ -100,12 +139,12 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                 # `isApiErrorMessage`: a synthetic "API Error: Can't reach the API server" turn.
                 # The human's next "Try again" is a retry, not a turn (see adapters.is_retry).
                 after_error = bool(o.get("isApiErrorMessage"))
-                s.assistant_turns += 1
                 model = m.get("model", "?")
-                s.models[model] += 1
-                u = m.get("usage") or {}
-                for k in TOKEN_KEYS:
-                    s.usage[model][k] += u.get(k, 0) or 0
+                key = m.get("id") or ("line", s.assistant_turns, ts)
+                if key not in per_message:
+                    s.assistant_turns += 1
+                    s.models[model] += 1
+                per_message[key] = (model, _usage_row(m.get("usage") or {}))
                 said = text_of(m.get("content"))
                 if said.strip():
                     last_text = (ts, said)
@@ -166,6 +205,10 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
     s.active_hours = round(s.active_hours, 2)
     if not s.first:
         return None
+    _add_usage(s.usage, per_message)
+    subs = _subagent_usage(f)
+    _add_usage(s.usage, subs)
+    _add_usage(s.sub_usage, subs)
     return s
 
 
