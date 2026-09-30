@@ -181,6 +181,18 @@ def test_only_an_external_symlink_is_not_an_instruction_file(tmp_path):
     assert _by(cloud.check_repo(r, owners=set(), net=False))["instructions"]["level"] == "BLOCK"
 
 
+def test_a_dangling_external_symlink_still_blocks(tmp_path):
+    """review of #70's fix, P1: a link to a file that is missing here is not is_file(), and was
+    dropped before the external-link check saw it."""
+    r = _prepared(tmp_path, files={"AGENTS.md": PREPARED_AGENTS})
+    (r / "CLAUDE.md").unlink()
+    (r / "CLAUDE.md").symlink_to(tmp_path / "outside" / "missing-policy.md")
+    assert [n for n, _ in cloud.instruction_files(r)] == ["AGENTS.md"]
+    rep = cloud.check_repo(r, owners=set(), net=False)
+    assert _by(rep)["instructions"]["level"] == "BLOCK" and "CLAUDE.md" in _by(rep)["instructions"]["detail"]
+    assert not rep["ready"]
+
+
 @pytest.mark.parametrize("line,level", [("merge-approved: yes", "OK"), ("merge-approved: no", "BLOCK"), ("", "WARN")])
 def test_merge_approved_line_against_the_owner_list(tmp_path, _home, line, level):
     (_home / ".claude" / "CLAUDE.md").write_text(OWNER_MD)
@@ -347,6 +359,14 @@ def test_local_main_does_not_make_a_session_landed(tmp_path):
     by = {s["session"]: s for s in cloud.scan_sessions([r], gh=False, now=NOW)}
     assert not by["session_OPEN22"]["landed"] and by["session_OPEN22"]["pr"] == "unknown"
     assert by["session_LANDED1"]["landed"]
+
+
+def test_without_a_remote_default_nothing_is_landed(tmp_path):
+    """review of #70's fix, P2: default_ref() falls back to local main when origin has none."""
+    r = _session_repo(tmp_path)
+    _git(r, "update-ref", "-d", "refs/remotes/origin/main")
+    by = {s["session"]: s for s in cloud.scan_sessions([r], gh=False, now=NOW)}
+    assert not by["session_LANDED1"]["landed"] and not by["session_OPEN22"]["landed"]
 
 
 def test_days_window_excludes_old_sessions(tmp_path):

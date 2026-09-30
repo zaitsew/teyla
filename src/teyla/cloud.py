@@ -169,7 +169,9 @@ def _instruction_candidates(repo: pathlib.Path) -> list[pathlib.Path]:
     rules = repo / ".claude" / "rules"
     if rules.is_dir():
         cands += sorted(rules.rglob("*.md"))
-    return [p for p in cands if p.is_file()]
+    # is_symlink() too: a dangling link (CLAUDE.md → a policy file only this Mac has) is not
+    # is_file(), and dropping it here hid it from external_instruction_links (review, P1).
+    return [p for p in cands if p.is_file() or p.is_symlink()]
 
 
 def _inside(repo: pathlib.Path, p: pathlib.Path) -> bool:
@@ -197,7 +199,7 @@ def instruction_files(repo: pathlib.Path) -> list[tuple[str, str]]:
     seen, out = set(), []
     for p in _instruction_candidates(repo):
         real = p.resolve()
-        if not _inside(repo, p) or real in seen:
+        if not _inside(repo, p) or not p.is_file() or real in seen:
             continue
         seen.add(real)
         # Name the real file: in a CLAUDE.md → AGENTS.md repo the line numbers are AGENTS.md's.
@@ -602,6 +604,10 @@ def repo_sessions(repo: pathlib.Path, days: int | None = None) -> list[dict]:
     # the same short name that was merged and not pushed (review of #70, P2).
     full = _git(repo, "rev-parse", "--symbolic-full-name", default, timeout=5)
     default_full = full.stdout.strip() if full.returncode == 0 else ""
+    # default_ref() falls back to a local main when no remote default resolves; that is no
+    # evidence of landing, so only a remote-tracking ref counts (review, P2).
+    if not default_full.startswith("refs/remotes/"):
+        default_full = ""
     slug = origin_slug(repo)
     out = []
     for s in by.values():
