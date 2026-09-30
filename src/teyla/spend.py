@@ -17,8 +17,10 @@ dollar figure and one fix:
   W6  failed loops: messages sent after three or more failed tool calls in a row
   W8  GitHub Actions minutes this month against the plan's included minutes (POLICY §10)
 
-Not covered yet, and said so in the output: W4 (the same diff on two branches) and W7 (product
-API spend from the ledgers and the providers' cost APIs, which need admin keys).
+  W7  product API spend (teyla.providers: the OpenAI and Anthropic cost APIs, admin keys in the
+      Keychain): a day past twice the median of the seven before it
+
+Not covered yet, and said so in the output: W4 (the same diff on two branches).
 
 `--alert` is the daily check: it says something only for a session over ALERT_SESSION_USD in the
 last day, or Actions past ALERT_ACTIONS_SHARE of the included minutes, and posts a notification.
@@ -56,7 +58,7 @@ VOLUME_MODEL = "claude-sonnet-5-5"
 LINUX_USD_PER_MIN = 0.006
 PLAN_MINUTES = {"free": 2000, "pro": 3000, "team": 3000, "enterprise": 50000}
 
-NOT_COVERED = "not covered yet: W4 duplicated work, W7 product API spend (needs the providers' admin keys)"
+NOT_COVERED = "not covered yet: W4 duplicated work"
 
 
 # --- rows ------------------------------------------------------------------------------------
@@ -234,7 +236,7 @@ def _money(x: float) -> str:
 
 
 def findings(rows: list[dict], actions: list[dict] | None = None, outcome_of=outcome,
-             coverage: list[str] | None = None) -> list[dict]:
+             coverage: list[str] | None = None, spikes: list[dict] | None = None) -> list[dict]:
     """The waste findings, largest first: {id, usd, title, evidence, fix, cmd}. `usd` is None for
     W8, whose cost is minutes, not tokens. What a rule could not check is appended to `coverage`."""
     F = []
@@ -287,6 +289,13 @@ def findings(rows: list[dict], actions: list[dict] | None = None, outcome_of=out
                       title=f"failed loops (3+ failed tool calls in a row) in {len(loops)} session(s)",
                       evidence="; ".join(f"{_who(r)} {_money(r['loop_usd'])}" for r in loops[:3]),
                       fix="after three failures in a row stop, read the error, and change the approach (or ask)"))
+    if spikes:
+        F.append(dict(id="W7", usd=sum(s["excess"] for s in spikes), cmd=False,
+                      title=f"{len(spikes)} day(s) of product API spend past 2x the week's median",
+                      evidence="; ".join(f"{s['provider']} {s['group']} {s['day']} {_money(s['usd'])} (median {_money(s['median'])})"
+                                         for s in spikes[:3]),
+                      fix="open that product's logs for the day: a deploy, a retry loop or a model switch; "
+                          "cap it (max_tokens, retries, a cheaper model on the path) before it repeats"))
     F = [f for f in F if f["usd"] >= FINDING_FLOOR_USD]
     for a in actions or []:
         if a["share"] is not None and a["share"] >= ALERT_ACTIONS_SHARE or a["paid_usd"] > 0:
@@ -301,12 +310,15 @@ def findings(rows: list[dict], actions: list[dict] | None = None, outcome_of=out
 
 # --- report ----------------------------------------------------------------------------------
 
-def report(days: int = 7, rows=None, actions=None, with_actions: bool = True) -> dict:
+def report(days: int = 7, rows=None, actions=None, with_actions: bool = True, bills=None) -> dict:
+    from . import providers
     rows = session_rows(days) if rows is None else rows
     if actions is None and with_actions:
         actions = actions_usage()
-    coverage: list[str] = []
-    F = findings(rows, actions, coverage=coverage)
+    bills = providers.read(days) if bills is None else bills
+    coverage: list[str] = [f"W7: {p} not read ({b.get('skipped') or b.get('error')})"
+                           for p, b in bills.items() if "daily" not in b]
+    F = findings(rows, actions, coverage=coverage, spikes=providers.spikes(bills, days))
     by_harness, by_model = Counter(), Counter()
     for r in rows:
         by_harness[r["harness"]] += r["usd"]
@@ -316,7 +328,8 @@ def report(days: int = 7, rows=None, actions=None, with_actions: bool = True) ->
     waste = sum(f["usd"] for f in F if f["usd"])
     return dict(days=days, total_usd=total, sub_usd=sum(r["sub_usd"] for r in rows), waste_usd=waste,
                 by_harness=dict(by_harness.most_common()), by_model=dict(by_model.most_common()),
-                findings=F, actions=actions, top_sessions=rows[:5], sessions=len(rows), coverage=coverage)
+                findings=F, actions=actions, top_sessions=rows[:5], sessions=len(rows), coverage=coverage,
+                providers=providers.totals(bills, days))
 
 
 def summary_line(rep: dict) -> str:
@@ -331,7 +344,11 @@ def render(rep: dict) -> str:
          f"total {_money(rep['total_usd'])} over {rep['sessions']} sessions  ·  "
          + "  ·  ".join(f"{h} {_money(v)}" for h, v in rep["by_harness"].items() if v >= 0.01)
          + (f"  ·  of which subagents {_money(rep['sub_usd'])}" if rep["sub_usd"] else ""),
-         "by model: " + ", ".join(f"{m} {_money(v)}" for m, v in list(rep["by_model"].items())[:6]), ""]
+         "by model: " + ", ".join(f"{m} {_money(v)}" for m, v in list(rep["by_model"].items())[:6])]
+    for prov, groups in (rep.get("providers") or {}).items():
+        L.append(f"{prov} billed (products, all keys): {_money(sum(groups.values()))}"
+                 + (" — " + ", ".join(f"{g} {_money(v)}" for g, v in list(groups.items())[:5]) if groups else ""))
+    L.append("")
     if rep["findings"]:
         L.append(f"waste {_money(rep['waste_usd'])}:")
         for f in rep["findings"]:
@@ -360,7 +377,8 @@ def digest_candidates(rep: dict) -> list[dict]:
     return out
 
 
-def alerts(rows: list[dict], actions: list[dict] | None, now: _dt.datetime | None = None) -> list[str]:
+def alerts(rows: list[dict], actions: list[dict] | None, now: _dt.datetime | None = None,
+           spikes: list[dict] | None = None) -> list[str]:
     now = now or _dt.datetime.now(_dt.timezone.utc)
     since = (now - _dt.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
     out = [f"session {_who(r)} cost {_money(r['usd'])} ({r['harness']})"
@@ -368,6 +386,8 @@ def alerts(rows: list[dict], actions: list[dict] | None, now: _dt.datetime | Non
     for a in actions or []:
         if a["share"] is not None and a["share"] >= ALERT_ACTIONS_SHARE:
             out.append(f"GitHub Actions {a['account']} at {a['share'] * 100:.0f}% of included minutes")
+    for s in spikes or []:
+        out.append(f"{s['provider']} {s['group']} spent {_money(s['usd'])} on {s['day']} (median {_money(s['median'])})")
     return out
 
 
@@ -392,8 +412,10 @@ def alerts_path() -> pathlib.Path:
 
 def cmd_spend(args) -> int:
     if args.alert:
+        from . import providers
         rows = session_rows(1)
-        lines = alerts(rows, actions_usage())
+        # Yesterday and today (UTC): the providers' day is UTC and today's bucket is still filling.
+        lines = alerts(rows, actions_usage(), spikes=providers.spikes(providers.read(2), 2))
         # The banner reads this file (digest.write_banner_items): one line per alert, today only.
         p = alerts_path()
         p.parent.mkdir(parents=True, exist_ok=True)
