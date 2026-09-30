@@ -285,7 +285,7 @@ def _skills(home: pathlib.Path) -> list[Step]:
 
 def _hooks(home: pathlib.Path) -> list[Step]:
     steps = []
-    hooks_dir = str(home / ".teyla" / "hooks")
+    hooks_dir = str(home / ".teyla" / "hooks") + "/"  # the boundary: ~/.teyla/hooks-mine/ is not ours
     cur = home / ".cursor" / "hooks.json"
     if cur.is_file():
         try:

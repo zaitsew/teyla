@@ -396,3 +396,17 @@ def test_codex_hooks_lose_only_teylas_handlers(tmp_path):
     [step] = [s for s in uninstall._hooks(home) if s.target == str(cx)]
     step.fn()
     assert not cx.exists()
+
+
+def test_a_sibling_hooks_directory_is_not_teylas(tmp_path):
+    # review of the #61 merge, P1: startswith("~/.teyla/hooks") also matched ~/.teyla/hooks-mine/.
+    from teyla import harness, uninstall
+    ours = str(tmp_path / ".teyla" / "hooks" / "capture-correction.sh")
+    mine = str(tmp_path / ".teyla" / "hooks-mine" / "check.sh")
+    cx = tmp_path / ".codex" / "hooks.json"
+    cx.parent.mkdir(parents=True)
+    cx.write_text(json.dumps({"description": harness.CODEX_DESCRIPTION, "hooks": {"UserPromptSubmit": [
+        {"hooks": [{"type": "command", "command": ours}, {"type": "command", "command": mine}]}]}}))
+    [step] = [s for s in uninstall._hooks(tmp_path) if s.target == str(cx)]
+    step.fn()
+    assert json.loads(cx.read_text())["hooks"]["UserPromptSubmit"] == [{"hooks": [{"type": "command", "command": mine}]}]

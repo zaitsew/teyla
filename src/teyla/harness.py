@@ -209,7 +209,7 @@ def _cursor_hooks(existing: dict | None) -> dict:
     d.setdefault("version", 1)
     hooks = dict(d.get("hooks") or {})
     for event, script in (("sessionStart", "session-start.sh"), ("beforeSubmitPrompt", "capture-correction.sh")):
-        entries = [e for e in (hooks.get(event) or []) if not str(e.get("command", "")).startswith(str(HOOKS_DIR))]
+        entries = [e for e in (hooks.get(event) or []) if not str(e.get("command", "")).startswith(str(HOOKS_DIR) + "/")]
         entries.append({"command": str(HOOKS_DIR / script), "type": "command", "timeout": 5})
         hooks[event] = entries
     d["hooks"] = hooks
@@ -221,7 +221,7 @@ CODEX_DESCRIPTION = ("Entries whose command is under ~/.teyla/hooks/ are written
 
 
 def _is_teyla_handler(handler) -> bool:
-    return isinstance(handler, dict) and str(handler.get("command", "")).startswith(str(HOOKS_DIR))
+    return isinstance(handler, dict) and str(handler.get("command", "")).startswith(str(HOOKS_DIR) + "/")
 
 
 def _is_teyla_group(group) -> bool:
