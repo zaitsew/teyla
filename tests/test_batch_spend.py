@@ -196,6 +196,7 @@ def test_share_does_not_leak_a17_project_names_or_paths(monkeypatch, capsys):
     ss = _many("grok", canary, 1500, 1) + _many("grok", canary, 100, 10)
     monkeypatch.setattr(cli, "_sessions", lambda a: ss)
     monkeypatch.setattr(cli, "_extras", lambda m, s, d: m.update(headless=headless(s, d, now=NOW), grok_week=None, harness_errors=[]))
+    monkeypatch.setattr(cli, "_cloud_sessions", lambda days: [])  # no git walk of the real code_root, no gh
     monkeypatch.setattr(policy, "status", lambda: {})
     run = lambda **kw: (cli.cmd_monitor(argparse.Namespace(days=29, project=None, no_sidechain=True, samples=False,  # noqa: E731
                                                           out=None, **kw)), capsys.readouterr().out)[1]

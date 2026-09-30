@@ -48,6 +48,8 @@
   teyla correct "<what was wrong>"                                a correction into ~/.teyla/corrections/<repo>.jsonl, secrets scrubbed
   teyla prompt [name]                                             the prompts shipped with this version (onboard, …); none: list them
   teyla uninstall [--dry] [--keep-data]                           undo every write Teyla made here; --dry lists every file it wrote
+  teyla cloud check [repo...] [--json]                            what a cloud session would lack in each repo; exit 1 on a blocker
+  teyla cloud inbox [--days N]                                    cloud branches with no PR + open PRs labelled needs-mac
 """
 from __future__ import annotations
 
@@ -81,6 +83,16 @@ def _grok_week(rows=None):
         return grokcost.week(rows=rows)
     except Exception:  # noqa: BLE001 — advisory only
         return None
+
+
+def _cloud_sessions(days):
+    """Cloud sessions from `Claude-Session:` commit trailers, for A19 and the report section.
+    Not part of metrics(): it reads git, not transcripts, and may ask gh for PR state."""
+    from . import cloud
+    try:
+        return cloud.scan_sessions(days=days)
+    except Exception:  # noqa: BLE001 — advisory only
+        return []
 
 
 def _grok_rows(days):
@@ -119,6 +131,7 @@ def cmd_monitor(args):
     ss = _sessions(args)
     m = enrich(metrics(ss, args.days))
     _extras(m, ss, args.days)
+    m["cloud_sessions"] = _cloud_sessions(args.days)
     if args.share:
         # Redact before advising: findings quote projects, sessions and connectors in their
         # evidence, and computed from the raw metrics they would carry the real names out
@@ -144,6 +157,7 @@ def cmd_advise(args):
     ss = _sessions(args)
     m = enrich(metrics(ss, args.days))
     _extras(m, ss, args.days)
+    m["cloud_sessions"] = _cloud_sessions(args.days)
     F = advise(m, policy.status())
     for f in F:
         print(f"[{f['severity']}] {f['id']} {f['title']}\n    {f['evidence']}\n    → {f['action']}")
@@ -372,7 +386,7 @@ def main(argv=None):
     q.add_argument("--prefer", choices=["agents", "claude"], help="sync-repo: when AGENTS.md and CLAUDE.md both exist and differ, keep this one and symlink the other to it")
     q.add_argument("--note", help="ack: free-text note recorded alongside the acknowledgement")
     q = sp.add_parser("harvest"); q.set_defaults(fn=cmd_harvest); q.add_argument("path"); q.add_argument("--project")
-    from . import grokcost, wiki, feedback, models, plugins, plugin_install, connectors, control, doctor, update, remind, rules, harness, storage
+    from . import grokcost, wiki, feedback, models, plugins, plugin_install, connectors, control, doctor, update, remind, rules, harness, storage, cloud
     from . import platform as platform_mod, productize as productize_mod
     doctor.register(sp); update.register(sp); _config.register(sp)
     platform_mod.register(sp); productize_mod.register(sp)
@@ -383,6 +397,7 @@ def main(argv=None):
     uninstall_mod.register(sp); grokcost.register(sp)
     from . import digest as digest_mod, routines as routines_mod
     digest_mod.register(sp); routines_mod.register_check(sp)
+    cloud.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
     q = sp.add_parser("routines"); q.set_defaults(fn=cmd_routines)
     q.add_argument("paths", nargs="*"); q.add_argument("--json", action="store_true")

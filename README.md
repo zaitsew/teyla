@@ -52,7 +52,7 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 
 | command | what you get |
 |---|---|
-| `teyla monitor [--days N] [--json]` | tokens by model and project, API-equivalent cost, orchestrator-tier share, subagent model mix, correction rate, cache-read ratio, giant sessions, governance-file edits, model ladder/price drift, headless calls per day by harness and project with their cost — plus advice A1–A18 |
+| `teyla monitor [--days N] [--json]` | tokens by model and project, API-equivalent cost, orchestrator-tier share, subagent model mix, correction rate, cache-read ratio, giant sessions, governance-file edits, model ladder/price drift, headless calls per day by harness and project with their cost — plus advice A1–A19, and a "Cloud sessions" section from git |
 | `teyla advise` | just the findings, each with the number that triggered it and one action |
 | `teyla grok-cost [--last\|--session ID] [--cwd PATH] [--days N] [--by project\|session] [--json]` | what Grok CLI sessions cost at list price, ranked by dollars not tokens. `--last --cwd <repo>` is the one line an orchestrator reads when a `grok -p` lane ends (cost, calls, tokens, cached %, tools, context, effort, title); the default is the last 7 days by project (worktrees and `~/repos/<repo>` collapse to `<repo>`, a `<repo>-grok-empty` temp dir to `<repo>`, other temp dirs to `tmp`); `--by session` is the top 20. `teyla monitor`/`advise` add A13/A14 |
 | `teyla sessions` / `teyla corrections --cluster` | one line per session; correction-shaped turns clustered into rule candidates |
@@ -79,6 +79,8 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | `teyla check <product> <check> ok\|broken [--note TEXT]` | confirm a manual check: sets `status` and today's `confirmed` in that product's `teyla.toml`, editing only those lines |
 | `teyla uninstall [--dry] [--keep-data]` | every file Teyla wrote on this machine (`--dry`), then the undo: LaunchAgents unloaded, the policy import line, symlinks, Hermes sections, harness skills and hooks, the plugin, `~/.teyla`. Touches only what carries Teyla's marker, label or symlink target; keeps and lists `~/.agents/POLICY.md` and repo-level `.teyla/` and rules |
 | `teyla prompt [name]` | the paste-able prompts (onboard, work-account-kickoff, …) that shipped with the installed version |
+| `teyla cloud check [repo...] [--json]` | what a cloud session (Claude Code on the web, `claude --cloud`) would lack in each repo — the VM clones the repo and nothing from your home directory: instructions that defer to a home-directory policy file, `.claude/` git-ignored, no shipping rules or cloud done state, no SessionStart/Stop hooks, a `merge-approved:` line missing or drifted from your list, Mac-only gate steps with no printed skip, secret names with no manifest, a public repo. BLOCK/WARN/OK per item, exit 1 on any BLOCK; `teyla doctor` shows `cloud-ready n/N repos` |
+| `teyla cloud inbox [--days N]` | what cloud sessions left for a local one: branches with `Claude-Session:` commits and no PR (with the `gh pr create` line), and open PRs labelled `needs-mac` |
 | `teyla storage [--json]` · `teyla storage clean [--apply]` | the disk and RAM agent work holds: every worktree (SAFE = clean, on the remote, idle, no process in it — removed with `git worktree remove`, branch kept), git-ignored build output of idle repos, caches with the command that clears each, booted simulators. Dry run unless `--apply`; `teyla config set storage.auto_clean=true` lets the daily routine do it |
 | `teyla remind add "<what>" <YYYY-MM-DD> [--how "..."]` \| `list` \| `done <n>` | dated to-dos only a human can act on (a key that expires, a trial that ends); `teyla doctor` shows each as OK, then WARN within 30 days, then FIX once overdue |
 
@@ -103,6 +105,7 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | A16 | a workflow runs on push, pull_request or schedule (only when POLICY.md declares `no-actions`) | `on: workflow_dispatch` only; `teyla doctor` lists every file |
 | A17 | one project drives more than 200 headless calls a day through one harness (7-day average), or its headless calls doubled week over week (from 100 a week) — `claude -p`, `codex exec`, `grok -p` | check the routine means to call that often: cap it, batch items per call, or move it to a cheaper provider; the report's "Headless calls" table has calls/day and cost per harness and project |
 | A18 | a harness recorded quota/balance or auth errors in the window (Grok 402 "usage balance exhausted", Hermes "missing access_token", `claude -p` "OAuth session expired", a Codex rate limit reached) — [high] while no later call succeeded | the exact fix (`hermes model`, `claude auth login`, top up); `teyla harness verify` |
+| A19 | a cloud session's branch has commits and no PR after 24 h (found from `Claude-Session:` commit trailers; PR state from `gh`, never asked in safe mode) | `gh pr create --repo <owner/name> --head <branch> --fill`, then build and review it locally |
 
 ### Policy detectors
 

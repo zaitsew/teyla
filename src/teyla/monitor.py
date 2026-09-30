@@ -315,6 +315,13 @@ def redact(m: dict) -> dict:
     r["skills"] = {salias[k]: v for k, v in skills.items()}
     r["review_skill_used"] = any(w in k for k in skills for w in REVIEW_SKILL_WORDS)
 
+    # Cloud sessions name repos, branches and session URLs: keep only the shape.
+    ralias: dict = {}
+    r["cloud_sessions"] = [dict(repo=ralias.setdefault(c.get("repo"), f"r{len(ralias)+1:02d}"), branch="—", session="—",
+                                commits=c.get("commits"), first=c.get("first"), last=c.get("last"), landed=c.get("landed"),
+                                pr=c.get("pr"), age_hours=c.get("age_hours"), slug=None, path=None, pr_url=None, labels=[])
+                           for c in m.get("cloud_sessions") or []]
+
     r["correction_samples"] = []
     # A15's example quotes the agent's own words and A16's names a repo and a workflow file:
     # the words go, the project keeps its pseudonym, repos become r01..rNN, files and paths go.

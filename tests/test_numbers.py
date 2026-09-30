@@ -381,6 +381,7 @@ def test_monitor_marks_a10_seen_only_after_the_report_is_written(tmp_path, monke
     _home(tmp_path, monkeypatch, "v1")
     monkeypatch.setattr(cli, "_sessions", lambda args: [_gov_session("2026-09-14")])
     monkeypatch.setattr(cli, "_extras", lambda m, ss, days: None)  # no Grok store, no harness logs
+    monkeypatch.setattr(cli, "_cloud_sessions", lambda days: [])  # no git walk of the real code_root, no gh
     args = argparse.Namespace(days=None, share=False, json=False, samples=False, out=str(tmp_path / "nope" / "r.md"))
     with pytest.raises(OSError):
         cli.cmd_monitor(args)

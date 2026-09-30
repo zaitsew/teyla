@@ -74,6 +74,9 @@ def markdown(m: dict, findings: list[dict], *, title="Teyla adoption report", in
         for g in m["giant_sessions"][:15]:
             L.append(f"| {_short(g['project'])} | {g['sid']} | {g['day']} | {g['mb']} | {g['hours']} | "
                       f"{g.get('active_hours', g['hours'])} | {g['compactions']} | {g['turns']} |")
+    if m.get("cloud_sessions"):
+        from .cloud import render_sessions_md
+        L += render_sessions_md(m["cloud_sessions"])
     if m.get("skills"):
         L += ["", "## Skills invoked", "", ", ".join(f"{k} ({v})" for k, v in sorted(m["skills"].items(), key=lambda kv: -kv[1]))]
     if include_samples and m.get("correction_samples"):

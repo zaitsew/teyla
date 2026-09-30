@@ -250,6 +250,22 @@ def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
                                + f": {e['message'][:140]}" + ("" if e["still_failing"] else " — later calls succeeded"),
                       action=f"{e['fix']}; `teyla harness verify` shows every harness's state."))
     try:
+        from . import cloud as _cloud
+        stuck = _cloud.stuck(m.get("cloud_sessions") or [])
+    except Exception:  # noqa: BLE001 — cloud advice is optional
+        stuck = []
+    if stuck:
+        # The measured failure: all three September cloud sessions ended on a pushed branch with no
+        # PR, and six days later two of them still had none. The work exists; nobody sees it.
+        s0 = max(stuck, key=lambda s: s["age_hours"])
+        F.append(dict(id="A19", severity="high", title="Cloud work with no PR",
+                      evidence=f"{len(stuck)} cloud branch(es) with commits and no PR after 24 h; oldest shown: "
+                               f"{s0['repo']} {s0['branch']} — {s0['commits']} commit(s), last {s0['age_hours']:.0f} h ago",
+                      action=("Run `teyla cloud inbox` for each branch and its `gh pr create` line"
+                              if m.get("redacted") else
+                              f"Open it: `{_cloud.open_pr_command(s0)}`, then build and review it in a local session; "
+                              "`teyla cloud inbox` lists the rest.")))
+    try:
         from . import connectors as _c
         cm = m.get("connectors")
         if cm:
