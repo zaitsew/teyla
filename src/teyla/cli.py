@@ -50,6 +50,7 @@
   teyla uninstall [--dry] [--keep-data]                           undo every write Teyla made here; --dry lists every file it wrote
   teyla cloud check [repo...] [--json]                            what a cloud session would lack in each repo; exit 1 on a blocker
   teyla cloud inbox [--days N]                                    cloud branches with no PR + open PRs labelled needs-mac
+  teyla cloud prep <repo> [--dry] [--allow-public] [--fix-gitignore]   AGENTS.md shipping section, hooks, rules, setup doc for cloud sessions
 """
 from __future__ import annotations
 
