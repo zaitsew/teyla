@@ -63,6 +63,11 @@ _RETRY_HEAD_RE = re.compile(r"^(?:please[, ]+)?(?:try again|retry|again|continue
 _REMINDER_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
 
 
+def strip_reminders(txt: str | None) -> str:
+    """`txt` without its `<system-reminder>…</system-reminder>` blocks: what the human typed."""
+    return _REMINDER_RE.sub("", txt or "").strip()
+
+
 def is_retry(txt: str, after_error: bool = False) -> bool:
     """A bare retry ("Try again", "continue", "ещё раз"), or — right after an API error — a short
     turn that opens with one ("Try again - the connector is back")."""
@@ -277,7 +282,7 @@ def human_text(txt: str, after_error: bool = False) -> str | None:
     real prompt is cut off, not allowed to decide the turn."""
     if not txt or is_noise_turn(txt):
         return None
-    t = _REMINDER_RE.sub("", txt).strip()
+    t = strip_reminders(txt)
     if not t or is_noise_turn(t) or is_retry(t, after_error):
         return None
     return t

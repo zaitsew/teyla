@@ -7,7 +7,7 @@ import json
 import os
 import re
 
-from . import CACHE_1H_KEY, ERROR_LOOP, HANDOFF_CONTEXT, LONG_CONTEXT, TOKEN_KEYS, AgentCall, Session, Turn, human_text, is_correction, is_retry, local_day, stale, text_of, turn_end_candidate
+from . import CACHE_1H_KEY, ERROR_LOOP, HANDOFF_CONTEXT, LONG_CONTEXT, TOKEN_KEYS, AgentCall, Session, Turn, human_text, is_correction, is_retry, local_day, stale, strip_reminders, text_of, turn_end_candidate
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "claude-code"
@@ -216,7 +216,10 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                 after_error = False
                 # A bare "continue" is a retry to the turn counts but an approval to A15: it
                 # still answers the question the agent ended on (review of the #60 merge).
-                reply = h if h is not None else (txt if is_retry(txt) else None)
+                # The reminder block Claude Code appends to a prompt is not part of the reply:
+                # "continue" + <system-reminder>…</system-reminder> is still "continue".
+                bare = strip_reminders(txt)
+                reply = h if h is not None else (bare if is_retry(bare) else None)
                 if reply is not None:
                     ending = turn_end_candidate(last_text[1]) if last_text else None
                     if ending:
