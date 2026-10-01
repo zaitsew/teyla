@@ -109,10 +109,12 @@ def anthropic_daily(key: str, start: _dt.date, end: _dt.date, get=_get) -> dict[
     return {k: dict(v) for k, v in out.items()}
 
 
-def read(days: int = 7, today: _dt.date | None = None, key_of=keychain, get=_get) -> dict:
+def read(days: int = 7, today: _dt.date | None = None, key_of=None, get=None) -> dict:
     """{provider: {"daily": {group: {day: usd}}} | {"error": str} | {"skipped": reason}} over the
     window plus HISTORY_DAYS before it (the spike baseline)."""
     from . import net
+    # Resolved here, not as defaults, so the suite's conftest can stub the Keychain module-wide.
+    key_of, get = key_of or keychain, get or _get
     today = today or _dt.datetime.now(_dt.timezone.utc).date()
     start = today - _dt.timedelta(days=days + HISTORY_DAYS)
     out = {}
