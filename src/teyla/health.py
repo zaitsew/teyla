@@ -250,7 +250,39 @@ def auth_grok(home: pathlib.Path, env=None) -> dict:
     return {"ok": True, "detail": f"{mode} login" + (", refreshed automatically" if e.get("refresh_token") else "")}
 
 
+# Environment variables Hermes reads an API key from, per provider id (hermes-agent providers).
+_HERMES_KEY_ENV = {
+    "openai-api": ("OPENAI_API_KEY",), "openai": ("OPENAI_API_KEY",), "anthropic": ("ANTHROPIC_API_KEY",),
+    "xai": ("XAI_API_KEY", "GROK_API_KEY"), "xai-api": ("XAI_API_KEY", "GROK_API_KEY"),
+    "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"), "openrouter": ("OPENROUTER_API_KEY",),
+}
+
+
+def _hermes_api_key(prov: str, st: dict, pool: list, env, home: pathlib.Path) -> str | None:
+    """Where an API-key (not OAuth) provider's key lives, as a short phrase — never the key. A key
+    needs no sign-in: it is either in the credential pool (`auth_type: api_key`, `source:
+    env:OPENAI_API_KEY`), in the provider state, in the environment, or in ~/.hermes/.env."""
+    for c in pool or []:
+        if isinstance(c, dict) and (c.get("auth_type") == "api_key" or c.get("api_key") or c.get("secret_fingerprint")):
+            return f"API key in the credential pool ({c.get('source') or c.get('label') or 'key'})"
+    if st.get("api_key") or str(st.get("auth_mode") or "").lower() in ("api_key", "apikey"):
+        return "API key in auth.json"
+    names = _HERMES_KEY_ENV.get(prov, ())
+    for var in names:
+        if env.get(var):
+            return f"{var} set in the environment"
+    try:
+        dotenv = (home / ".env").read_text()
+    except OSError:
+        return None
+    for var in names:
+        if re.search(rf"^\s*(export\s+)?{var}\s*=\s*[^\s#]", dotenv, re.M):
+            return f"{var} in ~/.hermes/.env"
+    return None
+
+
 def auth_hermes(home: pathlib.Path, env=None) -> dict:
+    env = os.environ if env is None else env
     p = home / "auth.json"
     try:
         d = json.loads(p.read_text())
@@ -264,10 +296,18 @@ def auth_hermes(home: pathlib.Path, env=None) -> dict:
     if st is None:
         if pool:
             return {"ok": True, "detail": f"{prov}: {len(pool)} pooled credential(s)"}
+        key = _hermes_api_key(prov, {}, [], env, home)
+        if key:
+            return {"ok": True, "detail": f"{prov}: {key}"}
         return {"ok": False, "detail": f"{prov}: no credentials", "fix": f"hermes model   (re-authenticate {prov})"}
     tok = st.get("tokens") or {}
     err = _hermes_current_auth_error(st, pool)
     if not tok.get("access_token"):
+        # An API-key provider has no OAuth tokens to be missing: with the key in place it is signed
+        # in, and only a failed call (`verify --live`, a logged error) can say otherwise.
+        key = _hermes_api_key(prov, st, pool, env, home)
+        if key:
+            return {"ok": True, "detail": f"{prov}: {key}"}
         why = f" — last error {str(err.get('at', ''))[:10]}: {err.get('message', '')[:120]}" if err else ""
         return {"ok": False, "detail": f"{prov} state is missing access_token{why}",
                 "fix": f"hermes model   (re-authenticate {_provider_label(prov)})"}

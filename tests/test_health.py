@@ -515,3 +515,27 @@ def test_claude_a_newer_error_of_another_entrypoint_does_not_hide_an_open_one(ho
         _api_error("claude-desktop", dt.timedelta(hours=5), "Failed to authenticate: OAuth session expired")])
     e = health.errors_claude(home / ".claude", time.time() - 86400)
     assert e["error"]["entrypoint"] == "claude-desktop" and e["last_ok"] is None
+
+
+def test_hermes_api_key_setup_is_not_a_fix_without_a_live_call(home):
+    # An API-key provider has no OAuth tokens; the key in the pool (env: source) is its sign-in.
+    key_pool = [{"id": "250988", "label": "OPENAI_API_KEY", "auth_type": "api_key", "source": "env:OPENAI_API_KEY",
+                 "secret_fingerprint": "sha256:4fc13fdd2b8b737e", "request_count": 0}]
+    (home / ".hermes" / "auth.json").write_text(json.dumps({
+        "version": 1, "active_provider": "openai-api",
+        "providers": {"openai-api": {"auth_mode": "api_key"}}, "credential_pool": {"openai-api": key_pool}}))
+    a = health.auth_hermes(home / ".hermes", env={})
+    assert a["ok"] and "API key" in a["detail"] and SECRET not in str(a)
+    # state absent, key only in the environment or in ~/.hermes/.env
+    (home / ".hermes" / "auth.json").write_text(json.dumps({"version": 1, "active_provider": "openai-api",
+                                                            "providers": {}, "credential_pool": {"openai-api": []}}))
+    assert not health.auth_hermes(home / ".hermes", env={})["ok"]
+    assert health.auth_hermes(home / ".hermes", env={"OPENAI_API_KEY": SECRET})["detail"] == "openai-api: OPENAI_API_KEY set in the environment"
+    (home / ".hermes" / ".env").write_text(f"OPENAI_API_KEY={SECRET}\n")
+    a = health.auth_hermes(home / ".hermes", env={})
+    assert a["ok"] and ".env" in a["detail"] and SECRET not in str(a)
+    # an OAuth provider with no access_token is still a FIX, key or not
+    (home / ".hermes" / "auth.json").write_text(json.dumps({
+        "version": 1, "active_provider": "xai-oauth", "providers": {"xai-oauth": {"tokens": {"id_token": SECRET}}},
+        "credential_pool": {"xai-oauth": []}}))
+    assert not health.auth_hermes(home / ".hermes", env={"OPENAI_API_KEY": SECRET})["ok"]
