@@ -32,6 +32,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 
 from . import cloud
 
@@ -47,7 +48,7 @@ _WHOLESALE = {".claude", ".claude/", "/.claude", "/.claude/", ".claude/*", "/.cl
 
 # The owner's policy says it three ways today; "No CI on `push` or `pull_request`" was missed
 # and the Shipping section silently dropped the rule (review of #71, P2).
-_NO_ACTIONS = re.compile(r"No GitHub Actions|GitHub Actions are off|No CI on\s+`?push`?\s+or\s+`?(pull_request|PR)\b", re.I)
+_NO_ACTIONS = re.compile(r"No GitHub Actions|GitHub Actions are off|No CI on\s+`?push`?\s*(?:or|/)\s*`?(pull_request|PR)\b", re.I)
 
 
 class Refused(Exception):
@@ -80,7 +81,9 @@ def shipping_section(merge: str, gate: str | None, no_actions: bool) -> str:
          "- Never force-push: not to the default branch, not to a shared branch.",
          ]
     if no_actions:
-        L.append(f"- No GitHub Actions on push or pull_request. The gate is {g}, run before every push.")
+        # POLICY §10 in its own words: deploy jobs on push to main are allowed, so "no Actions
+        # on push" overstated it and a cloud session could read a deploy workflow as a violation.
+        L.append(f"- No CI on push/PR (short ubuntu deploy jobs on push to main allowed, POLICY §10); the local gate is {g}.")
     L += ["- Report honestly: what you could not verify goes in the same sentence as the claim.",
           "- Ask about product decisions with a proposed default; never ask for permission to proceed.",
           ("- This repo is merge-approved: a PR whose whole gate ran green may be merged without asking."
@@ -138,10 +141,27 @@ if [ -n "$(git status --porcelain 2>/dev/null | head -1)" ]; then
   echo "Uncommitted changes on $branch: run {g}, commit, push, and open the PR before you stop." >&2
   exit 2
 fi
-# Unpushed = commits on no remote branch at all, asked before any "nothing to do" shortcut: a
-# missing base ref used to count as 0 ahead and let committed, unpushed work stop (review of
-# #71, P1). A question git cannot answer fails closed.
-if ! unpushed=$(git rev-list --count HEAD --not --remotes 2>/dev/null); then
+# Unpushed = commits not on THIS branch's own remote ref: its upstream (@{{u}}) or origin/<branch>.
+# A commit that only some other remote branch contains is not pushed for this branch's PR. A
+# branch never pushed counts what it has past the default branch; with neither ref, what is on
+# no remote at all. Asked before any "nothing to do" shortcut: a missing base ref used to count
+# as 0 ahead and let committed, unpushed work stop (review of #71, P1). A question git cannot
+# answer fails closed.
+has_ref() {{ git rev-parse --verify --quiet "$1^{{commit}}" >/dev/null 2>&1; }}
+up=$(git rev-parse --abbrev-ref --symbolic-full-name '@{{u}}' 2>/dev/null) || up=""
+own=""
+for r in "$up" "origin/$branch"; do
+  [ -n "$r" ] && has_ref "$r" && own="$own $r"
+done
+if [ -n "$own" ]; then
+  # shellcheck disable=SC2086 # $own is one or two ref names, split on purpose
+  unpushed=$(git rev-list --count HEAD --not $own 2>/dev/null) || unpushed=""
+elif has_ref "$base"; then
+  unpushed=$(git rev-list --count "$base..HEAD" 2>/dev/null) || unpushed=""
+else
+  unpushed=$(git rev-list --count HEAD --not --remotes 2>/dev/null) || unpushed=""
+fi
+if [ -z "$unpushed" ]; then
   echo "Could not tell whether $branch is pushed (git rev-list failed). Push it (git push -u origin $branch) and open the PR before you stop." >&2
   exit 2
 fi
@@ -160,14 +180,33 @@ if ! git rev-parse --verify --quiet "$base^{{commit}}" >/dev/null 2>&1 || \
   exit 2
 fi
 [ "$ahead" = 0 ] && exit 0
+# An open PR for this branch covers whatever is pushed to it. A merged or closed one covers only
+# the head it had: commits after it need a NEW PR, never "handled by the merged one".
 if command -v gh >/dev/null 2>&1; then
-  state=$(gh pr view "$branch" --json state --jq .state 2>/dev/null) || state=""
-  case "$state" in OPEN|MERGED) exit 0 ;; esac
-  if [ -z "$state" ] && ! gh auth status >/dev/null 2>&1; then
-    echo "Could not ask GitHub whether $branch has a PR (gh is not signed in here). If none is open, say so in your last message and name the branch." >&2
+  if ! open=$(gh pr list --head "$branch" --state open --json number --jq length 2>/dev/null); then
+    if ! gh auth status >/dev/null 2>&1; then
+      echo "Could not ask GitHub whether $branch has a PR (gh is not signed in here). If none is open, say so in your last message and name the branch." >&2
+    else
+      echo "Could not ask GitHub whether $branch has a PR (gh pr list failed). If none is open, open it (gh pr create --fill) or name the branch in your last message." >&2
+    fi
     exit 2
   fi
-  echo "No open PR for $branch. Open it: gh pr create --fill, with the gate's output and what is unverified in the body; add --label needs-mac if a Mac-only step was skipped." >&2
+  case "$open" in ''|0) ;; *) exit 0 ;; esac
+  head=$(git rev-parse HEAD 2>/dev/null) || head=""
+  done_heads=$(gh pr list --head "$branch" --state merged --json headRefOid --jq '.[].headRefOid' 2>/dev/null) || done_heads=""
+  if [ -n "$head" ] && printf '%s\\n' "$done_heads" | grep -qx "$head"; then
+    exit 0  # this exact head was merged: nothing after it
+  fi
+  if [ -n "$done_heads" ]; then
+    echo "The PR for $branch was already merged; the commits after it are in no PR. Open a new one: gh pr create --fill, with the gate's output and what is unverified in the body." >&2
+    exit 2
+  fi
+  closed=$(gh pr list --head "$branch" --state closed --json number --jq length 2>/dev/null) || closed=""
+  case "$closed" in ''|0)
+    echo "No open PR for $branch. Open it: gh pr create --fill, with the gate's output and what is unverified in the body; add --label needs-mac if a Mac-only step was skipped." >&2 ;;
+  *)
+    echo "The PR for $branch was closed without merging, so nothing open carries this work. Open a new one (gh pr create --fill), or say in your last message why it stays closed." >&2 ;;
+  esac
   exit 2
 fi
 echo "gh is not available here, so the PR could not be checked. Make sure one is open for $branch, or name the branch in your last message." >&2
@@ -228,7 +267,7 @@ def secret_destination(name: str) -> str:
 
 def setup_script(repo: pathlib.Path, gate_text: str) -> list[str]:
     """Install lines for the environment setup script: uv always, then what the repo's root
-    lockfiles and its gate name. Every step is an `if`, never `[ -f x ] && …`: under `set -e`
+    lockfiles and its gate name, then each subdirectory (depth ≤ 2) with a lockfile of its own. Every step is an `if`, never `[ -f x ] && …`: under `set -e`
     a false test as the last line would fail the whole setup."""
     has = lambda rel: (repo / rel).exists()  # noqa: E731
     L = ["#!/bin/bash", "set -euo pipefail",
@@ -253,7 +292,72 @@ def setup_script(repo: pathlib.Path, gate_text: str) -> list[str]:
         L.append("if [ -f package.json ]; then npm install; fi")
     if has("deno.json") or has("deno.jsonc") or has("deno.lock") or re.search(r"\bdeno\b", gate_text):
         L.append("if ! command -v deno >/dev/null 2>&1; then npm install -g deno; fi")
+    sub = sub_lockfiles(repo)
+    if sub and not has("pnpm-lock.yaml") and not re.search(r"\bpnpm\b", gate_text) \
+            and any("pnpm-lock.yaml" in names for _, names in sub):
+        L.append("if ! command -v pnpm >/dev/null 2>&1; then npm install -g pnpm; fi")
+    for rel, names in sub:
+        q = shlex.quote(rel)
+        for lock, cmd in _SUB_INSTALL:
+            if lock in names:
+                L.append(f"if [ -f {shlex.quote(rel + '/' + lock)} ]; then {cmd.format(d=q)}; fi")
+    for rel in swift_only_dirs(repo):
+        L.append(f"# skipped on Linux: {rel} (Swift packages, Package.resolved only; a Mac resolves them)")
     return L
+
+
+# Lockfiles that make a subdirectory its own install, in the order they are run. Node takes the
+# first lockfile it has (a directory with two is installed once); Python lines are independent.
+# Every install runs inside its directory: a requirements.txt with `-e .` run from the root
+# installed the root project (review of #86, P2).
+_SUB_LOCKS = ("pnpm-lock.yaml", "package-lock.json", "yarn.lock", "uv.lock", "requirements.txt")
+_SUB_INSTALL = (("pnpm-lock.yaml", "(cd {d} && pnpm install --frozen-lockfile)"),
+                ("package-lock.json", "(cd {d} && npm ci)"),
+                ("yarn.lock", "(cd {d} && corepack enable && yarn install --frozen-lockfile)"),
+                ("uv.lock", "(cd {d} && uv sync --frozen)"),
+                ("requirements.txt", "(cd {d} && uv pip install -q --system -r requirements.txt)"))
+_NODE_LOCKS = ("pnpm-lock.yaml", "package-lock.json", "yarn.lock")
+# Never descended into: dependencies, build output, VCS and tool state, vendored trees.
+_SKIP_DIRS = {"node_modules", "vendor", "vendored", "third_party", "third-party", "external", "deps", "Pods", "Carthage",
+              "DerivedData", "build", "dist", "out", "target", "venv", "env", "__pycache__", "site-packages", "bower_components"}
+SUB_DEPTH = 2
+
+
+def _subdirs(repo: pathlib.Path):
+    """Directories 1..SUB_DEPTH levels below the repo, sorted, skipping hidden, vendored and
+    symlinked ones (a link could point out of the repo or back into it)."""
+    def walk(d: pathlib.Path, depth: int):
+        try:
+            kids = sorted(p for p in d.iterdir() if p.is_dir() and not p.is_symlink())
+        except OSError:
+            return
+        for k in kids:
+            if k.name.startswith(".") or k.name in _SKIP_DIRS or k.name.endswith(".egg-info"):
+                continue
+            yield k
+            if depth < SUB_DEPTH:
+                yield from walk(k, depth + 1)
+    yield from walk(repo, 1)
+
+
+def sub_lockfiles(repo: pathlib.Path) -> list[tuple[str, list[str]]]:
+    """(repo-relative dir, lockfiles to install from) for every subdirectory with its own
+    lockfile, depth ≤ SUB_DEPTH. A web app or a worker beside the root package has its own
+    dependencies, and a setup script that installs only the root leaves its gate step failing."""
+    out = []
+    for d in _subdirs(repo):
+        found = [n for n in _SUB_LOCKS if (d / n).is_file()]
+        node = next((n for n in found if n in _NODE_LOCKS), None)
+        found = [n for n in found if n not in _NODE_LOCKS or n == node]
+        if found:
+            out.append((d.relative_to(repo).as_posix(), found))
+    return out
+
+
+def swift_only_dirs(repo: pathlib.Path) -> list[str]:
+    """Subdirectories whose only lockfile is Package.resolved: Swift, nothing to install on Linux."""
+    return [d.relative_to(repo).as_posix() for d in _subdirs(repo)
+            if (d / "Package.resolved").is_file() and not any((d / n).is_file() for n in _SUB_LOCKS)]
 
 
 def setup_doc(repo: pathlib.Path, names: list[str], gate: str | None, tools: list[str], gate_text: str) -> str:
@@ -372,7 +476,12 @@ def _inside(repo: pathlib.Path, path: pathlib.Path) -> None:
     """Refuse a destination that resolves out of the repo: a symlinked `.claude/`, settings file,
     doc or .gitignore would otherwise make prep write into someone else's tree (review of #71,
     P1). `resolve()` follows every symlinked parent and a dangling link to where it points."""
-    real = path.resolve()
+    if cloud.symlink_loop(path):
+        raise Refused(f"{path.relative_to(repo) if path.is_relative_to(repo) else path.name} is a symlink loop; nothing written")
+    try:
+        real = path.resolve()
+    except (RuntimeError, OSError):  # a loop further up the path, on Python < 3.13
+        raise Refused(f"{path.name}: its path does not resolve (a symlink loop); nothing written") from None
     if real != repo and repo not in real.parents:
         try:
             rel = path.relative_to(repo)
@@ -381,22 +490,30 @@ def _inside(repo: pathlib.Path, path: pathlib.Path) -> None:
         raise Refused(f"{rel} resolves out of the repo (a symlink); nothing written")
 
 
-def _conflicting_merge_lines(repo: pathlib.Path, merge: str) -> list[str]:
-    """`file:line` of every `merge-approved:` line outside the generated section that disagrees
-    with the owner's list. Prep rewrites only its own section, so such a line would survive and
-    `teyla cloud check` would still report drift (review of #71, P2): refuse and name them."""
+def _is_instruction(rel: str) -> bool:
+    return rel in ("AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md") or (rel.startswith(".claude/rules/") and rel.endswith(".md"))
+
+
+def _conflicting_merge_lines(repo: pathlib.Path, merge: str, changes: list) -> list[str]:
+    """`file:line` of every `merge-approved:` line that disagrees with the owner's list, judged
+    over each instruction file as prep would leave it — the whole file. Prep rewrites only the
+    first generated section of the files it writes; any other line survives, and `teyla cloud
+    check` would still report drift (review of #71, P2). Lines inside a marked section were
+    skipped, so a second or unterminated section — or one in a rules file prep does not write —
+    kept a stale value through prep (#71): no section is exempt. Line numbers are those of the
+    file as prep would write it."""
+    pending = {(repo / rel).resolve(): new for rel, _old, new, _x in changes}
+    files = {(repo / name).resolve(): (name, text) for name, text in cloud.instruction_files(repo)}
+    for rel, _old, new, _x in changes:
+        real = (repo / rel).resolve()
+        if real not in files and _is_instruction(rel):
+            files[real] = (rel, new)
     out = []
-    for name, text in cloud.instruction_files(repo):
-        inside = False
-        for i, line in enumerate(text.splitlines(), 1):
-            if line.startswith("<!-- teyla:cloud:start"):
-                inside = True
-            elif line.strip() == END:
-                inside = False
-            elif not inside:
-                m = cloud._MERGE_LINE.match(line)
-                if m and m.group(1).lower() != merge:
-                    out.append(f"{name}:{i}")
+    for real, (name, text) in sorted(files.items(), key=lambda kv: kv[1][0]):
+        for i, line in enumerate(pending.get(real, text).splitlines(), 1):
+            m = cloud._MERGE_LINE.match(line)
+            if m and m.group(1).lower() != merge:
+                out.append(f"{name}:{i}")
     return out
 
 
@@ -429,12 +546,10 @@ def plan(repo, owners: set[str] | None = ..., policy_text: str | None = None, fi
     section = shipping_section(merge, gate, bool(_NO_ACTIONS.search(policy_text)))
     generated["AGENTS.md"] = section
     for p in (a, c):
+        if cloud.symlink_loop(p):  # before resolve(), which raises on Python < 3.13
+            raise Refused(f"{p.name} is a symlink loop; make it a real file, nothing written")
         if p.is_symlink() and repo not in p.resolve().parents:
             raise Refused(f"{p.name} is a symlink out of the repo; nothing written")
-    conflicts = _conflicting_merge_lines(repo, merge)
-    if conflicts:
-        raise Refused(f"merge-approved: {merge} is what the owner's list says, but {', '.join(conflicts)} says otherwise "
-                      "outside the generated section; fix those lines by hand, nothing written")
     a_real, c_real = a.resolve() if a.exists() else None, c.resolve() if c.exists() else None
     if a_real and c_real and a_real == c_real:
         put(a_real, replace_section(cloud._read(a_real), section))  # one file, two names: no import needed
@@ -474,6 +589,11 @@ def plan(repo, owners: set[str] | None = ..., policy_text: str | None = None, fi
             notes.append(f".gitignore ignores .claude/ wholesale (line {', '.join(map(str, hit))}), so the files above cannot be "
                          "committed. Replace that line with:\n    " + "\n    ".join(GITIGNORE_LINES)
                          + "\n  (re-run with --fix-gitignore to apply)")
+
+    conflicts = _conflicting_merge_lines(repo, merge, changes)
+    if conflicts:
+        raise Refused(f"merge-approved: {merge} is what the owner's list says, but {', '.join(conflicts)} says otherwise "
+                      "outside what prep rewrites; fix those lines by hand, nothing written")
 
     generated["settings"] = merge_settings(None) + ensure_import("")
     for name, text in generated.items():

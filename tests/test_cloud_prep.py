@@ -76,7 +76,7 @@ def test_fresh_repo_gets_every_file_and_becomes_cloud_ready(tmp_path, _home):
     assert os.access(r / cloud_prep.STOP_HOOK, os.X_OK)
     assert (r / "CLAUDE.md").read_text().splitlines()[1] == "@AGENTS.md"
     agents = (r / "AGENTS.md").read_text()
-    assert "merge-approved: yes" in agents and "No GitHub Actions" in agents
+    assert "merge-approved: yes" in agents and "- No CI on push/PR (short ubuntu deploy jobs on push to main allowed, POLICY §10); the local gate is `./check.sh`." in agents.splitlines()
     rep = cloud.check_repo(r, net=False)
     assert rep["ready"] and all(i["level"] in ("OK", "INFO") for i in rep["items"]), rep["items"]
     rc, out = _prep(r)
@@ -199,6 +199,25 @@ def test_a_conflicting_merge_line_outside_the_section_is_refused_with_its_locati
     assert rc == 1 and "AGENTS.md:3" in out[0]
 
 
+def test_no_marked_section_is_exempt_from_the_merge_line_check(tmp_path):
+    # #71: lines inside any teyla:cloud marked section were skipped. A second section prep does
+    # not rewrite, an unterminated one, or one in another rules file kept `yes` through a prep
+    # that wrote `no`, and check reported drift afterwards.
+    stale = f"{cloud_prep.START}\n## Shipping\n\nmerge-approved: yes\n{cloud_prep.END}\n"
+    current = cloud_prep.shipping_section("no", None, no_actions=False)
+    cases = {"second section": {"AGENTS.md": f"# a\n\n{current}\n{stale}"},
+             "unterminated": {"AGENTS.md": f"# a\n\n{cloud_prep.START}\nmerge-approved: yes\n\nmore by hand\n"},
+             "rules file": {"AGENTS.md": "# a\n", ".claude/rules/old.md": f"x\n{stale}"}}
+    for i, (case, files) in enumerate(cases.items()):
+        r = _repo(tmp_path, files, name=f"app{i}")
+        before = _tree(r)
+        rc, out = _prep(r, owners={"acme/other"})
+        assert rc == 1 and "says otherwise" in out[0], (case, out)
+        assert _tree(r) == before, case
+    rc, out = _prep(_repo(tmp_path, {"AGENTS.md": f"# a\n\n{stale}"}, name="fine"), owners={"acme/other"})
+    assert rc == 0, out  # the one section prep rewrites is prep's to fix
+
+
 def test_hand_written_hook_script_is_not_touched(tmp_path):
     r = _repo(tmp_path, {cloud_prep.STOP_HOOK: "#!/bin/sh\necho mine\n"})
     rc, out = _prep(r)
@@ -261,18 +280,30 @@ def test_the_guard_catches_what_it_is_for():
 
 
 @pytest.mark.parametrize("policy,want", [("**No CI on `push` or `pull_request`.** Test workflows are dispatch only.", True),
-                                         ("No CI on\n  push or PR", True), ("Deploy on push to main.", False)])
+                                         ("No CI on\n  push or PR", True), ("No CI on push/PR (deploys allowed)", True),
+                                         ("Deploy on push to main.", False)])
 def test_no_actions_rule_is_read_from_the_policy_wording(tmp_path, policy, want):
     # The owner's policy says "No CI on `push` or `pull_request`"; it was not recognised (review of #71, P2).
     p = cloud_prep.plan(_repo(tmp_path), owners=OWNERS, policy_text=policy)
     agents = next(new for rel, _o, new, _x in p["changes"] if rel == "AGENTS.md")
-    assert ("No GitHub Actions on push or pull_request" in agents) is want
+    assert ("No CI on push/PR" in agents) is want
+
+
+def test_actions_line_says_exactly_what_policy_10_says():
+    # It said "No GitHub Actions on push or pull_request", which forbids the deploy-on-main jobs
+    # §10 allows; the line is now §10's meaning, with the repo's own gate named.
+    a = cloud_prep.shipping_section("no", "./check.sh", no_actions=True)
+    assert ("- No CI on push/PR (short ubuntu deploy jobs on push to main allowed, POLICY §10); "
+            "the local gate is `./check.sh`.") in a.splitlines()
+    assert "No GitHub Actions" not in a
+    b = cloud_prep.shipping_section("no", None, no_actions=True)
+    assert "the local gate is the repo's tests." in b
 
 
 def test_no_actions_rule_only_when_the_owner_policy_says_so(tmp_path):
     a = cloud_prep.shipping_section("yes", "./check.sh", no_actions=True)
     b = cloud_prep.shipping_section("no", None, no_actions=False)
-    assert "No GitHub Actions" in a and "No GitHub Actions" not in b
+    assert "No CI on push/PR" in a and "No CI on push/PR" not in b and "Actions" not in b
     assert "gh pr merge --merge`). If merging is refused" in a and "the owner merges" in b
     assert cloud._MERGE_LINE.findall(a) == ["yes"] and cloud._MERGE_LINE.findall(b) == ["no"]
 
@@ -306,6 +337,72 @@ def test_setup_script_is_valid_bash_and_survives_missing_files(tmp_path):
     f.write_text(script + "\n")
     assert subprocess.run(["bash", "-n", str(f)]).returncode == 0
     assert not any(l.startswith("[ ") and "&&" in l for l in script.splitlines())
+
+
+def test_setup_script_installs_subdirectories_with_their_own_lockfile(tmp_path):
+    # Only the root was installed; a web/ or worker/ with its own lockfile left the gate failing.
+    r = _repo(tmp_path, {"pyproject.toml": "[project]\nname='x'\n",
+                         "web/package-lock.json": "{}", "web/yarn.lock": "",  # one Node install, the first lockfile
+                         "services/api/uv.lock": "", "services/api/requirements.txt": "",
+                         "apps/site/pnpm-lock.yaml": "",
+                         "ios/Package.resolved": "{}",
+                         "a/b/c/package-lock.json": "{}",  # depth 3: out of bounds
+                         "web/node_modules/dep/package-lock.json": "{}", "vendor/lib/package-lock.json": "{}",
+                         ".github/x/package-lock.json": "{}", "my app/package-lock.json": "{}"})
+    (r / "linked").symlink_to(r / "web")
+    lines = cloud_prep.setup_script(r, "")
+    script = "\n".join(lines)
+    assert "if [ -f web/package-lock.json ]; then (cd web && npm ci); fi" in lines
+    assert "yarn" not in script
+    assert "if [ -f services/api/uv.lock ]; then (cd services/api && uv sync --frozen); fi" in lines
+    assert ("if [ -f services/api/requirements.txt ]; then (cd services/api && uv pip install -q --system -r requirements.txt); fi"
+            in lines)
+    assert "if [ -f apps/site/pnpm-lock.yaml ]; then (cd apps/site && pnpm install --frozen-lockfile); fi" in lines
+    assert lines.index("if ! command -v pnpm >/dev/null 2>&1; then npm install -g pnpm; fi") < \
+        next(i for i, l in enumerate(lines) if "apps/site" in l)
+    assert "if [ -f 'my app/package-lock.json' ]; then (cd 'my app' && npm ci); fi" in lines
+    assert "# skipped on Linux: ios (Swift packages, Package.resolved only; a Mac resolves them)" in lines
+    for gone in ("a/b/c", "node_modules", "vendor", ".github", "linked"):
+        assert gone not in script, gone
+
+    # Run it: every install line under set -euo pipefail, with stub tools that log their cwd.
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    log = tmp_path / "calls.log"
+    for tool in ("uv", "npm", "pnpm", "corepack", "yarn", "curl"):
+        (stubs / tool).write_text(f'#!/bin/sh\necho "{tool} $(basename "$PWD") $*" >> "{log}"\n')
+        (stubs / tool).chmod(0o755)
+    f = tmp_path / "setup.sh"
+    f.write_text(script + "\n")
+    env = dict(os.environ, PATH=f"{stubs}:/usr/bin:/bin", CLAUDE_PROJECT_DIR=str(r))
+    res = subprocess.run(["bash", str(f)], capture_output=True, text=True, env=env)
+    assert res.returncode == 0, res.stderr
+    calls = log.read_text().splitlines()
+    assert "npm web ci" in calls and "uv api sync --frozen" in calls and "pnpm site install --frozen-lockfile" in calls
+    assert "npm my app ci" in calls
+
+
+def test_every_subdirectory_install_runs_inside_its_directory(tmp_path):
+    # PR #86 review, P2: services/api/requirements.txt was installed from the repo root, so its
+    # `-e .` installed the root project (or failed). Every lockfile kind runs from its directory.
+    r = _repo(tmp_path, {"a/pnpm-lock.yaml": "", "b/package-lock.json": "{}", "c/yarn.lock": "",
+                         "d/uv.lock": "", "services/api/requirements.txt": "-e .\n"})
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    log = tmp_path / "calls.log"
+    for tool in ("uv", "npm", "pnpm", "corepack", "yarn", "curl"):
+        (stubs / tool).write_text(f'#!/bin/sh\necho "{tool} $PWD" >> "{log}"\n')
+        (stubs / tool).chmod(0o755)
+    f = tmp_path / "setup.sh"
+    f.write_text("\n".join(cloud_prep.setup_script(r, "")) + "\n")
+    env = dict(os.environ, PATH=f"{stubs}:/usr/bin:/bin", CLAUDE_PROJECT_DIR=str(r))
+    res = subprocess.run(["bash", str(f)], capture_output=True, text=True, env=env)
+    assert res.returncode == 0, res.stderr
+    calls = log.read_text().splitlines()
+    real = r.resolve()
+    for tool, sub in (("pnpm", "a"), ("npm", "b"), ("yarn", "c"), ("uv", "d"), ("uv", "services/api")):
+        assert f"{tool} {real / sub}" in calls or f"{tool} {r / sub}" in calls, (tool, sub, calls)
+    assert not any(c.endswith(" " + str(real)) or c.endswith(" " + str(r)) for c in calls if c.startswith("uv")), calls
 
 
 # --- the hooks, run for real -----------------------------------------------------------------
@@ -349,6 +446,20 @@ def _fake_gh(tmp_path, body):
     return f"{d}:{NO_GH}"
 
 
+def _gh_prs(tmp_path, open_=0, merged=(), closed=0):
+    """A gh that answers `gh pr list --head <b> --state <s> --json … --jq …` the way the real one
+    does after --jq: a count for open/closed, one head sha per line for merged."""
+    heads = " ".join(merged)
+    return _fake_gh(tmp_path, f"""case "$*" in
+  "auth status"*) exit 0 ;;
+  *"--state open"*) echo {open_} ;;
+  *"--state merged"*) printf '%s\\n' {heads} ;;
+  *"--state closed"*) echo {closed} ;;
+  *) exit 1 ;;
+esac
+""")
+
+
 def test_hooks_are_silent_outside_the_cloud(tmp_path):
     r = _landed_repo(tmp_path)
     (r / "x.txt").write_text("dirty")
@@ -384,9 +495,13 @@ def test_stop_hook_blocks_until_pushed_and_a_pr_exists(tmp_path):
     res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
     assert res.returncode == 2 and "gh is not available here" in res.stderr
 
-    none = _fake_gh(tmp_path, 'case "$1" in auth) exit 0;; esac\necho "no pull requests found" >&2\nexit 1\n')
+    none = _gh_prs(tmp_path)
     res = _run(r, cloud_prep.STOP_HOOK, path=none)
     assert res.returncode == 2 and "No open PR for claude/brave-x" in res.stderr
+
+    broken = _fake_gh(tmp_path, 'case "$1" in auth) exit 0;; esac\necho "HTTP 502" >&2\nexit 1\n')
+    res = _run(r, cloud_prep.STOP_HOOK, path=broken)
+    assert res.returncode == 2 and "gh pr list failed" in res.stderr
 
     unauth = tmp_path / "unauth"
     unauth.mkdir()
@@ -395,8 +510,7 @@ def test_stop_hook_blocks_until_pushed_and_a_pr_exists(tmp_path):
     res = _run(r, cloud_prep.STOP_HOOK, path=f"{unauth}:{NO_GH}")
     assert res.returncode == 2 and "gh is not signed in" in res.stderr
 
-    (tmp_path / "fakebin" / "gh").write_text("#!/bin/sh\necho OPEN\n")
-    assert _run(r, cloud_prep.STOP_HOOK, path=none).returncode == 0
+    assert _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, open_=1)).returncode == 0
 
     # told once, never trapped: the second stop in a row goes through whatever the state
     (r / "y.txt").write_text("more")
@@ -428,6 +542,55 @@ def test_stop_hook_counts_commits_on_no_remote_even_without_an_upstream(tmp_path
     _git(r, "commit", "-q", "--allow-empty", "-m", "more")
     res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
     assert res.returncode == 2 and "1 commit(s) on claude/brave-x are not on the remote" in res.stderr, res.stderr
+
+
+def test_stop_hook_pushed_means_on_this_branchs_own_remote_ref(tmp_path):
+    # "Pushed" was "contained in any remote branch": work pushed only under another name (or
+    # contained in a sibling branch) let the session stop with nothing on its own branch.
+    r = _landed_repo(tmp_path)
+    _git(r, "commit", "-q", "--allow-empty", "-m", "work")
+    _git(r, "push", "-q", "origin", "HEAD:refs/heads/claude/other")
+    res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
+    assert res.returncode == 2 and "1 commit(s) on claude/brave-x are not on the remote" in res.stderr, res.stderr
+
+    # an upstream set to another branch (git checkout -b x origin/main does that) still counts
+    # origin/<branch> as pushed once the branch is there
+    _git(r, "branch", "-q", "--set-upstream-to", "origin/main")
+    res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
+    assert res.returncode == 2 and "not on the remote" in res.stderr, res.stderr
+    _git(r, "push", "-q", "origin", "claude/brave-x")
+    res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
+    assert "not on the remote" not in res.stderr and "gh is not available" in res.stderr, res.stderr
+
+    # the upstream itself counts: pushed under another name with -u, origin/claude/brave-x is behind
+    _git(r, "commit", "-q", "--allow-empty", "-m", "more")
+    _git(r, "push", "-q", "-u", "origin", "HEAD:refs/heads/claude/renamed")
+    res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
+    assert "not on the remote" not in res.stderr, res.stderr
+
+
+def test_stop_hook_wants_a_new_pr_for_commits_after_a_merged_or_closed_one(tmp_path):
+    # `gh pr view <branch>` said MERGED and the hook let the session stop, though the commits
+    # pushed after that merge were in no PR at all.
+    r = _landed_repo(tmp_path)
+    _git(r, "commit", "-q", "--allow-empty", "-m", "first")
+    _git(r, "push", "-q", "-u", "origin", "claude/brave-x")
+    merged_head = _git(r, "rev-parse", "HEAD").strip()
+    res = _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, merged=[merged_head]))
+    assert res.returncode == 0, res.stderr  # squash-merged as it is: nothing after it
+
+    _git(r, "commit", "-q", "--allow-empty", "-m", "after the merge")
+    _git(r, "push", "-q", "origin", "claude/brave-x")
+    res = _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, merged=[merged_head]))
+    assert res.returncode == 2 and "already merged" in res.stderr and "Open a new one" in res.stderr, res.stderr
+    assert _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, open_=1, merged=[merged_head])).returncode == 0
+
+    res = _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, closed=1))
+    assert res.returncode == 2 and "closed without merging" in res.stderr, res.stderr
+
+    if not shutil.which("gh", path=NO_GH):  # gh missing: still a clear message, never a crash
+        res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
+        assert res.returncode == 2 and "gh is not available here" in res.stderr
 
 
 def test_stop_hook_on_the_default_branch_does_not_stop_with_unpushed_commits(tmp_path):

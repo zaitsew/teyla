@@ -193,6 +193,38 @@ def test_a_dangling_external_symlink_still_blocks(tmp_path):
     assert not rep["ready"]
 
 
+def _resolve_like_312(monkeypatch):
+    """Path.resolve() as Python 3.11/3.12 has it: RuntimeError on a symlink loop (3.13 returns
+    the path). The suite runs on whatever Python the venv has; this pins the old behaviour."""
+    import pathlib
+    real = pathlib.Path.resolve
+
+    def resolve(self, strict=False):
+        if cloud.symlink_loop(self):
+            raise RuntimeError(f"Symlink loop from {str(self)!r}")
+        return real(self, strict)
+    monkeypatch.setattr(pathlib.Path, "resolve", resolve)
+
+
+def test_a_symlink_loop_between_instruction_files_is_a_finding_not_a_crash(tmp_path, monkeypatch):
+    """review of #70, P2: CLAUDE.md → AGENTS.md → CLAUDE.md crashed `cloud check` on 3.11/3.12."""
+    _resolve_like_312(monkeypatch)
+    r = _prepared(tmp_path, files={"AGENTS.md": PREPARED_AGENTS})
+    (r / "AGENTS.md").unlink()
+    (r / "CLAUDE.md").unlink()
+    (r / "AGENTS.md").symlink_to("CLAUDE.md")
+    (r / "CLAUDE.md").symlink_to("AGENTS.md")
+    assert cloud.instruction_files(r) == []
+    rep = cloud.check_repo(r, owners=set(), net=False)
+    item = _by(rep)["instructions"]
+    assert item["level"] == "BLOCK" and "symlink loop" in item["detail"] and "out of the repo" not in item["detail"]
+    assert "CLAUDE.md → AGENTS.md" in item["detail"] and not rep["ready"]
+
+    from teyla import cloud_prep
+    rc, out = cloud_prep.prep(r, owners=set(), policy_text="", vis="private")
+    assert rc == 1 and "symlink loop" in out[0], out
+
+
 @pytest.mark.parametrize("line,level", [("merge-approved: yes", "OK"), ("merge-approved: no", "BLOCK"), ("", "WARN")])
 def test_merge_approved_line_against_the_owner_list(tmp_path, _home, line, level):
     (_home / ".claude" / "CLAUDE.md").write_text(OWNER_MD)
@@ -266,6 +298,31 @@ def test_else_of_a_positive_guard_is_unguarded_but_else_of_a_negated_one_is_guar
     step = lambda text: [s for s in cloud.mac_steps(text) if s["line"] == 4][0]["guarded"]  # noqa: E731
     assert step(pos) is False
     assert step(neg) is True
+
+
+@pytest.mark.parametrize("gate,guarded", [
+    # review of #70, P2: the else of `! guard && other` also runs when `other` fails, x or no x
+    ("if ! command -v xcodebuild >/dev/null && [ -z \"$FORCE\" ]; then\n  echo skipped here\nelse\n  xcodebuild test\nfi\n", False),
+    ("if ! command -v xcodebuild >/dev/null || [ -n \"$SKIP\" ]; then\n  echo skipped here\nelse\n  xcodebuild test\nfi\n", True),
+    ("if command -v xcodebuild >/dev/null && [ -d App ]; then\n  xcodebuild test\nfi\n", True),
+    ("if command -v xcodebuild >/dev/null || [ -n \"$CI\" ]; then\n  xcodebuild test\nfi\n", False),
+    ("if [ -d App ] && command -v xcodebuild; then\n  echo\nelse\n  xcodebuild test\nfi\n", False),
+    ("if ! command -v xcodebuild; then\n  echo skipped here\nelse\n  xcodebuild test\nfi\n", True),
+    # the same rules on one line
+    ("if ! command -v xcodebuild && [ -z \"$F\" ]; then echo skip; else xcodebuild test; fi\n", False),
+    ("if ! command -v xcodebuild; then echo skip; else xcodebuild test; fi\n", True),
+    ("command -v xcodebuild >/dev/null && xcodebuild test\n", True),
+    ("command -v xcodebuild >/dev/null || xcodebuild test\n", False),
+    ("! command -v xcodebuild >/dev/null || xcodebuild test\n", True),
+    ("command -v xcodebuild >/dev/null; xcodebuild test\n", False),
+    # PR #86 review, P2: a one-line if runs the tool in both branches; the else is not guarded
+    ("if command -v xcodebuild; then xcodebuild test; else xcodebuild build; fi\n", False),
+    ("if ! command -v xcodebuild; then xcodebuild test; else xcodebuild build; fi\n", False),
+])
+def test_compound_conditions_guard_only_where_the_logic_forces_it(gate, guarded):
+    step = [s for s in cloud.mac_steps(gate) if "xcodebuild test" in gate.splitlines()[s["line"] - 1]]
+    assert len(step) == 1, cloud.mac_steps(gate)
+    assert step[0]["guarded"] is guarded
 
 
 def test_secret_names_need_a_manifest_and_values_never_show(tmp_path):
@@ -350,6 +407,25 @@ def test_sessions_found_from_trailers_across_remote_refs(tmp_path):
     assert by["session_OPEN22"]["pr"] == "unknown"  # gh not asked
     assert by["session_LANDED1"]["landed"] and by["session_LANDED1"]["pr"] == "landed"
     assert by["session_OPEN22"]["age_hours"] == pytest.approx(9 * 24 + 2, abs=0.1)
+
+
+def test_a_session_belongs_to_the_branch_whose_tip_is_nearest_its_commit(tmp_path):
+    """review of #70, P2: a later branch cut from the session's branch contains its commits too,
+    and the alphabetical first (claude/alpha) took the session."""
+    r = _session_repo(tmp_path)
+    _git(r, "checkout", "-q", "-b", "claude/alpha", "origin/claude/brave-x")
+    for i in range(2):
+        _git(r, "commit", "-q", "--allow-empty", "-m", f"later {i}")
+    _git(r, "branch", "-q", "zzz-local", "origin/claude/brave-x")  # nearer, but not claude/*
+    _git(r, "checkout", "-q", "main")
+    by = {s["session"]: s for s in cloud.scan_sessions([r], gh=False, now=NOW)}
+    assert by["session_OPEN22"]["branch"] == "claude/brave-x"
+
+    # equal distance: the name decides, every time
+    _git(r, "branch", "-q", "claude/aaa-copy", "origin/claude/brave-x")
+    picks = {next(s["branch"] for s in cloud.scan_sessions([r], gh=False, now=NOW) if s["session"] == "session_OPEN22")
+             for _ in range(3)}
+    assert picks == {"claude/aaa-copy"}
 
 
 def test_local_main_does_not_make_a_session_landed(tmp_path):

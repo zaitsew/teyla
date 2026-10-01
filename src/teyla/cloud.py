@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import concurrent.futures as _cf
 import datetime as _dt
+import errno
 import json
 import os
 import pathlib
@@ -175,11 +176,24 @@ def _instruction_candidates(repo: pathlib.Path) -> list[pathlib.Path]:
     return [p for p in cands if p.is_file() or p.is_symlink()]
 
 
+def symlink_loop(p: pathlib.Path) -> bool:
+    """A symlink that never reaches a file (CLAUDE.md → AGENTS.md → CLAUDE.md). Asked with
+    os.stat, the same on every Python: resolve() raises RuntimeError on 3.11/3.12 and returns
+    the path on 3.13, and the RuntimeError crashed `cloud check` (review of #70, P2)."""
+    try:
+        if not p.is_symlink():
+            return False
+        os.stat(p)
+        return False
+    except OSError as e:
+        return e.errno == errno.ELOOP
+
+
 def _inside(repo: pathlib.Path, p: pathlib.Path) -> bool:
     try:
         p.resolve().relative_to(repo.resolve())
         return True
-    except ValueError:
+    except (ValueError, RuntimeError, OSError):  # RuntimeError: a symlink loop on Python < 3.13
         return False
 
 
@@ -188,7 +202,12 @@ def external_instruction_links(repo: pathlib.Path) -> list[str]:
     ~/.claude/CLAUDE.md). A cloud clone gets a dangling link, so they carry nothing there
     (review of #70, P1)."""
     return [f"{p.relative_to(repo)} → {os.readlink(p)}" for p in _instruction_candidates(repo)
-            if p.is_symlink() and not _inside(repo, p)]
+            if p.is_symlink() and not symlink_loop(p) and not _inside(repo, p)]
+
+
+def looped_instruction_links(repo: pathlib.Path) -> list[str]:
+    """Instruction files that are symlinks in a loop: no session, local or cloud, can read them."""
+    return [f"{p.relative_to(repo)} → {os.readlink(p)}" for p in _instruction_candidates(repo) if symlink_loop(p)]
 
 
 def instruction_files(repo: pathlib.Path) -> list[tuple[str, str]]:
@@ -199,8 +218,10 @@ def instruction_files(repo: pathlib.Path) -> list[tuple[str, str]]:
     repo = repo.resolve()
     seen, out = set(), []
     for p in _instruction_candidates(repo):
+        if symlink_loop(p) or not p.is_file() or not _inside(repo, p):
+            continue
         real = p.resolve()
-        if not _inside(repo, p) or not p.is_file() or real in seen:
+        if real in seen:
             continue
         seen.add(real)
         # Name the real file: in a CLAUDE.md → AGENTS.md repo the line numbers are AGENTS.md's.
@@ -248,7 +269,19 @@ def gate_script(repo: pathlib.Path) -> pathlib.Path | None:
     return None
 
 
-_NEGATED = re.compile(r"^(?:if|elif)\s+!|\[\[?\s+!\s|!=|\s-ne\s")
+_NEGATED = re.compile(r"^\s*!|\[\[?\s+!\s|!=|\s-ne\s")  # per clause, `if`/`elif` stripped
+_CHAIN = re.compile(r"(&&|\|\||;)")
+_QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'')
+
+
+def _clauses(text: str) -> tuple[list[str], list[str]]:
+    """`a && b || c` → (["a", "b", "c"], ["&&", "||"])."""
+    parts = _CHAIN.split(text)
+    return [c.strip() for c in parts[0::2]], parts[1::2]
+
+
+def _is_guard(clause: str, tool_guard: re.Pattern) -> bool:
+    return bool(tool_guard.search(clause) or _GENERIC_GUARD.search(clause))
 
 
 def _enclosing_guard(lines: list[str], i: int, tool_guard: re.Pattern) -> bool:
@@ -282,17 +315,63 @@ def _enclosing_guard(lines: list[str], i: int, tool_guard: re.Pattern) -> bool:
 
 
 def _cond_guards(cond: str, holds: bool, tool_guard: re.Pattern) -> bool:
-    if not (tool_guard.search(cond) or _GENERIC_GUARD.search(cond)):
+    """Does the branch of `if <cond>` — its `then` when `holds`, else its `else` — run only where
+    the tool (or the platform) is there? A plain test: the then of a positive one, the else of a
+    negated one. A compound test only where the logic forces it: `guard && …` in the then, and
+    `! guard || …` in the else (`if ! command -v x || …; then skip; else x`). `if ! command -v x
+    && …; then skip; else x` is NOT guarded: the else also runs when the other test fails, x or
+    no x (review of #70, P2). Any other mix of &&, || and ; is not guarded."""
+    body = re.split(r";\s*then\b", re.sub(r"^\s*(?:el)?if\s+", "", cond), maxsplit=1)[0]
+    clauses, ops = _clauses(body)
+    guards = [c for c in clauses if _is_guard(c, tool_guard)]
+    if not guards:
         return False
-    return holds != bool(_NEGATED.search(cond))
+    if len(clauses) == 1:
+        return holds != bool(_NEGATED.search(clauses[0]))
+    if holds and set(ops) == {"&&"}:
+        return any(not _NEGATED.search(c) for c in guards)
+    if not holds and set(ops) == {"||"}:
+        return any(_NEGATED.search(c) for c in guards)
+    return False
+
+
+def _line_guards(line: str, rx: re.Pattern, tool_guard: re.Pattern) -> bool:
+    """Is the step on this line guarded by the line itself? A one-line `if …; then …; else …`
+    is read like a block; otherwise the step's clause must follow a positive guard through `&&`
+    only (`command -v x && x test`), or come straight after `! guard ||`. A line that names the
+    tool only in its probe (`if command -v x; then`) is the guard, not a step."""
+    step = lambda c: bool(rx.search(_QUOTED.sub('""', c)))  # noqa: E731
+    m = re.match(r"\s*(?:el)?if\s+(.*?);\s*then\b(.*)", line)
+    if m:
+        cond, body = m.group(1), m.group(2)
+        then_part, else_part = (re.split(r";\s*else\b", body, maxsplit=1) + [""])[:2]
+        # Every branch that runs the tool must be guarded: `if command -v x; then x test; else
+        # x build; fi` runs x on Linux in the else (review of #86, P2).
+        branches = [h for part, h in ((then_part, True), (else_part, False)) if step(part)]
+        if branches:
+            return all(_cond_guards(cond, h, tool_guard) for h in branches)
+        return bool(tool_guard.search(cond))
+    clauses, ops = _clauses(line)
+    k = next((n for n, c in enumerate(clauses) if step(c) and not tool_guard.search(c)), None)
+    if k is None:
+        return any(tool_guard.search(c) for c in clauses)
+    for j in range(k - 1, -1, -1):
+        if not _is_guard(clauses[j], tool_guard):
+            continue
+        between = ops[j:k]
+        if not _NEGATED.search(clauses[j]) and all(o == "&&" for o in between):
+            return True
+        if _NEGATED.search(clauses[j]) and between == ["||"]:
+            return True
+    return False
 
 
 def mac_steps(text: str) -> list[dict]:
     """Every non-comment line of a gate script that runs a Mac-only tool, and whether it is
     guarded: the line itself tests for the tool (`command -v swift && swift test`), or an
     `if`/`elif` whose branch it sits in (within 15 lines) tests for the tool, the platform or an
-    Xcode directory (see _enclosing_guard). A heuristic: it reads the shape a skip usually has,
-    it does not run the script."""
+    Xcode directory (see _enclosing_guard, _cond_guards). A heuristic: it reads the shape a skip
+    usually has, it does not run the script."""
     lines = text.splitlines()
     out = []
     for i, line in enumerate(lines):
@@ -301,14 +380,12 @@ def mac_steps(text: str) -> list[dict]:
             continue
         # A tool named inside a quoted string is a message ("no xcodegen here — skipped"), not a
         # step; the guard is still looked for in the whole line.
-        bare = re.sub(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'', '""', line)
+        bare = _QUOTED.sub('""', line)
         for tool, rx in MAC_STEPS:
             if not rx.search(bare):
                 continue
             tool_guard = re.compile(r"(?:command\s+-v|which|type|hash)\s+" + re.escape(tool.split()[0]) + r"\b")
-            guarded = bool(tool_guard.search(line) or _GENERIC_GUARD.search(line))
-            if not guarded:
-                guarded = _enclosing_guard(lines, i, tool_guard)
+            guarded = _line_guards(line, rx, tool_guard) or _enclosing_guard(lines, i, tool_guard)
             out.append({"tool": tool, "line": i + 1, "guarded": guarded})
     return out
 
@@ -361,10 +438,16 @@ def check_repo(repo, owners: set[str] | None = ..., net: bool = True) -> dict:
     # 1. instructions at all
     top = [n for n in ("CLAUDE.md", "AGENTS.md", ".claude/CLAUDE.md") if (repo / n).is_file() and _inside(repo, repo / n)]
     external = external_instruction_links(repo)
-    if external:
-        items.append(_item(BLOCK, "instructions", f"{', '.join(external)}: symlink(s) out of the repo; the cloud clone has a "
-                           "dangling link, so those rules do not exist there",
-                           "commit the text into the repo (a real AGENTS.md), and keep the link for local sessions only if at all"))
+    looped = looped_instruction_links(repo)
+    if looped or external:
+        why = []
+        if looped:
+            why.append(f"{', '.join(looped)}: symlink loop; no session can read {'it' if len(looped) == 1 else 'them'}, here or in the cloud")
+        if external:
+            why.append(f"{', '.join(external)}: symlink(s) out of the repo; the cloud clone has a dangling link, so those rules do not exist there")
+        items.append(_item(BLOCK, "instructions", "; ".join(why),
+                           "commit the text into the repo (a real AGENTS.md), and keep the link for local sessions only if at all"
+                           if not looped else "make AGENTS.md a real file and point CLAUDE.md at it (or import it with @AGENTS.md)"))
     elif not top:
         items.append(_item(BLOCK, "instructions", "no CLAUDE.md or AGENTS.md: a cloud session starts with no instructions",
                            f"teyla cloud prep {repo.name}  (AGENTS.md with the shipping section, CLAUDE.md importing it)"))
@@ -561,16 +644,27 @@ def _short_ref(ref: str) -> str:
     return ref
 
 
-def _pick_branch(refs: list[str], default: str) -> str | None:
-    names = []
+def _pick_branch(repo: pathlib.Path, tip: str, refs: list[str], default: str) -> str | None:
+    """The branch a cloud session's newest commit belongs to, among the refs that contain it. A
+    later branch cut from the session's branch contains it too, and the alphabetical first used
+    to win (review of #70, P2). Now: a `claude/*` branch first, then the one whose tip is fewest
+    commits past the commit (its own branch is 0), then the name — deterministic. Local and
+    remote-tracking refs of one name count once, at the nearer tip. The `Claude-Session:`
+    trailer carries no branch name, so it cannot break the tie."""
+    dist: dict[str, int] = {}
     for ref in refs:
         s = _short_ref(ref)
         if s in ("HEAD", _short_ref(default)) or s.endswith("/HEAD"):
             continue
-        if s not in names:
-            names.append(s)
-    names.sort(key=lambda n: (not n.startswith("claude/"), n))
-    return names[0] if names else None
+        try:
+            r = _git(repo, "rev-list", "--count", f"{tip}..{ref}", timeout=10)
+            d = int(r.stdout.strip()) if r.returncode == 0 else 1 << 30
+        except (OSError, subprocess.SubprocessError, ValueError):
+            d = 1 << 30
+        dist[s] = min(dist.get(s, d), d)
+    if not dist:
+        return None
+    return min(dist, key=lambda n: (not n.startswith("claude/"), dist[n], n))
 
 
 def repo_sessions(repo: pathlib.Path, days: int | None = None) -> list[dict]:
@@ -615,7 +709,7 @@ def repo_sessions(repo: pathlib.Path, days: int | None = None) -> list[dict]:
         tip = s["shas"][0]  # git log is newest first
         refs = _git(repo, "for-each-ref", "--contains", tip, "--format=%(refname)", "refs/heads", "refs/remotes", timeout=10).stdout.split()
         landed = bool(default_full) and default_full in refs
-        branch = _pick_branch(refs, default)
+        branch = _pick_branch(repo, tip, refs, default)
         out.append({"repo": repo.name, "path": str(repo), "slug": slug, "session": s["session"],
                     "branch": branch or (_short_ref(default) if landed else None), "commits": len(s["shas"]),
                     "first": s["first"], "last": s["last"], "landed": landed,
