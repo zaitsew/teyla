@@ -199,6 +199,25 @@ def test_a_conflicting_merge_line_outside_the_section_is_refused_with_its_locati
     assert rc == 1 and "AGENTS.md:3" in out[0]
 
 
+def test_no_marked_section_is_exempt_from_the_merge_line_check(tmp_path):
+    # #71: lines inside any teyla:cloud marked section were skipped. A second section prep does
+    # not rewrite, an unterminated one, or one in another rules file kept `yes` through a prep
+    # that wrote `no`, and check reported drift afterwards.
+    stale = f"{cloud_prep.START}\n## Shipping\n\nmerge-approved: yes\n{cloud_prep.END}\n"
+    current = cloud_prep.shipping_section("no", None, no_actions=False)
+    cases = {"second section": {"AGENTS.md": f"# a\n\n{current}\n{stale}"},
+             "unterminated": {"AGENTS.md": f"# a\n\n{cloud_prep.START}\nmerge-approved: yes\n\nmore by hand\n"},
+             "rules file": {"AGENTS.md": "# a\n", ".claude/rules/old.md": f"x\n{stale}"}}
+    for i, (case, files) in enumerate(cases.items()):
+        r = _repo(tmp_path, files, name=f"app{i}")
+        before = _tree(r)
+        rc, out = _prep(r, owners={"acme/other"})
+        assert rc == 1 and "says otherwise" in out[0], (case, out)
+        assert _tree(r) == before, case
+    rc, out = _prep(_repo(tmp_path, {"AGENTS.md": f"# a\n\n{stale}"}, name="fine"), owners={"acme/other"})
+    assert rc == 0, out  # the one section prep rewrites is prep's to fix
+
+
 def test_hand_written_hook_script_is_not_touched(tmp_path):
     r = _repo(tmp_path, {cloud_prep.STOP_HOOK: "#!/bin/sh\necho mine\n"})
     rc, out = _prep(r)

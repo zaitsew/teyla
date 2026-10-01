@@ -483,22 +483,30 @@ def _inside(repo: pathlib.Path, path: pathlib.Path) -> None:
         raise Refused(f"{rel} resolves out of the repo (a symlink); nothing written")
 
 
-def _conflicting_merge_lines(repo: pathlib.Path, merge: str) -> list[str]:
-    """`file:line` of every `merge-approved:` line outside the generated section that disagrees
-    with the owner's list. Prep rewrites only its own section, so such a line would survive and
-    `teyla cloud check` would still report drift (review of #71, P2): refuse and name them."""
+def _is_instruction(rel: str) -> bool:
+    return rel in ("AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md") or (rel.startswith(".claude/rules/") and rel.endswith(".md"))
+
+
+def _conflicting_merge_lines(repo: pathlib.Path, merge: str, changes: list) -> list[str]:
+    """`file:line` of every `merge-approved:` line that disagrees with the owner's list, judged
+    over each instruction file as prep would leave it — the whole file. Prep rewrites only the
+    first generated section of the files it writes; any other line survives, and `teyla cloud
+    check` would still report drift (review of #71, P2). Lines inside a marked section were
+    skipped, so a second or unterminated section — or one in a rules file prep does not write —
+    kept a stale value through prep (#71): no section is exempt. Line numbers are those of the
+    file as prep would write it."""
+    pending = {(repo / rel).resolve(): new for rel, _old, new, _x in changes}
+    files = {(repo / name).resolve(): (name, text) for name, text in cloud.instruction_files(repo)}
+    for rel, _old, new, _x in changes:
+        real = (repo / rel).resolve()
+        if real not in files and _is_instruction(rel):
+            files[real] = (rel, new)
     out = []
-    for name, text in cloud.instruction_files(repo):
-        inside = False
-        for i, line in enumerate(text.splitlines(), 1):
-            if line.startswith("<!-- teyla:cloud:start"):
-                inside = True
-            elif line.strip() == END:
-                inside = False
-            elif not inside:
-                m = cloud._MERGE_LINE.match(line)
-                if m and m.group(1).lower() != merge:
-                    out.append(f"{name}:{i}")
+    for real, (name, text) in sorted(files.items(), key=lambda kv: kv[1][0]):
+        for i, line in enumerate(pending.get(real, text).splitlines(), 1):
+            m = cloud._MERGE_LINE.match(line)
+            if m and m.group(1).lower() != merge:
+                out.append(f"{name}:{i}")
     return out
 
 
@@ -533,10 +541,6 @@ def plan(repo, owners: set[str] | None = ..., policy_text: str | None = None, fi
     for p in (a, c):
         if p.is_symlink() and repo not in p.resolve().parents:
             raise Refused(f"{p.name} is a symlink out of the repo; nothing written")
-    conflicts = _conflicting_merge_lines(repo, merge)
-    if conflicts:
-        raise Refused(f"merge-approved: {merge} is what the owner's list says, but {', '.join(conflicts)} says otherwise "
-                      "outside the generated section; fix those lines by hand, nothing written")
     a_real, c_real = a.resolve() if a.exists() else None, c.resolve() if c.exists() else None
     if a_real and c_real and a_real == c_real:
         put(a_real, replace_section(cloud._read(a_real), section))  # one file, two names: no import needed
@@ -576,6 +580,11 @@ def plan(repo, owners: set[str] | None = ..., policy_text: str | None = None, fi
             notes.append(f".gitignore ignores .claude/ wholesale (line {', '.join(map(str, hit))}), so the files above cannot be "
                          "committed. Replace that line with:\n    " + "\n    ".join(GITIGNORE_LINES)
                          + "\n  (re-run with --fix-gitignore to apply)")
+
+    conflicts = _conflicting_merge_lines(repo, merge, changes)
+    if conflicts:
+        raise Refused(f"merge-approved: {merge} is what the owner's list says, but {', '.join(conflicts)} says otherwise "
+                      "outside what prep rewrites; fix those lines by hand, nothing written")
 
     generated["settings"] = merge_settings(None) + ensure_import("")
     for name, text in generated.items():
