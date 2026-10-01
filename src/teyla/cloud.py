@@ -248,7 +248,19 @@ def gate_script(repo: pathlib.Path) -> pathlib.Path | None:
     return None
 
 
-_NEGATED = re.compile(r"^(?:if|elif)\s+!|\[\[?\s+!\s|!=|\s-ne\s")
+_NEGATED = re.compile(r"^\s*!|\[\[?\s+!\s|!=|\s-ne\s")  # per clause, `if`/`elif` stripped
+_CHAIN = re.compile(r"(&&|\|\||;)")
+_QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'')
+
+
+def _clauses(text: str) -> tuple[list[str], list[str]]:
+    """`a && b || c` → (["a", "b", "c"], ["&&", "||"])."""
+    parts = _CHAIN.split(text)
+    return [c.strip() for c in parts[0::2]], parts[1::2]
+
+
+def _is_guard(clause: str, tool_guard: re.Pattern) -> bool:
+    return bool(tool_guard.search(clause) or _GENERIC_GUARD.search(clause))
 
 
 def _enclosing_guard(lines: list[str], i: int, tool_guard: re.Pattern) -> bool:
@@ -282,17 +294,62 @@ def _enclosing_guard(lines: list[str], i: int, tool_guard: re.Pattern) -> bool:
 
 
 def _cond_guards(cond: str, holds: bool, tool_guard: re.Pattern) -> bool:
-    if not (tool_guard.search(cond) or _GENERIC_GUARD.search(cond)):
+    """Does the branch of `if <cond>` — its `then` when `holds`, else its `else` — run only where
+    the tool (or the platform) is there? A plain test: the then of a positive one, the else of a
+    negated one. A compound test only where the logic forces it: `guard && …` in the then, and
+    `! guard || …` in the else (`if ! command -v x || …; then skip; else x`). `if ! command -v x
+    && …; then skip; else x` is NOT guarded: the else also runs when the other test fails, x or
+    no x (review of #70, P2). Any other mix of &&, || and ; is not guarded."""
+    body = re.split(r";\s*then\b", re.sub(r"^\s*(?:el)?if\s+", "", cond), maxsplit=1)[0]
+    clauses, ops = _clauses(body)
+    guards = [c for c in clauses if _is_guard(c, tool_guard)]
+    if not guards:
         return False
-    return holds != bool(_NEGATED.search(cond))
+    if len(clauses) == 1:
+        return holds != bool(_NEGATED.search(clauses[0]))
+    if holds and set(ops) == {"&&"}:
+        return any(not _NEGATED.search(c) for c in guards)
+    if not holds and set(ops) == {"||"}:
+        return any(_NEGATED.search(c) for c in guards)
+    return False
+
+
+def _line_guards(line: str, rx: re.Pattern, tool_guard: re.Pattern) -> bool:
+    """Is the step on this line guarded by the line itself? A one-line `if …; then …; else …`
+    is read like a block; otherwise the step's clause must follow a positive guard through `&&`
+    only (`command -v x && x test`), or come straight after `! guard ||`. A line that names the
+    tool only in its probe (`if command -v x; then`) is the guard, not a step."""
+    step = lambda c: bool(rx.search(_QUOTED.sub('""', c)))  # noqa: E731
+    m = re.match(r"\s*(?:el)?if\s+(.*?);\s*then\b(.*)", line)
+    if m:
+        cond, body = m.group(1), m.group(2)
+        then_part, else_part = (re.split(r";\s*else\b", body, maxsplit=1) + [""])[:2]
+        if step(then_part):
+            return _cond_guards(cond, True, tool_guard)
+        if step(else_part):
+            return _cond_guards(cond, False, tool_guard)
+        return bool(tool_guard.search(cond))
+    clauses, ops = _clauses(line)
+    k = next((n for n, c in enumerate(clauses) if step(c) and not tool_guard.search(c)), None)
+    if k is None:
+        return any(tool_guard.search(c) for c in clauses)
+    for j in range(k - 1, -1, -1):
+        if not _is_guard(clauses[j], tool_guard):
+            continue
+        between = ops[j:k]
+        if not _NEGATED.search(clauses[j]) and all(o == "&&" for o in between):
+            return True
+        if _NEGATED.search(clauses[j]) and between == ["||"]:
+            return True
+    return False
 
 
 def mac_steps(text: str) -> list[dict]:
     """Every non-comment line of a gate script that runs a Mac-only tool, and whether it is
     guarded: the line itself tests for the tool (`command -v swift && swift test`), or an
     `if`/`elif` whose branch it sits in (within 15 lines) tests for the tool, the platform or an
-    Xcode directory (see _enclosing_guard). A heuristic: it reads the shape a skip usually has,
-    it does not run the script."""
+    Xcode directory (see _enclosing_guard, _cond_guards). A heuristic: it reads the shape a skip
+    usually has, it does not run the script."""
     lines = text.splitlines()
     out = []
     for i, line in enumerate(lines):
@@ -301,14 +358,12 @@ def mac_steps(text: str) -> list[dict]:
             continue
         # A tool named inside a quoted string is a message ("no xcodegen here — skipped"), not a
         # step; the guard is still looked for in the whole line.
-        bare = re.sub(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'', '""', line)
+        bare = _QUOTED.sub('""', line)
         for tool, rx in MAC_STEPS:
             if not rx.search(bare):
                 continue
             tool_guard = re.compile(r"(?:command\s+-v|which|type|hash)\s+" + re.escape(tool.split()[0]) + r"\b")
-            guarded = bool(tool_guard.search(line) or _GENERIC_GUARD.search(line))
-            if not guarded:
-                guarded = _enclosing_guard(lines, i, tool_guard)
+            guarded = _line_guards(line, rx, tool_guard) or _enclosing_guard(lines, i, tool_guard)
             out.append({"tool": tool, "line": i + 1, "guarded": guarded})
     return out
 

@@ -268,6 +268,28 @@ def test_else_of_a_positive_guard_is_unguarded_but_else_of_a_negated_one_is_guar
     assert step(neg) is True
 
 
+@pytest.mark.parametrize("gate,guarded", [
+    # review of #70, P2: the else of `! guard && other` also runs when `other` fails, x or no x
+    ("if ! command -v xcodebuild >/dev/null && [ -z \"$FORCE\" ]; then\n  echo skipped here\nelse\n  xcodebuild test\nfi\n", False),
+    ("if ! command -v xcodebuild >/dev/null || [ -n \"$SKIP\" ]; then\n  echo skipped here\nelse\n  xcodebuild test\nfi\n", True),
+    ("if command -v xcodebuild >/dev/null && [ -d App ]; then\n  xcodebuild test\nfi\n", True),
+    ("if command -v xcodebuild >/dev/null || [ -n \"$CI\" ]; then\n  xcodebuild test\nfi\n", False),
+    ("if [ -d App ] && command -v xcodebuild; then\n  echo\nelse\n  xcodebuild test\nfi\n", False),
+    ("if ! command -v xcodebuild; then\n  echo skipped here\nelse\n  xcodebuild test\nfi\n", True),
+    # the same rules on one line
+    ("if ! command -v xcodebuild && [ -z \"$F\" ]; then echo skip; else xcodebuild test; fi\n", False),
+    ("if ! command -v xcodebuild; then echo skip; else xcodebuild test; fi\n", True),
+    ("command -v xcodebuild >/dev/null && xcodebuild test\n", True),
+    ("command -v xcodebuild >/dev/null || xcodebuild test\n", False),
+    ("! command -v xcodebuild >/dev/null || xcodebuild test\n", True),
+    ("command -v xcodebuild >/dev/null; xcodebuild test\n", False),
+])
+def test_compound_conditions_guard_only_where_the_logic_forces_it(gate, guarded):
+    step = [s for s in cloud.mac_steps(gate) if "xcodebuild test" in gate.splitlines()[s["line"] - 1]]
+    assert len(step) == 1, cloud.mac_steps(gate)
+    assert step[0]["guarded"] is guarded
+
+
 def test_secret_names_need_a_manifest_and_values_never_show(tmp_path):
     env = "OPENAI_API_KEY=sk-live-should-never-appear\n# comment\nAPP_URL=https://x\n"
     r = _prepared(tmp_path, files={".env.example": env})
