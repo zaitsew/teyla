@@ -332,6 +332,11 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
                                   "merge by hand, or teyla policy sync-repo <path> --prefer agents|claude"))
             if not missing and not differ:
                 out.append(_check("OK", "repos:agents-md", f"{len(rs)} repo(s) under {root}: AGENTS.md ⇄ CLAUDE.md consistent"))
+            # Per file, not per repo: each instruction file loads whole (rules_lifecycle.budget).
+            from . import rules_lifecycle
+            b = rules_lifecycle.doctor_check(root)
+            if b:
+                out.append(_check(b["level"], b["name"], b["detail"], b["fix"]))
             # INFO, not WARN: an unprepared repo is a fact about where cloud work can finish, not
             # a broken install — and a WARN here would sit in every session-start line for weeks.
             try:

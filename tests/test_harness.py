@@ -2,6 +2,7 @@
 in Cursor, Codex, Grok and Hermes, written into a fake HOME."""
 from __future__ import annotations
 
+import datetime
 import json
 import pathlib
 
@@ -125,9 +126,11 @@ def test_policy_sync_writes_the_cursor_policy_skill(home):
 def test_rule_writes_scoped_file_mirrors_into_real_agents_md_and_refuses_duplicates(tmp_path):
     repo = tmp_path / "repo"; repo.mkdir()
     (repo / "AGENTS.md").write_text("# guide\n\nsome text\n")
-    out = rules.add_rule(repo, "Outbound drafts open with a claim, not a question", scope="gtm/**")
+    out = rules.add_rule(repo, "Outbound drafts open with a claim, not a question", scope="gtm/**",
+                         today=datetime.date(2026, 10, 1))
     f = repo / ".claude" / "rules" / "outbound-drafts-open-claim.md"
-    assert f.read_text() == "---\nglobs: gtm/**\n---\n\n- Outbound drafts open with a claim, not a question.\n"
+    assert f.read_text() == ("---\nglobs: gtm/**\ncreated: 2026-10-01\nhits: 0\nlast_hit: never\nexpires: 2026-12-30\n"
+                             "---\n\n- Outbound drafts open with a claim, not a question.\n")
     assert (repo / "AGENTS.md").read_text().endswith("## Rules\n\n- Outbound drafts open with a claim, not a question.\n")
     assert out[0].startswith("wrote .claude/rules/outbound-drafts-open-claim.md")
     # exact and near-exact duplicates are refused
