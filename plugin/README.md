@@ -57,7 +57,7 @@ a harness `teyla doctor` can read logs from, not one you can drive from a shell.
   real file in the repo (not a symlink onto `CLAUDE.md` or similar — mirroring
   into a symlink would write through it and double the rule).
 - **`/teyla:correct <what was wrong>`** — runs `teyla correct`, which appends
-  `{ts, text, cwd}` to `~/.teyla/corrections/<repo>-<hash>.jsonl` (secrets
+  `{ts, text, cwd, source}` to `~/.teyla/corrections/<repo>-<hash>.jsonl` (secrets
   replaced by `[redacted]`), then drafts a candidate rule
   sentence and scope and asks whether to promote it with `/teyla:rule`. Never
   promotes on its own.
