@@ -386,6 +386,7 @@ def test_upgrade_retries_after_a_corrupt_uv_cache_and_restores_the_old_version(m
         return 0, "Installed 1 executable: teyla"
     SHA = "b" * 40
     monkeypatch.setattr(update, "_run", fake_run)
+    monkeypatch.setattr(update, "installed_commit", lambda method: SHA)  # the commit check passes
     monkeypatch.setattr(update.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else "/x/teyla")
     lines = update.upgrade("v0.10.0", "zaitsew/teyla", "uv-tool", python="3.13", sha=SHA)
     assert any("uv cache clean teyla" in l for l in lines) and lines[-1].startswith("installed v0.10.0")
@@ -599,6 +600,7 @@ def test_upgrade_passes_python_pin_to_uv_and_pipx(_home, monkeypatch):
     monkeypatch.setattr(update.shutil, "which", lambda name: f"/opt/bin/{name}")
     running = f"{sys.version_info.major}.{sys.version_info.minor}"
     sha = "c" * 40
+    monkeypatch.setattr(update, "installed_commit", lambda method: sha)  # the commit check passes
     lines = update.upgrade("v1.2.3", "o/r", "uv-tool", sha=sha)
     assert seen[-1][:5] == ["/opt/bin/uv", "tool", "install", "--force", "--python"] and seen[-1][5] == running
     assert seen[-1][-1].endswith(f"@{sha}"), "installed by commit, not by tag"
