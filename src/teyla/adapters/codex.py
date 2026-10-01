@@ -30,7 +30,7 @@ import json
 import os
 import re
 
-from . import AgentCall, Session, Turn, human_text, is_correction, is_retry, stale, turn_end_candidate
+from . import AgentCall, Session, Turn, human_text, is_correction, is_retry, stale, strip_reminders, turn_end_candidate
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "codex"
@@ -103,8 +103,10 @@ def _text_of(content) -> str:
     return "\n".join(parts)
 
 
-def load(root: str = DEFAULT_ROOT, archive_root: str = DEFAULT_ARCHIVE_ROOT,
+def load(root: str | None = None, archive_root: str | None = None,
          index_path: str = DEFAULT_INDEX, since: float | None = None, **kw) -> list[Session]:
+    root = DEFAULT_ROOT if root is None else root  # at call time, so tests and callers that move it are obeyed
+    archive_root = DEFAULT_ARCHIVE_ROOT if archive_root is None else archive_root  # "" = no archive
     if not os.path.isdir(root):
         raise FileNotFoundError(root)
     titles = _load_titles(index_path)
@@ -228,7 +230,7 @@ def parse(f: str, titles: dict | None = None) -> Session | None:
                         if txt:
                             last_text = (ts, txt)
                     elif role == "user":
-                        clean = strip_injected(txt).strip() if txt else ""
+                        clean = strip_reminders(strip_injected(txt)) if txt else ""
                         h = human_text(clean) if clean else None
                         # A bare "continue" is a retry to the turn counts but an approval to
                         # A15 (review of the #60 merge).

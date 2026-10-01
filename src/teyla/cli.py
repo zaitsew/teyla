@@ -46,6 +46,8 @@
   teyla harness verify [--live] [--timeout S] [--json]           can each harness do work now; --live sends one line through each
   teyla rule "<sentence>" [--scope <glob>]                        a rule into .claude/rules/, mirrored into AGENTS.md
   teyla correct "<what was wrong>"                                a correction into ~/.teyla/corrections/<repo>.jsonl, secrets scrubbed
+  teyla rules propose [--days 7] [--min 2] [--write]              proposed rule diff from human corrections only; hits on existing rules
+  teyla rules stale                                               expired and never-hit rules, as removal candidates (never deleted)
   teyla prompt [name]                                             the prompts shipped with this version (onboard, …); none: list them
   teyla uninstall [--dry] [--keep-data]                           undo every write Teyla made here; --dry lists every file it wrote
   teyla cloud check [repo...] [--json]                            what a cloud session would lack in each repo; exit 1 on a blocker
@@ -125,6 +127,22 @@ def _extras(m, sessions, days):
     m["harness_errors"] = _harness_errors(days)
 
 
+def _deliver(text: str) -> bool:
+    """Write `text` to stdout and flush it. True only when it reached the pipe: stdout is
+    buffered, so `sys.stdout.write` returning says nothing about a closed `| head` or a full
+    disk, and a finding marked seen on that say-so is never shown (review of #68, P2)."""
+    try:
+        sys.stdout.write(text)
+        sys.stdout.flush()
+        return True
+    except (OSError, ValueError):
+        try:  # keep the interpreter's exit flush from raising a second time
+            sys.stdout = open(os.devnull, "w")
+        except OSError:
+            pass
+        return False
+
+
 def cmd_monitor(args):
     from . import policy
     from .monitor import redact, scrub_home
@@ -143,11 +161,15 @@ def cmd_monitor(args):
     if args.share:
         out = scrub_home(out)
     if args.out:
-        open(args.out, "w").write(out); print(f"wrote {args.out}")
+        with open(args.out, "w") as fh:
+            fh.write(out)
+        delivered = _deliver(f"wrote {args.out}\n")
     else:
-        sys.stdout.write(out)
-    # Only after the report was delivered: an unwritable --out must not silence the
-    # never-acknowledged A10 on the next run (review of #68, P2).
+        delivered = _deliver(out)
+    # Only after the report was delivered: an unwritable --out, or a closed pipe, must not
+    # silence the never-acknowledged A10 on the next run (review of #68, P2).
+    if not delivered:
+        return 1
     from .advise import mark_seen
     mark_seen(F)
 
@@ -160,8 +182,9 @@ def cmd_advise(args):
     _extras(m, ss, args.days)
     m["cloud_sessions"] = _cloud_sessions(args.days)
     F = advise(m, policy.status())
-    for f in F:
-        print(f"[{f['severity']}] {f['id']} {f['title']}\n    {f['evidence']}\n    → {f['action']}")
+    text = "".join(f"[{f['severity']}] {f['id']} {f['title']}\n    {f['evidence']}\n    → {f['action']}\n" for f in F)
+    if not _deliver(text):
+        return 1
     from .advise import mark_seen
     mark_seen(F)
 
@@ -419,9 +442,14 @@ def main(argv=None):
     q.add_argument("--kind", choices=["cli", "app", "service", "ios"], default="cli")
     q.add_argument("--license", choices=["apache", "mit", "none"], default="apache")
     args = p.parse_args(argv)
-    from . import net
+    from . import net, invisible
     net.allow_for_this_command(getattr(args, "allow_network", False))
-    return args.fn(args)
+    try:
+        return args.fn(args)
+    except invisible.InvisibleText as e:
+        # Any rule or policy write that met a hidden character: nothing was written; say where.
+        print(f"teyla: {e}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

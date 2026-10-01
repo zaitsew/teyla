@@ -68,6 +68,14 @@ def is_work(text: str | None = None) -> bool:
 def template_path(work: bool = False) -> pathlib.Path:
     return TEMPLATE_WORK if work else TEMPLATE
 
+
+def _guard(text: str, path) -> str:
+    """`text`, unless it holds an invisible or bidi character — then InvisibleText, before the
+    write (invisible.py: every harness obeys these files and a person reviews them rendered)."""
+    from . import invisible
+    invisible.check(text, str(path))
+    return text
+
 TARGETS = {
     "claude-code": HOME / ".claude" / "CLAUDE.md",
     "codex": HOME / ".codex" / "AGENTS.md",
@@ -104,7 +112,7 @@ def init(force=False, owner: str | None = None, dry: bool = False, work: bool = 
     if POLICY.exists():
         _backup_policy()
     POLICY.parent.mkdir(parents=True, exist_ok=True)
-    POLICY.write_text(render_template(owner, work=work))
+    POLICY.write_text(_guard(render_template(owner, work=work), POLICY))
     return f"wrote {POLICY}" + (" from the work template" if work else "")
 
 
@@ -134,10 +142,14 @@ def sync(dry=False, owner: str | None = None) -> list[str]:
     done = []
     if not POLICY.exists():
         done.append(init(owner=owner, dry=dry))
+    # The source first, once: the imports and symlinks below expose POLICY.md to every harness,
+    # and a refusal half-way would leave some wired and some not (review of #87, P2).
+    if POLICY.exists():
+        _guard(POLICY.read_text(), POLICY)
     p = TARGETS["claude-code"]
     if p.exists() and IMPORT_LINE not in p.read_text():
         if not dry:
-            p.write_text(p.read_text().rstrip() + f"\n\n## How to run a session\n\n{IMPORT_LINE}\n")
+            p.write_text(_guard(p.read_text().rstrip() + f"\n\n## How to run a session\n\n{IMPORT_LINE}\n", p))
         done.append(f"added import to {p}")
     for h in ("codex", "grok"):
         p = TARGETS[h]
@@ -162,19 +174,37 @@ def sync(dry=False, owner: str | None = None) -> list[str]:
             new_text = text[:span[0]] + hermes_block().rstrip("\n") + "\n" + ("\n" + rest if rest else "")
             what = "replaced the policy section in"
         if not dry:
-            p.write_text(new_text)
+            p.write_text(_guard(new_text, p))
         done.append(f"{what} {p}")
     p = TARGETS.get("cursor")
     if p is not None and p.parents[2].is_dir() and POLICY.exists() and not (p.exists() and p.read_text() == cursor_skill_text()):
         if not dry:
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(cursor_skill_text())
+            p.write_text(_guard(cursor_skill_text(), p))
         done.append(f"wrote the policy as a Cursor user skill: {p}")
     return done or ["already in sync"]
 
 
 # CLAUDE.md that pulls AGENTS.md in: `@AGENTS.md` on a line of its own.
 IMPORT_RE = re.compile(r"^@AGENTS\.md\s*$", re.M)
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+
+
+def imports_agents(text: str) -> bool:
+    """True when `text` has a live `@AGENTS.md` import: a line of its own that is not inside a
+    ``` or ~~~ fenced code block. Claude Code does not expand imports in code, so a CLAUDE.md that
+    only shows the line as an example is not linked to AGENTS.md (review of #81, P2)."""
+    fence = None  # (char, length) of the open fence
+    for line in text.splitlines():
+        m = _FENCE_RE.match(line)
+        if fence is None:
+            if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
+                fence = (m.group(1)[0], len(m.group(1)))
+            elif IMPORT_RE.match(line):
+                return True
+        elif m and m.group(1)[0] == fence[0] and len(m.group(1)) >= fence[1] and not m.group(2).strip():
+            fence = None
+    return False
 
 
 def sync_repo(repo: str, dry=False, prefer: str | None = None) -> str:
@@ -190,7 +220,7 @@ def sync_repo(repo: str, dry=False, prefer: str | None = None) -> str:
     if a.exists() and c.exists():
         if a.is_symlink() or c.is_symlink():
             return f"{r.name}: already linked"
-        if IMPORT_RE.search(c.read_text()):
+        if imports_agents(c.read_text()):
             return f"{r.name}: already linked (CLAUDE.md imports @AGENTS.md)"
         a_lines, c_lines = a.read_text().splitlines(), c.read_text().splitlines()
         if a_lines == c_lines:
@@ -267,7 +297,7 @@ def init_claude_md(owner: str | None = None, merge_rule: str | None = None, code
                .replace("{{merge_rule}}", merge_rule or "Open the PR/MR, then stop and tell me. I merge it, or I tell you to. No exceptions.")
                .replace("{{code_root}}", code_root).replace("{{ops_root}}", ops_root))
     CLAUDE_GLOBAL.parent.mkdir(parents=True, exist_ok=True)
-    CLAUDE_GLOBAL.write_text(text)
+    CLAUDE_GLOBAL.write_text(_guard(text, CLAUDE_GLOBAL))
     return f"wrote {CLAUDE_GLOBAL}"
 
 
@@ -288,7 +318,7 @@ def init_ops_root(path: str, owner: str | None = None, code_root: str = "~/repos
             done.append(f"would write {c}")
         else:
             tpl = (__import__("teyla").templates_dir() / "ops" / "CLAUDE.md").read_text()
-            c.write_text(tpl.replace("{{owner}}", owner or getpass.getuser()).replace("{{code_root}}", code_root))
+            c.write_text(_guard(tpl.replace("{{owner}}", owner or getpass.getuser()).replace("{{code_root}}", code_root), c))
             done.append(f"wrote {c}")
     a = root / "AGENTS.md"
     if not a.exists():
@@ -406,6 +436,8 @@ def refresh(dry: bool = False) -> list[str]:
         if CONFLICT_PATH.exists():
             return [f"template unchanged; a merge conflict is still waiting in {CONFLICT_PATH}"]
         return ["template unchanged since last refresh"]
+    # Every write below (POLICY.md, the proposal, the conflict file) is made of these two.
+    _guard(local, POLICY); _guard(new, POLICY)
     from . import config
     if config.safe_mode():
         return _propose(local, base, new, dry)
@@ -422,8 +454,12 @@ def refresh(dry: bool = False) -> list[str]:
         (p / "local").write_text(local); (p / "base").write_text(base); (p / "new").write_text(new)
         r = subprocess.run([git, "merge-file", "-p", "-L", "yours", "-L", "base", "-L", "teyla-template",
                             str(p / "local"), str(p / "base"), str(p / "new")], capture_output=True, text=True)
-    if r.returncode < 0:
-        return [f"git merge-file failed: {r.stderr.strip()}"]
+    # The exit code is the conflict count, capped at 127; a negative one (a signal) or anything
+    # above 127 (255 and the like) is an error, not "N conflicts": there is no merge to write
+    # (review of #64, P2).
+    if r.returncode < 0 or r.returncode > 127:
+        return [f"git merge-file failed: {r.stderr.strip() or f'exit {r.returncode}'}; "
+                f"nothing written, {POLICY} untouched"]
     if r.returncode == 0:
         if not dry:
             _backup_policy()
@@ -514,7 +550,7 @@ def repos_status(root: pathlib.Path) -> list[tuple[str, str]]:
             # AGENTS.md (`@AGENTS.md` on a line of its own — what `teyla cloud prep` writes, and
             # what a repo with Claude-only lines needs). Claude Code expands the import, so the two
             # files cannot drift; comparing their text would flag exactly the layout we recommend.
-            if a.is_symlink() or c.is_symlink() or a.read_text() == c.read_text() or IMPORT_RE.search(c.read_text()):
+            if a.is_symlink() or c.is_symlink() or a.read_text() == c.read_text() or imports_agents(c.read_text()):
                 out.append(("ok", d.name))
             else:
                 out.append(("differ", d.name))

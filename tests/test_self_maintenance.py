@@ -181,6 +181,31 @@ def test_refresh_conflict_leaves_policy_untouched(_home, monkeypatch, tmp_path):
     assert policy.BASE_PATH.read_text() == "# P\nOwner: Ada.\n\n## 1\nline THEIRS\n"
 
 
+@pytest.mark.parametrize("code", [255, 128, -9])
+def test_refresh_treats_a_merge_file_error_as_an_error_not_conflicts(_home, monkeypatch, tmp_path, code):
+    # review of #64, P2: exit 255 (and anything above 127) was reported as "255 conflict(s)" and
+    # its empty stdout written to the conflict file.
+    import subprocess
+    _tpl(monkeypatch, tmp_path, "# P\nOwner: {{owner}}.\n\n## 1\nline A\n")
+    policy.POLICY.parent.mkdir(parents=True)
+    policy.POLICY.write_text("# P\nOwner: Ada.\n\n## 1\nline A\n")
+    policy.refresh()
+    mine = "# P\nOwner: Ada.\n\n## 1\nline MINE\n"
+    policy.POLICY.write_text(mine)
+    _tpl(monkeypatch, tmp_path, "# P\nOwner: {{owner}}.\n\n## 1\nline THEIRS\n")
+    real = subprocess.run
+
+    def fake(argv, *a, **k):
+        if "merge-file" in list(argv):
+            return subprocess.CompletedProcess(argv, code, "", "fatal: could not read file")
+        return real(argv, *a, **k)
+    monkeypatch.setattr(subprocess, "run", fake)
+    out = policy.refresh()
+    assert len(out) == 1 and "failed" in out[0] and "conflict(s)" not in out[0]
+    assert policy.POLICY.read_text() == mine
+    assert not policy.CONFLICT_PATH.exists()
+
+
 def test_refresh_applies_when_no_local_edits(_home, monkeypatch, tmp_path):
     _tpl(monkeypatch, tmp_path, "Owner: {{owner}}.\nv1\n")
     policy.POLICY.parent.mkdir(parents=True)
@@ -207,6 +232,27 @@ def test_repos_status(tmp_path):
     st = dict((n, s) for s, n in policy.repos_status(root))
     assert st == {"a": "missing", "b": "differ", "c": "none", "d": "missing", "e": "ok", "f": "ok"}
     assert "already linked" in policy.sync_repo(str(root / "e"))
+
+
+def test_an_agents_import_inside_a_code_fence_is_not_a_link(tmp_path):
+    # review of #81, P2: Claude Code does not expand imports in code, so a fenced example of the
+    # line neither links the files nor makes divergent text "consistent".
+    root = tmp_path / "repos"
+    cases = {
+        "fenced": "# notes\n\n```md\n@AGENTS.md\n```\n\nDivergent text.\n",
+        "tilde": "~~~\n@AGENTS.md\n~~~\nDivergent.\n",
+        "unclosed": "Intro\n````\n```\n@AGENTS.md\n```\nstill inside\n",
+        "after_fence": "```\nexample\n```\n@AGENTS.md\nreal import\n",
+        "live": "@AGENTS.md\n\n```\n@AGENTS.md\n```\n",
+    }
+    for name, claude in cases.items():
+        d = root / name; (d / ".git").mkdir(parents=True)
+        (d / "AGENTS.md").write_text("# guide\n")
+        (d / "CLAUDE.md").write_text(claude)
+    st = dict((n, s) for s, n in policy.repos_status(root))
+    assert st == {"fenced": "differ", "tilde": "differ", "unclosed": "differ", "after_fence": "ok", "live": "ok"}
+    assert "already linked" not in policy.sync_repo(str(root / "fenced"), dry=True)
+    assert "already linked" in policy.sync_repo(str(root / "live"), dry=True)
 
 
 # --- routine staleness ------------------------------------------------------------------
@@ -340,6 +386,7 @@ def test_upgrade_retries_after_a_corrupt_uv_cache_and_restores_the_old_version(m
         return 0, "Installed 1 executable: teyla"
     SHA = "b" * 40
     monkeypatch.setattr(update, "_run", fake_run)
+    monkeypatch.setattr(update, "installed_commit", lambda method: SHA)  # the commit check passes
     monkeypatch.setattr(update.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else "/x/teyla")
     lines = update.upgrade("v0.10.0", "zaitsew/teyla", "uv-tool", python="3.13", sha=SHA)
     assert any("uv cache clean teyla" in l for l in lines) and lines[-1].startswith("installed v0.10.0")
@@ -553,6 +600,7 @@ def test_upgrade_passes_python_pin_to_uv_and_pipx(_home, monkeypatch):
     monkeypatch.setattr(update.shutil, "which", lambda name: f"/opt/bin/{name}")
     running = f"{sys.version_info.major}.{sys.version_info.minor}"
     sha = "c" * 40
+    monkeypatch.setattr(update, "installed_commit", lambda method: sha)  # the commit check passes
     lines = update.upgrade("v1.2.3", "o/r", "uv-tool", sha=sha)
     assert seen[-1][:5] == ["/opt/bin/uv", "tool", "install", "--force", "--python"] and seen[-1][5] == running
     assert seen[-1][-1].endswith(f"@{sha}"), "installed by commit, not by tag"

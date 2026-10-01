@@ -51,6 +51,9 @@ def home(tmp_path, monkeypatch):
     ("Failed to authenticate: OAuth session expired and could not be refreshed", None, "auth"),
     ("API Error: 529 Overloaded.", None, "rate"),
     ("Too Many Requests", 429, "rate"),
+    # xAI's exhausted balance arrives as a 403; the text says it is money, not a login
+    ("Error code: 403 - {'code': 'personal-team-blocked:spending-limit', 'error': 'You have run out of credits'}", 403, "quota"),
+    ("Forbidden", 403, "auth"),
     ("API Error: Can't reach the API server — check your internet or DNS (ENOTFOUND)", None, "network"),
     ("something odd", None, "other"),
 ])
@@ -360,7 +363,8 @@ def test_an_unrelated_newer_error_does_not_hide_an_unresolved_quota_failure(home
     row = health.offline("codex")
     assert row["error"]["kind"] == "quota" and row["level"] == "FIX"
     # a success more than the recovery margin after the failure still clears it
-    ok = {"timestamp": _iso(NOW - dt.timedelta(minutes=10)), "type": "event_msg", "payload": {"type": "token_count", "rate_limits": None}}
+    ok = {"timestamp": _iso(NOW - dt.timedelta(minutes=10)), "type": "event_msg", "payload": {
+        "type": "token_count", "info": {"last_token_usage": {"total_tokens": 120}}, "rate_limits": None}}
     _codex_rollout(home, [quota, ok])
     row = health.offline("codex")
     assert row["level"] == "OK" and "later calls succeeded" not in row["detail"] and row["error"]["kind"] == "other"
@@ -407,3 +411,241 @@ def test_hermes_live_prompt_may_read_the_policy_file():
     cmd = health.live_command("hermes", "hermes")
     assert "do not read any file" not in cmd[-1].lower() and "you may read the policy file" in cmd[-1].lower()
     assert "do not read any file" in health.live_command("codex", "codex")[-1].lower()
+
+
+def _hermes_home(home, *, last_refresh=None, err_at=None, pool=None):
+    st = {"tokens": {"access_token": SECRET, "refresh_token": SECRET}, "auth_mode": "oauth_device_code"}
+    if last_refresh:
+        st["last_refresh"] = _iso(last_refresh)
+    if err_at:
+        st["last_auth_error"] = {"provider": "xai-oauth", "code": "xai_refresh_failed", "relogin_required": True,
+                                 "message": 'xAI token refresh failed. {"error":"invalid_grant"}', "at": _iso(err_at)}
+    (home / ".hermes" / "auth.json").write_text(json.dumps({
+        "version": 1, "active_provider": "xai-oauth", "providers": {"xai-oauth": st},
+        "credential_pool": {"xai-oauth": pool if pool is not None else []}}))
+
+
+def _request_dump(home, when_local, status, message, name="request_dump_a.json"):
+    (home / ".hermes" / "sessions").mkdir(exist_ok=True)
+    (home / ".hermes" / "sessions" / name).write_text(json.dumps({
+        "timestamp": when_local.isoformat(), "reason": "non_retryable_client_error",
+        "request": {"headers": {"Authorization": "Bearer eyJ0...X_3w"}},
+        "error": {"type": "PermissionDeniedError", "status_code": status, "message": message}}))
+
+
+def test_hermes_relogin_after_the_stored_auth_error_clears_it(home):
+    # Hermes never clears `last_auth_error`: after a re-login it sits next to a newer last_refresh.
+    _hermes_home(home, err_at=NOW - dt.timedelta(days=2), last_refresh=NOW - dt.timedelta(hours=1))
+    a = health.auth_hermes(home / ".hermes")
+    assert a["ok"] and "relogin" not in a["detail"] and SECRET not in str(a)
+    assert health.errors_hermes(home / ".hermes", time.time() - 7 * 86400)["error"] is None
+    # ... and an error newer than the last refresh is still current
+    _hermes_home(home, err_at=NOW - dt.timedelta(hours=1), last_refresh=NOW - dt.timedelta(days=2))
+    a = health.auth_hermes(home / ".hermes")
+    assert not a["ok"] and "relogin required" in a["detail"]
+    assert health.errors_hermes(home / ".hermes", time.time() - 7 * 86400)["error"]["kind"] == "auth"
+    # a pooled credential that went ok after the error counts as a success too
+    _hermes_home(home, err_at=NOW - dt.timedelta(days=2),
+                 pool=[{"last_status": "ok", "last_status_at": _iso(NOW - dt.timedelta(hours=1))}])
+    assert health.auth_hermes(home / ".hermes")["ok"]
+
+
+def test_hermes_a_later_spending_limit_replaces_the_old_relogin_error(home):
+    # 2026-10-01: relogin worked (last_refresh), then every request answered HTTP 403
+    # personal-team-blocked:spending-limit, which only the request dump records.
+    _hermes_home(home, err_at=NOW - dt.timedelta(days=2), last_refresh=NOW - dt.timedelta(hours=3))
+    _request_dump(home, (NOW - dt.timedelta(hours=2)).astimezone().replace(tzinfo=None), 403,
+                  "Error code: 403 - {'code': 'personal-team-blocked:spending-limit', 'error': 'You have run out of credits'}")
+    row = health.offline("hermes")
+    assert row["level"] == "FIX"
+    assert "relogin" not in row["detail"] and "AUTH:" not in row["detail"]
+    assert "quota" in row["detail"] and "spending-limit" in row["detail"]
+    assert "credits" in row["fix"] and "re-authenticate" not in row["fix"]
+    # the naive dump timestamp is local time, not UTC
+    e = health.errors_hermes(home / ".hermes", time.time() - 86400)["error"]
+    assert abs((e["ts"] - (NOW - dt.timedelta(hours=2))).total_seconds()) < 5
+
+
+def test_hermes_a_later_success_clears_the_dumped_error(home):
+    _hermes_home(home, last_refresh=NOW - dt.timedelta(days=3))
+    _request_dump(home, (NOW - dt.timedelta(hours=3)).astimezone().replace(tzinfo=None), 403,
+                  "run out of credits (spending-limit)")
+    con = sqlite3.connect(home / ".hermes" / "state.db")
+    con.execute("create table messages (id integer primary key, session_id text, role text, timestamp real)")
+    con.execute("insert into messages (session_id, role, timestamp) values ('s', 'assistant', ?)", (time.time() - 3600,))
+    con.commit(); con.close()
+    row = health.offline("hermes")
+    assert row["level"] == "OK" and "later calls succeeded" in row["detail"]
+
+
+def _claude_rows(home, rows, name="e.jsonl"):
+    p = home / ".claude" / "projects" / "-Users-me-ops" / name
+    p.write_text("\n".join(json.dumps(r, separators=(",", ":")) for r in rows) + "\n")
+
+
+def _api_error(ep, ago, text):
+    return {"type": "assistant", "entrypoint": ep, "timestamp": _iso(NOW - ago), "isApiErrorMessage": True,
+            "message": {"content": [{"type": "text", "text": text}]}}
+
+
+def _ok_row(ep, ago):
+    return {"type": "assistant", "entrypoint": ep, "timestamp": _iso(NOW - ago), "message": {"content": [{"type": "text", "text": "done"}]}}
+
+
+def test_claude_one_entrypoints_recovered_error_does_not_hide_anothers_open_one(home):
+    # sdk-cli (`claude -p`, the routines) failed to authenticate and never recovered; the desktop
+    # app hit a quota error later, then worked. The newest error is the desktop's, and recovered —
+    # the sdk-cli failure must still be the one reported.
+    _claude_rows(home, [
+        _api_error("sdk-cli", dt.timedelta(hours=6), "Failed to authenticate: OAuth session expired and could not be refreshed"),
+        _api_error("claude-desktop", dt.timedelta(hours=3), "You've hit your session limit"),
+        _ok_row("claude-desktop", dt.timedelta(hours=1))])
+    e = health.errors_claude(home / ".claude", time.time() - 86400)
+    assert e["error"]["entrypoint"] == "sdk-cli" and e["error"]["kind"] == "auth" and e["last_ok"] is None
+
+
+def test_claude_a_newer_error_of_another_entrypoint_does_not_hide_an_open_one(home):
+    _claude_rows(home, [
+        _api_error("sdk-cli", dt.timedelta(hours=6), "Failed to authenticate: OAuth session expired"),
+        _api_error("claude-desktop", dt.timedelta(hours=1), "API Error: 529 Overloaded.")])
+    assert health.errors_claude(home / ".claude", time.time() - 86400)["error"]["entrypoint"] == "sdk-cli"
+    # and the other way round: each entrypoint's own success clears only its own error
+    _claude_rows(home, [
+        _api_error("sdk-cli", dt.timedelta(hours=6), "Failed to authenticate: OAuth session expired"),
+        _ok_row("sdk-cli", dt.timedelta(hours=2)),
+        _api_error("claude-desktop", dt.timedelta(hours=5), "Failed to authenticate: OAuth session expired")])
+    e = health.errors_claude(home / ".claude", time.time() - 86400)
+    assert e["error"]["entrypoint"] == "claude-desktop" and e["last_ok"] is None
+
+
+def test_hermes_api_key_setup_is_not_a_fix_without_a_live_call(home):
+    # An API-key provider has no OAuth tokens; the key in the pool (env: source) is its sign-in.
+    key_pool = [{"id": "250988", "label": "OPENAI_API_KEY", "auth_type": "api_key", "source": "env:OPENAI_API_KEY",
+                 "secret_fingerprint": "sha256:4fc13fdd2b8b737e", "request_count": 0}]
+    (home / ".hermes" / "auth.json").write_text(json.dumps({
+        "version": 1, "active_provider": "openai-api",
+        "providers": {"openai-api": {"auth_mode": "api_key"}}, "credential_pool": {"openai-api": key_pool}}))
+    a = health.auth_hermes(home / ".hermes", env={})
+    assert a["ok"] and "API key" in a["detail"] and SECRET not in str(a)
+    # state absent, key only in the environment or in ~/.hermes/.env
+    (home / ".hermes" / "auth.json").write_text(json.dumps({"version": 1, "active_provider": "openai-api",
+                                                            "providers": {}, "credential_pool": {"openai-api": []}}))
+    assert not health.auth_hermes(home / ".hermes", env={})["ok"]
+    assert health.auth_hermes(home / ".hermes", env={"OPENAI_API_KEY": SECRET})["detail"] == "openai-api: OPENAI_API_KEY set in the environment"
+    (home / ".hermes" / ".env").write_text(f"OPENAI_API_KEY={SECRET}\n")
+    a = health.auth_hermes(home / ".hermes", env={})
+    assert a["ok"] and ".env" in a["detail"] and SECRET not in str(a)
+    # an OAuth provider with no access_token is still a FIX, key or not
+    (home / ".hermes" / "auth.json").write_text(json.dumps({
+        "version": 1, "active_provider": "xai-oauth", "providers": {"xai-oauth": {"tokens": {"id_token": SECRET}}},
+        "credential_pool": {"xai-oauth": []}}))
+    assert not health.auth_hermes(home / ".hermes", env={"OPENAI_API_KEY": SECRET})["ok"]
+
+
+def test_codex_a_rate_limit_only_token_count_is_not_a_success(home):
+    # After a turn that died on the usage limit Codex still writes `token_count` with `info: null`
+    # and the plan's windows. That is a report, not a call that got through: A18 must keep
+    # saying the quota error is unresolved until a turn that spent tokens follows it.
+    day = home / ".codex" / "sessions" / f"{NOW:%Y}" / f"{NOW:%m}" / f"{NOW:%d}"
+    day.mkdir(parents=True)
+    rows = [{"timestamp": _iso(NOW - dt.timedelta(hours=2)), "type": "event_msg", "payload": {
+                "type": "task_complete", "error": {"message": "You've hit your usage limit.", "codex_error_info": "usage_limit_exceeded"}}},
+            {"timestamp": _iso(NOW - dt.timedelta(hours=1)), "type": "event_msg", "payload": {
+                "type": "token_count", "info": None,
+                "rate_limits": {"limit_id": "codex", "primary": {"used_percent": 40.0, "window_minutes": 300, "resets_at": int(time.time()) + 3600},
+                                "secondary": None, "plan_type": "plus", "rate_limit_reached_type": None}}}]
+    f = day / "rollout-a.jsonl"
+    f.write_text("\n".join(json.dumps(r, separators=(",", ":")) for r in rows) + "\n")
+    e = health.errors_codex(home / ".codex", time.time() - 86400)
+    assert e["last_ok"] is None and e["error"]["kind"] == "quota" and e["limits"]["plan_type"] == "plus"
+    w = health.window_errors(1, home=home)
+    assert len(w) == 1 and w[0]["still_failing"]
+    # a turn that spent tokens, after the error, is the success
+    rows.append({"timestamp": _iso(NOW - dt.timedelta(minutes=30)), "type": "event_msg", "payload": {
+        "type": "token_count", "info": {"total_token_usage": {"total_tokens": 900}, "last_token_usage": {"total_tokens": 900}},
+        "rate_limits": rows[1]["payload"]["rate_limits"]}})
+    f.write_text("\n".join(json.dumps(r, separators=(",", ":")) for r in rows) + "\n")
+    assert not health.window_errors(1, home=home)[0]["still_failing"]
+    # zero tokens in the last turn is not a success either
+    rows[2]["payload"]["info"] = {"last_token_usage": {"total_tokens": 0}, "total_token_usage": {"total_tokens": 900}}
+    f.write_text("\n".join(json.dumps(r, separators=(",", ":")) for r in rows) + "\n")
+    assert health.window_errors(1, home=home)[0]["still_failing"]
+
+
+def test_hermes_api_key_mode_without_a_key_is_a_fix(home, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    # (Codex P2 on #84) `auth_mode: api_key` is a label, not a key: with nothing in the pool,
+    # auth.json, the environment or ~/.hermes/.env the provider cannot call anything.
+    def write(pool):
+        (home / ".hermes" / "auth.json").write_text(json.dumps({
+            "version": 1, "active_provider": "openai-api", "providers": {"openai-api": {"auth_mode": "api_key"}},
+            "credential_pool": {"openai-api": pool}}))
+    write([])
+    a = health.auth_hermes(home / ".hermes", env={})
+    assert not a["ok"] and "no key" in a["detail"] and a["fix"]
+    # a pool entry labelled api_key but holding neither the key nor its fingerprint is no proof either
+    write([{"id": "1", "auth_type": "api_key", "source": "env:OPENAI_API_KEY"}])
+    assert not health.auth_hermes(home / ".hermes", env={})["ok"]
+    row = health.offline("hermes")
+    assert row["level"] == "FIX"
+    # with the key in place it is OK again
+    write([{"id": "1", "auth_type": "api_key", "source": "env:OPENAI_API_KEY", "secret_fingerprint": "sha256:ab"}])
+    assert health.auth_hermes(home / ".hermes", env={})["ok"]
+    write([])
+    assert health.auth_hermes(home / ".hermes", env={"OPENAI_API_KEY": SECRET})["ok"]
+
+
+def test_hermes_failed_request_stub_rows_are_not_a_success(home):
+    # (coordinator) Hermes writes an assistant row for a failed request: "Your request was not
+    # processed…", display_kind failed_turn, finish_reason NULL. It was taken for a success, so the
+    # 403 right before it looked recovered.
+    con = sqlite3.connect(home / ".hermes" / "state.db")
+    con.execute("create table messages (id integer primary key, session_id text, role text, content text, "
+                "timestamp real, finish_reason text, display_kind text)")
+    con.executemany("insert into messages (session_id, role, content, timestamp, finish_reason, display_kind) values ('s',?,?,?,?,?)", [
+        ("assistant", "real answer", time.time() - 5 * 86400, "stop", None),
+        ("assistant", "Your request was not processed. Send it again if you still want me to carry it out.", time.time() - 3600, None, "failed_turn"),
+        ("assistant", "boom", time.time() - 1800, "error", None)])
+    con.commit(); con.close()
+    e = health.errors_hermes(home / ".hermes", time.time() - 7 * 86400)
+    # against the clock now, not NOW: NOW is taken at import, and a suite slower than 60 s failed this
+    assert abs((dt.datetime.now(dt.timezone.utc) - e["last_ok"]).total_seconds() - 5 * 86400) < 60
+    # the stub is also recognised by its text alone, when the schema has no display_kind column
+    con = sqlite3.connect(home / ".hermes" / "state.db")
+    con.execute("drop table messages")
+    con.execute("create table messages (id integer primary key, session_id text, role text, content text, timestamp real)")
+    con.executemany("insert into messages (session_id, role, content, timestamp) values ('s',?,?,?)", [
+        ("assistant", "real answer", time.time() - 5 * 86400),
+        ("assistant", "Your request was not processed. Send it again.", time.time() - 60)])
+    con.commit(); con.close()
+    last_ok = health.errors_hermes(home / ".hermes", time.time() - 7 * 86400)["last_ok"]
+    assert abs((dt.datetime.now(dt.timezone.utc) - last_ok).total_seconds() - 5 * 86400) < 60
+
+
+def test_claude_a_live_logged_in_probe_supersedes_cli_entrypoint_auth_errors(home, monkeypatch):
+    # `claude -p` (sdk-cli) and the CLI share one credential store, the one `claude auth status`
+    # reads: loggedIn now means their "OAuth session expired" errors are history. The desktop app
+    # signs in separately, so its auth error stays; quota errors are never superseded.
+    monkeypatch.setattr(health, "claude_auth_status", lambda b: {"loggedIn": True, "authMethod": "claude.ai", "apiProvider": "firstParty"})
+    monkeypatch.setattr(health, "find_binary", lambda n: "/bin/claude" if n == "claude-code" else None)
+    monkeypatch.setattr(health, "version", lambda b: ("2.1.234", None))
+    expired = "Failed to authenticate: OAuth session expired and could not be refreshed"
+    _claude_rows(home, [_api_error("sdk-cli", dt.timedelta(days=2), expired), _api_error("cli", dt.timedelta(days=1), expired)])
+    row = health.offline("claude-code")
+    assert row["level"] == "OK" and row["error"] is None and "OAuth session expired" not in row["detail"]
+    # without the probe (not logged in / not runnable) the error is still the verdict
+    monkeypatch.setattr(health, "claude_auth_status", lambda b: None)
+    monkeypatch.setattr(health, "_keychain_has", lambda s: True)
+    assert health.offline("claude-code")["level"] == "FIX"
+    monkeypatch.setattr(health, "claude_auth_status", lambda b: {"loggedIn": True, "authMethod": "claude.ai", "apiProvider": "firstParty"})
+    # the desktop app's own auth error and a quota error are not superseded by the CLI's probe
+    _claude_rows(home, [_api_error("claude-desktop", dt.timedelta(days=1), expired)])
+    row = health.offline("claude-code")
+    assert row["level"] == "FIX" and row["error"]["entrypoint"] == "claude-desktop"
+    _claude_rows(home, [_api_error("sdk-cli", dt.timedelta(days=1), "You've hit your session limit")])
+    row = health.offline("claude-code")
+    assert row["level"] == "FIX" and row["error"]["kind"] == "quota"
+    # an auth error recorded after the probe shows again
+    _claude_rows(home, [_api_error("sdk-cli", dt.timedelta(hours=1), expired)])
+    e = health.errors_claude(home / ".claude", time.time() - 7 * 86400, probe_ok=NOW - dt.timedelta(hours=3))
+    assert e["error"]["kind"] == "auth"

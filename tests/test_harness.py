@@ -2,6 +2,7 @@
 in Cursor, Codex, Grok and Hermes, written into a fake HOME."""
 from __future__ import annotations
 
+import datetime
 import json
 import pathlib
 
@@ -125,9 +126,11 @@ def test_policy_sync_writes_the_cursor_policy_skill(home):
 def test_rule_writes_scoped_file_mirrors_into_real_agents_md_and_refuses_duplicates(tmp_path):
     repo = tmp_path / "repo"; repo.mkdir()
     (repo / "AGENTS.md").write_text("# guide\n\nsome text\n")
-    out = rules.add_rule(repo, "Outbound drafts open with a claim, not a question", scope="gtm/**")
+    out = rules.add_rule(repo, "Outbound drafts open with a claim, not a question", scope="gtm/**",
+                         today=datetime.date(2026, 10, 1))
     f = repo / ".claude" / "rules" / "outbound-drafts-open-claim.md"
-    assert f.read_text() == "---\nglobs: gtm/**\n---\n\n- Outbound drafts open with a claim, not a question.\n"
+    assert f.read_text() == ("---\nglobs: gtm/**\ncreated: 2026-10-01\nhits: 0\nlast_hit: never\nexpires: 2026-12-30\n"
+                             "---\n\n- Outbound drafts open with a claim, not a question.\n")
     assert (repo / "AGENTS.md").read_text().endswith("## Rules\n\n- Outbound drafts open with a claim, not a question.\n")
     assert out[0].startswith("wrote .claude/rules/outbound-drafts-open-claim.md")
     # exact and near-exact duplicates are refused
@@ -307,3 +310,66 @@ def test_hermes_parser_reads_indentless_sequences():
     cmds = harness._hermes_pairs()
     text = "hooks:\n" + "".join(f"  {e}:\n  - command: {c}\n    timeout: 5\n" for e, c in cmds)
     assert harness._hermes_missing(text) == []
+
+
+def test_hermes_parser_a_bare_dash_item_sets_the_entry_indent(tmp_path):
+    # (#75) A foreign entry written as a bare `-` whose mapping follows on the next lines, with
+    # nested `examples:` commands: the first `- ` the parser saw was the nested one, so it took
+    # that deeper indent as the event's entry indent, counted the nested command as a hook, and
+    # missed the real entries at the shallower indent.
+    cmds = harness._hermes_pairs()
+    (ev0, c0), rest = cmds[0], cmds[1:]
+    text = (f"hooks:\n  {ev0}:\n    -\n      timeout: 9\n      examples:\n" +
+            "".join(f"        - command: {c}\n" for _, c in cmds) +
+            f"    - command: {c0}\n      timeout: 5\n" +
+            "".join(f"  {e}:\n    - command: {c}\n      timeout: 5\n" for e, c in rest if e != ev0))
+    have = harness._hermes_present_pairs(text)
+    assert (ev0, c0) in have
+    assert harness._hermes_missing(text) == [p for p in rest if p[0] == ev0]  # only what is truly absent
+    # the nested commands alone are not hooks
+    nested_only = f"hooks:\n  {ev0}:\n    -\n      examples:\n" + "".join(f"        - command: {c}\n" for _, c in cmds)
+    assert harness._hermes_present_pairs(nested_only) == set()
+    # a bare dash entry whose own `command:` key is on the next line is that entry's command
+    keyed = f"hooks:\n  {ev0}:\n    -\n      command: {c0}\n      timeout: 5\n"
+    assert harness._hermes_present_pairs(keyed) == {(ev0, c0)}
+
+
+def test_hermes_auto_accept_ignores_a_column_zero_key_inside_a_multiline_flow_mapping(home):
+    # (#61) `hooks_auto_accept: true` at column 0 inside `{ … }` spanning lines belongs to that
+    # mapping, not to the top level.
+    harness.sync(home=home)
+    cfg = home / ".hermes" / "config.yaml"
+    base = cfg.read_text()
+
+    def approved(extra):
+        cfg.write_text(base + extra)
+        return {r["harness"]: r for r in harness.status(home=home)}["hermes"]["trust"]["approved"]
+
+    assert approved("agent: {\nhooks_auto_accept: true\n}\n") == 0
+    assert approved("agent: {\n  a: 1,\nhooks_auto_accept: true,\n  b: [1,\n2]\n}\n") == 0
+    assert approved("agent:\n  tags: [x,\nhooks_auto_accept: true]\n") == 0
+    # braces in quotes or comments do not open a mapping; the top-level key after one still counts
+    assert approved("name: \"{not a mapping\"  # { nor this\nhooks_auto_accept: true\n") == 3
+    assert approved("agent: {a: 1}\nhooks_auto_accept: true\n") == 3
+    assert approved("agent: {\n  a: 1\n}\nhooks_auto_accept: true\n") == 3
+
+
+def test_hermes_auto_accept_ignores_brackets_inside_block_scalars(home):
+    # (Codex P2 on #84) A `}` in the indented lines of `key: |` / `>` is text: it must not close
+    # the flow mapping that follows, so the column-0 key inside that mapping stays nested.
+    harness.sync(home=home)
+    cfg = home / ".hermes" / "config.yaml"
+    base = cfg.read_text()
+
+    def approved(extra):
+        cfg.write_text(base + extra)
+        return {r["harness"]: r for r in harness.status(home=home)}["hermes"]["trust"]["approved"]
+
+    assert approved("prompt: |\n  }\nagent: {\nhooks_auto_accept: true\n}\n") == 0
+    assert approved("prompt: >-\n  ]\n\n  }\nagent: {\nhooks_auto_accept: true\n}\n") == 0
+    assert approved("items:\n  - note: |\n      }\n  - |\n    }\nagent: {\nhooks_auto_accept: true\n}\n") == 0
+    # an opening bracket inside a block scalar does not open a mapping either
+    assert approved("prompt: |\n  {\nhooks_auto_accept: true\n") == 3
+    assert approved("prompt: |  # text\n  [ not yaml\nhooks_auto_accept: yes\n") == 3
+    # a key whose value merely contains `|` is not a block scalar
+    assert approved("agent: {\n  x: a | b\n}\nhooks_auto_accept: true\n") == 3

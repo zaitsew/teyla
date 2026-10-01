@@ -288,6 +288,15 @@ def test_write_policy_replaces_unknown_model_with_newest_of_guessed_family():
     assert "Opus 3" not in after
 
 
+def test_write_policy_refuses_a_policy_with_a_hidden_character():
+    from teyla import invisible, policy as _policy
+    _policy.POLICY.write_text(POLICY_FIXTURE.replace("unrelated text", "unrelated\u202e text"))
+    before = _policy.POLICY.read_text()
+    with pytest.raises(invisible.InvisibleText):
+        models.write_policy(dry=False, claude_used_models=[])
+    assert _policy.POLICY.read_text() == before
+
+
 def test_write_policy_raises_without_markers(tmp_path):
     p = tmp_path / "no-markers.md"
     p.write_text("# nothing here")

@@ -389,3 +389,54 @@ def test_monitor_marks_a10_seen_only_after_the_report_is_written(tmp_path, monke
     args.out = str(tmp_path / "r.md")
     cli.cmd_monitor(args)
     assert list((tmp_path / ".teyla").glob("*seen*")), "delivered, so now it is marked seen"
+
+
+def _in_tz(monkeypatch, name):
+    import time
+    monkeypatch.setenv("TZ", name)
+    time.tzset()
+
+
+def test_a10_compares_the_write_and_the_ack_in_one_timezone(tmp_path, monkeypatch):
+    """review of #68, P2: the write's day was UTC, the ack day is local. 01:00Z on 09-21 is
+    still the evening of 09-20 in Los Angeles, so a write after an ack on 09-20 (local) is not
+    after it."""
+    import time
+    _home(tmp_path, monkeypatch, "v2", ack={"sha256": hashlib.sha256(b"v1").hexdigest(), "date": "2026-09-20"})
+    root = tmp_path / "projects"
+    _write(str(root / "-Users-me-ops" / "s.jsonl"), [
+        {"type": "user", "timestamp": "2026-09-20T10:00:00Z", "entrypoint": "cli",
+         "message": {"role": "user", "content": "start"}},
+        {"type": "assistant", "timestamp": "2026-09-21T01:00:00Z",
+         "message": {"model": "m", "role": "assistant", "content": [
+             {"type": "tool_use", "id": "t1", "name": "Edit", "input": {"file_path": str(tmp_path / ".claude" / "CLAUDE.md")}}]}}])
+    try:
+        _in_tz(monkeypatch, "America/Los_Angeles")
+        [f] = _a10(metrics(claude_code.load(root=str(root))))
+        assert f["severity"] == "medium" and "ack day itself" in f["evidence"], f
+        _in_tz(monkeypatch, "UTC")
+        [f] = _a10(metrics(claude_code.load(root=str(root))))
+        assert f["severity"] == "high"
+    finally:
+        monkeypatch.delenv("TZ", raising=False)
+        time.tzset()
+
+
+def test_a10_is_not_marked_seen_when_stdout_cannot_be_written(tmp_path, monkeypatch):
+    """review of #68, P2: a closed pipe (`teyla monitor | head -0`) is not delivery."""
+    import argparse
+    from teyla import cli
+
+    class ClosedPipe:
+        def write(self, s): return len(s)  # buffered: the write itself "succeeds"
+        def flush(self): raise BrokenPipeError(32, "Broken pipe")
+
+    _home(tmp_path, monkeypatch, "v1")
+    monkeypatch.setattr(cli, "_sessions", lambda args: [_gov_session("2026-09-14")])
+    monkeypatch.setattr(cli, "_extras", lambda m, ss, days: None)
+    monkeypatch.setattr(cli, "_cloud_sessions", lambda days: [])
+    args = argparse.Namespace(days=None, share=False, json=False, samples=False, out=None)
+    monkeypatch.setattr(cli.sys, "stdout", ClosedPipe())
+    assert cli.cmd_monitor(args) == 1
+    assert not (tmp_path / ".teyla").exists() or not list((tmp_path / ".teyla").glob("*seen*"))
+    monkeypatch.undo()

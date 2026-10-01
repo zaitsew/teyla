@@ -17,7 +17,7 @@ TEYLA_EOF
 )"
 ```
 
-It appends `{ts, text, cwd}` to this repo's file under `~/.teyla/corrections/`
+It appends `{ts, text, cwd, source: "correct"}` to this repo's file under `~/.teyla/corrections/`
 — outside the repo, so it can never be committed, with tokens, keys and
 `password=`-style values replaced by `[redacted]` — and prints the file and how
 many corrections it holds.

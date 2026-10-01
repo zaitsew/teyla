@@ -613,6 +613,8 @@ def write_policy(path: pathlib.Path | None = None, dry: bool = False, days: int 
         fromfile=f"{target} (current ladder)", tofile=f"{target} (proposed)", lineterm=""))
     changed = new_text != text
     if changed and not dry:
+        from . import invisible  # POLICY.md is obeyed by every harness: no hidden characters in it
+        invisible.check(new_text, str(target))
         target.write_text(new_text)
     return diff, changed
 

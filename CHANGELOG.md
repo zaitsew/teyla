@@ -7,6 +7,28 @@
   is now filled from `SCHEDULE`, and `teyla routine install --if-stale` (run by `teyla update`)
   rewrites an installed plist whose schedule differs, so an existing Monday install picks up the
   change on the next update. A weekly the Mac missed still runs from the daily wrapper, on Saturday.
+- **Rules have a lifecycle, fed by human corrections only** (#87). `teyla rules propose` prints a
+  proposed diff of rule files from corrections a person made (`teyla correct`, inbox rejections
+  with a note) and ignores the capture hook's regex guesses, now tagged `source: hook` — ~97% of
+  them were not corrections. A correction matching an existing rule is a hit; new rule files carry
+  `created`/`hits`/`last_hit`/`expires`, and `teyla rules stale` lists expired and never-hit rules
+  as removal candidates (never deleted). `--write` is the only path that writes. `teyla rule` warns
+  when a file it wrote is past ~200 lines, and `teyla doctor` lists every instruction file that is.
+- **Hidden characters are refused in instruction files** (#87). `teyla rule`, `teyla correct`,
+  `teyla rules propose --write`, every `teyla policy` write and `teyla models --write-policy` exit 2
+  and write nothing when the result would hold bidi controls, zero-width characters or Unicode tag
+  characters — text an agent obeys and a reviewer cannot see. The message names line and column.
+- **`teyla cloud prep` writes a stricter Stop hook and a truer Shipping section.** "Pushed" now
+  means on this branch's own upstream (`@{u}` or `origin/<branch>`), not "in any remote branch";
+  commits after a merged or closed PR ask for a new PR instead of counting as handled; the Actions
+  line says what POLICY §10 says (no CI on push/PR, short ubuntu deploy jobs on push to main
+  allowed); the setup script installs subdirectories (two levels down) that have their own
+  lockfile; and a stale `merge-approved:` line anywhere in an instruction file, marked section or
+  not, is refused. Re-run `teyla cloud prep` in repos already prepped to pick these up.
+- **`teyla cloud check` fixes (#70).** A cloud session is attributed to the `claude/*` branch whose
+  tip is nearest its commit, not the alphabetical first; `if ! command -v x && …; else x` no longer
+  counts as a guard; a symlink loop between CLAUDE.md and AGENTS.md is a BLOCK, not a crash on
+  Python 3.11/3.12.
 
 ## 0.13.1 — 2026-09-30
 

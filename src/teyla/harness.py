@@ -95,7 +95,7 @@ not yet a rule.
    teyla correct "<what was wrong>"
    ```
 
-   It appends `{ts, text, cwd}` to this repo's file under `~/.teyla/corrections/` — the same
+   It appends `{ts, text, cwd, source: "correct"}` to this repo's file under `~/.teyla/corrections/` — the same
    file the capture hook writes, outside the repo, secrets replaced by `[redacted]` — and
    prints how many are there.
 2. Draft one candidate rule sentence and a scope glob from it, show both, and ask whether to
@@ -296,23 +296,31 @@ def _hermes_present_pairs(text: str) -> set[tuple[str, str]]:
     event's entries are the list items at the indent of its first item (indented or YAML's
     indentless style); a `- command:` nested deeper is inside an entry, not a hook."""
     pairs, event, item_indent, inside = set(), None, None, False
+    bare_entry, entry_indent = False, None
     for line in text.splitlines():
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         if not line.startswith(" "):
             inside = line.split("#", 1)[0].rstrip() == "hooks:"
-            event = None
+            event, bare_entry = None, False
             continue
         if not inside:
             continue
         s, indent = line.split(" #", 1)[0].strip(), len(line) - len(line.lstrip())
         if indent == 2 and not s.startswith("-"):
-            event, item_indent = (s[:-1] if s.endswith(":") else None), None
+            event, item_indent, bare_entry = (s[:-1] if s.endswith(":") else None), None, False
             continue
-        if not event or not s.startswith("- "):
+        bare = s == "-"  # a list item whose mapping starts on the next line
+        if not event or not (bare or s.startswith("- ")):
+            if bare_entry and indent > item_indent:
+                entry_indent = indent if entry_indent is None else entry_indent
+                if indent == entry_indent and s.startswith("command:"):
+                    pairs.add((event, s.split(":", 1)[1].strip().strip("\"'")))
             continue
         if item_indent is None:
             item_indent = indent
+        if indent == item_indent:
+            bare_entry, entry_indent = bare, None  # a new entry of the event
         if indent == item_indent and s.startswith("- command:"):
             pairs.add((event, s.split(":", 1)[1].strip().strip("\"'")))
     return pairs
@@ -490,6 +498,38 @@ def _hermes_pairs() -> list[tuple[str, str]]:
     return pairs
 
 
+_BLOCK_SCALAR = re.compile(r"^(\s*)((?:-\s+)*)(?P<key>[^\s#][^#]*?:\s+)?[|>][+-]?\d?[+-]?\s*(?:#.*)?$")
+
+
+def _block_scalar_parent(line: str) -> int | None:
+    """If `line` opens a block scalar (`key: |`, `key: >-`, `- |`), the indent the scalar's lines must
+    exceed: the key's column, or the dash's for a bare `- |`; else None."""
+    m = _BLOCK_SCALAR.match(line)
+    if not m:
+        return None
+    lead = len(m.group(1))
+    return lead + len(m.group(2)) if m.group("key") else lead
+
+
+def _flow_delta(line: str) -> int:
+    """Net `{`/`[` opened by one config line, ignoring quoted text and a trailing comment."""
+    d, quote, prev = 0, None, " "
+    for ch in line:
+        if quote:
+            if ch == quote:
+                quote = None
+        elif ch in "\"'" and prev in " \t{[,:-":
+            quote = ch
+        elif ch == "#" and prev in " \t":
+            break
+        elif ch in "{[":
+            d += 1
+        elif ch in "}]":
+            d -= 1
+        prev = ch
+    return d
+
+
 _HERMES_TRUTHY = {"1", "true", "yes", "on"}  # agent/shell_hooks.py `_TRUTHY`
 
 
@@ -497,10 +537,22 @@ def _hermes_auto_accept(text: str) -> bool:
     """Is `hooks_auto_accept` set, as a top-level key, to what Hermes reads as true? A commented
     line or a nested key of the same name does not count (review of #61, P2). No YAML dependency:
     only an unindented `key: value` line is looked at, and the last one wins, as in YAML loaders."""
-    val = None
+    val, depth, block_parent = None, 0, None
     for line in text.splitlines():
+        # The indented lines of a block scalar (`key: |`, `- >-`) are text, not YAML: a `}` in one
+        # must not close a mapping (Codex P2 on #84).
+        if block_parent is not None:
+            if not line.strip() or len(line) - len(line.lstrip()) > block_parent:
+                continue
+            block_parent = None
+        # A `{…}` / `[…]` that spans lines keeps its members out of the top level, whatever column
+        # they start in (#61): count the brackets of every line, outside quotes and comments.
+        at_top = depth <= 0
+        if depth <= 0:
+            block_parent = _block_scalar_parent(line)
+        depth += _flow_delta(line)
         m = re.match(r"hooks_auto_accept\s*:\s*(.*)$", line)
-        if not m:
+        if not m or not at_top:
             continue
         v = re.sub(r"\s+#.*$", "", m.group(1)).strip()  # trailing comment
         quoted = len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'"

@@ -74,6 +74,7 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | `teyla harness status\|sync` | the plugin's skills and hooks, and the policy, in Cursor, Codex, Grok and Hermes — see [docs/HARNESSES.md](docs/HARNESSES.md) |
 | `teyla harness verify [--live]` | can each harness do work now: version, auth (shape and dates, never a secret), the newest quota/auth error it recorded, interactive vs batch sessions in 7 days; `--live` sends one line through `claude -p`, `codex exec`, `grok -p`, `hermes -z` and checks the policy reached it |
 | `teyla rule "<sentence>" [--scope <glob>]` · `teyla correct "<what was wrong>"` | what `/teyla:rule` and `/teyla:correct` do, as a CLI every harness's skill can call |
+| `teyla rules propose [--write]` · `teyla rules stale` | a proposed rule diff from human corrections only (hook guesses ignored), hit counts on existing rules; expired and never-hit rules as removal candidates |
 | `teyla doctor` | what Teyla can see on this machine |
 | `teyla digest [--write]` | the weekly digest: at most five lines — the top three actions across advice, doctor, routines and checks, each with its command, plus a streak note |
 | `teyla check <product> <check> ok\|broken [--note TEXT]` | confirm a manual check: sets `status` and today's `confirmed` in that product's `teyla.toml`, editing only those lines |
@@ -274,7 +275,7 @@ teyla cloud inbox                     # cloud branches with no PR, and PRs label
 `prep` writes plain files, because a cloud VM does not install plugins:
 
 - `AGENTS.md`: a Shipping section (one PR per logical unit, merge-not-squash, no force-push, no
-  Actions on push/PR when your policy says so, report honestly, ask about product decisions not
+  CI on push/PR (short ubuntu deploy jobs on push to main allowed) when your policy says so, report honestly, ask about product decisions not
   permission) and `merge-approved: yes|no`, derived from your MERGE-APPROVED list. `teyla cloud
   check` fails when the line drifts from the list.
 - The cloud definition of done: the gate ran and its output is in the PR body, the branch is pushed,
@@ -284,7 +285,7 @@ teyla cloud inbox                     # cloud branches with no PR, and PRs label
   without a Mac) and a Stop hook that sends it back once while work is unpushed or has no PR. Both
   do nothing unless `CLAUDE_CODE_REMOTE=true`.
 - `docs/cloud-setup.md`: the setup script to paste into the claude.ai environment (uv and the repo's
-  dependencies, no secrets), and each secret name from `.env.example` with where it goes. HTTP API
+  dependencies, including subdirectories two levels down with a lockfile of their own; no secrets), and each secret name from `.env.example` with where it goes. HTTP API
   keys go in the environment's API credentials (Pro/Max). Apple `.p8` keys never leave the Mac.
 
 Nothing personal is written: no home-directory paths, no other repo names, no list. The text is
