@@ -414,6 +414,22 @@ def errors_claude(home: pathlib.Path, since: float) -> dict:
     return {"error": err, "last_ok": ok}
 
 
+def _codex_used_tokens(info) -> bool:
+    """Does a `token_count` event's `info` record a turn that really ran? `last_token_usage` is that
+    turn's usage; `total_token_usage` (cumulative) is the fallback when it is absent."""
+    if not isinstance(info, dict):
+        return False
+    u = info.get("last_token_usage")
+    if not isinstance(u, dict):
+        u = info.get("total_token_usage")
+    if not isinstance(u, dict):
+        return False
+    n = u.get("total_tokens")
+    if not isinstance(n, (int, float)):
+        n = sum(v for k, v in u.items() if k in ("input_tokens", "output_tokens") and isinstance(v, (int, float)))
+    return n > 0
+
+
 def errors_codex(home: pathlib.Path, since: float) -> dict:
     errs, last_ok, limits = _Errs(), None, None
     db = home / "logs_2.sqlite"
@@ -454,7 +470,9 @@ def errors_codex(home: pathlib.Path, since: float) -> dict:
                 if ts is None:
                     continue
                 if pl.get("type") == "token_count":
-                    if last_ok is None or ts > last_ok:
+                    # `info: null` with only `rate_limits` is Codex reporting the plan's windows
+                    # (it does so after a failed turn too); only a turn that spent tokens is a success.
+                    if _codex_used_tokens(pl.get("info")) and (last_ok is None or ts > last_ok):
                         last_ok = ts
                     # Codex reports several limit ids ("codex", and "premium" with null windows);
                     # the newest one that carries a window is the one that says how close it is.

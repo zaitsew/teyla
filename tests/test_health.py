@@ -363,7 +363,8 @@ def test_an_unrelated_newer_error_does_not_hide_an_unresolved_quota_failure(home
     row = health.offline("codex")
     assert row["error"]["kind"] == "quota" and row["level"] == "FIX"
     # a success more than the recovery margin after the failure still clears it
-    ok = {"timestamp": _iso(NOW - dt.timedelta(minutes=10)), "type": "event_msg", "payload": {"type": "token_count", "rate_limits": None}}
+    ok = {"timestamp": _iso(NOW - dt.timedelta(minutes=10)), "type": "event_msg", "payload": {
+        "type": "token_count", "info": {"last_token_usage": {"total_tokens": 120}}, "rate_limits": None}}
     _codex_rollout(home, [quota, ok])
     row = health.offline("codex")
     assert row["level"] == "OK" and "later calls succeeded" not in row["detail"] and row["error"]["kind"] == "other"
@@ -539,3 +540,33 @@ def test_hermes_api_key_setup_is_not_a_fix_without_a_live_call(home):
         "version": 1, "active_provider": "xai-oauth", "providers": {"xai-oauth": {"tokens": {"id_token": SECRET}}},
         "credential_pool": {"xai-oauth": []}}))
     assert not health.auth_hermes(home / ".hermes", env={"OPENAI_API_KEY": SECRET})["ok"]
+
+
+def test_codex_a_rate_limit_only_token_count_is_not_a_success(home):
+    # After a turn that died on the usage limit Codex still writes `token_count` with `info: null`
+    # and the plan's windows. That is a report, not a call that got through: A18 must keep
+    # saying the quota error is unresolved until a turn that spent tokens follows it.
+    day = home / ".codex" / "sessions" / f"{NOW:%Y}" / f"{NOW:%m}" / f"{NOW:%d}"
+    day.mkdir(parents=True)
+    rows = [{"timestamp": _iso(NOW - dt.timedelta(hours=2)), "type": "event_msg", "payload": {
+                "type": "task_complete", "error": {"message": "You've hit your usage limit.", "codex_error_info": "usage_limit_exceeded"}}},
+            {"timestamp": _iso(NOW - dt.timedelta(hours=1)), "type": "event_msg", "payload": {
+                "type": "token_count", "info": None,
+                "rate_limits": {"limit_id": "codex", "primary": {"used_percent": 40.0, "window_minutes": 300, "resets_at": int(time.time()) + 3600},
+                                "secondary": None, "plan_type": "plus", "rate_limit_reached_type": None}}}]
+    f = day / "rollout-a.jsonl"
+    f.write_text("\n".join(json.dumps(r, separators=(",", ":")) for r in rows) + "\n")
+    e = health.errors_codex(home / ".codex", time.time() - 86400)
+    assert e["last_ok"] is None and e["error"]["kind"] == "quota" and e["limits"]["plan_type"] == "plus"
+    w = health.window_errors(1, home=home)
+    assert len(w) == 1 and w[0]["still_failing"]
+    # a turn that spent tokens, after the error, is the success
+    rows.append({"timestamp": _iso(NOW - dt.timedelta(minutes=30)), "type": "event_msg", "payload": {
+        "type": "token_count", "info": {"total_token_usage": {"total_tokens": 900}, "last_token_usage": {"total_tokens": 900}},
+        "rate_limits": rows[1]["payload"]["rate_limits"]}})
+    f.write_text("\n".join(json.dumps(r, separators=(",", ":")) for r in rows) + "\n")
+    assert not health.window_errors(1, home=home)[0]["still_failing"]
+    # zero tokens in the last turn is not a success either
+    rows[2]["payload"]["info"] = {"last_token_usage": {"total_tokens": 0}, "total_token_usage": {"total_tokens": 900}}
+    f.write_text("\n".join(json.dumps(r, separators=(",", ":")) for r in rows) + "\n")
+    assert health.window_errors(1, home=home)[0]["still_failing"]
