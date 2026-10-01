@@ -151,7 +151,7 @@ def _stale_session(path: str, since: float | None) -> bool:
 
 
 def load(root: str | None = None, since: float | None = None, **kw) -> list[Session]:
-    root = root or DEFAULT_ROOT  # at call time, so tests and callers that move DEFAULT_ROOT are obeyed
+    root = DEFAULT_ROOT if root is None else root  # at call time, so tests and callers that move it are obeyed
     if not os.path.isdir(root):
         raise FileNotFoundError(root)
     sessions = []
