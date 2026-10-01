@@ -138,11 +138,12 @@ def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
                       evidence=f"largest: {worst['project']} {worst['sid']} {worst['day']} — {worst['mb']} MB, "
                                f"{worst['hours']} span h, {worst.get('active_hours', worst['hours'])} active h, "
                                f"{worst['compactions']} compactions, {worst['turns']} human turns",
-                      action="Split work into one session per logical unit; start a fresh session after each merged PR instead of continuing for hours."))
+                      action="One session per project, compacted in place (autoCompactWindow 400000, handoff re-injected by "
+                             "~/ops/bin/context-budget-hook); one PR per logical unit inside it, and reading delegated to subagents."))
     if not connector_heavy and m.get("cache_read_ratio", 0) > 150:
         F.append(dict(id="A4", severity="medium", title="Very high cache-read to output ratio",
                       evidence=f"{m['cache_read_ratio']}x cache-read tokens per output token ({_fmt(m['tokens'].get('cache_read_input_tokens',0))} read)",
-                      action="Long contexts are re-read on every turn. Shorter sessions, subagents for reading, and summaries instead of whole-file reads bring this down."))
+                      action="Long contexts are re-read on every turn. Compaction at ~365k (autoCompactWindow), subagents for reading, and summaries instead of whole-file reads bring this down."))
     if connector_heavy:
         F.append(dict(id="A12", severity="medium", title="Connector-heavy work: tokens are not the lever",
                       evidence=f"{int(connector_share*100)}% of tool calls are connector calls (mcp__*) — "

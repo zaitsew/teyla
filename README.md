@@ -92,8 +92,8 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 |---|---|---|
 | A1 | >50% of subagent calls inherited the parent model | pass `model:` explicitly; cheap tier reads, mid tier builds, top tier reviews |
 | A2 | >60% of output tokens on the orchestrate tier | route volume work down the ladder |
-| A3 | sessions >8 MB, >12 h, or ≥3 compactions | one session per logical unit; end it after the PR merges |
-| A4 | cache-read per output token >150× | shorter sessions, subagents for reading |
+| A3 | sessions >8 MB, >12 h, or ≥3 compactions | one session per project, compacted in place (`autoCompactWindow` 400000); one PR per logical unit |
+| A4 | cache-read per output token >150× | compaction at ~365k, subagents for reading |
 | A5 | correction rate on human turns (never a `claude -p`/`codex exec`/`grok -p`/`hermes -z` prompt, a retry after an API error, or a harness-injected turn) | cluster them; two occurrences = a rule |
 | A6 | many subagents, no review skill ever run | `/review`, `/codex review`, `/grok review` before money, keys, other people's data |
 | A7 | sessions launched from a parent directory | launch from the repo root |

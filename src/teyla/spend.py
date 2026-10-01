@@ -11,7 +11,7 @@ dollar figure and one fix:
 
   W1  a session that cost W1_USD or more and left no commit or PR within a day of its end
   W2  re-reading context: messages past 250k tokens of context pay to re-read everything above
-      the ~50k a fresh session with a handoff note would start from
+      the ~50k a compacted session resumes from (system prompt, tools, the re-injected handoff)
   W3  the top tier in subagents: Fable output in Agent calls, priced as the saving at Sonnet 5.5
   W5  Grok lanes that cost W1_USD or more and left no commit or PR (POLICY §1's Grok rules)
   W6  failed loops: messages sent after three or more failed tool calls in a row
@@ -251,8 +251,8 @@ def findings(rows: list[dict], actions: list[dict] | None = None, outcome_of=out
     coverage = [] if coverage is None else coverage
     for rid, harness_ok, fix in (
         ("W1", lambda h: h != "grok",
-         "before a long session ends without a commit, write its handoff (memory file or draft PR); "
-         "resume the top one and ship or drop the work"),
+         "a session that stops without a commit should push a draft PR first (the compaction handoff keeps "
+         "a session going, it does not ship anything); resume the top one and ship or drop the work"),
         ("W5", lambda h: h == "grok",
          "POLICY §1 for Grok lanes: a file manifest, --max-turns, and paste-only fixes applied by hand; "
          "`teyla grok-cost --by session`"),
@@ -280,7 +280,9 @@ def findings(rows: list[dict], actions: list[dict] | None = None, outcome_of=out
         F.append(dict(id="W2", usd=sum(r["reread_usd"] for r in reread), cmd=False,
                       title=f"re-reading context past 250k tokens in {len(reread)} session(s)",
                       evidence="; ".join(f"{_who(r)} {_money(r['reread_usd'])}" for r in reread[:3]),
-                      fix="at ~200k context write a handoff (state, next step, files) to memory and start a fresh session"))
+                      fix="compaction is set (autoCompactWindow 400000, ~365k; context-budget-hook re-injects the "
+                          "handoff); if W2 stays high, check the session had the setting and the hook fired "
+                          "(~/.cache/context-budget/handoff/), and that the orchestrator delegates reading to subagents"))
     top = [r for r in rows if r["top_tier_sub_saving"] > 0]
     if top:
         top.sort(key=lambda r: -r["top_tier_sub_saving"])
