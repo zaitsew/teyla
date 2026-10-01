@@ -584,7 +584,17 @@ def errors_hermes(home: pathlib.Path, since: float) -> dict:
     if db.exists():
         try:
             con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
-            (t,) = con.execute("select max(timestamp) from messages where role='assistant'").fetchone()
+            # Hermes writes an assistant row for a request that failed too ("Your request was not
+            # processed. Send it again…", display_kind `failed_turn`, no finish_reason): not a success.
+            cols = {r[1] for r in con.execute("pragma table_info(messages)")}
+            where = ["role='assistant'"]
+            if "content" in cols:
+                where.append("coalesce(content,'') not like 'Your request was not processed%'")
+            if "display_kind" in cols:
+                where.append("coalesce(display_kind,'') not like 'failed%' and coalesce(display_kind,'') not like 'error%'")
+            if "finish_reason" in cols:
+                where.append("coalesce(finish_reason,'') not in ('error','failed')")
+            (t,) = con.execute(f"select max(timestamp) from messages where {' and '.join(where)}").fetchone()
             con.close()
             last_ok = _parse_ts(t)
         except sqlite3.Error:

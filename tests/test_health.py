@@ -593,3 +593,28 @@ def test_hermes_api_key_mode_without_a_key_is_a_fix(home, monkeypatch):
     assert health.auth_hermes(home / ".hermes", env={})["ok"]
     write([])
     assert health.auth_hermes(home / ".hermes", env={"OPENAI_API_KEY": SECRET})["ok"]
+
+
+def test_hermes_failed_request_stub_rows_are_not_a_success(home):
+    # (coordinator) Hermes writes an assistant row for a failed request: "Your request was not
+    # processed…", display_kind failed_turn, finish_reason NULL. It was taken for a success, so the
+    # 403 right before it looked recovered.
+    con = sqlite3.connect(home / ".hermes" / "state.db")
+    con.execute("create table messages (id integer primary key, session_id text, role text, content text, "
+                "timestamp real, finish_reason text, display_kind text)")
+    con.executemany("insert into messages (session_id, role, content, timestamp, finish_reason, display_kind) values ('s',?,?,?,?,?)", [
+        ("assistant", "real answer", time.time() - 5 * 86400, "stop", None),
+        ("assistant", "Your request was not processed. Send it again if you still want me to carry it out.", time.time() - 3600, None, "failed_turn"),
+        ("assistant", "boom", time.time() - 1800, "error", None)])
+    con.commit(); con.close()
+    e = health.errors_hermes(home / ".hermes", time.time() - 7 * 86400)
+    assert abs((NOW - e["last_ok"]).total_seconds() - 5 * 86400) < 60
+    # the stub is also recognised by its text alone, when the schema has no display_kind column
+    con = sqlite3.connect(home / ".hermes" / "state.db")
+    con.execute("drop table messages")
+    con.execute("create table messages (id integer primary key, session_id text, role text, content text, timestamp real)")
+    con.executemany("insert into messages (session_id, role, content, timestamp) values ('s',?,?,?)", [
+        ("assistant", "real answer", time.time() - 5 * 86400),
+        ("assistant", "Your request was not processed. Send it again.", time.time() - 60)])
+    con.commit(); con.close()
+    assert abs((NOW - health.errors_hermes(home / ".hermes", time.time() - 7 * 86400)["last_ok"]).total_seconds() - 5 * 86400) < 60
