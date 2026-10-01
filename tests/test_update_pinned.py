@@ -76,16 +76,25 @@ def github(monkeypatch, releases: dict, commits: dict, latest: str | None = None
     return urls
 
 
-def installer(monkeypatch, reports: str):
-    """Stub every subprocess: installs succeed, `teyla --version` answers `reports`."""
+_LANDED_AS_ASKED = object()
+
+
+def installer(monkeypatch, reports: str, landed=_LANDED_AS_ASKED):
+    """Stub every subprocess: installs succeed, `teyla --version` answers `reports`, and the
+    commit probe finds the commit that was asked for (`landed=None`: the probe cannot run)."""
     ran = []
+    asked = []
 
     def run(cmd, cwd=None):
         ran.append(cmd)
+        if cmd[-1].count("@") and "git+" in cmd[-1]:
+            asked.append(cmd[-1].rsplit("@", 1)[1])
         if cmd[-1] == "--version":
             return 0, reports
         return 0, "ok"
     monkeypatch.setattr(update, "_run", run)
+    monkeypatch.setattr(update, "installed_commit",
+                        lambda method: (asked[-1] if asked and len(asked[-1]) == 40 else None) if landed is _LANDED_AS_ASKED else landed)
     monkeypatch.setattr(update.shutil, "which", lambda name: f"/opt/bin/{name}")
     monkeypatch.setattr(update, "install_method", lambda: ("uv-tool", None))
     monkeypatch.setattr(update, "post_update", lambda quiet=False: ["(post-update stubbed)"])
@@ -221,6 +230,18 @@ def test_a_sha_pin_that_does_not_run_is_rolled_back(_home, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "reports version (none)" in out and "restored" in out
     assert not update.INSTALLED_PATH.exists()
+
+
+def test_an_install_whose_commit_cannot_be_checked_is_rolled_back(_home, monkeypatch, capsys):
+    # review of #64, P2: when the post-install commit check could not run, the install was accepted
+    # and recorded as the pin met. It is a failed verification now.
+    github(monkeypatch, {"v99.0.0": {"tag_name": "v99.0.0"}}, {"v99.0.0": SHA}, latest="v99.0.0")
+    ran = installer(monkeypatch, "99.0.0", landed=None)
+    assert update.cmd_update(args()) == 1
+    out = capsys.readouterr().out
+    assert "could not verify which commit is on disk" in out and f"restored {__version__}" in out
+    assert not update.INSTALLED_PATH.exists()
+    assert [c for c in ran if c[1:3] == ["tool", "install"]][-1][-1].endswith(f"@v{__version__}")
 
 
 def test_a_version_pin_is_met_by_the_release_commit_not_the_version_number(_home, monkeypatch):
