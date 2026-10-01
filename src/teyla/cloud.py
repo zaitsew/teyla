@@ -561,16 +561,27 @@ def _short_ref(ref: str) -> str:
     return ref
 
 
-def _pick_branch(refs: list[str], default: str) -> str | None:
-    names = []
+def _pick_branch(repo: pathlib.Path, tip: str, refs: list[str], default: str) -> str | None:
+    """The branch a cloud session's newest commit belongs to, among the refs that contain it. A
+    later branch cut from the session's branch contains it too, and the alphabetical first used
+    to win (review of #70, P2). Now: a `claude/*` branch first, then the one whose tip is fewest
+    commits past the commit (its own branch is 0), then the name — deterministic. Local and
+    remote-tracking refs of one name count once, at the nearer tip. The `Claude-Session:`
+    trailer carries no branch name, so it cannot break the tie."""
+    dist: dict[str, int] = {}
     for ref in refs:
         s = _short_ref(ref)
         if s in ("HEAD", _short_ref(default)) or s.endswith("/HEAD"):
             continue
-        if s not in names:
-            names.append(s)
-    names.sort(key=lambda n: (not n.startswith("claude/"), n))
-    return names[0] if names else None
+        try:
+            r = _git(repo, "rev-list", "--count", f"{tip}..{ref}", timeout=10)
+            d = int(r.stdout.strip()) if r.returncode == 0 else 1 << 30
+        except (OSError, subprocess.SubprocessError, ValueError):
+            d = 1 << 30
+        dist[s] = min(dist.get(s, d), d)
+    if not dist:
+        return None
+    return min(dist, key=lambda n: (not n.startswith("claude/"), dist[n], n))
 
 
 def repo_sessions(repo: pathlib.Path, days: int | None = None) -> list[dict]:
@@ -615,7 +626,7 @@ def repo_sessions(repo: pathlib.Path, days: int | None = None) -> list[dict]:
         tip = s["shas"][0]  # git log is newest first
         refs = _git(repo, "for-each-ref", "--contains", tip, "--format=%(refname)", "refs/heads", "refs/remotes", timeout=10).stdout.split()
         landed = bool(default_full) and default_full in refs
-        branch = _pick_branch(refs, default)
+        branch = _pick_branch(repo, tip, refs, default)
         out.append({"repo": repo.name, "path": str(repo), "slug": slug, "session": s["session"],
                     "branch": branch or (_short_ref(default) if landed else None), "commits": len(s["shas"]),
                     "first": s["first"], "last": s["last"], "landed": landed,

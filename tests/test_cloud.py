@@ -352,6 +352,25 @@ def test_sessions_found_from_trailers_across_remote_refs(tmp_path):
     assert by["session_OPEN22"]["age_hours"] == pytest.approx(9 * 24 + 2, abs=0.1)
 
 
+def test_a_session_belongs_to_the_branch_whose_tip_is_nearest_its_commit(tmp_path):
+    """review of #70, P2: a later branch cut from the session's branch contains its commits too,
+    and the alphabetical first (claude/alpha) took the session."""
+    r = _session_repo(tmp_path)
+    _git(r, "checkout", "-q", "-b", "claude/alpha", "origin/claude/brave-x")
+    for i in range(2):
+        _git(r, "commit", "-q", "--allow-empty", "-m", f"later {i}")
+    _git(r, "branch", "-q", "zzz-local", "origin/claude/brave-x")  # nearer, but not claude/*
+    _git(r, "checkout", "-q", "main")
+    by = {s["session"]: s for s in cloud.scan_sessions([r], gh=False, now=NOW)}
+    assert by["session_OPEN22"]["branch"] == "claude/brave-x"
+
+    # equal distance: the name decides, every time
+    _git(r, "branch", "-q", "claude/aaa-copy", "origin/claude/brave-x")
+    picks = {next(s["branch"] for s in cloud.scan_sessions([r], gh=False, now=NOW) if s["session"] == "session_OPEN22")
+             for _ in range(3)}
+    assert picks == {"claude/aaa-copy"}
+
+
 def test_local_main_does_not_make_a_session_landed(tmp_path):
     """review of #70, P2: merged into local main but not pushed is not landed on origin/main."""
     r = _session_repo(tmp_path)
