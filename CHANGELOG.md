@@ -1,7 +1,45 @@
 # Changelog
 
-## Unreleased
+## 0.14.0 — 2026-10-01 — rules that live and die, health that tells the truth
 
+- **`teyla spend`: the week's cost and the waste in it** (#78, #79, #85). Claude Code cost is one
+  usage per message, subagents included, with 1-hour cache writes at 2x. The Friday digest gets a
+  spend section, and `teyla spend --alert` is a daily spike check. With admin keys in the macOS
+  Keychain (`openai-admin-key`, `anthropic-admin-key`, read at call time, never written), it also
+  reads what OpenAI and Anthropic actually billed for product API use. A day past 2x the
+  previous week's median and at least $2 over is W7, reported apart from session waste. Safe mode
+  skips the providers.
+- **Harness health: the newest event wins** (#84). `health:hermes` said "relogin required since
+  09-29" after a successful re-login; a later success now clears an older auth error, and a later
+  quota error (Hermes' 403 `spending-limit`, read from its request dumps) replaces it as what it is.
+  Claude's errors are kept per entrypoint, and a live `claude auth status` clears the CLI's and
+  `claude -p`'s auth errors, not the desktop app's. Hermes' failed-request stub rows no longer
+  count as a success. An API-key Hermes setup is OK when a key exists, and FIX when one does not.
+  Codex rate-limit-only `token_count` events no longer clear A18. Two YAML parser fixes cover
+  `hooks_auto_accept` inside a flow mapping or after a block scalar, and a bare `-` hook entry.
+- **The other review findings deferred from 0.13 are fixed** (#83; the cloud and health ones are above and below):
+  - A refused act no longer uses up the approval.
+  - Old correction records no longer match by scrubbed path.
+  - A10 compares dates in one timezone, and nothing is marked seen until stdout is written.
+  - A "continue" reply with an appended system-reminder is still A15.
+  - `policy refresh` reports a `git merge-file` crash as an error, not as conflicts.
+  - A post-install commit check that cannot run rolls the update back.
+  - An `@AGENTS.md` inside a code fence is not an import.
+- **`teyla routine install --dry` is a dry run** (#90). Before, it installed for real. A plist
+  outside the real account's `~/Library/LaunchAgents` (a moved `$HOME`) is never bootstrapped:
+  launchd's `gui/<uid>` is the real account's, and such a plist replaced the real daily and weekly
+  jobs.
+- **The test suite never reads this Mac's transcripts** (#82). The adapters resolve their root
+  when called, so the doctor tests stopped parsing the real `~/.claude/projects`. `./check.sh` went
+  from 197 s to about 60 s, and one test from 184 s under load to under a second.
+- **`teyla doctor`: a CLAUDE.md that is `@AGENTS.md` is consistent** (#81), not "differ".
+- **The work-MacBook prompt targets 0.14.0 in safe mode** (#88). The prompt is
+  `teyla prompt work-account-update`, and its steps are:
+  - `teyla policy init --work` and a pinned `update.pin`;
+  - `teyla uninstall --dry` as the list of Teyla's files;
+  - `teyla prompt onboard`, reading only its corporate notes;
+  - a by-hand `teyla update --allow-network --wire`;
+  - a redacted `teyla feedback` file that you carry out yourself.
 - **The weekly routine moves from Monday 07:30 to Friday 20:45** (local time), so the waste digest
   lands at the end of the week. The whole weekly moves, so there is one digest, not two. The plist
   is now filled from `SCHEDULE`, and `teyla routine install --if-stale` (run by `teyla update`)
