@@ -51,6 +51,7 @@ class StepResult:
     cost_usd: float | None = None
     error: str | None = None
     argv: list = dataclasses.field(default_factory=list)
+    refused: bool = False  # safe mode refused the step before it started: nothing ran
 
     def as_dict(self) -> dict:
         return {
@@ -208,7 +209,7 @@ def safe_refusal(repo, harness: str | None = None) -> str | None:
 def run_command_step(step, *, cwd, env, timeout_s) -> StepResult:
     why = safe_refusal(cwd)
     if why:
-        return StepResult(ok=False, error=why, argv=["/bin/sh", "-c"])
+        return StepResult(ok=False, error=why, argv=["/bin/sh", "-c"], refused=True)
     argv = ["/bin/sh", "-c", step.run]
     rc, out, err, dur, error = _run(argv, cwd=cwd, env=env, timeout_s=timeout_s)
     return StepResult(
@@ -223,7 +224,7 @@ def run_agent_step(step, *, cwd, env, timeout_s, grants: dict, caps: dict, promp
     harness = step.harness
     why = safe_refusal(cwd, harness)
     if why:
-        return StepResult(ok=False, error=why)
+        return StepResult(ok=False, error=why, refused=True)
     binary = shutil.which(harness)
     if binary is None:
         return StepResult(
