@@ -430,6 +430,31 @@ def test_stop_hook_counts_commits_on_no_remote_even_without_an_upstream(tmp_path
     assert res.returncode == 2 and "1 commit(s) on claude/brave-x are not on the remote" in res.stderr, res.stderr
 
 
+def test_stop_hook_pushed_means_on_this_branchs_own_remote_ref(tmp_path):
+    # "Pushed" was "contained in any remote branch": work pushed only under another name (or
+    # contained in a sibling branch) let the session stop with nothing on its own branch.
+    r = _landed_repo(tmp_path)
+    _git(r, "commit", "-q", "--allow-empty", "-m", "work")
+    _git(r, "push", "-q", "origin", "HEAD:refs/heads/claude/other")
+    res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
+    assert res.returncode == 2 and "1 commit(s) on claude/brave-x are not on the remote" in res.stderr, res.stderr
+
+    # an upstream set to another branch (git checkout -b x origin/main does that) still counts
+    # origin/<branch> as pushed once the branch is there
+    _git(r, "branch", "-q", "--set-upstream-to", "origin/main")
+    res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
+    assert res.returncode == 2 and "not on the remote" in res.stderr, res.stderr
+    _git(r, "push", "-q", "origin", "claude/brave-x")
+    res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
+    assert "not on the remote" not in res.stderr and "gh is not available" in res.stderr, res.stderr
+
+    # the upstream itself counts: pushed under another name with -u, origin/claude/brave-x is behind
+    _git(r, "commit", "-q", "--allow-empty", "-m", "more")
+    _git(r, "push", "-q", "-u", "origin", "HEAD:refs/heads/claude/renamed")
+    res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
+    assert "not on the remote" not in res.stderr, res.stderr
+
+
 def test_stop_hook_on_the_default_branch_does_not_stop_with_unpushed_commits(tmp_path):
     r = _landed_repo(tmp_path)
     _git(r, "checkout", "-q", "main")

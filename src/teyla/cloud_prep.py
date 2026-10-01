@@ -138,10 +138,27 @@ if [ -n "$(git status --porcelain 2>/dev/null | head -1)" ]; then
   echo "Uncommitted changes on $branch: run {g}, commit, push, and open the PR before you stop." >&2
   exit 2
 fi
-# Unpushed = commits on no remote branch at all, asked before any "nothing to do" shortcut: a
-# missing base ref used to count as 0 ahead and let committed, unpushed work stop (review of
-# #71, P1). A question git cannot answer fails closed.
-if ! unpushed=$(git rev-list --count HEAD --not --remotes 2>/dev/null); then
+# Unpushed = commits not on THIS branch's own remote ref: its upstream (@{{u}}) or origin/<branch>.
+# A commit that only some other remote branch contains is not pushed for this branch's PR. A
+# branch never pushed counts what it has past the default branch; with neither ref, what is on
+# no remote at all. Asked before any "nothing to do" shortcut: a missing base ref used to count
+# as 0 ahead and let committed, unpushed work stop (review of #71, P1). A question git cannot
+# answer fails closed.
+has_ref() {{ git rev-parse --verify --quiet "$1^{{commit}}" >/dev/null 2>&1; }}
+up=$(git rev-parse --abbrev-ref --symbolic-full-name '@{{u}}' 2>/dev/null) || up=""
+own=""
+for r in "$up" "origin/$branch"; do
+  [ -n "$r" ] && has_ref "$r" && own="$own $r"
+done
+if [ -n "$own" ]; then
+  # shellcheck disable=SC2086 # $own is one or two ref names, split on purpose
+  unpushed=$(git rev-list --count HEAD --not $own 2>/dev/null) || unpushed=""
+elif has_ref "$base"; then
+  unpushed=$(git rev-list --count "$base..HEAD" 2>/dev/null) || unpushed=""
+else
+  unpushed=$(git rev-list --count HEAD --not --remotes 2>/dev/null) || unpushed=""
+fi
+if [ -z "$unpushed" ]; then
   echo "Could not tell whether $branch is pushed (git rev-list failed). Push it (git push -u origin $branch) and open the PR before you stop." >&2
   exit 2
 fi
