@@ -193,6 +193,38 @@ def test_a_dangling_external_symlink_still_blocks(tmp_path):
     assert not rep["ready"]
 
 
+def _resolve_like_312(monkeypatch):
+    """Path.resolve() as Python 3.11/3.12 has it: RuntimeError on a symlink loop (3.13 returns
+    the path). The suite runs on whatever Python the venv has; this pins the old behaviour."""
+    import pathlib
+    real = pathlib.Path.resolve
+
+    def resolve(self, strict=False):
+        if cloud.symlink_loop(self):
+            raise RuntimeError(f"Symlink loop from {str(self)!r}")
+        return real(self, strict)
+    monkeypatch.setattr(pathlib.Path, "resolve", resolve)
+
+
+def test_a_symlink_loop_between_instruction_files_is_a_finding_not_a_crash(tmp_path, monkeypatch):
+    """review of #70, P2: CLAUDE.md → AGENTS.md → CLAUDE.md crashed `cloud check` on 3.11/3.12."""
+    _resolve_like_312(monkeypatch)
+    r = _prepared(tmp_path, files={"AGENTS.md": PREPARED_AGENTS})
+    (r / "AGENTS.md").unlink()
+    (r / "CLAUDE.md").unlink()
+    (r / "AGENTS.md").symlink_to("CLAUDE.md")
+    (r / "CLAUDE.md").symlink_to("AGENTS.md")
+    assert cloud.instruction_files(r) == []
+    rep = cloud.check_repo(r, owners=set(), net=False)
+    item = _by(rep)["instructions"]
+    assert item["level"] == "BLOCK" and "symlink loop" in item["detail"] and "out of the repo" not in item["detail"]
+    assert "CLAUDE.md → AGENTS.md" in item["detail"] and not rep["ready"]
+
+    from teyla import cloud_prep
+    rc, out = cloud_prep.prep(r, owners=set(), policy_text="", vis="private")
+    assert rc == 1 and "symlink loop" in out[0], out
+
+
 @pytest.mark.parametrize("line,level", [("merge-approved: yes", "OK"), ("merge-approved: no", "BLOCK"), ("", "WARN")])
 def test_merge_approved_line_against_the_owner_list(tmp_path, _home, line, level):
     (_home / ".claude" / "CLAUDE.md").write_text(OWNER_MD)

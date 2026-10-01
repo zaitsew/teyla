@@ -474,7 +474,12 @@ def _inside(repo: pathlib.Path, path: pathlib.Path) -> None:
     """Refuse a destination that resolves out of the repo: a symlinked `.claude/`, settings file,
     doc or .gitignore would otherwise make prep write into someone else's tree (review of #71,
     P1). `resolve()` follows every symlinked parent and a dangling link to where it points."""
-    real = path.resolve()
+    if cloud.symlink_loop(path):
+        raise Refused(f"{path.relative_to(repo) if path.is_relative_to(repo) else path.name} is a symlink loop; nothing written")
+    try:
+        real = path.resolve()
+    except (RuntimeError, OSError):  # a loop further up the path, on Python < 3.13
+        raise Refused(f"{path.name}: its path does not resolve (a symlink loop); nothing written") from None
     if real != repo and repo not in real.parents:
         try:
             rel = path.relative_to(repo)
@@ -539,6 +544,8 @@ def plan(repo, owners: set[str] | None = ..., policy_text: str | None = None, fi
     section = shipping_section(merge, gate, bool(_NO_ACTIONS.search(policy_text)))
     generated["AGENTS.md"] = section
     for p in (a, c):
+        if cloud.symlink_loop(p):  # before resolve(), which raises on Python < 3.13
+            raise Refused(f"{p.name} is a symlink loop; make it a real file, nothing written")
         if p.is_symlink() and repo not in p.resolve().parents:
             raise Refused(f"{p.name} is a symlink out of the repo; nothing written")
     a_real, c_real = a.resolve() if a.exists() else None, c.resolve() if c.exists() else None

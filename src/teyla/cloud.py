@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import concurrent.futures as _cf
 import datetime as _dt
+import errno
 import json
 import os
 import pathlib
@@ -175,11 +176,24 @@ def _instruction_candidates(repo: pathlib.Path) -> list[pathlib.Path]:
     return [p for p in cands if p.is_file() or p.is_symlink()]
 
 
+def symlink_loop(p: pathlib.Path) -> bool:
+    """A symlink that never reaches a file (CLAUDE.md → AGENTS.md → CLAUDE.md). Asked with
+    os.stat, the same on every Python: resolve() raises RuntimeError on 3.11/3.12 and returns
+    the path on 3.13, and the RuntimeError crashed `cloud check` (review of #70, P2)."""
+    try:
+        if not p.is_symlink():
+            return False
+        os.stat(p)
+        return False
+    except OSError as e:
+        return e.errno == errno.ELOOP
+
+
 def _inside(repo: pathlib.Path, p: pathlib.Path) -> bool:
     try:
         p.resolve().relative_to(repo.resolve())
         return True
-    except ValueError:
+    except (ValueError, RuntimeError, OSError):  # RuntimeError: a symlink loop on Python < 3.13
         return False
 
 
@@ -188,7 +202,12 @@ def external_instruction_links(repo: pathlib.Path) -> list[str]:
     ~/.claude/CLAUDE.md). A cloud clone gets a dangling link, so they carry nothing there
     (review of #70, P1)."""
     return [f"{p.relative_to(repo)} → {os.readlink(p)}" for p in _instruction_candidates(repo)
-            if p.is_symlink() and not _inside(repo, p)]
+            if p.is_symlink() and not symlink_loop(p) and not _inside(repo, p)]
+
+
+def looped_instruction_links(repo: pathlib.Path) -> list[str]:
+    """Instruction files that are symlinks in a loop: no session, local or cloud, can read them."""
+    return [f"{p.relative_to(repo)} → {os.readlink(p)}" for p in _instruction_candidates(repo) if symlink_loop(p)]
 
 
 def instruction_files(repo: pathlib.Path) -> list[tuple[str, str]]:
@@ -199,8 +218,10 @@ def instruction_files(repo: pathlib.Path) -> list[tuple[str, str]]:
     repo = repo.resolve()
     seen, out = set(), []
     for p in _instruction_candidates(repo):
+        if symlink_loop(p) or not p.is_file() or not _inside(repo, p):
+            continue
         real = p.resolve()
-        if not _inside(repo, p) or not p.is_file() or real in seen:
+        if real in seen:
             continue
         seen.add(real)
         # Name the real file: in a CLAUDE.md → AGENTS.md repo the line numbers are AGENTS.md's.
@@ -416,10 +437,16 @@ def check_repo(repo, owners: set[str] | None = ..., net: bool = True) -> dict:
     # 1. instructions at all
     top = [n for n in ("CLAUDE.md", "AGENTS.md", ".claude/CLAUDE.md") if (repo / n).is_file() and _inside(repo, repo / n)]
     external = external_instruction_links(repo)
-    if external:
-        items.append(_item(BLOCK, "instructions", f"{', '.join(external)}: symlink(s) out of the repo; the cloud clone has a "
-                           "dangling link, so those rules do not exist there",
-                           "commit the text into the repo (a real AGENTS.md), and keep the link for local sessions only if at all"))
+    looped = looped_instruction_links(repo)
+    if looped or external:
+        why = []
+        if looped:
+            why.append(f"{', '.join(looped)}: symlink loop; no session can read {'it' if len(looped) == 1 else 'them'}, here or in the cloud")
+        if external:
+            why.append(f"{', '.join(external)}: symlink(s) out of the repo; the cloud clone has a dangling link, so those rules do not exist there")
+        items.append(_item(BLOCK, "instructions", "; ".join(why),
+                           "commit the text into the repo (a real AGENTS.md), and keep the link for local sessions only if at all"
+                           if not looped else "make AGENTS.md a real file and point CLAUDE.md at it (or import it with @AGENTS.md)"))
     elif not top:
         items.append(_item(BLOCK, "instructions", "no CLAUDE.md or AGENTS.md: a cloud session starts with no instructions",
                            f"teyla cloud prep {repo.name}  (AGENTS.md with the shipping section, CLAUDE.md importing it)"))
