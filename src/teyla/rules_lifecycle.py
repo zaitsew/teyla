@@ -28,13 +28,14 @@ went wrong, a rule's are what to do.
 
 **Lifecycle fields.** A rule file `teyla rule` writes carries, in its frontmatter:
 
-    created: 2026-10-01     the day it was written
+    created: 2026-10-01T09:12:00+00:00   when it was written (a date alone, from early files,
+                            reads as the end of that day)
     hits: 0                 human corrections that matched it after it was written
     last_hit: never         the newest of those (an ISO timestamp — also the counting watermark)
     expires: 2026-12-30     created + 90 days, pushed to last_hit + 90 days by every hit
 
 `hits` only moves on `--write`, and only counts corrections newer than `last_hit` (or than
-`created`), so running propose any number of times never counts one correction twice. Files from
+`created` — to the second: a correction the afternoon a rule was written that morning is a hit), so running propose any number of times never counts one correction twice. Files from
 before these fields still load and match; they get `hits`/`last_hit`/`expires` on their first hit.
 
 **Stale.** Expired rules, and rules never hit in 30 days or more, are listed as removal
@@ -124,6 +125,7 @@ class Rule:
     meta: dict
     bullets: list[str]
     created: _dt.date | None
+    created_at: _dt.datetime | None  # None when `created:` is a bare date
     hits: int | None
     last_hit: _dt.datetime | None
     expires: _dt.date | None
@@ -161,15 +163,24 @@ def load_rules(repo: pathlib.Path) -> list[Rule]:
         except ValueError:
             hits = None
         lh = meta.get("last_hit")
-        out.append(Rule(f, f"{RULES_DIR}/{f.name}", meta, bullets, _date(meta.get("created")), hits,
+        cr = meta.get("created")
+        created_at = _ts(cr) if isinstance(cr, str) and len(cr.strip()) > 10 else None
+        out.append(Rule(f, f"{RULES_DIR}/{f.name}", meta, bullets, _date(cr), created_at, hits,
                         _ts(lh) if isinstance(lh, str) and lh not in ("never", "") else None,
                         _date(meta.get("expires"))))
     return out
 
 
-def lifecycle_fields(today: _dt.date) -> str:
-    """The frontmatter lines a new rule file starts with (after `globs:`)."""
-    return f"created: {today.isoformat()}\nhits: 0\nlast_hit: never\nexpires: {(today + _dt.timedelta(days=TTL_DAYS)).isoformat()}\n"
+def lifecycle_fields(when: _dt.date | _dt.datetime) -> str:
+    """The frontmatter lines a new rule file starts with (after `globs:`). `created` is a full
+    timestamp: the hit watermark compares to the second, so a correction made later on the
+    rule's first day counts (review of #87, P2). A bare date is still accepted, as old files have."""
+    if isinstance(when, _dt.datetime):
+        when = when if when.tzinfo else when.replace(tzinfo=_dt.timezone.utc)
+        created, day = when.isoformat(timespec="seconds"), when.date()
+    else:
+        created, day = when.isoformat(), when
+    return f"created: {created}\nhits: 0\nlast_hit: never\nexpires: {(day + _dt.timedelta(days=TTL_DAYS)).isoformat()}\n"
 
 
 def set_fields(text: str, fields: dict) -> str:
@@ -269,7 +280,9 @@ def _effective(rule: Rule, matched: list[dict], window_start: _dt.datetime) -> d
     """The rule's fields after counting `matched` corrections newer than its watermark."""
     if rule.last_hit:
         floor = rule.last_hit
-    elif rule.created:
+    elif rule.created_at:
+        floor = rule.created_at
+    elif rule.created:  # a bare date: nothing says when that day, so none of it counts
         floor = _dt.datetime.combine(rule.created, _dt.time.max, tzinfo=_dt.timezone.utc)
     else:
         floor = window_start  # a pre-0.14 file: nothing says when it was written
@@ -331,14 +344,14 @@ def propose(repo, days: int = 7, min_repeats: int = 2, now: _dt.datetime | None 
             untracked.append(rule)
     return {"repo": repo, "days": days, "human": len(in_window), "automatic": automatic, "new": new,
             "recurring": recurring, "stale": stale, "untracked": untracked, "budget": budget(repo),
-            "today": now.date()}
+            "today": now.date(), "now": now}
 
 
-def _new_rule_diff(p: dict, today: _dt.date) -> list[str]:
+def _new_rule_diff(p: dict, now: _dt.datetime) -> list[str]:
     bullet = p["text"] if p["text"].endswith((".", "!", "?", "…")) else p["text"] + "."
     if p["exists"]:
         return [f"--- {p['rel']}", f"+++ {p['rel']}  (appended)", f"+- {bullet}"]
-    body = "---\nglobs: **\n" + lifecycle_fields(today) + "---\n\n" + f"- {bullet}"
+    body = "---\nglobs: **\n" + lifecycle_fields(now) + "---\n\n" + f"- {bullet}"
     return ["--- /dev/null", f"+++ {p['rel']}"] + ["+" + l for l in body.split("\n")]
 
 
@@ -363,7 +376,7 @@ def render(rep: dict) -> list[str]:
     for p in rep["new"]:
         ts = sorted(str(r.get("ts") or "")[:10] for r in p["records"])
         out += ["", f"new rule — {len(p['records'])} corrections no rule covers ({ts[0]}..{ts[-1]}):"]
-        out += _new_rule_diff(p, rep["today"])
+        out += _new_rule_diff(p, rep["now"])
         out += [f"  from: \"{_one_line(r.get('text') or '', 90)}\"" for r in p["records"][-3:]]
     for r in rep["recurring"]:
         rule = r["rule"]
@@ -393,7 +406,7 @@ def write(rep: dict) -> list[str]:
     written behind a message that says "Nothing was written" (review of #87, P2)."""
     from . import invisible, rules as rules_mod
     for p in rep["new"]:
-        rules_mod.add_rule(rep["repo"], p["text"], scope="**", dry=True, today=rep["today"])
+        rules_mod.add_rule(rep["repo"], p["text"], scope="**", dry=True, today=rep["now"])
     updates = []
     for r in rep["recurring"]:
         if not r["new_hits"]:
@@ -407,7 +420,7 @@ def write(rep: dict) -> list[str]:
         updates.append((rule, r, text))
     out = []
     for p in rep["new"]:
-        out += rules_mod.add_rule(rep["repo"], p["text"], scope="**", today=rep["today"])
+        out += rules_mod.add_rule(rep["repo"], p["text"], scope="**", today=rep["now"])
     for rule, r, text in updates:
         rule.path.write_text(text)
         out.append(f"{rule.rel}: hits {rule.hits or 0} → {r['hits']}")

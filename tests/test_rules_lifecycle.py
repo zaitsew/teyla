@@ -128,7 +128,7 @@ def test_propose_write_creates_the_rule_with_lifecycle_fields(repo, capsys):
     rl.write(rl.propose(repo, now=NOW))
     [f] = (repo / ".claude" / "rules").glob("*.md")
     meta, _ = control_rules._parse_frontmatter(f.read_text())
-    assert meta["hits"] == "0" and meta["created"] == "2026-10-01" and meta["expires"] == "2026-12-30"
+    assert meta["hits"] == "0" and meta["created"] == "2026-10-01T12:00:00+00:00" and meta["expires"] == "2026-12-30"
 
 
 def test_a_matching_correction_is_a_hit_counted_once(repo):
@@ -267,3 +267,15 @@ def test_propose_write_validates_every_proposal_before_writing_any(repo):
     with pytest.raises(invisible.InvisibleText):
         rl.write(rep)
     assert not (repo / ".claude").exists()
+
+
+def test_a_correction_later_on_the_rules_creation_day_is_a_hit(repo):
+    rules.add_rule(repo, "Merge with gh pr merge --merge, never squash",
+                   today=dt.datetime(2026, 9, 30, 9, 0, tzinfo=dt.timezone.utc))
+    human(repo, "no, you squash merged again — merge with --merge", "09-30")   # 10:00 the same day
+    [r] = rl.propose(repo, now=NOW)["recurring"]
+    assert r["new_hits"] == 1
+    # an old date-only `created:` still reads (as the end of that day: nothing says when)
+    [f] = (repo / ".claude" / "rules").glob("*.md")
+    f.write_text(rl.set_fields(f.read_text(), {"created": "2026-09-30"}))
+    assert rl.propose(repo, now=NOW)["recurring"][0]["new_hits"] == 0

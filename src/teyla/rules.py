@@ -96,7 +96,7 @@ def _mirror_cursor(repo: pathlib.Path, slug: str, text: str, scope: str, dry: bo
 
 
 def add_rule(repo: str | pathlib.Path, text: str, scope: str = "**", dry: bool = False,
-             today: _dt.date | None = None) -> list[str]:
+             today: _dt.date | _dt.datetime | None = None) -> list[str]:
     """Every file's new text is computed and scanned before any is written: a clean rule
     appended to a rule file, or mirrored into an AGENTS.md, that already hides a bidi or
     zero-width character would otherwise re-save it under Teyla's name (review of #87, P2).
@@ -120,7 +120,7 @@ def add_rule(repo: str | pathlib.Path, text: str, scope: str = "**", dry: bool =
         new = f.read_text().rstrip("\n") + "\n" + bullet + "\n"
         out.append(f"{'would append' if dry else 'appended'} to {f.relative_to(repo)} (scope kept as is)")
     else:
-        fields = rules_lifecycle.lifecycle_fields(today or _dt.date.today())
+        fields = rules_lifecycle.lifecycle_fields(today or _dt.datetime.now(_dt.timezone.utc))
         new = f"---\nglobs: {scope}\n{fields}---\n\n{bullet}\n"
         out.append(f"{'would write' if dry else 'wrote'} {f.relative_to(repo)} (globs: {scope})")
     writes = [(f, new)]
