@@ -386,11 +386,15 @@ def render(rep: dict) -> list[str]:
 
 def write(rep: dict) -> list[str]:
     """Apply a proposal: new rules through `teyla rule` (so dedupe, the invisible-character scan
-    and the budget warning apply), and the hit counts into the frontmatter of matched rules."""
+    and the budget warning apply), and the hit counts into the frontmatter of matched rules.
+
+    Two passes: everything is computed and scanned (a dry `add_rule` runs the same checks)
+    before anything is written, so a refusal on the third proposal cannot leave the first two
+    written behind a message that says "Nothing was written" (review of #87, P2)."""
     from . import invisible, rules as rules_mod
-    out = []
     for p in rep["new"]:
-        out += rules_mod.add_rule(rep["repo"], p["text"], scope="**", today=rep["today"])
+        rules_mod.add_rule(rep["repo"], p["text"], scope="**", dry=True, today=rep["today"])
+    updates = []
     for r in rep["recurring"]:
         if not r["new_hits"]:
             continue
@@ -400,6 +404,11 @@ def write(rep: dict) -> list[str]:
             fields["expires"] = r["expires"].isoformat()
         text = set_fields(rule.path.read_text(), fields)
         invisible.check(text, rule.rel)
+        updates.append((rule, r, text))
+    out = []
+    for p in rep["new"]:
+        out += rules_mod.add_rule(rep["repo"], p["text"], scope="**", today=rep["today"])
+    for rule, r, text in updates:
         rule.path.write_text(text)
         out.append(f"{rule.rel}: hits {rule.hits or 0} → {r['hits']}")
     return out or ["nothing to write"]

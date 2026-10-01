@@ -28,7 +28,7 @@ def human(repo, text, day, source="correct"):
 
 # --- invisible characters -------------------------------------------------------------------
 
-@pytest.mark.parametrize("ch", ["‮", "⁦", "‎", "‏", "​", "‍", "⁠", "﻿",
+@pytest.mark.parametrize("ch", ["\u202e", "\u2066", "\u200e", "\u200f", "\u200b", "\u200d", "\u2060", "\ufeff",
                                 "\U000e0041", "\U000e007f"])
 def test_every_hidden_class_is_found_with_its_position(ch):
     hits = invisible.find(f"line one\nab{ch}c")
@@ -44,13 +44,13 @@ def test_plain_text_and_visible_unicode_pass():
 def test_rule_with_a_hidden_character_is_refused_before_any_write(repo):
     (repo / "AGENTS.md").write_text("# a\n")
     with pytest.raises(invisible.InvisibleText):
-        rules.add_rule(repo, "Never squash‮ merges")
+        rules.add_rule(repo, "Never squash\u202e merges")
     assert not (repo / ".claude").exists()
     assert (repo / "AGENTS.md").read_text() == "# a\n"
 
 
 def test_cli_turns_the_refusal_into_exit_2(repo, capsys):
-    assert cli.main(["rule", "Always use pnpm​ here", "--repo", str(repo)]) == 2
+    assert cli.main(["rule", "Always use pnpm\u200b here", "--repo", str(repo)]) == 2
     assert "refused" in capsys.readouterr().err and not (repo / ".claude").exists()
     assert cli.main(["correct", "no\U000e0041 not that", "--repo", str(repo)]) == 2
     assert not corrections.path_for(repo).exists()
@@ -58,26 +58,26 @@ def test_cli_turns_the_refusal_into_exit_2(repo, capsys):
 
 def test_policy_writes_refuse_hidden_characters(tmp_path, monkeypatch):
     monkeypatch.setattr(policy, "POLICY", tmp_path / "POLICY.md")
-    monkeypatch.setattr(policy, "render_template", lambda owner=None, work=None: "# Policy\nobey⁧ this\n")
+    monkeypatch.setattr(policy, "render_template", lambda owner=None, work=None: "# Policy\nobey\u2067 this\n")
     with pytest.raises(invisible.InvisibleText):
         policy.init()
     assert not (tmp_path / "POLICY.md").exists()
     monkeypatch.setattr(policy, "CLAUDE_GLOBAL", tmp_path / "CLAUDE.md")
     monkeypatch.setattr(policy, "TEMPLATE", tmp_path / "unused")
     # refresh: a POLICY.md that already carries one is not merged into or proposed from
-    (tmp_path / "POLICY.md").write_text("# Policy\nmine﻿\n")
+    (tmp_path / "POLICY.md").write_text("# Policy\nmine\ufeff\n")
     monkeypatch.setattr(policy, "BASE_PATH", tmp_path / "base.md")
     (tmp_path / "base.md").write_text("# Policy\nold\n")
     monkeypatch.setattr(policy, "render_template", lambda owner=None, work=None: "# Policy\nnew\n")
     with pytest.raises(invisible.InvisibleText):
         policy.refresh()
-    assert (tmp_path / "POLICY.md").read_text() == "# Policy\nmine﻿\n"
+    assert (tmp_path / "POLICY.md").read_text() == "# Policy\nmine\ufeff\n"
 
 
 def test_policy_sync_refuses_to_copy_a_hidden_character_into_the_cursor_skill(tmp_path, monkeypatch):
     monkeypatch.setattr(policy, "POLICY", tmp_path / ".agents" / "POLICY.md")
     policy.POLICY.parent.mkdir()
-    policy.POLICY.write_text("# Policy\nx​y\n")
+    policy.POLICY.write_text("# Policy\nx\u200by\n")
     skill = tmp_path / ".cursor" / "skills" / "teyla-policy" / "SKILL.md"
     (tmp_path / ".cursor" / "skills").mkdir(parents=True)
     monkeypatch.setattr(policy, "TARGETS", {"claude-code": tmp_path / "none" / "CLAUDE.md",
@@ -232,7 +232,7 @@ def test_digest_candidate_per_repo_with_something_to_propose(tmp_path):
 def test_policy_sync_validates_policy_md_before_touching_any_target(tmp_path, monkeypatch):
     monkeypatch.setattr(policy, "POLICY", tmp_path / ".agents" / "POLICY.md")
     policy.POLICY.parent.mkdir()
-    policy.POLICY.write_text("# Policy\nobey‮ this\n")
+    policy.POLICY.write_text("# Policy\nobey\u202e this\n")
     claude = tmp_path / ".claude" / "CLAUDE.md"; claude.parent.mkdir(); claude.write_text("# mine\n")
     codex = tmp_path / ".codex" / "AGENTS.md"; codex.parent.mkdir()
     monkeypatch.setattr(policy, "TARGETS", {"claude-code": claude, "codex": codex, "grok": tmp_path / "none" / "b",
@@ -245,12 +245,25 @@ def test_policy_sync_validates_policy_md_before_touching_any_target(tmp_path, mo
 def test_a_clean_rule_is_refused_when_a_file_it_would_extend_already_hides_a_character(repo):
     d = repo / ".claude" / "rules"; d.mkdir(parents=True)
     f = d / "pnpm.md"
-    f.write_text("---\nglobs: **\n---\n\n- Use pnpm‮ here.\n")
+    f.write_text("---\nglobs: **\n---\n\n- Use pnpm\u202e here.\n")
     with pytest.raises(invisible.InvisibleText, match="pnpm.md"):
         rules.add_rule(repo, "Always pnpm")                   # same slug: an append to pnpm.md
-    assert f.read_text() == "---\nglobs: **\n---\n\n- Use pnpm‮ here.\n"
-    (repo / "AGENTS.md").write_text("# guide\nobey⁦ this\n")
+    assert f.read_text() == "---\nglobs: **\n---\n\n- Use pnpm\u202e here.\n"
+    (repo / "AGENTS.md").write_text("# guide\nobey\u2066 this\n")
     with pytest.raises(invisible.InvisibleText, match="AGENTS.md"):
         rules.add_rule(repo, "Deploys go to staging first")  # a new rule file, mirrored into AGENTS.md
     assert sorted(p.name for p in d.glob("*.md")) == ["pnpm.md"]
-    assert (repo / "AGENTS.md").read_text() == "# guide\nobey⁦ this\n"
+    assert (repo / "AGENTS.md").read_text() == "# guide\nobey\u2066 this\n"
+
+
+def test_propose_write_validates_every_proposal_before_writing_any(repo):
+    human(repo, "no, never squash merge, use gh pr merge --merge", "09-27")
+    human(repo, "again you squash merged, merge with --merge", "09-28")
+    # an inbox rejection note is human, and nothing scanned it on the way in
+    human(repo, "deploy to staging first, always", "09-29", source="inbox-reject")
+    human(repo, "the deploy goes to staging\u202e first", "09-30", source="inbox-reject")  # the proposal's text
+    rep = rl.propose(repo, now=NOW)
+    assert len(rep["new"]) == 2
+    with pytest.raises(invisible.InvisibleText):
+        rl.write(rep)
+    assert not (repo / ".claude").exists()
