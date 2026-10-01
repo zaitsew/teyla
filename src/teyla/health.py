@@ -372,9 +372,17 @@ class _Errs:
             return self.hard
         return self.newest
 
-def errors_claude(home: pathlib.Path, since: float) -> dict:
+def _shares_cli_credentials(ep: str) -> bool:
+    """`claude` in a terminal (cli) and `claude -p` (sdk-cli, sdk-*) read one credential store, the
+    one `claude auth status` reports on. The desktop app signs in on its own."""
+    return ep == "cli" or ep.startswith("sdk-")
+
+
+def errors_claude(home: pathlib.Path, since: float, probe_ok: _dt.datetime | None = None) -> dict:
     """{error, last_ok}: `isApiErrorMessage` records vs ordinary assistant records, from the
-    tail of every transcript written in the window."""
+    tail of every transcript written in the window. `probe_ok`: when a live `claude auth status`
+    just said loggedIn — it supersedes the auth errors (not the quota ones) recorded before it by
+    the entrypoints that use the CLI's credentials; an auth error after it shows again."""
     root = home / "projects"
     by_ep: dict[str, _Errs] = {}
     last_ok: dict[str, _dt.datetime] = {}
@@ -403,8 +411,10 @@ def errors_claude(home: pathlib.Path, since: float) -> dict:
             if d.get("isApiErrorMessage"):
                 content = (d.get("message") or {}).get("content") or []
                 text = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
-                by_ep.setdefault(ep, _Errs()).add(
-                    dict(_err(ts, classify(text + " " + str(d.get("error") or "")), text, p.name), entrypoint=ep))
+                err = dict(_err(ts, classify(text + " " + str(d.get("error") or "")), text, p.name), entrypoint=ep)
+                if probe_ok and err["kind"] == "auth" and _shares_cli_credentials(ep) and ts <= probe_ok:
+                    continue  # history: the CLI's credentials work now
+                by_ep.setdefault(ep, _Errs()).add(err)
             elif ep not in last_ok or ts > last_ok[ep]:
                 last_ok[ep] = ts
     # One verdict per entrypoint, then the pick among them: an unresolved quota/auth failure of any
@@ -671,10 +681,15 @@ def offline(name: str, home: pathlib.Path | None = None, days: int = 7, sessions
         return row
     # No binary but a home directory: a desktop app without its CLI on PATH, not a broken install.
     row["version"], row["version_error"] = version(binary) if binary else (None, None)
-    row["auth"] = auth_claude(hdir, status=claude_auth_status(binary)) if name == "claude-code" else AUTH[name](hdir)
+    status = claude_auth_status(binary) if name == "claude-code" else None
+    row["auth"] = auth_claude(hdir, status=status) if name == "claude-code" else AUTH[name](hdir)
     since = time.time() - days * 86400
     try:
-        e = ERRORS[name](hdir, since)
+        if name == "claude-code":
+            logged_in = bool((row["auth"] or {}).get("ok") and (status or {}).get("loggedIn"))
+            e = errors_claude(hdir, since, probe_ok=_now() if logged_in else None)
+        else:
+            e = ERRORS[name](hdir, since)
     except Exception as exc:  # noqa: BLE001 — a health check must never take doctor down
         e = {"error": None, "last_ok": None, "scan_error": str(exc)[:120]}
     row.update(error=e.get("error"), last_ok=e.get("last_ok"), limits=e.get("limits"))

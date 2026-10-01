@@ -618,3 +618,32 @@ def test_hermes_failed_request_stub_rows_are_not_a_success(home):
         ("assistant", "Your request was not processed. Send it again.", time.time() - 60)])
     con.commit(); con.close()
     assert abs((NOW - health.errors_hermes(home / ".hermes", time.time() - 7 * 86400)["last_ok"]).total_seconds() - 5 * 86400) < 60
+
+
+def test_claude_a_live_logged_in_probe_supersedes_cli_entrypoint_auth_errors(home, monkeypatch):
+    # `claude -p` (sdk-cli) and the CLI share one credential store, the one `claude auth status`
+    # reads: loggedIn now means their "OAuth session expired" errors are history. The desktop app
+    # signs in separately, so its auth error stays; quota errors are never superseded.
+    monkeypatch.setattr(health, "claude_auth_status", lambda b: {"loggedIn": True, "authMethod": "claude.ai", "apiProvider": "firstParty"})
+    monkeypatch.setattr(health, "find_binary", lambda n: "/bin/claude" if n == "claude-code" else None)
+    monkeypatch.setattr(health, "version", lambda b: ("2.1.234", None))
+    expired = "Failed to authenticate: OAuth session expired and could not be refreshed"
+    _claude_rows(home, [_api_error("sdk-cli", dt.timedelta(days=2), expired), _api_error("cli", dt.timedelta(days=1), expired)])
+    row = health.offline("claude-code")
+    assert row["level"] == "OK" and row["error"] is None and "OAuth session expired" not in row["detail"]
+    # without the probe (not logged in / not runnable) the error is still the verdict
+    monkeypatch.setattr(health, "claude_auth_status", lambda b: None)
+    monkeypatch.setattr(health, "_keychain_has", lambda s: True)
+    assert health.offline("claude-code")["level"] == "FIX"
+    monkeypatch.setattr(health, "claude_auth_status", lambda b: {"loggedIn": True, "authMethod": "claude.ai", "apiProvider": "firstParty"})
+    # the desktop app's own auth error and a quota error are not superseded by the CLI's probe
+    _claude_rows(home, [_api_error("claude-desktop", dt.timedelta(days=1), expired)])
+    row = health.offline("claude-code")
+    assert row["level"] == "FIX" and row["error"]["entrypoint"] == "claude-desktop"
+    _claude_rows(home, [_api_error("sdk-cli", dt.timedelta(days=1), "You've hit your session limit")])
+    row = health.offline("claude-code")
+    assert row["level"] == "FIX" and row["error"]["kind"] == "quota"
+    # an auth error recorded after the probe shows again
+    _claude_rows(home, [_api_error("sdk-cli", dt.timedelta(hours=1), expired)])
+    e = health.errors_claude(home / ".claude", time.time() - 7 * 86400, probe_ok=NOW - dt.timedelta(hours=3))
+    assert e["error"]["kind"] == "auth"
