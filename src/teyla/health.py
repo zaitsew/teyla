@@ -122,7 +122,7 @@ def _tail(path: pathlib.Path, n: int = TAIL) -> bytes:
 
 _KINDS = (
     ("quota", re.compile(r"\b402\b|payment required|balance exhausted|insufficient_quota|usage limit|session limit|"
-                         r"weekly limit|out of credits|credit balance|billing|quota", re.I)),
+                         r"weekly limit|out of credits|run out of credits|spending.?limit|credit balance|billing|quota", re.I)),
     ("auth", re.compile(r"\b401\b|unauthori[sz]ed|missing access_token|invalid_grant|refresh token|re-?authenticate|"
                         r"relogin|not logged in|authenticat|invalid api key|expired token|session expired", re.I)),
     ("rate", re.compile(r"\b429\b|rate.?limit|too many requests|\b529\b|overloaded", re.I)),
@@ -134,8 +134,10 @@ _KINDS = (
 def classify(text: str, status: int | None = None) -> str:
     if status == 402:
         return "quota"
+    # xAI answers an exhausted balance with HTTP 403 {"code": "personal-team-blocked:spending-limit"}:
+    # the text says what it is, the status alone would call it an auth failure.
     if status in (401, 403):
-        return "auth"
+        return "quota" if _KINDS[0][1].search(text or "") else "auth"
     if status in (429, 529):
         return "rate"
     for kind, rx in _KINDS:
@@ -264,7 +266,7 @@ def auth_hermes(home: pathlib.Path, env=None) -> dict:
             return {"ok": True, "detail": f"{prov}: {len(pool)} pooled credential(s)"}
         return {"ok": False, "detail": f"{prov}: no credentials", "fix": f"hermes model   (re-authenticate {prov})"}
     tok = st.get("tokens") or {}
-    err = st.get("last_auth_error") or {}
+    err = _hermes_current_auth_error(st, pool)
     if not tok.get("access_token"):
         why = f" — last error {str(err.get('at', ''))[:10]}: {err.get('message', '')[:120]}" if err else ""
         return {"ok": False, "detail": f"{prov} state is missing access_token{why}",
@@ -273,6 +275,24 @@ def auth_hermes(home: pathlib.Path, env=None) -> dict:
         return {"ok": False, "detail": f"{prov}: relogin required since {str(err.get('at', ''))[:10]}: {err.get('message', '')[:120]}",
                 "fix": f"hermes model   (re-authenticate {_provider_label(prov)})"}
     return {"ok": True, "detail": f"{prov} signed in"}
+
+
+def _hermes_current_auth_error(st: dict, pool: list) -> dict:
+    """`last_auth_error` of a provider state, or {} once something later succeeded. Hermes never
+    clears the field: after a re-login it still says "relogin required since 09-29" next to a
+    fresh `last_refresh`. The newest event decides — a token refresh or a pooled credential that
+    is `ok` after the error's `at` makes it history (2026-10-01, doctor health:hermes)."""
+    err = (st or {}).get("last_auth_error") or {}
+    at = _parse_ts(err.get("at"))
+    if not err or at is None:
+        return err
+    later = [_parse_ts((st or {}).get("last_refresh"))]
+    for c in pool or []:
+        if isinstance(c, dict):
+            later.append(_parse_ts(c.get("last_refresh")))
+            if c.get("last_status") == "ok":
+                later.append(_parse_ts(c.get("last_status_at")))
+    return {} if any(t and t > at for t in later) else err
 
 
 def _provider_label(prov: str) -> str:
@@ -440,17 +460,49 @@ def errors_grok(home: pathlib.Path, since: float) -> dict:
 _LOG_LINE = re.compile(rb"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+) (ERROR|WARNING|CRITICAL) (\S+): (.*)$")
 
 
+def _hermes_request_dumps(home: pathlib.Path, since: float, limit: int = 20):
+    """Failed provider requests Hermes dumps to sessions/request_dump_*.json: `{timestamp, error:
+    {status_code, message}}`. This is where an HTTP 403 `personal-team-blocked:spending-limit`
+    is recorded — not in auth.json, not in errors.log. The timestamp is naive local time."""
+    files = []
+    for p in (home / "sessions").glob("request_dump_*.json"):
+        try:
+            m = p.stat().st_mtime
+        except OSError:
+            continue
+        if m >= since:
+            files.append((m, p))
+    for _, p in sorted(files, reverse=True)[:limit]:
+        try:
+            d = json.loads(p.read_text())
+            e = d.get("error") or {}
+        except (OSError, ValueError, AttributeError):
+            continue
+        if not isinstance(e, dict):
+            continue
+        ts = _parse_ts(d.get("timestamp"))
+        if ts is not None and isinstance(d.get("timestamp"), str) and not re.search(r"(Z|[+-]\d\d:?\d\d)$", d["timestamp"].strip()):
+            ts = _dt.datetime.fromisoformat(d["timestamp"].strip()).astimezone(_dt.timezone.utc)  # naive = local
+        status = e.get("status_code") if isinstance(e.get("status_code"), int) else None
+        msg = e.get("message") or e.get("response_text") or f"status {status}"
+        yield _err(ts, classify(str(msg), status), msg, p.name)
+
+
 def errors_hermes(home: pathlib.Path, since: float) -> dict:
     errs, last_ok = _Errs(), None
     try:
         d = json.loads((home / "auth.json").read_text())
         for prov, st in (d.get("providers") or {}).items():
-            e = (st or {}).get("last_auth_error") or {}
+            # An auth error that a later refresh or login got past is history, not an event.
+            e = _hermes_current_auth_error(st or {}, (d.get("credential_pool") or {}).get(prov) or [])
             ts = _parse_ts(e.get("at"))
             if ts and ts.timestamp() >= since:
                 errs.add(_err(ts, "auth", f"{prov}: {e.get('message', e.get('code', ''))}", "auth.json"))
     except (OSError, ValueError, AttributeError):
         pass
+    for e in _hermes_request_dumps(home, since):
+        if e["ts"] is not None and e["ts"].timestamp() >= since:
+            errs.add(e)
     for raw in _tail(home / "logs" / "errors.log").splitlines():
         m = _LOG_LINE.match(raw)
         if not m:
@@ -515,6 +567,8 @@ def _fix_for(name: str, err: dict, batch_top: tuple[str, int] | None) -> str:
         return s
     if name == "hermes" and kind == "auth":
         return "hermes model   (re-authenticate xAI)" if "xai" in err["message"].lower() else "hermes model   (re-authenticate)"
+    if name == "hermes" and kind == "quota":
+        return "provider credits exhausted — add credits where the message says, or `hermes model` to switch provider"
     if kind == "auth":
         return {"claude-code": "claude auth login", "codex": "codex login", "grok": "grok login"}.get(name, "sign in again")
     if kind == "quota":

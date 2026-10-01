@@ -51,6 +51,9 @@ def home(tmp_path, monkeypatch):
     ("Failed to authenticate: OAuth session expired and could not be refreshed", None, "auth"),
     ("API Error: 529 Overloaded.", None, "rate"),
     ("Too Many Requests", 429, "rate"),
+    # xAI's exhausted balance arrives as a 403; the text says it is money, not a login
+    ("Error code: 403 - {'code': 'personal-team-blocked:spending-limit', 'error': 'You have run out of credits'}", 403, "quota"),
+    ("Forbidden", 403, "auth"),
     ("API Error: Can't reach the API server — check your internet or DNS (ENOTFOUND)", None, "network"),
     ("something odd", None, "other"),
 ])
@@ -407,3 +410,68 @@ def test_hermes_live_prompt_may_read_the_policy_file():
     cmd = health.live_command("hermes", "hermes")
     assert "do not read any file" not in cmd[-1].lower() and "you may read the policy file" in cmd[-1].lower()
     assert "do not read any file" in health.live_command("codex", "codex")[-1].lower()
+
+
+def _hermes_home(home, *, last_refresh=None, err_at=None, pool=None):
+    st = {"tokens": {"access_token": SECRET, "refresh_token": SECRET}, "auth_mode": "oauth_device_code"}
+    if last_refresh:
+        st["last_refresh"] = _iso(last_refresh)
+    if err_at:
+        st["last_auth_error"] = {"provider": "xai-oauth", "code": "xai_refresh_failed", "relogin_required": True,
+                                 "message": 'xAI token refresh failed. {"error":"invalid_grant"}', "at": _iso(err_at)}
+    (home / ".hermes" / "auth.json").write_text(json.dumps({
+        "version": 1, "active_provider": "xai-oauth", "providers": {"xai-oauth": st},
+        "credential_pool": {"xai-oauth": pool if pool is not None else []}}))
+
+
+def _request_dump(home, when_local, status, message, name="request_dump_a.json"):
+    (home / ".hermes" / "sessions").mkdir(exist_ok=True)
+    (home / ".hermes" / "sessions" / name).write_text(json.dumps({
+        "timestamp": when_local.isoformat(), "reason": "non_retryable_client_error",
+        "request": {"headers": {"Authorization": "Bearer eyJ0...X_3w"}},
+        "error": {"type": "PermissionDeniedError", "status_code": status, "message": message}}))
+
+
+def test_hermes_relogin_after_the_stored_auth_error_clears_it(home):
+    # Hermes never clears `last_auth_error`: after a re-login it sits next to a newer last_refresh.
+    _hermes_home(home, err_at=NOW - dt.timedelta(days=2), last_refresh=NOW - dt.timedelta(hours=1))
+    a = health.auth_hermes(home / ".hermes")
+    assert a["ok"] and "relogin" not in a["detail"] and SECRET not in str(a)
+    assert health.errors_hermes(home / ".hermes", time.time() - 7 * 86400)["error"] is None
+    # ... and an error newer than the last refresh is still current
+    _hermes_home(home, err_at=NOW - dt.timedelta(hours=1), last_refresh=NOW - dt.timedelta(days=2))
+    a = health.auth_hermes(home / ".hermes")
+    assert not a["ok"] and "relogin required" in a["detail"]
+    assert health.errors_hermes(home / ".hermes", time.time() - 7 * 86400)["error"]["kind"] == "auth"
+    # a pooled credential that went ok after the error counts as a success too
+    _hermes_home(home, err_at=NOW - dt.timedelta(days=2),
+                 pool=[{"last_status": "ok", "last_status_at": _iso(NOW - dt.timedelta(hours=1))}])
+    assert health.auth_hermes(home / ".hermes")["ok"]
+
+
+def test_hermes_a_later_spending_limit_replaces_the_old_relogin_error(home):
+    # 2026-10-01: relogin worked (last_refresh), then every request answered HTTP 403
+    # personal-team-blocked:spending-limit, which only the request dump records.
+    _hermes_home(home, err_at=NOW - dt.timedelta(days=2), last_refresh=NOW - dt.timedelta(hours=3))
+    _request_dump(home, (NOW - dt.timedelta(hours=2)).astimezone().replace(tzinfo=None), 403,
+                  "Error code: 403 - {'code': 'personal-team-blocked:spending-limit', 'error': 'You have run out of credits'}")
+    row = health.offline("hermes")
+    assert row["level"] == "FIX"
+    assert "relogin" not in row["detail"] and "AUTH:" not in row["detail"]
+    assert "quota" in row["detail"] and "spending-limit" in row["detail"]
+    assert "credits" in row["fix"] and "re-authenticate" not in row["fix"]
+    # the naive dump timestamp is local time, not UTC
+    e = health.errors_hermes(home / ".hermes", time.time() - 86400)["error"]
+    assert abs((e["ts"] - (NOW - dt.timedelta(hours=2))).total_seconds()) < 5
+
+
+def test_hermes_a_later_success_clears_the_dumped_error(home):
+    _hermes_home(home, last_refresh=NOW - dt.timedelta(days=3))
+    _request_dump(home, (NOW - dt.timedelta(hours=3)).astimezone().replace(tzinfo=None), 403,
+                  "run out of credits (spending-limit)")
+    con = sqlite3.connect(home / ".hermes" / "state.db")
+    con.execute("create table messages (id integer primary key, session_id text, role text, timestamp real)")
+    con.execute("insert into messages (session_id, role, timestamp) values ('s', 'assistant', ?)", (time.time() - 3600,))
+    con.commit(); con.close()
+    row = health.offline("hermes")
+    assert row["level"] == "OK" and "later calls succeeded" in row["detail"]
