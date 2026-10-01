@@ -32,6 +32,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 
 from . import cloud
 
@@ -266,7 +267,7 @@ def secret_destination(name: str) -> str:
 
 def setup_script(repo: pathlib.Path, gate_text: str) -> list[str]:
     """Install lines for the environment setup script: uv always, then what the repo's root
-    lockfiles and its gate name. Every step is an `if`, never `[ -f x ] && …`: under `set -e`
+    lockfiles and its gate name, then each subdirectory (depth ≤ 2) with a lockfile of its own. Every step is an `if`, never `[ -f x ] && …`: under `set -e`
     a false test as the last line would fail the whole setup."""
     has = lambda rel: (repo / rel).exists()  # noqa: E731
     L = ["#!/bin/bash", "set -euo pipefail",
@@ -291,7 +292,70 @@ def setup_script(repo: pathlib.Path, gate_text: str) -> list[str]:
         L.append("if [ -f package.json ]; then npm install; fi")
     if has("deno.json") or has("deno.jsonc") or has("deno.lock") or re.search(r"\bdeno\b", gate_text):
         L.append("if ! command -v deno >/dev/null 2>&1; then npm install -g deno; fi")
+    sub = sub_lockfiles(repo)
+    if sub and not has("pnpm-lock.yaml") and not re.search(r"\bpnpm\b", gate_text) \
+            and any("pnpm-lock.yaml" in names for _, names in sub):
+        L.append("if ! command -v pnpm >/dev/null 2>&1; then npm install -g pnpm; fi")
+    for rel, names in sub:
+        q = shlex.quote(rel)
+        for lock, cmd in _SUB_INSTALL:
+            if lock in names:
+                L.append(f"if [ -f {shlex.quote(rel + '/' + lock)} ]; then {cmd.format(d=q)}; fi")
+    for rel in swift_only_dirs(repo):
+        L.append(f"# skipped on Linux: {rel} (Swift packages, Package.resolved only; a Mac resolves them)")
     return L
+
+
+# Lockfiles that make a subdirectory its own install, in the order they are run. Node takes the
+# first lockfile it has (a directory with two is installed once); Python lines are independent.
+_SUB_LOCKS = ("pnpm-lock.yaml", "package-lock.json", "yarn.lock", "uv.lock", "requirements.txt")
+_SUB_INSTALL = (("pnpm-lock.yaml", "(cd {d} && pnpm install --frozen-lockfile)"),
+                ("package-lock.json", "(cd {d} && npm ci)"),
+                ("yarn.lock", "(cd {d} && corepack enable && yarn install --frozen-lockfile)"),
+                ("uv.lock", "(cd {d} && uv sync --frozen)"),
+                ("requirements.txt", "uv pip install -q --system -r {d}/requirements.txt"))
+_NODE_LOCKS = ("pnpm-lock.yaml", "package-lock.json", "yarn.lock")
+# Never descended into: dependencies, build output, VCS and tool state, vendored trees.
+_SKIP_DIRS = {"node_modules", "vendor", "vendored", "third_party", "third-party", "external", "deps", "Pods", "Carthage",
+              "DerivedData", "build", "dist", "out", "target", "venv", "env", "__pycache__", "site-packages", "bower_components"}
+SUB_DEPTH = 2
+
+
+def _subdirs(repo: pathlib.Path):
+    """Directories 1..SUB_DEPTH levels below the repo, sorted, skipping hidden, vendored and
+    symlinked ones (a link could point out of the repo or back into it)."""
+    def walk(d: pathlib.Path, depth: int):
+        try:
+            kids = sorted(p for p in d.iterdir() if p.is_dir() and not p.is_symlink())
+        except OSError:
+            return
+        for k in kids:
+            if k.name.startswith(".") or k.name in _SKIP_DIRS or k.name.endswith(".egg-info"):
+                continue
+            yield k
+            if depth < SUB_DEPTH:
+                yield from walk(k, depth + 1)
+    yield from walk(repo, 1)
+
+
+def sub_lockfiles(repo: pathlib.Path) -> list[tuple[str, list[str]]]:
+    """(repo-relative dir, lockfiles to install from) for every subdirectory with its own
+    lockfile, depth ≤ SUB_DEPTH. A web app or a worker beside the root package has its own
+    dependencies, and a setup script that installs only the root leaves its gate step failing."""
+    out = []
+    for d in _subdirs(repo):
+        found = [n for n in _SUB_LOCKS if (d / n).is_file()]
+        node = next((n for n in found if n in _NODE_LOCKS), None)
+        found = [n for n in found if n not in _NODE_LOCKS or n == node]
+        if found:
+            out.append((d.relative_to(repo).as_posix(), found))
+    return out
+
+
+def swift_only_dirs(repo: pathlib.Path) -> list[str]:
+    """Subdirectories whose only lockfile is Package.resolved: Swift, nothing to install on Linux."""
+    return [d.relative_to(repo).as_posix() for d in _subdirs(repo)
+            if (d / "Package.resolved").is_file() and not any((d / n).is_file() for n in _SUB_LOCKS)]
 
 
 def setup_doc(repo: pathlib.Path, names: list[str], gate: str | None, tools: list[str], gate_text: str) -> str:

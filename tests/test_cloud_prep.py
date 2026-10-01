@@ -320,6 +320,49 @@ def test_setup_script_is_valid_bash_and_survives_missing_files(tmp_path):
     assert not any(l.startswith("[ ") and "&&" in l for l in script.splitlines())
 
 
+def test_setup_script_installs_subdirectories_with_their_own_lockfile(tmp_path):
+    # Only the root was installed; a web/ or worker/ with its own lockfile left the gate failing.
+    r = _repo(tmp_path, {"pyproject.toml": "[project]\nname='x'\n",
+                         "web/package-lock.json": "{}", "web/yarn.lock": "",  # one Node install, the first lockfile
+                         "services/api/uv.lock": "", "services/api/requirements.txt": "",
+                         "apps/site/pnpm-lock.yaml": "",
+                         "ios/Package.resolved": "{}",
+                         "a/b/c/package-lock.json": "{}",  # depth 3: out of bounds
+                         "web/node_modules/dep/package-lock.json": "{}", "vendor/lib/package-lock.json": "{}",
+                         ".github/x/package-lock.json": "{}", "my app/package-lock.json": "{}"})
+    (r / "linked").symlink_to(r / "web")
+    lines = cloud_prep.setup_script(r, "")
+    script = "\n".join(lines)
+    assert "if [ -f web/package-lock.json ]; then (cd web && npm ci); fi" in lines
+    assert "yarn" not in script
+    assert "if [ -f services/api/uv.lock ]; then (cd services/api && uv sync --frozen); fi" in lines
+    assert ("if [ -f services/api/requirements.txt ]; then uv pip install -q --system -r services/api/requirements.txt; fi"
+            in lines)
+    assert "if [ -f apps/site/pnpm-lock.yaml ]; then (cd apps/site && pnpm install --frozen-lockfile); fi" in lines
+    assert lines.index("if ! command -v pnpm >/dev/null 2>&1; then npm install -g pnpm; fi") < \
+        next(i for i, l in enumerate(lines) if "apps/site" in l)
+    assert "if [ -f 'my app/package-lock.json' ]; then (cd 'my app' && npm ci); fi" in lines
+    assert "# skipped on Linux: ios (Swift packages, Package.resolved only; a Mac resolves them)" in lines
+    for gone in ("a/b/c", "node_modules", "vendor", ".github", "linked"):
+        assert gone not in script, gone
+
+    # Run it: every install line under set -euo pipefail, with stub tools that log their cwd.
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    log = tmp_path / "calls.log"
+    for tool in ("uv", "npm", "pnpm", "corepack", "yarn", "curl"):
+        (stubs / tool).write_text(f'#!/bin/sh\necho "{tool} $(basename "$PWD") $*" >> "{log}"\n')
+        (stubs / tool).chmod(0o755)
+    f = tmp_path / "setup.sh"
+    f.write_text(script + "\n")
+    env = dict(os.environ, PATH=f"{stubs}:/usr/bin:/bin", CLAUDE_PROJECT_DIR=str(r))
+    res = subprocess.run(["bash", str(f)], capture_output=True, text=True, env=env)
+    assert res.returncode == 0, res.stderr
+    calls = log.read_text().splitlines()
+    assert "npm web ci" in calls and "uv api sync --frozen" in calls and "pnpm site install --frozen-lockfile" in calls
+    assert "npm my app ci" in calls
+
+
 # --- the hooks, run for real -----------------------------------------------------------------
 
 def _landed_repo(tmp_path):
