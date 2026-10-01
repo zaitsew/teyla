@@ -298,3 +298,43 @@ def test_feedback_doctor_keeps_level_and_name_but_withholds_machine_detail(machi
 def test_shared_outputs_opened_no_socket(machine):
     log = machine["netlog"]
     assert not log.exists() or log.read_text() == "", log.read_text()
+
+
+# --- A17 (batch volume) must not name the project that drives it ---------------------------
+
+A17_NOW = dt.datetime(2026, 9, 29, 18, 0, tzinfo=dt.timezone.utc)
+
+
+def _batch_sessions(harness, cwd, n, days_ago):
+    """`n` headless sessions of `harness` in `cwd`, `days_ago` days before A17_NOW."""
+    from teyla.adapters import Session
+    out = []
+    for i in range(n):
+        s = Session(harness=harness, project=cwd, sid=f"{harness}-{cwd}-{days_ago}-{i}", path="/x")
+        s.cwd = cwd
+        s.first = s.last = (A17_NOW - dt.timedelta(days=days_ago, hours=1)).isoformat()
+        s.batch = True
+        out.append(s)
+    return out
+
+
+def test_share_does_not_leak_a17_project_names_or_paths(monkeypatch, capsys):
+    """`teyla monitor --share` advises from the redacted metrics: A17's title, evidence and action
+    name the project driving the volume (review of #69, P1). A path outside $HOME is its own name."""
+    import argparse
+    from teyla import cli, policy
+    from teyla.monitor import headless
+    canary = "/srv/zqcwdcanary/zqprojslug"
+    ss = _batch_sessions("grok", canary, 1500, 1) + _batch_sessions("grok", canary, 100, 10)
+    monkeypatch.setattr(cli, "_sessions", lambda a: ss)
+    monkeypatch.setattr(cli, "_extras", lambda m, s, d: m.update(headless=headless(s, d, now=A17_NOW), grok_week=None, harness_errors=[]))
+    monkeypatch.setattr(cli, "_cloud_sessions", lambda days: [])  # no git walk of the real code_root, no gh
+    monkeypatch.setattr(policy, "status", lambda: {})
+    run = lambda **kw: (cli.cmd_monitor(argparse.Namespace(days=29, project=None, no_sidechain=True, samples=False,  # noqa: E731
+                                                          out=None, **kw)), capsys.readouterr().out)[1]
+    raw = run(share=False, json=True)
+    assert "zqprojslug" in raw and '"A17"' in raw       # the canary is reachable without --share
+    for as_json in (False, True):
+        out = run(share=True, json=as_json)
+        assert "zq" not in out and "h01" in out
+    assert '"A17"' in run(share=True, json=True)         # the finding stays, only its names go

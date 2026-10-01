@@ -517,14 +517,20 @@ def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | No
         lines += restore(repo, method, spec, before)
         return lines
     landed = installed_commit(method)
-    if landed and not same_commit(landed, sha):
+    if landed is None:
+        # The check that the pinned commit is what landed could not run (no probe interpreter, a
+        # probe that failed, no commit recorded). An install nobody verified is not accepted: it
+        # would be recorded as the pin met (review of #64, P2). Keep the version known to work.
+        lines.append(f"FAIL: installed {sha[:12]} but could not verify which commit is on disk — restoring")
+        lines += restore(repo, method, spec, before)
+        return lines
+    if not same_commit(landed, sha):
         # The installer kept another build of the same version; recording `sha` would make the
-        # pin look met forever (review of #64, P1). Unknown provenance is accepted: the forced
-        # reinstall of one exact commit is what guarantees it, the probe only double-checks.
+        # pin look met forever (review of #64, P1).
         lines.append(f"FAIL: asked for {sha[:12]} but the installed build is {landed[:12]} — restoring")
         lines += restore(repo, method, spec, before)
         return lines
-    _record_installed(got, tag, landed or sha)
+    _record_installed(got, tag, landed)
     on = f" on python {spec}" if method in ("uv-tool", "pipx") else ""
     lines.append(f"installed {label} ({sha[:12]}) via {method}{on}")
     return lines

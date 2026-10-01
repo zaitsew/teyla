@@ -63,6 +63,11 @@ _RETRY_HEAD_RE = re.compile(r"^(?:please[, ]+)?(?:try again|retry|again|continue
 _REMINDER_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
 
 
+def strip_reminders(txt: str | None) -> str:
+    """`txt` without its `<system-reminder>…</system-reminder>` blocks: what the human typed."""
+    return _REMINDER_RE.sub("", txt or "").strip()
+
+
 def is_retry(txt: str, after_error: bool = False) -> bool:
     """A bare retry ("Try again", "continue", "ещё раз"), or — right after an API error — a short
     turn that opens with one ("Try again - the connector is back")."""
@@ -107,6 +112,22 @@ class AgentCall:
     desc: str | None
 
 
+def local_day(ts: str | None) -> str:
+    """The local calendar date (YYYY-MM-DD) of an ISO timestamp. Session timestamps are UTC
+    (`...Z`) and `teyla policy ack` records `date.today()`, which is local: A10 must compare
+    both in one timezone, or an evening edit west of UTC (or a night one east of it) lands on
+    the wrong side of the ack day (review of #68, P2). A naive timestamp is read as UTC; one
+    that does not parse falls back to its first ten characters."""
+    ts = ts or ""
+    try:
+        d = _dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=_dt.timezone.utc)
+        return d.astimezone().date().isoformat()
+    except (ValueError, OverflowError, OSError):
+        return ts[:10]
+
+
 @dataclasses.dataclass
 class Session:
     harness: str
@@ -145,7 +166,7 @@ class Session:
     pr_links: int = 0
     repos: Counter = dataclasses.field(default_factory=Counter)
     gov_edits: int = 0     # tool calls that touched the global instructions file (~/.claude/CLAUDE.md)
-    gov_days: list = dataclasses.field(default_factory=list)  # the distinct UTC dates those writes happened on —
+    gov_days: list = dataclasses.field(default_factory=list)  # the distinct local dates (like `policy ack`'s) those writes happened on —
                            # not the session's start day: a resumed session writes days after it began
     batch: bool = False    # non-interactive session (`claude -p`, `codex exec`, `grok -p` from a pipeline or
                            # another agent): counted, but its prompts are machine-written, not human turns
@@ -190,6 +211,10 @@ class Session:
     @property
     def first_prompt(self) -> str:
         return self.user_turns[0].text[:400] if self.user_turns else ""
+
+    @property
+    def local_day(self) -> str:
+        return local_day(self.first)
 
     @property
     def day(self) -> str:
@@ -257,7 +282,7 @@ def human_text(txt: str, after_error: bool = False) -> str | None:
     real prompt is cut off, not allowed to decide the turn."""
     if not txt or is_noise_turn(txt):
         return None
-    t = _REMINDER_RE.sub("", txt).strip()
+    t = strip_reminders(txt)
     if not t or is_noise_turn(t) or is_retry(t, after_error):
         return None
     return t
