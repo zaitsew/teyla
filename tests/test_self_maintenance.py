@@ -769,3 +769,25 @@ def test_weekly_plist_fires_fridays_2045_and_a_monday_plist_is_stale(_home, monk
     routine_install.install(if_stale=True)
     assert plistlib.loads(routine_install.PLIST_PATH.read_bytes())["StartCalendarInterval"] == fires
     assert not routine_install.is_stale()
+
+
+def test_routine_install_dry_writes_and_loads_nothing(_home, monkeypatch):
+    """`routine install --dry` used to install for real (only catch-up read --dry)."""
+    monkeypatch.setattr(routine_install.sys, "platform", "darwin")
+    ran = []
+    monkeypatch.setattr(routine_install.subprocess, "run", lambda *a, **k: ran.append(a) or None)
+    lines = routine_install.install(dry=True)
+    assert ran == []
+    assert not routine_install.PLIST_PATH.exists() and not routine_install.DAILY_WRAPPER_PATH.exists()
+    assert any(l.startswith("would write") for l in lines) and any("would load" in l for l in lines)
+
+
+def test_a_plist_under_a_moved_home_is_never_bootstrapped(tmp_path, monkeypatch):
+    """gui/<uid> is the real account's launchd: a throwaway HOME's plist carries the real label, and
+    bootstrapping it replaced the real jobs (2026-10-01)."""
+    ran = []
+    monkeypatch.setattr(routine_install.subprocess, "run", lambda *a, **k: ran.append(a) or None)
+    plist = tmp_path / "Library" / "LaunchAgents" / f"{routine_install.LABEL}.plist"
+    plist.parent.mkdir(parents=True); plist.write_text("<plist/>")
+    out = routine_install._load(plist, routine_install.LABEL)
+    assert out.startswith("NOT LOADED") and ran == []
