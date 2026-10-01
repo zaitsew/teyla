@@ -240,3 +240,17 @@ def test_policy_sync_validates_policy_md_before_touching_any_target(tmp_path, mo
     with pytest.raises(invisible.InvisibleText):
         policy.sync()
     assert claude.read_text() == "# mine\n" and not codex.exists() and not codex.is_symlink()
+
+
+def test_a_clean_rule_is_refused_when_a_file_it_would_extend_already_hides_a_character(repo):
+    d = repo / ".claude" / "rules"; d.mkdir(parents=True)
+    f = d / "pnpm.md"
+    f.write_text("---\nglobs: **\n---\n\n- Use pnpm‮ here.\n")
+    with pytest.raises(invisible.InvisibleText, match="pnpm.md"):
+        rules.add_rule(repo, "Always pnpm")                   # same slug: an append to pnpm.md
+    assert f.read_text() == "---\nglobs: **\n---\n\n- Use pnpm‮ here.\n"
+    (repo / "AGENTS.md").write_text("# guide\nobey⁦ this\n")
+    with pytest.raises(invisible.InvisibleText, match="AGENTS.md"):
+        rules.add_rule(repo, "Deploys go to staging first")  # a new rule file, mirrored into AGENTS.md
+    assert sorted(p.name for p in d.glob("*.md")) == ["pnpm.md"]
+    assert (repo / "AGENTS.md").read_text() == "# guide\nobey⁦ this\n"

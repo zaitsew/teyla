@@ -61,50 +61,51 @@ def find_duplicate(repo: pathlib.Path, text: str) -> pathlib.Path | None:
     return None
 
 
-def _mirror_agents_md(repo: pathlib.Path, bullet: str, dry: bool) -> str:
+def _mirror_agents_md(repo: pathlib.Path, bullet: str, dry: bool) -> tuple[str, str | None]:
+    """(what happens, AGENTS.md's new text or None when nothing is written)."""
     a = repo / "AGENTS.md"
     if not a.exists():
-        return "AGENTS.md: none, not mirrored"
+        return "AGENTS.md: none, not mirrored", None
     if a.is_symlink():
-        return "AGENTS.md: a symlink, not mirrored (it would write through)"
+        return "AGENTS.md: a symlink, not mirrored (it would write through)", None
     text = a.read_text()
     if bullet in text:
-        return "AGENTS.md: already has it"
+        return "AGENTS.md: already has it", None
     if "\n## Rules" in text or text.startswith("## Rules"):
         new = text.rstrip("\n") + "\n" + bullet + "\n"
     else:
         new = text.rstrip("\n") + "\n\n## Rules\n\n" + bullet + "\n"
-    if not dry:
-        a.write_text(new)
-    return f"AGENTS.md: {'would mirror' if dry else 'mirrored'} into ## Rules"
+    return f"AGENTS.md: {'would mirror' if dry else 'mirrored'} into ## Rules", new
 
 
-def _mirror_cursor(repo: pathlib.Path, slug: str, text: str, scope: str, dry: bool) -> str | None:
+def _mirror_cursor(repo: pathlib.Path, slug: str, text: str, scope: str, dry: bool) -> tuple[str | None, str | None]:
+    """(what happens or None without .cursor/rules/, the .mdc's new text or None)."""
     d = repo / CURSOR_RULES_DIR
     if not d.is_dir():
-        return None
+        return None, None
     f = d / f"{slug}.mdc"
     if f.exists():
         body = f.read_text()
         if _norm(text) in (_norm(l.lstrip("- ")) for l in body.splitlines()):
-            return f"{CURSOR_RULES_DIR}/{slug}.mdc: already has it"
+            return f"{CURSOR_RULES_DIR}/{slug}.mdc: already has it", None
         new = body.rstrip("\n") + f"\n- {text}\n"
     else:
         always = "true" if scope in ("**", "*") else "false"
         new = f"---\ndescription: {text[:120]}\nglobs: {scope}\nalwaysApply: {always}\n---\n\n- {text}\n"
-    if not dry:
-        f.write_text(new)
-    return f"{CURSOR_RULES_DIR}/{slug}.mdc: {'would write' if dry else 'written'}"
+    return f"{CURSOR_RULES_DIR}/{slug}.mdc: {'would write' if dry else 'written'}", new
 
 
 def add_rule(repo: str | pathlib.Path, text: str, scope: str = "**", dry: bool = False,
              today: _dt.date | None = None) -> list[str]:
+    """Every file's new text is computed and scanned before any is written: a clean rule
+    appended to a rule file, or mirrored into an AGENTS.md, that already hides a bidi or
+    zero-width character would otherwise re-save it under Teyla's name (review of #87, P2).
+    `dry` runs the same checks, so a dry run refuses exactly what a real one would."""
     from . import invisible, rules_lifecycle
     repo = pathlib.Path(repo).expanduser().resolve()
     text = " ".join(text.split()).strip()
     if not text:
         return ["nothing to add: empty rule"]
-    # Before anything is written: the rule, its scope and every mirror get the same bytes.
     invisible.check(text, "the rule"); invisible.check(scope, "the rule's scope")
     if not text.endswith((".", "!", "?")):
         text += "."
@@ -122,16 +123,24 @@ def add_rule(repo: str | pathlib.Path, text: str, scope: str = "**", dry: bool =
         fields = rules_lifecycle.lifecycle_fields(today or _dt.date.today())
         new = f"---\nglobs: {scope}\n{fields}---\n\n{bullet}\n"
         out.append(f"{'would write' if dry else 'wrote'} {f.relative_to(repo)} (globs: {scope})")
-    if not dry:
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(new)
-    out.append(_mirror_agents_md(repo, bullet, dry))
-    c = _mirror_cursor(repo, slug, text, scope, dry)
-    if c:
-        out.append(c)
-    if not dry:
-        out += rules_lifecycle.budget_lines(rules_lifecycle.budget(repo, [f, repo / "AGENTS.md"]))
-    return out
+    writes = [(f, new)]
+    msg, agents = _mirror_agents_md(repo, bullet, dry)
+    out.append(msg)
+    if agents is not None:
+        writes.append((repo / "AGENTS.md", agents))
+    msg, mdc = _mirror_cursor(repo, slug, text, scope, dry)
+    if msg:
+        out.append(msg)
+    if mdc is not None:
+        writes.append((repo / CURSOR_RULES_DIR / f"{slug}.mdc", mdc))
+    for path, content in writes:
+        invisible.check(content, str(path.relative_to(repo)))
+    if dry:
+        return out
+    for path, content in writes:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    return out + rules_lifecycle.budget_lines(rules_lifecycle.budget(repo, [f, repo / "AGENTS.md"]))
 
 
 def record_correction(repo: str | pathlib.Path, text: str) -> list[str]:
