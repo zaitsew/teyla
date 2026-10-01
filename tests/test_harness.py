@@ -349,3 +349,24 @@ def test_hermes_auto_accept_ignores_a_column_zero_key_inside_a_multiline_flow_ma
     assert approved("name: \"{not a mapping\"  # { nor this\nhooks_auto_accept: true\n") == 3
     assert approved("agent: {a: 1}\nhooks_auto_accept: true\n") == 3
     assert approved("agent: {\n  a: 1\n}\nhooks_auto_accept: true\n") == 3
+
+
+def test_hermes_auto_accept_ignores_brackets_inside_block_scalars(home):
+    # (Codex P2 on #84) A `}` in the indented lines of `key: |` / `>` is text: it must not close
+    # the flow mapping that follows, so the column-0 key inside that mapping stays nested.
+    harness.sync(home=home)
+    cfg = home / ".hermes" / "config.yaml"
+    base = cfg.read_text()
+
+    def approved(extra):
+        cfg.write_text(base + extra)
+        return {r["harness"]: r for r in harness.status(home=home)}["hermes"]["trust"]["approved"]
+
+    assert approved("prompt: |\n  }\nagent: {\nhooks_auto_accept: true\n}\n") == 0
+    assert approved("prompt: >-\n  ]\n\n  }\nagent: {\nhooks_auto_accept: true\n}\n") == 0
+    assert approved("items:\n  - note: |\n      }\n  - |\n    }\nagent: {\nhooks_auto_accept: true\n}\n") == 0
+    # an opening bracket inside a block scalar does not open a mapping either
+    assert approved("prompt: |\n  {\nhooks_auto_accept: true\n") == 3
+    assert approved("prompt: |  # text\n  [ not yaml\nhooks_auto_accept: yes\n") == 3
+    # a key whose value merely contains `|` is not a block scalar
+    assert approved("agent: {\n  x: a | b\n}\nhooks_auto_accept: true\n") == 3

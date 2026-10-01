@@ -498,6 +498,19 @@ def _hermes_pairs() -> list[tuple[str, str]]:
     return pairs
 
 
+_BLOCK_SCALAR = re.compile(r"^(\s*)((?:-\s+)*)(?P<key>[^\s#][^#]*?:\s+)?[|>][+-]?\d?[+-]?\s*(?:#.*)?$")
+
+
+def _block_scalar_parent(line: str) -> int | None:
+    """If `line` opens a block scalar (`key: |`, `key: >-`, `- |`), the indent the scalar's lines must
+    exceed: the key's column, or the dash's for a bare `- |`; else None."""
+    m = _BLOCK_SCALAR.match(line)
+    if not m:
+        return None
+    lead = len(m.group(1))
+    return lead + len(m.group(2)) if m.group("key") else lead
+
+
 def _flow_delta(line: str) -> int:
     """Net `{`/`[` opened by one config line, ignoring quoted text and a trailing comment."""
     d, quote, prev = 0, None, " "
@@ -524,11 +537,19 @@ def _hermes_auto_accept(text: str) -> bool:
     """Is `hooks_auto_accept` set, as a top-level key, to what Hermes reads as true? A commented
     line or a nested key of the same name does not count (review of #61, P2). No YAML dependency:
     only an unindented `key: value` line is looked at, and the last one wins, as in YAML loaders."""
-    val, depth = None, 0
+    val, depth, block_parent = None, 0, None
     for line in text.splitlines():
+        # The indented lines of a block scalar (`key: |`, `- >-`) are text, not YAML: a `}` in one
+        # must not close a mapping (Codex P2 on #84).
+        if block_parent is not None:
+            if not line.strip() or len(line) - len(line.lstrip()) > block_parent:
+                continue
+            block_parent = None
         # A `{…}` / `[…]` that spans lines keeps its members out of the top level, whatever column
         # they start in (#61): count the brackets of every line, outside quotes and comments.
         at_top = depth <= 0
+        if depth <= 0:
+            block_parent = _block_scalar_parent(line)
         depth += _flow_delta(line)
         m = re.match(r"hooks_auto_accept\s*:\s*(.*)$", line)
         if not m or not at_top:
