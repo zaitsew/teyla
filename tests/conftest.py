@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 
 from teyla import config, net, providers, update
+from teyla.adapters import claude_code, codex, cursor, grok, hermes
 
 
 @pytest.fixture(autouse=True)
@@ -39,3 +40,15 @@ def _no_real_config(tmp_path, monkeypatch):
     net.allow_for_this_command(False)
     yield
     net.allow_for_this_command(False)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_transcripts(tmp_path_factory, monkeypatch):
+    """Every adapter reads an empty, missing root unless the test hands it one. `doctor.checks()`
+    loads the last week's sessions of every harness; before this it parsed this Mac's real
+    ~/.claude/projects, ~/.codex and ~/.grok — the doctor tests took 184 s under load and
+    depended on whatever transcripts the machine happened to hold."""
+    none = tmp_path_factory.mktemp("no-transcripts")
+    for mod in (claude_code, codex, cursor, grok, hermes):
+        monkeypatch.setattr(mod, "DEFAULT_ROOT", str(none / mod.__name__.rsplit(".", 1)[-1]))
+    monkeypatch.setattr(codex, "DEFAULT_ARCHIVE_ROOT", str(none / "codex-archive"))

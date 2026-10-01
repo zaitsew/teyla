@@ -45,7 +45,8 @@ def _iso(epoch) -> str | None:
         return None
 
 
-def load(root: str = DEFAULT_ROOT, **kw) -> list[Session]:
+def load(root: str | None = None, **kw) -> list[Session]:
+    root = DEFAULT_ROOT if root is None else root  # at call time, so tests and callers that move it are obeyed
     if not os.path.isfile(root):
         raise FileNotFoundError(root)
     con = sqlite3.connect(f"file:{root}?mode=ro", uri=True)
@@ -53,7 +54,7 @@ def load(root: str = DEFAULT_ROOT, **kw) -> list[Session]:
     try:
         sessions = []
         for row in con.execute("SELECT * FROM sessions"):
-            s = _session_from_row(con, row)
+            s = _session_from_row(con, row, root)
             if s is not None:
                 sessions.append(s)
         return sessions
@@ -61,11 +62,11 @@ def load(root: str = DEFAULT_ROOT, **kw) -> list[Session]:
         con.close()
 
 
-def _session_from_row(con: sqlite3.Connection, row: sqlite3.Row) -> Session | None:
+def _session_from_row(con: sqlite3.Connection, row: sqlite3.Row, root: str) -> Session | None:
     sid = row["id"]
     cwd = row["cwd"] or row["git_repo_root"]
     s = Session(harness=NAME, project=cwd or row["session_key"] or "?", sid=sid,
-                path=DEFAULT_ROOT, size=0)
+                path=root, size=0)
     s.cwd = cwd
     s.title = row["title"]
     s.first = _iso(row["started_at"])
