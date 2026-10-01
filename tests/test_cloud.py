@@ -315,6 +315,9 @@ def test_else_of_a_positive_guard_is_unguarded_but_else_of_a_negated_one_is_guar
     ("command -v xcodebuild >/dev/null || xcodebuild test\n", False),
     ("! command -v xcodebuild >/dev/null || xcodebuild test\n", True),
     ("command -v xcodebuild >/dev/null; xcodebuild test\n", False),
+    # PR #86 review, P2: a one-line if runs the tool in both branches; the else is not guarded
+    ("if command -v xcodebuild; then xcodebuild test; else xcodebuild build; fi\n", False),
+    ("if ! command -v xcodebuild; then xcodebuild test; else xcodebuild build; fi\n", False),
 ])
 def test_compound_conditions_guard_only_where_the_logic_forces_it(gate, guarded):
     step = [s for s in cloud.mac_steps(gate) if "xcodebuild test" in gate.splitlines()[s["line"] - 1]]

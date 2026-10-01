@@ -345,10 +345,11 @@ def _line_guards(line: str, rx: re.Pattern, tool_guard: re.Pattern) -> bool:
     if m:
         cond, body = m.group(1), m.group(2)
         then_part, else_part = (re.split(r";\s*else\b", body, maxsplit=1) + [""])[:2]
-        if step(then_part):
-            return _cond_guards(cond, True, tool_guard)
-        if step(else_part):
-            return _cond_guards(cond, False, tool_guard)
+        # Every branch that runs the tool must be guarded: `if command -v x; then x test; else
+        # x build; fi` runs x on Linux in the else (review of #86, P2).
+        branches = [h for part, h in ((then_part, True), (else_part, False)) if step(part)]
+        if branches:
+            return all(_cond_guards(cond, h, tool_guard) for h in branches)
         return bool(tool_guard.search(cond))
     clauses, ops = _clauses(line)
     k = next((n for n, c in enumerate(clauses) if step(c) and not tool_guard.search(c)), None)
