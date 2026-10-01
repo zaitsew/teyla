@@ -103,8 +103,10 @@ def _text_of(content) -> str:
     return "\n".join(parts)
 
 
-def load(root: str = DEFAULT_ROOT, archive_root: str = DEFAULT_ARCHIVE_ROOT,
+def load(root: str | None = None, archive_root: str | None = None,
          index_path: str = DEFAULT_INDEX, since: float | None = None, **kw) -> list[Session]:
+    root = root or DEFAULT_ROOT  # at call time, so tests and callers that move DEFAULT_ROOT are obeyed
+    archive_root = archive_root or DEFAULT_ARCHIVE_ROOT
     if not os.path.isdir(root):
         raise FileNotFoundError(root)
     titles = _load_titles(index_path)
