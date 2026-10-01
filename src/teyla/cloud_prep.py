@@ -177,14 +177,33 @@ if ! git rev-parse --verify --quiet "$base^{{commit}}" >/dev/null 2>&1 || \
   exit 2
 fi
 [ "$ahead" = 0 ] && exit 0
+# An open PR for this branch covers whatever is pushed to it. A merged or closed one covers only
+# the head it had: commits after it need a NEW PR, never "handled by the merged one".
 if command -v gh >/dev/null 2>&1; then
-  state=$(gh pr view "$branch" --json state --jq .state 2>/dev/null) || state=""
-  case "$state" in OPEN|MERGED) exit 0 ;; esac
-  if [ -z "$state" ] && ! gh auth status >/dev/null 2>&1; then
-    echo "Could not ask GitHub whether $branch has a PR (gh is not signed in here). If none is open, say so in your last message and name the branch." >&2
+  if ! open=$(gh pr list --head "$branch" --state open --json number --jq length 2>/dev/null); then
+    if ! gh auth status >/dev/null 2>&1; then
+      echo "Could not ask GitHub whether $branch has a PR (gh is not signed in here). If none is open, say so in your last message and name the branch." >&2
+    else
+      echo "Could not ask GitHub whether $branch has a PR (gh pr list failed). If none is open, open it (gh pr create --fill) or name the branch in your last message." >&2
+    fi
     exit 2
   fi
-  echo "No open PR for $branch. Open it: gh pr create --fill, with the gate's output and what is unverified in the body; add --label needs-mac if a Mac-only step was skipped." >&2
+  case "$open" in ''|0) ;; *) exit 0 ;; esac
+  head=$(git rev-parse HEAD 2>/dev/null) || head=""
+  done_heads=$(gh pr list --head "$branch" --state merged --json headRefOid --jq '.[].headRefOid' 2>/dev/null) || done_heads=""
+  if [ -n "$head" ] && printf '%s\\n' "$done_heads" | grep -qx "$head"; then
+    exit 0  # this exact head was merged: nothing after it
+  fi
+  if [ -n "$done_heads" ]; then
+    echo "The PR for $branch was already merged; the commits after it are in no PR. Open a new one: gh pr create --fill, with the gate's output and what is unverified in the body." >&2
+    exit 2
+  fi
+  closed=$(gh pr list --head "$branch" --state closed --json number --jq length 2>/dev/null) || closed=""
+  case "$closed" in ''|0)
+    echo "No open PR for $branch. Open it: gh pr create --fill, with the gate's output and what is unverified in the body; add --label needs-mac if a Mac-only step was skipped." >&2 ;;
+  *)
+    echo "The PR for $branch was closed without merging, so nothing open carries this work. Open a new one (gh pr create --fill), or say in your last message why it stays closed." >&2 ;;
+  esac
   exit 2
 fi
 echo "gh is not available here, so the PR could not be checked. Make sure one is open for $branch, or name the branch in your last message." >&2

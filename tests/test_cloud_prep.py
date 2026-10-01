@@ -349,6 +349,20 @@ def _fake_gh(tmp_path, body):
     return f"{d}:{NO_GH}"
 
 
+def _gh_prs(tmp_path, open_=0, merged=(), closed=0):
+    """A gh that answers `gh pr list --head <b> --state <s> --json … --jq …` the way the real one
+    does after --jq: a count for open/closed, one head sha per line for merged."""
+    heads = " ".join(merged)
+    return _fake_gh(tmp_path, f"""case "$*" in
+  "auth status"*) exit 0 ;;
+  *"--state open"*) echo {open_} ;;
+  *"--state merged"*) printf '%s\\n' {heads} ;;
+  *"--state closed"*) echo {closed} ;;
+  *) exit 1 ;;
+esac
+""")
+
+
 def test_hooks_are_silent_outside_the_cloud(tmp_path):
     r = _landed_repo(tmp_path)
     (r / "x.txt").write_text("dirty")
@@ -384,9 +398,13 @@ def test_stop_hook_blocks_until_pushed_and_a_pr_exists(tmp_path):
     res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
     assert res.returncode == 2 and "gh is not available here" in res.stderr
 
-    none = _fake_gh(tmp_path, 'case "$1" in auth) exit 0;; esac\necho "no pull requests found" >&2\nexit 1\n')
+    none = _gh_prs(tmp_path)
     res = _run(r, cloud_prep.STOP_HOOK, path=none)
     assert res.returncode == 2 and "No open PR for claude/brave-x" in res.stderr
+
+    broken = _fake_gh(tmp_path, 'case "$1" in auth) exit 0;; esac\necho "HTTP 502" >&2\nexit 1\n')
+    res = _run(r, cloud_prep.STOP_HOOK, path=broken)
+    assert res.returncode == 2 and "gh pr list failed" in res.stderr
 
     unauth = tmp_path / "unauth"
     unauth.mkdir()
@@ -395,8 +413,7 @@ def test_stop_hook_blocks_until_pushed_and_a_pr_exists(tmp_path):
     res = _run(r, cloud_prep.STOP_HOOK, path=f"{unauth}:{NO_GH}")
     assert res.returncode == 2 and "gh is not signed in" in res.stderr
 
-    (tmp_path / "fakebin" / "gh").write_text("#!/bin/sh\necho OPEN\n")
-    assert _run(r, cloud_prep.STOP_HOOK, path=none).returncode == 0
+    assert _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, open_=1)).returncode == 0
 
     # told once, never trapped: the second stop in a row goes through whatever the state
     (r / "y.txt").write_text("more")
@@ -453,6 +470,30 @@ def test_stop_hook_pushed_means_on_this_branchs_own_remote_ref(tmp_path):
     _git(r, "push", "-q", "-u", "origin", "HEAD:refs/heads/claude/renamed")
     res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
     assert "not on the remote" not in res.stderr, res.stderr
+
+
+def test_stop_hook_wants_a_new_pr_for_commits_after_a_merged_or_closed_one(tmp_path):
+    # `gh pr view <branch>` said MERGED and the hook let the session stop, though the commits
+    # pushed after that merge were in no PR at all.
+    r = _landed_repo(tmp_path)
+    _git(r, "commit", "-q", "--allow-empty", "-m", "first")
+    _git(r, "push", "-q", "-u", "origin", "claude/brave-x")
+    merged_head = _git(r, "rev-parse", "HEAD").strip()
+    res = _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, merged=[merged_head]))
+    assert res.returncode == 0, res.stderr  # squash-merged as it is: nothing after it
+
+    _git(r, "commit", "-q", "--allow-empty", "-m", "after the merge")
+    _git(r, "push", "-q", "origin", "claude/brave-x")
+    res = _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, merged=[merged_head]))
+    assert res.returncode == 2 and "already merged" in res.stderr and "Open a new one" in res.stderr, res.stderr
+    assert _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, open_=1, merged=[merged_head])).returncode == 0
+
+    res = _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, closed=1))
+    assert res.returncode == 2 and "closed without merging" in res.stderr, res.stderr
+
+    if not shutil.which("gh", path=NO_GH):  # gh missing: still a clear message, never a crash
+        res = _run(r, cloud_prep.STOP_HOOK, path=NO_GH)
+        assert res.returncode == 2 and "gh is not available here" in res.stderr
 
 
 def test_stop_hook_on_the_default_branch_does_not_stop_with_unpushed_commits(tmp_path):
