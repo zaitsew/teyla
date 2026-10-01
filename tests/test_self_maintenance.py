@@ -234,6 +234,27 @@ def test_repos_status(tmp_path):
     assert "already linked" in policy.sync_repo(str(root / "e"))
 
 
+def test_an_agents_import_inside_a_code_fence_is_not_a_link(tmp_path):
+    # review of #81, P2: Claude Code does not expand imports in code, so a fenced example of the
+    # line neither links the files nor makes divergent text "consistent".
+    root = tmp_path / "repos"
+    cases = {
+        "fenced": "# notes\n\n```md\n@AGENTS.md\n```\n\nDivergent text.\n",
+        "tilde": "~~~\n@AGENTS.md\n~~~\nDivergent.\n",
+        "unclosed": "Intro\n````\n```\n@AGENTS.md\n```\nstill inside\n",
+        "after_fence": "```\nexample\n```\n@AGENTS.md\nreal import\n",
+        "live": "@AGENTS.md\n\n```\n@AGENTS.md\n```\n",
+    }
+    for name, claude in cases.items():
+        d = root / name; (d / ".git").mkdir(parents=True)
+        (d / "AGENTS.md").write_text("# guide\n")
+        (d / "CLAUDE.md").write_text(claude)
+    st = dict((n, s) for s, n in policy.repos_status(root))
+    assert st == {"fenced": "differ", "tilde": "differ", "unclosed": "differ", "after_fence": "ok", "live": "ok"}
+    assert "already linked" not in policy.sync_repo(str(root / "fenced"), dry=True)
+    assert "already linked" in policy.sync_repo(str(root / "live"), dry=True)
+
+
 # --- routine staleness ------------------------------------------------------------------
 
 def test_wrapper_stale_detects_moved_binary(_home):
