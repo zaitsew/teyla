@@ -308,12 +308,14 @@ def setup_script(repo: pathlib.Path, gate_text: str) -> list[str]:
 
 # Lockfiles that make a subdirectory its own install, in the order they are run. Node takes the
 # first lockfile it has (a directory with two is installed once); Python lines are independent.
+# Every install runs inside its directory: a requirements.txt with `-e .` run from the root
+# installed the root project (review of #86, P2).
 _SUB_LOCKS = ("pnpm-lock.yaml", "package-lock.json", "yarn.lock", "uv.lock", "requirements.txt")
 _SUB_INSTALL = (("pnpm-lock.yaml", "(cd {d} && pnpm install --frozen-lockfile)"),
                 ("package-lock.json", "(cd {d} && npm ci)"),
                 ("yarn.lock", "(cd {d} && corepack enable && yarn install --frozen-lockfile)"),
                 ("uv.lock", "(cd {d} && uv sync --frozen)"),
-                ("requirements.txt", "uv pip install -q --system -r {d}/requirements.txt"))
+                ("requirements.txt", "(cd {d} && uv pip install -q --system -r requirements.txt)"))
 _NODE_LOCKS = ("pnpm-lock.yaml", "package-lock.json", "yarn.lock")
 # Never descended into: dependencies, build output, VCS and tool state, vendored trees.
 _SKIP_DIRS = {"node_modules", "vendor", "vendored", "third_party", "third-party", "external", "deps", "Pods", "Carthage",

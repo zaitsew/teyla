@@ -355,7 +355,7 @@ def test_setup_script_installs_subdirectories_with_their_own_lockfile(tmp_path):
     assert "if [ -f web/package-lock.json ]; then (cd web && npm ci); fi" in lines
     assert "yarn" not in script
     assert "if [ -f services/api/uv.lock ]; then (cd services/api && uv sync --frozen); fi" in lines
-    assert ("if [ -f services/api/requirements.txt ]; then uv pip install -q --system -r services/api/requirements.txt; fi"
+    assert ("if [ -f services/api/requirements.txt ]; then (cd services/api && uv pip install -q --system -r requirements.txt); fi"
             in lines)
     assert "if [ -f apps/site/pnpm-lock.yaml ]; then (cd apps/site && pnpm install --frozen-lockfile); fi" in lines
     assert lines.index("if ! command -v pnpm >/dev/null 2>&1; then npm install -g pnpm; fi") < \
@@ -380,6 +380,29 @@ def test_setup_script_installs_subdirectories_with_their_own_lockfile(tmp_path):
     calls = log.read_text().splitlines()
     assert "npm web ci" in calls and "uv api sync --frozen" in calls and "pnpm site install --frozen-lockfile" in calls
     assert "npm my app ci" in calls
+
+
+def test_every_subdirectory_install_runs_inside_its_directory(tmp_path):
+    # PR #86 review, P2: services/api/requirements.txt was installed from the repo root, so its
+    # `-e .` installed the root project (or failed). Every lockfile kind runs from its directory.
+    r = _repo(tmp_path, {"a/pnpm-lock.yaml": "", "b/package-lock.json": "{}", "c/yarn.lock": "",
+                         "d/uv.lock": "", "services/api/requirements.txt": "-e .\n"})
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    log = tmp_path / "calls.log"
+    for tool in ("uv", "npm", "pnpm", "corepack", "yarn", "curl"):
+        (stubs / tool).write_text(f'#!/bin/sh\necho "{tool} $PWD" >> "{log}"\n')
+        (stubs / tool).chmod(0o755)
+    f = tmp_path / "setup.sh"
+    f.write_text("\n".join(cloud_prep.setup_script(r, "")) + "\n")
+    env = dict(os.environ, PATH=f"{stubs}:/usr/bin:/bin", CLAUDE_PROJECT_DIR=str(r))
+    res = subprocess.run(["bash", str(f)], capture_output=True, text=True, env=env)
+    assert res.returncode == 0, res.stderr
+    calls = log.read_text().splitlines()
+    real = r.resolve()
+    for tool, sub in (("pnpm", "a"), ("npm", "b"), ("yarn", "c"), ("uv", "d"), ("uv", "services/api")):
+        assert f"{tool} {real / sub}" in calls or f"{tool} {r / sub}" in calls, (tool, sub, calls)
+    assert not any(c.endswith(" " + str(real)) or c.endswith(" " + str(r)) for c in calls if c.startswith("uv")), calls
 
 
 # --- the hooks, run for real -----------------------------------------------------------------
