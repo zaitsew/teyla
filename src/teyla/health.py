@@ -332,7 +332,8 @@ def errors_claude(home: pathlib.Path, since: float) -> dict:
     """{error, last_ok}: `isApiErrorMessage` records vs ordinary assistant records, from the
     tail of every transcript written in the window."""
     root = home / "projects"
-    errs, last_ok = _Errs(), {}
+    by_ep: dict[str, _Errs] = {}
+    last_ok: dict[str, _dt.datetime] = {}
     if not root.is_dir():
         return {"error": None, "last_ok": None}
     for p in root.glob("*/*.jsonl"):
@@ -358,14 +359,17 @@ def errors_claude(home: pathlib.Path, since: float) -> dict:
             if d.get("isApiErrorMessage"):
                 content = (d.get("message") or {}).get("content") or []
                 text = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
-                errs.add(dict(_err(ts, classify(text + " " + str(d.get("error") or "")), text, p.name), entrypoint=ep))
+                by_ep.setdefault(ep, _Errs()).add(
+                    dict(_err(ts, classify(text + " " + str(d.get("error") or "")), text, p.name), entrypoint=ep))
             elif ep not in last_ok or ts > last_ok[ep]:
                 last_ok[ep] = ts
-    hard = errs.hard
-    if hard and not recovered(hard, last_ok.get(hard["entrypoint"])):
-        err = hard
-    else:
-        err = errs.newest
+    # One verdict per entrypoint, then the pick among them: an unresolved quota/auth failure of any
+    # entrypoint is shown over a newer error (or a recovered one) of another, so neither hides
+    # the other (#66). The error's own entrypoint supplies "last success".
+    picked = [e for ep, errs in by_ep.items() if (e := errs.pick(last_ok.get(ep)))]
+    open_hard = [e for e in picked if e["kind"] in ("quota", "auth") and not recovered(e, last_ok.get(e["entrypoint"]))]
+    pool = open_hard or picked
+    err = max(pool, key=lambda e: e["ts"]) if pool else None
     ok = last_ok.get(err["entrypoint"]) if err else max(last_ok.values(), default=None)
     return {"error": err, "last_ok": ok}
 

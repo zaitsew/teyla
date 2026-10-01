@@ -475,3 +475,43 @@ def test_hermes_a_later_success_clears_the_dumped_error(home):
     con.commit(); con.close()
     row = health.offline("hermes")
     assert row["level"] == "OK" and "later calls succeeded" in row["detail"]
+
+
+def _claude_rows(home, rows, name="e.jsonl"):
+    p = home / ".claude" / "projects" / "-Users-me-ops" / name
+    p.write_text("\n".join(json.dumps(r, separators=(",", ":")) for r in rows) + "\n")
+
+
+def _api_error(ep, ago, text):
+    return {"type": "assistant", "entrypoint": ep, "timestamp": _iso(NOW - ago), "isApiErrorMessage": True,
+            "message": {"content": [{"type": "text", "text": text}]}}
+
+
+def _ok_row(ep, ago):
+    return {"type": "assistant", "entrypoint": ep, "timestamp": _iso(NOW - ago), "message": {"content": [{"type": "text", "text": "done"}]}}
+
+
+def test_claude_one_entrypoints_recovered_error_does_not_hide_anothers_open_one(home):
+    # sdk-cli (`claude -p`, the routines) failed to authenticate and never recovered; the desktop
+    # app hit a quota error later, then worked. The newest error is the desktop's, and recovered —
+    # the sdk-cli failure must still be the one reported.
+    _claude_rows(home, [
+        _api_error("sdk-cli", dt.timedelta(hours=6), "Failed to authenticate: OAuth session expired and could not be refreshed"),
+        _api_error("claude-desktop", dt.timedelta(hours=3), "You've hit your session limit"),
+        _ok_row("claude-desktop", dt.timedelta(hours=1))])
+    e = health.errors_claude(home / ".claude", time.time() - 86400)
+    assert e["error"]["entrypoint"] == "sdk-cli" and e["error"]["kind"] == "auth" and e["last_ok"] is None
+
+
+def test_claude_a_newer_error_of_another_entrypoint_does_not_hide_an_open_one(home):
+    _claude_rows(home, [
+        _api_error("sdk-cli", dt.timedelta(hours=6), "Failed to authenticate: OAuth session expired"),
+        _api_error("claude-desktop", dt.timedelta(hours=1), "API Error: 529 Overloaded.")])
+    assert health.errors_claude(home / ".claude", time.time() - 86400)["error"]["entrypoint"] == "sdk-cli"
+    # and the other way round: each entrypoint's own success clears only its own error
+    _claude_rows(home, [
+        _api_error("sdk-cli", dt.timedelta(hours=6), "Failed to authenticate: OAuth session expired"),
+        _ok_row("sdk-cli", dt.timedelta(hours=2)),
+        _api_error("claude-desktop", dt.timedelta(hours=5), "Failed to authenticate: OAuth session expired")])
+    e = health.errors_claude(home / ".claude", time.time() - 86400)
+    assert e["error"]["entrypoint"] == "claude-desktop" and e["last_ok"] is None
