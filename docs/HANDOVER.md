@@ -36,4 +36,14 @@ personal product manifests, anything with a name in it.
 
 ## Updating a second machine
 
-Once Teyla is on a machine, it maintains itself (`docs/MANUAL.md` §4b). The one manual step is the bootstrap from any version before 0.7.0; [`prompts/work-account-update.md`](../prompts/work-account-update.md) is the paste-able version of that step plus the verification.
+On a machine where Teyla is installed, the update is a pinned, by-hand step in safe mode:
+`teyla config set update.pin=<version>`, then `teyla update --allow-network --wire` (safe mode
+refuses `teyla update` without `--allow-network`, even typed by hand, and neither the daily
+routine nor the session hook ever passes it). A version before 0.13.0 has no safe mode and no
+`uninstall`, so the one manual step is installing 0.14.0 by hand with `uv` or `pipx`, Python 3.12
+and the `work` extra.
+
+[`prompts/work-account-update.md`](../prompts/work-account-update.md) is the paste-able version
+for the work MacBook: bootstrap, `teyla policy init --work`, `teyla uninstall --dry` as the
+list of what Teyla owns there, `teyla prompt onboard`, the pinned update, `teyla doctor`, and a
+`teyla feedback` file that is reviewed and carried out by hand, never sent by the agent.
