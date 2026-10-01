@@ -357,14 +357,16 @@ mistakes.
 
 | Signal | Threshold | What to do |
 |---|---|---|
-| Transcript size | split at ~5 MB; **8 MB is a defect** | End it; start fresh from the repo root |
+| Transcript size | ~5 MB; **8 MB is a defect** | Check compaction fired (`autoCompactWindow` 400000) and reading went to subagents |
 | Wall-clock duration | 12 h | Same |
 | Compactions | ≥3 | The context you cared about is already gone |
-| Cache-read : output | >150:1 | Shorter sessions; subagents for reading; summaries, not whole files |
+| Cache-read : output | >150:1 | Compaction at ~365k; subagents for reading; summaries, not whole files |
 
-**One session per logical unit**, launched from the repo root, ended after the PR
-merges. A logical unit is what you would review in one sitting — the same
-definition as one PR, which is not a coincidence.
+**One session per project** (zaitsew/ops#198, 2026-10-01), launched from the repo
+root and compacted in place: `autoCompactWindow` 400000 compacts at ~365k, and
+`~/ops/bin/context-budget-hook` writes a handoff at 300k/340k and re-injects it
+after compaction. Inside it, **one PR per logical unit** — what you would review
+in one sitting.
 
 **Scope before code** (§0 §4): the agent's first output is a written scope,
 priority order and non-goals, not an implementation.

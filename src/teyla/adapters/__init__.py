@@ -90,8 +90,8 @@ TOKEN_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_t
 CACHE_1H_KEY = "cache_creation_1h_input_tokens"
 
 # W2 (teyla.spend): a message whose context (uncached + cache read + cache write) is past
-# LONG_CONTEXT re-reads everything above HANDOFF_CONTEXT, which is about where a fresh session
-# started from a handoff note begins (system prompt, tools, instructions, the note).
+# LONG_CONTEXT re-reads everything above HANDOFF_CONTEXT, which is about where a session resumes
+# after compaction (system prompt, tools, instructions, the re-injected handoff).
 LONG_CONTEXT = 250_000
 HANDOFF_CONTEXT = 50_000
 # W6: this many failed tool calls in a row make the next messages a failed loop.

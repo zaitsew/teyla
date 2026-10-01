@@ -96,7 +96,7 @@ def test_alert_only_for_the_last_day():
 
 def test_digest_carries_the_spend_line_and_findings():
     rep = dict(days=7, total_usd=400.0, waste_usd=100.0, findings=[
-        dict(id="W2", usd=70.0, title="re-reading context", evidence="", fix="hand off at 200k", cmd=False),
+        dict(id="W2", usd=70.0, title="re-reading context", evidence="", fix="check compaction fired", cmd=False),
         dict(id="W6", usd=30.0 - 25.0, title="failed loops", evidence="", fix="stop after three", cmd=False)])
     lines, _ = digest.build([], [], [], {}, _dt.date(2026, 10, 2), rep)
     assert "W2 $70 re-reading context" in lines[0]
