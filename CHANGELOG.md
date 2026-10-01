@@ -18,6 +18,17 @@
   `teyla rules propose --write`, every `teyla policy` write and `teyla models --write-policy` exit 2
   and write nothing when the result would hold bidi controls, zero-width characters or Unicode tag
   characters — text an agent obeys and a reviewer cannot see. The message names line and column.
+- **`teyla cloud prep` writes a stricter Stop hook and a truer Shipping section.** "Pushed" now
+  means on this branch's own upstream (`@{u}` or `origin/<branch>`), not "in any remote branch";
+  commits after a merged or closed PR ask for a new PR instead of counting as handled; the Actions
+  line says what POLICY §10 says (no CI on push/PR, short ubuntu deploy jobs on push to main
+  allowed); the setup script installs subdirectories (two levels down) that have their own
+  lockfile; and a stale `merge-approved:` line anywhere in an instruction file, marked section or
+  not, is refused. Re-run `teyla cloud prep` in repos already prepped to pick these up.
+- **`teyla cloud check` fixes (#70).** A cloud session is attributed to the `claude/*` branch whose
+  tip is nearest its commit, not the alphabetical first; `if ! command -v x && …; else x` no longer
+  counts as a guard; a symlink loop between CLAUDE.md and AGENTS.md is a BLOCK, not a crash on
+  Python 3.11/3.12.
 
 ## 0.13.1 — 2026-09-30
 

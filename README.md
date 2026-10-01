@@ -275,7 +275,7 @@ teyla cloud inbox                     # cloud branches with no PR, and PRs label
 `prep` writes plain files, because a cloud VM does not install plugins:
 
 - `AGENTS.md`: a Shipping section (one PR per logical unit, merge-not-squash, no force-push, no
-  Actions on push/PR when your policy says so, report honestly, ask about product decisions not
+  CI on push/PR (short ubuntu deploy jobs on push to main allowed) when your policy says so, report honestly, ask about product decisions not
   permission) and `merge-approved: yes|no`, derived from your MERGE-APPROVED list. `teyla cloud
   check` fails when the line drifts from the list.
 - The cloud definition of done: the gate ran and its output is in the PR body, the branch is pushed,
@@ -285,7 +285,7 @@ teyla cloud inbox                     # cloud branches with no PR, and PRs label
   without a Mac) and a Stop hook that sends it back once while work is unpushed or has no PR. Both
   do nothing unless `CLAUDE_CODE_REMOTE=true`.
 - `docs/cloud-setup.md`: the setup script to paste into the claude.ai environment (uv and the repo's
-  dependencies, no secrets), and each secret name from `.env.example` with where it goes. HTTP API
+  dependencies, including subdirectories two levels down with a lockfile of their own; no secrets), and each secret name from `.env.example` with where it goes. HTTP API
   keys go in the environment's API credentials (Pro/Max). Apple `.p8` keys never leave the Mac.
 
 Nothing personal is written: no home-directory paths, no other repo names, no list. The text is
