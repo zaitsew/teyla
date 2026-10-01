@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from teyla import config, net, update
+from teyla import config, net, providers, update
 from teyla.adapters import claude_code, codex, cursor, grok, hermes
 
 
@@ -35,6 +35,8 @@ def _no_real_config(tmp_path, monkeypatch):
     monkeypatch.setattr(update, "INSTALLED_PATH", tmp_path / "conftest-installed.json")
     # ...nor read the provenance of whatever `teyla` this interpreter has installed.
     monkeypatch.setattr(update, "_dist_commit", lambda: None)
+    # ...nor read the owner's admin keys and call the providers' cost APIs (`teyla spend`).
+    monkeypatch.setattr(providers, "keychain", lambda service: None)
     net.allow_for_this_command(False)
     yield
     net.allow_for_this_command(False)
