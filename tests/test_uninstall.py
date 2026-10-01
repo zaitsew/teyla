@@ -88,6 +88,7 @@ def _env(root: pathlib.Path, with_claude: bool) -> dict:
     return {"HOME": str(root / "home"), "PATH": f"{fakebin}:/usr/bin:/bin",
             "PYTHONPATH": f"{guard}{os.pathsep}{SRC}", "LANG": "C.UTF-8", "USER": "tester",
             "FAKE_LOG": str(root / "calls.log"), "FAKE_STATE": str(root / "launchd.state"),
+            "TEYLA_LAUNCHD_ANY_HOME": "1",  # launchctl here is the fake above
             "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
 
 
