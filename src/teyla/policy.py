@@ -187,6 +187,24 @@ def sync(dry=False, owner: str | None = None) -> list[str]:
 
 # CLAUDE.md that pulls AGENTS.md in: `@AGENTS.md` on a line of its own.
 IMPORT_RE = re.compile(r"^@AGENTS\.md\s*$", re.M)
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+
+
+def imports_agents(text: str) -> bool:
+    """True when `text` has a live `@AGENTS.md` import: a line of its own that is not inside a
+    ``` or ~~~ fenced code block. Claude Code does not expand imports in code, so a CLAUDE.md that
+    only shows the line as an example is not linked to AGENTS.md (review of #81, P2)."""
+    fence = None  # (char, length) of the open fence
+    for line in text.splitlines():
+        m = _FENCE_RE.match(line)
+        if fence is None:
+            if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
+                fence = (m.group(1)[0], len(m.group(1)))
+            elif IMPORT_RE.match(line):
+                return True
+        elif m and m.group(1)[0] == fence[0] and len(m.group(1)) >= fence[1] and not m.group(2).strip():
+            fence = None
+    return False
 
 
 def sync_repo(repo: str, dry=False, prefer: str | None = None) -> str:
@@ -202,7 +220,7 @@ def sync_repo(repo: str, dry=False, prefer: str | None = None) -> str:
     if a.exists() and c.exists():
         if a.is_symlink() or c.is_symlink():
             return f"{r.name}: already linked"
-        if IMPORT_RE.search(c.read_text()):
+        if imports_agents(c.read_text()):
             return f"{r.name}: already linked (CLAUDE.md imports @AGENTS.md)"
         a_lines, c_lines = a.read_text().splitlines(), c.read_text().splitlines()
         if a_lines == c_lines:
@@ -436,8 +454,12 @@ def refresh(dry: bool = False) -> list[str]:
         (p / "local").write_text(local); (p / "base").write_text(base); (p / "new").write_text(new)
         r = subprocess.run([git, "merge-file", "-p", "-L", "yours", "-L", "base", "-L", "teyla-template",
                             str(p / "local"), str(p / "base"), str(p / "new")], capture_output=True, text=True)
-    if r.returncode < 0:
-        return [f"git merge-file failed: {r.stderr.strip()}"]
+    # The exit code is the conflict count, capped at 127; a negative one (a signal) or anything
+    # above 127 (255 and the like) is an error, not "N conflicts": there is no merge to write
+    # (review of #64, P2).
+    if r.returncode < 0 or r.returncode > 127:
+        return [f"git merge-file failed: {r.stderr.strip() or f'exit {r.returncode}'}; "
+                f"nothing written, {POLICY} untouched"]
     if r.returncode == 0:
         if not dry:
             _backup_policy()
@@ -528,7 +550,7 @@ def repos_status(root: pathlib.Path) -> list[tuple[str, str]]:
             # AGENTS.md (`@AGENTS.md` on a line of its own — what `teyla cloud prep` writes, and
             # what a repo with Claude-only lines needs). Claude Code expands the import, so the two
             # files cannot drift; comparing their text would flag exactly the layout we recommend.
-            if a.is_symlink() or c.is_symlink() or a.read_text() == c.read_text() or IMPORT_RE.search(c.read_text()):
+            if a.is_symlink() or c.is_symlink() or a.read_text() == c.read_text() or imports_agents(c.read_text()):
                 out.append(("ok", d.name))
             else:
                 out.append(("differ", d.name))

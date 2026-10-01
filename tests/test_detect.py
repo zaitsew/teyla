@@ -321,6 +321,37 @@ def test_codex_records_the_text_a_turn_ended_on(tmp_path):
 
 
 @pytest.mark.parametrize("reply", ["continue", "продолжай"])
+def test_a_bare_continue_with_an_appended_system_reminder_still_answers_the_ask(tmp_path, reply):
+    # review of #60, P2: "continue" + a <system-reminder> block fell out of A15 in both adapters.
+    typed = reply + "\n\n<system-reminder>\nThe task tools haven't been used recently.\n</system-reminder>"
+    f = tmp_path / "projects" / "slug" / "s.jsonl"
+    _write(str(f), [
+        _cc("2026-09-21T10:00:00Z", "user", "fix the build"),
+        _cc("2026-09-21T10:00:08Z", "assistant", [{"type": "text", "text": "Fixed.\n\nWant me to push it?"}]),
+        _cc("2026-09-21T10:02:00Z", "user", typed),
+    ])
+    s = claude_code.load(root=str(tmp_path / "projects"))[0]
+    assert s.turn_ends == [("2026-09-21T10:00:08Z", "Fixed.\n\nWant me to push it?", reply)]
+    assert detect.is_permission_ask(*s.turn_ends[0][1:])
+
+    root = tmp_path / "sessions" / "2026" / "09" / "21"
+    cf = root / "rollout-2026-09-21T10-00-00-x.jsonl"
+
+    def msg(ts, role, text):
+        kind = "input_text" if role == "user" else "output_text"
+        return {"timestamp": ts, "type": "response_item",
+                "payload": {"type": "message", "role": role, "content": [{"type": kind, "text": text}]}}
+    _write(str(cf), [
+        {"timestamp": "2026-09-21T10:00:00Z", "type": "session_meta", "payload": {"id": "x", "cwd": "/r/demo"}},
+        msg("2026-09-21T10:00:01Z", "user", "fix it"),
+        msg("2026-09-21T10:00:04Z", "assistant", "Fixed. Shall I open the PR?"),
+        msg("2026-09-21T10:00:05Z", "user", typed),
+    ])
+    c = codex.load(root=str(tmp_path / "sessions"), archive_root=str(tmp_path / "x"), index_path=str(tmp_path / "i"))[0]
+    assert c.turn_ends == [("2026-09-21T10:00:04Z", "Fixed. Shall I open the PR?", reply)]
+
+
+@pytest.mark.parametrize("reply", ["continue", "продолжай"])
 def test_a_bare_continue_still_answers_the_ask_in_both_adapters(tmp_path, reply):
     # review of the #60 merge with #68: human_text drops a bare "continue" as a retry, and the
     # turn end went with it — A15 lost every approval phrased that way.

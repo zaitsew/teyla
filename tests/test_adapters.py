@@ -811,3 +811,16 @@ def test_grok_assistant_scan_matches_a_full_decode(tmp_path):
     with open(chat, "a") as fh:
         fh.write('{"type": "assistant", broken\n')
     assert [o.get("tool_calls") for o in grok._assistant_records(str(chat))] == [[{"name": "read_file"}], None]
+
+
+def test_codex_empty_archive_root_still_means_no_archive(tmp_path, monkeypatch):
+    """`archive_root=""` disables the archive; resolving defaults at call time must not turn it
+    back into ~/.codex/archived_sessions (Codex P2 on #82)."""
+    from teyla.adapters import codex
+    archive = tmp_path / "archive"; archive.mkdir()
+    monkeypatch.setattr(codex, "DEFAULT_ARCHIVE_ROOT", str(archive))
+    seen = []
+    monkeypatch.setattr(codex.os.path, "isdir", lambda p, _isdir=codex.os.path.isdir: seen.append(p) or _isdir(p))
+    root = tmp_path / "sessions"; root.mkdir()
+    codex.load(root=str(root), archive_root="", index_path=str(tmp_path / "none"))
+    assert str(archive) not in seen

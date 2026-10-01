@@ -1849,3 +1849,31 @@ def test_p2_8_a_net_grant_is_an_exact_host_or_a_star_domain(grant, url, expected
 
 def test_p2_8_net_star_is_still_everything():
     assert G.net_allowed("https://anything.example/x", ["*"])[0] is True
+
+
+# Review of #59 (P2): safe mode switched on between the approve check and the act step
+# refused the step, but the approval was recorded as used.
+
+def test_safe_mode_flipped_before_the_act_does_not_use_up_the_approval(product, monkeypatch, capsys):
+    from teyla.control import harness as H
+    cli("run", "demo:digest")
+    run_id = next(iter(S.fold_inbox()))
+    real, calls = H.safe_refusal, []
+
+    def flips_after_the_approve_check(*a, **k):
+        calls.append(1)
+        return None if len(calls) == 1 else "safe mode is on: switched on mid-approve"
+
+    monkeypatch.setattr(H, "safe_refusal", flips_after_the_approve_check)
+    capsys.readouterr()
+    assert cli("inbox", "approve", run_id) == 1
+    out = capsys.readouterr().out
+    assert "REFUSED" in out and "stays pending" in out
+    assert not (product / "acted.txt").exists()
+    item = S.fold_inbox()[run_id]
+    assert not item.get("decision"), "the refused act must not consume the approval"
+    assert not [r for r in S.receipts_for("demo:digest") if r.get("approved_from") == run_id]
+
+    monkeypatch.setattr(H, "safe_refusal", real)  # the mode allows it again: the same approve works
+    assert cli("inbox", "approve", run_id) == 0
+    assert (product / "acted.txt").exists()

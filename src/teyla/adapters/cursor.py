@@ -48,7 +48,8 @@ def _iso_ms(ms) -> str | None:
         return None
 
 
-def load(root: str = DEFAULT_ROOT, **kw) -> list[Session]:
+def load(root: str | None = None, **kw) -> list[Session]:
+    root = DEFAULT_ROOT if root is None else root  # at call time, so tests and callers that move it are obeyed
     if not os.path.isfile(root):
         raise FileNotFoundError(root)
     con = sqlite3.connect(f"file:{root}?mode=ro", uri=True)

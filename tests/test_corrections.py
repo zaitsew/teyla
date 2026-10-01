@@ -223,6 +223,24 @@ def test_misc_records_are_found_again_when_the_path_itself_was_scrubbed(tmp_path
     assert "abc123" not in json.dumps(recs) and "abc123" not in corrections.path_for(d).read_text()
 
 
+def test_old_misc_records_without_a_key_do_not_leak_between_directories_that_scrub_alike(tmp_path):
+    """review of #63, P2: a record from before `cwd_key` has only its scrubbed path, which two
+    directories can share. It is not attributed to either; a plain directory still gets its own."""
+    d = tmp_path / "token=abc123"; d.mkdir()
+    other = tmp_path / "token=xyz789"; other.mkdir()
+    plain = tmp_path / "plain"; plain.mkdir()
+    scrubbed = corrections.scrub(str(d.resolve()))
+    assert scrubbed == corrections.scrub(str(other.resolve())) and scrubbed != str(d.resolve())
+    misc = corrections.path_for(d)
+    corrections.append(plain, _rec("in plain", cwd=str(plain.resolve())))
+    with misc.open("a") as f:
+        f.write(json.dumps(_rec("old record", cwd=scrubbed)) + "\n")
+        f.write(json.dumps(_rec("old plain", cwd=str(plain.resolve()))) + "\n")
+    assert [r["text"] for r in corrections.records(d)] == []
+    assert [r["text"] for r in corrections.records(other)] == []
+    assert sorted(r["text"] for r in corrections.records(plain)) == ["in plain", "old plain"]
+
+
 def test_append_survives_a_short_write(tmp_path, monkeypatch):
     """review of #63, P1: os.write may write fewer bytes than asked; all of them must land."""
     import os as _os
