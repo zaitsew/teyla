@@ -97,7 +97,7 @@ def build_machine(root: pathlib.Path) -> dict:
     home = root / "zqhomeuser"
     home.mkdir()
 
-    # --- the main transcript: giant (3 compactions), edits ~/.claude/CLAUDE.md, calls two
+    # --- the main transcript: giant (13 active hours, 3 compactions), edits ~/.claude/CLAUDE.md, calls two
     # connectors, invokes a private, a Teyla and a built-in skill, has a correction.
     recs = [
         _user(0, FIRST_PROMPT),
@@ -120,7 +120,7 @@ def build_machine(root: pathlib.Path) -> dict:
     ] + [{"type": "system", "subtype": "compact_boundary", "timestamp": _ts(6 + i)} for i in range(3)] + [
         _user(10, "and again, do it the other way"),
         _assistant(11, [{"type": "text", "text": "done"}]),
-    ]
+    ] + [_assistant(11 + 25 * k, [{"type": "text", "text": "still going"}]) for k in range(1, 32)]  # A3: >12 active h
     _write_jsonl(home / ".claude" / "projects" / SLUG / f"{SID}.jsonl", recs)
 
     # --- a session launched from the repos root: advice A7 quotes it
