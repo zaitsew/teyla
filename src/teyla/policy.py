@@ -422,8 +422,12 @@ def refresh(dry: bool = False) -> list[str]:
         (p / "local").write_text(local); (p / "base").write_text(base); (p / "new").write_text(new)
         r = subprocess.run([git, "merge-file", "-p", "-L", "yours", "-L", "base", "-L", "teyla-template",
                             str(p / "local"), str(p / "base"), str(p / "new")], capture_output=True, text=True)
-    if r.returncode < 0:
-        return [f"git merge-file failed: {r.stderr.strip()}"]
+    # The exit code is the conflict count, capped at 127; a negative one (a signal) or anything
+    # above 127 (255 and the like) is an error, not "N conflicts": there is no merge to write
+    # (review of #64, P2).
+    if r.returncode < 0 or r.returncode > 127:
+        return [f"git merge-file failed: {r.stderr.strip() or f'exit {r.returncode}'}; "
+                f"nothing written, {POLICY} untouched"]
     if r.returncode == 0:
         if not dry:
             _backup_policy()

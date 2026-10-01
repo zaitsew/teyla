@@ -181,6 +181,31 @@ def test_refresh_conflict_leaves_policy_untouched(_home, monkeypatch, tmp_path):
     assert policy.BASE_PATH.read_text() == "# P\nOwner: Ada.\n\n## 1\nline THEIRS\n"
 
 
+@pytest.mark.parametrize("code", [255, 128, -9])
+def test_refresh_treats_a_merge_file_error_as_an_error_not_conflicts(_home, monkeypatch, tmp_path, code):
+    # review of #64, P2: exit 255 (and anything above 127) was reported as "255 conflict(s)" and
+    # its empty stdout written to the conflict file.
+    import subprocess
+    _tpl(monkeypatch, tmp_path, "# P\nOwner: {{owner}}.\n\n## 1\nline A\n")
+    policy.POLICY.parent.mkdir(parents=True)
+    policy.POLICY.write_text("# P\nOwner: Ada.\n\n## 1\nline A\n")
+    policy.refresh()
+    mine = "# P\nOwner: Ada.\n\n## 1\nline MINE\n"
+    policy.POLICY.write_text(mine)
+    _tpl(monkeypatch, tmp_path, "# P\nOwner: {{owner}}.\n\n## 1\nline THEIRS\n")
+    real = subprocess.run
+
+    def fake(argv, *a, **k):
+        if "merge-file" in list(argv):
+            return subprocess.CompletedProcess(argv, code, "", "fatal: could not read file")
+        return real(argv, *a, **k)
+    monkeypatch.setattr(subprocess, "run", fake)
+    out = policy.refresh()
+    assert len(out) == 1 and "failed" in out[0] and "conflict(s)" not in out[0]
+    assert policy.POLICY.read_text() == mine
+    assert not policy.CONFLICT_PATH.exists()
+
+
 def test_refresh_applies_when_no_local_edits(_home, monkeypatch, tmp_path):
     _tpl(monkeypatch, tmp_path, "Owner: {{owner}}.\nv1\n")
     policy.POLICY.parent.mkdir(parents=True)
