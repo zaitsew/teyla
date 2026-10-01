@@ -608,7 +608,8 @@ def test_hermes_failed_request_stub_rows_are_not_a_success(home):
         ("assistant", "boom", time.time() - 1800, "error", None)])
     con.commit(); con.close()
     e = health.errors_hermes(home / ".hermes", time.time() - 7 * 86400)
-    assert abs((NOW - e["last_ok"]).total_seconds() - 5 * 86400) < 60
+    # against the clock now, not NOW: NOW is taken at import, and a suite slower than 60 s failed this
+    assert abs((dt.datetime.now(dt.timezone.utc) - e["last_ok"]).total_seconds() - 5 * 86400) < 60
     # the stub is also recognised by its text alone, when the schema has no display_kind column
     con = sqlite3.connect(home / ".hermes" / "state.db")
     con.execute("drop table messages")
@@ -617,7 +618,8 @@ def test_hermes_failed_request_stub_rows_are_not_a_success(home):
         ("assistant", "real answer", time.time() - 5 * 86400),
         ("assistant", "Your request was not processed. Send it again.", time.time() - 60)])
     con.commit(); con.close()
-    assert abs((NOW - health.errors_hermes(home / ".hermes", time.time() - 7 * 86400)["last_ok"]).total_seconds() - 5 * 86400) < 60
+    last_ok = health.errors_hermes(home / ".hermes", time.time() - 7 * 86400)["last_ok"]
+    assert abs((dt.datetime.now(dt.timezone.utc) - last_ok).total_seconds() - 5 * 86400) < 60
 
 
 def test_claude_a_live_logged_in_probe_supersedes_cli_entrypoint_auth_errors(home, monkeypatch):
