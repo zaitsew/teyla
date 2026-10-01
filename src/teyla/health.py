@@ -263,9 +263,10 @@ def _hermes_api_key(prov: str, st: dict, pool: list, env, home: pathlib.Path) ->
     needs no sign-in: it is either in the credential pool (`auth_type: api_key`, `source:
     env:OPENAI_API_KEY`), in the provider state, in the environment, or in ~/.hermes/.env."""
     for c in pool or []:
-        if isinstance(c, dict) and (c.get("auth_type") == "api_key" or c.get("api_key") or c.get("secret_fingerprint")):
+        # `auth_type: api_key` alone is a label; the key (or the fingerprint Hermes stores of it) is the proof.
+        if isinstance(c, dict) and (c.get("api_key") or c.get("secret_fingerprint")):
             return f"API key in the credential pool ({c.get('source') or c.get('label') or 'key'})"
-    if st.get("api_key") or str(st.get("auth_mode") or "").lower() in ("api_key", "apikey"):
+    if st.get("api_key"):  # `auth_mode: api_key` without a key is a setup waiting for one, not a key
         return "API key in auth.json"
     names = _HERMES_KEY_ENV.get(prov, ())
     for var in names:
@@ -308,6 +309,9 @@ def auth_hermes(home: pathlib.Path, env=None) -> dict:
         key = _hermes_api_key(prov, st, pool, env, home)
         if key:
             return {"ok": True, "detail": f"{prov}: {key}"}
+        if str(st.get("auth_mode") or "").lower() in ("api_key", "apikey"):
+            return {"ok": False, "detail": f"{prov}: API-key mode but no key (credential pool, auth.json, environment, ~/.hermes/.env)",
+                    "fix": f"hermes model   (add the {_provider_label(prov)} API key)"}
         why = f" — last error {str(err.get('at', ''))[:10]}: {err.get('message', '')[:120]}" if err else ""
         return {"ok": False, "detail": f"{prov} state is missing access_token{why}",
                 "fix": f"hermes model   (re-authenticate {_provider_label(prov)})"}

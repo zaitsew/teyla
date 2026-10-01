@@ -570,3 +570,26 @@ def test_codex_a_rate_limit_only_token_count_is_not_a_success(home):
     rows[2]["payload"]["info"] = {"last_token_usage": {"total_tokens": 0}, "total_token_usage": {"total_tokens": 900}}
     f.write_text("\n".join(json.dumps(r, separators=(",", ":")) for r in rows) + "\n")
     assert health.window_errors(1, home=home)[0]["still_failing"]
+
+
+def test_hermes_api_key_mode_without_a_key_is_a_fix(home, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    # (Codex P2 on #84) `auth_mode: api_key` is a label, not a key: with nothing in the pool,
+    # auth.json, the environment or ~/.hermes/.env the provider cannot call anything.
+    def write(pool):
+        (home / ".hermes" / "auth.json").write_text(json.dumps({
+            "version": 1, "active_provider": "openai-api", "providers": {"openai-api": {"auth_mode": "api_key"}},
+            "credential_pool": {"openai-api": pool}}))
+    write([])
+    a = health.auth_hermes(home / ".hermes", env={})
+    assert not a["ok"] and "no key" in a["detail"] and a["fix"]
+    # a pool entry labelled api_key but holding neither the key nor its fingerprint is no proof either
+    write([{"id": "1", "auth_type": "api_key", "source": "env:OPENAI_API_KEY"}])
+    assert not health.auth_hermes(home / ".hermes", env={})["ok"]
+    row = health.offline("hermes")
+    assert row["level"] == "FIX"
+    # with the key in place it is OK again
+    write([{"id": "1", "auth_type": "api_key", "source": "env:OPENAI_API_KEY", "secret_fingerprint": "sha256:ab"}])
+    assert health.auth_hermes(home / ".hermes", env={})["ok"]
+    write([])
+    assert health.auth_hermes(home / ".hermes", env={"OPENAI_API_KEY": SECRET})["ok"]
