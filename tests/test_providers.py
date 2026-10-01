@@ -52,6 +52,26 @@ def test_openai_daily_groups_by_id_when_projects_cannot_be_listed():
     assert providers.openai_daily("k", TODAY, get) == {"proj_a": {"2026-09-30": 1.0}}
 
 
+def test_openai_projects_sharing_a_name_keep_their_own_series():
+    def get(url, headers):
+        if "/projects" in url:
+            return {"data": [{"id": "proj_a", "name": "loco"}, {"id": "proj_b", "name": "loco"},
+                             {"id": "proj_c", "name": "frank"}]}
+        return {"data": [{"start_time": _epoch("2026-09-30"), "results": [
+            {"project_id": p, "amount": {"value": 1}} for p in ("proj_a", "proj_b", "proj_c")]}]}
+
+    assert set(providers.openai_daily("k", TODAY, get)) == {"loco (proj_a)", "loco (proj_b)", "frank"}
+
+
+def test_a_bill_past_the_page_cap_is_an_error_not_a_partial_bill():
+    def get(url, headers):
+        return {"data": [], "has_more": True, "next_page": "again"}
+
+    out = providers.read(7, TODAY, key_of=lambda s: "k", get=get)
+    assert out["openai"]["error"].startswith("RuntimeError: more than 20 pages")
+    assert out["anthropic"]["error"].startswith("RuntimeError")
+
+
 def test_anthropic_daily_converts_cents_and_pages():
     calls = []
 
@@ -100,7 +120,8 @@ def test_spikes_look_only_inside_the_window_and_sort_by_excess():
 def test_totals_sum_the_window_only_and_drop_pennies():
     bills = {"openai": {"daily": {"loco": _series({0: 1.0, 6: 2.0, 7: 100.0}), "tiny": _series({0: 0.004})}},
              "anthropic": {"error": "HTTPError: 401"}}
-    assert providers.totals(bills, 7, TODAY) == {"openai": {"loco": 3.0}, "anthropic": {}}
+    # anthropic was not read: no "$0 billed" line, the coverage line says why
+    assert providers.totals(bills, 7, TODAY) == {"openai": {"loco": 3.0}}
 
 
 def test_read_skips_missing_keys_safe_mode_and_survives_errors(monkeypatch):
@@ -148,6 +169,10 @@ def test_report_carries_w7_and_says_what_it_could_not_read():
     assert "W7: anthropic not read (no anthropic-admin-key in the Keychain)" in rep["coverage"]
     assert rep["providers"]["openai"] == {"loco": 46.0}
     assert "openai billed (products, all keys): $46" in spend.render(rep)
+    assert "anthropic billed" not in spend.render(rep)
+    # product spikes are not part of the sessions' total, so not of its waste share
+    assert rep["waste_usd"] == 0 and rep["product_waste_usd"] == 39.0
+    assert spend.summary_line(rep).startswith("spend 7d: $0.00 API-equivalent, $0.00 of it waste, plus $39 of product API spikes")
 
 
 def test_alert_names_a_spike():

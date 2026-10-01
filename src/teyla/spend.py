@@ -335,6 +335,7 @@ def report(days: int = 7, rows=None, actions=None, with_actions: bool = True, bi
     total = sum(by_harness.values())
     waste = waste_usd(rows, F)
     return dict(days=days, total_usd=total, sub_usd=sum(r["sub_usd"] for r in rows), waste_usd=waste,
+                product_waste_usd=sum(f["usd"] for f in F if f["id"] == "W7"),
                 by_harness=dict(by_harness.most_common()), by_model=dict(by_model.most_common()),
                 findings=F, actions=actions, top_sessions=rows[:5], sessions=len(rows), coverage=coverage,
                 providers=providers.totals(bills, days))
@@ -343,7 +344,8 @@ def report(days: int = 7, rows=None, actions=None, with_actions: bool = True, bi
 def waste_usd(rows: list[dict], F: list[dict]) -> float:
     """The waste total without counting a dollar twice: a session with no outcome is waste whole
     (its re-reads and loops are inside that); any other session's W2/W3/W6 dollars are capped at
-    what it cost. Findings that are not about sessions (W7) add on top; W8 is minutes, not dollars."""
+    what it cost. W7 is product API spend, not part of the sessions' total, so it is reported on its
+    own (product_waste_usd) and never inflates the share; W8 is minutes, not dollars."""
     idle = {sid for f in F if f["id"] in ("W1", "W5") for sid in f.get("sids") or []}
     shown = {f["id"] for f in F}  # a rule under the floor is not reported, so its dollars do not count
 
@@ -351,13 +353,15 @@ def waste_usd(rows: list[dict], F: list[dict]) -> float:
         return ((r["reread_usd"] if "W2" in shown else 0) + (r["loop_usd"] if "W6" in shown else 0)
                 + (r["top_tier_sub_saving"] if "W3" in shown else 0))
     per_session = sum(r["usd"] if r["sid"] in idle else min(r["usd"], partial(r)) for r in rows)
-    return per_session + sum(f["usd"] for f in F if f["id"] == "W7" and f["usd"])
+    return per_session
 
 
 def summary_line(rep: dict) -> str:
     total = rep["total_usd"]
     share = f" ({rep['waste_usd'] / total * 100:.0f}%)" if total else ""
+    product = rep.get("product_waste_usd") or 0
     return (f"spend {rep['days']}d: {_money(total)} API-equivalent, {_money(rep['waste_usd'])} of it waste{share}"
+            + (f", plus {_money(product)} of product API spikes" if product else "")
             + (f"; top: {rep['findings'][0]['id']} {rep['findings'][0]['title']}" if rep["findings"] else ""))
 
 
@@ -372,7 +376,9 @@ def render(rep: dict) -> str:
                  + (" — " + ", ".join(f"{g} {_money(v)}" for g, v in list(groups.items())[:5]) if groups else ""))
     L.append("")
     if rep["findings"]:
-        L.append(f"waste {_money(rep['waste_usd'])}:")
+        L.append(f"waste {_money(rep['waste_usd'])}"
+                 + (f" + product spikes {_money(rep['product_waste_usd'])}" if rep.get("product_waste_usd") else "")
+                 + ":")
         for f in rep["findings"]:
             money = _money(f["usd"]) if f["usd"] is not None else "—"
             L += [f"  {f['id']} {money:>7}  {f['title']}", f"              {f['evidence']}", f"              fix: {f['fix']}"]

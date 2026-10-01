@@ -32,6 +32,7 @@ KEYCHAIN = {"openai": "openai-admin-key", "anthropic": "anthropic-admin-key"}
 SPIKE_FACTOR = 2.0
 SPIKE_FLOOR_USD = 2.0
 HISTORY_DAYS = 7
+MAX_PAGES = 20
 
 
 def keychain(service: str) -> str | None:
@@ -68,10 +69,15 @@ def openai_daily(key: str, start: _dt.date, get=_get) -> dict[str, dict[str, flo
             names[p.get("id")] = p.get("name") or p.get("id")
     except Exception:  # noqa: BLE001 — names are a nicety; ids still group
         pass
+    # Two projects with one name must not share a series: the spike rule compares each to its own median.
+    seen = defaultdict(int)
+    for n in names.values():
+        seen[n] += 1
+    names = {pid: (n if seen[n] == 1 else f"{n} ({pid})") for pid, n in names.items()}
     epoch = int(_dt.datetime.combine(start, _dt.time(), _dt.timezone.utc).timestamp())
     out: dict = defaultdict(lambda: defaultdict(float))
     page = None
-    for _ in range(20):
+    for _ in range(MAX_PAGES):
         q = {"start_time": epoch, "bucket_width": "1d", "limit": 31, "group_by": "project_id"}
         if page:
             q["page"] = page
@@ -84,6 +90,8 @@ def openai_daily(key: str, start: _dt.date, get=_get) -> dict[str, dict[str, flo
         if not data.get("has_more"):
             break
         page = data.get("next_page")
+    else:
+        raise RuntimeError(f"more than {MAX_PAGES} pages")  # a partial bill must not read as a whole one
     return {k: dict(v) for k, v in out.items()}
 
 
@@ -92,7 +100,7 @@ def anthropic_daily(key: str, start: _dt.date, end: _dt.date, get=_get) -> dict[
     h = {"x-api-key": key, "anthropic-version": "2023-06-01"}
     out: dict = defaultdict(lambda: defaultdict(float))
     page = None
-    for _ in range(20):
+    for _ in range(MAX_PAGES):
         q = [("starting_at", f"{start.isoformat()}T00:00:00Z"), ("ending_at", f"{end.isoformat()}T00:00:00Z"),
              ("group_by[]", "workspace_id"), ("limit", "31")]
         if page:
@@ -106,6 +114,8 @@ def anthropic_daily(key: str, start: _dt.date, end: _dt.date, get=_get) -> dict[
         if not data.get("has_more"):
             break
         page = data.get("next_page")
+    else:
+        raise RuntimeError(f"more than {MAX_PAGES} pages")  # a partial bill must not read as a whole one
     return {k: dict(v) for k, v in out.items()}
 
 
@@ -136,11 +146,14 @@ def read(days: int = 7, today: _dt.date | None = None, key_of=None, get=None) ->
 
 
 def totals(bills: dict, days: int, today: _dt.date | None = None) -> dict[str, dict[str, float]]:
-    """{provider: {group: usd over the window}}, groups with spend only."""
+    """{provider: {group: usd over the window}}, groups with spend only. A provider that was not
+    read is left out, not shown as $0: its line in the report's coverage says why."""
     today = today or _dt.datetime.now(_dt.timezone.utc).date()
     first = (today - _dt.timedelta(days=days - 1)).isoformat()
     out = {}
     for provider, b in bills.items():
+        if "daily" not in b:
+            continue
         groups = {g: sum(v for d, v in series.items() if d >= first) for g, series in (b.get("daily") or {}).items()}
         out[provider] = {g: v for g, v in sorted(groups.items(), key=lambda kv: -kv[1]) if v >= 0.01}
     return out
