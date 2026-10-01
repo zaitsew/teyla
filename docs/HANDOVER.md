@@ -40,7 +40,7 @@ On a machine where Teyla is installed, the update is a pinned, by-hand step in s
 `teyla config set update.pin=<version>`, then `teyla update --allow-network --wire` (safe mode
 refuses `teyla update` without `--allow-network`, even typed by hand, and neither the daily
 routine nor the session hook ever passes it). A version before 0.13.0 has no safe mode and no
-`uninstall`, so the one manual step is installing 0.13.1 by hand with `uv` or `pipx`, Python 3.12
+`uninstall`, so the one manual step is installing 0.14.0 by hand with `uv` or `pipx`, Python 3.12
 and the `work` extra.
 
 [`prompts/work-account-update.md`](../prompts/work-account-update.md) is the paste-able version
