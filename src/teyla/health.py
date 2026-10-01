@@ -122,7 +122,7 @@ def _tail(path: pathlib.Path, n: int = TAIL) -> bytes:
 
 _KINDS = (
     ("quota", re.compile(r"\b402\b|payment required|balance exhausted|insufficient_quota|usage limit|session limit|"
-                         r"weekly limit|out of credits|credit balance|billing|quota", re.I)),
+                         r"weekly limit|out of credits|run out of credits|spending.?limit|credit balance|billing|quota", re.I)),
     ("auth", re.compile(r"\b401\b|unauthori[sz]ed|missing access_token|invalid_grant|refresh token|re-?authenticate|"
                         r"relogin|not logged in|authenticat|invalid api key|expired token|session expired", re.I)),
     ("rate", re.compile(r"\b429\b|rate.?limit|too many requests|\b529\b|overloaded", re.I)),
@@ -134,8 +134,10 @@ _KINDS = (
 def classify(text: str, status: int | None = None) -> str:
     if status == 402:
         return "quota"
+    # xAI answers an exhausted balance with HTTP 403 {"code": "personal-team-blocked:spending-limit"}:
+    # the text says what it is, the status alone would call it an auth failure.
     if status in (401, 403):
-        return "auth"
+        return "quota" if _KINDS[0][1].search(text or "") else "auth"
     if status in (429, 529):
         return "rate"
     for kind, rx in _KINDS:
@@ -248,7 +250,40 @@ def auth_grok(home: pathlib.Path, env=None) -> dict:
     return {"ok": True, "detail": f"{mode} login" + (", refreshed automatically" if e.get("refresh_token") else "")}
 
 
+# Environment variables Hermes reads an API key from, per provider id (hermes-agent providers).
+_HERMES_KEY_ENV = {
+    "openai-api": ("OPENAI_API_KEY",), "openai": ("OPENAI_API_KEY",), "anthropic": ("ANTHROPIC_API_KEY",),
+    "xai": ("XAI_API_KEY", "GROK_API_KEY"), "xai-api": ("XAI_API_KEY", "GROK_API_KEY"),
+    "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"), "openrouter": ("OPENROUTER_API_KEY",),
+}
+
+
+def _hermes_api_key(prov: str, st: dict, pool: list, env, home: pathlib.Path) -> str | None:
+    """Where an API-key (not OAuth) provider's key lives, as a short phrase — never the key. A key
+    needs no sign-in: it is either in the credential pool (`auth_type: api_key`, `source:
+    env:OPENAI_API_KEY`), in the provider state, in the environment, or in ~/.hermes/.env."""
+    for c in pool or []:
+        # `auth_type: api_key` alone is a label; the key (or the fingerprint Hermes stores of it) is the proof.
+        if isinstance(c, dict) and (c.get("api_key") or c.get("secret_fingerprint")):
+            return f"API key in the credential pool ({c.get('source') or c.get('label') or 'key'})"
+    if st.get("api_key"):  # `auth_mode: api_key` without a key is a setup waiting for one, not a key
+        return "API key in auth.json"
+    names = _HERMES_KEY_ENV.get(prov, ())
+    for var in names:
+        if env.get(var):
+            return f"{var} set in the environment"
+    try:
+        dotenv = (home / ".env").read_text()
+    except OSError:
+        return None
+    for var in names:
+        if re.search(rf"^\s*(export\s+)?{var}\s*=\s*[^\s#]", dotenv, re.M):
+            return f"{var} in ~/.hermes/.env"
+    return None
+
+
 def auth_hermes(home: pathlib.Path, env=None) -> dict:
+    env = os.environ if env is None else env
     p = home / "auth.json"
     try:
         d = json.loads(p.read_text())
@@ -262,10 +297,21 @@ def auth_hermes(home: pathlib.Path, env=None) -> dict:
     if st is None:
         if pool:
             return {"ok": True, "detail": f"{prov}: {len(pool)} pooled credential(s)"}
+        key = _hermes_api_key(prov, {}, [], env, home)
+        if key:
+            return {"ok": True, "detail": f"{prov}: {key}"}
         return {"ok": False, "detail": f"{prov}: no credentials", "fix": f"hermes model   (re-authenticate {prov})"}
     tok = st.get("tokens") or {}
-    err = st.get("last_auth_error") or {}
+    err = _hermes_current_auth_error(st, pool)
     if not tok.get("access_token"):
+        # An API-key provider has no OAuth tokens to be missing: with the key in place it is signed
+        # in, and only a failed call (`verify --live`, a logged error) can say otherwise.
+        key = _hermes_api_key(prov, st, pool, env, home)
+        if key:
+            return {"ok": True, "detail": f"{prov}: {key}"}
+        if str(st.get("auth_mode") or "").lower() in ("api_key", "apikey"):
+            return {"ok": False, "detail": f"{prov}: API-key mode but no key (credential pool, auth.json, environment, ~/.hermes/.env)",
+                    "fix": f"hermes model   (add the {_provider_label(prov)} API key)"}
         why = f" — last error {str(err.get('at', ''))[:10]}: {err.get('message', '')[:120]}" if err else ""
         return {"ok": False, "detail": f"{prov} state is missing access_token{why}",
                 "fix": f"hermes model   (re-authenticate {_provider_label(prov)})"}
@@ -273,6 +319,24 @@ def auth_hermes(home: pathlib.Path, env=None) -> dict:
         return {"ok": False, "detail": f"{prov}: relogin required since {str(err.get('at', ''))[:10]}: {err.get('message', '')[:120]}",
                 "fix": f"hermes model   (re-authenticate {_provider_label(prov)})"}
     return {"ok": True, "detail": f"{prov} signed in"}
+
+
+def _hermes_current_auth_error(st: dict, pool: list) -> dict:
+    """`last_auth_error` of a provider state, or {} once something later succeeded. Hermes never
+    clears the field: after a re-login it still says "relogin required since 09-29" next to a
+    fresh `last_refresh`. The newest event decides — a token refresh or a pooled credential that
+    is `ok` after the error's `at` makes it history (2026-10-01, doctor health:hermes)."""
+    err = (st or {}).get("last_auth_error") or {}
+    at = _parse_ts(err.get("at"))
+    if not err or at is None:
+        return err
+    later = [_parse_ts((st or {}).get("last_refresh"))]
+    for c in pool or []:
+        if isinstance(c, dict):
+            later.append(_parse_ts(c.get("last_refresh")))
+            if c.get("last_status") == "ok":
+                later.append(_parse_ts(c.get("last_status_at")))
+    return {} if any(t and t > at for t in later) else err
 
 
 def _provider_label(prov: str) -> str:
@@ -308,11 +372,20 @@ class _Errs:
             return self.hard
         return self.newest
 
-def errors_claude(home: pathlib.Path, since: float) -> dict:
+def _shares_cli_credentials(ep: str) -> bool:
+    """`claude` in a terminal (cli) and `claude -p` (sdk-cli, sdk-*) read one credential store, the
+    one `claude auth status` reports on. The desktop app signs in on its own."""
+    return ep == "cli" or ep.startswith("sdk-")
+
+
+def errors_claude(home: pathlib.Path, since: float, probe_ok: _dt.datetime | None = None) -> dict:
     """{error, last_ok}: `isApiErrorMessage` records vs ordinary assistant records, from the
-    tail of every transcript written in the window."""
+    tail of every transcript written in the window. `probe_ok`: when a live `claude auth status`
+    just said loggedIn — it supersedes the auth errors (not the quota ones) recorded before it by
+    the entrypoints that use the CLI's credentials; an auth error after it shows again."""
     root = home / "projects"
-    errs, last_ok = _Errs(), {}
+    by_ep: dict[str, _Errs] = {}
+    last_ok: dict[str, _dt.datetime] = {}
     if not root.is_dir():
         return {"error": None, "last_ok": None}
     for p in root.glob("*/*.jsonl"):
@@ -338,16 +411,37 @@ def errors_claude(home: pathlib.Path, since: float) -> dict:
             if d.get("isApiErrorMessage"):
                 content = (d.get("message") or {}).get("content") or []
                 text = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
-                errs.add(dict(_err(ts, classify(text + " " + str(d.get("error") or "")), text, p.name), entrypoint=ep))
+                err = dict(_err(ts, classify(text + " " + str(d.get("error") or "")), text, p.name), entrypoint=ep)
+                if probe_ok and err["kind"] == "auth" and _shares_cli_credentials(ep) and ts <= probe_ok:
+                    continue  # history: the CLI's credentials work now
+                by_ep.setdefault(ep, _Errs()).add(err)
             elif ep not in last_ok or ts > last_ok[ep]:
                 last_ok[ep] = ts
-    hard = errs.hard
-    if hard and not recovered(hard, last_ok.get(hard["entrypoint"])):
-        err = hard
-    else:
-        err = errs.newest
+    # One verdict per entrypoint, then the pick among them: an unresolved quota/auth failure of any
+    # entrypoint is shown over a newer error (or a recovered one) of another, so neither hides
+    # the other (#66). The error's own entrypoint supplies "last success".
+    picked = [e for ep, errs in by_ep.items() if (e := errs.pick(last_ok.get(ep)))]
+    open_hard = [e for e in picked if e["kind"] in ("quota", "auth") and not recovered(e, last_ok.get(e["entrypoint"]))]
+    pool = open_hard or picked
+    err = max(pool, key=lambda e: e["ts"]) if pool else None
     ok = last_ok.get(err["entrypoint"]) if err else max(last_ok.values(), default=None)
     return {"error": err, "last_ok": ok}
+
+
+def _codex_used_tokens(info) -> bool:
+    """Does a `token_count` event's `info` record a turn that really ran? `last_token_usage` is that
+    turn's usage; `total_token_usage` (cumulative) is the fallback when it is absent."""
+    if not isinstance(info, dict):
+        return False
+    u = info.get("last_token_usage")
+    if not isinstance(u, dict):
+        u = info.get("total_token_usage")
+    if not isinstance(u, dict):
+        return False
+    n = u.get("total_tokens")
+    if not isinstance(n, (int, float)):
+        n = sum(v for k, v in u.items() if k in ("input_tokens", "output_tokens") and isinstance(v, (int, float)))
+    return n > 0
 
 
 def errors_codex(home: pathlib.Path, since: float) -> dict:
@@ -390,7 +484,9 @@ def errors_codex(home: pathlib.Path, since: float) -> dict:
                 if ts is None:
                     continue
                 if pl.get("type") == "token_count":
-                    if last_ok is None or ts > last_ok:
+                    # `info: null` with only `rate_limits` is Codex reporting the plan's windows
+                    # (it does so after a failed turn too); only a turn that spent tokens is a success.
+                    if _codex_used_tokens(pl.get("info")) and (last_ok is None or ts > last_ok):
                         last_ok = ts
                     # Codex reports several limit ids ("codex", and "premium" with null windows);
                     # the newest one that carries a window is the one that says how close it is.
@@ -440,17 +536,49 @@ def errors_grok(home: pathlib.Path, since: float) -> dict:
 _LOG_LINE = re.compile(rb"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+) (ERROR|WARNING|CRITICAL) (\S+): (.*)$")
 
 
+def _hermes_request_dumps(home: pathlib.Path, since: float, limit: int = 20):
+    """Failed provider requests Hermes dumps to sessions/request_dump_*.json: `{timestamp, error:
+    {status_code, message}}`. This is where an HTTP 403 `personal-team-blocked:spending-limit`
+    is recorded — not in auth.json, not in errors.log. The timestamp is naive local time."""
+    files = []
+    for p in (home / "sessions").glob("request_dump_*.json"):
+        try:
+            m = p.stat().st_mtime
+        except OSError:
+            continue
+        if m >= since:
+            files.append((m, p))
+    for _, p in sorted(files, reverse=True)[:limit]:
+        try:
+            d = json.loads(p.read_text())
+            e = d.get("error") or {}
+        except (OSError, ValueError, AttributeError):
+            continue
+        if not isinstance(e, dict):
+            continue
+        ts = _parse_ts(d.get("timestamp"))
+        if ts is not None and isinstance(d.get("timestamp"), str) and not re.search(r"(Z|[+-]\d\d:?\d\d)$", d["timestamp"].strip()):
+            ts = _dt.datetime.fromisoformat(d["timestamp"].strip()).astimezone(_dt.timezone.utc)  # naive = local
+        status = e.get("status_code") if isinstance(e.get("status_code"), int) else None
+        msg = e.get("message") or e.get("response_text") or f"status {status}"
+        yield _err(ts, classify(str(msg), status), msg, p.name)
+
+
 def errors_hermes(home: pathlib.Path, since: float) -> dict:
     errs, last_ok = _Errs(), None
     try:
         d = json.loads((home / "auth.json").read_text())
         for prov, st in (d.get("providers") or {}).items():
-            e = (st or {}).get("last_auth_error") or {}
+            # An auth error that a later refresh or login got past is history, not an event.
+            e = _hermes_current_auth_error(st or {}, (d.get("credential_pool") or {}).get(prov) or [])
             ts = _parse_ts(e.get("at"))
             if ts and ts.timestamp() >= since:
                 errs.add(_err(ts, "auth", f"{prov}: {e.get('message', e.get('code', ''))}", "auth.json"))
     except (OSError, ValueError, AttributeError):
         pass
+    for e in _hermes_request_dumps(home, since):
+        if e["ts"] is not None and e["ts"].timestamp() >= since:
+            errs.add(e)
     for raw in _tail(home / "logs" / "errors.log").splitlines():
         m = _LOG_LINE.match(raw)
         if not m:
@@ -466,7 +594,17 @@ def errors_hermes(home: pathlib.Path, since: float) -> dict:
     if db.exists():
         try:
             con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
-            (t,) = con.execute("select max(timestamp) from messages where role='assistant'").fetchone()
+            # Hermes writes an assistant row for a request that failed too ("Your request was not
+            # processed. Send it again…", display_kind `failed_turn`, no finish_reason): not a success.
+            cols = {r[1] for r in con.execute("pragma table_info(messages)")}
+            where = ["role='assistant'"]
+            if "content" in cols:
+                where.append("coalesce(content,'') not like 'Your request was not processed%'")
+            if "display_kind" in cols:
+                where.append("coalesce(display_kind,'') not like 'failed%' and coalesce(display_kind,'') not like 'error%'")
+            if "finish_reason" in cols:
+                where.append("coalesce(finish_reason,'') not in ('error','failed')")
+            (t,) = con.execute(f"select max(timestamp) from messages where {' and '.join(where)}").fetchone()
             con.close()
             last_ok = _parse_ts(t)
         except sqlite3.Error:
@@ -515,6 +653,8 @@ def _fix_for(name: str, err: dict, batch_top: tuple[str, int] | None) -> str:
         return s
     if name == "hermes" and kind == "auth":
         return "hermes model   (re-authenticate xAI)" if "xai" in err["message"].lower() else "hermes model   (re-authenticate)"
+    if name == "hermes" and kind == "quota":
+        return "provider credits exhausted — add credits where the message says, or `hermes model` to switch provider"
     if kind == "auth":
         return {"claude-code": "claude auth login", "codex": "codex login", "grok": "grok login"}.get(name, "sign in again")
     if kind == "quota":
@@ -541,10 +681,15 @@ def offline(name: str, home: pathlib.Path | None = None, days: int = 7, sessions
         return row
     # No binary but a home directory: a desktop app without its CLI on PATH, not a broken install.
     row["version"], row["version_error"] = version(binary) if binary else (None, None)
-    row["auth"] = auth_claude(hdir, status=claude_auth_status(binary)) if name == "claude-code" else AUTH[name](hdir)
+    status = claude_auth_status(binary) if name == "claude-code" else None
+    row["auth"] = auth_claude(hdir, status=status) if name == "claude-code" else AUTH[name](hdir)
     since = time.time() - days * 86400
     try:
-        e = ERRORS[name](hdir, since)
+        if name == "claude-code":
+            logged_in = bool((row["auth"] or {}).get("ok") and (status or {}).get("loggedIn"))
+            e = errors_claude(hdir, since, probe_ok=_now() if logged_in else None)
+        else:
+            e = ERRORS[name](hdir, since)
     except Exception as exc:  # noqa: BLE001 — a health check must never take doctor down
         e = {"error": None, "last_ok": None, "scan_error": str(exc)[:120]}
     row.update(error=e.get("error"), last_ok=e.get("last_ok"), limits=e.get("limits"))

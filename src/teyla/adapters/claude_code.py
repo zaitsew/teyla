@@ -34,8 +34,9 @@ def _parse_ts(ts: str):
         return None
 
 
-def load(root: str = DEFAULT_ROOT, repo_names: list[str] | None = None, since: float | None = None,
+def load(root: str | None = None, repo_names: list[str] | None = None, since: float | None = None,
          **kw) -> list[Session]:
+    root = DEFAULT_ROOT if root is None else root  # at call time, so tests and callers that move it are obeyed
     if not os.path.isdir(root):
         raise FileNotFoundError(root)
     sessions = []
