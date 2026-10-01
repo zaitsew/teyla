@@ -89,8 +89,10 @@ def session_rows(days: int = 7, sessions=None, grok_rows=None) -> list[dict]:
     cutoff = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
     rows = []
     for s in sessions:
-        if s.sidechain or s.harness == "grok" or (s.first or "")[:19] < cutoff:
-            continue  # Grok is priced from its own costUsdTicks below, not from token counts
+        # In the window when it was active in it: a session resumed today counts today (its whole
+        # cost; a transcript does not split by day). Grok is priced from its own costUsdTicks below.
+        if s.sidechain or s.harness == "grok" or (s.last or s.first or "")[:19] < cutoff:
+            continue
         by_model = {m: _usd(m, u) for m, u in s.usage.items()}
         sub = {m: _usd(m, u) for m, u in s.sub_usage.items()}
         saving = sum(max(0.0, _usd(m, u) - _usd(VOLUME_MODEL, u))
@@ -137,8 +139,8 @@ def _repo_dirs(row: dict) -> list[str]:
     out = []
     cwd = row.get("cwd")
     if cwd and os.path.isdir(cwd) and _git(["rev-parse", "--show-toplevel"], cwd):
-        return [cwd]
-    if cwd and ".worktrees" in pathlib.Path(cwd).parts:
+        out.append(cwd)  # and the repos it touched: work started in A is often committed in B
+    elif cwd and ".worktrees" in pathlib.Path(cwd).parts:
         out.append(os.path.join(root, row["project"]))
     out += [os.path.join(root, r) for r in row.get("repos") or []]
     return [d for d in dict.fromkeys(out) if os.path.isdir(os.path.join(d, ".git")) or _git(["rev-parse", "--git-dir"], d)]
@@ -164,11 +166,13 @@ def outcome(row: dict) -> bool | None:
     if not dirs:
         return None
     until = end + _dt.timedelta(hours=OUTCOME_GRACE_H)
+    failed = False
     for d in dirs:
         out = _git(["log", "--all", "-n1", "--format=%H", f"--since={start.isoformat()}", f"--until={until.isoformat()}"], d)
         if out:
             return True
-    return False
+        failed = failed or out is None  # git failed: an empty answer we cannot trust
+    return None if failed else False
 
 
 # --- GitHub Actions (W8) ---------------------------------------------------------------------
@@ -190,8 +194,8 @@ def _gh_json(path: str):
 
 def actions_usage(today: _dt.date | None = None, gh=_gh_json) -> list[dict] | None:
     """This month's Actions use for the gh user and each org it belongs to, or None when gh or the
-    network is not available. Minutes are Linux-equivalent (gross dollars / Linux price), which is
-    how GitHub counts the included minutes: a macOS minute is ten."""
+    network is not available. Minutes are the included minutes used, Linux-equivalent (discounted
+    dollars / Linux price), which is how GitHub counts them: a standard macOS minute is ten."""
     from . import net
     if not net.gate("gh api (Actions billing)", quiet=True):
         return None
@@ -208,8 +212,12 @@ def actions_usage(today: _dt.date | None = None, gh=_gh_json) -> list[dict] | No
         data = gh(f"/{kind}/{login}/settings/billing/usage?year={today.year}&month={today.month}")
         if not isinstance(data, dict):
             continue
-        items = [i for i in data.get("usageItems") or [] if i.get("product") == "actions" and i.get("unitType") == "Minutes"]
-        gross = sum(i.get("grossAmount") or 0 for i in items)
+        items = [i for i in data.get("usageItems") or []
+                 if str(i.get("product")).lower() == "actions" and str(i.get("unitType")).lower() == "minutes"]
+        # The included minutes are what GitHub discounted: larger runners never draw on them, so
+        # gross dollars would over-count; the discount is exactly the quota used.
+        used = sum((i.get("discountAmount") if i.get("discountAmount") is not None
+                    else (i.get("grossAmount") or 0) - (i.get("netAmount") or 0)) or 0 for i in items)
         net_usd = sum(i.get("netAmount") or 0 for i in items)
         by_repo, macos = Counter(), Counter()
         for i in items:
@@ -217,7 +225,7 @@ def actions_usage(today: _dt.date | None = None, gh=_gh_json) -> list[dict] | No
             if "macos" in str(i.get("sku") or "").lower():
                 macos[i.get("repositoryName") or "?"] += i.get("quantity") or 0
         included = PLAN_MINUTES.get(str(plan or "").lower())
-        minutes = gross / LINUX_USD_PER_MIN
+        minutes = used / LINUX_USD_PER_MIN
         out.append(dict(account=login, plan=plan, minutes=round(minutes), included=included,
                         share=(minutes / included) if included else None, paid_usd=round(net_usd, 2),
                         top_repos=[r for r, _ in by_repo.most_common(3)],
@@ -263,7 +271,7 @@ def findings(rows: list[dict], actions: list[dict] | None = None, outcome_of=out
                             f"({_money(sum(r['usd'] for r in unknown))})")
         if idle:
             total = sum(r["usd"] for r in idle)
-            F.append(dict(id=rid, usd=total, cmd=False, fix=fix,
+            F.append(dict(id=rid, usd=total, cmd=False, fix=fix, sids=[r["sid"] for r in idle],
                           title=f"{len(idle)} session(s) over {_money(W1_USD)} left no commit or PR",
                           evidence="; ".join(f"{_who(r)} {_money(r['usd'])}" for r in idle[:3])))
     reread = [r for r in rows if r["reread_usd"] > 0]
@@ -325,11 +333,25 @@ def report(days: int = 7, rows=None, actions=None, with_actions: bool = True, bi
         for m, v in r["by_model"].items():
             by_model[m] += v
     total = sum(by_harness.values())
-    waste = sum(f["usd"] for f in F if f["usd"])
+    waste = waste_usd(rows, F)
     return dict(days=days, total_usd=total, sub_usd=sum(r["sub_usd"] for r in rows), waste_usd=waste,
                 by_harness=dict(by_harness.most_common()), by_model=dict(by_model.most_common()),
                 findings=F, actions=actions, top_sessions=rows[:5], sessions=len(rows), coverage=coverage,
                 providers=providers.totals(bills, days))
+
+
+def waste_usd(rows: list[dict], F: list[dict]) -> float:
+    """The waste total without counting a dollar twice: a session with no outcome is waste whole
+    (its re-reads and loops are inside that); any other session's W2/W3/W6 dollars are capped at
+    what it cost. Findings that are not about sessions (W7) add on top; W8 is minutes, not dollars."""
+    idle = {sid for f in F if f["id"] in ("W1", "W5") for sid in f.get("sids") or []}
+    shown = {f["id"] for f in F}  # a rule under the floor is not reported, so its dollars do not count
+
+    def partial(r):
+        return ((r["reread_usd"] if "W2" in shown else 0) + (r["loop_usd"] if "W6" in shown else 0)
+                + (r["top_tier_sub_saving"] if "W3" in shown else 0))
+    per_session = sum(r["usd"] if r["sid"] in idle else min(r["usd"], partial(r)) for r in rows)
+    return per_session + sum(f["usd"] for f in F if f["id"] == "W7" and f["usd"])
 
 
 def summary_line(rep: dict) -> str:

@@ -60,9 +60,11 @@ def test_actions_usage_reads_linux_equivalent_minutes(monkeypatch):
     monkeypatch.setattr("teyla.net.gate", lambda *a, **k: True)
     usage = {"usageItems": [
         {"product": "actions", "unitType": "Minutes", "sku": "Actions Linux", "quantity": 1514,
-         "grossAmount": 9.084, "netAmount": 0.744, "repositoryName": "loco"},
-        {"product": "actions", "unitType": "Minutes", "sku": "Actions macOS 3-core", "quantity": 215,
-         "grossAmount": 13.33, "netAmount": 2.698, "repositoryName": "accounts"},
+         "grossAmount": 9.084, "discountAmount": 8.34, "netAmount": 0.744, "repositoryName": "loco"},
+        {"product": "Actions", "unitType": "minutes", "sku": "Actions macOS 3-core", "quantity": 215,
+         "grossAmount": 13.33, "discountAmount": 10.632, "netAmount": 2.698, "repositoryName": "accounts"},
+        {"product": "actions", "unitType": "Minutes", "sku": "Actions Linux 32-core", "quantity": 200,
+         "grossAmount": 16.4, "discountAmount": 0, "netAmount": 16.4, "repositoryName": "big"},
         {"product": "actions", "unitType": "GigabyteHours", "grossAmount": 0.02, "netAmount": 0},
         {"product": "copilot", "unitType": "Minutes", "grossAmount": 100, "netAmount": 100},
     ]}
@@ -72,9 +74,10 @@ def test_actions_usage_reads_linux_equivalent_minutes(monkeypatch):
                "/organizations/org/settings/billing/usage?year=2026&month=9": usage}
     out = {a["account"]: a for a in spend.actions_usage(_dt.date(2026, 9, 30), gh=answers.get)}
     org = out["org"]
-    assert org["minutes"] == 3736 and org["included"] == 3000 and round(org["share"], 2) == 1.25
-    assert org["paid_usd"] == 3.44 and org["macos_minutes"] == {"accounts": 215}
-    assert org["top_repos"][0] == "accounts"
+    # 18.972 discounted dollars / $0.006: the included minutes used; the 32-core runner draws none
+    assert org["minutes"] == 3162 and org["included"] == 3000 and round(org["share"], 2) == 1.05
+    assert org["paid_usd"] == 19.84 and org["macos_minutes"] == {"accounts": 215}
+    assert org["top_repos"][0] == "big"
     assert out["me"]["minutes"] == 0
 
 
@@ -164,3 +167,29 @@ def test_adapter_records_reread_loops_and_touched_repos(tmp_path):
     assert s.reread_excess["claude-fable-5-1"] == 300_001 - 50_000
     assert s.loop_usage["claude-fable-5-1"]["output_tokens"] == 10
     assert s.touched_repos["teyla"] == 3
+
+
+def test_waste_total_counts_a_dollar_once():
+    rows = [_row(sid="idle00000000", usd=100.0, loop_usd=30.0, reread_usd=20.0),
+            _row(sid="busy00000000", usd=10.0, reread_usd=8.0, loop_usd=5.0)]
+    verdict = {"idle00000000": False, "busy00000000": True}
+    F = spend.findings(rows, outcome_of=lambda r: verdict[r["sid"]])
+    # the idle session is waste whole ($100, its loops inside); the busy one is capped at its $10
+    assert spend.waste_usd(rows, F) == 110.0
+
+
+def test_a_failed_git_log_is_unknown_not_idle(monkeypatch):
+    monkeypatch.setattr(spend, "_repo_dirs", lambda r: ["/repo"])
+    monkeypatch.setattr(spend, "_git", lambda args, cwd: None)
+    assert spend.outcome(_row()) is None
+
+
+def test_outcome_looks_in_touched_repos_too(tmp_path, monkeypatch):
+    import subprocess
+    monkeypatch.setattr(spend.config, "code_root", lambda: tmp_path)
+    for name in ("a", "b"):
+        subprocess.run(["git", "init", "-q", str(tmp_path / name)], check=True)
+    env = dict(os.environ, GIT_AUTHOR_DATE="2026-09-28T13:00:00Z", GIT_COMMITTER_DATE="2026-09-28T13:00:00Z",
+               GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+    subprocess.run(["git", "-C", str(tmp_path / "b"), "commit", "-q", "--allow-empty", "-m", "x"], check=True, env=env)
+    assert spend.outcome(_row(cwd=str(tmp_path / "a"), project="a", repos=["b"])) is True

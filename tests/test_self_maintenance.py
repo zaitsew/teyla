@@ -198,8 +198,15 @@ def test_repos_status(tmp_path):
         for f in files:
             (d / f).write_text(f"# {name} {f}\n")
     (root / "notrepo").mkdir()
+    # a CLAUDE.md that imports AGENTS.md is one source of truth, not a difference — with or
+    # without Claude-only lines after the import
+    for name, claude in (("e", "@AGENTS.md\n"), ("f", "<!-- teyla:cloud-import:start -->\n@AGENTS.md\n<!-- teyla:cloud-import:end -->\n\nClaude-only note.\n")):
+        d = root / name; (d / ".git").mkdir(parents=True)
+        (d / "AGENTS.md").write_text("# guide\n")
+        (d / "CLAUDE.md").write_text(claude)
     st = dict((n, s) for s, n in policy.repos_status(root))
-    assert st == {"a": "missing", "b": "differ", "c": "none", "d": "missing"}
+    assert st == {"a": "missing", "b": "differ", "c": "none", "d": "missing", "e": "ok", "f": "ok"}
+    assert "already linked" in policy.sync_repo(str(root / "e"))
 
 
 # --- routine staleness ------------------------------------------------------------------
@@ -226,15 +233,18 @@ def _local(y, m, d, hh, mm):
 
 
 def test_last_due_follows_the_plist_schedule():
-    # Tuesday 10:00 → the weekly was due Monday 07:30, the daily today 07:00
-    now = _local(2026, 9, 15, 10, 0)
-    assert routine_install.last_due(routine_install.LABEL, now) == _local(2026, 9, 14, 7, 30)
-    assert routine_install.last_due(routine_install.DAILY_LABEL, now) == _local(2026, 9, 15, 7, 0)
-    # Monday 06:59: the weekly was last due a week ago, the daily yesterday; at 07:00 sharp the daily is due now
-    now = _local(2026, 9, 14, 6, 59)
-    assert routine_install.last_due(routine_install.LABEL, now) == _local(2026, 9, 7, 7, 30)
-    assert routine_install.last_due(routine_install.DAILY_LABEL, now) == _local(2026, 9, 13, 7, 0)
-    assert routine_install.last_due(routine_install.DAILY_LABEL, _local(2026, 9, 14, 7, 0)) == _local(2026, 9, 14, 7, 0)
+    # Saturday 10:00 → the weekly was due Friday 20:45, the daily today 07:00
+    now = _local(2026, 9, 19, 10, 0)
+    assert routine_install.last_due(routine_install.LABEL, now) == _local(2026, 9, 18, 20, 45)
+    assert routine_install.last_due(routine_install.DAILY_LABEL, now) == _local(2026, 9, 19, 7, 0)
+    # Friday 06:59: the weekly was last due a week ago, the daily yesterday; at 07:00 sharp the daily is due now
+    now = _local(2026, 9, 18, 6, 59)
+    assert routine_install.last_due(routine_install.LABEL, now) == _local(2026, 9, 11, 20, 45)
+    assert routine_install.last_due(routine_install.DAILY_LABEL, now) == _local(2026, 9, 17, 7, 0)
+    assert routine_install.last_due(routine_install.DAILY_LABEL, _local(2026, 9, 18, 7, 0)) == _local(2026, 9, 18, 7, 0)
+    # the weekly is due at 20:45 sharp, not a minute before
+    assert routine_install.last_due(routine_install.LABEL, _local(2026, 9, 18, 20, 44)) == _local(2026, 9, 11, 20, 45)
+    assert routine_install.last_due(routine_install.LABEL, _local(2026, 9, 18, 20, 45)) == _local(2026, 9, 18, 20, 45)
 
 
 def _install_fake_job(home, label, marker, *, installed_at):
@@ -251,23 +261,23 @@ def _install_fake_job(home, label, marker, *, installed_at):
 def test_missed_and_catch_up_run_the_skipped_weekly(_home, monkeypatch):
     monkeypatch.delenv("TEYLA_IN_ROUTINE", raising=False)
     marker = _home / "ran.txt"
-    # installed Friday 2026-09-11, due Monday 07:30, the Mac booted Monday 15:28: never started
+    # installed Friday 2026-09-11 16:55, due Friday 20:45, the Mac was off and booted Saturday 10:00: never started
     _install_fake_job(_home, routine_install.LABEL, marker, installed_at=_local(2026, 9, 11, 16, 55))
-    now = _local(2026, 9, 14, 15, 30)
-    assert routine_install.missed(routine_install.LABEL, now) == _local(2026, 9, 14, 7, 30)
+    now = _local(2026, 9, 12, 10, 0)
+    assert routine_install.missed(routine_install.LABEL, now) == _local(2026, 9, 11, 20, 45)
     # the daily has no plist here → not a missed run, just not installed
     assert routine_install.missed(routine_install.DAILY_LABEL, now) is None
     lines = routine_install.catch_up(dry=True, now=now)
-    assert any("MISSED 2026-09-14 07:30" in l and "would run" in l for l in lines)
+    assert any("MISSED 2026-09-11 20:45" in l and "would run" in l for l in lines)
     assert not marker.exists()
     lines = routine_install.catch_up(now=now)
     assert marker.read_text().strip() == f"ran-{routine_install.LABEL}"
     assert any("ran weekly.sh now, exit 0" in l for l in lines)
-    assert "catch-up: the run due 2026-09-14 07:30" in routine_install.LOG_PATH.read_text()
+    assert "catch-up: the run due 2026-09-11 20:45" in routine_install.LOG_PATH.read_text()
     # the wrapper stamped itself, so a second catch-up (or doctor) sees it as on schedule
     assert routine_install.last_started(routine_install.LABEL) is not None
     assert routine_install.missed(routine_install.LABEL) is None
-    assert routine_install.catch_up(dry=True, now=_local(2026, 9, 15, 9, 0))[1].endswith("on schedule")
+    assert routine_install.catch_up(dry=True, now=_local(2026, 9, 13, 9, 0))[1].endswith("on schedule")
 
 
 def test_not_missed_before_the_first_due_minute_or_when_stamped(_home):
@@ -284,24 +294,25 @@ def test_not_missed_before_the_first_due_minute_or_when_stamped(_home):
 
 
 def test_a_reinstall_does_not_hide_a_missed_run(_home, monkeypatch):
-    """`teyla update` rewrites the plists on every release; the weekly missed on Monday and
-    reinstalled Monday night must still read as missed — seen 2026-09-15."""
+    """`teyla update` rewrites the plists on every release; the weekly missed on its day and
+    reinstalled that night must still read as missed — seen 2026-09-15 (when the weekly was a Monday one)."""
     import datetime, os
     marker = _home / "ran.txt"
     plist, wrapper, log, stamp = _install_fake_job(_home, routine_install.LABEL, marker, installed_at=_local(2026, 9, 11, 16, 55))
-    assert routine_install.missed(routine_install.LABEL, _local(2026, 9, 14, 15, 30)) == _local(2026, 9, 14, 7, 30)
-    # a reinstall Monday 00:11 the next night: plist mtime is now after the due minute
-    later = _local(2026, 9, 15, 0, 11)
+    assert routine_install.missed(routine_install.LABEL, _local(2026, 9, 12, 10, 0)) == _local(2026, 9, 11, 20, 45)
+    # a reinstall Saturday 00:11, the night after: plist mtime is now after the due minute
+    later = _local(2026, 9, 12, 0, 11)
     os.utime(plist, (later.timestamp(), later.timestamp()))
     # without evidence of an earlier install this reads as "not yet due"...
     assert routine_install.missed(routine_install.LABEL, later) is None
     # ...but install() records the first install once, and then the miss is visible
-    stamp.with_suffix(".installed").write_text("2026-09-11T14:55:00Z\n")
-    assert routine_install.missed(routine_install.LABEL, later) == _local(2026, 9, 14, 7, 30)
+    stamp.with_suffix(".installed").write_text(
+        _local(2026, 9, 11, 16, 55).astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") + "\n")
+    assert routine_install.missed(routine_install.LABEL, later) == _local(2026, 9, 11, 20, 45)
     # an earlier start is evidence too, even without the marker
     stamp.with_suffix(".installed").unlink()
-    (stamp).write_text(_local(2026, 9, 7, 7, 30).astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") + "\n")
-    assert routine_install.missed(routine_install.LABEL, later) == _local(2026, 9, 14, 7, 30)
+    (stamp).write_text(_local(2026, 9, 4, 20, 45).astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") + "\n")
+    assert routine_install.missed(routine_install.LABEL, later) == _local(2026, 9, 11, 20, 45)
 
 
 def test_install_marks_first_install_once(_home, monkeypatch):
@@ -361,14 +372,14 @@ def test_doctor_warns_on_a_missed_run(_home, monkeypatch):
     monkeypatch.setattr(routine_install, "loaded", lambda label: (True, None, "0"))
     monkeypatch.setattr(routine_install, "_wrapper_stale", lambda *a, **k: False)
     monkeypatch.setattr(routine_install, "missed",
-                        lambda label, now=None: _local(2026, 9, 14, 7, 30) if label == routine_install.LABEL else None)
+                        lambda label, now=None: _local(2026, 9, 11, 20, 45) if label == routine_install.LABEL else None)
     monkeypatch.setattr(routine_install, "last_started", lambda label: _local(2026, 9, 14, 7, 0))
     for f in (routine_install.PLIST_PATH, routine_install.DAILY_PLIST_PATH):
         f.parent.mkdir(parents=True, exist_ok=True); f.write_text("<plist/>")
     monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: _Resp({"tag_name": "v0.0.0"}))
     by = {c["name"]: c for c in doctor.checks(scan_repos=False)}
     assert by["routine:weekly"]["level"] == "WARN" and by["routine:weekly"]["fix"] == "teyla routine catch-up"
-    assert "2026-09-14 07:30" in by["routine:weekly"]["detail"]
+    assert "2026-09-11 20:45" in by["routine:weekly"]["detail"]
     assert by["routine:daily"]["level"] == "OK" and "last started 2026-09-14 07:00" in by["routine:daily"]["detail"]
 
 
@@ -684,3 +695,29 @@ def test_doctor_reports_the_policy_detectors_the_policy_declares(_home, monkeypa
     assert levels == ["OK", "WARN"]
     assert any("active: no-actions" in c["detail"] for c in by["policy:detect"])
     assert any("no-such" in c["detail"] for c in by["policy:detect"])
+
+
+def test_weekly_plist_fires_fridays_2045_and_a_monday_plist_is_stale(_home, monkeypatch):
+    """The weekly moved from Monday 07:30 to Friday 20:45. The plist is filled from SCHEDULE, and
+    an already-installed Monday plist (current wrapper, current binary) must be seen as stale and
+    rewritten by `routine install --if-stale`, which is what `teyla update` runs."""
+    import plistlib
+    monkeypatch.setenv("HOME", str(_home))
+    monkeypatch.setattr(routine_install, "_load", lambda plist, label: f"loaded {label}")
+    monkeypatch.setattr(routine_install, "_teyla_bin", lambda: "/opt/tools/bin/teyla")
+    routine_install.install()
+    fires = plistlib.loads(routine_install.PLIST_PATH.read_bytes())["StartCalendarInterval"]
+    assert fires == {"Weekday": 5, "Hour": 20, "Minute": 45}
+    assert routine_install.SCHEDULE[routine_install.LABEL] == dict(hour=20, minute=45, weekday=5)
+    assert not routine_install.is_stale()
+    # the plist an earlier release wrote: same label, wrapper and env, other schedule
+    old = routine_install.PLIST_PATH.read_bytes().replace(
+        b"<integer>5</integer>", b"<integer>1</integer>").replace(
+        b"<integer>20</integer>", b"<integer>7</integer>").replace(b"<integer>45</integer>", b"<integer>30</integer>")
+    routine_install.PLIST_PATH.write_bytes(old)
+    assert plistlib.loads(old)["StartCalendarInterval"] == {"Weekday": 1, "Hour": 7, "Minute": 30}
+    assert routine_install.is_stale()
+    assert any("STALE" in l for l in routine_install.status() if "plist:" in l and "weekly" in l)
+    routine_install.install(if_stale=True)
+    assert plistlib.loads(routine_install.PLIST_PATH.read_bytes())["StartCalendarInterval"] == fires
+    assert not routine_install.is_stale()
