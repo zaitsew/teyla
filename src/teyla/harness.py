@@ -498,6 +498,25 @@ def _hermes_pairs() -> list[tuple[str, str]]:
     return pairs
 
 
+def _flow_delta(line: str) -> int:
+    """Net `{`/`[` opened by one config line, ignoring quoted text and a trailing comment."""
+    d, quote, prev = 0, None, " "
+    for ch in line:
+        if quote:
+            if ch == quote:
+                quote = None
+        elif ch in "\"'" and prev in " \t{[,:-":
+            quote = ch
+        elif ch == "#" and prev in " \t":
+            break
+        elif ch in "{[":
+            d += 1
+        elif ch in "}]":
+            d -= 1
+        prev = ch
+    return d
+
+
 _HERMES_TRUTHY = {"1", "true", "yes", "on"}  # agent/shell_hooks.py `_TRUTHY`
 
 
@@ -505,10 +524,14 @@ def _hermes_auto_accept(text: str) -> bool:
     """Is `hooks_auto_accept` set, as a top-level key, to what Hermes reads as true? A commented
     line or a nested key of the same name does not count (review of #61, P2). No YAML dependency:
     only an unindented `key: value` line is looked at, and the last one wins, as in YAML loaders."""
-    val = None
+    val, depth = None, 0
     for line in text.splitlines():
+        # A `{…}` / `[…]` that spans lines keeps its members out of the top level, whatever column
+        # they start in (#61): count the brackets of every line, outside quotes and comments.
+        at_top = depth <= 0
+        depth += _flow_delta(line)
         m = re.match(r"hooks_auto_accept\s*:\s*(.*)$", line)
-        if not m:
+        if not m or not at_top:
             continue
         v = re.sub(r"\s+#.*$", "", m.group(1)).strip()  # trailing comment
         quoted = len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'"

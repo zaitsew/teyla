@@ -329,3 +329,23 @@ def test_hermes_parser_a_bare_dash_item_sets_the_entry_indent(tmp_path):
     # a bare dash entry whose own `command:` key is on the next line is that entry's command
     keyed = f"hooks:\n  {ev0}:\n    -\n      command: {c0}\n      timeout: 5\n"
     assert harness._hermes_present_pairs(keyed) == {(ev0, c0)}
+
+
+def test_hermes_auto_accept_ignores_a_column_zero_key_inside_a_multiline_flow_mapping(home):
+    # (#61) `hooks_auto_accept: true` at column 0 inside `{ … }` spanning lines belongs to that
+    # mapping, not to the top level.
+    harness.sync(home=home)
+    cfg = home / ".hermes" / "config.yaml"
+    base = cfg.read_text()
+
+    def approved(extra):
+        cfg.write_text(base + extra)
+        return {r["harness"]: r for r in harness.status(home=home)}["hermes"]["trust"]["approved"]
+
+    assert approved("agent: {\nhooks_auto_accept: true\n}\n") == 0
+    assert approved("agent: {\n  a: 1,\nhooks_auto_accept: true,\n  b: [1,\n2]\n}\n") == 0
+    assert approved("agent:\n  tags: [x,\nhooks_auto_accept: true]\n") == 0
+    # braces in quotes or comments do not open a mapping; the top-level key after one still counts
+    assert approved("name: \"{not a mapping\"  # { nor this\nhooks_auto_accept: true\n") == 3
+    assert approved("agent: {a: 1}\nhooks_auto_accept: true\n") == 3
+    assert approved("agent: {\n  a: 1\n}\nhooks_auto_accept: true\n") == 3
