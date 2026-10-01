@@ -76,7 +76,7 @@ def test_fresh_repo_gets_every_file_and_becomes_cloud_ready(tmp_path, _home):
     assert os.access(r / cloud_prep.STOP_HOOK, os.X_OK)
     assert (r / "CLAUDE.md").read_text().splitlines()[1] == "@AGENTS.md"
     agents = (r / "AGENTS.md").read_text()
-    assert "merge-approved: yes" in agents and "No GitHub Actions" in agents
+    assert "merge-approved: yes" in agents and "- No CI on push/PR (short ubuntu deploy jobs on push to main allowed, POLICY §10); the local gate is `./check.sh`." in agents.splitlines()
     rep = cloud.check_repo(r, net=False)
     assert rep["ready"] and all(i["level"] in ("OK", "INFO") for i in rep["items"]), rep["items"]
     rc, out = _prep(r)
@@ -261,18 +261,30 @@ def test_the_guard_catches_what_it_is_for():
 
 
 @pytest.mark.parametrize("policy,want", [("**No CI on `push` or `pull_request`.** Test workflows are dispatch only.", True),
-                                         ("No CI on\n  push or PR", True), ("Deploy on push to main.", False)])
+                                         ("No CI on\n  push or PR", True), ("No CI on push/PR (deploys allowed)", True),
+                                         ("Deploy on push to main.", False)])
 def test_no_actions_rule_is_read_from_the_policy_wording(tmp_path, policy, want):
     # The owner's policy says "No CI on `push` or `pull_request`"; it was not recognised (review of #71, P2).
     p = cloud_prep.plan(_repo(tmp_path), owners=OWNERS, policy_text=policy)
     agents = next(new for rel, _o, new, _x in p["changes"] if rel == "AGENTS.md")
-    assert ("No GitHub Actions on push or pull_request" in agents) is want
+    assert ("No CI on push/PR" in agents) is want
+
+
+def test_actions_line_says_exactly_what_policy_10_says():
+    # It said "No GitHub Actions on push or pull_request", which forbids the deploy-on-main jobs
+    # §10 allows; the line is now §10's meaning, with the repo's own gate named.
+    a = cloud_prep.shipping_section("no", "./check.sh", no_actions=True)
+    assert ("- No CI on push/PR (short ubuntu deploy jobs on push to main allowed, POLICY §10); "
+            "the local gate is `./check.sh`.") in a.splitlines()
+    assert "No GitHub Actions" not in a
+    b = cloud_prep.shipping_section("no", None, no_actions=True)
+    assert "the local gate is the repo's tests." in b
 
 
 def test_no_actions_rule_only_when_the_owner_policy_says_so(tmp_path):
     a = cloud_prep.shipping_section("yes", "./check.sh", no_actions=True)
     b = cloud_prep.shipping_section("no", None, no_actions=False)
-    assert "No GitHub Actions" in a and "No GitHub Actions" not in b
+    assert "No CI on push/PR" in a and "No CI on push/PR" not in b and "Actions" not in b
     assert "gh pr merge --merge`). If merging is refused" in a and "the owner merges" in b
     assert cloud._MERGE_LINE.findall(a) == ["yes"] and cloud._MERGE_LINE.findall(b) == ["no"]
 

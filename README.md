@@ -274,7 +274,7 @@ teyla cloud inbox                     # cloud branches with no PR, and PRs label
 `prep` writes plain files, because a cloud VM does not install plugins:
 
 - `AGENTS.md`: a Shipping section (one PR per logical unit, merge-not-squash, no force-push, no
-  Actions on push/PR when your policy says so, report honestly, ask about product decisions not
+  CI on push/PR (short ubuntu deploy jobs on push to main allowed) when your policy says so, report honestly, ask about product decisions not
   permission) and `merge-approved: yes|no`, derived from your MERGE-APPROVED list. `teyla cloud
   check` fails when the line drifts from the list.
 - The cloud definition of done: the gate ran and its output is in the PR body, the branch is pushed,

@@ -47,7 +47,7 @@ _WHOLESALE = {".claude", ".claude/", "/.claude", "/.claude/", ".claude/*", "/.cl
 
 # The owner's policy says it three ways today; "No CI on `push` or `pull_request`" was missed
 # and the Shipping section silently dropped the rule (review of #71, P2).
-_NO_ACTIONS = re.compile(r"No GitHub Actions|GitHub Actions are off|No CI on\s+`?push`?\s+or\s+`?(pull_request|PR)\b", re.I)
+_NO_ACTIONS = re.compile(r"No GitHub Actions|GitHub Actions are off|No CI on\s+`?push`?\s*(?:or|/)\s*`?(pull_request|PR)\b", re.I)
 
 
 class Refused(Exception):
@@ -80,7 +80,9 @@ def shipping_section(merge: str, gate: str | None, no_actions: bool) -> str:
          "- Never force-push: not to the default branch, not to a shared branch.",
          ]
     if no_actions:
-        L.append(f"- No GitHub Actions on push or pull_request. The gate is {g}, run before every push.")
+        # POLICY §10 in its own words: deploy jobs on push to main are allowed, so "no Actions
+        # on push" overstated it and a cloud session could read a deploy workflow as a violation.
+        L.append(f"- No CI on push/PR (short ubuntu deploy jobs on push to main allowed, POLICY §10); the local gate is {g}.")
     L += ["- Report honestly: what you could not verify goes in the same sentence as the claim.",
           "- Ask about product decisions with a proposed default; never ask for permission to proceed.",
           ("- This repo is merge-approved: a PR whose whole gate ran green may be merged without asking."
