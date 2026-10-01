@@ -60,7 +60,40 @@ blind. `teyla policy sync-repo <path>` symlinks whichever is missing.
 **Keep it short.** Under ~200 lines, exact commands ahead of prose. Attention
 degrades with input length and does not error when it does; a 600-line
 instruction file hides your important rules inside your unimportant ones. Use
-`/init` as a skeleton, then delete aggressively.
+`/init` as a skeleton, then delete aggressively. `teyla rule` prints a warning
+when a file it wrote is past ~200 lines, and `teyla doctor` lists every
+`CLAUDE.md`, `AGENTS.md` and `.claude/rules/*.md` under your code root that is —
+per file, because each one loads whole.
+
+**Rules have a lifecycle.** A rule file `teyla rule` writes carries `created:`,
+`hits:`, `last_hit:` and `expires:` (created + 90 days) in its frontmatter.
+
+```
+teyla rules propose [--days 7] [--min 2]   # proposed diff from human corrections; writes nothing
+teyla rules propose --write                # write the proposed rules and the hit counts
+teyla rules stale                          # expired / never-hit rules: removal candidates
+```
+
+`propose` reads only **human** corrections: records from `teyla correct`
+(`source: correct`) and inbox rejections with a note (`source: inbox-reject`).
+The capture hook's regex guesses (`source: hook`) are ignored — the 0.12 review
+found ~97% of them were not corrections. (A pre-0.14 record without a `source`
+is a `teyla correct` one when its `text` key comes before `cwd`; the hook wrote
+`cwd` first.) A correction that matches an existing rule is a *hit*: the rule
+exists and was not followed, so sharpen it or narrow its scope; `--write` adds
+it to `hits`, moves `last_hit`, and pushes `expires` to `last_hit` + 90 days.
+Corrections no rule covers are clustered by shared words, and a cluster of two
+or more is shown as a new rule file. Prefer rewriting it as the constraint and
+running `teyla rule` over `--write`: a correction says what went wrong, a rule
+says what to do. Expired rules, and rules never hit in 30 days, are listed as
+removal candidates; Teyla never deletes one. The weekly digest names repos with
+something to propose.
+
+**Hidden characters are refused.** `teyla rule`, `teyla correct` and every
+`teyla policy` write exit non-zero, writing nothing, when the text holds bidi
+controls (U+202A–E, U+2066–9, U+200E/F), zero-width characters (U+200B–D,
+U+2060, U+FEFF) or tag characters (U+E0000–E007F). They make the text an agent
+obeys differ from the text you review. The message names the line and column.
 
 ---
 

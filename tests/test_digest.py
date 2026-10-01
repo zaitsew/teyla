@@ -31,6 +31,9 @@ def _home(tmp_path, monkeypatch):
     monkeypatch.setattr(doctor, "DOCTOR_SUMMARY", home / ".teyla" / "doctor.summary")
     monkeypatch.setattr(routines, "_launchctl_list", lambda: "")
     monkeypatch.setattr(routines, "_crontab_l", lambda: "")
+    # digest.write() asks every repo under code_root for proposed rules: not the real ~/repos.
+    from teyla import rules_lifecycle
+    monkeypatch.setattr(rules_lifecycle, "digest_candidates", lambda *a, **k: [])
     return home
 
 

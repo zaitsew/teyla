@@ -496,7 +496,9 @@ def capture(data: dict, now: _dt.datetime | None = None, cfg: dict | None = None
         return None
     cwd = data.get("cwd") or data.get("workspaceRoot") or data.get("workspace_root") or os.getcwd()
     now = now or _dt.datetime.now(_dt.timezone.utc)
-    raw = {"ts": now.isoformat(timespec="seconds"), "cwd": cwd, "text": prompt}
+    # `source: hook` marks the regex's guess, so `teyla rules propose` can leave it out: the 0.12
+    # review found ~97% of these were not corrections (rules_lifecycle.is_human).
+    raw = {"ts": now.isoformat(timespec="seconds"), "cwd": cwd, "text": prompt, "source": "hook"}
     rec = scrub_record(raw)
     path = path_for(cwd, cfg)
     try:

@@ -291,13 +291,15 @@ STREAK_WEEKS = 3
 
 
 def build(findings: list[dict], doctor_checks: list[dict], reports: list[dict], history: dict,
-          today: _dt.date | None = None, spend_rep: dict | None = None) -> tuple[list[str], dict]:
+          today: _dt.date | None = None, spend_rep: dict | None = None,
+          extra: list[dict] | None = None) -> tuple[list[str], dict]:
     """(digest lines — at most six —, the updated history). `spend_rep` is `teyla spend`'s week:
-    its summary is a line of its own and its waste findings compete for the top three."""
+    its summary is a line of its own and its waste findings compete for the top three. `extra`
+    is more ranked candidates (`teyla rules propose` per repo) competing the same way."""
     from . import spend
     today = today or _dt.date.today()
     history = update_history(history, [f["id"] for f in findings], today)
-    extra = spend.digest_candidates(spend_rep) if spend_rep else []
+    extra = (spend.digest_candidates(spend_rep) if spend_rep else []) + list(extra or [])
     top = sorted(candidates(findings, doctor_checks, reports) + extra, key=lambda c: c["rank"])[:3]
     if not top:
         lines = [f"teyla weekly {today.isoformat()}: nothing needs you this week."]
@@ -371,7 +373,12 @@ def write(findings: list[dict] | None = None, doctor_checks: list[dict] | None =
         history = json.loads(history_path().read_text())
     except (OSError, ValueError):
         history = {}
-    lines, history = build(findings, doctor_checks, reports, history, today, spend_rep)
+    try:
+        from . import rules_lifecycle
+        rule_cands = rules_lifecycle.digest_candidates()
+    except Exception:  # noqa: BLE001 — a proposal pass must never stop the digest being written
+        rule_cands = []
+    lines, history = build(findings, doctor_checks, reports, history, today, spend_rep, extra=rule_cands)
     p = digest_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("\n".join(lines) + "\n")

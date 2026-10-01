@@ -46,6 +46,8 @@
   teyla harness verify [--live] [--timeout S] [--json]           can each harness do work now; --live sends one line through each
   teyla rule "<sentence>" [--scope <glob>]                        a rule into .claude/rules/, mirrored into AGENTS.md
   teyla correct "<what was wrong>"                                a correction into ~/.teyla/corrections/<repo>.jsonl, secrets scrubbed
+  teyla rules propose [--days 7] [--min 2] [--write]              proposed rule diff from human corrections only; hits on existing rules
+  teyla rules stale                                               expired and never-hit rules, as removal candidates (never deleted)
   teyla prompt [name]                                             the prompts shipped with this version (onboard, …); none: list them
   teyla uninstall [--dry] [--keep-data]                           undo every write Teyla made here; --dry lists every file it wrote
   teyla cloud check [repo...] [--json]                            what a cloud session would lack in each repo; exit 1 on a blocker
@@ -440,9 +442,14 @@ def main(argv=None):
     q.add_argument("--kind", choices=["cli", "app", "service", "ios"], default="cli")
     q.add_argument("--license", choices=["apache", "mit", "none"], default="apache")
     args = p.parse_args(argv)
-    from . import net
+    from . import net, invisible
     net.allow_for_this_command(getattr(args, "allow_network", False))
-    return args.fn(args)
+    try:
+        return args.fn(args)
+    except invisible.InvisibleText as e:
+        # Any rule or policy write that met a hidden character: nothing was written; say where.
+        print(f"teyla: {e}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
