@@ -227,3 +227,16 @@ def test_digest_candidate_per_repo_with_something_to_propose(tmp_path):
                                "text": "no, never squash merge, use --merge", "cwd": str(r), "source": "correct"})
     [c] = rl.digest_candidates(root)
     assert c["id"] == "rules:app" and "1 proposed rule" in c["text"] and c["step"].startswith("teyla rules propose --repo")
+
+
+def test_policy_sync_validates_policy_md_before_touching_any_target(tmp_path, monkeypatch):
+    monkeypatch.setattr(policy, "POLICY", tmp_path / ".agents" / "POLICY.md")
+    policy.POLICY.parent.mkdir()
+    policy.POLICY.write_text("# Policy\nobey‮ this\n")
+    claude = tmp_path / ".claude" / "CLAUDE.md"; claude.parent.mkdir(); claude.write_text("# mine\n")
+    codex = tmp_path / ".codex" / "AGENTS.md"; codex.parent.mkdir()
+    monkeypatch.setattr(policy, "TARGETS", {"claude-code": claude, "codex": codex, "grok": tmp_path / "none" / "b",
+                                            "hermes": tmp_path / "none" / "SOUL.md"})
+    with pytest.raises(invisible.InvisibleText):
+        policy.sync()
+    assert claude.read_text() == "# mine\n" and not codex.exists() and not codex.is_symlink()

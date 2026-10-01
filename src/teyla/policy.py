@@ -142,6 +142,10 @@ def sync(dry=False, owner: str | None = None) -> list[str]:
     done = []
     if not POLICY.exists():
         done.append(init(owner=owner, dry=dry))
+    # The source first, once: the imports and symlinks below expose POLICY.md to every harness,
+    # and a refusal half-way would leave some wired and some not (review of #87, P2).
+    if POLICY.exists():
+        _guard(POLICY.read_text(), POLICY)
     p = TARGETS["claude-code"]
     if p.exists() and IMPORT_LINE not in p.read_text():
         if not dry:
