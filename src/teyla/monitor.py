@@ -42,7 +42,7 @@ def metrics(sessions: list[Session], days: int | None = None) -> dict:
         skills.update(s.skills); tools.update(s.tools)
         if s.gov_edits:
             gov.append(dict(project=s.project, sid=s.sid[:8], day=s.day, edits=s.gov_edits,
-                            days=sorted(s.gov_days) or [s.day]))
+                            days=sorted(s.gov_days) or [s.local_day]))
         # One human turn is already one logical unit: a big autonomous run cannot be "split into
         # one session per unit", so size alone never makes it giant. It still counts when it ran
         # for more active hours than a unit should, or compacted repeatedly — those are the

@@ -7,7 +7,7 @@ import json
 import os
 import re
 
-from . import CACHE_1H_KEY, ERROR_LOOP, HANDOFF_CONTEXT, LONG_CONTEXT, TOKEN_KEYS, AgentCall, Session, Turn, human_text, is_correction, is_retry, stale, text_of, turn_end_candidate
+from . import CACHE_1H_KEY, ERROR_LOOP, HANDOFF_CONTEXT, LONG_CONTEXT, TOKEN_KEYS, AgentCall, Session, Turn, human_text, is_correction, is_retry, local_day, stale, text_of, turn_end_candidate
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "claude-code"
@@ -177,10 +177,10 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                         s.touched_repos.update(_touched(inp))
                         if _touches_governance(name, inp):
                             s.gov_edits += 1
-                            # The write's own date, not the session's start: A10 compares it with
-                            # the ack day (review of #68, P2).
-                            if ts and ts[:10] not in s.gov_days:
-                                s.gov_days.append(ts[:10])
+                            # The write's own date, not the session's start, and local like the
+                            # ack day it is compared with (review of #68, P2).
+                            if ts and local_day(ts) not in s.gov_days:
+                                s.gov_days.append(local_day(ts))
                         if name in ("Agent", "Task"):
                             s.agents.append(AgentCall(inp.get("model"), inp.get("subagent_type"), inp.get("description")))
                         elif name == "Skill":
