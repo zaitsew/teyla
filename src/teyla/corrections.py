@@ -381,15 +381,23 @@ def records(cwd, cfg: dict | None = None) -> list[dict]:
     _touch_legacy(cwd, mode)
     root, _ = find_repo(cwd)
     here = str(pathlib.Path(cwd).expanduser().resolve())
-    key, scrubbed_here = cwd_key(here), scrub(here)
+    key = cwd_key(here)
+    path_exact = scrub(here) == here and REDACTED not in here
     files = [path_for(cwd, cfg)] + legacy_paths(cwd)
     seen, out = set(), []
     for f in dict.fromkeys(files):
         for rec in _read(f):
-            # misc.jsonl holds every non-repo directory; keep this one's. A record written
-            # before `cwd_key` existed is matched on its (scrubbed) path.
+            # misc.jsonl holds every non-repo directory; keep this one's, by `cwd_key`. A record
+            # written before `cwd_key` existed has only its scrubbed path, which several
+            # directories can share (`/tmp/token=a` and `/tmp/token=b`): it belongs to this one
+            # only when nothing was scrubbed out of this path, so a match is exact (review of
+            # #63, P2). Otherwise it is skipped — unattributable, and not worth another
+            # directory's text.
             if root is None and rec.get("cwd"):
-                if (rec["cwd_key"] != key) if rec.get("cwd_key") else (rec["cwd"] != scrubbed_here):
+                if rec.get("cwd_key"):
+                    if rec["cwd_key"] != key:
+                        continue
+                elif not path_exact or rec["cwd"] != here:
                     continue
             k = json.dumps(rec, sort_keys=True, ensure_ascii=False)
             if k not in seen:
