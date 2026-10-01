@@ -296,23 +296,31 @@ def _hermes_present_pairs(text: str) -> set[tuple[str, str]]:
     event's entries are the list items at the indent of its first item (indented or YAML's
     indentless style); a `- command:` nested deeper is inside an entry, not a hook."""
     pairs, event, item_indent, inside = set(), None, None, False
+    bare_entry, entry_indent = False, None
     for line in text.splitlines():
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         if not line.startswith(" "):
             inside = line.split("#", 1)[0].rstrip() == "hooks:"
-            event = None
+            event, bare_entry = None, False
             continue
         if not inside:
             continue
         s, indent = line.split(" #", 1)[0].strip(), len(line) - len(line.lstrip())
         if indent == 2 and not s.startswith("-"):
-            event, item_indent = (s[:-1] if s.endswith(":") else None), None
+            event, item_indent, bare_entry = (s[:-1] if s.endswith(":") else None), None, False
             continue
-        if not event or not s.startswith("- "):
+        bare = s == "-"  # a list item whose mapping starts on the next line
+        if not event or not (bare or s.startswith("- ")):
+            if bare_entry and indent > item_indent:
+                entry_indent = indent if entry_indent is None else entry_indent
+                if indent == entry_indent and s.startswith("command:"):
+                    pairs.add((event, s.split(":", 1)[1].strip().strip("\"'")))
             continue
         if item_indent is None:
             item_indent = indent
+        if indent == item_indent:
+            bare_entry, entry_indent = bare, None  # a new entry of the event
         if indent == item_indent and s.startswith("- command:"):
             pairs.add((event, s.split(":", 1)[1].strip().strip("\"'")))
     return pairs

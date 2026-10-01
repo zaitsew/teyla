@@ -307,3 +307,25 @@ def test_hermes_parser_reads_indentless_sequences():
     cmds = harness._hermes_pairs()
     text = "hooks:\n" + "".join(f"  {e}:\n  - command: {c}\n    timeout: 5\n" for e, c in cmds)
     assert harness._hermes_missing(text) == []
+
+
+def test_hermes_parser_a_bare_dash_item_sets_the_entry_indent(tmp_path):
+    # (#75) A foreign entry written as a bare `-` whose mapping follows on the next lines, with
+    # nested `examples:` commands: the first `- ` the parser saw was the nested one, so it took
+    # that deeper indent as the event's entry indent, counted the nested command as a hook, and
+    # missed the real entries at the shallower indent.
+    cmds = harness._hermes_pairs()
+    (ev0, c0), rest = cmds[0], cmds[1:]
+    text = (f"hooks:\n  {ev0}:\n    -\n      timeout: 9\n      examples:\n" +
+            "".join(f"        - command: {c}\n" for _, c in cmds) +
+            f"    - command: {c0}\n      timeout: 5\n" +
+            "".join(f"  {e}:\n    - command: {c}\n      timeout: 5\n" for e, c in rest if e != ev0))
+    have = harness._hermes_present_pairs(text)
+    assert (ev0, c0) in have
+    assert harness._hermes_missing(text) == [p for p in rest if p[0] == ev0]  # only what is truly absent
+    # the nested commands alone are not hooks
+    nested_only = f"hooks:\n  {ev0}:\n    -\n      examples:\n" + "".join(f"        - command: {c}\n" for _, c in cmds)
+    assert harness._hermes_present_pairs(nested_only) == set()
+    # a bare dash entry whose own `command:` key is on the next line is that entry's command
+    keyed = f"hooks:\n  {ev0}:\n    -\n      command: {c0}\n      timeout: 5\n"
+    assert harness._hermes_present_pairs(keyed) == {(ev0, c0)}
