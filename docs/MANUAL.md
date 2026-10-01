@@ -359,7 +359,7 @@ mistakes.
 |---|---|---|
 | Transcript size | ~5 MB; **8 MB is a defect** | Check compaction fired (`autoCompactWindow` 400000) and reading went to subagents |
 | Wall-clock duration | 12 h | Same |
-| Compactions | ≥3 | The context you cared about is already gone |
+| Compactions | not a signal | Expected: one session per project compacts in place |
 | Cache-read : output | >150:1 | Compaction at ~365k; subagents for reading; summaries, not whole files |
 
 **One session per project** (zaitsew/ops#198, 2026-10-01), launched from the repo
@@ -491,7 +491,7 @@ imperative action. A finding you cannot trace to a number is noise.
 |---|---|---|
 | **A1** | ≥10 subagent calls, >50% with no `model:` | Subagents inherited the orchestrator. Measured at 65%. |
 | **A2** | >60% of output on orchestrate-tier models, >1M output tokens | Volume work on the expensive model. |
-| **A3** | Any session >8 MB, >12 h, or ≥3 compactions | Giant sessions; names the worst with its numbers. |
+| **A3** | Any session >8 MB or >12 active h | Giant sessions; names the worst with its numbers. |
 | **A4** | Cache-read : output > 150:1 | Long contexts re-read every turn. |
 | **A5** | ≥50 human turns | Correction rate. >15% high, >8% medium. |
 | **A6** | >50 agent calls, no review skill invoked | No pre-merge or cross-provider review (§0 §2). |

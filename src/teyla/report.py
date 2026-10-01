@@ -37,7 +37,7 @@ def markdown(m: dict, findings: list[dict], *, title="Teyla adoption report", in
           f"| subagent calls / inherited top model | {sum(m['subagents'].values())} / {int((m['subagent_inherit_rate'] or 0)*100)}% |",
           f"| human turns / correction-shaped | {m['user_turns']} / {m['corrections']} ({(m['correction_rate'] or 0)*100:.1f}%) |",
           f"| cache-read tokens per output token | {m['cache_read_ratio']}x |",
-          f"| giant sessions (>8 MB, >12 active h, or ≥3 compactions) | {len(m['giant_sessions'])} |", ""]
+          f"| giant sessions (>8 MB or >12 active h) | {len(m['giant_sessions'])} |", ""]
     L += ["## Advice", ""]
     if not findings:
         L.append("Nothing to flag in this window.")

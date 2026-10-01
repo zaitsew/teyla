@@ -201,14 +201,19 @@ def test_giant_sessions_exempts_single_turn_session_on_size_alone():
     assert metrics([s])["giant_sessions"] == []
 
 
-def test_giant_sessions_keeps_single_turn_session_that_ran_long_or_compacted():
+def test_giant_sessions_keeps_single_turn_session_that_ran_long():
     long_run = _session("long"); long_run.size = 20_000_000; long_run.active_hours = 13.0; long_run.compactions = 0
     long_run.user_turns = long_run.user_turns[:1]
-    compacted = _session("compacted"); compacted.size = 500; compacted.active_hours = 0.5; compacted.compactions = 3
-    compacted.user_turns = compacted.user_turns[:1]
     multi = _session("multi"); multi.size = 20_000_000; multi.active_hours = 0.9; multi.compactions = 0  # two turns
-    sids = {g["sid"] for g in metrics([long_run, compacted, multi])["giant_sessions"]}
-    assert sids == {"long", "compacte", "multi"}  # sids are cut to 8 chars; the two-turn 20 MB one is giant on size
+    sids = {g["sid"] for g in metrics([long_run, multi])["giant_sessions"]}
+    assert sids == {"long", "multi"}  # the two-turn 20 MB one is giant on size
+
+
+def test_compactions_alone_never_make_a_session_giant():
+    # zaitsew/ops#198: one session per project compacts in place at ~365k, so many compactions
+    # in a small, short session are the intended shape.
+    s = _session("compacted"); s.size = 500; s.active_hours = 0.5; s.compactions = 9
+    assert metrics([s])["giant_sessions"] == []
 
 
 def test_batch_sessions_are_counted_but_never_clustered_as_corrections():
