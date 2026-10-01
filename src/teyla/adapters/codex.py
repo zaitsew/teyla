@@ -30,7 +30,7 @@ import json
 import os
 import re
 
-from . import AgentCall, Session, Turn, human_text, is_correction, is_retry, stale, turn_end_candidate
+from . import AgentCall, Session, Turn, human_text, is_correction, is_retry, stale, strip_reminders, turn_end_candidate
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "codex"
@@ -230,7 +230,7 @@ def parse(f: str, titles: dict | None = None) -> Session | None:
                         if txt:
                             last_text = (ts, txt)
                     elif role == "user":
-                        clean = strip_injected(txt).strip() if txt else ""
+                        clean = strip_reminders(strip_injected(txt)) if txt else ""
                         h = human_text(clean) if clean else None
                         # A bare "continue" is a retry to the turn counts but an approval to
                         # A15 (review of the #60 merge).

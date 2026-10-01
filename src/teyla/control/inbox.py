@@ -266,6 +266,14 @@ def cmd_approve(args) -> int:
     finally:
         S.clear_run_active(run_id)
 
+    # Safe mode switched on between the check above and the act step: the step refused
+    # itself and nothing ran. That is not a decision — the approval is not used up, the item
+    # stays pending, and the same approve works once the mode allows it (review of #59, P2).
+    if res.refused:
+        print(f"REFUSED: {res.error}")
+        print(f"  {args.id} stays pending.")
+        return 1
+
     from .engine import _read_actions, _merge_tokens, act_hash
     actions, counts, tampered = _read_actions(ctl_dir)
     tokens, cost = _merge_tokens(res)
