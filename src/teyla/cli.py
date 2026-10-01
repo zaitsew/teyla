@@ -351,7 +351,7 @@ def cmd_routine(args):
                 print(line)
         return 0
     if args.action == "install":
-        for line in routine_install.install(if_stale=getattr(args, "if_stale", False)):
+        for line in routine_install.install(if_stale=getattr(args, "if_stale", False), dry=args.dry):
             print(line)
     elif args.action == "status":
         for line in routine_install.status():
@@ -432,7 +432,7 @@ def main(argv=None):
     q = sp.add_parser("routine"); q.set_defaults(fn=cmd_routine)
     q.add_argument("action", choices=["install", "status", "catch-up"])
     q.add_argument("--if-stale", action="store_true", help="install: only rewrite when a wrapper names a binary that moved or a plist is missing")
-    q.add_argument("--dry", action="store_true", help="catch-up: say which runs launchd skipped, run nothing")
+    q.add_argument("--dry", action="store_true", help="install: list what it would write and load; catch-up: say which runs launchd skipped, run nothing")
     q.add_argument("--quiet", action="store_true", help="catch-up: print only when something was missed")
     q = sp.add_parser("prompt", help="print a paste-able prompt shipped with this version (onboard, work-account-kickoff, ...)")
     q.set_defaults(fn=cmd_prompt); q.add_argument("name", nargs="?")

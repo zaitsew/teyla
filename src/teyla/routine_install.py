@@ -291,8 +291,22 @@ def is_stale() -> bool:
             or _plist_schedule_stale(PLIST_PATH, LABEL))
 
 
+def _real_launch_agents() -> pathlib.Path:
+    """The LaunchAgents directory of the account launchd's gui/<uid> domain belongs to — from the
+    password database, not $HOME, which a sandboxed or throwaway run may have moved."""
+    import pwd
+    return pathlib.Path(pwd.getpwuid(os.getuid()).pw_dir) / "Library" / "LaunchAgents"
+
+
 def _load(plist: pathlib.Path, label: str) -> str:
     uid = os.getuid()
+    # gui/<uid> is the real account's launchd whatever $HOME says. A plist written under a moved
+    # HOME has the real job's label: bootstrapping it replaced the real daily and weekly jobs with
+    # ones pointing into a throwaway directory (2026-10-01, a lane verifying a prompt).
+    # TEYLA_LAUNCHD_ANY_HOME=1: a test whose PATH puts a fake launchctl first.
+    if plist.resolve().parent != _real_launch_agents().resolve() and os.environ.get("TEYLA_LAUNCHD_ANY_HOME") != "1":
+        return (f"NOT LOADED {label} — {plist} is outside {_real_launch_agents()} ($HOME is moved); "
+                f"launchd's gui/{uid} jobs were left alone")
     subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"], capture_output=True, text=True)
     r = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(plist)], capture_output=True, text=True)
     if r.returncode == 0:
@@ -303,11 +317,18 @@ def _load(plist: pathlib.Path, label: str) -> str:
     return f"NOT LOADED {label} — bootstrap: {r.stderr.strip()!r}; load: {r2.stderr.strip()!r}"
 
 
-def install(if_stale: bool = False) -> list[str]:
+def install(if_stale: bool = False, dry: bool = False) -> list[str]:
     lines = []
     teyla_bin = _teyla_bin()
     if if_stale and not is_stale():
         return ["routines current (wrappers name the current binary and the configured env, both plists present, the weekly's schedule as configured)"]
+    if dry:
+        # `--dry` used to be read by catch-up only, so `routine install --dry` installed for real.
+        out = [f"would write {p}" for p in (DAILY_WRAPPER_PATH, DAILY_PLIST_PATH, WRAPPER_PATH, PLIST_PATH)]
+        if sys.platform == "darwin":
+            out += [f"would load {label} via launchctl bootstrap gui/{os.getuid()} (replacing the loaded job)"
+                    for label in (DAILY_LABEL, LABEL)]
+        return out + [f"teyla binary: {teyla_bin}"]
     env = launchd_env(teyla_bin)
     env_plist, env_sh = _env_plist(env), _env_sh(env)
 
