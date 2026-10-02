@@ -6,7 +6,7 @@ Local-first. No data leaves your machine — the only outbound calls are GitHub 
 
 ```bash
 uv tool install git+https://github.com/zaitsew/teyla      # or: pipx install git+https://github.com/zaitsew/teyla
-teyla policy init --owner "Your Name" && teyla policy sync   # one POLICY.md → Claude Code, Codex, Grok, Hermes
+teyla policy init --owner "Your Name" && teyla policy sync   # one POLICY.md (+ your CLAUDE.md rules) → Claude Code, Codex, Grok, Hermes, Cursor
 teyla plugin install zaitsew/teyla   # the Claude Code plugin (or: claude plugin marketplace add zaitsew/teyla)
 teyla harness sync                   # the same skills and hooks in Cursor, Codex, Grok and Hermes
 teyla routine install                # daily: update + doctor; weekly: monitor, routines, products, models
@@ -56,7 +56,7 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | `teyla advise` | just the findings, each with the number that triggered it and one action |
 | `teyla grok-cost [--last\|--session ID] [--cwd PATH] [--days N] [--by project\|session] [--json]` | what Grok CLI sessions cost at list price, ranked by dollars not tokens. `--last --cwd <repo>` is the one line an orchestrator reads when a `grok -p` lane ends (cost, calls, tokens, cached %, tools, context, effort, title); the default is the last 7 days by project (worktrees and `~/repos/<repo>` collapse to `<repo>`, a `<repo>-grok-empty` temp dir to `<repo>`, other temp dirs to `tmp`); `--by session` is the top 20. `teyla monitor`/`advise` add A13/A14 |
 | `teyla sessions` / `teyla corrections --cluster` | one line per session; correction-shaped turns clustered into rule candidates |
-| `teyla policy init [--claude-md --ops-root-init]\|status\|sync\|sync-repo` | `~/.agents/POLICY.md` imported by `~/.claude/CLAUDE.md`, symlinked as `~/.codex/AGENTS.md` and `~/.grok/AGENTS.md`, appended to Hermes `SOUL.md`; `AGENTS.md ⇄ CLAUDE.md` in repos |
+| `teyla policy init [--claude-md --ops-root-init]\|status\|sync\|sync-repo` | `~/.agents/POLICY.md` imported by `~/.claude/CLAUDE.md`; `~/.codex/AGENTS.md` and `~/.grok/AGENTS.md` generated from POLICY.md + the owner's rules in `~/.claude/CLAUDE.md` (Codex cannot import a file; a plain symlink while CLAUDE.md holds only the import); appended to Hermes `SOUL.md`; `AGENTS.md ⇄ CLAUDE.md` in repos |
 | `teyla harvest <path>` | tool spines and corrections from every session that touched a path — the input to the harvest skill (skill = what was done the same way every time; everything else = candidate rules) |
 | `teyla scaffold <path> --name X --kind cli\|app\|service\|ios` | a repo born plug-and-play |
 | `teyla products` | real-usage counters from every repo's `./check.sh usage` — the "built, not used" detector; `products.repos` in config limits which repos' code it runs |
