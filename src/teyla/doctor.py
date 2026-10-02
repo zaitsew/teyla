@@ -206,15 +206,29 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     claude_present = shutil.which("claude") or (claude_home / "projects").is_dir() or (claude_home / "plugins").is_dir()
     if claude_present:
         pv = plugin_install.installed_version()
+        pref = plugin_install.pin_ref(cfg) if safe else None   # `v<pin>`: hooks pinned like the CLI
+        add = (f"claude plugin marketplace add {plugin_install.pinned_source(pref)}" if pref
+               else "claude plugin marketplace add zaitsew/teyla")
         if pv is None:
             out.append(_check("FIX", "plugin", "teyla plugin not installed in Claude Code",
-                              "claude plugin marketplace add zaitsew/teyla && claude plugin install teyla@teyla" if safe else
+                              f"{add} && claude plugin install teyla@teyla" if safe else
                               "teyla plugin install zaitsew/teyla   (or: claude plugin marketplace add zaitsew/teyla && claude plugin install teyla@teyla)"))
         elif pv != __version__:
             out.append(_check("FIX", "plugin", f"installed copy is {pv}, CLI is {__version__}",
-                              "claude plugin marketplace update teyla && claude plugin update teyla@teyla" if safe else "teyla plugin refresh"))
+                              (plugin_install.repin_command(pref) if pref else
+                               "claude plugin marketplace update teyla && claude plugin update teyla@teyla") if safe else "teyla plugin refresh"))
         else:
             out.append(_check("OK", "plugin", f"teyla@{pv} in Claude Code"))
+        if safe:
+            found, ref, kind = plugin_install.marketplace_ref()
+            follows = ref or ("main" if kind in ("github", "git") else f"a {kind} source, not a tag")
+            if pref and found and ref != pref:
+                out.append(_check("WARN", "plugin:pin", f"the plugin's hooks follow {follows}, not {pref} (update.pin): "
+                                  "they can be newer than the pinned CLI", plugin_install.repin_command(pref)))
+            elif plugin_install.pin_is_sha(cfg) and found:
+                out.append(_check("WARN", "plugin:pin", f"update.pin is a commit sha; Claude Code pins a marketplace to a tag, "
+                                  f"not a commit, so the plugin's hooks follow {follows}",
+                                  "teyla config set update.pin=<release version>   (then re-pin the plugin)"))
     else:
         out.append(_check("INFO", "plugin", "Claude Code absent (no `claude`, no ~/.claude/projects or plugins)"))
 
