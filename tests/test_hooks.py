@@ -394,3 +394,38 @@ def test_session_start_leaves_a_current_or_hand_written_agents_md_alone(tmp_path
     _start_with_fake_teyla(tmp_path)
     time.sleep(0.5)
     assert "policy sync" not in (log.read_text() if log.exists() else "")
+
+
+def test_session_start_syncs_when_an_imported_file_is_newer(tmp_path):
+    # a file CLAUDE.md pulls in with @~/... is a source too (Codex review of #96, P2)
+    import time
+    home = tmp_path / "home"
+    _generated_agents(home, claude_newer=False)
+    (home / ".claude" / "CLAUDE.md").write_text("# Mine\n@~/ops/releases.md\n")
+    old = time.time() - 3600
+    os.utime(home / ".claude" / "CLAUDE.md", (old, old))
+    (home / "ops").mkdir()
+    (home / "ops" / "releases.md").write_text("ship it\n")
+    os.utime(home / "ops" / "releases.md", (time.time() + 60,) * 2)
+    log = _start_with_fake_teyla(tmp_path)
+    assert "policy sync --quiet" in _wait_for(log)
+
+
+def test_session_start_syncs_a_symlink_once_claude_md_changes(tmp_path):
+    # a symlink to POLICY.md is stale once CLAUDE.md changes after the last sync: it may have gained rules
+    import time
+    home = tmp_path / "home"
+    for d in (".claude", ".agents", ".codex", ".teyla"):
+        (home / d).mkdir(parents=True, exist_ok=True)
+    (home / ".agents" / "POLICY.md").write_text("# P\n")
+    (home / ".codex" / "AGENTS.md").symlink_to(home / ".agents" / "POLICY.md")
+    (home / ".claude" / "CLAUDE.md").write_text("# Mine\n")
+    stamp = home / ".teyla" / "policy-sync.stamp"
+    stamp.write_text("")
+    os.utime(stamp, (time.time() - 3600,) * 2)
+    log = _start_with_fake_teyla(tmp_path)
+    assert "policy sync --quiet" in _wait_for(log)
+    log.unlink()
+    _start_with_fake_teyla(tmp_path)  # the stamp is fresh now: no second sync
+    time.sleep(0.5)
+    assert "policy sync" not in (log.read_text() if log.exists() else "")
