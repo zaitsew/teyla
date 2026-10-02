@@ -43,6 +43,8 @@ routine nor the session hook ever passes it). A version before 0.13.0 has no saf
 `uninstall`, so the one manual step is installing 0.14.0 by hand with `uv` or `pipx`, Python 3.12
 and the `work` extra.
 
+[`docs/WORK.md`](WORK.md) is the short page for the person using it: what safe mode guarantees, the five steps to a new release (CLI and plugin pinned to the same tag), and the daily commands.
+
 [`prompts/work-account-update.md`](../prompts/work-account-update.md) is the paste-able version
 for the work MacBook: bootstrap, `teyla policy init --work`, `teyla uninstall --dry` as the
 list of what Teyla owns there, `teyla prompt onboard`, the pinned update, `teyla doctor`, and a
