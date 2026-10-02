@@ -1,7 +1,7 @@
 # The same manner in every harness
 
 Claude Code in the Claude desktop app has the whole loop: the policy imported by
-`~/.claude/CLAUDE.md`, the plugin's skills (`harvest`, `adoption-review`, `wiki-pass`), the
+`~/.claude/CLAUDE.md`, the plugin's skills (`harvest`, `adoption-review`, `wiki-pass`, `review`), the
 two commands (`/teyla:rule`, `/teyla:correct`), and the hooks that show the doctor summary at
 session start and capture corrections as they are typed. This page is what the other three
 desktop-app harnesses get, how, and what each one cannot do. Every fact about a harness was
@@ -26,9 +26,9 @@ teyla doctor           # the same, as OK/FIX lines
 
 | | policy | per-repo rules | skills | hooks | sessions read by `teyla monitor` |
 |---|---|---|---|---|---|
-| **Claude Code** | `@~/.agents/POLICY.md` in `~/.claude/CLAUDE.md` | `.claude/rules/*.md` (`globs:`), `CLAUDE.md` | the plugin (`teyla plugin install`) | plugin `hooks.json`: SessionStart, UserPromptSubmit, PreToolUse | `~/.claude/projects/**/*.jsonl` |
+| **Claude Code** | `@~/.agents/POLICY.md` in `~/.claude/CLAUDE.md` | `.claude/rules/*.md` (`globs:`), `CLAUDE.md` | the plugin (`teyla plugin install`) | plugin `hooks.json`: SessionStart, UserPromptSubmit, PreToolUse; opt-in PostToolUse + Stop (`[hooks]`) | `~/.claude/projects/**/*.jsonl` |
 | **Cursor** (app) | a user skill `~/.cursor/skills/teyla-policy/SKILL.md` carrying the policy text and the owner's rules (as for Codex) — Cursor has no global rules file (`create-rule/SKILL.md` names only `.cursor/rules/*.mdc` per project) | `AGENTS.md` at the repo root; `.cursor/rules/<slug>.mdc` when that directory exists (`teyla rule` fills both) | `~/.cursor/skills/teyla-*/SKILL.md` (`name`, `description`, `disable-model-invocation: false`) | `~/.cursor/hooks.json`: `sessionStart`, `beforeSubmitPrompt` (JSON on stdin) | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (`composerData:*`, `bubbleId:*`; model name, turns, tools; no per-message tokens) |
-| **Codex** (ChatGPT app / CLI) | `~/.codex/AGENTS.md`, generated: `POLICY.md` + the owner's rules from `~/.claude/CLAUDE.md` (a `POLICY.md` symlink while CLAUDE.md holds only the import) | `AGENTS.md` per directory | `~/.codex/skills/teyla-*/SKILL.md` | `~/.codex/hooks.json`: `SessionStart`, `UserPromptSubmit` (Claude Code's shape; `codex features list`: `hooks stable true`); each runs only after you trust it once in Codex | `~/.codex/sessions/**/rollout-*.jsonl` |
+| **Codex** (ChatGPT app / CLI) | `~/.codex/AGENTS.md`, generated: `POLICY.md` + the owner's rules from `~/.claude/CLAUDE.md` (a `POLICY.md` symlink while CLAUDE.md holds only the import) | `AGENTS.md` per directory | `~/.codex/skills/teyla-*/SKILL.md` | `~/.codex/hooks.json`: `SessionStart`, `UserPromptSubmit` (Claude Code's shape; `codex features list`: `hooks stable true`), and `Stop` while `[hooks] land_check` is on; each runs only after you trust it once in Codex | `~/.codex/sessions/**/rollout-*.jsonl` |
 | **Grok CLI** | `~/.grok/AGENTS.md`, generated as for Codex | `Agents.md`/`CLAUDE.md`/`AGENTS.md` per directory, repo root down to cwd (`12-project-rules.md`) | `~/.grok/skills/teyla-*/SKILL.md`; also scans `~/.claude/skills`, `~/.cursor/skills`, `.agents/skills` (`08-skills.md`) | `~/.grok/hooks/teyla.json`: `SessionStart`, `UserPromptSubmit`; it also loads `~/.cursor/hooks.json` and `~/.claude/settings.json` (`10-hooks.md`), so the capture hook de-duplicates | `~/.grok/sessions/<cwd>/<id>/` |
 | **Hermes** (app / CLI) | an "Operating policy" section in `~/.hermes/SOUL.md` | `AGENTS.md` chain from the git root (`context-files.md`; `.hermes.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`, first match) | `~/.hermes/skills/teyla/teyla-*/SKILL.md`, each also a slash command (`skills.md`) | a `hooks:` block in `~/.hermes/config.yaml`: `on_session_start`, and two `pre_llm_call` shell hooks (capture; first-turn orientation); Hermes asks once per hook before running it (`hooks.md`, "Shell hooks") | `~/.hermes/state.db` |
 
@@ -107,6 +107,17 @@ scripts, which read every harness's stdin shape.
   inspected; `contextTokensUsed` is a context-window snapshot), so Cursor sessions carry
   model, turns, tools and corrections but no cost, like Grok. The monitor says "unknown" for
   their cost rather than guessing.
+- **The land check in Codex** (opt-in: `teyla config set hooks.land_check=true`, then
+  `teyla harness sync`). Sync adds a `Stop` group running `~/.teyla/hooks/land-check.sh
+  --codex`; turn the key off and sync again, and Teyla's handler goes while any Stop hook of
+  yours stays. In `--codex` mode the script prints `{"systemMessage": "…"}` — the field Codex
+  documents for Stop output; it is not known to accept Claude Code's `hookSpecificOutput` there
+  — and stays silent for a `codex exec` rollout, the same test as session start. Like the other
+  two it runs only after you trust it in Codex; `teyla harness status` then counts 3 hooks.
+  Not re-verified against a running Codex when added (2026-10-02): that Codex shows a Stop
+  `systemMessage` to the model rather than only to the person, and that its trust label for
+  Stop is `stop`. The context-budget hook is not wired into Codex: it reads Claude Code's
+  transcript usage records and relies on its `autoCompactWindow`.
 - **Kill switch and grants** (`teyla run`, the PreToolUse hook) stay Claude-only. Cursor
   and Hermes both have a blocking pre-tool hook (`preToolUse`, `pre_tool_call` with exit 2),
   so the control plane could be wired there later; it is not, and `teyla harness status`
@@ -115,7 +126,7 @@ scripts, which read every harness's stdin shape.
 ## Verifying on a machine
 
 ```
-teyla harness status          # present / policy / skills n/5 / hooks per harness
+teyla harness status          # present / policy / skills n/6 / hooks per harness
 teyla doctor | grep harness   # the same as OK/FIX lines
 teyla harness verify          # can each one work now: version, auth, last quota/auth error, 7-day volume
 teyla harness verify --live   # plus one real line through each, headless (a few tokens; never from a routine)
