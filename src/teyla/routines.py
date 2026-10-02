@@ -38,8 +38,15 @@ runs at all — a `pg_cron`/`script` routine (no local API to inspect), or a
 do, in the summary line and in the exit code below, because "nothing can tell
 you if this runs" is exactly the built-but-unused case this file exists to catch.
 
+A routine whose `log` is JSONL (a `.jsonl` file, or a last line that is a JSON object
+with a boolean `ok`) is judged by what its last real run did, not just by when the log was
+touched: a routine that runs and fails touches its log every time, so mtime alone calls it
+healthy. When the last non-`dry_run` row has `ok: false` the verdict is `FAILING`, with the
+streak's start, its length and the first line of `error` in the row's detail. Any other log
+keeps the mtime behaviour, and a malformed log never raises.
+
 Exit codes: `0` clean; `1` if any routine is not running (`NOT LOADED`, `STALE`,
-`unknown`) or any check is `BROKEN`; `2` if the only problems are `UNTESTED`/
+`unknown`, `FAILING`) or any check is `BROKEN`; `2` if the only problems are `UNTESTED`/
 `RE-TEST` checks — unverified is not the same as broken, and this split lets a CI
 gate tell "nobody has tried this" apart from "this is provably failing".
 """
@@ -47,6 +54,7 @@ from __future__ import annotations
 
 import copy
 import datetime as dt
+import json
 import os
 import re
 import pathlib
@@ -277,7 +285,108 @@ def last_run(routine: dict) -> dt.datetime | None:
     return dt.datetime.fromtimestamp(p.stat().st_mtime, tz=dt.timezone.utc)
 
 
-def routine_verdict(routine: dict, loaded: str, run_at: dt.datetime | None, *, now: dt.datetime | None = None) -> str:
+LOG_TAIL_BYTES = 256 * 1024
+ERROR_TRUNC = 120
+
+
+def _parse_ts(v) -> dt.datetime | None:
+    if not isinstance(v, str):
+        return None
+    try:
+        t = dt.datetime.fromisoformat(v.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)
+
+
+def _log_tail_rows(p: pathlib.Path) -> tuple[list[dict], bool]:
+    """(JSON-object rows from the last LOG_TAIL_BYTES of p, whether the window starts mid-file).
+    Lines that do not parse are skipped. Reads only the tail, never the whole file."""
+    size = p.stat().st_size
+    with p.open("rb") as f:
+        truncated = size > LOG_TAIL_BYTES
+        if truncated:
+            f.seek(size - LOG_TAIL_BYTES)
+        data = f.read()
+    lines = data.decode("utf-8", errors="replace").splitlines()
+    if truncated and lines:
+        lines = lines[1:]  # the first line of a mid-file window is cut
+    rows = []
+    for line in lines:
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(obj, dict):
+            rows.append(obj)
+    return rows, truncated
+
+
+def log_outcome(routine: dict) -> dict | None:
+    """What the routine's last real run did, read from its JSONL log, or None when the log is
+    not that kind of log (missing, plain text, no usable rows) — callers then use the mtime.
+
+    `{"ok": bool, "finished_at": datetime | None, "streak": int, "since": datetime | None,
+    "streak_open": bool, "error": str}`. Rows with `dry_run` true are ignored; a row counts only
+    if its `ok` is a boolean. `streak` is the number of consecutive failures ending at the last
+    row, `streak_open` that the tail window ended before the streak did. Never raises."""
+    try:
+        log = routine.get("log")
+        if not log:
+            return None
+        p = pathlib.Path(log).expanduser()
+        if not p.is_file():
+            return None
+        rows, truncated = _log_tail_rows(p)
+        if not p.name.endswith(".jsonl"):
+            # A plain-text log keeps the mtime behaviour unless its last non-empty line is a result row.
+            last = ""
+            with p.open("rb") as f:
+                f.seek(max(0, p.stat().st_size - 65536))
+                for ln in f.read().decode("utf-8", errors="replace").splitlines():
+                    if ln.strip():
+                        last = ln.strip()
+            try:
+                obj = json.loads(last)
+            except ValueError:
+                return None
+            if not isinstance(obj, dict) or not isinstance(obj.get("ok"), bool):
+                return None
+        runs = [r for r in rows if isinstance(r.get("ok"), bool) and not r.get("dry_run")]
+        if not runs:
+            return None
+        last_row = runs[-1]
+        out = {"ok": last_row["ok"], "finished_at": _parse_ts(last_row.get("finished_at")),
+               "streak": 0, "since": None, "streak_open": False, "error": ""}
+        if not last_row["ok"]:
+            i = len(runs)
+            while i > 0 and not runs[i - 1]["ok"]:
+                i -= 1
+            streak = runs[i:]
+            out["streak"] = len(streak)
+            out["since"] = _parse_ts(streak[0].get("finished_at")) or _parse_ts(streak[0].get("started_at"))
+            out["streak_open"] = i == 0 and truncated
+            err = last_row.get("error")
+            first = str(err).strip().splitlines()[0] if err is not None and str(err).strip() else "no error recorded"
+            out["error"] = first if len(first) <= ERROR_TRUNC else first[:ERROR_TRUNC - 1] + "…"
+        return out
+    except Exception:  # noqa: BLE001 - a reporting nicety must never be fatal
+        return None
+
+
+def failing_detail(outcome: dict) -> str:
+    since = outcome.get("since")
+    n = outcome["streak"]
+    when = f" since {since:%Y-%m-%d %H:%M}Z" if since else ""
+    count = f"{n}{'+' if outcome.get('streak_open') else ''} consecutive failure{'s' if n != 1 else ''}"
+    return f"{count}{when}: {outcome['error']}"
+
+
+def routine_verdict(routine: dict, loaded: str, run_at: dt.datetime | None, *, now: dt.datetime | None = None,
+                    outcome: dict | None = None) -> str:
     now = now or dt.datetime.now(dt.timezone.utc)
     if loaded == ON_DEMAND:
         return "ok"
@@ -287,7 +396,11 @@ def routine_verdict(routine: dict, loaded: str, run_at: dt.datetime | None, *, n
         period = cadence(routine["every"])
         if period is not None and now - run_at > period * 2:
             return "STALE"
+        if outcome is not None and not outcome["ok"]:
+            return "FAILING"
         return "ok"
+    if outcome is not None and not outcome["ok"]:
+        return "FAILING"
     if loaded == "unknown":
         return "unknown"
     return "ok"
@@ -329,13 +442,17 @@ def evaluate(manifest: dict, *, now: dt.datetime | None = None) -> dict:
     routine_rows = []
     for r in manifest["routines"]:
         loaded = loaded_state(r, launchctl_output=lc, crontab_output=ct)
-        run_at = last_run(r)
-        verdict = routine_verdict(r, loaded, run_at, now=now)
-        routine_rows.append({
+        outcome = log_outcome(r)
+        run_at = (outcome or {}).get("finished_at") or last_run(r)
+        verdict = routine_verdict(r, loaded, run_at, now=now, outcome=outcome)
+        row = {
             "name": r["name"], "kind": r["kind"], "loaded": loaded,
             "last_run": run_at.isoformat() if run_at else "?", "verdict": verdict,
             "last_receipt": outcomes.get(f"{product_name}:{r['name']}", "-"),
-        })
+        }
+        if verdict == "FAILING":
+            row["detail"] = failing_detail(outcome)
+        routine_rows.append(row)
 
     check_rows = []
     for c in manifest["checks"]:
@@ -446,7 +563,8 @@ def problem_items(report: dict) -> list[tuple[str, str]]:
     for r in report.get("routines") or []:
         if r.get("verdict") in NOT_RUNNING_VERDICTS:  # `unknown` included: nothing can say it runs
             out.append((f"routine|{report['product']}|{r['name']}|{r['verdict']}",
-                        f"{report['product']} routine {r['name']} {r['verdict']}"))
+                        f"{report['product']} routine {r['name']} {r['verdict']}"
+                        + (f" ({r['detail']})" if r.get("detail") else "")))
     for c in report.get("checks") or []:
         if c.get("verdict") == "BROKEN":
             out.append((f"check|{report['product']}|{c['name']}|BROKEN", f"{report['product']} check {_trunc(c['name'])} BROKEN"))
@@ -479,18 +597,31 @@ def _clean(s: str) -> str:
     return re.sub(r"[\t\r\n]+", " ", str(s))
 
 
-NOT_RUNNING_VERDICTS = {"NOT LOADED", "STALE", "unknown"}
+NOT_RUNNING_VERDICTS = {"NOT LOADED", "STALE", "unknown", "FAILING"}
 BROKEN_CHECK_VERDICTS = {"BROKEN"}
 NEEDS_ATTENTION_CHECK_VERDICTS = {"UNTESTED", "RE-TEST"}
 
 
 def summarize(reports: list[dict]) -> tuple[int, int, int]:
     """(routines not running, checks broken, checks untested/re-test). A routine verdict of
-    `unknown` counts as not running, same as `NOT LOADED`/`STALE` — see NOT_RUNNING_VERDICTS."""
+    `unknown` and `FAILING` count as not running, same as `NOT LOADED`/`STALE` — see NOT_RUNNING_VERDICTS."""
     n = sum(1 for r in reports for row in r["routines"] if row["verdict"] in NOT_RUNNING_VERDICTS)
     m = sum(1 for r in reports for row in r["checks"] if row["verdict"] in BROKEN_CHECK_VERDICTS)
     k = sum(1 for r in reports for row in r["checks"] if row["verdict"] in NEEDS_ATTENTION_CHECK_VERDICTS)
     return n, m, k
+
+
+def count_failing(reports: list[dict]) -> int:
+    return sum(1 for r in reports for row in r.get("routines") or [] if row.get("verdict") == "FAILING")
+
+
+def counts_line(reports: list[dict]) -> str:
+    """"N routines not running, M checks broken, K untested/re-test"; a FAILING routine is counted
+    on its own ("1 routine failing"), not under "not running"."""
+    n, m, k = summarize(reports)
+    f = count_failing(reports)
+    failing = f", {f} routine{'s' if f != 1 else ''} failing" if f else ""
+    return f"{n - f} routines not running{failing}, {m} checks broken, {k} untested/re-test"
 
 
 def exit_code(n: int, m: int, k: int) -> int:
@@ -547,6 +678,9 @@ def render_text(reports: list[dict]) -> str:
                 for row, src in zip(rows, r["routines"]):
                     row.append(str(src.get("last_receipt", "-")))
             lines.extend(_table(headers, rows))
+            for row in r["routines"]:
+                if row.get("detail"):
+                    lines.append(f"  {_trunc(row['name'])}: {row['detail']}")
         else:
             lines.append("  (no routines declared)")
         if r["checks"]:
@@ -557,14 +691,14 @@ def render_text(reports: list[dict]) -> str:
         else:
             lines.append("  (no checks declared)")
         lines.append("")
-    n, m, k = summarize(reports)
-    lines.append(f"{n} routines not running, {m} checks broken, {k} untested/re-test")
+    lines.append(counts_line(reports))
     return "\n".join(lines)
 
 
 def render_json(reports: list[dict]) -> dict:
     n, m, k = summarize(reports)
-    return {"products": reports, "summary": {"routines_not_running": n, "checks_broken": m, "checks_needs_attention": k}}
+    return {"products": reports, "summary": {"routines_not_running": n, "routines_failing": count_failing(reports),
+                                             "checks_broken": m, "checks_needs_attention": k}}
 
 
 # --- `teyla routines --issues` --------------------------------------------------

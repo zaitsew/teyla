@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 import pathlib
 
@@ -12,6 +13,7 @@ from teyla.routines import (
     check_age_days,
     check_verdict,
     evaluate,
+    counts_line,
     exit_code,
     loaded_state,
     parse_manifest,
@@ -365,3 +367,124 @@ def test_summary_line_and_write_lines(tmp_path):
     assert [f.name for f in files] == ["frank.line", "a_b_c.line"]
     assert (tmp_path / "frank.line").read_text().rstrip() == line
     assert "no routines declared" in (tmp_path / "a_b_c.line").read_text()
+
+
+# --- JSONL run outcomes: a routine that runs and fails is FAILING, not ok -------
+
+NOW = dt.datetime(2026, 10, 2, 16, 0, tzinfo=dt.timezone.utc)
+
+
+def _row(ok, finished, *, dry_run=False, error=None):
+    r = {"dry_run": dry_run, "finished_at": finished, "items": 0, "ok": ok, "warnings": []}
+    if error is not None:
+        r["error"] = error
+    return json.dumps(r)
+
+
+def _jsonl_routine(tmp_path, lines, name="sync-runs.jsonl"):
+    log = tmp_path / name
+    log.write_text("\n".join(lines) + "\n")
+    return {"name": "garmin-sync", "kind": "launchd", "every": "30m", "log": str(log)}
+
+
+def _verdict(r):
+    from teyla.routines import log_outcome
+    o = log_outcome(r)
+    run_at = (o or {}).get("finished_at")
+    return routine_verdict(r, "loaded (pid 1)", run_at, now=NOW, outcome=o), o
+
+
+def test_failing_streak_reports_since_count_and_error(tmp_path):
+    err = "SyncError: Garmin refused all 19 reads (GarminAuthError): the session has expired. " + "x" * 200 + "\nsecond line"
+    r = _jsonl_routine(tmp_path, [
+        _row(True, "2026-10-02T09:25:00Z"),
+        _row(False, "2026-10-02T09:55:00Z", error=err),
+        _row(False, "2026-10-02T10:25:00Z", error=err),
+        _row(False, "2026-10-02T15:25:37Z", error=err),
+    ])
+    v, o = _verdict(r)
+    assert v == "FAILING"
+    assert o["streak"] == 3 and o["since"] == dt.datetime(2026, 10, 2, 9, 55, tzinfo=dt.timezone.utc)
+    assert o["finished_at"] == dt.datetime(2026, 10, 2, 15, 25, 37, tzinfo=dt.timezone.utc)
+    assert o["error"].startswith("SyncError: Garmin refused all 19 reads") and len(o["error"]) <= 120
+    assert "second line" not in o["error"]
+
+
+def test_recovered_after_failures_is_ok(tmp_path):
+    r = _jsonl_routine(tmp_path, [_row(False, "2026-10-02T14:00:00Z", error="boom"), _row(True, "2026-10-02T15:30:00Z")])
+    assert _verdict(r)[0] == "ok"
+
+
+def test_dry_run_rows_are_ignored(tmp_path):
+    r = _jsonl_routine(tmp_path, [
+        _row(True, "2026-10-02T15:00:00Z"),
+        _row(False, "2026-10-02T15:10:00Z", dry_run=True, error="dry"),
+    ])
+    assert _verdict(r)[0] == "ok"
+    r = _jsonl_routine(tmp_path, [
+        _row(False, "2026-10-02T15:00:00Z", error="real"),
+        _row(True, "2026-10-02T15:10:00Z", dry_run=True),
+    ], name="b.jsonl")
+    assert _verdict(r)[0] == "FAILING"
+
+
+def test_malformed_lines_never_raise_and_fall_back_to_mtime(tmp_path):
+    from teyla.routines import log_outcome
+    r = _jsonl_routine(tmp_path, ["{not json", "[1, 2]", '{"ok": "yes"}'])
+    assert log_outcome(r) is None
+    assert routine_verdict(r, "loaded (pid 1)", NOW - dt.timedelta(minutes=10), now=NOW, outcome=None) == "ok"
+    # a garbled tail after good rows is skipped, the last readable run still decides
+    r = _jsonl_routine(tmp_path, [_row(False, "2026-10-02T15:00:00Z", error="e"), '{"ok": fal'], name="c.jsonl")
+    assert _verdict(r)[0] == "FAILING"
+    assert log_outcome({"log": str(tmp_path / "missing.jsonl")}) is None
+    assert log_outcome({"log": str(tmp_path)}) is None
+
+
+def test_plain_text_log_is_unchanged(tmp_path):
+    from teyla.routines import log_outcome
+    log = tmp_path / "sync.log"
+    log.write_text("ERROR: everything failed\nok: false\n")
+    assert log_outcome({"log": str(log)}) is None
+    log.write_text('{"ok": false, "error": "x"}\n')  # a non-.jsonl log whose last line is a result row
+    assert log_outcome({"log": str(log)})["ok"] is False
+
+
+def test_large_log_reads_only_the_tail(tmp_path):
+    from teyla.routines import LOG_TAIL_BYTES, log_outcome
+    pad = [_row(True, "2026-10-01T00:00:00Z")] * (LOG_TAIL_BYTES // 100)
+    r = _jsonl_routine(tmp_path, pad + [_row(False, "2026-10-02T15:25:37Z", error="late")])
+    o = log_outcome(r)
+    assert o["ok"] is False and o["streak"] == 1 and o["streak_open"] is False
+
+
+def test_failing_counts_everywhere_not_running_does(tmp_path):
+    from teyla.routines import problem_items
+    report = _report(routine_verdicts=["FAILING", "NOT LOADED", "ok"])
+    report["routines"][0]["detail"] = "3 consecutive failures since 2026-10-02 09:55Z: boom"
+    assert summarize([report])[0] == 2
+    assert exit_code(*summarize([report])) == 1
+    assert counts_line([report]) == "1 routines not running, 1 routine failing, 0 checks broken, 0 untested/re-test"
+    assert counts_line([_report(routine_verdicts=["ok"])]) == "0 routines not running, 0 checks broken, 0 untested/re-test"
+    assert "3 consecutive failures" in render_text([report])
+    assert "1 routine failing" in render_text([report])
+    assert any("FAILING" in text and "boom" in text for _, text in problem_items(report))
+
+
+def test_evaluate_marks_a_failing_jsonl_routine(tmp_path):
+    log = tmp_path / "runs.jsonl"
+    log.write_text(_row(False, "2026-10-02T15:25:37Z", error="SyncError: nope") + "\n")
+    p = write(tmp_path, f"""
+[product]
+name = "iron"
+
+[[routine]]
+name = "garmin-sync"
+kind = "script"
+every = "30m"
+log = "{log}"
+""")
+    rep = evaluate(parse_manifest(p), now=NOW)
+    row = rep["routines"][0]
+    assert row["verdict"] == "FAILING" and "SyncError: nope" in row["detail"]
+    assert row["last_run"].startswith("2026-10-02T15:25:37")
+    assert summarize([rep])[0] == 1
