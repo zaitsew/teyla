@@ -79,9 +79,9 @@ teyla config set hooks.context_budget=true hooks.land_check=true
   window. `teyla doctor` warns when the key is missing; it never edits the file. The thresholds
   are `hooks.context_budget_first` and `hooks.context_budget_step`.
 - **Land check.** When a session stops with uncommitted files or commits on no remote, the model
-  is told once, with how to land it: one MR per logical unit, then **stop** — unless the repo's
-  `group/repo` (GitLab or GitHub, nested groups included) is in the `MERGE-APPROVED REPOS` block of
-  `~/.claude/CLAUDE.md`. On a work laptop that block is usually absent, so every MR waits for you.
+  is told once, with how to land it: one MR per logical unit, then **stop** — unless the repo is in the
+  `MERGE-APPROVED REPOS` block of `~/.claude/CLAUDE.md` — as `owner/repo` for GitHub, and with its
+  host for anything else (`gitlab.corp/group/sub/repo`). On a work laptop that block is usually absent, so every MR waits for you.
 - **`/teyla:review`** before asking for a merge: one P1/P2-only pass on the branch's diff, by one
   fresh sub-agent (labelled "same-provider review", since there is no second provider's CLI
   here), at most two rounds.

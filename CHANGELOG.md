@@ -21,9 +21,9 @@ off by default: on the personal Mac the `~/ops` copies already run, and two woul
 - **Land check** (`[hooks] land_check = true`). A Stop hook, once per session: uncommitted files
   or commits on no remote (`git log HEAD --not --remotes` — without `HEAD` a never-pushed repo
   reads as pushed) are named with how to land them: one PR/MR per logical unit; "merge it —
-  merge, not squash, never force-push" only when origin's slug (GitHub or GitLab, ssh or https,
-  nested groups whole) is in the fenced `MERGE-APPROVED REPOS` block of `~/.claude/CLAUDE.md`,
-  else "open the PR/MR and STOP". Never a block. Pure `sh` (the work Mac has no Node).
+  merge, not squash, never force-push" only when origin's slug (ssh or https, nested groups whole) is in the fenced `MERGE-APPROVED REPOS` block of `~/.claude/CLAUDE.md`,
+  else "open the PR/MR and STOP". A bare `owner/repo` approves github.com
+  only; another host's repo needs its host in the entry (`gitlab.corp/group/repo`). Never a block. Pure `sh` (the work Mac has no Node).
   `teyla harness sync` wires it into Codex's `~/.codex/hooks.json` as a Stop hook
   (`land-check.sh --codex`, `{"systemMessage": …}`) while the key is on, and removes it when off.
 - **`/teyla:review`**: POLICY §2 without any CLI. One pass on the branch's diff (or one fix

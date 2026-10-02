@@ -232,9 +232,10 @@ def test_land_check_is_once_per_session_and_silent_when_everything_is_landed(tmp
 @pytest.mark.parametrize("origin,slug", [
     ("git@github.com:Zaitsew/Teyla.git", "zaitsew/teyla"),
     ("https://github.com/zaitsew/teyla", "zaitsew/teyla"),
-    ("ssh://git@gitlab.corp.example:2222/platform/tools/svc-api.git", "platform/tools/svc-api"),
-    ("https://gitlab.corp.example/platform/tools/svc-api.git", "platform/tools/svc-api"),
-    ("git@gitlab.corp.example:platform/tools/svc-api.git", "platform/tools/svc-api"),
+    ("ssh://git@gitlab.corp.example:2222/platform/tools/svc-api.git", "gitlab.corp.example/platform/tools/svc-api"),
+    ("https://GitLab.corp.example/platform/tools/svc-api.git", "gitlab.corp.example/platform/tools/svc-api"),
+    ("git@gitlab.corp.example:platform/tools/svc-api.git", "gitlab.corp.example/platform/tools/svc-api"),
+    ("https://github.com/zaitsew/teyla", "github.com/zaitsew/teyla"),
 ])
 def test_land_check_merges_only_in_a_merge_approved_repo(tmp_path, origin, slug):
     _config(tmp_path, "[hooks]\nland_check = true\n")
@@ -247,9 +248,14 @@ def test_land_check_merges_only_in_a_merge_approved_repo(tmp_path, origin, slug)
 def test_land_check_stops_at_the_pr_off_the_list(tmp_path):
     _config(tmp_path, "[hooks]\nland_check = true\n")
     # on the page but not in the fenced list, a prefix of a listed repo, or a parent group
-    _claude_md(tmp_path, "platform/tools/svc-api-v2", "platform/tools")
+    _claude_md(tmp_path, "platform/tools/svc-api-v2", "platform/tools", "zaitsew/teyla", "other.host/platform/x")
     for i, origin in enumerate(("git@github.com:approved/in-prose.git", "git@github.com:zaitsew/after-the-fence.git",
-                                "https://gitlab.corp.example/platform/tools/svc-api.git")):
+                                "https://gitlab.corp.example/platform/tools/svc-api.git",
+                                # a bare owner/repo approves GitHub only, not the same path on
+                                # another host (review of #100, P1); a host entry approves only
+                                # that host
+                                "git@gitlab.corp.example:zaitsew/teyla.git",
+                                "https://gitlab.corp.example/platform/x.git")):
         shutil.rmtree(tmp_path / "repo", ignore_errors=True)
         repo = _repo(tmp_path, origin=origin)
         note = _note(_stop(tmp_path, repo, sid=f"x{i}"))

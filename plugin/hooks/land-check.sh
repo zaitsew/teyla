@@ -13,7 +13,8 @@
 # additionalContext the model sees, and gets out of the way.
 #
 # What it says about merging comes from the `MERGE-APPROVED REPOS` block of ~/.claude/CLAUDE.md
-# (inside a ``` fence, one `owner/repo` per line, first word): a repo on it is "open the PR/MR
+# (inside a ``` fence, one repo per line, first word: `owner/repo` for GitHub,
+# `host/group/repo` for anywhere else): a repo on it is "open the PR/MR
 # and merge it"; anything else — including no list, no origin, a repo merely writable — is
 # "open the PR/MR and STOP". Until 2026-08-16 the ~/ops version said "merged without being
 # asked" with no qualification, the one thing the standing rule does not say; until 2026-10-02
@@ -95,15 +96,23 @@ awk '
   fi
 
   # owner/repo from origin: https://host/a/b(.git), ssh://git@host:22/a/b, git@host:a/b, host:a/b.
-  slug=$(g remote get-url origin | sed -e 's#^[A-Za-z][A-Za-z0-9+.-]*://[^/]*/##' -e 's#^[^@/]*@[^:/]*:##' \
+  url=$(g remote get-url origin)
+  # The host, lower-cased, without user@ or :port. The MERGE-APPROVED list names GitHub repos
+  # as owner/repo, so a bare entry approves github.com only; a repo elsewhere is approved only
+  # by an entry that spells its host (gitlab.corp/group/repo). Without this, gitlab.corp/a/b
+  # inherited github.com/a/b's approval (review of #100, P1).
+  host=$(printf '%s' "$url" | sed -n -e 's#^[A-Za-z][A-Za-z0-9+.-]*://\([^@/]*@\)\{0,1\}\([^/:]*\).*#\2#p' \
+         -e 't' -e 's#^\([^@/]*@\)\{0,1\}\([^:/]*\):.*#\2#p' | tr 'A-Z' 'a-z')
+  slug=$(printf '%s' "$url" | sed -e 's#^[A-Za-z][A-Za-z0-9+.-]*://[^/]*/##' -e 's#^[^@/]*@[^:/]*:##' \
          -e 's#^[^/]*:##' -e 's#/*$##' -e 's#\.git$##')
   approved=""
   if [ -n "$slug" ] && [ -f "$HOME/.claude/CLAUDE.md" ]; then
     want=$(printf '%s' "$slug" | tr 'A-Z' 'a-z')
-    awk -v want="$want" '
+    bare=""; [ "$host" = github.com ] && bare="$want"
+    awk -v want="$host/$want" -v bare="$bare" '
       /^[ \t]*```/ { fence = !fence; block = 0; next }
       fence && /MERGE-APPROVED REPOS/ { block = 1; next }
-      block && tolower($1) == want { found = 1 }
+      block && (tolower($1) == want || (bare != "" && tolower($1) == bare)) { found = 1 }
       END { exit found ? 0 : 1 }' "$HOME/.claude/CLAUDE.md" && approved=1
   fi
   if [ -n "$approved" ]; then

@@ -100,8 +100,8 @@ swallowed silently rather than surfaced.
   Once per session, when the repo has uncommitted files or commits on no remote
   (`git log HEAD --not --remotes`: without `HEAD` a never-pushed repo reads as
   pushed), it tells the model the fact and how to land it: one PR/MR per
-  logical unit; merge only when origin's `owner/repo` (GitHub or GitLab, nested
-  groups whole) is in the `MERGE-APPROVED REPOS` block of `~/.claude/CLAUDE.md`,
+  logical unit; merge only when origin's `owner/repo` (GitHub) or `host/group/repo`
+  (any other host, nested groups whole) is in the `MERGE-APPROVED REPOS` block of `~/.claude/CLAUDE.md`,
   else open the PR/MR and stop. `additionalContext`, never a block. Not a judge
   of whether the work is *done* — only of whether it reached a remote.
 - **Context budget** (`hooks/context-budget.sh` → `context-budget.py`) —
