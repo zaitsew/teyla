@@ -862,8 +862,10 @@ def live_command(name: str, binary: str, prompt: str | None = None) -> list[str]
     if name == "claude-code":
         return [binary, "-p", prompt, "--model", "haiku", "--max-turns", "2"]
     if name == "codex":
+        # The Standard tier whatever Fast is set to for interactive sessions: a probe is
+        # automation, and "priority" draws the subscription limit at 2.5x.
         return [binary, "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only",
-                "-c", 'model_reasoning_effort="low"', prompt]
+                "-c", 'model_reasoning_effort="low"', "-c", 'service_tier="default"', prompt]
     if name == "grok":
         return [binary, "-p", prompt, "--max-turns", "2"]
     if name == "hermes":
