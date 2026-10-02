@@ -27,6 +27,12 @@ capture-correction.sh, which already read every harness's stdin shape (`prompt`,
 ~/.cursor/hooks.json. session-start.sh takes `--codex` (skip `codex exec` batch runs) and
 `--context-json` (Hermes: the orientation as `{"context": …}` on the first turn only).
 
+The opt-in land check (`[hooks] land_check = true`) is wired into Codex as a Stop hook running
+`land-check.sh --codex` (`{"systemMessage": …}`, the field Codex documents for Stop output) —
+only while the key is on: a sync with it off removes Teyla's Stop handler and keeps any other.
+The context-budget hook is not: it reads Claude Code's transcript usage records and relies on
+its autoCompactWindow, neither of which Codex has.
+
 Codex parses hooks.json strictly — an unknown top-level key (anything but `description` and
 `hooks`) makes it skip the whole file with "failed to parse hooks config" — so Teyla's marker
 there is the command path under ~/.teyla/hooks/ plus the file's `description`, not a comment.
@@ -51,7 +57,7 @@ from . import __version__, plugin_dir
 
 HOME = pathlib.Path.home()
 HOOKS_DIR = HOME / ".teyla" / "hooks"
-HOOK_SCRIPTS = ("session-start.sh", "capture-correction.sh")
+HOOK_SCRIPTS = ("session-start.sh", "capture-correction.sh", "land-check.sh")
 PLUGIN_SKILLS = ("harvest", "adoption-review", "wiki-pass", "review")
 CLI_SKILLS = {
     "teyla-rule": (
@@ -243,10 +249,21 @@ def _without_teyla(groups) -> list:
     return out
 
 
-def _codex_hooks(existing: dict | None) -> dict:
+def _land_check_on() -> bool:
+    from . import config
+    try:
+        return config.hook_on("land_check")
+    except Exception:  # noqa: BLE001 — an unreadable config wires nothing optional
+        return False
+
+
+def _codex_hooks(existing: dict | None, land_check: bool | None = None) -> dict:
     """~/.codex/hooks.json with Teyla's SessionStart and UserPromptSubmit groups present, every other
     group kept. Codex's shape is Claude Code's (`{hooks: {Event: [{matcher?, hooks: [{type, command,
-    timeout}]}]}}`); plain SessionStart stdout reaches the model as `hooks.additional_context`."""
+    timeout}]}]}}`); plain SessionStart stdout reaches the model as `hooks.additional_context`.
+    A Stop group running `land-check.sh --codex` is present exactly while `[hooks] land_check` is
+    on (`land_check` None reads the config); turned off, Teyla's Stop handler goes and the user's
+    Stop groups stay."""
     d = dict(existing or {})
     d.setdefault("description", CODEX_DESCRIPTION)
     hooks = dict(d.get("hooks") or {})
@@ -255,6 +272,15 @@ def _codex_hooks(existing: dict | None) -> dict:
         groups = _without_teyla(hooks.get(event))
         groups.append({"hooks": [{"type": "command", "command": command, "timeout": 5}]})
         hooks[event] = groups
+    land = _land_check_on() if land_check is None else land_check
+    before = hooks.get("Stop")
+    stop = _without_teyla(before)
+    if land:
+        stop.append({"hooks": [{"type": "command", "command": f"{HOOKS_DIR / 'land-check.sh'} --codex", "timeout": 10}]})
+    if stop:
+        hooks["Stop"] = stop
+    elif before:  # only Teyla's handler was there: drop the event, not a user's empty list
+        del hooks["Stop"]
     d["hooks"] = hooks
     return d
 
@@ -362,7 +388,9 @@ def _sync_hooks(h: Harness, dry: bool) -> list[str]:
         if not dry:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(json.dumps(want, indent=2) + "\n")
-        return [f"codex: {'would write' if dry else 'wrote'} SessionStart + UserPromptSubmit into {p} — "
+        events = "SessionStart + UserPromptSubmit" + (" + Stop (land check)" if "Stop" in (want.get("hooks") or {})
+                                                         and any(_is_teyla_group(g) for g in want["hooks"]["Stop"]) else "")
+        return [f"codex: {'would write' if dry else 'wrote'} {events} into {p} — "
                 "open Codex once and trust them (\"Hooks need review\" → Trust, or /hooks); until then Codex skips them"]
     if h.hooks_kind == "grok":
         want = json.dumps(_grok_hooks(), indent=2) + "\n"
@@ -431,7 +459,10 @@ def hooks_wired(h: Harness) -> bool | None:
 
 # Codex's trust-event label for each hook event (the `hook_event_key_label` in
 # codex-rs/hooks/src/engine/discovery.rs, visible in `hooks/list` keys).
-_CODEX_EVENT_LABELS = {"SessionStart": "session_start", "UserPromptSubmit": "user_prompt_submit"}
+# "stop" follows the same snake_case rule; it was not re-read from discovery.rs when the land
+# check was added (2026-10-02), so a Stop handler reported untrusted after trusting it is the
+# first thing to check there.
+_CODEX_EVENT_LABELS = {"SessionStart": "session_start", "UserPromptSubmit": "user_prompt_submit", "Stop": "stop"}
 
 
 def codex_hook_hash(event: str, handler: dict, matcher: str | None = None) -> str:
