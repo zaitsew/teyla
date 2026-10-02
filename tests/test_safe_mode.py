@@ -736,3 +736,25 @@ def test_doctor_plugin_fix_names_the_pinned_tag(_home, monkeypatch):
     (pd / "installed_plugins.json").unlink()
     fix = _plugin_checks(_home, monkeypatch)["plugin"]["fix"]
     assert "add zaitsew/teyla#v0.15.0" in fix
+
+
+def test_pinned_install_over_an_unpinned_marketplace_removes_it_first(_home):
+    # `marketplace add` refuses a registered name, which would keep the old ref (Codex review, P2)
+    safe_on()
+    config.set_value("update.pin", "0.15.0")
+    _known(_home, {"source": "github", "repo": "zaitsew/teyla"})
+    text = "\n".join(plugin_install.install("zaitsew/teyla"))
+    assert text.index("marketplace remove teyla") < text.index("marketplace add zaitsew/teyla#v0.15.0")
+    _known(_home, {"source": "github", "repo": "zaitsew/teyla", "ref": "v0.15.0"})
+    assert "marketplace remove" not in "\n".join(plugin_install.install("zaitsew/teyla"))
+
+
+def test_pinned_refresh_re_pins_a_current_version_that_follows_main(_home):
+    # the right version on the wrong ref is stale: the next marketplace update pulls main (Codex review, P2)
+    safe_on()
+    config.set_value("update.pin", "0.15.0")
+    _known(_home, {"source": "github", "repo": "zaitsew/teyla"})
+    text = "\n".join(plugin_install.refresh())
+    assert "marketplace add zaitsew/teyla#v0.15.0" in text and "already" not in text
+    _known(_home, {"source": "github", "repo": "zaitsew/teyla", "ref": "v0.15.0"})
+    assert "already" in "\n".join(plugin_install.refresh())

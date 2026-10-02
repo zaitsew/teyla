@@ -276,6 +276,12 @@ def safe_install_commands(source: str) -> list[str]:
         ref = pin_ref()
         if ref and source.lower() == TEYLA_REPO:
             src = pinned_source(ref)
+            # `marketplace add` refuses a name that is already registered, which would
+            # leave an unpinned (or other-tag) marketplace in place (Codex review, P2).
+            found, cur, _kind = marketplace_ref(mkt)
+            if found and cur != ref:
+                return _claude_commands(f"plugin marketplace remove {mkt}", f"plugin marketplace add {src}",
+                                        *(f"plugin install {n}@{mkt}" for n in names))
     return _claude_commands(f"plugin marketplace add {src}", *(f"plugin install {n}@{mkt}" for n in names))
 
 
@@ -405,9 +411,15 @@ def refresh(*, plugins_dir: pathlib.Path | None = None, force: bool = False) -> 
     version = _load_json(src / ".claude-plugin" / "plugin.json").get("version") or "0.0.0"
     if _safe():
         stale = [k for k in keys if (plugins[k] or [{}])[0].get("version") != version or force]
+        ref = pin_ref()
+        # The right version on the wrong ref is still stale: the next marketplace update
+        # would pull main (Codex review, P2).
+        if ref and "teyla@teyla" in keys and "teyla@teyla" not in stale:
+            found, cur, _kind = marketplace_ref("teyla")
+            if found and cur != ref:
+                stale.append("teyla@teyla")
         if not stale:
             return [f"{k}: already {version}" for k in keys]
-        ref = pin_ref()
         if ref and "teyla@teyla" in stale:
             # `marketplace update` would pull main; re-add the marketplace at the pinned tag.
             return _claude_commands("plugin marketplace remove teyla", f"plugin marketplace add {pinned_source(ref)}",
