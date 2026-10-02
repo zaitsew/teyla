@@ -299,6 +299,7 @@ def test_live_commands_are_headless_and_cheap():
     assert health.live_command("claude-code", "claude")[:2] == ["claude", "-p"]
     assert "--model" in health.live_command("claude-code", "claude")
     assert health.live_command("codex", "codex")[:2] == ["codex", "exec"] and "--ephemeral" in health.live_command("codex", "codex")
+    assert 'service_tier="default"' in health.live_command("codex", "codex")  # never the Fast tier
     assert health.live_command("grok", "grok")[:2] == ["grok", "-p"]
     assert health.live_command("hermes", "hermes")[:2] == ["hermes", "-z"]
 
