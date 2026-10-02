@@ -791,3 +791,23 @@ def test_a_plist_under_a_moved_home_is_never_bootstrapped(tmp_path, monkeypatch)
     plist.parent.mkdir(parents=True); plist.write_text("<plist/>")
     out = routine_install._load(plist, routine_install.LABEL)
     assert out.startswith("NOT LOADED") and ran == []
+
+
+def test_doctor_says_why_a_generated_agents_md_is_stale(_home, monkeypatch):
+    """~/.codex/AGENTS.md carries a copy of ~/.claude/CLAUDE.md; a day-old copy is "not wired",
+    with the reason and the existing fix, not a bare "not wired"."""
+    import os
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: _Resp({"tag_name": "v0.0.0"}))
+    (_home / ".codex").mkdir()
+    policy.POLICY.parent.mkdir(parents=True)
+    policy.POLICY.write_text("# P\n\n## 7. Merging\n")
+    policy.CLAUDE_GLOBAL.parent.mkdir(parents=True)
+    policy.CLAUDE_GLOBAL.write_text("# Mine\n\n@~/.agents/POLICY.md\n\n- merge into me/app without asking\n")
+    policy.sync()
+    by = {c["name"]: c for c in doctor.checks(refresh_update=False, scan_repos=False)}
+    assert by["policy:codex"]["level"] == "OK"
+    policy.CLAUDE_GLOBAL.write_text(policy.CLAUDE_GLOBAL.read_text() + "- and me/lib\n")
+    os.utime(_home / ".codex" / "AGENTS.md", (1, 1))
+    by = {c["name"]: c for c in doctor.checks(refresh_update=False, scan_repos=False)}
+    assert by["policy:codex"]["level"] == "FIX" and by["policy:codex"]["fix"] == "teyla policy sync"
+    assert by["policy:codex"]["detail"] == "not wired: ~/.codex/AGENTS.md is older than ~/.claude/CLAUDE.md"

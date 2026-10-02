@@ -27,9 +27,9 @@ teyla doctor           # the same, as OK/FIX lines
 | | policy | per-repo rules | skills | hooks | sessions read by `teyla monitor` |
 |---|---|---|---|---|---|
 | **Claude Code** | `@~/.agents/POLICY.md` in `~/.claude/CLAUDE.md` | `.claude/rules/*.md` (`globs:`), `CLAUDE.md` | the plugin (`teyla plugin install`) | plugin `hooks.json`: SessionStart, UserPromptSubmit, PreToolUse | `~/.claude/projects/**/*.jsonl` |
-| **Cursor** (app) | a user skill `~/.cursor/skills/teyla-policy/SKILL.md` carrying the policy text — Cursor has no global rules file (`create-rule/SKILL.md` names only `.cursor/rules/*.mdc` per project) | `AGENTS.md` at the repo root; `.cursor/rules/<slug>.mdc` when that directory exists (`teyla rule` fills both) | `~/.cursor/skills/teyla-*/SKILL.md` (`name`, `description`, `disable-model-invocation: false`) | `~/.cursor/hooks.json`: `sessionStart`, `beforeSubmitPrompt` (JSON on stdin) | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (`composerData:*`, `bubbleId:*`; model name, turns, tools; no per-message tokens) |
-| **Codex** (ChatGPT app / CLI) | `~/.codex/AGENTS.md` → `POLICY.md` symlink | `AGENTS.md` per directory | `~/.codex/skills/teyla-*/SKILL.md` | `~/.codex/hooks.json`: `SessionStart`, `UserPromptSubmit` (Claude Code's shape; `codex features list`: `hooks stable true`); each runs only after you trust it once in Codex | `~/.codex/sessions/**/rollout-*.jsonl` |
-| **Grok CLI** | `~/.grok/AGENTS.md` → `POLICY.md` symlink | `Agents.md`/`CLAUDE.md`/`AGENTS.md` per directory, repo root down to cwd (`12-project-rules.md`) | `~/.grok/skills/teyla-*/SKILL.md`; also scans `~/.claude/skills`, `~/.cursor/skills`, `.agents/skills` (`08-skills.md`) | `~/.grok/hooks/teyla.json`: `SessionStart`, `UserPromptSubmit`; it also loads `~/.cursor/hooks.json` and `~/.claude/settings.json` (`10-hooks.md`), so the capture hook de-duplicates | `~/.grok/sessions/<cwd>/<id>/` |
+| **Cursor** (app) | a user skill `~/.cursor/skills/teyla-policy/SKILL.md` carrying the policy text and the owner's rules (as for Codex) — Cursor has no global rules file (`create-rule/SKILL.md` names only `.cursor/rules/*.mdc` per project) | `AGENTS.md` at the repo root; `.cursor/rules/<slug>.mdc` when that directory exists (`teyla rule` fills both) | `~/.cursor/skills/teyla-*/SKILL.md` (`name`, `description`, `disable-model-invocation: false`) | `~/.cursor/hooks.json`: `sessionStart`, `beforeSubmitPrompt` (JSON on stdin) | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (`composerData:*`, `bubbleId:*`; model name, turns, tools; no per-message tokens) |
+| **Codex** (ChatGPT app / CLI) | `~/.codex/AGENTS.md`, generated: `POLICY.md` + the owner's rules from `~/.claude/CLAUDE.md` (a `POLICY.md` symlink while CLAUDE.md holds only the import) | `AGENTS.md` per directory | `~/.codex/skills/teyla-*/SKILL.md` | `~/.codex/hooks.json`: `SessionStart`, `UserPromptSubmit` (Claude Code's shape; `codex features list`: `hooks stable true`); each runs only after you trust it once in Codex | `~/.codex/sessions/**/rollout-*.jsonl` |
+| **Grok CLI** | `~/.grok/AGENTS.md`, generated as for Codex | `Agents.md`/`CLAUDE.md`/`AGENTS.md` per directory, repo root down to cwd (`12-project-rules.md`) | `~/.grok/skills/teyla-*/SKILL.md`; also scans `~/.claude/skills`, `~/.cursor/skills`, `.agents/skills` (`08-skills.md`) | `~/.grok/hooks/teyla.json`: `SessionStart`, `UserPromptSubmit`; it also loads `~/.cursor/hooks.json` and `~/.claude/settings.json` (`10-hooks.md`), so the capture hook de-duplicates | `~/.grok/sessions/<cwd>/<id>/` |
 | **Hermes** (app / CLI) | an "Operating policy" section in `~/.hermes/SOUL.md` | `AGENTS.md` chain from the git root (`context-files.md`; `.hermes.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`, first match) | `~/.hermes/skills/teyla/teyla-*/SKILL.md`, each also a slash command (`skills.md`) | a `hooks:` block in `~/.hermes/config.yaml`: `on_session_start`, and two `pre_llm_call` shell hooks (capture; first-turn orientation); Hermes asks once per hook before running it (`hooks.md`, "Shell hooks") | `~/.hermes/state.db` |
 
 The skills are rendered from the plugin's own `SKILL.md` files with `/teyla:rule` and
@@ -80,6 +80,23 @@ scripts, which read every harness's stdin shape.
   Teyla's marker there is not a comment: its entries are the ones whose command is under
   `~/.teyla/hooks/`, and the file's `description` says so. Delete those entries (or the
   file, if nothing else is in it) to undo; `teyla harness sync` keeps every other entry.
+- **The owner's rules.** `~/.claude/CLAUDE.md` — the merge-approved repos, shipping and
+  release rules, layout, git safety — is read by Claude Code only, and Codex has no `@path`
+  imports (codex-cli 0.159.2: an `@extra.md` line in `$CODEX_HOME/AGENTS.md` reaches the model
+  as the literal line). So `teyla policy sync` writes `~/.codex/AGENTS.md` and
+  `~/.grok/AGENTS.md` as one generated file: `POLICY.md`, then a `# The owner's rules` section
+  with CLAUDE.md's text (the `@~/.agents/POLICY.md` import dropped, any other `@~/...` import
+  inlined one level), then where the shared project memory lives. The first line is a
+  generated-by marker; sync replaces a file carrying it and skips one without it. Codex caps a
+  *project* doc at 32 KiB but reads the global file whole; sync warns above 32 KiB anyway. The
+  session-start hook re-runs `teyla policy sync --quiet` in the background when CLAUDE.md or
+  POLICY.md is newer than the generated file, and `teyla doctor` says which source it is older
+  than.
+- **Project memory.** Claude Code keeps per-project memory in
+  `~/.claude/projects/<key>/memory/` (`<key>`: the main checkout's absolute path, every `/` and
+  `.` made `-`; a worktree uses its main checkout). The generated AGENTS.md tells Codex to read
+  `MEMORY.md` there and to add a memory the same way (one file plus one index line), and in
+  `--codex` mode the session-start hook prints the first 40 lines of that `MEMORY.md`.
 - **Rules.** `.claude/rules/*.md` is read by Claude Code only. `teyla rule` therefore mirrors
   every rule into `AGENTS.md`'s `## Rules` section, which all four other harnesses read, and
   into `.cursor/rules/<slug>.mdc` when the repo has that directory. A repo whose `AGENTS.md`

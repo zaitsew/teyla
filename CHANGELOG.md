@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **Codex and Grok get the owner's rules, not only the policy.** `~/.claude/CLAUDE.md` — the
+  merge-approved repos, shipping, releases, layout, git safety — reached Claude Code only:
+  Codex has no `@path` imports (codex-cli 0.159.2), so a symlink to `POLICY.md` left every
+  Codex session without the merge list. `teyla policy sync` now writes `~/.codex/AGENTS.md` and
+  `~/.grok/AGENTS.md` as one generated file: `POLICY.md`, then CLAUDE.md under `# The owner's
+  rules` (the policy import dropped, other `@~/...` imports inlined one level, fenced ones left
+  as examples), then where the shared project memory lives. The Cursor skill carries the same
+  text, and the work policy gets the same treatment.
+  - A CLAUDE.md with nothing but the import keeps the symlink, exactly as before.
+  - The first line is a generated-by marker. Sync replaces a symlink or a marked file; a
+    hand-written `AGENTS.md` is still skipped. An invisible character in CLAUDE.md or an
+    imported file refuses the whole sync before any write. Over 32 KiB, sync prints a WARN.
+  - `teyla doctor` says why a copy is stale ("~/.codex/AGENTS.md is older than
+    ~/.claude/CLAUDE.md"); `teyla uninstall` removes a marked file as it removes the symlink.
+- **The session-start hook keeps the copy fresh.** When CLAUDE.md or POLICY.md is newer than a
+  generated `AGENTS.md`, it starts `teyla policy sync --quiet` (new flag: only SKIP/WARN lines)
+  in the background, safe mode included: the sync is offline.
+- **Codex sees Claude Code's project memory.** In `--codex` mode the hook prints the first 40
+  lines (at most ~4 KB) of `~/.claude/projects/<key>/memory/MEMORY.md` for the session's repo,
+  a worktree mapped to its main checkout, and the generated `AGENTS.md` says how to add a
+  memory in the same format.
 - **Safe mode pins the plugin to the CLI's release.** With `update.pin` set to a version, the
   plugin's marketplace is added as `zaitsew/teyla#v<pin>`, so the hooks that run at every
   session start and before every tool call are never newer than the pinned CLI. `teyla plugin
