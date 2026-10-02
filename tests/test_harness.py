@@ -33,7 +33,7 @@ def home(tmp_path, monkeypatch):
 def test_sync_writes_skills_hooks_and_is_idempotent(home):
     lines = harness.sync(home=home)
     assert any("copied session-start.sh" in l for l in lines)
-    # five skills per harness, hooks for the three that have a mechanism
+    # six skills per harness, hooks for the three that have a mechanism
     for h in ("cursor", "codex", "grok"):
         for s in harness.skill_names():
             assert (home / f".{h}" / "skills" / s / "SKILL.md").exists(), (h, s)
@@ -59,7 +59,7 @@ def test_sync_writes_skills_hooks_and_is_idempotent(home):
     # second run: nothing to do
     assert harness.sync(home=home) == ["in sync: cursor, codex, grok, hermes"]
     rows = {r["harness"]: r for r in harness.status(home=home)}
-    assert rows["cursor"]["skills"] == 5 and rows["cursor"]["hooks"] is True
+    assert rows["cursor"]["skills"] == 6 and rows["cursor"]["hooks"] is True
     assert rows["codex"]["hooks"] is True and rows["grok"]["hooks"] is True and rows["hermes"]["hooks"] is True
     # wired is not approved: Codex and Hermes skip a hook nobody trusted
     assert rows["codex"]["trust"] == {"approved": 0, "total": 2,

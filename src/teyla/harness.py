@@ -52,7 +52,7 @@ from . import __version__, plugin_dir
 HOME = pathlib.Path.home()
 HOOKS_DIR = HOME / ".teyla" / "hooks"
 HOOK_SCRIPTS = ("session-start.sh", "capture-correction.sh")
-PLUGIN_SKILLS = ("harvest", "adoption-review", "wiki-pass")
+PLUGIN_SKILLS = ("harvest", "adoption-review", "wiki-pass", "review")
 CLI_SKILLS = {
     "teyla-rule": (
         "Write a one-sentence rule into this repo so a correction is never said twice: `.claude/rules/<slug>.md`, "
