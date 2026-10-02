@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — the personal Mac's habits, on the work MacBook
+## 0.16.0 — 2026-10-02 — the personal Mac's habits, on the work MacBook
 
 Three practices lived only in the owner's private `~/ops/bin`, so the managed work MacBook (the
 Claude Code desktop app, no `claude`/`gh`/`codex`, GitLab, safe mode, plugin pinned to a tag) had
@@ -21,9 +21,10 @@ off by default: on the personal Mac the `~/ops` copies already run, and two woul
 - **Land check** (`[hooks] land_check = true`). A Stop hook, once per session: uncommitted files
   or commits on no remote (`git log HEAD --not --remotes` — without `HEAD` a never-pushed repo
   reads as pushed) are named with how to land them: one PR/MR per logical unit; "merge it —
-  merge, not squash, never force-push" only when origin's slug (ssh or https, nested groups whole) is in the fenced `MERGE-APPROVED REPOS` block of `~/.claude/CLAUDE.md`,
-  else "open the PR/MR and STOP". A bare `owner/repo` approves github.com
-  only; another host's repo needs its host in the entry (`gitlab.corp/group/repo`). Never a block. Pure `sh` (the work Mac has no Node).
+  merge, not squash, never force-push" only when origin's slug (ssh or https, nested groups
+  whole) is in the fenced `MERGE-APPROVED REPOS` block of `~/.claude/CLAUDE.md`, else "open the
+  PR/MR and STOP". A bare `owner/repo` approves github.com only; another host's repo needs its
+  host in the entry (`gitlab.corp/group/repo`). Never a block. Pure `sh` (the work Mac has no Node).
   `teyla harness sync` wires it into Codex's `~/.codex/hooks.json` as a Stop hook
   (`land-check.sh --codex`, `{"systemMessage": …}`) while the key is on, and removes it when off.
 - **`/teyla:review`**: POLICY §2 without any CLI. One pass on the branch's diff (or one fix
@@ -37,6 +38,9 @@ off by default: on the personal Mac the `~/ops` copies already run, and two woul
 - **Docs**: `docs/WORK.md` "Same as on the personal Mac"; `prompts/work-account-update.md`
   targets 0.16.0 and adds the step that turns the hooks on, merges `autoCompactWindow` into
   `~/.claude/settings.json` (after a backup) and checks `/teyla:review` is listed.
+- **Fast stays a per-session choice.** `teyla health --live` runs its Codex probe with
+  `-c service_tier="default"`, so an interactive Fast setting (the 2.5x "priority" tier) never
+  reaches automation; `codex-review` and `~/ops/bin/codex-lane` pin the same tier.
 
 ## 0.15.0 — 2026-10-02 — Codex reads the owner's rules, the work plugin follows the pin
 
