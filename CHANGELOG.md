@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.15.0 — 2026-10-02 — Codex reads the owner's rules, the work plugin follows the pin
 
 - **Codex and Grok get the owner's rules, not only the policy.** `~/.claude/CLAUDE.md` — the
   merge-approved repos, shipping, releases, layout, git safety — reached Claude Code only:
