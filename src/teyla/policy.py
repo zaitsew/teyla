@@ -3,13 +3,24 @@
     ~/.agents/POLICY.md                 the source of truth (template in templates/POLICY.md, or
                                         templates/POLICY.work.md with `teyla policy init --work`)
     ~/.claude/CLAUDE.md                 gets an `@~/.agents/POLICY.md` import line
-    ~/.codex/AGENTS.md                  symlink → POLICY.md        (Codex global instructions)
-    ~/.grok/AGENTS.md                   symlink → POLICY.md        (Grok CLI global rules)
+    ~/.codex/AGENTS.md                  generated: POLICY.md + the owner's rules (Codex global instructions)
+    ~/.grok/AGENTS.md                   generated: POLICY.md + the owner's rules (Grok CLI global rules)
+                                        — or a symlink → POLICY.md while ~/.claude/CLAUDE.md holds
+                                        nothing but the import line
     ~/.hermes/SOUL.md                   gets a short "Operating policy" section (Hermes injects SOUL.md)
-    ~/.cursor/skills/teyla-policy/SKILL.md   a user-level skill carrying the policy text (Cursor has no
-                                        global rules file; skills under ~/.cursor/skills load in every
-                                        project — Cursor 3.19.7 create-skill/SKILL.md)
+    ~/.cursor/skills/teyla-policy/SKILL.md   a user-level skill carrying the same text as AGENTS.md
+                                        (Cursor has no global rules file; skills under ~/.cursor/skills
+                                        load in every project — Cursor 3.19.7 create-skill/SKILL.md)
     <repo>/AGENTS.md                    symlink → CLAUDE.md when only CLAUDE.md exists (Cursor, Zed, Hermes, Grok, Codex read AGENTS.md)
+
+Why AGENTS.md is generated rather than a symlink: the owner's own rules — which repos may be
+merged into without asking, how releases are cut, the layout, git safety — live in
+~/.claude/CLAUDE.md, and Claude Code is the only harness that reads it. Codex has no `@path`
+imports (codex-cli 0.159.2: an `@extra.md` line in $CODEX_HOME/AGENTS.md reaches the model as
+the literal line), so a symlink to POLICY.md left every Codex session without the merge list.
+The generated file is POLICY.md, then CLAUDE.md with the policy import dropped and any other
+`@~/...` import inlined one level, then where the shared project memory lives. Its first line is
+a generated-by marker: sync replaces a file carrying it, and never one without it.
 """
 from __future__ import annotations
 
@@ -95,7 +106,7 @@ disable-model-invocation: false
 
 
 def cursor_skill_text() -> str:
-    return CURSOR_HEAD + POLICY.read_text()
+    return CURSOR_HEAD + combined_text()
 
 
 def init(force=False, owner: str | None = None, dry: bool = False, work: bool = False) -> str:
@@ -122,9 +133,15 @@ def status() -> dict:
     st["policy-file"] = POLICY.exists()
     p = TARGETS["claude-code"]
     st["claude-code"] = (IMPORT_LINE in p.read_text()) if p.exists() else None
+    want = agents_text() if POLICY.exists() else None
     for h in ("codex", "grok"):
         p = TARGETS[h]
-        st[h] = (p.resolve() == POLICY.resolve()) if p.exists() else (None if not p.parent.exists() else False)
+        if not p.exists():
+            st[h] = None if not p.parent.exists() else False
+        elif want is None:
+            st[h] = p.resolve() == POLICY.resolve()
+        else:
+            st[h] = not p.is_symlink() and p.read_text() == want
     p = TARGETS["hermes"]
     # Current, not merely present: after `policy init --work --force` a home-variant section
     # still tells Hermes to send diffs to another provider (Codex review of #59, P1).
@@ -146,22 +163,55 @@ def sync(dry=False, owner: str | None = None) -> list[str]:
     # and a refusal half-way would leave some wired and some not (review of #87, P2).
     if POLICY.exists():
         _guard(POLICY.read_text(), POLICY)
+    # ... and so is everything AGENTS.md and the Cursor skill are made of: CLAUDE.md under its own
+    # name (the refusal should point at the file to fix), then the whole text with the inlined
+    # imports, before the first write below.
+    want = None
+    if POLICY.exists():
+        cm = TARGETS["claude-code"]
+        if cm.exists():
+            _guard(cm.read_text(), cm)
+        want = agents_text()
+        if want is not None:
+            _guard(want, TARGETS["codex"])
     p = TARGETS["claude-code"]
     if p.exists() and IMPORT_LINE not in p.read_text():
         if not dry:
             p.write_text(_guard(p.read_text().rstrip() + f"\n\n## How to run a session\n\n{IMPORT_LINE}\n", p))
         done.append(f"added import to {p}")
+    warned = False
     for h in ("codex", "grok"):
         p = TARGETS[h]
-        if p.parent.exists() and not (p.exists() and p.resolve() == POLICY.resolve()):
-            if p.exists() and not p.is_symlink():
-                done.append(f"SKIP {p}: a real file exists; merge by hand or delete it")
+        if not p.parent.exists():
+            continue
+        real = p.exists() and not p.is_symlink()
+        if real and not is_generated_agents(p.read_text()):
+            done.append(f"SKIP {p}: a real file exists; merge by hand or delete it")
+            continue
+        if want is None:
+            if p.exists() and p.resolve() == POLICY.resolve() and p.is_symlink():
                 continue
             if not dry:
-                if p.is_symlink():
+                if p.is_symlink() or real:
                     p.unlink()
                 p.symlink_to(POLICY)
             done.append(f"symlinked {p} → {POLICY}")
+            continue
+        if len(want.encode()) > AGENTS_SIZE_WARN and not warned:
+            warned = True
+            done.append(f"WARN the generated AGENTS.md is {len(want.encode()) // 1024} KiB, over the 32 KiB Codex "
+                        "allows a project doc (the global file is read whole); prune ~/.claude/CLAUDE.md or POLICY.md")
+        if real and p.read_text() == want:
+            # Same text, older file: touch it, or session-start.sh's -nt test would start a sync
+            # at every session for an edit that changed nothing here.
+            if not dry and _older_than_sources(p):
+                os.utime(p)
+            continue
+        if not dry:
+            if p.is_symlink():
+                p.unlink()  # never write through it: it points at POLICY.md
+            p.write_text(_guard(want, p))
+        done.append(f"wrote {p}: POLICY.md + the owner's rules from {TARGETS['claude-code']}")
     p = TARGETS["hermes"]
     if p.exists() and not _hermes_current(p.read_text()):
         text = p.read_text()
@@ -190,21 +240,195 @@ IMPORT_RE = re.compile(r"^@AGENTS\.md\s*$", re.M)
 _FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 
 
-def imports_agents(text: str) -> bool:
-    """True when `text` has a live `@AGENTS.md` import: a line of its own that is not inside a
-    ``` or ~~~ fenced code block. Claude Code does not expand imports in code, so a CLAUDE.md that
-    only shows the line as an example is not linked to AGENTS.md (review of #81, P2)."""
+def _live_lines(text: str):
+    """(line, live) for every line of `text`; `live` is False for the lines of a ``` or ~~~ fenced
+    code block, fences included. Claude Code does not expand an import shown in code."""
     fence = None  # (char, length) of the open fence
     for line in text.splitlines():
         m = _FENCE_RE.match(line)
         if fence is None:
             if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
                 fence = (m.group(1)[0], len(m.group(1)))
-            elif IMPORT_RE.match(line):
-                return True
-        elif m and m.group(1)[0] == fence[0] and len(m.group(1)) >= fence[1] and not m.group(2).strip():
-            fence = None
-    return False
+                yield line, False
+            else:
+                yield line, True
+        else:
+            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= fence[1] and not m.group(2).strip():
+                fence = None
+            yield line, False
+
+
+def imports_agents(text: str) -> bool:
+    """True when `text` has a live `@AGENTS.md` import: a line of its own that is not inside a
+    ``` or ~~~ fenced code block. Claude Code does not expand imports in code, so a CLAUDE.md that
+    only shows the line as an example is not linked to AGENTS.md (review of #81, P2)."""
+    return any(live and IMPORT_RE.match(line) for line, live in _live_lines(text))
+
+
+# ---------------------------------------------------------------------------
+# The owner's rules for harnesses that cannot import: ~/.codex/AGENTS.md, ~/.grok/AGENTS.md and
+# the Cursor skill get POLICY.md + ~/.claude/CLAUDE.md as one generated text.
+
+AGENTS_MARKER = "<!-- generated by teyla policy sync"
+AGENTS_HEAD = (f"{AGENTS_MARKER} from ~/.agents/POLICY.md + ~/.claude/CLAUDE.md — "
+               "edit those, not this file -->\n\n")
+OWNER_HEAD = "# The owner's rules (from ~/.claude/CLAUDE.md)"
+OWNER_PREAMBLE = (
+    "Everything below is the owner's own global instructions, copied here by `teyla policy sync` "
+    "because this harness cannot import ~/.claude/CLAUDE.md the way Claude Code does. Edit "
+    "~/.agents/POLICY.md or ~/.claude/CLAUDE.md, not this file: the next sync overwrites it. They "
+    "bind you exactly as the policy above does. Where a line says it is Claude-specific or names "
+    "Claude Code tools (`Agent`, `model: sonnet`, skills, slash commands), apply the equivalent "
+    "of your own harness.")
+MEMORY_SECTION = """## Project memory (shared with Claude Code)
+
+Per-project memory lives in `~/.claude/projects/<key>/memory/`, and Claude Code reads and writes
+the same directory. `<key>` is the repo's absolute path with every `/` and `.` replaced by `-`
+(`/Users/me/repos/app` → `-Users-me-repos-app`); in a git worktree, use the main checkout's path,
+the parent of `git rev-parse --path-format=absolute --git-common-dir`. When you start work in a
+repo, read `MEMORY.md` there: an index, one line per memory file. To keep a new durable fact (a
+decision, a gotcha, how this owner wants something done), write it as one small `.md` file in
+that directory — frontmatter with `name` and a one-line `description`, then the fact and why —
+and add one line to `MEMORY.md`: `- [Title](file.md) — one-line hook`, the format Claude Code uses.
+"""
+# Codex caps a project doc at 32 KiB (project_doc_max_bytes); the global file is read whole
+# (verified on 0.159.2), but a file that size is mostly not being read either.
+AGENTS_SIZE_WARN = 32 * 1024
+# An import line Claude Code expands: `@~/...` or `@/abs/...`, alone on its line.
+_PATH_IMPORT_RE = re.compile(r"^\s*@((?:~/|/)\S+)\s*$")
+_RUN_HEADING = "## How to run a session"
+
+
+def is_generated_agents(text: str) -> bool:
+    """Whether an AGENTS.md is the one sync writes: its first line is the generated-by marker."""
+    return text.startswith(AGENTS_MARKER)
+
+
+def _import_path(spec: str) -> pathlib.Path:
+    return HOME / spec[2:] if spec.startswith("~/") else pathlib.Path(spec)
+
+
+def _same_file(a: pathlib.Path, b: pathlib.Path) -> bool:
+    try:
+        return a.resolve() == b.resolve()
+    except OSError:
+        return False
+
+
+def owner_rules(text: str) -> str | None:
+    """CLAUDE.md's text as the other harnesses should get it, or None when it holds nothing but
+    the policy import (and headings, blank lines) — then AGENTS.md stays a plain symlink.
+
+    The `@~/.agents/POLICY.md` import is dropped (the policy is already above it), with the
+    `## How to run a session` heading sync puts over it when that heading is left empty. Any
+    other live `@~/...` or `@/abs/...` import line is replaced by that file's text, one level
+    deep — a missing file leaves the line as it was. An import inside a code fence is an example,
+    not an import, and stays as written."""
+    out: list[str] = []
+    dropped = False
+    targets = [TARGETS[h] for h in ("codex", "grok") if h in TARGETS]
+    for line, live in _live_lines(text):
+        m = _PATH_IMPORT_RE.match(line) if live else None
+        if m:
+            path = _import_path(m.group(1))
+            if line.strip() == IMPORT_LINE or _same_file(path, POLICY):
+                dropped = bool(out) and not out[-1].strip()
+                continue
+            if path.is_file() and not any(_same_file(path, t) for t in targets):
+                out.extend(path.read_text().rstrip("\n").splitlines())
+                continue
+        if dropped and not line.strip():
+            dropped = False
+            continue  # the blank line after a dropped import: one gap, not two
+        dropped = False
+        out.append(line)
+    # The heading sync wrote over the import, now with nothing under it.
+    i = 0
+    while i < len(out):
+        if out[i].strip() == _RUN_HEADING:
+            j = i + 1
+            while j < len(out) and not out[j].strip():
+                j += 1
+            if j == len(out) or out[j].startswith("#"):
+                del out[i:j]
+                continue
+        i += 1
+    body = "\n".join(out).strip()
+    if all(not l.strip() or l.lstrip().startswith("#") for l in body.splitlines()):
+        return None
+    return body + "\n"
+
+
+def _claude_md_rules() -> str | None:
+    p = TARGETS["claude-code"]
+    return owner_rules(p.read_text()) if p.exists() else None
+
+
+def combined_text() -> str:
+    """POLICY.md, then — when ~/.claude/CLAUDE.md has rules of its own — those rules under
+    OWNER_HEAD and the shared-memory section. With no owner rules: POLICY.md as it is."""
+    text = POLICY.read_text()
+    rules = _claude_md_rules()
+    if rules is None:
+        return text
+    return (text.rstrip("\n") + "\n\n---\n\n" + OWNER_HEAD + "\n\n" + OWNER_PREAMBLE + "\n\n"
+            + rules + "\n" + MEMORY_SECTION)
+
+
+def agents_text() -> str | None:
+    """What ~/.codex/AGENTS.md and ~/.grok/AGENTS.md should hold, or None for "a symlink to
+    POLICY.md" (CLAUDE.md missing, or nothing in it but the import)."""
+    if _claude_md_rules() is None:
+        return None
+    return AGENTS_HEAD + combined_text()
+
+
+def _sources() -> list[pathlib.Path]:
+    return [p for p in (TARGETS["claude-code"], POLICY) if p.exists()]
+
+
+def _older_than_sources(p: pathlib.Path) -> pathlib.Path | None:
+    """The first source (CLAUDE.md, POLICY.md) modified after `p`, or None."""
+    mt = p.stat().st_mtime
+    return next((s for s in _sources() if s.stat().st_mtime > mt), None)
+
+
+def _tilde(p: pathlib.Path) -> str:
+    try:
+        return "~/" + str(p.relative_to(HOME))
+    except ValueError:
+        return str(p)
+
+
+def drift(h: str) -> tuple[str, str] | None:
+    """(why, fix) when ~/.<h>/AGENTS.md is not what sync would write — for `teyla doctor`, which
+    otherwise could only say "not wired" about a file that is merely a day behind CLAUDE.md."""
+    p = TARGETS[h]
+    if not POLICY.exists() or not p.parent.exists():
+        return None
+    sync_fix = "teyla policy sync"
+    if not p.exists():
+        return f"{_tilde(p)} is missing", sync_fix
+    want = agents_text()
+    real = not p.is_symlink()
+    if real and not is_generated_agents(p.read_text()):
+        return (f"{_tilde(p)} is a hand-written file (no generated-by marker), so sync leaves it alone",
+                f"merge it into ~/.agents/POLICY.md or ~/.claude/CLAUDE.md, delete it, then: {sync_fix}")
+    if want is None:
+        if real:
+            return f"{_tilde(p)} still carries owner rules that {_tilde(TARGETS['claude-code'])} no longer has", sync_fix
+        if _same_file(p, POLICY):
+            return None
+        return f"{_tilde(p)} is a symlink, but not to {_tilde(POLICY)}", sync_fix
+    if not real:
+        return (f"{_tilde(p)} is a symlink to the policy alone: this harness cannot import "
+                f"{_tilde(TARGETS['claude-code'])}, so it misses the owner's rules"), sync_fix
+    if p.read_text() == want:
+        return None
+    newer = _older_than_sources(p)
+    if newer is not None:
+        return f"{_tilde(p)} is older than {_tilde(newer)}", sync_fix
+    return f"{_tilde(p)} differs from what sync would write (an imported file changed?)", sync_fix
 
 
 def sync_repo(repo: str, dry=False, prefer: str | None = None) -> str:

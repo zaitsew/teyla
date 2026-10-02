@@ -5,7 +5,7 @@
   teyla sessions [--days N] [--project SUBSTR]                   one line per session
   teyla corrections [--days N] [--project SUBSTR] [--recorded]   correction-shaped human turns, clustered; --recorded: the stored ones
   teyla policy init [--owner] [--work] [--claude-md] [--ops-root-init] [--dry]   POLICY.md, global CLAUDE.md, an ops root
-  teyla policy status|sync [--dry]                                the wiring into every harness
+  teyla policy status|sync [--dry] [--quiet]                      the wiring into every harness
   teyla policy sync-repo <path>... [--prefer agents|claude]      AGENTS.md ⇄ CLAUDE.md in repos
   teyla policy ack [--note TEXT]                                  record acceptance of ~/.claude/CLAUDE.md's current hash
   teyla policy refresh [--dry] [--resolved]                       three-way merge of template changes into ~/.agents/POLICY.md
@@ -294,7 +294,10 @@ def cmd_policy(args):
             print(f"{k:14} {'ok' if v else ('not installed' if v is None else 'MISSING')}")
     elif args.action == "sync":
         for line in policy.sync(dry=args.dry, owner=args.owner):
-            print(line)
+            # --quiet: what session-start.sh runs in the background when CLAUDE.md or POLICY.md
+            # is newer than the generated AGENTS.md — only what needs a human is worth a line.
+            if not args.quiet or line.startswith(("SKIP", "WARN")):
+                print(line)
     elif args.action == "sync-repo":
         for p in args.paths:
             print(policy.sync_repo(p, dry=args.dry, prefer=args.prefer))
@@ -409,6 +412,7 @@ def main(argv=None):
     q.add_argument("--ops-root-init", action="store_true", help="init: also create the ops root (CLAUDE.md, .claude/, wiki-ready, runs/ ignored)")
     q.add_argument("--prefer", choices=["agents", "claude"], help="sync-repo: when AGENTS.md and CLAUDE.md both exist and differ, keep this one and symlink the other to it")
     q.add_argument("--note", help="ack: free-text note recorded alongside the acknowledgement")
+    q.add_argument("--quiet", action="store_true", help="sync: print only SKIP/WARN lines (offline; the session-start hook runs it)")
     q = sp.add_parser("harvest"); q.set_defaults(fn=cmd_harvest); q.add_argument("path"); q.add_argument("--project")
     from . import grokcost, wiki, feedback, models, plugins, plugin_install, connectors, control, doctor, update, remind, rules, harness, storage, cloud
     from . import platform as platform_mod, productize as productize_mod

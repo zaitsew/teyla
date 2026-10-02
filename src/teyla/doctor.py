@@ -165,7 +165,11 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
         elif v:
             out.append(_check("OK", f"policy:{k}", "wired"))
         else:
-            out.append(_check("FIX", f"policy:{k}", "not wired", "teyla policy sync"))
+            # codex/grok carry a generated copy of CLAUDE.md, so "not wired" is usually "a day
+            # behind ~/.claude/CLAUDE.md" — say which, and what to run.
+            why = policy.drift(k) if k in ("codex", "grok") else None
+            out.append(_check("FIX", f"policy:{k}", f"not wired: {why[0]}" if why else "not wired",
+                              why[1] if why else "teyla policy sync"))
     if policy.POLICY.exists():
         if policy.CONFLICT_PATH.exists():
             out.append(_check("FIX", "policy:template", f"merge conflict waiting in {policy.CONFLICT_PATH}",
