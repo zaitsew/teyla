@@ -45,6 +45,12 @@ a harness `teyla doctor` can read logs from, not one you can drive from a shell.
   concrete changes: a rule (via `/teyla:rule`), a `model:` override, or a
   flagged session split. Requires the `teyla` CLI — there's no fallback for
   `monitor`, since it needs the full session-adapter set, not a one-off parse.
+- **`review`** (`/teyla:review`) — one review pass on the branch's diff
+  (`git diff $(git merge-base origin/<default> HEAD)`, or one fix commit in
+  round two), P1/P2 only, `P1 path:line — defect — scenario` or exactly
+  `No P1/P2`. Uses `~/ops/bin/codex-review` or a `codex-review`/`claude-review`
+  on PATH when one exists (cross-provider); otherwise one fresh sub-agent given
+  only the diff, labelled "same-provider review". At most two rounds.
 
 ### Commands
 
@@ -64,7 +70,7 @@ a harness `teyla doctor` can read logs from, not one you can drive from a shell.
 
 ### Hooks
 
-Both are POSIX `sh`, exit 0 unconditionally — a broken hook must never break a
+All are POSIX `sh`, exit 0 unconditionally — a broken hook must never break a
 session, so every failure path (missing files, bad JSON, no `python3`) is
 swallowed silently rather than surfaced.
 
@@ -90,10 +96,25 @@ swallowed silently rather than surfaced.
   `UserPromptSubmit` stdout is injected into the model's context, and a
   "logged your correction" note on every turn is exactly the kind of narration
   that gets a tool turned off.
-- **`Stop`** — none, on purpose, for now. A real judge of "did this session's
-  work actually land" needs a model call to read the transcript and decide,
-  which this file-only plugin doesn't make. Planned once there's a cheap way
-  to do that without a round-trip that slows every `Stop`.
+- **`Stop`** (`hooks/land-check.sh`) — **opt-in**, `[hooks] land_check = true`.
+  Once per session, when the repo has uncommitted files or commits on no remote
+  (`git log HEAD --not --remotes`: without `HEAD` a never-pushed repo reads as
+  pushed), it tells the model the fact and how to land it: one PR/MR per
+  logical unit; merge only when origin's `owner/repo` (GitHub) or `host/group/repo`
+  (any other host, nested groups whole) is in the `MERGE-APPROVED REPOS` block of `~/.claude/CLAUDE.md`,
+  else open the PR/MR and stop. `additionalContext`, never a block. Not a judge
+  of whether the work is *done* — only of whether it reached a remote.
+- **Context budget** (`hooks/context-budget.sh` → `context-budget.py`) —
+  **opt-in**, `[hooks] context_budget = true`. On `UserPromptSubmit` and every
+  `PostToolUse` it reads the transcript's last usage record; at 300k tokens of
+  context (`context_budget_first`) and every 40k after (`context_budget_step`)
+  it asks the model to write a handoff to `~/.teyla/handoff/<session>.md`; on
+  `SessionStart` with source `compact` it puts that handoff back, once. Pair it
+  with `"autoCompactWindow": 400000` in `~/.claude/settings.json`. Off, the
+  wrapper is one `awk` over `~/.teyla/config.toml` and starts no Python.
+
+Both opt-in hooks are off by default because the owner's personal Mac runs its
+own `~/ops` copies; turning them on there would double every note.
 
 ## Where data goes
 

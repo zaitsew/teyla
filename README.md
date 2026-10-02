@@ -321,6 +321,13 @@ unless you pass `--allow-public`.
 - `/teyla:correct <what was wrong>` → `~/.teyla/corrections/<repo>-<hash>.jsonl` (outside the repo, 0600, secrets replaced by `[redacted]`), then proposes the rule
 - skills: **harvest** (sessions → skill draft + candidate rules + routine manifest + a done-test *question*), **adoption-review** (`teyla monitor` → three concrete edits), and **wiki-pass** (this session's facts → wiki pages as a PR you confirm or correct; see [docs/WIKI.md](docs/WIKI.md))
 - a `UserPromptSubmit` hook that captures correction-shaped prompts silently, into the same store (it needs the `teyla` CLI installed: the scrubber lives there, and with no scrubber nothing is written). `teyla corrections --recorded` lists what was stored; `teyla config set corrections.store=repo` keeps the pre-0.12 in-repo file instead. Either way `.teyla/` is added to the repo's `.git/info/exclude`, so an agent's `git add -A` cannot commit it
+- **`/teyla:review`**: one P1/P2-only review of the branch's diff before a merge — `~/ops/bin/codex-review` or a `codex-review`/`claude-review` on PATH when there is one (cross-provider), else one fresh sub-agent given only the diff ("same-provider review"); at most two rounds
+- two opt-in hooks, off by default (`teyla config set hooks.context_budget=true hooks.land_check=true`), for a machine without the owner's `~/ops` copies:
+
+  | hook | event | what it does |
+  |---|---|---|
+  | `context-budget.sh` | UserPromptSubmit, PostToolUse, SessionStart (compact) | at 300k tokens of context, then every 40k, the model writes a handoff to `~/.teyla/handoff/`; after Claude Code compacts (`"autoCompactWindow": 400000` in `~/.claude/settings.json`) it is put back once. Off, it costs one `awk` and starts no Python |
+  | `land-check.sh` | Stop (Claude Code; Codex via `teyla harness sync`) | once per session, uncommitted files or commits on no remote are named with how to land them: open the PR/MR and merge only when the repo is in the `MERGE-APPROVED REPOS` block of `~/.claude/CLAUDE.md`, else stop at the PR/MR. Never a block |
 
 ```bash
 claude plugin marketplace add zaitsew/teyla    # or a local path: claude plugin marketplace add ~/repos/teyla

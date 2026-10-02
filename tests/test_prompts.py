@@ -36,3 +36,16 @@ def test_onboard_points_at_uninstall_and_lists_the_network_calls():
     assert "nothing leaves this machine" not in text.lower()
     for call in ("api.github.com", "teyla update", "models.dev", "LaunchAgent"):
         assert call in text
+
+
+def test_work_update_prompt_pins_one_release_and_turns_on_the_parity_hooks():
+    """Every version the work prompt installs, pins or adds the plugin at is the same one (0.13.0
+    is named only as where safe mode first shipped), and the step after doctor turns on what the
+    personal Mac has: both opt-in hooks, autoCompactWindow merged in after a backup, /teyla:review."""
+    text = (ROOT / "prompts" / "work-account-update.md").read_text()
+    assert set(re.findall(r"\b0\.1\d\.\d+\b", text)) - {"0.13.0"} == {"0.16.0"}
+    assert "update.pin=0.16.0" in text and "zaitsew/teyla#v0.16.0" in text and "teyla@v0.16.0" in text
+    assert "teyla config set hooks.context_budget=true hooks.land_check=true" in text
+    assert "settings.json.bak-" in text and '"autoCompactWindow": 400000' in text and "os.replace" in text
+    assert "teyla:review" in text
+    assert text.index("## 8. Doctor must be clean") < text.index("## 9. The personal Mac's habits") < text.index("## 10. A feedback round")

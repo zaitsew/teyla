@@ -51,6 +51,7 @@ If your organisation restricts plugin marketplaces, step 3 may be refused. Say s
 | `teyla advise` | What should I change, given those numbers. Each item has a number behind it and one action. |
 | `/teyla:correct <what was wrong>` | Record a correction. It is scrubbed and stored outside the repo. |
 | `/teyla:rule <sentence>` | Append a one-sentence rule to `.claude/rules/` in this repo. |
+| `/teyla:review` | One P1/P2-only review of this branch's diff before you ask for a merge. |
 | `teyla rules propose` | Which corrections came back often enough to become a rule. Writes nothing without `--write`. |
 | `teyla rules stale` | Which rules expired or were never hit: candidates to remove. |
 | `teyla wiki status <path>` | Is this wiki folder in order. |
@@ -59,6 +60,33 @@ If your organisation restricts plugin marketplaces, step 3 may be refused. Say s
 
 In an employer's repo, a rule file is a change to their repo. It goes through a normal merge
 request like any other change. Teyla never pushes it for you.
+
+## Same as on the personal Mac
+
+Three practices the owner's personal Mac runs from its own scripts ship in the plugin too, so they
+arrive here pinned with it. The two hooks are off by default (on the personal Mac its own copies
+already run, and two would double every note); turn them on here:
+
+```
+teyla config set hooks.context_budget=true hooks.land_check=true
+```
+
+- **Context budget.** At 300k tokens of context, and every 40k after, the model is asked to write
+  a handoff (state, open work, decisions, next steps, file paths) to `~/.teyla/handoff/` and keep
+  going; after Claude Code compacts the session, the handoff is put back once. It needs
+  `"autoCompactWindow": 400000` in `~/.claude/settings.json` (set it with `/config`, or add the
+  key to the file, keeping the rest): without it Claude Code compacts only near the model's full
+  window. `teyla doctor` warns when the key is missing; it never edits the file. The thresholds
+  are `hooks.context_budget_first` and `hooks.context_budget_step`.
+- **Land check.** When a session stops with uncommitted files or commits on no remote, the model
+  is told once, with how to land it: one MR per logical unit, then **stop** — unless the repo is in the
+  `MERGE-APPROVED REPOS` block of `~/.claude/CLAUDE.md` — as `owner/repo` for GitHub, and with its
+  host for anything else (`gitlab.corp/group/sub/repo`). On a work laptop that block is usually absent, so every MR waits for you.
+- **`/teyla:review`** before asking for a merge: one P1/P2-only pass on the branch's diff, by one
+  fresh sub-agent (labelled "same-provider review", since there is no second provider's CLI
+  here), at most two rounds.
+
+All three are offline; safe mode allows them. `teyla doctor` prints one INFO line per hook that is on.
 
 ## What never happens in safe mode
 

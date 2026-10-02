@@ -236,6 +236,9 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     else:
         out.append(_check("INFO", "plugin", "Claude Code absent (no `claude`, no ~/.claude/projects or plugins)"))
 
+    # --- opt-in plugin hooks (`[hooks]` in config.toml) ---------------------------------
+    out += hook_checks(cfg)
+
     # --- the other harnesses: skills + hooks ------------------------------------------
     from . import harness as _harness
     for row in _harness.status():
@@ -363,6 +366,44 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
                 out.append(_check(c["level"], c["name"], c["detail"], c["fix"]))
             except Exception as e:  # noqa: BLE001 — a readiness line must never take doctor down
                 out.append(_check("INFO", "cloud", f"readiness not computed: {e}"))
+    return out
+
+
+def hook_checks(cfg: dict) -> list[dict]:
+    """One INFO line per opt-in hook that is on; nothing for one that is off (the default, and
+    the personal Mac's state, where ~/ops wires its own copies). Context budget without
+    `autoCompactWindow` in ~/.claude/settings.json is a WARN: the hook asks for the handoff at
+    300k, but Claude Code then compacts only near the model's full window, so the session keeps
+    paying for the re-read it was meant to stop. Doctor names the fix; it never writes
+    settings.json, which belongs to Claude Code and to the person."""
+    out = []
+    hooks = cfg.get("hooks") or {}
+    if config.hook_on("context_budget", cfg):
+        def num(key, default):
+            try:
+                return int(hooks.get(key, default))
+            except (TypeError, ValueError):
+                return default
+        first, step = num("context_budget_first", 300000), num("context_budget_step", 40000)
+        out.append(_check("INFO", "hooks:context-budget", f"on: a handoff at {first // 1000}k tokens of context, again every "
+                          f"{step // 1000}k, into ~/.teyla/handoff/; put back after Claude Code compacts"))
+        settings = config.HOME / ".claude" / "settings.json"
+        try:
+            data = json.loads(settings.read_text())
+            why = None if isinstance(data, dict) and "autoCompactWindow" in data else "has no autoCompactWindow"
+        except FileNotFoundError:
+            why = "does not exist, so has no autoCompactWindow"
+        except (OSError, ValueError) as e:
+            why = f"cannot be read ({e.__class__.__name__}), so autoCompactWindow is unknown"
+        if why:
+            out.append(_check("WARN", "hooks:autocompact",
+                              f"{settings} {why}: Claude Code compacts only near the model's full window, so the "
+                              "session keeps re-reading everything above the handoff threshold",
+                              f'/config in Claude Code, or add "autoCompactWindow": 400000 to {settings} '
+                              "(merge the key; keep the rest of the file)"))
+    if config.hook_on("land_check", cfg):
+        out.append(_check("INFO", "hooks:land-check", "on: at Stop, once per session, uncommitted or unpushed work is named "
+                          "with how to land it (merge only into a repo on the MERGE-APPROVED list in ~/.claude/CLAUDE.md)"))
     return out
 
 

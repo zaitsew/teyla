@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased — the personal Mac's habits, on the work MacBook
+
+Three practices lived only in the owner's private `~/ops/bin`, so the managed work MacBook (the
+Claude Code desktop app, no `claude`/`gh`/`codex`, GitLab, safe mode, plugin pinned to a tag) had
+none of them. They now ship in the plugin and arrive pinned with it. The two hooks are opt-in,
+off by default: on the personal Mac the `~/ops` copies already run, and two would double every note.
+
+- **Context budget** (`[hooks] context_budget = true`). At 300k tokens of context
+  (`context_budget_first`) and every 40k after (`context_budget_step`), the model writes a
+  handoff — state, open work, decisions, next steps, file paths — to `~/.teyla/handoff/` (0700)
+  and keeps working; after Claude Code compacts the session (`"autoCompactWindow": 400000` in
+  `~/.claude/settings.json`: about 365k), the handoff is put back into the context once and
+  renamed `.prev.md`. Wired on UserPromptSubmit, PostToolUse and SessionStart(compact). It runs
+  after every tool call, so the wrapper decides on/off with one `awk` and starts no Python when
+  off; when on, it uses the installed `teyla`'s interpreter (a GUI app has no shell PATH), else a
+  `python3` that will not pop the developer-tools dialog. Ported from `context-budget-hook`,
+  whose measurements are in the docstring: a turn at 450k costs ~9× one at 50k, and that
+  re-reading was $772 of $2,696 in the week to 1 Oct.
+- **Land check** (`[hooks] land_check = true`). A Stop hook, once per session: uncommitted files
+  or commits on no remote (`git log HEAD --not --remotes` — without `HEAD` a never-pushed repo
+  reads as pushed) are named with how to land them: one PR/MR per logical unit; "merge it —
+  merge, not squash, never force-push" only when origin's slug (ssh or https, nested groups whole) is in the fenced `MERGE-APPROVED REPOS` block of `~/.claude/CLAUDE.md`,
+  else "open the PR/MR and STOP". A bare `owner/repo` approves github.com
+  only; another host's repo needs its host in the entry (`gitlab.corp/group/repo`). Never a block. Pure `sh` (the work Mac has no Node).
+  `teyla harness sync` wires it into Codex's `~/.codex/hooks.json` as a Stop hook
+  (`land-check.sh --codex`, `{"systemMessage": …}`) while the key is on, and removes it when off.
+- **`/teyla:review`**: POLICY §2 without any CLI. One pass on the branch's diff (or one fix
+  commit in round two), P1/P2 only, `P1 path:line — defect — scenario` or exactly `No P1/P2`;
+  `~/ops/bin/codex-review` or a `codex-review`/`claude-review` on PATH when present, else one
+  fresh sub-agent given only the diff, labelled "same-provider review". At most two rounds.
+  Synced to Cursor, Codex, Grok and Hermes as `teyla-review` (six skills per harness now).
+- **`teyla doctor`**: one INFO line per hook that is on; with the context budget on and no
+  `autoCompactWindow` in `~/.claude/settings.json`, a WARN naming `/config` or the key to add.
+  Doctor never writes settings.json. `teyla policy init --force` keeps `[hooks]`.
+- **Docs**: `docs/WORK.md` "Same as on the personal Mac"; `prompts/work-account-update.md`
+  targets 0.16.0 and adds the step that turns the hooks on, merges `autoCompactWindow` into
+  `~/.claude/settings.json` (after a backup) and checks `/teyla:review` is listed.
+
 ## 0.15.0 — 2026-10-02 — Codex reads the owner's rules, the work plugin follows the pin
 
 - **Codex and Grok get the owner's rules, not only the policy.** `~/.claude/CLAUDE.md` — the

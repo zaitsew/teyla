@@ -25,6 +25,14 @@
     [corrections]
     store = "home"                 "home": ~/.teyla/corrections/<repo-key>.jsonl (default);
                                    "repo": <repo>/.teyla/corrections.jsonl, the pre-0.12 place
+    [hooks]                        opt-in plugin hooks; off by default because the personal Mac
+                                   already runs ~/ops copies of both, and two would double every message
+    context_budget = false         at 300k tokens of context (then every 40k) the model writes a handoff
+                                   to ~/.teyla/handoff/; it is put back after Claude Code compacts
+    context_budget_first = 300000
+    context_budget_step  = 40000
+    land_check     = false         Stop: once per session, uncommitted or unpushed work is named, with
+                                   how to land it (merge only into a MERGE-APPROVED repo)
     [env]
     SSL_CERT_FILE = "~/.teyla/ca-bundle.pem"
     HTTPS_PROXY   = "http://127.0.0.1:9000"
@@ -65,6 +73,11 @@ DEFAULTS = {
     "products": {"repos": []},
     # `teyla digest --write` (the weekly routine) posts a macOS notification with its headline.
     "digest": {"notify": True},
+    # The plugin's opt-in hooks (plugin/hooks/context-budget.sh, land-check.sh). Off by default: on
+    # the personal Mac the ~/ops versions are already wired, and a second copy doubles each note.
+    # The hooks read these keys from the file with awk/tomllib, not through this module.
+    "hooks": {"context_budget": False, "context_budget_first": 300000, "context_budget_step": 40000,
+              "land_check": False},
 }
 
 
@@ -217,10 +230,10 @@ def write(code_root: str = "~/repos", ops_root: str = "~/ops", repo: str = "zait
     data = {"code_root": code_root, "ops_root": ops_root, "update": {"repo": repo, "channel": channel}}
     if p.exists():
         # --force rewrites the roots and the update block; [env], [safe], [products],
-        # [storage] and [corrections] are kept: they are exactly the local adaptation a rewrite must not erase
+        # [storage], [corrections], [digest] and [hooks] are kept: they are exactly the local adaptation a rewrite must not erase
         # (a work laptop that loses `safe.enabled` here would self-update the next morning).
         old = _read(p)
-        for table in ("env", "safe", "products", "storage", "corrections", "digest"):
+        for table in ("env", "safe", "products", "storage", "corrections", "digest", "hooks"):
             if isinstance(old.get(table), dict) and old[table]:
                 data[table] = old[table]
         # The same for a pin, an interpreter pin and channel = "none": a frozen update that
@@ -316,6 +329,12 @@ def show(path: pathlib.Path | None = None) -> str:
 
 def truthy(v) -> bool:
     return v is True or str(v).strip().lower() in ("1", "true", "yes", "on")
+
+
+def hook_on(name: str, cfg: dict | None = None) -> bool:
+    """Is the opt-in plugin hook `[hooks] <name>` switched on? Read the same way the hook's own
+    sh wrapper reads it (true/1/yes/on), so doctor and `harness sync` agree with what runs."""
+    return truthy(((cfg or load()).get("hooks") or {}).get(name))
 
 
 SAFE_ENV = "TEYLA_SAFE"
