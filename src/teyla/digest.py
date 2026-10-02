@@ -8,7 +8,7 @@ of 44 session starts since 09-16 with the same items for 13 days, so it stopped 
 
 **Banner.** `teyla doctor` and `teyla routines` write `~/.teyla/banner.items`, one
 `key<TAB>text` line per thing that needs a human: doctor WARN/FIX rows (key = level|name, so
-a WARN turning into a FIX is news), routines not running (NOT LOADED/STALE/unknown) and BROKEN checks from every
+a WARN turning into a FIX is news), routines not running (NOT LOADED/STALE/unknown/FAILING) and BROKEN checks from every
 product, and reminders — those only on the day they fall due, the day after, and then once a
 week (the key carries the overdue week). The plugin's session-start hook compares the keys
 with `~/.teyla/banner.seen` (the keys it showed last time) in one awk call, prints
@@ -251,7 +251,8 @@ def candidates(findings: list[dict], doctor_checks: list[dict], reports: list[di
         for row in r.get("routines") or []:
             if row.get("verdict") in routines.NOT_RUNNING_VERDICTS:  # `unknown` counts, as in `teyla routines`
                 out.append(dict(rank=2, id=f"routine:{r['product']}:{row['name']}",
-                                text=f"{r['product']} routine {row['name']} {row['verdict']}",
+                                text=_short(f"{r['product']} routine {row['name']} {row['verdict']}"
+                                            + (f" ({row['detail']})" if row.get("detail") else "")),
                                 step=f"teyla routines {routines._sh(r.get('repo') or '.')}", cmd=True))
         for c in routines.stale_checks(r):
             age = c.get("age_days")

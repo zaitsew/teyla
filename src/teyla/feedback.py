@@ -98,7 +98,7 @@ def _policy_lines(policy_status: dict) -> list[str]:
 
 def _routines_summary(cwd: str | None = None) -> str | None:
     """The one-line routines summary, if a teyla.toml exists under cwd or under ~/repos."""
-    from .routines import ManifestError, evaluate, find_manifests, parse_manifest, summarize
+    from .routines import ManifestError, evaluate, find_manifests, parse_manifest, counts_line
 
     cwd = cwd or os.getcwd()
     manifests = {p.resolve() for p in find_manifests([cwd])} | {p.resolve() for p in find_manifests(None)}
@@ -112,8 +112,7 @@ def _routines_summary(cwd: str | None = None) -> str | None:
             continue
     if not reports:
         return None
-    n, m_, k = summarize(reports)
-    return f"{n} routines not running, {m_} checks broken, {k} untested/re-test — {len(reports)} product(s) checked"
+    return f"{counts_line(reports)} — {len(reports)} product(s) checked"
 
 
 def build(metrics_raw: dict, *, days: int, policy_status: dict, doctor_lines: list[str],
