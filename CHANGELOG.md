@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **Safe mode pins the plugin to the CLI's release.** With `update.pin` set to a version, the
+  plugin's marketplace is added as `zaitsew/teyla#v<pin>`, so the hooks that run at every
+  session start and before every tool call are never newer than the pinned CLI. `teyla plugin
+  install|refresh` and doctor's `plugin` FIX print `marketplace remove` + `add ...#v<pin>` +
+  `install` instead of `marketplace update`, which pulls main. Doctor's new `plugin:pin` WARN
+  fires when `known_marketplaces.json` shows the marketplace following another ref (or main), and
+  when the pin is a commit sha: Claude Code pins a marketplace to a branch or tag, not a commit.
+  No pin, or safe mode off: unchanged.
+- **`docs/WORK.md`**: Teyla on a work laptop. What safe mode guarantees, the five steps to a new
+  release, the daily commands, and what never happens. `prompts/work-account-update.md` now
+  targets 0.15.0 and installs the plugin at `#v0.15.0`.
+
 ## 0.14.0 — 2026-10-01 — rules that live and die, health that tells the truth
 
 - **`teyla spend`: the week's cost and the waste in it** (#78, #79, #85). Claude Code cost is one

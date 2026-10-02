@@ -39,6 +39,13 @@ marketplaces through Claude Code's own settings, and a hand-written registry row
 that. install/refresh/uninstall then print the `claude plugin ...` (or in-app `/plugin ...`)
 commands to run instead, and nothing is cloned.
 
+Safe mode with `update.pin` set to a release (`0.15.0`) also pins the *plugin*: the hooks run
+shell code at every session start and before every tool call, so on a pinned machine they must
+not be newer than the CLI. The marketplace is then added as `zaitsew/teyla#v<pin>` (Claude Code
+takes `#ref` for a branch or tag, not a commit), and a mismatch is fixed by removing and
+re-adding it at that tag; `marketplace update` would pull main. A pin that is a commit sha
+cannot be expressed that way, so the source stays unpinned and doctor warns. See `pin_ref`.
+
 Every `rmtree` here is of a path under ~/.claude/plugins/cache, checked first: an
 `installPath` read from installed_plugins.json, or a version string read from a cloned
 plugin.json, is data, and `"../../.."` in either must not become a recursive delete.
@@ -93,6 +100,60 @@ def _rmtree_in_cache(plugins_dir: pathlib.Path, path) -> bool:
 def _safe() -> bool:
     from . import config
     return config.safe_mode()
+
+
+TEYLA_REPO = "zaitsew/teyla"
+_RELEASE_PIN_RE = re.compile(r"^v?\d+(\.\d+)*$")
+
+
+def pin_ref(cfg: dict | None = None) -> str | None:
+    """`v<pin>`, the git tag the plugin's marketplace should be pinned to — only in safe mode
+    with `update.pin` set to a release version. A sha, or no pin, is None."""
+    from . import config, update
+    if not config.safe_mode(cfg):
+        return None
+    pin = update.update_settings(cfg)[1]
+    if not pin or not _RELEASE_PIN_RE.match(pin):
+        return None
+    return pin if pin.startswith("v") else f"v{pin}"
+
+
+def pin_is_sha(cfg: dict | None = None) -> bool:
+    """Safe mode with `update.pin` a commit sha: the plugin cannot follow it (a marketplace
+    `ref` is a branch or tag)."""
+    from . import config, update
+    if not config.safe_mode(cfg):
+        return False
+    pin = update.update_settings(cfg)[1]
+    return bool(pin) and update.pin_is_sha(pin)
+
+
+def pinned_source(ref: str) -> str:
+    return f"{TEYLA_REPO}#{ref}"
+
+
+def repin_command(ref: str) -> str:
+    """Remove the teyla marketplace (which uninstalls its plugin) and add it back at `ref`."""
+    steps = ["plugin marketplace remove teyla", f"plugin marketplace add {pinned_source(ref)}", "plugin install teyla@teyla"]
+    return " && ".join(f"claude {c}" for c in steps)
+
+
+def marketplace_ref(name: str = "teyla", *, plugins_dir: pathlib.Path | None = None) -> tuple[bool, str | None, str]:
+    """(found, ref, kind) for marketplace `name` in known_marketplaces.json: `ref` is the git
+    ref its source pins (None = the default branch), `kind` the source type. Missing or garbled
+    file, or no such marketplace: found is False."""
+    path = (plugins_dir or PLUGINS_DIR) / "known_marketplaces.json"
+    try:
+        row = json.loads(path.read_text()).get(name)
+        src = row.get("source")
+    except (OSError, ValueError, AttributeError):
+        return False, None, ""
+    if isinstance(src, str):
+        return True, None, src
+    if not isinstance(src, dict):
+        return False, None, ""
+    ref = src.get("ref")
+    return True, ref if isinstance(ref, str) and ref else None, str(src.get("source") or "?")
 
 
 def _claude_commands(*cmds: str) -> list[str]:
@@ -212,6 +273,15 @@ def safe_install_commands(source: str) -> list[str]:
     else:
         mkt = source.rstrip("/").split("/")[-1]
         names, src = [mkt], source
+        ref = pin_ref()
+        if ref and source.lower() == TEYLA_REPO:
+            src = pinned_source(ref)
+            # `marketplace add` refuses a name that is already registered, which would
+            # leave an unpinned (or other-tag) marketplace in place (Codex review, P2).
+            found, cur, _kind = marketplace_ref(mkt)
+            if found and cur != ref:
+                return _claude_commands(f"plugin marketplace remove {mkt}", f"plugin marketplace add {src}",
+                                        *(f"plugin install {n}@{mkt}" for n in names))
     return _claude_commands(f"plugin marketplace add {src}", *(f"plugin install {n}@{mkt}" for n in names))
 
 
@@ -341,8 +411,19 @@ def refresh(*, plugins_dir: pathlib.Path | None = None, force: bool = False) -> 
     version = _load_json(src / ".claude-plugin" / "plugin.json").get("version") or "0.0.0"
     if _safe():
         stale = [k for k in keys if (plugins[k] or [{}])[0].get("version") != version or force]
+        ref = pin_ref()
+        # The right version on the wrong ref is still stale: the next marketplace update
+        # would pull main (Codex review, P2).
+        if ref and "teyla@teyla" in keys and "teyla@teyla" not in stale:
+            found, cur, _kind = marketplace_ref("teyla")
+            if found and cur != ref:
+                stale.append("teyla@teyla")
         if not stale:
             return [f"{k}: already {version}" for k in keys]
+        if ref and "teyla@teyla" in stale:
+            # `marketplace update` would pull main; re-add the marketplace at the pinned tag.
+            return _claude_commands("plugin marketplace remove teyla", f"plugin marketplace add {pinned_source(ref)}",
+                                    "plugin install teyla@teyla")
         mkts = sorted({k.split("@", 1)[1] for k in stale})
         return _claude_commands(*(f"plugin marketplace update {m}" for m in mkts), *(f"plugin update {k}" for k in stale))
     lines = []

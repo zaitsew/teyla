@@ -633,3 +633,128 @@ def test_triggers_are_not_installed_and_installed_ones_are_flagged_in_safe_mode(
     (agents / "com.teyla.demo.digest.plist").write_text("<plist/>")
     by = [c for c in doctor.checks(scan_repos=False) if c["name"] == "control:trigger"]
     assert by and by[0]["level"] == "FIX" and "com.teyla.demo.digest" in by[0]["fix"]
+
+
+# --- the plugin follows the pin: hooks must not be newer than the CLI -------------------------
+
+def _known(home, source):
+    pd = home / ".claude" / "plugins"
+    pd.mkdir(parents=True, exist_ok=True)
+    (pd / "known_marketplaces.json").write_text(json.dumps({"teyla": {"source": source}}))
+    (pd / "installed_plugins.json").write_text(json.dumps(
+        {"version": 2, "plugins": {"teyla@teyla": [{"installPath": str(pd / "cache"), "version": teyla.__version__}]}}))
+
+
+def _plugin_checks(home, monkeypatch):
+    monkeypatch.setenv("HOME", str(home))
+    return {c["name"]: c for c in doctor.checks(scan_repos=False)}
+
+
+def test_pinned_safe_mode_adds_the_marketplace_at_the_tag(_home):
+    safe_on()
+    assert plugin_install.pin_ref() is None  # safe, but no pin
+    assert any("plugin marketplace add zaitsew/teyla" in l and "#" not in l for l in plugin_install.install("zaitsew/teyla"))
+    config.set_value("update.pin", "0.15.0")
+    assert plugin_install.pin_ref() == "v0.15.0"
+    text = "\n".join(plugin_install.install("zaitsew/teyla"))
+    assert "plugin marketplace add zaitsew/teyla#v0.15.0" in text and "plugin install teyla@teyla" in text
+    config.set_value("update.pin", "v0.15.0")
+    assert plugin_install.pin_ref() == "v0.15.0"  # a leading v is not doubled
+    assert "zaitsew/teyla#v0.15.0" in "\n".join(plugin_install.install("zaitsew/teyla"))
+    assert "#" not in "\n".join(plugin_install.install("someone/else"))  # the pin is Teyla's, not every repo's
+
+
+def test_pin_does_nothing_outside_safe_mode_or_for_a_sha(_home):
+    config.set_value("update.pin", "0.15.0")
+    assert plugin_install.pin_ref() is None  # safe mode off: unchanged
+    safe_on()
+    config.set_value("update.pin", "b90e2a0f1c2d")
+    assert plugin_install.pin_ref() is None and plugin_install.pin_is_sha()
+    assert "#" not in "\n".join(plugin_install.install("zaitsew/teyla"))
+
+
+def test_pinned_refresh_re_adds_the_marketplace_instead_of_pulling_main(_home):
+    pd = plugin_install.PLUGINS_DIR
+    pd.mkdir(parents=True)
+    (pd / "installed_plugins.json").write_text(json.dumps(
+        {"version": 2, "plugins": {"teyla@teyla": [{"installPath": str(pd / "cache"), "version": "0.0.1"}]}}))
+    safe_on()
+    config.set_value("update.pin", "0.15.0")
+    text = "\n".join(plugin_install.refresh())
+    assert "marketplace remove teyla" in text and "marketplace add zaitsew/teyla#v0.15.0" in text
+    assert "marketplace update" not in text
+
+
+def test_doctor_warns_when_the_plugin_does_not_follow_the_pin(_home, monkeypatch):
+    safe_on()
+    config.set_value("update.pin", "0.15.0")
+    _known(_home, {"source": "github", "repo": "zaitsew/teyla"})
+    c = _plugin_checks(_home, monkeypatch)["plugin:pin"]
+    assert c["level"] == "WARN" and "main" in c["detail"] and "v0.15.0" in c["detail"]
+    assert "marketplace remove teyla" in c["fix"] and "zaitsew/teyla#v0.15.0" in c["fix"]
+    _known(_home, {"source": "github", "repo": "zaitsew/teyla", "ref": "v0.14.0"})
+    assert "v0.14.0" in _plugin_checks(_home, monkeypatch)["plugin:pin"]["detail"]
+
+
+def test_doctor_is_quiet_when_the_plugin_follows_the_pin(_home, monkeypatch):
+    safe_on()
+    config.set_value("update.pin", "0.15.0")
+    _known(_home, {"source": "github", "repo": "zaitsew/teyla", "ref": "v0.15.0"})
+    assert "plugin:pin" not in _plugin_checks(_home, monkeypatch)
+
+
+def test_doctor_plugin_pin_needs_a_pin_and_a_readable_registry(_home, monkeypatch):
+    safe_on()
+    _known(_home, {"source": "github", "repo": "zaitsew/teyla"})
+    assert "plugin:pin" not in _plugin_checks(_home, monkeypatch)  # safe mode, no pin
+    config.set_value("update.pin", "0.15.0")
+    (plugin_install.PLUGINS_DIR / "known_marketplaces.json").write_text("{not json")
+    assert "plugin:pin" not in _plugin_checks(_home, monkeypatch)  # garbled: no line, no crash
+    (plugin_install.PLUGINS_DIR / "known_marketplaces.json").write_text("[]")
+    assert "plugin:pin" not in _plugin_checks(_home, monkeypatch)
+    (plugin_install.PLUGINS_DIR / "known_marketplaces.json").unlink()
+    assert "plugin:pin" not in _plugin_checks(_home, monkeypatch)  # missing
+
+
+def test_doctor_says_a_sha_pin_cannot_pin_the_plugin(_home, monkeypatch):
+    safe_on()
+    config.set_value("update.pin", "b90e2a0f1c2d")
+    _known(_home, {"source": "github", "repo": "zaitsew/teyla"})
+    c = _plugin_checks(_home, monkeypatch)["plugin:pin"]
+    assert c["level"] == "WARN" and "commit sha" in c["detail"]
+
+
+def test_doctor_plugin_fix_names_the_pinned_tag(_home, monkeypatch):
+    safe_on()
+    config.set_value("update.pin", "0.15.0")
+    _known(_home, {"source": "github", "repo": "zaitsew/teyla", "ref": "v0.15.0"})
+    pd = plugin_install.PLUGINS_DIR
+    (pd / "installed_plugins.json").write_text(json.dumps(
+        {"version": 2, "plugins": {"teyla@teyla": [{"installPath": str(pd / "cache"), "version": "0.0.1"}]}}))
+    fix = _plugin_checks(_home, monkeypatch)["plugin"]["fix"]
+    assert "marketplace remove teyla" in fix and "add zaitsew/teyla#v0.15.0" in fix and "marketplace update" not in fix
+    (pd / "installed_plugins.json").unlink()
+    fix = _plugin_checks(_home, monkeypatch)["plugin"]["fix"]
+    assert "add zaitsew/teyla#v0.15.0" in fix
+
+
+def test_pinned_install_over_an_unpinned_marketplace_removes_it_first(_home):
+    # `marketplace add` refuses a registered name, which would keep the old ref (Codex review, P2)
+    safe_on()
+    config.set_value("update.pin", "0.15.0")
+    _known(_home, {"source": "github", "repo": "zaitsew/teyla"})
+    text = "\n".join(plugin_install.install("zaitsew/teyla"))
+    assert text.index("marketplace remove teyla") < text.index("marketplace add zaitsew/teyla#v0.15.0")
+    _known(_home, {"source": "github", "repo": "zaitsew/teyla", "ref": "v0.15.0"})
+    assert "marketplace remove" not in "\n".join(plugin_install.install("zaitsew/teyla"))
+
+
+def test_pinned_refresh_re_pins_a_current_version_that_follows_main(_home):
+    # the right version on the wrong ref is stale: the next marketplace update pulls main (Codex review, P2)
+    safe_on()
+    config.set_value("update.pin", "0.15.0")
+    _known(_home, {"source": "github", "repo": "zaitsew/teyla"})
+    text = "\n".join(plugin_install.refresh())
+    assert "marketplace add zaitsew/teyla#v0.15.0" in text and "already" not in text
+    _known(_home, {"source": "github", "repo": "zaitsew/teyla", "ref": "v0.15.0"})
+    assert "already" in "\n".join(plugin_install.refresh())
