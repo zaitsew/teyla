@@ -1,4 +1,4 @@
-# Teyla on the work MacBook — bring it to 0.14.0, in safe mode
+# Teyla on the work MacBook — bring it to 0.15.0, in safe mode
 
 Paste this whole file into Claude Code on the machine to update. It was written for a
 managed corporate laptop: Claude Code as the desktop app (there may be no `claude` binary
@@ -7,7 +7,7 @@ than GitHub, Python 3.12 pinned, and Teyla installed once from https://github.co
 at some older version. Absent tools are a different scope, not a broken install — `teyla
 doctor` reports them as INFO, never as failures.
 
-Target: **v0.14.0**, the newest published release when this was written. Everything below is
+Target: **v0.15.0**, the newest published release when this was written. Everything below is
 verified against that version's `--help`; do not use a flag that is not in it.
 
 Links: repo https://github.com/zaitsew/teyla · README https://github.com/zaitsew/teyla#readme ·
@@ -17,7 +17,7 @@ https://github.com/zaitsew/teyla/blob/main/docs/HANDOVER.md
 
 ---
 
-You are updating an existing Teyla install on this machine to 0.14.0 and putting it in safe
+You are updating an existing Teyla install on this machine to 0.15.0 and putting it in safe
 mode, so that from now on it does nothing on its own that touches the network. Do every step,
 verify each with a command, and report at the end in the format given. Do not ask me whether
 to proceed; stop only at a real blocker.
@@ -45,10 +45,10 @@ command -v claude gh codex grok
 
 The path tells you the method: `.../uv/tools/teyla/...` → uv tool; `.../pipx/venvs/teyla/...`
 → pipx; a directory with `.git` and `pyproject.toml` two levels up → git checkout; anything
-else → pip. `teyla --version` prints the bare version number (for example `0.14.0`). Write
+else → pip. `teyla --version` prints the bare version number (for example `0.15.0`). Write
 down the old version, the method, and which of `claude`, `gh`, `codex`, `grok` exist.
 
-## 2. Bootstrap to 0.14.0 by hand (only if the version above is older, or `teyla` is missing)
+## 2. Bootstrap to 0.15.0 by hand (only if the version above is older, or `teyla` is missing)
 
 The safe-mode and uninstall commands used below first shipped in 0.13.0, so an older install
 cannot run them and has to be moved by hand once, with the method you found. Pin Python 3.12
@@ -56,14 +56,14 @@ cannot run them and has to be moved by hand once, with the method you found. Pin
 makes Python trust the macOS keychain:
 
 ```
-uv tool install --force --python 3.12 "teyla[work] @ git+https://github.com/zaitsew/teyla@v0.14.0"      # uv tool
-pipx install --force --python python3.12 "teyla[work] @ git+https://github.com/zaitsew/teyla@v0.14.0"   # pipx
-python3.12 -m pip install --user --upgrade "teyla[work] @ git+https://github.com/zaitsew/teyla@v0.14.0" # pip
-git -C <checkout> fetch --tags origin && git -C <checkout> checkout --detach v0.14.0 \
+uv tool install --force --python 3.12 "teyla[work] @ git+https://github.com/zaitsew/teyla@v0.15.0"      # uv tool
+pipx install --force --python python3.12 "teyla[work] @ git+https://github.com/zaitsew/teyla@v0.15.0"   # pipx
+python3.12 -m pip install --user --upgrade "teyla[work] @ git+https://github.com/zaitsew/teyla@v0.15.0" # pip
+git -C <checkout> fetch --tags origin && git -C <checkout> checkout --detach v0.15.0 \
   && python3.12 -m pip install -e "<checkout>[work]"                                                      # checkout
 ```
 
-`teyla --version` must print `0.14.0` before you continue. If it already did, skip this step.
+`teyla --version` must print `0.15.0` before you continue. If it already did, skip this step.
 
 If GitHub is not reachable from this machine, or the install fails on TLS (`certificate
 verify failed`, a proxy error), that is a blocker only I can resolve (the proxy, the root CA
@@ -109,12 +109,12 @@ refused; a config that cannot be parsed turns safe mode on rather than off.
 Then freeze the update to this release and the interpreter to 3.12:
 
 ```
-teyla config set update.pin=0.14.0 update.python=3.12
+teyla config set update.pin=0.15.0 update.python=3.12
 teyla doctor | head -6
 ```
 
 Doctor's second line must read `INFO safe  on (network off, no auto-update, no repo commands)`
-and the `update` line `pinned to 0.14.0`. A `FIX safe:setting` line means the config does not
+and the `update` line `pinned to 0.15.0`. A `FIX safe:setting` line means the config does not
 parse or holds a non-boolean: run the command it prints.
 
 If a proxy setting is needed and the install in step 2 did not already cover it (an `[env]`
@@ -139,7 +139,7 @@ Never run `teyla uninstall` without `--dry`.
 teyla prompt onboard
 ```
 
-This is the onboarding prompt shipped with 0.14.0. Read its "Corporate notes": the table of
+This is the onboarding prompt shipped with 0.15.0. Read its "Corporate notes": the table of
 what touches the network and the table of every file Teyla writes, with the undo for each. Do
 not re-run its install steps 1–5, and above all not its `teyla policy init --owner` line
 without `--work`: you already did the right version in step 3. Where its table says the daily
@@ -157,8 +157,8 @@ teyla update --allow-network --wire
 ```
 
 In safe mode `teyla update` refuses without `--allow-network`, even by hand, and prints the
-refusal; that is the gate working. With the pin set the target is exactly 0.14.0: an install
-that is already 0.14.0 reports `is the pinned release` and `--wire` runs the post-update steps
+refusal; that is the gate working. With the pin set the target is exactly 0.15.0: an install
+that is already 0.15.0 reports `is the pinned release` and `--wire` runs the post-update steps
 anyway; a different version is reinstalled from the release's commit and verified, and rolled
 back if the build reports the wrong version. The post-update steps run in this order and each
 prints what it did: `policy sync` (the import line and symlinks for harnesses that exist here),
@@ -190,9 +190,13 @@ If `teyla doctor` still shows `FIX plugin`, or step 6 printed `/plugin ...` line
 lines verbatim into the report as "for me to type in a Claude Code session":
 
 ```
-/plugin marketplace add zaitsew/teyla
+/plugin marketplace add zaitsew/teyla#v0.15.0
 /plugin install teyla@teyla
 ```
+
+The `#v0.15.0` pins the hooks to the same release as the CLI; without it they follow main. If
+a teyla plugin from an unpinned marketplace is already installed (`teyla doctor` warns
+`plugin:pin`), put `/plugin marketplace remove teyla` first in that list.
 
 Do not run `teyla plugin install`, which in safe mode only reprints them, and do not edit
 `~/.claude/plugins/*.json`. If the organisation restricts plugin marketplaces, my typing them
