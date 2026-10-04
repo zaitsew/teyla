@@ -195,7 +195,8 @@ def _in_self_ignoring_cache(path: str, entry: str, seen: dict[str, bool]) -> boo
         rel = "/".join(parts[:i + 1])
         if rel not in seen:
             try:
-                rules = [ln.strip() for ln in pathlib.Path(path, rel, ".gitignore").read_text().splitlines()]
+                # rstrip only: git drops trailing spaces, but a leading one is part of the pattern.
+                rules = [ln.rstrip() for ln in pathlib.Path(path, rel, ".gitignore").read_text().splitlines()]
             except (OSError, UnicodeDecodeError):
                 rules = []
             rc, tracked = _git(path, "ls-files", "--", rel)

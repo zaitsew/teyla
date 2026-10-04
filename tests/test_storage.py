@@ -648,6 +648,19 @@ def test_cache_whose_gitignore_is_not_just_a_star_is_work(tmp_path):
     assert work == [".ruff_cache/notes.md"]
 
 
+def test_cache_gitignore_with_a_leading_space_is_not_self_ignoring(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    (main / ".gitignore").write_text(".env\n")
+    _git(main, "add", "-A"); _git(main, "commit", "-m", "env"); _git(main, "push")
+    wt = tmp_path / "wt-feat"
+    _add_worktree(main, wt, "feat")
+    (wt / ".pytest_cache").mkdir()
+    (wt / ".pytest_cache" / ".gitignore").write_text(" *\n")   # matches a file named " *", not everything
+    (wt / ".pytest_cache" / ".env").write_text("KEY=secret")
+    work, _ = storage.ignored_work(str(wt))
+    assert work == [".pytest_cache/.env"]
+
+
 def test_xcuserdata_is_not_work():
     assert storage._harmless("App.xcodeproj/xcuserdata/")
 
