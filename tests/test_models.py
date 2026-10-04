@@ -110,6 +110,30 @@ def test_parse_ladder_splits_cells_and_expands_slash_prefix():
     assert ladder["anthropic"]["note"] == "anthropic note"
 
 
+def test_split_ladder_cell_keeps_annotations_with_their_model():
+    # POLICY.md's own cells on 2026-10-04: the commas inside the parentheses and after the dash
+    # used to split off "design", "same-provider review)" etc. as nine LADDER-UNKNOWN entries.
+    cell = "Sonnet 5.5 (default worker), Opus 5.5 (hard sub-tasks, design, same-provider review)"
+    assert models._split_ladder_cell(cell) == ["Sonnet 5.5 (default worker)",
+                                                 "Opus 5.5 (hard sub-tasks, design, same-provider review)"]
+    cell = "GPT-6.1 Sol (`gpt-6.1-sol`, needs codex-cli ≥ 0.159) — the default: Codex sessions, `codex exec` lanes"
+    assert models._split_ladder_cell(cell) == [cell]
+    assert models._split_ladder_cell("Grok 4.7, `grok-4.7-build-fast` (fix rounds)") == [
+        "Grok 4.7", "`grok-4.7-build-fast` (fix rounds)"]
+
+
+@pytest.mark.parametrize("entry,expect_id", [
+    ("Sonnet 5 (default worker)", "claude-sonnet-5"),
+    ("Opus 5 (hard sub-tasks, design, same-provider review)", "claude-opus-5"),
+    ("GPT-5.6 Sol (`gpt-5.6-sol`, needs codex-cli ≥ 0.159) — the default: Codex sessions, reviews", "gpt-5.6-sol"),
+    ("`grok-4.6` (fix rounds)", "grok-4.6"),
+])
+def test_resolve_annotated_ladder_entries(entry, expect_id):
+    resolved = models.resolve_ladder_entry(entry, entry.startswith("GPT") and "openai"
+                                           or "grok" in entry and "xai" or "anthropic", CATALOGUE, [])
+    assert resolved is not None and resolved["id"] == expect_id
+
+
 def test_parse_ladder_no_markers_returns_empty():
     assert models.parse_ladder("# no markers here at all") == {}
 

@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- **A10 counts writes to `~/.claude/CLAUDE.md`, not mentions of it.** A Bash call counted when
+  it named the path anywhere and wrote anything anywhere, so a session that edited a hook, a PR
+  body and a changelog naming the file was reported as six edits to it (A10 [high], 2026-10-04)
+  though the file had not changed since the ack. Now the path has to be the target: a redirect
+  into it, the operand of `sed -i`/`tee`/`perl -i`, the last operand of `cp`/`mv`, or a literal
+  (or `Path.home()/".claude/CLAUDE.md"`) that a script writes. Edits to a repo's own
+  `.claude/CLAUDE.md` no longer count either. Over 40 days of transcripts: 24 hits kept, 77
+  dropped, the dropped ones reads and mentions.
+- **A11 reads annotated ladder cells.** `Sonnet 5.5 (default worker), Opus 5.5 (hard sub-tasks,
+  design, same-provider review)` was split at every comma, and the pieces — `design`,
+  `` `codex exec` lanes `` — came back as nine LADDER-UNKNOWN for a ladder whose every model
+  exists. Commas inside parentheses and backticks no longer split, text after ` — ` stays with
+  its entry, and the annotation is stripped only for matching, so `--write-policy` keeps it.
+
 ## 0.16.0 — 2026-10-02 — the personal Mac's habits, on the work MacBook
 
 Three practices lived only in the owner's private `~/ops/bin`, so the managed work MacBook (the

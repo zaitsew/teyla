@@ -9,6 +9,8 @@ import json
 import os
 import sqlite3
 
+import pytest
+
 from teyla.adapters import claude_code, codex, grok, hermes
 
 
@@ -824,3 +826,26 @@ def test_codex_empty_archive_root_still_means_no_archive(tmp_path, monkeypatch):
     root = tmp_path / "sessions"; root.mkdir()
     codex.load(root=str(root), archive_root="", index_path=str(tmp_path / "none"))
     assert str(archive) not in seen
+
+
+# --- the global instructions file: a write, not a mention ------------------------------------
+
+@pytest.mark.parametrize("name,inp,expect", [
+    ("Edit", {"file_path": "/Users/me/.claude/CLAUDE.md"}, True),
+    ("Edit", {"file_path": "/Users/me/repos/x/.claude/CLAUDE.md"}, False),  # a repo's own file
+    ("Bash", {"command": "echo x >> ~/.claude/CLAUDE.md"}, True),
+    ("Bash", {"command": "cat > \"$HOME/.claude/CLAUDE.md\" <<'EOF'\nx\nEOF"}, True),
+    ("Bash", {"command": "sed -i '' 's/a/b/' ~/.claude/CLAUDE.md"}, True),
+    ("Bash", {"command": "cp /tmp/x.md ~/.claude/CLAUDE.md"}, True),
+    ("Bash", {"command": "cp ~/.claude/CLAUDE.md /tmp/backup.md"}, False),
+    ("Bash", {"command": "python3 - <<'EOF'\np='/Users/me/.claude/CLAUDE.md'; s=open(p).read()\nopen(p,'w').write(s)\nEOF"}, True),
+    ("Bash", {"command": "python3 - <<'EOF'\np=pathlib.Path.home()/'.claude/CLAUDE.md'\np.write_text('x')\nEOF"}, True),
+    # 2026-10-02: reads, and scripts writing other files that only name the path, were six A10 edits
+    ("Bash", {"command": "grep -oE 'x' ~/.claude/CLAUDE.md | sort > /tmp/x1; diff /tmp/x1 /tmp/x2"}, False),
+    ("Bash", {"command": "wc -c ~/.agents/POLICY.md ~/.claude/CLAUDE.md"}, False),
+    ("Bash", {"command": "python3 - <<'EOF'\np=pathlib.Path('bin/x.mjs')\np.write_text('// lives in ~/.claude/CLAUDE.md')\nEOF"}, False),
+    ("Bash", {"command": "python3 - <<'EOF'\nold='[ \"$HOME/.claude/CLAUDE.md\" -nt \"$a\" ]'\np.write_text(s)\nEOF"}, False),
+    ("Bash", {"command": "cat ~/.claude/CLAUDE.md >> $P"}, False),
+])
+def test_touches_governance_needs_the_file_as_the_write_target(name, inp, expect):
+    assert claude_code._touches_governance(name, inp) is expect

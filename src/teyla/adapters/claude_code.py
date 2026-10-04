@@ -242,16 +242,40 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
     return s
 
 
-_WRITE_RE = re.compile(r"(>>?\s*[^|]*CLAUDE\.md|sed -i|write_text|tee |open\([^)]*['\"]w)")
+# The global instructions file as a path token: ~, $HOME, ${HOME} or a home directory, then
+# /.claude/CLAUDE.md. A repo's own .claude/CLAUDE.md is a project file, not the global one.
+_HOME_RE = r"(?:~|\$HOME|\$\{HOME\}|/Users/[^/\s'\"]+|/home/[^/\s'\"]+)"
+_GLOBAL_MD = _HOME_RE + r"/\.claude/CLAUDE\.md"
+# Shell verbs that write any path operand they are given, and those that write only their last.
+_WRITE_VERB_RE = re.compile(r"^\s*(?:sudo\s+)?(?:sed\s+(?:-\S+\s+)*-i|perl\s+-\S*i|tee\b|truncate\b)")
+_COPY_VERB_RE = re.compile(r"^\s*(?:sudo\s+)?(?:cp|mv|install|ln)\b")
+# A script's write call; counted only together with the path held as a whole string literal.
+_SCRIPT_WRITE_RE = re.compile(r"write_text|\.write\(|open\([^)]*,\s*['\"][wa]")
 
 
 def _touches_governance(name: str, inp: dict) -> bool:
-    """True when a tool call writes the global instructions file. Reads (grep, cat) do not count."""
+    """True when a tool call writes the global instructions file. Reads (grep, cat) do not count,
+    and neither does a command that only mentions the path: on 2026-10-02 a session that wrote
+    a hook, a PR body and a changelog naming ~/.claude/CLAUDE.md was reported as six edits to it
+    (A10 [high]) though the file was untouched since the ack. The path has to be the target:
+    a redirect into it, the operand of a writing verb, or a literal a script opens and writes."""
     target = os.path.expanduser("~/.claude/CLAUDE.md")
+    path = rf"(?:{_GLOBAL_MD}|{re.escape(target)})"
     if name in ("Edit", "Write", "MultiEdit"):
         fp = str(inp.get("file_path", ""))
-        return fp.endswith(".claude/CLAUDE.md") or fp == target
-    if name == "Bash":
-        cmd = str(inp.get("command", ""))
-        return ".claude/CLAUDE.md" in cmd and bool(_WRITE_RE.search(cmd))
-    return False
+        return fp == target or bool(re.fullmatch(path, fp))
+    if name != "Bash":
+        return False
+    cmd = str(inp.get("command", ""))
+    if "CLAUDE.md" not in cmd:
+        return False
+    if re.search(rf">>?\s*['\"]?{path}['\"]?(?=$|[\s;|&)])", cmd):
+        return True
+    for seg in re.split(r"[;\n|&]+", cmd):
+        if _WRITE_VERB_RE.match(seg) and re.search(path, seg):
+            return True
+        if _COPY_VERB_RE.match(seg) and re.fullmatch(rf"['\"]?{path}['\"]?", (seg.split() or [""])[-1]):
+            return True
+    held = (re.search(rf"(?:\b\w+\s*=\s*|(?:open|Path|expanduser)\(\s*)(['\"]){path}\1", cmd)
+            or re.search(r"Path\.home\(\)\s*/\s*['\"]\.claude(?:/|['\"]\s*/\s*['\"])CLAUDE\.md['\"]", cmd))
+    return bool(held and _SCRIPT_WRITE_RE.search(cmd))
