@@ -233,13 +233,14 @@ turn them on here:
 
 ```
 teyla config set hooks.context_budget=true hooks.land_check=true
+teyla config set hooks.context_budget_first=240000 hooks.context_budget_step=30000
 teyla doctor | grep 'hooks:'
 ```
 
 Doctor must print `INFO hooks:context-budget` and `INFO hooks:land-check`, and until the next part
-also `WARN hooks:autocompact`. The context budget asks the model for a handoff at 300k tokens of
-context; Claude Code only compacts early enough when `~/.claude/settings.json` has
-`"autoCompactWindow": 400000`. Doctor never writes that file; you add the one key. Back the file
+also `WARN hooks:autocompact`. The context budget asks the model for a handoff at 240k tokens of
+context (0.16.0's defaults are 300k/40k, hence the second line); Claude Code compacts at about
+300k, early enough, only when `~/.claude/settings.json` has `"autoCompactWindow": 335000`. Doctor never writes that file; you add the one key. Back the file
 up first, then merge the key in and keep every other key as it is:
 
 ```
@@ -253,12 +254,12 @@ if not isinstance(d, dict):
 if "autoCompactWindow" in d:
     print(f"autoCompactWindow already {d['autoCompactWindow']}; left as is")
 else:
-    d["autoCompactWindow"] = 400000
+    d["autoCompactWindow"] = 335000
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(d, indent=2) + "\n")
     os.replace(tmp, p)
-    print(f"added autoCompactWindow 400000 to {p}")
+    print(f"added autoCompactWindow 335000 to {p}")
 PY
 teyla doctor | grep 'hooks:'
 ```

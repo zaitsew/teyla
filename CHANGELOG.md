@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Compaction at ~300k, read from the machine.** On 2026-10-04 the personal Mac moved
+  `"autoCompactWindow"` from 400000 to 335000 (compaction at ~300k instead of ~365k) and
+  `~/ops/bin/context-budget-hook` its handoff reminders to 240k/270k (zaitsew/ops#208): replaying
+  1–3 Oct, ~10% less re-read context for ~50 more compactions in 3 days; 250k compacted mid-task
+  too often. A3, A4 and W2 no longer print a fixed 400000/~365k: they read `autoCompactWindow`
+  from `~/.claude/settings.json` (compaction ≈ window − 35k) and, when it is absent, recommend
+  335000 (~300k). `teyla doctor` suggests 335000, and warns (`hooks:context-budget-late`) when
+  `context_budget_first` is at or past the point the window compacts at, since the handoff would
+  then come after the compaction it is for. The plugin's context-budget hook defaults to 240000 /
+  30000 and its reminder names where this machine compacts. The work-account prompt sets those
+  thresholds explicitly (0.16.0's defaults are 300k/40k) and merges in 335000.
 - **A10 counts writes to `~/.claude/CLAUDE.md`, not mentions of it.** A Bash call counted when
   it named the path anywhere and wrote anything anywhere, so a session that edited a hook, a PR
   body and a changelog naming the file was reported as six edits to it (A10 [high], 2026-10-04)

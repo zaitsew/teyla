@@ -92,8 +92,8 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 |---|---|---|
 | A1 | >50% of subagent calls inherited the parent model | pass `model:` explicitly; cheap tier reads, mid tier builds, top tier reviews |
 | A2 | >60% of output tokens on the orchestrate tier | route volume work down the ladder |
-| A3 | sessions >8 MB or >12 active h | one session per project, compacted in place (`autoCompactWindow` 400000); one PR per logical unit |
-| A4 | cache-read per output token >150× | compaction at ~365k, subagents for reading |
+| A3 | sessions >8 MB or >12 active h | one session per project, compacted in place (`autoCompactWindow` 335000, or the machine's own value); one PR per logical unit |
+| A4 | cache-read per output token >150× | compaction at ~300k (`autoCompactWindow` − 35k), subagents for reading |
 | A5 | correction rate on human turns (never a `claude -p`/`codex exec`/`grok -p`/`hermes -z` prompt, a retry after an API error, or a harness-injected turn) | cluster them; two occurrences = a rule |
 | A6 | many subagents, no review skill ever run | `/review`, `/codex review`, `/grok review` before money, keys, other people's data |
 | A7 | sessions launched from a parent directory | launch from the repo root |
@@ -326,7 +326,7 @@ unless you pass `--allow-public`.
 
   | hook | event | what it does |
   |---|---|---|
-  | `context-budget.sh` | UserPromptSubmit, PostToolUse, SessionStart (compact) | at 300k tokens of context, then every 40k, the model writes a handoff to `~/.teyla/handoff/`; after Claude Code compacts (`"autoCompactWindow": 400000` in `~/.claude/settings.json`) it is put back once. Off, it costs one `awk` and starts no Python |
+  | `context-budget.sh` | UserPromptSubmit, PostToolUse, SessionStart (compact) | at 240k tokens of context, then every 30k, the model writes a handoff to `~/.teyla/handoff/`; after Claude Code compacts (at ~300k with `"autoCompactWindow": 335000` in `~/.claude/settings.json`) it is put back once. Off, it costs one `awk` and starts no Python |
   | `land-check.sh` | Stop (Claude Code; Codex via `teyla harness sync`) | once per session, uncommitted files or commits on no remote are named with how to land them: open the PR/MR and merge only when the repo is in the `MERGE-APPROVED REPOS` block of `~/.claude/CLAUDE.md`, else stop at the PR/MR. Never a block |
 
 ```bash

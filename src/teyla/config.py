@@ -27,10 +27,11 @@
                                    "repo": <repo>/.teyla/corrections.jsonl, the pre-0.12 place
     [hooks]                        opt-in plugin hooks; off by default because the personal Mac
                                    already runs ~/ops copies of both, and two would double every message
-    context_budget = false         at 300k tokens of context (then every 40k) the model writes a handoff
+    context_budget = false         at 240k tokens of context (then every 30k) the model writes a handoff
                                    to ~/.teyla/handoff/; it is put back after Claude Code compacts
-    context_budget_first = 300000
-    context_budget_step  = 40000
+                                   (~300k with "autoCompactWindow": 335000 in ~/.claude/settings.json)
+    context_budget_first = 240000
+    context_budget_step  = 30000
     land_check     = false         Stop: once per session, uncommitted or unpushed work is named, with
                                    how to land it (merge only into a MERGE-APPROVED repo)
     [env]
@@ -51,6 +52,7 @@ work laptop and the home laptop can differ in roots without differing in command
 from __future__ import annotations
 
 import copy
+import json
 import os
 import pathlib
 
@@ -76,9 +78,34 @@ DEFAULTS = {
     # The plugin's opt-in hooks (plugin/hooks/context-budget.sh, land-check.sh). Off by default: on
     # the personal Mac the ~/ops versions are already wired, and a second copy doubles each note.
     # The hooks read these keys from the file with awk/tomllib, not through this module.
-    "hooks": {"context_budget": False, "context_budget_first": 300000, "context_budget_step": 40000,
+    "hooks": {"context_budget": False, "context_budget_first": 240000, "context_budget_step": 30000,
               "land_check": False},
 }
+
+# Claude Code compacts at autoCompactWindow minus the output reserve minus 13k: about 35k under
+# the window. 335000 (compaction at ~300k) is the personal Mac's value since 2026-10-04: replaying
+# 1-3 Oct, it re-read ~10% less context than 400000 (~365k) for ~50 more compactions in 3 days;
+# 250000 compacted mid-task too often. The context-budget hook's 240k/30k reminders sit under it.
+AUTOCOMPACT_RECOMMENDED = 335000
+AUTOCOMPACT_MARGIN = 35000
+
+
+def autocompact_window() -> int | None:
+    """`autoCompactWindow` from ~/.claude/settings.json, or None when the file, the key or a
+    usable number is missing. Read-only: the file belongs to Claude Code and to the person."""
+    try:
+        w = json.loads((HOME / ".claude" / "settings.json").read_text()).get("autoCompactWindow")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return w if isinstance(w, int) and not isinstance(w, bool) and w > AUTOCOMPACT_MARGIN else None
+
+
+def compaction() -> tuple[int, int, bool]:
+    """(window, compaction point, set): this machine's autoCompactWindow and where it compacts,
+    or the recommended 335000 (~300k) with set=False when settings.json does not have one."""
+    w = autocompact_window()
+    window = w or AUTOCOMPACT_RECOMMENDED
+    return window, window - AUTOCOMPACT_MARGIN, w is not None
 
 
 UNPARSEABLE = "unparseable"

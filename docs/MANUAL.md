@@ -357,15 +357,17 @@ mistakes.
 
 | Signal | Threshold | What to do |
 |---|---|---|
-| Transcript size | ~5 MB; **8 MB is a defect** | Check compaction fired (`autoCompactWindow` 400000) and reading went to subagents |
+| Transcript size | ~5 MB; **8 MB is a defect** | Check compaction fired (`autoCompactWindow` 335000) and reading went to subagents |
 | Wall-clock duration | 12 h | Same |
 | Compactions | not a signal | Expected: one session per project compacts in place |
-| Cache-read : output | >150:1 | Compaction at ~365k; subagents for reading; summaries, not whole files |
+| Cache-read : output | >150:1 | Compaction at ~300k; subagents for reading; summaries, not whole files |
 
 **One session per project** (zaitsew/ops#198, 2026-10-01), launched from the repo
-root and compacted in place: `autoCompactWindow` 400000 compacts at ~365k, and
-`~/ops/bin/context-budget-hook` writes a handoff at 300k/340k and re-injects it
-after compaction. Inside it, **one PR per logical unit** — what you would review
+root and compacted in place: `autoCompactWindow` 335000 compacts at ~300k, and
+`~/ops/bin/context-budget-hook` writes a handoff at 240k/270k and re-injects it
+after compaction (400000, ~365k and 300k/340k until 2026-10-04, zaitsew/ops#208:
+~10% less re-read context for ~50 more compactions over 1–3 Oct; 250k compacted
+mid-task too often). Inside it, **one PR per logical unit** — what you would review
 in one sitting.
 
 **Scope before code** (§0 §4): the agent's first output is a written scope,

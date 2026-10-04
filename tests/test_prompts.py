@@ -46,6 +46,8 @@ def test_work_update_prompt_pins_one_release_and_turns_on_the_parity_hooks():
     assert set(re.findall(r"\b0\.1\d\.\d+\b", text)) - {"0.13.0"} == {"0.16.0"}
     assert "update.pin=0.16.0" in text and "zaitsew/teyla#v0.16.0" in text and "teyla@v0.16.0" in text
     assert "teyla config set hooks.context_budget=true hooks.land_check=true" in text
-    assert "settings.json.bak-" in text and '"autoCompactWindow": 400000' in text and "os.replace" in text
+    assert "teyla config set hooks.context_budget_first=240000 hooks.context_budget_step=30000" in text
+    assert "settings.json.bak-" in text and '"autoCompactWindow": 335000' in text and "os.replace" in text
+    assert 'd["autoCompactWindow"] = 335000' in text and "400000" not in text
     assert "teyla:review" in text
     assert text.index("## 8. Doctor must be clean") < text.index("## 9. The personal Mac's habits") < text.index("## 10. A feedback round")

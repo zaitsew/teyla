@@ -46,7 +46,7 @@ def metrics(sessions: list[Session], days: int | None = None) -> dict:
         # One human turn is already one logical unit: a big autonomous run cannot be "split into
         # one session per unit", so size alone never makes it giant. It still counts when it ran
         # for more active hours than a unit should. Compactions do not count: since zaitsew/ops#198
-        # (2026-10-01) one session per project compacts in place at ~365k, so a long project
+        # (2026-10-01) one session per project compacts in place (~300k since 2026-10-04), so a long project
         # compacting several times is the intended shape, not a giant session.
         oversized = s.size > GIANT_BYTES and s.n_user > 1
         if oversized or (s.active_hours or 0) > LONG_ACTIVE_HOURS:

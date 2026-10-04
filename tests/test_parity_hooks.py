@@ -105,20 +105,36 @@ def _turn(tmp_path, event="PostToolUse", sid="sess-1", **env):
 def test_context_budget_asks_for_a_handoff_at_the_threshold_once_per_step(tmp_path):
     _config(tmp_path, "[hooks]\ncontext_budget = true\n")
     handoff = tmp_path / "home" / ".teyla" / "handoff"
-    _transcript(tmp_path, 299_000)
+    _transcript(tmp_path, 239_000)
     assert _turn(tmp_path).stdout == ""
-    _transcript(tmp_path, 310_000, sidechain_tokens=5)  # a subagent's record is not the session's context
+    _transcript(tmp_path, 250_000, sidechain_tokens=5)  # a subagent's record is not the session's context
     out = json.loads(_turn(tmp_path).stdout)["hookSpecificOutput"]
     assert out["hookEventName"] == "PostToolUse"
     note = out["additionalContext"]
-    assert "~310k tokens" in note and str(handoff / "sess-1.md") in note
+    assert "~250k tokens" in note and str(handoff / "sess-1.md") in note
+    # no ~/.claude/settings.json in this HOME: the note says so and names 335000 (~300k)
+    assert "near the model's full window" in note and '335000 would compact at about 300k' in note
     assert "Write the handoff" in note and "Do not stop" in note
     assert oct(handoff.stat().st_mode & 0o777) == "0o700"
     assert _turn(tmp_path).stdout == "", "the same level is asked for once"
     (handoff / "sess-1.md").write_text("state\n")
-    _transcript(tmp_path, 345_000)
+    _transcript(tmp_path, 275_000)
     note = json.loads(_turn(tmp_path, event="UserPromptSubmit").stdout)["hookSpecificOutput"]
     assert note["hookEventName"] == "UserPromptSubmit" and "Rewrite the handoff" in note["additionalContext"]
+
+
+@pytest.mark.parametrize("settings,expect", [
+    ({"autoCompactWindow": 335000}, 'at about 300k with "autoCompactWindow": 335000'),
+    ({"model": "opus", "autoCompactWindow": 400000}, 'at about 365k with "autoCompactWindow": 400000'),
+    ({"autoCompactWindow": "400000"}, "near the model's full window"),
+    (["not", "an", "object"], "near the model's full window"),
+])
+def test_context_budget_names_where_this_machine_compacts(tmp_path, settings, expect):
+    _config(tmp_path, "[hooks]\ncontext_budget = true\n")
+    (tmp_path / "home" / ".claude").mkdir(parents=True)
+    (tmp_path / "home" / ".claude" / "settings.json").write_text(json.dumps(settings))
+    _transcript(tmp_path, 241_000)
+    assert expect in json.loads(_turn(tmp_path).stdout)["hookSpecificOutput"]["additionalContext"]
 
 
 def test_context_budget_thresholds_come_from_config_and_safe_mode_does_not_stop_it(tmp_path):
@@ -292,7 +308,7 @@ def test_config_keys_are_typed_and_default_off(tmp_path):
     assert config.set_value("hooks.context_budget_step", "lots", path=p).startswith("invalid")
     cfg = config.load(p)
     assert cfg["hooks"]["context_budget"] is True and cfg["hooks"]["context_budget_first"] == 250000
-    assert cfg["hooks"]["context_budget_step"] == 40000 and config.hook_on("context_budget", cfg)
+    assert cfg["hooks"]["context_budget_step"] == 30000 and config.hook_on("context_budget", cfg)
     assert "[hooks]\ncontext_budget = true\ncontext_budget_first = 250000\n" in p.read_text()
 
 
@@ -306,7 +322,7 @@ def test_doctor_names_each_enabled_hook_and_the_missing_autocompact_window(tmp_p
     assert by["hooks:context-budget"]["level"] == "INFO" and "300k" in by["hooks:context-budget"]["detail"]
     assert by["hooks:land-check"]["level"] == "INFO"
     warn = by["hooks:autocompact"]
-    assert warn["level"] == "WARN" and '"autoCompactWindow": 400000' in warn["fix"] and "/config" in warn["fix"]
+    assert warn["level"] == "WARN" and '"autoCompactWindow": 335000' in warn["fix"] and "/config" in warn["fix"]
     settings = home / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({"model": "opus", "autoCompactWindow": 400000}))
@@ -315,6 +331,47 @@ def test_doctor_names_each_enabled_hook_and_the_missing_autocompact_window(tmp_p
     assert settings.read_text() == before, "doctor never writes settings.json"
     only_land = {"hooks": {"land_check": True}}
     assert [c["name"] for c in doctor.hook_checks(only_land)] == ["hooks:land-check"]
+    assert "hooks:context-budget-late" not in {c["name"] for c in doctor.hook_checks(cfg)}, "300k < ~365k"
+
+
+def test_doctor_warns_when_the_handoff_comes_after_the_compaction(tmp_path, monkeypatch):
+    """A config.toml still at 300k with a 335000 window (~300k): the compaction comes first."""
+    monkeypatch.setattr(config, "HOME", tmp_path)
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text(json.dumps({"autoCompactWindow": 335000}))
+    late = {c["name"]: c for c in doctor.hook_checks({"hooks": {"context_budget": True, "context_budget_first": 300000}})}
+    late = late["hooks:context-budget-late"]
+    assert late["level"] == "WARN" and "about 300k" in late["detail"]
+    assert late["fix"] == "teyla config set hooks.context_budget_first=240000 hooks.context_budget_step=30000"
+    by = {c["name"] for c in doctor.hook_checks({"hooks": {"context_budget": True}})}
+    assert "hooks:context-budget-late" not in by and "hooks:autocompact" not in by, "the defaults fit 335000"
+
+
+@pytest.mark.parametrize("settings,window,at,is_set", [
+    (None, 335000, 300000, False),
+    ({"autoCompactWindow": 400000}, 400000, 365000, True),
+    ({"autoCompactWindow": 335000}, 335000, 300000, True),
+    ({"autoCompactWindow": True}, 335000, 300000, False),
+    ({"autoCompactWindow": 20000}, 335000, 300000, False),
+    ("not json", 335000, 300000, False),
+])
+def test_compaction_reads_this_machines_window_or_recommends_335000(tmp_path, monkeypatch, settings, window, at, is_set):
+    monkeypatch.setattr(config, "HOME", tmp_path)
+    if settings is not None:
+        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".claude" / "settings.json").write_text(settings if isinstance(settings, str) else json.dumps(settings))
+    assert config.compaction() == (window, at, is_set)
+
+
+def test_advise_and_spend_name_the_machines_compaction(tmp_path, monkeypatch):
+    from teyla import advise, spend
+    monkeypatch.setattr(config, "HOME", tmp_path)
+    assert advise._compaction() == "set autoCompactWindow 335000 in ~/.claude/settings.json: compaction at ~300k"
+    assert spend._w2_fix().startswith('compaction is not set: add "autoCompactWindow": 335000 to ~/.claude/settings.json (~300k)')
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text(json.dumps({"autoCompactWindow": 400000}))
+    assert advise._compaction() == "autoCompactWindow 400000: compaction at ~365k"
+    assert spend._w2_fix().startswith("compaction is set (autoCompactWindow 400000, ~365k)")
 
 
 @pytest.fixture

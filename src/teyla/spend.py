@@ -243,6 +243,19 @@ def _money(x: float) -> str:
     return f"${x:,.0f}" if x >= 10 else f"${x:,.2f}"
 
 
+def _w2_fix() -> str:
+    """W2's fix names this machine's autoCompactWindow (compaction ≈ window − 35k), or the
+    recommended 335000 when ~/.claude/settings.json has none."""
+    window, at, is_set = config.compaction()
+    hook = ("context-budget-hook re-injects the handoff; if W2 stays high, check the session had the "
+            "setting and the hook fired (~/.cache/context-budget/handoff/), and that the orchestrator "
+            "delegates reading to subagents")
+    if is_set:
+        return f"compaction is set (autoCompactWindow {window}, ~{at // 1000}k); {hook}"
+    return (f"compaction is not set: add \"autoCompactWindow\": {window} to ~/.claude/settings.json "
+            f"(~{at // 1000}k); {hook}")
+
+
 def findings(rows: list[dict], actions: list[dict] | None = None, outcome_of=outcome,
              coverage: list[str] | None = None, spikes: list[dict] | None = None) -> list[dict]:
     """The waste findings, largest first: {id, usd, title, evidence, fix, cmd}. `usd` is None for
@@ -280,9 +293,7 @@ def findings(rows: list[dict], actions: list[dict] | None = None, outcome_of=out
         F.append(dict(id="W2", usd=sum(r["reread_usd"] for r in reread), cmd=False,
                       title=f"re-reading context past 250k tokens in {len(reread)} session(s)",
                       evidence="; ".join(f"{_who(r)} {_money(r['reread_usd'])}" for r in reread[:3]),
-                      fix="compaction is set (autoCompactWindow 400000, ~365k; context-budget-hook re-injects the "
-                          "handoff); if W2 stays high, check the session had the setting and the hook fired "
-                          "(~/.cache/context-budget/handoff/), and that the orchestrator delegates reading to subagents"))
+                      fix=_w2_fix()))
     top = [r for r in rows if r["top_tier_sub_saving"] > 0]
     if top:
         top.sort(key=lambda r: -r["top_tier_sub_saving"])

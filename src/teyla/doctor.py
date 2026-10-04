@@ -373,9 +373,11 @@ def hook_checks(cfg: dict) -> list[dict]:
     """One INFO line per opt-in hook that is on; nothing for one that is off (the default, and
     the personal Mac's state, where ~/ops wires its own copies). Context budget without
     `autoCompactWindow` in ~/.claude/settings.json is a WARN: the hook asks for the handoff at
-    300k, but Claude Code then compacts only near the model's full window, so the session keeps
-    paying for the re-read it was meant to stop. Doctor names the fix; it never writes
-    settings.json, which belongs to Claude Code and to the person."""
+    240k, but Claude Code then compacts only near the model's full window, so the session keeps
+    paying for the re-read it was meant to stop. So is a first threshold at or past the point the
+    window compacts at (window − 35k): the handoff would be asked for after the compaction it is
+    meant to survive. Doctor names the fix; it never writes settings.json, which belongs to Claude
+    Code and to the person."""
     out = []
     hooks = cfg.get("hooks") or {}
     if config.hook_on("context_budget", cfg):
@@ -384,7 +386,8 @@ def hook_checks(cfg: dict) -> list[dict]:
                 return int(hooks.get(key, default))
             except (TypeError, ValueError):
                 return default
-        first, step = num("context_budget_first", 300000), num("context_budget_step", 40000)
+        d = config.DEFAULTS["hooks"]
+        first, step = num("context_budget_first", d["context_budget_first"]), num("context_budget_step", d["context_budget_step"])
         out.append(_check("INFO", "hooks:context-budget", f"on: a handoff at {first // 1000}k tokens of context, again every "
                           f"{step // 1000}k, into ~/.teyla/handoff/; put back after Claude Code compacts"))
         settings = config.HOME / ".claude" / "settings.json"
@@ -399,8 +402,18 @@ def hook_checks(cfg: dict) -> list[dict]:
             out.append(_check("WARN", "hooks:autocompact",
                               f"{settings} {why}: Claude Code compacts only near the model's full window, so the "
                               "session keeps re-reading everything above the handoff threshold",
-                              f'/config in Claude Code, or add "autoCompactWindow": 400000 to {settings} '
-                              "(merge the key; keep the rest of the file)"))
+                              f'/config in Claude Code, or add "autoCompactWindow": {config.AUTOCOMPACT_RECOMMENDED} '
+                              f"to {settings} (merge the key; keep the rest of the file)"))
+        else:
+            window, at, is_set = config.compaction()
+            if is_set and first >= at:
+                # 240k/30k under ~300k: two reminders before the compaction, as on the personal Mac
+                fit = max(at - 60000, at * 4 // 5)
+                out.append(_check("WARN", "hooks:context-budget-late",
+                                  f"the handoff is asked for at {first // 1000}k, but autoCompactWindow {window} "
+                                  f"compacts at about {at // 1000}k: the compaction comes first and the handoff is lost",
+                                  f"teyla config set hooks.context_budget_first={fit} "
+                                  f"hooks.context_budget_step={max(1000, (at - fit) // 2)}"))
     if config.hook_on("land_check", cfg):
         out.append(_check("INFO", "hooks:land-check", "on: at Stop, once per session, uncommitted or unpushed work is named "
                           "with how to land it (merge only into a repo on the MERGE-APPROVED list in ~/.claude/CLAUDE.md)"))
