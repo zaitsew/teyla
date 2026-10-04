@@ -71,12 +71,12 @@ already run, and two would double every note); turn them on here:
 teyla config set hooks.context_budget=true hooks.land_check=true
 ```
 
-- **Context budget.** At 300k tokens of context, and every 40k after, the model is asked to write
+- **Context budget.** At 240k tokens of context, and every 30k after, the model is asked to write
   a handoff (state, open work, decisions, next steps, file paths) to `~/.teyla/handoff/` and keep
   going; after Claude Code compacts the session, the handoff is put back once. It needs
-  `"autoCompactWindow": 400000` in `~/.claude/settings.json` (set it with `/config`, or add the
-  key to the file, keeping the rest): without it Claude Code compacts only near the model's full
-  window. `teyla doctor` warns when the key is missing; it never edits the file. The thresholds
+  `"autoCompactWindow": 335000` in `~/.claude/settings.json` (set it with `/config`, or add the
+  key to the file, keeping the rest), which compacts at about 300k: without it Claude Code compacts
+  only near the model's full window. `teyla doctor` warns when the key is missing; it never edits the file. The thresholds
   are `hooks.context_budget_first` and `hooks.context_budget_step`.
 - **Land check.** When a session stops with uncommitted files or commits on no remote, the model
   is told once, with how to land it: one MR per logical unit, then **stop** — unless the repo is in the

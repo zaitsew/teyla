@@ -9,11 +9,13 @@ The 27 Sept 2026 audit found orchestrator sessions spending 43% of their turns a
 Stopping the session at 300k and continuing in a fresh one saved the tokens but split one
 project across several windows, so the session shrinks in place instead:
 
-  1. ~/.claude/settings.json sets "autoCompactWindow": 400000. Claude Code then compacts at
-     about 365k (window minus the output reserve minus 13k) and carries on: same window, same
-     session id. `teyla doctor` warns when the key is missing; it never writes the file.
-  2. This hook, at `[hooks] context_budget_first` (300000) and again every
-     `context_budget_step` (40000) after, has the model write a handoff (state, open work,
+  1. ~/.claude/settings.json sets "autoCompactWindow": 335000. Claude Code then compacts at
+     about 300k (window minus the output reserve minus 13k: about 35k under the window) and
+     carries on: same window, same session id. `teyla doctor` warns when the key is missing; it
+     never writes the file. (400000, ~365k, until 2026-10-04: replaying 1-3 Oct, 335000 re-read
+     ~10% less context for ~50 more compactions in 3 days; 250000 compacted mid-task too often.)
+  2. This hook, at `[hooks] context_budget_first` (240000) and again every
+     `context_budget_step` (30000) after, has the model write a handoff (state, open work,
      decisions, next steps, file paths) to ~/.teyla/handoff/<session_id>.md and keep working.
      It is the part of the context the compaction summary must not lose.
   3. On SessionStart with source "compact" it puts that handoff back into the context, so work
@@ -37,6 +39,8 @@ import sys
 
 HANDOFF_MAX = 24_000  # characters put back after a compaction; the rest stays on disk
 TAIL = 3_000_000      # bytes of transcript read from the end; the last usage record is near it
+AUTOCOMPACT_RECOMMENDED = 335_000  # as teyla.config: compaction at about 300k
+AUTOCOMPACT_MARGIN = 35_000        # Claude Code compacts this far under autoCompactWindow
 
 
 def teyla_dir():
@@ -45,8 +49,8 @@ def teyla_dir():
 
 def thresholds():
     """(first, step) from `[hooks]` in ~/.teyla/config.toml (not TEYLA_HOME: the wrapper and
-    `teyla config` both read the config from HOME), defaults 300000 / 40000."""
-    first, step = 300_000, 40_000
+    `teyla config` both read the config from HOME), defaults 240000 / 30000."""
+    first, step = 240_000, 30_000
     path = os.path.expanduser("~/.teyla/config.toml")
     try:
         with open(path, encoding="utf-8", errors="ignore") as f:
@@ -75,6 +79,21 @@ def thresholds():
     except (TypeError, ValueError):
         pass
     return first, step
+
+
+def compaction_note():
+    """Where Claude Code will compact, from autoCompactWindow in ~/.claude/settings.json
+    (window minus about 35k), as teyla.config.compaction() reads it."""
+    try:
+        with open(os.path.expanduser("~/.claude/settings.json"), encoding="utf-8") as f:
+            w = json.load(f).get("autoCompactWindow")
+    except Exception:  # noqa: BLE001 — absent, unreadable or not an object: treated as unset
+        w = None
+    if isinstance(w, int) and not isinstance(w, bool) and w > AUTOCOMPACT_MARGIN:
+        return f"at about {(w - AUTOCOMPACT_MARGIN) // 1000}k with \"autoCompactWindow\": {w}"
+    return (f"near the model's full window: ~/.claude/settings.json has no \"autoCompactWindow\"; "
+            f"{AUTOCOMPACT_RECOMMENDED} would compact at about "
+            f"{(AUTOCOMPACT_RECOMMENDED - AUTOCOMPACT_MARGIN) // 1000}k")
 
 
 def private_dir(d):
@@ -178,7 +197,7 @@ def on_turn(data, hdir):
     verb = "Rewrite" if os.path.exists(target) else "Write"
     emit(data.get("hook_event_name") or "UserPromptSubmit",
          f"Context budget: this session is at ~{ctx // 1000}k tokens of context. Claude Code will compact "
-         f"it (at about 365k with \"autoCompactWindow\": 400000) and carry on in this same session. "
+         f"it ({compaction_note()}) and carry on in this same session. "
          f"{verb} the handoff now, at {target}: state of the work, open PRs/MRs and running lanes, "
          "decisions taken and why, next steps, file paths. Keep it under 300 lines. Then keep working; "
          "it is put back into the context after the compaction. Do not stop and do not ask the user "

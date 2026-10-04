@@ -106,11 +106,12 @@ swallowed silently rather than surfaced.
   of whether the work is *done* — only of whether it reached a remote.
 - **Context budget** (`hooks/context-budget.sh` → `context-budget.py`) —
   **opt-in**, `[hooks] context_budget = true`. On `UserPromptSubmit` and every
-  `PostToolUse` it reads the transcript's last usage record; at 300k tokens of
-  context (`context_budget_first`) and every 40k after (`context_budget_step`)
+  `PostToolUse` it reads the transcript's last usage record; at 240k tokens of
+  context (`context_budget_first`) and every 30k after (`context_budget_step`)
   it asks the model to write a handoff to `~/.teyla/handoff/<session>.md`; on
   `SessionStart` with source `compact` it puts that handoff back, once. Pair it
-  with `"autoCompactWindow": 400000` in `~/.claude/settings.json`. Off, the
+  with `"autoCompactWindow": 335000` in `~/.claude/settings.json` (compaction at
+  about 300k). Off, the
   wrapper is one `awk` over `~/.teyla/config.toml` and starts no Python.
 
 Both opt-in hooks are off by default because the owner's personal Mac runs its
