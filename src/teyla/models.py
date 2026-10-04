@@ -227,19 +227,53 @@ def _find_ladder_span(text: str) -> tuple[int, int] | None:
 def _split_ladder_cell(cell: str) -> list[str]:
     """'Grok 4.6, Grok 4.5' -> ['Grok 4.6', 'Grok 4.5']; 'GPT-5.6 Sol/Terra' -> ['GPT-5.6 Sol',
     'GPT-5.6 Terra'] (the leading words before the last, slash-joined token are treated as a
-    shared prefix)."""
+    shared prefix).
+
+    A cell may annotate its entries: 'Sonnet 5.5 (default worker), Opus 5.5 (hard sub-tasks,
+    design)' or 'GPT-6.1 Sol (`gpt-6.1-sol`) — the default: Codex sessions, reviews'. Commas
+    inside parentheses or backticks do not split, and everything after ' — ' stays with the
+    entry before it, so each annotation travels with its model (and survives --write-policy);
+    `_model_name` strips it again for matching. Until 2026-10-04 those commas split the
+    annotations into entries of their own, and A11 reported nine LADDER-UNKNOWN for a ladder
+    whose every model was real."""
+    head, dash, tail = cell.partition(" — ")
+    parts, depth, tick, cur = [], 0, False, ""
+    for ch in head:
+        if ch == "`":
+            tick = not tick
+        elif not tick and ch == "(":
+            depth += 1
+        elif not tick and ch == ")":
+            depth = max(0, depth - 1)
+        if ch == "," and depth == 0 and not tick:
+            parts.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    parts.append(cur)
     out = []
-    for part in cell.split(","):
+    for part in parts:
         part = part.strip()
         if not part or part in ("—", "-", "–"):
             continue
         tokens = part.split()
-        if tokens and "/" in tokens[-1]:
+        if tokens and "/" in tokens[-1] and not re.search(r"[(`]", part):
             prefix = " ".join(tokens[:-1])
             out.extend(f"{prefix} {alt}".strip() for alt in tokens[-1].split("/") if alt)
         else:
             out.append(part)
+    if dash and out:
+        out[-1] += f" — {tail.strip()}"
     return out
+
+
+def _model_name(entry: str) -> str:
+    """The model an annotated ladder entry names: 'Opus 5.5 (hard sub-tasks)' -> 'Opus 5.5',
+    '`grok-4.7-build-fast` (fix rounds)' -> 'grok-4.7-build-fast'."""
+    s = entry.partition(" — ")[0]
+    while re.search(r"\([^()]*\)", s):
+        s = re.sub(r"\([^()]*\)", " ", s)
+    return " ".join(s.replace("`", " ").split())
 
 
 def parse_ladder(text: str) -> dict:
@@ -295,6 +329,7 @@ def resolve_ladder_entry(name: str, provider: str, models_dev: dict, cli_ids: li
     id. Returns {'id', 'family', 'release_date', 'cost', 'source'} or None — None is LADDER-UNKNOWN.
     A pure-prose entry with no model claim in it (no digit, no non-filler word) resolves to a
     descriptive placeholder rather than None, so it never causes a false LADDER-UNKNOWN."""
+    name = _model_name(name)
     norm = _normalize(name, provider)
     cat = provider_catalogue(models_dev, provider)
 
