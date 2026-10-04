@@ -846,6 +846,9 @@ def test_codex_empty_archive_root_still_means_no_archive(tmp_path, monkeypatch):
     ("Bash", {"command": "python3 - <<'EOF'\np=pathlib.Path('bin/x.mjs')\np.write_text('// lives in ~/.claude/CLAUDE.md')\nEOF"}, False),
     ("Bash", {"command": "python3 - <<'EOF'\nold='[ \"$HOME/.claude/CLAUDE.md\" -nt \"$a\" ]'\np.write_text(s)\nEOF"}, False),
     ("Bash", {"command": "cat ~/.claude/CLAUDE.md >> $P"}, False),
+    # review of #104 (P2): a quoted sed script's | is not a pipe; a quoted > is not a redirect
+    ("Bash", {"command": "sed -i '' 's|old|new|' ~/.claude/CLAUDE.md"}, True),
+    ("Bash", {"command": "echo 'example > ~/.claude/CLAUDE.md' > /tmp/docs"}, False),
 ])
 def test_touches_governance_needs_the_file_as_the_write_target(name, inp, expect):
     assert claude_code._touches_governance(name, inp) is expect

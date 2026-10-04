@@ -269,9 +269,12 @@ def _touches_governance(name: str, inp: dict) -> bool:
     cmd = str(inp.get("command", ""))
     if "CLAUDE.md" not in cmd:
         return False
-    if re.search(rf">>?\s*['\"]?{path}['\"]?(?=$|[\s;|&)])", cmd):
+    # Single-quoted text is data (a sed script with | as its delimiter, an echoed example), so
+    # its operators split nothing and its redirects write nothing; a quoted path stays a path.
+    shell = re.sub(r"'([^'\n]*)'", lambda q: q.group(0) if re.fullmatch(path, q.group(1)) else "''", cmd)
+    if re.search(rf">>?\s*['\"]?{path}['\"]?(?=$|[\s;|&)])", shell):
         return True
-    for seg in re.split(r"[;\n|&]+", cmd):
+    for seg in re.split(r"[;\n|&]+", shell):
         if _WRITE_VERB_RE.match(seg) and re.search(path, seg):
             return True
         if _COPY_VERB_RE.match(seg) and re.fullmatch(rf"['\"]?{path}['\"]?", (seg.split() or [""])[-1]):
