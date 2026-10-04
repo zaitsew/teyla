@@ -610,6 +610,57 @@ def test_launch_agent_working_directory_without_slash_keeps_build(tmp_path):
     assert rows[0]["verdict"] == "KEEP"
 
 
+def test_self_ignoring_caches_are_not_work(tmp_path):
+    # mypy, ruff and pytest put a `.gitignore` of `*` in their cache: git lists the files
+    # inside, not the directory, and every finished Python worktree was kept for them.
+    code_root, main, _ = _make_repo(tmp_path)
+    wt = tmp_path / "wt-feat"
+    _add_worktree(main, wt, "feat")
+    for cache in ("api/.mypy_cache", ".ruff_cache", ".pytest_cache"):
+        (wt / cache / "3.12").mkdir(parents=True)
+        (wt / cache / ".gitignore").write_text("*\n")
+        (wt / cache / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55\n")
+        (wt / cache / "3.12" / "x.json").write_text("{}")
+    work, _ = storage.ignored_work(str(wt))
+    assert work == []
+
+
+def test_dir_named_like_a_cache_with_tracked_files_keeps_its_ignored_files(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    (main / ".gitignore").write_text(".env\n")
+    (main / ".pytest_cache").mkdir(); (main / ".pytest_cache" / "fixture.json").write_text("{}")
+    _git(main, "add", "-A"); _git(main, "commit", "-m", "fixtures"); _git(main, "push")
+    wt = tmp_path / "wt-feat"
+    _add_worktree(main, wt, "feat")
+    (wt / ".pytest_cache" / ".env").write_text("KEY=secret")
+    work, _ = storage.ignored_work(str(wt))
+    assert work == [".pytest_cache/.env"]
+
+
+def test_cache_whose_gitignore_is_not_just_a_star_is_work(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    wt = tmp_path / "wt-feat"
+    _add_worktree(main, wt, "feat")
+    (wt / ".ruff_cache").mkdir()
+    (wt / ".ruff_cache" / ".gitignore").write_text("notes.md\n")
+    (wt / ".ruff_cache" / "notes.md").write_text("mine")
+    work, _ = storage.ignored_work(str(wt))
+    assert work == [".ruff_cache/notes.md"]
+
+
+def test_cache_gitignore_with_a_leading_space_is_not_self_ignoring(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    (main / ".gitignore").write_text(".env\n")
+    _git(main, "add", "-A"); _git(main, "commit", "-m", "env"); _git(main, "push")
+    wt = tmp_path / "wt-feat"
+    _add_worktree(main, wt, "feat")
+    (wt / ".pytest_cache").mkdir()
+    (wt / ".pytest_cache" / ".gitignore").write_text(" *\n")   # matches a file named " *", not everything
+    (wt / ".pytest_cache" / ".env").write_text("KEY=secret")
+    work, _ = storage.ignored_work(str(wt))
+    assert work == [".pytest_cache/.env"]
+
+
 def test_xcuserdata_is_not_work():
     assert storage._harmless("App.xcodeproj/xcuserdata/")
 

@@ -66,6 +66,9 @@ HARMLESS_IGNORED = REGENERABLE | DEPENDENCIES | {"__pycache__", ".swiftpm", ".DS
 HARMLESS_SUFFIXES = (".xcodeproj", ".tsbuildinfo", ".pyc", ".xcworkspace")
 # Session-local permission grants, not work.
 HARMLESS_PATHS = {".claude/settings.local.json"}
+# Caches that write their own `.gitignore` of `*`: git lists what is inside them file by
+# file (`api/.mypy_cache/.gitignore`, `api/.mypy_cache/3.12/`), never the directory itself.
+SELF_IGNORING = {".pytest_cache", ".mypy_cache", ".ruff_cache"}
 # Ignored, but work: moved into the main checkout's copy before the tree goes.
 RESCUE = ".teyla/corrections.jsonl"
 # Build/dependency rows smaller than this are counted, not listed, in the text report.
@@ -181,6 +184,27 @@ def _harmless(entry: str) -> bool:
     return name in HARMLESS_IGNORED or name.endswith(HARMLESS_SUFFIXES)
 
 
+def _in_self_ignoring_cache(path: str, entry: str, seen: dict[str, bool]) -> bool:
+    """`entry` lies inside a cache the tool itself ignores: its `.gitignore` says only `*`
+    and git tracks nothing in it. A directory merely named `.pytest_cache` that holds
+    tracked fixtures and an ignored `.env` is not one."""
+    parts = entry.rstrip("/").split("/")
+    for i, part in enumerate(parts[:-1]):
+        if part not in SELF_IGNORING:
+            continue
+        rel = "/".join(parts[:i + 1])
+        if rel not in seen:
+            try:
+                # rstrip only: git drops trailing spaces, but a leading one is part of the pattern.
+                rules = [ln.rstrip() for ln in pathlib.Path(path, rel, ".gitignore").read_text().splitlines()]
+            except (OSError, UnicodeDecodeError):
+                rules = []
+            rc, tracked = _git(path, "ls-files", "--", rel)
+            seen[rel] = [r for r in rules if r and not r.startswith("#")] == ["*"] and rc == 0 and not tracked.strip()
+        return seen[rel]
+    return False
+
+
 def ignored_work(path: str) -> tuple[list[str], list[str]]:
     """(ignored entries that are work, files to rescue). `git status` does not show ignored
     files, and `git worktree remove` deletes them without --force: a `.env` holding a key,
@@ -188,12 +212,12 @@ def ignored_work(path: str) -> tuple[list[str], list[str]]:
     rc, out = _git(path, "status", "--porcelain", "--ignored=matching", "--untracked-files=all")
     if rc != 0:
         return ["(git status failed)"], []
-    work, rescue = [], []
+    work, rescue, caches = [], [], {}
     for line in out.splitlines():
         if not line.startswith("!! "):
             continue
         entry = line[3:].strip().strip('"')
-        if _harmless(entry):
+        if _harmless(entry) or _in_self_ignoring_cache(path, entry, caches):
             continue
         if entry.rstrip("/") == ".teyla":
             files = [str(p.relative_to(path)) for p in pathlib.Path(path, ".teyla").rglob("*") if p.is_file()]
