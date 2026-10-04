@@ -625,6 +625,29 @@ def test_self_ignoring_caches_are_not_work(tmp_path):
     assert work == []
 
 
+def test_dir_named_like_a_cache_with_tracked_files_keeps_its_ignored_files(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    (main / ".gitignore").write_text(".env\n")
+    (main / ".pytest_cache").mkdir(); (main / ".pytest_cache" / "fixture.json").write_text("{}")
+    _git(main, "add", "-A"); _git(main, "commit", "-m", "fixtures"); _git(main, "push")
+    wt = tmp_path / "wt-feat"
+    _add_worktree(main, wt, "feat")
+    (wt / ".pytest_cache" / ".env").write_text("KEY=secret")
+    work, _ = storage.ignored_work(str(wt))
+    assert work == [".pytest_cache/.env"]
+
+
+def test_cache_whose_gitignore_is_not_just_a_star_is_work(tmp_path):
+    code_root, main, _ = _make_repo(tmp_path)
+    wt = tmp_path / "wt-feat"
+    _add_worktree(main, wt, "feat")
+    (wt / ".ruff_cache").mkdir()
+    (wt / ".ruff_cache" / ".gitignore").write_text("notes.md\n")
+    (wt / ".ruff_cache" / "notes.md").write_text("mine")
+    work, _ = storage.ignored_work(str(wt))
+    assert work == [".ruff_cache/notes.md"]
+
+
 def test_xcuserdata_is_not_work():
     assert storage._harmless("App.xcodeproj/xcuserdata/")
 

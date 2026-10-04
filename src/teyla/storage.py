@@ -180,11 +180,28 @@ def _harmless(entry: str) -> bool:
         return True
     # The entry's own name only: `--ignored=matching` lists an ignored directory as `build/`,
     # so a listed `build/signing.p12` means build/ itself is tracked and that file is not output.
-    parts = e.split("/")
-    if SELF_IGNORING.intersection(parts[:-1]):
-        return True
-    name = parts[-1]
+    name = e.rsplit("/", 1)[-1]
     return name in HARMLESS_IGNORED or name.endswith(HARMLESS_SUFFIXES)
+
+
+def _in_self_ignoring_cache(path: str, entry: str, seen: dict[str, bool]) -> bool:
+    """`entry` lies inside a cache the tool itself ignores: its `.gitignore` says only `*`
+    and git tracks nothing in it. A directory merely named `.pytest_cache` that holds
+    tracked fixtures and an ignored `.env` is not one."""
+    parts = entry.rstrip("/").split("/")
+    for i, part in enumerate(parts[:-1]):
+        if part not in SELF_IGNORING:
+            continue
+        rel = "/".join(parts[:i + 1])
+        if rel not in seen:
+            try:
+                rules = [ln.strip() for ln in pathlib.Path(path, rel, ".gitignore").read_text().splitlines()]
+            except (OSError, UnicodeDecodeError):
+                rules = []
+            rc, tracked = _git(path, "ls-files", "--", rel)
+            seen[rel] = [r for r in rules if r and not r.startswith("#")] == ["*"] and rc == 0 and not tracked.strip()
+        return seen[rel]
+    return False
 
 
 def ignored_work(path: str) -> tuple[list[str], list[str]]:
@@ -194,12 +211,12 @@ def ignored_work(path: str) -> tuple[list[str], list[str]]:
     rc, out = _git(path, "status", "--porcelain", "--ignored=matching", "--untracked-files=all")
     if rc != 0:
         return ["(git status failed)"], []
-    work, rescue = [], []
+    work, rescue, caches = [], [], {}
     for line in out.splitlines():
         if not line.startswith("!! "):
             continue
         entry = line[3:].strip().strip('"')
-        if _harmless(entry):
+        if _harmless(entry) or _in_self_ignoring_cache(path, entry, caches):
             continue
         if entry.rstrip("/") == ".teyla":
             files = [str(p.relative_to(path)) for p in pathlib.Path(path, ".teyla").rglob("*") if p.is_file()]
