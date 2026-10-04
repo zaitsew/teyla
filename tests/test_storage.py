@@ -610,6 +610,21 @@ def test_launch_agent_working_directory_without_slash_keeps_build(tmp_path):
     assert rows[0]["verdict"] == "KEEP"
 
 
+def test_self_ignoring_caches_are_not_work(tmp_path):
+    # mypy, ruff and pytest put a `.gitignore` of `*` in their cache: git lists the files
+    # inside, not the directory, and every finished Python worktree was kept for them.
+    code_root, main, _ = _make_repo(tmp_path)
+    wt = tmp_path / "wt-feat"
+    _add_worktree(main, wt, "feat")
+    for cache in ("api/.mypy_cache", ".ruff_cache", ".pytest_cache"):
+        (wt / cache / "3.12").mkdir(parents=True)
+        (wt / cache / ".gitignore").write_text("*\n")
+        (wt / cache / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55\n")
+        (wt / cache / "3.12" / "x.json").write_text("{}")
+    work, _ = storage.ignored_work(str(wt))
+    assert work == []
+
+
 def test_xcuserdata_is_not_work():
     assert storage._harmless("App.xcodeproj/xcuserdata/")
 

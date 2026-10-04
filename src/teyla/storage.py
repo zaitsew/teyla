@@ -66,6 +66,9 @@ HARMLESS_IGNORED = REGENERABLE | DEPENDENCIES | {"__pycache__", ".swiftpm", ".DS
 HARMLESS_SUFFIXES = (".xcodeproj", ".tsbuildinfo", ".pyc", ".xcworkspace")
 # Session-local permission grants, not work.
 HARMLESS_PATHS = {".claude/settings.local.json"}
+# Caches that write their own `.gitignore` of `*`: git lists what is inside them file by
+# file (`api/.mypy_cache/.gitignore`, `api/.mypy_cache/3.12/`), never the directory itself.
+SELF_IGNORING = {".pytest_cache", ".mypy_cache", ".ruff_cache"}
 # Ignored, but work: moved into the main checkout's copy before the tree goes.
 RESCUE = ".teyla/corrections.jsonl"
 # Build/dependency rows smaller than this are counted, not listed, in the text report.
@@ -177,7 +180,10 @@ def _harmless(entry: str) -> bool:
         return True
     # The entry's own name only: `--ignored=matching` lists an ignored directory as `build/`,
     # so a listed `build/signing.p12` means build/ itself is tracked and that file is not output.
-    name = e.rsplit("/", 1)[-1]
+    parts = e.split("/")
+    if SELF_IGNORING.intersection(parts[:-1]):
+        return True
+    name = parts[-1]
     return name in HARMLESS_IGNORED or name.endswith(HARMLESS_SUFFIXES)
 
 
