@@ -26,6 +26,8 @@ import pytest
 
 from teyla import routine_install, storage
 
+XCODE_WRITING = storage.xcode_writing  # the real one; the autouse fixture stubs it
+
 
 # --- fixtures & small helpers -----------------------------------------------------------
 
@@ -35,6 +37,8 @@ def _isolated_home(tmp_path, monkeypatch):
     # storage.LOG_PATH is bound from config.TEYLA_DIR at import time, before HOME is patched —
     # repoint it explicitly so a successful `clean(apply=True)` never writes to the real machine.
     monkeypatch.setattr(storage, "LOG_PATH", tmp_path / ".teyla" / "storage.log")
+    # The machine running the tests may be building; the tests that need a build say so.
+    monkeypatch.setattr(storage, "xcode_writing", lambda: False)
 
 
 def _git(cwd, *args):
@@ -819,3 +823,32 @@ def test_derived_data_plist_that_is_not_a_dict_is_skipped(tmp_path):
         plistlib.dump(["not", "a", "dict"], f)
     _derived(tmp_path, name="Orphan-1")
     assert [r["name"] for r in _scan_derived(tmp_path, root)["derived"]] == ["Orphan-1"]
+
+
+@pytest.mark.parametrize("writing, why", [(True, "an Xcode build is running"), (None, "ps failed")])
+def test_derived_data_is_kept_while_xcode_may_be_writing(tmp_path, monkeypatch, writing, why):
+    """A build writes deep under Build/, where no mtime the scan reads moves (review of #107, P1
+    round 2): no folder goes while xcodebuild or a build service runs, or when ps cannot say."""
+    root, d = _derived(tmp_path, name="Busy-1")
+    monkeypatch.setattr(storage, "xcode_writing", lambda: writing)
+    assert _scan_derived(tmp_path, root)["derived"] == []
+    assert why in storage._derived_orphan(d)[1]
+
+
+def test_derived_data_removal_rechecks_for_a_build_started_after_the_scan(tmp_path, monkeypatch):
+    root, d = _derived(tmp_path, name="Late-1")
+    rep = _scan_derived(tmp_path, root)
+    assert [r["name"] for r in rep["derived"]] == ["Late-1"]
+    monkeypatch.setattr(storage, "xcode_writing", lambda: True)
+    storage.clean(rep, apply=True)
+    assert d.exists()
+
+
+def test_xcode_writing_reads_process_names(monkeypatch):
+    run = lambda out, rc=0: (lambda *a, **k: subprocess.CompletedProcess(a, rc, out, ""))  # noqa: E731
+    monkeypatch.setattr(storage.subprocess, "run", run("/usr/sbin/cfprefsd\n/Applications/Xcode.app/Contents/SharedFrameworks/SwiftBuild.framework/Versions/A/PlugIns/SWBBuildService.bundle/Contents/MacOS/SWBBuildService\n"))
+    assert XCODE_WRITING() is True
+    monkeypatch.setattr(storage.subprocess, "run", run("/usr/sbin/cfprefsd\n/bin/zsh\n"))
+    assert XCODE_WRITING() is False
+    monkeypatch.setattr(storage.subprocess, "run", run("", 1))
+    assert XCODE_WRITING() is None
