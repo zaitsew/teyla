@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **`teyla storage` finds Xcode DerivedData whose workspace is gone.** Agents build iOS apps in
+  throwaway worktrees (`~/.worktrees/loco/build-99/Loco.xcodeproj`); `storage clean` removed the
+  worktree and left its `~/Library/Developer/Xcode/DerivedData/<Scheme>-<hash>` behind, 0.4–0.9 GB
+  each, listed only as one REVIEW row for the whole directory. On 2026-10-07 that was 9 folders and
+  5.7 GB, deleted by hand. Now a folder whose `info.plist` names an absolute `WorkspacePath` that no
+  longer exists, and which nothing has touched for a day, is its own SAFE row ("its workspace is
+  gone: …"): counted in `safe`, listed in `--json` under `derived`, removed by `clean --apply` and
+  `clean --auto` after the same facts are checked again. Folders without an `info.plist`
+  (`ModuleCache.noindex`, `SDKStatCaches.noindex`, …) are shared caches and stay untouched, as does a
+  workspace on a volume that is not mounted.
 - **Compaction at ~300k, read from the machine.** On 2026-10-04 the personal Mac moved
   `"autoCompactWindow"` from 400000 to 335000 (compaction at ~300k instead of ~365k) and
   `~/ops/bin/context-budget-hook` its handoff reminders to 240k/270k (zaitsew/ops#208): replaying
