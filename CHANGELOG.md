@@ -1,7 +1,20 @@
 # Changelog
 
-## Unreleased
+## 0.17.0 — 2026-10-07 — what agents leave on disk, and routines that fail quietly
 
+- **The work-account prompt targets 0.17.0.** `prompts/work-account-update.md` pins, installs and
+  adds the plugin at 0.17.0, and `docs/WORK.md`'s update example follows. Step 9 no longer says the
+  hook defaults are 300k/40k; its explicit 240k/30k line now only overrides an older setup's values.
+- **A routine that runs and fails is FAILING, not ok.** A failing run still touches its log, so
+  mtime alone called it fine: iron-u's garmin-sync failed every 30 minutes for 6 hours while
+  `teyla routines` reported nothing not running. For a `.jsonl` log Teyla now reads the last run's
+  outcome (dry runs ignored) and reports FAILING with the streak's start, length and first error
+  line. FAILING counts as not running in the exit code, digest, banner and feedback.
+- **Self-ignoring caches are not work.** mypy, ruff and pytest write a `.gitignore` of `*` inside
+  their cache, so git listed the files inside (`api/.mypy_cache/3.12/`) and `teyla storage` kept
+  every finished Python worktree as holding "ignored files that are not build output" (both combra
+  worktrees and the teyla and iron-u session worktrees on 2026-10-04). A cache counts only when its
+  own `.gitignore` really ignores everything in it.
 - **`teyla storage` finds Xcode DerivedData whose workspace is gone.** Agents build iOS apps in
   throwaway worktrees (`~/.worktrees/loco/build-99/Loco.xcodeproj`); `storage clean` removed the
   worktree and left its `~/Library/Developer/Xcode/DerivedData/<Scheme>-<hash>` behind, 0.4–0.9 GB
