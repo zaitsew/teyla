@@ -24,6 +24,12 @@ What counts as SAFE is the rule in the owner's CLAUDE.md, applied mechanically:
   SAFE when git ignores it, tracks nothing inside it, it is not part of a nested clone, no
   LaunchAgent names it, and its repo has been idle for `build_idle_days`. It is output the
   next build writes again.
+- **a DerivedData folder** (`~/Library/Developer/Xcode/DerivedData/<Scheme>-<hash>`) is SAFE when
+  its `info.plist` names a `WorkspacePath` that is absolute and no longer exists, and nothing in
+  the folder has changed for an hour (a build may be writing). Agents build iOS apps in
+  throwaway worktrees; the worktree goes, its 0.4–0.9 GB of DerivedData stays. A folder without
+  an `info.plist` (`ModuleCache.noindex`, `SDKStatCaches.noindex`, …) is a cache every project
+  shares: never listed, never removed. A path on a volume that is not mounted is not "gone".
 
 When `lsof` cannot answer, nothing counts as unused and nothing is removed.
 
@@ -42,10 +48,12 @@ import datetime as _dt
 import json
 import os
 import pathlib
+import plistlib
 import shutil
 import subprocess
 import sys
 import time
+from xml.parsers.expat import ExpatError
 
 from . import config
 
@@ -71,6 +79,8 @@ HARMLESS_PATHS = {".claude/settings.local.json"}
 SELF_IGNORING = {".pytest_cache", ".mypy_cache", ".ruff_cache"}
 # Ignored, but work: moved into the main checkout's copy before the tree goes.
 RESCUE = ".teyla/corrections.jsonl"
+# A DerivedData folder a build touched more recently than this may still be written to.
+DERIVED_MIN_IDLE = 3600
 # Build/dependency rows smaller than this are counted, not listed, in the text report.
 SHOW_MIN = 50 * 1024 ** 2
 
@@ -515,6 +525,71 @@ def artifacts(repo: pathlib.Path, cwds: list[str] | None, build_idle_days: int, 
     return rows
 
 
+# --- orphaned DerivedData ---------------------------------------------------------------
+
+def derived_data_root() -> pathlib.Path:
+    return pathlib.Path.home() / "Library" / "Developer" / "Xcode" / "DerivedData"
+
+
+def _gone(path: str) -> bool:
+    """`path` does not exist. An error that is not "no such file" (permissions) and a path on a
+    volume that is not mounted are "unknown", never "gone"."""
+    parts = pathlib.PurePath(path).parts
+    if parts[:2] == (os.sep, "Volumes") and len(parts) > 2 and not os.path.isdir(os.path.join(*parts[:3])):
+        return False
+    try:
+        os.stat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return True
+    except OSError:
+        return False
+    return False
+
+
+def _derived_orphan(d: pathlib.Path, now: float | None = None) -> tuple[str, str]:
+    """(workspace, "") when `d` is a DerivedData folder whose workspace is gone and which nothing
+    has touched for DERIVED_MIN_IDLE; ("", why not) otherwise. The scan and the removal both ask."""
+    if d.is_symlink() or not d.is_dir():
+        return "", "not a plain directory"
+    info = d / "info.plist"
+    if info.is_symlink() or not info.is_file():
+        return "", "no info.plist: a cache every project shares"
+    try:
+        with info.open("rb") as f:
+            ws = plistlib.load(f).get("WorkspacePath")
+    except (OSError, ValueError, ExpatError):  # ValueError: plistlib.InvalidFileException
+        return "", "info.plist unreadable"
+    if not isinstance(ws, str) or not os.path.isabs(ws):
+        return "", "no absolute WorkspacePath"
+    if not _gone(ws):
+        return "", "its workspace exists"
+    try:
+        # A build writes under Build/ and Index.noindex/, which moves their mtimes, not the folder's.
+        newest = max(_mtime(p) for p in [d, *d.iterdir()])
+    except OSError:
+        return "", "unreadable"
+    age = (now or time.time()) - newest
+    if age < DERIVED_MIN_IDLE:
+        return "", f"touched {age / 60:.0f} min ago (< {DERIVED_MIN_IDLE // 60} min)"
+    return ws, ""
+
+
+def derived_data(root: pathlib.Path, sizes: bool = True, now: float | None = None) -> list[dict]:
+    """The SAFE rows under `root`: folders whose workspace is gone. Anything else there stays
+    in the one `caches()` row for the whole directory."""
+    if not root.is_dir():
+        return []
+    home = str(pathlib.Path.home())
+    rows = []
+    for d in sorted(root.iterdir()):
+        ws, _ = _derived_orphan(d, now)
+        if ws:
+            rows.append({"kind": "derived", "name": d.name, "path": str(d), "root": str(root), "workspace": ws,
+                         "verdict": "SAFE", "reason": f"its workspace is gone: {ws.replace(home, '~', 1)}",
+                         "action": "rm", "bytes": du(d) if sizes else None})
+    return rows
+
+
 # --- caches and stores Teyla only reports -------------------------------------------
 
 def _caches() -> list[tuple[str, str, str, str]]:
@@ -590,7 +665,8 @@ def disk(path: pathlib.Path | None = None) -> dict:
 
 
 def scan(root: pathlib.Path | None = None, sizes: bool = True, cfg: dict | None = None,
-         cwds: list[str] | None = None, now: float | None = None, deep: bool = True) -> dict:
+         cwds: list[str] | None = None, now: float | None = None, deep: bool = True,
+         derived_root: pathlib.Path | None = None) -> dict:
     s = settings(cfg)
     extra = [] if root else [config.ops_root(cfg)]
     root = root or config.code_root(cfg)
@@ -600,11 +676,16 @@ def scan(root: pathlib.Path | None = None, sizes: bool = True, cfg: dict | None 
     for repo in repos(root, extra):
         wt += worktrees(repo, cwds, s["idle_days"], sizes=sizes, now=now, agent_idle_days=s["agent_idle_days"], deep=deep)
         art += artifacts(repo, cwds, s["build_idle_days"], sizes=sizes, now=now, launched=launched)
-    return {"root": str(root), "settings": s, "disk": disk(), "worktrees": wt, "artifacts": art}
+    return {"root": str(root), "settings": s, "disk": disk(), "worktrees": wt, "artifacts": art,
+            "derived": derived_data(derived_root or derived_data_root(), sizes=sizes, now=now)}
+
+
+def _rows(rep: dict) -> list[dict]:
+    return rep["worktrees"] + rep["artifacts"] + rep.get("derived", [])
 
 
 def reclaimable(rep: dict) -> int:
-    return sum(r.get("bytes") or 0 for r in rep["worktrees"] + rep["artifacts"] if r["verdict"] == "SAFE")
+    return sum(r.get("bytes") or 0 for r in _rows(rep) if r["verdict"] == "SAFE")
 
 
 def render(rep: dict, cache_rows: list[dict], sims: list[str], mem: list[tuple[str, int, int]]) -> str:
@@ -612,7 +693,7 @@ def render(rep: dict, cache_rows: list[dict], sims: list[str], mem: list[tuple[s
     home = str(pathlib.Path.home())
     short = lambda p: p.replace(home, "~", 1)
     L = [f"disk    {human(d['free'])} free of {human(d['total'])} ({d['free_fraction']:.0%})"]
-    safe = [r for r in rep["worktrees"] + rep["artifacts"] if r["verdict"] == "SAFE"]
+    safe = [r for r in _rows(rep) if r["verdict"] == "SAFE"]
     L.append(f"safe    {human(reclaimable(rep))} in {len(safe)} item(s) — `teyla storage clean --apply` removes them"
              + ("" if s["auto_clean"] else "; `teyla config set storage.auto_clean=true` makes the daily routine do it"))
     L.append("")
@@ -631,6 +712,11 @@ def render(rep: dict, cache_rows: list[dict], sims: list[str], mem: list[tuple[s
         L.append(f"  {r['verdict']:6} {human(r.get('bytes')):>6}  {short(r['path'])}  — {r['reason']}")
     if len(arts) < len(rep["artifacts"]):
         L.append(f"  {len(rep['artifacts']) - len(arts)} smaller not shown (--json lists them)")
+    if rep.get("derived"):
+        L.append("")
+        L.append(f"orphaned Xcode DerivedData (SAFE = its workspace is gone, untouched ≥ {DERIVED_MIN_IDLE // 60} min)")
+        for r in sorted(rep["derived"], key=lambda r: -(r.get("bytes") or 0)):
+            L.append(f"  {r['verdict']:6} {human(r.get('bytes')):>6}  {short(r['path'])}  — {r['reason']}")
     if cache_rows:
         L.append("")
         L.append("caches and stores (Teyla never deletes these; the command clears them)")
@@ -714,9 +800,24 @@ def _remove_build(r: dict) -> tuple[int, str]:
         return 1, str(e)
 
 
+def _remove_derived(r: dict) -> tuple[int, str]:
+    path = pathlib.Path(r["path"])
+    # Only a folder directly under the DerivedData dir: never the dir itself, never a path outside it.
+    if os.path.normpath(r["root"]) != os.path.normpath(str(path.parent)) or path.name in ("", ".", ".."):
+        return 1, "not directly under the DerivedData directory"
+    ws, why = _derived_orphan(path)
+    if not ws:
+        return 1, "changed since the scan: " + why
+    try:
+        shutil.rmtree(path)  # unlinks a symlink inside it, never follows one
+        return 0, ""
+    except OSError as e:
+        return 1, str(e)
+
+
 def clean(rep: dict, apply: bool = False) -> list[str]:
     out = []
-    for r in rep["worktrees"] + rep["artifacts"]:
+    for r in _rows(rep):
         if r["verdict"] != "SAFE":
             continue
         if r.get("bytes") is None:
@@ -725,7 +826,7 @@ def clean(rep: dict, apply: bool = False) -> list[str]:
         if not apply:
             out.append(f"would remove {size:>6}  {r['path']}")
             continue
-        rc, msg = _remove_worktree(r) if r["kind"] == "worktree" else _remove_build(r)
+        rc, msg = {"worktree": _remove_worktree, "derived": _remove_derived}.get(r["kind"], _remove_build)(r)
         if rc == 0:
             out.append(f"removed {size:>6}  {r['path']}")
             _log(f"removed {r.get('bytes') or 0} {r['kind']} {r['path']}")

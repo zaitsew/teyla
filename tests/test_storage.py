@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import os
 import pathlib
+import plistlib
 import subprocess
 import time
 
@@ -700,3 +701,111 @@ def test_remote_patch_ids_cache_misses_once_a_remote_ref_moves(tmp_path):
     _git(main, "add", "extra.txt"); _git(main, "commit", "-m", "extra"); _git(main, "push")
     storage._remote_patch_ids(str(main), plain, 1000)
     assert len(storage._REMOTE_PATCH_IDS) == 2
+
+
+# --- orphaned DerivedData -----------------------------------------------------------------
+
+def _derived(tmp_path, name="Loco-abc", workspace=None, plist=True, age=7200):
+    """A DerivedData folder under tmp_path/DD (never the real ~/Library), its info.plist naming
+    `workspace`, everything in it last touched `age` seconds ago."""
+    root = tmp_path / "DD"
+    d = root / name
+    (d / "Build").mkdir(parents=True)
+    (d / "Build" / "o.bin").write_bytes(b"x" * 2048)
+    if plist:
+        with (d / "info.plist").open("wb") as f:
+            plistlib.dump({"WorkspacePath": workspace or str(tmp_path / "gone" / "Loco.xcodeproj")}, f)
+    old = time.time() - age
+    for p in (d / "Build" / "o.bin", d / "Build", d / "info.plist", d):
+        if p.exists():
+            os.utime(p, (old, old))
+    return root, d
+
+
+def _scan_derived(tmp_path, root):
+    code_root = tmp_path / "code"
+    code_root.mkdir(exist_ok=True)
+    return storage.scan(root=code_root, cfg=_cfg(tmp_path), cwds=[], derived_root=root)
+
+
+def test_derived_data_with_a_gone_workspace_is_safe_and_cleaned(tmp_path):
+    root, d = _derived(tmp_path)
+    shared = root / "ModuleCache.noindex"
+    shared.mkdir()
+    rep = _scan_derived(tmp_path, root)
+    (row,) = rep["derived"]
+    assert row["path"] == str(d) and row["verdict"] == "SAFE" and row["bytes"] > 0
+    assert "its workspace is gone" in row["reason"] and "Loco.xcodeproj" in row["reason"]
+    assert storage.reclaimable(rep) >= row["bytes"]
+    assert d.name in storage.render(rep, [], [], [])
+
+    lines = storage.clean(rep, apply=True)
+
+    assert not d.exists() and shared.exists()
+    assert any(l.startswith("removed") and str(d) in l for l in lines)
+    assert str(d) in storage.LOG_PATH.read_text()
+
+
+def test_derived_data_whose_workspace_exists_is_not_listed(tmp_path):
+    ws = tmp_path / "live" / "Loco.xcodeproj"
+    ws.mkdir(parents=True)
+    root, d = _derived(tmp_path, workspace=str(ws))
+    assert _scan_derived(tmp_path, root)["derived"] == []
+    assert d.exists()
+
+
+def test_derived_data_without_info_plist_is_a_shared_cache(tmp_path):
+    root, d = _derived(tmp_path, name="ModuleCache.noindex", plist=False)
+    rep = _scan_derived(tmp_path, root)
+    assert rep["derived"] == []
+    storage.clean(rep, apply=True)
+    assert d.exists()
+
+
+def test_derived_data_touched_within_the_hour_is_not_listed(tmp_path):
+    root, _ = _derived(tmp_path, name="Top-1", age=600)
+    _derived(tmp_path, name="Below-1", age=7200)
+    recent = time.time() - 60
+    os.utime(root / "Below-1" / "Build", (recent, recent))  # a build writes below the top, not in it
+    _derived(tmp_path, name="Idle-1", age=7200)
+    assert [r["name"] for r in _scan_derived(tmp_path, root)["derived"]] == ["Idle-1"]
+
+
+def test_derived_data_symlink_is_not_followed(tmp_path):
+    root, real = _derived(tmp_path, name="Real-1")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("mine\n")
+    (root / "Link-1").symlink_to(real)  # a link to an orphan is not a folder of its own
+    (real / "Build" / "out").symlink_to(outside)  # a link inside one is unlinked, not followed
+    old = time.time() - 7200
+    os.utime(real / "Build", (old, old))
+    rep = _scan_derived(tmp_path, root)
+    assert [r["name"] for r in rep["derived"]] == ["Real-1"]
+
+    storage.clean(rep, apply=True)
+
+    assert not real.exists() and (outside / "keep.txt").read_text() == "mine\n"
+    assert (root / "Link-1").is_symlink()
+
+
+def test_derived_data_is_checked_again_before_removal(tmp_path):
+    root, d = _derived(tmp_path)
+    rep = _scan_derived(tmp_path, root)
+    ws = tmp_path / "gone" / "Loco.xcodeproj"
+    ws.mkdir(parents=True)  # the workspace came back between the scan and the removal
+
+    lines = storage.clean(rep, apply=True)
+
+    assert d.exists() and any(l.startswith("kept") and "workspace exists" in l for l in lines)
+
+
+def test_derived_data_dry_run_removes_nothing(tmp_path):
+    root, d = _derived(tmp_path)
+    lines = storage.clean(_scan_derived(tmp_path, root), apply=False)
+    assert d.exists() and lines and lines[0].startswith("would remove")
+
+
+def test_derived_data_on_an_unmounted_volume_is_not_gone(tmp_path):
+    root, d = _derived(tmp_path, workspace="/Volumes/NoSuchDisk-teyla-test/App.xcodeproj")
+    assert _scan_derived(tmp_path, root)["derived"] == []
