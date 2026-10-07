@@ -8,7 +8,8 @@
   each, listed only as one REVIEW row for the whole directory. On 2026-10-07 that was 9 folders and
   5.7 GB, deleted by hand. Now a folder whose `info.plist` names an absolute `WorkspacePath` that no
   longer exists, and which nothing has touched for a day, is its own SAFE row ("its workspace is
-  gone: …"): counted in `safe`, listed in `--json` under `derived`, removed by `clean --apply` and
+  gone: …") while no `xcodebuild`, Xcode build service or Xcode runs (a build writes deep inside,
+  where no mtime the scan reads moves; review of #107, #109): counted in `safe`, listed in `--json` under `derived`, removed by `clean --apply` and
   `clean --auto` after the same facts are checked again. Folders without an `info.plist`
   (`ModuleCache.noindex`, `SDKStatCaches.noindex`, …) are shared caches and stay untouched, as does a
   workspace on a volume that is not mounted.

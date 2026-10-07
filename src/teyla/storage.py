@@ -26,7 +26,8 @@ What counts as SAFE is the rule in the owner's CLAUDE.md, applied mechanically:
   next build writes again.
 - **a DerivedData folder** (`~/Library/Developer/Xcode/DerivedData/<Scheme>-<hash>`) is SAFE when
   its `info.plist` names a `WorkspacePath` that is absolute and no longer exists, and nothing in
-  the folder has changed for a day (a build may be writing). Agents build iOS apps in
+  the folder has changed for a day, and no `xcodebuild`, Xcode build service or Xcode is running
+  (a build writes deep inside, where no mtime the scan reads moves). Agents build iOS apps in
   throwaway worktrees; the worktree goes, its 0.4–0.9 GB of DerivedData stays. A folder without
   an `info.plist` (`ModuleCache.noindex`, `SDKStatCaches.noindex`, …) is a cache every project
   shares: never listed, never removed. A path on a volume that is not mounted is not "gone".
@@ -548,6 +549,24 @@ def _gone(path: str) -> bool:
     return False
 
 
+# The processes that write into DerivedData: a command-line build, Xcode's build services, the app.
+XCODE_WRITERS = {"xcodebuild", "XCBBuildService", "SWBBuildService", "Xcode"}
+
+
+def xcode_writing() -> bool | None:
+    """Whether any process that writes into DerivedData is running. A build writes deep under
+    Build/ and Index.noindex/, where no mtime the scan reads moves, and a workspace renamed
+    mid-build looks gone; so no DerivedData folder goes while one runs. None when ps could not
+    answer: "unknown", and nothing is removed on it."""
+    try:
+        r = subprocess.run(["ps", "-axo", "comm="], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+    return any(line.strip().rsplit("/", 1)[-1] in XCODE_WRITERS for line in r.stdout.splitlines())
+
+
 def _derived_orphan(d: pathlib.Path, now: float | None = None) -> tuple[str, str]:
     """(workspace, "") when `d` is a DerivedData folder whose workspace is gone and which nothing
     has touched for DERIVED_MIN_IDLE; ("", why not) otherwise. The scan and the removal both ask."""
@@ -574,6 +593,9 @@ def _derived_orphan(d: pathlib.Path, now: float | None = None) -> tuple[str, str
     age = (now or time.time()) - newest
     if age < DERIVED_MIN_IDLE:
         return "", f"touched {age / 3600:.1f} h ago (< {DERIVED_MIN_IDLE // 3600} h)"
+    writing = xcode_writing()
+    if writing is not False:
+        return "", "an Xcode build is running" if writing else "could not check for Xcode builds (ps failed)"
     return ws, ""
 
 
