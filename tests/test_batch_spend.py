@@ -111,7 +111,7 @@ def test_window_errors_from_the_harness_records(tmp_path, monkeypatch):
 def test_report_has_the_headless_section():
     ss = _many("grok", "/private/tmp/frank-grok-empty", 30, 1) + [_s("claude-code", "/private/tmp/x", 1, batch=False)]
     m = metrics(ss, 29)
-    m["headless"] = headless(ss, 29, now=dt.datetime.now(dt.timezone.utc))
+    m["headless"] = headless(ss, 29, now=NOW)
     text = markdown(m, [])
     assert "## Headless calls by harness and project" in text
     assert "| grok | frank | 4.3 | 1 | 30 | 0 | 30 | calls, tokens unknown |" in text
@@ -130,7 +130,7 @@ def test_share_redacts_headless_project_names():
     from teyla.monitor import redact
     ss = _many("grok", "/private/tmp/frank-grok-empty", 3, 1)
     m = metrics(ss, 29)
-    m["headless"] = headless(ss, 29, now=dt.datetime.now(dt.timezone.utc))
+    m["headless"] = headless(ss, 29, now=NOW)
     r = redact(m)
     assert [h["project"] for h in r["headless"]] == ["h01"] and "frank" not in json.dumps(r["headless"])
 
