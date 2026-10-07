@@ -26,7 +26,7 @@ What counts as SAFE is the rule in the owner's CLAUDE.md, applied mechanically:
   next build writes again.
 - **a DerivedData folder** (`~/Library/Developer/Xcode/DerivedData/<Scheme>-<hash>`) is SAFE when
   its `info.plist` names a `WorkspacePath` that is absolute and no longer exists, and nothing in
-  the folder has changed for an hour (a build may be writing). Agents build iOS apps in
+  the folder has changed for a day (a build may be writing). Agents build iOS apps in
   throwaway worktrees; the worktree goes, its 0.4–0.9 GB of DerivedData stays. A folder without
   an `info.plist` (`ModuleCache.noindex`, `SDKStatCaches.noindex`, …) is a cache every project
   shares: never listed, never removed. A path on a volume that is not mounted is not "gone".
@@ -79,8 +79,10 @@ HARMLESS_PATHS = {".claude/settings.local.json"}
 SELF_IGNORING = {".pytest_cache", ".mypy_cache", ".ruff_cache"}
 # Ignored, but work: moved into the main checkout's copy before the tree goes.
 RESCUE = ".teyla/corrections.jsonl"
-# A DerivedData folder a build touched more recently than this may still be written to.
-DERIVED_MIN_IDLE = 3600
+# A DerivedData folder touched more recently than this may still be written to: a build or the
+# indexer writes deep under Build/ and Index.noindex/, which moves no mtime the scan reads, and a
+# workspace renamed mid-build looks gone. No build of a workspace that is gone runs for a day.
+DERIVED_MIN_IDLE = 86400
 # Build/dependency rows smaller than this are counted, not listed, in the text report.
 SHOW_MIN = 50 * 1024 ** 2
 
@@ -556,9 +558,10 @@ def _derived_orphan(d: pathlib.Path, now: float | None = None) -> tuple[str, str
         return "", "no info.plist: a cache every project shares"
     try:
         with info.open("rb") as f:
-            ws = plistlib.load(f).get("WorkspacePath")
+            info_d = plistlib.load(f)
     except (OSError, ValueError, ExpatError):  # ValueError: plistlib.InvalidFileException
         return "", "info.plist unreadable"
+    ws = info_d.get("WorkspacePath") if isinstance(info_d, dict) else None
     if not isinstance(ws, str) or not os.path.isabs(ws):
         return "", "no absolute WorkspacePath"
     if not _gone(ws):
@@ -570,7 +573,7 @@ def _derived_orphan(d: pathlib.Path, now: float | None = None) -> tuple[str, str
         return "", "unreadable"
     age = (now or time.time()) - newest
     if age < DERIVED_MIN_IDLE:
-        return "", f"touched {age / 60:.0f} min ago (< {DERIVED_MIN_IDLE // 60} min)"
+        return "", f"touched {age / 3600:.1f} h ago (< {DERIVED_MIN_IDLE // 3600} h)"
     return ws, ""
 
 
@@ -714,7 +717,7 @@ def render(rep: dict, cache_rows: list[dict], sims: list[str], mem: list[tuple[s
         L.append(f"  {len(rep['artifacts']) - len(arts)} smaller not shown (--json lists them)")
     if rep.get("derived"):
         L.append("")
-        L.append(f"orphaned Xcode DerivedData (SAFE = its workspace is gone, untouched ≥ {DERIVED_MIN_IDLE // 60} min)")
+        L.append(f"orphaned Xcode DerivedData (SAFE = its workspace is gone, untouched ≥ {DERIVED_MIN_IDLE // 3600} h)")
         for r in sorted(rep["derived"], key=lambda r: -(r.get("bytes") or 0)):
             L.append(f"  {r['verdict']:6} {human(r.get('bytes')):>6}  {short(r['path'])}  — {r['reason']}")
     if cache_rows:

@@ -705,7 +705,7 @@ def test_remote_patch_ids_cache_misses_once_a_remote_ref_moves(tmp_path):
 
 # --- orphaned DerivedData -----------------------------------------------------------------
 
-def _derived(tmp_path, name="Loco-abc", workspace=None, plist=True, age=7200):
+def _derived(tmp_path, name="Loco-abc", workspace=None, plist=True, age=2 * 86400):
     """A DerivedData folder under tmp_path/DD (never the real ~/Library), its info.plist naming
     `workspace`, everything in it last touched `age` seconds ago."""
     root = tmp_path / "DD"
@@ -762,12 +762,12 @@ def test_derived_data_without_info_plist_is_a_shared_cache(tmp_path):
     assert d.exists()
 
 
-def test_derived_data_touched_within_the_hour_is_not_listed(tmp_path):
-    root, _ = _derived(tmp_path, name="Top-1", age=600)
-    _derived(tmp_path, name="Below-1", age=7200)
+def test_derived_data_touched_within_a_day_is_not_listed(tmp_path):
+    root, _ = _derived(tmp_path, name="Top-1", age=6 * 3600)
+    _derived(tmp_path, name="Below-1", age=2 * 86400)
     recent = time.time() - 60
     os.utime(root / "Below-1" / "Build", (recent, recent))  # a build writes below the top, not in it
-    _derived(tmp_path, name="Idle-1", age=7200)
+    _derived(tmp_path, name="Idle-1", age=2 * 86400)
     assert [r["name"] for r in _scan_derived(tmp_path, root)["derived"]] == ["Idle-1"]
 
 
@@ -778,7 +778,7 @@ def test_derived_data_symlink_is_not_followed(tmp_path):
     (outside / "keep.txt").write_text("mine\n")
     (root / "Link-1").symlink_to(real)  # a link to an orphan is not a folder of its own
     (real / "Build" / "out").symlink_to(outside)  # a link inside one is unlinked, not followed
-    old = time.time() - 7200
+    old = time.time() - 2 * 86400
     os.utime(real / "Build", (old, old))
     rep = _scan_derived(tmp_path, root)
     assert [r["name"] for r in rep["derived"]] == ["Real-1"]
@@ -809,3 +809,13 @@ def test_derived_data_dry_run_removes_nothing(tmp_path):
 def test_derived_data_on_an_unmounted_volume_is_not_gone(tmp_path):
     root, d = _derived(tmp_path, workspace="/Volumes/NoSuchDisk-teyla-test/App.xcodeproj")
     assert _scan_derived(tmp_path, root)["derived"] == []
+
+
+def test_derived_data_plist_that_is_not_a_dict_is_skipped(tmp_path):
+    """A valid plist holding an array is not a DerivedData info.plist: skipped, the scan goes on
+    (review of #107, P2)."""
+    root, d = _derived(tmp_path, name="Odd-1")
+    with (d / "info.plist").open("wb") as f:
+        plistlib.dump(["not", "a", "dict"], f)
+    _derived(tmp_path, name="Orphan-1")
+    assert [r["name"] for r in _scan_derived(tmp_path, root)["derived"]] == ["Orphan-1"]
