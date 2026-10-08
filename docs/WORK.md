@@ -53,19 +53,19 @@ and the plugin installer still refuse. `teyla doctor` prints `safe: auto-update 
 
 ## Update to a new release by hand
 
-Do this when you choose to, not when a tag appears (the default, without `safe.auto_update`). Replace `0.18.0` with the release you want.
+Do this when you choose to, not when a tag appears (the default, without `safe.auto_update`). Replace `0.19.0` with the release you want.
 
-1. Set the pin: `teyla config set update.pin=0.18.0`
+1. Set the pin: `teyla config set update.pin=0.19.0`
 2. Update the CLI and run the post-update steps: `teyla update --allow-network --wire`
 3. Re-pin the plugin, by typing these in a Claude Code session (the first line only if the plugin is already installed from an unpinned marketplace):
 
    ```
    /plugin marketplace remove teyla
-   /plugin marketplace add zaitsew/teyla#v0.18.0
+   /plugin marketplace add zaitsew/teyla#v0.19.0
    /plugin install teyla@teyla
    ```
 
-   The `#v0.18.0` is what ties the hooks to that release. Without it they follow `main`.
+   The `#v0.19.0` is what ties the hooks to that release. Without it they follow `main`.
 4. Check: `teyla doctor`. No `FIX` line. No `plugin:pin` warning.
 5. Start a new Claude Code session in any repo. The first line it prints is the rule count, or the doctor summary (problems first, then free disk space, for example `disk 64 GB free`).
 
