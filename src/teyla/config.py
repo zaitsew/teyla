@@ -34,6 +34,10 @@
     context_budget_step  = 30000
     land_check     = false         Stop: once per session, uncommitted or unpushed work is named, with
                                    how to land it (merge only into a MERGE-APPROVED repo)
+    [harness]
+    disabled = ["hermes", "grok"]  harnesses this machine does not use: doctor, health, `harness status|sync`
+                                   and `policy sync` skip them entirely (claude-code, codex, grok, hermes,
+                                   cursor); `teyla config set harness.disabled=hermes,grok`
     [env]
     SSL_CERT_FILE = "~/.teyla/ca-bundle.pem"
     HTTPS_PROXY   = "http://127.0.0.1:9000"
@@ -72,6 +76,8 @@ DEFAULTS = {
     # the default is outside the repo.
     "corrections": {"store": "home"},
     "safe": {"enabled": False},
+    # Harnesses to leave alone: no health line, no FIX for their hooks or credits, no sync.
+    "harness": {"disabled": []},
     "products": {"repos": []},
     # `teyla digest --write` (the weekly routine) posts a macOS notification with its headline.
     "digest": {"notify": True},
@@ -351,6 +357,35 @@ def show(path: pathlib.Path | None = None) -> str:
     cfg = load(p)
     head = f"# {p} ({'exists' if p.exists() else 'absent — defaults'})\n"
     return head + dump(cfg)
+
+
+HARNESS_NAMES = ("claude-code", "codex", "grok", "hermes", "cursor")
+_HARNESS_ALIAS = {"claude": "claude-code", "claudecode": "claude-code", "claude_code": "claude-code"}
+
+
+def disabled_harnesses(cfg: dict | None = None) -> tuple[list[str], list[str]]:
+    """([known names], [unknown entries]) of `[harness] disabled`, in the order written, without
+    duplicates. A string is read as a comma list, so a hand-edited `disabled = "hermes"` works too."""
+    raw = ((cfg if cfg is not None else load()).get("harness") or {}).get("disabled") or []
+    if isinstance(raw, str):
+        raw = raw.split(",")
+    if not isinstance(raw, (list, tuple)):
+        raw = [raw]
+    known: list[str] = []
+    unknown: list[str] = []
+    for item in raw:
+        name = str(item).strip().lower()
+        if not name:
+            continue
+        name = _HARNESS_ALIAS.get(name, name)
+        bucket = known if name in HARNESS_NAMES else unknown
+        if name not in bucket:
+            bucket.append(name)
+    return known, unknown
+
+
+def harness_disabled(name: str, cfg: dict | None = None) -> bool:
+    return name in disabled_harnesses(cfg)[0]
 
 
 def truthy(v) -> bool:

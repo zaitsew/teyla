@@ -811,3 +811,143 @@ def test_doctor_says_why_a_generated_agents_md_is_stale(_home, monkeypatch):
     by = {c["name"]: c for c in doctor.checks(refresh_update=False, scan_repos=False)}
     assert by["policy:codex"]["level"] == "FIX" and by["policy:codex"]["fix"] == "teyla policy sync"
     assert by["policy:codex"]["detail"] == "not wired: ~/.codex/AGENTS.md is older than ~/.claude/CLAUDE.md"
+
+
+# --- policy: hand edits to generated copies wait in the inbox; the daily routine syncs ----------
+
+def _edit_codex_twice(_home, monkeypatch):
+    import datetime
+    (_home / ".codex").mkdir(exist_ok=True)
+    policy.POLICY.parent.mkdir(parents=True, exist_ok=True)
+    policy.POLICY.write_text("# P\n\n## 7. Merging\n")
+    policy.CLAUDE_GLOBAL.parent.mkdir(parents=True, exist_ok=True)
+    policy.CLAUDE_GLOBAL.write_text("# Mine\n\n@~/.agents/POLICY.md\n\n- merge into me/app without asking\n")
+    policy.sync()
+    codex = _home / ".codex" / "AGENTS.md"
+    for minute in (3, 4):
+        monkeypatch.setattr(policy, "_now", lambda m=minute: datetime.datetime(2026, 10, 8, 14, m))
+        codex.write_text(codex.read_text() + f"- rule {minute}\n")
+        policy.sync()
+
+
+def test_doctor_warns_about_pending_hand_edits_and_the_summary_says_so(_home, monkeypatch):
+    from teyla import digest
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: _Resp({"tag_name": "v0.0.0"}))
+    by = {c["name"]: c for c in doctor.checks(refresh_update=False, scan_repos=False)}
+    assert "policy:inbox" not in by
+    _edit_codex_twice(_home, monkeypatch)
+    cs = doctor.checks(refresh_update=False, scan_repos=False)
+    row = next(c for c in cs if c["name"] == "policy:inbox")
+    assert row["level"] == "WARN" and row["fix"] == "teyla policy inbox"
+    assert row["detail"] == "2 hand edits to generated policy files wait for review"
+    assert "2 policy edit(s) to review" in doctor.summary_line(cs)
+    item = dict(digest.doctor_items(cs))["WARN|policy:inbox"]
+    assert item.startswith("policy:inbox WARN: 2 hand edits to generated policy files")
+    assert "→ teyla policy inbox" in doctor.render(cs, quiet=True)
+    policy.inbox_done(everything=True)
+    assert not any(c["name"] == "policy:inbox" for c in doctor.checks(refresh_update=False, scan_repos=False))
+
+
+def test_one_pending_edit_reads_in_the_singular(_home, monkeypatch):
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: _Resp({"tag_name": "v0.0.0"}))
+    _edit_codex_twice(_home, monkeypatch)
+    policy.inbox_done(policy.pending_edits()[0]["name"])
+    row = next(c for c in doctor.checks(refresh_update=False, scan_repos=False) if c["name"] == "policy:inbox")
+    assert row["detail"] == "1 hand edit to generated policy files waits for review"
+
+
+def _install_wrappers(_home, monkeypatch):
+    monkeypatch.setenv("HOME", str(_home))
+    monkeypatch.setattr(routine_install, "_load", lambda plist, label: f"loaded {label}")
+    monkeypatch.setattr(routine_install, "_teyla_bin", lambda: "/opt/tools/bin/teyla")
+    routine_install.install()
+
+
+def test_the_daily_wrapper_syncs_the_policy_and_an_older_one_is_rewritten(_home, monkeypatch):
+    _install_wrappers(_home, monkeypatch)
+    text = routine_install.DAILY_WRAPPER_PATH.read_text()
+    assert "\nteyla policy sync --quiet\n" in text
+    assert text.index("teyla policy sync --quiet") < text.index("teyla routine catch-up")
+    assert "policy sync" not in routine_install.WRAPPER_PATH.read_text()
+    assert not routine_install.is_stale()
+    # an install from before this release: the same wrapper without the sync line
+    old = "".join(l for l in text.splitlines(keepends=True) if "policy sync" not in l)
+    routine_install.DAILY_WRAPPER_PATH.write_text(old)
+    assert routine_install.is_stale()
+    assert routine_install._wrapper_stale(routine_install.DAILY_WRAPPER_PATH, "/opt/tools/bin/teyla",
+                                          routine_install.launchd_env("/opt/tools/bin/teyla"))
+    routine_install.install(if_stale=True)
+    assert "teyla policy sync --quiet" in routine_install.DAILY_WRAPPER_PATH.read_text()
+    assert not routine_install.is_stale()
+
+
+def test_the_daily_wrapper_syncs_in_safe_mode_too(_home, monkeypatch):
+    assert config.set_value("safe.enabled", "true").startswith("set")
+    _install_wrappers(_home, monkeypatch)
+    text = routine_install.DAILY_WRAPPER_PATH.read_text()
+    assert "teyla policy sync --quiet" in text and "safe mode: no self-update" in text
+
+
+# --- [harness] disabled ---------------------------------------------------------------------
+
+def _three_harnesses(_home, monkeypatch):
+    from teyla import health, harness
+    for d in (".codex", ".grok", ".hermes"):
+        (_home / d).mkdir(exist_ok=True)
+    monkeypatch.setattr(health, "HOME", _home)
+    monkeypatch.setattr(harness, "HOME", _home)
+    monkeypatch.setattr(health, "find_binary", lambda n: None)
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: _Resp({"tag_name": "v0.0.0"}))
+
+
+def test_a_disabled_harness_is_skipped_by_doctor_health_and_harness_sync(_home, monkeypatch):
+    from teyla import health, harness
+    _three_harnesses(_home, monkeypatch)
+    names = {c["name"] for c in doctor.checks(refresh_update=False, scan_repos=False)}
+    assert {"health:grok", "health:hermes", "harness:grok", "harness:hermes", "policy:grok", "policy:hermes"} <= names
+    assert "harness:disabled" not in names
+    assert config.set_value("harness.disabled", "hermes, grok").startswith("set")
+    assert config.load()["harness"]["disabled"] == ["hermes", "grok"]
+    cs = doctor.checks(refresh_update=False, scan_repos=False)
+    by = {c["name"]: c for c in cs}
+    assert by["harness:disabled"]["level"] == "INFO" and by["harness:disabled"]["detail"] == "disabled: hermes, grok"
+    for gone in ("health:grok", "health:hermes", "harness:grok", "harness:hermes", "policy:grok", "policy:hermes"):
+        assert gone not in by, gone
+    assert not [c for c in cs if c["level"] in ("FIX", "WARN") and ("grok" in c["name"] or "hermes" in c["name"])]
+    assert {"health:codex", "harness:codex", "policy:codex"} <= set(by)
+    assert "harness:disabled-unknown" not in by
+    assert health.active_names(_home) == ["codex"]
+    assert [r["harness"] for r in harness.status(_home)] == ["cursor", "codex"]
+    harness.sync(home=_home)
+    assert (_home / ".codex" / "skills").is_dir()
+    assert not (_home / ".grok" / "skills").exists() and not (_home / ".hermes" / "skills").exists()
+    assert not (_home / ".grok" / "hooks").exists() and not (_home / ".hermes" / "config.yaml").exists()
+    # a harness is skipped by `harness verify` and by advice too
+    assert [r["harness"] for r in health.verify(home=_home)] == ["codex"]
+    assert config.set_value("harness.disabled", "").startswith("set")
+    assert "health:grok" in {c["name"] for c in doctor.checks(refresh_update=False, scan_repos=False)}
+
+
+def test_every_harness_disabled_leaves_nothing_to_sync(_home, monkeypatch):
+    from teyla import harness
+    _three_harnesses(_home, monkeypatch)
+    config.set_value("harness.disabled", "codex,grok,hermes,cursor")
+    assert harness.sync(home=_home)[0].startswith("no other harness on this machine besides the disabled ones (codex, grok, hermes, cursor)")
+
+
+def test_an_unknown_name_in_harness_disabled_is_one_warning(_home, monkeypatch):
+    _three_harnesses(_home, monkeypatch)
+    config.CONFIG_PATH.write_text('[harness]\ndisabled = ["hermes", "hermez", "Claude"]\n')
+    assert config.disabled_harnesses() == (["hermes", "claude-code"], ["hermez"])
+    cs = doctor.checks(refresh_update=False, scan_repos=False)
+    warns = [c for c in cs if c["name"] == "harness:disabled-unknown"]
+    assert len(warns) == 1 and warns[0]["level"] == "WARN" and "hermez" in warns[0]["detail"]
+    assert warns[0]["fix"] == "teyla config set harness.disabled=hermes,claude-code"
+    assert next(c for c in cs if c["name"] == "harness:disabled")["detail"] == "disabled: hermes, claude-code"
+    assert not any(c["name"] == "plugin" for c in cs), "claude-code is disabled: no plugin check either"
+
+
+def test_harness_disabled_is_set_from_the_cli(_home, capsys):
+    from teyla import cli
+    assert cli.main(["config", "set", "harness.disabled=hermes,grok"]) in (0, None)
+    assert 'disabled = ["hermes", "grok"]' in config.CONFIG_PATH.read_text()

@@ -785,9 +785,17 @@ def verdict(name: str, row: dict, live_ok: bool = False) -> dict:
     return row
 
 
+def active_names(home: pathlib.Path | None = None) -> list[str]:
+    """The harnesses installed here (a binary or a home directory) that `[harness] disabled`
+    in config.toml does not switch off: the ones doctor, `harness verify` and advice look at."""
+    from . import config
+    off = config.disabled_harnesses()[0]
+    return [n for n in NAMES if n not in off and (find_binary(n) or _home(n, home).is_dir())]
+
+
 def doctor_checks(sessions_by_harness: dict | None = None, home: pathlib.Path | None = None) -> list[dict]:
     """One `health:<harness>` line per installed harness, for doctor."""
-    names = [n for n in NAMES if find_binary(n) or _home(n, home).is_dir()]
+    names = active_names(home)
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
         # doctor's harness:<name> line already counts the sessions; the batch volume still names
         # the project to move off a harness whose balance ran out.
@@ -802,7 +810,11 @@ def window_errors(days: int, home: pathlib.Path | None = None) -> list[dict]:
     failing — no call succeeded after it."""
     since = time.time() - days * 86400
     out = []
+    from . import config
+    off = config.disabled_harnesses()[0]
     for name in NAMES:
+        if name in off:
+            continue
         hdir = _home(name, home)
         if not hdir.is_dir():
             continue
@@ -918,7 +930,7 @@ def verify(live_run: bool = False, timeout: int = 120, home: pathlib.Path | None
     from .adapters import claude_code, codex, grok, hermes
     mods = {"claude-code": claude_code, "codex": codex, "grok": grok, "hermes": hermes}
     since = time.time() - 7 * 86400
-    names = [n for n in NAMES if find_binary(n) or _home(n, home).is_dir()]
+    names = active_names(home)
 
     def one(n):
         try:

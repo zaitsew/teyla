@@ -9,7 +9,7 @@ uv tool install git+https://github.com/zaitsew/teyla      # or: pipx install git
 teyla policy init --owner "Your Name" && teyla policy sync   # one POLICY.md (+ your CLAUDE.md rules) → Claude Code, Codex, Grok, Hermes, Cursor
 teyla plugin install zaitsew/teyla   # the Claude Code plugin (or: claude plugin marketplace add zaitsew/teyla)
 teyla harness sync                   # the same skills and hooks in Cursor, Codex, Grok and Hermes
-teyla routine install                # daily: update + doctor; weekly: monitor, routines, products, models
+teyla routine install                # daily: update, doctor, policy sync; weekly: monitor, routines, products, models
 teyla doctor                         # everything that must be true here, and the fix for each thing that is not
 teyla monitor --days 30              # the adoption report, with advice
 ```
@@ -56,7 +56,8 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | `teyla advise` | just the findings, each with the number that triggered it and one action |
 | `teyla grok-cost [--last\|--session ID] [--cwd PATH] [--days N] [--by project\|session] [--json]` | what Grok CLI sessions cost at list price, ranked by dollars not tokens. `--last --cwd <repo>` is the one line an orchestrator reads when a `grok -p` lane ends (cost, calls, tokens, cached %, tools, context, effort, title); the default is the last 7 days by project (worktrees and `~/repos/<repo>` collapse to `<repo>`, a `<repo>-grok-empty` temp dir to `<repo>`, other temp dirs to `tmp`); `--by session` is the top 20. `teyla monitor`/`advise` add A13/A14 |
 | `teyla sessions` / `teyla corrections --cluster` | one line per session; correction-shaped turns clustered into rule candidates |
-| `teyla policy init [--claude-md --ops-root-init]\|status\|sync\|sync-repo` | `~/.agents/POLICY.md` imported by `~/.claude/CLAUDE.md`; `~/.codex/AGENTS.md` and `~/.grok/AGENTS.md` generated from POLICY.md + your own rules in `~/.claude/CLAUDE.md` (Codex cannot import a file; a plain symlink while CLAUDE.md holds only the import); appended to Hermes `SOUL.md`; `AGENTS.md ⇄ CLAUDE.md` in repos |
+| `teyla policy init [--claude-md --ops-root-init]\|status\|sync\|sync-repo` | `~/.agents/POLICY.md` imported by `~/.claude/CLAUDE.md`; `~/.codex/AGENTS.md` and `~/.grok/AGENTS.md` generated from POLICY.md + your own rules in `~/.claude/CLAUDE.md` (Codex cannot import a file; a plain symlink while CLAUDE.md holds only the import); appended to Hermes `SOUL.md`; `AGENTS.md ⇄ CLAUDE.md` in repos; `sync --quiet` is what the daily routine runs (silent when nothing changed, never creates POLICY.md or edits CLAUDE.md) |
+| `teyla policy inbox [--done FILE\|--all]` | the hand edits `policy sync` found in a generated copy (a rule added to `~/.codex/AGENTS.md` from inside Codex) before it overwrote the copy, newest first with their added-line counts; `--done FILE` deletes one once you moved what should stay into `~/.agents/POLICY.md` or `~/.claude/CLAUDE.md`, `--all` deletes every one. `teyla doctor` warns `policy:inbox` while any wait |
 | `teyla harvest <path>` | tool spines and corrections from every session that touched a path — the input to the harvest skill (skill = what was done the same way every time; everything else = candidate rules) |
 | `teyla scaffold <path> --name X --kind cli\|app\|service\|ios` | a repo born plug-and-play |
 | `teyla products` | real-usage counters from every repo's `./check.sh usage` — the "built, not used" detector; `products.repos` in config limits which repos' code it runs |
@@ -72,6 +73,7 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | `teyla run <product:routine>` | the control plane: grants, caps, idempotency, gates A/B/C, a receipt naming the rules the run obeyed — see [docs/CONTROL-PLANE.md](docs/CONTROL-PLANE.md) |
 | `teyla inbox` · `teyla kill` · `teyla triggers` · `teyla promote` · `teyla receipts` | the needs-you inbox, the kill switch, clock triggers as LaunchAgents, earned autonomy on ten clean approvals, the audit trail |
 | `teyla harness status\|sync` | the plugin's skills and hooks, and the policy, in Cursor, Codex, Grok and Hermes — see [docs/HARNESSES.md](docs/HARNESSES.md) |
+| `teyla config set harness.disabled=hermes,grok` | harnesses this machine does not use: `doctor`, `harness status\|sync\|verify` and `policy sync` skip them entirely (no health, credit, hook or auth lines), and `doctor` prints one `disabled: hermes, grok` line. Names: claude-code, codex, grok, hermes, cursor; an unknown one is a warning |
 | `teyla harness verify [--live]` | can each harness do work now: version, auth (shape and dates, never a secret), the newest quota/auth error it recorded, interactive vs batch sessions in 7 days; `--live` sends one line through `claude -p`, `codex exec`, `grok -p`, `hermes -z` and checks the policy reached it |
 | `teyla rule "<sentence>" [--scope <glob>]` · `teyla correct "<what was wrong>"` | what `/teyla:rule` and `/teyla:correct` do, as a CLI every harness's skill can call |
 | `teyla rules propose [--write]` · `teyla rules stale` | a proposed rule diff from human corrections only (hook guesses ignored), hit counts on existing rules; expired and never-hit rules as removal candidates |
@@ -310,6 +312,8 @@ unless you pass `--allow-public`.
 5. **Stop only at a real blocker** (a key, a payment, a sign-in): do everything around it, open the exact page, name the exact file and line, hand over one line.
 6. **Plug-and-play is the definition of done.**
 7. **Say what is unverified.**
+
+**Edits to a generated copy are kept.** `policy sync` keeps the sha256 of everything it writes (`~/.teyla/state/policy-written.json`, with a copy of the text). Before it overwrites a copy whose hash no longer matches, it files the difference (the lines added and removed since the last write) in `~/.teyla/policy-inbox/<harness>-<date-time>.md`, with the instruction to move what should stay into `~/.agents/POLICY.md` or `~/.claude/CLAUDE.md`, the two sources; only then does it overwrite. For the Hermes `SOUL.md` only Teyla's own section is compared, never your text around it. With no record yet (the first sync after an upgrade) the copy is compared with what sync would write now, and only added lines count. The daily routine runs `teyla policy sync --quiet`, so an edit made in Codex today reaches the inbox tomorrow morning instead of vanishing silently at the next manual sync. `teyla policy inbox` lists what waits, `teyla doctor` warns while anything does, and the session-start line says how many.
 
 ## The plugin
 

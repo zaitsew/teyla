@@ -27,8 +27,9 @@ PLIST_PATH = pathlib.Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
 WRAPPER_PATH = pathlib.Path.home() / ".teyla" / "weekly.sh"
 LOG_PATH = pathlib.Path.home() / "Library" / "Logs" / "teyla-weekly.log"
 
-# The daily agent: `teyla update` (a newer release → install + re-wire) then `teyla doctor`,
-# whose one-line summary the session-start hook shows. 07:00 local, before the weekly one.
+# The daily agent: `teyla update` (a newer release → install + re-wire), `teyla doctor` (whose
+# one-line summary the session-start hook shows), `teyla policy sync --quiet`, catch-up and the
+# storage clean. 07:00 local, before the weekly one.
 DAILY_LABEL = "com.zaitsew.teyla.daily"
 DAILY_PLIST_PATH = pathlib.Path.home() / "Library" / "LaunchAgents" / f"{DAILY_LABEL}.plist"
 DAILY_WRAPPER_PATH = pathlib.Path.home() / ".teyla" / "daily.sh"
@@ -94,6 +95,10 @@ teyla spend --alert
 teyla doctor --quiet
 # Refresh ~/.teyla/routines/<product>.line, the one-liners the session-start hook shows.
 teyla routines >/dev/null 2>&1
+# The generated copies of the policy (Codex, Grok, Cursor, Hermes) follow ~/.agents/POLICY.md and
+# ~/.claude/CLAUDE.md; a hand edit found in one is filed in ~/.teyla/policy-inbox/ first. Local files
+# only, so safe mode runs it too.
+teyla policy sync --quiet
 # A weekly that launchd skipped (the Mac was off at its minute) runs now instead of never.
 teyla routine catch-up --quiet
 # Finished worktrees and idle build output go, when storage.auto_clean is on; silent otherwise.
@@ -201,6 +206,9 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         return True
     if path == DAILY_WRAPPER_PATH and "storage clean" not in text:
         # Written before `teyla storage`: the daily would never clean.
+        return True
+    if path == DAILY_WRAPPER_PATH and "policy sync" not in text:
+        # Written before the daily kept the generated policy copies current.
         return True
     if path == WRAPPER_PATH and "digest --write" not in text:
         # Written before `teyla digest`: the weekly would never write the digest.
