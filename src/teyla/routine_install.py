@@ -210,6 +210,7 @@ mkdir -p "$OUT_DIR"
 "$TEYLA" products > "$OUT_DIR/products.md" 2>&1
 "$TEYLA" models > "$OUT_DIR/models.md" 2>&1
 {models_watch_line} > "$OUT_DIR/models-watch.md" 2>&1
+"$TEYLA" reviews --quiet > "$OUT_DIR/reviews.md" 2>&1
 # The reports above tend to have no reader: the digest is the five lines
 # that are read — the session-start hook shows its headline once, and a notification says it exists.
 "$TEYLA" digest --write
@@ -219,6 +220,8 @@ mkdir -p "$OUT_DIR"
 UPDATE_LINE = '"$TEYLA" update --quiet'
 # Safe mode: the daily never self-updates. `teyla update` refuses without --allow-network
 # anyway (net.py), but a wrapper that does not even try is the one a reviewer can read.
+# With `safe.auto_update = true` the wrapper carries UPDATE_LINE again: net.update_scope lets that
+# one command (and nothing else in the file) look up and install a published release.
 SAFE_UPDATE_LINE = "# safe mode: no self-update here; by hand: teyla update --allow-network"
 
 
@@ -237,7 +240,7 @@ def _watch_line() -> str:
 
 def _update_line() -> str:
     from . import config
-    if config.safe_mode():
+    if config.safe_mode() and not config.safe_auto_update():
         return SAFE_UPDATE_LINE
     if str((config.load().get("update") or {}).get("channel") or "release").strip().lower() == "none":
         return NONE_UPDATE_LINE
@@ -290,6 +293,9 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         return True
     if path == WRAPPER_PATH and "models watch" not in text:
         # Written before `teyla models watch`: the weekly would never look for new models.
+        return True
+    if path == WRAPPER_PATH and "reviews --quiet" not in text:
+        # Written before `teyla reviews`: the weekly would never count merged PRs nobody reviewed.
         return True
     if path == WRAPPER_PATH and ("models watch --refresh" in text) != (_watch_line() == WATCH_LINE):
         # Safe mode was switched on (or off) after the wrapper was written.

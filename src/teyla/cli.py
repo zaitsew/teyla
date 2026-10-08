@@ -35,6 +35,7 @@
   teyla update [--check] [--force] [--wire] [--quiet]            newer release → install, then policy sync/refresh, plugin refresh, routines
   teyla platform [init|env-example] [--json] [--no-net]          the shared resources set up once, and the step for each missing one
   teyla productize [path...] [--json] [--owner-steps]            what stands between each product and its second user
+  teyla reviews [--days N] [--json] [--quiet] [repo...]            review debt: merged PRs never reviewed, merged with an open P1, skipped
   teyla products [path...]                                       real-usage counters from every repo's ./check.sh usage
   teyla routines [path...] [--json]                               routines + manual checks from every repo's teyla.toml
   teyla check <product> <check> ok|broken [--note TEXT]            confirm a manual check: status + today's date in its teyla.toml
@@ -439,6 +440,8 @@ def main(argv=None):
     from . import digest as digest_mod, routines as routines_mod
     digest_mod.register(sp); routines_mod.register_check(sp)
     cloud.register(sp)
+    from . import reviews as reviews_mod
+    reviews_mod.register(sp)
     from . import spend as spend_mod
     spend_mod.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")

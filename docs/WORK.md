@@ -12,8 +12,8 @@ agent is [`prompts/work-account-update.md`](../prompts/work-account-update.md).
 `teyla policy init --work` turns it on (`teyla config set safe.enabled=true` does the same).
 `teyla doctor` prints `safe: on` as its first line.
 
-- **No network** unless the command you typed carries `--allow-network`. The session hook and the daily routine never pass it.
-- **No self-update.** The CLI changes only when you set `update.pin` and run `teyla update --allow-network --wire`.
+- **No network** unless the command you typed carries `--allow-network`. The session hook and the daily routine never pass it. The one opt-in exception is `safe.auto_update`, below.
+- **No self-update**, unless you switch on `safe.auto_update`. Otherwise the CLI changes only when you set `update.pin` and run `teyla update --allow-network --wire`.
 - **The plugin is pinned too.** With `update.pin` set to a release, you add the plugin from the same tag (`zaitsew/teyla#v<pin>`), so its hooks are never newer than the CLI. `teyla doctor` warns (`plugin:pin`) when they are.
 - **No repo code runs** except `./check.sh` in the repos you list under `products.repos`. `teyla run`, triggers and agent steps are refused.
 - **No hand-edited Claude Code registry.** Plugin changes are printed as `/plugin ...` commands for you to type.
@@ -21,9 +21,39 @@ agent is [`prompts/work-account-update.md`](../prompts/work-account-update.md).
 
 A config file that does not parse turns safe mode on, never off.
 
-## Update to a new release
+## Let the laptop update itself (opt-in)
 
-Do this when you choose to, not when a tag appears. Replace `0.18.0` with the release you want.
+```
+teyla config set update.pin=          # clear any pin: a pin freezes the machine
+teyla config set safe.auto_update=true
+teyla routine install --if-stale      # puts `teyla update --quiet` back into the daily wrapper
+```
+
+From then on releases install themselves at the daily run. Exactly this, and nothing more, may
+reach GitHub: `teyla update` looks up the latest *published release*, resolves its tag to a commit,
+builds it, checks `teyla --version` against the release, and puts the previous version back on a
+mismatch. Every other network block of safe mode stays: doctor, the session hook, `models`, `gh`
+and the plugin installer still refuse. `teyla doctor` prints `safe: auto-update on (releases only)`.
+
+- **A pin wins.** With `update.pin` set the machine installs the pin and nothing newer, and doctor warns
+  (`safe:auto-update-pin`) with the command to clear it: `teyla config set update.pin=`.
+- **The plugin follows by hand.** Re-pointing the plugin's marketplace at the new tag takes Claude Code
+  (`claude plugin marketplace add` clones from GitHub, and the desktop app has only the `/plugin` UI), which
+  safe mode never drives for you. After an auto-update the hooks are older than the CLI until you type
+  the three lines. The session banner shows them, as does `teyla doctor` (`plugin:pin`); both disappear
+  once the marketplace is at the new tag:
+
+  ```
+  /plugin marketplace remove teyla
+  /plugin marketplace add zaitsew/teyla#v<new version>
+  /plugin install teyla@teyla
+  ```
+
+- **Off again:** `teyla config set safe.auto_update=false`, then `teyla routine install --if-stale`.
+
+## Update to a new release by hand
+
+Do this when you choose to, not when a tag appears (the default, without `safe.auto_update`). Replace `0.18.0` with the release you want.
 
 1. Set the pin: `teyla config set update.pin=0.18.0`
 2. Update the CLI and run the post-update steps: `teyla update --allow-network --wire`
@@ -91,7 +121,7 @@ All three are offline; safe mode allows them. `teyla doctor` prints one INFO lin
 ## What never happens in safe mode
 
 - No request to GitHub, models.dev, or any other host, unless you typed `--allow-network`.
-- No update of the CLI or the plugin by a routine, a hook, or a session.
+- No update of the CLI or the plugin by a routine, a hook, or a session (the one exception: the daily `teyla update --quiet` when `safe.auto_update` is on, releases only; the plugin is never updated).
 - No `teyla run`, no trigger, no agent step.
 - No write to `~/.claude/plugins/*.json`, and no `rm` under `~/.claude`, `~/.teyla` or `~/.agents`.
 - No merge into `~/.agents/POLICY.md` by itself: a newer template is proposed in `~/.teyla/policy-proposed.md`, and you apply it.

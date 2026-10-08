@@ -13,6 +13,8 @@
     [safe]
     enabled = false                work mode (also env TEYLA_SAFE=1): no network, no self-update,
                                    no repo code run, no hand-edited plugin registry — see safe_mode()
+    auto_update = false            safe mode only: the daily `teyla update --quiet` may reach GitHub for
+                                   the latest published release (nothing else may); `update.pin` still wins
     [products]
     repos = ["teyla", "~/work/x"]  the only repos `teyla products` runs `./check.sh usage` in
                                    (names under code_root, or paths); unset = every repo, outside safe mode
@@ -42,6 +44,9 @@
     sweep_agent     = false        ... and one for storage sweep --temp hourly; the weekly runs storage sweep
     [digest]
     notify = true                  the weekly digest posts a macOS notification when written
+    [review]                       `teyla reviews`: merged PRs against the review ledger
+    ledger    = "~/.cache/review-ledger.tsv"   one TSV line per review, appended by the review script
+    min_lines = 7                  PRs with fewer changed lines, or docs-only (*.md, docs/), need no review
     [corrections]
     store = "home"                 "home": ~/.teyla/corrections/<repo-key>.jsonl (default);
                                    "repo": <repo>/.teyla/corrections.jsonl, the pre-0.12 place
@@ -115,7 +120,7 @@ DEFAULTS = {
     # Where `teyla correct` and the capture hook keep corrections; see corrections.py for why
     # the default is outside the repo.
     "corrections": {"store": "home"},
-    "safe": {"enabled": False},
+    "safe": {"enabled": False, "auto_update": False},
     # Harnesses to leave alone: no health line, no FIX for their hooks or credits, no sync.
     "harness": {"disabled": []},
     "products": {"repos": []},
@@ -125,6 +130,8 @@ DEFAULTS = {
               "a20_share": 0.3, "a20_min_calls": 10, "a20_models": []},
     # `teyla digest --write` (the weekly routine) posts a macOS notification with its headline.
     "digest": {"notify": True},
+    # `teyla reviews`: the ledger the review script appends to, and the size below which a PR is exempt.
+    "review": {"ledger": "~/.cache/review-ledger.tsv", "min_lines": 7},
     # The plugin's opt-in hooks (plugin/hooks/context-budget.sh, land-check.sh). Off by default: where
     # the same hooks are already wired some other way, a second copy doubles each note.
     # The hooks read these keys from the file with awk/tomllib, not through this module.
@@ -463,6 +470,7 @@ def hook_on(name: str, cfg: dict | None = None) -> bool:
 
 SAFE_ENV = "TEYLA_SAFE"
 SAFE_SUMMARY = "on (network off, no auto-update, no repo commands)"
+SAFE_SUMMARY_AUTO = "on (network off except `teyla update` for published releases, no repo commands)"
 
 
 def safe_mode(cfg: dict | None = None) -> bool:
@@ -472,6 +480,14 @@ def safe_mode(cfg: dict | None = None) -> bool:
     if _fail_closed(os.environ.get(SAFE_ENV)):
         return True
     return _fail_closed(((cfg or load()).get("safe") or {}).get("enabled"))
+
+
+def safe_auto_update(cfg: dict | None = None) -> bool:
+    """Safe mode with `[safe] auto_update = true`: `teyla update` (and only it) may reach GitHub for
+    the latest published release. Fails open to *off*: anything but an explicit true word is false,
+    because this setting only ever widens what a work laptop does."""
+    cfg = cfg or load()
+    return safe_mode(cfg) and truthy(((cfg.get("safe") or {}).get("auto_update")))
 
 
 def _fail_closed(v) -> bool:
