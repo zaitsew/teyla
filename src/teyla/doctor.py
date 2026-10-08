@@ -40,7 +40,8 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     safe = config.safe_mode(cfg)
 
     # --- safe mode: first, because it changes what every line below means --------
-    out.append(_check("INFO", "safe", config.SAFE_SUMMARY if safe else "off"))
+    auto = config.safe_auto_update(cfg)
+    out.append(_check("INFO", "safe", ("off" if not safe else config.SAFE_SUMMARY_AUTO if auto else config.SAFE_SUMMARY)))
     cfg_err = config.parse_error()
     bad_safe = config.safe_setting_invalid(cfg)
     if cfg_err:
@@ -49,6 +50,15 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     elif bad_safe is not None:
         out.append(_check("FIX", "safe:setting", f"[safe] enabled = {bad_safe!r} is not true or false — treated as ON",
                           "teyla config set safe.enabled=true   (or =false)"))
+
+    if auto:
+        out.append(_check("INFO", "safe:auto-update", "safe mode: auto-update on (releases only)"))
+        pin_now = update.update_settings(cfg)[1]
+        if pin_now:
+            out.append(_check("WARN", "safe:auto-update-pin",
+                              f"safe.auto_update is on but update.pin = {pin_now} freezes it: the daily run installs "
+                              f"only {pin_now}, never a newer release",
+                              "teyla config set update.pin=   (clears the pin)"))
 
     # --- version ---------------------------------------------------------------
     rec = update.check(refresh=refresh_update, max_age_hours=24)
@@ -67,9 +77,15 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     if safe:
         # Doctor never passes --allow-network: it runs from the hook and the daily routine.
         known = f"; {rec['latest']} was the latest at {when}" if rec.get("latest") else ""
-        out.append(_check("FIX" if rec.get("newer") else "INFO", "version",
-                          f"{__version__} ({method}); update checks off in safe mode{known}",
-                          "teyla update --allow-network   (when you choose to)"))
+        if auto:
+            out.append(_check("FIX" if rec.get("newer") else "INFO", "version",
+                              f"{__version__} ({method}); auto-update on (releases only): the daily run installs the "
+                              f"latest release; doctor itself does not look{known}",
+                              "teyla update   (installs it now)" if rec.get("newer") else None))
+        else:
+            out.append(_check("FIX" if rec.get("newer") else "INFO", "version",
+                              f"{__version__} ({method}); update checks off in safe mode{known}",
+                              "teyla update --allow-network   (when you choose to)"))
     elif upin and rec.get("sha") and not rec.get("latest"):
         state = "not installed yet" if rec.get("newer") else "installed"
         out.append(_check("FIX" if rec.get("newer") else "OK", "version",
@@ -235,7 +251,7 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
         pass
     elif claude_present:
         pv = plugin_install.installed_version()
-        pref = plugin_install.pin_ref(cfg) if safe else None   # `v<pin>`: hooks pinned like the CLI
+        pref = plugin_install.follow_ref(cfg) if safe else None   # `v<pin>` (or, auto-update, the CLI's tag): hooks pinned like the CLI
         add = (f"claude plugin marketplace add {plugin_install.pinned_source(pref)}" if pref
                else "claude plugin marketplace add zaitsew/teyla")
         if pv is None:
@@ -252,8 +268,10 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
             found, ref, kind = plugin_install.marketplace_ref()
             follows = ref or ("main" if kind in ("github", "git") else f"a {kind} source, not a tag")
             if pref and found and ref != pref:
-                out.append(_check("WARN", "plugin:pin", f"the plugin's hooks follow {follows}, not {pref} (update.pin): "
-                                  "they can be newer than the pinned CLI", plugin_install.repin_command(pref)))
+                why = ("(update.pin): they can be newer than the pinned CLI" if plugin_install.pin_ref(cfg)
+                       else "(the CLI's release, after an auto-update): the hooks lag the CLI")
+                out.append(_check("WARN", "plugin:pin", f"the plugin's hooks follow {follows}, not {pref} {why}",
+                                  plugin_install.repin_command(pref)))
             elif plugin_install.pin_is_sha(cfg) and found:
                 out.append(_check("WARN", "plugin:pin", f"update.pin is a commit sha; Claude Code pins a marketplace to a tag, "
                                   f"not a commit, so the plugin's hooks follow {follows}",
