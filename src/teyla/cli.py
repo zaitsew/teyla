@@ -378,7 +378,7 @@ def cmd_prompt(args):
 
 def cmd_scaffold(args):
     from .scaffold import scaffold
-    for line in scaffold(args.path, name=args.name, kind=args.kind, license=args.license):
+    for line in scaffold(args.path, name=args.name, kind=args.kind, license=args.license, owner=args.owner):
         print(line)
 
 
@@ -445,6 +445,7 @@ def main(argv=None):
     q.add_argument("--name", required=True)
     q.add_argument("--kind", choices=["cli", "app", "service", "ios"], default="cli")
     q.add_argument("--license", choices=["apache", "mit", "none"], default="apache")
+    q.add_argument("--owner", help="copyright holder written into the LICENSE (default: git config user.name)")
     args = p.parse_args(argv)
     from . import net, invisible
     net.allow_for_this_command(getattr(args, "allow_network", False))
