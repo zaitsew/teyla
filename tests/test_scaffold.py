@@ -75,9 +75,12 @@ def test_ci_template_is_manual_and_linux(tmp_path, monkeypatch):
 def test_productized_compose_fragment_gets_a_registry_owner(tmp_path, monkeypatch):
     _no_git_identity(monkeypatch, tmp_path)
     dest = tmp_path / "svc"
+    dest.mkdir()
+    subprocess.run(["git", "init", "-q", str(dest)], check=True)
+    subprocess.run(["git", "-C", str(dest), "remote", "add", "origin", "git@github.com:AdaL/widget.git"], check=True)
     scaffold.scaffold(str(dest), name="widget", kind="service", license="none", owner="Ada Lovelace")
     frag = (dest / "deploy" / "droplet" / "docker-compose.fragment.yml").read_text()
-    assert "image: ghcr.io/ada-lovelace/widget:latest" in frag
+    assert "image: ghcr.io/adal/widget:latest" in frag, "the GitHub owner, not the display name"
     assert "{{owner}}" not in frag
     assert "{{port}}" in frag  # the server's add-product.sh fills the port
 
@@ -85,6 +88,6 @@ def test_productized_compose_fragment_gets_a_registry_owner(tmp_path, monkeypatc
 def test_compose_fragment_without_any_owner_keeps_a_visible_placeholder(tmp_path, monkeypatch):
     _no_git_identity(monkeypatch, tmp_path)
     dest = tmp_path / "svc"
-    scaffold.scaffold(str(dest), name="widget", kind="service", license="none")
+    scaffold.scaffold(str(dest), name="widget", kind="service", license="none", owner="Ada Lovelace")
     frag = (dest / "deploy" / "droplet" / "docker-compose.fragment.yml").read_text()
     assert "ghcr.io/your-github-owner/widget" in frag and "{{owner}}" not in frag

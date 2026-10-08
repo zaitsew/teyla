@@ -124,12 +124,22 @@ def _owner(owner: str | None, cwd: pathlib.Path) -> str:
 NEUTRAL_OWNER = "the authors"
 
 
-def _owner_slug(display: str) -> str:
-    """The owner as a container-registry namespace (ghcr.io/<owner>/...): lower case, runs of
-    anything else folded into a hyphen. No usable name leaves a visible placeholder to edit."""
-    if display == NEUTRAL_OWNER:
-        return "your-github-owner"
-    return re.sub(r"[^a-z0-9]+", "-", display.lower()).strip("-") or "your-github-owner"
+def _git_out(cwd: pathlib.Path, *args: str) -> str:
+    try:
+        out = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return out.stdout.strip() if out.returncode == 0 else ""
+
+
+def _registry_owner(dest: pathlib.Path) -> str:
+    """The container-registry namespace (ghcr.io/<owner>/...): the GitHub owner of the repo's
+    origin, else `git config github.user`, else a visible placeholder. Never the display name:
+    a person's name is not their GitHub account."""
+    url = _git_out(dest, "remote", "get-url", "origin") if dest.is_dir() else ""
+    m = re.search(r"github\.com[:/]+([A-Za-z0-9-]+)/", url)
+    login = m.group(1) if m else _git_out(dest if dest.is_dir() else pathlib.Path.cwd(), "config", "--get", "github.user")
+    return login.lower() if re.fullmatch(r"[A-Za-z0-9-]+", login or "") else "your-github-owner"
 
 
 def _render(text: str, ctx: dict) -> str:
@@ -175,7 +185,7 @@ def scaffold(path: str, name: str, kind: str = "cli", license: str = "apache", o
     dest = pathlib.Path(path).expanduser()
     dest.mkdir(parents=True, exist_ok=True)
     owner_name = _owner(owner, dest)
-    ctx = {**_context(name, kind), "owner": _owner_slug(owner_name)}
+    ctx = {**_context(name, kind), "owner": _registry_owner(dest)}
     report: list[str] = [f"scaffolding {kind} repo '{name}' into {dest}"]
 
     _copy_tree(TEMPLATE_ROOT, dest, ctx, report, skip_names={"_kind"})

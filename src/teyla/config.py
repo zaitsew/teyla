@@ -307,6 +307,8 @@ def write(code_root: str = "~/repos", ops_root: str = "~/ops", repo: str = "zait
         for table in ("env", "safe", "products", "storage", "corrections", "digest", "hooks", "spend"):
             if isinstance(old.get(table), dict) and old[table]:
                 data[table] = old[table]
+        if old.get("runs_root"):
+            data["runs_root"] = old["runs_root"]   # where the reports already go
         # The same for a pin, an interpreter pin and channel = "none": a frozen update that
         # silently thaws on `policy init --force` is not frozen.
         for key in ("pin", "python", "channel"):

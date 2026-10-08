@@ -76,3 +76,9 @@ def test_uninstall_lists_the_configured_runs_dir(tmp_path):
     (home / "ops" / "runs").mkdir(parents=True)
     steps = uninstall._reports(home, {"ops_root": "~/ops"})
     assert any(s.target == str(home / "ops" / "runs") for s in steps)
+
+
+def test_a_forced_config_rewrite_keeps_runs_root(tmp_path):
+    config.set_value("runs_root", str(tmp_path / "reports"))
+    config.write(ops_root=str(tmp_path / "ops"), force=True)
+    assert config.runs_root() == tmp_path / "reports"
