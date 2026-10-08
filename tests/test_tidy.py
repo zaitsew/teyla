@@ -505,3 +505,48 @@ def test_two_or_more_trailing_spaces_before_text_are_a_hard_break_and_are_kept(e
     res = tidy.run([str(p)], apply_fixes=True)
     assert p.read_text() == "first line   \nsecond line  \nthird\n\nlast\n"
     assert [f["line"] for f in res["findings"]] == []
+
+
+# --- round two: fence closers, symlinked checkouts ---------------------------------------------------
+
+def test_a_quote_marker_line_inside_a_plain_fence_does_not_close_it(env):
+    dup = "- A repeated bullet that is only an example inside the code.\n"
+    text = f"intro   \n\n```md\n> ```\n{dup}{dup}```\n\ntail   \n"
+    p = put(env.code / "a.md", text)
+    res = tidy.run([str(p)], apply_fixes=True)
+    assert p.read_text() == text.replace("intro   ", "intro").replace("tail   ", "tail")  # the fence is byte-identical
+    assert res["findings"] == [] and res["refused"] == []
+
+
+def test_a_quoted_fence_closes_only_at_its_own_quote_depth(env):
+    text = "> ```\n> kept   \n> > ```\n> still kept   \n> ```\n\nout   \n"
+    p = put(env.code / "a.md", text)
+    tidy.run([str(p)], apply_fixes=True)
+    assert p.read_text() == text.replace("out   ", "out")
+    # a plain fence is not closed by a shorter or different fence either
+    q = put(env.code / "b.md", "````\n```\nkept   \n~~~\nkept   \n````\nout   \n")
+    tidy.run([str(q)], apply_fixes=True)
+    assert q.read_text() == "````\n```\nkept   \n~~~\nkept   \n````\nout\n"
+
+
+def test_apply_refuses_a_directory_that_is_another_checkout_reached_by_a_link(env):
+    r = repo(env)
+    other = env.tmp / "other-checkout"
+    (other / ".git").mkdir(parents=True)
+    put(other / "CLAUDE.md", "dirty   \n")
+    (r / "vendor").symlink_to(other)
+    res = tidy.run([str(r / "vendor" / "CLAUDE.md")], apply_fixes=True)
+    assert [x["reason"][:21] for x in res["refused"]] == ["sits below a symlinke"]
+    assert (other / "CLAUDE.md").read_text() == "dirty   \n" and not env.backups.exists()
+    # the checkout itself, given by its real path, is tidied
+    assert tidy.run([str(other / "CLAUDE.md")], apply_fixes=True)["refused"] == []
+    assert (other / "CLAUDE.md").read_text() == "dirty\n"
+
+
+def test_apply_refuses_a_repository_whose_dot_git_is_a_link(env):
+    r = env.code / "linked-git"
+    r.mkdir()
+    (r / ".git").symlink_to(env.tmp)  # any directory: it only has to exist
+    p = put(r / "CLAUDE.md", "dirty   \n")
+    res = tidy.run([str(p)], apply_fixes=True)
+    assert len(res["refused"]) == 1 and p.read_text() == "dirty   \n"

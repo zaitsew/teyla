@@ -74,6 +74,12 @@ CYRILLIC = re.compile(r"[\u0400-\u04FF]")  # as in scripts/leak_check.py: U+0400
 
 FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
 _QUOTE_RE = re.compile(r"^(?:\s*>)+")  # a fence may sit inside a blockquote: `> ```
+
+
+def _quote_depth(line: str) -> tuple[int, str]:
+    """(blockquote depth, the line without its `>` markers)."""
+    m = _QUOTE_RE.match(line)
+    return (m.group(0).count(">"), line[m.end():]) if m else (0, line)
 LIST_RE = re.compile(r"^(\s*)([-*+]|\d+[.)])\s+(\S.*)$")
 BULLET_RE = re.compile(r"^(\s*)[-*+]\s+(\S.*)$")
 HEADING_RE = re.compile(r"^\s{0,3}#{1,6}(\s|$)")
@@ -164,12 +170,18 @@ def _protected_lines(lines: list[str]) -> list[bool]:
                 prot[k] = True
             i = j + 1
             continue
-        m = FENCE_RE.match(_QUOTE_RE.sub("", line))
+        depth, rest = _quote_depth(line)
+        m = FENCE_RE.match(rest)
         if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
             fence, ch = m.group(1), m.group(1)[0]
             close = re.compile(r"^\s*" + re.escape(ch) + "{" + str(len(fence)) + r",}\s*$")
+            # CommonMark: a fence closes with the same character, at least as long, at the same
+            # blockquote depth. A `> ```` line inside a plain fence is code, not a closer.
             j = i + 1
-            while j < n and not close.match(_QUOTE_RE.sub("", lines[j])):
+            while j < n:
+                d2, rest2 = _quote_depth(lines[j])
+                if d2 == depth and close.match(rest2):
+                    break
                 j += 1
             for k in range(i, min(j, n - 1) + 1):
                 prot[k] = True
@@ -765,7 +777,9 @@ def apply(docs: list[Doc], now: _dt.datetime | None = None) -> tuple[list[dict],
             tmp = _write_temp(path, new_text.encode("utf-8"), mode)
             # Compare-and-replace: what is on disk right now must be what the fix was computed
             # from (bytes, mtime and size). The backup holds exactly those bytes, and the check
-            # is repeated as the last step before the rename.
+            # is repeated as the last step before the rename: nothing runs between the final
+            # compare and os.replace. A save landing inside that one syscall gap is the only
+            # window left (a rename cannot be made conditional on content).
             cur, sig = _snapshot(path, nofollow=True)
             if cur != doc.raw or (doc.sig is not None and sig != doc.sig):
                 refused.append(dict(file=str(path), reason="changed while tidy ran; nothing written"))
@@ -842,12 +856,15 @@ def _symlinked_ancestor(path: pathlib.Path) -> bool:
     """Whether a directory between the file and its anchor (the repository root, else the home
     directory, else the file's own directory) is a symlink: writing there rewrites a file that
     lives somewhere else, shared by whoever else links to it. Links above the anchor (a /tmp or
-    /var that is itself a link) are the machine's layout, not the file's."""
+    /var that is itself a link) are the machine's layout, not the file's. A repository root that is
+    itself a link (or whose .git is one) is another checkout reached through the link: refused too."""
     d = pathlib.Path(os.path.abspath(path)).parent
     anchors = {os.path.abspath(_home()), os.path.realpath(_home())}
     chain = []
     while True:
         if str(d) in anchors or (d / ".git").exists():
+            if str(d) not in anchors and (d.is_symlink() or (d / ".git").is_symlink()):
+                return True  # the "repository" is another checkout reached through a link
             return any(c.is_symlink() for c in chain)
         chain.append(d)
         if d.parent == d:  # no repository and not under home: only the file's own directory counts
