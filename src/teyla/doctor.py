@@ -28,8 +28,8 @@ DOCTOR_JSON = config.TEYLA_DIR / "doctor.json"
 DOCTOR_SUMMARY = config.TEYLA_DIR / "doctor.summary"
 
 
-def _check(level, name, detail, fix=None):
-    return {"level": level, "name": name, "detail": detail, "fix": fix}
+def _check(level, name, detail, fix=None, **extra):
+    return {"level": level, "name": name, "detail": detail, "fix": fix, **extra}
 
 
 def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
@@ -285,6 +285,8 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
                 started = routine_install.last_started(label)
                 out.append(_check("OK", f"routine:{label.rsplit('.', 1)[-1]}", f"loaded" + (f", last exit {code}" if code not in (None, "0") else "")
                                   + (f", last started {started:%Y-%m-%d %H:%M}" if started else ", not yet due")))
+        for row in routine_install.optional_checks():
+            out.append(_check(*row))
     else:
         out.append(_check("INFO", "routine", "not macOS: schedule ~/.teyla/daily.sh and weekly.sh with cron"))
 
@@ -324,7 +326,7 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     if scan_repos:
         from . import storage
         for row in storage.doctor_checks(cfg):
-            out.append(_check(row["level"], row["name"], row["detail"], row["fix"]))
+            out.append(_check(row["level"], row["name"], row["detail"], row["fix"], **({"free": row["free"]} if "free" in row else {})))
 
     # --- policy detectors: the rules in POLICY.md that files can prove broken --------------
     from . import detect
@@ -419,7 +421,7 @@ def hook_checks(cfg: dict) -> list[dict]:
     return out
 
 
-def summary_line(cs: list[dict]) -> str:
+def _problems(cs: list[dict]) -> list[str]:
     n = {lvl: sum(1 for c in cs if c["level"] == lvl) for lvl in ("FIX", "WARN")}
     parts = []
     if n["FIX"]:
@@ -429,7 +431,25 @@ def summary_line(cs: list[dict]) -> str:
     ver = next((c for c in cs if c["name"] == "version"), None)
     if ver and ver["level"] == "FIX":
         parts.append("update available")
-    return ("teyla: " + ", ".join(parts) + " — run `teyla doctor`") if parts else ""
+    return parts
+
+
+def disk_free(cs: list[dict]) -> str:
+    """`disk 64 GB free` from the storage:disk row, or '' when doctor did not check the disk."""
+    free = next((c.get("free") for c in cs if c["name"] == "storage:disk"), None)
+    if not isinstance(free, (int, float)) or isinstance(free, bool):
+        return ""
+    gb = free / 1024 ** 3
+    return f"disk {gb:.0f} GB free" if gb >= 10 else f"disk {gb:.1f} GB free"
+
+
+def summary_line(cs: list[dict]) -> str:
+    """The one line the session-start hook falls back to: what needs you, then the free disk
+    space — shown even when everything is fine, so a filling disk is seen before it is an error."""
+    parts, disk = _problems(cs), disk_free(cs)
+    if parts:
+        return "teyla: " + ", ".join(parts + ([disk] if disk else [])) + " — run `teyla doctor`"
+    return f"teyla: {disk}" if disk else ""
 
 
 def write_state(cs: list[dict]) -> None:
@@ -452,8 +472,7 @@ def render(cs: list[dict], quiet: bool = False) -> str:
         lines.append(f"{c['level']:4} {c['name']:22} {c['detail']}")
         if c["fix"] and c["level"] != "OK":
             lines.append(f"{'':4} {'':22} → {c['fix']}")
-    s = summary_line(cs)
-    lines.append(s or "all clear")
+    lines.append(summary_line(cs) if _problems(cs) else "all clear" + (f" ({disk_free(cs)})" if disk_free(cs) else ""))
     return "\n".join(lines)
 
 
