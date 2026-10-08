@@ -71,6 +71,7 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | `teyla feedback` | one redacted markdown file: environment, the shareable report, and a questionnaire — the way a second user tells the maintainer what is missing |
 | `teyla models [--days N] \| --json \| --refresh` | credential presence, models available on this machine, newest catalogue entries with cost, and what `~/.agents/POLICY.md`'s ladder names — per provider, plus drift flags; exits 1 on drift |
 | `teyla models watch [--refresh] [--json] [--ack [ID...]] [--seed FILE]` | the weekly "did a provider ship something to move to?": models in the catalogue that are not in `~/.teyla/models-known.json` (first run seeds it), the ladder entry each would replace, its price, and which git repos under `code_root` still name a superseded id; exits 1 while new models are unacknowledged; the weekly routine runs it and the digest names new models |
+| `teyla reviews [--days N] [--json] [--quiet] [repo...]` | the review debt: for each repo under `code_root` with a GitHub remote, the PRs merged in the last N days (7) against the review ledger (`review.ledger`, default `~/.cache/review-ledger.tsv`, one TSV line per review: time, repo, commit sha, mode, P1, P2, reviewer): reviewed, merged with an open P1 (the newest reviewed commit still had one), skipped (a `skip` line), exempt (under `review.min_lines` changed lines, or docs only) or unreviewed, with the URL of each PR that needs a look. One `gh` call per repo, none in safe mode (`--allow-network` for one run); the weekly routine files it and the digest names the debt |
 | `teyla models --write-policy [--dry]` | rewrite the ladder table between `<!-- ladder:start/end -->` in POLICY.md: keep what still resolves, replace what doesn't with the newest of the same family, print the diff |
 | `teyla models --write-prices` | `~/.teyla/prices.json` from the models.dev catalogue, tiered from the ladder; `pricing.py` prefers it over its built-in table when present |
 | `teyla run <product:routine>` | the control plane: grants, caps, idempotency, gates A/B/C, a receipt naming the rules the run obeyed — see [docs/CONTROL-PLANE.md](docs/CONTROL-PLANE.md) |
@@ -190,7 +191,7 @@ or UNTESTED for more than 14 days (or was never confirmed), the product line nam
 
 `teyla routine install` writes and loads Teyla's own weekly launchd job
 (`~/Library/LaunchAgents/com.zaitsew.teyla.weekly.plist`, Friday 20:45) that
-runs `teyla monitor`, `teyla routines` and `teyla products` and files the
+runs `teyla monitor`, `teyla routines`, `teyla products`, `teyla models` and `teyla reviews` and files the
 output under `<runs_root>/<date>/` (`runs_root` defaults to `<ops_root>/runs`; set it with
 `teyla config set runs_root=~/path`). `teyla routine status`
 shows whether it is loaded and its last log lines.
