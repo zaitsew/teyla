@@ -552,14 +552,16 @@ def _fake_gh(tmp_path, body):
     return f"{d}:{NO_GH}"
 
 
-def _gh_prs(tmp_path, open_=0, merged=(), closed=0):
+def _gh_prs(tmp_path, open_heads=(), merged=(), closed=0):
     """A gh that answers `gh pr list --head <b> --state <s> --json … --jq …` the way the real one
-    does after --jq: a count for open/closed, one head sha per line for merged."""
-    heads = " ".join(merged)
+    does after --jq: one headRefOid per line for open/merged (the hook asks open PRs for their head
+    and, if there are none, for a count), a count for closed."""
+    heads, done = " ".join(open_heads), " ".join(merged)
     return _fake_gh(tmp_path, f"""case "$*" in
   "auth status"*) exit 0 ;;
-  *"--state open"*) echo {open_} ;;
-  *"--state merged"*) printf '%s\\n' {heads} ;;
+  *"--state open"*headRefOid*) printf '%s\\n' {heads} ;;
+  *"--state open"*) echo {len(open_heads)} ;;
+  *"--state merged"*) printf '%s\\n' {done} ;;
   *"--state closed"*) echo {closed} ;;
   *) exit 1 ;;
 esac
@@ -616,7 +618,7 @@ def test_stop_hook_blocks_until_pushed_and_a_pr_exists(tmp_path):
     res = _run(r, cloud_prep.STOP_HOOK, path=f"{unauth}:{NO_GH}")
     assert res.returncode == 2 and "gh is not signed in" in res.stderr
 
-    assert _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, open_=1)).returncode == 0
+    assert _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, open_heads=[_git(r, "rev-parse", "HEAD").strip()])).returncode == 0
 
     # told once, never trapped: the second stop in a row goes through whatever the state
     (r / "y.txt").write_text("more")
@@ -675,6 +677,81 @@ def test_stop_hook_pushed_means_on_this_branchs_own_remote_ref(tmp_path):
     assert "not on the remote" not in res.stderr, res.stderr
 
 
+def test_stop_hook_with_an_open_pr_pushed_means_inside_the_prs_head(tmp_path):
+    # The upstream held HEAD, origin/<branch> (the PR's head) was behind, and the union of the two
+    # refs said "pushed": the session stopped with the PR missing its latest commits (review, P1).
+    r = _landed_repo(tmp_path)
+    _git(r, "commit", "-q", "--allow-empty", "-m", "first")
+    _git(r, "push", "-q", "-u", "origin", "claude/brave-x")
+    pr_head = _git(r, "rev-parse", "HEAD").strip()
+    _git(r, "commit", "-q", "--allow-empty", "-m", "second")
+    head = _git(r, "rev-parse", "HEAD").strip()
+    _git(r, "push", "-q", "-u", "origin", "HEAD:refs/heads/claude/renamed")  # upstream now holds HEAD
+    behind = _gh_prs(tmp_path, open_heads=[pr_head])
+    res = _run(r, cloud_prep.STOP_HOOK, path=behind)
+    assert res.returncode == 2 and "1 commit(s) on claude/brave-x are not in the open PR's head" in res.stderr, res.stderr
+    assert pr_head in res.stderr and "git push origin claude/brave-x" in res.stderr
+
+    # the PR's head contains HEAD: passes, whatever the other refs say
+    assert _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, open_heads=[head])).returncode == 0
+    _git(r, "push", "-q", "origin", "claude/brave-x")
+    assert _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, open_heads=[head])).returncode == 0
+
+    # someone else pushed past HEAD: HEAD is inside the PR's head, so nothing is missing
+    _git(r, "commit", "-q", "--allow-empty", "-m", "third")
+    ahead = _git(r, "rev-parse", "HEAD").strip()
+    _git(r, "push", "-q", "origin", "claude/brave-x")
+    _git(r, "reset", "-q", "--hard", head)
+    assert _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, open_heads=[ahead])).returncode == 0
+
+
+def test_stop_hook_fetches_the_prs_head_and_fails_closed_when_it_cannot_read_it(tmp_path):
+    r = _landed_repo(tmp_path)
+    _git(r, "commit", "-q", "--allow-empty", "-m", "work")
+    _git(r, "push", "-q", "-u", "origin", "claude/brave-x")
+    # a commit the PR branch has and this clone has never seen: fetched, then compared
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", "-q", str(tmp_path / "origin.git"), str(other), "-b", "claude/brave-x"], check=True)
+    _git(other, "commit", "-q", "--allow-empty", "-m", "pushed from elsewhere")
+    _git(other, "push", "-q", "origin", "claude/brave-x")
+    elsewhere = _git(other, "rev-parse", "HEAD").strip()
+    assert subprocess.run(["git", "-C", str(r), "cat-file", "-e", elsewhere], capture_output=True).returncode != 0
+    assert _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, open_heads=[elsewhere])).returncode == 0
+
+    # a head that is not here and cannot be fetched: git cannot answer, so the stop is refused
+    res = _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, open_heads=["0123456789abcdef0123456789abcdef01234567"]))
+    assert res.returncode == 2 and "Could not compare claude/brave-x with the open PR's head" in res.stderr, res.stderr
+
+
+def test_stop_hook_does_not_take_an_open_pr_as_pushed_when_its_head_was_not_read(tmp_path):
+    # The headRefOid query failed (a transient gh error), the upstream held HEAD so the ref count
+    # said 0, and the later count query saw an open PR: the session stopped although the PR's head
+    # was never compared with HEAD (caught in review, P2).
+    r = _landed_repo(tmp_path)
+    _git(r, "commit", "-q", "--allow-empty", "-m", "work")
+    _git(r, "push", "-q", "-u", "origin", "claude/brave-x")
+    flaky = _fake_gh(tmp_path, """case "$*" in
+  "auth status"*) exit 0 ;;
+  *"--state open"*headRefOid*) exit 1 ;;
+  *"--state open"*) echo 1 ;;
+  *) exit 1 ;;
+esac
+""")
+    res = _run(r, cloud_prep.STOP_HOOK, path=flaky)
+    assert res.returncode == 2 and "GitHub did not say which commit it carries" in res.stderr, res.stderr
+
+
+def test_stop_hook_without_an_open_pr_keeps_the_ref_based_count(tmp_path):
+    r = _landed_repo(tmp_path)
+    _git(r, "commit", "-q", "--allow-empty", "-m", "work")
+    _git(r, "push", "-q", "-u", "origin", "HEAD:refs/heads/claude/renamed")  # the upstream holds HEAD
+    res = _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path))
+    assert res.returncode == 2 and "No open PR for claude/brave-x" in res.stderr, res.stderr  # pushed, but no PR
+    _git(r, "commit", "-q", "--allow-empty", "-m", "more")
+    res = _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path))
+    assert res.returncode == 2 and "1 commit(s) on claude/brave-x are not on the remote" in res.stderr, res.stderr
+
+
 def test_stop_hook_wants_a_new_pr_for_commits_after_a_merged_or_closed_one(tmp_path):
     # `gh pr view <branch>` said MERGED and the hook let the session stop, though the commits
     # pushed after that merge were in no PR at all.
@@ -689,7 +766,8 @@ def test_stop_hook_wants_a_new_pr_for_commits_after_a_merged_or_closed_one(tmp_p
     _git(r, "push", "-q", "origin", "claude/brave-x")
     res = _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, merged=[merged_head]))
     assert res.returncode == 2 and "already merged" in res.stderr and "Open a new one" in res.stderr, res.stderr
-    assert _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, open_=1, merged=[merged_head])).returncode == 0
+    assert _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, open_heads=[_git(r, "rev-parse", "HEAD").strip()],
+                                                                  merged=[merged_head])).returncode == 0
 
     res = _run(r, cloud_prep.STOP_HOOK, path=_gh_prs(tmp_path, closed=1))
     assert res.returncode == 2 and "closed without merging" in res.stderr, res.stderr
