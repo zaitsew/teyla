@@ -208,6 +208,7 @@ mkdir -p "$OUT_DIR"
 "$TEYLA" products > "$OUT_DIR/products.md" 2>&1
 "$TEYLA" models > "$OUT_DIR/models.md" 2>&1
 {models_watch_line} > "$OUT_DIR/models-watch.md" 2>&1
+"$TEYLA" lang --quiet > "$OUT_DIR/lang.md" 2>&1
 # The reports above tend to have no reader: the digest is the five lines
 # that are read — the session-start hook shows its headline once, and a notification says it exists.
 "$TEYLA" digest --write
@@ -288,6 +289,9 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         return True
     if path == WRAPPER_PATH and ("models watch --refresh" in text) != (_watch_line() == WATCH_LINE):
         # Safe mode was switched on (or off) after the wrapper was written.
+        return True
+    if path == WRAPPER_PATH and "lang --quiet" not in text:
+        # Written before `teyla lang`: the weekly would never look for non-English text.
         return True
     if path == WRAPPER_PATH and f'OUT_DIR="{_runs_root()}/' not in text:
         # Written before ops_root or runs_root changed in config.

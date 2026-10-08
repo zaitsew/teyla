@@ -16,6 +16,9 @@
     [products]
     repos = ["teyla", "~/work/x"]  the only repos `teyla products` runs `./check.sh usage` in
                                    (names under code_root, or paths); unset = every repo, outside safe mode
+    [lang]
+    allow = ["docs/ru/**"]         `teyla lang`: globs of files that may hold non-English text, on top of the
+                                   localization defaults and each repo's .teyla/lang-allow
     [storage]
     auto_clean      = false        the daily routine removes finished worktrees + idle build output
     idle_days       = 3            a clean, pushed worktree untouched this long is finished
@@ -111,6 +114,8 @@ DEFAULTS = {
     # Harnesses to leave alone: no health line, no FIX for their hooks or credits, no sync.
     "harness": {"disabled": []},
     "products": {"repos": []},
+    # `teyla lang`: extra globs exempt from the non-English text report (localization is built in).
+    "lang": {"allow": []},
     # `teyla spend` thresholds; 0 = off for the budgets. Per-project budgets are `budget.<project>`
     # keys (or a [spend.budget] table): see spend.budgets().
     "spend": {"alert_session_usd": 250.0, "w1_usd": 15.0, "daily_budget_usd": 0.0,
