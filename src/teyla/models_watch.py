@@ -198,9 +198,10 @@ def _repos(root: pathlib.Path) -> list[pathlib.Path]:
 
 def _id_regex(ids: list[str]) -> re.Pattern:
     # An id is a whole token: "gpt-5" must not match "gpt-5.5" or "gpt-5-mini" (the next character
-    # may continue the id), nor "my-gpt-5" (the previous one may begin another word).
+    # may continue the id), nor "my-gpt-5" (the previous one may begin another word). A slash before
+    # it is fine: provider-qualified ids such as "anthropic/<id>" name the same model.
     alt = "|".join(re.escape(i) for i in sorted(ids, key=len, reverse=True))
-    return re.compile(rf"(?<![\w.\-/])({alt})(?![\w]|[.\-]\w)")
+    return re.compile(rf"(?<![\w.\-])({alt})(?![\w]|[.\-]\w)")
 
 
 def grep_repo(repo: pathlib.Path, ids: list[str], timeout: int = 30) -> list[dict]:

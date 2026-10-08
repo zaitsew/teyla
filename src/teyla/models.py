@@ -93,6 +93,14 @@ def load_models_dev_catalogue(refresh: bool = False) -> tuple[dict, str | None]:
     `refresh` is True and that cache is missing or stale — default is always network-free."""
     age = _cache_age_days(MODELS_DEV_CACHE)
     stale = age is None or age > CACHE_MAX_AGE_DAYS
+    if not refresh and MODELS_DEV_FALLBACK.exists() and MODELS_DEV_CACHE.exists():
+        try:  # a fetch by `--refresh` is newer than the cache it replaced: read the newer one
+            fresher = MODELS_DEV_FALLBACK.stat().st_mtime > MODELS_DEV_CACHE.stat().st_mtime
+        except OSError:
+            fresher = False
+        data = _read_json(MODELS_DEV_FALLBACK) if fresher else None
+        if data is not None:
+            return data, str(MODELS_DEV_FALLBACK)
     if MODELS_DEV_CACHE.exists() and not (stale and refresh):
         data = _read_json(MODELS_DEV_CACHE)
         if data is not None:

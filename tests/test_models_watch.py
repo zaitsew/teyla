@@ -324,3 +324,24 @@ def test_old_wrapper_is_stale_until_rewritten(env, monkeypatch):
     w.write_text(_wrapper(routine_install._watch_line()))
     monkeypatch.setenv("TEYLA_SAFE", "1")
     assert routine_install._wrapper_stale(w, "/x/teyla")  # safe mode on since: must lose --refresh
+
+
+def test_provider_qualified_ids_count_as_the_same_model():
+    from teyla import models_watch
+    rx = models_watch._id_regex(["claude-sonnet-4"])
+    assert rx.search('model = "anthropic/claude-sonnet-4"')
+    assert not rx.search("claude-sonnet-4.5") and not rx.search("my-claude-sonnet-4")
+
+
+def test_catalogue_prefers_a_fresher_fetched_copy(tmp_path, monkeypatch):
+    import json, os
+    from teyla import models
+    cache, fallback = tmp_path / "cache.json", tmp_path / "fallback.json"
+    cache.write_text(json.dumps({"old": {}}))
+    fallback.write_text(json.dumps({"new": {}}))
+    os.utime(cache, (1, 1))
+    monkeypatch.setattr(models, "MODELS_DEV_CACHE", cache)
+    monkeypatch.setattr(models, "MODELS_DEV_FALLBACK", fallback)
+    assert models.load_models_dev_catalogue(refresh=False)[0] == {"new": {}}
+    os.utime(fallback, (0, 0))
+    assert models.load_models_dev_catalogue(refresh=False)[0] == {"old": {}}
