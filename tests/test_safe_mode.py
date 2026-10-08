@@ -160,8 +160,8 @@ def test_weekly_wrapper_files_reports_under_config_ops_root(_home, monkeypatch, 
     config.set_value("ops_root", str(tmp_path / "work-ops"))
     routine_install.install()
     assert f'OUT_DIR="{tmp_path / "work-ops" / "runs"}/' in routine_install.WRAPPER_PATH.read_text()
-    (tmp_path / "work-ops" / "startup" / "os" / "ai-dev").mkdir(parents=True)
-    assert config.runs_root() == tmp_path / "work-ops" / "startup" / "os" / "ai-dev" / "runs"
+    (tmp_path / "work-ops" / pathlib.Path(*config._LEGACY_RUNS)).mkdir(parents=True)
+    assert config.runs_root() == tmp_path / "work-ops" / pathlib.Path(*config._LEGACY_RUNS)
     assert routine_install.is_stale()
 
 

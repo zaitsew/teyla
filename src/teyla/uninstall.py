@@ -488,7 +488,13 @@ def _reports(home: pathlib.Path, cfg: dict) -> list[Step]:
             rules = sorted((repo / ".claude" / "rules").glob("*.md")) if (repo / ".claude" / "rules").is_dir() else []
             if rules:
                 steps.append(Step("", repo / ".claude" / "rules", f"{len(rules)} rule file(s) — this repo's rules, not Teyla's"))
-    runs = _expand(str(cfg.get("ops_root") or "~/ops"), home) / "startup" / "os" / "ai-dev" / "runs"
+    from . import config
+    if str(cfg.get("runs_root") or "").strip():
+        runs = _expand(str(cfg["runs_root"]).strip(), home)
+    else:
+        ops = _expand(str(cfg.get("ops_root") or "~/ops"), home)
+        legacy = ops.joinpath(*config._LEGACY_RUNS)
+        runs = legacy if legacy.is_dir() else ops / "runs"
     if runs.is_dir():
         steps.append(Step("", runs, "the weekly routine's reports"))
     return steps

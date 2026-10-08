@@ -87,7 +87,7 @@ carries Teyla's marker, label or symlink target; `--keep-data` keeps `~/.teyla`)
 | a `.teyla/` line in `<repo>/.git/info/exclude`; an older `<repo>/.teyla/corrections.jsonl` | the same, in repos that had a `.teyla/` | **kept**, listed for repos under code_root and ops_root; others: `find ~ -maxdepth 4 -type d -name .teyla` |
 | `<repo>/.claude/rules/*.md`, an AGENTS.md `## Rules` section, `.cursor/rules/*.mdc` | `teyla rule` | **kept**, listed — the repo's rules |
 | `<repo>/AGENTS.md` ⇄ `CLAUDE.md` links (+ `.bak`) | `policy sync-repo` | kept — repo content |
-| the ops root (`CLAUDE.md`, `.claude/`, `runs/`, `.gitignore`), `<ops_root>/runs/<date>/` | `policy init --ops-root-init`, the weekly job | kept; the weekly reports are listed |
+| the ops root (`CLAUDE.md`, `.claude/`, `runs/`, `.gitignore`), `<runs_root>/<date>/` (default `<ops_root>/runs`) | `policy init --ops-root-init`, the weekly job | kept; the weekly reports are listed |
 | files you name: `--out`, `teyla-feedback-<date>.md`, wiki pages | `monitor`, `feedback`, `harvest`, `wiki` | yours |
 
 Last step, which uninstall prints: `uv tool uninstall teyla` (or `pipx uninstall teyla`).
