@@ -10,6 +10,10 @@ each replace, and which repos on this machine still name a model that has been s
   new          catalogue ids (text-output models of the providers in the ladder) not in the list.
   superseded   ids older than a ladder model of their family, found by `git grep -F` in every git
                repo directly under code_root (tracked text files only, no lockfiles, nothing over 1 MB).
+               Only live code and config are action items (`.env.example`, default constants,
+               routers). Tests, price/cost tables (a `price`/`pricing`/`cost` path, or a line pairing
+               the id with two numbers), docs and changelogs, and migrations are history, not usage:
+               they are counted on one summary line.
 
 Network only with `--refresh` (and, in safe mode, `--allow-network`), as for `teyla models`.
 Exit code 1 when there are unacknowledged new models, else 0.
@@ -23,7 +27,7 @@ import pathlib
 import re
 import subprocess
 
-from . import config, models
+from . import config, lang, models
 
 KNOWN_NAME = "models-known.json"
 MAX_FILE_BYTES = 1_000_000
@@ -204,9 +208,47 @@ def _id_regex(ids: list[str]) -> re.Pattern:
     return re.compile(rf"(?<![\w.\-])({alt})(?![\w]|[.\-]\w)")
 
 
+# What a hit is, so history is not reported as usage. Order matters: a test of the price table is a test.
+KIND_LABELS = {"test": "tests", "price": "price tables", "doc": "docs", "migration": "migrations"}
+_DOC_NAMES = {"changelog", "changes", "history", "news", "releases", "release-notes", "release_notes"}
+_MIGRATION_DIRS = {"migrations", "migration", "migrate", "alembic"}
+_PRICE_WORDS = {"price", "prices", "pricing", "cost", "costs"}
+_NUM = r"\$?\d+(?:\.\d+)?"
+_NUM_PAIR = re.compile(rf"(?<![\w.\-]){_NUM}\s*[,/|]\s*{_NUM}(?![\w])")
+_IN_NUM = re.compile(rf"(?i)\b(?:(?:input|prompt)\w*|in(?:_\w+)?)[\"']?\s*[:=]\s*{_NUM}")
+_OUT_NUM = re.compile(rf"(?i)\b(?:(?:output|completion)\w*|out(?:_\w+)?)[\"']?\s*[:=]\s*{_NUM}")
+
+
+def classify_path(rel: str) -> str:
+    """live | test | doc | migration | price, from the repo-relative path alone."""
+    low = rel.lower()
+    p = pathlib.PurePosixPath(low)
+    if lang.is_test(rel) or "_spec" in p.name or any(d in ("spec", "specs", "e2e", "__mocks__") for d in p.parts[:-1]):
+        return "test"
+    if lang.is_doc(rel) or p.stem in _DOC_NAMES or p.name.startswith("changelog"):
+        return "doc"
+    if any(d in _MIGRATION_DIRS for d in p.parts[:-1]):
+        return "migration"
+    if _PRICE_WORDS & {w.lower() for w in re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])", rel)}:  # modelPricing, cost_table
+        return "price"
+    return "live"
+
+
+def is_price_line(line: str, rx: re.Pattern) -> bool:
+    """A line that pairs the id with two numbers after it: `"id": (15, 75)`, `id | 3 | 15`,
+    `{input: 3, output: 15}`. A version or a year in a comment is one number, not a pair."""
+    first = rx.search(line)
+    if not first:
+        return False
+    rest = rx.sub(" ", line[first.end():])
+    return bool(_NUM_PAIR.search(rest) or (_IN_NUM.search(rest) and _OUT_NUM.search(rest)))
+
+
 def grep_repo(repo: pathlib.Path, ids: list[str], timeout: int = 30) -> list[dict]:
-    """[{file, ids, lines}] for tracked text files in `repo` naming any of `ids`. One `git grep -F`
-    per chunk of ids; exact matching (token boundaries) is then done on the few files it lists."""
+    """[{repo, file, ids, lines, kind}] for tracked text files in `repo` naming any of `ids`. One
+    `git grep -F` per chunk of ids; exact matching (token boundaries) is then done on the few files
+    it lists. `kind` is live, test, doc, migration or price (see classify_path / is_price_line); in a
+    live file only the lines that are not price rows count, and a file of price rows alone is `price`."""
     files: set[str] = set()
     for i in range(0, len(ids), 200):
         chunk = ids[i:i + 200]
@@ -230,14 +272,22 @@ def grep_repo(repo: pathlib.Path, ids: list[str], timeout: int = 30) -> list[dic
             text = path.read_text(errors="replace")
         except OSError:
             continue
-        hit, lines = set(), 0
+        kind = classify_path(rel)
+        hit, lines, priced, priced_hit = set(), 0, 0, set()
         for line in text.splitlines():
             found = rx.findall(line)
-            if found:
-                lines += 1
-                hit.update(found)
+            if not found:
+                continue
+            if kind == "live" and is_price_line(line, rx):
+                priced += 1
+                priced_hit.update(found)
+                continue
+            lines += 1
+            hit.update(found)
         if lines:
-            rows.append(dict(repo=repo.name, file=rel, ids=sorted(hit), lines=lines))
+            rows.append(dict(repo=repo.name, file=rel, ids=sorted(hit), lines=lines, kind=kind))
+        elif priced:
+            rows.append(dict(repo=repo.name, file=rel, ids=sorted(priced_hit), lines=priced, kind="price"))
     return rows
 
 
@@ -344,9 +394,14 @@ def watch(refresh: bool = False, root: pathlib.Path | None = None, today: _dt.da
 
     why = superseded_ids(models_dev, lm, new)
     root = root or config.code_root(config.load())
-    sup = find_superseded(root, why)
+    found = find_superseded(root, why)
+    sup = [r for r in found if r["kind"] == "live"]
+    history: dict[str, int] = {}
+    for r in found:
+        if r["kind"] != "live":
+            history[r["kind"]] = history.get(r["kind"], 0) + 1
     return dict(date=today.isoformat(), source=source, providers=providers, seeded=seeded, notes=notes,
-                acked=sorted(acked), new=new, superseded=sup, superseded_ids=len(why),
+                acked=sorted(acked), new=new, superseded=sup, superseded_history=history, superseded_ids=len(why),
                 ladder_edit=ladder_edit(models_dev, ladder_rows, cli_ids), code_root=str(root))
 
 
@@ -375,7 +430,11 @@ def render(rep: dict) -> str:
         for r in sup[:MAX_ROWS]:
             L.append(f"  {r['repo']}/{r['file']}  {r['lines']} line(s)  {', '.join(r['ids'])}")
     else:
-        L.append(f"superseded ids in use: none ({rep['superseded_ids']} id(s) checked under {rep['code_root']})")
+        L.append(f"superseded ids in use: none in live code or config ({rep['superseded_ids']} id(s) checked under {rep['code_root']})")
+    history = rep.get("superseded_history") or {}
+    if history:
+        names = ", ".join(KIND_LABELS[k] for k in KIND_LABELS if k in history)
+        L.append(f"+{sum(history.values())} file(s) in {names} — historical, not usage")
     L.append("")
     if rep["ladder_edit"]:
         L.append("proposed ladder edit (teyla models --write-policy):")
