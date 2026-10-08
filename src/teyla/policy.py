@@ -21,9 +21,22 @@ the literal line), so a symlink to POLICY.md left every Codex session without th
 The generated file is POLICY.md, then CLAUDE.md with the policy import dropped and any other
 `@~/...` import inlined one level, then where the shared project memory lives. Its first line is
 a generated-by marker: sync replaces a file carrying it, and never one without it.
+
+Edits made inside a generated copy are kept, not lost. Every time sync writes a copy (or the
+Hermes section) it records the sha256 of exactly what it wrote in ~/.teyla/state/policy-written.json,
+with a copy of the text. The next sync that is about to overwrite a copy whose hash no longer
+matches first files the difference (lines added and removed since the last write) in
+~/.teyla/policy-inbox/<harness>-<date-time>.md, then overwrites as before. `teyla policy inbox`
+lists those files; the person moves what should stay into ~/.agents/POLICY.md or
+~/.claude/CLAUDE.md (the sources) and marks the file done. Without a record (the first sync after
+an upgrade) the copy is compared with what sync would write now.
 """
 from __future__ import annotations
 
+import datetime as _dt
+import difflib
+import hashlib
+import json
 import os
 import pathlib
 import re
@@ -127,14 +140,25 @@ def init(force=False, owner: str | None = None, dry: bool = False, work: bool = 
     return f"wrote {POLICY}" + (" from the work template" if work else "")
 
 
+def _disabled() -> list[str]:
+    """Harnesses `[harness] disabled` in config.toml leaves alone (status, sync and drift skip them)."""
+    from . import config
+    return config.disabled_harnesses()[0]
+
+
 def status() -> dict:
-    """harness -> True/False/None (None = harness not installed)."""
+    """harness -> True/False/None (None = harness not installed). A harness listed in
+    `[harness] disabled` is left out altogether."""
     st = {}
+    off = _disabled()
     st["policy-file"] = POLICY.exists()
     p = TARGETS["claude-code"]
-    st["claude-code"] = (IMPORT_LINE in p.read_text()) if p.exists() else None
+    if "claude-code" not in off:
+        st["claude-code"] = (IMPORT_LINE in p.read_text()) if p.exists() else None
     want = agents_text() if POLICY.exists() else None
     for h in ("codex", "grok"):
+        if h in off:
+            continue
         p = TARGETS[h]
         if not p.exists():
             st[h] = None if not p.parent.exists() else False
@@ -145,19 +169,275 @@ def status() -> dict:
     p = TARGETS["hermes"]
     # Current, not merely present: after `policy init --work --force` a home-variant section
     # still tells Hermes to send diffs to another provider (Codex review, P1).
-    st["hermes"] = _hermes_current(p.read_text()) if p.exists() else None
+    if "hermes" not in off:
+        st["hermes"] = _hermes_current(p.read_text()) if p.exists() else None
     p = TARGETS.get("cursor")
-    if p is not None:  # tests patch TARGETS without it
+    if p is not None and "cursor" not in off:  # tests patch TARGETS without it
         if not p.parents[2].is_dir():
             st["cursor"] = None
         else:
             st["cursor"] = bool(POLICY.exists() and p.exists() and p.read_text() == cursor_skill_text())
-    return st
+    return {k: v for k, v in st.items() if k not in off}
 
 
-def sync(dry=False, owner: str | None = None) -> list[str]:
+# ---------------------------------------------------------------------------
+# Fingerprints and hand edits. What sync writes is hashed (and its text kept beside the hash);
+# a copy that no longer matches its hash was edited by hand, and the edit is filed in the policy
+# inbox before the next sync overwrites it. Nothing here is read by a harness.
+
+def _teyla_dir() -> pathlib.Path:
+    return HOME / ".teyla"
+
+
+def written_path() -> pathlib.Path:
+    return _teyla_dir() / "state" / "policy-written.json"
+
+
+def _written_copy(harness: str) -> pathlib.Path:
+    return _teyla_dir() / "state" / "policy-written" / f"{harness}.txt"
+
+
+def inbox_dir() -> pathlib.Path:
+    return _teyla_dir() / "policy-inbox"
+
+
+def _sha(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _now() -> _dt.datetime:
+    return _dt.datetime.now()
+
+
+def load_written() -> dict:
+    """{key: {"harness", "sha256", "date"}}: what the last sync wrote. {} when absent or unreadable."""
+    try:
+        data = json.loads(written_path().read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _record(harness: str, key: str, text: str) -> None:
+    """Remember that sync wrote `text` at `key` (hash, date and a copy of the text for the diff).
+    Best effort: a full disk must not stop a sync, it only means the next edit is compared with
+    what sync would write then."""
+    from . import config
+    try:
+        state = load_written()
+        entry = {"harness": harness, "sha256": _sha(text), "date": _now().date().isoformat()}
+        if (state.get(key) or {}).get("sha256") != entry["sha256"]:
+            state[key] = entry
+            config.write_private(written_path(), json.dumps(state, indent=2, sort_keys=True) + "\n")
+        copy = _written_copy(harness)
+        if not copy.exists() or _sha(copy.read_text()) != entry["sha256"]:
+            config.write_private(copy, text)
+    except OSError:
+        pass
+
+
+def _baseline(harness: str, key: str) -> tuple[str | None, str | None]:
+    """(hash, text) of what sync last wrote at `key`: (None, None) with no record; (hash, None)
+    when the record has no usable copy of the text."""
+    rec = load_written().get(key)
+    if not isinstance(rec, dict) or not isinstance(rec.get("sha256"), str):
+        return None, None
+    try:
+        text = _written_copy(harness).read_text()
+    except OSError:
+        return rec["sha256"], None
+    return rec["sha256"], (text if _sha(text) == rec["sha256"] else None)
+
+
+def _is_marker_line(line: str) -> bool:
+    return line.startswith(("<!-- generated by `teyla policy sync`", AGENTS_MARKER))
+
+
+def _changes(before: str, after: str, context: int = 0) -> tuple[list[str], list[str], list[str]]:
+    """(added lines, removed lines, unified diff lines) turning `before` into `after`; the
+    generated-by marker line is not an edit."""
+    diff = list(difflib.unified_diff(before.splitlines(), after.splitlines(), "last written", "current",
+                                     lineterm="", n=context))
+    added = [l[1:] for l in diff[2:] if l.startswith("+") and not _is_marker_line(l[1:])]
+    removed = [l[1:] for l in diff[2:] if l.startswith("-") and not _is_marker_line(l[1:])]
+    return added, removed, diff
+
+
+def _visible(text: str) -> str:
+    """`text` with every invisible or bidi character spelled out as <U+XXXX>: an inbox file is
+    read by a person, and the edit that carried such a character is exactly what they must see."""
+    from . import invisible
+    return "".join(f"<U+{ord(ch):04X}>" if invisible._kind(ord(ch)) else ch for ch in text)
+
+
+def _fence(text: str) -> str:
+    runs = [len(m) for m in re.findall(r"`+", text)]
+    return "`" * max(3, max(runs, default=0) + 1)
+
+
+def _inbox_text(harness: str, label: str, name: str, basis: str, added: list[str], removed: list[str],
+                diff: list[str], when: _dt.datetime) -> str:
+    def block(lines: list[str]) -> str:
+        body = "\n".join(lines)
+        f = _fence(body)
+        return f"{f}text\n{body}\n{f}\n"
+    n_add = sum(1 for l in added if l.strip())
+    n_rem = sum(1 for l in removed if l.strip())
+    out = [f"<!-- teyla-policy-inbox harness={harness} added={n_add} removed={n_rem} file={label} -->",
+           f"# Hand edit to {label} ({harness})", "",
+           f"`teyla policy sync` found this file changed since it last wrote it, on {when:%Y-%m-%d %H:%M}. "
+           "The edit is kept here; the file has been overwritten with the generated text, so the edit "
+           "is not in effect any more.", "",
+           f"Compared with: {basis}.", "",
+           f"**Move what should stay into ~/.agents/POLICY.md or ~/.claude/CLAUDE.md, then "
+           f"`teyla policy inbox --done {name}`.**", ""]
+    if added:
+        out += [f"## Added ({n_add} line(s))", "", block(added)]
+    if removed:
+        out += [f"## Removed ({n_rem} line(s))", "", block(removed)]
+    out += ["## Diff", "", block(diff)]
+    return "\n".join(out)
+
+
+def _copy_text() -> str | None:
+    """What a generated copy holds when sync symlinks instead: the marker line and the policy. The
+    basis for spotting a hand edit in a copy about to become a symlink, with no record of it."""
+    try:
+        return AGENTS_HEAD + combined_text()
+    except (OSError, ValueError):
+        return None
+
+
+def _keep_edit(harness: str, key: str, label: str, current: str | None, want: str | None, dry: bool,
+               known_alt: tuple[str, ...] = ()) -> tuple[bool, str | None]:
+    """Before a generated copy at `key` is overwritten: file any hand edit it holds. `current` is the
+    text now on disk (None: nothing to lose), `want` what sync is about to write (None: a symlink).
+    Returns (go ahead and overwrite, a line for sync's report)."""
+    if current is None:
+        return True, None
+    rec_hash, rec_text = _baseline(harness, key)
+    if rec_hash is not None:
+        if _sha(current) == rec_hash:
+            return True, None  # exactly what sync wrote: stale, not edited
+        basis = "the text `teyla policy sync` last wrote there" if rec_text is not None else None
+        before = rec_text if rec_text is not None else want
+        if before is None:
+            return True, None
+        basis = basis or "the text sync would write now (the copy of the last write is gone)"
+        added, removed, diff = _changes(before, current, context=2)
+        changed = any(l.strip() for l in added + removed)
+    else:
+        # No record (the first sync after an upgrade): what sync would write now is all there is
+        # to compare with, and only added lines count — a copy that is merely behind its sources
+        # has lines the sources no longer have, which says nothing about an edit.
+        ref = want if want is not None else _copy_text()
+        if ref is None or current == ref or current.strip() in known_alt:
+            return True, None
+        basis = "the text sync would write now (no record of the last write yet)"
+        added, removed, diff = _changes(ref, current, context=2)
+        changed = any(l.strip() for l in added)
+    if not changed:
+        return True, None
+    n_add = sum(1 for l in added if l.strip())
+    n_rem = sum(1 for l in removed if l.strip())
+    what = f"{n_add} added and {n_rem} removed line(s)" if rec_hash is not None else f"{n_add} added line(s)"
+    when = _now()
+    d = inbox_dir()
+
+    def named(k: int) -> str:
+        return f"{harness}-{when:%Y-%m-%d-%H%M}" + (f"-{k}" if k > 1 else "") + ".md"
+
+    k = 1
+    while (d / named(k)).exists():
+        k += 1
+    name = named(k)
+    if dry:
+        return True, f"would keep the hand edit of {label} ({what}) in {_tilde(d / name)}, then overwrite it"
+    try:
+        from . import config
+        config.private_dir(d)
+        # O_EXCL: a second sync picking the same name moves on to the next one instead of
+        # overwriting the first one's edit.
+        while True:
+            name = named(k)
+            try:
+                fd = os.open(d / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                break
+            except FileExistsError:
+                k += 1
+        try:
+            config.write_all(fd, _visible(_inbox_text(harness, label, name, basis, added, removed, diff, when)).encode("utf-8"))
+        finally:
+            os.close(fd)
+    except OSError as e:
+        return False, (f"SKIP {label}: it holds a hand edit ({what}) and the policy inbox {d} could not be "
+                       f"written ({e}); nothing overwritten")
+    return True, f"kept the hand edit of {label} ({what}) in {_tilde(d / name)} (teyla policy inbox), then overwrote it"
+
+
+def pending_edits() -> list[dict]:
+    """The hand edits waiting in the policy inbox, newest first: name, path, harness, file, added, removed."""
+    d = inbox_dir()
+    rows = []
+    try:
+        files = [p for p in d.iterdir() if p.suffix == ".md" and p.is_file()]
+    except OSError:
+        return []
+    for p in files:
+        try:
+            head = p.read_text().splitlines()[0]
+            mt = p.stat().st_mtime
+        except (OSError, IndexError):
+            head, mt = "", 0.0
+        m = re.match(r"<!-- teyla-policy-inbox harness=(\S+) added=(\d+) removed=(\d+) file=(.*) -->$", head)
+        rows.append(dict(name=p.name, path=p, mtime=mt,
+                         harness=m.group(1) if m else p.name.split("-", 1)[0],
+                         added=int(m.group(2)) if m else 0, removed=int(m.group(3)) if m else 0,
+                         file=m.group(4) if m else "?"))
+    return sorted(rows, key=lambda r: (r["mtime"], r["name"]), reverse=True)
+
+
+def inbox_summary(rows: list[dict] | None = None) -> str:
+    rows = pending_edits() if rows is None else rows
+    if not rows:
+        return "policy inbox: empty"
+    lines = [f"{len(rows)} hand edit(s) to generated policy files wait for review in {_tilde(inbox_dir())}:"]
+    for r in rows:
+        lines.append(f"  {r['name']}  +{r['added']} -{r['removed']} line(s)  {r['file']}")
+    lines.append("move what should stay into ~/.agents/POLICY.md or ~/.claude/CLAUDE.md, "
+                 "then `teyla policy inbox --done <file>` (or --all)")
+    return "\n".join(lines)
+
+
+def inbox_done(name: str | None = None, everything: bool = False) -> list[str]:
+    """Mark one inbox file (by file name) done, or every pending one: the file is deleted."""
+    rows = pending_edits()
+    if everything:
+        picked = rows
+    else:
+        want = pathlib.Path(name or "").name  # a name only: never a path outside the inbox
+        picked = [r for r in rows if r["name"] == want]
+        if not picked:
+            return [f"no pending edit named {name!r}" + (": " + ", ".join(r["name"] for r in rows) if rows else "")]
+    out = []
+    for r in picked:
+        try:
+            r["path"].unlink()
+            out.append(f"done: {r['name']}")
+        except OSError as e:
+            out.append(f"could not remove {r['name']}: {e}")
+    return out or ["policy inbox: nothing pending"]
+
+
+def sync(dry=False, owner: str | None = None, unattended: bool = False) -> list[str]:
+    """Wire the policy into every harness that is installed and not disabled. `unattended` (the
+    daily routine, --quiet): never create POLICY.md and never edit ~/.claude/CLAUDE.md — those two
+    are for a person to start. Everything else is the same, and nothing here touches the network."""
     done = []
+    off = _disabled()
     if not POLICY.exists():
+        if unattended:
+            return [f"SKIP no {POLICY}: run `teyla policy init` first"]
         done.append(init(owner=owner, dry=dry))
     # The source first, once: the imports and symlinks below expose POLICY.md to every harness,
     # and a refusal half-way would leave some wired and some not (caught in review, P2).
@@ -175,12 +455,14 @@ def sync(dry=False, owner: str | None = None) -> list[str]:
         if want is not None:
             _guard(want, TARGETS["codex"])
     p = TARGETS["claude-code"]
-    if p.exists() and IMPORT_LINE not in p.read_text():
+    if "claude-code" not in off and not unattended and p.exists() and IMPORT_LINE not in p.read_text():
         if not dry:
             p.write_text(_guard(p.read_text().rstrip() + f"\n\n## How to run a session\n\n{IMPORT_LINE}\n", p))
         done.append(f"added import to {p}")
     warned = False
     for h in ("codex", "grok"):
+        if h in off:
+            continue
         p = TARGETS[h]
         if not p.parent.exists():
             continue
@@ -188,8 +470,14 @@ def sync(dry=False, owner: str | None = None) -> list[str]:
         if real and not is_generated_agents(p.read_text()):
             done.append(f"SKIP {p}: a real file exists; merge by hand or delete it")
             continue
+        current = p.read_text() if real else None
         if want is None:
             if p.exists() and p.resolve() == POLICY.resolve() and p.is_symlink():
+                continue
+            ok, line = _keep_edit(h, str(p), _tilde(p), current, None, dry)
+            if line:
+                done.append(line)
+            if not ok:
                 continue
             if not dry:
                 if p.is_symlink() or real:
@@ -201,37 +489,72 @@ def sync(dry=False, owner: str | None = None) -> list[str]:
             warned = True
             done.append(f"WARN the generated AGENTS.md is {len(want.encode()) // 1024} KiB, over the 32 KiB Codex "
                         "allows a project doc (the global file is read whole); prune ~/.claude/CLAUDE.md or POLICY.md")
-        if real and p.read_text() == want:
+        if real and current == want:
             # Same text, older file: touch it, or session-start.sh's -nt test would start a sync
             # at every session for an edit that changed nothing here.
             if not dry and _older_than_sources(p):
                 os.utime(p)
+            if not dry:
+                _record(h, str(p), want)
+            continue
+        ok, line = _keep_edit(h, str(p), _tilde(p), current, want, dry)
+        if line:
+            done.append(line)
+        if not ok:
             continue
         if not dry:
             if p.is_symlink():
                 p.unlink()  # never write through it: it points at POLICY.md
             p.write_text(_guard(want, p))
+            _record(h, str(p), want)
         done.append(f"wrote {p}: POLICY.md + the owner's rules from {TARGETS['claude-code']}")
     p = TARGETS["hermes"]
-    if p.exists() and not _hermes_current(p.read_text()):
+    if "hermes" not in off and p.exists():
         text = p.read_text()
-        span = _hermes_section(text)
-        if span is None:
-            new_text, what = text.rstrip() + hermes_block(), "appended policy section to"
+        key = f"{p}#operating-policy"
+        block = hermes_block().strip()
+        if _hermes_current(text):
+            if not dry:
+                _record("hermes", key, block)
         else:
-            # The section under HERMES_MARK is Teyla's: replaced whole, whatever variant it was.
-            rest = text[span[1]:]
-            new_text = text[:span[0]] + hermes_block().rstrip("\n") + "\n" + ("\n" + rest if rest else "")
-            what = "replaced the policy section in"
-        if not dry:
-            p.write_text(_guard(new_text, p))
-        done.append(f"{what} {p}")
+            span = _hermes_section(text)
+            if span is None:
+                new_text, what = text.rstrip() + hermes_block(), "appended policy section to"
+            else:
+                ok, line = _keep_edit("hermes", key, f"{_tilde(p)} (the Operating policy section)",
+                                      text[span[0]:span[1]].strip(), block, dry,
+                                      known_alt=(HERMES_BLOCK.strip(), HERMES_BLOCK_WORK.strip()))
+                if line:
+                    done.append(line)
+                if not ok:
+                    new_text = None
+                else:
+                    # The section under HERMES_MARK is Teyla's: replaced whole, whatever variant it was.
+                    rest = text[span[1]:]
+                    new_text = text[:span[0]] + hermes_block().rstrip("\n") + "\n" + ("\n" + rest if rest else "")
+                    what = "replaced the policy section in"
+            if new_text is not None:
+                if not dry:
+                    p.write_text(_guard(new_text, p))
+                    _record("hermes", key, block)
+                done.append(f"{what} {p}")
     p = TARGETS.get("cursor")
-    if p is not None and p.parents[2].is_dir() and POLICY.exists() and not (p.exists() and p.read_text() == cursor_skill_text()):
-        if not dry:
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(_guard(cursor_skill_text(), p))
-        done.append(f"wrote the policy as a Cursor user skill: {p}")
+    if p is not None and "cursor" not in off and p.parents[2].is_dir() and POLICY.exists():
+        skill = cursor_skill_text()
+        current = p.read_text() if p.exists() else None
+        if current == skill:
+            if not dry:
+                _record("cursor", str(p), skill)
+        else:
+            ok, line = _keep_edit("cursor", str(p), _tilde(p), current, skill, dry)
+            if line:
+                done.append(line)
+            if ok:
+                if not dry:
+                    p.parent.mkdir(parents=True, exist_ok=True)
+                    p.write_text(_guard(skill, p))
+                    _record("cursor", str(p), skill)
+                done.append(f"wrote the policy as a Cursor user skill: {p}")
     return done or ["already in sync"]
 
 
@@ -423,8 +746,13 @@ def drift(h: str) -> tuple[str, str] | None:
     if not real:
         return (f"{_tilde(p)} is a symlink to the policy alone: this harness cannot import "
                 f"{_tilde(TARGETS['claude-code'])}, so it misses the owner's rules"), sync_fix
-    if p.read_text() == want:
+    cur = p.read_text()
+    if cur == want:
         return None
+    rec_hash, _ = _baseline(h, str(p))
+    if rec_hash is not None and _sha(cur) != rec_hash:
+        return (f"{_tilde(p)} was edited after sync wrote it", sync_fix + "   (files the edit in "
+                f"{_tilde(inbox_dir())} first; move what should stay into ~/.agents/POLICY.md or ~/.claude/CLAUDE.md)")
     newer = _older_than_sources(p)
     if newer is not None:
         return f"{_tilde(p)} is older than {_tilde(newer)}", sync_fix

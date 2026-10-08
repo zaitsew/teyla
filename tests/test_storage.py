@@ -366,7 +366,12 @@ def test_wrapper_stale_flags_wrapper_missing_storage_clean(tmp_path, monkeypatch
     wrapper_path.write_text(old_text)
     assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is True
 
-    fresh_text = old_text + 'teyla spend --alert\n"$TEYLA" storage clean --auto --quiet\n'
+    # ... and one that has everything but the policy sync (added later) is stale too
+    no_sync = old_text + 'teyla spend --alert\n"$TEYLA" storage clean --auto --quiet\n'
+    wrapper_path.write_text(no_sync)
+    assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is True
+
+    fresh_text = no_sync + "teyla policy sync --quiet\n"
     wrapper_path.write_text(fresh_text)
     assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is False
 

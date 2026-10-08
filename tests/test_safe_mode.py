@@ -758,3 +758,26 @@ def test_pinned_refresh_re_pins_a_current_version_that_follows_main(_home):
     assert "marketplace add zaitsew/teyla#v0.15.0" in text and "already" not in text
     _known(_home, {"source": "github", "repo": "zaitsew/teyla", "ref": "v0.15.0"})
     assert "already" in "\n".join(plugin_install.refresh())
+
+
+def test_policy_sync_quiet_is_local_only_in_safe_mode(_home, monkeypatch):
+    """The daily routine runs `policy sync --quiet`, safe mode included: it reads and writes files
+    and never opens a socket."""
+    import socket
+    safe_on()
+
+    def no_socket(*a, **k):
+        raise AssertionError("socket opened by policy sync")
+    monkeypatch.setattr(socket.socket, "connect", no_socket)
+    monkeypatch.setattr(socket, "create_connection", no_socket)
+    (_home / ".codex").mkdir()
+    policy.POLICY.parent.mkdir(parents=True)
+    policy.POLICY.write_text("# P\n")
+    policy.CLAUDE_GLOBAL.parent.mkdir(parents=True)
+    policy.CLAUDE_GLOBAL.write_text("# Mine\n\n- a rule\n")
+    assert cli.main(["policy", "sync", "--quiet"]) in (0, None)
+    assert "- a rule" in (_home / ".codex" / "AGENTS.md").read_text()
+    codex = _home / ".codex" / "AGENTS.md"
+    codex.write_text(codex.read_text() + "- hand edit\n")
+    assert cli.main(["policy", "sync", "--quiet"]) in (0, None)
+    assert len(policy.pending_edits()) == 1

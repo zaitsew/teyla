@@ -455,6 +455,15 @@ def _teyla_dir(home: pathlib.Path, keep_data: bool) -> list[Step]:
     steps = []
     if not d.exists():
         return steps
+    inbox = d / "policy-inbox"
+    pending = sorted(inbox.glob("*.md")) if inbox.is_dir() else []
+    if not keep_data and pending:
+        # Hand edits nobody has read yet are the user's words, not Teyla's state: keep them.
+        for p in sorted(d.iterdir()):
+            if p != inbox:
+                steps.append(Step("remove", p, "Teyla's state", lambda p=p: _rm(p)))
+        return steps + [Step("", inbox, f"{len(pending)} hand edit(s) to generated policy files not reviewed yet; "
+                                        "read them, then rm -rf ~/.teyla")]
     if not keep_data:
         return steps + [Step("remove", d, "Teyla's state: config, caches, doctor, reminders, hooks, wrappers, control plane",
                              lambda: _rm(d))]
