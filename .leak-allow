@@ -1,0 +1,38 @@
+# Allow-list for scripts/leak_check.py. Generic content only: never put a private name,
+# product or address here -- those live in ~/.config/teyla/private-terms.txt, outside the repo.
+# One glob (or name) per line under a section; `#` starts a comment. Globs match the
+# repo-relative path (fnmatch: `*` also crosses `/`).
+
+emails:
+# RFC 2606 reserved names that example.com/org/net do not already cover.
+*@example.invalid
+*@example.test
+# `\n@AGENTS.md`: a newline escape in source followed by an import line, not an address.
+n@agents.md
+
+paths:
+# Files skipped by every rule. Keep empty unless a file is generated or vendored.
+
+home:
+# Placeholder user names accepted in /Users/<x>/ and /home/<x>/ (the built-in list covers
+# me, you, user, username, name, acme, example, runner, alice, bob, and a few more).
+
+cyrillic:
+# POLICY: everything in the repo is English, except language data a feature needs. These
+# files hold the Russian-language lexicons (phrases the detectors must recognise) and the
+# tests that feed those lexicons Russian text.
+src/teyla/lexicon.py
+tests/test_detect.py
+tests/test_numbers.py
+tests/test_corrections.py
+# a unicode-handling test (non-Latin scripts in a rule line), not chat data
+tests/test_rules_lifecycle.py
+# the guard's own tests need Cyrillic input
+tests/test_leak_check.py
+
+secrets:
+# Tests that deliberately contain fake keys, to prove the scrubbers redact them.
+tests/test_corrections.py
+tests/test_cloud.py
+tests/test_health.py
+tests/test_platform.py
