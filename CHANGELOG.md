@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.18.0 — 2026-10-08 — shareable, and the chores that were scripts
+
+- **The repository is meant to be shared.** Docs, prompts, templates, fixtures and comments no
+  longer name one owner's products, people, places or paths, and everything is in English (the
+  correction-phrase word lists a feature needs moved to `src/teyla/lexicon.py`). `teyla scaffold
+  --owner "<name>"` fills the LICENSE templates. The CI template is `workflow_dispatch` on ubuntu.
+- **A leak guard.** `scripts/leak_check.py` scans the tree (part of `./check.sh`), a commit range
+  (messages, author and committer, every added line including merge resolutions) and a PR body
+  (`--text`). Private terms live outside the repo in `~/.config/teyla/private-terms.txt` or
+  `$TEYLA_PRIVATE_TERMS`; emails, home paths, secrets and non-English text are found without a
+  list. `.githooks/pre-push` asks the destination which commits it already has and scans the rest;
+  enable it with `git config core.hooksPath .githooks`. Exceptions go in `.leak-allow`.
+- **`teyla models watch`.** Compares the provider catalogues with a known list
+  (`~/.teyla/models-known.json`, `--seed` from a file, `--ack` to accept), names new models and
+  greps configs and rule files for ids that a newer model superseded. The weekly routine runs it
+  and the digest carries one line.
+- **Spend budgets.** `spend.alert_session_usd`, `spend.daily_budget_usd` and
+  `spend.budget.<project>` write `~/.teyla/spend.alert`, which the session-start banner shows; an
+  alert repeats only after the spend grows another 25%. Advice A20 flags a day where the
+  orchestrator model did most of the volume work (`spend.a20_models`, `a20_share`,
+  `a20_min_calls`). `teyla spend --by-day` and `--no-write`.
+- **`teyla storage sims` and `teyla storage sweep`.** Idle booted simulators are shut down;
+  devices matching `storage.sim_prune_pattern` (empty by default: nothing is deleted) are deleted
+  once nothing inside them changed for `sim_prune_days`. The sweep removes what agents leave
+  behind (temp builds, release leftovers, DerivedData nothing wrote to and whose package checkouts
+  are clean, runtime and package caches, dangling and superseded Docker images, archived
+  sessions, oversized routine logs), each with its own age and process check; `--dry` reports
+  bytes only. Optional LaunchAgents behind `storage.sims_agent` and `storage.sweep_agent` (off by
+  default). The doctor summary carries the free disk space.
+- **Policy sync keeps hand edits and runs daily.** Generated harness files are fingerprinted; an
+  edit made by hand is filed in `~/.teyla/policy-inbox/` before sync overwrites it. `teyla policy
+  inbox [--done NAME | --all]`, a doctor WARN, and `teyla policy sync --quiet` in the daily
+  routine (unattended: never creates POLICY.md, never edits `~/.claude/CLAUDE.md`).
+  `harness.disabled` takes the harnesses you do not use. `teyla uninstall` keeps unreviewed edits.
+- **No one owner's layout in the defaults.** Run reports go to `runs_root` (`teyla config set
+  runs_root=...`), by default `<ops_root>/runs`; an install that already has its reports in the
+  older tree keeps using it. `release_tool` has no guessed default: doctor says it is not
+  configured and where to set it. `teyla scaffold` fills the registry owner in the deploy
+  compose fragment. The model ladder in the policy templates is marked as an example.
+- **The work-account prompt targets 0.18.0.** `prompts/work-account-update.md` and `docs/WORK.md`
+  pin, install and add the plugin at 0.18.0.
+
 ## 0.17.0 — 2026-10-07 — what agents leave on disk, and routines that fail quietly
 
 - **The work-account prompt targets 0.17.0.** `prompts/work-account-update.md` pins, installs and
