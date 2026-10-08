@@ -119,9 +119,22 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
         out.append(_check("INFO", "config", f"no {config.CONFIG_PATH}; defaults code_root={cfg['code_root']} ops_root={cfg['ops_root']} runs_root={config.runs_root(cfg)}",
                           "teyla policy init  (writes it)"))
 
+    # --- harnesses this machine does not use (`[harness] disabled`) ----------------
+    off, unknown_off = config.disabled_harnesses(cfg)
+    if off:
+        out.append(_check("INFO", "harness:disabled", f"disabled: {', '.join(off)}"))
+    if unknown_off:
+        out.append(_check("WARN", "harness:disabled-unknown",
+                          f"[harness] disabled names {', '.join(unknown_off)}, which "
+                          f"{'is' if len(unknown_off) == 1 else 'are'} not a harness Teyla knows "
+                          f"({', '.join(config.HARNESS_NAMES)})",
+                          "teyla config set harness.disabled=" + ",".join(off)))
+
     # --- harness stores --------------------------------------------------------
     loaded = {}
     for mod in (claude_code, codex, grok, hermes, cursor):
+        if mod.NAME in off:
+            continue
         root = getattr(mod, "DEFAULT_ROOT", None)
         ok = bool(root) and os.path.exists(os.path.expanduser(root))
         if not ok:
@@ -205,10 +218,22 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
             else:
                 out.append(_check("OK", "policy:ack", "global CLAUDE.md matches its acknowledgement"))
 
+    # Edits made inside a generated copy (a rule added to ~/.codex/AGENTS.md from within Codex) that
+    # `policy sync` found and filed before it overwrote the copy: the person decides where they live.
+    edits = policy.pending_edits()
+    if edits:
+        c = _check("WARN", "policy:inbox",
+                   f"{len(edits)} hand edit{'s' if len(edits) != 1 else ''} to generated policy files "
+                   f"wait{'s' if len(edits) == 1 else ''} for review", "teyla policy inbox")
+        c["n"] = len(edits)
+        out.append(c)
+
     # --- Claude Code plugin ----------------------------------------------------
     claude_home = pathlib.Path.home() / ".claude"
     claude_present = shutil.which("claude") or (claude_home / "projects").is_dir() or (claude_home / "plugins").is_dir()
-    if claude_present:
+    if "claude-code" in off:
+        pass
+    elif claude_present:
         pv = plugin_install.installed_version()
         pref = plugin_install.pin_ref(cfg) if safe else None   # `v<pin>`: hooks pinned like the CLI
         add = (f"claude plugin marketplace add {plugin_install.pinned_source(pref)}" if pref
@@ -431,6 +456,9 @@ def _problems(cs: list[dict]) -> list[str]:
     ver = next((c for c in cs if c["name"] == "version"), None)
     if ver and ver["level"] == "FIX":
         parts.append("update available")
+    inbox = next((c for c in cs if c["name"] == "policy:inbox"), None)
+    if inbox:
+        parts.append(f"{inbox.get('n', 1)} policy edit(s) to review")
     return parts
 
 

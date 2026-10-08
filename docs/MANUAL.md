@@ -389,7 +389,7 @@ launchd agents, one hook and one command:
 
 | when | what | writes |
 |---|---|---|
-| daily 07:00 (`com.zaitsew.teyla.daily`) | `teyla update --quiet` then `teyla doctor --quiet` | `~/Library/Logs/teyla-daily.log`, `~/.teyla/doctor.summary`, `~/.teyla/banner.items` |
+| daily 07:00 (`com.zaitsew.teyla.daily`) | `teyla update --quiet`, `teyla doctor --quiet`, `teyla policy sync --quiet` (local files only, safe mode too), catch-up, storage clean | `~/Library/Logs/teyla-daily.log`, `~/.teyla/doctor.summary`, `~/.teyla/banner.items` |
 | Friday 20:45 (`com.zaitsew.teyla.weekly`) | `monitor --days 7`, `routines`, `products`, `models`, then `digest --write` | `<ops>/runs/<date>/`, `~/.teyla/digest.md` |
 | every session start (plugin hook) | prints what is new in `banner.items` since the last start (nothing when nothing is), and the digest headline once per week; if the last update check is older than a day, starts `teyla update --check` in the background | `~/.teyla/update-check.json` |
 | on demand | `teyla doctor` — the checklist with a fix per line; exit 1 when a FIX is pending | `~/.teyla/doctor.json` |

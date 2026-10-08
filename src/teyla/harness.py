@@ -634,11 +634,20 @@ TRUST_HOWTO = {
 
 # --- status / sync ---------------------------------------------------------------------------
 
+def _disabled() -> list[str]:
+    """Harnesses `[harness] disabled` in config.toml switches off: no row in status, nothing synced."""
+    from . import config
+    return config.disabled_harnesses()[0]
+
+
 def status(home: pathlib.Path | None = None) -> list[dict]:
     from . import policy
     pol = policy.status()
     out = []
+    off = _disabled()
     for name, h in harnesses(home).items():
+        if name in off:
+            continue
         if not h.present():
             out.append(dict(harness=name, present=False))
             continue
@@ -672,9 +681,11 @@ def render_status(rows: list[dict]) -> str:
 
 def sync(dry: bool = False, home: pathlib.Path | None = None) -> list[str]:
     out = []
-    hs = {n: h for n, h in harnesses(home).items() if h.present()}
+    off = _disabled()
+    hs = {n: h for n, h in harnesses(home).items() if h.present() and n not in off}
     if not hs:
-        return ["no other harness on this machine (no ~/.cursor, ~/.codex, ~/.grok, ~/.hermes)"]
+        return ["no other harness on this machine" + (f" besides the disabled ones ({', '.join(off)})" if off else "")
+                + " (no ~/.cursor, ~/.codex, ~/.grok, ~/.hermes)"]
     if any(h.hooks_kind for h in hs.values()):
         out += _sync_scripts(dry)
     for h in hs.values():
@@ -689,6 +700,8 @@ def cmd_harness(args):
         return health.cmd_verify(args)
     if args.action == "status":
         print(render_status(status()))
+        if _disabled():
+            print(f"disabled: {', '.join(_disabled())} (teyla config set harness.disabled=...)")
         return 0
     for line in sync(dry=args.dry):
         print(line)

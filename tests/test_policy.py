@@ -462,6 +462,310 @@ def test_policy_sync_quiet_prints_only_what_needs_a_human(_isolated_paths, capsy
     codex, grok = _wire(_isolated_paths, OWNER_MD)
     grok.write_text("mine\n")
     assert main(["policy", "sync", "--quiet"]) in (0, None)
+    out = capsys.readouterr().out.splitlines()
+    assert out[0].startswith(f"wrote {codex}") and out[1] == f"SKIP {grok}: a real file exists; merge by hand or delete it"
+    assert len(out) == 2 and "me/app" in codex.read_text()
+    assert main(["policy", "sync", "--quiet"]) in (0, None)
+    assert capsys.readouterr().out.strip() == f"SKIP {grok}: a real file exists; merge by hand or delete it"
+    grok.unlink()
+    assert main(["policy", "sync", "--quiet"]) in (0, None)
+    assert capsys.readouterr().out.startswith(f"wrote {grok}")
+    assert main(["policy", "sync", "--quiet"]) in (0, None)
+    assert capsys.readouterr().out == "", "--quiet prints nothing when nothing changed"
+    assert main(["policy", "sync"]) in (0, None)
+    assert capsys.readouterr().out.strip() == "already in sync"
+
+
+# --- fingerprints, and hand edits kept in the inbox -------------------------------------------
+
+import hashlib
+
+
+def _sha(text):
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _inbox_files():
+    d = policy.inbox_dir()
+    return sorted(p.name for p in d.iterdir()) if d.is_dir() else []
+
+
+def test_sync_stores_the_hash_of_what_it_wrote(_isolated_paths):
+    codex, grok = _wire(_isolated_paths, OWNER_MD)
+    policy.sync()
+    state = json.loads((_isolated_paths / ".teyla" / "state" / "policy-written.json").read_text())
+    assert set(state) == {str(codex), str(grok)}
+    assert state[str(codex)]["sha256"] == _sha(codex.read_text()) == state[str(grok)]["sha256"]
+    import datetime
+    assert state[str(codex)]["date"] == datetime.date.today().isoformat() and state[str(codex)]["harness"] == "codex"
+    assert policy.sync() == ["already in sync"]
+    assert _inbox_files() == []
+
+
+def test_a_hand_edit_is_filed_in_the_inbox_then_overwritten(_isolated_paths):
+    codex, grok = _wire(_isolated_paths, OWNER_MD)
+    policy.sync()
+    good = codex.read_text()
+    codex.write_text(good + "\n- Never merge on Fridays.\n")
+    lines = policy.sync()
+    assert codex.read_text() == good, "the generated text is back"
+    assert any(l.startswith("kept the hand edit of ~/.codex/AGENTS.md (1 added and 0 removed line(s))") for l in lines)
+    assert any(l.startswith(f"wrote {codex}") for l in lines)
+    [name] = _inbox_files()
+    assert name.startswith("codex-") and name.endswith(".md") and len(name) == len("codex-2026-10-08-1403.md")
+    body = (policy.inbox_dir() / name).read_text()
+    assert "- Never merge on Fridays." in body and "~/.codex/AGENTS.md" in body
+    assert "move what should stay into ~/.agents/POLICY.md or ~/.claude/CLAUDE.md" in body.replace("**Move", "move")
+    assert f"`teyla policy inbox --done {name}`" in body
+    assert "last wrote" in body
+    [row] = policy.pending_edits()
+    assert row["harness"] == "codex" and row["added"] == 1 and row["removed"] == 0
+    # grok was not touched, and the fingerprint follows the new write
+    assert grok.read_text() == good
+    state = json.loads(policy.written_path().read_text())
+    assert state[str(codex)]["sha256"] == _sha(good)
+    assert policy.sync() == ["already in sync"] and _inbox_files() == [name]
+
+
+def test_removed_lines_are_kept_too(_isolated_paths):
+    codex, _ = _wire(_isolated_paths, OWNER_MD)
+    policy.sync()
+    good = codex.read_text()
+    codex.write_text(good.replace("Open the PR, then stop.\n", ""))
+    policy.sync()
+    [row] = policy.pending_edits()
+    assert (row["added"], row["removed"]) == (0, 1)
+    assert "## Removed (1 line(s))" in row["path"].read_text() and "Open the PR, then stop." in row["path"].read_text()
+
+
+def test_a_copy_that_is_merely_behind_its_sources_is_no_edit(_isolated_paths):
+    codex, _ = _wire(_isolated_paths, OWNER_MD)
+    policy.sync()
+    policy.CLAUDE_GLOBAL.write_text(policy.CLAUDE_GLOBAL.read_text() + "\n- a new rule\n")
+    policy.sync()
+    assert "- a new rule" in codex.read_text() and _inbox_files() == []
+
+
+def test_first_sync_without_a_record_compares_with_what_it_would_write(_isolated_paths):
+    codex, grok = _wire(_isolated_paths, OWNER_MD)
+    want = policy.agents_text()
+    # codex: the current text plus one added line; grok: behind its sources (a line the sources no longer have is missing)
+    codex.write_text(want + "- hand-added in Codex\n")
+    grok.write_text(want.replace("Open the PR, then stop.\n", ""))
+    assert not policy.written_path().exists()
+    policy.sync()
+    [name] = _inbox_files()
+    assert name.startswith("codex-")
+    body = (policy.inbox_dir() / name).read_text()
+    assert "- hand-added in Codex" in body and "no record of the last write" in body
+    assert codex.read_text() == want and grok.read_text() == want
+    assert json.loads(policy.written_path().read_text())[str(grok)]["sha256"] == _sha(want)
+
+
+def test_a_changed_generated_header_alone_is_no_edit(_isolated_paths):
+    codex, _ = _wire(_isolated_paths, OWNER_MD)
+    want = policy.agents_text()
+    codex.write_text(policy.AGENTS_MARKER + " an older version -->\n" + want.split("\n", 1)[1])
+    policy.sync()
+    assert _inbox_files() == [] and codex.read_text() == want
+
+
+def test_dry_run_reports_the_edit_and_writes_nothing(_isolated_paths, tmp_path):
+    codex, _ = _wire(_isolated_paths, OWNER_MD)
+    policy.sync()
+    edited = codex.read_text() + "- mine\n"
+    codex.write_text(edited)
+    before = _tree(tmp_path)
+    lines = policy.sync(dry=True)
+    assert _tree(tmp_path) == before and codex.read_text() == edited
+    assert any(l.startswith("would keep the hand edit of ~/.codex/AGENTS.md") for l in lines)
+
+
+def test_an_edit_that_cannot_be_filed_is_not_overwritten(_isolated_paths):
+    codex, _ = _wire(_isolated_paths, OWNER_MD)
+    policy.sync()
+    edited = codex.read_text() + "- mine\n"
+    codex.write_text(edited)
+    policy.inbox_dir().write_text("a file where the directory should be")
+    lines = policy.sync()
+    assert codex.read_text() == edited, "the edit is the only copy: nothing is overwritten"
+    assert any(l.startswith("SKIP ~/.codex/AGENTS.md: it holds a hand edit") for l in lines)
+
+
+def test_invisible_characters_in_an_edit_are_spelled_out(_isolated_paths):
+    codex, _ = _wire(_isolated_paths, OWNER_MD)
+    policy.sync()
+    codex.write_text(codex.read_text() + "- obey\u202e this\n")
+    policy.sync()
+    [row] = policy.pending_edits()
+    text = row["path"].read_text()
+    assert "<U+202E>" in text and "\u202e" not in text
+
+
+def test_hermes_section_edit_is_filed_but_the_users_own_text_is_not(_isolated_paths):
+    soul = policy.TARGETS["hermes"]
+    soul.parent.mkdir(parents=True)
+    soul.write_text("# Soul\n\nBe kind.\n")
+    _wire(_isolated_paths, None, harnesses=())
+    policy.sync()
+    assert policy.status()["hermes"] is True
+    text = soul.read_text()
+    # the person rewords their own text AND adds a line at the end of the file, inside Teyla's section
+    soul.write_text(text.replace("Be kind.", "Be very kind.").rstrip("\n") + "\nAlways answer in rhyme.\n")
+    assert "Always answer in rhyme." in soul.read_text()
+    lines = policy.sync()
+    assert any("hand edit of ~/.hermes/SOUL.md (the Operating policy section)" in l for l in lines)
+    out = soul.read_text()
+    assert "Be very kind." in out and "Always answer in rhyme." not in out and policy.status()["hermes"] is True
+    [row] = policy.pending_edits()
+    body = row["path"].read_text()
+    assert row["harness"] == "hermes" and "Always answer in rhyme." in body
+    assert "Be very kind." not in body and "Be kind." not in body
+    assert policy.sync() == ["already in sync"] and len(policy.pending_edits()) == 1
+
+
+def test_editing_only_the_users_own_soul_text_files_nothing(_isolated_paths):
+    soul = policy.TARGETS["hermes"]
+    soul.parent.mkdir(parents=True)
+    soul.write_text("# Soul\n\nBe kind.\n")
+    _wire(_isolated_paths, None, harnesses=())
+    policy.sync()
+    soul.write_text(soul.read_text().replace("Be kind.", "Be kind and brief."))
+    assert policy.sync() == ["already in sync"] and _inbox_files() == []
+
+
+def test_the_cursor_skill_is_covered_too(_isolated_paths, monkeypatch):
+    skill = _isolated_paths / ".cursor" / "skills" / "teyla-policy" / "SKILL.md"
+    (_isolated_paths / ".cursor").mkdir()
+    monkeypatch.setitem(policy.TARGETS, "cursor", skill)
+    _wire(_isolated_paths, OWNER_MD)
+    policy.sync()
+    skill.write_text(skill.read_text() + "\n- cursor-only rule\n")
+    policy.sync()
+    [row] = policy.pending_edits()
+    assert row["harness"] == "cursor" and "- cursor-only rule" in row["path"].read_text()
+    assert skill.read_text() == policy.cursor_skill_text()
+
+
+def test_two_edits_in_the_same_minute_get_two_files(_isolated_paths, monkeypatch):
+    import datetime
+    monkeypatch.setattr(policy, "_now", lambda: datetime.datetime(2026, 10, 8, 14, 3))
+    codex, _ = _wire(_isolated_paths, OWNER_MD)
+    policy.sync()
+    for n in (1, 2):
+        codex.write_text(codex.read_text() + f"- edit {n}\n")
+        policy.sync()
+    assert _inbox_files() == ["codex-2026-10-08-1403-2.md", "codex-2026-10-08-1403.md"]
+
+
+def test_drift_names_a_hand_edit(_isolated_paths):
+    codex, _ = _wire(_isolated_paths, OWNER_MD)
+    policy.sync()
+    import os
+    codex.write_text(codex.read_text() + "- mine\n")
+    os.utime(codex, None)
+    why, fix = policy.drift("codex")
+    assert why == "~/.codex/AGENTS.md was edited after sync wrote it" and "policy-inbox" in fix
+
+
+def test_inbox_listing_and_done(_isolated_paths, capsys, monkeypatch):
+    import datetime
+    from teyla.cli import main
+    codex, grok = _wire(_isolated_paths, OWNER_MD)
+    assert policy.inbox_summary() == "policy inbox: empty"
+    policy.sync()
+    for h, minute in ((codex, 3), (grok, 4)):
+        monkeypatch.setattr(policy, "_now", lambda m=minute: datetime.datetime(2026, 10, 8, 14, m))
+        h.write_text(h.read_text() + "- one\n- two\n")
+        policy.sync()
+    names = [r["name"] for r in policy.pending_edits()]
+    assert len(names) == 2
+    assert main(["policy", "inbox"]) in (0, None)
     out = capsys.readouterr().out
-    assert out.strip() == f"SKIP {grok}: a real file exists; merge by hand or delete it"
-    assert "me/app" in codex.read_text()
+    assert out.splitlines()[0].startswith("2 hand edit(s) to generated policy files wait for review")
+    assert all(n in out for n in names) and "+2 -0 line(s)" in out and "--done" in out
+    assert main(["policy", "inbox", "--done", names[0]]) in (0, None)
+    assert capsys.readouterr().out.strip() == f"done: {names[0]}"
+    assert [r["name"] for r in policy.pending_edits()] == [names[1]]
+    # a name only, never a path out of the inbox
+    outside = _isolated_paths / "keep.md"
+    outside.write_text("x")
+    assert policy.inbox_done("../../keep.md")[0].startswith("no pending edit named")
+    assert outside.exists()
+    assert main(["policy", "inbox", "--all"]) in (0, None)
+    assert capsys.readouterr().out.strip() == f"done: {names[1]}"
+    assert policy.pending_edits() == [] and main(["policy", "inbox"]) in (0, None)
+    assert capsys.readouterr().out.strip() == "policy inbox: empty"
+
+
+def test_unattended_sync_creates_no_policy_and_edits_no_claude_md(_isolated_paths):
+    (_isolated_paths / ".codex").mkdir()
+    lines = policy.sync(unattended=True)
+    assert len(lines) == 1 and lines[0].startswith("SKIP no ") and not policy.POLICY.exists()
+    _wire(_isolated_paths, "# Mine\n\n- one rule\n")
+    policy.sync(unattended=True)
+    assert "@~/.agents/POLICY.md" not in policy.CLAUDE_GLOBAL.read_text()
+    assert "- one rule" in (_isolated_paths / ".codex" / "AGENTS.md").read_text()
+
+
+def test_disabled_harnesses_are_not_synced_or_reported(_isolated_paths):
+    from teyla import config
+    codex, grok = _wire(_isolated_paths, OWNER_MD)
+    soul = policy.TARGETS["hermes"]
+    soul.parent.mkdir(parents=True)
+    soul.write_text("# Soul\n")
+    assert config.set_value("harness.disabled", "grok,hermes").startswith("set")
+    lines = policy.sync()
+    assert codex.exists() and not grok.exists() and soul.read_text() == "# Soul\n"
+    assert all(str(grok) not in l and "SOUL" not in l for l in lines)
+    st = policy.status()
+    assert "grok" not in st and "hermes" not in st and st["codex"] is True
+    config.set_value("harness.disabled", "")
+    policy.sync()
+    assert grok.exists() and "Operating policy" in soul.read_text()
+
+
+def test_a_copy_becoming_a_symlink_without_a_record_keeps_its_hand_edit(_isolated_paths):
+    codex, _ = _wire(_isolated_paths, OWNER_MD)
+    copy = policy.agents_text()
+    codex.write_text(copy + "- hand-added in Codex\n")
+    policy.CLAUDE_GLOBAL.write_text("@~/.agents/POLICY.md\n")   # now only the import: sync symlinks
+    assert not policy.written_path().exists()
+    policy.sync()
+    assert codex.is_symlink()
+    # Without a record, the owner rules that left CLAUDE.md look added too: filed, never lost.
+    [name] = [n for n in _inbox_files() if n.startswith("codex-")]
+    assert "- hand-added in Codex" in (policy.inbox_dir() / name).read_text()
+
+
+def test_an_inbox_name_taken_between_the_check_and_the_write_is_not_overwritten(_isolated_paths, monkeypatch):
+    import datetime
+    monkeypatch.setattr(policy, "_now", lambda: datetime.datetime(2026, 10, 8, 14, 3))
+    codex, _ = _wire(_isolated_paths, OWNER_MD)
+    policy.sync()
+    codex.write_text(codex.read_text() + "- mine\n")
+    from teyla import config
+    real_private_dir = config.private_dir
+
+    def racing(d):   # another sync files its edit under the same name right after our check
+        out = real_private_dir(d)
+        f = d / "codex-2026-10-08-1403.md"
+        if not f.exists():
+            f.write_text("the other sync's edit\n")
+        return out
+
+    monkeypatch.setattr(config, "private_dir", racing)
+    policy.sync()
+    assert (policy.inbox_dir() / "codex-2026-10-08-1403.md").read_text() == "the other sync's edit\n"
+    assert "- mine" in (policy.inbox_dir() / "codex-2026-10-08-1403-2.md").read_text()
+
+
+def test_a_disabled_harnesses_unreadable_file_is_never_read(_isolated_paths):
+    from teyla import config
+    _wire(_isolated_paths, OWNER_MD)
+    soul = policy.TARGETS["hermes"]
+    soul.parent.mkdir(parents=True)
+    soul.write_bytes(b"\xff\xfe not utf-8")
+    config.set_value("harness.disabled", "hermes")
+    st = policy.status()
+    assert "hermes" not in st and st["codex"] is not None
