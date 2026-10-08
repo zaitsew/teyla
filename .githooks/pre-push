@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Refuse a push that would put private data or non-English text on the public remote.
+# Enable once per clone: git config core.hooksPath .githooks
+# stdin, one line per ref: <local ref> <local sha> <remote ref> <remote sha>
+set -euo pipefail
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+py=python3
+[ -x .venv/bin/python ] && py=.venv/bin/python
+zero=0000000000000000000000000000000000000000
+fail=0
+"$py" scripts/leak_check.py || fail=1
+url="${2:-${1:-origin}}"
+# What the destination already holds is asked of the destination itself (its push URL may
+# differ from what local tracking refs mirror). Only commits it lacks are scanned; if it
+# cannot be asked, the whole history being pushed is.
+have=""
+if remote_refs="$(git ls-remote "$url" 2>/dev/null)"; then
+  for sha in $(printf '%s\n' "$remote_refs" | awk '{print $1}' | sort -u); do
+    git cat-file -e "$sha^{commit}" 2>/dev/null && have="$have $sha"
+  done
+fi
+while read -r _lref lsha _rref rsha; do
+  [ "$lsha" = "$zero" ] && continue                      # deleting a ref
+  if [ -n "$have" ]; then
+    range="$lsha --not$have"                              # what the destination lacks
+  else
+    range="$lsha"                                         # empty or unreachable destination: all history
+  fi
+  "$py" scripts/leak_check.py --commits "$range" </dev/null || fail=1
+done
+if [ "$fail" -ne 0 ]; then
+  echo "pre-push: leak check failed; fix the findings above (private terms: CONTRIBUTING.md)" >&2
+  exit 1
+fi
