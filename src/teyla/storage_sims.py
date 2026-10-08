@@ -206,8 +206,8 @@ def prune(pattern: str, days: int, devs: list[dict] | None, procs: list[str] | N
         plist = dev / "device.plist"
         if not plist.is_file() or named_by_process(d["udid"], procs):
             continue
-        # device.plist moves on boot and shutdown, Library/Preferences on anything an app writes.
-        newest = max(storage._mtime(p) for p in (plist, dev / "data" / "Library" / "Preferences"))
+        # Anything written anywhere in the device (app containers included) makes it recent.
+        newest = storage.newest_mtime(dev, limit=now - days * 86400)
         idle = (now - newest) / 86400
         if idle < days:
             continue

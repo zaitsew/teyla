@@ -217,6 +217,23 @@ def _mtime(p) -> float:
         return 0.0
 
 
+def newest_mtime(root, limit: float | None = None) -> float:
+    """The newest mtime of `root` and anything under it (symlinks not followed). Stops early once
+    an entry newer than `limit` is seen: the caller only needs to know the tree is recent."""
+    newest = _mtime(root)
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        for name in dirnames + filenames:
+            try:
+                m = os.lstat(os.path.join(dirpath, name)).st_mtime
+            except OSError:
+                continue
+            if m > newest:
+                newest = m
+                if limit is not None and newest > limit:
+                    return newest
+    return newest
+
+
 def _idle_days(*paths, now: float | None = None) -> float:
     latest = max((_mtime(p) for p in paths), default=0.0)
     return ((now or time.time()) - latest) / 86400 if latest else 1e9

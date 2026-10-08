@@ -268,6 +268,24 @@ def test_old_derived_data_goes_and_shared_caches_stay(tmp_path):
     assert new.exists() and used.exists() and shared.exists()
 
 
+def test_derived_data_written_inside_recently_or_with_an_edited_package_stays(tmp_path):
+    root = tmp_path / "home" / "Library" / "Developer" / "Xcode" / "DerivedData"
+    recent = derived_dir(root, "Recent-abc", seconds=20 * DAY)
+    log = recent / "Logs" / "build.log"
+    os.utime(log, (NOW - DAY, NOW - DAY))       # info.plist is old, a file inside is not
+    edited = derived_dir(root, "Edited-abc", seconds=20 * DAY)
+    pkg = edited / "SourcePackages" / "checkouts" / "lib"
+    (pkg / ".git").mkdir(parents=True)
+    age(edited, 20 * DAY)
+    clean = derived_dir(root, "Clean-abc", seconds=20 * DAY)
+    (clean / "SourcePackages" / "checkouts" / "lib" / ".git").mkdir(parents=True)
+    age(clean, 20 * DAY)
+    r = Runner({("git", "-C", str(pkg), "status"): (0, " M Sources/lib.swift\n"), ("git", "-C"): (0, "")})
+    res = sw.derived_data(make_ctx(tmp_path, runner=r))
+    assert recent.exists() and edited.exists() and not clean.exists()
+    assert any("uncommitted changes" in x for x in res.lines)
+
+
 # --- codex runtimes --------------------------------------------------------------------------------
 
 def test_codex_runtime_install_leftovers(tmp_path):
@@ -356,6 +374,7 @@ def test_docker_prunes_and_reports_what_it_reclaimed(tmp_path):
     r = docker_runner([])
     res = sw.docker(make_ctx(tmp_path, runner=r))
     assert ["docker", "builder", "prune", "-f", "--filter", "until=168h"] in r.calls
+    assert ["docker", "image", "prune", "-f", "--filter", "until=168h"] in r.calls, "a fresh dangling image stays"
     assert res.bytes == 1_500_000_000 + 500_000_000
 
 
@@ -555,6 +574,33 @@ def test_one_sweep_at_a_time_and_a_dead_owners_lock_is_taken_over(tmp_path, monk
     (lock / "pid").write_text("2147483646")
     rep = sw.run(ctx=make_ctx(tmp_path))
     assert not rep["busy"] and not lock.exists(), "taken over, then released"
+
+
+def test_a_lock_without_a_pid_yet_is_a_sweep_starting_unless_it_is_stale(tmp_path):
+    lock = storage.state_dir("sweep.lock")
+    lock.mkdir(parents=True)
+    rep = sw.run(ctx=make_ctx(tmp_path))
+    assert rep["busy"] and lock.exists(), "a second sweep must not remove a lock just made"
+    old = time.time() - 2 * sw.LOCK_GRACE_S
+    os.utime(lock, (old, old))
+    rep = sw.run(ctx=make_ctx(tmp_path))
+    assert not rep["busy"] and not lock.exists()
+
+
+def test_trim_log_leaves_a_file_that_grew_after_the_snapshot(tmp_path, monkeypatch):
+    log = tmp_path / "r.log"
+    log.write_bytes(b"".join(b"line %d\n" % i for i in range(50)))
+    real_tail = sw._tail
+
+    def tail_then_append(path, keep_lines=sw.KEEP_LOG_LINES):
+        t = real_tail(path, keep_lines)
+        with path.open("ab") as f:
+            f.write(b"written during the trim\n")
+        return t
+
+    monkeypatch.setattr(sw, "_tail", tail_then_append)
+    assert sw.trim_log(log, keep_lines=5) == 0
+    assert log.read_bytes().endswith(b"written during the trim\n") and b"line 0\n" in log.read_bytes()
 
 
 def test_cmd_sweep_logs_a_real_run_but_not_a_dry_one(tmp_path, capsys):

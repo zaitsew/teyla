@@ -369,6 +369,20 @@ def simulators(ctx: Ctx) -> Result:
 
 # --- Xcode DerivedData ----------------------------------------------------------------------
 
+def _edited_checkouts(ctx: Ctx, d: pathlib.Path) -> bool:
+    """A Swift package checkout under `d` has uncommitted changes, or git cannot tell."""
+    checkouts = d / "SourcePackages" / "checkouts"
+    if not checkouts.is_dir():
+        return False
+    for c in checkouts.iterdir():
+        if c.is_symlink() or not (c / ".git").exists():
+            continue
+        rc, out = ctx.run(["git", "-C", str(c), "status", "--porcelain"], 60)
+        if rc != 0 or out.strip():
+            return True
+    return False
+
+
 def derived_data(ctx: Ctx) -> Result:
     r = Result("DerivedData")
     root = ctx.home / "Library" / "Developer" / "Xcode" / "DerivedData"
@@ -381,6 +395,12 @@ def derived_data(ctx: Ctx) -> Result:
         if d.is_symlink() or not d.is_dir() or not info.is_file() or _age_days(ctx, info) < ctx.cfg["derived_days"]:
             continue
         if ctx.named(d):
+            continue
+        # info.plist alone is not enough: a file written anywhere inside keeps the folder.
+        if (ctx.now - storage.newest_mtime(d, limit=ctx.now - ctx.cfg["derived_days"] * 86400)) / 86400 < ctx.cfg["derived_days"]:
+            continue
+        if _edited_checkouts(ctx, d):
+            r.lines.append(f"kept DerivedData {d.name}: a package checkout has uncommitted changes")
             continue
         size = ctx.size(d)
         if ctx.dry or _rm(d):
@@ -525,9 +545,9 @@ def docker(ctx: Ctx) -> Result:
         return r
     until = f"{ctx.cfg['docker_days'] * 24}h"
     if ctx.dry:
-        r.lines.append(f"would run: docker image prune (dangling), docker builder prune --filter until={until}")
+        r.lines.append(f"would run: docker image prune (dangling) and docker builder prune, both --filter until={until}")
     else:
-        for label, cmd in (("images", ["docker", "image", "prune", "-f"]),
+        for label, cmd in (("images", ["docker", "image", "prune", "-f", "--filter", f"until={until}"]),
                            ("build cache", ["docker", "builder", "prune", "-f", "--filter", f"until={until}"])):
             rc, out = ctx.run(cmd, 600)
             n = _reclaimed(out)
@@ -696,6 +716,10 @@ def trim_log(path: pathlib.Path, keep_lines: int = KEEP_LOG_LINES, dry: bool = F
     freed = max(0, before - sum(len(x) for x in tail))
     if not dry and freed:
         with path.open("r+b") as f:
+            # A writer appended since the snapshot: leave the file for the next sweep rather than
+            # drop its new lines.
+            if os.fstat(f.fileno()).st_size != before:
+                return 0
             f.seek(0)
             f.writelines(tail)
             f.truncate()
@@ -733,6 +757,9 @@ CATEGORIES = (("temp builds", temp_builds, True), ("release leftovers", release_
               ("claude cli logs", claude_logs, False), ("routine logs", routine_logs, False))
 
 
+LOCK_GRACE_S = 60
+
+
 class Busy(Exception):
     pass
 
@@ -751,6 +778,9 @@ def lock():
                 pid = int((d / "pid").read_text().strip())
                 os.kill(pid, 0)
             except (OSError, ValueError):
+                # No pid yet may be a sweep that has just made the lock: only a stale one is taken over.
+                if not (d / "pid").exists() and time.time() - storage._mtime(d) < LOCK_GRACE_S:
+                    raise Busy(f"another sweep is starting ({d})") from None
                 _rm(d)   # no readable pid or no such process
                 continue
             raise Busy(f"another sweep is running (pid {pid}, {d})") from None

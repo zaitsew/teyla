@@ -213,7 +213,10 @@ def make_device(n: int, age_days: float, prefs_age_days: float | None = None):
     plist.write_text("x")
     (root / "data" / "blob").write_bytes(b"0" * 2048)
     t = NOW - age_days * 86400
-    os.utime(plist, (t, t))
+    for dirpath, dirnames, filenames in sorted(os.walk(root), reverse=True):   # children first
+        for name in filenames + dirnames:
+            os.utime(os.path.join(dirpath, name), (t, t))
+    os.utime(root, (t, t))
     prefs = root / "data" / "Library" / "Preferences"
     p = NOW - (prefs_age_days if prefs_age_days is not None else age_days) * 86400
     os.utime(prefs, (p, p))
@@ -248,6 +251,20 @@ def test_only_shut_down_old_devices_matching_the_pattern_are_deleted(monkeypatch
 def test_a_device_written_to_recently_is_not_unused(monkeypatch):
     sim = install(monkeypatch, (udid(1), "Task one", "Shutdown"))
     make_device(1, age_days=30, prefs_age_days=1)   # an app wrote its preferences yesterday
+    storage_sims.reap(cfg(sim_prune_pattern="Task "), now=NOW, procs=[])
+    assert sim.verbs("delete") == []
+
+
+def test_a_device_whose_app_container_changed_recently_is_not_unused(monkeypatch):
+    sim = install(monkeypatch, (udid(1), "Task one", "Shutdown"))
+    root = make_device(1, age_days=30)
+    doc = root / "data" / "Containers" / "Data" / "Application" / "A" / "Documents" / "take.mov"
+    doc.parent.mkdir(parents=True)
+    doc.write_bytes(b"0")
+    t = NOW - 86400   # written yesterday; the device.plist and Preferences are a month old
+    os.utime(doc, (t, t))
+    for d in [doc.parent, *doc.parent.parents][:6]:
+        os.utime(d, (NOW - 30 * 86400,) * 2)
     storage_sims.reap(cfg(sim_prune_pattern="Task "), now=NOW, procs=[])
     assert sim.verbs("delete") == []
 
