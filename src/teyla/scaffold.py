@@ -49,8 +49,8 @@ RELEASE_SECTION_IOS = """## Releases (iOS)
 
 See `docs/RELEASE.md`. TestFlight and the App Store go through the App Store
 Connect API key only — never the Xcode GUI, never a password.
-`~/ops/bin/testflight release ...` cuts a release; `~/ops/bin/testflight
-bootstrap ...` sets up signing once per machine.
+Your release tool (a script that wraps the API key) cuts a release and sets up
+signing once per machine.
 """
 
 
@@ -108,6 +108,18 @@ def _context(name: str, kind: str) -> dict:
     }
 
 
+def _owner(owner: str | None, cwd: pathlib.Path) -> str:
+    """Copyright holder for the LICENSE: --owner, else `git config user.name`, else a neutral default."""
+    if owner and owner.strip():
+        return owner.strip()
+    try:
+        out = subprocess.run(["git", "config", "--get", "user.name"], cwd=str(cwd), capture_output=True,
+                             text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        out = ""
+    return out or "the authors"
+
+
 def _render(text: str, ctx: dict) -> str:
     for key, value in ctx.items():
         text = text.replace("{{" + key + "}}", value)
@@ -140,7 +152,7 @@ def _copy_tree(src_root: pathlib.Path, dest_root: pathlib.Path, ctx: dict, repor
         _write(dest, content, executable, report)
 
 
-def scaffold(path: str, name: str, kind: str = "cli", license: str = "apache") -> list[str]:
+def scaffold(path: str, name: str, kind: str = "cli", license: str = "apache", owner: str | None = None) -> list[str]:
     if kind not in KINDS:
         raise ValueError(f"kind must be one of {KINDS}, got {kind!r}")
     if license not in LICENSES:
@@ -164,7 +176,9 @@ def scaffold(path: str, name: str, kind: str = "cli", license: str = "apache") -
 
     if license != "none":
         license_src = TEMPLATE_ROOT / LICENSE_TEMPLATES[license]
-        _write(dest / "LICENSE", _render(license_src.read_text(), ctx), False, report)
+        # `owner` is rendered into the licence only: other templates keep their own {{owner}} placeholders.
+        license_ctx = {**ctx, "owner": _owner(owner, dest)}
+        _write(dest / "LICENSE", _render(license_src.read_text(), license_ctx), False, report)
 
     agents = dest / "AGENTS.md"
     claude = dest / "CLAUDE.md"

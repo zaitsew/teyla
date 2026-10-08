@@ -6,57 +6,57 @@
   adds the plugin at 0.17.0, and `docs/WORK.md`'s update example follows. Step 9 no longer says the
   hook defaults are 300k/40k; its explicit 240k/30k line now only overrides an older setup's values.
 - **A routine that runs and fails is FAILING, not ok.** A failing run still touches its log, so
-  mtime alone called it fine: iron-u's garmin-sync failed every 30 minutes for 6 hours while
-  `teyla routines` reported nothing not running. For a `.jsonl` log Teyla now reads the last run's
-  outcome (dry runs ignored) and reports FAILING with the streak's start, length and first error
-  line. FAILING counts as not running in the exit code, digest, banner and feedback.
+  mtime alone called it fine: a sync routine in a product repo failed every 30 minutes for hours
+  while `teyla routines` reported nothing not running. For a `.jsonl` log Teyla now reads the last
+  run's outcome (dry runs ignored) and reports FAILING with the streak's start, length and first
+  error line. FAILING counts as not running in the exit code, digest, banner and feedback.
 - **Self-ignoring caches are not work.** mypy, ruff and pytest write a `.gitignore` of `*` inside
   their cache, so git listed the files inside (`api/.mypy_cache/3.12/`) and `teyla storage` kept
-  every finished Python worktree as holding "ignored files that are not build output" (both combra
-  worktrees and the teyla and iron-u session worktrees on 2026-10-04). A cache counts only when its
-  own `.gitignore` really ignores everything in it.
+  every finished Python worktree as holding "ignored files that are not build output". A cache
+  counts only when its own `.gitignore` really ignores everything in it.
 - **`teyla storage` finds Xcode DerivedData whose workspace is gone.** Agents build iOS apps in
-  throwaway worktrees (`~/.worktrees/loco/build-99/Loco.xcodeproj`); `storage clean` removed the
-  worktree and left its `~/Library/Developer/Xcode/DerivedData/<Scheme>-<hash>` behind, 0.4–0.9 GB
-  each, listed only as one REVIEW row for the whole directory. On 2026-10-07 that was 9 folders and
-  5.7 GB, deleted by hand. Now a folder whose `info.plist` names an absolute `WorkspacePath` that no
-  longer exists, and which nothing has touched for a day, is its own SAFE row ("its workspace is
-  gone: …") while no `xcodebuild`, Xcode build service or Xcode runs (a build writes deep inside,
-  where no mtime the scan reads moves; review of #107, #109): counted in `safe`, listed in `--json` under `derived`, removed by `clean --apply` and
-  `clean --auto` after the same facts are checked again. Folders without an `info.plist`
-  (`ModuleCache.noindex`, `SDKStatCaches.noindex`, …) are shared caches and stay untouched, as does a
-  workspace on a volume that is not mounted.
-- **Compaction at ~300k, read from the machine.** On 2026-10-04 the personal Mac moved
-  `"autoCompactWindow"` from 400000 to 335000 (compaction at ~300k instead of ~365k) and
-  `~/ops/bin/context-budget-hook` its handoff reminders to 240k/270k (zaitsew/ops#208): replaying
-  1–3 Oct, ~10% less re-read context for ~50 more compactions in 3 days; 250k compacted mid-task
-  too often. A3, A4 and W2 no longer print a fixed 400000/~365k: they read `autoCompactWindow`
-  from `~/.claude/settings.json` (compaction ≈ window − 35k) and, when it is absent, recommend
-  335000 (~300k). `teyla doctor` suggests 335000, and warns (`hooks:context-budget-late`) when
-  `context_budget_first` is at or past the point the window compacts at, since the handoff would
-  then come after the compaction it is for. The plugin's context-budget hook defaults to 240000 /
-  30000 and its reminder names where this machine compacts. The work-account prompt sets those
-  thresholds explicitly (0.16.0's defaults are 300k/40k) and merges in 335000.
+  throwaway worktrees (`~/.worktrees/app-a/build-1/App.xcodeproj`); `storage clean` removed the
+  worktree and left its `~/Library/Developer/Xcode/DerivedData/<Scheme>-<hash>` behind, hundreds of
+  megabytes each, listed only as one REVIEW row for the whole directory. Now a folder whose
+  `info.plist` names an absolute `WorkspacePath` that no longer exists, and which nothing has touched
+  for a day, is its own SAFE row ("its workspace is gone: …") while no `xcodebuild`, Xcode build
+  service or Xcode runs (a build writes deep inside, where no mtime the scan reads moves): counted
+  in `safe`, listed in `--json` under `derived`, removed by `clean --apply` and `clean --auto` after
+  the same facts are checked again. Folders without an `info.plist` (`ModuleCache.noindex`,
+  `SDKStatCaches.noindex`, …) are shared caches and stay untouched, as does a workspace on a volume
+  that is not mounted.
+- **Compaction at ~300k, read from the machine.** Replaying real sessions showed that moving
+  `"autoCompactWindow"` from 400000 to 335000 (compaction at ~300k instead of ~365k) and the handoff
+  reminders of a context-budget hook to 240k/270k cut re-read context by roughly a tenth at the cost
+  of more frequent compactions; 250k compacted mid-task too often. A3, A4 and W2 no longer print a
+  fixed 400000/~365k: they read `autoCompactWindow` from `~/.claude/settings.json` (compaction ≈
+  window − 35k) and, when it is absent, recommend 335000 (~300k). `teyla doctor` suggests 335000, and
+  warns (`hooks:context-budget-late`) when `context_budget_first` is at or past the point the window
+  compacts at, since the handoff would then come after the compaction it is for. The plugin's
+  context-budget hook defaults to 240000 / 30000 and its reminder names where this machine compacts.
+  The work-account prompt sets those thresholds explicitly (0.16.0's defaults are 300k/40k) and
+  merges in 335000.
 - **A10 counts writes to `~/.claude/CLAUDE.md`, not mentions of it.** A Bash call counted when
   it named the path anywhere and wrote anything anywhere, so a session that edited a hook, a PR
-  body and a changelog naming the file was reported as six edits to it (A10 [high], 2026-10-04)
-  though the file had not changed since the ack. Now the path has to be the target: a redirect
-  into it, the operand of `sed -i`/`tee`/`perl -i`, the last operand of `cp`/`mv`, or a literal
-  (or `Path.home()/".claude/CLAUDE.md"`) that a script writes. Edits to a repo's own
-  `.claude/CLAUDE.md` no longer count either. Over 40 days of transcripts: 24 hits kept, 77
-  dropped, the dropped ones reads and mentions.
+  body and a changelog naming the file was reported as six edits to it (A10 [high]) though the file
+  had not changed since the ack. Now the path has to be the target: a redirect into it, the operand
+  of `sed -i`/`tee`/`perl -i`, the last operand of `cp`/`mv`, or a literal (or
+  `Path.home()/".claude/CLAUDE.md"`) that a script writes. Edits to a repo's own
+  `.claude/CLAUDE.md` no longer count either. Replayed over weeks of transcripts, the hits that were
+  dropped were reads and mentions.
 - **A11 reads annotated ladder cells.** `Sonnet 5.5 (default worker), Opus 5.5 (hard sub-tasks,
   design, same-provider review)` was split at every comma, and the pieces — `design`,
-  `` `codex exec` lanes `` — came back as nine LADDER-UNKNOWN for a ladder whose every model
+  `` `codex exec` lanes `` — came back as LADDER-UNKNOWN for a ladder whose every model
   exists. Commas inside parentheses and backticks no longer split, text after ` — ` stays with
   its entry, and the annotation is stripped only for matching, so `--write-policy` keeps it.
 
-## 0.16.0 — 2026-10-02 — the personal Mac's habits, on the work MacBook
+## 0.16.0 — 2026-10-02 — a personal machine's habits, on a managed work laptop
 
-Three practices lived only in the owner's private `~/ops/bin`, so the managed work MacBook (the
-Claude Code desktop app, no `claude`/`gh`/`codex`, GitLab, safe mode, plugin pinned to a tag) had
-none of them. They now ship in the plugin and arrive pinned with it. The two hooks are opt-in,
-off by default: on the personal Mac the `~/ops` copies already run, and two would double every note.
+Three practices lived only in the author's private scripts, so a managed work laptop (the
+Claude Code desktop app, no `claude`/`gh`/`codex`, a self-hosted forge such as GitLab, safe mode,
+plugin pinned to a tag) had none of them. They now ship in the plugin and arrive pinned with it. The
+two hooks are opt-in, off by default: on a personal machine the private copies already run, and two
+would double every note.
 
 - **Context budget** (`[hooks] context_budget = true`). At 300k tokens of context
   (`context_budget_first`) and every 40k after (`context_budget_step`), the model writes a
@@ -66,42 +66,43 @@ off by default: on the personal Mac the `~/ops` copies already run, and two woul
   renamed `.prev.md`. Wired on UserPromptSubmit, PostToolUse and SessionStart(compact). It runs
   after every tool call, so the wrapper decides on/off with one `awk` and starts no Python when
   off; when on, it uses the installed `teyla`'s interpreter (a GUI app has no shell PATH), else a
-  `python3` that will not pop the developer-tools dialog. Ported from `context-budget-hook`,
-  whose measurements are in the docstring: a turn at 450k costs ~9× one at 50k, and that
-  re-reading was $772 of $2,696 in the week to 1 Oct.
+  `python3` that will not pop the developer-tools dialog. Ported from a private context-budget hook
+  whose measurements were: a turn at 450k costs about 9x one at 50k, and in a heavy week that
+  re-reading was a large share of the total cost.
 - **Land check** (`[hooks] land_check = true`). A Stop hook, once per session: uncommitted files
   or commits on no remote (`git log HEAD --not --remotes` — without `HEAD` a never-pushed repo
   reads as pushed) are named with how to land them: one PR/MR per logical unit; "merge it —
   merge, not squash, never force-push" only when origin's slug (ssh or https, nested groups
   whole) is in the fenced `MERGE-APPROVED REPOS` block of `~/.claude/CLAUDE.md`, else "open the
   PR/MR and STOP". A bare `owner/repo` approves github.com only; another host's repo needs its
-  host in the entry (`gitlab.corp/group/repo`). Never a block. Pure `sh` (the work Mac has no Node).
-  `teyla harness sync` wires it into Codex's `~/.codex/hooks.json` as a Stop hook
+  host in the entry (`git.example.com/group/repo`). Never a block. Pure `sh` (a work laptop may have no
+  Node). `teyla harness sync` wires it into Codex's `~/.codex/hooks.json` as a Stop hook
   (`land-check.sh --codex`, `{"systemMessage": …}`) while the key is on, and removes it when off.
 - **`/teyla:review`**: POLICY §2 without any CLI. One pass on the branch's diff (or one fix
   commit in round two), P1/P2 only, `P1 path:line — defect — scenario` or exactly `No P1/P2`;
-  `~/ops/bin/codex-review` or a `codex-review`/`claude-review` on PATH when present, else one
-  fresh sub-agent given only the diff, labelled "same-provider review". At most two rounds.
-  Synced to Cursor, Codex, Grok and Hermes as `teyla-review` (six skills per harness now).
+  a `codex-review` or `claude-review` script on PATH when present, else one fresh sub-agent given
+  only the diff, labelled "same-provider review". At most two rounds. Synced to Cursor, Codex, Grok
+  and Hermes as `teyla-review` (six skills per harness now).
 - **`teyla doctor`**: one INFO line per hook that is on; with the context budget on and no
   `autoCompactWindow` in `~/.claude/settings.json`, a WARN naming `/config` or the key to add.
   Doctor never writes settings.json. `teyla policy init --force` keeps `[hooks]`.
-- **Docs**: `docs/WORK.md` "Same as on the personal Mac"; `prompts/work-account-update.md`
-  targets 0.16.0 and adds the step that turns the hooks on, merges `autoCompactWindow` into
-  `~/.claude/settings.json` (after a backup) and checks `/teyla:review` is listed.
+- **Docs**: `docs/WORK.md` gains a section on the habits a personal machine already has;
+  `prompts/work-account-update.md` targets 0.16.0 and adds the step that turns the hooks on,
+  merges `autoCompactWindow` into `~/.claude/settings.json` (after a backup) and checks
+  `/teyla:review` is listed.
 - **Fast stays a per-session choice.** `teyla health --live` runs its Codex probe with
   `-c service_tier="default"`, so an interactive Fast setting (the 2.5x "priority" tier) never
-  reaches automation; `codex-review` and `~/ops/bin/codex-lane` pin the same tier.
+  reaches automation; a `codex-review` script and a Codex lane wrapper should pin the same tier.
 
-## 0.15.0 — 2026-10-02 — Codex reads the owner's rules, the work plugin follows the pin
+## 0.15.0 — 2026-10-02 — Codex reads the user's global rules, the work plugin follows the pin
 
-- **Codex and Grok get the owner's rules, not only the policy.** `~/.claude/CLAUDE.md` — the
+- **Codex and Grok get the user's global rules, not only the policy.** `~/.claude/CLAUDE.md` — the
   merge-approved repos, shipping, releases, layout, git safety — reached Claude Code only:
   Codex has no `@path` imports (codex-cli 0.159.2), so a symlink to `POLICY.md` left every
   Codex session without the merge list. `teyla policy sync` now writes `~/.codex/AGENTS.md` and
-  `~/.grok/AGENTS.md` as one generated file: `POLICY.md`, then CLAUDE.md under `# The owner's
-  rules` (the policy import dropped, other `@~/...` imports inlined one level, fenced ones left
-  as examples), then where the shared project memory lives. The Cursor skill carries the same
+  `~/.grok/AGENTS.md` as one generated file: `POLICY.md`, then CLAUDE.md under a heading for the
+  user's own rules (the policy import dropped, other `@~/...` imports inlined one level, fenced ones
+  left as examples), then where the shared project memory lives. The Cursor skill carries the same
   text, and the work policy gets the same treatment.
   - A CLAUDE.md with nothing but the import keeps the symlink, exactly as before.
   - The first line is a generated-by marker. Sync replaces a symlink or a marked file; a
@@ -130,22 +131,22 @@ off by default: on the personal Mac the `~/ops` copies already run, and two woul
 
 ## 0.14.0 — 2026-10-01 — rules that live and die, health that tells the truth
 
-- **`teyla spend`: the week's cost and the waste in it** (#78, #79, #85). Claude Code cost is one
+- **`teyla spend`: the week's cost and the waste in it.** Claude Code cost is one
   usage per message, subagents included, with 1-hour cache writes at 2x. The Friday digest gets a
   spend section, and `teyla spend --alert` is a daily spike check. With admin keys in the macOS
   Keychain (`openai-admin-key`, `anthropic-admin-key`, read at call time, never written), it also
   reads what OpenAI and Anthropic actually billed for product API use. A day past 2x the
   previous week's median and at least $2 over is W7, reported apart from session waste. Safe mode
   skips the providers.
-- **Harness health: the newest event wins** (#84). `health:hermes` said "relogin required since
-  09-29" after a successful re-login; a later success now clears an older auth error, and a later
+- **Harness health: the newest event wins.** `health:hermes` said "relogin required" after a
+  successful re-login; a later success now clears an older auth error, and a later
   quota error (Hermes' 403 `spending-limit`, read from its request dumps) replaces it as what it is.
   Claude's errors are kept per entrypoint, and a live `claude auth status` clears the CLI's and
   `claude -p`'s auth errors, not the desktop app's. Hermes' failed-request stub rows no longer
   count as a success. An API-key Hermes setup is OK when a key exists, and FIX when one does not.
   Codex rate-limit-only `token_count` events no longer clear A18. Two YAML parser fixes cover
   `hooks_auto_accept` inside a flow mapping or after a block scalar, and a bare `-` hook entry.
-- **The other review findings deferred from 0.13 are fixed** (#83; the cloud and health ones are above and below):
+- **The other review findings deferred from 0.13 are fixed** (the cloud and health ones are above and below):
   - A refused act no longer uses up the approval.
   - Old correction records no longer match by scrubbed path.
   - A10 compares dates in one timezone, and nothing is marked seen until stdout is written.
@@ -153,15 +154,15 @@ off by default: on the personal Mac the `~/ops` copies already run, and two woul
   - `policy refresh` reports a `git merge-file` crash as an error, not as conflicts.
   - A post-install commit check that cannot run rolls the update back.
   - An `@AGENTS.md` inside a code fence is not an import.
-- **`teyla routine install --dry` is a dry run** (#90). Before, it installed for real. A plist
+- **`teyla routine install --dry` is a dry run.** Before, it installed for real. A plist
   outside the real account's `~/Library/LaunchAgents` (a moved `$HOME`) is never bootstrapped:
   launchd's `gui/<uid>` is the real account's, and such a plist replaced the real daily and weekly
   jobs.
-- **The test suite never reads this Mac's transcripts** (#82). The adapters resolve their root
+- **The test suite never reads the machine's real transcripts.** The adapters resolve their root
   when called, so the doctor tests stopped parsing the real `~/.claude/projects`. `./check.sh` went
   from 197 s to about 60 s, and one test from 184 s under load to under a second.
-- **`teyla doctor`: a CLAUDE.md that is `@AGENTS.md` is consistent** (#81), not "differ".
-- **The work-MacBook prompt targets 0.14.0 in safe mode** (#88). The prompt is
+- **`teyla doctor`: a CLAUDE.md that is `@AGENTS.md` is consistent**, not "differ".
+- **The work-laptop prompt targets 0.14.0 in safe mode.** The prompt is
   `teyla prompt work-account-update`, and its steps are:
   - `teyla policy init --work` and a pinned `update.pin`;
   - `teyla uninstall --dry` as the list of Teyla's files;
@@ -173,14 +174,14 @@ off by default: on the personal Mac the `~/ops` copies already run, and two woul
   is now filled from `SCHEDULE`, and `teyla routine install --if-stale` (run by `teyla update`)
   rewrites an installed plist whose schedule differs, so an existing Monday install picks up the
   change on the next update. A weekly the Mac missed still runs from the daily wrapper, on Saturday.
-- **Rules have a lifecycle, fed by human corrections only** (#87). `teyla rules propose` prints a
+- **Rules have a lifecycle, fed by human corrections only.** `teyla rules propose` prints a
   proposed diff of rule files from corrections a person made (`teyla correct`, inbox rejections
-  with a note) and ignores the capture hook's regex guesses, now tagged `source: hook` — ~97% of
-  them were not corrections. A correction matching an existing rule is a hit; new rule files carry
+  with a note) and ignores the capture hook's regex guesses, now tagged `source: hook` — nearly all
+  of them were not corrections. A correction matching an existing rule is a hit; new rule files carry
   `created`/`hits`/`last_hit`/`expires`, and `teyla rules stale` lists expired and never-hit rules
   as removal candidates (never deleted). `--write` is the only path that writes. `teyla rule` warns
   when a file it wrote is past ~200 lines, and `teyla doctor` lists every instruction file that is.
-- **Hidden characters are refused in instruction files** (#87). `teyla rule`, `teyla correct`,
+- **Hidden characters are refused in instruction files.** `teyla rule`, `teyla correct`,
   `teyla rules propose --write`, every `teyla policy` write and `teyla models --write-policy` exit 2
   and write nothing when the result would hold bidi controls, zero-width characters or Unicode tag
   characters — text an agent obeys and a reviewer cannot see. The message names line and column.
@@ -191,122 +192,124 @@ off by default: on the personal Mac the `~/ops` copies already run, and two woul
   allowed); the setup script installs subdirectories (two levels down) that have their own
   lockfile; and a stale `merge-approved:` line anywhere in an instruction file, marked section or
   not, is refused. Re-run `teyla cloud prep` in repos already prepped to pick these up.
-- **`teyla cloud check` fixes (#70).** A cloud session is attributed to the `claude/*` branch whose
+- **`teyla cloud check` fixes.** A cloud session is attributed to the `claude/*` branch whose
   tip is nearest its commit, not the alphabetical first; `if ! command -v x && …; else x` no longer
   counts as a guard; a symlink loop between CLAUDE.md and AGENTS.md is a BLOCK, not a crash on
   Python 3.11/3.12.
 
 ## 0.13.1 — 2026-09-30
 
-- **Hermes hooks are recognised after Hermes rewrites its config.** Installing 0.13.0 on the
-  machine this was written on: Hermes 0.21.5 had rewritten `~/.hermes/config.yaml` on update,
-  dropping Teyla's marker comments and the quotes but keeping the entries, so `harness sync`
-  asked for all of them by hand and doctor said "hooks not wired". Teyla now reads the
-  (event, command) pairs under `hooks:`, as it does for Codex, and names only what is missing (#75).
+- **Hermes hooks are recognised after Hermes rewrites its config.** After Hermes updated itself it
+  rewrote `~/.hermes/config.yaml`, dropping Teyla's marker comments and the quotes but keeping the
+  entries, so `harness sync` asked for all of them by hand and doctor said "hooks not wired".
+  Teyla now reads the (event, command) pairs under `hooks:`, as it does for Codex, and names only
+  what is missing.
 
 ## 0.13.0 — 2026-09-30 — safe at work, true in every harness, useful in the cloud
 
-Measured on the machine this was written on, before the sprint:
-- `teyla doctor` took 242 s, 211 of them in one `git log -p` per worktree; 0.12 brought it to
-  8.4 s (#56), and `teyla monitor --days 3` from 21–29 s to about 2 s (#55).
-- The correction rate over 29 days read 8.4%; with batch prompts and retries no longer counted
-  as human turns it is 3.9% (#68). The capture hook had filed 107 records in September, about
-  3 of them real corrections; 509 of 520 September Codex sessions were `codex exec`.
-- Four weekly reports were written in September and none was opened; the session-start line
-  showed the same "1 fix(es), 2 warning(s)" on 44 of 44 starts for 13 days.
-- The no-Actions rule was broken three times in September (accounts twice, loco once) until the
-  Actions quota hit 100%; the new scan flags 16 workflow files in 10 repos.
-- frank drove 455 `grok -p` calls a day; 0 of 18 repos were ready for a cloud session.
+What the sprint was measured against, before it started:
+- `teyla doctor` was dominated by one `git log -p` per worktree and took minutes; 0.12 brought it
+  to 8.4 s, and `teyla monitor --days 3` from 21–29 s to about 2 s.
+- The correction rate was overstated: batch prompts and retries were counted as human turns, and
+  the capture hook filed mostly false positives. Almost all Codex sessions in the sample were
+  `codex exec`.
+- Weekly reports were written and never opened, and the session-start line showed the same
+  "1 fix(es), 2 warning(s)" on every start for two weeks.
+- The no-Actions rule was broken several times in product repos until the Actions quota ran out;
+  the new scan flags workflow files across the repos it checks.
+- One product drove hundreds of `grok -p` calls a day, and no repo in the sample was ready for a
+  cloud session.
 
-Every PR below had one GPT-6.1 Sol review of its own diff at merge time, and one of each fix;
-21 P1s were found and fixed before merging.
+Every change below had one GPT-6.1 Sol review of its own diff at merge time, and one of each fix;
+the P1s it found were fixed before merging.
 
 ### Safe at work
 
-- **Safe mode** (#59). `teyla config set safe.enabled=true`, `TEYLA_SAFE=1` or
+- **Safe mode.** `teyla config set safe.enabled=true`, `TEYLA_SAFE=1` or
   `teyla policy init --work`: no network unless the typed command says `--allow-network`, no
   self-update from the hook or the daily routine, `check.sh` only in `products.repos`, plugin
   changes printed as `claude plugin …` commands, no keychain query, `teyla run`, triggers and
   agent steps gated. A config that does not parse or cannot be read turns safe mode **on**, and
   is never rewritten. `templates/POLICY.work.md` lists approved providers only.
-- **Updates install a published release, by commit, verified** (#64). A draft release
+- **Updates install a published release, by commit, verified.** A draft release
   is not a release; every install forces a reinstall and checks the commit the installer
   recorded; a build that reports the wrong version or commit is rolled back to the commit that
   was running. `update.pin` (a version or a sha) and `update.channel=none`.
-- **Corrections leave the repo** (#63): `~/.teyla/corrections/<repo>-<hash>.jsonl`, 0600 in a
+- **Corrections leave the repo**: `~/.teyla/corrections/<repo>-<hash>.jsonl`, 0600 in a
   0700 `~/.teyla`, secrets scrubbed (long tokens, `KEY=value` assignments, `.netrc`-style passwords), written
   in full or not at all. An older in-repo `.teyla/` gets an
   `info/exclude` line on first touch.
-- **`teyla uninstall [--dry] [--keep-data]`** (#67) reverses every write Teyla makes —
+- **`teyla uninstall [--dry] [--keep-data]`** reverses every write Teyla makes —
   LaunchAgents, the policy import line, symlinks, Hermes sections, harness skills and hooks
   (Codex's included), the plugin, `~/.teyla` — touching only what carries Teyla's marker, label
   or symlink target. `prompts/onboard.md` lists every network call and every file with its undo.
 
 ### True in every harness
 
-- **Codex hooks and Hermes orientation** (#61). `teyla harness sync` wires Codex's SessionStart
+- **Codex hooks and Hermes orientation.** `teyla harness sync` wires Codex's SessionStart
   and UserPromptSubmit in `~/.codex/hooks.json`, keeping a user's handlers in a shared group;
   Hermes gets the orientation on its first turn. `codex exec` prompts are never corrections.
   `harness status` shows whether Codex and Hermes approved the hooks.
-- **`teyla harness verify [--live]`** (#66): can each harness do work now — version, auth shape
+- **`teyla harness verify [--live]`**: can each harness do work now — version, auth shape
   and dates, the newest quota or auth error still unresolved, interactive vs batch sessions;
   `--live` sends one line through each and checks the policy reached it.
-- **Numbers you can act on** (#68). Batch sessions are never human turns (Hermes `oneshot`
+- **Numbers you can act on.** Batch sessions are never human turns (Hermes `oneshot`
   included), retries are not corrections, one matcher for the hook and the report; A9 no
   longer tops out on "Try again"; A10 compares the dates governance files were written with
   the ack date.
-- **Headless spend** (#69): calls a day per harness and project with their cost; **A17** when
+- **Headless spend**: calls a day per harness and project with their cost; **A17** when
   one project drives more than 200 a day or doubles week over week, **A18** for quota, balance
   or auth errors. Under `--share` advice is computed from redacted metrics.
-- **Policy detectors** (#60): a POLICY.md marker switches on a check that files or transcripts
+- **Policy detectors**: a POLICY.md marker switches on a check that files or transcripts
   can prove broken — `no-actions` (workflows on push, pull_request or schedule, in the working
   tree and on `origin/HEAD`; doctor and **A16**) and `ask-permission` (turns ending on a
   permission question answered with a bare yes; **A15**).
-- **A digest that gets read** (#65): the session-start banner shows only what is new; the
+- **A digest that gets read**: the session-start banner shows only what is new; the
   weekly routine writes a five-line digest (`teyla digest`) with the top three actions and
   their commands; `teyla check <product> <check> ok|broken` confirms a manual check in place.
-- **Model generation** (#72): prices and the POLICY ladder for opus-5-5, sonnet-5-5,
+- **Model generation**: prices and the POLICY ladder for opus-5-5, sonnet-5-5,
   haiku-4-5, fable-5-1, gpt-6.1-sol, gpt-6-luna, grok-4.7 and grok-4.7-build-fast.
 
 ### Useful in the cloud
 
-- **`teyla cloud check`** (#70): per repo, what a cloud session would lack — instructions that
+- **`teyla cloud check`**: per repo, what a cloud session would lack — instructions that
   defer to a home-directory file (a symlink out of the repo blocks), `.claude/` ignored, no
-  shipping rules or hooks, a `merge-approved:` line that drifts from the owner's list, Mac-only
+  shipping rules or hooks, a `merge-approved:` line that drifts from the user's list, Mac-only
   gate steps with no skip, secrets with no manifest. `teyla cloud inbox` and **A19**: branches
   with `Claude-Session:` commits and no PR after 24 h, landed only when on the remote default.
-- **`teyla cloud prep`** (#71) writes what a repo needs for that: an AGENTS.md shipping section
+- **`teyla cloud prep`** writes what a repo needs for that: an AGENTS.md shipping section
   with the `merge-approved` line, SessionStart/Stop hooks gated on the remote environment (the
   Stop hook fails closed on unpushed work), rules and a setup doc that labels every secret name
   by where it may live. Every write stays inside the repo; public repos get no private data.
 
 ## 0.12.0 — 2026-09-29
 
-- **`teyla doctor`: 242 s → 8.4 s** (#56): doctor counts finished worktrees without the reflog
-  comparison (removal still runs it), the remote half is computed once per repository, and the
-  harness lines count only the last 7 days of sessions.
-- **Batch prompts are not human turns** (#55): `claude -p`, `codex exec` and `grok -p` sessions
+- **`teyla doctor` is much faster** (242 s → 8.4 s on a many-worktree machine): doctor counts
+  finished worktrees without the reflog comparison (removal still runs it), the remote half is
+  computed once per repository, and the harness lines count only the last 7 days of sessions.
+- **Batch prompts are not human turns**: `claude -p`, `codex exec` and `grok -p` sessions
   are counted but their prompts are not; `--days` reads only the window (`monitor --days 3`:
   21–29 s → about 2 s).
 - **`teyla grok-cost`** reports what Grok CLI sessions cost at list price. `--last --cwd <repo>`
   prints one line for the newest session under a path (cost, model calls, input with cached %,
   output, tool calls, context, effort, title) — what an orchestrator runs when a `grok -p` lane
   ends; `--session ID` does the same for one id. The default is the last 7 days by project,
-  `--by session` the top 20, `--json` for either. Ranked by dollars (`costUsdTicks`, 1e10 = $1),
-  never raw tokens: cached reads are most of them. Worktrees and `~/repos/<repo>` collapse to
-  `<repo>`, a `<repo>-grok-empty` temp directory to `<repo>`, other temp directories to `tmp`.
+  `--by session` the top 20, `--json` for either. Ranked by dollars (`costUsdTicks`, 1e10 ticks to
+  the dollar), never raw tokens: cached reads are most of them. Worktrees and `~/repos/<repo>`
+  collapse to `<repo>`, a `<repo>-grok-empty` temp directory to `<repo>`, other temp directories to
+  `tmp`.
 - **Reader.** `adapters/grok.session_costs` sums the usage of every `turn_completed` record in a
   session's `updates.jsonl`, streamed in bytes. It prunes by stat and directory name, opens
   `summary.json` only for sessions in the window, and never touches `chat_history.jsonl`: a week
-  of a 14,000-session store reads in about a second, `--last` in 0.06 s.
+  of a store with thousands of sessions reads in about a second, `--last` in well under a second.
 - **A13, A14** in `teyla monitor` / `teyla advise`: one project over half of the week's Grok
   cost (once the week is over $10), or a single Grok session over $10.
 
 ## 0.11.0 — 2026-09-25 — the disk agent work leaves behind
 
-Measured on the machine this was written on: 35 subagent worktrees under
-`<repo>/.claude/worktrees` held 20 GB, 33 of them clean and already pushed; 13 more under
-`~/.worktrees` held 9 GB; several iOS simulators were booted at once.
+What prompted it: dozens of subagent worktrees under `<repo>/.claude/worktrees` held tens of
+gigabytes, nearly all clean and already pushed; more under `~/.worktrees` held several more; and
+several iOS simulators were booted at once.
 
 - **`teyla storage`** reports disk free, every linked worktree with a verdict, git-ignored
   build output, dependencies, caches with the command that clears each, booted simulators
@@ -328,8 +331,8 @@ Measured on the machine this was written on: 35 subagent worktrees under
 
 ## 0.10.2 — 2026-09-15
 
-- **POLICY template §9 restored.** #39 re-synced the template from the trimmed live file
-  three minutes after #37 added §9 and dropped it; 0.10.1 shipped without it.
+- **POLICY template §9 restored.** A later re-sync of the template from the trimmed live file
+  dropped §9 minutes after it had been added; 0.10.1 shipped without it.
 - **`~/.teyla/routines/<product>.line` is written by the `teyla routines` command only**, not
   by the library call the tests use — the suite had left two fixture products there.
 
@@ -350,32 +353,31 @@ Both seen while 0.10.0 installed itself on the machine it was written on.
 
 ## 0.10.0 — 2026-09-15 — works when it is needed
 
-A review of three weeks of sessions (2026-08-24 → 09-14, 91 Claude Code sessions) asked one
-question: did Teyla run whenever it should have? Four findings, each with a fix here.
+A review of three weeks of Claude Code sessions asked one question: did Teyla run whenever it
+should have? Four findings, each with a fix here.
 
 - **The weekly never ran.** Installed Friday, due Monday 07:30; the Mac was off until
-  15:28, and launchd fires late only after *sleep*, never after a power-off — `launchctl
+  the afternoon, and launchd fires late only after *sleep*, never after a power-off — `launchctl
   print` showed `runs = 0` while `doctor` said "loaded". Each wrapper now stamps
   `~/.teyla/<job>.last` when it starts; **`teyla routine catch-up`** runs any job whose stamp
   is older than its last due minute; the daily wrapper and the plugin's session-start hook
   call it. `routine status` shows last started / last due; doctor says **MISSED** with the
   due time instead of OK.
-- **"Did it run?" cost a session.** Seven sessions in frank, iron-u and loco asked whether a
-  product ran and answered by reading code and git log; none ran `teyla routines`. Two of
-  nine products errored out of `teyla routines` anyway (a `script` routine without a label,
+- **"Did it run?" cost a session.** Several sessions in product repos asked whether a
+  product ran and answered by reading code and git log; none ran `teyla routines`. Some products
+  errored out of `teyla routines` anyway (a `script` routine without a label,
   a cadence of `5m`, a check whose status was a paragraph). Now: `teyla routines` writes one
   line per product to `~/.teyla/routines/<product>.line` and the session-start hook prints it
   when the cwd has a `teyla.toml`; POLICY **§9** says a status question is answered from the
   record before code is read; `script` routines need only a name; `every` accepts any
   `<n>m|h|d`; the status error names the allowed values.
-- **Every captured correction was noise.** 35 of 35 records in ops and 3 of 3 in iron-u
-  were `<task-notification>` blocks (a subagent finishing) that matched "again"/"don't";
-  `teyla corrections --cluster` opened with a Grok batch brief 2861 times. The capture hook
-  skips harness-injected prompts (same list as `is_noise_turn`, which gains
+- **Every captured correction was noise.** All the sampled records were
+  `<task-notification>` blocks (a subagent finishing) that matched "again"/"don't";
+  `teyla corrections --cluster` was dominated by a Grok batch brief repeated thousands of times.
+  The capture hook skips harness-injected prompts (same list as `is_noise_turn`, which gains
   `<command-message>`, `[Request interrupted`, and the continued-session summary); batch
-  sessions are never clustered; the headline says `grok (10199, of which 10150 batch calls)`.
-  (PR #36, and #38 from a second session the same evening for the same bug; `tests/test_hooks.py`
-  runs the hook through `sh` with the exact notification shape.)
+  sessions are never clustered; the headline says `grok (N, of which M batch calls)`.
+  `tests/test_hooks.py` runs the hook through `sh` with the exact notification shape.
 - **Only Claude had the loop.** Policy was wired into Codex, Grok and Hermes; skills, hooks
   and Cursor were not. **`teyla harness sync`** (run by `teyla update`) renders the plugin's
   skills plus `teyla-rule` and `teyla-correct` into `~/.cursor/skills`, `~/.codex/skills`,
@@ -392,8 +394,8 @@ question: did Teyla run whenever it should have? Four findings, each with a fix 
 
 ## 0.9.0 — 2026-09-11 — self-maintenance that survives a managed laptop
 
-Fixes from the second work-laptop feedback round (2026-09-11): a managed machine behind a
-TLS-inspecting proxy, Claude Code as a desktop app only, `uv` from Homebrew.
+Fixes from a second work-laptop feedback round: a managed machine behind a TLS-inspecting
+corporate proxy, Claude Code as a desktop app only, `uv` from Homebrew.
 
 - **`[env]` in `~/.teyla/config.toml`, and `teyla config show|set`.** The environment
   Teyla cannot inherit — `SSL_CERT_FILE`, a proxy — is applied by every `teyla` process at
@@ -432,7 +434,7 @@ TLS-inspecting proxy, Claude Code as a desktop app only, `uv` from Homebrew.
   `~/.agents/POLICY.md` or `~/.claude/CLAUDE.md` (`` `~/work/<repo>` ``) instead of the
   `~/repos` constant; `--code-root`/`--ops-root` still win.
 - **Connector display names.** `teyla connectors` and the C1–C4 advice lines say
-  `Airtable (41dc7c58)` instead of a truncated uuid, joined from the desktop app's own
+  `Airtable (<short id>)` instead of a truncated uuid, joined from the desktop app's own
   connector registry (`remoteMcpServersConfig` in its local-agent-mode-sessions files).
   Read-only; an unknown id is shown as before. `--json` carries `display` and `names`.
 - **Review fixes (codex, GPT-5.6 Sol, cross-provider per POLICY §2):** `teyla update --force`
@@ -446,7 +448,7 @@ TLS-inspecting proxy, Claude Code as a desktop app only, `uv` from Homebrew.
 
 ## 0.8.0 — 2026-09-11 — productization
 
-The distance between "works for me" and "works for four people" is not a feature. It is
+The distance between "works for me" and "works for a few other people" is not a feature. It is
 six pieces of plumbing — a shared key instead of accounts, no `user_id`, a backend on the
 builder's laptop, no distribution path, an unmetered model key, no onboarding doc — each
 locally correct for someone with no second user, each a wall the moment there is one.
@@ -472,7 +474,7 @@ locally correct for someone with no second user, each a wall the moment there is
   `docs/GETTING-STARTED.md` addressed to a person who is not you, and `deploy/droplet/`
   fragments. Other kinds are untouched.
 - **`docs/PRODUCTIZE.md`** — the method: why solo-built apps resist sharing, what to build
-  for N from day one, the platform cost table, how to productize an app that already
+  for N users from day one, the platform cost table, how to productize an app that already
   exists, and what changes at twenty users.
 
 
@@ -625,9 +627,9 @@ work" half.
   status/confirmed/age/verdict (ok / BROKEN / UNTESTED / RE-TEST), a summary
   line, and exit code 1 when anything needs attention (so a cron can alert).
 - `teyla routine install`: Teyla's own Monday 07:30 launchd weekly (monitor,
-  routines, products, filed under the ops run-artifact layout). `teyla
+  routines, products, filed under the run-artifact layout). `teyla
   routine status` shows whether it is loaded and its last log lines.
-- `teyla.toml` added to several private product repos from what was actually verified on this machine.
+- `teyla.toml` manifests written for several product repos from what was actually verified.
 
 ## 0.1.0 — 2026-09-09
 

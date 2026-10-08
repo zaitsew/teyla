@@ -1,12 +1,12 @@
 # Handover: the practices that travel to a second machine
 
-What moves from one person's setup to another (here: a personal Mac → a corporate laptop
-with Claude Code, Codex and Hermes, GitLab instead of GitHub). Each row says where the
+What moves from one person's setup to another (for example a personal Mac → a corporate laptop
+with Claude Code, Codex and Hermes, and a self-hosted forge such as GitLab instead of GitHub). Each row says where the
 practice came from, what `teyla` installs, and what has to be adapted by hand.
 
 | practice | origin | installed by | adapt at work |
 |---|---|---|---|
-| **Safe mode**: no network without `--allow-network`, no self-update, no repo code outside `products.repos`, no hand-edited plugin registry | the 2026-09-29 work-laptop audit | `teyla policy init --work` (or `teyla config set safe.enabled=true`) | on first; `teyla doctor` shows `safe: on`; update by hand with `teyla update --allow-network` |
+| **Safe mode**: no network without `--allow-network`, no self-update, no repo code outside `products.repos`, no hand-edited plugin registry | an audit of a managed work laptop | `teyla policy init --work` (or `teyla config set safe.enabled=true`) | on first; `teyla doctor` shows `safe: on`; update by hand with `teyla update --allow-network` |
 | **The model ladder**: the top model orchestrates, cheaper tiers do volume, say which model did what | POLICY §1 | `teyla policy init` → `~/.agents/POLICY.md` | delete providers you do not have; name the top tier your org licenses |
 | **Second opinion across providers** before designs and anything touching money, keys, people's data | POLICY §2 | POLICY.md | `policy init --work` writes the work variant: a fresh same-provider session, and code goes only to providers IT approved |
 | **Tool ladder**: connector → CLI → browser → computer use, say when you fell | POLICY §3 | POLICY.md | corporate connectors (messaging, Jira/Confluence, Drive) come first; computer use may be disallowed |
@@ -16,7 +16,7 @@ practice came from, what `teyla` installs, and what has to be adapted by hand.
 | **Merge rule**: an explicit allowlist or "open the MR and stop" | global CLAUDE.md | `teyla policy init --claude-md --merge-rule "…"` | at work: never merge; MR + stop |
 | One PR/MR per unit; merge don't squash; never force-push; never push a diverged main; check before destructive git; never move a worktree | global CLAUDE.md | `--claude-md` | squash may be mandated by the team — then say so in the file |
 | **Layout**: flat code root, one ops root, worktrees outside the tree, no harness names in paths, launch from the repo root | global CLAUDE.md, advice A7 | `--claude-md --code-root --ops-root` | `~/work/<repo>` and `~/work-ops` |
-| **Secrets**: never committed, never printed; a key seen in chat is rotated | global CLAUDE.md, a hard-coded-key incident | `--claude-md` | corporate vault |
+| **Secrets**: never committed, never printed; a key seen in chat is rotated | global CLAUDE.md | `--claude-md` | corporate vault |
 | **Reporting**: unverified claims say so; check what a subagent claims; corrections once | global CLAUDE.md | `--claude-md` | — |
 | **Skill / rule / fact split**; skills flat, routed by description; rules from corrections; facts beside the work | ops CLAUDE.md | `teyla policy init --ops-root-init` | — |
 | **`runs/` gitignored, `NOTES.md` committed** | ops CLAUDE.md | `--ops-root-init` | — |
@@ -24,15 +24,15 @@ practice came from, what `teyla` installs, and what has to be adapted by hand.
 | **Corrections → rules**: a correction said twice is a rule; capture hook; `/teyla:rule` | Teyla | plugin; `teyla rule` / `teyla correct` | `teyla rule` mirrors into AGENTS.md so Codex/Hermes/Grok/Cursor obey them |
 | **The same skills and hooks in every harness**: Cursor, Codex, Grok, Hermes | [docs/HARNESSES.md](HARNESSES.md) | `teyla harness sync` (run by `teyla update`) | a harness that is not installed is skipped; Hermes asks once per hook |
 | **Facts → wiki**: agent writes drafts, human confirms; stale after 90 days; inbox for the unfileable | Karpathy's LLM-wiki, Teyla | `teyla wiki init`, skill `wiki-pass` | the team's GitLab Wiki is a git repo of .md — same layout, MR as the review |
-| **Routines vs checks**: what must run without you vs what you confirm by hand, in `teyla.toml`; a weekly self-report | the "built, not used" finding | `teyla routines`, `teyla routine install` | routines under a corporate scheduler; the plugin's own `teyla.toml` |
-| **Session discipline**: one session per unit; split at 5 MB; status check-ins are scripts | advice A3, A4, A7; the retrospective | monitor | — |
+| **Routines vs checks**: what must run without you vs what you confirm by hand, in `teyla.toml`; a weekly self-report | the "built, not used" problem | `teyla routines`, `teyla routine install` | routines under a corporate scheduler; the plugin's own `teyla.toml` |
+| **Session discipline**: one session per unit; split at 5 MB; status check-ins are scripts | advice A3, A4, A7 | monitor | — |
 | **Model on every subagent**; `inherit` is the expensive default | advice A1 | monitor | — |
-| **Governance file is the human's**; A10 flags any session that writes it | the fabricated-quote incident | monitor | the allowlist becomes "the MR approvers" |
+| **Governance file is the human's**; A10 flags any session that writes it | a session once rewrote a governance file unasked | monitor | the allowlist becomes "the MR approvers" |
 | **Memory conventions**: one fact per file with frontmatter, an index of one-liners, never content in the index | Claude Code auto-memory practice | (Claude Code built-in) | — |
-| **Data boundary for feedback**: aggregates only, fingerprints not text, pseudonymous projects | reviews of 0.1.0 | `teyla monitor --share`, `teyla feedback` | the only two files that cross the boundary |
+| **Data boundary for feedback**: aggregates only, fingerprints not text, pseudonymous projects | early external reviews | `teyla monitor --share`, `teyla feedback` | the only two files that cross the boundary |
 
-What does **not** travel: the merge-approved list itself, the App Store release path, the
-personal product manifests, anything with a name in it.
+What does **not** travel: the merge-approved list itself, a store-release path, personal
+product manifests, anything with a name in it.
 
 ## Updating a second machine
 
@@ -40,12 +40,11 @@ On a machine where Teyla is installed, the update is a pinned, by-hand step in s
 `teyla config set update.pin=<version>`, then `teyla update --allow-network --wire` (safe mode
 refuses `teyla update` without `--allow-network`, even typed by hand, and neither the daily
 routine nor the session hook ever passes it). A version before 0.13.0 has no safe mode and no
-`uninstall`, so the one manual step is installing 0.14.0 by hand with `uv` or `pipx`, Python 3.12
-and the `work` extra.
+`uninstall`, so the one manual step is installing 0.14.0 or later by hand with `uv` or `pipx` and the `work` extra.
 
 [`docs/WORK.md`](WORK.md) is the short page for the person using it: what safe mode guarantees, the five steps to a new release (CLI and plugin pinned to the same tag), and the daily commands.
 
 [`prompts/work-account-update.md`](../prompts/work-account-update.md) is the paste-able version
-for the work MacBook: bootstrap, `teyla policy init --work`, `teyla uninstall --dry` as the
+for a managed work laptop: bootstrap, `teyla policy init --work`, `teyla uninstall --dry` as the
 list of what Teyla owns there, `teyla prompt onboard`, the pinned update, `teyla doctor`, and a
 `teyla feedback` file that is reviewed and carried out by hand, never sent by the agent.

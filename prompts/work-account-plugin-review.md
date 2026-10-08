@@ -67,7 +67,7 @@ Then: apply the changes that are file edits inside the plugin (after showing the
 
 You share `teyla-work-report.md` (only that file) with the maintainer; it is published under
 `docs/case-studies/` only with your consent and after a second redaction pass. Section E is the product feedback: it becomes issues. Sections A and C are the
-first evidence of what a *connector-heavy PM* setup looks like, which the personal repos do not have.
+first evidence of what a *connector-heavy PM* setup looks like, which a developer-only setup does not have.
 Nothing else from the work machine is needed. A work machine usually cannot push to GitHub; the transport is
 copy-paste of one markdown file.
 

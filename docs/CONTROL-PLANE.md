@@ -73,7 +73,7 @@ unchanged, and both may sit in one file.
 name         = "morning-digest"
 gate         = "A"                     # A | B | C   (default A)
 idempotency  = "date"                  # date | none | input-hash
-trigger      = { type = "clock", at = "07:00", tz = "Europe/Madrid", days = "mon-fri" }
+trigger      = { type = "clock", at = "07:00", tz = "Europe/London", days = "mon-fri" }
 step         = { kind = "command", run = "./bin/digest" }
 #            or { kind = "agent", harness = "claude", skill = "digest-draft",
 #                 prompt = "…", context = ["notes/**"] }
@@ -81,7 +81,7 @@ act          = { kind = "command", run = "./bin/send" }   # required at B and C
 critic       = { harness = "claude", prompt = "…" }       # required at C
 capabilities = ["fs.write:runs/**", "shell:./bin/digest", "shell:./bin/send",
                 "shell:git push", "net:*", "send:telegram",
-                "tool:mcp__loco__*", "tool:Agent", "tool:Skill:harvest"]
+                "tool:mcp__example__*", "tool:Agent", "tool:Skill:harvest"]
 caps         = { max_minutes = 20, max_output_tokens = 200000,
                  max_writes = 50, max_sends = 1, max_turns = 30 }
 ```

@@ -1,9 +1,9 @@
-# Teyla on the work MacBook — bring it to 0.17.0, in safe mode
+# Teyla on a managed work laptop — bring it to 0.17.0, in safe mode
 
 Paste this whole file into Claude Code on the machine to update. It was written for a
 managed corporate laptop: Claude Code as the desktop app (there may be no `claude` binary
-on PATH), no `gh`, `codex` or `grok`, a Zscaler TLS-inspecting proxy, pushes to GitLab rather
-than GitHub, Python 3.12 pinned, and Teyla installed once from https://github.com/zaitsew/teyla
+on PATH), no `gh`, `codex` or `grok`, a TLS-inspecting corporate proxy, pushes to a self-hosted forge
+such as GitLab rather than GitHub, Python 3.12 pinned, and Teyla installed once from https://github.com/zaitsew/teyla
 at some older version. Absent tools are a different scope, not a broken install — `teyla
 doctor` reports them as INFO, never as failures.
 
@@ -52,7 +52,7 @@ down the old version, the method, and which of `claude`, `gh`, `codex`, `grok` e
 
 The safe-mode and uninstall commands used below first shipped in 0.13.0, so an older install
 cannot run them and has to be moved by hand once, with the method you found. Pin Python 3.12
-(3.13's strict X.509 check rejects the Zscaler root CA) and install the `work` extra, which
+(3.13's strict X.509 check can reject a corporate proxy's root CA) and install the `work` extra, which
 makes Python trust the macOS keychain:
 
 ```
@@ -228,7 +228,7 @@ rule count, the doctor summary, or nothing (when all is clear). Report which.
 
 ## 9. The personal Mac's habits: context budget, land check, review
 
-Three practices from my personal Mac ship in the plugin. The two hooks are off by default;
+Three practices of a personal setup ship in the plugin. The two hooks are off by default;
 turn them on here:
 
 ```
