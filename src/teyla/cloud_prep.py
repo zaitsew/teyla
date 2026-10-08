@@ -157,13 +157,38 @@ if [ -n "$(git status --porcelain 2>/dev/null | head -1)" ]; then
   echo "Uncommitted changes on $branch: run {g}, commit, push, and open the PR before you stop." >&2
   exit 2
 fi
-# Unpushed = commits not on THIS branch's own remote ref: its upstream (@{{u}}) or origin/<branch>.
-# A commit that only some other remote branch contains is not pushed for this branch's PR. A
-# branch never pushed counts what it has past the default branch; with neither ref, what is on
-# no remote at all. Asked before any "nothing to do" shortcut: a missing base ref used to count
-# as 0 ahead and let committed, unpushed work stop (caught in review, P1). A question git cannot
-# answer fails closed.
 has_ref() {{ git rev-parse --verify --quiet "$1^{{commit}}" >/dev/null 2>&1; }}
+# With an open PR, "pushed" means HEAD is inside the PR's head commit (headRefOid), and nothing else
+# counts: an upstream that holds HEAD while origin/<branch> (the PR's head) is behind would
+# otherwise let the session stop with the PR missing its latest commits (caught in review, P1). A
+# question git cannot answer (the head is not here and cannot be fetched, merge-base errors) fails
+# closed. Without gh, or when gh finds no open PR, the ref-based count below decides.
+if [ "$branch" != "${{base#origin/}}" ] && command -v gh >/dev/null 2>&1 \
+   && pr_heads=$(gh pr list --head "$branch" --state open --json headRefOid --jq '.[].headRefOid' 2>/dev/null) \
+   && [ -n "$pr_heads" ]; then
+  in_pr=""; unknown=""; first=""
+  for oid in $pr_heads; do
+    [ -n "$first" ] || first=$oid
+    has_ref "$oid" || git fetch -q origin "$branch" >/dev/null 2>&1
+    if ! has_ref "$oid"; then unknown=$oid; continue; fi
+    git merge-base --is-ancestor HEAD "$oid" >/dev/null 2>&1
+    case $? in 0) in_pr=1 ;; 1) ;; *) unknown=$oid ;; esac
+  done
+  [ -n "$in_pr" ] && exit 0
+  if [ -n "$unknown" ]; then
+    echo "Could not compare $branch with the open PR's head ($unknown) here (git could not read it). Push (git push origin $branch) and check that the PR shows your last commit before you stop." >&2
+    exit 2
+  fi
+  behind=$(git rev-list --count HEAD --not "$first" 2>/dev/null) || behind="some"
+  echo "$behind commit(s) on $branch are not in the open PR's head ($first): git push origin $branch (git pull --rebase first if the PR branch moved), so the PR carries them, before you stop." >&2
+  exit 2
+fi
+# No open PR (or no gh): unpushed = commits not on THIS branch's own remote ref, its upstream
+# (@{{u}}) or origin/<branch>. A commit that only some other remote branch contains is not pushed
+# for this branch's PR. A branch never pushed counts what it has past the default branch; with
+# neither ref, what is on no remote at all. Asked before any "nothing to do" shortcut: a missing
+# base ref used to count as 0 ahead and let committed, unpushed work stop (caught in review, P1).
+# A question git cannot answer fails closed.
 up=$(git rev-parse --abbrev-ref --symbolic-full-name '@{{u}}' 2>/dev/null) || up=""
 own=""
 for r in "$up" "origin/$branch"; do
