@@ -49,26 +49,26 @@ def store(tmp_path, monkeypatch):
     root = tmp_path / "sessions"
     home = "/Users/me"
     monkeypatch.setenv("HOME", home)
-    _session(root, f"{home}/repos/frank", "aaaa1111-0000", 1, turns=(1.5, 2.5))
-    _session(root, f"{home}/.worktrees/frank/lane-a", "aaaa2222-0000", 2, turns=(3.0,))
-    _session(root, f"{home}/repos/loco", "bbbb1111-0000", 1, turns=(12.0,), title="big lane")
+    _session(root, f"{home}/repos/app-a", "aaaa1111-0000", 1, turns=(1.5, 2.5))
+    _session(root, f"{home}/.worktrees/app-a/lane-a", "aaaa2222-0000", 2, turns=(3.0,))
+    _session(root, f"{home}/repos/app-b", "bbbb1111-0000", 1, turns=(12.0,), title="big lane")
     _session(root, "/private/tmp/claude-501/x/scratchpad/grok-empty", "cccc1111-0000", 3, turns=(0.5,))
-    _session(root, f"{home}/repos/frank", "dddd1111-0000", 30, turns=(99.0,))          # outside the week
-    _session(root, f"{home}/repos/frank", "eeee1111-0000", 0.1, turns=())             # errored, no usage
+    _session(root, f"{home}/repos/app-a", "dddd1111-0000", 30, turns=(99.0,))          # outside the week
+    _session(root, f"{home}/repos/app-a", "eeee1111-0000", 0.1, turns=())             # errored, no usage
     return root
 
 
 def test_read_usage_sums_only_usage_bearing_turn_completed(store):
-    u = grok.read_usage(str(store / urllib.parse.quote("/Users/me/repos/frank", safe="") / "aaaa1111-0000"))
+    u = grok.read_usage(str(store / urllib.parse.quote("/Users/me/repos/app-a", safe="") / "aaaa1111-0000"))
     assert u["turns"] == 2 and u["calls"] == 4
     assert u["ticks"] == int(1.5e10) + int(2.5e10)
     assert u["input"] == 2000 and u["cached"] == 1200 and u["output"] == 100
 
 
 def test_last_under_cwd(store):
-    (c,) = grok.session_costs(root=str(store), cwd="/Users/me/repos/frank", last=True)
+    (c,) = grok.session_costs(root=str(store), cwd="/Users/me/repos/app-a", last=True)
     assert c.sid == "eeee1111-0000"  # newest by write time, billed or not
-    (c,) = grok.session_costs(root=str(store), cwd="/Users/me/repos/loco", last=True)
+    (c,) = grok.session_costs(root=str(store), cwd="/Users/me/repos/app-b", last=True)
     assert c.usd == pytest.approx(12.0) and c.tool_calls == 7 and c.context == 50_000
     assert c.effort == "high" and c.title == "big lane" and c.cached_pct == 60.0
 
@@ -81,11 +81,11 @@ def test_cwd_matches_path_or_below_only(store):
 
 def test_project_of_collapses_worktrees_repos_and_temp():
     p = lambda c: grokcost.project_of(c, home="/Users/me")
-    assert p("/Users/me/.worktrees/frank/lane-a") == "frank"
-    assert p("/Users/me/.worktrees/frank/lane-a/sub") == "frank"
-    assert p("/Users/me/repos/frank") == "frank"
-    assert p("/Users/me/repos/frank/.claude/worktrees/x") == "frank"
-    assert p("/private/var/folders/x/T/frank-grok-empty") == "frank"
+    assert p("/Users/me/.worktrees/app-a/lane-a") == "app-a"
+    assert p("/Users/me/.worktrees/app-a/lane-a/sub") == "app-a"
+    assert p("/Users/me/repos/app-a") == "app-a"
+    assert p("/Users/me/repos/app-a/.claude/worktrees/x") == "app-a"
+    assert p("/private/var/folders/x/T/app-a-grok-empty") == "app-a"
     assert p("/private/tmp/claude-501/x/scratchpad/grok-empty") == "tmp"
     assert p("/private/tmp/claude-501/scratch") == "tmp"
     assert p("/Users/me/ops/startup") == "ops"
@@ -96,26 +96,26 @@ def test_by_project_ranks_by_dollars_and_skips_unbilled(store):
     from teyla.adapters import since_epoch
     rows = grok.session_costs(root=str(store), since=since_epoch(7))
     t = grokcost.by_project(rows)
-    assert [r["project"] for r in t] == ["loco", "frank", "tmp"]
-    frank = t[1]
-    assert frank["usd"] == pytest.approx(7.0) and frank["sessions"] == 2  # the errored and the 30-day one are out
+    assert [r["project"] for r in t] == ["app-b", "app-a", "tmp"]
+    bot = t[1]
+    assert bot["usd"] == pytest.approx(7.0) and bot["sessions"] == 2  # the errored and the 30-day one are out
     assert sum(r["share"] for r in t) == pytest.approx(1.0)
     assert t[0]["share"] == pytest.approx(12 / 19.5)
 
 
 def test_cli_last_line_and_json(store, monkeypatch, capsys):
     monkeypatch.setattr(grok, "DEFAULT_ROOT", str(store))
-    assert main(["grok-cost", "--last", "--cwd", "/Users/me/repos/loco"]) == 0
+    assert main(["grok-cost", "--last", "--cwd", "/Users/me/repos/app-b"]) == 0
     out = capsys.readouterr().out.strip()
     assert out.startswith("$12.00 · 2 calls · in 1k (60% cached) · out 50 · 7 tools · ctx 50k · effort high · grok-4.7 · bbbb1111")
     assert out.endswith("big lane") and "\n" not in out
-    assert main(["grok-cost", "--last", "--cwd", "/Users/me/repos/loco", "--json"]) == 0
+    assert main(["grok-cost", "--last", "--cwd", "/Users/me/repos/app-b", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["usd"] == 12.0
 
 
 def test_cli_unbilled_last_says_so(store, monkeypatch, capsys):
     monkeypatch.setattr(grok, "DEFAULT_ROOT", str(store))
-    assert main(["grok-cost", "--last", "--cwd", "/Users/me/repos/frank"]) == 0
+    assert main(["grok-cost", "--last", "--cwd", "/Users/me/repos/app-a"]) == 0
     assert "no billed turn" in capsys.readouterr().out
 
 
@@ -124,7 +124,7 @@ def test_cli_week_by_project_and_by_session(store, monkeypatch, capsys):
     assert main(["grok-cost", "--days", "7"]) == 0
     out = capsys.readouterr().out
     rows = [l.split() for l in out.splitlines()[2:]]
-    assert [r[0] for r in rows] == ["loco", "frank", "tmp", "total"]
+    assert [r[0] for r in rows] == ["app-b", "app-a", "tmp", "total"]
     assert rows[0][2] == "$12.00" and rows[-1][2] == "$19.50"
     assert main(["grok-cost", "--by", "session", "--json"]) == 0
     top = json.loads(capsys.readouterr().out)
@@ -147,7 +147,7 @@ def test_missing_store_is_an_error_not_a_crash(tmp_path, monkeypatch, capsys):
 
 def test_advice_project_share_and_expensive_session(store):
     w = grokcost.week(root=str(store))
-    assert w["top_project"] == "loco" and w["top_project_share"] == pytest.approx(12 / 19.5)
+    assert w["top_project"] == "app-b" and w["top_project_share"] == pytest.approx(12 / 19.5)
     ids = {f["id"] for f in grokcost.advise(w)}
     assert ids == {"A13", "A14"}  # 62% of the week, and one $12 session
     calm = dict(w, top_project_share=0.4, top_session=dict(w["top_session"], usd=9.99))

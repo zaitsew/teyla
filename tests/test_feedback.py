@@ -11,7 +11,7 @@ from teyla.monitor import metrics
 from teyla.routines import open_issues
 
 
-def _session(sid, cwd="/Users/alice/repos/demo-project"):
+def _session(sid, cwd="/Users/me/repos/demo-project"):
     s = Session(harness="claude-code", project="demo-project", sid=sid, path=f"/tmp/{sid}.jsonl", size=1000)
     s.first = "2026-01-01T00:00:00Z"
     s.last = "2026-01-01T01:00:00Z"
@@ -76,7 +76,7 @@ def test_build_reports_redacted_project_alias_not_raw_name():
 
 # --- routines.open_issues ---------------------------------------------------------------
 
-def _report(product="my-app", repo="/Users/alice/repos/my-app", checks=None):
+def _report(product="my-app", repo="/Users/me/repos/my-app", checks=None):
     return {"product": product, "repo": repo, "routines": [], "checks": checks or []}
 
 

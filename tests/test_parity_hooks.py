@@ -207,7 +207,7 @@ def _claude_md(tmp_path, *slugs):
     p.parent.mkdir(parents=True, exist_ok=True)
     entries = "\n".join(f"    {s:28} # added on the owner's instruction" for s in slugs)
     p.write_text("# Shipping\n\nThe MERGE-APPROVED REPOS list below is the whole permission.\n"
-                 "approved/in-prose\n\n```\nMERGE-APPROVED REPOS\n" + entries + "\n```\n\nzaitsew/after-the-fence\n")
+                 "approved/in-prose\n\n```\nMERGE-APPROVED REPOS\n" + entries + "\n```\n\nacme/app\n")
 
 
 def _stop(tmp_path, repo, *args, sid="s1", **payload):
@@ -265,7 +265,7 @@ def test_land_check_stops_at_the_pr_off_the_list(tmp_path):
     _config(tmp_path, "[hooks]\nland_check = true\n")
     # on the page but not in the fenced list, a prefix of a listed repo, or a parent group
     _claude_md(tmp_path, "platform/tools/svc-api-v2", "platform/tools", "zaitsew/teyla", "other.host/platform/x")
-    for i, origin in enumerate(("git@github.com:approved/in-prose.git", "git@github.com:zaitsew/after-the-fence.git",
+    for i, origin in enumerate(("git@github.com:approved/in-prose.git", "git@github.com:acme/app.git",
                                 "https://gitlab.corp.example/platform/tools/svc-api.git",
                                 # a bare owner/repo approves GitHub only, not the same path on
                                 # another host (caught in review, P1); a host entry approves only

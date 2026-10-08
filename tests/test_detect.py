@@ -154,9 +154,9 @@ def test_scan_without_origin_and_clean_ok_row(tmp_path):
 
 def test_enrich_scans_only_when_declared(tmp_path, monkeypatch):
     monkeypatch.setattr(detect, "scan_workflows", lambda cfg=None: {"repos": 1, "findings": [
-        dict(repo="loco", path="/r/loco", file=".github/workflows/ci.yml", triggers=["push"], where="default branch + working tree")]})
+        dict(repo="app-b", path="/r/app-b", file=".github/workflows/ci.yml", triggers=["push"], where="default branch + working tree")]})
     m = detect.enrich({}, text="<!-- teyla:detect no-actions -->")
-    assert m["policy_detectors"] == ["no-actions"] and m["workflow_triggers"][0]["repo"] == "loco"
+    assert m["policy_detectors"] == ["no-actions"] and m["workflow_triggers"][0]["repo"] == "app-b"
     m2 = detect.enrich({}, text="")
     assert m2["policy_detectors"] == [] and "workflow_triggers" not in m2
 
@@ -238,11 +238,11 @@ def test_a15_fires_above_threshold_only_when_policy_declares_it():
 
 def test_a16_fires_on_workflow_triggers_when_declared():
     m = metrics([_s("a1", [])])
-    m["workflow_triggers"] = [dict(repo="loco", path="/r/loco", file=".github/workflows/ci.yml", triggers=["push", "pull_request"],
+    m["workflow_triggers"] = [dict(repo="app-b", path="/r/app-b", file=".github/workflows/ci.yml", triggers=["push", "pull_request"],
                                    where="default branch + working tree")]
     m["policy_detectors"] = ["no-actions"]
     a16 = [f for f in advise(m) if f["id"] == "A16"]
-    assert a16 and a16[0]["severity"] == "high" and "loco .github/workflows/ci.yml on: push, pull_request" in a16[0]["evidence"]
+    assert a16 and a16[0]["severity"] == "high" and "app-b .github/workflows/ci.yml on: push, pull_request" in a16[0]["evidence"]
     m["policy_detectors"] = []
     assert not [f for f in advise(m) if f["id"] == "A16"]
 

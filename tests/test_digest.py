@@ -48,9 +48,9 @@ def test_banner_shows_only_new_items_and_counts_known():
     items = "FIX|version\tversion FIX: 0.13 available\nWARN|repos:agents-md\trepos:agents-md WARN: 1 differ\n"
     assert digest.banner(items, None) == ("teyla: new — version FIX: 0.13 available; repos:agents-md WARN: 1 differ (teyla doctor)")
     assert digest.banner(items, "FIX|version\nWARN|repos:agents-md\n") == ""
-    more = items + "routine|frank|gate|NOT LOADED\tfrank routine gate NOT LOADED\n"
+    more = items + "routine|app-a|gate|NOT LOADED\tapp-a routine gate NOT LOADED\n"
     assert digest.banner(more, "FIX|version\nWARN|repos:agents-md\n") == \
-        "teyla: new — frank routine gate NOT LOADED; 2 known (teyla doctor)"
+        "teyla: new — app-a routine gate NOT LOADED; 2 known (teyla doctor)"
     five = "".join(f"W|{i}\titem {i}\n" for i in range(5))
     assert digest.banner(five, "") == "teyla: new — item 0; item 1; item 2 (+2 more) (teyla doctor)"
 
@@ -104,17 +104,17 @@ def test_reminders_reach_the_banner_on_the_due_day_then_weekly():
 def test_write_banner_items_merges_doctor_routines_and_reminders(_home):
     checks = [doctor._check("OK", "version", "fine"), doctor._check("WARN", "repos:agents-md", "1 differ"),
               doctor._check("FIX", "remind:Apple secret", "overdue", "x"), doctor._check("FIX", "plugin", "not installed", "y")]
-    routines.write_lines([{"product": "frank", "repo": "/r/frank",
+    routines.write_lines([{"product": "app-a", "repo": "/r/app-a",
                            "routines": [{"name": "gate", "verdict": "NOT LOADED"}, {"name": "daily", "verdict": "ok"}],
                            "checks": [{"name": "send one", "verdict": "BROKEN", "age_days": 3}]}])
     remind.save([{"what": "Apple secret", "due": dt.date.today().isoformat(), "how": ""}])
     p = digest.write_banner_items(checks)
     keys = [l.split("\t")[0] for l in p.read_text().splitlines()]
-    assert keys == ["WARN|repos:agents-md", "FIX|plugin", "routine|frank|gate|NOT LOADED", "check|frank|send one|BROKEN",
+    assert keys == ["WARN|repos:agents-md", "FIX|plugin", "routine|app-a|gate|NOT LOADED", "check|app-a|send one|BROKEN",
                     "remind|Apple secret|due"]
     # a product whose problems are gone loses its file, and with it its banner items
-    routines.write_lines([{"product": "frank", "repo": "/r/frank", "routines": [], "checks": []}])
-    assert not (routines.LINES_DIR / "frank.problems").exists()
+    routines.write_lines([{"product": "app-a", "repo": "/r/app-a", "routines": [], "checks": []}])
+    assert not (routines.LINES_DIR / "app-a.problems").exists()
 
 
 def test_doctor_write_state_writes_banner_items(_home):
@@ -125,30 +125,30 @@ def test_doctor_write_state_writes_banner_items(_home):
 # --- the product line names the one command -----------------------------------------------------
 
 def test_product_line_names_the_confirm_command_for_stale_checks():
-    rep = {"product": "frank", "repo": "/r/frank", "routines": [],
+    rep = {"product": "app-a", "repo": "/r/app-a", "routines": [],
            "checks": [{"name": "fresh", "verdict": "UNTESTED", "age_days": 3},
                       {"name": "log a photo", "verdict": "UNTESTED", "age_days": "-"},
                       {"name": "send one", "verdict": "BROKEN", "age_days": 19}]}
     line = routines.summary_line(rep)
-    assert 'broken >14d: send one (+1 more); after trying it: `teyla check frank "send one" ok` or, if it failed, `teyla check frank "send one" broken`' in line
+    assert 'broken >14d: send one (+1 more); after trying it: `teyla check app-a "send one" ok` or, if it failed, `teyla check app-a "send one" broken`' in line
     assert "ok|broken" not in line
     assert line.endswith("`teyla routines .` for the table")
     rep["checks"] = [{"name": "fresh", "verdict": "UNTESTED", "age_days": 3}, {"name": "ok one", "verdict": "ok", "age_days": 90}]
     assert "teyla check" not in routines.summary_line(rep)
-    assert routines.confirm_command("frank", "gate shows today's drafts") == 'teyla check frank "gate shows today\'s drafts" ok'
-    assert routines.confirm_command("frank", 'say "hi" $HOME', "broken") == "teyla check frank 'say \"hi\" $HOME' broken"
+    assert routines.confirm_command("app-a", "gate shows today's drafts") == 'teyla check app-a "gate shows today\'s drafts" ok'
+    assert routines.confirm_command("app-a", 'say "hi" $HOME', "broken") == "teyla check app-a 'say \"hi\" $HOME' broken"
 
 
 # --- teyla check ---------------------------------------------------------------------------------
 
-TOML = """# frank — the X drafting bot
+TOML = """# app-a — the X drafting bot
 [product]
-name = "frank"   # shown in every report
+name = "app-a"   # shown in every report
 
 [[routine]]
 name = "daily"
 kind = "launchd"
-label = "com.x.frank"
+label = "com.x.app-a"
 every = "1d"
 
 [[check]]
@@ -181,7 +181,7 @@ def test_set_check_edits_only_that_block(tmp_path):
     assert 'status = "ok"\nconfirmed = 2026-09-29\nnote = "works on 5G"\n\n# trailing comment kept\n' in new2
     parsed = routines.parse_manifest(p)
     assert [c["status"] for c in parsed["checks"]] == ["ok", "ok"]
-    assert new2.startswith("# frank — the X drafting bot\n[product]\nname = \"frank\"   # shown in every report\n")
+    assert new2.startswith("# app-a — the X drafting bot\n[product]\nname = \"app-a\"   # shown in every report\n")
 
 
 def test_set_check_unknown_name_and_file_without_newline(tmp_path):
@@ -195,26 +195,26 @@ def test_set_check_unknown_name_and_file_without_newline(tmp_path):
 
 def test_find_product_by_name_dir_path_and_cwd(tmp_path, monkeypatch):
     code = tmp_path / "repos"
-    (code / "frank-repo").mkdir(parents=True)
-    (code / "frank-repo" / "teyla.toml").write_text('[product]\nname = "frank"\n')
+    (code / "app-a-repo").mkdir(parents=True)
+    (code / "app-a-repo" / "teyla.toml").write_text('[product]\nname = "app-a"\n')
     monkeypatch.setattr(config, "load", lambda path=None: {**config.DEFAULTS, "code_root": str(code)})
-    m = code / "frank-repo" / "teyla.toml"
-    assert routines.find_product("frank", cwd=tmp_path) == m
-    assert routines.find_product("frank-repo", cwd=tmp_path) == m
-    assert routines.find_product(str(code / "frank-repo")) == m
+    m = code / "app-a-repo" / "teyla.toml"
+    assert routines.find_product("app-a", cwd=tmp_path) == m
+    assert routines.find_product("app-a-repo", cwd=tmp_path) == m
+    assert routines.find_product(str(code / "app-a-repo")) == m
     assert routines.find_product("nothing", cwd=tmp_path) is None
     (tmp_path / "here").mkdir()
-    (tmp_path / "here" / "teyla.toml").write_text('[product]\nname = "frank"\n')
-    assert routines.find_product("frank", cwd=tmp_path / "here") == tmp_path / "here" / "teyla.toml"
+    (tmp_path / "here" / "teyla.toml").write_text('[product]\nname = "app-a"\n')
+    assert routines.find_product("app-a", cwd=tmp_path / "here") == tmp_path / "here" / "teyla.toml"
 
 
 def test_teyla_check_cli_updates_file_line_and_banner(_home, tmp_path, capsys):
-    repo = tmp_path / "frank"
+    repo = tmp_path / "app-a"
     repo.mkdir()
     (repo / "teyla.toml").write_text(TOML)
     assert cli.main(["check", str(repo), 'send "one"', "ok"]) == 0
     assert "broken -> ok" in capsys.readouterr().out
-    assert "BROKEN" not in (routines.LINES_DIR / "frank.line").read_text()
+    assert "BROKEN" not in (routines.LINES_DIR / "app-a.line").read_text()
     assert "send" not in (_home / ".teyla" / "banner.items").read_text()
     assert cli.main(["check", str(repo), "missing", "ok"]) == 1
 
@@ -226,7 +226,7 @@ FINDINGS = [dict(id="A1", severity="high", title="Subagents inherit the parent m
             dict(id="A3", severity="medium", title="3 giant sessions", evidence="x", action="Split work; run `teyla sessions`.")]
 DOCTOR = [doctor._check("FIX", "plugin", "not installed", "teyla plugin install zaitsew/teyla   (or: claude plugin …)"),
           doctor._check("WARN", "repos:agents-md", "1 differ", "x")]
-REPORTS = [{"product": "frank", "repo": "/r/frank",
+REPORTS = [{"product": "app-a", "repo": "/r/app-a",
             "routines": [{"name": "gate", "verdict": "NOT LOADED"}],
             "checks": [{"name": "send one", "verdict": "BROKEN", "age_days": 19},
                        {"name": "new one", "verdict": "UNTESTED", "age_days": 2}]}]
@@ -237,11 +237,11 @@ def test_digest_top_three_across_sources_with_commands():
     assert lines[0] == "teyla weekly 2026-09-28: plugin: not installed → teyla plugin install zaitsew/teyla (+2 more: teyla digest)"
     assert lines[1:] == ["1. plugin: not installed → `teyla plugin install zaitsew/teyla`",
                          "2. A1 Subagents inherit the parent model → Pass model: sonnet (or haiku) on every Agent call that reads",
-                         "3. frank routine gate NOT LOADED → `teyla routines /r/frank`"]
+                         "3. app-a routine gate NOT LOADED → `teyla routines /r/app-a`"]
     cands = digest.candidates(FINDINGS, DOCTOR, REPORTS)
-    assert [c["id"] for c in cands] == ["doctor:plugin", "A1", "routine:frank:gate", "check:frank:send one", "A3"]
-    assert cands[3]["step"] == ('try it, then `teyla check frank "send one" ok` or, if it failed, '
-                                '`teyla check frank "send one" broken`')
+    assert [c["id"] for c in cands] == ["doctor:plugin", "A1", "routine:app-a:gate", "check:app-a:send one", "A3"]
+    assert cands[3]["step"] == ('try it, then `teyla check app-a "send one" ok` or, if it failed, '
+                                '`teyla check app-a "send one" broken`')
     assert cands[3]["cmd"] is False and "|" not in cands[3]["step"] and cands[4]["step"] == "teyla sessions"
 
 
@@ -302,10 +302,10 @@ def test_weekly_wrapper_writes_the_digest_and_an_old_one_is_stale(_home, monkeyp
 
 
 def test_unknown_routines_count_as_not_running_in_banner_and_digest():
-    rep = {"product": "loco", "repo": "/r/loco", "checks": [],
+    rep = {"product": "app-b", "repo": "/r/app-b", "checks": [],
            "routines": [{"name": "health", "verdict": "unknown"}, {"name": "sync", "verdict": "ok"}]}
-    assert routines.problem_items(rep) == [("routine|loco|health|unknown", "loco routine health unknown")]
-    assert [c["id"] for c in digest.candidates([], [], [rep])] == ["routine:loco:health"]
+    assert routines.problem_items(rep) == [("routine|app-b|health|unknown", "app-b routine health unknown")]
+    assert [c["id"] for c in digest.candidates([], [], [rep])] == ["routine:app-b:health"]
 
 
 def test_prose_stays_prose_and_commands_get_backticks():
@@ -352,11 +352,11 @@ def test_a10_digest_action_never_becomes_an_unconditional_ack():
 
 
 def test_repo_paths_with_spaces_are_quoted_in_both_branches():
-    repo = "/Users/ivan/Work Projects/demo"
+    repo = "/Users/me/Work Projects/demo"
     rep_err = {"product": "demo", "repo": repo, "error": "bad toml"}
     rep_run = {"product": "demo", "repo": repo, "routines": [{"name": "gate", "verdict": "NOT LOADED"}], "checks": []}
     steps = [c["step"] for c in digest.candidates([], [], [rep_err, rep_run])]
-    assert steps == ['teyla routines "/Users/ivan/Work Projects/demo"'] * 2
+    assert steps == ['teyla routines "/Users/me/Work Projects/demo"'] * 2
     assert digest.candidates([], [], [dict(rep_err, repo="/r/plain")])[0]["step"] == "teyla routines /r/plain"
 
 

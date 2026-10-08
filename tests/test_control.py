@@ -158,7 +158,7 @@ def test_parse_days_refuses_a_backwards_range():
 
 
 def test_parse_capability_splits_on_the_first_colon_only():
-    assert parse_capability("tool:mcp__loco__*") == ("tool", "mcp__loco__*")
+    assert parse_capability("tool:mcp__notes__*") == ("tool", "mcp__notes__*")
     assert parse_capability("shell:git push") == ("shell", "git push")
 
 
@@ -403,9 +403,9 @@ def fixture_grants(tmp_path):
     doc = {
         "version": 1, "run_id": "R1", "routine": "demo:digest", "repo": str(tmp_path / "repo"),
         "gate": "A",
-        "capabilities": ["fs.write:runs/**", "shell:git push", "tool:mcp__loco__*"],
+        "capabilities": ["fs.write:runs/**", "shell:git push", "tool:mcp__notes__*"],
         "grants": {"fs.write": ["runs/**"], "shell": ["git push"], "net": [],
-                   "send": [], "tool": ["mcp__loco__*"]},
+                   "send": [], "tool": ["mcp__notes__*"]},
         "caps": {"max_writes": 2, "max_sends": 0},
         "run_dir": str(run_dir), "state": str(run_dir / "grants-state.json"),
         "actions": str(run_dir / "actions.jsonl"),
@@ -478,7 +478,7 @@ def test_hook_matches_bash_verbs_against_shell_grants(fixture_grants):
 
 def test_hook_allows_read_only_builtins_and_granted_mcp_tools(fixture_grants):
     for tool, ti in (("Read", {"file_path": "/tmp/x"}), ("Grep", {"pattern": "x"}),
-                     ("mcp__loco__loco_get_trip", {})):
+                     ("mcp__notes__get_note", {})):
         r = hook(payload(tool, ti), home=fixture_grants["home"], grants_path=fixture_grants["path"])
         assert r.returncode == 0, f"{tool}: {r.stderr}"
 

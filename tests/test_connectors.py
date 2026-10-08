@@ -325,7 +325,7 @@ def test_connector_names_read_from_desktop_registry_and_label_rows(tmp_path):
     names = connector_names([d, tmp_path / "absent"])
     assert names == {"aaaaaaaa-0000-4000-8000-000000000001": "Airtable", "bbbbbbbb-0000-4000-8000-000000000002": "Google Drive"}
     assert label("aaaaaaaa-0000-4000-8000-000000000001", names) == "Airtable (aaaaaaaa)"
-    assert label("loco", names) == "loco", "a stdio server already has a readable name"
+    assert label("app-b", names) == "app-b", "a stdio server already has a readable name"
     calls = [dict(server="bbbbbbbb-0000-4000-8000-000000000002", tool="search_files", turn_index=0, result="ok") for _ in range(30)]
     m = metrics([_session("s1", calls)], names=names)
     c = m["connectors"]["bbbbbbbb-0000-4000-8000-000000000002"]

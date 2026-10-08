@@ -7,9 +7,9 @@
 # tax nobody agreed to, so the off path is sh + one awk over ~/.teyla/config.toml, and no
 # config file at all is one `test`. Python starts only when `[hooks] context_budget = true`.
 #
-# Off by default: on the personal Mac ~/ops/bin/context-budget-hook is wired in
-# ~/.claude/settings.json already, and two copies would ask for every handoff twice. The work
-# MacBook has no ~/ops; `teyla config set hooks.context_budget=true` turns this copy on.
+# Off by default: a machine that already wires its own context-budget hook in
+# ~/.claude/settings.json would ask for every handoff twice.
+# `teyla config set hooks.context_budget=true` turns this copy on.
 #
 # Interpreter, in the same order as capture-correction.sh and for the same reasons:
 #   1. $TEYLA_PYTHON (tests; an unusual install).

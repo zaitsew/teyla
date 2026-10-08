@@ -141,7 +141,7 @@ def _grok_log(home, events):
                                  "msg": msg, "ctx": ctx}) + "\n")
 
 
-def _fake_sessions(n_batch, project="/private/tmp/frank-grok-empty"):  # Frank starts its grok children here
+def _fake_sessions(n_batch, project="/private/tmp/app-a-grok-empty"):  # a bot starts its grok children here
     last = NOW.isoformat()
     return [types.SimpleNamespace(batch=True, cwd=project, project=project, last=last, first=last) for _ in range(n_batch)] + \
         [types.SimpleNamespace(batch=False, cwd="/Users/me/ops", project="/Users/me/ops", last=last, first=last)]
@@ -156,7 +156,7 @@ def test_grok_402_after_the_last_success_is_a_fix_naming_the_batch_project(home,
     (home / ".grok" / "auth.json").write_text(json.dumps({"x::1": {"key": SECRET, "refresh_token": SECRET, "auth_mode": "oidc"}}))
     row = health.offline("grok", sessions=_fake_sessions(250))
     assert row["level"] == "FIX" and "quota ×2" in row["detail"] and "7d: 1 interactive, 250 batch" in row["detail"]
-    assert row["fix"].startswith("Grok Build balance exhausted") and "`frank` (250 `grok -p` calls in 7 days)" in row["fix"]
+    assert row["fix"].startswith("Grok Build balance exhausted") and "`app-a` (250 `grok -p` calls in 7 days)" in row["fix"]
     # a success after the error: history, not a fix
     _grok_log(home, [(NOW - dt.timedelta(hours=2), "shell.turn.inference_failed", fail),
                      (NOW - dt.timedelta(hours=1), "shell.turn.inference_done", {})])
