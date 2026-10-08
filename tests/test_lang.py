@@ -432,3 +432,134 @@ def test_digest_write_includes_the_line(env, capsys, monkeypatch):
     run(["lang", "--quiet"], capsys)
     lines = digest.write(findings=[], doctor_checks=[], reports=[], notify_now=False)
     assert any("non-English text: 1 file(s) in 1 repo(s)" in line for line in lines)
+
+
+# --- quoted labels in English prose ------------------------------------------------------------
+
+LQ, RQ = "«", "»"
+LDQ, RDQ, LOW = "“", "”", "„"
+
+
+def _hits(env, files):
+    repo = make_repo(env.code, "app", files)
+    return {(f["path"], h["line"]): h["kind"] for f in lang.scan_repo(repo)["files"] for h in f["hits"]}
+
+
+def test_quoted_non_latin_text_in_comments_and_docs_is_not_a_finding(env):
+    quoted = [f"{LQ}{RU}{RQ}", f"{LDQ}{RU}{RDQ}", f"{LOW}{RU}{LDQ}", f'"{RU}"', f"'{RU}'", f"`{RU}`"]
+    comments = "".join(f"// the {q} sheet closes\n" for q in quoted)
+    docs = "".join(f"The {q} button.\n" for q in quoted)
+    assert _hits(env, {"a.swift": comments, "docs/guide.md": docs, "b.py": f'x = 1  # tap {LQ}{RU}{RQ}\n'}) == {}
+
+
+def test_a_non_latin_run_in_english_prose_is_not_a_finding_but_a_mostly_non_latin_line_is(env):
+    hits = _hits(env, {
+        "a.ts": f"// this sheet closes after the {RU} label is tapped\n"       # 8 Latin words, 1 non-Latin
+                f"// {RU} {RU} make build\n"                                   # 3 Latin words, 4 non-Latin
+                f"// {RU}\n"
+                f"// don't touch it: {RU} {RU} {RU} ok\n",                     # apostrophe is not a quote
+        "docs/n.md": f"Open the {RU} screen from the menu bar.\n{RU} {RU} the menu\n",
+    })
+    assert hits == {("a.ts", 2): "comment", ("a.ts", 3): "comment", ("a.ts", 4): "comment", ("docs/n.md", 2): "doc"}
+
+
+def test_strings_and_fixtures_are_classified_as_before(env):
+    hits = _hits(env, {
+        "a.py": f'label = "{RU}"  # the {RU} label of the sheet\n',
+        "tests/test_a.py": f'EXPECTED = "{RU}"\n',
+        "b.ts": f'const s = "{RU}"; // see the "{RU}" sheet\n',
+    })
+    assert hits == {("a.py", 1): "string", ("tests/test_a.py", 1): "fixture", ("b.ts", 1): "string"}
+
+
+def test_only_the_comment_part_of_a_line_decides(env):
+    # English code around the comment must not turn a Russian comment into prose
+    hits = _hits(env, {"a.py": f"def open_the_sheet(a, b, c):  # {RU} {RU}\n    pass\n"})
+    assert hits == {("a.py", 1): "comment"}
+
+
+def test_help_says_quoted_labels_are_not_counted(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["lang", "--help"])
+    out = capsys.readouterr().out
+    assert "Quoted labels in English prose are not counted" in out and "never fetches" in out
+
+
+# --- stale clones ------------------------------------------------------------------------------
+
+def _clone_behind(env, name="app", commit_date=None, fetch=True):
+    """An origin, a clone of it, and `commits_ahead` more commits on origin; returns (clone, origin)."""
+    origin = env.code.parent / "origins" / f"{name}.git"
+    origin.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origin)], check=True)
+    author = env.code.parent / "author"
+    subprocess.run(["git", "clone", "-q", str(origin), str(author)], check=True, capture_output=True)
+    envv = dict(__import__("os").environ)
+    if commit_date:
+        envv.update(GIT_AUTHOR_DATE=commit_date, GIT_COMMITTER_DATE=commit_date)
+
+    def commit(msg, date=True):
+        subprocess.run(["git", "-C", str(author), "-c", "user.name=T", "-c", "user.email=t@example.com",
+                        "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", msg],
+                       check=True, env=envv if date else dict(__import__("os").environ))
+    commit("one")
+    git(author, "push", "-q", "origin", "main")
+    clone = env.code / name
+    subprocess.run(["git", "clone", "-q", str(origin), str(clone)], check=True, capture_output=True)
+    commit("two", date=False)
+    commit("three", date=False)
+    git(author, "push", "-q", "origin", "main")
+    if fetch:
+        git(clone, "fetch", "-q")
+    return clone, origin
+
+
+def test_a_clone_behind_its_upstream_is_flagged_from_the_refs_it_has(env, capsys):
+    clone, _ = _clone_behind(env)
+    b = lang.behind_upstream(clone)
+    assert b["upstream"] == "origin/main" and b["commits"] == 2 and b["old"] is False
+    code, out, _ = run(["lang", "app"], capsys)
+    assert code == 0
+    assert "app: clone is 2 commits behind origin/main — results are for the local tree; git pull first" in out
+    code, out, _ = run(["lang", "app", "--quiet"], capsys)
+    assert out.splitlines() == ["app: clone is 2 commits behind origin/main — results are for the local tree; git pull first"]
+    rep = json.loads(run(["lang", "app", "--json"], capsys)[1])
+    assert rep["stale"] == ["app"] and rep["repos"][0]["behind"]["commits"] == 2
+
+
+def test_an_old_last_commit_on_a_behind_clone_says_so(env, capsys):
+    clone, _ = _clone_behind(env, commit_date="2020-01-01T00:00:00Z")
+    b = lang.behind_upstream(clone)
+    assert b["old"] is True and b["last_commit_days"] > 30
+    assert "last local commit" in run(["lang", "app", "--quiet"], capsys)[1]
+
+
+def test_no_fetch_no_warning_and_a_current_clone_is_quiet(env, capsys, monkeypatch):
+    clone, origin = _clone_behind(env, fetch=False)
+    assert lang.behind_upstream(clone) is None           # origin is ahead, but the refs do not know it
+    assert run(["lang", "app", "--quiet"], capsys) == (0, "", "")
+    assert git_out(clone, "rev-parse", "origin/main") != git_out(origin, "rev-parse", "main")  # nothing fetched
+    git(clone, "pull", "-q")
+    assert lang.behind_upstream(clone) is None
+    assert json.loads(run(["lang", "app", "--json"], capsys)[1])["stale"] == []
+
+
+def test_the_check_runs_no_network_git_commands(env, monkeypatch):
+    clone, _ = _clone_behind(env)
+    seen = []
+    real = lang._git
+    monkeypatch.setattr(lang, "_git", lambda repo, *a, **k: seen.append(a[0]) or real(repo, *a, **k))
+    lang.behind_upstream(clone)
+    assert seen and not {"fetch", "pull", "remote", "ls-remote", "push"} & set(seen)
+
+
+def test_a_branch_without_an_upstream_is_compared_with_origin_default_only_on_the_default_branch(env):
+    clone, _ = _clone_behind(env)
+    git(clone, "branch", "--unset-upstream")
+    assert lang.behind_upstream(clone)["commits"] == 2    # on main: origin/main is the comparison
+    git(clone, "checkout", "-q", "-b", "feature")
+    assert lang.behind_upstream(clone) is None            # a feature branch is not a stale clone
+
+
+def git_out(repo, *args):
+    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()

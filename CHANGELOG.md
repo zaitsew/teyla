@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **`teyla lang` ignores quoted labels in English prose and flags a stale clone.** In a comment or doc line,
+  non-Latin text inside quotes, or a non-Latin word on a line that is otherwise English prose (3+ Latin words),
+  is no longer a finding; mostly non-Latin lines, strings and fixtures count as before. A repo whose HEAD is behind
+  its upstream (refs as they are, never a fetch) gets one warning line, plus a `behind` field and a `stale` list
+  in `--json`.
+
 ## 0.19.3 — 2026-10-08 — localization exempt, Stop hook reads the PR head, quieter models watch
 
 - **`teyla lang` no longer reports Android and string-catalog localization.** Android resource
