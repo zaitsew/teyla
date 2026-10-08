@@ -3,14 +3,17 @@ working tree what a cloud session needs to finish, as plain files (a cloud VM in
 plugins, not even ones the repo's settings declare):
 
     AGENTS.md                  a Shipping section between <!-- teyla:cloud:start/end -->: the
-                               repo-safe part of the owner's policy, `merge-approved: yes|no`
-                               from the owner's list, and the cloud definition of done
+                               repo-safe part of the owner's policy and `merge-approved: yes|no`
+                               from the owner's list. Declarative only: AGENTS.md is read by every
+                               model run in the repo, headless one-shot calls included, so no
+                               step that ends a session lives there
     CLAUDE.md                  `@AGENTS.md` at the top, inside markers, when CLAUDE.md is its
                                own file (a CLAUDE.md ⇄ AGENTS.md symlink needs nothing)
     .claude/settings.json      SessionStart + Stop hooks, merged into what is there
     .claude/hooks/teyla-cloud-start.sh   orientation, printed only when CLAUDE_CODE_REMOTE=true
     .claude/hooks/teyla-cloud-stop.sh    exit 2 while work is unpushed or has no PR (cloud only)
-    .claude/rules/cloud.md     the rules that only apply in a cloud VM
+    .claude/rules/cloud.md     the rules that only apply in a cloud VM, with the cloud definition
+                               of done (push, PR, `needs-mac`, merge)
     docs/cloud-setup.md        the setup script to paste into claude.ai, and the secret NAMES
                                from .env.example with where each goes
     .gitignore                 only with --fix-gitignore: `.claude/` wholesale → three lines
@@ -33,6 +36,7 @@ import os
 import pathlib
 import re
 import shlex
+import subprocess
 
 from . import cloud
 
@@ -64,6 +68,21 @@ def owner_policy_text() -> str:
     return "\n".join(cloud._read(p) for p in (home / ".claude" / "CLAUDE.md", home / ".agents" / "POLICY.md"))
 
 
+def project_name(repo: pathlib.Path) -> str:
+    """The project's name: the last path segment of the origin remote, without `.git`; the
+    directory name when there is no origin. A git worktree lives in a directory named for its
+    branch, so `repo.name` there is not the project."""
+    repo = pathlib.Path(repo)
+    try:
+        r = cloud._git(repo, "remote", "get-url", "origin", timeout=5)
+        url = r.stdout.strip() if r.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        url = ""
+    name = re.split(r"[/:]", url.rstrip("/"))[-1] if url else ""
+    name = name[:-4] if name.endswith(".git") else name
+    return name or repo.name
+
+
 def _gate(repo: pathlib.Path) -> tuple[str | None, list[str]]:
     g = cloud.gate_script(repo)
     if g is None:
@@ -74,8 +93,15 @@ def _gate(repo: pathlib.Path) -> tuple[str | None, list[str]]:
 # --- the generated content ---------------------------------------------------------------
 
 def shipping_section(merge: str, gate: str | None, no_actions: bool) -> str:
+    """Passive policy only. This text is loaded by every model run in the repo directory,
+    including one-shot calls a product makes itself (`grok -p`, `claude -p`); an imperative,
+    session-ending checklist here was started by such a probe. The cloud "done" steps live in
+    the cloud-only rules file (rules_section) and the SessionStart hook."""
     g = f"`{gate}`" if gate else "the repo's tests"
-    L = [START, "## Shipping", "", f"merge-approved: {merge}", "",
+    L = [START, "## Shipping", "",
+         "Repository policy for whoever changes this repo. It describes how changes land; it is not a task. "
+         "A one-shot prompt (`claude -p`, `grok -p`, an API call) answers only its prompt.", "",
+         f"merge-approved: {merge}", "",
          "- One PR per logical unit: what a reviewer reads in one sitting. Two unrelated fixes are two PRs.",
          "- Merge, don't squash (`gh pr merge --merge`): every commit stays in history.",
          "- Never force-push: not to the default branch, not to a shared branch.",
@@ -88,17 +114,7 @@ def shipping_section(merge: str, gate: str | None, no_actions: bool) -> str:
           "- Ask about product decisions with a proposed default; never ask for permission to proceed.",
           ("- This repo is merge-approved: a PR whose whole gate ran green may be merged without asking."
            if merge == "yes" else "- This repo is not merge-approved: open the PR and stop; the owner merges."),
-          "", "### Done, in a cloud session", "",
-          "A cloud session (`CLAUDE_CODE_REMOTE=true`) can push only to its own branch and has no Mac. It is done when:", "",
-          f"1. {g} ran here and the PR body carries its output: the result, and every line saying what was skipped.",
-          "2. The branch is pushed and a PR is open (`gh pr create --fill`, then a body: what changed, why, the gate output, what is unverified).",
-          "3. A step that needs a Mac (Xcode, simulator, TestFlight, launchd, keychain) and was skipped puts the label `needs-mac` on the PR "
-          "(`gh pr edit --add-label needs-mac`). That PR is not merged from the cloud: a local session builds, reviews and merges it.",
-          "4. Second opinion: codex and grok are not installed here. Review the diff in a fresh pass and call it a \"same-provider review\" in the PR body.",
-          ]
-    if merge == "yes":
-        L.append("5. Nothing skipped and the gate green: merge it (`gh pr merge --merge`). If merging is refused from here, the open PR is the done state.")
-    L += [END]
+          END]
     return "\n".join(L) + "\n"
 
 
@@ -118,7 +134,7 @@ Cloud session on branch $branch. This VM has the repository only: no Mac, and no
 {gate_line}
 Skipped here without a Mac: {skips}
 merge-approved: {merge} (AGENTS.md, section Shipping)
-Before you stop: push this branch and open the PR (gh pr create --fill); label it needs-mac if a Mac-only step was skipped. The Stop hook checks for the PR.
+Before you stop: push this branch and open the PR (gh pr create --fill); label it needs-mac if a Mac-only step was skipped. The Stop hook checks for the PR. The full list: .claude/rules/cloud.md
 EOF
 """
 
@@ -214,10 +230,12 @@ exit 2
 """
 
 
-def rules_section() -> str:
-    return "\n".join([
+def rules_section(gate: str | None = None, merge: str = "no") -> str:
+    g = f"`{gate}`" if gate else "the repo's tests"
+    L = [
         START, "# In a cloud session", "",
-        "These apply when `CLAUDE_CODE_REMOTE=true` (Claude Code on the web, `claude --cloud`). A local session can ignore them.", "",
+        "These apply only when `CLAUDE_CODE_REMOTE=true` (Claude Code on the web, `claude --cloud`). A local session, and a one-shot "
+        "prompt (`claude -p`, `grok -p`, an API call) that is not a cloud session, can ignore them.", "",
         "- You can push only to this session's branch. Never try to push to the default branch: the PR is how work lands.",
         "- There is no Mac here. Never claim an Xcode build, a simulator run, a TestFlight upload, a launchd routine or a keychain step "
         "worked: say it was skipped and put the label `needs-mac` on the PR.",
@@ -226,7 +244,18 @@ def rules_section() -> str:
         "- Secrets exist here only as docs/cloud-setup.md says. Never ask for a key in chat, never write one into a file, never commit one.",
         "- codex and grok are not installed: a review here is a \"same-provider review\", and the PR says so.",
         "- An idle session expires and unpushed work is lost: commit and push as you go, and open the PR before you stop.",
-        END]) + "\n"
+        "", "## Done, in a cloud session", "",
+        "A cloud session is done when:", "",
+        f"1. {g} ran here and the PR body carries its output: the result, and every line saying what was skipped.",
+        "2. The branch is pushed and a PR is open (`gh pr create --fill`, then a body: what changed, why, the gate output, what is unverified).",
+        "3. A step that needs a Mac (Xcode, simulator, TestFlight, launchd, keychain) and was skipped puts the label `needs-mac` on the PR "
+        "(`gh pr edit --add-label needs-mac`). That PR is not merged from the cloud: a local session builds, reviews and merges it.",
+        "4. Second opinion: codex and grok are not installed here. Review the diff in a fresh pass and call it a \"same-provider review\" in the PR body.",
+    ]
+    if merge == "yes":
+        L.append("5. Nothing skipped and the gate green: merge it (`gh pr merge --merge`). If merging is refused from here, the open PR is the done state.")
+    L.append(END)
+    return "\n".join(L) + "\n"
 
 
 # Where each kind of secret goes. HTTP APIs: the claude.ai environment's "API credentials" on
@@ -554,7 +583,7 @@ def plan(repo, owners: set[str] | None = ..., policy_text: str | None = None, fi
     if a_real and c_real and a_real == c_real:
         put(a_real, replace_section(cloud._read(a_real), section))  # one file, two names: no import needed
     else:
-        put(a_real or a, replace_section(cloud._read(a_real) if a_real else f"# {repo.name}\n", section))
+        put(a_real or a, replace_section(cloud._read(a_real) if a_real else f"# {project_name(repo)}\n", section))
         put(c_real or c, ensure_import(cloud._read(c_real) if c_real else ""))
 
     # .claude/
@@ -567,7 +596,7 @@ def plan(repo, owners: set[str] | None = ..., policy_text: str | None = None, fi
             continue
         put(p, body, executable=True)
     rules = repo / ".claude" / "rules" / "cloud.md"
-    generated["rules"] = rules_section()
+    generated["rules"] = rules_section(gate, merge)
     put(rules, replace_section(cloud._read(rules) if rules.exists() else "", generated["rules"]))
 
     # docs/cloud-setup.md
@@ -635,7 +664,8 @@ def prep(repo, dry=False, allow_public=False, fix_gitignore=False, owners=..., p
         p = plan(repo, owners=owners, policy_text=policy_text, fix_gitignore=fix_gitignore)
     except Refused as e:
         return 1, [f"refused: {e}"]
-    head = f"{repo.name}: merge-approved: {p['merge']}; {len(p['changes'])} file(s) to change"
+    name = project_name(repo)
+    head = f"{name}: merge-approved: {p['merge']}; {len(p['changes'])} file(s) to change"
     out = [head] + [f"note: {n}" for n in p["notes"]]
     if not p["changes"]:
         return 0, out + ["up to date: nothing to write"]
@@ -644,7 +674,7 @@ def prep(repo, dry=False, allow_public=False, fix_gitignore=False, owners=..., p
     if vis is ...:
         vis = cloud.visibility(p["slug"])
     if vis not in ("private", "internal") and not allow_public:
-        return 1, out + [f"refused: {repo.name} is {'public' if vis == 'public' else 'of unknown visibility (no gh, safe mode, or no GitHub origin), so treated as public'}. "
+        return 1, out + [f"refused: {name} is {'public' if vis == 'public' else 'of unknown visibility (no gh, safe mode, or no GitHub origin), so treated as public'}. "
                          "These files carry the shipping policy and the merge-approved flag: re-run with --allow-public "
                          "to write them anyway, or --dry to read them first"]
     try:

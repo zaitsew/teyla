@@ -54,6 +54,11 @@ SHIPPING_RULES = (
     ("merge, don't squash", re.compile(r"squash", re.I)),
     ("never force-push", re.compile(r"force[- ]?push", re.I)),
 )
+# The cloud "done" steps once lived in AGENTS.md, which every model run in the repo reads,
+# headless one-shot calls included (one started the routine from a `grok -p` probe). Prep now
+# writes them to the cloud-only rules file; a heading like this in any other instruction file
+# is the old layout.
+_OLD_DONE_HEADING = re.compile(r"^#{2,4}\s*Done, in a cloud session\s*$", re.I | re.M)
 DONE_STATE = re.compile(r"needs-mac|definition of done|done state|done-state|open the PR before|" + CLOUD_MARK, re.I)
 
 # check.sh steps that need a Mac. The Linux cloud image has none of these (Ubuntu 24.04 with
@@ -491,11 +496,17 @@ def check_repo(repo, owners: set[str] | None = ..., net: bool = True) -> dict:
         items.append(_item(BLOCK, "shipping", "no cloud definition of done (branch pushed, PR open with the gate's output, "
                            f"`{DONE_STATE_LABEL}` label when a Mac step was skipped)"
                            + (f"; also missing: {', '.join(missing)}" if missing else ""),
-                           f"teyla cloud prep {repo.name}  (the Shipping section in AGENTS.md)"))
+                           f"teyla cloud prep {repo.name}  (a Shipping policy in AGENTS.md, the done steps in .claude/rules/cloud.md)"))
     elif missing:
         items.append(_item(WARN, "shipping", f"missing in the repo: {', '.join(missing)}", f"teyla cloud prep {repo.name}"))
     else:
         items.append(_item(OK, "shipping", "PR per unit, merge-not-squash, no force-push and a done state are in the repo"))
+    old_done = [f"{n}:{ln[0]}" for n, t in files if not n.startswith(".claude/rules/")
+                for ln in [_line_numbers(t, _OLD_DONE_HEADING)] if ln]
+    if old_done and items[-1]["level"] in (OK, WARN):
+        items[-1] = _item(WARN, "shipping", f"{', '.join(old_done)} still carries the old imperative cloud done steps, which every model "
+                          "run in the repo reads (headless one-shot calls included)",
+                          f"teyla cloud prep {repo.name}  (replaces the section in place; the steps move to .claude/rules/cloud.md)")
 
     # 5. hooks: orientation at start, landing check at stop
     events, err = settings_hooks(repo)
