@@ -395,6 +395,13 @@ _QUOTED = re.compile(
 )
 _LATIN_WORD = re.compile(r"[A-Za-z]{2,}")
 _NON_ASCII_WORD = re.compile(r"[^\x00-\x7f\W]+")
+# Scripts written without spaces: a "word" there is a whole clause, so each character counts as one
+# (caught in review: a long CJK paragraph after "Please translate this:" was one word and forgiven).
+_SPACELESS = re.compile("[\u0e00-\u0e7f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+
+
+def _non_latin_words(text: str) -> int:
+    return sum(max(1, len(_SPACELESS.findall(w))) for w in _NON_ASCII_WORD.findall(text))
 
 
 def _quoted_spans(text: str) -> list[tuple[int, int]]:
@@ -412,7 +419,7 @@ def _forgiven(segment: str, offset: int) -> bool:
         masked[a:b] = " " * (b - a)
     masked = "".join(masked)
     latin = len(_LATIN_WORD.findall(masked))
-    return latin >= LATIN_PROSE_WORDS and latin >= 2 * len(_NON_ASCII_WORD.findall(masked))
+    return latin >= LATIN_PROSE_WORDS and latin >= 2 * _non_latin_words(masked)
 
 
 def scan_text(rel: str, text: str, scripts: set[str] | None = None) -> list[dict]:
@@ -501,7 +508,8 @@ def behind_upstream(repo: pathlib.Path, now: float | None = None) -> dict | None
         cur = _git(repo, "symbolic-ref", "-q", "--short", "HEAD")
         name = cur.decode().strip() if cur else ""
         dflt = default_branch(repo)
-        if name and name == dflt.split("/")[-1] and _git(repo, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{name}") is not None:
+        # origin/HEAD may name a branch with slashes (origin/release/stable): drop the remote only
+        if name and name == dflt.removeprefix("origin/") and _git(repo, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{name}") is not None:
             ref = f"origin/{name}"
     if not ref:
         return None

@@ -463,6 +463,15 @@ def test_a_non_latin_run_in_english_prose_is_not_a_finding_but_a_mostly_non_lati
     assert hits == {("a.ts", 2): "comment", ("a.ts", 3): "comment", ("a.ts", 4): "comment", ("docs/n.md", 2): "doc"}
 
 
+def test_a_long_passage_in_a_script_without_spaces_is_not_forgiven_as_one_word(env):
+    # review P2: a whole CJK paragraph has no spaces, was counted as one non-Latin word, and the
+    # English lead-in made it "prose"
+    zh = "\u4e2d\u6587\u7684\u6bb5\u843d" * 6
+    hits = _hits(env, {"a.py": f"# Please translate this paragraph: {zh}\n",
+                       "b.py": f"# open the \u8bbe\u7f6e screen from the menu bar\n"})   # a short label still passes
+    assert hits == {("a.py", 1): "comment"}
+
+
 def test_strings_and_fixtures_are_classified_as_before(env):
     hits = _hits(env, {
         "a.py": f'label = "{RU}"  # the {RU} label of the sheet\n',
@@ -551,6 +560,30 @@ def test_the_check_runs_no_network_git_commands(env, monkeypatch):
     monkeypatch.setattr(lang, "_git", lambda repo, *a, **k: seen.append(a[0]) or real(repo, *a, **k))
     lang.behind_upstream(clone)
     assert seen and not {"fetch", "pull", "remote", "ls-remote", "push"} & set(seen)
+
+
+def test_a_default_branch_with_a_slash_in_its_name_is_compared(env, monkeypatch):
+    # review P2: origin/release/stable was split on every "/" and compared as "stable"
+    origin = env.code.parent / "origins" / "rel.git"
+    origin.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "release/stable", str(origin)], check=True)
+    author = env.code.parent / "author-rel"
+    subprocess.run(["git", "clone", "-q", str(origin), str(author)], check=True, capture_output=True)
+
+    def commit(msg):
+        subprocess.run(["git", "-C", str(author), "-c", "user.name=T", "-c", "user.email=t@example.com",
+                        "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", msg], check=True)
+    commit("one")
+    git(author, "push", "-q", "origin", "HEAD:release/stable")
+    clone = env.code / "rel"
+    subprocess.run(["git", "clone", "-q", "-b", "release/stable", str(origin), str(clone)], check=True, capture_output=True)
+    commit("two")
+    git(author, "push", "-q", "origin", "HEAD:release/stable")
+    git(clone, "fetch", "-q")
+    git(clone, "branch", "--unset-upstream")
+    monkeypatch.setattr(lang, "default_branch", lambda repo: "origin/release/stable")
+    b = lang.behind_upstream(clone)
+    assert b and b["upstream"] == "origin/release/stable" and b["commits"] == 1
 
 
 def test_a_branch_without_an_upstream_is_compared_with_origin_default_only_on_the_default_branch(env):
