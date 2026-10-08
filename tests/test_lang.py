@@ -169,6 +169,31 @@ def test_localization_paths_are_exempt_by_default(env):
     assert [f["path"] for f in rep["files"]] == ["src/real.py"] and rep["exempt"] == 10
 
 
+def test_android_resource_qualifiers_and_string_catalogs_are_exempt_by_default(env):
+    xml = f'<resources><string name="title">{RU}</string></resources>\n'
+    files = {p: xml for p in (
+        "android/app/src/main/res/values-ru/strings.xml", "app/src/main/res/values-pt-rBR/plurals.xml",
+        "res/values-zh/arrays.xml", "mobile/android/src/main/res/values-ru-rRU/strings.xml")}
+    files.update({"Tools/strings/access.json": f'{{"a": "{RU}"}}\n', "tools/strings/deep.json": f'{{"a": "{RU}"}}\n'})
+    # not localization resources: still findings
+    files.update({"app/src/main/res/values-ru/notes.xml": xml, "app/src/main/res/layout/main.xml": xml,
+                  "src/strings/helper.py": f"# {RU}\n", "values-ru/strings.xml": xml})
+    repo = make_repo(env.code, "app", files)
+    rep = lang.scan_repo(repo)
+    assert sorted(f["path"] for f in rep["files"]) == [
+        "app/src/main/res/layout/main.xml", "app/src/main/res/values-ru/notes.xml", "src/strings/helper.py",
+        "values-ru/strings.xml"]
+    assert rep["exempt"] == 6
+
+
+def test_help_documents_the_per_repo_exemption_list(capsys):
+    with pytest.raises(SystemExit) as e:
+        cli.main(["lang", "--help"])
+    assert e.value.code == 0
+    out = capsys.readouterr().out
+    assert ".teyla/lang-allow" in out and "lang.allow" in out and "res/values-*" in out
+
+
 def test_repo_allow_file_and_config_allow(env):
     repo = make_repo(env.code, "app", {
         ".teyla/lang-allow": "# the lexicon is language data\nsrc/lexicon.py   # trailing note\ndata/ru/**\n",
