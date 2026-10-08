@@ -32,7 +32,7 @@ can clear it in one tap — nothing you see before you sign in and add your own 
 
 ## What it costs you
 
-Nothing, or exactly what. If the app spends the owner's model budget, say what the cap
+Nothing, or exactly what. If the app spends the builder's model budget, say what the cap
 is and what happens when it runs out.
 
 ## Your data

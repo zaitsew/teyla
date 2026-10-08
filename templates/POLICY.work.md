@@ -65,8 +65,8 @@ nobody can start is not shipped.
 
 ## 7. Merging
 
-Merge without asking only into repos on the owner's merge-approved list (Claude: the
-list in `~/.claude/CLAUDE.md`). A repo the owner asked you to create in a kickoff is
+Merge without asking only into repos on your merge-approved list (Claude: the
+list in `~/.claude/CLAUDE.md`). A repo you were asked to create in a kickoff is
 approved from creation; record it with the kickoff sentence quoted verbatim.
 Everywhere else: open the PR, stop, say what it changes. Merge, never squash. Never
 force-push.

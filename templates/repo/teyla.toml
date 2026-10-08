@@ -29,7 +29,7 @@ idempotency = "date"                    # date | none | input-hash
 
 # Only `clock` triggers are built. Install one with
 # `teyla triggers install {{name}}:example`; until then this routine is manual.
-trigger = { type = "clock", at = "09:00", tz = "Europe/Madrid", days = "mon-fri" }
+trigger = { type = "clock", at = "09:00", tz = "Europe/London", days = "mon-fri" }
 
 # The draft step. `kind = "command"` runs a shell command and captures its
 # stdout as the draft. `kind = "agent"` calls a model instead:
