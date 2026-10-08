@@ -128,6 +128,37 @@ def _a10(gov: list[dict]) -> list[dict]:
                         "run `teyla policy ack`.")]
 
 
+def _a20(projects: dict) -> list[dict]:
+    """A20: a project whose Agent calls name a top-tier model explicitly. A1 only sees calls that
+    inherit; after the policy moves volume work down the ladder, the habit that stays is
+    `model: "<top tier>"` typed on every call. Per project: more than `spend.a20_share` of its
+    subagent calls (at least `spend.a20_min_calls`), with the top tier's share of its subagent cost."""
+    cfg = config.load().get("spend") or {}
+    try:
+        share = float(cfg.get("a20_share", 0.3))
+        min_calls = int(cfg.get("a20_min_calls", 10))
+    except (TypeError, ValueError):
+        share, min_calls = 0.3, 10
+    hot = []
+    for name, d in projects.items():
+        calls, top = d.get("calls", 0), d.get("explicit_top", 0)
+        if calls >= min_calls and calls and top / calls > share:
+            hot.append((top / calls, top, name, d))
+    out = []
+    for frac, top, name, d in sorted(hot, key=lambda h: (-h[0], str(h[2])))[:3]:
+        cost = (f"; the top tier ran {d['top_sub_usd'] / d['sub_usd'] * 100:.0f}% of its subagent cost "
+                f"(${d['top_sub_usd']:,.0f} of ${d['sub_usd']:,.0f})") if d.get("sub_usd") else ""
+        models = ", ".join(f"{m}×{n}" for m, n in sorted((d.get("top_models") or {}).items(), key=lambda x: -x[1])[:3])
+        out.append(dict(id="A20", severity="high" if frac > 0.6 else "medium",
+                        title=f"{name} names a top-tier model on its subagent calls",
+                        evidence=f"{top} of {d['calls']} subagent calls in {name} set a top-tier model explicitly "
+                                 f"({frac * 100:.0f}%, threshold {share * 100:.0f}% from {min_calls} calls){cost}"
+                                 + (f"; {models}" if models else ""),
+                        action="Route volume lanes (reading, boilerplate, tests, docs, bulk edits) to the volume tier with "
+                               "model: sonnet; keep the top tier for review and design, passed on that call only."))
+    return out
+
+
 def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
     F = []
     sub = m.get("subagents") or {}
@@ -261,6 +292,7 @@ def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
                       evidence=f"last {e['day']}" + (f", ×{e['count']}" if e.get("count", 1) > 1 else "")
                                + f": {e['message'][:140]}" + ("" if e["still_failing"] else " — later calls succeeded"),
                       action=f"{e['fix']}; `teyla harness verify` shows every harness's state."))
+    F += _a20(m.get("subagent_projects") or {})
     try:
         from . import cloud as _cloud
         stuck = _cloud.stuck(m.get("cloud_sessions") or [])

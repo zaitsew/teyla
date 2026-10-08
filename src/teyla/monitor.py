@@ -4,11 +4,33 @@ from __future__ import annotations
 import datetime as _dt
 from collections import Counter, defaultdict
 
+from . import config
 from .adapters import Session
 from .pricing import cost_usd, tier
 
 GIANT_BYTES = 8_000_000
 LONG_ACTIVE_HOURS = 12  # active_hours, not wall span — a session resumed after days is not giant
+
+
+def _subagent_project(acc: dict, s: Session, extra_top=()) -> None:
+    """Per project (A20): subagent calls, how many named a top-tier model explicitly, how many named
+    none (inherited), and the subagent spend that actually ran on the orchestrate tier."""
+    if not s.agents and not s.sub_usage:
+        return
+    from .pricing import is_top_tier
+    d = acc.setdefault(s.project, dict(calls=0, explicit_top=0, inherited=0, sub_usd=0.0, top_sub_usd=0.0, top_models=Counter()))
+    for a in s.agents:
+        d["calls"] += 1
+        if not a.model:
+            d["inherited"] += 1
+        elif is_top_tier(a.model, extra_top):
+            d["explicit_top"] += 1
+            d["top_models"][a.model] += 1
+    for model, u in s.sub_usage.items():
+        c = cost_usd(model, u) or 0.0
+        d["sub_usd"] += c
+        if tier(model) == "orchestrate":
+            d["top_sub_usd"] += c
 
 
 def metrics(sessions: list[Session], days: int | None = None) -> dict:
@@ -20,6 +42,8 @@ def metrics(sessions: list[Session], days: int | None = None) -> dict:
     by_harness = Counter(); by_day = defaultdict(Counter); cost = 0.0; cost_known = 0; cost_unknown = set()
     user_turns = corr = 0; agents = Counter(); giant = []; skills = Counter(); tools = Counter()
     corr_texts = []; gov = []
+    sub_projects: dict = {}
+    extra_top = (config.load().get("spend") or {}).get("a20_models") or []
     batch_by_harness = Counter()
     for s in sessions:
         by_harness[s.harness] += 1
@@ -39,6 +63,7 @@ def metrics(sessions: list[Session], days: int | None = None) -> dict:
             corr_texts += [t.text[:200] for t in s.user_turns if t.corr]
         for a in s.agents:
             agents[a.model or "inherit"] += 1
+        _subagent_project(sub_projects, s, extra_top)
         skills.update(s.skills); tools.update(s.tools)
         if s.gov_edits:
             gov.append(dict(project=s.project, sid=s.sid[:8], day=s.day, edits=s.gov_edits,
@@ -67,7 +92,8 @@ def metrics(sessions: list[Session], days: int | None = None) -> dict:
         user_turns=user_turns, corrections=corr,
         correction_rate=round(corr / user_turns, 3) if user_turns else None,
         subagents=dict(agents), subagent_inherit_rate=round(agents["inherit"] / sum(agents.values()), 2) if agents else None,
-        output_by_tier=dict(out_by_tier),
+        output_by_tier=dict(out_by_tier), subagent_projects={p: dict(v, top_models=dict(v["top_models"]), sub_usd=round(v["sub_usd"], 2),
+                                    top_sub_usd=round(v["top_sub_usd"], 2)) for p, v in sub_projects.items()},
         orchestrator_share=round(out_by_tier["orchestrate"] / max(1, sum(out_by_tier.values())), 2),
         cache_read_ratio=round(tok["cache_read_input_tokens"] / max(1, tok["output_tokens"]), 1),
         giant_sessions=sorted(giant, key=lambda g: -g["mb"]), skills=dict(skills), tools=dict(tools.most_common(30)),
@@ -246,6 +272,11 @@ def redact(m: dict) -> dict:
     order = sorted(r["by_project"], key=lambda p: -sum(u.get("output_tokens", 0) for u in r["by_project"][p].values()))
     alias = {p: f"p{i+1:02d}" for i, p in enumerate(order)}
     r["by_project"] = {alias[p]: v for p, v in r["by_project"].items()}
+    # A20 counts per project; a project with subagents but no tokens in by_project still needs a pseudonym.
+    for p in r.get("subagent_projects") or {}:
+        alias.setdefault(p, f"p{len(alias) + 1:02d}")
+    r["subagent_projects"] = {alias[p]: dict(v, top_models=dict(v.get("top_models") or {}))
+                              for p, v in (r.get("subagent_projects") or {}).items()}
     for g in r.get("giant_sessions", []):
         g["project"] = alias.get(g["project"], "p??"); g["sid"] = "—"
     for g in r.get("governance_edits", []):
