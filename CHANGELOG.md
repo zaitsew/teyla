@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.19.4 — 2026-10-08 — `teyla lang` reads translated prose correctly
 
 - **`teyla lang` ignores quoted labels in English prose and flags a stale clone.** In a comment or doc line,
   non-Latin text inside quotes, or a non-Latin word on a line that is otherwise English prose (3+ Latin words),
