@@ -723,6 +723,24 @@ def test_stop_hook_fetches_the_prs_head_and_fails_closed_when_it_cannot_read_it(
     assert res.returncode == 2 and "Could not compare claude/brave-x with the open PR's head" in res.stderr, res.stderr
 
 
+def test_stop_hook_does_not_take_an_open_pr_as_pushed_when_its_head_was_not_read(tmp_path):
+    # The headRefOid query failed (a transient gh error), the upstream held HEAD so the ref count
+    # said 0, and the later count query saw an open PR: the session stopped although the PR's head
+    # was never compared with HEAD (caught in review, P2).
+    r = _landed_repo(tmp_path)
+    _git(r, "commit", "-q", "--allow-empty", "-m", "work")
+    _git(r, "push", "-q", "-u", "origin", "claude/brave-x")
+    flaky = _fake_gh(tmp_path, """case "$*" in
+  "auth status"*) exit 0 ;;
+  *"--state open"*headRefOid*) exit 1 ;;
+  *"--state open"*) echo 1 ;;
+  *) exit 1 ;;
+esac
+""")
+    res = _run(r, cloud_prep.STOP_HOOK, path=flaky)
+    assert res.returncode == 2 and "GitHub did not say which commit it carries" in res.stderr, res.stderr
+
+
 def test_stop_hook_without_an_open_pr_keeps_the_ref_based_count(tmp_path):
     r = _landed_repo(tmp_path)
     _git(r, "commit", "-q", "--allow-empty", "-m", "work")

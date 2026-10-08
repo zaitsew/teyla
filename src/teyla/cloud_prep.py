@@ -162,14 +162,20 @@ has_ref() {{ git rev-parse --verify --quiet "$1^{{commit}}" >/dev/null 2>&1; }}
 # counts: an upstream that holds HEAD while origin/<branch> (the PR's head) is behind would
 # otherwise let the session stop with the PR missing its latest commits (caught in review, P1). A
 # question git cannot answer (the head is not here and cannot be fetched, merge-base errors) fails
-# closed. Without gh, or when gh finds no open PR, the ref-based count below decides.
-if [ "$branch" != "${{base#origin/}}" ] && command -v gh >/dev/null 2>&1 \
-   && pr_heads=$(gh pr list --head "$branch" --state open --json headRefOid --jq '.[].headRefOid' 2>/dev/null) \
-   && [ -n "$pr_heads" ]; then
+# closed. Without gh, or when gh finds no open PR, the ref-based count below decides; when this
+# query FAILED, a later "an open PR exists" answer is not taken as pushed (caught in review, P2).
+pr_heads=""; heads_ok=""
+if [ "$branch" != "${{base#origin/}}" ] && command -v gh >/dev/null 2>&1; then
+  pr_heads=$(gh pr list --head "$branch" --state open --json headRefOid --jq '.[].headRefOid' 2>/dev/null) \
+    && heads_ok=1 || pr_heads=""
+fi
+if [ -n "$pr_heads" ]; then
   in_pr=""; unknown=""; first=""
   for oid in $pr_heads; do
     [ -n "$first" ] || first=$oid
     has_ref "$oid" || git fetch -q origin "$branch" >/dev/null 2>&1
+    # a PR from a fork: its head is not origin/<branch>; GitHub serves a PR head by its sha
+    has_ref "$oid" || git fetch -q origin "$oid" >/dev/null 2>&1
     if ! has_ref "$oid"; then unknown=$oid; continue; fi
     git merge-base --is-ancestor HEAD "$oid" >/dev/null 2>&1
     case $? in 0) in_pr=1 ;; 1) ;; *) unknown=$oid ;; esac
@@ -232,7 +238,11 @@ if command -v gh >/dev/null 2>&1; then
     fi
     exit 2
   fi
-  case "$open" in ''|0) ;; *) exit 0 ;; esac
+  case "$open" in ''|0) ;; *)
+    [ -n "$heads_ok" ] && exit 0
+    echo "$branch has an open PR, but GitHub did not say which commit it carries (gh pr list failed), so whether your last commit is in it is unknown. Push (git push origin $branch) and check that the PR shows it before you stop." >&2
+    exit 2 ;;
+  esac
   head=$(git rev-parse HEAD 2>/dev/null) || head=""
   done_heads=$(gh pr list --head "$branch" --state merged --json headRefOid --jq '.[].headRefOid' 2>/dev/null) || done_heads=""
   if [ -n "$head" ] && printf '%s\\n' "$done_heads" | grep -qx "$head"; then
