@@ -1,0 +1,274 @@
+"""teyla models watch — fixture catalogue, fixture POLICY.md, fake repos under a tmp code_root, a tmp
+HOME. Nothing here reads the real caches, the real ~/.teyla or the network."""
+from __future__ import annotations
+
+import copy
+import json
+import pathlib
+import subprocess
+
+import pytest
+
+from teyla import cli, config, models, models_watch, pricing
+
+from test_models import CATALOGUE, POLICY_FIXTURE
+
+
+def _model(family, date, name, cin=1.0, cout=5.0):
+    return {"name": name, "family": family, "release_date": date, "cost": {"input": cin, "output": cout}}
+
+
+@pytest.fixture
+def env(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    (home / ".teyla").mkdir(parents=True)
+    monkeypatch.setattr(config, "HOME", home)
+    monkeypatch.setattr(config, "TEYLA_DIR", home / ".teyla")
+    monkeypatch.setattr(config, "CONFIG_PATH", home / ".teyla" / "config.toml")
+    code = tmp_path / "code"
+    code.mkdir()
+    (home / ".teyla" / "config.toml").write_text(f'code_root = "{code}"\n')
+
+    cache = tmp_path / "models_dev_cache.json"
+    cache.write_text(json.dumps(CATALOGUE))
+    monkeypatch.setattr(models, "MODELS_DEV_CACHE", cache)
+    monkeypatch.setattr(models, "MODELS_DEV_FALLBACK", tmp_path / "models_dev_fallback.json")
+    for name in ("GROK_CACHE", "GROK_AUTH", "CODEX_CACHE", "CODEX_AUTH", "HERMES_AUTH"):
+        monkeypatch.setattr(models, name, tmp_path / f"missing-{name}.json")
+    monkeypatch.setattr(models, "CODEX_CONFIG", tmp_path / "missing-codex.toml")
+    prices = tmp_path / "prices.json"
+    monkeypatch.setattr(models, "PRICES_OUT", prices)
+    monkeypatch.setattr(pricing, "OVERRIDE_PATH", prices)
+    policy_path = tmp_path / "POLICY.md"
+    policy_path.write_text(POLICY_FIXTURE)
+    monkeypatch.setattr("teyla.policy.POLICY", policy_path)
+    for var in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY", "GEMINI_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+
+    class E:
+        pass
+    e = E()
+    e.home, e.code, e.cache, e.policy = home, code, cache, policy_path
+    e.known = home / ".teyla" / "models-known.json"
+
+    def publish(extra: dict):
+        cat = copy.deepcopy(CATALOGUE)
+        for provider, mods in extra.items():
+            cat[provider]["models"].update(mods)
+        cache.write_text(json.dumps(cat))
+    e.publish = publish
+    return e
+
+
+def git_repo(root: pathlib.Path, name: str, files: dict[str, str]) -> pathlib.Path:
+    repo = root / name
+    repo.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    for rel, text in files.items():
+        f = repo / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text)
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    return repo
+
+
+NEW_OPUS = {"anthropic": {"claude-opus-5-1": _model("claude-opus", "2026-09-20", "Claude Opus 5.1", 5, 25)}}
+
+
+def run(argv, capsys):
+    code = cli.main(argv)
+    return code, capsys.readouterr().out
+
+
+# --- the known list ---------------------------------------------------------------------------
+
+def test_first_run_seeds_the_known_list_and_reports_nothing_new(env, capsys):
+    code, out = run(["models", "watch"], capsys)
+    assert code == 0
+    assert "first run: seeded" in out and "new models: none" in out
+    known = json.loads(env.known.read_text())
+    assert set(known["known"]) == {"anthropic", "openai", "xai"}
+    assert "claude-opus-5" in known["known"]["anthropic"] and known["acked"]
+
+
+def test_second_run_without_changes_does_not_rewrite_or_report(env, capsys):
+    run(["models", "watch"], capsys)
+    before = env.known.read_text()
+    code, out = run(["models", "watch"], capsys)
+    assert code == 0 and "first run" not in out
+    assert env.known.read_text() == before
+
+
+def test_new_model_is_detected_with_price_date_and_the_entry_it_replaces(env, capsys):
+    run(["models", "watch"], capsys)
+    env.publish(NEW_OPUS)
+    code, out = run(["models", "watch"], capsys)
+    assert code == 1
+    assert "anthropic:claude-opus-5-1" in out and "2026-09-20" in out and "$5/$25 per 1M" in out
+    assert "replaces Opus 5 (volume, claude-opus-5)" in out
+    rep = models_watch.watch()
+    (n,) = rep["new"]
+    assert n["replaces"] == {"entry": "Opus 5", "id": "claude-opus-5", "tier": "volume"}
+
+
+def test_new_family_and_non_text_models(env, capsys):
+    run(["models", "watch"], capsys)
+    env.publish({"openai": {"gpt-7-nova": _model("gpt-nova", "2026-09-25", "GPT-7 Nova"),
+                             "text-embed-9": {**_model("embed", "2026-09-25", "Embed 9"),
+                                              "modalities": {"output": ["embedding"]}}}})
+    code, out = run(["models", "watch", "--json"], capsys)
+    rep = json.loads(out)
+    assert code == 1
+    assert [(n["id"], n["replaces"]) for n in rep["new"]] == [("gpt-7-nova", None)]  # embeddings are not text models
+    code, out = run(["models", "watch"], capsys)
+    assert "openai:gpt-7-nova" in out and "new family" in out
+
+
+def test_same_family_variant_picks_the_closest_ladder_entry(env):
+    models_watch.watch()
+    env.publish({"xai": {"grok-4.7": _model("grok", "2026-09-30", "Grok 4.7"),
+                          "grok-4.7-build-fast": _model("grok", "2026-09-30", "Grok 4.7 Build Fast")}})
+    rep = models_watch.watch()
+    by_id = {n["id"]: n for n in rep["new"]}
+    assert by_id["grok-4.7"]["replaces"]["id"] == "grok-4.6"
+    # no ladder entry is a "build-fast" variant, so the plain model is the closest in both cases
+    assert by_id["grok-4.7-build-fast"]["replaces"]["id"] == "grok-4.6"
+
+
+def test_a_provider_that_joins_the_ladder_later_is_seeded_not_reported(env):
+    env.policy.write_text(POLICY_FIXTURE.replace("| xAI | Grok 4.6 | Grok 4.6, Grok 4.5 | — | xai note |\n", ""))
+    models_watch.watch()
+    assert "xai" not in json.loads(env.known.read_text())["known"]
+    env.policy.write_text(POLICY_FIXTURE)
+    rep = models_watch.watch()
+    assert rep["new"] == [] and "xai" in json.loads(env.known.read_text())["known"]
+
+
+# --- superseded ids in repos -------------------------------------------------------------------
+
+def test_superseded_id_found_in_a_repo_file_and_exact_token_match(env, capsys):
+    git_repo(env.code, "alpha", {
+        "src/app.py": 'MODEL = "claude-sonnet-4"\nOTHER = "claude-opus-5"\nx = 1\n',
+        "package-lock.json": '"claude-opus-5"',
+        "notes.md": "gpt-5.5-turbo is not gpt-5.5, but gpt-5.5 is.\n",
+    })
+    git_repo(env.code, "beta", {"README.md": "nothing here\n"})
+    (env.code / "not-a-repo").mkdir()
+    (env.code / "not-a-repo" / "x.py").write_text("claude-opus-5")
+    cat = copy.deepcopy(CATALOGUE)
+    cat["anthropic"]["models"]["claude-sonnet-4"] = _model("claude-sonnet", "2025-05-01", "Claude Sonnet 4")
+    cat["anthropic"]["models"]["claude-sonnet-5"]["release_date"] = "2026-06-29"
+    cat["openai"]["models"]["gpt-5.5"]["family"] = "gpt-sol"
+    env.cache.write_text(json.dumps(cat))
+    models_watch.watch()  # seed: nothing is new, the superseded scan still runs
+    code, out = run(["models", "watch"], capsys)
+    rows = {(r["repo"], r["file"]): r for r in models_watch.watch()["superseded"]}
+    assert ("alpha", "src/app.py") in rows and "claude-sonnet-4" in rows[("alpha", "src/app.py")]["ids"]
+    assert rows[("alpha", "src/app.py")]["lines"] == 1  # claude-opus-5 is a current ladder entry, not superseded
+    assert not any(k[1] == "package-lock.json" for k in rows)  # lockfiles are skipped
+    assert ("alpha", "notes.md") in rows and rows[("alpha", "notes.md")]["ids"] == ["gpt-5.5"]  # not gpt-5.5-turbo
+    assert not any(k[0] in ("beta", "not-a-repo") for k in rows)
+    assert "alpha/src/app.py  1 line(s)  claude-sonnet-4" in out
+
+
+def test_replaced_ladder_entry_is_searched_and_big_files_skipped(env):
+    models_watch.watch()
+    git_repo(env.code, "alpha", {"a.py": 'M = "claude-opus-5"\n'})
+    big = env.code / "alpha" / "big.txt"
+    big.write_text("claude-opus-5 " * 200_000)
+    subprocess.run(["git", "-C", str(env.code / "alpha"), "add", "-A"], check=True)
+    env.publish(NEW_OPUS)
+    rep = models_watch.watch()
+    files = [(r["file"], r["why"]) for r in rep["superseded"]]
+    assert files == [("a.py", {"claude-opus-5": "replaced by claude-opus-5-1"})]
+
+
+def test_output_is_capped_at_twenty_rows(env, capsys):
+    models_watch.watch()
+    for i in range(25):
+        git_repo(env.code, f"r{i:02d}", {"a.py": 'M = "claude-opus-5"\n'})
+    env.publish(NEW_OPUS)
+    code, out = run(["models", "watch"], capsys)
+    assert out.count("line(s)") == models_watch.MAX_ROWS and "25 file(s)" in out
+
+
+# --- the ladder edit ---------------------------------------------------------------------------
+
+CURRENT_POLICY = POLICY_FIXTURE.replace("GPT-6 Astra", "GPT-5.6 Sol")
+
+
+def test_ladder_current_and_proposed_edit(env, capsys):
+    env.policy.write_text(CURRENT_POLICY)
+    code, out = run(["models", "watch"], capsys)
+    assert "ladder current" in out  # a rewrite that only stamps the review date is not an edit
+    env.policy.write_text(CURRENT_POLICY.replace("Haiku 4.5", "Haiku 9"))
+    code, out = run(["models", "watch"], capsys)
+    assert "proposed ladder edit" in out and "ladder current" not in out
+    assert "-| Anthropic" in out and "Claude Haiku 4.5" in out
+    assert env.policy.read_text() == CURRENT_POLICY.replace("Haiku 4.5", "Haiku 9")  # a dry diff, never a write
+
+
+# --- --ack -------------------------------------------------------------------------------------
+
+def test_ack_all_marks_every_new_model_known_and_exits_zero(env, capsys):
+    run(["models", "watch"], capsys)
+    env.publish({**NEW_OPUS, "openai": {"gpt-7-nova": _model("gpt-nova", "2026-09-25", "GPT-7 Nova")}})
+    code, out = run(["models", "watch", "--ack"], capsys)
+    assert code == 0 and "acknowledged 2" in out and "new models: none" in out
+    known = json.loads(env.known.read_text())["known"]
+    assert "claude-opus-5-1" in known["anthropic"] and "gpt-7-nova" in known["openai"]
+    assert run(["models", "watch"], capsys)[0] == 0
+
+
+def test_ack_one_leaves_the_rest_and_exits_one(env, capsys):
+    run(["models", "watch"], capsys)
+    env.publish({**NEW_OPUS, "openai": {"gpt-7-nova": _model("gpt-nova", "2026-09-25", "GPT-7 Nova")}})
+    code, out = run(["models", "watch", "--ack", "openai:gpt-7-nova"], capsys)
+    assert code == 1 and "claude-opus-5-1" in out and "gpt-7-nova  " not in out.split("new models")[1]
+    code, out = run(["models", "watch", "--ack", "claude-opus-5-1", "no-such-model"], capsys)
+    assert code == 0 and "not in the catalogue" in out and "no-such-model" in out
+
+
+def test_ack_flags_are_refused_outside_watch(env, capsys):
+    assert run(["models", "--ack"], capsys)[0] == 2
+
+
+# --- --seed ------------------------------------------------------------------------------------
+
+def test_seed_with_list_and_dict_shapes(env, tmp_path, capsys):
+    seed = tmp_path / "other.json"
+    seed.write_text(json.dumps({"known": {
+        "anthropic": ["claude-fable-5", "claude-fable-5-1", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"],
+        "openai": {"gpt-5.6-sol": {"seen": "x"}, "gpt-5.6-terra": 1, "gpt-5.6-luna": 1, "gpt-5.5": 1},
+        "xai": [{"id": "grok-4.6"}]}}))
+    code, out = run(["models", "watch", "--seed", str(seed)], capsys)
+    assert "imported 10 known model(s)" in out and "first run" not in out
+    assert [n["id"] for n in json.loads(run(["models", "watch", "--json"], capsys)[1])["new"]] == ["grok-4.5"]
+    known = json.loads(env.known.read_text())["known"]
+    assert known["openai"] == ["gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]
+
+
+def test_seed_errors_exit_two_and_write_nothing(env, tmp_path, capsys):
+    bad = tmp_path / "bad.json"
+    bad.write_text("[1, 2]")
+    assert run(["models", "watch", "--seed", str(bad)], capsys)[0] == 2
+    assert run(["models", "watch", "--seed", str(tmp_path / "missing.json")], capsys)[0] == 2
+    assert not env.known.exists()
+
+
+# --- network -----------------------------------------------------------------------------------
+
+def test_no_network_without_refresh_and_safe_mode_refuses_refresh(env, monkeypatch, capsys):
+    import urllib.request
+    def boom(*a, **k):
+        raise AssertionError("network call")
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    assert run(["models", "watch"], capsys)[0] == 0
+    # stale cache + --refresh in safe mode: refused, the local copy is used
+    import os, time
+    old = time.time() - 30 * 86400
+    os.utime(env.cache, (old, old))
+    monkeypatch.setenv("TEYLA_SAFE", "1")
+    code = cli.main(["models", "watch", "--refresh"])
+    cap = capsys.readouterr()
+    assert code == 0 and "safe mode is on" in cap.err
