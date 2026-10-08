@@ -6,7 +6,7 @@ For a product manager or solo founder who is not a full-time engineer and runs
 Claude Code, Codex, Grok or Hermes daily. One policy, one loop for running work,
 one mechanism that makes a correction stick, one spine for building software.
 
-Rev. 8 is written against measurements taken on one real multi-product setup.
+Rev. 8 is written against measurements taken on a real multi-product setup.
 The headline finding reorders the whole document: **the products shipped and
 nobody used them.** Combined daily usage, read from their own usage counters,
 was approximately zero. None failed
@@ -77,7 +77,7 @@ teyla rules stale                          # expired / never-hit rules: removal 
 `propose` reads only **human** corrections: records from `teyla correct`
 (`source: correct`) and inbox rejections with a note (`source: inbox-reject`).
 The capture hook's regex guesses (`source: hook`) are ignored — the 0.12 review
-found ~97% of them were not corrections. (A pre-0.14 record without a `source`
+found that the large majority of them were not corrections. (A pre-0.14 record without a `source`
 is a `teyla correct` one when its `text` key comes before `cwd`; the hook wrote
 `cwd` first.) A correction that matches an existing rule is a *hit*: the rule
 exists and was not followed, so sharpen it or narrow its scope; `--write` adds
@@ -113,9 +113,8 @@ rule.* You cannot see that split inside one session; there is only one run of it
 
 The project root is the directory you launch from; it keys the transcript store,
 the memory directory and the learnings file. **Keep it coarse; folders inside it
-are free.** A root per routine feels tidier and fragments all three. Measured on
-one machine: 22 roots, 785 MB, the top four holding 77 of 99 sessions, while
-Each new root
+are free.** A root per routine feels tidier and fragments all three: dozens of roots, most
+sessions piled into a handful of them. Each new root
 restarts accumulation at zero. Split roots only on boundaries that are **real** —
 data ownership, a legal line, a separate remote, different collaborators — never
 on taxonomy.
@@ -165,7 +164,7 @@ scope. Nothing is inferred.
 
 ```yaml
 routine: weekly-digest
-trigger: { type: schedule, at: "0 7 * * 1", tz: Europe/Madrid }
+trigger: { type: schedule, at: "0 7 * * 1", tz: Europe/London }
 skill:   digest-draft        # named, not chosen by a model
 scope:   { task: reporting, artifact: "runs/{date}/digest.md" }
 gate:    { position: pre, surface: file }
@@ -340,7 +339,7 @@ inference — not by write access, not by org membership, not by a green build, 
 by "the fix is obviously correct". Everywhere else: open the PR, then stop and
 say what it changes, why, and who owns the repo.
 
-Two corollaries from real incidents: **the list is edited by the human, in the
+Two corollaries: **the list is edited by the human, in the
 human's own file** (§0 §8). And **never force-push, never push a diverged main** —
 if local `main` is both ahead and behind, push it as a named branch and report
 what you found.
@@ -349,8 +348,8 @@ what you found.
 
 ## 4. Session discipline
 
-The measured shape of a bad fortnight: transcripts of 8–35 MB, sessions of 12–60
-hours, **zero compactions**, cache-read to output ratios of 250–400:1. A session
+The shape of a bad fortnight: transcripts of tens of MB, sessions of dozens of
+hours, **zero compactions**, cache-read to output ratios in the hundreds to one. A session
 like that re-reads an enormous context every turn to produce a few hundred
 tokens, and by hour thirty the model is working from a summary of its own earlier
 mistakes.
@@ -362,12 +361,11 @@ mistakes.
 | Compactions | not a signal | Expected: one session per project compacts in place |
 | Cache-read : output | >150:1 | Compaction at ~300k; subagents for reading; summaries, not whole files |
 
-**One session per project** (zaitsew/ops#198, 2026-10-01), launched from the repo
+**One session per project**, launched from the repo
 root and compacted in place: `autoCompactWindow` 335000 compacts at ~300k, and
-`~/ops/bin/context-budget-hook` writes a handoff at 240k/270k and re-injects it
-after compaction (400000, ~365k and 300k/340k until 2026-10-04, zaitsew/ops#208:
-~10% less re-read context for ~50 more compactions over 1–3 Oct; 250k compacted
-mid-task too often). Inside it, **one PR per logical unit** — what you would review
+a context-budget hook (shipped in the plugin, opt-in) writes a handoff at 240k/270k and re-injects it
+after compaction. Larger windows re-read more context per turn; a trigger as low as 250k
+compacted mid-task too often). Inside it, **one PR per logical unit** — what you would review
 in one sitting.
 
 **Scope before code** (§0 §4): the agent's first output is a written scope,
@@ -392,7 +390,7 @@ launchd agents, one hook and one command:
 | when | what | writes |
 |---|---|---|
 | daily 07:00 (`com.zaitsew.teyla.daily`) | `teyla update --quiet` then `teyla doctor --quiet` | `~/Library/Logs/teyla-daily.log`, `~/.teyla/doctor.summary`, `~/.teyla/banner.items` |
-| Friday 20:45 (`com.zaitsew.teyla.weekly`) | `monitor --days 7`, `routines`, `products`, `models`, then `digest --write` | `<ops>/startup/os/ai-dev/runs/<date>/`, `~/.teyla/digest.md` |
+| Friday 20:45 (`com.zaitsew.teyla.weekly`) | `monitor --days 7`, `routines`, `products`, `models`, then `digest --write` | `<ops>/runs/<date>/`, `~/.teyla/digest.md` |
 | every session start (plugin hook) | prints what is new in `banner.items` since the last start (nothing when nothing is), and the digest headline once per week; if the last update check is older than a day, starts `teyla update --check` in the background | `~/.teyla/update-check.json` |
 | on demand | `teyla doctor` — the checklist with a fix per line; exit 1 when a FIX is pending | `~/.teyla/doctor.json` |
 
@@ -491,7 +489,7 @@ imperative action. A finding you cannot trace to a number is noise.
 
 | id | Fires when | Meaning |
 |---|---|---|
-| **A1** | ≥10 subagent calls, >50% with no `model:` | Subagents inherited the orchestrator. Measured at 65%. |
+| **A1** | ≥10 subagent calls, >50% with no `model:` | Subagents inherited the orchestrator. |
 | **A2** | >60% of output on orchestrate-tier models, >1M output tokens | Volume work on the expensive model. |
 | **A3** | Any session >8 MB or >12 active h | Giant sessions; names the worst with its numbers. |
 | **A4** | Cache-read : output > 150:1 | Long contexts re-read every turn. |
@@ -697,7 +695,7 @@ gate before the code.
 
 | It will not | Because |
 |---|---|
-| Mine your chat for rules automatically | Measured on a real corpus: ~3 durable rules in the whole thing, a ~0.5% base rate. At that prevalence a detector with 80% recall and 99% specificity still lands under 30% precision. Corrections come through `/teyla:correct` or the gate, or they do not exist. |
+| Mine your chat for rules automatically | Measured on a real corpus: a handful of durable rules in the whole thing, a base rate around 0.5%. At that prevalence a detector with 80% recall and 99% specificity still lands under 30% precision. Corrections come through `/teyla:correct` or the gate, or they do not exist. |
 | Rewrite skill files unattended | It destroys attributability, and self-generated skill search is sparse rather than steadily improving. |
 | Summarise or consolidate the rule set | A measured rewrite compressed a context to a fraction of its size and dropped accuracy *below* the no-context baseline. Merge by supersession only. |
 | Record your screen or audio | An enormous noise surface feeding a signal measured at 0.5%, plus storage and consent problems you would then own. |

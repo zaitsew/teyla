@@ -5,7 +5,7 @@ Claude Code in the Claude desktop app has the whole loop: the policy imported by
 two commands (`/teyla:rule`, `/teyla:correct`), and the hooks that show the doctor summary at
 session start and capture corrections as they are typed. This page is what the other three
 desktop-app harnesses get, how, and what each one cannot do. Every fact about a harness was
-read from that harness's own files on one machine on 2026-09-14 (Cursor 3.19.7, Codex CLI
+read from that harness's own files on 2026-09-14 (Cursor 3.19.7, Codex CLI
 0.153.4 inside ChatGPT 26.908, Grok CLI 1.0.0, Hermes Agent 0.20.4); the file is named so
 a newer version can be re-checked against it. Hooks were re-checked on 2026-09-29: Codex by
 running `codex exec` and `codex app-server` (0.153.4 from npm; 0.158.0-alpha.2.1, the CLI
@@ -27,8 +27,8 @@ teyla doctor           # the same, as OK/FIX lines
 | | policy | per-repo rules | skills | hooks | sessions read by `teyla monitor` |
 |---|---|---|---|---|---|
 | **Claude Code** | `@~/.agents/POLICY.md` in `~/.claude/CLAUDE.md` | `.claude/rules/*.md` (`globs:`), `CLAUDE.md` | the plugin (`teyla plugin install`) | plugin `hooks.json`: SessionStart, UserPromptSubmit, PreToolUse; opt-in PostToolUse + Stop (`[hooks]`) | `~/.claude/projects/**/*.jsonl` |
-| **Cursor** (app) | a user skill `~/.cursor/skills/teyla-policy/SKILL.md` carrying the policy text and the owner's rules (as for Codex) — Cursor has no global rules file (`create-rule/SKILL.md` names only `.cursor/rules/*.mdc` per project) | `AGENTS.md` at the repo root; `.cursor/rules/<slug>.mdc` when that directory exists (`teyla rule` fills both) | `~/.cursor/skills/teyla-*/SKILL.md` (`name`, `description`, `disable-model-invocation: false`) | `~/.cursor/hooks.json`: `sessionStart`, `beforeSubmitPrompt` (JSON on stdin) | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (`composerData:*`, `bubbleId:*`; model name, turns, tools; no per-message tokens) |
-| **Codex** (ChatGPT app / CLI) | `~/.codex/AGENTS.md`, generated: `POLICY.md` + the owner's rules from `~/.claude/CLAUDE.md` (a `POLICY.md` symlink while CLAUDE.md holds only the import) | `AGENTS.md` per directory | `~/.codex/skills/teyla-*/SKILL.md` | `~/.codex/hooks.json`: `SessionStart`, `UserPromptSubmit` (Claude Code's shape; `codex features list`: `hooks stable true`), and `Stop` while `[hooks] land_check` is on; each runs only after you trust it once in Codex | `~/.codex/sessions/**/rollout-*.jsonl` |
+| **Cursor** (app) | a user skill `~/.cursor/skills/teyla-policy/SKILL.md` carrying the policy text and your own rules (as for Codex) — Cursor has no global rules file (`create-rule/SKILL.md` names only `.cursor/rules/*.mdc` per project) | `AGENTS.md` at the repo root; `.cursor/rules/<slug>.mdc` when that directory exists (`teyla rule` fills both) | `~/.cursor/skills/teyla-*/SKILL.md` (`name`, `description`, `disable-model-invocation: false`) | `~/.cursor/hooks.json`: `sessionStart`, `beforeSubmitPrompt` (JSON on stdin) | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (`composerData:*`, `bubbleId:*`; model name, turns, tools; no per-message tokens) |
+| **Codex** (ChatGPT app / CLI) | `~/.codex/AGENTS.md`, generated: `POLICY.md` + your own rules from `~/.claude/CLAUDE.md` (a `POLICY.md` symlink while CLAUDE.md holds only the import) | `AGENTS.md` per directory | `~/.codex/skills/teyla-*/SKILL.md` | `~/.codex/hooks.json`: `SessionStart`, `UserPromptSubmit` (Claude Code's shape; `codex features list`: `hooks stable true`), and `Stop` while `[hooks] land_check` is on; each runs only after you trust it once in Codex | `~/.codex/sessions/**/rollout-*.jsonl` |
 | **Grok CLI** | `~/.grok/AGENTS.md`, generated as for Codex | `Agents.md`/`CLAUDE.md`/`AGENTS.md` per directory, repo root down to cwd (`12-project-rules.md`) | `~/.grok/skills/teyla-*/SKILL.md`; also scans `~/.claude/skills`, `~/.cursor/skills`, `.agents/skills` (`08-skills.md`) | `~/.grok/hooks/teyla.json`: `SessionStart`, `UserPromptSubmit`; it also loads `~/.cursor/hooks.json` and `~/.claude/settings.json` (`10-hooks.md`), so the capture hook de-duplicates | `~/.grok/sessions/<cwd>/<id>/` |
 | **Hermes** (app / CLI) | an "Operating policy" section in `~/.hermes/SOUL.md` | `AGENTS.md` chain from the git root (`context-files.md`; `.hermes.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`, first match) | `~/.hermes/skills/teyla/teyla-*/SKILL.md`, each also a slash command (`skills.md`) | a `hooks:` block in `~/.hermes/config.yaml`: `on_session_start`, and two `pre_llm_call` shell hooks (capture; first-turn orientation); Hermes asks once per hook before running it (`hooks.md`, "Shell hooks") | `~/.hermes/state.db` |
 
@@ -55,8 +55,8 @@ scripts, which read every harness's stdin shape.
   are read); Cursor's docs do not say what `sessionStart` output does. In those two the hook
   still runs — it starts the background update check and `teyla routine catch-up` — but the
   model does not see the line; `teyla doctor` is the command to run by hand there.
-- **`codex exec` is not a person.** Codex fires both hooks for `codex exec` too (509 of 520
-  Codex sessions in September 2026 were `codex exec` reviews). The payload names
+- **`codex exec` is not a person.** Codex fires both hooks for `codex exec` too (on a machine that runs
+  cross-provider reviews, most Codex sessions are `codex exec` reviews). The payload names
   `transcript_path`; when that rollout's first record says `"originator":"codex_exec"`,
   `session-start.sh --codex` prints nothing and starts nothing, and the capture hook records
   nothing — the same test the monitor uses to call a Codex session batch.
@@ -80,11 +80,11 @@ scripts, which read every harness's stdin shape.
   Teyla's marker there is not a comment: its entries are the ones whose command is under
   `~/.teyla/hooks/`, and the file's `description` says so. Delete those entries (or the
   file, if nothing else is in it) to undo; `teyla harness sync` keeps every other entry.
-- **The owner's rules.** `~/.claude/CLAUDE.md` — the merge-approved repos, shipping and
+- **Your own rules.** `~/.claude/CLAUDE.md` — the merge-approved repos, shipping and
   release rules, layout, git safety — is read by Claude Code only, and Codex has no `@path`
   imports (codex-cli 0.159.2: an `@extra.md` line in `$CODEX_HOME/AGENTS.md` reaches the model
   as the literal line). So `teyla policy sync` writes `~/.codex/AGENTS.md` and
-  `~/.grok/AGENTS.md` as one generated file: `POLICY.md`, then a `# The owner's rules` section
+  `~/.grok/AGENTS.md` as one generated file: `POLICY.md`, then a section
   with CLAUDE.md's text (the `@~/.agents/POLICY.md` import dropped, any other `@~/...` import
   inlined one level), then where the shared project memory lives. The first line is a
   generated-by marker; sync replaces a file carrying it and skips one without it. Codex caps a
@@ -132,7 +132,7 @@ teyla harness verify          # can each one work now: version, auth, last quota
 teyla harness verify --live   # plus one real line through each, headless (a few tokens; never from a routine)
 ```
 
-"Wired" is not "working". On 2026-09-29 every line above said OK while every Grok call
+"Wired" is not "working". Once, every line above said OK while every Grok call
 answered 402 "Grok Build usage balance exhausted", Hermes had lost its xAI access token and
 the `claude` CLI's OAuth session had expired (the desktop app signs in on its own).
 `harness verify` reads what each harness itself recorded — Grok's
