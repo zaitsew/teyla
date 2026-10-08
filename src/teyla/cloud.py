@@ -179,7 +179,7 @@ def _instruction_candidates(repo: pathlib.Path) -> list[pathlib.Path]:
 def symlink_loop(p: pathlib.Path) -> bool:
     """A symlink that never reaches a file (CLAUDE.md → AGENTS.md → CLAUDE.md). Asked with
     os.stat, the same on every Python: resolve() raises RuntimeError on 3.11/3.12 and returns
-    the path on 3.13, and the RuntimeError crashed `cloud check` (review of #70, P2)."""
+    the path on 3.13, and the RuntimeError crashed `cloud check` (caught in review, P2)."""
     try:
         if not p.is_symlink():
             return False
@@ -200,7 +200,7 @@ def _inside(repo: pathlib.Path, p: pathlib.Path) -> bool:
 def external_instruction_links(repo: pathlib.Path) -> list[str]:
     """Instruction files that are symlinks resolving outside the repo (e.g. CLAUDE.md →
     ~/.claude/CLAUDE.md). A cloud clone gets a dangling link, so they carry nothing there
-    (review of #70, P1)."""
+    (caught in review, P1)."""
     return [f"{p.relative_to(repo)} → {os.readlink(p)}" for p in _instruction_candidates(repo)
             if p.is_symlink() and not symlink_loop(p) and not _inside(repo, p)]
 
@@ -214,7 +214,7 @@ def instruction_files(repo: pathlib.Path) -> list[tuple[str, str]]:
     """(repo-relative name, text) for every instruction file a cloud session reads, each real
     file once (AGENTS.md → CLAUDE.md symlinks are common and would double every finding).
     A symlink that resolves outside the repo is not read: readiness is judged on what the
-    committed tree carries, and the clone does not carry its target (review of #70, P1)."""
+    committed tree carries, and the clone does not carry its target (caught in review, P1)."""
     repo = repo.resolve()
     seen, out = set(), []
     for p in _instruction_candidates(repo):
@@ -289,7 +289,7 @@ def _enclosing_guard(lines: list[str], i: int, tool_guard: re.Pattern) -> bool:
     blocks that closed before it (`fi` ... `if`), and reads the branch it is in: the `then`
     branch of a positive test is guarded, so is the `else` (or a later `elif`) of a negated one
     (`if ! command -v x; then skip; else x ...`). A step after a completed guarded block is not
-    (review of #70, P2)."""
+    (caught in review, P2)."""
     depth = 0
     holds = True  # does the next condition header up the chain hold on the way to line i?
     for j in range(i - 1, max(-1, i - 16), -1):
@@ -320,7 +320,7 @@ def _cond_guards(cond: str, holds: bool, tool_guard: re.Pattern) -> bool:
     negated one. A compound test only where the logic forces it: `guard && …` in the then, and
     `! guard || …` in the else (`if ! command -v x || …; then skip; else x`). `if ! command -v x
     && …; then skip; else x` is NOT guarded: the else also runs when the other test fails, x or
-    no x (review of #70, P2). Any other mix of &&, || and ; is not guarded."""
+    no x (caught in review, P2). Any other mix of &&, || and ; is not guarded."""
     body = re.split(r";\s*then\b", re.sub(r"^\s*(?:el)?if\s+", "", cond), maxsplit=1)[0]
     clauses, ops = _clauses(body)
     guards = [c for c in clauses if _is_guard(c, tool_guard)]
@@ -346,7 +346,7 @@ def _line_guards(line: str, rx: re.Pattern, tool_guard: re.Pattern) -> bool:
         cond, body = m.group(1), m.group(2)
         then_part, else_part = (re.split(r";\s*else\b", body, maxsplit=1) + [""])[:2]
         # Every branch that runs the tool must be guarded: `if command -v x; then x test; else
-        # x build; fi` runs x on Linux in the else (review of #86, P2).
+        # x build; fi` runs x on Linux in the else (caught in review, P2).
         branches = [h for part, h in ((then_part, True), (else_part, False)) if step(part)]
         if branches:
             return all(_cond_guards(cond, h, tool_guard) for h in branches)
@@ -647,7 +647,7 @@ def _short_ref(ref: str) -> str:
 def _pick_branch(repo: pathlib.Path, tip: str, refs: list[str], default: str) -> str | None:
     """The branch a cloud session's newest commit belongs to, among the refs that contain it. A
     later branch cut from the session's branch contains it too, and the alphabetical first used
-    to win (review of #70, P2). Now: a `claude/*` branch first, then the one whose tip is fewest
+    to win (caught in review, P2). Now: a `claude/*` branch first, then the one whose tip is fewest
     commits past the commit (its own branch is 0), then the name — deterministic. Local and
     remote-tracking refs of one name count once, at the nearer tip. The `Claude-Session:`
     trailer carries no branch name, so it cannot break the tie."""
@@ -696,7 +696,7 @@ def repo_sessions(repo: pathlib.Path, days: int | None = None) -> list[dict]:
         return []
     default = default_ref(repo)
     # Landed means contained in exactly the default ref (origin/main), never a local `main` of
-    # the same short name that was merged and not pushed (review of #70, P2).
+    # the same short name that was merged and not pushed (caught in review, P2).
     full = _git(repo, "rev-parse", "--symbolic-full-name", default, timeout=5)
     default_full = full.stdout.strip() if full.returncode == 0 else ""
     # default_ref() falls back to a local main when no remote default resolves; that is no

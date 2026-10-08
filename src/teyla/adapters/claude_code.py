@@ -179,7 +179,7 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                         if _touches_governance(name, inp):
                             s.gov_edits += 1
                             # The write's own date, not the session's start, and local like the
-                            # ack day it is compared with (review of #68, P2).
+                            # ack day it is compared with (caught in review, P2).
                             if ts and local_day(ts) not in s.gov_days:
                                 s.gov_days.append(local_day(ts))
                         if name in ("Agent", "Task"):
@@ -216,7 +216,7 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                 h = human_text(txt, after_error)
                 after_error = False
                 # A bare "continue" is a retry to the turn counts but an approval to A15: it
-                # still answers the question the agent ended on (review of the #60 merge).
+                # still answers the question the agent ended on (caught in review).
                 # The reminder block Claude Code appends to a prompt is not part of the reply:
                 # "continue" + <system-reminder>…</system-reminder> is still "continue".
                 bare = strip_reminders(txt)

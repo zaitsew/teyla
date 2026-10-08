@@ -210,7 +210,7 @@ def cmd_approve(args) -> int:
 
     # Safe mode refuses before anything is created or recorded. Refused later, inside the
     # step, the item was already marked approved, so the retry with --allow-network found
-    # "already approve" and the act never ran (review of #59, P2). run_act checks again.
+    # "already approve" and the act never ran (caught in review, P2). run_act checks again.
     why_safe = H.safe_refusal(routine.repo, routine.act.harness if routine.act.kind == "agent" else None)
     if why_safe:
         print(f"REFUSED: {why_safe}")
@@ -268,7 +268,7 @@ def cmd_approve(args) -> int:
 
     # Safe mode switched on between the check above and the act step: the step refused
     # itself and nothing ran. That is not a decision — the approval is not used up, the item
-    # stays pending, and the same approve works once the mode allows it (review of #59, P2).
+    # stays pending, and the same approve works once the mode allows it (caught in review, P2).
     if res.refused:
         print(f"REFUSED: {res.error}")
         print(f"  {args.id} stays pending.")

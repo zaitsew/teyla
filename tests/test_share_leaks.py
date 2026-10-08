@@ -258,7 +258,7 @@ def test_no_canary_in_shared_output(machine, which):
 def test_shared_output_still_carries_the_findings_under_pseudonyms(machine, which):
     text = machine[which]
     # A13/A14 (the week's Grok cost) are `teyla monitor`'s, not the feedback file's;
-    # A15/A16 reach both, via detect.enrich (review of #60, P2)
+    # A15/A16 reach both, via detect.enrich (caught in review, P2)
     for fid in ("A3", "A7", "A9", "A10", "C1", "C4", "A15", "A16") + (("A13", "A14") if which != "feedback" else ()):
         assert fid in text, f"{fid} missing from {which}: redaction must not drop the advice"
     for alias in ("p01", "c01", "c02", "s01"):
@@ -320,7 +320,7 @@ def _batch_sessions(harness, cwd, n, days_ago):
 
 def test_share_does_not_leak_a17_project_names_or_paths(monkeypatch, capsys):
     """`teyla monitor --share` advises from the redacted metrics: A17's title, evidence and action
-    name the project driving the volume (review of #69, P1). A path outside $HOME is its own name."""
+    name the project driving the volume (caught in review, P1). A path outside $HOME is its own name."""
     import argparse
     from teyla import cli, policy
     from teyla.monitor import headless

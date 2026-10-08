@@ -185,7 +185,7 @@ def test_pin_to_a_sha_installs_that_commit_once(_home, monkeypatch):
 
 
 def test_every_installer_reinstalls_the_exact_commit(monkeypatch):
-    # review of #64, P1: `pip install --upgrade` keeps an installed build of the same version.
+    # caught in review, P1: `pip install --upgrade` keeps an installed build of the same version.
     monkeypatch.setattr(update.shutil, "which", lambda name: f"/opt/bin/{name}")
     assert "--force-reinstall" in update._installer("pip", "3.12", "src")
     assert "--reinstall" in update._installer("uv-tool", "3.12", "src")
@@ -210,7 +210,7 @@ def _pip_installer(monkeypatch, version: str | None, commit: str):
 
 
 def test_a_sha_pin_that_did_not_land_is_rolled_back_not_recorded(_home, monkeypatch, capsys):
-    # review of #64, P1: the installer kept another build; recording the pin would freeze that.
+    # caught in review, P1: the installer kept another build; recording the pin would freeze that.
     config.set_value("update.pin", SHA)
     github(monkeypatch, {}, {SHA: SHA})
     ran = _pip_installer(monkeypatch, __version__, "e" * 40)
@@ -222,7 +222,7 @@ def test_a_sha_pin_that_did_not_land_is_rolled_back_not_recorded(_home, monkeypa
 
 
 def test_a_sha_pin_that_does_not_run_is_rolled_back(_home, monkeypatch, capsys):
-    # review of #64, P2: a build whose version probe fails is not a successful install.
+    # caught in review, P2: a build whose version probe fails is not a successful install.
     config.set_value("update.pin", SHA)
     github(monkeypatch, {}, {SHA: SHA})
     _pip_installer(monkeypatch, None, SHA)
@@ -233,7 +233,7 @@ def test_a_sha_pin_that_does_not_run_is_rolled_back(_home, monkeypatch, capsys):
 
 
 def test_an_install_whose_commit_cannot_be_checked_is_rolled_back(_home, monkeypatch, capsys):
-    # review of #64, P2: when the post-install commit check could not run, the install was accepted
+    # caught in review, P2: when the post-install commit check could not run, the install was accepted
     # and recorded as the pin met. It is a failed verification now.
     github(monkeypatch, {"v99.0.0": {"tag_name": "v99.0.0"}}, {"v99.0.0": SHA}, latest="v99.0.0")
     ran = installer(monkeypatch, "99.0.0", landed=None)
@@ -245,7 +245,7 @@ def test_an_install_whose_commit_cannot_be_checked_is_rolled_back(_home, monkeyp
 
 
 def test_a_version_pin_is_met_by_the_release_commit_not_the_version_number(_home, monkeypatch):
-    # review of #64, P1: a build of main that says the pinned version is not that release.
+    # caught in review, P1: a build of main that says the pinned version is not that release.
     config.set_value("update.pin", __version__)
     tag = f"v{__version__}"
     github(monkeypatch, {tag: {"tag_name": tag}}, {tag: SHA})
@@ -337,7 +337,7 @@ def test_outside_safe_mode_policy_refresh_still_merges(_home, tmp_path, monkeypa
 
 
 def test_safe_mode_a_failing_merge_proposes_nothing(_home, tmp_path, monkeypatch):
-    # review of #64, P2: `git merge-file` erroring (255, empty stdout) is not "255 conflicts".
+    # caught in review, P2: `git merge-file` erroring (255, empty stdout) is not "255 conflicts".
     import subprocess
     t = _template(tmp_path, monkeypatch)
     t.write_text("Owner: {{owner}}. Edit here.\n\n## A\none\n")
@@ -354,7 +354,7 @@ def test_safe_mode_a_failing_merge_proposes_nothing(_home, tmp_path, monkeypatch
 
 
 def test_rollback_goes_to_the_commit_that_was_running_not_the_rejected_one(_home, monkeypatch, capsys):
-    # review of #64's fix, P1: after the install, direct_url.json describes the new build, so
+    # review of the fix, P1: after the install, direct_url.json describes the new build, so
     # "restore what is installed" reinstalled the build being rejected.
     config.set_value("update.pin", SHA)
     github(monkeypatch, {}, {SHA: SHA})
@@ -375,7 +375,7 @@ def test_rollback_goes_to_the_commit_that_was_running_not_the_rejected_one(_home
 
 
 def test_rollback_with_an_unknown_running_commit_goes_to_the_tag(_home, monkeypatch, capsys):
-    # review of #64's second fix, P1: with no commit known before the install, restore()
+    # review of the second fix, P1: with no commit known before the install, restore()
     # re-read direct_url.json afterwards and reinstalled the rejected build.
     config.set_value("update.pin", SHA)
     github(monkeypatch, {}, {SHA: SHA})

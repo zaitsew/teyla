@@ -633,7 +633,7 @@ def test_claude_code_print_mode_is_batch(tmp_path):
     root = tmp_path / "projects"
     _write(str(root / "-Users-me-ops" / "p.jsonl"), [
         {"type": "user", "timestamp": "2026-01-01T00:00:00Z", "entrypoint": "sdk-cli",
-         "message": {"role": "user", "content": "Review PR #313. Do not run any command, never edit files."}},
+         "message": {"role": "user", "content": "Review PR #1. Do not run any command, never edit files."}},
     ])
     _write(str(root / "-Users-me-ops" / "i.jsonl"), [
         {"type": "user", "timestamp": "2026-01-01T00:00:00Z", "entrypoint": "cli",
@@ -817,7 +817,7 @@ def test_grok_assistant_scan_matches_a_full_decode(tmp_path):
 
 def test_codex_empty_archive_root_still_means_no_archive(tmp_path, monkeypatch):
     """`archive_root=""` disables the archive; resolving defaults at call time must not turn it
-    back into ~/.codex/archived_sessions (Codex P2 on #82)."""
+    back into ~/.codex/archived_sessions (Codex P2)."""
     from teyla.adapters import codex
     archive = tmp_path / "archive"; archive.mkdir()
     monkeypatch.setattr(codex, "DEFAULT_ARCHIVE_ROOT", str(archive))
@@ -846,7 +846,7 @@ def test_codex_empty_archive_root_still_means_no_archive(tmp_path, monkeypatch):
     ("Bash", {"command": "python3 - <<'EOF'\np=pathlib.Path('bin/x.mjs')\np.write_text('// lives in ~/.claude/CLAUDE.md')\nEOF"}, False),
     ("Bash", {"command": "python3 - <<'EOF'\nold='[ \"$HOME/.claude/CLAUDE.md\" -nt \"$a\" ]'\np.write_text(s)\nEOF"}, False),
     ("Bash", {"command": "cat ~/.claude/CLAUDE.md >> $P"}, False),
-    # review of #104 (P2): a quoted sed script's | is not a pipe; a quoted > is not a redirect
+    # caught in review (P2): a quoted sed script's | is not a pipe; a quoted > is not a redirect
     ("Bash", {"command": "sed -i '' 's|old|new|' ~/.claude/CLAUDE.md"}, True),
     ("Bash", {"command": "echo 'example > ~/.claude/CLAUDE.md' > /tmp/docs"}, False),
 ])

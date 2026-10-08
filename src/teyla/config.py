@@ -142,7 +142,7 @@ def write_all(fd: int, data: bytes) -> None:
     """Write every byte of `data` to `fd`, then fsync. `os.write` may write fewer bytes than
     asked — a full disk or quota — and says so only in its return value: an unchecked call
     reported a half-written record as saved, and the worktree rescue then deleted the
-    original (review of #63, P1)."""
+    original (caught in review, P1)."""
     view = memoryview(data)
     while view:
         n = os.write(fd, view)
@@ -171,7 +171,7 @@ def _read(p: pathlib.Path) -> dict:
     """The file's tables, or — when it exists and does not parse — a config whose only content
     is a safe mode that cannot be read as off. Returning {} here made one stray quote in [env]
     turn safe mode off: doctor then asked GitHub, routines ran gh, products ran every check.sh
-    (review of #59, P1). Fail closed, and let doctor say why. Only a file that is really not
+    (caught in review, P1). Fail closed, and let doctor say why. Only a file that is really not
     there reads as {}: Path.exists() is False when stat itself is refused (a 0000 parent
     directory), which made an unreadable config look absent — safe mode off (review, P1)."""
     import tomllib
@@ -285,7 +285,7 @@ def _coerce(default, value: str):
     """A `config set` string as the type its default has: `safe.enabled=true` must be a TOML
     boolean and `products.repos=a,b` a list, or every reader has to re-guess the string.
     A value that is not of that type raises InvalidValue: `safe.enabled=treu` stored as a
-    string read as false, and switched safe mode *off* (Codex review of #59, P2)."""
+    string read as false, and switched safe mode *off* (Codex review, P2)."""
     if isinstance(default, bool):
         low = value.strip().lower()
         if low in TRUE_WORDS:

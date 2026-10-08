@@ -280,7 +280,7 @@ def installed_sha() -> str | None:
     """The commit the running version was installed from: what its installer recorded
     (direct_url.json), else what `teyla update` recorded after a verified install of this
     version. None when neither knows — a pin then counts as not met: the same version number
-    says nothing about which commit it was built from (review of #64, P1)."""
+    says nothing about which commit it was built from (caught in review, P1)."""
     found = _dist_commit()
     if found:
         return found
@@ -310,7 +310,7 @@ def _wanted(tag: str | None, sha: str | None, pin: str | None) -> bool:
     if tag and not sha:
         return _vtuple(tag) != _vtuple(__version__)  # nothing to compare commits with; install would refuse anyway
     # By commit, never by version: a build of main that says 0.12.0 is not release v0.12.0,
-    # and an install whose commit is unknown is not known to be the pin (review of #64, P1).
+    # and an install whose commit is unknown is not known to be the pin (caught in review, P1).
     return bool(sha) and not same_commit(installed_sha(), sha)
 
 
@@ -408,7 +408,7 @@ def _installer(method: str, spec: str, src: str) -> list[str] | None:
     """The install command for `method`, or None when its tool is missing."""
     # Every install names one exact commit, and it must land even when that commit carries the
     # version already installed: pip's --upgrade then keeps what is there, and uv may reuse its
-    # build. So always reinstall (review of #64, P1). pipx --force recreates the venv already.
+    # build. So always reinstall (caught in review, P1). pipx --force recreates the venv already.
     if method == "uv-tool":
         uv = shutil.which("uv")
         return [uv, "tool", "install", "--force", "--python", spec, "--reinstall", src] if uv else None
@@ -456,7 +456,7 @@ def restore(repo: str, method: str, spec: str, before: str | None = None) -> lis
     """Put the version that was running back: by the commit it was installed from when
     `teyla update` recorded one, else by its release tag. After an install, pass `before`
     (installed_sha() read *before* the installer ran): by then direct_url.json describes the
-    build being rejected, and restoring "what is installed" reinstalled it (review of #64, P1)."""
+    build being rejected, and restoring "what is installed" reinstalled it (caught in review, P1)."""
     ref = before or installed_sha() or f"v{__version__}"
     cmd = _installer(method, spec, install_source(repo, ref))
     if cmd is None:
@@ -485,7 +485,7 @@ def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | No
     src = install_source(repo, sha)
     # What to roll back to, frozen before the installer replaces direct_url.json. The tag
     # fallback is frozen too: when the running build's commit is unknown, re-reading it after
-    # the install found the rejected build's commit (review of #64, P1).
+    # the install found the rejected build's commit (caught in review, P1).
     before = installed_sha() or f"v{__version__}"
     cmd = _installer(method, spec, src)
     if cmd is None:
@@ -510,7 +510,7 @@ def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | No
     got = installed_version(method)
     if (got != tag.lstrip("v")) if tag else not got:
         # The commit built, but it is not the release it was looked up as (a moved tag, a
-        # mis-versioned build) — or, for a sha pin, it does not run at all (review of #64, P2).
+        # mis-versioned build) — or, for a sha pin, it does not run at all (caught in review, P2).
         # Keep the version that was known to work.
         want = f", expected {tag.lstrip('v')}" if tag else ""
         lines.append(f"FAIL: installed {sha[:12]} reports version {got or '(none)'}{want} — restoring")
@@ -520,13 +520,13 @@ def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | No
     if landed is None:
         # The check that the pinned commit is what landed could not run (no probe interpreter, a
         # probe that failed, no commit recorded). An install nobody verified is not accepted: it
-        # would be recorded as the pin met (review of #64, P2). Keep the version known to work.
+        # would be recorded as the pin met (caught in review, P2). Keep the version known to work.
         lines.append(f"FAIL: installed {sha[:12]} but could not verify which commit is on disk — restoring")
         lines += restore(repo, method, spec, before)
         return lines
     if not same_commit(landed, sha):
         # The installer kept another build of the same version; recording `sha` would make the
-        # pin look met forever (review of #64, P1).
+        # pin look met forever (caught in review, P1).
         lines.append(f"FAIL: asked for {sha[:12]} but the installed build is {landed[:12]} — restoring")
         lines += restore(repo, method, spec, before)
         return lines

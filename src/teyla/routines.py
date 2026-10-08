@@ -517,7 +517,7 @@ def _sh(s: str) -> str:
 
 def confirm_command(product: str, check_name: str, status: str = "ok") -> str:
     """One pasteable command. Never `ok|broken` in one line: pasted, that is a pipeline — Teyla
-    records ok and the shell then tries to run `broken` (review of #65, P2)."""
+    records ok and the shell then tries to run `broken` (caught in review, P2)."""
     return f"teyla check {_sh(product)} {_sh(check_name)} {status}"
 
 
@@ -845,8 +845,8 @@ def _toml_str(s: str) -> str:
 
 def _inside_value(lines: list[str]) -> list[bool]:
     """inside[i]: does line i begin in the middle of a TOML value — a multiline string or a
-    multiline array? Such a line is text, never a table header or a `key = value` field (review
-    of #65, P1: a `how` that quoted `status = "..."` on its own line was eaten as the field).
+    multiline array? Such a line is text, never a table header or a `key = value` field (caught in
+    review, P1: a `how` that quoted `status = "..."` on its own line was eaten as the field).
     One extra entry at the end: whether the file stops inside a value."""
     inside, st, depth = [], None, 0
     for line in lines:

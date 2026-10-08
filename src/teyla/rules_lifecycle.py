@@ -174,7 +174,7 @@ def load_rules(repo: pathlib.Path) -> list[Rule]:
 def lifecycle_fields(when: _dt.date | _dt.datetime) -> str:
     """The frontmatter lines a new rule file starts with (after `globs:`). `created` is a full
     timestamp: the hit watermark compares to the second, so a correction made later on the
-    rule's first day counts (review of #87, P2). A bare date is still accepted, as old files have."""
+    rule's first day counts (caught in review, P2). A bare date is still accepted, as old files have."""
     if isinstance(when, _dt.datetime):
         when = when if when.tzinfo else when.replace(tzinfo=_dt.timezone.utc)
         created, day = when.isoformat(timespec="seconds"), when.date()
@@ -403,7 +403,7 @@ def write(rep: dict) -> list[str]:
 
     Two passes: everything is computed and scanned (a dry `add_rule` runs the same checks)
     before anything is written, so a refusal on the third proposal cannot leave the first two
-    written behind a message that says "Nothing was written" (review of #87, P2)."""
+    written behind a message that says "Nothing was written" (caught in review, P2)."""
     from . import invisible, rules as rules_mod
     for p in rep["new"]:
         rules_mod.add_rule(rep["repo"], p["text"], scope="**", dry=True, today=rep["now"])

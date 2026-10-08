@@ -268,7 +268,7 @@ def test_land_check_stops_at_the_pr_off_the_list(tmp_path):
     for i, origin in enumerate(("git@github.com:approved/in-prose.git", "git@github.com:zaitsew/after-the-fence.git",
                                 "https://gitlab.corp.example/platform/tools/svc-api.git",
                                 # a bare owner/repo approves GitHub only, not the same path on
-                                # another host (review of #100, P1); a host entry approves only
+                                # another host (caught in review, P1); a host entry approves only
                                 # that host
                                 "git@gitlab.corp.example:zaitsew/teyla.git",
                                 "https://gitlab.corp.example/platform/x.git")):

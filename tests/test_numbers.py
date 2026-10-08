@@ -332,10 +332,10 @@ def test_a10_acked_and_unchanged_is_silent(tmp_path, monkeypatch):
     assert _a10(metrics([_gov_session("2026-09-14"), _gov_session("2026-09-25")])) == []
 
 
-# --- review of #68 ------------------------------------------------------------------------------
+# --- caught in review ------------------------------------------------------------------------------
 
 def test_hermes_oneshot_source_is_batch_whatever_the_prompt_count(tmp_path):
-    """Installed Hermes records `hermes -z` with source "oneshot" (review of #68, P1)."""
+    """Installed Hermes records `hermes -z` with source "oneshot" (caught in review, P1)."""
     db = tmp_path / "state.db"
     con = sqlite3.connect(db)
     con.execute("CREATE TABLE sessions (id TEXT, source TEXT, model TEXT, cwd TEXT, git_repo_root TEXT, session_key TEXT,"
@@ -353,7 +353,7 @@ def test_hermes_oneshot_source_is_batch_whatever_the_prompt_count(tmp_path):
 
 
 def test_hook_skips_a_single_query_child_of_an_interactive_hermes(tmp_path):
-    """`hermes -z` launched from interactive Hermes inherits HERMES_INTERACTIVE=1 (review of #68, P2)."""
+    """`hermes -z` launched from interactive Hermes inherits HERMES_INTERACTIVE=1 (caught in review, P2)."""
     from teyla.corrections import headless
     assert headless({"prompt": "that is wrong"}, env={"HERMES_SINGLE_QUERY_SESSION": "1", "HERMES_INTERACTIVE": "1"})
     assert not headless({"prompt": "that is wrong"}, env={"HERMES_INTERACTIVE": "1"})
@@ -361,7 +361,7 @@ def test_hook_skips_a_single_query_child_of_an_interactive_hermes(tmp_path):
 
 def test_a10_uses_the_day_of_the_write_not_the_day_the_session_started(tmp_path, monkeypatch):
     """Started 09-18, acked 09-20, resumed and wrote the file 09-23: an edit after the ack
-    (review of #68, P2). Without the write's own date it read as "no edit after the ack"."""
+    (caught in review, P2). Without the write's own date it read as "no edit after the ack"."""
     _home(tmp_path, monkeypatch, "v2", ack={"sha256": hashlib.sha256(b"v1").hexdigest(), "date": "2026-09-20"})
     root = tmp_path / "projects"
     _write(str(root / "-Users-me-ops" / "s.jsonl"), [
@@ -375,7 +375,7 @@ def test_a10_uses_the_day_of_the_write_not_the_day_the_session_started(tmp_path,
 
 
 def test_monitor_marks_a10_seen_only_after_the_report_is_written(tmp_path, monkeypatch):
-    """An unwritable --out must not silence the never-acknowledged A10 next time (review of #68, P2)."""
+    """An unwritable --out must not silence the never-acknowledged A10 next time (caught in review, P2)."""
     import argparse
     from teyla import cli
     _home(tmp_path, monkeypatch, "v1")
@@ -398,7 +398,7 @@ def _in_tz(monkeypatch, name):
 
 
 def test_a10_compares_the_write_and_the_ack_in_one_timezone(tmp_path, monkeypatch):
-    """review of #68, P2: the write's day was UTC, the ack day is local. 01:00Z on 09-21 is
+    """caught in review, P2: the write's day was UTC, the ack day is local. 01:00Z on 09-21 is
     still the evening of 09-20 in Los Angeles, so a write after an ack on 09-20 (local) is not
     after it."""
     import time
@@ -423,7 +423,7 @@ def test_a10_compares_the_write_and_the_ack_in_one_timezone(tmp_path, monkeypatc
 
 
 def test_a10_is_not_marked_seen_when_stdout_cannot_be_written(tmp_path, monkeypatch):
-    """review of #68, P2: a closed pipe (`teyla monitor | head -0`) is not delivery."""
+    """caught in review, P2: a closed pipe (`teyla monitor | head -0`) is not delivery."""
     import argparse
     from teyla import cli
 

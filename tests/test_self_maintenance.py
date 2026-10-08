@@ -183,7 +183,7 @@ def test_refresh_conflict_leaves_policy_untouched(_home, monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("code", [255, 128, -9])
 def test_refresh_treats_a_merge_file_error_as_an_error_not_conflicts(_home, monkeypatch, tmp_path, code):
-    # review of #64, P2: exit 255 (and anything above 127) was reported as "255 conflict(s)" and
+    # caught in review, P2: exit 255 (and anything above 127) was reported as "255 conflict(s)" and
     # its empty stdout written to the conflict file.
     import subprocess
     _tpl(monkeypatch, tmp_path, "# P\nOwner: {{owner}}.\n\n## 1\nline A\n")
@@ -235,7 +235,7 @@ def test_repos_status(tmp_path):
 
 
 def test_an_agents_import_inside_a_code_fence_is_not_a_link(tmp_path):
-    # review of #81, P2: Claude Code does not expand imports in code, so a fenced example of the
+    # caught in review, P2: Claude Code does not expand imports in code, so a fenced example of the
     # line neither links the files nor makes divergent text "consistent".
     root = tmp_path / "repos"
     cases = {

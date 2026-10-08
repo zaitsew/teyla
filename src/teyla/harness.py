@@ -237,7 +237,7 @@ def _is_teyla_group(group) -> bool:
 def _without_teyla(groups) -> list:
     """`groups` minus Teyla's handlers. A user's handler that shares a group with ours stays in
     that group (matcher and other keys kept); a group is dropped only once it is left empty
-    (review of #61, P1)."""
+    (caught in review, P1)."""
     out = []
     for g in groups or []:
         if not _is_teyla_group(g):
@@ -502,7 +502,7 @@ def _codex_trust(h: Harness) -> tuple[int, int, list[str]]:
                 continue
             for hi, handler in enumerate(group.get("hooks") or []):
                 if not _is_teyla_handler(handler):
-                    continue  # a user's handler in a shared group is not ours to count (review of #61)
+                    continue  # a user's handler in a shared group is not ours to count (caught in review)
                 total += 1
                 rec = state.get(f"{h.hooks_path}:{_CODEX_EVENT_LABELS[event]}:{gi}:{hi}") or {}
                 want = codex_hook_hash(event, handler, group.get("matcher"))
@@ -566,18 +566,18 @@ _HERMES_TRUTHY = {"1", "true", "yes", "on"}  # agent/shell_hooks.py `_TRUTHY`
 
 def _hermes_auto_accept(text: str) -> bool:
     """Is `hooks_auto_accept` set, as a top-level key, to what Hermes reads as true? A commented
-    line or a nested key of the same name does not count (review of #61, P2). No YAML dependency:
+    line or a nested key of the same name does not count (caught in review, P2). No YAML dependency:
     only an unindented `key: value` line is looked at, and the last one wins, as in YAML loaders."""
     val, depth, block_parent = None, 0, None
     for line in text.splitlines():
         # The indented lines of a block scalar (`key: |`, `- >-`) are text, not YAML: a `}` in one
-        # must not close a mapping (Codex P2 on #84).
+        # must not close a mapping (Codex P2).
         if block_parent is not None:
             if not line.strip() or len(line) - len(line.lstrip()) > block_parent:
                 continue
             block_parent = None
         # A `{…}` / `[…]` that spans lines keeps its members out of the top level, whatever column
-        # they start in (#61): count the brackets of every line, outside quotes and comments.
+        # they start in: count the brackets of every line, outside quotes and comments.
         at_top = depth <= 0
         if depth <= 0:
             block_parent = _block_scalar_parent(line)

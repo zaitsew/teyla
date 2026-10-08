@@ -179,7 +179,7 @@ fi
   fi
   if [ -n "$teyla_bin" ]; then
     # The generated file is stale when a source is newer: POLICY.md, CLAUDE.md, or a file
-    # CLAUDE.md pulls in with an `@~/...` line (Codex review of #96, P2). A symlink still
+    # CLAUDE.md pulls in with an `@~/...` line (Codex review, P2). A symlink still
     # pointing at POLICY.md is stale once CLAUDE.md changes after the last sync — it may have
     # gained rules — so the sync stamp, not the link, is compared then.
     sources="$HOME/.agents/POLICY.md $HOME/.claude/CLAUDE.md"

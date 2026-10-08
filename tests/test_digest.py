@@ -331,7 +331,7 @@ def test_manifests_are_discovered_under_config_code_root(tmp_path, monkeypatch):
     assert routines.find_manifests() == [code / "a" / "teyla.toml"]
 
 
-# --- review of #65 ------------------------------------------------------------------------------------
+# --- caught in review ------------------------------------------------------------------------------------
 
 def test_a10_digest_action_never_becomes_an_unconditional_ack():
     from teyla import advise

@@ -100,7 +100,7 @@ awk '
   # The host, lower-cased, without user@ or :port. The MERGE-APPROVED list names GitHub repos
   # as owner/repo, so a bare entry approves github.com only; a repo elsewhere is approved only
   # by an entry that spells its host (gitlab.corp/group/repo). Without this, gitlab.corp/a/b
-  # inherited github.com/a/b's approval (review of #100, P1).
+  # inherited github.com/a/b's approval (caught in review, P1).
   host=$(printf '%s' "$url" | sed -n -e 's#^[A-Za-z][A-Za-z0-9+.-]*://\([^@/]*@\)\{0,1\}\([^/:]*\).*#\2#p' \
          -e 't' -e 's#^\([^@/]*@\)\{0,1\}\([^:/]*\):.*#\2#p' | tr 'A-Z' 'a-z')
   slug=$(printf '%s' "$url" | sed -e 's#^[A-Za-z][A-Za-z0-9+.-]*://[^/]*/##' -e 's#^[^@/]*@[^:/]*:##' \

@@ -75,14 +75,14 @@ _SECRET_NAME = r"[A-Za-z0-9_\-]*?(?:password|passwd|token|secret|api[_-]?key|acc
 # A quoted value honours backslash escapes (`"ab\"cd"` is one value, as netrc reads it) and
 # runs to the end of the line when its closing quote was cut off. An unquoted value may hold
 # `}` — `PASSWORD=abC}123` is one password — and only braces at its very end are left, as
-# the close of `{token=abc}` (review of #63, P1: excluding `}` outright kept `}123`).
+# the close of `{token=abc}` (caught in review, P1: excluding `}` outright kept `}123`).
 _QUOTED = r"\"(?:[^\"\\\n]|\\.)*\"?|'(?:[^'\\\n]|\\.)*'?"
 _BARE = r"[^\s,;'\"]+?(?=\}*(?:[\s,;'\"]|\Z))"
 _VALUE = r"(" + _QUOTED + r"|" + _BARE + r")"
 _ASSIGN_RE = re.compile(r"(?i)\b(" + _SECRET_NAME + r"[\"']?)(\s*[:=]\s*)" + _VALUE)
 _FLAG_RE = re.compile(r"(?i)((?<!\S)--" + _SECRET_NAME + r")(\s+)(?!\[redacted\])" + _VALUE)
 # `password hunter2`: only a value with a digit or a symbol in it — "reset my password then" is
-# prose. A quoted value always goes: `password "hunter2"` is valid .netrc (review of #63, P1).
+# prose. A quoted value always goes: `password "hunter2"` is valid .netrc (caught in review, P1).
 _BARE_RE = re.compile(r"(?i)(\b(?:password|passwd))(\s+)(?!\[redacted\])"
                       r"(" + _QUOTED + r"|(?=[^\s,;]*(?:\d|_|[^\s\w,;]))" + _BARE + r")")
 _HEX_RE = re.compile(r"\b[0-9a-fA-F]{40,}\b")
@@ -211,7 +211,7 @@ def cwd_key(cwd) -> str:
     """Sixteen hex of a hash of the resolved `cwd`. misc.jsonl holds every non-repo directory,
     and `records()` keeps one directory's by comparing paths — but the stored `cwd` is
     scrubbed, so `/tmp/token=abc123` was kept as `/tmp/token=[redacted]` and never matched its
-    own directory again (review of #63, P2). The key is taken before scrubbing and matched
+    own directory again (caught in review, P2). The key is taken before scrubbing and matched
     instead; sixteen hex stays below every pattern `scrub()` has."""
     try:
         p = str(pathlib.Path(cwd).expanduser().resolve())
@@ -390,8 +390,8 @@ def records(cwd, cfg: dict | None = None) -> list[dict]:
             # misc.jsonl holds every non-repo directory; keep this one's, by `cwd_key`. A record
             # written before `cwd_key` existed has only its scrubbed path, which several
             # directories can share (`/tmp/token=a` and `/tmp/token=b`): it belongs to this one
-            # only when nothing was scrubbed out of this path, so a match is exact (review of
-            # #63, P2). Otherwise it is skipped — unattributable, and not worth another
+            # only when nothing was scrubbed out of this path, so a match is exact (caught in
+            # review, P2). Otherwise it is skipped — unattributable, and not worth another
             # directory's text.
             if root is None and rec.get("cwd"):
                 if rec.get("cwd_key"):
@@ -451,14 +451,14 @@ def headless(data: dict, env=None) -> bool:
     if str(env.get("CLAUDE_CODE_ENTRYPOINT") or "").startswith("sdk-"):
         return True
     # A `hermes -z` child launched from an interactive Hermes inherits HERMES_INTERACTIVE=1, so
-    # the single-query flag is checked first (review of #68, P2).
+    # the single-query flag is checked first (caught in review, P2).
     if env.get("HERMES_SINGLE_QUERY_SESSION") == "1":
         return True
     if env.get("HERMES_YOLO_MODE") == "1" and env.get("HERMES_ACCEPT_HOOKS") == "1" and not env.get("HERMES_INTERACTIVE"):
         return True
     # Codex fires UserPromptSubmit for `codex exec` too: a script or another agent wrote that
     # prompt. Its rollout (transcript_path) opens with `"originator":"codex_exec"` — the same
-    # test the monitor's Codex adapter uses to call a session batch (#61).
+    # test the monitor's Codex adapter uses to call a session batch.
     tp = data.get("transcript_path") if isinstance(data, dict) else None
     if isinstance(tp, str) and tp:
         try:

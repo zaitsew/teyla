@@ -148,7 +148,7 @@ def workflow_triggers(text: str) -> list[str]:
             ind = len(s) - len(s.lstrip())
             if ind == 0 and not s.startswith("-"):
                 # Next top-level key ends the block. A sequence at the key's own indentation
-                # (`on:` then `- push`) is valid YAML and stays in (review of #60, P2).
+                # (`on:` then `- push`) is valid YAML and stays in (caught in review, P2).
                 break
             if indent is None:
                 indent = ind
@@ -191,7 +191,7 @@ def repos(cfg: dict | None = None) -> list[pathlib.Path]:
 
 def _git(repo: pathlib.Path, *args: str, stdin: str | None = None) -> bytes | None:
     # Bytes, not text: text mode turns CRLF into LF, and cat-file --batch declares blob sizes in
-    # the original bytes, so every offset after a CRLF file drifted (review of #60, P2).
+    # the original bytes, so every offset after a CRLF file drifted (caught in review, P2).
     try:
         r = subprocess.run(["git", "-C", str(repo), *args], input=stdin.encode() if stdin is not None else None,
                            capture_output=True, timeout=10)
@@ -340,7 +340,7 @@ BLOCKER_RE = re.compile(
 )
 # The whole reply must be a yes — words from this list and punctuation, nothing else.
 # "Yes, but don't push until CI is green" is a decision with a condition, not a nudge; a
-# prefix match counted it (Codex review of #60). "ok", "go" and "давай" open a redirect as
+# prefix match counted it (Codex review). "ok", "go" and "давай" open a redirect as
 # often as a yes ("Okay, skip grok…", "Давай нагенерим больше вариантов" — both measured),
 # so a reply is also rejected when anything but these words follows them.
 AFFIRMATIVE_WORDS = frozenset(

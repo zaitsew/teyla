@@ -1851,7 +1851,7 @@ def test_p2_8_net_star_is_still_everything():
     assert G.net_allowed("https://anything.example/x", ["*"])[0] is True
 
 
-# Review of #59 (P2): safe mode switched on between the approve check and the act step
+# Caught in review (P2): safe mode switched on between the approve check and the act step
 # refused the step, but the approval was recorded as used.
 
 def test_safe_mode_flipped_before_the_act_does_not_use_up_the_approval(product, monkeypatch, capsys):

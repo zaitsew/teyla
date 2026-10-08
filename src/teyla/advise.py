@@ -97,7 +97,7 @@ def _a10(gov: list[dict]) -> list[dict]:
                      action="Run `teyla policy ack` after reviewing ~/.claude/CLAUDE.md; from then on only "
                             "edits after the ack are flagged. Shown once until the file changes.")]
     # Compare the days the writes happened on, not the day the session started: a session begun
-    # before the ack and resumed after it wrote after it (review of #68, P2). Metrics written
+    # before the ack and resumed after it wrote after it (caught in review, P2). Metrics written
     # before `days` existed fall back to the start day.
     days = lambda g: g.get("days") or [g["day"]]
     is_after = lambda g: bool(acked_date) and any(d > acked_date for d in days(g))

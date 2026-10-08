@@ -350,7 +350,7 @@ AUTH = {"claude-code": auth_claude, "codex": auth_codex, "grok": auth_grok, "her
 
 class _Errs:
     """The newest error and, separately, the newest quota/auth one. An unrelated newer error (a
-    local filesystem ERROR, a 529) must not hide an unresolved quota/auth failure (review of #66,
+    local filesystem ERROR, a 529) must not hide an unresolved quota/auth failure (caught in review,
     P2), so the caller picks with `pick` once it knows the last success."""
 
     def __init__(self):
@@ -419,7 +419,7 @@ def errors_claude(home: pathlib.Path, since: float, probe_ok: _dt.datetime | Non
                 last_ok[ep] = ts
     # One verdict per entrypoint, then the pick among them: an unresolved quota/auth failure of any
     # entrypoint is shown over a newer error (or a recovered one) of another, so neither hides
-    # the other (#66). The error's own entrypoint supplies "last success".
+    # the other. The error's own entrypoint supplies "last success".
     picked = [e for ep, errs in by_ep.items() if (e := errs.pick(last_ok.get(ep)))]
     open_hard = [e for e in picked if e["kind"] in ("quota", "auth") and not recovered(e, last_ok.get(e["entrypoint"]))]
     pool = open_hard or picked
@@ -718,7 +718,7 @@ def recovered(err: dict | None, last_ok: _dt.datetime | None) -> bool:
 
 def _window_live(w: dict, now: float) -> bool:
     """A recorded window still counts only until its own reset: a 100% snapshot whose `resets_at`
-    has passed is history, not a limit (review of #66, P2)."""
+    has passed is history, not a limit (caught in review, P2)."""
     r = w.get("resets_at")
     return not (isinstance(r, (int, float)) and r <= now)
 
@@ -726,7 +726,7 @@ def _window_live(w: dict, now: float) -> bool:
 def verdict(name: str, row: dict, live_ok: bool = False) -> dict:
     """level (OK/WARN/FIX), a one-line detail, and the fix. `live_ok`: a live call just succeeded,
     which supersedes every historical availability failure (auth record, limit snapshot, logged
-    error) but not a broken install (review of #66, P2)."""
+    error) but not a broken install (caught in review, P2)."""
     parts, level, fix = [], "OK", None
     parts.append(row.get("version") or (f"no `{BINARY[name]}` on PATH" if not row.get("binary") else "version ?"))
     if row.get("version_error"):
@@ -816,7 +816,7 @@ def window_errors(days: int, home: pathlib.Path | None = None) -> list[dict]:
         now = time.time()
         live = {"primary": _window_live(lim.get("primary") or {}, now), "secondary": _window_live(lim.get("secondary") or {}, now)}
         # A limit event newer than the recorded error is the current state, even when an old quota
-        # error was already cleared by a success in between (review of #69, P2); only a success
+        # error was already cleared by a success in between (caught in review, P2); only a success
         # after the limit event clears it. A snapshot whose window has reset is history.
         if (rt and lim.get("at") and live.get(str(rt), any(live.values()))
                 and (err is None or err["kind"] not in ("quota", "auth") or err.get("ts") is None or lim["at"] > err["ts"])):
@@ -849,8 +849,8 @@ LIVE_PROMPT = ("Reply with one line and nothing else: the title of section 7 of 
 
 
 # Hermes's SOUL.md carries a summary of the policy and a reference to POLICY.md, not section 7's
-# heading (policy.sync); forbidding file reads would make correct wiring answer NO-POLICY (review
-# of #66, P2).
+# heading (policy.sync); forbidding file reads would make correct wiring answer NO-POLICY (caught
+# in review, P2).
 LIVE_PROMPT_HERMES = ("Reply with one line and nothing else: the title of section 7 of the operating policy your "
                       "instructions refer to (the heading text after \"7.\"). You may read the policy file your "
                       "instructions point to, but use no other tool. "
@@ -935,7 +935,7 @@ def verify(live_run: bool = False, timeout: int = 120, home: pathlib.Path | None
         for n, r, lv in zip(names, rows, lives):
             r["live"] = lv
             if lv.get("result") == "ok":
-                verdict(n, r, live_ok=True)  # a confirmed success supersedes history (review of #66, P2)
+                verdict(n, r, live_ok=True)  # a confirmed success supersedes history (caught in review, P2)
     return rows
 
 

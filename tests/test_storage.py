@@ -817,7 +817,7 @@ def test_derived_data_on_an_unmounted_volume_is_not_gone(tmp_path):
 
 def test_derived_data_plist_that_is_not_a_dict_is_skipped(tmp_path):
     """A valid plist holding an array is not a DerivedData info.plist: skipped, the scan goes on
-    (review of #107, P2)."""
+    (caught in review, P2)."""
     root, d = _derived(tmp_path, name="Odd-1")
     with (d / "info.plist").open("wb") as f:
         plistlib.dump(["not", "a", "dict"], f)
@@ -827,7 +827,7 @@ def test_derived_data_plist_that_is_not_a_dict_is_skipped(tmp_path):
 
 @pytest.mark.parametrize("writing, why", [(True, "an Xcode build is running"), (None, "ps failed")])
 def test_derived_data_is_kept_while_xcode_may_be_writing(tmp_path, monkeypatch, writing, why):
-    """A build writes deep under Build/, where no mtime the scan reads moves (review of #107, P1
+    """A build writes deep under Build/, where no mtime the scan reads moves (caught in review, P1
     round 2): no folder goes while xcodebuild or a build service runs, or when ps cannot say."""
     root, d = _derived(tmp_path, name="Busy-1")
     monkeypatch.setattr(storage, "xcode_writing", lambda: writing)

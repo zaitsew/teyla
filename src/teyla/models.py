@@ -622,7 +622,7 @@ def write_policy(path: pathlib.Path | None = None, dry: bool = False, days: int 
     In a work-variant policy the ladder *is* the list of providers IT approved for this code, so
     only rows already there are updated; a provider joins it only through `add_providers`
     (`--add-provider`). Without that, a routine model refresh added OpenAI and xAI rows and
-    silently widened the allowlist (Codex review of #59)."""
+    silently widened the allowlist (Codex review)."""
     from . import policy as _policy
     target = path or _policy.POLICY
     text = target.read_text()

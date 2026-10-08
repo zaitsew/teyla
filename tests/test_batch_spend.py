@@ -136,8 +136,8 @@ def test_share_redacts_headless_project_names():
 
 
 def test_a18_a_later_unrelated_error_does_not_hide_a_quota_failure(tmp_path, monkeypatch):
-    """Grok answered 402, then a connection reset; no call succeeded. Still failing (review of #69, P2;
-    already resolved by the #66 merge, this pins it for A18)."""
+    """Grok answered 402, then a connection reset; no call succeeded. Still failing (caught in review, P2;
+    this pins it for A18)."""
     home = tmp_path / "home"
     (home / ".grok" / "logs").mkdir(parents=True)
     monkeypatch.delenv("CODEX_HOME", raising=False); monkeypatch.delenv("GROK_HOME", raising=False)
@@ -152,7 +152,7 @@ def test_a18_a_later_unrelated_error_does_not_hide_a_quota_failure(tmp_path, mon
 
 def test_a18_a_limit_event_newer_than_a_cleared_quota_error_is_still_failing(tmp_path, monkeypatch):
     """Old quota error, a success, then Codex reports the limit reached again: exhausted now, not
-    "recovered" because the old error's kind matched (review of #69, P2)."""
+    "recovered" because the old error's kind matched (caught in review, P2)."""
     home = tmp_path / "home"
     (home / ".codex" / "sessions").mkdir(parents=True)
     monkeypatch.delenv("CODEX_HOME", raising=False); monkeypatch.delenv("GROK_HOME", raising=False)

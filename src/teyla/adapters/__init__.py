@@ -116,7 +116,7 @@ def local_day(ts: str | None) -> str:
     """The local calendar date (YYYY-MM-DD) of an ISO timestamp. Session timestamps are UTC
     (`...Z`) and `teyla policy ack` records `date.today()`, which is local: A10 must compare
     both in one timezone, or an evening edit west of UTC (or a night one east of it) lands on
-    the wrong side of the ack day (review of #68, P2). A naive timestamp is read as UTC; one
+    the wrong side of the ack day (caught in review, P2). A naive timestamp is read as UTC; one
     that does not parse falls back to its first ten characters."""
     ts = ts or ""
     try:

@@ -137,7 +137,7 @@ def _session_from_row(con: sqlite3.Connection, row: sqlite3.Row, root: str) -> S
 
 
 # Installed Hermes records `hermes -z` (one-shot) with source "oneshot": always batch,
-# whatever the prompt count (review of #68, P1). Older builds wrote it as "cli", the same as
+# whatever the prompt count (caught in review, P1). Older builds wrote it as "cli", the same as
 # `hermes chat`, so the source could not tell them apart; what can is that a one-shot session
 # has exactly one prompt. As for Grok without its flag, a CLI session with at most one user
 # message is taken as batch; the desktop app and the messaging gateways are people.

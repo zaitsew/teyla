@@ -99,7 +99,7 @@ def add_rule(repo: str | pathlib.Path, text: str, scope: str = "**", dry: bool =
              today: _dt.date | _dt.datetime | None = None) -> list[str]:
     """Every file's new text is computed and scanned before any is written: a clean rule
     appended to a rule file, or mirrored into an AGENTS.md, that already hides a bidi or
-    zero-width character would otherwise re-save it under Teyla's name (review of #87, P2).
+    zero-width character would otherwise re-save it under Teyla's name (caught in review, P2).
     `dry` runs the same checks, so a dry run refuses exactly what a real one would."""
     from . import invisible, rules_lifecycle
     repo = pathlib.Path(repo).expanduser().resolve()

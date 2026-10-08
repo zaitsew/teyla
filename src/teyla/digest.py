@@ -204,7 +204,7 @@ def _step_of_advice(action: str) -> tuple[str, bool]:
 
     A span is skipped when the words before it, in its sentence, set a condition ("if the edit
     is yours, run `teyla policy ack`") or when it is an ack: the line would say "run this" and
-    lose the "if" (review of #65, P1 — A10 became an unconditional `teyla policy ack`)."""
+    lose the "if" (caught in review, P1 — A10 became an unconditional `teyla policy ack`)."""
     text = action or ""
     for m in re.finditer(r"`([^`]+)`", text):
         span = m.group(1)
@@ -222,7 +222,7 @@ def _step_of_fix(fix: str | None) -> tuple[str, bool]:
     # doctor fixes often carry an alternative in parentheses after spaces: keep the first command.
     # Not truncated: a step is copied into a shell, and a command cut with "…" does not run.
     step = _clean(re.split(r"\s{2,}\(", fix or "")[0]) or "teyla doctor"
-    if _ACK_RE.match(step):  # its parenthesis says "if you made or accepted the edit" (review of #65, P1)
+    if _ACK_RE.match(step):  # its parenthesis says "if you made or accepted the edit" (caught in review, P1)
         return "diff the global CLAUDE.md, then acknowledge it only if the edit is yours", False
     return step, bool(_COMMAND_RE.match(step))
 

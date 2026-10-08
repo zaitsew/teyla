@@ -322,7 +322,7 @@ def test_doctor_checks_one_line_per_installed_harness(home, monkeypatch):
     assert "7d:" not in rows[2]["detail"]  # doctor's harness:grok line already counts sessions
 
 
-# --- review of #66 --------------------------------------------------------------------------------
+# --- caught in review --------------------------------------------------------------------------------
 
 def _codex_rollout(home, records):
     day = home / ".codex" / "sessions" / f"{NOW:%Y}" / f"{NOW:%m}" / f"{NOW:%d}"
@@ -575,7 +575,7 @@ def test_codex_a_rate_limit_only_token_count_is_not_a_success(home):
 
 def test_hermes_api_key_mode_without_a_key_is_a_fix(home, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    # (Codex P2 on #84) `auth_mode: api_key` is a label, not a key: with nothing in the pool,
+    # (Codex P2) `auth_mode: api_key` is a label, not a key: with nothing in the pool,
     # auth.json, the environment or ~/.hermes/.env the provider cannot call anything.
     def write(pool):
         (home / ".hermes" / "auth.json").write_text(json.dumps({

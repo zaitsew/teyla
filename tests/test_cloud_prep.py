@@ -143,7 +143,7 @@ def test_invalid_settings_json_refuses_and_writes_nothing(tmp_path):
 
 
 # Only AGENTS.md/CLAUDE.md were checked; a symlinked .claude/, settings file, doc or .gitignore
-# made prep write outside the repo (review of #71, P1). (.gitignore goes through the same check;
+# made prep write outside the repo (caught in review, P1). (.gitignore goes through the same check;
 # git itself no longer reads a symlinked .gitignore, so prep never gets to rewrite one.)
 @pytest.mark.parametrize("link,is_dir,fix", [(".claude", True, False), (".claude/settings.json", False, False),
                                              ("docs", True, False), ("docs/cloud-setup.md", False, False),
@@ -183,7 +183,7 @@ def test_apply_checks_every_destination_again_before_the_first_write(tmp_path):
 
 
 # An unmarked `merge-approved: yes` survived prep writing `no`, and check still reported drift
-# (review of #71, P2): refuse and name the lines.
+# (caught in review, P2): refuse and name the lines.
 def test_a_conflicting_merge_line_outside_the_section_is_refused_with_its_location(tmp_path):
     r = _repo(tmp_path, {"AGENTS.md": "# a\n\nmerge-approved: yes\n", ".claude/rules/ship.md": "x\n- merge-approved: no\n"})
     before = _tree(r)
@@ -200,7 +200,7 @@ def test_a_conflicting_merge_line_outside_the_section_is_refused_with_its_locati
 
 
 def test_no_marked_section_is_exempt_from_the_merge_line_check(tmp_path):
-    # #71: lines inside any teyla:cloud marked section were skipped. A second section prep does
+    # Lines inside any teyla:cloud marked section were skipped. A second section prep does
     # not rewrite, an unterminated one, or one in another rules file kept `yes` through a prep
     # that wrote `no`, and check reported drift afterwards.
     stale = f"{cloud_prep.START}\n## Shipping\n\nmerge-approved: yes\n{cloud_prep.END}\n"
@@ -283,7 +283,7 @@ def test_the_guard_catches_what_it_is_for():
                                          ("No CI on\n  push or PR", True), ("No CI on push/PR (deploys allowed)", True),
                                          ("Deploy on push to main.", False)])
 def test_no_actions_rule_is_read_from_the_policy_wording(tmp_path, policy, want):
-    # The owner's policy says "No CI on `push` or `pull_request`"; it was not recognised (review of #71, P2).
+    # The owner's policy says "No CI on `push` or `pull_request`"; it was not recognised (caught in review, P2).
     p = cloud_prep.plan(_repo(tmp_path), owners=OWNERS, policy_text=policy)
     agents = next(new for rel, _o, new, _x in p["changes"] if rel == "AGENTS.md")
     assert ("No CI on push/PR" in agents) is want
@@ -317,7 +317,7 @@ def test_secret_destinations(name, want):
 
 
 # Credential-bearing or unknown names were labelled "environment variable", which the doc says
-# every user of the environment can read (review of #71, P1).
+# every user of the environment can read (caught in review, P1).
 @pytest.mark.parametrize("name,want", [("DATABASE_URL", "local only"), ("REDIS_URL", "local only"), ("AMQP_URL", "local only"),
                                        ("SUPABASE_DB_URL", "local only"), ("CELERY_BROKER_URL", "local only"),
                                        ("SENTRY_DSN", "local only"), ("SUPABASE_SERVICE_ROLE", "API credentials"),
@@ -383,7 +383,7 @@ def test_setup_script_installs_subdirectories_with_their_own_lockfile(tmp_path):
 
 
 def test_every_subdirectory_install_runs_inside_its_directory(tmp_path):
-    # PR #86 review, P2: services/api/requirements.txt was installed from the repo root, so its
+    # caught in review, P2: services/api/requirements.txt was installed from the repo root, so its
     # `-e .` installed the root project (or failed). Every lockfile kind runs from its directory.
     r = _repo(tmp_path, {"a/pnpm-lock.yaml": "", "b/package-lock.json": "{}", "c/yarn.lock": "",
                          "d/uv.lock": "", "services/api/requirements.txt": "-e .\n"})
@@ -519,7 +519,7 @@ def test_stop_hook_blocks_until_pushed_and_a_pr_exists(tmp_path):
 
 def test_stop_hook_fails_closed_without_a_base_ref(tmp_path):
     # No origin/HEAD and no origin/main: `rev-list` failed, `|| echo 0` read that as "no work",
-    # and committed work was allowed to stop (review of #71, P1).
+    # and committed work was allowed to stop (caught in review, P1).
     r = _landed_repo(tmp_path)
     _git(r, "update-ref", "-d", "refs/remotes/origin/HEAD")
     _git(r, "update-ref", "-d", "refs/remotes/origin/main")
@@ -604,7 +604,7 @@ def test_stop_hook_on_the_default_branch_does_not_stop_with_unpushed_commits(tmp
 @pytest.mark.parametrize("name", ["VITE_JWT", "PUBLIC_BEARER", "VITE_GITHUB_PAT", "NEXT_PUBLIC_JWT_SECRET", "GITHUB_PAT",
                                   "WEBHOOK_HMAC"])
 def test_credential_words_beat_the_public_prefix(name):
-    # review of #71's fix, P1: JWT/BEARER/PAT names with a browser prefix were "config, not a secret".
+    # review of the fix, P1: JWT/BEARER/PAT names with a browser prefix were "config, not a secret".
     assert "environment variable" not in cloud_prep.secret_destination(name)
 
 

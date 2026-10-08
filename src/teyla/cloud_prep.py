@@ -47,7 +47,7 @@ GITIGNORE_LINES = (".claude/settings.local.json", ".claude/launch.json", ".claud
 _WHOLESALE = {".claude", ".claude/", "/.claude", "/.claude/", ".claude/*", "/.claude/*", ".claude/**", "/.claude/**"}
 
 # The owner's policy says it three ways today; "No CI on `push` or `pull_request`" was missed
-# and the Shipping section silently dropped the rule (review of #71, P2).
+# and the Shipping section silently dropped the rule (caught in review, P2).
 _NO_ACTIONS = re.compile(r"No GitHub Actions|GitHub Actions are off|No CI on\s+`?push`?\s*(?:or|/)\s*`?(pull_request|PR)\b", re.I)
 
 
@@ -145,7 +145,7 @@ fi
 # A commit that only some other remote branch contains is not pushed for this branch's PR. A
 # branch never pushed counts what it has past the default branch; with neither ref, what is on
 # no remote at all. Asked before any "nothing to do" shortcut: a missing base ref used to count
-# as 0 ahead and let committed, unpushed work stop (review of #71, P1). A question git cannot
+# as 0 ahead and let committed, unpushed work stop (caught in review, P1). A question git cannot
 # answer fails closed.
 has_ref() {{ git rev-parse --verify --quiet "$1^{{commit}}" >/dev/null 2>&1; }}
 up=$(git rev-parse --abbrev-ref --symbolic-full-name '@{{u}}' 2>/dev/null) || up=""
@@ -233,7 +233,7 @@ def rules_section() -> str:
 # Pro/Max (a proxy attaches them for the named host; the VM never sees the value). Apple keys:
 # never in the cloud. Config that is not secret: an environment variable — which every user of
 # the environment can read, so a name earns that label only from an allowlist; anything unknown
-# is decided by hand (review of #71, P1: DATABASE_URL and SUPABASE_SERVICE_ROLE were "config").
+# is decided by hand (caught in review, P1: DATABASE_URL and SUPABASE_SERVICE_ROLE were "config").
 _HOSTS = (("OPENAI", "api.openai.com"), ("ANTHROPIC", "api.anthropic.com"), ("XAI", "api.x.ai"),
           ("SUPABASE", "api.supabase.com / <ref>.supabase.co"), ("CLOUDFLARE", "api.cloudflare.com"),
           ("TELEGRAM", "api.telegram.org"), ("MAILGUN", "api.mailgun.net"), ("RESEND", "api.resend.com"),
@@ -241,7 +241,7 @@ _HOSTS = (("OPENAI", "api.openai.com"), ("ANTHROPIC", "api.anthropic.com"), ("XA
           ("STRAVA", "www.strava.com"), ("X_BEARER", "api.x.com"), ("GOOGLE", "*.googleapis.com"))
 _APPLE = re.compile(r"(^|_)(ASC|APNS|APPLE|APP_STORE|P8|KEYCHAIN|SIGNING|MATCH|TESTFLIGHT)(_|$)")
 _SECRET = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASS|PWD|PRIVATE|CREDENTIAL|AUTH|DSN|SERVICE_ROLE|CERT|SESSION|COOKIE|SALT|JWT|BEARER|HMAC|"
-                     r"(^|_)PATS?(_|$))", re.I)  # JWT/BEARER/PAT: review of #71, P1 (VITE_GITHUB_PAT was "config")
+                     r"(^|_)PATS?(_|$))", re.I)  # JWT/BEARER/PAT: caught in review, P1 (VITE_GITHUB_PAT was "config")
 # A connection string carries its password and is not an HTTP API a proxy can sign for.
 _CONN = re.compile(r"(DSN|CONNECTION|(^|_)(DATABASE|DB|PG|POSTGRES|POSTGRESQL|MYSQL|MARIADB|MONGO|MONGODB|REDIS|"
                    r"VALKEY|KV|AMQP|RABBITMQ|RABBIT|KAFKA|NATS|MQ|BROKER|CELERY|SMTP|IMAP|FTP|SFTP|LDAP)(_|$))", re.I)
@@ -309,7 +309,7 @@ def setup_script(repo: pathlib.Path, gate_text: str) -> list[str]:
 # Lockfiles that make a subdirectory its own install, in the order they are run. Node takes the
 # first lockfile it has (a directory with two is installed once); Python lines are independent.
 # Every install runs inside its directory: a requirements.txt with `-e .` run from the root
-# installed the root project (review of #86, P2).
+# installed the root project (caught in review, P2).
 _SUB_LOCKS = ("pnpm-lock.yaml", "package-lock.json", "yarn.lock", "uv.lock", "requirements.txt")
 _SUB_INSTALL = (("pnpm-lock.yaml", "(cd {d} && pnpm install --frozen-lockfile)"),
                 ("package-lock.json", "(cd {d} && npm ci)"),
@@ -474,7 +474,7 @@ def leaks(text: str, owners: set[str] | None, slug: str | None) -> list[str]:
 
 def _inside(repo: pathlib.Path, path: pathlib.Path) -> None:
     """Refuse a destination that resolves out of the repo: a symlinked `.claude/`, settings file,
-    doc or .gitignore would otherwise make prep write into someone else's tree (review of #71,
+    doc or .gitignore would otherwise make prep write into someone else's tree (caught in review,
     P1). `resolve()` follows every symlinked parent and a dangling link to where it points."""
     if cloud.symlink_loop(path):
         raise Refused(f"{path.relative_to(repo) if path.is_relative_to(repo) else path.name} is a symlink loop; nothing written")
@@ -498,9 +498,9 @@ def _conflicting_merge_lines(repo: pathlib.Path, merge: str, changes: list) -> l
     """`file:line` of every `merge-approved:` line that disagrees with the owner's list, judged
     over each instruction file as prep would leave it — the whole file. Prep rewrites only the
     first generated section of the files it writes; any other line survives, and `teyla cloud
-    check` would still report drift (review of #71, P2). Lines inside a marked section were
+    check` would still report drift (caught in review, P2). Lines inside a marked section were
     skipped, so a second or unterminated section — or one in a rules file prep does not write —
-    kept a stale value through prep (#71): no section is exempt. Line numbers are those of the
+    kept a stale value through prep: no section is exempt. Line numbers are those of the
     file as prep would write it."""
     pending = {(repo / rel).resolve(): new for rel, _old, new, _x in changes}
     files = {(repo / name).resolve(): (name, text) for name, text in cloud.instruction_files(repo)}

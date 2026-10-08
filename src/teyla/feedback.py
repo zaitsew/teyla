@@ -154,7 +154,7 @@ def render(days: int = 30) -> str:
 
     sessions = [s for s in load_all(since=since_epoch(days)) if not s.sidechain]
     # enrich() carries the policy detectors' inputs, so A15/A16 reach the shared report the same
-    # way they reach `monitor --share`; build() redacts them (review of #60, P2).
+    # way they reach `monitor --share`; build() redacts them (caught in review, P2).
     m = enrich(metrics(sessions, days))
     return build(m, days=days, policy_status=policy.status(), doctor_lines=_doctor_lines(),
                  routines_summary=_routines_summary())

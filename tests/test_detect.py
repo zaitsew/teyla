@@ -49,7 +49,7 @@ def test_doctor_rows_for_unknown_marker_and_no_policy(tmp_path):
     ("on:\n  push:\n    branches: [main]\n  workflow_dispatch:\n\njobs:\n  a: {}\n", ["push", "workflow_dispatch"]),
     ('"on":\n  schedule:\n    - cron: "0 6 * * 1"   # Mondays\n  workflow_dispatch:\n', ["schedule", "workflow_dispatch"]),
     ("on:\n  - pull_request_target\n  - issues\n", ["pull_request_target", "issues"]),
-    ("on:\n- push\n- pull_request\njobs:\n  a: {}\n", ["push", "pull_request"]),  # (review of #60, P2)
+    ("on:\n- push\n- pull_request\njobs:\n  a: {}\n", ["push", "pull_request"]),  # (caught in review, P2)
     ("on:\n- push\n\njobs:\n- x\n", ["push"]),
     ("on: {push: {branches: [main]}, workflow_dispatch: {}}\n", ["push", "workflow_dispatch"]),
     ("on:\n  # push: disabled per POLICY §10\n  workflow_dispatch:\n", ["workflow_dispatch"]),
@@ -123,7 +123,7 @@ def test_scan_says_which_copy_declares_the_trigger(tmp_path):
 @pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
 def test_scan_reads_default_branch_blobs_by_byte_size_even_with_crlf(tmp_path):
     # `cat-file --batch` declares blob sizes in original bytes; reading its output as text turned
-    # CRLF into LF and skipped the file after a CRLF one (review of #60, P2).
+    # CRLF into LF and skipped the file after a CRLF one (caught in review, P2).
     wf = ".github/workflows/"
     manual = "on: workflow_dispatch\r\n" + "# comment\r\n" * 60
     clone = _repo_with_origin(tmp_path, "crlf", {wf + "a-manual.yml": "", wf + "b-nightly.yml": "on:\n  schedule:\n    - cron: '0 1 * * *'\n"}, {})
@@ -322,7 +322,7 @@ def test_codex_records_the_text_a_turn_ended_on(tmp_path):
 
 @pytest.mark.parametrize("reply", ["continue", "продолжай"])
 def test_a_bare_continue_with_an_appended_system_reminder_still_answers_the_ask(tmp_path, reply):
-    # review of #60, P2: "continue" + a <system-reminder> block fell out of A15 in both adapters.
+    # caught in review, P2: "continue" + a <system-reminder> block fell out of A15 in both adapters.
     typed = reply + "\n\n<system-reminder>\nThe task tools haven't been used recently.\n</system-reminder>"
     f = tmp_path / "projects" / "slug" / "s.jsonl"
     _write(str(f), [
@@ -353,7 +353,7 @@ def test_a_bare_continue_with_an_appended_system_reminder_still_answers_the_ask(
 
 @pytest.mark.parametrize("reply", ["continue", "продолжай"])
 def test_a_bare_continue_still_answers_the_ask_in_both_adapters(tmp_path, reply):
-    # review of the #60 merge with #68: human_text drops a bare "continue" as a retry, and the
+    # caught in review: human_text drops a bare "continue" as a retry, and the
     # turn end went with it — A15 lost every approval phrased that way.
     assert detect.is_permission_ask("Fixed.\n\nWant me to push it?", reply)
     f = tmp_path / "projects" / "slug" / "s.jsonl"
