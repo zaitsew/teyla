@@ -27,8 +27,10 @@ Exceptions, so localization is not noise. Matching files are not read at all:
 
     defaults      *.lproj/**  *.xcstrings  **/locales/**  **/i18n/**  **/l10n/**
                   **/translations/**  *.po  *.strings  **/Localizable*  **/messages/*.json
-    .teyla/lang-allow   in the repo: one glob per line, `#` comments
-    config        [lang] allow = ["docs/ru/**"]   (`teyla config set lang.allow=a,b`)
+                  **/strings/*.json  and Android's **/res/values-*/{strings,plurals,arrays}.xml
+    .teyla/lang-allow   the per-repo list, committed in the repo: one glob per line, `#` comments
+    config        [lang] allow = ["docs/ru/**"]   (`teyla config set lang.allow=a,b`); applies
+                  to every repo you scan, so prefer .teyla/lang-allow for one repo's catalogs
     .leak-allow   the `cyrillic:` and `paths:` sections of the leak guard's file are honoured
                   too, matched exactly as the guard matches them (fnmatch on the repo-relative
                   path, so `*` crosses `/`); a file allowed Cyrillic there is still checked for
@@ -49,6 +51,7 @@ unless the command line is wrong (2).
 """
 from __future__ import annotations
 
+import argparse
 import datetime as _dt
 import fnmatch
 import json
@@ -80,6 +83,9 @@ _RUNS = {name: re.compile("[%s]{%d,}" % (chars, n)) for name, (chars, n) in SCRI
 DEFAULT_ALLOW = (
     "*.lproj/**", "*.xcstrings", "**/locales/**", "**/i18n/**", "**/l10n/**", "**/translations/**",
     "*.po", "*.strings", "**/Localizable*", "**/messages/*.json",
+    # Android resource qualifiers (values-ru, values-pt-rBR...) and string-catalog directories
+    "**/res/values-*/strings.xml", "**/res/values-*/plurals.xml", "**/res/values-*/arrays.xml",
+    "**/strings/*.json",
 )
 ALLOW_FILE = ".teyla/lang-allow"
 
@@ -592,7 +598,8 @@ def render(rep: dict, quiet: bool = False) -> str:
         out.append(f"not scanned (git failed): {', '.join(rep['errors'])}")
     if not quiet:
         out.append("Only non-Latin scripts are detected; Latin-script languages (Spanish, French, German...) are not. "
-                   "Localization files are exempt: .teyla/lang-allow or `teyla config set lang.allow=GLOB` adds more.")
+                   "Localization files are exempt (see `teyla lang --help`): add more per repo in .teyla/lang-allow, or for every "
+                   "repo with `teyla config set lang.allow=GLOB`.")
     return "\n".join(out)
 
 
@@ -650,8 +657,19 @@ def cmd_lang(args) -> int:
     return 0
 
 
+HELP_EPILOG = """\
+Exempt files (localization is product content, not a finding), matched on the repo-relative path:
+  built in    *.lproj/**  *.xcstrings  *.po  *.strings  **/Localizable*  **/locales/**  **/i18n/**
+              **/l10n/**  **/translations/**  **/messages/*.json  **/strings/*.json
+              **/res/values-*/{strings,plurals,arrays}.xml   (Android resources)
+  one repo    .teyla/lang-allow in that repo: one glob per line, '#' comments
+  all repos   `teyla config set lang.allow=GLOB,GLOB`  ([lang] allow in ~/.teyla/config.toml)
+A glob without a leading '/' matches at any depth; '**' crosses directories, '*' does not."""
+
+
 def register(sp):
-    q = sp.add_parser("lang", help="where tracked files and commit messages hold non-English (non-Latin script) text")
+    q = sp.add_parser("lang", help="where tracked files and commit messages hold non-English (non-Latin script) text",
+                      epilog=HELP_EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
     q.set_defaults(fn=cmd_lang)
     q.add_argument("repos", nargs="*", help="repos to scan (names under code_root, or paths); none: every repo")
     q.add_argument("--json", action="store_true", help="every file with its counts and a few sample hits (line, kind, script, text)")
