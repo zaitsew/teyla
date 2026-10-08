@@ -21,8 +21,14 @@ dollar figure and one fix:
 
 Not covered yet, and said so in the output: W4 (the same diff on two branches).
 
-`--alert` is the daily check: it says something only for a session over ALERT_SESSION_USD in the
-last day, or Actions past ALERT_ACTIONS_SHARE of the included minutes, and posts a notification.
+`--alert` is the daily check: it says something only for a session over `spend.alert_session_usd`
+in the last day, a project or the day's total over its budget yesterday (`spend.budget.<project>`,
+`spend.daily_budget_usd`), Actions past ALERT_ACTIONS_SHARE of the included minutes, or a product
+API spike. It posts a notification, writes `~/.teyla/spend.alert` for the session-start banner, and
+does not say the same thing again the next day unless the amount grew by a quarter.
+
+`--by-day` is the per-day view: total cost, subagent cost, and the subagents' cost and calls by
+model tier.
 """
 from __future__ import annotations
 
@@ -40,15 +46,18 @@ from . import config
 
 # W1/W5: a session under this is not worth a line even when it produced nothing. Spend is heavily
 # skewed: a small share of the sessions is most of the money, and below this a line costs more
-# attention than money.
-W1_USD = 15.0
+# attention than money. Defaults live in config.DEFAULTS["spend"]; `[spend]` in config.toml
+# overrides them (a machine's spend is not another's).
+W1_USD = config.DEFAULTS["spend"]["w1_usd"]
 # W1: a commit this long after the session's last message still counts as its outcome.
 OUTCOME_GRACE_H = 24
 # Findings under this are dropped: a $0.40 loop is not worth a line in a six-line digest.
 FINDING_FLOOR_USD = 1.0
 # The daily alert. A threshold that fires every morning gets ignored; this one is a handful of
 # sessions a week.
-ALERT_SESSION_USD = 250.0
+ALERT_SESSION_USD = config.DEFAULTS["spend"]["alert_session_usd"]
+# An alert already given yesterday is repeated only when its amount grew by this much.
+ALERT_REGROWTH = 0.25
 ALERT_ACTIONS_SHARE = 0.8
 # W3: the model the policy says volume work runs on.
 VOLUME_MODEL = "claude-sonnet-5-5"
@@ -58,6 +67,38 @@ LINUX_USD_PER_MIN = 0.006
 PLAN_MINUTES = {"free": 2000, "pro": 3000, "team": 3000, "enterprise": 50000}
 
 NOT_COVERED = "not covered yet: W4 duplicated work"
+
+
+# --- config ----------------------------------------------------------------------------------
+
+def _number(v, default: float) -> float:
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return default
+    return n if n == n and n >= 0 else default
+
+
+def setting(name: str, cfg: dict | None = None) -> float:
+    """A `[spend]` number from config.toml, else its default; a value that is not a number or is
+    negative reads as the default rather than switching a check off by accident."""
+    default = config.DEFAULTS["spend"][name]
+    return _number(((cfg or config.load()).get("spend") or {}).get(name, default), default)
+
+
+def budgets(cfg: dict | None = None) -> tuple[float, dict[str, float]]:
+    """(the day's total budget, {project: budget}); 0 and absent mean no budget. A project's budget is
+    `spend.budget.<project>` (what `teyla config set` writes: a key literally named `budget.<project>`)
+    or an entry of a `[spend.budget]` table."""
+    sp = (cfg or config.load()).get("spend") or {}
+    per = {}
+    nested = sp.get("budget")
+    for k, v in (nested.items() if isinstance(nested, dict) else []):
+        per[str(k)] = _number(v, 0.0)
+    for k, v in sp.items():
+        if isinstance(k, str) and k.startswith("budget."):
+            per[k[len("budget."):]] = _number(v, 0.0)
+    return setting("daily_budget_usd", cfg), {k: v for k, v in per.items() if v > 0}
 
 
 # --- rows ------------------------------------------------------------------------------------
@@ -76,6 +117,26 @@ def _project(cwd: str | None) -> str:
         if len(parts) > i + 1:
             return parts[i + 1]
     return os.path.basename(cwd.rstrip("/")) or "unknown"
+
+
+# Per-day keys of a row: the input of --by-day and the budget alerts, left out of printed rows.
+DAY_KEYS = ("day_usd", "day_model_usd", "sub_day_model_usd", "sub_calls")
+
+
+def _day_fields(s) -> dict:
+    """Per local day: what the session cost, by model, and what its subagents cost, by model, plus
+    one (day, model) per subagent call. A harness whose transcript carries no per-message time
+    (everything but Claude Code) books the whole session on the day it was last active."""
+    split = s.day_usage or {}
+    sub = s.sub_day_usage or {}
+    if not split:
+        from .adapters import local_day
+        split = {local_day(s.last or s.first): s.usage}
+    day_model = {d: {m: _usd(m, u) for m, u in mm.items()} for d, mm in split.items()}
+    return dict(day_usd={d: sum(mm.values()) for d, mm in day_model.items()},
+                day_model_usd=day_model,
+                sub_day_model_usd={d: {m: _usd(m, u) for m, u in mm.items()} for d, mm in sub.items()},
+                sub_calls=list(s.sub_calls or []))
 
 
 def session_rows(days: int = 7, sessions=None, grok_rows=None) -> list[dict]:
@@ -104,6 +165,7 @@ def session_rows(days: int = 7, sessions=None, grok_rows=None) -> list[dict]:
             reread_usd=reread, loop_usd=sum(_usd(m, u) for m, u in s.loop_usage.items()),
             inherited_agents=sum(1 for a in s.agents if not a.model), agents=len(s.agents),
             prs=s.pr_links, batch=s.batch, repos=sorted(s.touched_repos, key=lambda r: -s.touched_repos[r])[:5],
+            **_day_fields(s),
         ))
     if grok_rows is None:
         try:
@@ -114,10 +176,13 @@ def session_rows(days: int = 7, sessions=None, grok_rows=None) -> list[dict]:
     for c in grok_rows:
         if (c.created or "")[:19] < cutoff:
             continue
+        from .adapters import local_day
+        model = c.model or "grok"
         rows.append(dict(harness="grok", sid=c.sid, project=_project(c.cwd), cwd=c.cwd, first=c.created,
-                         last=c.created, usd=c.usd, by_model={c.model or "grok": c.usd}, sub_usd=0.0,
+                         last=c.created, usd=c.usd, by_model={model: c.usd}, sub_usd=0.0,
                          top_tier_sub_saving=0.0, reread_usd=0.0, loop_usd=0.0, inherited_agents=0, agents=0,
-                         prs=c.prs, batch=False, repos=[]))
+                         prs=c.prs, batch=False, repos=[], day_usd={local_day(c.created): c.usd},
+                         day_model_usd={local_day(c.created): {model: c.usd}}, sub_day_model_usd={}, sub_calls=[]))
     return sorted(rows, key=lambda r: -r["usd"])
 
 
@@ -261,6 +326,7 @@ def findings(rows: list[dict], actions: list[dict] | None = None, outcome_of=out
     W8, whose cost is minutes, not tokens. What a rule could not check is appended to `coverage`."""
     F = []
     coverage = [] if coverage is None else coverage
+    w1 = setting("w1_usd")
     for rid, harness_ok, fix in (
         ("W1", lambda h: h != "grok",
          "a session that stops without a commit should push a draft PR first (the compaction handoff keeps "
@@ -271,7 +337,7 @@ def findings(rows: list[dict], actions: list[dict] | None = None, outcome_of=out
     ):
         idle, unknown = [], []
         for r in rows:
-            if not harness_ok(r["harness"]) or r["batch"] or r["usd"] < W1_USD:
+            if not harness_ok(r["harness"]) or r["batch"] or r["usd"] < w1:
                 continue
             verdict = outcome_of(r)
             if verdict is False:
@@ -279,12 +345,12 @@ def findings(rows: list[dict], actions: list[dict] | None = None, outcome_of=out
             elif verdict is None:
                 unknown.append(r)
         if unknown:
-            coverage.append(f"{rid}: {len(unknown)} session(s) over {_money(W1_USD)} had no repo to check "
+            coverage.append(f"{rid}: {len(unknown)} session(s) over {_money(w1)} had no repo to check "
                             f"({_money(sum(r['usd'] for r in unknown))})")
         if idle:
             total = sum(r["usd"] for r in idle)
             F.append(dict(id=rid, usd=total, cmd=False, fix=fix, sids=[r["sid"] for r in idle],
-                          title=f"{len(idle)} session(s) over {_money(W1_USD)} left no commit or PR",
+                          title=f"{len(idle)} session(s) over {_money(w1)} left no commit or PR",
                           evidence="; ".join(f"{_who(r)} {_money(r['usd'])}" for r in idle[:3])))
     reread = [r for r in rows if r["reread_usd"] > 0]
     if reread:
@@ -349,7 +415,8 @@ def report(days: int = 7, rows=None, actions=None, with_actions: bool = True, bi
     return dict(days=days, total_usd=total, sub_usd=sum(r["sub_usd"] for r in rows), waste_usd=waste,
                 product_waste_usd=sum(f["usd"] for f in F if f["id"] == "W7"),
                 by_harness=dict(by_harness.most_common()), by_model=dict(by_model.most_common()),
-                findings=F, actions=actions, top_sessions=rows[:5], sessions=len(rows), coverage=coverage,
+                findings=F, actions=actions,
+                top_sessions=[{k: v for k, v in r.items() if k not in DAY_KEYS} for r in rows[:5]], sessions=len(rows), coverage=coverage,
                 providers=providers.totals(bills, days))
 
 
@@ -417,18 +484,109 @@ def digest_candidates(rep: dict) -> list[dict]:
     return out
 
 
-def alerts(rows: list[dict], actions: list[dict] | None, now: _dt.datetime | None = None,
-           spikes: list[dict] | None = None) -> list[str]:
+def _top(d: dict, n: int = 3) -> list[tuple[str, float]]:
+    return sorted(((k, v) for k, v in d.items() if v > 0), key=lambda kv: -kv[1])[:n]
+
+
+def _budget_alert(rows: list[dict], day: str, project: str | None, budget: float) -> dict | None:
+    """One budget alert for `day`: a project's cost that day (`project`), or the day's total (None),
+    against `budget`. Names the amount, the budget, the top three sessions and the top model by cost."""
+    sessions, models, projects = {}, {}, {}
+    for r in rows:
+        if project is not None and r["project"] != project:
+            continue
+        usd = (r.get("day_usd") or {}).get(day, 0.0)
+        if usd <= 0:
+            continue
+        sessions[f"{r['sid'][:8]}"] = sessions.get(f"{r['sid'][:8]}", 0.0) + usd
+        projects[r["project"]] = projects.get(r["project"], 0.0) + usd
+        for m, v in ((r.get("day_model_usd") or {}).get(day) or {}).items():
+            models[m] = models.get(m, 0.0) + v
+    total = sum(projects.values())
+    if total <= budget:
+        return None
+    top_sessions = ", ".join(f"{s} {_money(v)}" for s, v in _top(sessions))
+    top_model = _top(models, 1)
+    who = f"project {project}" if project is not None else "all projects"
+    text = (f"budget: {who} cost {_money(total)} on {day}, over its {_money(budget)} a day"
+            + (f" (largest: {', '.join(f'{p} {_money(v)}' for p, v in _top(projects))})" if project is None else "")
+            + f"; top sessions {top_sessions}"
+            + (f"; top model {top_model[0][0]} {_money(top_model[0][1])}" if top_model else ""))
+    return dict(key=f"budget:{project or '*'}:{day}", usd=total, text=text)
+
+
+def alert_items(rows: list[dict], actions: list[dict] | None, now: _dt.datetime | None = None,
+                spikes: list[dict] | None = None, cfg: dict | None = None) -> list[dict]:
+    """Everything `--alert` would say before the dedupe: {key, usd, text}. `usd` is the amount the
+    dedupe compares (Actions: the percent of included minutes); `key` names the thing, so yesterday's
+    alert and today's can be recognised as the same one."""
     now = now or _dt.datetime.now(_dt.timezone.utc)
+    cfg = cfg or config.load()
     since = (now - _dt.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
-    out = [f"session {_who(r)} cost {_money(r['usd'])} ({r['harness']})"
-           for r in rows if r["usd"] >= ALERT_SESSION_USD and (r.get("last") or "")[:19] >= since]
+    limit = setting("alert_session_usd", cfg)
+    out = [dict(key=f"session:{r['harness']}:{r['sid']}", usd=r["usd"],
+                text=f"session {_who(r)} cost {_money(r['usd'])} ({r['harness']})")
+           for r in rows if r["usd"] >= limit and (r.get("last") or "")[:19] >= since]
+    # Yesterday, by the local calendar: the day is over, so its total is final.
+    yesterday = (now.astimezone().date() - _dt.timedelta(days=1)).isoformat()
+    total_budget, per_project = budgets(cfg)
+    for project, budget in sorted(per_project.items()):
+        a = _budget_alert(rows, yesterday, project, budget)
+        if a:
+            out.append(a)
+    if total_budget > 0:
+        a = _budget_alert(rows, yesterday, None, total_budget)
+        if a:
+            out.append(a)
     for a in actions or []:
         if a["share"] is not None and a["share"] >= ALERT_ACTIONS_SHARE:
-            out.append(f"GitHub Actions {a['account']} at {a['share'] * 100:.0f}% of included minutes")
+            out.append(dict(key=f"actions:{a['account']}", usd=a["share"] * 100,
+                            text=f"GitHub Actions {a['account']} at {a['share'] * 100:.0f}% of included minutes"))
     for s in spikes or []:
-        out.append(f"{s['provider']} {s['group']} spent {_money(s['usd'])} on {s['day']} (median {_money(s['median'])})")
+        out.append(dict(key=f"spike:{s['provider']}:{s['group']}:{s['day']}", usd=s["usd"],
+                        text=f"{s['provider']} {s['group']} spent {_money(s['usd'])} on {s['day']} (median {_money(s['median'])})"))
     return out
+
+
+def alerts(rows: list[dict], actions: list[dict] | None, now: _dt.datetime | None = None,
+           spikes: list[dict] | None = None, cfg: dict | None = None) -> list[str]:
+    return [a["text"] for a in alert_items(rows, actions, now, spikes, cfg)]
+
+
+def state_path() -> pathlib.Path:
+    return config.TEYLA_DIR / "state" / "spend-alerts.json"
+
+
+def dedupe(items: list[dict], today: _dt.date, state: dict | None = None) -> tuple[list[dict], list[dict], dict]:
+    """(new, shown, state'). An alert given yesterday (or kept quiet yesterday for being the same) is
+    not given again today unless its amount grew by ALERT_REGROWTH over the amount last given; one
+    already given today stays shown. `new` are the ones to notify about, `shown` all that go in the
+    banner file. State: key -> {alerted: day, usd: the amount given, seen: last day it was true}."""
+    state = {k: dict(v) for k, v in (state or {}).items() if isinstance(v, dict)}
+    yesterday = (today - _dt.timedelta(days=1)).isoformat()
+    day = today.isoformat()
+    new, shown = [], []
+    for a in items:
+        st = state.get(a["key"])
+        grew = not st or a["usd"] >= _number(st.get("usd"), 0.0) * (1 + ALERT_REGROWTH)
+        if st and not grew and st.get("alerted") == day:
+            shown.append(a)
+        elif st and not grew and str(st.get("seen") or "") >= yesterday:
+            st["seen"] = day  # same thing, still true: quiet, and the streak goes on
+        else:
+            state[a["key"]] = dict(alerted=day, usd=a["usd"], seen=day)
+            new.append(a); shown.append(a)
+    # Forget what has not been true for two weeks.
+    keep = (today - _dt.timedelta(days=14)).isoformat()
+    return new, shown, {k: v for k, v in state.items() if str(v.get("seen") or "") >= keep}
+
+
+def _read_state() -> dict:
+    try:
+        raw = json.loads(state_path().read_text())
+    except (OSError, ValueError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
 
 
 def notify(lines: list[str]) -> bool:
@@ -447,23 +605,104 @@ def notify(lines: list[str]) -> bool:
 
 
 def alerts_path() -> pathlib.Path:
-    return config.TEYLA_DIR / "spend.alerts"
+    """What the session-start banner shows: the current alerts, one per line, no date. Written by
+    every `--alert` run and removed when there is nothing to say."""
+    return config.TEYLA_DIR / "spend.alert"
 
+
+def run_alert(items: list[dict], today: _dt.date, write: bool = True) -> list[dict]:
+    """Dedupe against yesterday's state, print what is shown, and (unless `write` is off) leave the
+    banner file and the state behind. Returns the alerts that are new today, for the notification."""
+    new, shown, state = dedupe(items, today, _read_state())
+    if write:
+        # The banner reads this file (plugin/hooks/session-start.sh): the current alerts, or no file.
+        write_alert_file([a["text"] for a in shown])
+        config.write_private(state_path(), json.dumps(state, indent=1) + "\n")
+    for a in shown:
+        print(f"teyla spend alert: {a['text']}")
+    return new
+
+
+def write_alert_file(lines: list[str]) -> None:
+    p = alerts_path()
+    # The file this one replaced carried a date per line and went through banner.items.
+    (config.TEYLA_DIR / "spend.alerts").unlink(missing_ok=True)
+    if lines:
+        config.write_private(p, "".join(l.replace("\n", " ") + "\n" for l in lines))
+    else:
+        p.unlink(missing_ok=True)
+
+
+# --- per day ---------------------------------------------------------------------------------
+
+TIERS = ("orchestrate", "volume", "triage", "unknown")
+
+
+def by_day(days: int = 7, rows: list[dict] | None = None, today: _dt.date | None = None) -> list[dict]:
+    """One row per local day, oldest first, for the last `days` days including today: total cost, the
+    subagents' cost, and the subagents' cost and calls by model tier (a model with no price is
+    "unknown"), with the top tier's share of the subagent cost. Cost is split by the day each message
+    was sent, not by the session's start; harnesses without per-message times book a session on its
+    last day (see _day_fields)."""
+    from .pricing import tier
+    today = today or _dt.date.today()
+    window = [(today - _dt.timedelta(days=i)).isoformat() for i in range(days - 1, -1, -1)]
+    rows = session_rows(days + 1) if rows is None else rows
+    out = {d: dict(day=d, total_usd=0.0, sub_usd=0.0, sessions=0,
+                   tiers={t: dict(usd=0.0, calls=0) for t in TIERS}) for d in window}
+    for r in rows:
+        touched = set()
+        for d, usd in (r.get("day_usd") or {}).items():
+            if d in out:
+                out[d]["total_usd"] += usd
+                touched.add(d)
+        for d, mm in (r.get("sub_day_model_usd") or {}).items():
+            if d in out:
+                for m, usd in mm.items():
+                    out[d]["sub_usd"] += usd
+                    out[d]["tiers"][tier(m)]["usd"] += usd
+        for d, m in r.get("sub_calls") or []:
+            if d in out:
+                out[d]["tiers"][tier(m)]["calls"] += 1
+        for d in touched:
+            out[d]["sessions"] += 1
+    for row in out.values():
+        top = row["tiers"]["orchestrate"]["usd"]
+        row["top_share"] = round(top / row["sub_usd"], 3) if row["sub_usd"] else None
+        row["total_usd"] = round(row["total_usd"], 2)
+        row["sub_usd"] = round(row["sub_usd"], 2)
+        for v in row["tiers"].values():
+            v["usd"] = round(v["usd"], 2)
+    return list(out.values())
+
+
+def render_by_day(rows: list[dict]) -> str:
+    cell = lambda v: f"{_money(v['usd'])}/{v['calls']}" if v["usd"] or v["calls"] else "-"
+    L = [f"teyla spend --by-day — API list price; subagent columns are cost/calls by the tier the subagent ran on", "",
+         f"{'day':<10}  {'total':>8}  {'subagents':>9}  " + "  ".join(f"{t:>14}" for t in TIERS) + "  top-tier share"]
+    for r in rows:
+        share = f"{r['top_share'] * 100:.0f}%" if r["top_share"] is not None else "-"
+        L.append(f"{r['day']:<10}  {_money(r['total_usd']):>8}  {_money(r['sub_usd']):>9}  "
+                 + "  ".join(f"{cell(r['tiers'][t]):>14}" for t in TIERS) + f"  {share:>14}")
+    return "\n".join(L)
+
+
+# --- command ---------------------------------------------------------------------------------
 
 def cmd_spend(args) -> int:
+    if args.by_day:
+        rows = by_day(max(1, args.days))
+        print(json.dumps(dict(days=args.days, rows=rows), indent=1) if args.json else render_by_day(rows))
+        return 0
     if args.alert:
         from . import providers
-        rows = session_rows(1)
+        # Three days of sessions: the budget check looks at yesterday, the session check at the last 24 h.
+        rows = session_rows(3)
         # Yesterday and today (UTC): the providers' day is UTC and today's bucket is still filling.
-        lines = alerts(rows, actions_usage(), spikes=providers.spikes(providers.read(2), 2))
-        # The banner reads this file (digest.write_banner_items): one line per alert, today only.
-        p = alerts_path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("".join(f"{_dt.date.today().isoformat()}\t{l}\n" for l in lines))
-        for l in lines:
-            print(f"teyla spend alert: {l}")
-        if lines and not args.no_notify:
-            notify(lines)
+        items = alert_items(rows, actions_usage(), spikes=providers.spikes(providers.read(2), 2))
+        new = run_alert(items, _dt.date.today(), write=not args.no_write)
+        if new and not args.no_notify and not args.no_write:
+            notify([a["text"] for a in new])
         return 0
     rep = report(args.days, with_actions=not args.no_actions)
     if args.json:
@@ -478,7 +717,10 @@ def register(sp):
     q.set_defaults(fn=cmd_spend)
     q.add_argument("--days", type=int, default=7)
     q.add_argument("--json", action="store_true")
-    q.add_argument("--alert", action="store_true", help="the daily check: a session over $250 in the last day, Actions past 80%%")
+    q.add_argument("--by-day", action="store_true", help="one row per day: total, subagent cost, and subagent cost/calls by model tier")
+    q.add_argument("--alert", action="store_true",
+                   help="the daily check: a session over spend.alert_session_usd in the last day, a project or the day over its budget yesterday, Actions past 80%%")
+    q.add_argument("--no-write", action="store_true", help="--alert: print only; leave ~/.teyla/spend.alert and the dedupe state alone")
     q.add_argument("--no-actions", action="store_true", help="skip the GitHub Actions billing call")
     q.add_argument("--no-notify", action="store_true", help="--alert: no macOS notification")
     q.add_argument("--allow-network", action="store_true", help="safe mode: allow gh for this one run")
