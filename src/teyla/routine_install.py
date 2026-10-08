@@ -202,6 +202,7 @@ mkdir -p "$OUT_DIR"
 "$TEYLA" routines > "$OUT_DIR/routines.md" 2>&1
 "$TEYLA" products > "$OUT_DIR/products.md" 2>&1
 "$TEYLA" models > "$OUT_DIR/models.md" 2>&1
+{models_watch_line} > "$OUT_DIR/models-watch.md" 2>&1
 # The reports above tend to have no reader: the digest is the five lines
 # that are read — the session-start hook shows its headline once, and a notification says it exists.
 "$TEYLA" digest --write
@@ -215,6 +216,16 @@ SAFE_UPDATE_LINE = "# safe mode: no self-update here; by hand: teyla update --al
 
 
 NONE_UPDATE_LINE = "# [update] channel = none: no self-update here; by hand: teyla update"
+
+
+WATCH_LINE = '"$TEYLA" models watch --refresh'
+# Safe mode: the weekly never reaches models.dev (net.py); the watch reads the local catalogue only.
+SAFE_WATCH_LINE = '"$TEYLA" models watch'
+
+
+def _watch_line() -> str:
+    from . import config
+    return SAFE_WATCH_LINE if config.safe_mode() else WATCH_LINE
 
 
 def _update_line() -> str:
@@ -263,6 +274,12 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         return True
     if path == WRAPPER_PATH and (SWEEP_LINE in text) != optional_enabled(SWEEP_LABEL):
         # storage.sweep_agent was switched on (or off) after the wrapper was written.
+        return True
+    if path == WRAPPER_PATH and "models watch" not in text:
+        # Written before `teyla models watch`: the weekly would never look for new models.
+        return True
+    if path == WRAPPER_PATH and ("models watch --refresh" in text) != (_watch_line() == WATCH_LINE):
+        # Safe mode was switched on (or off) after the wrapper was written.
         return True
     if path == WRAPPER_PATH and f'OUT_DIR="{_runs_root()}/' not in text:
         # Written with the hard-coded ~/ops path, or before ops_root changed in config.
@@ -475,7 +492,7 @@ def install(if_stale: bool = False, dry: bool = False) -> list[str]:
 
     WRAPPER_PATH.parent.mkdir(parents=True, exist_ok=True)
     weekly = WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin, env_sh=env_sh, stamp=STAMP_PATH, label=LABEL,
-                                     runs_root=_runs_root())
+                                     runs_root=_runs_root(), models_watch_line=_watch_line())
     if optional_enabled(SWEEP_LABEL):
         weekly += f"# Disk sweep ([storage] sweep_agent): old DerivedData, caches, logs, grok archive.\n{SWEEP_LINE}\n"
     WRAPPER_PATH.write_text(weekly)

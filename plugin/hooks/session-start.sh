@@ -9,6 +9,9 @@
 #   one-liner (~/.teyla/doctor.summary) showed on 44 of 44 starts with the same items
 #   for 13 days and stopped being read. Without banner.items (a CLI older than this
 #   hook) the summary is printed as before.
+# - If ~/.teyla/spend.alert exists (the daily `teyla spend --alert` writes the current spend
+#   alerts there and removes the file when there are none), print its first line and how many
+#   more: "teyla: spend alert — …". One extra line at most.
 # - Once per weekly digest (~/.teyla/digest.md newer than ~/.teyla/digest.seen), print
 #   its headline: the top action of the week and its command.
 # - If ./teyla.toml names a product and the daily routine left a one-line routines
@@ -104,6 +107,17 @@ orientation() {
   elif [ -s "$summary" ]; then
     line=$(head -n 1 "$summary" 2>/dev/null)
     [ -n "$line" ] && echo "$line"
+  fi
+  # `teyla spend --alert` (daily) leaves its current alerts here, one per line, and removes the
+  # file when there are none: show the first and count the rest. Not shown once it is a day and
+  # a half old (the daily job has not run since, so it no longer says what is true).
+  alert="$HOME/.teyla/spend.alert"
+  if [ -s "$alert" ] && [ -n "$(find "$alert" -mmin -2160 2>/dev/null)" ]; then
+    line=$(head -n 1 "$alert" 2>/dev/null)
+    n=$(wc -l < "$alert" 2>/dev/null | tr -d ' ')
+    more=""
+    [ "${n:-1}" -gt 1 ] 2>/dev/null && more=" (+$((n - 1)) more)"
+    [ -n "$line" ] && echo "teyla: spend alert — ${line}${more}"
   fi
   digest="$HOME/.teyla/digest.md"
   if [ -s "$digest" ] && { [ ! -f "$HOME/.teyla/digest.seen" ] || [ "$digest" -nt "$HOME/.teyla/digest.seen" ]; }; then
