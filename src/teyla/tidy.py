@@ -177,15 +177,21 @@ def _protected_lines(lines: list[str]) -> list[bool]:
             close = re.compile(r"^\s*" + re.escape(ch) + "{" + str(len(fence)) + r",}\s*$")
             # CommonMark: a fence closes with the same character, at least as long, at the same
             # blockquote depth. A `> ```` line inside a plain fence is code, not a closer.
-            j = i + 1
+            # A quoted fence also ends where its blockquote ends: the line after it is read afresh.
+            j, last = i + 1, None
             while j < n:
                 d2, rest2 = _quote_depth(lines[j])
+                if depth and d2 < depth:
+                    last = j - 1
+                    break
                 if d2 == depth and close.match(rest2):
+                    last = j
                     break
                 j += 1
-            for k in range(i, min(j, n - 1) + 1):
+            end = n - 1 if last is None else last
+            for k in range(i, end + 1):
                 prot[k] = True
-            i = j + 1
+            i = end + 1
             continue
         i += 1
     return prot
@@ -862,8 +868,11 @@ def _symlinked_ancestor(path: pathlib.Path) -> bool:
     anchors = {os.path.abspath(_home()), os.path.realpath(_home())}
     chain = []
     while True:
-        if str(d) in anchors or (d / ".git").exists():
-            if str(d) not in anchors and (d.is_symlink() or (d / ".git").is_symlink()):
+        git = d / ".git"
+        if git.is_symlink():
+            return True  # a .git that is a link (dangling or not, home included) is another checkout
+        if str(d) in anchors or os.path.lexists(git):
+            if str(d) not in anchors and d.is_symlink():
                 return True  # the "repository" is another checkout reached through a link
             return any(c.is_symlink() for c in chain)
         chain.append(d)
