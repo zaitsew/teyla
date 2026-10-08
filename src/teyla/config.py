@@ -30,6 +30,14 @@
                                    derived_days, codex_days, grok_days, log_days, docker_days, log_max_mb,
                                    urgent_free_gb); docker_superseded_repos = ["registry/vendor/"] lets it
                                    remove older tags of those repositories (default none)
+    orphan_patterns = [...]        `storage procs`: regexes on a command line that may be an orphaned dev process
+                                   (default: Xcode/SwiftPM builds, node/npm/pnpm/yarn/bun/deno, vite, next,
+                                   `-m http.server`, supabase)
+    orphan_min_age_min = 30        a process must have run this long to count as an orphan
+    orphan_roots    = []           extra folders whose first sub-folder an agent made (besides ~/.worktrees,
+                                   <repo>/.claude/worktrees, /tmp, $TMPDIR); a process there whose folder is
+                                   gone is an orphan
+    orphan_kill     = false        the sims agent also runs `storage procs --kill --quiet` (needs sims_agent)
     sims_agent      = false        `teyla routine install` also writes an agent: storage sims --reap every 10 min
     sweep_agent     = false        ... and one for storage sweep --temp hourly; the weekly runs storage sweep
     [digest]
