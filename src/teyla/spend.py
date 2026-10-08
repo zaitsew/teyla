@@ -512,7 +512,9 @@ def _budget_alert(rows: list[dict], day: str, project: str | None, budget: float
             + (f" (largest: {', '.join(f'{p} {_money(v)}' for p, v in _top(projects))})" if project is None else "")
             + f"; top sessions {top_sessions}"
             + (f"; top model {top_model[0][0]} {_money(top_model[0][1])}" if top_model else ""))
-    return dict(key=f"budget:{project or '*'}:{day}", usd=total, text=text)
+    # The key names the budget, not the day: the same overspend every day is one alert until it
+    # grows by the dedupe margin.
+    return dict(key=f"budget:{project or '*'}", usd=total, text=text)
 
 
 def alert_items(rows: list[dict], actions: list[dict] | None, now: _dt.datetime | None = None,

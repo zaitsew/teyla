@@ -101,7 +101,7 @@ def _budget_rows():
 def test_project_budget_alert_names_amount_budget_top_sessions_and_model():
     cfg = {"spend": {"budget.alpha": 100, "budget.beta": 100}}
     out = spend.alert_items(_budget_rows(), None, now=NOW, cfg=cfg)
-    assert [a["key"] for a in out] == ["budget:alpha:2026-10-07"]  # beta's $70 is under, today's $200 is not counted
+    assert [a["key"] for a in out] == ["budget:alpha"]  # beta's $70 is under, today's $200 is not counted
     text = out[0]["text"]
     assert "project alpha" in text and "$115" in text and "$100 a day" in text and "2026-10-07" in text
     assert "s1aaaaaa $60, s2bbbbbb $30, s3cccccc $20" in text and "s4dddddd" not in text  # top 3 only
@@ -111,7 +111,7 @@ def test_project_budget_alert_names_amount_budget_top_sessions_and_model():
 
 def test_total_budget_alert_names_projects_sessions_and_model():
     out = spend.alert_items(_budget_rows(), None, now=NOW, cfg={"spend": {"daily_budget_usd": 150}})
-    assert len(out) == 1 and out[0]["key"] == "budget:*:2026-10-07"
+    assert len(out) == 1 and out[0]["key"] == "budget:*"
     text = out[0]["text"]
     assert "all projects cost $185" in text and "over its $150 a day" in text
     assert "beta $70" in text and "alpha $115" in text
@@ -401,3 +401,15 @@ def test_by_day_cli_json_and_table(monkeypatch, capsys, tmp_path):
     spend.cmd_spend(ns)
     out = capsys.readouterr().out
     assert "2026-10-07" in out and "top-tier share" in out and "orchestrate" in out
+
+
+def test_the_same_overspend_every_day_is_one_alert(_utc_and_list_prices):
+    d1, d2 = _dt.date(2026, 10, 1), _dt.date(2026, 10, 2)
+    assert len(spend.run_alert([_a(115, key="budget:alpha")], d1)) == 1
+    assert spend.run_alert([_a(115, key="budget:alpha")], d2) == []
+
+
+def test_non_ascii_budget_keys_stay_valid_toml(tmp_path):
+    import tomllib
+    text = config.dump({"spend": {"budget": {"café": 40, "app-a": 10}}})
+    assert tomllib.loads(text)["spend"]["budget"] == {"café": 40, "app-a": 10}

@@ -60,6 +60,7 @@ work laptop and the home laptop can differ in roots without differing in command
 """
 from __future__ import annotations
 
+import re
 import copy
 import json
 import os
@@ -237,7 +238,7 @@ def _toml_value(v) -> str:
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, dict):
-        return "{ " + ", ".join(f"{k if str(k).replace('_', '').replace('-', '').isalnum() else _toml_value(str(k))} = {_toml_value(x)}"
+        return "{ " + ", ".join(f"{k if re.fullmatch(r'[A-Za-z0-9_-]+', str(k)) else _toml_value(str(k))} = {_toml_value(x)}"
                                 for k, x in v.items()) + " }"
     if isinstance(v, (int, float)):
         return str(v)
