@@ -13,6 +13,7 @@
   teyla harvest <path> [--project SLUG]                          tool spine + corrections for sessions touching a path
   teyla models [--days N] [--json] [--refresh]                   model ladder + price drift report
   teyla models watch [--refresh] [--json] [--ack [ID...]] [--seed FILE]  new models, what they replace, repos naming superseded ids
+  teyla tidy [paths...] [--json] [--apply] [--quiet]              duplicates, dead references and whitespace junk in the rule and memory files; --apply: mechanical fixes only, backup first
   teyla models --write-policy [--dry] [--drop-absent]             rewrite the ladder table in ~/.agents/POLICY.md
   teyla models --write-prices                                     ~/.teyla/prices.json from models.dev
   teyla wiki init|status|lint|confirm <path> [slug]              the facts store as an LLM-maintained wiki
@@ -441,6 +442,8 @@ def main(argv=None):
     cloud.register(sp)
     from . import spend as spend_mod
     spend_mod.register(sp)
+    from . import tidy as tidy_mod
+    tidy_mod.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
     q = sp.add_parser("routines"); q.set_defaults(fn=cmd_routines)
     q.add_argument("paths", nargs="*"); q.add_argument("--json", action="store_true")

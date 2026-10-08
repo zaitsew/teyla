@@ -366,6 +366,11 @@ def write(findings: list[dict] | None = None, doctor_checks: list[dict] | None =
         rule_cands += models_watch.digest_candidates()
     except Exception:  # noqa: BLE001 — same: a models pass must never stop the digest being written
         pass
+    try:
+        from . import tidy
+        rule_cands += tidy.digest_candidates()
+    except Exception:  # noqa: BLE001 — same: a markdown scan must never stop the digest being written
+        pass
     lines, history = build(findings, doctor_checks, reports, history, today, spend_rep, extra=rule_cands)
     p = digest_path()
     p.parent.mkdir(parents=True, exist_ok=True)

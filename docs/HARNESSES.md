@@ -1,7 +1,7 @@
 # The same manner in every harness
 
 Claude Code in the Claude desktop app has the whole loop: the policy imported by
-`~/.claude/CLAUDE.md`, the plugin's skills (`harvest`, `adoption-review`, `wiki-pass`, `review`), the
+`~/.claude/CLAUDE.md`, the plugin's skills (`harvest`, `adoption-review`, `wiki-pass`, `review`, `tidy`), the
 two commands (`/teyla:rule`, `/teyla:correct`), and the hooks that show the doctor summary at
 session start and capture corrections as they are typed. This page is what the other three
 desktop-app harnesses get, how, and what each one cannot do. Every fact about a harness was

@@ -45,6 +45,11 @@ a harness `teyla doctor` can read logs from, not one you can drive from a shell.
   concrete changes: a rule (via `/teyla:rule`), a `model:` override, or a
   flagged session split. Requires the `teyla` CLI — there's no fallback for
   `monitor`, since it needs the full session-adapter set, not a one-off parse.
+- **`tidy`** — editorial cleanup of the always-loaded rule and memory files: runs
+  `teyla tidy --json`, then proposes (never applies) rewrites that turn dated
+  anecdotes into rules, merge near-duplicates and move one-off history out, as a
+  diff it asks about. Protected blocks (code fences, `MERGE-APPROVED`,
+  `<!-- teyla:protect -->`) are never touched.
 - **`review`** (`/teyla:review`) — one review pass on the branch's diff
   (`git diff $(git merge-base origin/<default> HEAD)`, or one fix commit in
   round two), P1/P2 only, `P1 path:line — defect — scenario` or exactly
