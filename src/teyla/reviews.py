@@ -57,7 +57,7 @@ PR_QUERY = ("query($q:String!){search(query:$q,type:ISSUE,first:%d){nodes{... on
             "number title url mergedAt additions deletions headRefOid mergeCommit{oid} "
             "files(first:100){nodes{path}} commits(first:100){nodes{commit{oid}}}}}}}" % GH_LIMIT)
 _SHA = re.compile(r"^[0-9a-f]{7,64}$")
-_PR_URL = re.compile(r"github\.com/[^/\s]+/([^/\s]+)/pull/(\d+)")
+_PR_URL = re.compile(r"github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)")
 _PR_REF = re.compile(r"(?:\bPR\s*#?|#|/pull/)(\d+)\b", re.I)
 
 Runner = Callable[[list[str]], "tuple[int, str, str]"]
@@ -99,9 +99,9 @@ def parse_ledger(text: str) -> dict:
         mode, _, detail = f[3].partition(":")       # codex-review writes "branch:<paths>", review-gate "skip:<why>"
         mode = mode.lower()
         pr = None
-        m = _PR_URL.search(repo)                    # review-gate names the PR by its URL
+        m = _PR_URL.search(repo)                    # review-gate names the PR by its URL: owner/name
         if m:
-            repo, pr = m.group(1), int(m.group(2))
+            repo, pr = m.group(1).lower(), int(m.group(2))
         if mode == SKIP:
             skips.append({"time": when, "repo": repo, "sha": sha if _SHA.match(sha) else "", "pr": pr,
                           "reason": detail.strip() or (f[-1] if len(f) > 4 else ""), "seq": seq})
@@ -177,9 +177,11 @@ def classify(pr: dict, repo_names: set[str], ledger: dict, threshold: int) -> di
     for s in ledger["skips"]:                       # a logged skip outranks an open P1: it says why
         if s["repo"] not in repo_names:
             continue
-        if (s["sha"] and any(_same_sha(s["sha"], c) for c in shas)) or \
-                (number is not None and (s.get("pr") == number or
-                                         any(int(m) == number for m in _PR_REF.findall(s["reason"])))):
+        if s.get("pr") is not None:                 # an explicit PR target: its reason may name others
+            hit = s["pr"] == number
+        else:
+            hit = number is not None and any(int(m) == number for m in _PR_REF.findall(s["reason"]))
+        if hit or (s["sha"] and any(_same_sha(s["sha"], c) for c in shas)):
             return {"state": "skipped", "reason": s["reason"]}
     if newest:
         return {"state": "open_p1", "p1": newest["p1"], "reviewer": newest["reviewer"]}
@@ -201,7 +203,7 @@ def _gh_runner(argv: list[str]) -> tuple[int, str, str]:
 def merged_prs(slug: str, since: _dt.date, runner: Runner) -> tuple[list[dict] | None, str]:
     """(PRs, note). None plus a reason when gh failed; the note is also set when the list was cut."""
     argv = ["gh", "api", "graphql", "-f", f"query={PR_QUERY}",
-            "-f", f"q=repo:{slug} is:pr is:merged merged:>={since.isoformat()}"]
+            "-f", f"q=repo:{slug} is:pr is:merged merged:>={since.isoformat()} sort:updated-desc"]
     try:
         rc, out, err = runner(argv)
     except (OSError, subprocess.SubprocessError) as e:
@@ -285,7 +287,7 @@ def scan(paths: list[str] | None = None, days: int = 7, cfg: dict | None = None,
             continue
         if note:
             rep["notes"].append(f"{slug}: {note}")
-        names = {repo.name.lower(), slug.split("/", 1)[1].lower()}
+        names = {repo.name.lower(), slug.split("/", 1)[1].lower(), slug.lower()}
         row = {"repo": repo.name, "slug": slug, "merged": 0, **{k: 0 for k in STATES}, "prs": []}
         for pr in prs:
             merged_at = str(pr.get("mergedAt") or "")

@@ -123,7 +123,15 @@ def test_parse_ledger_reads_what_codex_review_and_review_gate_write():
     assert led["unparsed"] == 0
     assert [(r["repo"], r["mode"], r["p1"]) for r in led["reviews"]] == [("web", "branch", 0), ("app", "diff-file", 1)]
     (skip,) = led["skips"]
-    assert (skip["repo"], skip["pr"], skip["sha"], skip["reason"]) == ("app", 243, C, "moved out of #if os(iOS)")
+    assert (skip["repo"], skip["pr"], skip["sha"], skip["reason"]) == ("acme/app", 243, C, "moved out of #if os(iOS)")
+
+
+def test_a_url_skip_names_one_pr_of_one_owner(env):
+    env.repo("app")
+    env.write(f"2026-10-07T12:00:00Z\thttps://github.com/other-org/app/pull/9\t{D}\tskip:theirs\t-\t-\treview-gate",
+              f"2026-10-07T12:00:00Z\thttps://github.com/acme/app/pull/8\t{E}\tskip:superseded by #9\t-\t-\treview-gate")
+    rows = {p["number"]: p["state"] for p in _scan(env, [_pr(8, [A]), _pr(9, [B])])["repos"][0]["prs"]}
+    assert rows == {8: "skipped", 9: "unreviewed"}
 
 
 def test_a_logged_skip_outranks_an_open_p1(env):
@@ -232,7 +240,7 @@ def test_one_gh_call_per_repo_with_the_documented_arguments(env):
     assert len(run.calls) == 2
     argv = next(c for c in run.calls if any("repo:acme/app " in a for a in c))
     assert argv[:3] == ["gh", "api", "graphql"]
-    assert "q=repo:acme/app is:pr is:merged merged:>=2026-10-01" in argv
+    assert "q=repo:acme/app is:pr is:merged merged:>=2026-10-01 sort:updated-desc" in argv
     query = next(a for a in argv if a.startswith("query="))
     assert "first:100" in query and "commits(first:100){nodes{commit{oid}}}" in query
     assert "author" not in query          # authors made gh pr list exceed GitHub's node limit
