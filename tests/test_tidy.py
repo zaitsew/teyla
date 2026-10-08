@@ -68,7 +68,12 @@ def test_exact_duplicate_bullet_is_reported_with_the_first_line_and_is_auto_fixa
     p = put(env.code / "a.md", "# T\n\n- Always run the gate before pushing a branch.\n- Something else entirely, ok.\n"
                               "- Always  run the gate  before pushing a branch.\n")
     (f,) = of(scan_files(p), "dup-line")
-    assert f["line"] == 5 and "line 3" in f["message"] and f["auto"] is True and f["file"] == str(p)
+    # reported (whitespace-insensitive) but not auto: the text is not identical to the character
+    assert f["line"] == 5 and "line 3" in f["message"] and f["auto"] is False and f["file"] == str(p)
+    q = put(env.code / "b.md", "- Always run the gate before pushing a branch.\n- Another long rule, kept here.\n"
+                              "- Always run the gate before pushing a branch.  \n")
+    (g,) = of(scan_files(q), "dup-line")
+    assert g["line"] == 3 and g["auto"] is True
 
 
 def test_dup_that_is_wrapped_or_a_paragraph_is_reported_but_not_auto(env):
@@ -176,10 +181,11 @@ def test_size_budget_follows_config_and_long_index_lines(env):
 
 
 def test_whitespace_findings_and_the_hard_break_exception(env):
-    p = put(env.code / "a.md", "clean line\ntrailing   \nhard break  \nnext line\n\n\n\n\nafter blanks\n- item\n\t- tabbed child\n"
+    p = put(env.code / "a.md", "clean line\ntrailing   \n\nhard break  \nnext line\nhard break three   \nnext\n\n\n\n\nafter blanks\n- item\n\t- tabbed child\n"
                               "last line with trailing tab\t\n")
     fs = scan_files(p)
-    assert rules(fs) == [("blank-run", 5), ("tab-list", 11), ("trailing-ws", 2), ("trailing-ws", 12)]
+    # 2 or more trailing spaces before a following text line is a markdown hard break: kept
+    assert rules(fs) == [("blank-run", 8), ("tab-list", 14), ("trailing-ws", 2), ("trailing-ws", 15)]
     assert all(f["auto"] for f in fs)
 
 
@@ -265,9 +271,9 @@ def test_apply_removes_the_blank_a_deleted_bullet_leaves_behind(env):
 
 
 def test_apply_keeps_crlf_endings(env):
-    p = put(env.code / "a.md", "line one   \r\nline two\r\n")
+    p = put(env.code / "a.md", "line one   \r\n\r\nline two\r\n")
     tidy.run([str(p)], apply_fixes=True)
-    assert p.read_bytes() == b"line one\r\nline two\r\n"
+    assert p.read_bytes() == b"line one\r\n\r\nline two\r\n"
 
 
 def test_apply_refuses_a_symlink_and_writes_nothing_through_it(env):
@@ -295,9 +301,9 @@ def test_apply_refuses_files_policy_sync_generated(env):
 
 
 def test_unclosed_fence_protects_to_the_end(env):
-    p = put(env.code / "a.md", "text   \n```\nunclosed   \n\n\n\n\nstill code\n")
+    p = put(env.code / "a.md", "text   \n\n```\nunclosed   \n\n\n\n\nstill code\n")
     tidy.run([str(p)], apply_fixes=True)
-    assert p.read_text() == "text\n```\nunclosed   \n\n\n\n\nstill code\n"
+    assert p.read_text() == "text\n\n```\nunclosed   \n\n\n\n\nstill code\n"
 
 
 def test_generated_regions_are_protected_too(env):
@@ -368,7 +374,7 @@ def test_digest_gets_one_line_only_when_there_are_findings(env):
     assert tidy.digest_candidates() == []
     r = repo(env)
     put(r / "CLAUDE.md", "dirty   \n")
-    put(r / "AGENTS.md", "- also dirty   \n- and   \n")
+    put(r / "AGENTS.md", "- also dirty   \n\n- and   \n")
     put(env.home / ".claude" / "CLAUDE.md", "fine\n")
     (c,) = tidy.digest_candidates()
     assert c["text"] == "md tidy: 3 finding(s) in 2 file(s)" and c["step"] == "teyla tidy" and c["cmd"] is True
@@ -376,3 +382,126 @@ def test_digest_gets_one_line_only_when_there_are_findings(env):
     assert any("md tidy: 3 finding(s) in 2 file(s)" in line and "`teyla tidy`" in line for line in lines)
     lines = digest.write([], [], [], today=TODAY, notify_now=False)
     assert any("md tidy: 3 finding(s) in 2 file(s)" in line for line in lines)
+
+
+# --- review round: races, temp files, whole-item duplicates, code spans, quotes, links, hard breaks ----
+
+def _edit_during_apply(monkeypatch, target, new_bytes, touch_only=False):
+    """Simulate an editor saving `target` in the window after tidy read it: the first chmod of
+    tidy's temp file (made after the read, before the replace, in any version) saves the file."""
+    real = os.chmod
+    state = {"done": False}
+
+    def chmod(p, mode, *a, **k):
+        if ".tidy-tmp" in os.fspath(p) and not state["done"]:
+            state["done"] = True
+            if touch_only:
+                st = os.stat(target)
+                os.utime(target, ns=(st.st_atime_ns, st.st_mtime_ns + 5_000_000_000))
+            else:
+                pathlib.Path(target).write_bytes(new_bytes)
+        return real(p, mode, *a, **k)
+    monkeypatch.setattr(os, "chmod", chmod)
+    return state
+
+
+def test_apply_refuses_when_the_file_is_saved_after_it_was_read(env, monkeypatch):
+    r = repo(env)
+    p = put(r / "CLAUDE.md", "dirty   \n\nmine\n")
+    editor = b"dirty   \n\nmine, plus a line written a moment ago\n"
+    state = _edit_during_apply(monkeypatch, p, editor)
+    res = tidy.run([str(p)], apply_fixes=True)
+    assert state["done"] and p.read_bytes() == editor  # the editor's save survives
+    assert res["applied"] == [] and "changed while tidy ran" in res["refused"][0]["reason"]
+    assert not list(r.glob(".*tidy-tmp")) and not list(env.backups.rglob("*CLAUDE.md*"))  # no temp, no stray backup
+
+
+def test_apply_refuses_when_only_the_mtime_changed(env, monkeypatch):
+    p = put(env.code / "a.md", "dirty   \n\nmine\n")
+    state = _edit_during_apply(monkeypatch, p, b"", touch_only=True)
+    res = tidy.run([str(p)], apply_fixes=True)
+    assert state["done"] and p.read_bytes() == b"dirty   \n\nmine\n"
+    assert res["applied"] == [] and "changed while tidy ran" in res["refused"][0]["reason"]
+
+
+def test_apply_refuses_a_file_changed_between_scan_and_apply_and_backs_up_what_it_replaces(env):
+    p = put(env.code / "a.md", "dirty   \n\nmine\n")
+    docs, _ = tidy.load([p])
+    p.write_bytes(b"edited   \n\nafter the scan\n")
+    applied, refused = tidy.apply(docs)
+    assert applied == [] and len(refused) == 1 and p.read_bytes() == b"edited   \n\nafter the scan\n"
+    docs, _ = tidy.load([p])
+    applied, _ = tidy.apply(docs)
+    assert pathlib.Path(applied[0]["backup"]).read_bytes() == b"edited   \n\nafter the scan\n"
+
+
+def test_apply_never_opens_a_planted_temp_name(env):
+    victim = put(env.tmp / "victim.txt", "precious content\n")
+    p = put(env.code / "CLAUDE.md", "dirty   \n")
+    os.link(victim, env.code / ".CLAUDE.md.tidy-tmp")  # the name an older version used
+    res = tidy.run([str(p)], apply_fixes=True)
+    assert res["refused"] == [] and p.read_text() == "dirty\n"
+    assert victim.read_text() == "precious content\n"
+    assert (env.code / ".CLAUDE.md.tidy-tmp").read_text() == "precious content\n"
+    assert not [x for x in env.code.iterdir() if x.name.endswith(".tidy-tmp") and x.name != ".CLAUDE.md.tidy-tmp"]
+
+
+def test_apply_keeps_the_file_mode(env):
+    p = put(env.code / "a.md", "dirty   \n")
+    os.chmod(p, 0o640)
+    tidy.run([str(p)], apply_fixes=True)
+    assert p.read_text() == "dirty\n" and (p.stat().st_mode & 0o777) == 0o640
+
+
+def test_a_duplicate_is_not_deleted_when_the_first_copy_has_a_continuation(env):
+    text = ("- Never touch the generated copies of a file.\n  Except the docs folder, which is hand written.\n\n"
+            "- Never touch the generated copies of a file.\n")
+    p = put(env.code / "a.md", text)
+    res = tidy.run([str(p)], apply_fixes=True)
+    assert res["applied"] == [] and p.read_text() == text
+    assert [f["auto"] for f in res["findings"] if f["rule"] == "dup-line"] == [False]
+    # a nested child under the first copy counts as part of it too
+    q = put(env.code / "b.md", "- Always run the full gate first.\n  - except for docs\n\n- Always run the full gate first.\n")
+    assert tidy.run([str(q)], apply_fixes=True)["applied"] == []
+
+
+def test_code_span_spacing_is_part_of_the_item(env):
+    text = "- Print it with `printf 'a  b'` exactly.\n- Print it with `printf 'a b'` exactly.\n"
+    p = put(env.code / "a.md", text)
+    res = tidy.run([str(p)], apply_fixes=True)
+    assert of(res["findings"], "dup-line") == [] and p.read_text() == text
+    # outside a span, spacing still does not matter for the report, but only an identical line is deleted
+    q = put(env.code / "b.md", "- Print it with `x` exactly.\n- Print  it with `x` exactly.\n")
+    (f,) = of(scan_files(q), "dup-line")
+    assert f["auto"] is False
+
+
+def test_a_fence_inside_a_blockquote_is_protected(env):
+    text = "> note   \n>\n> ```\n> kept   \n>\n>\n>\n>\n> - A repeated bullet inside the quoted fence.\n> - A repeated bullet inside the quoted fence.\n> ```\n\ntail   \n"
+    p = put(env.code / "a.md", text)
+    res = tidy.run([str(p)], apply_fixes=True)
+    assert res["findings"] == []
+    assert p.read_text() == text.replace("tail   \n", "tail\n")  # only the line outside the quote moved
+    assert "> note   \n" in p.read_text()  # followed by a quoted line: a hard break, kept
+
+
+def test_apply_refuses_a_file_below_a_symlinked_directory(env):
+    r = repo(env)
+    shared = env.tmp / "shared-rules"
+    put(shared / "one.md", "dirty   \n")
+    (r / ".claude").mkdir()
+    (r / ".claude" / "rules").symlink_to(shared)
+    res = tidy.run([str(r)], apply_fixes=True)
+    assert [x["reason"][:21] for x in res["refused"]] == ["sits below a symlinke"]
+    assert (shared / "one.md").read_text() == "dirty   \n" and not env.backups.exists()
+    # the real directory, given directly (no repository around it), is tidied
+    assert tidy.run([str(shared / "one.md")], apply_fixes=True)["refused"] == []
+    assert (shared / "one.md").read_text() == "dirty\n"
+
+
+def test_two_or_more_trailing_spaces_before_text_are_a_hard_break_and_are_kept(env):
+    text = "first line   \nsecond line  \nthird\n\nlast   \n"
+    p = put(env.code / "a.md", text)
+    res = tidy.run([str(p)], apply_fixes=True)
+    assert p.read_text() == "first line   \nsecond line  \nthird\n\nlast\n"
+    assert [f["line"] for f in res["findings"]] == []

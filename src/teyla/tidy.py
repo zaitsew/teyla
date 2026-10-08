@@ -48,6 +48,7 @@ import os
 import pathlib
 import re
 import sys
+import tempfile
 
 PROTECT_START = "<!-- teyla:protect -->"
 PROTECT_END = "<!-- /teyla:protect -->"
@@ -72,6 +73,7 @@ DATE_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 CYRILLIC = re.compile(r"[\u0400-\u04FF]")  # as in scripts/leak_check.py: U+0400-U+04FF
 
 FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
+_QUOTE_RE = re.compile(r"^(?:\s*>)+")  # a fence may sit inside a blockquote: `> ```
 LIST_RE = re.compile(r"^(\s*)([-*+]|\d+[.)])\s+(\S.*)$")
 BULLET_RE = re.compile(r"^(\s*)[-*+]\s+(\S.*)$")
 HEADING_RE = re.compile(r"^\s{0,3}#{1,6}(\s|$)")
@@ -116,9 +118,10 @@ class Doc:
     """One markdown file: its lines (no line ending), the line endings, and which lines are
     protected (code fences, teyla:protect regions, regions Teyla generates) or frontmatter."""
 
-    def __init__(self, path: pathlib.Path, raw: bytes):
+    def __init__(self, path: pathlib.Path, raw: bytes, sig: tuple[int, int] | None = None):
         self.path = path
         self.raw = raw
+        self.sig = sig  # (mtime_ns, size) when the bytes were read, to notice a save made since
         self.text = raw.decode("utf-8")  # the caller turns a decode error into "unreadable"
         pieces = [p for p in re.split(r"(?<=\n)", self.text) if p != ""]
         self.pieces = pieces
@@ -161,12 +164,12 @@ def _protected_lines(lines: list[str]) -> list[bool]:
                 prot[k] = True
             i = j + 1
             continue
-        m = FENCE_RE.match(line)
+        m = FENCE_RE.match(_QUOTE_RE.sub("", line))
         if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
             fence, ch = m.group(1), m.group(1)[0]
             close = re.compile(r"^\s*" + re.escape(ch) + "{" + str(len(fence)) + r",}\s*$")
             j = i + 1
-            while j < n and not close.match(lines[j]):
+            while j < n and not close.match(_QUOTE_RE.sub("", lines[j])):
                 j += 1
             for k in range(i, min(j, n - 1) + 1):
                 prot[k] = True
@@ -309,7 +312,9 @@ def _finding(doc: Doc | pathlib.Path, line: int, rule: str, message: str, fix: s
 
 
 def _norm(text: str) -> str:
-    return " ".join(text.split())
+    """Whitespace collapsed outside backtick spans; inside a span it is part of the code."""
+    parts = re.split(r"(`[^`\n]*`)", text)
+    return "".join(part if i % 2 else re.sub(r"\s+", " ", part) for i, part in enumerate(parts)).strip()
 
 
 def _item_key(line: str) -> tuple[str, bool] | None:
@@ -345,8 +350,7 @@ def _deletable_bullet(doc: Doc, i: int) -> bool:
 
 def _is_hard_break(doc: Doc, i: int) -> bool:
     line = doc.lines[i]
-    return (line.endswith("  ") and not line.endswith("   ") and bool(line.strip())
-            and i + 1 < len(doc.lines) and not doc.blank(i + 1))
+    return line.endswith("  ") and bool(line.strip()) and i + 1 < len(doc.lines) and not doc.blank(i + 1)
 
 
 class Plan:
@@ -389,8 +393,13 @@ class Plan:
                 continue
             key, _ = ik
             if key in first:
-                if _deletable_bullet(doc, i):
-                    self.dup[i] = first[key]
+                f = first[key]
+                # Whole items must match: both single standalone bullets, the same text to the
+                # character (only trailing whitespace trimmed), so a first copy with a wrapped
+                # exception line, or a code span with different spacing, never costs the later one.
+                if (doc.lines[i].rstrip() == doc.lines[f].rstrip()
+                        and _deletable_bullet(doc, i) and _deletable_bullet(doc, f)):
+                    self.dup[i] = f
             else:
                 first[key] = i
         # A bullet removed between two blank lines leaves two; take the second as well.
@@ -605,7 +614,7 @@ def _scan_dups(doc: Doc, plan: Plan, out: list[dict]) -> list[tuple[int, str, bo
         if key in first:
             auto = i in plan.dup
             out.append(_finding(doc, i + 1, "dup-line", f"same as line {first[key] + 1}: \"{_clip(key)}\"",
-                                "delete this copy" + ("" if auto else " by hand (it is not a single standalone bullet)"),
+                                "delete this copy" + ("" if auto else " by hand (the two items are not identical single-line bullets)"),
                                 auto=auto))
             continue
         first[key] = i
@@ -659,7 +668,8 @@ def load(paths: list[pathlib.Path]) -> tuple[list[Doc], list[str]]:
     docs, notes = [], []
     for p in paths:
         try:
-            docs.append(Doc(p, p.read_bytes()))
+            raw, sig = _snapshot(p)
+            docs.append(Doc(p, raw, sig))
         except (OSError, UnicodeDecodeError) as e:
             notes.append(f"{p}: not read ({type(e).__name__})")
     return docs, notes
@@ -745,48 +755,104 @@ def apply(docs: list[Doc], now: _dt.datetime | None = None) -> tuple[list[dict],
         if check is None or _protected_pieces(check) != _protected_pieces(doc):
             refused.append(dict(file=str(path), reason="the fix would have changed a protected block; nothing written"))
             continue
+        if _symlinked_ancestor(path):
+            refused.append(dict(file=str(path), reason="sits below a symlinked directory (tidy the real path)"))
+            continue
+        tmp = None
+        backup = None
         try:
-            if path.read_bytes() != doc.raw:
+            mode = path.stat().st_mode & 0o7777
+            tmp = _write_temp(path, new_text.encode("utf-8"), mode)
+            # Compare-and-replace: what is on disk right now must be what the fix was computed
+            # from (bytes, mtime and size). The backup holds exactly those bytes, and the check
+            # is repeated as the last step before the rename.
+            cur, sig = _snapshot(path, nofollow=True)
+            if cur != doc.raw or (doc.sig is not None and sig != doc.sig):
                 refused.append(dict(file=str(path), reason="changed while tidy ran; nothing written"))
                 continue
-            backup = stamp_dir / _flatten(path)
             config.private_dir(stamp_dir.parent)
             config.private_dir(stamp_dir)
+            backup = stamp_dir / _flatten(path)
             n = 1
             while backup.exists():
                 backup = stamp_dir / f"{_flatten(path)}.{n}"
                 n += 1
             fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             try:
-                config.write_all(fd, doc.raw)
+                config.write_all(fd, cur)
             finally:
                 os.close(fd)
-            _replace(path, new_text.encode("utf-8"))
+            if _snapshot(path, nofollow=True) != (cur, sig):
+                os.unlink(backup)
+                refused.append(dict(file=str(path), reason="changed while tidy ran; nothing written"))
+                continue
+            os.replace(tmp, path)
+            tmp = None
         except OSError as e:
             refused.append(dict(file=str(path), reason=f"not written ({e.strerror or type(e).__name__})"))
             continue
+        finally:
+            if tmp is not None:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
         applied.append(dict(file=str(path), backup=str(backup), fixed=plan.counts()))
     return applied, refused
 
 
-def _replace(path: pathlib.Path, data: bytes) -> None:
+def _snapshot(path: pathlib.Path, nofollow: bool = False) -> tuple[bytes, tuple[int, int]]:
+    """(bytes, (mtime_ns, size)) read through one descriptor. A write path passes nofollow, so a link
+    swapped in after the symlink check is not followed; a scan reads through links."""
+    fd = os.open(path, os.O_RDONLY | (getattr(os, "O_NOFOLLOW", 0) if nofollow else 0))
+    try:
+        st = os.fstat(fd)
+        chunks = []
+        while True:
+            chunk = os.read(fd, 1 << 20)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    finally:
+        os.close(fd)
+    return b"".join(chunks), (st.st_mtime_ns, st.st_size)
+
+
+def _write_temp(path: pathlib.Path, data: bytes, mode: int) -> str:
+    """The new content in a fresh, unpredictably named file beside `path` (O_CREAT|O_EXCL, so an
+    existing name or a planted link is never opened), with the original's permission bits."""
     from . import config
-    mode = path.stat().st_mode & 0o7777
-    tmp = path.with_name(f".{path.name}.tidy-tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tidy-tmp", dir=path.parent)
     try:
         try:
             config.write_all(fd, data)
         finally:
             os.close(fd)
         os.chmod(tmp, mode)
-        os.replace(tmp, path)
     except OSError:
         try:
             os.unlink(tmp)
         except OSError:
             pass
         raise
+    return tmp
+
+
+def _symlinked_ancestor(path: pathlib.Path) -> bool:
+    """Whether a directory between the file and its anchor (the repository root, else the home
+    directory, else the file's own directory) is a symlink: writing there rewrites a file that
+    lives somewhere else, shared by whoever else links to it. Links above the anchor (a /tmp or
+    /var that is itself a link) are the machine's layout, not the file's."""
+    d = pathlib.Path(os.path.abspath(path)).parent
+    anchors = {os.path.abspath(_home()), os.path.realpath(_home())}
+    chain = []
+    while True:
+        if str(d) in anchors or (d / ".git").exists():
+            return any(c.is_symlink() for c in chain)
+        chain.append(d)
+        if d.parent == d:  # no repository and not under home: only the file's own directory counts
+            return chain[0].is_symlink()
+        d = d.parent
 
 
 # --- report -------------------------------------------------------------------------------------
