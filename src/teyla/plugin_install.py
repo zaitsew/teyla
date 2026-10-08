@@ -44,6 +44,14 @@ takes `#ref` for a branch or tag, not a commit), and a mismatch is fixed by remo
 re-adding it at that tag; `marketplace update` would pull main. A pin that is a commit sha
 cannot be expressed that way, so the source stays unpinned and doctor warns. See `pin_ref`.
 
+Safe mode with `safe.auto_update` (and no pin) keeps the same shape, following the CLI instead of a
+pin: the marketplace should sit at the tag of the release the CLI now is (`follow_ref`). The CLI
+updates itself at the daily run, but re-pointing the marketplace means `claude plugin marketplace
+add` — a clone from GitHub made by Claude Code, and in the desktop app only the interactive
+`/plugin` UI — which Teyla neither runs nor edits the registry for in safe mode. So the step after
+an auto-update is a banner item (`lag_banner_item`) carrying the exact lines to type, and doctor
+shows the same lines; both clear themselves once the marketplace is at the new tag.
+
 Every `rmtree` here is of a path under ~/.claude/plugins/cache, checked first: an
 `installPath` read from installed_plugins.json, or a version string read from a cloned
 plugin.json, is data, and `"../../.."` in either must not become a recursive delete.
@@ -114,6 +122,37 @@ def pin_ref(cfg: dict | None = None) -> str | None:
     if not pin or not _RELEASE_PIN_RE.match(pin):
         return None
     return pin if pin.startswith("v") else f"v{pin}"
+
+
+def auto_ref(cfg: dict | None = None) -> str | None:
+    """`v<this CLI's version>`: where the plugin's marketplace should sit on a machine that
+    updates itself (`safe.auto_update`, no pin). None otherwise, or for a non-release version."""
+    from . import config, update, __version__
+    if not config.safe_auto_update(cfg) or update.update_settings(cfg)[1]:
+        return None
+    return f"v{__version__}" if _RELEASE_PIN_RE.match(__version__) else None
+
+
+def follow_ref(cfg: dict | None = None) -> str | None:
+    """The tag the marketplace belongs at: the pin's, else (auto-update) the CLI's own release."""
+    return pin_ref(cfg) or auto_ref(cfg)
+
+
+def lag_banner_item(cfg: dict | None = None, *, plugins_dir: pathlib.Path | None = None) -> tuple[str, str] | None:
+    """(key, text) for the session-start banner when auto-update left the plugin behind: the
+    marketplace sits on another tag (or on main) than the CLI's release. The text is the one line a
+    person types; None when nothing lags or there is nothing to compare (no marketplace, a local
+    directory source)."""
+    ref = auto_ref(cfg)
+    if not ref:
+        return None
+    found, cur, kind = marketplace_ref(plugins_dir=plugins_dir)
+    if not found or cur == ref or (cur is None and kind not in ("github", "git")):
+        return None
+    on = cur or "main"
+    steps = ["plugin marketplace remove teyla", f"plugin marketplace add {pinned_source(ref)}", "plugin install teyla@teyla"]
+    return (f"plugin-lag|{on}|{ref}",
+            f"Teyla CLI is {ref}, plugin hooks follow {on}: in Claude Code type " + " then ".join(f"/{c}" for c in steps))
 
 
 def pin_is_sha(cfg: dict | None = None) -> bool:
@@ -271,7 +310,7 @@ def safe_install_commands(source: str) -> list[str]:
     else:
         mkt = source.rstrip("/").split("/")[-1]
         names, src = [mkt], source
-        ref = pin_ref()
+        ref = follow_ref()
         if ref and source.lower() == TEYLA_REPO:
             src = pinned_source(ref)
             # `marketplace add` refuses a name that is already registered, which would
@@ -409,7 +448,7 @@ def refresh(*, plugins_dir: pathlib.Path | None = None, force: bool = False) -> 
     version = _load_json(src / ".claude-plugin" / "plugin.json").get("version") or "0.0.0"
     if _safe():
         stale = [k for k in keys if (plugins[k] or [{}])[0].get("version") != version or force]
-        ref = pin_ref()
+        ref = follow_ref()
         # The right version on the wrong ref is still stale: the next marketplace update
         # would pull main (Codex review, P2).
         if ref and "teyla@teyla" in keys and "teyla@teyla" not in stale:
