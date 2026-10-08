@@ -43,7 +43,17 @@ The JSON report keeps counts for every file but only a few sample hits: at most 
 per file and MAX_SAMPLES in all, and none under --quiet, so a repo full of non-English text does
 not fill memory.
 
+Quoted labels in English prose are not findings. In a comment or a doc line, a non-Latin run is
+ignored when it sits inside quotes (`«…»`, `“…”`, `„…“`, `"…"`, `'…'`, backticks) or when the rest of the
+line is English prose: at least LATIN_PROSE_WORDS Latin words, and at least twice as many as the
+non-Latin words left outside quotes. A line that is mostly non-Latin prose still counts. Strings
+and fixtures are their own kinds and are classified as before.
+
 `--commits N` also reads the last N commit messages on the default branch.
+
+A clone that is behind its upstream is flagged, because the scan reads the working tree: one warning
+line per repo, and a `behind` field in `--json`. The check compares HEAD with `@{u}` (or
+`origin/<default>` on the default branch) using the refs as they are. It never fetches or pulls.
 
 The weekly routine runs `teyla lang --quiet > lang.md` and leaves the counts in
 `~/.teyla/lang.json`, which the digest turns into one line. It is a report: the exit code is 0
@@ -68,6 +78,8 @@ TOP_FILES = 5
 SAMPLES_PER_FILE = 5
 MAX_SAMPLES = 1000   # retained sample hits in one report, all repos together
 CACHE_MAX_AGE_DAYS = 14
+LATIN_PROSE_WORDS = 3   # a comment or doc line with this many Latin words is English prose around a quoted label
+OLD_COMMIT_DAYS = 30    # a behind clone whose last commit is older than this says so
 
 # script -> (character ranges, minimum run). \u escapes on purpose: the repo's own leak check
 # flags literal Cyrillic outside allow-listed files.
@@ -373,6 +385,43 @@ def _sample(line: str, width: int = SAMPLE_CHARS) -> str:
     return line if len(line) <= width else line[:width - 3] + "..."
 
 
+_QUOTED = re.compile(
+    "\u00ab[^\u00bb]*\u00bb"                  # guillemets
+    "|\u201c[^\u201d]*\u201d"                  # curly double
+    "|\u201e[^\u201c\u201d]*[\u201c\u201d]"  # low-9 opening
+    "|\"[^\"]*\""
+    "|`[^`]*`"
+    "|(?<![\\w'])'[^'\\n]*'(?!\\w)"          # apostrophes in "don't" must not open a quote
+)
+_LATIN_WORD = re.compile(r"[A-Za-z]{2,}")
+_NON_ASCII_WORD = re.compile(r"[^\x00-\x7f\W]+")
+# Scripts written without spaces: a "word" there is a whole clause, so each character counts as one
+# (caught in review: a long CJK paragraph after "Please translate this:" was one word and forgiven).
+_SPACELESS = re.compile("[\u0e00-\u0e7f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+
+
+def _non_latin_words(text: str) -> int:
+    return sum(max(1, len(_SPACELESS.findall(w))) for w in _NON_ASCII_WORD.findall(text))
+
+
+def _quoted_spans(text: str) -> list[tuple[int, int]]:
+    return [m.span() for m in _QUOTED.finditer(text)]
+
+
+def _forgiven(segment: str, offset: int) -> bool:
+    """True when the non-Latin run at `offset` in a comment or doc `segment` is a quoted label or sits in
+    English prose."""
+    quoted = _quoted_spans(segment)
+    if _inside(quoted, offset):
+        return True
+    masked = list(segment)
+    for a, b in quoted:
+        masked[a:b] = " " * (b - a)
+    masked = "".join(masked)
+    latin = len(_LATIN_WORD.findall(masked))
+    return latin >= LATIN_PROSE_WORDS and latin >= 2 * _non_latin_words(masked)
+
+
 def scan_text(rel: str, text: str, scripts: set[str] | None = None) -> list[dict]:
     """[{line, kind, script, scripts, text}] — one hit per line and kind; `scripts` lists every script in that kind on the line."""
     if text.isascii():
@@ -390,15 +439,17 @@ def scan_text(rel: str, text: str, scripts: set[str] | None = None) -> list[dict
         seen: dict[str, list[str]] = {}
         for script, start in runs:
             if doc and not test:
-                kind = "doc"
+                kind, seg = "doc", (0, len(line))
             elif _inside(cs, start):
-                kind = "comment"
+                kind, seg = "comment", next(sp for sp in cs if sp[0] <= start < sp[1])
             elif test:
                 kind = "fixture"
             elif _inside(ss, start):
                 kind = "string"
             else:
                 kind = "other"
+            if kind in ("doc", "comment") and _forgiven(line[seg[0]:seg[1]], start - seg[0]):
+                continue
             found = seen.setdefault(kind, [])
             if script not in found:
                 found.append(script)
@@ -445,6 +496,39 @@ def default_branch(repo: pathlib.Path) -> str:
     return "HEAD"
 
 
+def behind_upstream(repo: pathlib.Path, now: float | None = None) -> dict | None:
+    """How far this clone's HEAD is behind its upstream, from the refs as they are: {upstream, commits,
+    last_commit_days, old}, or None when it is level, ahead, has no upstream to compare, or git fails.
+    Never fetches; a clone that has not fetched cannot know it is behind, and the report does not guess."""
+    ref = None
+    out = _git(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    if out and out.strip():
+        ref = out.decode().strip()
+    else:
+        cur = _git(repo, "symbolic-ref", "-q", "--short", "HEAD")
+        name = cur.decode().strip() if cur else ""
+        dflt = default_branch(repo)
+        # origin/HEAD may name a branch with slashes (origin/release/stable): drop the remote only
+        if name and name == dflt.removeprefix("origin/") and _git(repo, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{name}") is not None:
+            ref = f"origin/{name}"
+    if not ref:
+        return None
+    n = _git(repo, "rev-list", "--count", f"HEAD..{ref}")
+    try:
+        commits = int(n.decode().strip()) if n else 0
+    except ValueError:
+        return None
+    if commits <= 0:
+        return None
+    ts = _git(repo, "log", "-1", "--format=%ct", "HEAD")
+    try:
+        days = int(((now if now is not None else _dt.datetime.now().timestamp()) - int(ts.decode().strip())) // 86400)
+    except (AttributeError, ValueError):
+        days = None
+    return dict(upstream=ref, commits=commits, last_commit_days=days,
+                old=days is not None and days > OLD_COMMIT_DAYS)
+
+
 def scan_commits(repo: pathlib.Path, n: int) -> list[dict]:
     """The last `n` commit messages on the default branch that hold non-Latin text."""
     out = _git(repo, "log", f"-{n}", "--format=%H%x00%B%x1e", default_branch(repo))
@@ -481,11 +565,13 @@ def scan_repo(repo: pathlib.Path, cfg: dict | None = None, commits: int = 0, bud
     Budget(0): counts only."""
     cfg = cfg or config.load()
     budget = Budget() if budget is None else budget
-    rep: dict = dict(repo=repo.resolve().name, path=str(repo), files=[], counts={}, commits=[], exempt=0, error=None)
+    rep: dict = dict(repo=repo.resolve().name, path=str(repo), files=[], counts={}, commits=[], exempt=0, error=None,
+                     behind=None)
     names = tracked_files(repo)
     if names is None:
         rep["error"] = "not a readable git repository"
         return rep
+    rep["behind"] = behind_upstream(repo)
     allow = Allow(repo, cfg)
     for rel in sorted(names):
         if skipped(rel):
@@ -547,6 +633,7 @@ def report(repos: list[pathlib.Path], cfg: dict | None = None, commits: int = 0,
         scanned=len(rows), repos_with_text=len(hit),
         files=sum(len(r["files"]) for r in rows), lines=sum(f["lines"] for r in rows for f in r["files"]),
         commits=sum(len(r["commits"]) for r in rows), errors=[r["repo"] for r in rows if r["error"]],
+        stale=sorted(r["repo"] for r in rows if r["behind"]),
         repos=sorted(rows, key=lambda r: (-len(r["files"]), r["repo"])),
     )
 
@@ -594,6 +681,12 @@ def render(rep: dict, quiet: bool = False) -> str:
             out.append(f"  commit {c['sha']}  {c['lines']} line(s)  \"{c['subject']}\"")
         if len(r["commits"]) > TOP_FILES:
             out.append(f"  ... and {len(r['commits']) - TOP_FILES} more commit(s)")
+    for r in sorted(rep["repos"], key=lambda r: r["repo"]):
+        b = r.get("behind")
+        if b:
+            age = f"; last local commit {b['last_commit_days']} days ago" if b["old"] else ""
+            out.append(f"{r['repo']}: clone is {b['commits']} commit{'' if b['commits'] == 1 else 's'} behind {b['upstream']} — results are for the local "
+                       f"tree; git pull first{age}")
     if rep["errors"] and not quiet:
         out.append(f"not scanned (git failed): {', '.join(rep['errors'])}")
     if not quiet:
@@ -664,7 +757,14 @@ Exempt files (localization is product content, not a finding), matched on the re
               **/res/values-*/{strings,plurals,arrays}.xml   (Android resources)
   one repo    .teyla/lang-allow in that repo: one glob per line, '#' comments
   all repos   `teyla config set lang.allow=GLOB,GLOB`  ([lang] allow in ~/.teyla/config.toml)
-A glob without a leading '/' matches at any depth; '**' crosses directories, '*' does not."""
+A glob without a leading '/' matches at any depth; '**' crosses directories, '*' does not.
+
+Quoted labels in English prose are not counted: in a comment or doc line, non-Latin text inside quotes
+(\u00ab\u00bb, \u201c\u201d, "", '', ``) is ignored, and so is a non-Latin word on a line that is otherwise English
+prose (3+ Latin words, at least twice the non-Latin words). A line that is mostly non-Latin still counts.
+
+A clone behind its upstream gets a warning, since the scan reads the local tree. The check uses the refs as
+they are (it never fetches or pulls); --json has a `behind` field per repo and a `stale` list."""
 
 
 def register(sp):
