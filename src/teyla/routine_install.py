@@ -210,6 +210,7 @@ mkdir -p "$OUT_DIR"
 "$TEYLA" products > "$OUT_DIR/products.md" 2>&1
 "$TEYLA" models > "$OUT_DIR/models.md" 2>&1
 {models_watch_line} > "$OUT_DIR/models-watch.md" 2>&1
+"$TEYLA" tidy --quiet > "$OUT_DIR/tidy.md" 2>&1
 "$TEYLA" lang --quiet > "$OUT_DIR/lang.md" 2>&1
 "$TEYLA" reviews --quiet > "$OUT_DIR/reviews.md" 2>&1
 # The reports above tend to have no reader: the digest is the five lines
@@ -294,6 +295,9 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         return True
     if path == WRAPPER_PATH and "models watch" not in text:
         # Written before `teyla models watch`: the weekly would never look for new models.
+        return True
+    if path == WRAPPER_PATH and "tidy --quiet" not in text:
+        # Written before `teyla tidy`: the weekly would never look for junk in the rule files.
         return True
     if path == WRAPPER_PATH and "reviews --quiet" not in text:
         # Written before `teyla reviews`: the weekly would never count merged PRs nobody reviewed.

@@ -217,8 +217,8 @@ def fingerprint(text: str) -> str:
 # works on — so it becomes s01..sNN.
 PUBLIC_SKILLS = frozenset({
     # Teyla's plugin and CLI skills, bare and namespaced
-    "adoption-review", "harvest", "wiki-pass", "correct", "rule",
-    "teyla:adoption-review", "teyla:harvest", "teyla:wiki-pass", "teyla:correct", "teyla:rule", "teyla:review",
+    "adoption-review", "harvest", "wiki-pass", "correct", "rule", "tidy",
+    "teyla:adoption-review", "teyla:harvest", "teyla:wiki-pass", "teyla:correct", "teyla:rule", "teyla:review", "teyla:tidy",
     # Claude Code built-ins
     "review", "security-review", "code-review", "init", "simplify", "loop", "schedule", "run",
     "update-config", "keybindings-help", "claude-api", "fewer-permission-prompts", "compact",

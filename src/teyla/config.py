@@ -45,6 +45,9 @@
     orphan_kill     = false        the sims agent also runs `storage procs --kill --quiet` (needs sims_agent)
     sims_agent      = false        `teyla routine install` also writes an agent: storage sims --reap every 10 min
     sweep_agent     = false        ... and one for storage sweep --temp hourly; the weekly runs storage sweep
+    [tidy]                         `teyla tidy`: the rule and memory files checked for junk
+    max_kb     = 24                a file over this many KB is a finding (an always-loaded file this big is not read)
+    stale_days = 120               a dated "until" / "for now" / "temporary" / "this week" / TODO line older than this is a finding
     [digest]
     notify = true                  the weekly digest posts a macOS notification when written
     [review]                       `teyla reviews`: merged PRs against the review ledger
@@ -135,6 +138,8 @@ DEFAULTS = {
               "a20_share": 0.3, "a20_min_calls": 10, "a20_models": []},
     # `teyla digest --write` (the weekly routine) posts a macOS notification with its headline.
     "digest": {"notify": True},
+    # `teyla tidy`: size budget for a rule or memory file, and how old a dated "for now" may get.
+    "tidy": {"max_kb": 24, "stale_days": 120},
     # `teyla reviews`: the ledger the review script appends to, and the size below which a PR is exempt.
     "review": {"ledger": "~/.cache/review-ledger.tsv", "min_lines": 7},
     # The plugin's opt-in hooks (plugin/hooks/context-budget.sh, land-check.sh). Off by default: where

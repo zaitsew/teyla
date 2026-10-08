@@ -390,7 +390,7 @@ launchd agents, one hook and one command:
 | when | what | writes |
 |---|---|---|
 | daily 07:00 (`com.zaitsew.teyla.daily`) | `teyla update --quiet`, `teyla doctor --quiet`, `teyla policy sync --quiet` (local files only, safe mode too), catch-up, storage clean | `~/Library/Logs/teyla-daily.log`, `~/.teyla/doctor.summary`, `~/.teyla/banner.items` |
-| Friday 20:45 (`com.zaitsew.teyla.weekly`) | `monitor --days 7`, `routines`, `products`, `models`, `models watch`, `lang --quiet` (non-Latin text in tracked files), `reviews --quiet` (merged PRs nobody reviewed), then `digest --write` | `<ops>/runs/<date>/`, `~/.teyla/digest.md` |
+| Friday 20:45 (`com.zaitsew.teyla.weekly`) | `monitor --days 7`, `routines`, `products`, `models`, `models watch`, `tidy --quiet` (report only), `lang --quiet` (non-Latin text in tracked files), `reviews --quiet` (merged PRs nobody reviewed), then `digest --write` | `<ops>/runs/<date>/`, `~/.teyla/digest.md` |
 | every session start (plugin hook) | prints what is new in `banner.items` since the last start (nothing when nothing is), and the digest headline once per week; if the last update check is older than a day, starts `teyla update --check` in the background | `~/.teyla/update-check.json` |
 | on demand | `teyla doctor` — the checklist with a fix per line; exit 1 when a FIX is pending | `~/.teyla/doctor.json` |
 
@@ -450,6 +450,15 @@ Every `teyla` process applies `[env]` at startup (a variable the shell already s
 and `routine install` writes it, with `PATH`, into both plists and both wrappers. Because
 the generator reads config on every write, the update that regenerates those files keeps
 the adaptation instead of erasing it. `teyla config show` prints the effective file.
+
+**Rule files rot too.** `~/.agents/POLICY.md`, `~/.claude/CLAUDE.md`, memory and each repo's
+`CLAUDE.md` / `AGENTS.md` / `.claude/rules/` collect dated anecdotes, copies of each other and
+pointers to files that moved, and an always-loaded file nobody can read in one sitting is not
+read. `teyla tidy` finds that without a model (duplicates, dead references, size, stale
+"for now" lines) and the weekly routine files the report; the digest names the count. It never
+rewrites prose: `--apply` is limited to whitespace and an exact duplicate bullet, with a backup,
+and code fences and `<!-- teyla:protect -->` regions are skipped outright. Shortening an
+anecdote into a rule is the `tidy` skill's job, as a diff you approve.
 
 What it never does: edit a repo. Repos missing their `AGENTS.md ⇄ CLAUDE.md` pairing are a
 WARN in doctor with the `teyla policy sync-repo` command to run; that creates a file in

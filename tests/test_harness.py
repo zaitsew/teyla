@@ -59,7 +59,7 @@ def test_sync_writes_skills_hooks_and_is_idempotent(home):
     # second run: nothing to do
     assert harness.sync(home=home) == ["in sync: cursor, codex, grok, hermes"]
     rows = {r["harness"]: r for r in harness.status(home=home)}
-    assert rows["cursor"]["skills"] == 6 and rows["cursor"]["hooks"] is True
+    assert rows["cursor"]["skills"] == 7 and rows["cursor"]["hooks"] is True
     assert rows["codex"]["hooks"] is True and rows["grok"]["hooks"] is True and rows["hermes"]["hooks"] is True
     # wired is not approved: Codex and Hermes skip a hook nobody trusted
     assert rows["codex"]["trust"] == {"approved": 0, "total": 2,

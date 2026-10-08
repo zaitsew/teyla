@@ -378,6 +378,11 @@ def write(findings: list[dict] | None = None, doctor_checks: list[dict] | None =
     except Exception:  # noqa: BLE001 — same: a models pass must never stop the digest being written
         pass
     try:
+        from . import tidy
+        rule_cands += tidy.digest_candidates()
+    except Exception:  # noqa: BLE001 — same: a markdown scan must never stop the digest being written
+        pass
+    try:
         from . import lang
         rule_cands += lang.digest_candidates()
     except Exception:  # noqa: BLE001 — same: a language pass must never stop the digest being written

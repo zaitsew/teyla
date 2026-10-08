@@ -36,6 +36,8 @@ def _home(tmp_path, monkeypatch):
     monkeypatch.setattr(rules_lifecycle, "digest_candidates", lambda *a, **k: [])
     from teyla import models_watch
     monkeypatch.setattr(models_watch, "digest_candidates", lambda *a, **k: [])
+    from teyla import tidy
+    monkeypatch.setattr(tidy, "digest_candidates", lambda *a, **k: [])  # the real one scans $HOME and code_root
     return home
 
 
