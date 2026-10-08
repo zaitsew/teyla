@@ -247,7 +247,7 @@ def _w2_fix() -> str:
     recommended 335000 when ~/.claude/settings.json has none."""
     window, at, is_set = config.compaction()
     hook = ("context-budget-hook re-injects the handoff; if W2 stays high, check the session had the "
-            "setting and the hook fired (~/.cache/context-budget/handoff/), and that the orchestrator "
+            "setting and the hook fired (~/.teyla/handoff/), and that the orchestrator "
             "delegates reading to subagents")
     if is_set:
         return f"compaction is set (autoCompactWindow {window}, ~{at // 1000}k); {hook}"

@@ -52,6 +52,7 @@ import datetime as _dt
 import pathlib
 import re
 
+from . import lexicon
 from .rules import RULES_DIR, STOP, slug_of
 
 TTL_DAYS = 90
@@ -61,9 +62,7 @@ HUMAN_SOURCES = ("correct", "inbox-reject")
 # Words a correction is phrased in, not what it is about.
 CORRECTION_STOP = {"wrong", "again", "instead", "please", "should", "told", "said", "just", "only", "also",
                    "why", "what", "was", "were", "has", "have", "had", "did", "does", "but", "from", "not",
-                   "never", "always", "yes", "wait", "stop", "still", "then", "there", "they", "them",
-                   "не", "нет", "это", "так", "как", "что", "надо", "нужно", "опять", "снова", "уже", "тоже",
-                   "для", "если", "или", "еще", "ещё", "все", "всё", "был", "была", "было", "нам", "тут"}
+                   "never", "always", "yes", "wait", "stop", "still", "then", "there", "they", "them"} | lexicon.STOPWORDS_RU
 _FRONT_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?", re.S)
 
 
@@ -90,7 +89,7 @@ def _ts(rec_or_s) -> _dt.datetime | None:
 
 def _stem(w: str) -> str:
     """Crude on purpose: drop an English inflection, keep five characters. 'merging', 'merged'
-    and 'merge' meet at 'merg'; 'мерджить' and 'мерджи' at 'мердж'. Clustering a dozen
+    and 'merge' meet at 'merg'. Clustering a dozen
     corrections needs nothing finer, and Teyla is stdlib-only."""
     for suf in ("ing", "ed", "es", "s", "e"):
         if len(w) > len(suf) + 3 and w.endswith(suf):
@@ -100,7 +99,7 @@ def _stem(w: str) -> str:
 
 
 def words(text: str) -> frozenset[str]:
-    return frozenset(_stem(w) for w in re.findall(r"[a-zа-яё0-9]+", (text or "").lower())
+    return frozenset(_stem(w) for w in re.findall(rf"[{lexicon.WORD_CHARS_LOWER}]+", (text or "").lower())
                      if len(w) >= 3 and w not in STOP and w not in CORRECTION_STOP)
 
 

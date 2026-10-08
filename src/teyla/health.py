@@ -323,7 +323,7 @@ def auth_hermes(home: pathlib.Path, env=None) -> dict:
 
 def _hermes_current_auth_error(st: dict, pool: list) -> dict:
     """`last_auth_error` of a provider state, or {} once something later succeeded. Hermes never
-    clears the field: after a re-login it still says "relogin required since 09-29" next to a
+    clears the field: after a re-login it still says "relogin required since 01-01" next to a
     fresh `last_refresh`. The newest event decides — a token refresh or a pooled credential that
     is `ok` after the error's `at` makes it history."""
     err = (st or {}).get("last_auth_error") or {}

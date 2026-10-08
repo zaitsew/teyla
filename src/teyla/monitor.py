@@ -91,8 +91,7 @@ def metrics(sessions: list[Session], days: int | None = None) -> dict:
 # --- headless volume -----------------------------------------------------------------------------
 #
 # A batch session is one headless call: `claude -p`, `codex exec`, `grok -p` from a script or
-# another agent (adapters set `batch`). In September 2026 they were 15,236 of Grok's 15,240 and
-# 534 of Codex's 545 sessions here, and the Grok ones were invisible: Grok stores no per-message
+# another agent (adapters set `batch`). They can be nearly all of a harness's sessions, and the Grok ones were invisible: Grok stores no per-message
 # token counts, so the By-model table had no Grok row, until the balance ran out (HTTP 402).
 # Grok's list-price cost comes from `teyla grok-cost` (adapters.grok.session_costs,
 # costUsdTicks), passed in as `grok_rows`; other harnesses are priced from their tokens with

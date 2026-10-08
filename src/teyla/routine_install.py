@@ -149,7 +149,7 @@ mkdir -p "$OUT_DIR"
 "$TEYLA" routines > "$OUT_DIR/routines.md" 2>&1
 "$TEYLA" products > "$OUT_DIR/products.md" 2>&1
 "$TEYLA" models > "$OUT_DIR/models.md" 2>&1
-# The reports above had no reader (4 written in 2026-09, 0 opened): the digest is the five lines
+# The reports above tend to have no reader: the digest is the five lines
 # that are read — the session-start hook shows its headline once, and a notification says it exists.
 "$TEYLA" digest --write
 """

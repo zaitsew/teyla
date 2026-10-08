@@ -31,7 +31,7 @@ import pathlib
 import re
 import subprocess
 
-from . import config
+from . import config, lexicon
 
 MARKER_RE = re.compile(r"<!--\s*teyla:detect\s+([A-Za-z0-9][A-Za-z0-9_-]*)(?![\w-])[^>]*-->")
 
@@ -311,7 +311,7 @@ def enrich(m: dict, cfg: dict | None = None, text: str | None = None) -> dict:
 # Many turns end with a question before the next human turn. Most are real decisions — "A or B?",
 # "which do you want?", "paste the key or skip?" — and a detector that counted every trailing
 # question would be noise. The shape §4 forbids is narrower and has a tell: the agent asks
-# permission for one next step ("Want me to push them?", "Делать?", "Go?") and the human's
+# permission for one next step ("Want me to push them?", "Go?") and the human's
 # whole decision is "yes". So a turn counts only when all three hold:
 #   1. the last paragraph asks permission (PERMISSION_RE) for a single step — no " or ",
 #      no "which", no numbered menu;
@@ -320,30 +320,16 @@ def enrich(m: dict, cfg: dict | None = None, text: str | None = None) -> dict:
 #   3. the next human turn is a bare yes and nothing else (is_bare_yes).
 # A session that ends on the question is not counted: nobody answered, so nothing is known.
 
-PERMISSION_RE = re.compile(
-    r"\b(?:do you )?want me to\b|\bwould you like me to\b|\b(?:shall|should) (?:i|we)\b"
-    r"|\b(?:ok|okay|ready) to (?:proceed|go|continue|start)\b|\blet me know if you(?:'d| would)? (?:like|want) me to\b"
-    r"|(?:^|[.!?]\s+|\n)\s*(?:proceed|go|apply|continue|ship it|go ahead)\?"
-    r"|\bхочешь\b|\bхотите\b|\bделать\?|\bделаем\?|\bпродолж(?:ить|аю|аем)\?|\bзапуска(?:ю|ем|ть)\?|\bприменить\?"
-    r"|\bмне (?:продолжить|сделать|начать|запустить)\b|\bсделать\?",
-    re.I,
-)
-CHOICE_RE = re.compile(r"\bor\b|\bwhich\b|\bили\b|\bкакой\b|\bкакую\b|\bкакое\b|\bчто (?:берём|выбираешь)\b|(?:^|\n)\s*(?:\d+[.)]|\(?[a-c]\))\s", re.I)
-BLOCKER_RE = re.compile(
-    r"api[ _-]?key|password|passphrase|token|credential|secret|sign[ -]?in|log[ -]?in|2fa|payment|pay\b|purchase|billing"
-    r"|\bmerge\b|\bproduction\b|\bprod\b|\bdeploy|\bdelete|\bremove|\bdrop\b|force[- ]push|\bdownload|\bpublish|\bsend\b|\bemail"
-    r"|CLAUDE\.md|POLICY\.md|ключ|пароль|оплат|удал|смерж|мерж|прод\b|деплой|задепло",
-    re.I,
-)
+PERMISSION_RE = re.compile(lexicon.PERMISSION_PATTERN, re.I)
+CHOICE_RE = re.compile(lexicon.CHOICE_PATTERN, re.I)
+BLOCKER_RE = re.compile(lexicon.BLOCKER_PATTERN, re.I)
 # The whole reply must be a yes — words from this list and punctuation, nothing else.
 # "Yes, but don't push until CI is green" is a decision with a condition, not a nudge; a
-# prefix match counted it (Codex review). "ok", "go" and "давай" open a redirect as
-# often as a yes ("Okay, skip the tests…", "Давай сначала проверим" — both seen),
-# so a reply is also rejected when anything but these words follows them.
-AFFIRMATIVE_WORDS = frozenset(
-    "yes yep yeah yup sure ok okay k proceed go ahead do it please agreed agree lgtm ship run continue sounds good "
-    "да давай делай ок окей конечно ага продолжай согласен запускай го пожалуйста вперёд вперед".split())
-FILLER_WORDS = frozenset("ahead it please good пожалуйста".split())
+# prefix match counted it (Codex review). "ok", "go" and "let's go" open a redirect as
+# often as a yes ("Okay, skip the tests…"), so a reply is also rejected when anything but these
+# words follows them. The word lists (English and Russian) are in `lexicon`.
+AFFIRMATIVE_WORDS = lexicon.AFFIRMATIVE_WORDS
+FILLER_WORDS = lexicon.FILLER_WORDS
 
 
 def is_bare_yes(reply: str | None) -> bool:

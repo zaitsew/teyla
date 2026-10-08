@@ -112,7 +112,7 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
     after_error = False  # the last assistant record was an API error
     # Claude Code writes one record per content block: a reply with text and three tool calls is
     # four records, each carrying the same message id and usage. Summing per record counted output
-    # 2.85x over 2026-09 (102M vs 36M tokens). Usage is keyed by message id, the last record wins
+    # almost three times over. Usage is keyed by message id, the last record wins
     # (in subagent files the records of one message carry growing counts).
     per_message: dict = {}
     failed_in_a_row = 0  # tool results that came back is_error, since the last one that did not

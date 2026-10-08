@@ -441,9 +441,8 @@ def headless(data: dict, env=None) -> bool:
     - Hermes one-shot (`hermes -z`) sets HERMES_SINGLE_QUERY_SESSION=1, and HERMES_YOLO_MODE and
       HERMES_ACCEPT_HOOKS without HERMES_INTERACTIVE (unless launched from an interactive Hermes) (hermes-agent: hermes_cli/oneshot.py, cli.py).
     - A prompt wrapped whole in `<user_query>…</user_query>` is the Cursor-compatible envelope
-      Grok hands ~/.cursor/hooks.json. 41 of the 107 records in 2026-09's correction files
-      were `claude -p`/`grok -p` review briefs in that envelope, and none was typed by a
-      person: in an interactive Grok session the same prompt also reaches Grok's own hook
+      Grok hands ~/.cursor/hooks.json. Many captured records were `claude -p`/`grok -p`
+      review briefs in that envelope, and none was typed by a person: in an interactive Grok session the same prompt also reaches Grok's own hook
       unwrapped, so nothing a person types is lost by skipping the envelope.
     """
     env = os.environ if env is None else env

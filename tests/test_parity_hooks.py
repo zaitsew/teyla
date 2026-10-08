@@ -1,8 +1,8 @@
-"""The three practices ported from the personal Mac's ~/ops/bin into the plugin, for the work
-MacBook: the context budget (plugin/hooks/context-budget.sh + .py), the land check
-(plugin/hooks/land-check.sh) and the `/teyla:review` skill. Both hooks are opt-in under
-`[hooks]` in ~/.teyla/config.toml; every hook here runs for real through `sh` with HOME, TMPDIR
-and the config in tmp_path, so nothing touches the real ~/.teyla, ~/.claude or ~/.codex."""
+"""The three practices shipped in the plugin, for a machine with no hand-wired copies: the
+context budget (plugin/hooks/context-budget.sh + .py), the land check (plugin/hooks/land-check.sh)
+and the `/teyla:review` skill. Both hooks are opt-in under `[hooks]` in ~/.teyla/config.toml;
+every hook here runs for real through `sh` with HOME, TMPDIR and the config in tmp_path, so
+nothing touches the real ~/.teyla, ~/.claude or ~/.codex."""
 from __future__ import annotations
 
 import json
