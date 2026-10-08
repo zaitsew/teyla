@@ -25,6 +25,15 @@
     [corrections]
     store = "home"                 "home": ~/.teyla/corrections/<repo-key>.jsonl (default);
                                    "repo": <repo>/.teyla/corrections.jsonl, the pre-0.12 place
+    [spend]                        `teyla spend`: thresholds that act (every key optional)
+    alert_session_usd = 250.0      --alert: a session that cost this much in the last day
+    w1_usd            = 15.0       W1/W5: a session under this is not worth a finding
+    daily_budget_usd  = 0.0        --alert: the day's total over this (API-equivalent); 0 = off
+    budget.<project>  = 40.0       --alert: that project's day over this (project as `teyla spend` names it)
+    a20_share         = 0.3        advice A20: explicit top-tier model in more than this share of a
+                                   project's subagent calls ...
+    a20_min_calls     = 10         ... and at least this many calls
+    a20_models        = []         extra model names/aliases counted as top tier for A20
     [hooks]                        opt-in plugin hooks; off by default because a machine that
                                    already runs its own copies of both would double every message
     context_budget = false         at 240k tokens of context (then every 30k) the model writes a handoff
@@ -55,6 +64,7 @@ work laptop and the home laptop can differ in roots without differing in command
 """
 from __future__ import annotations
 
+import re
 import copy
 import json
 import os
@@ -79,6 +89,10 @@ DEFAULTS = {
     # Harnesses to leave alone: no health line, no FIX for their hooks or credits, no sync.
     "harness": {"disabled": []},
     "products": {"repos": []},
+    # `teyla spend` thresholds; 0 = off for the budgets. Per-project budgets are `budget.<project>`
+    # keys (or a [spend.budget] table): see spend.budgets().
+    "spend": {"alert_session_usd": 250.0, "w1_usd": 15.0, "daily_budget_usd": 0.0,
+              "a20_share": 0.3, "a20_min_calls": 10, "a20_models": []},
     # `teyla digest --write` (the weekly routine) posts a macOS notification with its headline.
     "digest": {"notify": True},
     # The plugin's opt-in hooks (plugin/hooks/context-budget.sh, land-check.sh). Off by default: where
@@ -229,6 +243,9 @@ def _toml_value(v) -> str:
         return "[" + ", ".join(_toml_value(x) for x in v) + "]"
     if isinstance(v, bool):
         return "true" if v else "false"
+    if isinstance(v, dict):
+        return "{ " + ", ".join(f"{k if re.fullmatch(r'[A-Za-z0-9_-]+', str(k)) else _toml_value(str(k))} = {_toml_value(x)}"
+                                for k, x in v.items()) + " }"
     if isinstance(v, (int, float)):
         return str(v)
     s = str(v).replace("\\", "\\\\").replace('"', '\\"')
@@ -262,10 +279,10 @@ def write(code_root: str = "~/repos", ops_root: str = "~/ops", repo: str = "zait
     data = {"code_root": code_root, "ops_root": ops_root, "update": {"repo": repo, "channel": channel}}
     if p.exists():
         # --force rewrites the roots and the update block; [env], [safe], [products],
-        # [storage], [corrections], [digest] and [hooks] are kept: they are exactly the local adaptation a rewrite must not erase
+        # [storage], [corrections], [digest], [spend] and [hooks] are kept: they are exactly the local adaptation a rewrite must not erase
         # (a work laptop that loses `safe.enabled` here would self-update the next morning).
         old = _read(p)
-        for table in ("env", "safe", "products", "storage", "corrections", "digest", "hooks"):
+        for table in ("env", "safe", "products", "storage", "corrections", "digest", "hooks", "spend"):
             if isinstance(old.get(table), dict) and old[table]:
                 data[table] = old[table]
         # The same for a pin, an interpreter pin and channel = "none": a frozen update that
@@ -303,6 +320,14 @@ def _coerce(default, value: str):
             return int(value)
         except ValueError:
             raise InvalidValue(f"{value!r} is not a whole number") from None
+    if isinstance(default, float):
+        try:
+            number = float(value)
+        except ValueError:
+            raise InvalidValue(f"{value!r} is not a number") from None
+        if number != number or number in (float("inf"), float("-inf")):
+            raise InvalidValue(f"{value!r} is not a finite number")
+        return number
     if isinstance(default, list):
         return [x.strip() for x in value.split(",") if x.strip()]
     return value
@@ -333,7 +358,10 @@ def set_value(dotted: str, value: str | None, path: pathlib.Path | None = None) 
             del sub[key]
         else:
             try:
-                value = _coerce(DEFAULTS[table].get(key), value)
+                default = DEFAULTS[table].get(key)
+                if default is None and table == "spend" and key.startswith("budget."):
+                    default = 0.0  # a per-project budget is a dollar amount
+                value = _coerce(default, value)
             except InvalidValue as e:
                 return f"invalid {dotted}: {e}; nothing written"
             sub[key] = value

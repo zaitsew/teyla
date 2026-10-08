@@ -106,14 +106,6 @@ def test_digest_carries_the_spend_line_and_findings():
     assert lines[0].endswith("nothing needs you this week.") and lines[1].startswith("spend 7d")
 
 
-def test_banner_shows_todays_spend_alerts(tmp_path, monkeypatch):
-    monkeypatch.setattr(spend, "alerts_path", lambda: tmp_path / "spend.alerts")
-    (tmp_path / "spend.alerts").write_text("2026-09-30\tsession demo abc 2026-09-30 cost $80\n"
-                                           "2026-09-29\tsession old\n")
-    items = digest.spend_items(_dt.date(2026, 9, 30))
-    assert len(items) == 1 and items[0][1] == "spend: session demo abc 2026-09-30 cost $80"
-
-
 def test_outcome_finds_a_commit_in_the_session_repo(tmp_path):
     import subprocess
     repo = tmp_path / "demo"

@@ -12,6 +12,7 @@
   teyla policy refresh [--dry] [--resolved]                       three-way merge of template changes into ~/.agents/POLICY.md
   teyla harvest <path> [--project SLUG]                          tool spine + corrections for sessions touching a path
   teyla models [--days N] [--json] [--refresh]                   model ladder + price drift report
+  teyla models watch [--refresh] [--json] [--ack [ID...]] [--seed FILE]  new models, what they replace, repos naming superseded ids
   teyla models --write-policy [--dry] [--drop-absent]             rewrite the ladder table in ~/.agents/POLICY.md
   teyla models --write-prices                                     ~/.teyla/prices.json from models.dev
   teyla wiki init|status|lint|confirm <path> [slug]              the facts store as an LLM-maintained wiki

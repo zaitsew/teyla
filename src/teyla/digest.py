@@ -120,22 +120,6 @@ def routine_items(lines_dir: pathlib.Path | None = None) -> list[tuple[str, str]
     return out
 
 
-def spend_items(today: _dt.date | None = None) -> list[tuple[str, str]]:
-    """Today's `teyla spend --alert` lines (the daily routine writes them before doctor runs)."""
-    from . import spend
-    today = (today or _dt.date.today()).isoformat()
-    try:
-        lines = spend.alerts_path().read_text().splitlines()
-    except OSError:
-        return []
-    out = []
-    for line in lines:
-        day, _, text = line.partition("\t")
-        if day == today and text:
-            out.append((f"spend|{day}|{_short(text, 40)}", f"spend: {text}"))
-    return out
-
-
 def _doctor_checks_on_disk() -> list[dict]:
     from . import doctor
     try:
@@ -150,7 +134,6 @@ def write_banner_items(checks: list[dict] | None = None, today: _dt.date | None 
     items = doctor_items(_doctor_checks_on_disk() if checks is None else checks)
     items += routine_items()
     items += reminder_items(today=today)
-    items += spend_items(today)
     p = banner_items_path()
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -378,6 +361,11 @@ def write(findings: list[dict] | None = None, doctor_checks: list[dict] | None =
         rule_cands = rules_lifecycle.digest_candidates()
     except Exception:  # noqa: BLE001 — a proposal pass must never stop the digest being written
         rule_cands = []
+    try:
+        from . import models_watch
+        rule_cands += models_watch.digest_candidates()
+    except Exception:  # noqa: BLE001 — same: a models pass must never stop the digest being written
+        pass
     lines, history = build(findings, doctor_checks, reports, history, today, spend_rep, extra=rule_cands)
     p = digest_path()
     p.parent.mkdir(parents=True, exist_ok=True)

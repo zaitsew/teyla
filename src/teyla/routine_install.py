@@ -154,6 +154,7 @@ mkdir -p "$OUT_DIR"
 "$TEYLA" routines > "$OUT_DIR/routines.md" 2>&1
 "$TEYLA" products > "$OUT_DIR/products.md" 2>&1
 "$TEYLA" models > "$OUT_DIR/models.md" 2>&1
+{models_watch_line} > "$OUT_DIR/models-watch.md" 2>&1
 # The reports above tend to have no reader: the digest is the five lines
 # that are read — the session-start hook shows its headline once, and a notification says it exists.
 "$TEYLA" digest --write
@@ -167,6 +168,16 @@ SAFE_UPDATE_LINE = "# safe mode: no self-update here; by hand: teyla update --al
 
 
 NONE_UPDATE_LINE = "# [update] channel = none: no self-update here; by hand: teyla update"
+
+
+WATCH_LINE = '"$TEYLA" models watch --refresh'
+# Safe mode: the weekly never reaches models.dev (net.py); the watch reads the local catalogue only.
+SAFE_WATCH_LINE = '"$TEYLA" models watch'
+
+
+def _watch_line() -> str:
+    from . import config
+    return SAFE_WATCH_LINE if config.safe_mode() else WATCH_LINE
 
 
 def _update_line() -> str:
@@ -214,6 +225,12 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         # Written before `teyla digest`: the weekly would never write the digest.
         return True
     if path == DAILY_WRAPPER_PATH and (UPDATE_LINE in text) != (_update_line() == UPDATE_LINE):
+        # Safe mode was switched on (or off) after the wrapper was written.
+        return True
+    if path == WRAPPER_PATH and "models watch" not in text:
+        # Written before `teyla models watch`: the weekly would never look for new models.
+        return True
+    if path == WRAPPER_PATH and ("models watch --refresh" in text) != (_watch_line() == WATCH_LINE):
         # Safe mode was switched on (or off) after the wrapper was written.
         return True
     if path == WRAPPER_PATH and f'OUT_DIR="{_runs_root()}/' not in text:
@@ -357,7 +374,7 @@ def install(if_stale: bool = False, dry: bool = False) -> list[str]:
 
     WRAPPER_PATH.parent.mkdir(parents=True, exist_ok=True)
     WRAPPER_PATH.write_text(WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin, env_sh=env_sh, stamp=STAMP_PATH, label=LABEL,
-                                                    runs_root=_runs_root()))
+                                                    runs_root=_runs_root(), models_watch_line=_watch_line()))
     WRAPPER_PATH.chmod(0o755)
     lines.append(f"wrote {WRAPPER_PATH}")
 
