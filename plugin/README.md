@@ -57,7 +57,7 @@ a harness `teyla doctor` can read logs from, not one you can drive from a shell.
 - **`/teyla:rule <text> [--scope <glob>]`** — appends a one-sentence rule to
   `.claude/rules/<slug>.md` in the current repo, with a `globs:` frontmatter
   (default `**`), following the conventions in
-  `~/ops/.claude/rules/README.md`. Refuses to duplicate a rule that's already
+  `<ops_root>/.claude/rules/README.md`. Refuses to duplicate a rule that's already
   there — it greps first and just reports the existing file. Also mirrors the
   rule into a `## Rules` section of `AGENTS.md`, but only if `AGENTS.md` is a
   real file in the repo (not a symlink onto `CLAUDE.md` or similar — mirroring

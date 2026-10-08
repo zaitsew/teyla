@@ -191,7 +191,8 @@ or UNTESTED for more than 14 days (or was never confirmed), the product line nam
 `teyla routine install` writes and loads Teyla's own weekly launchd job
 (`~/Library/LaunchAgents/com.zaitsew.teyla.weekly.plist`, Friday 20:45) that
 runs `teyla monitor`, `teyla routines` and `teyla products` and files the
-output under `<ops_root>/runs/<date>/`. `teyla routine status`
+output under `<runs_root>/<date>/` (`runs_root` defaults to `<ops_root>/runs`; set it with
+`teyla config set runs_root=~/path`). `teyla routine status`
 shows whether it is loaded and its last log lines.
 
 ## What gets read

@@ -296,6 +296,26 @@ def test_apple_complete(_home):
     assert "3 ids" in r["detail"]
 
 
+def test_apple_without_a_release_tool_says_how_to_set_one(_home):
+    manifest(_home, MINIMAL.replace('release_tool = "~/bin/testflight"', 'release_tool = ""'))
+    apple_config(_home)
+    r = row(platform.checks(no_net=True), "apple")
+    assert r["state"] == platform.WARN
+    assert "no release tool configured" in r["todo"] and "release_tool" in r["todo"]
+    assert "testflight" not in r["todo"] and "ops/bin" not in r["detail"]
+
+
+def test_apple_release_tool_unset_key_is_not_guessed(_home):
+    manifest(_home, MINIMAL.replace('release_tool = "~/bin/testflight"\n', ''))
+    apple_config(_home)
+    tool = _home / "ops" / "bin" / "testflight"
+    tool.parent.mkdir(parents=True)
+    tool.write_text("#!/bin/sh\n")
+    tool.chmod(0o755)
+    r = row(platform.checks(no_net=True), "apple")
+    assert r["state"] == platform.WARN and "not set" in r["detail"]
+
+
 def test_android_states(_home):
     manifest(_home, MINIMAL)
     assert row(platform.checks(no_net=True), "android")["state"] == platform.MISSING

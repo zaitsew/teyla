@@ -301,7 +301,8 @@ def _check_mail(cfg, present):
 def _check_apple(cfg):
     a = cfg.get("apple") or {}
     cfg_path = pathlib.Path(a.get("config") or "~/.appstoreconnect/config.env").expanduser()
-    tool = pathlib.Path(a.get("release_tool") or "~/ops/bin/testflight").expanduser()
+    tool_raw = str(a.get("release_tool") or "").strip()
+    tool = pathlib.Path(tool_raw).expanduser() if tool_raw else None
     if not cfg_path.exists():
         return _row("apple", MISSING,
                     f"create an App Store Connect API key (https://appstoreconnect.apple.com/access/integrations/api) → "
@@ -318,6 +319,10 @@ def _check_apple(cfg):
         return _row("apple", MISSING,
                     f"download the .p8 once (it is shown once) into {keys_dir}/ and chmod 600 it",
                     f"no .p8 in {keys_dir}")
+    if tool is None:
+        return _row("apple", WARN,
+                    f"no release tool configured: set release_tool = \"/path/to/your-upload-script\" under [apple] in {PLATFORM_PATH}",
+                    f"ids and key ok; release_tool not set in {PLATFORM_PATH}")
     if not tool.exists():
         return _row("apple", WARN, f"the release tool named in {PLATFORM_PATH} is not at {tool}", f"ids and key ok; {tool} absent")
     if not os.access(tool, os.X_OK):

@@ -429,7 +429,8 @@ def test_scaffolded_app_fragments_keep_the_server_placeholders(tmp_path):
     dest = tmp_path / "app"
     scaffold.scaffold(str(dest), name="widget", kind="app", license="none")
     compose = (dest / "deploy" / "droplet" / "docker-compose.fragment.yml").read_text()
-    assert "{{port}}" in compose and "{{owner}}" in compose   # filled in by add-product.sh, not here
+    assert "{{port}}" in compose                               # filled in by add-product.sh, not here
+    assert "{{owner}}" not in compose                          # scaffold fills the registry owner
     assert "widget:" in compose                                # {{name}} is resolved at scaffold time
     caddy = (dest / "deploy" / "droplet" / "Caddyfile.fragment").read_text()
     assert "widget.{{domain}}" in caddy

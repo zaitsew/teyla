@@ -114,9 +114,9 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
 
     # --- config --------------------------------------------------------------
     if config.CONFIG_PATH.exists():
-        out.append(_check("OK", "config", f"{config.CONFIG_PATH}: code_root={cfg['code_root']} ops_root={cfg['ops_root']} repo={cfg['update']['repo']}"))
+        out.append(_check("OK", "config", f"{config.CONFIG_PATH}: code_root={cfg['code_root']} ops_root={cfg['ops_root']} runs_root={config.runs_root(cfg)} repo={cfg['update']['repo']}"))
     else:
-        out.append(_check("INFO", "config", f"no {config.CONFIG_PATH}; defaults code_root={cfg['code_root']} ops_root={cfg['ops_root']}",
+        out.append(_check("INFO", "config", f"no {config.CONFIG_PATH}; defaults code_root={cfg['code_root']} ops_root={cfg['ops_root']} runs_root={config.runs_root(cfg)}",
                           "teyla policy init  (writes it)"))
 
     # --- harnesses this machine does not use (`[harness] disabled`) ----------------

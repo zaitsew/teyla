@@ -290,7 +290,7 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         # Safe mode was switched on (or off) after the wrapper was written.
         return True
     if path == WRAPPER_PATH and f'OUT_DIR="{_runs_root()}/' not in text:
-        # Written with the hard-coded ~/ops path, or before ops_root changed in config.
+        # Written before ops_root or runs_root changed in config.
         return True
     for line in text.splitlines():
         if line.startswith('TEYLA="'):

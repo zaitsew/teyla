@@ -9,7 +9,7 @@ Parse `$ARGUMENTS`: everything up to a literal `--scope` token is the rule text;
 whatever follows `--scope` is the glob. If no `--scope` is given, the glob is
 `**`.
 
-Follow the conventions in `~/ops/.claude/rules/README.md` if present, otherwise
+Follow the conventions in `<ops_root>/.claude/rules/README.md` if present, otherwise
 these (same conventions, restated): a rule is one or two sentences, states the
 constraint and not the reasoning, and lives in a file named for what it
 constrains, with a `globs:` frontmatter scoping when it loads.

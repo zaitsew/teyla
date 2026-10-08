@@ -2,6 +2,7 @@
 
     code_root = "~/repos"          where this machine keeps code repos (doctor scans it)
     ops_root  = "~/ops"            the ops root (run artifacts, wiki)
+    runs_root = "~/ops/runs"       where the weekly routine files its reports (default: <ops_root>/runs)
     [update]
     repo    = "zaitsew/teyla"      GitHub repo `teyla update` pulls releases from
     channel = "release"            "release" (published GitHub releases) or "none" (no routine
@@ -88,6 +89,7 @@ CONFIG_PATH = TEYLA_DIR / "config.toml"
 DEFAULTS = {
     "code_root": "~/repos",
     "ops_root": "~/ops",
+    "runs_root": "",  # empty = <ops_root>/runs (see runs_root())
     "update": {"repo": "zaitsew/teyla", "channel": "release"},
     "env": {},
     # `teyla storage`: auto_clean lets the daily routine remove finished worktrees (clean, on
@@ -305,6 +307,8 @@ def write(code_root: str = "~/repos", ops_root: str = "~/ops", repo: str = "zait
         for table in ("env", "safe", "products", "storage", "corrections", "digest", "hooks", "spend"):
             if isinstance(old.get(table), dict) and old[table]:
                 data[table] = old[table]
+        if old.get("runs_root"):
+            data["runs_root"] = old["runs_root"]   # where the reports already go
         # The same for a pin, an interpreter pin and channel = "none": a frozen update that
         # silently thaws on `policy init --force` is not frozen.
         for key in ("pin", "python", "channel"):
@@ -404,7 +408,10 @@ def show(path: pathlib.Path | None = None) -> str:
     p = path or CONFIG_PATH
     cfg = load(p)
     head = f"# {p} ({'exists' if p.exists() else 'absent — defaults'})\n"
-    return head + dump(cfg)
+    body = dump(cfg)
+    if not str(cfg.get("runs_root") or "").strip():
+        body += f"# runs_root is unset; reports go to {runs_root(cfg)}\n"
+    return head + body
 
 
 HARNESS_NAMES = ("claude-code", "codex", "grok", "hermes", "cursor")
@@ -490,13 +497,22 @@ def products_allowlist(cfg: dict | None = None) -> list[pathlib.Path]:
             for r in (str(x) for x in raw)]
 
 
+# Kept so installs from before runs_root keep their history.
+_LEGACY_RUNS = ("startup", "os", "ai-dev", "runs")
+
+
 def runs_root(cfg: dict | None = None) -> pathlib.Path:
-    """Where the weekly routine files its reports: the owner's existing
-    <ops_root>/startup/os/ai-dev/runs when that tree exists, else <ops_root>/runs — the
-    git-ignored directory `teyla policy init --ops-root-init` creates."""
+    """Where the weekly routine files its reports: `runs_root` from config.toml (`~` expanded)
+    when set, else <ops_root>/runs — the git-ignored directory `teyla policy init
+    --ops-root-init` creates. An install that predates the key and already has a report tree in
+    an older place keeps using that one until `runs_root` is set."""
+    cfg = cfg or load()
+    raw = str(cfg.get("runs_root") or "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
     ops = ops_root(cfg)
-    legacy = ops / "startup" / "os" / "ai-dev"
-    return legacy / "runs" if legacy.is_dir() else ops / "runs"
+    legacy = ops.joinpath(*_LEGACY_RUNS)
+    return legacy if legacy.is_dir() else ops / "runs"
 
 
 def code_root(cfg: dict | None = None) -> pathlib.Path:

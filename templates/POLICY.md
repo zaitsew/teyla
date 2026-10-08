@@ -10,6 +10,7 @@ parts. Everything else — repo surveys, transcript mining, boilerplate, tests, 
 first drafts, bulk edits — goes to a cheaper model of the same provider, as a
 subagent or a separate run. Say in the recap which model did what.
 
+<!-- Example ladder: replace these rows with the models you actually use. -->
 <!-- ladder:start — maintained by `teyla models --write-policy`; edit rows by hand if you must, keep the markers -->
 | provider | orchestrate / hardest tasks | volume work | throwaway / triage | note |
 |---|---|---|---|---|

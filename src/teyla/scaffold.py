@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import datetime
 import pathlib
+import re
 import subprocess
 
 PKG_ROOT = None  # templates resolved via teyla.templates_dir()
@@ -117,7 +118,28 @@ def _owner(owner: str | None, cwd: pathlib.Path) -> str:
                              text=True, timeout=10).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         out = ""
-    return out or "the authors"
+    return out or NEUTRAL_OWNER
+
+
+NEUTRAL_OWNER = "the authors"
+
+
+def _git_out(cwd: pathlib.Path, *args: str) -> str:
+    try:
+        out = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return out.stdout.strip() if out.returncode == 0 else ""
+
+
+def _registry_owner(dest: pathlib.Path) -> str:
+    """The container-registry namespace (ghcr.io/<owner>/...): the GitHub owner of the repo's
+    origin, else `git config github.user`, else a visible placeholder. Never the display name:
+    a person's name is not their GitHub account."""
+    url = _git_out(dest, "remote", "get-url", "origin") if dest.is_dir() else ""
+    m = re.search(r"github\.com[:/]+([A-Za-z0-9-]+)/", url)
+    login = m.group(1) if m else _git_out(dest if dest.is_dir() else pathlib.Path.cwd(), "config", "--get", "github.user")
+    return login.lower() if re.fullmatch(r"[A-Za-z0-9-]+", login or "") else "your-github-owner"
 
 
 def _render(text: str, ctx: dict) -> str:
@@ -162,7 +184,8 @@ def scaffold(path: str, name: str, kind: str = "cli", license: str = "apache", o
 
     dest = pathlib.Path(path).expanduser()
     dest.mkdir(parents=True, exist_ok=True)
-    ctx = _context(name, kind)
+    owner_name = _owner(owner, dest)
+    ctx = {**_context(name, kind), "owner": _registry_owner(dest)}
     report: list[str] = [f"scaffolding {kind} repo '{name}' into {dest}"]
 
     _copy_tree(TEMPLATE_ROOT, dest, ctx, report, skip_names={"_kind"})
@@ -176,8 +199,9 @@ def scaffold(path: str, name: str, kind: str = "cli", license: str = "apache", o
 
     if license != "none":
         license_src = TEMPLATE_ROOT / LICENSE_TEMPLATES[license]
-        # `owner` is rendered into the licence only: other templates keep their own {{owner}} placeholders.
-        license_ctx = {**ctx, "owner": _owner(owner, dest)}
+        # Everywhere else {{owner}} is the registry namespace (the deploy compose fragment);
+        # the licence names the person.
+        license_ctx = {**ctx, "owner": owner_name}
         _write(dest / "LICENSE", _render(license_src.read_text(), license_ctx), False, report)
 
     agents = dest / "AGENTS.md"
