@@ -1,11 +1,33 @@
 # Changelog
 
-## Unreleased
+## 0.19.0 — 2026-10-08 — the chores that were left: RAM, markdown, language, review debt, updates
 
+- **`teyla storage procs`.** Dev processes an agent left behind (`xcodebuild`, `swift-build`,
+  node/vite/next dev servers, `python -m http.server`, supabase) whose working directory sat in a
+  worktree or temp folder that is gone: pid, RSS, age, why. Yours only, no terminal, running at
+  least `storage.orphan_min_age_min` (30); patterns (`storage.orphan_patterns`) see the executable
+  or the interpreted script, never other arguments. `--kill` sends SIGTERM, then SIGKILL after 10 s,
+  each signal only after a start-time check and a kqueue exit watch. `storage.orphan_kill=true`
+  (off by default) lets the sims agent do it every 10 minutes; `teyla storage` and doctor report the
+  RAM held.
+- **`teyla tidy`.** Junk in the rule and memory markdown: exact and near duplicates (also across
+  POLICY.md and CLAUDE.md), dead `@` imports and links, memory files missing from the index, files
+  over `tidy.max_kb`, whitespace, non-English prose in a repo file, dated "for now" lines older than
+  `tidy.stale_days`. Read-only by default; `--apply` fixes only the mechanical part after a backup in
+  `~/.teyla/tidy-backup/`, and never touches code fences, `<!-- teyla:protect -->` regions or blocks
+  Teyla writes. The weekly routine files `tidy.md`; a `tidy` skill joins the plugin.
+- **`teyla lang`.** Non-Latin text (Cyrillic, CJK, Greek, Arabic, Hebrew) in tracked files and
+  recent commit messages, per repo and kind (doc, comment, string, fixture, commit). Exemptions use
+  `.leak-allow` exactly as the leak guard does, plus `[lang] allow`. Weekly, with one digest line.
 - **`teyla reviews`.** The review debt: merged PRs of the last N days against the review ledger
   (`review.ledger`), counted per repo as reviewed, merged with an open P1, skipped, exempt or
-  unreviewed. The weekly routine files `reviews --quiet` and the digest carries the totals line
-  while the debt is above zero. Re-run `teyla routine install` to pick up the new weekly line.
+  unreviewed. Weekly, and the digest carries the totals line while the debt is above zero; a failed
+  `gh` query keeps last week's summary instead of reporting zero.
+- **Safe mode can update itself.** `safe.auto_update = true` lets the daily routine run `teyla
+  update --quiet`; only that command reaches the network, and a pin still wins. The banner says when
+  the plugin hooks lag the CLI. `prompts/work-account-update.md` turns it on.
+- Re-run `teyla routine install --if-stale` to pick up the new weekly lines (`tidy`, `lang`,
+  `reviews`) and, on a safe-mode machine with auto-update, the daily update line.
 
 ## 0.18.0 — 2026-10-08 — shareable, and the chores that were scripts
 
