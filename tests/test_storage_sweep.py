@@ -280,8 +280,9 @@ def test_derived_data_written_inside_recently_or_with_an_edited_package_stays(tm
     clean = derived_dir(root, "Clean-abc", seconds=20 * DAY)
     (clean / "SourcePackages" / "checkouts" / "lib" / ".git").mkdir(parents=True)
     age(clean, 20 * DAY)
-    r = Runner({("git", "-C", str(pkg), "status"): (0, " M Sources/lib.swift\n"), ("git", "-C"): (0, "")})
+    r = Runner({("git", "-C", str(pkg)): (0, " M Sources/lib.swift\n"), ("git", "-C"): (0, "")})
     res = sw.derived_data(make_ctx(tmp_path, runner=r))
+    assert all("--untracked-files=all" in c for c in r.ran("git")), "untracked files count whatever the config says"
     assert recent.exists() and edited.exists() and not clean.exists()
     assert any("uncommitted changes" in x for x in res.lines)
 
@@ -581,6 +582,9 @@ def test_a_lock_without_a_pid_yet_is_a_sweep_starting_unless_it_is_stale(tmp_pat
     lock.mkdir(parents=True)
     rep = sw.run(ctx=make_ctx(tmp_path))
     assert rep["busy"] and lock.exists(), "a second sweep must not remove a lock just made"
+    (lock / "pid").write_text("")   # the owner created the file but has not written its pid yet
+    assert sw.run(ctx=make_ctx(tmp_path))["busy"] and lock.exists()
+    (lock / "pid").unlink()
     old = time.time() - 2 * sw.LOCK_GRACE_S
     os.utime(lock, (old, old))
     rep = sw.run(ctx=make_ctx(tmp_path))

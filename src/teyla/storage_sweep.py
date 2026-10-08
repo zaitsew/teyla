@@ -377,7 +377,9 @@ def _edited_checkouts(ctx: Ctx, d: pathlib.Path) -> bool:
     for c in checkouts.iterdir():
         if c.is_symlink() or not (c / ".git").exists():
             continue
-        rc, out = ctx.run(["git", "-C", str(c), "status", "--porcelain"], 60)
+        # Untracked files count whatever the checkout's own config says.
+        rc, out = ctx.run(["git", "-C", str(c), "-c", "status.showUntrackedFiles=all", "status", "--porcelain",
+                           "--untracked-files=all", "--ignore-submodules=none"], 60)
         if rc != 0 or out.strip():
             return True
     return False
@@ -760,6 +762,13 @@ CATEGORIES = (("temp builds", temp_builds, True), ("release leftovers", release_
 LOCK_GRACE_S = 60
 
 
+def _read(p) -> str:
+    try:
+        return pathlib.Path(p).read_text()
+    except OSError:
+        return ""
+
+
 class Busy(Exception):
     pass
 
@@ -779,7 +788,7 @@ def lock():
                 os.kill(pid, 0)
             except (OSError, ValueError):
                 # No pid yet may be a sweep that has just made the lock: only a stale one is taken over.
-                if not (d / "pid").exists() and time.time() - storage._mtime(d) < LOCK_GRACE_S:
+                if not _read(d / "pid").strip() and time.time() - storage._mtime(d) < LOCK_GRACE_S:
                     raise Busy(f"another sweep is starting ({d})") from None
                 _rm(d)   # no readable pid or no such process
                 continue
