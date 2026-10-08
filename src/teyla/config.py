@@ -20,6 +20,17 @@
     idle_days       = 3            a clean, pushed worktree untouched this long is finished
     agent_idle_days = 1            the same for a subagent's <repo>/.claude/worktrees/agent-*
     build_idle_days = 14           git-ignored build dirs of a repo idle this long are removed
+    sim_idle_min    = 30           `storage sims --reap`: a booted simulator nothing uses this long is shut down
+    sim_max_booted  = 3            above this many booted, idle ones go at once, longest idle first
+    sim_prune_pattern = ""         regex on a device name (matched at its start): such devices that stay
+                                   shut down sim_prune_days days are deleted; empty = never delete
+    sim_prune_days  = 3
+    sweep_*         = ...          `storage sweep` ages and limits (temp_hours, release_days, sim_days,
+                                   derived_days, codex_days, grok_days, log_days, docker_days, log_max_mb,
+                                   urgent_free_gb); docker_superseded_repos = ["registry/vendor/"] lets it
+                                   remove older tags of those repositories (default none)
+    sims_agent      = false        `teyla routine install` also writes an agent: storage sims --reap every 10 min
+    sweep_agent     = false        ... and one for storage sweep --temp hourly; the weekly runs storage sweep
     [digest]
     notify = true                  the weekly digest posts a macOS notification when written
     [corrections]
@@ -77,7 +88,16 @@ DEFAULTS = {
     "env": {},
     # `teyla storage`: auto_clean lets the daily routine remove finished worktrees (clean, on
     # the remote, idle >= idle_days) and git-ignored build output of repos idle >= build_idle_days.
-    "storage": {"auto_clean": False, "idle_days": 3, "agent_idle_days": 1, "build_idle_days": 14},
+    "storage": {"auto_clean": False, "idle_days": 3, "agent_idle_days": 1, "build_idle_days": 14,
+                # `teyla storage sims`: shut down booted iOS simulators nothing is using.
+                "sim_idle_min": 30, "sim_max_booted": 3, "sim_prune_pattern": "", "sim_prune_days": 3,
+                # `teyla storage sweep`: what agent work leaves in temp, caches and logs.
+                "sweep_temp_hours": 24, "sweep_release_days": 3, "sweep_urgent_free_gb": 20,
+                "sweep_sim_days": 7, "sweep_derived_days": 14, "sweep_codex_days": 2, "sweep_grok_days": 14,
+                "sweep_log_days": 14, "sweep_docker_days": 7, "sweep_log_max_mb": 50,
+                "sweep_log_glob": "*.log", "docker_superseded_repos": [],
+                # Optional launchd agents, written by `teyla routine install`.
+                "sims_agent": False, "sweep_agent": False},
     # Where `teyla correct` and the capture hook keep corrections; see corrections.py for why
     # the default is outside the repo.
     "corrections": {"store": "home"},

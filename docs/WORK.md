@@ -37,7 +37,7 @@ Do this when you choose to, not when a tag appears. Replace `0.17.0` with the re
 
    The `#v0.17.0` is what ties the hooks to that release. Without it they follow `main`.
 4. Check: `teyla doctor`. No `FIX` line. No `plugin:pin` warning.
-5. Start a new Claude Code session in any repo. The first line it prints is the rule count, the doctor summary, or nothing when all is clear.
+5. Start a new Claude Code session in any repo. The first line it prints is the rule count, or the doctor summary (problems first, then free disk space, for example `disk 64 GB free`).
 
 If your organisation restricts plugin marketplaces, step 3 may be refused. Say so; do not edit `~/.claude/plugins/*.json`.
 

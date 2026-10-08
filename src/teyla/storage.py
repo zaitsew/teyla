@@ -3,6 +3,8 @@ of it that is safe to give back.
 
     teyla storage [--json] [--no-sizes]          the report: disk, worktrees, build output, caches, RAM
     teyla storage clean [--apply] [--auto]       remove the SAFE rows; a dry run unless --apply
+    teyla storage sims [--reap] [--dry] [--json] booted simulators: in use or idle; --reap shuts the idle ones down
+    teyla storage sweep [--temp] [--dry] [--json] temp build output, old DerivedData, caches, logs (storage_sweep.py)
 
 Parallel agent work leaves a lot behind: dozens of agent worktrees under
 `<repo>/.claude/worktrees` and `~/.worktrees` (gigabytes, most of them clean and already on the
@@ -140,6 +142,48 @@ def settings(cfg: dict | None = None) -> dict:
             "build_idle_days": _int("build_idle_days", 14)}
 
 
+def _conf(cfg: dict | None, key: str):
+    return ((cfg if cfg is not None else config.load()).get("storage") or {}).get(key)
+
+
+def conf_int(cfg: dict | None, key: str, default: int) -> int:
+    """`[storage] <key>` as an int; anything that is not a number falls back to the default."""
+    try:
+        return int(_conf(cfg, key))
+    except (TypeError, ValueError):
+        return default
+
+
+def conf_str(cfg: dict | None, key: str, default: str = "") -> str:
+    v = _conf(cfg, key)
+    return default if v is None else str(v).strip()
+
+
+def conf_list(cfg: dict | None, key: str) -> list[str]:
+    v = _conf(cfg, key)
+    if isinstance(v, str):
+        v = v.split(",")
+    return [str(x).strip() for x in v if str(x).strip()] if isinstance(v, (list, tuple)) else []
+
+
+def state_dir(*parts: str) -> pathlib.Path:
+    """`~/.teyla/state/<parts>` (`TEYLA_HOME` overrides `~/.teyla`), resolved at call time."""
+    base = pathlib.Path(os.environ.get("TEYLA_HOME") or (pathlib.Path.home() / ".teyla")).expanduser()
+    return base.joinpath("state", *parts)
+
+
+def process_commands() -> list[str] | None:
+    """The full command line of every process (`ps -Ao command=`). None when ps could not answer:
+    "unknown", and nothing that depends on "no process names this" is removed on it."""
+    try:
+        r = subprocess.run(["ps", "-Ao", "command="], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+    return r.stdout.splitlines()
+
+
 def is_agent_worktree(path: str) -> bool:
     """`<repo>/.claude/worktrees/agent-<hex>`: a subagent's isolated checkout. Nothing resumes
     it once its parent has the result, so it is finished sooner than a session's worktree."""
@@ -171,6 +215,23 @@ def _mtime(p) -> float:
         return os.stat(p).st_mtime
     except OSError:
         return 0.0
+
+
+def newest_mtime(root, limit: float | None = None) -> float:
+    """The newest mtime of `root` and anything under it (symlinks not followed). Stops early once
+    an entry newer than `limit` is seen: the caller only needs to know the tree is recent."""
+    newest = _mtime(root)
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        for name in dirnames + filenames:
+            try:
+                m = os.lstat(os.path.join(dirpath, name)).st_mtime
+            except OSError:
+                continue
+            if m > newest:
+                newest = m
+                if limit is not None and newest > limit:
+                    return newest
+    return newest
 
 
 def _idle_days(*paths, now: float | None = None) -> float:
@@ -713,7 +774,8 @@ def reclaimable(rep: dict) -> int:
     return sum(r.get("bytes") or 0 for r in _rows(rep) if r["verdict"] == "SAFE")
 
 
-def render(rep: dict, cache_rows: list[dict], sims: list[str], mem: list[tuple[str, int, int]]) -> str:
+def render(rep: dict, cache_rows: list[dict], sims: list[str], mem: list[tuple[str, int, int]],
+           sim_status: dict | None = None, sweep: list[dict] | None = None) -> str:
     d, s = rep["disk"], rep["settings"]
     home = str(pathlib.Path.home())
     short = lambda p: p.replace(home, "~", 1)
@@ -747,9 +809,20 @@ def render(rep: dict, cache_rows: list[dict], sims: list[str], mem: list[tuple[s
         L.append("caches and stores (Teyla never deletes these; the command clears them)")
         for r in sorted(cache_rows, key=lambda r: -(r.get("bytes") or 0)):
             L.append(f"  {r['verdict']:6} {human(r.get('bytes')):>6}  {r['name']:24} {r['reason']}")
+    if sweep:
+        L.append("")
+        L.append("sweepable (`teyla storage sweep` removes these; `--dry` first)")
+        for c in sorted(sweep, key=lambda c: -c["bytes"]):
+            L.append(f"  {human(c['bytes']):>6}  {c['name']}" + (f" ({c['items']})" if c["items"] > 1 else ""))
+    if sim_status and sim_status["booted"]:
+        from . import storage_sims
+        L.append("")
+        L.append(f"booted simulators ({len(sim_status['booted'])}; `teyla storage sims --reap` shuts down the idle ones)")
+        for line in storage_sims.render_status(sim_status):
+            L.append(f"  {line}")
     L.append("")
     L.append("memory")
-    if sims:
+    if sims and not (sim_status and sim_status["booted"]):
         L.append(f"  {len(sims)} simulator(s) booted: {', '.join(sims)}")
         if len(sims) > 1:
             L.append("  → each runs a full iOS userland; xcrun simctl shutdown all   (or shut down the ones no session is using)")
@@ -868,9 +941,10 @@ def doctor_checks(cfg: dict | None = None) -> list[dict]:
     d = disk()
     if d["free_fraction"] < LOW_FREE_FRACTION or d["free"] < LOW_FREE_BYTES:
         out.append({"level": "WARN", "name": "storage:disk", "detail": f"{human(d['free'])} free ({d['free_fraction']:.0%})",
-                    "fix": "teyla storage   (what is safe to remove, and the command for the rest)"})
+                    "fix": "teyla storage   (what is safe to remove, and the command for the rest)", "free": d["free"]})
     else:
-        out.append({"level": "OK", "name": "storage:disk", "detail": f"{human(d['free'])} free ({d['free_fraction']:.0%})", "fix": None})
+        out.append({"level": "OK", "name": "storage:disk", "detail": f"{human(d['free'])} free ({d['free_fraction']:.0%})", "fix": None,
+                    "free": d["free"]})
     s = settings(cfg)
     rep = scan(sizes=False, cfg=cfg, deep=False)
     n = sum(1 for r in rep["worktrees"] if r["verdict"] == "SAFE")
@@ -888,6 +962,12 @@ def doctor_checks(cfg: dict | None = None) -> list[dict]:
 
 def cmd_storage(args):
     cfg = config.load()
+    if args.action == "sims":
+        from . import storage_sims
+        return storage_sims.cmd_sims(args, cfg)
+    if args.action == "sweep":
+        from . import storage_sweep
+        return storage_sweep.cmd_sweep(args, cfg)
     if args.action == "clean":
         if args.auto and not settings(cfg)["auto_clean"]:
             return 0
@@ -903,23 +983,30 @@ def cmd_storage(args):
     rep = scan(sizes=sizes, cfg=cfg)
     cache_rows = caches(sizes=sizes)
     sims, mem = booted_simulators(), memory_by_app()
+    from . import storage_sims, storage_sweep
+    sim_status = storage_sims.status(record=False) if sims else {"booted": [], "error": None}
+    sweep = storage_sweep.sweepable(cfg) if sizes else None
     if args.json:
         rep["caches"] = cache_rows; rep["simulators_booted"] = sims
+        rep["simulators"] = sim_status["booted"]; rep["sweepable"] = sweep or []
         rep["memory"] = [{"name": n, "rss": b, "count": c} for n, b, c in mem]
         rep["reclaimable"] = reclaimable(rep)
         print(json.dumps(rep, indent=2))
     else:
-        print(render(rep, cache_rows, sims, mem))
+        print(render(rep, cache_rows, sims, mem, sim_status, sweep))
     return 0
 
 
 def register(sp):
     q = sp.add_parser("storage", help="what agent work holds on disk and in RAM, and removing the part that is safe to")
     q.set_defaults(fn=cmd_storage)
-    q.add_argument("action", nargs="?", choices=["report", "clean"], default="report")
+    q.add_argument("action", nargs="?", choices=["report", "clean", "sims", "sweep"], default="report")
     q.add_argument("--json", action="store_true")
     q.add_argument("--no-sizes", action="store_true", help="report: skip `du` (fast; verdicts only)")
     q.add_argument("--apply", action="store_true", help="clean: remove the SAFE rows (default: dry run)")
     q.add_argument("--auto", action="store_true", help="clean: apply only if storage.auto_clean is true; silent otherwise (the daily routine)")
-    q.add_argument("--quiet", action="store_true", help="clean: print nothing when nothing was removed")
+    q.add_argument("--quiet", action="store_true", help="clean: print nothing when nothing was removed; sims/sweep: print only what was done")
+    q.add_argument("--reap", action="store_true", help="sims: shut down idle simulators and delete old ones matching storage.sim_prune_pattern")
+    q.add_argument("--dry", action="store_true", help="sims --reap / sweep: say what would be done, do nothing")
+    q.add_argument("--temp", action="store_true", help="sweep: only the temp build output (the hourly agent)")
     return q

@@ -38,6 +38,23 @@ DAILY_LOG_PATH = pathlib.Path.home() / "Library" / "Logs" / "teyla-daily.log"
 STAMP_PATH = pathlib.Path.home() / ".teyla" / "weekly.last"
 DAILY_STAMP_PATH = pathlib.Path.home() / ".teyla" / "daily.last"
 
+# Optional agents, written only when config asks for them (`[storage] sims_agent`, `sweep_agent`).
+# They run on an interval, not at a calendar time, so catch-up has nothing to do for them.
+SIMS_LABEL = "com.zaitsew.teyla.sims"
+SWEEP_LABEL = "com.zaitsew.teyla.sweep"
+OPTIONAL_LABELS = (SIMS_LABEL, SWEEP_LABEL)
+# label -> (config key, seconds between runs, `teyla` arguments, wrapper name, log name, stamp name)
+OPTIONAL = {
+    SIMS_LABEL: dict(key="sims_agent", interval=600, args="storage sims --reap --quiet",
+                     wrapper="sims.sh", log="teyla-sims.log", stamp="sims.last",
+                     what="shuts down idle iOS simulators"),
+    SWEEP_LABEL: dict(key="sweep_agent", interval=3600, args="storage sweep --temp --quiet",
+                      wrapper="sweep.sh", log="teyla-sweep.log", stamp="sweep.last",
+                      what="removes idle temp build output"),
+}
+# The weekly wrapper's extra line when storage.sweep_agent is on.
+SWEEP_LINE = '"$TEYLA" storage sweep --quiet'
+
 # What the plists say, kept here so catch-up and doctor compute "due" from the same numbers.
 # launchd Weekday: 0 = Sunday … 6 = Saturday; None = every day.
 SCHEDULE = {
@@ -98,6 +115,42 @@ teyla routines >/dev/null 2>&1
 teyla routine catch-up --quiet
 # Finished worktrees and idle build output go, when storage.auto_clean is on; silent otherwise.
 teyla storage clean --auto --quiet
+"""
+
+INTERVAL_PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{label}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>{wrapper}</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>{interval}</integer>
+    <key>EnvironmentVariables</key>
+    <dict>
+{env_plist}    </dict>
+    <key>StandardOutPath</key>
+    <string>{log}</string>
+    <key>StandardErrorPath</key>
+    <string>{log}</string>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
+"""
+
+INTERVAL_WRAPPER_TEMPLATE = """#!/usr/bin/env bash
+# Written by `teyla routine install` because [storage] {key} is on. {what}.
+set -uo pipefail
+{env_sh}
+date -u +%FT%TZ > "{stamp}"
+export TEYLA_IN_ROUTINE="{label}"
+TEYLA="{teyla_bin}"
+"$TEYLA" {args}
 """
 
 PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
@@ -219,6 +272,9 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
     if path == DAILY_WRAPPER_PATH and (UPDATE_LINE in text) != (_update_line() == UPDATE_LINE):
         # Safe mode was switched on (or off) after the wrapper was written.
         return True
+    if path == WRAPPER_PATH and (SWEEP_LINE in text) != optional_enabled(SWEEP_LABEL):
+        # storage.sweep_agent was switched on (or off) after the wrapper was written.
+        return True
     if path == WRAPPER_PATH and "models watch" not in text:
         # Written before `teyla models watch`: the weekly would never look for new models.
         return True
@@ -299,12 +355,34 @@ def _plist_schedule_stale(plist: pathlib.Path, label: str) -> bool:
     return got != want
 
 
+def optional_enabled(label: str) -> bool:
+    """Is the optional agent `label` switched on in `[storage]`?"""
+    from . import config
+    return config.truthy((config.load().get("storage") or {}).get(OPTIONAL[label]["key"]))
+
+
+def optional_paths(label: str) -> dict[str, pathlib.Path]:
+    """Where an optional agent's files live: beside the weekly's (so a relocated HOME moves them too)."""
+    o = OPTIONAL[label]
+    return {"plist": PLIST_PATH.parent / f"{label}.plist", "wrapper": WRAPPER_PATH.parent / o["wrapper"],
+            "log": LOG_PATH.parent / o["log"], "stamp": STAMP_PATH.parent / o["stamp"]}
+
+
+def _optional_stale(label: str, teyla_bin: str, env: dict[str, str]) -> bool:
+    """Enabled: the plist is missing or the wrapper is stale. Disabled: files from when it was on remain."""
+    p = optional_paths(label)
+    if optional_enabled(label):
+        return not p["plist"].exists() or _wrapper_stale(p["wrapper"], teyla_bin, env)
+    return p["plist"].exists() or p["wrapper"].exists()
+
+
 def is_stale() -> bool:
     teyla_bin = _teyla_bin()
     env = launchd_env(teyla_bin)
     return (_wrapper_stale(WRAPPER_PATH, teyla_bin, env) or _wrapper_stale(DAILY_WRAPPER_PATH, teyla_bin, env)
             or not PLIST_PATH.exists() or not DAILY_PLIST_PATH.exists()
-            or _plist_schedule_stale(PLIST_PATH, LABEL))
+            or _plist_schedule_stale(PLIST_PATH, LABEL)
+            or any(_optional_stale(label, teyla_bin, env) for label in OPTIONAL_LABELS))
 
 
 def _real_launch_agents() -> pathlib.Path:
@@ -333,6 +411,46 @@ def _load(plist: pathlib.Path, label: str) -> str:
     return f"NOT LOADED {label} — bootstrap: {r.stderr.strip()!r}; load: {r2.stderr.strip()!r}"
 
 
+def _unload(plist: pathlib.Path, label: str) -> str:
+    """The inverse of _load, with the same refusal to touch the real launchd from a moved HOME."""
+    uid = os.getuid()
+    if plist.resolve().parent != _real_launch_agents().resolve() and os.environ.get("TEYLA_LAUNCHD_ANY_HOME") != "1":
+        return f"NOT UNLOADED {label} — {plist} is outside {_real_launch_agents()} ($HOME is moved); launchd's gui/{uid} jobs were left alone"
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"], capture_output=True, text=True)
+    return f"unloaded {label}"
+
+
+def _write_optional(label: str, teyla_bin: str, env_plist: str, env_sh: str) -> list[str]:
+    o, p = OPTIONAL[label], optional_paths(label)
+    p["wrapper"].parent.mkdir(parents=True, exist_ok=True)
+    p["wrapper"].write_text(INTERVAL_WRAPPER_TEMPLATE.format(key=o["key"], what=o["what"].capitalize(), env_sh=env_sh,
+                                                             stamp=p["stamp"], label=label, teyla_bin=teyla_bin,
+                                                             args=o["args"]))
+    p["wrapper"].chmod(0o755)
+    p["log"].parent.mkdir(parents=True, exist_ok=True)
+    p["plist"].parent.mkdir(parents=True, exist_ok=True)
+    p["plist"].write_text(INTERVAL_PLIST_TEMPLATE.format(label=label, wrapper=p["wrapper"], interval=o["interval"],
+                                                         log=p["log"], env_plist=env_plist))
+    lines = [f"wrote {p['wrapper']}", f"wrote {p['plist']}"]
+    if sys.platform == "darwin":
+        lines.append(_load(p["plist"], label))
+    else:
+        lines.append(f"not macOS: add to cron yourself: every {o['interval'] // 60} min: bash {p['wrapper']}")
+    return lines
+
+
+def _remove_optional(label: str) -> list[str]:
+    """The agent is off in config: unload it and delete what Teyla wrote for it."""
+    p, lines = optional_paths(label), []
+    if p["plist"].exists() and sys.platform == "darwin":
+        lines.append(_unload(p["plist"], label))
+    for f in (p["plist"], p["wrapper"], p["stamp"]):
+        if f.exists():
+            f.unlink()
+            lines.append(f"removed {f}")
+    return lines
+
+
 def install(if_stale: bool = False, dry: bool = False) -> list[str]:
     lines = []
     teyla_bin = _teyla_bin()
@@ -344,6 +462,14 @@ def install(if_stale: bool = False, dry: bool = False) -> list[str]:
         if sys.platform == "darwin":
             out += [f"would load {label} via launchctl bootstrap gui/{os.getuid()} (replacing the loaded job)"
                     for label in (DAILY_LABEL, LABEL)]
+        for label in OPTIONAL_LABELS:
+            p = optional_paths(label)
+            if optional_enabled(label):
+                out += [f"would write {p['wrapper']}", f"would write {p['plist']}"]
+                if sys.platform == "darwin":
+                    out.append(f"would load {label} via launchctl bootstrap gui/{os.getuid()}")
+            elif p["plist"].exists() or p["wrapper"].exists():
+                out.append(f"would unload and remove {label} ([storage] {OPTIONAL[label]['key']} is off)")
         return out + [f"teyla binary: {teyla_bin}"]
     env = launchd_env(teyla_bin)
     env_plist, env_sh = _env_plist(env), _env_sh(env)
@@ -365,8 +491,11 @@ def install(if_stale: bool = False, dry: bool = False) -> list[str]:
         lines.append("not macOS: add to cron yourself: 0 7 * * * bash " + str(DAILY_WRAPPER_PATH))
 
     WRAPPER_PATH.parent.mkdir(parents=True, exist_ok=True)
-    WRAPPER_PATH.write_text(WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin, env_sh=env_sh, stamp=STAMP_PATH, label=LABEL,
-                                                    runs_root=_runs_root(), models_watch_line=_watch_line()))
+    weekly = WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin, env_sh=env_sh, stamp=STAMP_PATH, label=LABEL,
+                                     runs_root=_runs_root(), models_watch_line=_watch_line())
+    if optional_enabled(SWEEP_LABEL):
+        weekly += f"# Disk sweep ([storage] sweep_agent): old DerivedData, caches, logs, grok archive.\n{SWEEP_LINE}\n"
+    WRAPPER_PATH.write_text(weekly)
     WRAPPER_PATH.chmod(0o755)
     lines.append(f"wrote {WRAPPER_PATH}")
 
@@ -384,8 +513,15 @@ def install(if_stale: bool = False, dry: bool = False) -> list[str]:
         lines.append(f"not macOS: add to cron yourself: {w['minute']} {w['hour']} * * {w['weekday']} bash " + str(WRAPPER_PATH))
     _mark_installed(DAILY_LABEL)
     _mark_installed(LABEL)
+    for label in OPTIONAL_LABELS:
+        if optional_enabled(label):
+            lines += _write_optional(label, teyla_bin, env_plist, env_sh)
+        else:
+            lines += _remove_optional(label)
     uid = os.getuid()
-    lines.append(f"to remove: launchctl bootout gui/{uid}/{LABEL}; launchctl bootout gui/{uid}/{DAILY_LABEL}; rm {PLIST_PATH} {DAILY_PLIST_PATH}")
+    on = [label for label in OPTIONAL_LABELS if optional_enabled(label)]
+    lines.append(f"to remove: launchctl bootout gui/{uid}/{LABEL}; launchctl bootout gui/{uid}/{DAILY_LABEL}; rm {PLIST_PATH} {DAILY_PLIST_PATH}"
+                 + "".join(f"; launchctl bootout gui/{uid}/{label}; rm {optional_paths(label)['plist']}" for label in on))
     return lines
 
 
@@ -393,6 +529,9 @@ def _job(label: str) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path, pathlib.
     """(plist, wrapper, log, stamp) for a label."""
     if label == DAILY_LABEL:
         return DAILY_PLIST_PATH, DAILY_WRAPPER_PATH, DAILY_LOG_PATH, DAILY_STAMP_PATH
+    if label in OPTIONAL:
+        p = optional_paths(label)
+        return p["plist"], p["wrapper"], p["log"], p["stamp"]
     return PLIST_PATH, WRAPPER_PATH, LOG_PATH, STAMP_PATH
 
 
@@ -533,4 +672,47 @@ def status() -> list[str]:
             lines.extend(f"    {t}" for t in tail)
         else:
             lines.append(f"  log: {log} (missing — has not run yet)")
+    for label in OPTIONAL_LABELS:
+        o, p, on = OPTIONAL[label], optional_paths(label), optional_enabled(label)
+        if not on and not p["plist"].exists():
+            lines.append(f"{label}: off ([storage] {o['key']} = false)")
+            continue
+        ok, pid, code = loaded(label)
+        lines.append(f"{label}: {'on' if on else 'OFF in config but still installed — run `teyla routine install`'}"
+                     f" (every {o['interval'] // 60} min, {o['what']}); loaded: {'yes' if ok else 'no'}"
+                     + (f" (pid {pid})" if pid else "") + (f" (last exit {code})" if code else ""))
+        lines.append(f"  plist: {p['plist']} ({'exists' if p['plist'].exists() else 'missing'})")
+        stale = _wrapper_stale(p["wrapper"], teyla_bin, env)
+        lines.append(f"  wrapper: {p['wrapper']} ({'missing' if not p['wrapper'].exists() else ('STALE — run `teyla routine install`' if stale else 'current')})")
+        started = last_started(label)
+        lines.append(f"  last started: {started:%Y-%m-%d %H:%M}" if started else "  last started: never")
+        if p["log"].exists():
+            lines.append(f"  last log lines ({p['log']}):")
+            lines.extend(f"    {t}" for t in p["log"].read_text(errors="replace").splitlines()[-3:])
     return lines
+
+
+def optional_checks() -> list[tuple[str, str, str, str | None]]:
+    """(level, name, detail, fix) for `teyla doctor`: one row per optional agent that is on in
+    config, or still installed after it was switched off. Nothing for one that is off and gone."""
+    out = []
+    teyla_bin = _teyla_bin()
+    env = launchd_env(teyla_bin)
+    for label in OPTIONAL_LABELS:
+        name, o, p = f"routine:{label.rsplit('.', 1)[-1]}", OPTIONAL[label], optional_paths(label)
+        if not optional_enabled(label):
+            if p["plist"].exists() or p["wrapper"].exists():
+                out.append(("WARN", name, f"still installed, but [storage] {o['key']} is off", "teyla routine install   (removes it)"))
+            continue
+        ok, _, code = loaded(label)
+        if not p["plist"].exists():
+            out.append(("FIX", name, f"[storage] {o['key']} is on but the agent is not installed", "teyla routine install"))
+        elif _wrapper_stale(p["wrapper"], teyla_bin, env):
+            out.append(("FIX", name, f"{p['wrapper'].name} is missing, names another teyla binary or lacks the [env] in config.toml", "teyla routine install"))
+        elif not ok:
+            out.append(("FIX", name, "plist exists but launchd has not loaded it", "teyla routine install"))
+        else:
+            started = last_started(label)
+            out.append(("OK", name, f"loaded, every {o['interval'] // 60} min" + (f", last exit {code}" if code not in (None, "0") else "")
+                        + (f", last started {started:%Y-%m-%d %H:%M}" if started else ", not run yet"), None))
+    return out
