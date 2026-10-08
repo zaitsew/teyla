@@ -43,8 +43,8 @@ def test_work_update_prompt_pins_one_release_and_turns_on_the_parity_hooks():
     is named only as where safe mode first shipped), and the step after doctor turns on what the
     personal Mac has: both opt-in hooks, autoCompactWindow merged in after a backup, /teyla:review."""
     text = (ROOT / "prompts" / "work-account-update.md").read_text()
-    assert set(re.findall(r"\b0\.1\d\.\d+\b", text)) - {"0.13.0"} == {"0.17.0"}
-    assert "update.pin=0.17.0" in text and "zaitsew/teyla#v0.17.0" in text and "teyla@v0.17.0" in text
+    assert set(re.findall(r"\b0\.1\d\.\d+\b", text)) - {"0.13.0"} == {"0.18.0"}
+    assert "update.pin=0.18.0" in text and "zaitsew/teyla#v0.18.0" in text and "teyla@v0.18.0" in text
     assert "teyla config set hooks.context_budget=true hooks.land_check=true" in text
     assert "teyla config set hooks.context_budget_first=240000 hooks.context_budget_step=30000" in text
     assert "settings.json.bak-" in text and '"autoCompactWindow": 335000' in text and "os.replace" in text
