@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **`teyla cloud prep` no longer puts a session-ending checklist in `AGENTS.md`.** The file is read
+  by every model run in the repo, including headless one-shot calls a product makes itself; a
+  `grok -p` probe followed the "Done, in a cloud session" steps, took twice as long and broke the
+  repo's tests. The Shipping section is now passive policy (merge-approved, one PR per unit,
+  merge-not-squash, no force-push, the gate line) with a line saying it is not a task; the done
+  steps (push, PR, `needs-mac`, second opinion, merge when approved) moved to
+  `.claude/rules/cloud.md`, which applies only when `CLAUDE_CODE_REMOTE=true`. `teyla cloud check`
+  warns on a repo that still carries the old heading; re-running `teyla cloud prep` replaces the
+  section in place.
+- **`teyla cloud prep` titles a new `AGENTS.md` with the repository's name** (the origin remote),
+  not the name of the git worktree directory it was run from.
+
 ## 0.19.1 — 2026-10-08 — `teyla reviews` against the real GitHub and ledger
 
 - **`teyla reviews` failed on every repo**: `gh pr list --json commits` also fetched each commit's

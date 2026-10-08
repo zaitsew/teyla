@@ -304,8 +304,114 @@ def test_no_actions_rule_only_when_the_owner_policy_says_so(tmp_path):
     a = cloud_prep.shipping_section("yes", "./check.sh", no_actions=True)
     b = cloud_prep.shipping_section("no", None, no_actions=False)
     assert "No CI on push/PR" in a and "No CI on push/PR" not in b and "Actions" not in b
-    assert "gh pr merge --merge`). If merging is refused" in a and "the owner merges" in b
+    assert "may be merged without asking" in a and "the owner merges" in b
     assert cloud._MERGE_LINE.findall(a) == ["yes"] and cloud._MERGE_LINE.findall(b) == ["no"]
+
+
+# --- passive AGENTS.md, active steps only in the cloud-only rules file ----------------------
+
+# The section as it was written before the done steps moved out of AGENTS.md.
+OLD_SECTION = f"""{cloud_prep.START}
+## Shipping
+
+merge-approved: yes
+
+- One PR per logical unit: what a reviewer reads in one sitting. Two unrelated fixes are two PRs.
+- Merge, don't squash (`gh pr merge --merge`): every commit stays in history.
+- Never force-push: not to the default branch, not to a shared branch.
+- Report honestly: what you could not verify goes in the same sentence as the claim.
+- This repo is merge-approved: a PR whose whole gate ran green may be merged without asking.
+
+### Done, in a cloud session
+
+A cloud session (`CLAUDE_CODE_REMOTE=true`) can push only to its own branch and has no Mac. It is done when:
+
+1. `./check.sh` ran here and the PR body carries its output.
+2. The branch is pushed and a PR is open (`gh pr create --fill`).
+5. Nothing skipped and the gate green: merge it (`gh pr merge --merge`).
+{cloud_prep.END}
+"""
+
+
+@pytest.mark.parametrize("merge", ["yes", "no"])
+def test_agents_section_is_passive_policy_only(merge):
+    sec = cloud_prep.shipping_section(merge, "./check.sh", no_actions=True)
+    for imperative in ("gh pr create", "Done, in a cloud session", "gh pr edit", "needs-mac", "git push", "CLAUDE_CODE_REMOTE"):
+        assert imperative not in sec, imperative
+    assert not any(l[:2] in ("1.", "2.", "3.", "4.", "5.") for l in sec.splitlines())
+    assert f"merge-approved: {merge}" in sec.splitlines()
+    for policy in ("One PR per logical unit", "Merge, don't squash", "Never force-push", "Report honestly",
+                   "No CI on push/PR", "the local gate is `./check.sh`"):
+        assert policy in sec, policy
+    assert "it is not a task" in sec and "A one-shot prompt (`claude -p`, `grok -p`, an API call) answers only its prompt." in sec
+
+
+def test_prepped_repo_keeps_the_done_steps_out_of_agents_md_and_in_the_rules_file(tmp_path):
+    r = _repo(tmp_path, {"check.sh": GATE})
+    assert _prep(r)[0] == 0
+    agents = (r / "AGENTS.md").read_text()
+    assert "gh pr create" not in agents and "Done, in a cloud session" not in agents
+    rules = (r / ".claude" / "rules" / "cloud.md").read_text()
+    assert "These apply only when `CLAUDE_CODE_REMOTE=true`" in rules
+    assert "## Done, in a cloud session" in rules
+    assert "1. `./check.sh` ran here" in rules and "gh pr create --fill" in rules and "gh pr edit --add-label needs-mac" in rules
+    assert "same-provider review" in rules
+    assert "Before you stop: push this branch and open the PR" in (r / cloud_prep.START_HOOK).read_text()
+    rep = cloud.check_repo(r, owners=OWNERS, net=False)
+    assert rep["ready"] and all(i["level"] in ("OK", "INFO") for i in rep["items"]), rep["items"]
+
+
+def test_the_merge_step_is_in_the_rules_file_only_for_a_merge_approved_repo(tmp_path):
+    yes, no = cloud_prep.rules_section("./check.sh", "yes"), cloud_prep.rules_section("./check.sh", "no")
+    assert "5. Nothing skipped and the gate green: merge it (`gh pr merge --merge`)" in yes
+    assert "gh pr merge" not in no and "5. " not in no
+    assert cloud._MERGE_LINE.findall(yes) == [] and cloud._MERGE_LINE.findall(no) == []  # the one merge-approved line stays in AGENTS.md
+    r = _repo(tmp_path, {"check.sh": GATE})
+    _prep(r, owners={"acme/other"})
+    assert "gh pr merge" not in (r / ".claude" / "rules" / "cloud.md").read_text()
+    r2 = _repo(tmp_path, {"check.sh": GATE}, name="app2")
+    _prep(r2)
+    assert "gh pr merge --merge" in (r2 / ".claude" / "rules" / "cloud.md").read_text()
+
+
+def test_reprep_replaces_the_old_section_in_place_and_is_idempotent(tmp_path):
+    r = _repo(tmp_path, {"AGENTS.md": f"# app\n\nIntro by hand.\n\n{OLD_SECTION}\n## After, by hand\n\nkept\n", "check.sh": GATE})
+    rep = cloud.check_repo(r, owners=OWNERS, net=False)
+    stale = cloud_check_by_name(rep)["shipping"]
+    assert stale["level"] == "WARN" and "AGENTS.md:" in stale["detail"] and "teyla cloud prep" in stale["fix"]
+    assert rep["ready"]  # an old section is not a blocker
+    assert _prep(r)[0] == 0
+    agents = (r / "AGENTS.md").read_text()
+    assert agents.count("teyla:cloud:start") == 1 and agents.count("teyla:cloud:end") == 1
+    assert "Done, in a cloud session" not in agents and "gh pr create" not in agents and "### Done" not in agents
+    assert agents.startswith("# app\n\nIntro by hand.\n\n<!-- teyla:cloud:start") and agents.endswith("\n## After, by hand\n\nkept\n")
+    assert cloud_check_by_name(cloud.check_repo(r, owners=OWNERS, net=False))["shipping"]["level"] == "OK"
+    before = _tree(r)
+    rc, out = _prep(r)
+    assert rc == 0 and out[-1] == "up to date: nothing to write" and _tree(r) == before
+
+
+def test_a_new_agents_md_is_titled_with_the_repository_not_the_worktree_directory(tmp_path):
+    main = _repo(tmp_path, {"README.md": "x\n"}, name="app-main", slug=None)
+    _git(main, "remote", "add", "origin", "git@github.com:acme/app.git")
+    _git(main, "add", ".")
+    _git(main, "commit", "-q", "-m", "init")
+    wt = tmp_path / "cloud-prep"
+    _git(main, "worktree", "add", "-q", "-b", "cloud-prep", str(wt))
+    assert (wt / ".git").is_file()  # a worktree, not a clone
+    rc, out = _prep(wt)
+    assert rc == 0, out
+    assert (wt / "AGENTS.md").read_text().splitlines()[0] == "# app"
+    assert out[0].startswith("app: merge-approved: yes")
+
+
+@pytest.mark.parametrize("url,want", [("git@github.com:acme/app.git", "app"), ("https://github.com/acme/app", "app"),
+                                      ("https://gitlab.example/g/sub/tool.git/", "tool"), (None, "dir-name")])
+def test_project_name_comes_from_origin_else_the_directory(tmp_path, url, want):
+    r = _repo(tmp_path, name="dir-name", slug=None)
+    if url:
+        _git(r, "remote", "add", "origin", url)
+    assert cloud_prep.project_name(r) == want
 
 
 @pytest.mark.parametrize("name,want", [("ASC_KEY_ID", "local only"), ("APNS_KEY_ID", "local only"),
@@ -611,3 +717,7 @@ def test_credential_words_beat_the_public_prefix(name):
 @pytest.mark.parametrize("name", ["NEXT_PUBLIC_PATH_PREFIX", "VITE_PATTERN"])
 def test_pat_is_a_word_not_a_substring(name):
     assert "environment variable" in cloud_prep.secret_destination(name)
+
+
+def cloud_check_by_name(report):
+    return {i["name"]: i for i in report["items"]}

@@ -89,7 +89,7 @@ Agentic coding makes shipping cheap and leaves the expensive questions unanswere
 | `teyla uninstall [--dry] [--keep-data]` | every file Teyla wrote on this machine (`--dry`), then the undo: LaunchAgents unloaded, the policy import line, symlinks, Hermes sections, harness skills and hooks, the plugin, `~/.teyla`. Touches only what carries Teyla's marker, label or symlink target; keeps and lists `~/.agents/POLICY.md` and repo-level `.teyla/` and rules |
 | `teyla prompt [name]` | the paste-able prompts (onboard, work-account-kickoff, …) that shipped with the installed version |
 | `teyla cloud check [repo...] [--json]` | what a cloud session (Claude Code on the web, `claude --cloud`) would lack in each repo — the VM clones the repo and nothing from your home directory: instructions that defer to a home-directory policy file, `.claude/` git-ignored, no shipping rules or cloud done state, no SessionStart/Stop hooks, a `merge-approved:` line missing or drifted from your list, Mac-only gate steps with no printed skip, secret names with no manifest, a public repo. BLOCK/WARN/OK per item, exit 1 on any BLOCK; `teyla doctor` shows `cloud-ready n/N repos` |
-| `teyla cloud prep <repo> [--dry] [--allow-public] [--fix-gitignore]` | writes what a cloud session needs into the repo, between `teyla:cloud` markers: a Shipping section in `AGENTS.md` (+ `@AGENTS.md` in `CLAUDE.md`), SessionStart/Stop hooks in `.claude/settings.json`, `.claude/rules/cloud.md`, `docs/cloud-setup.md`. See [Cloud sessions](#cloud-sessions) |
+| `teyla cloud prep <repo> [--dry] [--allow-public] [--fix-gitignore]` | writes what a cloud session needs into the repo, between `teyla:cloud` markers: a passive Shipping policy in `AGENTS.md` (+ `@AGENTS.md` in `CLAUDE.md`), SessionStart/Stop hooks in `.claude/settings.json`, `.claude/rules/cloud.md` (the cloud-only done steps), `docs/cloud-setup.md`. See [Cloud sessions](#cloud-sessions) |
 | `teyla cloud inbox [--days N]` | what cloud sessions left for a local one: branches with `Claude-Session:` commits and no PR (with the `gh pr create` line), and open PRs labelled `needs-mac` |
 | `teyla storage [--json]` · `teyla storage clean [--apply]` | the disk and RAM agent work holds: every worktree (SAFE = clean, on the remote, idle, no process in it — removed with `git worktree remove`, branch kept), git-ignored build output of idle repos, caches with the command that clears each, booted simulators. Dry run unless `--apply`; `teyla config set storage.auto_clean=true` lets the daily routine do it |
 | `teyla storage sims [--reap] [--dry] [--json]` | booted simulators: in use, or idle N min. `--reap` shuts down idle ones (`storage.sim_idle_min` 30, `storage.sim_max_booted` 3) and deletes shut-down devices matching `storage.sim_prune_pattern` (empty = never) after `storage.sim_prune_days` (3). `storage.sims_agent=true` makes `teyla routine install` run it every 10 minutes |
@@ -287,13 +287,18 @@ teyla cloud inbox                     # cloud branches with no PR, and PRs label
 
 `prep` writes plain files, because a cloud VM does not install plugins:
 
-- `AGENTS.md`: a Shipping section (one PR per logical unit, merge-not-squash, no force-push, no
-  CI on push/PR (short ubuntu deploy jobs on push to main allowed) when your policy says so, report honestly, ask about product decisions not
-  permission) and `merge-approved: yes|no`, derived from your MERGE-APPROVED list. `teyla cloud
-  check` fails when the line drifts from the list.
-- The cloud definition of done: the gate ran and its output is in the PR body, the branch is pushed,
-  a PR is open, and it carries the `needs-mac` label when a Mac-only step was skipped. Second opinion:
-  "same-provider review".
+- `AGENTS.md`: a Shipping section of passive policy only (one PR per logical unit, merge-not-squash,
+  no force-push, no CI on push/PR (short ubuntu deploy jobs on push to main allowed) when your
+  policy says so, report honestly, ask about product decisions not permission) and
+  `merge-approved: yes|no`, derived from your MERGE-APPROVED list, plus one line saying it is policy
+  and not a task. `teyla cloud check` fails when the line drifts from the list. AGENTS.md is read
+  by every model run in the repo, headless one-shot calls (`claude -p`, `grok -p`) included, so it
+  carries no step that ends a session.
+- `.claude/rules/cloud.md`: the cloud definition of done, under a header that limits it to
+  `CLAUDE_CODE_REMOTE=true`: the gate ran and its output is in the PR body, the branch is pushed, a
+  PR is open, it carries the `needs-mac` label when a Mac-only step was skipped, a second opinion is
+  a "same-provider review", and, in a merge-approved repo, the merge. Re-run `teyla cloud prep` in a
+  repo prepped before 0.19.2: it replaces the old section in place (`teyla cloud check` warns).
 - `.claude/settings.json`: a SessionStart hook that orients the session (branch, gate, what skips
   without a Mac) and a Stop hook that sends it back once while work is unpushed or has no PR. Both
   do nothing unless `CLAUDE_CODE_REMOTE=true`.
