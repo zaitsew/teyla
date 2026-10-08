@@ -228,7 +228,7 @@ def scan(paths: list[str] | None = None, days: int = 7, cfg: dict | None = None,
     today = today or _dt.date.today()
     since = today - _dt.timedelta(days=days)
     rep = {"days": days, "ledger": str(ledger_path(cfg)), "ledger_found": False, "unparsed": 0, "repos": [],
-           "notes": [], "totals": {k: 0 for k in ("merged",) + STATES}, "gh_called": False}
+           "notes": [], "totals": {k: 0 for k in ("merged",) + STATES}, "gh_called": False, "gh_failed": 0}
     ledger = load_ledger(ledger_path(cfg))
     if ledger is None:
         rep["notes"].append(f"no ledger at {rep['ledger']} — nothing to compare merged PRs against "
@@ -254,6 +254,7 @@ def scan(paths: list[str] | None = None, days: int = 7, cfg: dict | None = None,
         rep["gh_called"] = True
         prs, note = merged_prs(slug, since, runner)
         if prs is None:
+            rep["gh_failed"] += 1
             rep["notes"].append(f"{slug}: {note}, skipped")
             continue
         if note:
@@ -290,7 +291,7 @@ def render(rep: dict, quiet: bool = False) -> str:
     out = []
     if not rep["ledger_found"]:
         return "\n".join(rep["notes"])
-    if not rep["repos"] and rep["notes"] and not rep["gh_called"]:
+    if not rep["repos"] and rep["notes"] and (not rep["gh_called"] or rep.get("gh_failed")):
         return "\n".join(f"review debt: not checked — {n}" for n in rep["notes"])
     if not quiet and rep["repos"]:
         out += [f"{'repo':20} {'merged':>6} {'exempt':>6} {'reviewed':>8} {'open-P1':>7} {'skipped':>7} {'unreviewed':>10}",
@@ -319,8 +320,9 @@ def render(rep: dict, quiet: bool = False) -> str:
 
 
 def write_summary(rep: dict, now: _dt.datetime | None = None) -> None:
-    """What the digest reads: only a run that really asked GitHub leaves one."""
-    if not rep["gh_called"]:
+    """What the digest reads: only a run that asked GitHub about every repo leaves one. A failed
+    query (expired login, outage) keeps the last summary, which ages out on its own."""
+    if not rep["gh_called"] or rep.get("gh_failed"):
         return
     t = rep["totals"]
     body = {"when": (now or _dt.datetime.now(_dt.timezone.utc)).isoformat(timespec="seconds"),

@@ -217,6 +217,22 @@ def test_gh_failure_skips_the_repo_with_a_note(env):
     assert out.startswith("review debt: 0 unreviewed") or "not checked" in out
 
 
+def test_a_failed_gh_query_keeps_the_last_summary(env):
+    env.repo("app")
+    env.repo("lib", slug="acme/lib")
+    env.write(_line(A))
+    reviews.write_summary(reviews.scan(None, days=7, today=TODAY,
+                                       runner=env.runner({"acme/app": [_pr(1, [B])], "acme/lib": [_pr(2, [C])]})))
+    assert json.loads(reviews.summary_path().read_text())["unreviewed"] == 2
+    rep = reviews.scan(None, days=7, today=TODAY,
+                       runner=env.runner({"acme/app": (1, "", "gh: not logged in"), "acme/lib": []}))
+    reviews.write_summary(rep)
+    assert json.loads(reviews.summary_path().read_text())["unreviewed"] == 2   # not replaced by a partial 0
+    rep = reviews.scan(None, days=7, today=TODAY,
+                       runner=env.runner({"acme/app": (1, "", "gh: not logged in"), "acme/lib": (1, "", "gh: not logged in")}))
+    assert "not checked" in reviews.render(rep)
+
+
 def test_gh_missing_is_a_note_not_a_crash(env, monkeypatch):
     env.repo("app")
     env.write(_line(A))
