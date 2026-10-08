@@ -55,6 +55,8 @@ OPTIONAL = {
 }
 # The weekly wrapper's extra line when storage.sweep_agent is on.
 SWEEP_LINE = '"$TEYLA" storage sweep --quiet'
+# The sims agent's extra line when storage.orphan_kill is on.
+PROCS_LINE = '"$TEYLA" storage procs --kill --quiet'
 
 # What the plists say, kept here so catch-up and doctor compute "due" from the same numbers.
 # launchd Weekday: 0 = Sunday … 6 = Saturday; None = every day.
@@ -156,7 +158,7 @@ date -u +%FT%TZ > "{stamp}"
 export TEYLA_IN_ROUTINE="{label}"
 TEYLA="{teyla_bin}"
 "$TEYLA" {args}
-"""
+{extra}"""
 
 PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -209,6 +211,8 @@ mkdir -p "$OUT_DIR"
 "$TEYLA" models > "$OUT_DIR/models.md" 2>&1
 {models_watch_line} > "$OUT_DIR/models-watch.md" 2>&1
 "$TEYLA" tidy --quiet > "$OUT_DIR/tidy.md" 2>&1
+"$TEYLA" lang --quiet > "$OUT_DIR/lang.md" 2>&1
+"$TEYLA" reviews --quiet > "$OUT_DIR/reviews.md" 2>&1
 # The reports above tend to have no reader: the digest is the five lines
 # that are read — the session-start hook shows its headline once, and a notification says it exists.
 "$TEYLA" digest --write
@@ -286,14 +290,23 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
     if path == WRAPPER_PATH and (SWEEP_LINE in text) != optional_enabled(SWEEP_LABEL):
         # storage.sweep_agent was switched on (or off) after the wrapper was written.
         return True
+    if path == optional_paths(SIMS_LABEL)["wrapper"] and (PROCS_LINE in text) != orphan_kill_enabled():
+        # storage.orphan_kill was switched on (or off) after the sims wrapper was written.
+        return True
     if path == WRAPPER_PATH and "models watch" not in text:
         # Written before `teyla models watch`: the weekly would never look for new models.
         return True
     if path == WRAPPER_PATH and "tidy --quiet" not in text:
         # Written before `teyla tidy`: the weekly would never look for junk in the rule files.
         return True
+    if path == WRAPPER_PATH and "reviews --quiet" not in text:
+        # Written before `teyla reviews`: the weekly would never count merged PRs nobody reviewed.
+        return True
     if path == WRAPPER_PATH and ("models watch --refresh" in text) != (_watch_line() == WATCH_LINE):
         # Safe mode was switched on (or off) after the wrapper was written.
+        return True
+    if path == WRAPPER_PATH and "lang --quiet" not in text:
+        # Written before `teyla lang`: the weekly would never look for non-English text.
         return True
     if path == WRAPPER_PATH and f'OUT_DIR="{_runs_root()}/' not in text:
         # Written before ops_root or runs_root changed in config.
@@ -375,6 +388,12 @@ def optional_enabled(label: str) -> bool:
     return config.truthy((config.load().get("storage") or {}).get(OPTIONAL[label]["key"]))
 
 
+def orphan_kill_enabled() -> bool:
+    """Does `[storage] orphan_kill` ask the sims agent to end orphaned dev processes too?"""
+    from . import config
+    return config.truthy((config.load().get("storage") or {}).get("orphan_kill"))
+
+
 def optional_paths(label: str) -> dict[str, pathlib.Path]:
     """Where an optional agent's files live: beside the weekly's (so a relocated HOME moves them too)."""
     o = OPTIONAL[label]
@@ -439,7 +458,8 @@ def _write_optional(label: str, teyla_bin: str, env_plist: str, env_sh: str) -> 
     p["wrapper"].parent.mkdir(parents=True, exist_ok=True)
     p["wrapper"].write_text(INTERVAL_WRAPPER_TEMPLATE.format(key=o["key"], what=o["what"].capitalize(), env_sh=env_sh,
                                                              stamp=p["stamp"], label=label, teyla_bin=teyla_bin,
-                                                             args=o["args"]))
+                                                             args=o["args"],
+                                                             extra=PROCS_LINE + "\n" if label == SIMS_LABEL and orphan_kill_enabled() else ""))
     p["wrapper"].chmod(0o755)
     p["log"].parent.mkdir(parents=True, exist_ok=True)
     p["plist"].parent.mkdir(parents=True, exist_ok=True)

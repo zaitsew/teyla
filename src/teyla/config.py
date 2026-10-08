@@ -18,6 +18,9 @@
     [products]
     repos = ["teyla", "~/work/x"]  the only repos `teyla products` runs `./check.sh usage` in
                                    (names under code_root, or paths); unset = every repo, outside safe mode
+    [lang]
+    allow = ["docs/ru/**"]         `teyla lang`: globs of files that may hold non-English text, on top of the
+                                   localization defaults and each repo's .teyla/lang-allow
     [storage]
     auto_clean      = false        the daily routine removes finished worktrees + idle build output
     idle_days       = 3            a clean, pushed worktree untouched this long is finished
@@ -32,6 +35,14 @@
                                    derived_days, codex_days, grok_days, log_days, docker_days, log_max_mb,
                                    urgent_free_gb); docker_superseded_repos = ["registry/vendor/"] lets it
                                    remove older tags of those repositories (default none)
+    orphan_patterns = [...]        `storage procs`: regexes on the program (executable name, or node/python script name or `-m module`)
+                                   (default: Xcode/SwiftPM builds, node/npm/pnpm/yarn/bun/deno, vite, next,
+                                   `-m http.server`, supabase)
+    orphan_min_age_min = 30        a process must have run this long to count as an orphan
+    orphan_roots    = []           extra folders whose first sub-folder an agent made (besides ~/.worktrees,
+                                   <repo>/.claude/worktrees, /tmp, $TMPDIR); a process there whose folder is
+                                   gone is an orphan
+    orphan_kill     = false        the sims agent also runs `storage procs --kill --quiet` (needs sims_agent)
     sims_agent      = false        `teyla routine install` also writes an agent: storage sims --reap every 10 min
     sweep_agent     = false        ... and one for storage sweep --temp hourly; the weekly runs storage sweep
     [tidy]                         `teyla tidy`: the rule and memory files checked for junk
@@ -39,6 +50,9 @@
     stale_days = 120               a dated "until" / "for now" / "temporary" / "this week" / TODO line older than this is a finding
     [digest]
     notify = true                  the weekly digest posts a macOS notification when written
+    [review]                       `teyla reviews`: merged PRs against the review ledger
+    ledger    = "~/.cache/review-ledger.tsv"   one TSV line per review, appended by the review script
+    min_lines = 7                  PRs with fewer changed lines, or docs-only (*.md, docs/), need no review
     [corrections]
     store = "home"                 "home": ~/.teyla/corrections/<repo-key>.jsonl (default);
                                    "repo": <repo>/.teyla/corrections.jsonl, the pre-0.12 place
@@ -116,6 +130,8 @@ DEFAULTS = {
     # Harnesses to leave alone: no health line, no FIX for their hooks or credits, no sync.
     "harness": {"disabled": []},
     "products": {"repos": []},
+    # `teyla lang`: extra globs exempt from the non-English text report (localization is built in).
+    "lang": {"allow": []},
     # `teyla spend` thresholds; 0 = off for the budgets. Per-project budgets are `budget.<project>`
     # keys (or a [spend.budget] table): see spend.budgets().
     "spend": {"alert_session_usd": 250.0, "w1_usd": 15.0, "daily_budget_usd": 0.0,
@@ -124,6 +140,8 @@ DEFAULTS = {
     "digest": {"notify": True},
     # `teyla tidy`: size budget for a rule or memory file, and how old a dated "for now" may get.
     "tidy": {"max_kb": 24, "stale_days": 120},
+    # `teyla reviews`: the ledger the review script appends to, and the size below which a PR is exempt.
+    "review": {"ledger": "~/.cache/review-ledger.tsv", "min_lines": 7},
     # The plugin's opt-in hooks (plugin/hooks/context-budget.sh, land-check.sh). Off by default: where
     # the same hooks are already wired some other way, a second copy doubles each note.
     # The hooks read these keys from the file with awk/tomllib, not through this module.
