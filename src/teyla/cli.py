@@ -28,6 +28,8 @@
   teyla remind list | done <n>                                    everything pending; clear the n-th
   teyla storage [--json] [--no-sizes]                             disk and RAM held by agent work: worktrees, build output, caches
   teyla storage clean [--apply] [--auto]                          remove finished worktrees and idle build output (dry run by default)
+  teyla storage sims [--reap] [--dry] [--json]                    booted simulators: in use or idle; --reap shuts down the idle ones
+  teyla storage sweep [--temp] [--dry] [--json]                   temp build output, old DerivedData, caches and logs agents leave behind
   teyla config show | set KEY=VALUE                               ~/.teyla/config.toml, incl. [env] for launchd/hook runs
   teyla config set safe.enabled=true                              work mode: no network (--allow-network per command), no self-update
   teyla update [--check] [--force] [--wire] [--quiet]            newer release → install, then policy sync/refresh, plugin refresh, routines
