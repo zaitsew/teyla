@@ -1,6 +1,6 @@
 # Teyla on a work laptop
 
-For a managed Mac: a TLS-inspecting proxy, the employer's code in every transcript, no say over
+For a managed Mac: a TLS-inspecting corporate proxy, the employer's code in every transcript, no say over
 what runs at night. Teyla has one switch for this, **safe mode**. This page says what it
 guarantees, how to move to a new release, and what to use day to day.
 
@@ -56,16 +56,16 @@ If your organisation restricts plugin marketplaces, step 3 may be refused. Say s
 | `teyla rules stale` | Which rules expired or were never hit: candidates to remove. |
 | `teyla wiki status <path>` | Is this wiki folder in order. |
 | `teyla sessions` | What sessions ran, and how they went. |
-| `teyla feedback --days 14` | A report of how Teyla behaved here, for the owner. It stays on the machine: you read it, then carry it. |
+| `teyla feedback --days 14` | A report of how Teyla behaved here, for the maintainer. It stays on the machine: you read it, then carry it. |
 
 In an employer's repo, a rule file is a change to their repo. It goes through a normal merge
 request like any other change. Teyla never pushes it for you.
 
-## Same as on the personal Mac
+## Optional hooks
 
-Three practices the owner's personal Mac runs from its own scripts ship in the plugin too, so they
-arrive here pinned with it. The two hooks are off by default (on the personal Mac its own copies
-already run, and two would double every note); turn them on here:
+Three practices that are often run from personal scripts ship in the plugin too, so they
+arrive pinned with it. The two hooks are off by default (a machine that already runs its own
+copies would get every note twice); turn them on here:
 
 ```
 teyla config set hooks.context_budget=true hooks.land_check=true
@@ -81,7 +81,7 @@ teyla config set hooks.context_budget=true hooks.land_check=true
 - **Land check.** When a session stops with uncommitted files or commits on no remote, the model
   is told once, with how to land it: one MR per logical unit, then **stop** — unless the repo is in the
   `MERGE-APPROVED REPOS` block of `~/.claude/CLAUDE.md` — as `owner/repo` for GitHub, and with its
-  host for anything else (`gitlab.corp/group/sub/repo`). On a work laptop that block is usually absent, so every MR waits for you.
+  host for anything else (`git.example.com/group/sub/repo`). On a work laptop that block is usually absent, so every MR waits for you.
 - **`/teyla:review`** before asking for a merge: one P1/P2-only pass on the branch's diff, by one
   fresh sub-agent (labelled "same-provider review", since there is no second provider's CLI
   here), at most two rounds.

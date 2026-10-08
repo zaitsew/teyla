@@ -41,7 +41,7 @@ must respect it, it goes in `NOTES.md`.
 ## Skill routing
 
 Skills are flat under `.claude/skills/`. Scope comes from the description: name the
-trigger phrases the owner actually says, say what the skill is *not* for, one skill per
+trigger phrases you actually say, say what the skill is *not* for, one skill per
 artifact type. When no skill matches, do the work, then run `/teyla:harvest <path>`
 after the second time — skills are harvested from sessions that happened, never
 written speculatively.

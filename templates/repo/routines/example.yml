@@ -13,7 +13,7 @@ trigger:
   type: manual
   # cron, for schedule triggers. Always set tz explicitly.
   # at: "0 9 * * 1-5"
-  # tz: Europe/Madrid
+  # tz: Europe/London
 
 # ---------------------------------------------------------------------------
 # skill — the procedure this routine executes

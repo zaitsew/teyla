@@ -48,7 +48,7 @@ a harness `teyla doctor` can read logs from, not one you can drive from a shell.
 - **`review`** (`/teyla:review`) — one review pass on the branch's diff
   (`git diff $(git merge-base origin/<default> HEAD)`, or one fix commit in
   round two), P1/P2 only, `P1 path:line — defect — scenario` or exactly
-  `No P1/P2`. Uses `~/ops/bin/codex-review` or a `codex-review`/`claude-review`
+  `No P1/P2`. Uses a `codex-review`/`claude-review` script
   on PATH when one exists (cross-provider); otherwise one fresh sub-agent given
   only the diff, labelled "same-provider review". At most two rounds.
 
@@ -80,8 +80,8 @@ swallowed silently rather than surfaced.
   imports it on its own, so there's nothing useful to add.
 - **`UserPromptSubmit`** (`hooks/capture-correction.sh`) — the same
   correction test `teyla monitor` counts with (`teyla.adapters.is_correction`:
-  pushback such as "wrong", "no, I mean…", "don't … at all", "you use too much…",
-  "не так", "я же говорил", "сделай сам"; not instructions like "don't forget
+  pushback such as "wrong", "no, I mean…", "don't … at all", "you use too much…", plus the same phrases in Russian;
+  not instructions like "don't forget
   to…"), skipping retries and headless runs (`claude -p`, `grok -p` via the
   `<user_query>` envelope, `hermes -z`). On a match, appends `{ts, cwd, text[:500]}` to `~/.teyla/corrections/<repo>-<hash>.jsonl`
   for the repo the prompt was submitted in (worktrees count as their main
@@ -114,8 +114,8 @@ swallowed silently rather than surfaced.
   about 300k). Off, the
   wrapper is one `awk` over `~/.teyla/config.toml` and starts no Python.
 
-Both opt-in hooks are off by default because the owner's personal Mac runs its
-own `~/ops` copies; turning them on there would double every note.
+Both opt-in hooks are off by default because a machine that already runs its
+own equivalents would get every note twice.
 
 ## Where data goes
 

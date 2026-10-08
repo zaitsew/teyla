@@ -21,7 +21,7 @@ teyla productize    # per product: who it serves, who it should serve, what is i
 
 ## 1. Why solo-built apps resist sharing
 
-Audit four apps built by one person for one person and the same six findings come back.
+Audit a handful of apps built by one person for one person and the same six findings come back.
 None of them is a mistake. Each is the locally correct decision, taken by someone with no
 second user, and each becomes a wall the moment there is one.
 
@@ -69,10 +69,10 @@ for everything (`[identity]` in the platform manifest). Do not invent a key sche
 shared key is not a simpler account system, it is an account system with one account and
 no way to add a second.
 
-**Identity: the accounts hub.** The strongest shape identity can take is one Supabase-Auth
+**Identity: the accounts hub.** The strongest shape identity can take is one auth
 project shared by every product — an accounts hub, not a login screen reinvented per app.
-One sign-in system, one user table, and one admin panel where the owner sets plans and
-per-user budgets across every product at once, with a Swift kit and a TS kit so a new
+One sign-in system, one user table, and one admin panel where plans and
+per-user budgets are set across every product at once, with a small client kit per platform so a new
 product wires itself into it in an afternoon instead of building its own. Declare it as
 `identity = "accounts-hub"`; R1 treats it as the strongest option — first in the list, on
 equal footing with a bespoke `supabase-auth` setup, never a lesser or exotic choice next
@@ -157,7 +157,7 @@ domain    ok       example.com resolves
 identity  ok       supabase present, org <id>
 mail      MISSING  create the key at https://resend.com/api-keys → paste as RESEND_API_KEY= in
                    ~/.config/teyla/platform.env
-apple     ok       3 ids, 1 key(s), ~/ops/bin/testflight
+apple     ok       3 ids, 1 key(s), release tool found
 android   MISSING  open a Play Console account ($25 once) → play_console = true
 llm       ok       openai, OPENAI_API_KEY set
 ```
@@ -234,7 +234,7 @@ looking at a preview are not the audience the first screen is for.
 
 ### The first screen
 
-The owner's rule, set after testing his own apps: every product opens on a sign in / sign
+A rule worth adopting: every product opens on a sign in / sign
 up screen. Where the product is usable without an account, that screen has an explicit
 skip (an ×, "continue without an account"); where it is not, there is no skip. After
 sign-in comes a short onboarding. Demo or sample data is never shown as if it were the
@@ -253,9 +253,9 @@ is marked as an example and clears in one tap), or `unlabelled` — canned conte
 as the user's own, which is the exact state R9 exists to catch.
 
 ```
-cellar    owner→family  7/7 met
+app-a     owner→family  7/7 met
     [owner] internal TestFlight group — App Store Connect → add two Apple IDs
-lang      owner→family  1/7 met  unmet: R1 identity=shared-key, R2 tenancy=single,
+notes     owner→family  1/7 met  unmet: R1 identity=shared-key, R2 tenancy=single,
                                         R3 backend=local-mac, R4 ios=none,
                                         R5 onboarding_doc unset, R7 cost_cap unset (llm=app-key)
     [agent] no per-user rows — add user_id + RLS, backfill existing rows to the owner
@@ -267,16 +267,16 @@ mail sender unblocks three products and one TestFlight group unblocks one.
 
 ### Four case studies, one paragraph each
 
-**A training app** had already done the expensive part: `user_id` and deny-by-default RLS
+**An app built for N from the start** had already done the expensive part: `user_id` and deny-by-default RLS
 from the first migration, real accounts, per-user onboarding, and a metered allowance
-against the owner's model key. Nothing needed writing. What stood in the way was entirely
-operational — two tester emails in a TestFlight group, and a short setup page for a person
+against the author's model key. Nothing needed writing. What stood in the way was entirely
+operational — a couple of tester emails in a TestFlight group, and a short setup page for a person
 who is not the author, because the existing one said "you" and meant one specific person.
 This is what building for N from day one buys: productizing is an afternoon of admin
 instead of a migration.
 
-**A language app** was the opposite and the most instructive. One shared bearer key, no
-users table, no `user_id` on any of six tables, the learner's own name in an environment
+**A single-user app** was the opposite and the most instructive. One shared bearer key, no
+users table, no `user_id` on any table, the user's own name in an environment
 variable, a backend on the author's laptop behind no proxy, and an extension that loads
 unpacked. Every finding in §1 in one repo. The path out is a migration adding a users table
 and a `user_id` column with the existing rows backfilled to the author, auth resolving a
@@ -284,7 +284,7 @@ token to a person instead of comparing one string, the per-user name moving from
 user row, a host that is not a laptop, and a zipped extension with install instructions.
 That is a week, and it would have been an hour spread across the first month.
 
-**A trip app** was multi-client and further along than it looked: capability tokens rather
+**A multi-client app** was further along than it looked: capability tokens rather
 than accounts, so anyone with a link can already read or edit, and a genuine installable
 PWA that covers Android with no store at all. Its wall was not tenancy but delivery — the
 built-in mailer sends sign-in codes only to addresses that already belong to the project,
@@ -292,7 +292,7 @@ so nobody else can complete a sign-in, and iOS deep links do not verify because 
 are served from a host that returns the wrong content type for the association file. Both
 are owner steps taking minutes: a mail sender, and a domain in front of the pages.
 
-**A cellar app** stores everything on the device and has no accounts by design — which is a
+**A local-first app** stores everything on the device and has no accounts by design — which is a
 legitimate answer, not a gap, and why `per-device` tenancy exempts a product from the
 identity requirement. Two people can each run their own copy today; what they cannot do is
 share one dataset, and that is a real feature (sync) rather than plumbing. Its actual

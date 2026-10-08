@@ -1,7 +1,7 @@
 # How I want work shipped — global instructions for {{owner}}
 
-Applies in every repo. Keep it short: the measured median CLAUDE.md is ~485 words and
-grows ~57 a day without pruning. Anything added here should displace something.
+Applies in every repo. Keep it short: a global CLAUDE.md only grows unless it is pruned.
+Anything added here should displace something.
 
 @~/.agents/POLICY.md
 

@@ -23,8 +23,8 @@ config and dependency bumps with no code; say it was skipped and why.
 
 ## 2. Who reviews — the first that exists
 
-1. **Another provider.** `~/ops/bin/codex-review` if it is executable, else `codex-review`
-   or `claude-review` on PATH. Run it from the repo (`--commit <sha>` for round two), in the
+1. **Another provider.** A `codex-review` or `claude-review`
+   script on PATH (for example `~/ops/bin/codex-review`). Run it from the repo (`--commit <sha>` for round two), in the
    background, and wait for it: no polling, no second copy. Label the result
    "cross-provider review".
 2. **Otherwise one fresh sub-agent** of this harness. In Claude Code: the Agent tool with

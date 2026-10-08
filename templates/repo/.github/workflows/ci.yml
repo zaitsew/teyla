@@ -1,12 +1,14 @@
 name: check
 
+# Manual only: the laptop's ./check.sh is the gate, and automatic runs spend the Actions budget.
+# iOS and macOS repos switch `runs-on` to macos-latest by hand (macOS minutes bill at 10x).
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   check:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: run check.sh
