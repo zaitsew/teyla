@@ -6,7 +6,10 @@
 
 In safe mode (`safe.enabled`, TEYLA_SAFE=1) nothing here touches the network unless the
 command line says `--allow-network`; see net.py. The daily routine and the session hook
-never pass it, so a work laptop updates only when its owner runs `teyla update --allow-network`.
+never pass it, so a work laptop updates only when its owner runs `teyla update --allow-network` —
+unless `safe.auto_update = true`: then `teyla update` itself (nothing else) may reach GitHub, for the
+release lookup and the verified install below, and the daily routine's `teyla update --quiet`
+keeps a work laptop current. `update.pin` still wins: a pinned machine installs the pin and nothing newer.
 
 What gets installed: the latest *published GitHub release* (never a bare `v*` tag), by the
 commit its tag resolves to (`git+<repo>@<sha>`), and only if the build then says
@@ -553,6 +556,11 @@ def post_update(quiet: bool = False) -> list[str]:
 
 def cmd_update(args):
     cfg = config.load()
+    with net.update_scope(cfg):
+        return _cmd_update(args, cfg)
+
+
+def _cmd_update(args, cfg):
     repo = cfg["update"]["repo"]
     channel, pin = update_settings(cfg)
     if channel not in ("release", "none"):
