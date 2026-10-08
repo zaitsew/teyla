@@ -58,7 +58,7 @@ def test_banner_shows_only_new_items_and_counts_known():
 def test_hook_prints_new_then_nothing_then_only_the_change(_home, tmp_path):
     t = _home / ".teyla"
     (t / "doctor.summary").write_text("teyla: 1 fix(es), 2 warning(s) — run `teyla doctor`\n")
-    items = "FIX|remind:x\treminder\nWARN|repos:agents-md\trepos:agents-md WARN: teyla-ai differs\n"
+    items = "FIX|remind:x\treminder\nWARN|repos:agents-md\trepos:agents-md WARN: app-a differs\n"
     (t / "banner.items").write_text(items)
     start = time.monotonic()
     first = run_hook(_home, tmp_path)
