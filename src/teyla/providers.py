@@ -1,8 +1,7 @@
 """What the providers actually billed: OpenAI's and Anthropic's cost APIs, read with admin keys.
 
 `teyla spend` prices transcripts, which covers the harnesses on this machine. The products
-(winecave, iron-u, guiri, loco, frank, knut, lumi, njord, …) call the APIs from servers and
-phones; only some of them log their calls, and none of those ledgers is reachable from a launchd
+you build call the APIs from servers and phones; only some of them log their calls, and none of those ledgers is reachable from a launchd
 job. The providers' own cost APIs see every call, logged or not, grouped by project (OpenAI) or
 workspace (Anthropic). That is W7's input: a product's daily cost jumping past twice its median.
 

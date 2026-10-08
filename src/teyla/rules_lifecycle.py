@@ -4,7 +4,7 @@ removal when they are not.
     teyla rules propose [--repo <path>] [--days 7] [--min 2] [--write]
     teyla rules stale   [--repo <path>]
 
-The 0.12 review measured two failures. Correction capture was ~97% noise: the hook classifies
+Two failures motivated this module. Correction capture was ~97% noise: the hook classifies
 every prompt with one regex, and "no, wait" in a sentence about something else is a match. And
 rules never died: a rule written once was loaded into every session forever, whether or not
 anything had needed it since. This module answers both from the data already on disk.

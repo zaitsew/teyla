@@ -94,10 +94,10 @@ def test_scrub_keeps_the_name_of_an_assignment_and_drops_the_value(text, want):
 
 @pytest.mark.parametrize("text", [
     "no, don't rewrite the whole file, just fix the one line",
-    "не так, я же говорил — сделай сам",
+    "не так, я же писал — сделай сам",
     "revert 9109aba, it broke the tokens: count",             # short sha; "tokens:" is not "token:"
-    "/private/tmp/claude-501/-Users-ceozaitsev-repos-njord/def1dd1e-d751-4770-aeb7-77a3f1e9b6df/tasks/a257944d6c38e1807.output",
-    "session 46bca301-b4cf-4e94-8a5f-57b6f50b09ab again",
+    "/private/tmp/claude-501/-Users-me-repos-app-a/00000000-0000-4000-8000-000000000001/tasks/a0000000000000001.output",
+    "session 00000000-0000-4000-8000-000000000004 again",
     "pwd: /Users/me/repos/teyla",
     "the model is claude-opus-5-5-20260601, wrong one",
     "the token expired again, and the secret santa list is wrong",

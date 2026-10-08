@@ -68,8 +68,8 @@ def _globs_of(meta: dict) -> list[str]:
 
 
 def glob_matches(pattern: str, path: str) -> bool:
-    """`startup/combra/gtm/**` matches `startup/combra/gtm/x-outbound/NOTES.md`, and also
-    the directory `startup/combra/gtm` itself — a routine whose context is the folder
+    """`startup/acme/gtm/**` matches `startup/acme/gtm/outbound/NOTES.md`, and also
+    the directory `startup/acme/gtm` itself — a routine whose context is the folder
     must pick up the rules scoped to the folder."""
     pattern, path = pattern.strip().rstrip("/"), str(path).strip().rstrip("/")
     if not pattern:

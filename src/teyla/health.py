@@ -1,7 +1,7 @@
 """Can each harness do work right now? — `teyla harness verify [--live]` and doctor's `health:*` lines.
 
 `teyla harness status` answers "is Teyla wired into it". That is not the question a person has
-when a routine stopped producing anything: on 2026-09-29 doctor said grok and hermes were OK
+when a routine stopped producing anything: doctor once said grok and hermes were OK
 ("wired") while every Grok model answered HTTP 402 "Grok Build usage balance exhausted" and
 Hermes answered "xAI OAuth state is missing access_token". This module reads, per harness and
 without a network call:
@@ -325,7 +325,7 @@ def _hermes_current_auth_error(st: dict, pool: list) -> dict:
     """`last_auth_error` of a provider state, or {} once something later succeeded. Hermes never
     clears the field: after a re-login it still says "relogin required since 09-29" next to a
     fresh `last_refresh`. The newest event decides — a token refresh or a pooled credential that
-    is `ok` after the error's `at` makes it history (2026-10-01, doctor health:hermes)."""
+    is `ok` after the error's `at` makes it history."""
     err = (st or {}).get("last_auth_error") or {}
     at = _parse_ts(err.get("at"))
     if not err or at is None:
@@ -497,7 +497,7 @@ def errors_codex(home: pathlib.Path, since: float) -> dict:
                     msg = pl.get("message") or json.dumps(pl)[:200]
                     errs.add(_err(ts, classify(msg), msg, p.name))
                 elif pl.get("type") == "task_complete" and isinstance(pl.get("error"), dict):
-                    # A turn Codex ended on an error (0.153.4, 2026-09-29): {"message": "You've hit
+                    # A turn Codex ended on an error (Codex 0.153.4): {"message": "You've hit
                     # your usage limit. … try again at 11:20 PM.", "codex_error_info": "usage_limit_exceeded"}
                     er = pl["error"]
                     msg = er.get("message") or str(er.get("codex_error_info") or "error")
@@ -832,7 +832,7 @@ def window_errors(days: int, home: pathlib.Path | None = None) -> list[dict]:
 # --- live ---------------------------------------------------------------------------------------
 
 def policy_marker(policy_path: pathlib.Path | None = None) -> str | None:
-    """The title of §7 of POLICY.md ("Merging" in Ivan's), which a model can only name if the
+    """The title of §7 of POLICY.md ("Merging" in the shipped template), which a model can only name if the
     policy is in its instructions."""
     from . import policy
     p = policy_path or policy.POLICY

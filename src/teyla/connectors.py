@@ -9,8 +9,6 @@ session actually needs: sessions, calls, read/write split, empty/error rate, how
 up between human turns (the "round-trip tail"), which tools it spends its calls on, and how much
 of that is pure rediscovery (list/search/schema/lookup) rather than work.
 
-Case study: docs/case-studies/2026-09-09-corporate-pm-work-report.md §C and its feedback file's
-"Add: a connector view" / "Skill use ≠ Skill-tool invocation".
 """
 from __future__ import annotations
 
@@ -82,7 +80,7 @@ def connector_names(dirs: list[pathlib.Path] | None = None, max_files: int = 60)
 
 
 def label(server: str, names: dict[str, str] | None) -> str:
-    """`Airtable (41dc7c58)` when the registry knows the id, else the id itself."""
+    """`Airtable (aaaaaaaa)` when the registry knows the id, else the id itself."""
     name = (names or {}).get(server)
     if name:
         return f"{name} ({server[:8]})"

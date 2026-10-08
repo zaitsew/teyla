@@ -21,8 +21,7 @@ ACTIVE_GAP_CEILING_S = 30 * 60
 # `entrypoint` on each record says how the session was started. `sdk-cli` is `claude -p` /
 # `--print`: a script or another agent handing Claude one prompt, never a human at the keyboard.
 # (`cli` is the terminal, `claude-desktop` the app; both are interactive.) The Agent SDKs
-# stamp their own `sdk-*` value; only `sdk-cli` and `claude-desktop` were seen on the machine
-# this was written on (233 of 233 transcripts in 2026-09 were `claude-desktop`), so the
+# stamp their own `sdk-*` value; only `sdk-cli` and `claude-desktop` have been observed, so the
 # prefix, not a list, decides — a new SDK must not make its prompts human turns.
 BATCH_ENTRYPOINT_PREFIX = "sdk-"
 
@@ -255,9 +254,9 @@ _SCRIPT_WRITE_RE = re.compile(r"write_text|\.write\(|open\([^)]*,\s*['\"][wa]")
 
 def _touches_governance(name: str, inp: dict) -> bool:
     """True when a tool call writes the global instructions file. Reads (grep, cat) do not count,
-    and neither does a command that only mentions the path: on 2026-10-02 a session that wrote
-    a hook, a PR body and a changelog naming ~/.claude/CLAUDE.md was reported as six edits to it
-    (A10 [high]) though the file was untouched since the ack. The path has to be the target:
+    and neither does a command that only mentions the path: a session that wrote
+    a hook, a PR body and a changelog naming ~/.claude/CLAUDE.md was once reported as six edits
+    to it (A10 [high]) though the file was untouched since the ack. The path has to be the target:
     a redirect into it, the operand of a writing verb, or a literal a script opens and writes."""
     target = os.path.expanduser("~/.claude/CLAUDE.md")
     path = rf"(?:{_GLOBAL_MD}|{re.escape(target)})"

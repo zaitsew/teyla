@@ -28,7 +28,7 @@ evidence required here:
   promoted.
 
 Refusal prints the evidence rather than the verdict. "9 clean, then a failure on
-2026-09-02" tells you what to do next; "refused" does not.
+2026-01-02" tells you what to do next; "refused" does not.
 
 `--force` overrides, and records `forced: true` with the note in
 `~/.teyla/promotions.jsonl`. It exists because there are legitimate reasons to

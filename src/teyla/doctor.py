@@ -95,7 +95,7 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
              f"python {rec.get('python') or py_running} ({method}, update pins {pin})")
     repo = rec.get("repo") or cfg["update"]["repo"]
     # truststore reads the OS keychain, where MDM puts the proxy's root CA; without it (and
-    # without SSL_CERT_FILE) Python 3.13 behind Zscaler fails every HTTPS call.
+    # without SSL_CERT_FILE) Python 3.13 behind a TLS-intercepting proxy fails every HTTPS call.
     tls_fix = update.WORK_EXTRA_HINT if (proxy and not update.truststore_available()
                                           and not update._explicit_bundle()) else None
     if safe:
@@ -142,8 +142,8 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
             out.append(_check("WARN", f"harness:{mod.NAME}", f"{root}: adapter error: {e}"))
 
     # --- can each harness do work right now? -------------------------------------
-    # "wired" is not "working": on 2026-09-29 every Grok call answered 402 and Hermes had lost
-    # its xAI token while the lines above said OK. Version, auth, the newest quota/auth error
+    # "wired" is not "working": a Grok that answers 402 on every call, or a Hermes that
+    # has lost its token, still shows OK in the lines above. Version, auth, the newest quota/auth error
     # the harness itself recorded, and its batch volume (health.py).
     from . import health
     try:
@@ -370,8 +370,7 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
 
 
 def hook_checks(cfg: dict) -> list[dict]:
-    """One INFO line per opt-in hook that is on; nothing for one that is off (the default, and
-    the personal Mac's state, where ~/ops wires its own copies). Context budget without
+    """One INFO line per opt-in hook that is on; nothing for one that is off (the default). Context budget without
     `autoCompactWindow` in ~/.claude/settings.json is a WARN: the hook asks for the handoff at
     240k, but Claude Code then compacts only near the model's full window, so the session keeps
     paying for the re-read it was meant to stop. So is a first threshold at or past the point the
@@ -407,7 +406,7 @@ def hook_checks(cfg: dict) -> list[dict]:
         else:
             window, at, is_set = config.compaction()
             if is_set and first >= at:
-                # 240k/30k under ~300k: two reminders before the compaction, as on the personal Mac
+                # 240k/30k under ~300k: two reminders before the compaction
                 fit = max(at - 60000, at * 4 // 5)
                 out.append(_check("WARN", "hooks:context-budget-late",
                                   f"the handoff is asked for at {first // 1000}k, but autoCompactWindow {window} "

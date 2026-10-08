@@ -27,44 +27,44 @@ def _write(path, lines):
 
 # --- the matcher ------------------------------------------------------------------------------
 
-# Shapes of real 2026-09 corrections, reworded.
+# Typical shapes of a person pushing back on finished work.
 CORRECTIONS = [
-    "You use too much GitHub actions",                                          # missed by 0.11: no keyword
-    "Can you make changes and don’t use GitHub actions at all, or only when necessary?",  # missed: curly ’
+    "You use too many retries in this script",                                  # missed by 0.11: no keyword
+    "Can you rewrite it and don’t use the cache at all, or only when necessary?",  # missed: curly ’
     "No, I mean the folder you created yesterday",
-    "You are wrong - I sent 3 comments, not 2",
+    "You are wrong - there are 3 files, not 2",
     "Something wrong with the formatting",
-    "Why did you push one commit when you said there were 14?",
+    "Why did you push one commit when you said there were 5?",
     "Where is the video? I haven't asked you to change it",
     "I don't like the title, too long",
     "never use npm in this project, always pnpm",
-    "Pages /today and /learned do not work for me",
+    "Pages /home and /about do not work for me",
     "For the app, I again got a link, not a code",
     "You still didn't understand me. Go 2 steps back",
     "revert that last change",
-    "не так, я же говорил — через конфиг",
+    "не так, я же писал — через конфиг",
     "Опять ничего не понял",
-    "Я думаю ты неправильно уловил суть",
-    "Зачем ты это удалил?",
-    "Сделай сам или доведи до шага, где нужно моё действие",
-    "Это не то, что мне нужно",
-    "Ты зря остановил discovery",
+    "Мне кажется, ты неправильно понял задачу",
+    "Зачем ты удалил этот файл?",
+    "Сделай сам или доведи до шага, где нужна моя помощь",
+    "Это совсем не то, что нужно",
+    "Ты зря остановил тесты",
 ]
 
 # Instructions, questions and reports that 0.11 counted and a person would not call a correction.
 NOT_CORRECTIONS = [
-    "Don't forget to deploy everything to github",      # an instruction, not pushback (precision over recall)
-    "I don't mind agencies as additional hypotheses",
-    "I set a hard spend limit, don't worry",
-    "I don't understand what 'preference Elo' means",
-    "Any tools I can use instead of building my own?",
-    "Do we actually need to store rules in one file?",
-    "So run again with OpenAI and propose the final structure",
+    "Don't forget to deploy everything to staging",      # an instruction, not pushback (precision over recall)
+    "I don't mind extra options as hypotheses",
+    "I set a hard limit, don't worry",
+    "I don't understand what 'cache warm-up' means",
+    "Is there a library I can use instead of writing my own?",
+    "Do we actually need to keep config in one file?",
+    "So run it again with the new flag and propose the final structure",
     "Keep going non-stop for the next 3 hours",
     "Do you still have p2/p3 tasks unresolved?",
-    "Зачем мне нужен gbrain?",
-    "Снова скорее всего поменялся IP из-за отключения электричества",
-    "Потраченные токены и время не зря?",
+    "Зачем мне нужен этот кэш?",
+    "Снова, скорее всего, поменялся адрес сервера",
+    "Потраченное время и деньги не зря?",
     "Ты не мог бы проверить логи?",
     "Try again",
     "add a --json flag to the sessions command",

@@ -4,7 +4,7 @@
     ~/.teyla/corrections/misc.jsonl           prompts typed outside any git repo
 
 A correction used to be appended to `<cwd>/.teyla/corrections.jsonl`, inside the repo, with
-the umask's 0644. The security review of 2026-09-29 found what that costs: work repos do not
+the umask's 0644. A security review found what that costs: work repos do not
 ignore `.teyla/`, so an agent's `git add -A` commits whatever was pasted into a prompt —
 500 raw characters of it, keys included — into a repo other people clone. The store is
 therefore outside every repo by default, every write goes through `scrub()` first, and the
@@ -18,8 +18,7 @@ not a file you want committed by an agent.
 The repo key is the main checkout's directory name plus eight hex of a hash of its path:
 `teyla-3f9c2a1b`. Worktrees resolve to their main checkout (the `.git` file's `commondir`),
 so a correction typed in `~/.worktrees/teyla/<branch>` lands with the rest of the repo's and
-does not vanish with the worktree; 13 worktrees under ~/.worktrees on the machine this was
-written on would otherwise have been 13 separate stores. The key is computed from the
+does not vanish with the worktree; a dozen worktrees would otherwise be a dozen separate stores. The key is computed from the
 filesystem alone — no `git` subprocess: on a Mac without the Command Line Tools, /usr/bin/git
 is a stub that pops an install dialog, and the capture hook runs on every prompt.
 

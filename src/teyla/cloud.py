@@ -5,7 +5,7 @@ a repo, and what the cloud sessions that already ran left behind.
     teyla cloud inbox [--days N] [--json]      cloud branches with no PR + open PRs labelled needs-mac
     teyla cloud prep <repo> [--dry] [--allow-public] [--fix-gitignore]   write what is missing (cloud_prep.py)
 
-Why this exists (measured 2026-09-29): all three cloud sessions in September left their work
+Why this exists: cloud sessions tend to leave their work
 on a `claude/*` branch — unbuilt, no PR, unmerged — and a local session had to find, build,
 review and merge it the next morning. A cloud VM clones the repo and nothing else: no user
 CLAUDE.md, no POLICY.md, no user skills, plugins, hooks or memory, no codex/grok/Xcode. It

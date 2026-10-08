@@ -483,14 +483,14 @@ def evaluate_all(paths: list[str] | None = None) -> list[dict]:
 
 # One line per product, kept where the plugin's session-start hook can read it without
 # running anything: ~/.teyla/routines/<product>.line. "Did it run?" then arrives in the
-# model's context before the human asks — the measured alternative was four sessions in
-# one repo that answered that question by reading code and git log.
+# model's context before the human asks, instead of a session answering it by reading code
+# and git log.
 LINES_DIR = pathlib.Path(os.path.expanduser("~/.teyla/routines"))
 
 
 # A BROKEN or UNTESTED check left alone this long gets its one-command confirmation named in
-# the product line. Measured 2026-09-29: 26 of 30 checks untested, 2 broken for 19 days, while
-# the line said "N untested" every session — a count names no next step.
+# the product line. A line that only says "N untested" every
+# session goes unread: a count names no next step.
 STALE_CHECK_DAYS = 14
 
 

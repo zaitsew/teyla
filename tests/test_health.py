@@ -44,7 +44,7 @@ def home(tmp_path, monkeypatch):
 @pytest.mark.parametrize("text,status,kind", [
     ("API error (status 402 Payment Required): Grok Build usage balance exhausted", 402, "quota"),
     ("Grok Build usage balance exhausted", None, "quota"),
-    ("You've hit your session limit · resets 3am (Europe/Madrid)", None, "quota"),
+    ("You've hit your session limit · resets 3am (Europe/London)", None, "quota"),
     ("xAI OAuth state is missing access_token. Re-authenticate with `hermes model`.", None, "auth"),
     ('xAI token refresh failed. Response: {"error":"invalid_grant"}', None, "auth"),
     ("unexpected status 401 Unauthorized: Missing bearer", None, "auth"),
@@ -239,7 +239,7 @@ def test_claude_api_error_records(home):
     p = home / ".claude" / "projects" / "-Users-me-ops" / "s.jsonl"
     rows = [{"type": "assistant", "timestamp": _iso(NOW - dt.timedelta(hours=3)), "message": {"content": [{"type": "text", "text": "done"}]}},
             {"type": "assistant", "timestamp": _iso(NOW - dt.timedelta(hours=1)), "isApiErrorMessage": True, "error": "rate_limit",
-             "message": {"content": [{"type": "text", "text": "You've hit your session limit · resets 3am (Europe/Madrid)"}]}}]
+             "message": {"content": [{"type": "text", "text": "You've hit your session limit · resets 3am (Europe/London)"}]}}]
     p.write_text("\n".join(json.dumps(r, separators=(",", ":")) for r in rows) + "\n")
     e = health.errors_claude(home / ".claude", time.time() - 86400)
     assert e["error"]["kind"] == "quota" and e["last_ok"] < e["error"]["ts"]

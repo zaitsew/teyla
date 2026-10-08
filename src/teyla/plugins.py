@@ -1,7 +1,6 @@
 """`teyla plugins` — inventory and quality pass over installed Claude Code plugins.
 
-Born from doing this by hand: docs/case-studies/2026-09-09-corporate-pm-work-report.md
-§A is a human running the skill / rule / fact test (docs/WIKI.md's "three-objects rule",
+Born from doing this by hand: a human running the skill / rule / fact test (docs/WIKI.md's "three-objects rule",
 docs/MANUAL.md §1) over someone else's plugin, one skill at a time, with a script written
 for the occasion. This module is that script, kept.
 

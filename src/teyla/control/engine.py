@@ -73,10 +73,10 @@ def resolve(ref: str, *, repo=None) -> Routine:
 def local_day(routine: Routine, when=None) -> str:
     """The calendar day *the routine's trigger means*.
 
-    A routine that fires at 07:00 Europe/Madrid rolls over at midnight in Madrid, not
+    A routine that fires at 07:00 Europe/London rolls over at midnight in London, not
     at midnight UTC. Keying on the UTC date meant the 07:00 run and a re-run at 01:30
-    the next Madrid morning shared a key — and, in the other direction, that a routine
-    firing at 23:30 Madrid got a fresh key an hour later. Falls back to the machine's
+    the next London morning shared a key — and, in the other direction, that a routine
+    firing at 23:30 London got a fresh key an hour later. Falls back to the machine's
     local zone when the manifest declares none, and to UTC if even that is unreadable."""
     when = when or S.now()
     name = getattr(routine.trigger, "tz", None)

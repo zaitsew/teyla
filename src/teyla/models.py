@@ -233,8 +233,8 @@ def _split_ladder_cell(cell: str) -> list[str]:
     design)' or 'GPT-6.1 Sol (`gpt-6.1-sol`) — the default: Codex sessions, reviews'. Commas
     inside parentheses or backticks do not split, and everything after ' — ' stays with the
     entry before it, so each annotation travels with its model (and survives --write-policy);
-    `_model_name` strips it again for matching. Until 2026-10-04 those commas split the
-    annotations into entries of their own, and A11 reported nine LADDER-UNKNOWN for a ladder
+    `_model_name` strips it again for matching. Without that, those commas split the
+    annotations into entries of their own, and A11 reported LADDER-UNKNOWN for a ladder
     whose every model was real."""
     head, dash, tail = cell.partition(" — ")
     parts, depth, tick, cur = [], 0, False, ""

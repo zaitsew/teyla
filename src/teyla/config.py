@@ -25,8 +25,8 @@
     [corrections]
     store = "home"                 "home": ~/.teyla/corrections/<repo-key>.jsonl (default);
                                    "repo": <repo>/.teyla/corrections.jsonl, the pre-0.12 place
-    [hooks]                        opt-in plugin hooks; off by default because the personal Mac
-                                   already runs ~/ops copies of both, and two would double every message
+    [hooks]                        opt-in plugin hooks; off by default because a machine that
+                                   already runs its own copies of both would double every message
     context_budget = false         at 240k tokens of context (then every 30k) the model writes a handoff
                                    to ~/.teyla/handoff/; it is put back after Claude Code compacts
                                    (~300k with "autoCompactWindow": 335000 in ~/.claude/settings.json)
@@ -75,17 +75,17 @@ DEFAULTS = {
     "products": {"repos": []},
     # `teyla digest --write` (the weekly routine) posts a macOS notification with its headline.
     "digest": {"notify": True},
-    # The plugin's opt-in hooks (plugin/hooks/context-budget.sh, land-check.sh). Off by default: on
-    # the personal Mac the ~/ops versions are already wired, and a second copy doubles each note.
+    # The plugin's opt-in hooks (plugin/hooks/context-budget.sh, land-check.sh). Off by default: where
+    # the same hooks are already wired some other way, a second copy doubles each note.
     # The hooks read these keys from the file with awk/tomllib, not through this module.
     "hooks": {"context_budget": False, "context_budget_first": 240000, "context_budget_step": 30000,
               "land_check": False},
 }
 
 # Claude Code compacts at autoCompactWindow minus the output reserve minus 13k: about 35k under
-# the window. 335000 (compaction at ~300k) is the personal Mac's value since 2026-10-04: replaying
-# 1-3 Oct, it re-read ~10% less context than 400000 (~365k) for ~50 more compactions in 3 days;
-# 250000 compacted mid-task too often. The context-budget hook's 240k/30k reminders sit under it.
+# the window. 335000 (compaction at ~300k) is the recommended value: a session that re-reads a long context
+# every turn costs several times one that stays short, while a window much smaller than this
+# compacts mid-task too often. The context-budget hook's 240k/30k reminders sit under it.
 AUTOCOMPACT_RECOMMENDED = 335000
 AUTOCOMPACT_MARGIN = 35000
 
@@ -126,9 +126,8 @@ def parse_error(p: pathlib.Path | None = None) -> str | None:
 
 def private_dir(d: pathlib.Path) -> pathlib.Path:
     """mkdir -p `d` at 0700, and tighten it if it already exists with group/other bits.
-    ~/.teyla holds prompt excerpts, the update record (paths, proxy) and doctor output; on
-    the machine this was written on it was 0755 with every file 0644 — readable by any
-    other account on the Mac. Same user, same launchd agents: nothing Teyla runs needs more."""
+    ~/.teyla holds prompt excerpts, the update record (paths, proxy) and doctor output; the
+    default was 0755 with every file 0644 — readable by any other account on the Mac. Same user, same launchd agents: nothing Teyla runs needs more."""
     d.mkdir(parents=True, exist_ok=True, mode=0o700)
     try:
         if d.stat().st_mode & 0o077:

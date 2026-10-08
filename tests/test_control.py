@@ -34,7 +34,7 @@ name = "demo"
 name = "digest"
 gate = "A"
 idempotency = "date"
-trigger = { type = "clock", at = "07:00", tz = "Europe/Madrid", days = "mon-fri" }
+trigger = { type = "clock", at = "07:00", tz = "Europe/London", days = "mon-fri" }
 step = { kind = "command", run = "echo DRAFT-LINE-ONE; echo more" }
 act  = { kind = "command", run = "echo ACTED > acted.txt; echo 'rm acted.txt' > \\"$TEYLA_UNDO\\"; echo done" }
 capabilities = ["fs.write:runs/**", "fs.write:acted.txt", "shell:git push", "shell:echo"]
@@ -1384,7 +1384,7 @@ def test_p2_11_context_files_expands_a_glob(tmp_path, monkeypatch):
     assert [rel for rel, _ in engine.context_files(r)] == ["notes/a.md", "notes/deep/b.md"]
 
 
-# P2-12. The date key was computed in UTC, so a routine triggering at 07:00 Madrid
+# P2-12. The date key was computed in UTC, so a routine triggering at 07:00 London
 # rolled over at midnight in the wrong city.
 
 def test_p2_12_the_date_key_uses_the_trigger_timezone(tmp_path, monkeypatch):
@@ -1392,13 +1392,13 @@ def test_p2_12_the_date_key_uses_the_trigger_timezone(tmp_path, monkeypatch):
     repos = tmp_path / "repos"; repo = repos / "tz"; repo.mkdir(parents=True)
     (repo / "teyla.toml").write_text(
         '[product]\nname="tz"\n[[routine]]\nname="r"\n'
-        'trigger={type="clock",at="08:00",tz="Asia/Tokyo"}\nstep={kind="command",run="true"}\n'
+        'trigger={type="clock",at="08:00",tz="Europe/London"}\nstep={kind="command",run="true"}\n'
         'capabilities=["shell:true"]\n'
     )
     monkeypatch.setenv("TEYLA_REPO_ROOTS", str(repos))
     r = load_manifest(repo / "teyla.toml")[0]
 
-    when = dt.datetime(2026, 9, 10, 23, 30, tzinfo=dt.timezone.utc)   # already the 11th in Tokyo
+    when = dt.datetime(2026, 9, 10, 23, 30, tzinfo=dt.timezone.utc)   # already the 11th in London
     assert engine.local_day(r, when) == "2026-09-11"
     assert engine.idempotency_key(r, run_id="x", when=when) == "date:tz:r:2026-09-11"
 

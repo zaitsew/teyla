@@ -1,10 +1,9 @@
 """What gets read: the session-start banner shows only what changed, and a weekly digest
 names the three things worth doing.
 
-Measured 2026-09-01..29: the weekly reports (monitor.md, routines.md, products.md,
-models.md under the ops runs folder) had no reader — 4 written, 0 opened by any session.
-The session-start line "teyla: 1 fix(es), 2 warning(s) — run `teyla doctor`" showed on 44
-of 44 session starts since 09-16 with the same items for 13 days, so it stopped being read.
+The weekly reports (monitor.md, routines.md, products.md, models.md under the ops runs folder)
+had no reader: nothing opened them. And a session-start line such as "teyla: 1 fix(es),
+2 warning(s) — run `teyla doctor`" that repeats the same items for days stops being read.
 
 **Banner.** `teyla doctor` and `teyla routines` write `~/.teyla/banner.items`, one
 `key<TAB>text` line per thing that needs a human: doctor WARN/FIX rows (key = level|name, so
@@ -13,7 +12,7 @@ product, and reminders — those only on the day they fall due, the day after, a
 week (the key carries the overdue week). The plugin's session-start hook compares the keys
 with `~/.teyla/banner.seen` (the keys it showed last time) in one awk call, prints
 
-    teyla: new — frank routine gate NOT LOADED; 2 known (teyla doctor)
+    teyla: new — app-a routine gate NOT LOADED; 2 known (teyla doctor)
 
 and nothing at all when nothing is new, then records the current keys as seen. The weekly
 digest is where known items come back.

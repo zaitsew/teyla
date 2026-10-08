@@ -2,8 +2,7 @@
 
     ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb
 
-Table `cursorDiskKV` (key, value) holds the sessions. Inspected on this machine, Cursor 3.19.7,
-2026-09-14:
+Table `cursorDiskKV` (key, value) holds the sessions. As inspected in Cursor 3.19.7:
 
   composerData:<composerId>        one JSON per session ("composer"): name, createdAt and
                                    lastUpdatedAt (epoch ms), unifiedMode ("agent"/"ask"),

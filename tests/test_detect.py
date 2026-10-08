@@ -23,9 +23,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 def test_markers_and_wording_declare_detectors():
     text = "# P\n<!-- teyla:detect no-actions -->\n<!-- teyla:detect nonsense-id -->\n"
     assert detect.declared(text) == (["no-actions"], ["nonsense-id"])
-    # Ivan's §10 heading and the template's §4 wording switch detectors on without a marker.
-    ivan = "## 10. GitHub Actions are off — the laptop is the gate\n\n## 4. Ask about product decisions, not about permission\n"
-    assert detect.declared(ivan) == (["ask-permission", "no-actions"], [])
+    # A policy's §10 heading and the template's §4 wording switch detectors on without a marker.
+    text = "## 10. GitHub Actions are off — the laptop is the gate\n\n## 4. Ask about product decisions, not about permission\n"
+    assert detect.declared(text) == (["ask-permission", "no-actions"], [])
     assert detect.declared("# A policy without either rule\n## 3. Use the tool ladder\n") == ([], [])
 
 
@@ -165,11 +165,11 @@ def test_enrich_scans_only_when_declared(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("ending,reply", [
     ("All four PRs are green and pushed.\n\nWant me to push them?", "yes, go ahead"),
-    ("Первое вернёт половину прогона, второе снимет четверть отказов. Делать?", "да, давай!"),
+    ("Первое ускорит сборку, второе уберёт половину предупреждений. Делать?", "да, давай!"),
     ("The plan is in PLAN.md.\n\nProceed?", "go"),
     ("Tests pass locally.\n\nShould I open the PR now?", "Yes"),
     ("I found the leak in the cache layer. Let me know if you want me to fix it.", "yes please"),
-    ("Хочешь — соберу такой прогон?", "Да"),
+    ("Хочешь — соберу такой отчёт?", "Да"),
 ])
 def test_permission_asks_answered_with_a_bare_yes_count(ending, reply):
     assert detect.is_permission_ask(ending, reply)
@@ -177,9 +177,9 @@ def test_permission_asks_answered_with_a_bare_yes_count(ending, reply):
 
 @pytest.mark.parametrize("ending,reply", [
     # a real decision: alternatives, a choice, a menu
-    ("Want me to run that, or build a /grok skill mirroring the /codex one?", "yes"),
+    ("Want me to run that, or build a /lint skill mirroring the /format one?", "yes"),
     ("Which do you want? If A, I'll regenerate all 8.", "yes"),
-    ("Делать её сейчас или сначала закончить снос gbrain?", "да"),
+    ("Делать её сейчас или сначала закончить миграцию базы?", "да"),
     # something the policy reserves for the human
     ("Want me to merge it?", "yes"),
     ("Should I deploy to production?", "yes"),
@@ -187,15 +187,15 @@ def test_permission_asks_answered_with_a_bare_yes_count(ending, reply):
     ("Should I add them to ~/.agents/POLICY.md?", "yes"),
     # the human did not just say yes
     ("Want me to push them?", "Why did you change the lockfile?"),
-    ("Want me to run Grok on the same prompt now as the third vote?", "Okay, skip grok. So what is your top title"),
-    ("Хотите, поправлю конфиг сам?", "Давай переавторизуемся с Grok"),
+    ("Want me to run the linter on the same files now as a second check?", "Okay, skip the linter. So what is your top pick"),
+    ("Хотите, поправлю конфиг сам?", "Давай переустановим зависимости"),
     ("Want me to push them?", None),
     ("Want me to push them?", "Yes, but don't push until CI is green"),
     ("Want me to push them?", "yes, push them and then open the PR for the other repo"),
     ("Делать?", "да, но сначала покажи дифф"),
     ("Want me to push them?", "please"),
     # no question at the end of the turn
-    ("Want me to push them?\n\nPushed anyway; PR #12 is open.", "yes"),
+    ("Want me to push them?\n\nPushed anyway; PR 12 is open.", "yes"),
     ("Done. All tests pass.", "yes"),
 ])
 def test_decisions_blockers_and_real_answers_do_not_count(ending, reply):

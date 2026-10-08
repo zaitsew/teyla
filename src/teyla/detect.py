@@ -1,11 +1,9 @@
 """Policy detectors: the rules in POLICY.md a machine can check, checked.
 
-A rule written down and never measured is followed until the first busy week. In September
-2026 the no-Actions rule (POLICY §10) was broken three times by agents — workflow files
-created in `accounts` twice on 09-11 and in `loco` on 09-20 — and nothing noticed until the
-Actions quota hit 100% on 09-23; afterwards nine checkouts under ~/repos still declared
-push / pull_request / schedule triggers. The rule was in every harness's context the whole
-time. What was missing was a detector.
+A rule written down and never measured is followed until the first busy week. A no-Actions
+rule can be broken by agents again and again — workflow files created in one repo after
+another — and nothing notices until the Actions quota runs out, with the rule in every
+harness's context the whole time. What is missing is a detector.
 
 Which detectors run is declared by the policy itself, so a user whose POLICY.md does not
 carry a rule is never nagged about it:
@@ -23,7 +21,7 @@ Built-in detectors (DETECTORS):
   `on:` names push, pull_request, pull_request_target or schedule. `teyla doctor` WARNs
   per repo with the file and the fix; `teyla monitor`/`advise` raise A16.
 - `ask-permission` — turns that ended with the agent asking permission to do the obvious
-  next step ("Want me to push them?") and the human answering only "yes". Measured from
+  next step ("Want me to push them?") and the human answering only "yes". Read from
   Claude Code and Codex transcripts; `teyla monitor`/`advise` raise A15.
 """
 from __future__ import annotations
@@ -37,8 +35,8 @@ from . import config
 
 MARKER_RE = re.compile(r"<!--\s*teyla:detect\s+([A-Za-z0-9][A-Za-z0-9_-]*)(?![\w-])[^>]*-->")
 
-# Wording that switches a detector on without a marker: the heading of Ivan's §10 ("GitHub
-# Actions are off — the laptop is the gate") and the template's §4 ("Ask about product
+# Wording that switches a detector on without a marker: the heading of a policy's no-Actions
+# section ("GitHub Actions are off — the laptop is the gate") and the template's §4 ("Ask about product
 # decisions, not about permission" / "Never ask "shall I proceed?"").
 IMPLICIT = {
     "no-actions": re.compile(r"^#{1,6}\s.*\bGitHub Actions\b.*\b(off|never|not|no)\b", re.I | re.M),
@@ -46,7 +44,7 @@ IMPLICIT = {
 }
 
 DETECTORS = {
-    "no-actions": dict(rule="GitHub Actions only on workflow_dispatch (Ivan's POLICY §10)",
+    "no-actions": dict(rule="GitHub Actions only on workflow_dispatch (POLICY §10)",
                        reported="teyla doctor (actions:<repo>), advice A16"),
     "ask-permission": dict(rule="ask about product decisions, never for permission to proceed (POLICY §4)",
                            reported="advice A15"),
@@ -310,8 +308,7 @@ def enrich(m: dict, cfg: dict | None = None, text: str | None = None) -> dict:
 
 # --- ask-permission: turns that ended by asking to do the obvious next step ----------------
 #
-# Measured on this machine's last 30 days of Claude Code transcripts (2026-09): 403 turns
-# ended with a question before the next human turn. Most were real decisions — "A or B?",
+# Many turns end with a question before the next human turn. Most are real decisions — "A or B?",
 # "which do you want?", "paste the key or skip?" — and a detector that counted every trailing
 # question would be noise. The shape §4 forbids is narrower and has a tell: the agent asks
 # permission for one next step ("Want me to push them?", "Делать?", "Go?") and the human's
@@ -341,7 +338,7 @@ BLOCKER_RE = re.compile(
 # The whole reply must be a yes — words from this list and punctuation, nothing else.
 # "Yes, but don't push until CI is green" is a decision with a condition, not a nudge; a
 # prefix match counted it (Codex review). "ok", "go" and "давай" open a redirect as
-# often as a yes ("Okay, skip grok…", "Давай нагенерим больше вариантов" — both measured),
+# often as a yes ("Okay, skip the tests…", "Давай сначала проверим" — both seen),
 # so a reply is also rejected when anything but these words follows them.
 AFFIRMATIVE_WORDS = frozenset(
     "yes yep yeah yup sure ok okay k proceed go ahead do it please agreed agree lgtm ship run continue sounds good "

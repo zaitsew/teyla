@@ -75,9 +75,9 @@ def mark_seen(findings: list[dict]) -> None:
 def _a10(gov: list[dict]) -> list[dict]:
     """Sessions that wrote ~/.claude/CLAUDE.md, judged against `teyla policy ack`.
 
-    Weeks 2026-09-15, 09-21 and 09-28 each opened with an A10 [high] for edits the owner had
-    asked for — ack had never been run, so every edit in the window counted, every week, and
-    the finding stopped being read. Now:
+    Before the ack was taken into account, every week opened with an A10 [high] for edits the
+    owner had asked for: ack had never been run, so every edit in the window counted, and the
+    finding stopped being read. Now:
       - acknowledged, file unchanged since: only edits after the ack day count;
       - file changed since the ack: [high] for the edits after the ack day — those are the
         unacknowledged ones — and the evidence says how many of the window's edits they are

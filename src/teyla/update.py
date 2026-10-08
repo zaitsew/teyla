@@ -494,7 +494,7 @@ def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | No
     rc, out = _run(cmd)
     if rc != 0 and method == "uv-tool" and _uv_cache_corrupt(out):
         # uv's git checkout of the repo lost objects ("unable to read sha1 file"); seen
-        # 2026-09-15 on the 0.9.3 → 0.10.0 update. Clearing the cache entry and retrying
+        # on a version update. Clearing the cache entry and retrying
         # once is the fix; nothing else is.
         lines.append("uv's cached checkout of teyla is corrupt — `uv cache clean teyla`, then retrying")
         _run([cmd[0], "cache", "clean", "teyla"])

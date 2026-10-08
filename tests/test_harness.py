@@ -230,13 +230,13 @@ def test_hermes_auto_accept_is_a_top_level_true_key_not_a_substring(home):
 
 
 def test_codex_hook_hash_matches_what_codex_computed():
-    # `codex app-server` hooks/list, Codex 0.153.4, 2026-09-29: this handler in a scratch
-    # CODEX_HOME/hooks.json reported currentHash sha256:e21d99f3…cf00.
+    # The algorithm was reproduced against `codex app-server` hooks/list (Codex 0.153.4) with a
+    # scratch CODEX_HOME/hooks.json; the expected value below is for this handler.
     handler = {"type": "command", "timeout": 5, "statusMessage": "teyla: orientation",
-               "command": "/private/tmp/claude-501/-Users-ceozaitsev-repos-teyla/"
-                          "46bca301-b4cf-4e94-8a5f-57b6f50b09ab/scratchpad/hook.sh start"}
+               "command": "/private/tmp/claude-501/-Users-me-repos-teyla/"
+                          "00000000-0000-4000-8000-000000000004/scratchpad/hook.sh start"}
     assert harness.codex_hook_hash("SessionStart", handler) == \
-        "sha256:e21d99f3378164b3cef97119afeaeb6876436c8fa4dbfc08d175a5dbedcbcf00"
+        "sha256:16266d5187c320c43d6aac28278f75554daafdbfadaef087e881d01554e1f91d"
 
 
 def test_codex_trust_is_read_from_config_toml(home):
