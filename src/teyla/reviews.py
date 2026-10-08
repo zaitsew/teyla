@@ -42,15 +42,22 @@ from typing import Callable
 
 from . import config
 
-MODES = {"branch", "commit", "diff"}
+MODES = {"branch", "commit", "diff", "diff-file"}   # "branch:<paths>" counts as branch
+UNMATCHABLE = {"dirty"}                                # a review of uncommitted work names no commit
 SKIP = "skip"
 DEFAULT_LEDGER = "~/.cache/review-ledger.tsv"
 DEFAULT_MIN_LINES = 7
 SUMMARY_NAME = "reviews.json"
 SUMMARY_MAX_AGE_DAYS = 10
-PR_FIELDS = "number,title,mergedAt,additions,deletions,files,commits,url,mergeCommit,headRefOid"
 GH_LIMIT = 100
+# One search query per repo. `gh pr list --json commits` also fetches each commit's authors, and
+# 100 PRs x 100 commits x 100 authors is over GitHub's 500,000-node limit: every repo failed.
+# This asks only for the commit ids: 100 x (100 + 100) nodes.
+PR_QUERY = ("query($q:String!){search(query:$q,type:ISSUE,first:%d){nodes{... on PullRequest{"
+            "number title url mergedAt additions deletions headRefOid mergeCommit{oid} "
+            "files(first:100){nodes{path}} commits(first:100){nodes{commit{oid}}}}}}}" % GH_LIMIT)
 _SHA = re.compile(r"^[0-9a-f]{7,64}$")
+_PR_URL = re.compile(r"github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)")
 _PR_REF = re.compile(r"(?:\bPR\s*#?|#|/pull/)(\d+)\b", re.I)
 
 Runner = Callable[[list[str]], "tuple[int, str, str]"]
@@ -88,10 +95,18 @@ def parse_ledger(text: str) -> dict:
         if len(f) < 4:
             unparsed += 1
             continue
-        when, repo, sha, mode = f[0], f[1].lower(), f[2].lower(), f[3].lower()
+        when, repo, sha = f[0], f[1].lower(), f[2].lower()
+        mode, _, detail = f[3].partition(":")       # codex-review writes "branch:<paths>", review-gate "skip:<why>"
+        mode = mode.lower()
+        pr = None
+        m = _PR_URL.search(repo)                    # review-gate names the PR by its URL: owner/name
+        if m:
+            repo, pr = m.group(1).lower(), int(m.group(2))
         if mode == SKIP:
-            skips.append({"time": when, "repo": repo, "sha": sha if _SHA.match(sha) else "",
-                          "reason": f[-1] if len(f) > 4 else "", "seq": seq})
+            skips.append({"time": when, "repo": repo, "sha": sha if _SHA.match(sha) else "", "pr": pr,
+                          "reason": detail.strip() or (f[-1] if len(f) > 4 else ""), "seq": seq})
+            continue
+        if mode in UNMATCHABLE or sha == "-":       # reviewed, but no commit to match a PR against
             continue
         if mode not in MODES or len(f) < 6 or not _SHA.match(sha):
             unparsed += 1
@@ -155,19 +170,23 @@ def classify(pr: dict, repo_names: set[str], ledger: dict, threshold: int) -> di
             if _same_sha(r["sha"], s):
                 hits.append((pos, r["seq"], r))
                 break
-    if hits:
-        newest = max(hits, key=lambda h: (h[0], h[1]))[2]
-        return {"state": "open_p1" if newest["p1"] > 0 else "reviewed", "p1": newest["p1"],
-                "reviewer": newest["reviewer"]}
-    if is_exempt(pr, threshold):
-        return {"state": "exempt"}
+    newest = max(hits, key=lambda h: (h[0], h[1]))[2] if hits else None
+    if newest and newest["p1"] == 0:
+        return {"state": "reviewed", "p1": 0, "reviewer": newest["reviewer"]}
     number = pr.get("number")
-    for s in ledger["skips"]:
+    for s in ledger["skips"]:                       # a logged skip outranks an open P1: it says why
         if s["repo"] not in repo_names:
             continue
-        if (s["sha"] and any(_same_sha(s["sha"], c) for c in shas)) or \
-                (number is not None and any(int(m) == number for m in _PR_REF.findall(s["reason"]))):
+        if s.get("pr") is not None:                 # an explicit PR target: its reason may name others
+            hit = s["pr"] == number
+        else:
+            hit = number is not None and any(int(m) == number for m in _PR_REF.findall(s["reason"]))
+        if hit or (s["sha"] and any(_same_sha(s["sha"], c) for c in shas)):
             return {"state": "skipped", "reason": s["reason"]}
+    if newest:
+        return {"state": "open_p1", "p1": newest["p1"], "reviewer": newest["reviewer"]}
+    if is_exempt(pr, threshold):
+        return {"state": "exempt"}
     return {"state": "unreviewed"}
 
 
@@ -183,8 +202,8 @@ def _gh_runner(argv: list[str]) -> tuple[int, str, str]:
 
 def merged_prs(slug: str, since: _dt.date, runner: Runner) -> tuple[list[dict] | None, str]:
     """(PRs, note). None plus a reason when gh failed; the note is also set when the list was cut."""
-    argv = ["gh", "pr", "list", "--repo", slug, "--state", "merged", "--search", f"merged:>={since.isoformat()}",
-            "--json", PR_FIELDS, "--limit", str(GH_LIMIT)]
+    argv = ["gh", "api", "graphql", "-f", f"query={PR_QUERY}",
+            "-f", f"q=repo:{slug} is:pr is:merged merged:>={since.isoformat()} sort:updated-desc"]
     try:
         rc, out, err = runner(argv)
     except (OSError, subprocess.SubprocessError) as e:
@@ -193,14 +212,23 @@ def merged_prs(slug: str, since: _dt.date, runner: Runner) -> tuple[list[dict] |
         line = (err or out).strip().splitlines()
         return None, "gh failed" + (f": {line[0][:100]}" if line else f" (exit {rc})")
     try:
-        rows = json.loads(out or "[]")
-    except ValueError:
-        return None, "gh returned something that is not JSON"
-    if not isinstance(rows, list):
+        nodes = json.loads(out or "{}")["data"]["search"]["nodes"]
+    except (ValueError, KeyError, TypeError):
+        return None, "gh returned something that is not a search result"
+    if not isinstance(nodes, list):
         return None, "gh returned something that is not a list"
-    rows = [r for r in rows if isinstance(r, dict)]
+    rows = [_flat(n) for n in nodes if isinstance(n, dict) and n.get("number") is not None]
     note = f"only the newest {GH_LIMIT} merged PRs were listed" if len(rows) >= GH_LIMIT else ""
     return rows, note
+
+
+def _flat(node: dict) -> dict:
+    """A search node in the shape `gh pr list --json` gives: commits [{oid}], files [{path}]."""
+    def items(conn):
+        return (conn or {}).get("nodes") or [] if isinstance(conn, dict) else []
+    return {**node,
+            "commits": [{"oid": (c.get("commit") or {}).get("oid")} for c in items(node.get("commits")) if isinstance(c, dict)],
+            "files": [f for f in items(node.get("files")) if isinstance(f, dict)]}
 
 
 def _repos(paths: list[str] | None, cfg: dict) -> list[pathlib.Path]:
@@ -259,7 +287,7 @@ def scan(paths: list[str] | None = None, days: int = 7, cfg: dict | None = None,
             continue
         if note:
             rep["notes"].append(f"{slug}: {note}")
-        names = {repo.name.lower(), slug.split("/", 1)[1].lower()}
+        names = {repo.name.lower(), slug.split("/", 1)[1].lower(), slug.lower()}
         row = {"repo": repo.name, "slug": slug, "merged": 0, **{k: 0 for k in STATES}, "prs": []}
         for pr in prs:
             merged_at = str(pr.get("mergedAt") or "")
