@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **`teyla reviews`.** The review debt: merged PRs of the last N days against the review ledger
+  (`review.ledger`), counted per repo as reviewed, merged with an open P1, skipped, exempt or
+  unreviewed. The weekly routine files `reviews --quiet` and the digest carries the totals line
+  while the debt is above zero. Re-run `teyla routine install` to pick up the new weekly line.
+
 ## 0.18.0 — 2026-10-08 — shareable, and the chores that were scripts
 
 - **The repository is meant to be shared.** Docs, prompts, templates, fixtures and comments no

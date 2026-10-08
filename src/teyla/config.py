@@ -36,6 +36,9 @@
     sweep_agent     = false        ... and one for storage sweep --temp hourly; the weekly runs storage sweep
     [digest]
     notify = true                  the weekly digest posts a macOS notification when written
+    [review]                       `teyla reviews`: merged PRs against the review ledger
+    ledger    = "~/.cache/review-ledger.tsv"   one TSV line per review, appended by the review script
+    min_lines = 7                  PRs with fewer changed lines, or docs-only (*.md, docs/), need no review
     [corrections]
     store = "home"                 "home": ~/.teyla/corrections/<repo-key>.jsonl (default);
                                    "repo": <repo>/.teyla/corrections.jsonl, the pre-0.12 place
@@ -119,6 +122,8 @@ DEFAULTS = {
               "a20_share": 0.3, "a20_min_calls": 10, "a20_models": []},
     # `teyla digest --write` (the weekly routine) posts a macOS notification with its headline.
     "digest": {"notify": True},
+    # `teyla reviews`: the ledger the review script appends to, and the size below which a PR is exempt.
+    "review": {"ledger": "~/.cache/review-ledger.tsv", "min_lines": 7},
     # The plugin's opt-in hooks (plugin/hooks/context-budget.sh, land-check.sh). Off by default: where
     # the same hooks are already wired some other way, a second copy doubles each note.
     # The hooks read these keys from the file with awk/tomllib, not through this module.

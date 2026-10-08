@@ -390,9 +390,14 @@ launchd agents, one hook and one command:
 | when | what | writes |
 |---|---|---|
 | daily 07:00 (`com.zaitsew.teyla.daily`) | `teyla update --quiet`, `teyla doctor --quiet`, `teyla policy sync --quiet` (local files only, safe mode too), catch-up, storage clean | `~/Library/Logs/teyla-daily.log`, `~/.teyla/doctor.summary`, `~/.teyla/banner.items` |
-| Friday 20:45 (`com.zaitsew.teyla.weekly`) | `monitor --days 7`, `routines`, `products`, `models`, then `digest --write` | `<ops>/runs/<date>/`, `~/.teyla/digest.md` |
+| Friday 20:45 (`com.zaitsew.teyla.weekly`) | `monitor --days 7`, `routines`, `products`, `models`, `reviews --quiet` (merged PRs nobody reviewed), then `digest --write` | `<ops>/runs/<date>/`, `~/.teyla/digest.md` |
 | every session start (plugin hook) | prints what is new in `banner.items` since the last start (nothing when nothing is), and the digest headline once per week; if the last update check is older than a day, starts `teyla update --check` in the background | `~/.teyla/update-check.json` |
 | on demand | `teyla doctor` — the checklist with a fix per line; exit 1 when a FIX is pending | `~/.teyla/doctor.json` |
+
+`teyla reviews` reads the review ledger (`review.ledger`) against `gh pr list --state merged` and
+counts, per repo, PRs merged without a review, merged with a P1 still open, and skipped with a
+logged reason. PRs under `review.min_lines` changed lines (default 7) and docs-only PRs are exempt.
+It leaves its totals in `~/.teyla/reviews.json`; the digest shows the line while the debt is above zero.
 
 A one-off fact with a deadline — a key that expires, a trial that ends — gets its own line:
 `teyla remind add "<what>" <YYYY-MM-DD> [--how "..."]`, folded into `teyla doctor` as OK

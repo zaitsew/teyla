@@ -1,7 +1,7 @@
 """What gets read: the session-start banner shows only what changed, and a weekly digest
 names the three things worth doing.
 
-The weekly reports (monitor.md, routines.md, products.md, models.md under the ops runs folder)
+The weekly reports (monitor.md, routines.md, products.md, models.md, reviews.md under the ops runs folder)
 had no reader: nothing opened them. And a session-start line such as "teyla: 1 fix(es),
 2 warning(s) — run `teyla doctor`" that repeats the same items for days stops being read.
 
@@ -18,7 +18,8 @@ and nothing at all when nothing is new, then records the current keys as seen. T
 digest is where known items come back.
 
 **Digest.** The weekly routine runs `teyla digest --write`: `~/.teyla/digest.md`, at most
-six lines — a headline, the week's spend and waste (`teyla spend`), the top three actions
+six lines — a headline, the week's spend and waste (`teyla spend`), the review debt line
+(`teyla reviews`, only while PRs merged unreviewed or with an open P1), the top three actions
 across monitor advice, spend waste findings, doctor FIX rows, routines not running and checks
 BROKEN/UNTESTED for more than 14 days, each with its one command or fix, and a streak note when the same advice has fired three weeks running (advice ids
 per ISO week are kept in `~/.teyla/digest-history.json`). The session-start hook prints the
@@ -282,10 +283,11 @@ STREAK_WEEKS = 3
 
 def build(findings: list[dict], doctor_checks: list[dict], reports: list[dict], history: dict,
           today: _dt.date | None = None, spend_rep: dict | None = None,
-          extra: list[dict] | None = None) -> tuple[list[str], dict]:
+          extra: list[dict] | None = None, review_line: str | None = None) -> tuple[list[str], dict]:
     """(digest lines — at most six —, the updated history). `spend_rep` is `teyla spend`'s week:
     its summary is a line of its own and its waste findings compete for the top three. `extra`
-    is more ranked candidates (`teyla rules propose` per repo) competing the same way."""
+    is more ranked candidates (`teyla rules propose` per repo) competing the same way. `review_line`
+    is `teyla reviews`' totals line, given only while merged PRs are unreviewed or carry an open P1."""
     from . import spend
     today = today or _dt.date.today()
     history = update_history(history, [f["id"] for f in findings], today)
@@ -301,6 +303,8 @@ def build(findings: list[dict], doctor_checks: list[dict], reports: list[dict], 
         if spend_rep:
             lines.append(spend.summary_line(spend_rep))
         lines += [f"{i}. {c['text']} → " + (f"`{c['step']}`" if c.get("cmd") else c["step"]) for i, c in enumerate(top, 1)]
+    if review_line:
+        lines.append(review_line)
     long_runs = sorted(((n, aid) for aid, n in streaks(history, today).items() if n >= STREAK_WEEKS), reverse=True)
     if long_runs:
         names = ", ".join(f"{aid} ({n} weeks)" for n, aid in long_runs[:3])
@@ -373,7 +377,13 @@ def write(findings: list[dict] | None = None, doctor_checks: list[dict] | None =
         rule_cands += models_watch.digest_candidates()
     except Exception:  # noqa: BLE001 — same: a models pass must never stop the digest being written
         pass
-    lines, history = build(findings, doctor_checks, reports, history, today, spend_rep, extra=rule_cands)
+    try:
+        from . import reviews
+        review_line = reviews.digest_line()
+    except Exception:  # noqa: BLE001 — same: the review pass must never stop the digest being written
+        review_line = None
+    lines, history = build(findings, doctor_checks, reports, history, today, spend_rep, extra=rule_cands,
+                           review_line=review_line)
     p = digest_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("\n".join(lines) + "\n")
