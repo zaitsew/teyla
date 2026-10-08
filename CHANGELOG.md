@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.19.1 — 2026-10-08 — `teyla reviews` against the real GitHub and ledger
+
+- **`teyla reviews` failed on every repo**: `gh pr list --json commits` also fetched each commit's
+  authors and went over GitHub's GraphQL node limit. It now runs one search per repo that asks only
+  for commit ids, newest first.
+- **The ledger is read as the review scripts write it**: modes with a detail after `:`
+  (`branch:<paths>`, `skip:<why>`), `diff-file`, reviews that name no commit, and skips that name
+  the PR by URL (that owner's PR only). A logged skip now outranks an open P1.
+
 ## 0.19.0 — 2026-10-08 — the chores that were left: RAM, markdown, language, review debt, updates
 
 - **`teyla storage procs`.** Dev processes an agent left behind (`xcodebuild`, `swift-build`,
