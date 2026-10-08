@@ -13,6 +13,8 @@
     [safe]
     enabled = false                work mode (also env TEYLA_SAFE=1): no network, no self-update,
                                    no repo code run, no hand-edited plugin registry — see safe_mode()
+    auto_update = false            safe mode only: the daily `teyla update --quiet` may reach GitHub for
+                                   the latest published release (nothing else may); `update.pin` still wins
     [products]
     repos = ["teyla", "~/work/x"]  the only repos `teyla products` runs `./check.sh usage` in
                                    (names under code_root, or paths); unset = every repo, outside safe mode
@@ -110,7 +112,7 @@ DEFAULTS = {
     # Where `teyla correct` and the capture hook keep corrections; see corrections.py for why
     # the default is outside the repo.
     "corrections": {"store": "home"},
-    "safe": {"enabled": False},
+    "safe": {"enabled": False, "auto_update": False},
     # Harnesses to leave alone: no health line, no FIX for their hooks or credits, no sync.
     "harness": {"disabled": []},
     "products": {"repos": []},
@@ -460,6 +462,7 @@ def hook_on(name: str, cfg: dict | None = None) -> bool:
 
 SAFE_ENV = "TEYLA_SAFE"
 SAFE_SUMMARY = "on (network off, no auto-update, no repo commands)"
+SAFE_SUMMARY_AUTO = "on (network off except `teyla update` for published releases, no repo commands)"
 
 
 def safe_mode(cfg: dict | None = None) -> bool:
@@ -469,6 +472,14 @@ def safe_mode(cfg: dict | None = None) -> bool:
     if _fail_closed(os.environ.get(SAFE_ENV)):
         return True
     return _fail_closed(((cfg or load()).get("safe") or {}).get("enabled"))
+
+
+def safe_auto_update(cfg: dict | None = None) -> bool:
+    """Safe mode with `[safe] auto_update = true`: `teyla update` (and only it) may reach GitHub for
+    the latest published release. Fails open to *off*: anything but an explicit true word is false,
+    because this setting only ever widens what a work laptop does."""
+    cfg = cfg or load()
+    return safe_mode(cfg) and truthy(((cfg.get("safe") or {}).get("auto_update")))
 
 
 def _fail_closed(v) -> bool:

@@ -18,7 +18,9 @@ https://github.com/zaitsew/teyla/blob/main/docs/HANDOVER.md
 ---
 
 You are updating an existing Teyla install on this machine to 0.18.0 and putting it in safe
-mode, so that from now on it does nothing on its own that touches the network. Do every step,
+mode, so that from now on it does nothing on its own that touches the network, except one
+thing: from now on releases install themselves at the daily run (`safe.auto_update`, step 3),
+which reaches GitHub for the latest published release and for nothing else. Do every step,
 verify each with a command, and report at the end in the format given. Do not ask me whether
 to proceed; stop only at a real blocker.
 
@@ -29,7 +31,9 @@ Three rules for the whole run:
   read first and mine to carry.
 - **Network only where a step says so.** Two steps reach GitHub, both typed by hand: the install
   in step 2 and `teyla update --allow-network` in step 6. Do not add `--allow-network` anywhere
-  else, and do not run `teyla doctor --refresh`.
+  else, and do not run `teyla doctor --refresh`. The one unattended exception is the daily
+  routine's `teyla update --quiet` once step 3 has set `safe.auto_update`; it is limited to the
+  release lookup and the verified install.
 - **Never edit the Claude Code plugin registry files by hand,** and never `rm` anything under
   `~/.claude`, `~/.teyla` or `~/.agents`. `teyla uninstall` (step 4) is only ever run with `--dry`.
 
@@ -100,22 +104,33 @@ what is left undone if safe mode or the work policy did not both take.
   re-adding them.
 - It prints `exists:` and exits 0: the file is already the work policy; leave it.
 
-Safe mode means: no network unless the typed command says `--allow-network`; no self-update
-from the daily routine or the session hook; `./check.sh` runs only in repos listed under
+Safe mode means: no network unless the typed command says `--allow-network` (the one exception is
+the opt-in auto-update below); no self-update from the session hook; `./check.sh` runs only in repos listed under
 `products.repos`; plugin changes are printed as `/plugin ...` commands for me to type instead
 of edited into the registry; no keychain query; `teyla run`, triggers and agent steps are
 refused; a config that cannot be parsed turns safe mode on rather than off.
 
-Then freeze the update to this release and the interpreter to 3.12:
+Then let the machine update itself, with releases only, and keep the interpreter on 3.12. Do not
+pin a version: a pin would freeze the machine, and any pin an older run of this prompt left behind
+is cleared (it prints `update.pin not set` and exits 1 when there was none; that is fine):
 
 ```
-teyla config set update.pin=0.18.0 update.python=3.12
-teyla doctor | head -6
+teyla config set update.pin=
+teyla config set safe.auto_update=true update.python=3.12
+teyla doctor | head -8
 ```
 
-Doctor's second line must read `INFO safe  on (network off, no auto-update, no repo commands)`
-and the `update` line `pinned to 0.18.0`. A `FIX safe:setting` line means the config does not
-parse or holds a non-boolean: run the command it prints.
+Doctor must print `INFO safe:auto-update  safe mode: auto-update on (releases only)`, and no
+`safe:auto-update-pin` warning and no pinned `update` line. A `FIX safe:setting` line means the
+config does not parse or holds a non-boolean: run the command it prints.
+
+What this switch does, in one sentence: from now on releases install themselves at the daily run
+(`teyla update --quiet`: the latest published GitHub release, resolved to its commit, built,
+version-checked and rolled back on a mismatch), and no other command gains network access. The
+plugin's hooks are the exception: re-pointing the marketplace needs Claude Code, so after each
+self-update the session banner shows the three `/plugin` lines for me to type. If I ever want to
+freeze the machine, `teyla config set update.pin=<version>` does it and doctor warns that it
+overrides auto-update; `teyla config set safe.auto_update=false` turns the whole thing off.
 
 If a proxy setting is needed and the install in step 2 did not already cover it (an `[env]`
 entry such as `SSL_CERT_FILE`), `teyla config set env.SSL_CERT_FILE=<path>` writes it into the
@@ -144,30 +159,33 @@ what touches the network and the table of every file Teyla writes, with the undo
 not re-run its install steps 1–5, and above all not its `teyla policy init --owner` line
 without `--work`: you already did the right version in step 3. Where its table says the daily
 LaunchAgent or the session hook runs `teyla update`, that is true outside safe mode only; here
-neither does. Report in three lines what can still touch the network on this machine (only a
-command typed by hand with `--allow-network`: `teyla update`, `teyla models --refresh`,
+the hook never does, and the daily does only because step 3 sets `safe.auto_update` (releases only).
+Report in three lines what can still touch the network on this machine (the daily `teyla update
+--quiet`, and a command typed by hand with `--allow-network`: `teyla update`, `teyla models --refresh`,
 `teyla routines`, `teyla spend`, `teyla platform`; plus the `/plugin` commands I type in Claude Code) and what
 cannot.
 
-## 6. Update to the pinned version and wire everything
+## 6. Update to the latest release and wire everything
 
 ```
 teyla update --check --allow-network
 teyla update --allow-network --wire
 ```
 
-In safe mode `teyla update` refuses without `--allow-network`, even by hand, and prints the
-refusal; that is the gate working. With the pin set the target is exactly 0.18.0: an install
-that is already 0.18.0 reports `is the pinned release` and `--wire` runs the post-update steps
-anyway; a different version is reinstalled from the release's commit and verified, and rolled
-back if the build reports the wrong version. The post-update steps run in this order and each
+Without `safe.auto_update`, safe mode makes `teyla update` refuse without `--allow-network`, even by
+hand; with it (step 3) the flag is no longer needed, and it is harmless here. The target is the
+latest published release: an install that is already current reports `is the latest release` and
+`--wire` runs the post-update steps anyway; an older one is reinstalled from the release's commit
+and verified, and rolled back if the build reports the wrong version. If a release newer than
+0.18.0 exists, it is what gets installed; use that version's number wherever step 7 says 0.18.0.
+The post-update steps run in this order and each
 prints what it did: `policy sync` (the import line and symlinks for harnesses that exist here),
 `policy refresh` (in safe mode it only proposes a merge into `~/.teyla/policy-proposed.md` and
 leaves `POLICY.md` alone: if it says so, read the proposal, show me the diff, do not apply it),
 `plugin refresh` (in safe mode: prints the `/plugin ...` commands, edits nothing),
 `harness sync` (skills and hooks for Cursor, Codex, Grok and Hermes, only those present),
-`routine install --if-stale` (rewrites the daily and weekly LaunchAgents without the update
-line), then `doctor`.
+`routine install --if-stale` (rewrites the daily and weekly LaunchAgents; the daily now carries
+the `teyla update --quiet` line, since auto-update is on), then `doctor`.
 
 If GitHub cannot be reached, fix nothing by guessing: take the TLS hint the command prints,
 report it, and run the five offline steps by hand instead, which need no network:
@@ -181,8 +199,8 @@ safe mode: the plugin's session-start hook runs doctor itself. `teyla routine in
 lists what it would write and load without touching launchd. Say which of the two paths is
 the active one here.
 
-To move to a newer release later, I run `teyla config set update.pin=<version>` followed by
-`teyla update --allow-network --wire`; do not change the pin yourself.
+Later releases need nothing from me: the daily run installs them. Do not set `update.pin`
+yourself; a pin is mine to choose, to freeze the machine.
 
 ## 7. The plugin, which safe mode leaves to me
 
@@ -194,7 +212,9 @@ lines verbatim into the report as "for me to type in a Claude Code session":
 /plugin install teyla@teyla
 ```
 
-The `#v0.18.0` pins the hooks to the same release as the CLI; without it they follow main. If
+The `#v0.18.0` pins the hooks to the same release as the CLI; without it they follow main. After
+a later self-update the CLI is newer than the hooks until I type the lines for the new tag; doctor
+and the session banner print them. If
 a teyla plugin from an unpinned marketplace is already installed (`teyla doctor` warns
 `plugin:pin`), put `/plugin marketplace remove teyla` first in that list.
 
@@ -319,7 +339,7 @@ uninstall --dry: <the full output, unedited>
 update: <the lines `teyla update --allow-network --wire` printed, or the offline fallback and why>
 doctor: <FIX count> <WARN count>; <paste>
 plugin: <installed | for me to type: the /plugin lines>
-update path: manual (safe mode: teyla update --allow-network, by me) · daily routine: launchd | none
+update path: automatic (safe.auto_update=true, no pin; daily `teyla update --quiet`) · daily routine: launchd | none
 hooks: context_budget <on|off>, land_check <on|off>; autoCompactWindow <added | already N | not set: why>; settings backup <path>; /teyla:review listed <yes|no>
 feedback file: <path>; reviewed for identifying text: <yes, nothing found | removed N items of: kinds>
 blockers: <none | what only I can do, with the exact step>

@@ -132,6 +132,13 @@ def write_banner_items(checks: list[dict] | None = None, today: _dt.date | None 
     """Rewrite ~/.teyla/banner.items from doctor (the given rows, else doctor.json), every
     product's problems file and the reminders. Atomic: the hook may read it at any moment."""
     items = doctor_items(_doctor_checks_on_disk() if checks is None else checks)
+    from . import plugin_install
+    lag = plugin_install.lag_banner_item()
+    if lag:
+        # Auto-update moved the CLI and left the plugin's tag behind: this one line carries the
+        # commands, so the two generic doctor rows about the same thing (cut to 70 characters) go.
+        items = [(k, t) for k, t in items if k.split("|", 1)[-1] not in ("plugin", "plugin:pin")]
+        items.append(lag)
     items += routine_items()
     items += reminder_items(today=today)
     p = banner_items_path()
