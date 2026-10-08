@@ -136,7 +136,7 @@ should be scoped to. Do not promote anything to `.claude/rules/` yourself — us
 
 ### 3. `routine.yml`
 
-Fill the `routine.yml` template (see `~/ops/.claude/templates/routine.yml` if
+Fill the `routine.yml` template (see `<ops_root>/.claude/templates/routine.yml` if
 present, otherwise emit the same shape from memory: `routine`, `trigger`,
 `skill`, `scope`, `context`, `gate`, `capabilities`, `done`). Propose values for
 `artifact`, `trigger`, `scope`, and `capabilities`.

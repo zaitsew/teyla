@@ -70,3 +70,21 @@ def test_ci_template_is_manual_and_linux(tmp_path, monkeypatch):
     assert "push" not in on_block and "pull_request" not in on_block
     assert "runs-on: ubuntu-latest" in ci
     assert not re.search(r"^\s*runs-on:\s*macos", ci, re.M)
+
+
+def test_productized_compose_fragment_gets_a_registry_owner(tmp_path, monkeypatch):
+    _no_git_identity(monkeypatch, tmp_path)
+    dest = tmp_path / "svc"
+    scaffold.scaffold(str(dest), name="widget", kind="service", license="none", owner="Ada Lovelace")
+    frag = (dest / "deploy" / "droplet" / "docker-compose.fragment.yml").read_text()
+    assert "image: ghcr.io/ada-lovelace/widget:latest" in frag
+    assert "{{owner}}" not in frag
+    assert "{{port}}" in frag  # the server's add-product.sh fills the port
+
+
+def test_compose_fragment_without_any_owner_keeps_a_visible_placeholder(tmp_path, monkeypatch):
+    _no_git_identity(monkeypatch, tmp_path)
+    dest = tmp_path / "svc"
+    scaffold.scaffold(str(dest), name="widget", kind="service", license="none")
+    frag = (dest / "deploy" / "droplet" / "docker-compose.fragment.yml").read_text()
+    assert "ghcr.io/your-github-owner/widget" in frag and "{{owner}}" not in frag

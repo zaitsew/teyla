@@ -16,6 +16,7 @@ Code, diffs, logs and transcripts from this machine go only to providers IT has 
 for this code. A provider with a CLI installed here is not approved by that fact; add its
 row below only when it is.
 
+<!-- Example ladder: replace these rows with the models you actually use. -->
 <!-- ladder:start — maintained by `teyla models --write-policy`; edit rows by hand if you must, keep the markers -->
 | provider | orchestrate / hardest tasks | volume work | throwaway / triage | note |
 |---|---|---|---|---|

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import datetime
 import pathlib
+import re
 import subprocess
 
 PKG_ROOT = None  # templates resolved via teyla.templates_dir()
@@ -117,7 +118,18 @@ def _owner(owner: str | None, cwd: pathlib.Path) -> str:
                              text=True, timeout=10).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         out = ""
-    return out or "the authors"
+    return out or NEUTRAL_OWNER
+
+
+NEUTRAL_OWNER = "the authors"
+
+
+def _owner_slug(display: str) -> str:
+    """The owner as a container-registry namespace (ghcr.io/<owner>/...): lower case, runs of
+    anything else folded into a hyphen. No usable name leaves a visible placeholder to edit."""
+    if display == NEUTRAL_OWNER:
+        return "your-github-owner"
+    return re.sub(r"[^a-z0-9]+", "-", display.lower()).strip("-") or "your-github-owner"
 
 
 def _render(text: str, ctx: dict) -> str:
@@ -162,7 +174,8 @@ def scaffold(path: str, name: str, kind: str = "cli", license: str = "apache", o
 
     dest = pathlib.Path(path).expanduser()
     dest.mkdir(parents=True, exist_ok=True)
-    ctx = _context(name, kind)
+    owner_name = _owner(owner, dest)
+    ctx = {**_context(name, kind), "owner": _owner_slug(owner_name)}
     report: list[str] = [f"scaffolding {kind} repo '{name}' into {dest}"]
 
     _copy_tree(TEMPLATE_ROOT, dest, ctx, report, skip_names={"_kind"})
@@ -176,8 +189,9 @@ def scaffold(path: str, name: str, kind: str = "cli", license: str = "apache", o
 
     if license != "none":
         license_src = TEMPLATE_ROOT / LICENSE_TEMPLATES[license]
-        # `owner` is rendered into the licence only: other templates keep their own {{owner}} placeholders.
-        license_ctx = {**ctx, "owner": _owner(owner, dest)}
+        # Everywhere else {{owner}} is the registry namespace (the deploy compose fragment);
+        # the licence names the person.
+        license_ctx = {**ctx, "owner": owner_name}
         _write(dest / "LICENSE", _render(license_src.read_text(), license_ctx), False, report)
 
     agents = dest / "AGENTS.md"
