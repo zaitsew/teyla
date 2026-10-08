@@ -218,6 +218,8 @@ mkdir -p "$OUT_DIR"
 UPDATE_LINE = '"$TEYLA" update --quiet'
 # Safe mode: the daily never self-updates. `teyla update` refuses without --allow-network
 # anyway (net.py), but a wrapper that does not even try is the one a reviewer can read.
+# With `safe.auto_update = true` the wrapper carries UPDATE_LINE again: net.update_scope lets that
+# one command (and nothing else in the file) look up and install a published release.
 SAFE_UPDATE_LINE = "# safe mode: no self-update here; by hand: teyla update --allow-network"
 
 
@@ -236,7 +238,7 @@ def _watch_line() -> str:
 
 def _update_line() -> str:
     from . import config
-    if config.safe_mode():
+    if config.safe_mode() and not config.safe_auto_update():
         return SAFE_UPDATE_LINE
     if str((config.load().get("update") or {}).get("channel") or "release").strip().lower() == "none":
         return NONE_UPDATE_LINE
