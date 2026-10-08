@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.19.2 — 2026-10-08 — cloud prep keeps AGENTS.md passive
 
 - **`teyla cloud prep` no longer puts a session-ending checklist in `AGENTS.md`.** The file is read
   by every model run in the repo, including headless one-shot calls a product makes itself; a
