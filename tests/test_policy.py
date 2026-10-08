@@ -723,3 +723,49 @@ def test_disabled_harnesses_are_not_synced_or_reported(_isolated_paths):
     config.set_value("harness.disabled", "")
     policy.sync()
     assert grok.exists() and "Operating policy" in soul.read_text()
+
+
+def test_a_copy_becoming_a_symlink_without_a_record_keeps_its_hand_edit(_isolated_paths):
+    codex, _ = _wire(_isolated_paths, OWNER_MD)
+    copy = policy.agents_text()
+    codex.write_text(copy + "- hand-added in Codex\n")
+    policy.CLAUDE_GLOBAL.write_text("@~/.agents/POLICY.md\n")   # now only the import: sync symlinks
+    assert not policy.written_path().exists()
+    policy.sync()
+    assert codex.is_symlink()
+    # Without a record, the owner rules that left CLAUDE.md look added too: filed, never lost.
+    [name] = [n for n in _inbox_files() if n.startswith("codex-")]
+    assert "- hand-added in Codex" in (policy.inbox_dir() / name).read_text()
+
+
+def test_an_inbox_name_taken_between_the_check_and_the_write_is_not_overwritten(_isolated_paths, monkeypatch):
+    import datetime
+    monkeypatch.setattr(policy, "_now", lambda: datetime.datetime(2026, 10, 8, 14, 3))
+    codex, _ = _wire(_isolated_paths, OWNER_MD)
+    policy.sync()
+    codex.write_text(codex.read_text() + "- mine\n")
+    from teyla import config
+    real_private_dir = config.private_dir
+
+    def racing(d):   # another sync files its edit under the same name right after our check
+        out = real_private_dir(d)
+        f = d / "codex-2026-10-08-1403.md"
+        if not f.exists():
+            f.write_text("the other sync's edit\n")
+        return out
+
+    monkeypatch.setattr(config, "private_dir", racing)
+    policy.sync()
+    assert (policy.inbox_dir() / "codex-2026-10-08-1403.md").read_text() == "the other sync's edit\n"
+    assert "- mine" in (policy.inbox_dir() / "codex-2026-10-08-1403-2.md").read_text()
+
+
+def test_a_disabled_harnesses_unreadable_file_is_never_read(_isolated_paths):
+    from teyla import config
+    _wire(_isolated_paths, OWNER_MD)
+    soul = policy.TARGETS["hermes"]
+    soul.parent.mkdir(parents=True)
+    soul.write_bytes(b"\xff\xfe not utf-8")
+    config.set_value("harness.disabled", "hermes")
+    st = policy.status()
+    assert "hermes" not in st and st["codex"] is not None

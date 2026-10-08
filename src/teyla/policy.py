@@ -150,11 +150,15 @@ def status() -> dict:
     """harness -> True/False/None (None = harness not installed). A harness listed in
     `[harness] disabled` is left out altogether."""
     st = {}
+    off = _disabled()
     st["policy-file"] = POLICY.exists()
     p = TARGETS["claude-code"]
-    st["claude-code"] = (IMPORT_LINE in p.read_text()) if p.exists() else None
+    if "claude-code" not in off:
+        st["claude-code"] = (IMPORT_LINE in p.read_text()) if p.exists() else None
     want = agents_text() if POLICY.exists() else None
     for h in ("codex", "grok"):
+        if h in off:
+            continue
         p = TARGETS[h]
         if not p.exists():
             st[h] = None if not p.parent.exists() else False
@@ -165,14 +169,14 @@ def status() -> dict:
     p = TARGETS["hermes"]
     # Current, not merely present: after `policy init --work --force` a home-variant section
     # still tells Hermes to send diffs to another provider (Codex review, P1).
-    st["hermes"] = _hermes_current(p.read_text()) if p.exists() else None
+    if "hermes" not in off:
+        st["hermes"] = _hermes_current(p.read_text()) if p.exists() else None
     p = TARGETS.get("cursor")
-    if p is not None:  # tests patch TARGETS without it
+    if p is not None and "cursor" not in off:  # tests patch TARGETS without it
         if not p.parents[2].is_dir():
             st["cursor"] = None
         else:
             st["cursor"] = bool(POLICY.exists() and p.exists() and p.read_text() == cursor_skill_text())
-    off = _disabled()
     return {k: v for k, v in st.items() if k not in off}
 
 
@@ -295,6 +299,15 @@ def _inbox_text(harness: str, label: str, name: str, basis: str, added: list[str
     return "\n".join(out)
 
 
+def _copy_text() -> str | None:
+    """What a generated copy holds when sync symlinks instead: the marker line and the policy. The
+    basis for spotting a hand edit in a copy about to become a symlink, with no record of it."""
+    try:
+        return AGENTS_HEAD + combined_text()
+    except (OSError, ValueError):
+        return None
+
+
 def _keep_edit(harness: str, key: str, label: str, current: str | None, want: str | None, dry: bool,
                known_alt: tuple[str, ...] = ()) -> tuple[bool, str | None]:
     """Before a generated copy at `key` is overwritten: file any hand edit it holds. `current` is the
@@ -317,10 +330,11 @@ def _keep_edit(harness: str, key: str, label: str, current: str | None, want: st
         # No record (the first sync after an upgrade): what sync would write now is all there is
         # to compare with, and only added lines count — a copy that is merely behind its sources
         # has lines the sources no longer have, which says nothing about an edit.
-        if want is None or current == want or current.strip() in known_alt:
+        ref = want if want is not None else _copy_text()
+        if ref is None or current == ref or current.strip() in known_alt:
             return True, None
         basis = "the text sync would write now (no record of the last write yet)"
-        added, removed, diff = _changes(want, current, context=2)
+        added, removed, diff = _changes(ref, current, context=2)
         changed = any(l.strip() for l in added)
     if not changed:
         return True, None
@@ -328,17 +342,33 @@ def _keep_edit(harness: str, key: str, label: str, current: str | None, want: st
     n_rem = sum(1 for l in removed if l.strip())
     what = f"{n_add} added and {n_rem} removed line(s)" if rec_hash is not None else f"{n_add} added line(s)"
     when = _now()
-    name = f"{harness}-{when:%Y-%m-%d-%H%M}.md"
     d = inbox_dir()
-    k = 2
-    while (d / name).exists():
-        name = f"{harness}-{when:%Y-%m-%d-%H%M}-{k}.md"
+
+    def named(k: int) -> str:
+        return f"{harness}-{when:%Y-%m-%d-%H%M}" + (f"-{k}" if k > 1 else "") + ".md"
+
+    k = 1
+    while (d / named(k)).exists():
         k += 1
+    name = named(k)
     if dry:
         return True, f"would keep the hand edit of {label} ({what}) in {_tilde(d / name)}, then overwrite it"
     try:
         from . import config
-        config.write_private(d / name, _visible(_inbox_text(harness, label, name, basis, added, removed, diff, when)))
+        config.private_dir(d)
+        # O_EXCL: a second sync picking the same name moves on to the next one instead of
+        # overwriting the first one's edit.
+        while True:
+            name = named(k)
+            try:
+                fd = os.open(d / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                break
+            except FileExistsError:
+                k += 1
+        try:
+            config.write_all(fd, _visible(_inbox_text(harness, label, name, basis, added, removed, diff, when)).encode("utf-8"))
+        finally:
+            os.close(fd)
     except OSError as e:
         return False, (f"SKIP {label}: it holds a hand edit ({what}) and the policy inbox {d} could not be "
                        f"written ({e}); nothing overwritten")
