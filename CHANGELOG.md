@@ -1,12 +1,20 @@
 # Changelog
 
-## Unreleased
+## 0.19.3 — 2026-10-08 — localization exempt, Stop hook reads the PR head, quieter models watch
 
 - **`teyla lang` no longer reports Android and string-catalog localization.** Android resource
   qualifiers (`**/res/values-*/strings.xml`, `plurals.xml`, `arrays.xml`) and `**/strings/*.json`
   catalogs are exempt by default. The per-repo exemption list is `.teyla/lang-allow` (globs, any
   depth); `[lang] allow` in config applies to every repo. Both are now spelled out in
   `teyla lang --help` and the README.
+- **The cloud Stop hook checks the PR's head.** With an open PR, "pushed" means HEAD is inside the
+  PR's head commit (fetched by branch, or by sha for a fork PR), so an upstream that holds HEAD while
+  the PR branch is behind no longer lets a session stop with commits missing from the PR. If GitHub
+  cannot say which commit the open PR carries, the stop is refused once. Without `gh` or an open PR
+  the ref-based count is unchanged. Repos prepared earlier get it on the next `teyla cloud prep`.
+- **`teyla models watch` lists only live code and config as superseded-id usage.** Tests, price
+  tables, docs/changelogs and migrations are counted on one line as history; `--json` keeps them
+  under `superseded_history`.
 
 ## 0.19.2 — 2026-10-08 — cloud prep keeps AGENTS.md passive
 
