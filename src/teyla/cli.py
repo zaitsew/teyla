@@ -15,6 +15,7 @@
   teyla models watch [--refresh] [--json] [--ack [ID...]] [--seed FILE]  new models, what they replace, repos naming superseded ids
   teyla models --write-policy [--dry] [--drop-absent]             rewrite the ladder table in ~/.agents/POLICY.md
   teyla models --write-prices                                     ~/.teyla/prices.json from models.dev
+  teyla lang [repo...] [--json] [--quiet] [--commits N]          tracked files and commit messages holding non-English (non-Latin script) text
   teyla wiki init|status|lint|confirm <path> [slug]              the facts store as an LLM-maintained wiki
   teyla feedback [--days N] [--out FILE]                         one redacted file to send to the maintainer
   teyla run <product:routine> [--dry] [--force]                  the run engine: grants, caps, gate A/B/C, receipt
@@ -428,7 +429,7 @@ def main(argv=None):
     q.add_argument("--done", metavar="FILE", help="inbox: mark one pending hand edit done (its file is deleted)")
     q.add_argument("--all", action="store_true", help="inbox: mark every pending hand edit done")
     q = sp.add_parser("harvest"); q.set_defaults(fn=cmd_harvest); q.add_argument("path"); q.add_argument("--project")
-    from . import grokcost, wiki, feedback, models, plugins, plugin_install, connectors, control, doctor, update, remind, rules, harness, storage, cloud
+    from . import grokcost, wiki, feedback, models, plugins, plugin_install, connectors, control, doctor, update, remind, rules, harness, storage, cloud, lang
     from . import platform as platform_mod, productize as productize_mod
     doctor.register(sp); update.register(sp); _config.register(sp)
     platform_mod.register(sp); productize_mod.register(sp)
@@ -439,7 +440,7 @@ def main(argv=None):
     uninstall_mod.register(sp); grokcost.register(sp)
     from . import digest as digest_mod, routines as routines_mod
     digest_mod.register(sp); routines_mod.register_check(sp)
-    cloud.register(sp)
+    cloud.register(sp); lang.register(sp)
     from . import reviews as reviews_mod
     reviews_mod.register(sp)
     from . import spend as spend_mod
