@@ -412,3 +412,13 @@ def test_a_sibling_hooks_directory_is_not_teylas(tmp_path):
     [step] = [s for s in uninstall._hooks(tmp_path) if s.target == str(cx)]
     step.fn()
     assert json.loads(cx.read_text())["hooks"]["UserPromptSubmit"] == [{"hooks": [{"type": "command", "command": mine}]}]
+
+
+def test_unreviewed_policy_hand_edits_survive_uninstall(machine):
+    home, env = machine["home"], machine["env"]
+    inbox = home / ".teyla" / "policy-inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    (inbox / "codex-2026-10-08T10-00.md").write_text("a line the owner added by hand\n")
+    out = teyla(env, "uninstall")
+    assert (inbox / "codex-2026-10-08T10-00.md").exists() and "not reviewed yet" in out
+    assert sorted(p.name for p in (home / ".teyla").iterdir()) == ["policy-inbox"]
