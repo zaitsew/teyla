@@ -10,7 +10,7 @@ logs, not a session store — `hermes dump`/`hermes sessions stats` both point a
 Never touches `~/.hermes/auth.json`, `.env`, or any secret store — only state.db, opened
 read-only.
 
-Table shapes actually observed on this machine (`pragma table_info`):
+Table shapes actually observed (`pragma table_info`):
   sessions              -- one row per session: id, source, model, started_at/ended_at (epoch
                            seconds), token/tool-call counters, cwd, title.
   messages              -- one row per message: session_id, role, content (plain text), tool_name,
@@ -20,7 +20,7 @@ Table shapes actually observed on this machine (`pragma table_info`):
                            model than the chat itself) more accurately than the sessions table's
                            single `model` column.
   async_delegations     -- background/subagent dispatch records (origin_session, parent_session_id,
-                           task_json). None exist on this machine yet, so this path is exercised
+                           task_json). None have been seen yet, so this path is exercised
                            only defensively; `task_json` is parsed best-effort for a `model` field.
 """
 from __future__ import annotations
@@ -137,7 +137,7 @@ def _session_from_row(con: sqlite3.Connection, row: sqlite3.Row, root: str) -> S
 
 
 # Installed Hermes records `hermes -z` (one-shot) with source "oneshot": always batch,
-# whatever the prompt count (review of #68, P1). Older builds wrote it as "cli", the same as
+# whatever the prompt count (caught in review, P1). Older builds wrote it as "cli", the same as
 # `hermes chat`, so the source could not tell them apart; what can is that a one-shot session
 # has exactly one prompt. As for Grok without its flag, a CLI session with at most one user
 # message is taken as batch; the desktop app and the messaging gateways are people.

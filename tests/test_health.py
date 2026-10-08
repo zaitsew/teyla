@@ -44,7 +44,7 @@ def home(tmp_path, monkeypatch):
 @pytest.mark.parametrize("text,status,kind", [
     ("API error (status 402 Payment Required): Grok Build usage balance exhausted", 402, "quota"),
     ("Grok Build usage balance exhausted", None, "quota"),
-    ("You've hit your session limit · resets 3am (Europe/Madrid)", None, "quota"),
+    ("You've hit your session limit · resets 3am (Europe/London)", None, "quota"),
     ("xAI OAuth state is missing access_token. Re-authenticate with `hermes model`.", None, "auth"),
     ('xAI token refresh failed. Response: {"error":"invalid_grant"}', None, "auth"),
     ("unexpected status 401 Unauthorized: Missing bearer", None, "auth"),
@@ -141,7 +141,7 @@ def _grok_log(home, events):
                                  "msg": msg, "ctx": ctx}) + "\n")
 
 
-def _fake_sessions(n_batch, project="/private/tmp/frank-grok-empty"):  # Frank starts its grok children here
+def _fake_sessions(n_batch, project="/private/tmp/app-a-grok-empty"):  # a bot starts its grok children here
     last = NOW.isoformat()
     return [types.SimpleNamespace(batch=True, cwd=project, project=project, last=last, first=last) for _ in range(n_batch)] + \
         [types.SimpleNamespace(batch=False, cwd="/Users/me/ops", project="/Users/me/ops", last=last, first=last)]
@@ -156,7 +156,7 @@ def test_grok_402_after_the_last_success_is_a_fix_naming_the_batch_project(home,
     (home / ".grok" / "auth.json").write_text(json.dumps({"x::1": {"key": SECRET, "refresh_token": SECRET, "auth_mode": "oidc"}}))
     row = health.offline("grok", sessions=_fake_sessions(250))
     assert row["level"] == "FIX" and "quota ×2" in row["detail"] and "7d: 1 interactive, 250 batch" in row["detail"]
-    assert row["fix"].startswith("Grok Build balance exhausted") and "`frank` (250 `grok -p` calls in 7 days)" in row["fix"]
+    assert row["fix"].startswith("Grok Build balance exhausted") and "`app-a` (250 `grok -p` calls in 7 days)" in row["fix"]
     # a success after the error: history, not a fix
     _grok_log(home, [(NOW - dt.timedelta(hours=2), "shell.turn.inference_failed", fail),
                      (NOW - dt.timedelta(hours=1), "shell.turn.inference_done", {})])
@@ -239,7 +239,7 @@ def test_claude_api_error_records(home):
     p = home / ".claude" / "projects" / "-Users-me-ops" / "s.jsonl"
     rows = [{"type": "assistant", "timestamp": _iso(NOW - dt.timedelta(hours=3)), "message": {"content": [{"type": "text", "text": "done"}]}},
             {"type": "assistant", "timestamp": _iso(NOW - dt.timedelta(hours=1)), "isApiErrorMessage": True, "error": "rate_limit",
-             "message": {"content": [{"type": "text", "text": "You've hit your session limit · resets 3am (Europe/Madrid)"}]}}]
+             "message": {"content": [{"type": "text", "text": "You've hit your session limit · resets 3am (Europe/London)"}]}}]
     p.write_text("\n".join(json.dumps(r, separators=(",", ":")) for r in rows) + "\n")
     e = health.errors_claude(home / ".claude", time.time() - 86400)
     assert e["error"]["kind"] == "quota" and e["last_ok"] < e["error"]["ts"]
@@ -322,7 +322,7 @@ def test_doctor_checks_one_line_per_installed_harness(home, monkeypatch):
     assert "7d:" not in rows[2]["detail"]  # doctor's harness:grok line already counts sessions
 
 
-# --- review of #66 --------------------------------------------------------------------------------
+# --- caught in review --------------------------------------------------------------------------------
 
 def _codex_rollout(home, records):
     day = home / ".codex" / "sessions" / f"{NOW:%Y}" / f"{NOW:%m}" / f"{NOW:%d}"
@@ -575,7 +575,7 @@ def test_codex_a_rate_limit_only_token_count_is_not_a_success(home):
 
 def test_hermes_api_key_mode_without_a_key_is_a_fix(home, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    # (Codex P2 on #84) `auth_mode: api_key` is a label, not a key: with nothing in the pool,
+    # (Codex P2) `auth_mode: api_key` is a label, not a key: with nothing in the pool,
     # auth.json, the environment or ~/.hermes/.env the provider cannot call anything.
     def write(pool):
         (home / ".hermes" / "auth.json").write_text(json.dumps({

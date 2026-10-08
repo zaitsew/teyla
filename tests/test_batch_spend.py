@@ -33,14 +33,14 @@ def _many(harness, cwd, n, days_ago, **kw):
 
 
 def test_headless_counts_prices_and_says_when_tokens_are_unknown():
-    frank = "/private/tmp/frank-grok-empty"  # grok-cost's project_of: <repo>-grok-empty is <repo>
-    ss = (_many("grok", frank, 1500, 1) + _many("grok", frank, 100, 10)
-          + _many("codex", "/private/tmp/loco-review", 3, 2, usage={"gpt-6-astra": {"output_tokens": 100_000}})
+    bot = "/private/tmp/app-a-grok-empty"  # grok-cost's project_of: <repo>-grok-empty is <repo>
+    ss = (_many("grok", bot, 1500, 1) + _many("grok", bot, 100, 10)
+          + _many("codex", "/private/tmp/app-b-review", 3, 2, usage={"gpt-6-astra": {"output_tokens": 100_000}})
           + _many("claude-code", "/private/tmp/x", 2, 3)                   # no usage recorded
           + [_s("claude-code", "/private/tmp/x", 1, batch=False)])         # interactive: not headless
     grok_rows = [types.SimpleNamespace(sid=s.sid, usd=0.05, turns=1) for s in ss if s.harness == "grok"]
     rows = {(r["harness"], r["project"]): r for r in headless(ss, 29, grok_rows=grok_rows, now=NOW)}
-    f = rows[("grok", "frank")]
+    f = rows[("grok", "app-a")]
     assert (f["calls"], f["calls_7d"], f["calls_prev_7d"]) == (1600, 1500, 100)
     assert f["per_day_7d"] == pytest.approx(214.3, abs=0.1) and f["per_day_window"] == pytest.approx(55.2, abs=0.1)
     assert f["usd"] == pytest.approx(80.0) and f["cost_note"] == "list price" and f["doubled"]
@@ -52,7 +52,7 @@ def test_headless_counts_prices_and_says_when_tokens_are_unknown():
 
 
 def test_headless_without_grok_cost_rows_is_explicit_and_a_short_window_never_doubles():
-    ss = _many("grok", "/private/tmp/frank-grok-empty", 300, 1)
+    ss = _many("grok", "/private/tmp/app-a-grok-empty", 300, 1)
     [r] = headless(ss, 7, now=NOW)
     assert r["cost_note"] == "calls, tokens unknown" and r["usd"] == 0
     assert r["window_days"] == 7 and not r["doubled"]  # no "week before" inside a 7-day window
@@ -60,16 +60,16 @@ def test_headless_without_grok_cost_rows_is_explicit_and_a_short_window_never_do
 
 def test_a17_fires_on_volume_or_doubling_and_names_project_and_harness():
     m = {"headless": [
-        dict(harness="grok", project="frank", calls=14380, calls_7d=3189, calls_prev_7d=3041, per_day_7d=455.6,
-             per_day_window=495.9, window_days=29, usd=1097.71, cost_note="list price", doubled=False),
-        dict(harness="grok", project="loco", calls=310, calls_7d=175, calls_prev_7d=74, per_day_7d=25.0,
+        dict(harness="grok", project="app-a", calls=14000, calls_7d=3000, calls_prev_7d=3000, per_day_7d=450.0,
+             per_day_window=480.0, window_days=29, usd=1000.0, cost_note="list price", doubled=False),
+        dict(harness="grok", project="app-b", calls=310, calls_7d=175, calls_prev_7d=74, per_day_7d=25.0,
              per_day_window=10.7, window_days=29, usd=199.6, cost_note="list price", doubled=True),
         dict(harness="codex", project="teyla", calls=29, calls_7d=26, calls_prev_7d=0, per_day_7d=3.7,
              per_day_window=1.0, window_days=29, usd=58.1, cost_note="API-equivalent", doubled=False),
     ], "tokens": {}, "subagents": {}}
     fs = [f for f in advise_mod.advise(m) if f["id"] == "A17"]
-    assert [f["title"] for f in fs] == ["frank drives grok headless volume", "loco drives grok headless volume"]
-    assert "455.6 headless calls/day" in fs[0]["evidence"] and "$1,098 list price" in fs[0]["evidence"]
+    assert [f["title"] for f in fs] == ["app-a drives grok headless volume", "app-b drives grok headless volume"]
+    assert "450 headless calls/day" in fs[0]["evidence"] and "$1,000 list price" in fs[0]["evidence"]
     assert "175 headless calls this week, 74 the week before" in fs[1]["evidence"]
     assert all(f["severity"] == "medium" for f in fs)
 
@@ -109,35 +109,35 @@ def test_window_errors_from_the_harness_records(tmp_path, monkeypatch):
 
 
 def test_report_has_the_headless_section():
-    ss = _many("grok", "/private/tmp/frank-grok-empty", 30, 1) + [_s("claude-code", "/private/tmp/x", 1, batch=False)]
+    ss = _many("grok", "/private/tmp/app-a-grok-empty", 30, 1) + [_s("claude-code", "/private/tmp/x", 1, batch=False)]
     m = metrics(ss, 29)
     m["headless"] = headless(ss, 29, now=NOW)
     text = markdown(m, [])
     assert "## Headless calls by harness and project" in text
-    assert "| grok | frank | 4.3 | 1 | 30 | 0 | 30 | calls, tokens unknown |" in text
+    assert "| grok | app-a | 4.3 | 1 | 30 | 0 | 30 | calls, tokens unknown |" in text
 
 
 def test_grok_week_reuses_rows_of_a_longer_window():
     now = dt.datetime.now(dt.timezone.utc)
-    mk = lambda days, usd, cwd="/private/tmp/frank-grok-empty": types.SimpleNamespace(  # noqa: E731
+    mk = lambda days, usd, cwd="/private/tmp/app-a-grok-empty": types.SimpleNamespace(  # noqa: E731
         sid=f"s{days}{usd}", cwd=cwd, created=(now - dt.timedelta(days=days)).isoformat(), usd=usd, turns=1,
         calls=1, input=10, cached=5, output=1, day=(now - dt.timedelta(days=days)).strftime("%Y-%m-%d"))
     w = grokcost.week(rows=[mk(1, 30.0), mk(2, 2.0, "/private/tmp/x"), mk(20, 500.0)])
-    assert w["total_usd"] == pytest.approx(32.0) and w["top_project"] == "frank"
+    assert w["total_usd"] == pytest.approx(32.0) and w["top_project"] == "app-a"
 
 
 def test_share_redacts_headless_project_names():
     from teyla.monitor import redact
-    ss = _many("grok", "/private/tmp/frank-grok-empty", 3, 1)
+    ss = _many("grok", "/private/tmp/app-a-grok-empty", 3, 1)
     m = metrics(ss, 29)
     m["headless"] = headless(ss, 29, now=NOW)
     r = redact(m)
-    assert [h["project"] for h in r["headless"]] == ["h01"] and "frank" not in json.dumps(r["headless"])
+    assert [h["project"] for h in r["headless"]] == ["h01"] and "app-a" not in json.dumps(r["headless"])
 
 
 def test_a18_a_later_unrelated_error_does_not_hide_a_quota_failure(tmp_path, monkeypatch):
-    """Grok answered 402, then a connection reset; no call succeeded. Still failing (review of #69, P2;
-    already resolved by the #66 merge, this pins it for A18)."""
+    """Grok answered 402, then a connection reset; no call succeeded. Still failing (caught in review, P2;
+    this pins it for A18)."""
     home = tmp_path / "home"
     (home / ".grok" / "logs").mkdir(parents=True)
     monkeypatch.delenv("CODEX_HOME", raising=False); monkeypatch.delenv("GROK_HOME", raising=False)
@@ -152,7 +152,7 @@ def test_a18_a_later_unrelated_error_does_not_hide_a_quota_failure(tmp_path, mon
 
 def test_a18_a_limit_event_newer_than_a_cleared_quota_error_is_still_failing(tmp_path, monkeypatch):
     """Old quota error, a success, then Codex reports the limit reached again: exhausted now, not
-    "recovered" because the old error's kind matched (review of #69, P2)."""
+    "recovered" because the old error's kind matched (caught in review, P2)."""
     home = tmp_path / "home"
     (home / ".codex" / "sessions").mkdir(parents=True)
     monkeypatch.delenv("CODEX_HOME", raising=False); monkeypatch.delenv("GROK_HOME", raising=False)

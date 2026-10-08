@@ -54,7 +54,7 @@ def _generated_by_teyla(text: str) -> bool:
     policy.CURSOR_HEAD) emit valid frontmatter, a blank line, then the generated-by comment as
     the first body line — so that, and only that, is accepted: the first nonblank line after the
     closing `---` starts with the marker. A user's skill that shows the marker in a fenced
-    example, or quotes it later in the body, is not one (review of #67, P1: the whole skill
+    example, or quotes it later in the body, is not one (caught in review, P1: the whole skill
     directory gets deleted)."""
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
@@ -307,7 +307,7 @@ def _hooks(home: pathlib.Path) -> list[Step]:
                 else:
                     cur.write_text(json.dumps(d, indent=2) + "\n")
             steps.append(Step("edit", cur, "drop the entries that run ~/.teyla/hooks/* (the file goes if nothing else is left)", edit_cursor))
-    # ~/.codex/hooks.json (#61): the same shape as Claude Code's. Only Teyla's handlers go; a
+    # ~/.codex/hooks.json: the same shape as Claude Code's. Only Teyla's handlers go; a
     # user's handler in a shared group keeps its group, and the file goes only when nothing
     # but Teyla's own description is left.
     cx = home / ".codex" / "hooks.json"
@@ -387,7 +387,7 @@ def _plugin(home: pathlib.Path) -> list[Step]:
             def drop_plugin(key=key):
                 # Delete the validated cache copies first and drop a registry row only once its
                 # copy is gone, so a failed deletion (permissions) leaves the row and a re-run
-                # can retry it (review of #67, P2).
+                # can retry it (caught in review, P2).
                 path = plugins / "installed_plugins.json"
                 installed = plugin_install._load_json(path)
                 rows = installed.get("plugins", {}).get(key) or []

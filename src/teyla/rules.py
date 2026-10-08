@@ -31,6 +31,8 @@ import json
 import pathlib
 import re
 
+from . import lexicon
+
 RULES_DIR = ".claude/rules"
 CURSOR_RULES_DIR = ".cursor/rules"
 STOP = {"a", "an", "the", "in", "on", "at", "to", "of", "for", "and", "or", "not", "never", "always", "is", "are",
@@ -40,7 +42,7 @@ STOP = {"a", "an", "the", "in", "on", "at", "to", "of", "for", "and", "or", "not
 def slug_of(text: str) -> str:
     """A few significant words of the rule, kebab-cased: 'Outbound drafts open with a claim, not a
     question.' -> outbound-drafts-open-claim."""
-    words = [w for w in re.findall(r"[a-zA-Zа-яА-Я0-9]+", text.lower()) if w not in STOP]
+    words = [w for w in re.findall(rf"[{lexicon.WORD_CHARS}]+", text.lower()) if w not in STOP]
     slug = "-".join(words[:4]) or "rule"
     return slug[:48].strip("-")
 
@@ -99,7 +101,7 @@ def add_rule(repo: str | pathlib.Path, text: str, scope: str = "**", dry: bool =
              today: _dt.date | _dt.datetime | None = None) -> list[str]:
     """Every file's new text is computed and scanned before any is written: a clean rule
     appended to a rule file, or mirrored into an AGENTS.md, that already hides a bidi or
-    zero-width character would otherwise re-save it under Teyla's name (review of #87, P2).
+    zero-width character would otherwise re-save it under Teyla's name (caught in review, P2).
     `dry` runs the same checks, so a dry run refuses exactly what a real one would."""
     from . import invisible, rules_lifecycle
     repo = pathlib.Path(repo).expanduser().resolve()

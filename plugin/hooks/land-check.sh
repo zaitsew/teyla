@@ -2,7 +2,7 @@
 # Stop: notice work that never reached a remote, once per session — opt-in
 # (`teyla config set hooks.land_check=true`).
 #
-# "Land work one PR per logical unit" is already in the owner's CLAUDE.md, and it mostly works.
+# "Land work one PR per logical unit" is typically already in the owner's CLAUDE.md, and it mostly works.
 # What it cannot cover is the end of a session: the model finishes, the turn ends, and a branch
 # with real commits sits on the laptop until somebody remembers. An instruction that has to be
 # remembered at exactly the moment attention is leaving is the one that fails; this runs whether
@@ -16,14 +16,12 @@
 # (inside a ``` fence, one repo per line, first word: `owner/repo` for GitHub,
 # `host/group/repo` for anywhere else): a repo on it is "open the PR/MR
 # and merge it"; anything else — including no list, no origin, a repo merely writable — is
-# "open the PR/MR and STOP". Until 2026-08-16 the ~/ops version said "merged without being
-# asked" with no qualification, the one thing the standing rule does not say; until 2026-10-02
-# it read a mirror of the list that had fallen seven repos behind. So: the one file, read now.
+# "open the PR/MR and STOP". A mirror of the list goes stale, so the one file is read at
+# the time.
 # The slug is origin's path, from GitHub or GitLab, ssh or https, nested GitLab groups whole
 # (`group/sub/repo`), compared case-insensitively.
 #
-# Ported to sh from the owner's ~/ops/bin/land-work-check.mjs: the work MacBook has no Node,
-# and needs no Python for this either.
+# Written in plain sh: a managed laptop may have no Node, and this needs no Python either.
 #
 #   (none)    Claude Code Stop: {"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":…}}
 #   --codex   Codex Stop (~/.codex/hooks.json, written by `teyla harness sync` when the key is
@@ -100,7 +98,7 @@ awk '
   # The host, lower-cased, without user@ or :port. The MERGE-APPROVED list names GitHub repos
   # as owner/repo, so a bare entry approves github.com only; a repo elsewhere is approved only
   # by an entry that spells its host (gitlab.corp/group/repo). Without this, gitlab.corp/a/b
-  # inherited github.com/a/b's approval (review of #100, P1).
+  # inherited github.com/a/b's approval (caught in review, P1).
   host=$(printf '%s' "$url" | sed -n -e 's#^[A-Za-z][A-Za-z0-9+.-]*://\([^@/]*@\)\{0,1\}\([^/:]*\).*#\2#p' \
          -e 't' -e 's#^\([^@/]*@\)\{0,1\}\([^:/]*\):.*#\2#p' | tr 'A-Z' 'a-z')
   slug=$(printf '%s' "$url" | sed -e 's#^[A-Za-z][A-Za-z0-9+.-]*://[^/]*/##' -e 's#^[^@/]*@[^:/]*:##' \

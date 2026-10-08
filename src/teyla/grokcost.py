@@ -30,8 +30,8 @@ _EMPTY_SUFFIX = "-grok-empty"
 
 def project_of(cwd: str, home: str | None = None) -> str:
     """The name a cwd is grouped under: ~/.worktrees/<repo>/<branch>[/...] and
-    ~/repos/<repo>[/...] are <repo>; a temp directory named <repo>-grok-empty is <repo> (Frank starts
-    its grok children in one, so they read no repo context) and any other temp directory is "tmp";
+    ~/repos/<repo>[/...] are <repo>; a temp directory named <repo>-grok-empty is <repo> (a bot that starts
+    its grok children in one reads no repo context) and any other temp directory is "tmp";
     anything else under $HOME is its first component (~/ops is "ops"); $HOME itself is "~"; a path
     outside $HOME stays as it is."""
     home = (home or os.path.expanduser("~")).rstrip("/")

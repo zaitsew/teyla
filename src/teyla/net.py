@@ -1,7 +1,7 @@
 """The one network gate. Every call that leaves this machine asks `allowed()` first.
 
-On a managed work laptop (Zscaler in the path, corporate code in the transcripts) an audit on
-2026-09-29 found Teyla reaching out on its own from five places: the session-start hook's
+On a managed work laptop (a TLS-intercepting proxy in the path, corporate code in the transcripts) an audit
+found Teyla reaching out on its own from five places: the session-start hook's
 update check, the daily routine's self-update, `gh` in `teyla routines`, models.dev, and the
 plugin installer's git clone. Safe mode (`teyla config set safe.enabled=true`, or
 TEYLA_SAFE=1) closes all of them here, in one place, so a new call site cannot forget.

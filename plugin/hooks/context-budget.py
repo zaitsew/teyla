@@ -3,8 +3,8 @@
 (`teyla config set hooks.context_budget=true`); started by context-budget.sh only when on.
 
 Every turn re-reads the whole context, so a turn at 450k costs about nine times one at 50k.
-The 27 Sept 2026 audit found orchestrator sessions spending 43% of their turns above 400k;
-`teyla spend` priced that re-reading at $772 of $2,696 for the week to 1 Oct.
+Long orchestrator sessions spend a large share of their turns above 400k, and `teyla spend`
+prices that re-reading as a large part of the week's bill.
 
 Stopping the session at 300k and continuing in a fresh one saved the tokens but split one
 project across several windows, so the session shrinks in place instead:
@@ -12,8 +12,8 @@ project across several windows, so the session shrinks in place instead:
   1. ~/.claude/settings.json sets "autoCompactWindow": 335000. Claude Code then compacts at
      about 300k (window minus the output reserve minus 13k: about 35k under the window) and
      carries on: same window, same session id. `teyla doctor` warns when the key is missing; it
-     never writes the file. (400000, ~365k, until 2026-10-04: replaying 1-3 Oct, 335000 re-read
-     ~10% less context for ~50 more compactions in 3 days; 250000 compacted mid-task too often.)
+     never writes the file. (A larger window re-reads more context per turn; a much smaller one
+     compacts mid-task too often.)
   2. This hook, at `[hooks] context_budget_first` (240000) and again every
      `context_budget_step` (30000) after, has the model write a handoff (state, open work,
      decisions, next steps, file paths) to ~/.teyla/handoff/<session_id>.md and keep working.
@@ -24,10 +24,10 @@ project across several windows, so the session shrinks in place instead:
      compaction never brings back an older cycle's decisions as current. Lookup is by session
      id only (it survives compaction); another session's note in the same repo is never used.
 
-Ported from the owner's ~/ops/bin/context-budget-hook so the work MacBook, which has no ~/ops,
-gets it pinned with the plugin. Differences: handoffs live under ~/.teyla/handoff/ (0700, files
-0600 — they hold the session's working state, often an employer's file paths) instead of
-~/.cache, and the thresholds come from ~/.teyla/config.toml instead of the environment.
+Shipped with the plugin so a machine without a hand-wired copy of this hook gets it pinned with
+the plugin. Handoffs live under ~/.teyla/handoff/ (0700, files
+0600 — they hold the session's working state, often an employer's file paths), and the thresholds
+come from ~/.teyla/config.toml.
 
 Stdlib only: it may run on whatever python3 the wrapper found, which need not have `teyla`
 importable (and before 3.11 has no tomllib). Never blocks; exits 0 on any error.

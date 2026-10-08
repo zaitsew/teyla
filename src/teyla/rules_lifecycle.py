@@ -4,7 +4,7 @@ removal when they are not.
     teyla rules propose [--repo <path>] [--days 7] [--min 2] [--write]
     teyla rules stale   [--repo <path>]
 
-The 0.12 review measured two failures. Correction capture was ~97% noise: the hook classifies
+Two failures motivated this module. Correction capture was ~97% noise: the hook classifies
 every prompt with one regex, and "no, wait" in a sentence about something else is a match. And
 rules never died: a rule written once was loaded into every session forever, whether or not
 anything had needed it since. This module answers both from the data already on disk.
@@ -52,6 +52,7 @@ import datetime as _dt
 import pathlib
 import re
 
+from . import lexicon
 from .rules import RULES_DIR, STOP, slug_of
 
 TTL_DAYS = 90
@@ -61,9 +62,7 @@ HUMAN_SOURCES = ("correct", "inbox-reject")
 # Words a correction is phrased in, not what it is about.
 CORRECTION_STOP = {"wrong", "again", "instead", "please", "should", "told", "said", "just", "only", "also",
                    "why", "what", "was", "were", "has", "have", "had", "did", "does", "but", "from", "not",
-                   "never", "always", "yes", "wait", "stop", "still", "then", "there", "they", "them",
-                   "не", "нет", "это", "так", "как", "что", "надо", "нужно", "опять", "снова", "уже", "тоже",
-                   "для", "если", "или", "еще", "ещё", "все", "всё", "был", "была", "было", "нам", "тут"}
+                   "never", "always", "yes", "wait", "stop", "still", "then", "there", "they", "them"} | lexicon.STOPWORDS_RU
 _FRONT_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?", re.S)
 
 
@@ -90,7 +89,7 @@ def _ts(rec_or_s) -> _dt.datetime | None:
 
 def _stem(w: str) -> str:
     """Crude on purpose: drop an English inflection, keep five characters. 'merging', 'merged'
-    and 'merge' meet at 'merg'; 'мерджить' and 'мерджи' at 'мердж'. Clustering a dozen
+    and 'merge' meet at 'merg'. Clustering a dozen
     corrections needs nothing finer, and Teyla is stdlib-only."""
     for suf in ("ing", "ed", "es", "s", "e"):
         if len(w) > len(suf) + 3 and w.endswith(suf):
@@ -100,7 +99,7 @@ def _stem(w: str) -> str:
 
 
 def words(text: str) -> frozenset[str]:
-    return frozenset(_stem(w) for w in re.findall(r"[a-zа-яё0-9]+", (text or "").lower())
+    return frozenset(_stem(w) for w in re.findall(rf"[{lexicon.WORD_CHARS_LOWER}]+", (text or "").lower())
                      if len(w) >= 3 and w not in STOP and w not in CORRECTION_STOP)
 
 
@@ -174,7 +173,7 @@ def load_rules(repo: pathlib.Path) -> list[Rule]:
 def lifecycle_fields(when: _dt.date | _dt.datetime) -> str:
     """The frontmatter lines a new rule file starts with (after `globs:`). `created` is a full
     timestamp: the hit watermark compares to the second, so a correction made later on the
-    rule's first day counts (review of #87, P2). A bare date is still accepted, as old files have."""
+    rule's first day counts (caught in review, P2). A bare date is still accepted, as old files have."""
     if isinstance(when, _dt.datetime):
         when = when if when.tzinfo else when.replace(tzinfo=_dt.timezone.utc)
         created, day = when.isoformat(timespec="seconds"), when.date()
@@ -403,7 +402,7 @@ def write(rep: dict) -> list[str]:
 
     Two passes: everything is computed and scanned (a dry `add_rule` runs the same checks)
     before anything is written, so a refusal on the third proposal cannot leave the first two
-    written behind a message that says "Nothing was written" (review of #87, P2)."""
+    written behind a message that says "Nothing was written" (caught in review, P2)."""
     from . import invisible, rules as rules_mod
     for p in rep["new"]:
         rules_mod.add_rule(rep["repo"], p["text"], scope="**", dry=True, today=rep["now"])

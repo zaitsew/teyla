@@ -1,9 +1,8 @@
 """`teyla spend` — what the last N days of AI work cost, and which part of it bought nothing.
 
-Ivan, 2026-09-30: "давай ещё регулярно (каждый день или неделю) смотреть расход токенов по AI
-моделям и определять, что улетело впустую и как избегать это в будущем". The monitor report
-already priced sessions, but nobody read it (4 written in 2026-09, 0 opened), so this command's
-output goes into the weekly digest and the daily alert, not into another file.
+Token spend should be reviewed regularly (daily or weekly) by model, with what was wasted and how
+to avoid it next time. The monitor report already prices sessions, but a report in a file tends
+not to be read, so this command's output goes into the weekly digest and the daily alert.
 
 Dollars are API list price ("API-equivalent"): a subscription bills differently, but list price
 is what makes two sessions, two models and two harnesses comparable. Each waste rule gives a
@@ -39,16 +38,16 @@ from collections import Counter, defaultdict
 
 from . import config
 
-# W1/W5: a session under this is not worth a line even when it produced nothing. Of the sessions
-# active in the 30 days to 2026-09-30 on this machine, 217 cost $5 or more and 155 cost $10 or
-# more, and those 155 were 93% of all spend: below $15 a line costs more attention than money.
+# W1/W5: a session under this is not worth a line even when it produced nothing. Spend is heavily
+# skewed: a small share of the sessions is most of the money, and below this a line costs more
+# attention than money.
 W1_USD = 15.0
 # W1: a commit this long after the session's last message still counts as its outcome.
 OUTCOME_GRACE_H = 24
 # Findings under this are dropped: a $0.40 loop is not worth a line in a six-line digest.
 FINDING_FLOOR_USD = 1.0
-# The daily alert. 73 sessions in that window cost $50 or more (two a day): at $50 it would fire
-# every morning and be ignored. $250 is a handful a week.
+# The daily alert. A threshold that fires every morning gets ignored; this one is a handful of
+# sessions a week.
 ALERT_SESSION_USD = 250.0
 ALERT_ACTIONS_SHARE = 0.8
 # W3: the model the policy says volume work runs on.
@@ -248,7 +247,7 @@ def _w2_fix() -> str:
     recommended 335000 when ~/.claude/settings.json has none."""
     window, at, is_set = config.compaction()
     hook = ("context-budget-hook re-injects the handoff; if W2 stays high, check the session had the "
-            "setting and the hook fired (~/.cache/context-budget/handoff/), and that the orchestrator "
+            "setting and the hook fired (~/.teyla/handoff/), and that the orchestrator "
             "delegates reading to subagents")
     if is_set:
         return f"compaction is set (autoCompactWindow {window}, ~{at // 1000}k); {hook}"

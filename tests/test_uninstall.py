@@ -334,7 +334,7 @@ def _in_process(monkeypatch):
 
 
 def test_a_skill_that_shows_the_marker_in_a_fenced_example_is_not_teylas(tmp_path, monkeypatch):
-    # review of #67, P1: the marker inside the first lines of the body, but not as the first
+    # caught in review, P1: the marker inside the first lines of the body, but not as the first
     # nonblank line after the frontmatter, must not get the user's whole skill directory deleted
     uninstall = _in_process(monkeypatch)
     home = tmp_path
@@ -356,7 +356,7 @@ def test_a_skill_that_shows_the_marker_in_a_fenced_example_is_not_teylas(tmp_pat
 
 
 def test_a_failed_cache_deletion_keeps_the_registry_row_so_a_rerun_retries(tmp_path, monkeypatch):
-    # review of #67, P2: the row went first, so a cache that could not be deleted was orphaned
+    # caught in review, P2: the row went first, so a cache that could not be deleted was orphaned
     uninstall = _in_process(monkeypatch)
     home = tmp_path
     plugins = home / ".claude" / "plugins"
@@ -378,7 +378,7 @@ def test_a_failed_cache_deletion_keeps_the_registry_row_so_a_rerun_retries(tmp_p
 
 
 def test_codex_hooks_lose_only_teylas_handlers(tmp_path):
-    # #61 wires ~/.codex/hooks.json; uninstall (#67) predates it. A user's handler that shares a
+    # Teyla wires ~/.codex/hooks.json; uninstall must undo that. A user's handler that shares a
     # group with Teyla's stays, with its matcher; a file with only Teyla's left goes.
     from teyla import harness, uninstall
     home = tmp_path
@@ -401,7 +401,7 @@ def test_codex_hooks_lose_only_teylas_handlers(tmp_path):
 
 
 def test_a_sibling_hooks_directory_is_not_teylas(tmp_path):
-    # review of the #61 merge, P1: startswith("~/.teyla/hooks") also matched ~/.teyla/hooks-mine/.
+    # caught in review, P1: startswith("~/.teyla/hooks") also matched ~/.teyla/hooks-mine/.
     from teyla import harness, uninstall
     ours = str(tmp_path / ".teyla" / "hooks" / "capture-correction.sh")
     mine = str(tmp_path / ".teyla" / "hooks-mine" / "check.sh")

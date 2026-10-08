@@ -233,8 +233,8 @@ def _split_ladder_cell(cell: str) -> list[str]:
     design)' or 'GPT-6.1 Sol (`gpt-6.1-sol`) — the default: Codex sessions, reviews'. Commas
     inside parentheses or backticks do not split, and everything after ' — ' stays with the
     entry before it, so each annotation travels with its model (and survives --write-policy);
-    `_model_name` strips it again for matching. Until 2026-10-04 those commas split the
-    annotations into entries of their own, and A11 reported nine LADDER-UNKNOWN for a ladder
+    `_model_name` strips it again for matching. Without that, those commas split the
+    annotations into entries of their own, and A11 reported LADDER-UNKNOWN for a ladder
     whose every model was real."""
     head, dash, tail = cell.partition(" — ")
     parts, depth, tick, cur = [], 0, False, ""
@@ -622,7 +622,7 @@ def write_policy(path: pathlib.Path | None = None, dry: bool = False, days: int 
     In a work-variant policy the ladder *is* the list of providers IT approved for this code, so
     only rows already there are updated; a provider joins it only through `add_providers`
     (`--add-provider`). Without that, a routine model refresh added OpenAI and xAI rows and
-    silently widened the allowlist (Codex review of #59)."""
+    silently widened the allowlist (Codex review)."""
     from . import policy as _policy
     target = path or _policy.POLICY
     text = target.read_text()

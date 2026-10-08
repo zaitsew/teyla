@@ -1,14 +1,12 @@
 """`teyla plugin install|uninstall` — the no-CLI install path.
 
-Written for the machine docs/case-studies/2026-09-09-corporate-pm-feedback.md describes:
-Claude Code runs as the desktop app, there is no `claude` binary on PATH, so
-`claude plugin marketplace add` / `claude plugin install` cannot run at all. The feedback
-is explicit about what that means: *"I installed it by cloning the repo into the
-marketplace directory and hand-writing three registry JSON files. That worked, but it is
-not a documented path and it is not something I would ask a colleague to do."* This module
-is that hand-editing, made safe and reversible.
+Written for machines where Claude Code runs as the desktop app and there is no `claude` binary
+on PATH, so `claude plugin marketplace add` / `claude plugin install` cannot run at all. The
+only way to install is then to clone the repo into the marketplace directory and hand-write
+the registry JSON files, which is not a documented path. This module is that hand-editing,
+made safe and reversible.
 
-What the harness actually keeps, inspected on this machine (`~/.claude/plugins/`):
+What the harness actually keeps, as inspected in `~/.claude/plugins/`:
 
     known_marketplaces.json    {marketplace: {source: {...}, installLocation, lastUpdated}}
     installed_plugins.json     {"version": 2, "plugins": {"<name>@<marketplace>": [
@@ -20,8 +18,8 @@ What the harness actually keeps, inspected on this machine (`~/.claude/plugins/`
                                                  tree, which is used in place and never copied.
 
 No separate file-hash manifest exists in either registry file or anywhere under
-`~/.claude/plugins` on this machine as of 2026-09-09 (the case study mentions one but the
-directory here has none to copy the shape of). `install()` looks for one — a JSON file
+`~/.claude/plugins` in the versions inspected (a harness version may add one, so there is
+none to copy the shape of). `install()` looks for one — a JSON file
 whose values are all hex-hash-shaped strings — and mirrors its exact shape into the new
 cache path only if it finds one; it never invents a format. See `_find_hash_manifest`.
 

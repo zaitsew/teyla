@@ -1,7 +1,7 @@
 """Can each harness do work right now? — `teyla harness verify [--live]` and doctor's `health:*` lines.
 
 `teyla harness status` answers "is Teyla wired into it". That is not the question a person has
-when a routine stopped producing anything: on 2026-09-29 doctor said grok and hermes were OK
+when a routine stopped producing anything: doctor once said grok and hermes were OK
 ("wired") while every Grok model answered HTTP 402 "Grok Build usage balance exhausted" and
 Hermes answered "xAI OAuth state is missing access_token". This module reads, per harness and
 without a network call:
@@ -323,9 +323,9 @@ def auth_hermes(home: pathlib.Path, env=None) -> dict:
 
 def _hermes_current_auth_error(st: dict, pool: list) -> dict:
     """`last_auth_error` of a provider state, or {} once something later succeeded. Hermes never
-    clears the field: after a re-login it still says "relogin required since 09-29" next to a
+    clears the field: after a re-login it still says "relogin required since 01-01" next to a
     fresh `last_refresh`. The newest event decides — a token refresh or a pooled credential that
-    is `ok` after the error's `at` makes it history (2026-10-01, doctor health:hermes)."""
+    is `ok` after the error's `at` makes it history."""
     err = (st or {}).get("last_auth_error") or {}
     at = _parse_ts(err.get("at"))
     if not err or at is None:
@@ -350,7 +350,7 @@ AUTH = {"claude-code": auth_claude, "codex": auth_codex, "grok": auth_grok, "her
 
 class _Errs:
     """The newest error and, separately, the newest quota/auth one. An unrelated newer error (a
-    local filesystem ERROR, a 529) must not hide an unresolved quota/auth failure (review of #66,
+    local filesystem ERROR, a 529) must not hide an unresolved quota/auth failure (caught in review,
     P2), so the caller picks with `pick` once it knows the last success."""
 
     def __init__(self):
@@ -419,7 +419,7 @@ def errors_claude(home: pathlib.Path, since: float, probe_ok: _dt.datetime | Non
                 last_ok[ep] = ts
     # One verdict per entrypoint, then the pick among them: an unresolved quota/auth failure of any
     # entrypoint is shown over a newer error (or a recovered one) of another, so neither hides
-    # the other (#66). The error's own entrypoint supplies "last success".
+    # the other. The error's own entrypoint supplies "last success".
     picked = [e for ep, errs in by_ep.items() if (e := errs.pick(last_ok.get(ep)))]
     open_hard = [e for e in picked if e["kind"] in ("quota", "auth") and not recovered(e, last_ok.get(e["entrypoint"]))]
     pool = open_hard or picked
@@ -497,7 +497,7 @@ def errors_codex(home: pathlib.Path, since: float) -> dict:
                     msg = pl.get("message") or json.dumps(pl)[:200]
                     errs.add(_err(ts, classify(msg), msg, p.name))
                 elif pl.get("type") == "task_complete" and isinstance(pl.get("error"), dict):
-                    # A turn Codex ended on an error (0.153.4, 2026-09-29): {"message": "You've hit
+                    # A turn Codex ended on an error (Codex 0.153.4): {"message": "You've hit
                     # your usage limit. … try again at 11:20 PM.", "codex_error_info": "usage_limit_exceeded"}
                     er = pl["error"]
                     msg = er.get("message") or str(er.get("codex_error_info") or "error")
@@ -718,7 +718,7 @@ def recovered(err: dict | None, last_ok: _dt.datetime | None) -> bool:
 
 def _window_live(w: dict, now: float) -> bool:
     """A recorded window still counts only until its own reset: a 100% snapshot whose `resets_at`
-    has passed is history, not a limit (review of #66, P2)."""
+    has passed is history, not a limit (caught in review, P2)."""
     r = w.get("resets_at")
     return not (isinstance(r, (int, float)) and r <= now)
 
@@ -726,7 +726,7 @@ def _window_live(w: dict, now: float) -> bool:
 def verdict(name: str, row: dict, live_ok: bool = False) -> dict:
     """level (OK/WARN/FIX), a one-line detail, and the fix. `live_ok`: a live call just succeeded,
     which supersedes every historical availability failure (auth record, limit snapshot, logged
-    error) but not a broken install (review of #66, P2)."""
+    error) but not a broken install (caught in review, P2)."""
     parts, level, fix = [], "OK", None
     parts.append(row.get("version") or (f"no `{BINARY[name]}` on PATH" if not row.get("binary") else "version ?"))
     if row.get("version_error"):
@@ -816,7 +816,7 @@ def window_errors(days: int, home: pathlib.Path | None = None) -> list[dict]:
         now = time.time()
         live = {"primary": _window_live(lim.get("primary") or {}, now), "secondary": _window_live(lim.get("secondary") or {}, now)}
         # A limit event newer than the recorded error is the current state, even when an old quota
-        # error was already cleared by a success in between (review of #69, P2); only a success
+        # error was already cleared by a success in between (caught in review, P2); only a success
         # after the limit event clears it. A snapshot whose window has reset is history.
         if (rt and lim.get("at") and live.get(str(rt), any(live.values()))
                 and (err is None or err["kind"] not in ("quota", "auth") or err.get("ts") is None or lim["at"] > err["ts"])):
@@ -832,7 +832,7 @@ def window_errors(days: int, home: pathlib.Path | None = None) -> list[dict]:
 # --- live ---------------------------------------------------------------------------------------
 
 def policy_marker(policy_path: pathlib.Path | None = None) -> str | None:
-    """The title of §7 of POLICY.md ("Merging" in Ivan's), which a model can only name if the
+    """The title of §7 of POLICY.md ("Merging" in the shipped template), which a model can only name if the
     policy is in its instructions."""
     from . import policy
     p = policy_path or policy.POLICY
@@ -849,8 +849,8 @@ LIVE_PROMPT = ("Reply with one line and nothing else: the title of section 7 of 
 
 
 # Hermes's SOUL.md carries a summary of the policy and a reference to POLICY.md, not section 7's
-# heading (policy.sync); forbidding file reads would make correct wiring answer NO-POLICY (review
-# of #66, P2).
+# heading (policy.sync); forbidding file reads would make correct wiring answer NO-POLICY (caught
+# in review, P2).
 LIVE_PROMPT_HERMES = ("Reply with one line and nothing else: the title of section 7 of the operating policy your "
                       "instructions refer to (the heading text after \"7.\"). You may read the policy file your "
                       "instructions point to, but use no other tool. "
@@ -935,7 +935,7 @@ def verify(live_run: bool = False, timeout: int = 120, home: pathlib.Path | None
         for n, r, lv in zip(names, rows, lives):
             r["live"] = lv
             if lv.get("result") == "ok":
-                verdict(n, r, live_ok=True)  # a confirmed success supersedes history (review of #66, P2)
+                verdict(n, r, live_ok=True)  # a confirmed success supersedes history (caught in review, P2)
     return rows
 
 

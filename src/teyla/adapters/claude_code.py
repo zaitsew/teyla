@@ -21,8 +21,7 @@ ACTIVE_GAP_CEILING_S = 30 * 60
 # `entrypoint` on each record says how the session was started. `sdk-cli` is `claude -p` /
 # `--print`: a script or another agent handing Claude one prompt, never a human at the keyboard.
 # (`cli` is the terminal, `claude-desktop` the app; both are interactive.) The Agent SDKs
-# stamp their own `sdk-*` value; only `sdk-cli` and `claude-desktop` were seen on the machine
-# this was written on (233 of 233 transcripts in 2026-09 were `claude-desktop`), so the
+# stamp their own `sdk-*` value; only `sdk-cli` and `claude-desktop` have been observed, so the
 # prefix, not a list, decides — a new SDK must not make its prompts human turns.
 BATCH_ENTRYPOINT_PREFIX = "sdk-"
 
@@ -113,7 +112,7 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
     after_error = False  # the last assistant record was an API error
     # Claude Code writes one record per content block: a reply with text and three tool calls is
     # four records, each carrying the same message id and usage. Summing per record counted output
-    # 2.85x over 2026-09 (102M vs 36M tokens). Usage is keyed by message id, the last record wins
+    # almost three times over. Usage is keyed by message id, the last record wins
     # (in subagent files the records of one message carry growing counts).
     per_message: dict = {}
     failed_in_a_row = 0  # tool results that came back is_error, since the last one that did not
@@ -179,7 +178,7 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                         if _touches_governance(name, inp):
                             s.gov_edits += 1
                             # The write's own date, not the session's start, and local like the
-                            # ack day it is compared with (review of #68, P2).
+                            # ack day it is compared with (caught in review, P2).
                             if ts and local_day(ts) not in s.gov_days:
                                 s.gov_days.append(local_day(ts))
                         if name in ("Agent", "Task"):
@@ -216,7 +215,7 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                 h = human_text(txt, after_error)
                 after_error = False
                 # A bare "continue" is a retry to the turn counts but an approval to A15: it
-                # still answers the question the agent ended on (review of the #60 merge).
+                # still answers the question the agent ended on (caught in review).
                 # The reminder block Claude Code appends to a prompt is not part of the reply:
                 # "continue" + <system-reminder>…</system-reminder> is still "continue".
                 bare = strip_reminders(txt)
@@ -255,9 +254,9 @@ _SCRIPT_WRITE_RE = re.compile(r"write_text|\.write\(|open\([^)]*,\s*['\"][wa]")
 
 def _touches_governance(name: str, inp: dict) -> bool:
     """True when a tool call writes the global instructions file. Reads (grep, cat) do not count,
-    and neither does a command that only mentions the path: on 2026-10-02 a session that wrote
-    a hook, a PR body and a changelog naming ~/.claude/CLAUDE.md was reported as six edits to it
-    (A10 [high]) though the file was untouched since the ack. The path has to be the target:
+    and neither does a command that only mentions the path: a session that wrote
+    a hook, a PR body and a changelog naming ~/.claude/CLAUDE.md was once reported as six edits
+    to it (A10 [high]) though the file was untouched since the ack. The path has to be the target:
     a redirect into it, the operand of a writing verb, or a literal a script opens and writes."""
     target = os.path.expanduser("~/.claude/CLAUDE.md")
     path = rf"(?:{_GLOBAL_MD}|{re.escape(target)})"

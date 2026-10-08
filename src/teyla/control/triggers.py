@@ -13,7 +13,7 @@ works on some machines, and guessing wrong silently leaves the job unloaded.
 launchd's own spelling for "every day" and avoids seven near-identical entries.
 
 **Timezone.** launchd fires on *local* time and has no timezone field. A routine
-declaring `tz = "Europe/Madrid"` on a machine set to another zone will fire at the
+declaring `tz = "Europe/London"` on a machine set to another zone will fire at the
 wrong hour, so `install` says so instead of pretending. The `tz` is still recorded
 in the manifest and the receipt; it is the intent, and the plist is the
 approximation.

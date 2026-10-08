@@ -8,7 +8,7 @@ still loaded. This module reads the shape that Teyla itself **runs**:
     name = "morning-digest"
     gate = "A"
     idempotency = "date"
-    trigger = { type = "clock", at = "07:00", tz = "Europe/Madrid", days = "mon-fri" }
+    trigger = { type = "clock", at = "07:00", tz = "Europe/London", days = "mon-fri" }
     step    = { kind = "command", run = "./bin/digest" }
     act     = { kind = "command", run = "./bin/send-digest" }
     capabilities = ["fs.write:runs/**", "shell:git push", "send:telegram"]
@@ -190,7 +190,7 @@ def parse_capability(cap: str) -> tuple[str, str]:
 
 
 def group_capabilities(caps) -> dict[str, list[str]]:
-    """`["fs.write:runs/**", "tool:mcp__loco__*"]` -> `{"fs.write": ["runs/**"], ...}`,
+    """`["fs.write:runs/**", "tool:mcp__notes__*"]` -> `{"fs.write": ["runs/**"], ...}`,
     with every scheme present (empty list = nothing granted under it). The hook reads
     this shape; an absent key and an empty list must not mean different things there."""
     out: dict[str, list[str]] = {s: [] for s in CAPABILITY_SCHEMES}
@@ -259,7 +259,7 @@ def _parse_trigger(raw, where: str) -> Trigger:
         raise ManifestError(f"{where}: clock trigger needs `at` as 24h HH:MM, got {at!r}")
     tz = raw.get("tz")
     if not tz:
-        raise ManifestError(f"{where}: clock trigger needs an explicit `tz` (e.g. tz = \"Europe/Madrid\")")
+        raise ManifestError(f"{where}: clock trigger needs an explicit `tz` (e.g. tz = \"Europe/London\")")
     return Trigger(type="clock", at=str(at), tz=str(tz), days=parse_days(raw.get("days")))
 
 

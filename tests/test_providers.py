@@ -24,7 +24,7 @@ def test_openai_daily_follows_pages_and_names_projects():
         calls.append(url)
         assert headers["Authorization"] == "Bearer sk-admin-x"
         if "/projects" in url:
-            return {"data": [{"id": "proj_a", "name": "loco"}]}
+            return {"data": [{"id": "proj_a", "name": "app-b"}]}
         if "page" not in _query(url):
             return {"data": [{"start_time": _epoch("2026-09-29"), "results": [
                         {"project_id": "proj_a", "amount": {"value": 1.5}},
@@ -35,7 +35,7 @@ def test_openai_daily_follows_pages_and_names_projects():
                     {"project_id": None, "amount": {"value": 0.25}}]}], "has_more": False}
 
     out = providers.openai_daily("sk-admin-x", _dt.date(2026, 9, 17), get)
-    assert out == {"loco": {"2026-09-29": 2.0}, "proj_b": {"2026-09-29": 3.0},
+    assert out == {"app-b": {"2026-09-29": 2.0}, "proj_b": {"2026-09-29": 3.0},
                    "default project": {"2026-09-30": 0.25}}
     q = _query(calls[1])
     assert q["start_time"] == [str(_epoch("2026-09-17"))] and q["group_by"] == ["project_id"]
@@ -55,12 +55,12 @@ def test_openai_daily_groups_by_id_when_projects_cannot_be_listed():
 def test_openai_projects_sharing_a_name_keep_their_own_series():
     def get(url, headers):
         if "/projects" in url:
-            return {"data": [{"id": "proj_a", "name": "loco"}, {"id": "proj_b", "name": "loco"},
-                             {"id": "proj_c", "name": "frank"}]}
+            return {"data": [{"id": "proj_a", "name": "app-b"}, {"id": "proj_b", "name": "app-b"},
+                             {"id": "proj_c", "name": "app-a"}]}
         return {"data": [{"start_time": _epoch("2026-09-30"), "results": [
             {"project_id": p, "amount": {"value": 1}} for p in ("proj_a", "proj_b", "proj_c")]}]}
 
-    assert set(providers.openai_daily("k", TODAY, get)) == {"loco (proj_a)", "loco (proj_b)", "frank"}
+    assert set(providers.openai_daily("k", TODAY, get)) == {"app-b (proj_a)", "app-b (proj_b)", "app-a"}
 
 
 def test_a_bill_past_the_page_cap_is_an_error_not_a_partial_bill():
@@ -101,27 +101,27 @@ def _series(values: dict[int, float]) -> dict[str, float]:
 def test_spikes_need_twice_the_median_and_a_floor():
     flat = {b: 1.0 for b in range(1, 15)}
     bills = {"openai": {"daily": {
-        "loco": _series({**flat, 0: 5.0}),          # 5x the median, $4 over: a spike
-        "frank": _series({**flat, 0: 2.5}),         # 2.5x but only $1.50 over: below the floor
-        "knut": _series({**{b: 10.0 for b in range(1, 15)}, 0: 18.0}),  # $8 over but under 2x
+        "app-b": _series({**flat, 0: 5.0}),          # 5x the median, $4 over: a spike
+        "app-a": _series({**flat, 0: 2.5}),         # 2.5x but only $1.50 over: below the floor
+        "app-c": _series({**{b: 10.0 for b in range(1, 15)}, 0: 18.0}),  # $8 over but under 2x
     }}, "anthropic": {"skipped": "no anthropic-admin-key in the Keychain"}}
     out = providers.spikes(bills, 7, TODAY)
-    assert [(s["group"], s["day"]) for s in out] == [("loco", "2026-10-01")]
+    assert [(s["group"], s["day"]) for s in out] == [("app-b", "2026-10-01")]
     assert out[0]["median"] == 1.0 and out[0]["excess"] == 4.0
 
 
 def test_spikes_look_only_inside_the_window_and_sort_by_excess():
     series = _series({9: 50.0, 3: 9.0, 1: 30.0})   # day 9 is history; new spend has median 0
-    out = providers.spikes({"openai": {"daily": {"lumi": series}}}, 7, TODAY)
+    out = providers.spikes({"openai": {"daily": {"app-d": series}}}, 7, TODAY)
     assert [s["day"] for s in out] == ["2026-09-30", "2026-09-28"]
     assert out[0]["excess"] == 30.0
 
 
 def test_totals_sum_the_window_only_and_drop_pennies():
-    bills = {"openai": {"daily": {"loco": _series({0: 1.0, 6: 2.0, 7: 100.0}), "tiny": _series({0: 0.004})}},
+    bills = {"openai": {"daily": {"app-b": _series({0: 1.0, 6: 2.0, 7: 100.0}), "tiny": _series({0: 0.004})}},
              "anthropic": {"error": "HTTPError: 401"}}
     # anthropic was not read: no "$0 billed" line, the coverage line says why
-    assert providers.totals(bills, 7, TODAY) == {"openai": {"loco": 3.0}}
+    assert providers.totals(bills, 7, TODAY) == {"openai": {"app-b": 3.0}}
 
 
 def test_read_skips_missing_keys_safe_mode_and_survives_errors(monkeypatch):
@@ -156,18 +156,18 @@ def test_the_suite_never_reads_the_real_keychain():
 
 
 def test_report_carries_w7_and_says_what_it_could_not_read():
-    bills = {"openai": {"daily": {"loco": _series({**{b: 1.0 for b in range(1, 15)}, 0: 40.0})}},
+    bills = {"openai": {"daily": {"app-b": _series({**{b: 1.0 for b in range(1, 15)}, 0: 40.0})}},
              "anthropic": {"skipped": "no anthropic-admin-key in the Keychain"}}
     today = _dt.datetime.now(_dt.timezone.utc).date()
     # report() reads "today" itself; shift the fixture onto the real date.
     shift = (today - TODAY).days
-    bills["openai"]["daily"]["loco"] = {(_dt.date.fromisoformat(d) + _dt.timedelta(days=shift)).isoformat(): v
-                                        for d, v in bills["openai"]["daily"]["loco"].items()}
+    bills["openai"]["daily"]["app-b"] = {(_dt.date.fromisoformat(d) + _dt.timedelta(days=shift)).isoformat(): v
+                                        for d, v in bills["openai"]["daily"]["app-b"].items()}
     rep = spend.report(7, rows=[], actions=[], bills=bills)
     w7 = [f for f in rep["findings"] if f["id"] == "W7"]
-    assert w7 and w7[0]["usd"] == 39.0 and "openai loco" in w7[0]["evidence"]
+    assert w7 and w7[0]["usd"] == 39.0 and "openai app-b" in w7[0]["evidence"]
     assert "W7: anthropic not read (no anthropic-admin-key in the Keychain)" in rep["coverage"]
-    assert rep["providers"]["openai"] == {"loco": 46.0}
+    assert rep["providers"]["openai"] == {"app-b": 46.0}
     assert "openai billed (products, all keys): $46" in spend.render(rep)
     assert "anthropic billed" not in spend.render(rep)
     # product spikes are not part of the sessions' total, so not of its waste share
@@ -176,5 +176,5 @@ def test_report_carries_w7_and_says_what_it_could_not_read():
 
 
 def test_alert_names_a_spike():
-    s = dict(provider="openai", group="loco", day="2026-10-01", usd=40.0, median=1.0, excess=39.0)
-    assert spend.alerts([], [], spikes=[s]) == ["openai loco spent $40 on 2026-10-01 (median $1.00)"]
+    s = dict(provider="openai", group="app-b", day="2026-10-01", usd=40.0, median=1.0, excess=39.0)
+    assert spend.alerts([], [], spikes=[s]) == ["openai app-b spent $40 on 2026-10-01 (median $1.00)"]

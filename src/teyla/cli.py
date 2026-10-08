@@ -130,7 +130,7 @@ def _extras(m, sessions, days):
 def _deliver(text: str) -> bool:
     """Write `text` to stdout and flush it. True only when it reached the pipe: stdout is
     buffered, so `sys.stdout.write` returning says nothing about a closed `| head` or a full
-    disk, and a finding marked seen on that say-so is never shown (review of #68, P2)."""
+    disk, and a finding marked seen on that say-so is never shown (caught in review, P2)."""
     try:
         sys.stdout.write(text)
         sys.stdout.flush()
@@ -154,7 +154,7 @@ def cmd_monitor(args):
     if args.share:
         # Redact before advising: findings quote projects, sessions and connectors in their
         # evidence, and computed from the raw metrics they would carry the real names out
-        # (review of #69, P1: A17 named the project that drives the volume).
+        # (caught in review, P1: A17 named the project that drives the volume).
         m = redact(m); args.samples = False
     F = advise(m, policy.status())
     out = to_json(m, F) if args.json else markdown(m, F, include_samples=args.samples)
@@ -167,7 +167,7 @@ def cmd_monitor(args):
     else:
         delivered = _deliver(out)
     # Only after the report was delivered: an unwritable --out, or a closed pipe, must not
-    # silence the never-acknowledged A10 on the next run (review of #68, P2).
+    # silence the never-acknowledged A10 on the next run (caught in review, P2).
     if not delivered:
         return 1
     from .advise import mark_seen
@@ -259,7 +259,7 @@ def cmd_policy(args):
             if args.work:
                 # Safe mode goes on even when the policy step was refused: it only ever makes this
                 # machine do less. But the command succeeds only when both halves hold — a work
-                # laptop left on the home policy must not read "done" (Codex review of #59).
+                # laptop left on the home policy must not read "done" (Codex review).
                 try:
                     set_msg = config.set_value("safe.enabled", "true")
                 except OSError as e:

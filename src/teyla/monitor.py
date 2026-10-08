@@ -45,9 +45,9 @@ def metrics(sessions: list[Session], days: int | None = None) -> dict:
                             days=sorted(s.gov_days) or [s.local_day]))
         # One human turn is already one logical unit: a big autonomous run cannot be "split into
         # one session per unit", so size alone never makes it giant. It still counts when it ran
-        # for more active hours than a unit should. Compactions do not count: since zaitsew/ops#198
-        # (2026-10-01) one session per project compacts in place (~300k since 2026-10-04), so a long project
-        # compacting several times is the intended shape, not a giant session.
+        # for more active hours than a unit should. Compactions do not count: with one session per
+        # project that compacts in place, a long project compacting several times is the intended
+        # shape, not a giant session.
         oversized = s.size > GIANT_BYTES and s.n_user > 1
         if oversized or (s.active_hours or 0) > LONG_ACTIVE_HOURS:
             giant.append(dict(project=s.project, sid=s.sid[:8], day=s.day, mb=round(s.size / 1e6, 1), hours=s.hours,
@@ -91,8 +91,7 @@ def metrics(sessions: list[Session], days: int | None = None) -> dict:
 # --- headless volume -----------------------------------------------------------------------------
 #
 # A batch session is one headless call: `claude -p`, `codex exec`, `grok -p` from a script or
-# another agent (adapters set `batch`). In September 2026 they were 15,236 of Grok's 15,240 and
-# 534 of Codex's 545 sessions here, and the Grok ones were invisible: Grok stores no per-message
+# another agent (adapters set `batch`). They can be nearly all of a harness's sessions, and the Grok ones were invisible: Grok stores no per-message
 # token counts, so the By-model table had no Grok row, until the balance ran out (HTTP 402).
 # Grok's list-price cost comes from `teyla grok-cost` (adapters.grok.session_costs,
 # costUsdTicks), passed in as `grok_rows`; other harnesses are priced from their tokens with
@@ -152,14 +151,14 @@ def headless(sessions: list[Session], days: int | None, grok_rows: list | None =
             r["cost_note"] = "no list price for " + ", ".join(sorted(r["unpriced_models"]))
         else:
             r["cost_note"] = "list price" if r["harness"] == "grok" else "API-equivalent"
-        # A cost known for only some of the calls is a floor, not the total (review of #69, P2).
+        # A cost known for only some of the calls is a floor, not the total (caught in review, P2).
         r["cost_partial"] = bool(r["tokens_known"]) and r["priced"] < r["calls"]
         if r["cost_partial"]:
             r["cost_note"] += f", partial: {r['priced']} of {r['calls']} calls costed"
         r["unpriced_models"] = sorted(r["unpriced_models"])
         r["usd"] = round(r["usd"], 2)
         # The floor is the baseline: 100 calls this week after none last week is a start, not a doubling
-        # (review of #69, P2).
+        # (caught in review, P2).
         r["doubled"] = r["calls_prev_7d"] >= HEADLESS_DOUBLING_FLOOR and span >= 14 and r["calls_7d"] >= 2 * r["calls_prev_7d"]
         out.append(r)
     return sorted(out, key=lambda r: (-r["calls"], r["harness"], r["project"]))

@@ -158,7 +158,7 @@ def test_symlinked_instructions_are_read_once_and_named_by_the_real_file(tmp_pat
 
 
 def test_symlink_out_of_the_repo_does_not_count_and_blocks(tmp_path):
-    """review of #70, P1: CLAUDE.md -> a home-directory policy carries nothing in a cloud clone."""
+    """caught in review, P1: CLAUDE.md -> a home-directory policy carries nothing in a cloud clone."""
     outside = tmp_path / "elsewhere" / "policy.md"
     outside.parent.mkdir()
     outside.write_text(PREPARED_AGENTS)
@@ -182,7 +182,7 @@ def test_only_an_external_symlink_is_not_an_instruction_file(tmp_path):
 
 
 def test_a_dangling_external_symlink_still_blocks(tmp_path):
-    """review of #70's fix, P1: a link to a file that is missing here is not is_file(), and was
+    """review of the fix, P1: a link to a file that is missing here is not is_file(), and was
     dropped before the external-link check saw it."""
     r = _prepared(tmp_path, files={"AGENTS.md": PREPARED_AGENTS})
     (r / "CLAUDE.md").unlink()
@@ -207,7 +207,7 @@ def _resolve_like_312(monkeypatch):
 
 
 def test_a_symlink_loop_between_instruction_files_is_a_finding_not_a_crash(tmp_path, monkeypatch):
-    """review of #70, P2: CLAUDE.md → AGENTS.md → CLAUDE.md crashed `cloud check` on 3.11/3.12."""
+    """caught in review, P2: CLAUDE.md → AGENTS.md → CLAUDE.md crashed `cloud check` on 3.11/3.12."""
     _resolve_like_312(monkeypatch)
     r = _prepared(tmp_path, files={"AGENTS.md": PREPARED_AGENTS})
     (r / "AGENTS.md").unlink()
@@ -286,7 +286,7 @@ def test_gate_guarded_but_silent_warns(tmp_path):
 
 
 def test_step_after_a_completed_guarded_block_is_not_guarded():
-    """review of #70, P2: the guard search must not cross `fi`."""
+    """caught in review, P2: the guard search must not cross `fi`."""
     gate = ("if command -v xcodebuild >/dev/null; then\n  xcodebuild build\nelse\n  echo skipped here: ios\nfi\n"
             "xcodebuild test\n")
     assert [(s["line"], s["guarded"]) for s in cloud.mac_steps(gate) if s["line"] > 1] == [(2, True), (6, False)]
@@ -301,7 +301,7 @@ def test_else_of_a_positive_guard_is_unguarded_but_else_of_a_negated_one_is_guar
 
 
 @pytest.mark.parametrize("gate,guarded", [
-    # review of #70, P2: the else of `! guard && other` also runs when `other` fails, x or no x
+    # caught in review, P2: the else of `! guard && other` also runs when `other` fails, x or no x
     ("if ! command -v xcodebuild >/dev/null && [ -z \"$FORCE\" ]; then\n  echo skipped here\nelse\n  xcodebuild test\nfi\n", False),
     ("if ! command -v xcodebuild >/dev/null || [ -n \"$SKIP\" ]; then\n  echo skipped here\nelse\n  xcodebuild test\nfi\n", True),
     ("if command -v xcodebuild >/dev/null && [ -d App ]; then\n  xcodebuild test\nfi\n", True),
@@ -315,7 +315,7 @@ def test_else_of_a_positive_guard_is_unguarded_but_else_of_a_negated_one_is_guar
     ("command -v xcodebuild >/dev/null || xcodebuild test\n", False),
     ("! command -v xcodebuild >/dev/null || xcodebuild test\n", True),
     ("command -v xcodebuild >/dev/null; xcodebuild test\n", False),
-    # PR #86 review, P2: a one-line if runs the tool in both branches; the else is not guarded
+    # caught in review, P2: a one-line if runs the tool in both branches; the else is not guarded
     ("if command -v xcodebuild; then xcodebuild test; else xcodebuild build; fi\n", False),
     ("if ! command -v xcodebuild; then xcodebuild test; else xcodebuild build; fi\n", False),
 ])
@@ -410,7 +410,7 @@ def test_sessions_found_from_trailers_across_remote_refs(tmp_path):
 
 
 def test_a_session_belongs_to_the_branch_whose_tip_is_nearest_its_commit(tmp_path):
-    """review of #70, P2: a later branch cut from the session's branch contains its commits too,
+    """caught in review, P2: a later branch cut from the session's branch contains its commits too,
     and the alphabetical first (claude/alpha) took the session."""
     r = _session_repo(tmp_path)
     _git(r, "checkout", "-q", "-b", "claude/alpha", "origin/claude/brave-x")
@@ -429,7 +429,7 @@ def test_a_session_belongs_to_the_branch_whose_tip_is_nearest_its_commit(tmp_pat
 
 
 def test_local_main_does_not_make_a_session_landed(tmp_path):
-    """review of #70, P2: merged into local main but not pushed is not landed on origin/main."""
+    """caught in review, P2: merged into local main but not pushed is not landed on origin/main."""
     r = _session_repo(tmp_path)
     _git(r, "merge", "-q", "--no-ff", "-m", "local merge", "origin/claude/brave-x")
     by = {s["session"]: s for s in cloud.scan_sessions([r], gh=False, now=NOW)}
@@ -438,7 +438,7 @@ def test_local_main_does_not_make_a_session_landed(tmp_path):
 
 
 def test_without_a_remote_default_nothing_is_landed(tmp_path):
-    """review of #70's fix, P2: default_ref() falls back to local main when origin has none."""
+    """review of the fix, P2: default_ref() falls back to local main when origin has none."""
     r = _session_repo(tmp_path)
     _git(r, "update-ref", "-d", "refs/remotes/origin/main")
     by = {s["session"]: s for s in cloud.scan_sessions([r], gh=False, now=NOW)}

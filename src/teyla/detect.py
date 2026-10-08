@@ -1,11 +1,9 @@
 """Policy detectors: the rules in POLICY.md a machine can check, checked.
 
-A rule written down and never measured is followed until the first busy week. In September
-2026 the no-Actions rule (POLICY §10) was broken three times by agents — workflow files
-created in `accounts` twice on 09-11 and in `loco` on 09-20 — and nothing noticed until the
-Actions quota hit 100% on 09-23; afterwards nine checkouts under ~/repos still declared
-push / pull_request / schedule triggers. The rule was in every harness's context the whole
-time. What was missing was a detector.
+A rule written down and never measured is followed until the first busy week. A no-Actions
+rule can be broken by agents again and again — workflow files created in one repo after
+another — and nothing notices until the Actions quota runs out, with the rule in every
+harness's context the whole time. What is missing is a detector.
 
 Which detectors run is declared by the policy itself, so a user whose POLICY.md does not
 carry a rule is never nagged about it:
@@ -23,7 +21,7 @@ Built-in detectors (DETECTORS):
   `on:` names push, pull_request, pull_request_target or schedule. `teyla doctor` WARNs
   per repo with the file and the fix; `teyla monitor`/`advise` raise A16.
 - `ask-permission` — turns that ended with the agent asking permission to do the obvious
-  next step ("Want me to push them?") and the human answering only "yes". Measured from
+  next step ("Want me to push them?") and the human answering only "yes". Read from
   Claude Code and Codex transcripts; `teyla monitor`/`advise` raise A15.
 """
 from __future__ import annotations
@@ -33,12 +31,12 @@ import pathlib
 import re
 import subprocess
 
-from . import config
+from . import config, lexicon
 
 MARKER_RE = re.compile(r"<!--\s*teyla:detect\s+([A-Za-z0-9][A-Za-z0-9_-]*)(?![\w-])[^>]*-->")
 
-# Wording that switches a detector on without a marker: the heading of Ivan's §10 ("GitHub
-# Actions are off — the laptop is the gate") and the template's §4 ("Ask about product
+# Wording that switches a detector on without a marker: the heading of a policy's no-Actions
+# section ("GitHub Actions are off — the laptop is the gate") and the template's §4 ("Ask about product
 # decisions, not about permission" / "Never ask "shall I proceed?"").
 IMPLICIT = {
     "no-actions": re.compile(r"^#{1,6}\s.*\bGitHub Actions\b.*\b(off|never|not|no)\b", re.I | re.M),
@@ -46,7 +44,7 @@ IMPLICIT = {
 }
 
 DETECTORS = {
-    "no-actions": dict(rule="GitHub Actions only on workflow_dispatch (Ivan's POLICY §10)",
+    "no-actions": dict(rule="GitHub Actions only on workflow_dispatch (POLICY §10)",
                        reported="teyla doctor (actions:<repo>), advice A16"),
     "ask-permission": dict(rule="ask about product decisions, never for permission to proceed (POLICY §4)",
                            reported="advice A15"),
@@ -148,7 +146,7 @@ def workflow_triggers(text: str) -> list[str]:
             ind = len(s) - len(s.lstrip())
             if ind == 0 and not s.startswith("-"):
                 # Next top-level key ends the block. A sequence at the key's own indentation
-                # (`on:` then `- push`) is valid YAML and stays in (review of #60, P2).
+                # (`on:` then `- push`) is valid YAML and stays in (caught in review, P2).
                 break
             if indent is None:
                 indent = ind
@@ -191,7 +189,7 @@ def repos(cfg: dict | None = None) -> list[pathlib.Path]:
 
 def _git(repo: pathlib.Path, *args: str, stdin: str | None = None) -> bytes | None:
     # Bytes, not text: text mode turns CRLF into LF, and cat-file --batch declares blob sizes in
-    # the original bytes, so every offset after a CRLF file drifted (review of #60, P2).
+    # the original bytes, so every offset after a CRLF file drifted (caught in review, P2).
     try:
         r = subprocess.run(["git", "-C", str(repo), *args], input=stdin.encode() if stdin is not None else None,
                            capture_output=True, timeout=10)
@@ -310,11 +308,10 @@ def enrich(m: dict, cfg: dict | None = None, text: str | None = None) -> dict:
 
 # --- ask-permission: turns that ended by asking to do the obvious next step ----------------
 #
-# Measured on this machine's last 30 days of Claude Code transcripts (2026-09): 403 turns
-# ended with a question before the next human turn. Most were real decisions — "A or B?",
+# Many turns end with a question before the next human turn. Most are real decisions — "A or B?",
 # "which do you want?", "paste the key or skip?" — and a detector that counted every trailing
 # question would be noise. The shape §4 forbids is narrower and has a tell: the agent asks
-# permission for one next step ("Want me to push them?", "Делать?", "Go?") and the human's
+# permission for one next step ("Want me to push them?", "Go?") and the human's
 # whole decision is "yes". So a turn counts only when all three hold:
 #   1. the last paragraph asks permission (PERMISSION_RE) for a single step — no " or ",
 #      no "which", no numbered menu;
@@ -323,30 +320,16 @@ def enrich(m: dict, cfg: dict | None = None, text: str | None = None) -> dict:
 #   3. the next human turn is a bare yes and nothing else (is_bare_yes).
 # A session that ends on the question is not counted: nobody answered, so nothing is known.
 
-PERMISSION_RE = re.compile(
-    r"\b(?:do you )?want me to\b|\bwould you like me to\b|\b(?:shall|should) (?:i|we)\b"
-    r"|\b(?:ok|okay|ready) to (?:proceed|go|continue|start)\b|\blet me know if you(?:'d| would)? (?:like|want) me to\b"
-    r"|(?:^|[.!?]\s+|\n)\s*(?:proceed|go|apply|continue|ship it|go ahead)\?"
-    r"|\bхочешь\b|\bхотите\b|\bделать\?|\bделаем\?|\bпродолж(?:ить|аю|аем)\?|\bзапуска(?:ю|ем|ть)\?|\bприменить\?"
-    r"|\bмне (?:продолжить|сделать|начать|запустить)\b|\bсделать\?",
-    re.I,
-)
-CHOICE_RE = re.compile(r"\bor\b|\bwhich\b|\bили\b|\bкакой\b|\bкакую\b|\bкакое\b|\bчто (?:берём|выбираешь)\b|(?:^|\n)\s*(?:\d+[.)]|\(?[a-c]\))\s", re.I)
-BLOCKER_RE = re.compile(
-    r"api[ _-]?key|password|passphrase|token|credential|secret|sign[ -]?in|log[ -]?in|2fa|payment|pay\b|purchase|billing"
-    r"|\bmerge\b|\bproduction\b|\bprod\b|\bdeploy|\bdelete|\bremove|\bdrop\b|force[- ]push|\bdownload|\bpublish|\bsend\b|\bemail"
-    r"|CLAUDE\.md|POLICY\.md|ключ|пароль|оплат|удал|смерж|мерж|прод\b|деплой|задепло",
-    re.I,
-)
+PERMISSION_RE = re.compile(lexicon.PERMISSION_PATTERN, re.I)
+CHOICE_RE = re.compile(lexicon.CHOICE_PATTERN, re.I)
+BLOCKER_RE = re.compile(lexicon.BLOCKER_PATTERN, re.I)
 # The whole reply must be a yes — words from this list and punctuation, nothing else.
 # "Yes, but don't push until CI is green" is a decision with a condition, not a nudge; a
-# prefix match counted it (Codex review of #60). "ok", "go" and "давай" open a redirect as
-# often as a yes ("Okay, skip grok…", "Давай нагенерим больше вариантов" — both measured),
-# so a reply is also rejected when anything but these words follows them.
-AFFIRMATIVE_WORDS = frozenset(
-    "yes yep yeah yup sure ok okay k proceed go ahead do it please agreed agree lgtm ship run continue sounds good "
-    "да давай делай ок окей конечно ага продолжай согласен запускай го пожалуйста вперёд вперед".split())
-FILLER_WORDS = frozenset("ahead it please good пожалуйста".split())
+# prefix match counted it (Codex review). "ok", "go" and "let's go" open a redirect as
+# often as a yes ("Okay, skip the tests…"), so a reply is also rejected when anything but these
+# words follows them. The word lists (English and Russian) are in `lexicon`.
+AFFIRMATIVE_WORDS = lexicon.AFFIRMATIVE_WORDS
+FILLER_WORDS = lexicon.FILLER_WORDS
 
 
 def is_bare_yes(reply: str | None) -> bool:

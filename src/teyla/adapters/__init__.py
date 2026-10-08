@@ -12,37 +12,18 @@ import re
 from collections import Counter, defaultdict
 from typing import Iterable
 
-# "Correction-shaped": the human pushing back on work already produced. English + Russian, a
-# heuristic, tuned for precision over recall. The 0.11 pattern matched any "don't", "never",
-# "always", "instead", "actually", "again", "зачем" or "снова": over 2026-09-01..29 it flagged
-# "I don't mind", "don't worry", "use X instead", "Any tools I can use instead?", "run again
-# with OpenAI", "Зачем мне нужен gbrain?" and 17× "Try again", and it missed the two
-# corrections that mattered that month — "You use too much GitHub actions" (no keyword) and
-# "don’t use GitHub actions at all" (a typographic apostrophe). A missed correction costs one
-# data point; a false one teaches the owner to ignore the rate, so each branch below needs
-# either an unambiguous word ("wrong", "revert", "не так") or a shape that is pushback and not
-# an instruction: "don't X at all/anymore" is a correction, "don't forget to deploy" is not.
+from .. import lexicon
+
+# "Correction-shaped": the human pushing back on work already produced. English + Russian (the
+# word lists live in `lexicon`), a heuristic tuned for precision over recall. A broad pattern
+# that matches any "don't", "never", "always", "instead", "actually" or "again" flags "I don't
+# mind", "don't worry", "use X instead" and every "Try again", and a typographic apostrophe
+# ("don’t use the cache at all") must still match. A missed correction costs one data point;
+# a false one teaches the owner to ignore the rate, so each branch needs either an unambiguous
+# word ("wrong", "revert") or a shape that is pushback and not an instruction: "don't X at
+# all/anymore" is a correction, "don't forget to deploy" is not.
 # Turns of 800+ characters are briefs, never corrections (`is_correction`).
-CORRECTION_RE = re.compile(
-    r"(?:^|[.!?;\n]\s*)(?:no|nope|нет)\s*[,.!—–-]"                                 # "No, I mean…" as a reply
-    r"|\b(?:wrong|incorrect|not like (?:that|this)|not what i (?:asked|wanted|meant|said)|(?:don't|do not) do (?:that|this|it))\b"
-    r"|\b(?:revert|undo|roll ?back)\b"
-    r"|\bi (?:said|told you|already (?:said|told|asked)|meant|asked (?:you )?(?:to|for|not))\b"
-    r"|\bi (?:didn't|did not|haven't|have not|never) (?:ask|asked|say|said|want|wanted)\b"
-    r"|\bwhy (?:did|are|have|would|were) you\b"
-    r"|(?<!do )(?<!did )(?<!can )\byou (?:should have|shouldn't have|forgot|missed|broke|ignored|keep|kept|still|again|didn't|did not)\b"
-    r"|\byou (?:use|used|do|did|add|added|make|made|run|ran|spend|spent) (?:too|so) (?:much|many)\b"
-    r"|\b(?:don't|do not|stop|never)\b[^.!?\n]{0,60}\b(?:at all|anymore|any more|ever again)\b"
-    r"|(?:^|[.!?;\n]\s*)(?:stop|never) (?:using|doing|adding|creating|asking|use|do|add|create|ask|run|push|merge|touch|change)\b"
-    r"|\bi (?:don't|do not) like\b"
-    r"|\b(?:doesn't|don't|does not|do not|isn't|is not) work(?:ing)?\b|\b(?:still )?broken\b"
-    r"|\b(?:again|still)\b[^.!?\n]{0,20}(?:\bnot\b|n't\b|\bwrong\b|\bfail|\bbroken\b)"
-    r"|не так\b|(?:это|совсем) не то\b|неправильно|неверно|ошибся|ошиблась|я же (?:говорил|сказал|просил|писал)|"
-    r"я (?:сказал|говорил|просил)|не надо|не нужно было|верни|откати|зачем ты|сделай сам|"
-    r"опять[^.!?\n]{0,40}(?:\bне\b|ничего|ошиб|слома)|ты (?:снова|опять)|"
-    r"ты не (?:заметил|сделал|понял|учёл|учел|прочитал|проверил|то)|(?<!не )\bзря\b|перестань",
-    re.I,
-)
+CORRECTION_RE = re.compile(lexicon.CORRECTION_PATTERN, re.I)
 
 TOKEN_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
 
@@ -51,15 +32,10 @@ _QUOTES = str.maketrans({"\u2019": "'", "\u2018": "'", "\u02bc": "'", "\u2032": 
 
 # A retry is the human re-sending after an API error, not a correction and not a new turn.
 # "proceed", "go on" and "keep going" are left out on purpose: after a plan they are a
-# decision, not a re-send.
-# 17 of 126 correction-shaped turns in 2026-09-01..29 were a bare "Try again" after
-# "API Error: Can't reach the API server", and A9's "repeats 13×" was that phrase.
-RETRY_RE = re.compile(
-    r"^(?:please[, ]+)?(?:try again|retry|try it again|again|continue|"
-    r"продолжай|продолжи|ещё раз|еще раз|повтори|попробуй (?:ещё|еще) раз)(?:[\s,.!…]+(?:please|пожалуйста))?[\s.!…]*$",
-    re.I,
-)
-_RETRY_HEAD_RE = re.compile(r"^(?:please[, ]+)?(?:try again|retry|again|continue|ещё раз|еще раз|повтори)\b", re.I)
+# decision, not a re-send. A bare "Try again" after "API Error: Can't reach the API server" is
+# by far the most common retry, and would otherwise top the repeated-corrections finding.
+RETRY_RE = re.compile(lexicon.RETRY_PATTERN, re.I)
+_RETRY_HEAD_RE = re.compile(lexicon.RETRY_HEAD_PATTERN, re.I)
 _REMINDER_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
 
 
@@ -69,7 +45,7 @@ def strip_reminders(txt: str | None) -> str:
 
 
 def is_retry(txt: str, after_error: bool = False) -> bool:
-    """A bare retry ("Try again", "continue", "ещё раз"), or — right after an API error — a short
+    """A bare retry ("Try again", "continue"), or — right after an API error — a short
     turn that opens with one ("Try again - the connector is back")."""
     t = (txt or "").strip().translate(_QUOTES)
     if RETRY_RE.match(t):
@@ -116,7 +92,7 @@ def local_day(ts: str | None) -> str:
     """The local calendar date (YYYY-MM-DD) of an ISO timestamp. Session timestamps are UTC
     (`...Z`) and `teyla policy ack` records `date.today()`, which is local: A10 must compare
     both in one timezone, or an evening edit west of UTC (or a night one east of it) lands on
-    the wrong side of the ack day (review of #68, P2). A naive timestamp is read as UTC; one
+    the wrong side of the ack day (caught in review, P2). A naive timestamp is read as UTC; one
     that does not parse falls back to its first ten characters."""
     ts = ts or ""
     try:
@@ -247,9 +223,8 @@ def text_of(content) -> str:
 # tool output and events, plus the bare-text shapes Claude Code files as user turns (an
 # interrupted request; the summary that opens a continued session; a background-task
 # notice; a comment relayed from an Artifact page). The plugin's capture-correction hook
-# calls this same function — a subagent's "done, but…" notification was 35 of 35 captured
-# "corrections" in one repo before it did, and artifact relays were 8 of 107 records in
-# 2026-09's correction files.
+# calls this same function — a subagent's "done, but…" notification was once every captured
+# "correction" in a repo before it did, and artifact relays were captured too.
 NOISE_TAGS = ("system-reminder", "command-name", "command-message", "local-command", "task-notification",
               "ci-monitor", "ide_", "artifact-view-context")
 NOISE_PREFIXES = ("[Request interrupted", "This session is being continued from a previous conversation",

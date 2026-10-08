@@ -47,12 +47,11 @@
 #                     model's context; the other three ignore it (see docs/HARNESSES.md).
 #   --codex           Codex SessionStart (~/.codex/hooks.json). Codex also injects plain
 #                     stdout, as a developer message tagged `hooks.additional_context`
-#                     (verified with `codex exec` 0.153.4 and 0.158.0-alpha.2.1 on
-#                     2026-09-29). The JSON payload on stdin names `transcript_path`; a
+#                     (verified with `codex exec` 0.153.4 and 0.158.0-alpha.2.1). The JSON payload on stdin names `transcript_path`; a
 #                     rollout whose session_meta says `"originator":"codex_exec"` is a
 #                     `codex exec` batch run (a script wrote its prompt): it gets nothing,
 #                     neither the lines (no person reads them) nor the background check
-#                     (509 of 520 Codex sessions in September 2026 were batch).
+#                     (most Codex sessions are batch).
 #   --context-json    Hermes pre_llm_call. Hermes ignores what on_session_start prints, but
 #                     injects `{"context": "..."}` from a pre_llm_call shell hook into the
 #                     user message (hermes-agent 0.20.4 agent/shell_hooks.py
@@ -179,7 +178,7 @@ fi
   fi
   if [ -n "$teyla_bin" ]; then
     # The generated file is stale when a source is newer: POLICY.md, CLAUDE.md, or a file
-    # CLAUDE.md pulls in with an `@~/...` line (Codex review of #96, P2). A symlink still
+    # CLAUDE.md pulls in with an `@~/...` line (Codex review, P2). A symlink still
     # pointing at POLICY.md is stale once CLAUDE.md changes after the last sync — it may have
     # gained rules — so the sync stamp, not the link, is compared then.
     sources="$HOME/.agents/POLICY.md $HOME/.claude/CLAUDE.md"

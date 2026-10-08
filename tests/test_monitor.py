@@ -210,7 +210,7 @@ def test_giant_sessions_keeps_single_turn_session_that_ran_long():
 
 
 def test_compactions_alone_never_make_a_session_giant():
-    # zaitsew/ops#198: one session per project compacts in place at ~365k, so many compactions
+    # One session per project compacts in place, so many compactions
     # in a small, short session are the intended shape.
     s = _session("compacted"); s.size = 500; s.active_hours = 0.5; s.compactions = 9
     assert metrics([s])["giant_sessions"] == []

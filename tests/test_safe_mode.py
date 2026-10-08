@@ -412,7 +412,7 @@ def test_doctor_shows_safe_line_and_stays_offline(_home, monkeypatch):
     assert any(line.split()[:3] == ["INFO", "safe", "on"] for line in doctor.render(cs).splitlines())
 
 
-# --- review of #59: fail closed, and no stale managed policy copies ------------------------
+# --- caught in review: fail closed, and no stale managed policy copies ------------------------
 
 def test_invalid_boolean_is_rejected_and_nothing_is_written(_home, capsys):
     msg = config.set_value("safe.enabled", "treu")
@@ -472,7 +472,7 @@ def test_policy_sync_rewrites_the_cursor_skill_after_switching_to_work(_home, mo
     assert policy.is_work(skill.read_text()) and "`grok -p`" not in skill.read_text()
 
 
-# --- review of #59, round two ---------------------------------------------------------
+# --- caught in review, round two ---------------------------------------------------------
 
 def test_policy_init_work_without_force_over_a_home_policy_exits_nonzero(_home, capsys):
     policy.init(owner="Ann")
@@ -512,7 +512,7 @@ def test_write_policy_on_a_home_policy_still_covers_every_provider(_home, monkey
     assert set(models.parse_ladder(policy.POLICY.read_text())) == {"anthropic", "openai", "xai"}
 
 
-# --- review of #59, round three: an unreadable config, and the control plane --------------
+# --- caught in review, round three: an unreadable config, and the control plane --------------
 
 BROKEN = 'code_root = "~/work"\n[env]\nSSL_CERT_FILE = "/unterminated\n[safe]\nenabled = false\n'
 
@@ -535,7 +535,7 @@ def test_a_config_that_does_not_parse_is_never_rewritten(_home):
 
 def test_a_config_behind_an_unreadable_directory_forces_safe_mode_on(_home, monkeypatch, tmp_path):
     # Path.exists() is False when stat is refused, so an exists() precheck read this as "no
-    # config": safe mode off, network allowed (review of #59, round four, P1).
+    # config": safe mode off, network allowed (caught in review, round four, P1).
     locked = tmp_path / "locked"
     locked.mkdir()
     (locked / "config.toml").write_text("[safe]\nenabled = true\n")
@@ -585,7 +585,7 @@ def test_teyla_run_needs_allow_network_and_the_allowlist_in_safe_mode(_home, tmp
 
 def test_a_refused_approval_leaves_the_item_pending(_home, tmp_path, monkeypatch):
     # Refused inside the act step, the approval was recorded anyway and the retry with
-    # --allow-network said "already approve" (review of #59, round four, P2).
+    # --allow-network said "already approve" (caught in review, round four, P2).
     from teyla.control import engine, inbox, state as S
     repo = _control_repo(tmp_path, monkeypatch)
     safe_on()

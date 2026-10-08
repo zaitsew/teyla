@@ -47,22 +47,22 @@ def test_w2_w3_w6_sum_their_dollars_and_drop_pennies():
 
 
 def test_w8_fires_past_80_percent_or_when_paying():
-    actions = [dict(account="org", plan="team", minutes=3736, included=3000, share=1.245, paid_usd=3.44,
-                    top_repos=["accounts", "loco"], macos_minutes={"accounts": 33}),
-               dict(account="me", plan="free", minutes=283, included=2000, share=0.14, paid_usd=0.0,
+    actions = [dict(account="org", plan="team", minutes=3600, included=3000, share=1.2, paid_usd=3.5,
+                    top_repos=["app-a", "app-b"], macos_minutes={"app-a": 33}),
+               dict(account="me", plan="free", minutes=280, included=2000, share=0.14, paid_usd=0.0,
                     top_repos=["x"], macos_minutes={})]
     F = spend.findings([], actions)
     assert len(F) == 1 and F[0]["id"] == "W8" and F[0]["usd"] is None
-    assert "$3.44 paid" in F[0]["title"] and "accounts 33 min" in F[0]["evidence"]
+    assert "$3.50 paid" in F[0]["title"] and "app-a 33 min" in F[0]["evidence"]
 
 
 def test_actions_usage_reads_linux_equivalent_minutes(monkeypatch):
     monkeypatch.setattr("teyla.net.gate", lambda *a, **k: True)
     usage = {"usageItems": [
-        {"product": "actions", "unitType": "Minutes", "sku": "Actions Linux", "quantity": 1514,
-         "grossAmount": 9.084, "discountAmount": 8.34, "netAmount": 0.744, "repositoryName": "loco"},
-        {"product": "Actions", "unitType": "minutes", "sku": "Actions macOS 3-core", "quantity": 215,
-         "grossAmount": 13.33, "discountAmount": 10.632, "netAmount": 2.698, "repositoryName": "accounts"},
+        {"product": "actions", "unitType": "Minutes", "sku": "Actions Linux", "quantity": 1500,
+         "grossAmount": 9.0, "discountAmount": 8.4, "netAmount": 0.6, "repositoryName": "app-b"},
+        {"product": "Actions", "unitType": "minutes", "sku": "Actions macOS 3-core", "quantity": 200,
+         "grossAmount": 13.0, "discountAmount": 10.8, "netAmount": 2.2, "repositoryName": "app-a"},
         {"product": "actions", "unitType": "Minutes", "sku": "Actions Linux 32-core", "quantity": 200,
          "grossAmount": 16.4, "discountAmount": 0, "netAmount": 16.4, "repositoryName": "big"},
         {"product": "actions", "unitType": "GigabyteHours", "grossAmount": 0.02, "netAmount": 0},
@@ -74,9 +74,9 @@ def test_actions_usage_reads_linux_equivalent_minutes(monkeypatch):
                "/organizations/org/settings/billing/usage?year=2026&month=9": usage}
     out = {a["account"]: a for a in spend.actions_usage(_dt.date(2026, 9, 30), gh=answers.get)}
     org = out["org"]
-    # 18.972 discounted dollars / $0.006: the included minutes used; the 32-core runner draws none
-    assert org["minutes"] == 3162 and org["included"] == 3000 and round(org["share"], 2) == 1.05
-    assert org["paid_usd"] == 19.84 and org["macos_minutes"] == {"accounts": 215}
+    # 19.2 discounted dollars / $0.006: the included minutes used; the 32-core runner draws none
+    assert org["minutes"] == 3200 and org["included"] == 3000 and round(org["share"], 2) == 1.07
+    assert org["paid_usd"] == 19.2 and org["macos_minutes"] == {"app-a": 200}
     assert org["top_repos"][0] == "big"
     assert out["me"]["minutes"] == 0
 

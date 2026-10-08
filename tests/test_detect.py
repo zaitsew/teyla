@@ -23,9 +23,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 def test_markers_and_wording_declare_detectors():
     text = "# P\n<!-- teyla:detect no-actions -->\n<!-- teyla:detect nonsense-id -->\n"
     assert detect.declared(text) == (["no-actions"], ["nonsense-id"])
-    # Ivan's §10 heading and the template's §4 wording switch detectors on without a marker.
-    ivan = "## 10. GitHub Actions are off — the laptop is the gate\n\n## 4. Ask about product decisions, not about permission\n"
-    assert detect.declared(ivan) == (["ask-permission", "no-actions"], [])
+    # A policy's §10 heading and the template's §4 wording switch detectors on without a marker.
+    text = "## 10. GitHub Actions are off — the laptop is the gate\n\n## 4. Ask about product decisions, not about permission\n"
+    assert detect.declared(text) == (["ask-permission", "no-actions"], [])
     assert detect.declared("# A policy without either rule\n## 3. Use the tool ladder\n") == ([], [])
 
 
@@ -49,7 +49,7 @@ def test_doctor_rows_for_unknown_marker_and_no_policy(tmp_path):
     ("on:\n  push:\n    branches: [main]\n  workflow_dispatch:\n\njobs:\n  a: {}\n", ["push", "workflow_dispatch"]),
     ('"on":\n  schedule:\n    - cron: "0 6 * * 1"   # Mondays\n  workflow_dispatch:\n', ["schedule", "workflow_dispatch"]),
     ("on:\n  - pull_request_target\n  - issues\n", ["pull_request_target", "issues"]),
-    ("on:\n- push\n- pull_request\njobs:\n  a: {}\n", ["push", "pull_request"]),  # (review of #60, P2)
+    ("on:\n- push\n- pull_request\njobs:\n  a: {}\n", ["push", "pull_request"]),  # (caught in review, P2)
     ("on:\n- push\n\njobs:\n- x\n", ["push"]),
     ("on: {push: {branches: [main]}, workflow_dispatch: {}}\n", ["push", "workflow_dispatch"]),
     ("on:\n  # push: disabled per POLICY §10\n  workflow_dispatch:\n", ["workflow_dispatch"]),
@@ -123,7 +123,7 @@ def test_scan_says_which_copy_declares_the_trigger(tmp_path):
 @pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
 def test_scan_reads_default_branch_blobs_by_byte_size_even_with_crlf(tmp_path):
     # `cat-file --batch` declares blob sizes in original bytes; reading its output as text turned
-    # CRLF into LF and skipped the file after a CRLF one (review of #60, P2).
+    # CRLF into LF and skipped the file after a CRLF one (caught in review, P2).
     wf = ".github/workflows/"
     manual = "on: workflow_dispatch\r\n" + "# comment\r\n" * 60
     clone = _repo_with_origin(tmp_path, "crlf", {wf + "a-manual.yml": "", wf + "b-nightly.yml": "on:\n  schedule:\n    - cron: '0 1 * * *'\n"}, {})
@@ -154,9 +154,9 @@ def test_scan_without_origin_and_clean_ok_row(tmp_path):
 
 def test_enrich_scans_only_when_declared(tmp_path, monkeypatch):
     monkeypatch.setattr(detect, "scan_workflows", lambda cfg=None: {"repos": 1, "findings": [
-        dict(repo="loco", path="/r/loco", file=".github/workflows/ci.yml", triggers=["push"], where="default branch + working tree")]})
+        dict(repo="app-b", path="/r/app-b", file=".github/workflows/ci.yml", triggers=["push"], where="default branch + working tree")]})
     m = detect.enrich({}, text="<!-- teyla:detect no-actions -->")
-    assert m["policy_detectors"] == ["no-actions"] and m["workflow_triggers"][0]["repo"] == "loco"
+    assert m["policy_detectors"] == ["no-actions"] and m["workflow_triggers"][0]["repo"] == "app-b"
     m2 = detect.enrich({}, text="")
     assert m2["policy_detectors"] == [] and "workflow_triggers" not in m2
 
@@ -165,11 +165,11 @@ def test_enrich_scans_only_when_declared(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("ending,reply", [
     ("All four PRs are green and pushed.\n\nWant me to push them?", "yes, go ahead"),
-    ("Первое вернёт половину прогона, второе снимет четверть отказов. Делать?", "да, давай!"),
+    ("Первое ускорит сборку, второе уберёт половину предупреждений. Делать?", "да, давай!"),
     ("The plan is in PLAN.md.\n\nProceed?", "go"),
     ("Tests pass locally.\n\nShould I open the PR now?", "Yes"),
     ("I found the leak in the cache layer. Let me know if you want me to fix it.", "yes please"),
-    ("Хочешь — соберу такой прогон?", "Да"),
+    ("Хочешь — соберу такой отчёт?", "Да"),
 ])
 def test_permission_asks_answered_with_a_bare_yes_count(ending, reply):
     assert detect.is_permission_ask(ending, reply)
@@ -177,9 +177,9 @@ def test_permission_asks_answered_with_a_bare_yes_count(ending, reply):
 
 @pytest.mark.parametrize("ending,reply", [
     # a real decision: alternatives, a choice, a menu
-    ("Want me to run that, or build a /grok skill mirroring the /codex one?", "yes"),
+    ("Want me to run that, or build a /lint skill mirroring the /format one?", "yes"),
     ("Which do you want? If A, I'll regenerate all 8.", "yes"),
-    ("Делать её сейчас или сначала закончить снос gbrain?", "да"),
+    ("Делать её сейчас или сначала закончить миграцию базы?", "да"),
     # something the policy reserves for the human
     ("Want me to merge it?", "yes"),
     ("Should I deploy to production?", "yes"),
@@ -187,15 +187,15 @@ def test_permission_asks_answered_with_a_bare_yes_count(ending, reply):
     ("Should I add them to ~/.agents/POLICY.md?", "yes"),
     # the human did not just say yes
     ("Want me to push them?", "Why did you change the lockfile?"),
-    ("Want me to run Grok on the same prompt now as the third vote?", "Okay, skip grok. So what is your top title"),
-    ("Хотите, поправлю конфиг сам?", "Давай переавторизуемся с Grok"),
+    ("Want me to run the linter on the same files now as a second check?", "Okay, skip the linter. So what is your top pick"),
+    ("Хотите, поправлю конфиг сам?", "Давай переустановим зависимости"),
     ("Want me to push them?", None),
     ("Want me to push them?", "Yes, but don't push until CI is green"),
     ("Want me to push them?", "yes, push them and then open the PR for the other repo"),
     ("Делать?", "да, но сначала покажи дифф"),
     ("Want me to push them?", "please"),
     # no question at the end of the turn
-    ("Want me to push them?\n\nPushed anyway; PR #12 is open.", "yes"),
+    ("Want me to push them?\n\nPushed anyway; PR 12 is open.", "yes"),
     ("Done. All tests pass.", "yes"),
 ])
 def test_decisions_blockers_and_real_answers_do_not_count(ending, reply):
@@ -238,11 +238,11 @@ def test_a15_fires_above_threshold_only_when_policy_declares_it():
 
 def test_a16_fires_on_workflow_triggers_when_declared():
     m = metrics([_s("a1", [])])
-    m["workflow_triggers"] = [dict(repo="loco", path="/r/loco", file=".github/workflows/ci.yml", triggers=["push", "pull_request"],
+    m["workflow_triggers"] = [dict(repo="app-b", path="/r/app-b", file=".github/workflows/ci.yml", triggers=["push", "pull_request"],
                                    where="default branch + working tree")]
     m["policy_detectors"] = ["no-actions"]
     a16 = [f for f in advise(m) if f["id"] == "A16"]
-    assert a16 and a16[0]["severity"] == "high" and "loco .github/workflows/ci.yml on: push, pull_request" in a16[0]["evidence"]
+    assert a16 and a16[0]["severity"] == "high" and "app-b .github/workflows/ci.yml on: push, pull_request" in a16[0]["evidence"]
     m["policy_detectors"] = []
     assert not [f for f in advise(m) if f["id"] == "A16"]
 
@@ -322,7 +322,7 @@ def test_codex_records_the_text_a_turn_ended_on(tmp_path):
 
 @pytest.mark.parametrize("reply", ["continue", "продолжай"])
 def test_a_bare_continue_with_an_appended_system_reminder_still_answers_the_ask(tmp_path, reply):
-    # review of #60, P2: "continue" + a <system-reminder> block fell out of A15 in both adapters.
+    # caught in review, P2: "continue" + a <system-reminder> block fell out of A15 in both adapters.
     typed = reply + "\n\n<system-reminder>\nThe task tools haven't been used recently.\n</system-reminder>"
     f = tmp_path / "projects" / "slug" / "s.jsonl"
     _write(str(f), [
@@ -353,7 +353,7 @@ def test_a_bare_continue_with_an_appended_system_reminder_still_answers_the_ask(
 
 @pytest.mark.parametrize("reply", ["continue", "продолжай"])
 def test_a_bare_continue_still_answers_the_ask_in_both_adapters(tmp_path, reply):
-    # review of the #60 merge with #68: human_text drops a bare "continue" as a retry, and the
+    # caught in review: human_text drops a bare "continue" as a retry, and the
     # turn end went with it — A15 lost every approval phrased that way.
     assert detect.is_permission_ask("Fixed.\n\nWant me to push it?", reply)
     f = tmp_path / "projects" / "slug" / "s.jsonl"

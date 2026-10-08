@@ -372,7 +372,7 @@ def product_name(manifest_path: pathlib.Path) -> str | None:
 
 
 def split_ref(ref: str) -> tuple[str, str]:
-    """`"combra:morning-digest"` -> `("combra", "morning-digest")`."""
+    """`"acme:morning-digest"` -> `("acme", "morning-digest")`."""
     if ":" not in ref:
         raise ValueError(f"routine reference {ref!r} must be <product>:<routine>")
     product, _, routine = ref.partition(":")

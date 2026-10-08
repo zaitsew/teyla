@@ -50,7 +50,7 @@ def strip_injected(txt: str) -> str:
     """The message minus the harness-written `<tag>...</tag>` blocks it opens with. Codex's
     desktop app sends `<recommended_plugins>…</recommended_plugins>` and
     `<environment_context>…</environment_context>` as one user message with two parts; the
-    0.11 test wanted a single block and let all 11 of them through as human turns in 2026-09.
+    0.11 test wanted a single block and let them through as human turns.
     `<in-app-browser-context>` (a hyphen) precedes a real question and is cut off it.
 
     A message made only of blocks is injected whatever the tags (0.11's rule, for any
@@ -233,7 +233,7 @@ def parse(f: str, titles: dict | None = None) -> Session | None:
                         clean = strip_reminders(strip_injected(txt)) if txt else ""
                         h = human_text(clean) if clean else None
                         # A bare "continue" is a retry to the turn counts but an approval to
-                        # A15 (review of the #60 merge).
+                        # A15 (caught in review).
                         reply = h or (clean if clean and is_retry(clean) else None)
                         if reply:
                             ending = turn_end_candidate(last_text[1]) if last_text else None

@@ -7,9 +7,8 @@ routines are loaded needs to be a routine itself.
 
 A launchd StartCalendarInterval fires on the minute, or on the next wake if the Mac was
 asleep — and never, if the Mac was *off* at that minute. On a laptop that is the common
-case: the weekly installed on 2026-09-11 was due Monday 2026-09-14 07:30 (the schedule then;
-it now fires Fridays 20:45) and the Mac booted at 15:28, so `launchctl print` showed
-`runs = 0` while `doctor` said "loaded".
+case: a weekly job due at 07:30 on a Monday, with the Mac booting at 15:28, leaves
+`launchctl print` showing `runs = 0` while `doctor` says "loaded".
 `teyla routine catch-up` is the anacron half: each wrapper stamps `~/.teyla/<job>.last`
 when it starts, and catch-up runs any job whose stamp is older than its last due time.
 It is called by the daily wrapper (so a Friday run the Mac missed runs Saturday at 07:00) and by the
@@ -150,7 +149,7 @@ mkdir -p "$OUT_DIR"
 "$TEYLA" routines > "$OUT_DIR/routines.md" 2>&1
 "$TEYLA" products > "$OUT_DIR/products.md" 2>&1
 "$TEYLA" models > "$OUT_DIR/models.md" 2>&1
-# The reports above had no reader (4 written in 2026-09, 0 opened): the digest is the five lines
+# The reports above tend to have no reader: the digest is the five lines
 # that are read — the session-start hook shows its headline once, and a notification says it exists.
 "$TEYLA" digest --write
 """
@@ -302,7 +301,7 @@ def _load(plist: pathlib.Path, label: str) -> str:
     uid = os.getuid()
     # gui/<uid> is the real account's launchd whatever $HOME says. A plist written under a moved
     # HOME has the real job's label: bootstrapping it replaced the real daily and weekly jobs with
-    # ones pointing into a throwaway directory (2026-10-01, a lane verifying a prompt).
+    # ones pointing into a throwaway directory (seen when a prompt was verified under a scratch HOME).
     # TEYLA_LAUNCHD_ANY_HOME=1: a test whose PATH puts a fake launchctl first.
     if plist.resolve().parent != _real_launch_agents().resolve() and os.environ.get("TEYLA_LAUNCHD_ANY_HOME") != "1":
         return (f"NOT LOADED {label} — {plist} is outside {_real_launch_agents()} ($HOME is moved); "

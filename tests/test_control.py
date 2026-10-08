@@ -34,7 +34,7 @@ name = "demo"
 name = "digest"
 gate = "A"
 idempotency = "date"
-trigger = { type = "clock", at = "07:00", tz = "Europe/Madrid", days = "mon-fri" }
+trigger = { type = "clock", at = "07:00", tz = "Europe/London", days = "mon-fri" }
 step = { kind = "command", run = "echo DRAFT-LINE-ONE; echo more" }
 act  = { kind = "command", run = "echo ACTED > acted.txt; echo 'rm acted.txt' > \\"$TEYLA_UNDO\\"; echo done" }
 capabilities = ["fs.write:runs/**", "fs.write:acted.txt", "shell:git push", "shell:echo"]
@@ -158,7 +158,7 @@ def test_parse_days_refuses_a_backwards_range():
 
 
 def test_parse_capability_splits_on_the_first_colon_only():
-    assert parse_capability("tool:mcp__loco__*") == ("tool", "mcp__loco__*")
+    assert parse_capability("tool:mcp__notes__*") == ("tool", "mcp__notes__*")
     assert parse_capability("shell:git push") == ("shell", "git push")
 
 
@@ -403,9 +403,9 @@ def fixture_grants(tmp_path):
     doc = {
         "version": 1, "run_id": "R1", "routine": "demo:digest", "repo": str(tmp_path / "repo"),
         "gate": "A",
-        "capabilities": ["fs.write:runs/**", "shell:git push", "tool:mcp__loco__*"],
+        "capabilities": ["fs.write:runs/**", "shell:git push", "tool:mcp__notes__*"],
         "grants": {"fs.write": ["runs/**"], "shell": ["git push"], "net": [],
-                   "send": [], "tool": ["mcp__loco__*"]},
+                   "send": [], "tool": ["mcp__notes__*"]},
         "caps": {"max_writes": 2, "max_sends": 0},
         "run_dir": str(run_dir), "state": str(run_dir / "grants-state.json"),
         "actions": str(run_dir / "actions.jsonl"),
@@ -478,7 +478,7 @@ def test_hook_matches_bash_verbs_against_shell_grants(fixture_grants):
 
 def test_hook_allows_read_only_builtins_and_granted_mcp_tools(fixture_grants):
     for tool, ti in (("Read", {"file_path": "/tmp/x"}), ("Grep", {"pattern": "x"}),
-                     ("mcp__loco__loco_get_trip", {})):
+                     ("mcp__notes__get_note", {})):
         r = hook(payload(tool, ti), home=fixture_grants["home"], grants_path=fixture_grants["path"])
         assert r.returncode == 0, f"{tool}: {r.stderr}"
 
@@ -1384,7 +1384,7 @@ def test_p2_11_context_files_expands_a_glob(tmp_path, monkeypatch):
     assert [rel for rel, _ in engine.context_files(r)] == ["notes/a.md", "notes/deep/b.md"]
 
 
-# P2-12. The date key was computed in UTC, so a routine triggering at 07:00 Madrid
+# P2-12. The date key was computed in UTC, so a routine triggering at 07:00 London
 # rolled over at midnight in the wrong city.
 
 def test_p2_12_the_date_key_uses_the_trigger_timezone(tmp_path, monkeypatch):
@@ -1392,13 +1392,13 @@ def test_p2_12_the_date_key_uses_the_trigger_timezone(tmp_path, monkeypatch):
     repos = tmp_path / "repos"; repo = repos / "tz"; repo.mkdir(parents=True)
     (repo / "teyla.toml").write_text(
         '[product]\nname="tz"\n[[routine]]\nname="r"\n'
-        'trigger={type="clock",at="08:00",tz="Asia/Tokyo"}\nstep={kind="command",run="true"}\n'
+        'trigger={type="clock",at="08:00",tz="Europe/London"}\nstep={kind="command",run="true"}\n'
         'capabilities=["shell:true"]\n'
     )
     monkeypatch.setenv("TEYLA_REPO_ROOTS", str(repos))
     r = load_manifest(repo / "teyla.toml")[0]
 
-    when = dt.datetime(2026, 9, 10, 23, 30, tzinfo=dt.timezone.utc)   # already the 11th in Tokyo
+    when = dt.datetime(2026, 9, 10, 23, 30, tzinfo=dt.timezone.utc)   # already the 11th in London
     assert engine.local_day(r, when) == "2026-09-11"
     assert engine.idempotency_key(r, run_id="x", when=when) == "date:tz:r:2026-09-11"
 
@@ -1851,7 +1851,7 @@ def test_p2_8_net_star_is_still_everything():
     assert G.net_allowed("https://anything.example/x", ["*"])[0] is True
 
 
-# Review of #59 (P2): safe mode switched on between the approve check and the act step
+# Caught in review (P2): safe mode switched on between the approve check and the act step
 # refused the step, but the approval was recorded as used.
 
 def test_safe_mode_flipped_before_the_act_does_not_use_up_the_approval(product, monkeypatch, capsys):

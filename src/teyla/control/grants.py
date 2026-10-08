@@ -12,7 +12,7 @@ Five schemes, and each is enforced by a different piece of evidence:
                            redirection target in it, checked against `fs.write:`
     net:*                  the host of a WebFetch/WebSearch URL
     send:telegram          a budget, spent by anything that looks like a send
-    tool:mcp__loco__*      the tool name, for MCP and any other non-built-in tool
+    tool:mcp__notes__*     the tool name, for MCP and any other non-built-in tool
     tool:Agent             sub-agents (`Task`), which are not free by default
     tool:Skill:<name>      one named skill; `tool:Skill:*` for all of them
 

@@ -4,10 +4,10 @@ of it that is safe to give back.
     teyla storage [--json] [--no-sizes]          the report: disk, worktrees, build output, caches, RAM
     teyla storage clean [--apply] [--auto]       remove the SAFE rows; a dry run unless --apply
 
-Measured on the machine this was written on (2026-09-25): 35 agent worktrees under
-`<repo>/.claude/worktrees` held 20 GB, 33 of them clean and already on the remote; 13 more
-under `~/.worktrees` held 9 GB; four iOS simulators were booted at once. Nothing there is
-work — it is what a parallel agent leaves behind when its PR merges.
+Parallel agent work leaves a lot behind: dozens of agent worktrees under
+`<repo>/.claude/worktrees` and `~/.worktrees` (gigabytes, most of them clean and already on the
+remote), and several iOS simulators booted at once. Nothing there is work — it is what a parallel
+agent leaves behind when its PR merges.
 
 What counts as SAFE is the rule in the owner's CLAUDE.md, applied mechanically:
 

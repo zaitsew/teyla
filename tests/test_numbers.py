@@ -27,44 +27,44 @@ def _write(path, lines):
 
 # --- the matcher ------------------------------------------------------------------------------
 
-# Shapes of real 2026-09 corrections, reworded.
+# Typical shapes of a person pushing back on finished work.
 CORRECTIONS = [
-    "You use too much GitHub actions",                                          # missed by 0.11: no keyword
-    "Can you make changes and don’t use GitHub actions at all, or only when necessary?",  # missed: curly ’
+    "You use too many retries in this script",                                  # missed by 0.11: no keyword
+    "Can you rewrite it and don’t use the cache at all, or only when necessary?",  # missed: curly ’
     "No, I mean the folder you created yesterday",
-    "You are wrong - I sent 3 comments, not 2",
+    "You are wrong - there are 3 files, not 2",
     "Something wrong with the formatting",
-    "Why did you push one commit when you said there were 14?",
+    "Why did you push one commit when you said there were 5?",
     "Where is the video? I haven't asked you to change it",
     "I don't like the title, too long",
     "never use npm in this project, always pnpm",
-    "Pages /today and /learned do not work for me",
+    "Pages /home and /about do not work for me",
     "For the app, I again got a link, not a code",
     "You still didn't understand me. Go 2 steps back",
     "revert that last change",
-    "не так, я же говорил — через конфиг",
+    "не так, я же писал — через конфиг",
     "Опять ничего не понял",
-    "Я думаю ты неправильно уловил суть",
-    "Зачем ты это удалил?",
-    "Сделай сам или доведи до шага, где нужно моё действие",
-    "Это не то, что мне нужно",
-    "Ты зря остановил discovery",
+    "Мне кажется, ты неправильно понял задачу",
+    "Зачем ты удалил этот файл?",
+    "Сделай сам или доведи до шага, где нужна моя помощь",
+    "Это совсем не то, что нужно",
+    "Ты зря остановил тесты",
 ]
 
 # Instructions, questions and reports that 0.11 counted and a person would not call a correction.
 NOT_CORRECTIONS = [
-    "Don't forget to deploy everything to github",      # an instruction, not pushback (precision over recall)
-    "I don't mind agencies as additional hypotheses",
-    "I set a hard spend limit, don't worry",
-    "I don't understand what 'preference Elo' means",
-    "Any tools I can use instead of building my own?",
-    "Do we actually need to store rules in one file?",
-    "So run again with OpenAI and propose the final structure",
+    "Don't forget to deploy everything to staging",      # an instruction, not pushback (precision over recall)
+    "I don't mind extra options as hypotheses",
+    "I set a hard limit, don't worry",
+    "I don't understand what 'cache warm-up' means",
+    "Is there a library I can use instead of writing my own?",
+    "Do we actually need to keep config in one file?",
+    "So run it again with the new flag and propose the final structure",
     "Keep going non-stop for the next 3 hours",
     "Do you still have p2/p3 tasks unresolved?",
-    "Зачем мне нужен gbrain?",
-    "Снова скорее всего поменялся IP из-за отключения электричества",
-    "Потраченные токены и время не зря?",
+    "Зачем мне нужен этот кэш?",
+    "Снова, скорее всего, поменялся адрес сервера",
+    "Потраченное время и деньги не зря?",
     "Ты не мог бы проверить логи?",
     "Try again",
     "add a --json flag to the sessions command",
@@ -332,10 +332,10 @@ def test_a10_acked_and_unchanged_is_silent(tmp_path, monkeypatch):
     assert _a10(metrics([_gov_session("2026-09-14"), _gov_session("2026-09-25")])) == []
 
 
-# --- review of #68 ------------------------------------------------------------------------------
+# --- caught in review ------------------------------------------------------------------------------
 
 def test_hermes_oneshot_source_is_batch_whatever_the_prompt_count(tmp_path):
-    """Installed Hermes records `hermes -z` with source "oneshot" (review of #68, P1)."""
+    """Installed Hermes records `hermes -z` with source "oneshot" (caught in review, P1)."""
     db = tmp_path / "state.db"
     con = sqlite3.connect(db)
     con.execute("CREATE TABLE sessions (id TEXT, source TEXT, model TEXT, cwd TEXT, git_repo_root TEXT, session_key TEXT,"
@@ -353,7 +353,7 @@ def test_hermes_oneshot_source_is_batch_whatever_the_prompt_count(tmp_path):
 
 
 def test_hook_skips_a_single_query_child_of_an_interactive_hermes(tmp_path):
-    """`hermes -z` launched from interactive Hermes inherits HERMES_INTERACTIVE=1 (review of #68, P2)."""
+    """`hermes -z` launched from interactive Hermes inherits HERMES_INTERACTIVE=1 (caught in review, P2)."""
     from teyla.corrections import headless
     assert headless({"prompt": "that is wrong"}, env={"HERMES_SINGLE_QUERY_SESSION": "1", "HERMES_INTERACTIVE": "1"})
     assert not headless({"prompt": "that is wrong"}, env={"HERMES_INTERACTIVE": "1"})
@@ -361,7 +361,7 @@ def test_hook_skips_a_single_query_child_of_an_interactive_hermes(tmp_path):
 
 def test_a10_uses_the_day_of_the_write_not_the_day_the_session_started(tmp_path, monkeypatch):
     """Started 09-18, acked 09-20, resumed and wrote the file 09-23: an edit after the ack
-    (review of #68, P2). Without the write's own date it read as "no edit after the ack"."""
+    (caught in review, P2). Without the write's own date it read as "no edit after the ack"."""
     _home(tmp_path, monkeypatch, "v2", ack={"sha256": hashlib.sha256(b"v1").hexdigest(), "date": "2026-09-20"})
     root = tmp_path / "projects"
     _write(str(root / "-Users-me-ops" / "s.jsonl"), [
@@ -375,7 +375,7 @@ def test_a10_uses_the_day_of_the_write_not_the_day_the_session_started(tmp_path,
 
 
 def test_monitor_marks_a10_seen_only_after_the_report_is_written(tmp_path, monkeypatch):
-    """An unwritable --out must not silence the never-acknowledged A10 next time (review of #68, P2)."""
+    """An unwritable --out must not silence the never-acknowledged A10 next time (caught in review, P2)."""
     import argparse
     from teyla import cli
     _home(tmp_path, monkeypatch, "v1")
@@ -398,7 +398,7 @@ def _in_tz(monkeypatch, name):
 
 
 def test_a10_compares_the_write_and_the_ack_in_one_timezone(tmp_path, monkeypatch):
-    """review of #68, P2: the write's day was UTC, the ack day is local. 01:00Z on 09-21 is
+    """caught in review, P2: the write's day was UTC, the ack day is local. 01:00Z on 09-21 is
     still the evening of 09-20 in Los Angeles, so a write after an ack on 09-20 (local) is not
     after it."""
     import time
@@ -423,7 +423,7 @@ def test_a10_compares_the_write_and_the_ack_in_one_timezone(tmp_path, monkeypatc
 
 
 def test_a10_is_not_marked_seen_when_stdout_cannot_be_written(tmp_path, monkeypatch):
-    """review of #68, P2: a closed pipe (`teyla monitor | head -0`) is not delivery."""
+    """caught in review, P2: a closed pipe (`teyla monitor | head -0`) is not delivery."""
     import argparse
     from teyla import cli
 

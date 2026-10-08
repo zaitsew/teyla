@@ -193,7 +193,7 @@ def test_codex_hooks_keep_a_users_groups_and_leave_invalid_json_alone(home):
 
 
 def test_codex_sync_keeps_a_users_handler_that_shares_a_group_with_ours(home):
-    # (review of #61, P1) a user's handler grouped next to Teyla's must survive sync, and a
+    # (caught in review, P1) a user's handler grouped next to Teyla's must survive sync, and a
     # group left empty by removing ours is dropped
     p = home / ".codex" / "hooks.json"
     theirs = {"type": "command", "command": "/x/mine.sh"}
@@ -212,7 +212,7 @@ def test_codex_sync_keeps_a_users_handler_that_shares_a_group_with_ours(home):
 
 
 def test_hermes_auto_accept_is_a_top_level_true_key_not_a_substring(home):
-    # (review of #61, P2)
+    # (caught in review, P2)
     harness.sync(home=home)
     cfg = home / ".hermes" / "config.yaml"
     base = cfg.read_text()
@@ -230,13 +230,13 @@ def test_hermes_auto_accept_is_a_top_level_true_key_not_a_substring(home):
 
 
 def test_codex_hook_hash_matches_what_codex_computed():
-    # `codex app-server` hooks/list, Codex 0.153.4, 2026-09-29: this handler in a scratch
-    # CODEX_HOME/hooks.json reported currentHash sha256:e21d99f3…cf00.
+    # The algorithm was reproduced against `codex app-server` hooks/list (Codex 0.153.4) with a
+    # scratch CODEX_HOME/hooks.json; the expected value below is for this handler.
     handler = {"type": "command", "timeout": 5, "statusMessage": "teyla: orientation",
-               "command": "/private/tmp/claude-501/-Users-ceozaitsev-repos-teyla/"
-                          "46bca301-b4cf-4e94-8a5f-57b6f50b09ab/scratchpad/hook.sh start"}
+               "command": "/private/tmp/claude-501/-Users-me-repos-teyla/"
+                          "00000000-0000-4000-8000-000000000004/scratchpad/hook.sh start"}
     assert harness.codex_hook_hash("SessionStart", handler) == \
-        "sha256:e21d99f3378164b3cef97119afeaeb6876436c8fa4dbfc08d175a5dbedcbcf00"
+        "sha256:16266d5187c320c43d6aac28278f75554daafdbfadaef087e881d01554e1f91d"
 
 
 def test_codex_trust_is_read_from_config_toml(home):
@@ -313,7 +313,7 @@ def test_hermes_parser_reads_indentless_sequences():
 
 
 def test_hermes_parser_a_bare_dash_item_sets_the_entry_indent(tmp_path):
-    # (#75) A foreign entry written as a bare `-` whose mapping follows on the next lines, with
+    # A foreign entry written as a bare `-` whose mapping follows on the next lines, with
     # nested `examples:` commands: the first `- ` the parser saw was the nested one, so it took
     # that deeper indent as the event's entry indent, counted the nested command as a hook, and
     # missed the real entries at the shallower indent.
@@ -335,7 +335,7 @@ def test_hermes_parser_a_bare_dash_item_sets_the_entry_indent(tmp_path):
 
 
 def test_hermes_auto_accept_ignores_a_column_zero_key_inside_a_multiline_flow_mapping(home):
-    # (#61) `hooks_auto_accept: true` at column 0 inside `{ … }` spanning lines belongs to that
+    # `hooks_auto_accept: true` at column 0 inside `{ … }` spanning lines belongs to that
     # mapping, not to the top level.
     harness.sync(home=home)
     cfg = home / ".hermes" / "config.yaml"
@@ -355,7 +355,7 @@ def test_hermes_auto_accept_ignores_a_column_zero_key_inside_a_multiline_flow_ma
 
 
 def test_hermes_auto_accept_ignores_brackets_inside_block_scalars(home):
-    # (Codex P2 on #84) A `}` in the indented lines of `key: |` / `>` is text: it must not close
+    # (Codex P2) A `}` in the indented lines of `key: |` / `>` is text: it must not close
     # the flow mapping that follows, so the column-0 key inside that mapping stays nested.
     harness.sync(home=home)
     cfg = home / ".hermes" / "config.yaml"

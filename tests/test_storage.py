@@ -709,7 +709,7 @@ def test_remote_patch_ids_cache_misses_once_a_remote_ref_moves(tmp_path):
 
 # --- orphaned DerivedData -----------------------------------------------------------------
 
-def _derived(tmp_path, name="Loco-abc", workspace=None, plist=True, age=2 * 86400):
+def _derived(tmp_path, name="Notes-abc", workspace=None, plist=True, age=2 * 86400):
     """A DerivedData folder under tmp_path/DD (never the real ~/Library), its info.plist naming
     `workspace`, everything in it last touched `age` seconds ago."""
     root = tmp_path / "DD"
@@ -718,7 +718,7 @@ def _derived(tmp_path, name="Loco-abc", workspace=None, plist=True, age=2 * 8640
     (d / "Build" / "o.bin").write_bytes(b"x" * 2048)
     if plist:
         with (d / "info.plist").open("wb") as f:
-            plistlib.dump({"WorkspacePath": workspace or str(tmp_path / "gone" / "Loco.xcodeproj")}, f)
+            plistlib.dump({"WorkspacePath": workspace or str(tmp_path / "gone" / "Notes.xcodeproj")}, f)
     old = time.time() - age
     for p in (d / "Build" / "o.bin", d / "Build", d / "info.plist", d):
         if p.exists():
@@ -739,7 +739,7 @@ def test_derived_data_with_a_gone_workspace_is_safe_and_cleaned(tmp_path):
     rep = _scan_derived(tmp_path, root)
     (row,) = rep["derived"]
     assert row["path"] == str(d) and row["verdict"] == "SAFE" and row["bytes"] > 0
-    assert "its workspace is gone" in row["reason"] and "Loco.xcodeproj" in row["reason"]
+    assert "its workspace is gone" in row["reason"] and "Notes.xcodeproj" in row["reason"]
     assert storage.reclaimable(rep) >= row["bytes"]
     assert d.name in storage.render(rep, [], [], [])
 
@@ -751,7 +751,7 @@ def test_derived_data_with_a_gone_workspace_is_safe_and_cleaned(tmp_path):
 
 
 def test_derived_data_whose_workspace_exists_is_not_listed(tmp_path):
-    ws = tmp_path / "live" / "Loco.xcodeproj"
+    ws = tmp_path / "live" / "Notes.xcodeproj"
     ws.mkdir(parents=True)
     root, d = _derived(tmp_path, workspace=str(ws))
     assert _scan_derived(tmp_path, root)["derived"] == []
@@ -796,7 +796,7 @@ def test_derived_data_symlink_is_not_followed(tmp_path):
 def test_derived_data_is_checked_again_before_removal(tmp_path):
     root, d = _derived(tmp_path)
     rep = _scan_derived(tmp_path, root)
-    ws = tmp_path / "gone" / "Loco.xcodeproj"
+    ws = tmp_path / "gone" / "Notes.xcodeproj"
     ws.mkdir(parents=True)  # the workspace came back between the scan and the removal
 
     lines = storage.clean(rep, apply=True)
@@ -817,7 +817,7 @@ def test_derived_data_on_an_unmounted_volume_is_not_gone(tmp_path):
 
 def test_derived_data_plist_that_is_not_a_dict_is_skipped(tmp_path):
     """A valid plist holding an array is not a DerivedData info.plist: skipped, the scan goes on
-    (review of #107, P2)."""
+    (caught in review, P2)."""
     root, d = _derived(tmp_path, name="Odd-1")
     with (d / "info.plist").open("wb") as f:
         plistlib.dump(["not", "a", "dict"], f)
@@ -827,7 +827,7 @@ def test_derived_data_plist_that_is_not_a_dict_is_skipped(tmp_path):
 
 @pytest.mark.parametrize("writing, why", [(True, "an Xcode build is running"), (None, "ps failed")])
 def test_derived_data_is_kept_while_xcode_may_be_writing(tmp_path, monkeypatch, writing, why):
-    """A build writes deep under Build/, where no mtime the scan reads moves (review of #107, P1
+    """A build writes deep under Build/, where no mtime the scan reads moves (caught in review, P1
     round 2): no folder goes while xcodebuild or a build service runs, or when ps cannot say."""
     root, d = _derived(tmp_path, name="Busy-1")
     monkeypatch.setattr(storage, "xcode_writing", lambda: writing)

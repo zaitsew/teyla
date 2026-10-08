@@ -20,12 +20,12 @@ HOOK = ROOT / "plugin" / "hooks" / "capture-correction.sh"
 # `<note>` carries "again", which the heuristic matches.
 TASK_NOTIFICATION = (
     "<task-notification>\n"
-    "<task-id>a257944d6c38e1807</task-id>\n"
-    "<tool-use-id>toolu_01Y1utWdg4jFo6Nis5gVbp9g</tool-use-id>\n"
-    "<output-file>/private/tmp/claude-501/-Users-ceozaitsev-repos-njord/"
-    "def1dd1e-d751-4770-aeb7-77a3f1e9b6df/tasks/a257944d6c38e1807.output</output-file>\n"
+    "<task-id>a0000000000000001</task-id>\n"
+    "<tool-use-id>toolu_0000000000000000000000001</tool-use-id>\n"
+    "<output-file>/private/tmp/claude-501/-Users-me-repos-app-a/"
+    "00000000-0000-4000-8000-000000000001/tasks/a0000000000000001.output</output-file>\n"
     "<status>completed</status>\n"
-    '<summary>Agent "SwiftUI macOS Njord console" finished</summary>\n'
+    '<summary>Agent "Example app console" finished</summary>\n'
     "<note>A task-notification fires each time this agent stops with no live background "
     "children of its own. The user can send it another message and it will run again; "
     "don't wait on it.</note>\n"
@@ -64,7 +64,7 @@ def test_human_correction_is_recorded_silently(tmp_path):
     assert len(rows) == 1
     assert rows[0]["cwd"] == str(tmp_path)
     assert rows[0]["text"].startswith("no, don't")
-    # cwd_key: a misc record is looked up by a hash of its unscrubbed cwd (review of #63, P2).
+    # cwd_key: a misc record is looked up by a hash of its unscrubbed cwd (caught in review, P2).
     assert set(rows[0]) == {"ts", "cwd", "text", "source", "cwd_key"} and rows[0]["source"] == "hook"
 
 
@@ -109,15 +109,15 @@ def test_bad_json_exits_zero_and_writes_nothing(tmp_path):
 
 # --- Codex: the UserPromptSubmit/SessionStart payloads Codex sends ------------------------------
 #
-# Captured from `codex exec` 0.158.0-alpha.2.1 (the ChatGPT app's bundled CLI) on 2026-09-29 with
+# Modelled on `codex exec` 0.158.0-alpha.2.1 (the ChatGPT app's bundled CLI) with
 # a scratch CODEX_HOME whose hooks.json pointed at a script that saved its stdin. Paths shortened.
 
 def _codex_payload(tmp_path, event, **extra):
-    d = {"session_id": "01a0ee07-c654-7d51-a3f5-836ddf44ac5a",
+    d = {"session_id": "00000000-0000-4000-8000-000000000002",
          "transcript_path": str(tmp_path / "rollout.jsonl"),
          "cwd": str(tmp_path), "hook_event_name": event, "model": "gpt-6-astra", "permission_mode": "default"}
     if event == "UserPromptSubmit":
-        d["turn_id"] = "01a0ee07-c68e-72c0-8e1a-8bcb44c5a9db"
+        d["turn_id"] = "00000000-0000-4000-8000-000000000003"
     d.update(extra)
     return d
 
@@ -397,7 +397,7 @@ def test_session_start_leaves_a_current_or_hand_written_agents_md_alone(tmp_path
 
 
 def test_session_start_syncs_when_an_imported_file_is_newer(tmp_path):
-    # a file CLAUDE.md pulls in with @~/... is a source too (Codex review of #96, P2)
+    # a file CLAUDE.md pulls in with @~/... is a source too (Codex review, P2)
     import time
     home = tmp_path / "home"
     _generated_agents(home, claude_newer=False)

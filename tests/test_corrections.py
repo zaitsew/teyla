@@ -79,11 +79,11 @@ def test_scrub_removes_a_pem_block_even_cut_off_by_truncation():
     ("machine api.example.com login me password hunter2", "machine api.example.com login me password [redacted]"),
     ("clone https://me:hunter2@git.example.com/x.git", "clone https://[redacted]@git.example.com/x.git"),
     ("use glpat-" + "abcdefghij0123456789", "use [redacted]"),
-    # review of #63, P1: `}` inside an unquoted value is part of it; only a closing brace stays.
+    # caught in review, P1: `}` inside an unquoted value is part of it; only a closing brace stays.
     ("PASSWORD=abC}123 again", "PASSWORD=[redacted] again"),
     ("password hunt}er2 again", "password [redacted] again"),
     ("{token=abc123}", "{token=[redacted]}"),
-    # review of #63, P1: a quoted .netrc password, escaped quotes included.
+    # caught in review, P1: a quoted .netrc password, escaped quotes included.
     ('machine h login me password "hunter2"', "machine h login me password [redacted]"),
     ('machine h login me password "hun\\"ter 2" x', "machine h login me password [redacted] x"),
     ('API_KEY="ab\\"cd" again', "API_KEY=[redacted] again"),
@@ -94,10 +94,10 @@ def test_scrub_keeps_the_name_of_an_assignment_and_drops_the_value(text, want):
 
 @pytest.mark.parametrize("text", [
     "no, don't rewrite the whole file, just fix the one line",
-    "не так, я же говорил — сделай сам",
+    "не так, я же писал — сделай сам",
     "revert 9109aba, it broke the tokens: count",             # short sha; "tokens:" is not "token:"
-    "/private/tmp/claude-501/-Users-ceozaitsev-repos-njord/def1dd1e-d751-4770-aeb7-77a3f1e9b6df/tasks/a257944d6c38e1807.output",
-    "session 46bca301-b4cf-4e94-8a5f-57b6f50b09ab again",
+    "/private/tmp/claude-501/-Users-me-repos-app-a/00000000-0000-4000-8000-000000000001/tasks/a0000000000000001.output",
+    "session 00000000-0000-4000-8000-000000000004 again",
     "pwd: /Users/me/repos/teyla",
     "the model is claude-opus-5-5-20260601, wrong one",
     "the token expired again, and the secret santa list is wrong",
@@ -213,7 +213,7 @@ def test_misc_records_are_per_directory(tmp_path):
 
 
 def test_misc_records_are_found_again_when_the_path_itself_was_scrubbed(tmp_path):
-    """review of #63, P2: the stored cwd is scrubbed, so lookup goes by a key of the raw one."""
+    """caught in review, P2: the stored cwd is scrubbed, so lookup goes by a key of the raw one."""
     d = tmp_path / "token=abc123"; d.mkdir()
     other = tmp_path / "token=xyz789"; other.mkdir()
     assert corrections.capture({"prompt": "no, use pnpm", "cwd": str(d)}) is not None
@@ -224,7 +224,7 @@ def test_misc_records_are_found_again_when_the_path_itself_was_scrubbed(tmp_path
 
 
 def test_old_misc_records_without_a_key_do_not_leak_between_directories_that_scrub_alike(tmp_path):
-    """review of #63, P2: a record from before `cwd_key` has only its scrubbed path, which two
+    """caught in review, P2: a record from before `cwd_key` has only its scrubbed path, which two
     directories can share. It is not attributed to either; a plain directory still gets its own."""
     d = tmp_path / "token=abc123"; d.mkdir()
     other = tmp_path / "token=xyz789"; other.mkdir()
@@ -242,7 +242,7 @@ def test_old_misc_records_without_a_key_do_not_leak_between_directories_that_scr
 
 
 def test_append_survives_a_short_write(tmp_path, monkeypatch):
-    """review of #63, P1: os.write may write fewer bytes than asked; all of them must land."""
+    """caught in review, P1: os.write may write fewer bytes than asked; all of them must land."""
     import os as _os
     real = _os.write
     monkeypatch.setattr(_os, "write", lambda fd, b: real(fd, bytes(b[:3])))

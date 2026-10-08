@@ -144,7 +144,7 @@ def status() -> dict:
             st[h] = not p.is_symlink() and p.read_text() == want
     p = TARGETS["hermes"]
     # Current, not merely present: after `policy init --work --force` a home-variant section
-    # still tells Hermes to send diffs to another provider (Codex review of #59, P1).
+    # still tells Hermes to send diffs to another provider (Codex review, P1).
     st["hermes"] = _hermes_current(p.read_text()) if p.exists() else None
     p = TARGETS.get("cursor")
     if p is not None:  # tests patch TARGETS without it
@@ -160,7 +160,7 @@ def sync(dry=False, owner: str | None = None) -> list[str]:
     if not POLICY.exists():
         done.append(init(owner=owner, dry=dry))
     # The source first, once: the imports and symlinks below expose POLICY.md to every harness,
-    # and a refusal half-way would leave some wired and some not (review of #87, P2).
+    # and a refusal half-way would leave some wired and some not (caught in review, P2).
     if POLICY.exists():
         _guard(POLICY.read_text(), POLICY)
     # ... and so is everything AGENTS.md and the Cursor skill are made of: CLAUDE.md under its own
@@ -261,7 +261,7 @@ def _live_lines(text: str):
 def imports_agents(text: str) -> bool:
     """True when `text` has a live `@AGENTS.md` import: a line of its own that is not inside a
     ``` or ~~~ fenced code block. Claude Code does not expand imports in code, so a CLAUDE.md that
-    only shows the line as an example is not linked to AGENTS.md (review of #81, P2)."""
+    only shows the line as an example is not linked to AGENTS.md (caught in review, P2)."""
     return any(live and IMPORT_RE.match(line) for line, live in _live_lines(text))
 
 
@@ -680,7 +680,7 @@ def refresh(dry: bool = False) -> list[str]:
                             str(p / "local"), str(p / "base"), str(p / "new")], capture_output=True, text=True)
     # The exit code is the conflict count, capped at 127; a negative one (a signal) or anything
     # above 127 (255 and the like) is an error, not "N conflicts": there is no merge to write
-    # (review of #64, P2).
+    # (caught in review, P2).
     if r.returncode < 0 or r.returncode > 127:
         return [f"git merge-file failed: {r.stderr.strip() or f'exit {r.returncode}'}; "
                 f"nothing written, {POLICY} untouched"]
@@ -717,7 +717,7 @@ def _merge(local: str, base: str, new: str) -> tuple[str | None, int, str]:
                             str(p / "local"), str(p / "base"), str(p / "new")], capture_output=True, text=True)
     # git merge-file exits with the conflict count, capped at 127; above that (255 and the like,
     # with empty stdout) is an error, not a merge — proposing its stdout would offer an empty
-    # POLICY.md to copy over the real one (review of #64, P2).
+    # POLICY.md to copy over the real one (caught in review, P2).
     if 0 <= r.returncode <= 127:
         return r.stdout, r.returncode, ""
     return None, -1, (r.stderr.strip() or f"exit {r.returncode}")

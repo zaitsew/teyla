@@ -141,11 +141,11 @@ every = "5m"
 
 
 def test_script_routine_needs_only_a_name(tmp_path):
-    """guiri's backend is a container with restart: unless-stopped and a health URL — no
+    """app-e's backend is a container with restart: unless-stopped and a health URL — no
     scheduler label, no cadence. The row is shown as unknown rather than the product refused."""
     p = write(tmp_path, """
 [product]
-name = "guiri"
+name = "app-e"
 [[routine]]
 name = "backend"
 kind = "script"
@@ -355,17 +355,17 @@ def test_render_text_truncates_long_names_and_stays_aligned():
 
 def test_summary_line_and_write_lines(tmp_path):
     from teyla import routines
-    report = {"product": "frank", "repo": "/r/frank",
+    report = {"product": "app-a", "repo": "/r/app-a",
               "routines": [{"name": "daily", "verdict": "ok"}, {"name": "gate", "verdict": "NOT LOADED"}],
               "checks": [{"name": "gate shows drafts", "verdict": "UNTESTED"}, {"name": "send one", "verdict": "BROKEN"}]}
     line = routines.summary_line(report)
-    assert line.startswith("frank: 1/2 routines running (not: gate) · 2 checks, broken: send one, 1 untested/re-test (as of ")
+    assert line.startswith("app-a: 1/2 routines running (not: gate) · 2 checks, broken: send one, 1 untested/re-test (as of ")
     assert line.endswith("`teyla routines .` for the table")
-    err = routines.summary_line({"product": "loco", "repo": "/r/loco", "error": "bad status", "routines": [], "checks": []})
+    err = routines.summary_line({"product": "app-b", "repo": "/r/app-b", "error": "bad status", "routines": [], "checks": []})
     assert "teyla.toml has an error" in err
     files = routines.write_lines([report, {"product": "a/b c", "repo": "", "routines": [], "checks": []}], tmp_path)
-    assert [f.name for f in files] == ["frank.line", "a_b_c.line"]
-    assert (tmp_path / "frank.line").read_text().rstrip() == line
+    assert [f.name for f in files] == ["app-a.line", "a_b_c.line"]
+    assert (tmp_path / "app-a.line").read_text().rstrip() == line
     assert "no routines declared" in (tmp_path / "a_b_c.line").read_text()
 
 

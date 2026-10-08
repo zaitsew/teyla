@@ -75,9 +75,9 @@ def mark_seen(findings: list[dict]) -> None:
 def _a10(gov: list[dict]) -> list[dict]:
     """Sessions that wrote ~/.claude/CLAUDE.md, judged against `teyla policy ack`.
 
-    Weeks 2026-09-15, 09-21 and 09-28 each opened with an A10 [high] for edits the owner had
-    asked for — ack had never been run, so every edit in the window counted, every week, and
-    the finding stopped being read. Now:
+    Before the ack was taken into account, every week opened with an A10 [high] for edits the
+    owner had asked for: ack had never been run, so every edit in the window counted, and the
+    finding stopped being read. Now:
       - acknowledged, file unchanged since: only edits after the ack day count;
       - file changed since the ack: [high] for the edits after the ack day — those are the
         unacknowledged ones — and the evidence says how many of the window's edits they are
@@ -97,7 +97,7 @@ def _a10(gov: list[dict]) -> list[dict]:
                      action="Run `teyla policy ack` after reviewing ~/.claude/CLAUDE.md; from then on only "
                             "edits after the ack are flagged. Shown once until the file changes.")]
     # Compare the days the writes happened on, not the day the session started: a session begun
-    # before the ack and resumed after it wrote after it (review of #68, P2). Metrics written
+    # before the ack and resumed after it wrote after it (caught in review, P2). Metrics written
     # before `days` existed fall back to the start day.
     days = lambda g: g.get("days") or [g["day"]]
     is_after = lambda g: bool(acked_date) and any(d > acked_date for d in days(g))
@@ -150,7 +150,7 @@ def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
                                f"{worst['hours']} span h, {worst.get('active_hours', worst['hours'])} active h, "
                                f"{worst['compactions']} compactions, {worst['turns']} human turns",
                       action=f"One session per project, compacted in place ({_compaction()}, handoff re-injected by "
-                             "~/ops/bin/context-budget-hook); one PR per logical unit inside it, and reading delegated to subagents."))
+                             "the context-budget hook); one PR per logical unit inside it, and reading delegated to subagents."))
     if not connector_heavy and m.get("cache_read_ratio", 0) > 150:
         F.append(dict(id="A4", severity="medium", title="Very high cache-read to output ratio",
                       evidence=f"{m['cache_read_ratio']}x cache-read tokens per output token ({_fmt(m['tokens'].get('cache_read_input_tokens',0))} read)",
@@ -187,8 +187,8 @@ def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
             F.append(dict(id="A8", severity="medium", title="Policy not wired into every harness",
                           evidence="missing: " + ", ".join(missing),
                           action="Run `teyla policy sync` so Codex, Hermes, Grok and project AGENTS.md read the same POLICY.md."))
-    # repeated corrections → rule candidates. A retry is never one: the "repeats 13×" that
-    # topped A9 on 2026-09-21 was "Try again" after an API outage. The adapters no longer
+    # repeated corrections → rule candidates. A retry is never one: a "repeats 13×" that
+    # topped A9 once was "Try again" after an API outage. The adapters no longer
     # count retries; the filter here also covers a metrics JSON written before they did.
     from .adapters import is_retry
     from .monitor import fingerprint
@@ -267,8 +267,8 @@ def advise(m: dict, policy_status: dict | None = None) -> list[dict]:
     except Exception:  # noqa: BLE001 — cloud advice is optional
         stuck = []
     if stuck:
-        # The measured failure: all three September cloud sessions ended on a pushed branch with no
-        # PR, and six days later two of them still had none. The work exists; nobody sees it.
+        # The failure seen in practice: cloud sessions end on a pushed branch with no
+        # PR, and days later still have none. The work exists; nobody sees it.
         s0 = max(stuck, key=lambda s: s["age_hours"])
         F.append(dict(id="A19", severity="high", title="Cloud work with no PR",
                       evidence=f"{len(stuck)} cloud branch(es) with commits and no PR after 24 h; oldest shown: "

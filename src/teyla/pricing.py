@@ -16,8 +16,8 @@ PRICES = {
     # model prefix: (input, cache_write, cache_read, output, tier, verified)  — USD per 1M tokens
     # cache_write is the 5-minute TTL price (1.25x input); a 1-hour write costs 2x input and is
     # priced from `input` in cost_usd, not from this column.
-    # Anthropic: input/output checked 2026-09-30 against the claude-api skill's price table (cached
-    # 2026-09-25) and its prompt-caching page (reads $0.25 on Fable 5.1, $0.20 on Opus 5.5 and
+    # Anthropic: input/output checked against the claude-api skill's price table
+    # and its prompt-caching page (reads $0.25 on Fable 5.1, $0.20 on Opus 5.5 and
     # Sonnet 5.5, 0.1x input elsewhere; writes 1.25x / 2x).
     "claude-fable-5-1": (10.0, 12.5, 0.25, 50.0, "orchestrate", True),
     "claude-opus-5-5": (4.0, 5.0, 0.2, 20.0, "volume", True),

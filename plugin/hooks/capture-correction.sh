@@ -1,8 +1,8 @@
 #!/bin/sh
 # UserPromptSubmit: records correction-shaped prompts, catching what the model
 # might not notice mid-turn. The test is `teyla.adapters.is_correction` — the same
-# one `teyla monitor` counts with, tuned for precision: in 2026-09 the old broad
-# net filed 107 records of which about 3 were real corrections. Prompts from
+# one `teyla monitor` counts with, tuned for precision: an old broad
+# net filed over a hundred records of which only a handful were real corrections. Prompts from
 # `claude -p`, `grok -p` and `hermes -z` are skipped (`teyla.corrections.headless`).
 #
 # All of the logic is `teyla.corrections.hook_main` — the same code `teyla correct`
@@ -30,7 +30,7 @@
 # Codex fires UserPromptSubmit for `codex exec` too, whose prompt a script or another
 # agent wrote (a review brief full of "don't"); `teyla.corrections.headless` reads the
 # rollout at `transcript_path` and skips it when its first record says
-# `"originator":"codex_exec"` (Codex 0.158.0-alpha.2.1, 2026-09-29).
+# `"originator":"codex_exec"` (Codex 0.158.0-alpha.2.1).
 #
 # Silent by construction: UserPromptSubmit stdout is injected into the model's
 # context, so this hook never writes to stdout, match or no match. It also
