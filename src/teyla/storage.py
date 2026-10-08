@@ -5,6 +5,7 @@ of it that is safe to give back.
     teyla storage clean [--apply] [--auto]       remove the SAFE rows; a dry run unless --apply
     teyla storage sims [--reap] [--dry] [--json] booted simulators: in use or idle; --reap shuts the idle ones down
     teyla storage sweep [--temp] [--dry] [--json] temp build output, old DerivedData, caches, logs (storage_sweep.py)
+    teyla storage procs [--kill] [--dry] [--json] dev processes whose worktree or temp folder is gone (storage_procs.py)
 
 Parallel agent work leaves a lot behind: dozens of agent worktrees under
 `<repo>/.claude/worktrees` and `~/.worktrees` (gigabytes, most of them clean and already on the
@@ -92,6 +93,8 @@ SHOW_MIN = 50 * 1024 ** 2
 # Free space below either threshold is a doctor WARN.
 LOW_FREE_FRACTION = 0.15
 LOW_FREE_BYTES = 25 * 1024 ** 3
+# Orphan processes holding more RSS than this are a doctor INFO row.
+ORPHAN_INFO_BYTES = 1024 ** 3
 
 
 # --- small helpers --------------------------------------------------------------
@@ -775,7 +778,7 @@ def reclaimable(rep: dict) -> int:
 
 
 def render(rep: dict, cache_rows: list[dict], sims: list[str], mem: list[tuple[str, int, int]],
-           sim_status: dict | None = None, sweep: list[dict] | None = None) -> str:
+           sim_status: dict | None = None, sweep: list[dict] | None = None, orphans: list[dict] | None = None) -> str:
     d, s = rep["disk"], rep["settings"]
     home = str(pathlib.Path.home())
     short = lambda p: p.replace(home, "~", 1)
@@ -820,6 +823,11 @@ def render(rep: dict, cache_rows: list[dict], sims: list[str], mem: list[tuple[s
         L.append(f"booted simulators ({len(sim_status['booted'])}; `teyla storage sims --reap` shuts down the idle ones)")
         for line in storage_sims.render_status(sim_status):
             L.append(f"  {line}")
+    if orphans:
+        from . import storage_procs
+        L.append("")
+        L.append(f"orphan processes ({len(orphans)}, {human(storage_procs.total_rss(orphans))} RSS; their worktree or temp folder is gone; "
+                 "`teyla storage procs --kill` ends them)")
     L.append("")
     L.append("memory")
     if sims and not (sim_status and sim_status["booted"]):
@@ -955,6 +963,16 @@ def doctor_checks(cfg: dict | None = None) -> list[dict]:
     elif n:
         out.append({"level": "INFO", "name": "storage:worktrees", "detail": f"{n} finished worktree(s)"
                     + ("; the daily routine removes them" if s["auto_clean"] else ""), "fix": "teyla storage clean --apply"})
+    try:
+        from . import storage_procs
+        orphans = storage_procs.find(cfg)["orphans"]
+        held = storage_procs.total_rss(orphans)
+    except Exception:   # an INFO row must never break doctor
+        orphans, held = [], 0
+    if held > ORPHAN_INFO_BYTES:
+        out.append({"level": "INFO", "name": "storage:orphans",
+                    "detail": f"{len(orphans)} orphan process(es) hold {human(held)} RSS (their worktree or temp folder is gone)",
+                    "fix": "teyla storage procs --kill"})
     return out
 
 
@@ -962,6 +980,9 @@ def doctor_checks(cfg: dict | None = None) -> list[dict]:
 
 def cmd_storage(args):
     cfg = config.load()
+    if args.action == "procs":
+        from . import storage_procs
+        return storage_procs.cmd_procs(args, cfg)
     if args.action == "sims":
         from . import storage_sims
         return storage_sims.cmd_sims(args, cfg)
@@ -986,27 +1007,31 @@ def cmd_storage(args):
     from . import storage_sims, storage_sweep
     sim_status = storage_sims.status(record=False) if sims else {"booted": [], "error": None}
     sweep = storage_sweep.sweepable(cfg) if sizes else None
+    from . import storage_procs
+    orphans = storage_procs.find(cfg)["orphans"]
     if args.json:
         rep["caches"] = cache_rows; rep["simulators_booted"] = sims
         rep["simulators"] = sim_status["booted"]; rep["sweepable"] = sweep or []
+        rep["orphan_processes"] = orphans
         rep["memory"] = [{"name": n, "rss": b, "count": c} for n, b, c in mem]
         rep["reclaimable"] = reclaimable(rep)
         print(json.dumps(rep, indent=2))
     else:
-        print(render(rep, cache_rows, sims, mem, sim_status, sweep))
+        print(render(rep, cache_rows, sims, mem, sim_status, sweep, orphans))
     return 0
 
 
 def register(sp):
     q = sp.add_parser("storage", help="what agent work holds on disk and in RAM, and removing the part that is safe to")
     q.set_defaults(fn=cmd_storage)
-    q.add_argument("action", nargs="?", choices=["report", "clean", "sims", "sweep"], default="report")
+    q.add_argument("action", nargs="?", choices=["report", "clean", "sims", "sweep", "procs"], default="report")
     q.add_argument("--json", action="store_true")
     q.add_argument("--no-sizes", action="store_true", help="report: skip `du` (fast; verdicts only)")
     q.add_argument("--apply", action="store_true", help="clean: remove the SAFE rows (default: dry run)")
     q.add_argument("--auto", action="store_true", help="clean: apply only if storage.auto_clean is true; silent otherwise (the daily routine)")
-    q.add_argument("--quiet", action="store_true", help="clean: print nothing when nothing was removed; sims/sweep: print only what was done")
+    q.add_argument("--quiet", action="store_true", help="clean: print nothing when nothing was removed; sims/sweep/procs: print only what was done")
     q.add_argument("--reap", action="store_true", help="sims: shut down idle simulators and delete old ones matching storage.sim_prune_pattern")
-    q.add_argument("--dry", action="store_true", help="sims --reap / sweep: say what would be done, do nothing")
+    q.add_argument("--dry", action="store_true", help="sims --reap / sweep / procs --kill: say what would be done, do nothing")
+    q.add_argument("--kill", action="store_true", help="procs: end the orphan processes (SIGTERM, then SIGKILL after 10 s); default: list them")
     q.add_argument("--temp", action="store_true", help="sweep: only the temp build output (the hourly agent)")
     return q

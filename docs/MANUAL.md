@@ -394,6 +394,13 @@ launchd agents, one hook and one command:
 | every session start (plugin hook) | prints what is new in `banner.items` since the last start (nothing when nothing is), and the digest headline once per week; if the last update check is older than a day, starts `teyla update --check` in the background | `~/.teyla/update-check.json` |
 | on demand | `teyla doctor` — the checklist with a fix per line; exit 1 when a FIX is pending | `~/.teyla/doctor.json` |
 
+Parallel agents also leave RAM behind: an `xcodebuild`, a `next dev` or a `python -m http.server`
+started in a worktree that was then removed keeps running. `teyla storage procs` lists them (your
+processes, no terminal, running 30+ minutes, working directory in a worktree or temp folder that no longer
+exists) and `--kill` ends them: SIGTERM, 10 seconds, SIGKILL only for a
+pid that still has the same start time and did not exit since the check. `teyla storage` and `teyla doctor` show what they hold.
+`teyla config set storage.orphan_kill=true` lets the optional `storage.sims_agent` do it every 10 minutes.
+
 `teyla reviews` reads the review ledger (`review.ledger`) against `gh pr list --state merged` and
 counts, per repo, PRs merged without a review, merged with a P1 still open, and skipped with a
 logged reason. PRs under `review.min_lines` changed lines (default 7) and docs-only PRs are exempt.
