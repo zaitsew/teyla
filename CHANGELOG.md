@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **`teyla lang` no longer reports Android and string-catalog localization.** Android resource
+  qualifiers (`**/res/values-*/strings.xml`, `plurals.xml`, `arrays.xml`) and `**/strings/*.json`
+  catalogs are exempt by default. The per-repo exemption list is `.teyla/lang-allow` (globs, any
+  depth); `[lang] allow` in config applies to every repo. Both are now spelled out in
+  `teyla lang --help` and the README.
+
 ## 0.19.2 — 2026-10-08 — cloud prep keeps AGENTS.md passive
 
 - **`teyla cloud prep` no longer puts a session-ending checklist in `AGENTS.md`.** The file is read
