@@ -9,7 +9,7 @@ import subprocess
 
 import pytest
 
-from teyla import cli, config, models, models_watch, pricing
+from teyla import cli, config, digest, models, models_watch, pricing, routine_install
 
 from test_models import CATALOGUE, POLICY_FIXTURE
 
@@ -272,3 +272,55 @@ def test_no_network_without_refresh_and_safe_mode_refuses_refresh(env, monkeypat
     code = cli.main(["models", "watch", "--refresh"])
     cap = capsys.readouterr()
     assert code == 0 and "safe mode is on" in cap.err
+
+
+# --- digest ------------------------------------------------------------------------------------
+
+def test_digest_line_only_when_unacked_new_models_exist(env, capsys):
+    assert models_watch.digest_candidates() == []  # no known list yet: never seeds from the digest
+    assert not env.known.exists()
+    run(["models", "watch"], capsys)
+    assert models_watch.digest_candidates() == []
+    env.publish({**NEW_OPUS, "openai": {"gpt-7-nova": _model("gpt-nova", "2026-09-25", "GPT-7 Nova")}})
+    (c,) = models_watch.digest_candidates()
+    assert c["text"] == "models: 2 new (openai:gpt-7-nova, anthropic:claude-opus-5-1)" and c["step"] == "teyla models watch"
+    lines, _ = digest.build([], [], [], {}, extra=[c])
+    assert any("models: 2 new" in line and "`teyla models watch`" in line for line in lines)
+    run(["models", "watch", "--ack"], capsys)
+    assert models_watch.digest_candidates() == []
+
+
+def test_digest_line_names_at_most_three(env, capsys):
+    run(["models", "watch"], capsys)
+    env.publish({"openai": {f"gpt-7-n{i}": _model("gpt-nova", f"2026-09-2{i}", f"N{i}") for i in range(5)}})
+    (c,) = models_watch.digest_candidates()
+    assert c["text"].startswith("models: 5 new (") and c["text"].endswith(", +2)")
+
+
+# --- the weekly wrapper ------------------------------------------------------------------------
+
+def _wrapper(watch_line):
+    return routine_install.WRAPPER_TEMPLATE.format(teyla_bin="/x/teyla", env_sh="", stamp="/s.last", label="l",
+                                                   runs_root=routine_install._runs_root(), models_watch_line=watch_line)
+
+
+def test_wrapper_has_the_watch_line_and_safe_mode_drops_refresh(env, monkeypatch):
+    assert routine_install._watch_line() == '"$TEYLA" models watch --refresh'
+    text = _wrapper(routine_install._watch_line())
+    assert '"$TEYLA" models watch --refresh > "$OUT_DIR/models-watch.md" 2>&1' in text
+    monkeypatch.setenv("TEYLA_SAFE", "1")
+    assert routine_install._watch_line() == '"$TEYLA" models watch'
+    safe = _wrapper(routine_install._watch_line())
+    assert 'models watch > "$OUT_DIR/models-watch.md"' in safe and "--refresh" not in safe
+
+
+def test_old_wrapper_is_stale_until_rewritten(env, monkeypatch):
+    w = env.home / ".teyla" / "weekly.sh"
+    monkeypatch.setattr(routine_install, "WRAPPER_PATH", w)
+    w.write_text(_wrapper(routine_install._watch_line()))
+    assert not routine_install._wrapper_stale(w, "/x/teyla")
+    w.write_text(_wrapper(routine_install._watch_line()).replace('"$TEYLA" models watch --refresh > "$OUT_DIR/models-watch.md" 2>&1\n', ""))
+    assert routine_install._wrapper_stale(w, "/x/teyla")  # written before `models watch`
+    w.write_text(_wrapper(routine_install._watch_line()))
+    monkeypatch.setenv("TEYLA_SAFE", "1")
+    assert routine_install._wrapper_stale(w, "/x/teyla")  # safe mode on since: must lose --refresh

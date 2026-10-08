@@ -34,6 +34,8 @@ def _home(tmp_path, monkeypatch):
     # digest.write() asks every repo under code_root for proposed rules: not the real ~/repos.
     from teyla import rules_lifecycle
     monkeypatch.setattr(rules_lifecycle, "digest_candidates", lambda *a, **k: [])
+    from teyla import models_watch
+    monkeypatch.setattr(models_watch, "digest_candidates", lambda *a, **k: [])
     return home
 
 
@@ -293,11 +295,11 @@ def test_weekly_wrapper_writes_the_digest_and_an_old_one_is_stale(_home, monkeyp
     assert '"$TEYLA" digest --write' in routine_install.WRAPPER_TEMPLATE
     w = routine_install.WRAPPER_PATH
     w.write_text(routine_install.WRAPPER_TEMPLATE.format(teyla_bin="/x/teyla", env_sh="", stamp="/s.last", label="l",
-                                                          runs_root=routine_install._runs_root())
+                                                          runs_root=routine_install._runs_root(), models_watch_line=routine_install._watch_line())
                  .replace('"$TEYLA" digest --write\n', ""))
     assert routine_install._wrapper_stale(w, "/x/teyla")
     w.write_text(routine_install.WRAPPER_TEMPLATE.format(teyla_bin="/x/teyla", env_sh="", stamp="/s.last", label="l",
-                                                          runs_root=routine_install._runs_root()))
+                                                          runs_root=routine_install._runs_root(), models_watch_line=routine_install._watch_line()))
     assert not routine_install._wrapper_stale(w, "/x/teyla")
 
 
