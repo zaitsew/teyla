@@ -186,7 +186,7 @@ def test_replaced_ladder_entry_is_searched_and_big_files_skipped(env):
 LIVE_AND_HISTORY = {
     "src/router.py": 'DEFAULT_MODEL = "claude-opus-5"\n',            # live
     ".env.example": "MODEL=claude-opus-5\n",                        # live
-    "src/limits.py": '"claude-opus-5": (15, 75),\nFALLBACK = "claude-opus-5"\n',  # one price row, one live line
+    "src/limits.py": '"claude-opus-5": (15, 75),  # usd per million\nFALLBACK = "claude-opus-5"\n',  # one price row, one live line
     "tests/test_router.py": 'assert MODEL == "claude-opus-5"\n',     # tests, in four shapes
     "web/app.test.ts": 'expect(m).toBe("claude-opus-5")\n',
     "pkg/router_test.go": 'const m = "claude-opus-5"\n',
@@ -215,6 +215,21 @@ def test_only_live_code_and_config_are_action_items_the_rest_is_one_count(env, c
     assert json.loads(out)["superseded_history"]["test"] == 4
 
 
+def test_a_call_with_numeric_args_and_a_special_file_name_stay_live(env):
+    # codex-review P2s: a numeric pair after an id hid `generate("id", 0.7, 1000)` as history, and
+    # `_spec` anywhere in a name made model_selector_special.py a test.
+    models_watch.watch()
+    git_repo(env.code, "alpha", {
+        "src/router.py": 'reply = generate("claude-opus-5", 0.7, 1000)\n',
+        "src/model_selector_special.py": 'DEFAULT = "claude-opus-5"\n',
+        "src/model_selector_spec.py": 'DEFAULT = "claude-opus-5"\n',
+    })
+    env.publish(NEW_OPUS)
+    rep = models_watch.watch()
+    assert sorted(r["file"] for r in rep["superseded"]) == ["src/model_selector_special.py", "src/router.py"]
+    assert rep["superseded_history"] == {"test": 1}
+
+
 def test_history_alone_is_not_reported_as_usage(env, capsys):
     models_watch.watch()
     git_repo(env.code, "alpha", {k: v for k, v in LIVE_AND_HISTORY.items()
@@ -235,8 +250,10 @@ def test_a_nothing_found_run_has_no_history_line(env, capsys):
 
 
 @pytest.mark.parametrize("line", [
-    '"claude-opus-5": (15, 75),', "| claude-opus-5 | 15 | 75 |", "claude-opus-5: 15.00 / 75.00",
-    '"claude-opus-5": {"input": 15, "output": 75},', "claude-opus-5 -> input_per_mtok: 15, out: 75"])
+    "| claude-opus-5 | 15 | 75 |", "claude-opus-5,15,75", "claude-opus-5\t15\t75", '"claude-opus-5", 15, 75',
+    "claude-opus-5: $15.00 / $75.00", '"claude-opus-5": {"input": 15, "output": 75},',
+    "claude-opus-5 -> input_per_mtok: 15, out: 75", '"claude-opus-5": (15, 75),  # usd per_million',
+    'cost["claude-opus-5"] = (15, 75)'])
 def test_price_rows_are_recognised(line):
     rx = models_watch._id_regex(["claude-opus-5"])
     assert models_watch.is_price_line(line, rx), line
@@ -244,7 +261,8 @@ def test_price_rows_are_recognised(line):
 
 @pytest.mark.parametrize("line", [
     'MODEL = "claude-opus-5"  # since 2025, v2', 'MODEL = "claude-opus-5"', "retries = 3, 5 and claude-opus-5",
-    'pick("claude-opus-5", 3)', 'MODEL = "claude-opus-5"  # replaces 4.1 in 2026'])
+    'pick("claude-opus-5", 3)', 'generate("claude-opus-5", 0.7, 1000)', '"claude-opus-5": (15, 75),',
+    'client.create(model="claude-opus-5", temperature=0.7, max_tokens=1000)', 'MODEL = "claude-opus-5"  # replaces 4.1 in 2026'])
 def test_a_version_or_a_year_beside_an_id_is_not_a_price_row(line):
     rx = models_watch._id_regex(["claude-opus-5"])
     assert not models_watch.is_price_line(line, rx), line
@@ -256,7 +274,8 @@ def test_a_version_or_a_year_beside_an_id_is_not_a_price_row(line):
     ("src/__tests__/a.ts", "test"), ("AppTests/Router.swift", "test"),
     ("src/pricing.ts", "price"), ("data/prices.json", "price"), ("billing/cost_table.py", "price"),
     ("docs/a.txt", "doc"), ("README.md", "doc"), ("CHANGELOG", "doc"), ("db/migrations/001.sql", "migration"),
-    ("tests/pricing.py", "test")])
+    ("tests/pricing.py", "test"), ("src/model_selector_special.py", "live"), ("src/especial_spec_helper.py", "live"),
+    ("lib/router_spec.rb", "test"), ("lib/router.spec.ts", "test"), ("spec/router.rb", "test")])
 def test_paths_are_classified(path, kind):
     assert models_watch.classify_path(path) == kind
 

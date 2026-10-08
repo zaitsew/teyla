@@ -214,8 +214,10 @@ _DOC_NAMES = {"changelog", "changes", "history", "news", "releases", "release-no
 _MIGRATION_DIRS = {"migrations", "migration", "migrate", "alembic"}
 _PRICE_WORDS = {"price", "prices", "pricing", "cost", "costs"}
 _NUM = r"\$?\d+(?:\.\d+)?"
-_NUM_PAIR = re.compile(rf"(?<![\w.\-]){_NUM}\s*[,/|]\s*{_NUM}(?![\w])")
+_NUM_PAIR = re.compile(rf"(?<![\w.\-]){_NUM}(?:\s*[,/|]\s*|\t){_NUM}(?![\w])")
 _IN_NUM = re.compile(rf"(?i)\b(?:(?:input|prompt)\w*|in(?:_\w+)?)[\"']?\s*[:=]\s*{_NUM}")
+_PRICE_KEYWORD = re.compile(r"(?i)input|output|prompt|completion|cached|price|cost|per[_ ]?million"
+                            r"|(?<![a-z])(?:usd|eur)(?![a-z])|[$\u20ac]")
 _OUT_NUM = re.compile(rf"(?i)\b(?:(?:output|completion)\w*|out(?:_\w+)?)[\"']?\s*[:=]\s*{_NUM}")
 
 
@@ -223,7 +225,8 @@ def classify_path(rel: str) -> str:
     """live | test | doc | migration | price, from the repo-relative path alone."""
     low = rel.lower()
     p = pathlib.PurePosixPath(low)
-    if lang.is_test(rel) or "_spec" in p.name or any(d in ("spec", "specs", "e2e", "__mocks__") for d in p.parts[:-1]):
+    if (lang.is_test(rel) or p.stem.endswith(("_spec", ".spec"))
+            or any(d in ("spec", "specs", "e2e", "__mocks__") for d in p.parts[:-1])):
         return "test"
     if lang.is_doc(rel) or p.stem in _DOC_NAMES or p.name.startswith("changelog"):
         return "doc"
@@ -235,13 +238,20 @@ def classify_path(rel: str) -> str:
 
 
 def is_price_line(line: str, rx: re.Pattern) -> bool:
-    """A line that pairs the id with two numbers after it: `"id": (15, 75)`, `id | 3 | 15`,
-    `{input: 3, output: 15}`. A version or a year in a comment is one number, not a pair."""
+    """A line that pairs the id with two numbers after it AND looks like a price row: it names a
+    price or token keyword (input, output, prompt, completion, cached, price, cost, per_million,
+    usd, eur, $, \u20ac), or it is a table row (`| id | 3 | 15 |`, `id,3,15`). Numbers alone are not
+    enough: `generate("id", 0.7, 1000)` is a call in live code. A year or a version is one number."""
     first = rx.search(line)
     if not first:
         return False
     rest = rx.sub(" ", line[first.end():])
-    return bool(_NUM_PAIR.search(rest) or (_IN_NUM.search(rest) and _OUT_NUM.search(rest)))
+    if not (_NUM_PAIR.search(rest) or (_IN_NUM.search(rest) and _OUT_NUM.search(rest))):
+        return False
+    if _PRICE_KEYWORD.search(rx.sub(" ", line)):
+        return True
+    cell = rf"[\"']?\s*[,\t|]\s*{_NUM}\s*[,\t|]\s*{_NUM}"
+    return not line[:first.start()].strip(" \t\"'|") and bool(re.match(cell, line[first.end():]))
 
 
 def grep_repo(repo: pathlib.Path, ids: list[str], timeout: int = 30) -> list[dict]:
