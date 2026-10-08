@@ -100,6 +100,7 @@ class Machine:
         self.sleeps += 1
 
     def ctx(self, **kw):
+        kw.setdefault("watch", lambda pid: None)          # no kqueue on fake pids
         return REAL_CTX(run=self.run, kill=self.kill, sleep=self.sleep, uid=UID, self_pid=kw.pop("self_pid", 99999),
                                  home=pathlib.Path.home(), tmpdir=kw.pop("tmpdir", ""), **kw)
 
@@ -132,17 +133,40 @@ def test_the_builtin_tools_are_all_recognised(tmp_path):
     assert sorted(pids(storage_procs.find({}, m.ctx()))) == [100 + i for i in range(len(cmds))]
 
 
-def test_a_path_argument_in_a_deleted_temp_folder_counts_even_when_the_cwd_exists(tmp_path):
+def test_a_path_argument_in_a_deleted_folder_does_not_count_when_the_cwd_exists(tmp_path):
     m = Machine()
     live = live_wt(tmp_path, "repo/main")
     root = tmp_path / "scratch"
     root.mkdir()
     m.add(11, f"/usr/bin/xcodebuild -derivedDataPath {root}/build-1/dd test", cwd=live)
     cfg = {"storage": {"orphan_roots": [str(root)]}}
-    found = storage_procs.find(cfg, m.ctx())
-    assert pids(found) == [11] and "names a deleted path" in found["orphans"][0]["reason"]
-    (root / "build-1").mkdir()
     assert pids(storage_procs.find(cfg, m.ctx())) == []
+
+
+def test_a_path_with_a_space_is_not_taken_for_a_deleted_folder(tmp_path):
+    # ps prints `node "/x/My Project/server.js"` unquoted; `/x/My` does not exist, the project does.
+    m = Machine()
+    root = tmp_path / "scratch"
+    (root / "My Project").mkdir(parents=True)
+    m.add(12, f"node {root}/My Project/server.js", cwd=str(root / "My Project"))
+    assert pids(storage_procs.find({"storage": {"orphan_roots": [str(root)]}}, m.ctx())) == []
+
+
+def test_an_argument_that_names_a_tool_does_not_make_the_process_that_tool(tmp_path):
+    m = Machine()
+    cwd = gone_wt(tmp_path)
+    m.add(13, "/bin/bash /x/backup.sh --exclude /tmp/node", cwd=cwd)
+    m.add(14, "/usr/bin/rsync -a /src/xcodebuild /dst", cwd=cwd)
+    m.add(15, "/usr/bin/python3 tool.py --serve -m http.server", cwd=cwd)
+    assert pids(storage_procs.find({}, m.ctx())) == []
+
+
+def test_program_is_the_executable_or_the_interpreted_script():
+    p = storage_procs.program
+    assert p("/opt/homebrew/bin/node /x/node_modules/.bin/vite --port 5173") == "node vite"
+    assert p("/usr/bin/python3.12 -u -m http.server 8000") == "python3.12 -m http.server"
+    assert p("/bin/bash backup.sh --exclude /tmp/node") == "bash"
+    assert p("next-server (v14.2.0)") == "next-server" and p("") == ""
 
 
 def test_tmp_and_tmpdir_and_claude_worktrees_are_roots(tmp_path):
@@ -283,6 +307,54 @@ def test_a_pid_that_changed_between_the_scan_and_the_kill_is_skipped(tmp_path):
     m.rows[10]["lstart"] = "Thu Oct  8 11:00:00 2026"
     res = storage_procs.reap({}, ctx=m.ctx(), found=found)
     assert m.signals == [] and res["killed"] == [] and "pid was reused" in res["lines"][0]
+
+
+class FakeWatch:
+    def __init__(self, exits):
+        self.exits, self.closed = exits, False
+
+    def exited(self):
+        return self.exits
+
+    def close(self):
+        self.closed = True
+
+
+def test_a_process_that_exits_after_the_check_is_not_signalled(tmp_path):
+    # The ps check passed, but the exit watch saw the process die: its pid may already be reused.
+    m = Machine()
+    m.add(10, "node a.js", cwd=gone_wt(tmp_path))
+    watches = []
+    res = storage_procs.reap({}, ctx=m.ctx(watch=lambda pid: watches.append(FakeWatch(True)) or watches[-1]))
+    assert m.signals == [] and res["killed"] == [] and "pid was reused" in res["lines"][0]
+    assert watches and all(w.closed for w in watches)
+
+
+def test_a_process_gone_before_the_watch_is_not_signalled(tmp_path):
+    m = Machine()
+    m.add(10, "node a.js", cwd=gone_wt(tmp_path))
+    res = storage_procs.reap({}, ctx=m.ctx(watch=lambda pid: storage_procs.GONE))
+    assert m.signals == [] and res["killed"] == []
+
+
+def test_the_exit_watch_follows_a_real_process():
+    import select
+    import subprocess
+    import sys
+    if not hasattr(select, "kqueue"):
+        pytest.skip("kqueue is macOS/BSD only")
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        w = storage_procs.watch_exit(child.pid)
+        assert w not in (None, storage_procs.GONE) and not w.exited()
+        child.kill()
+        child.wait()
+        assert w.exited()
+        w.close()
+    finally:
+        if child.poll() is None:
+            child.kill()
+    assert storage_procs.watch_exit(child.pid) is storage_procs.GONE
 
 
 def test_dry_run_signals_nothing(tmp_path):

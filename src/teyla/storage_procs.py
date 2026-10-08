@@ -8,17 +8,22 @@ inside a throwaway worktree or a temp folder, then the worktree is removed and t
 running, holding hundreds of megabytes. A process is an *orphan* only when ALL of this holds:
 
 - it belongs to the current user and has no terminal (`tty` is `??`): nothing a person is looking at;
-- its command line matches `storage.orphan_patterns` (regexes; default: Xcode/SwiftPM builds, node,
-  npm/pnpm/yarn/bun/deno, vite/next, `-m http.server`, supabase);
+- its *program* matches `storage.orphan_patterns` (regexes; default: Xcode/SwiftPM builds, node,
+  npm/pnpm/yarn/bun/deno, vite/next, `python -m http.server`, supabase). The program is the
+  executable's name and, for node/bun/deno/python, the script's name or `-m <module>`: an argument
+  that merely names a tool (`backup.sh --exclude /tmp/node`) does not make a process that tool;
 - it has run at least `storage.orphan_min_age_min` minutes (default 30);
 - it is not this process or one of its ancestors;
-- `lsof` could say where it sits, and its working directory, or a path on its command line, lies in
-  a folder that agents create and that no longer exists: `~/.worktrees/<repo>/<branch>`,
+- `lsof` could say where it sits, and its working directory lies in a folder that agents create and
+  that no longer exists: `~/.worktrees/<repo>/<branch>`,
   `<repo>/.claude/worktrees/<name>`, the first folder below `/tmp`, `/private/tmp` or `$TMPDIR`, or
   below a root in `storage.orphan_roots`. When `lsof` or `ps` fails, nothing is an orphan.
 
-`--kill` signals each process only after checking again that the pid still runs the same command
-since the same start time, so a recycled pid is never signalled. SIGTERM first, up to 10 s of grace,
+Paths on the command line are not read: `ps` prints them unquoted, so a path with a space cannot be
+told from two arguments. `--kill` puts a kqueue exit watch on each pid, then checks again that the
+pid runs the same command since the same start time, then reads the watch right before the signal:
+a pid that died and was reused after the check shows as an exit, which leaves only the gap between
+two system calls. SIGTERM first, up to 10 s of grace,
 then SIGKILL for the ones that are still the same process. The optional sims agent runs
 `storage procs --kill --quiet` every 10 minutes when `storage.orphan_kill = true`.
 """
@@ -35,18 +40,18 @@ from typing import Callable
 
 from . import storage
 
-DEFAULT_PATTERNS = (
-    r"(^|/)(xcodebuild|swift-build|swift-frontend|swift-test|swiftc)(\s|$)",
-    r"XCBBuildService|SWBBuildService",
-    r"(^|/)(node|npm|npx|pnpm|yarn|bun|deno|vite|supabase)(\s|$)",
-    r"next-server|\bnext (dev|start)\b",
-    r"-m http\.server",
+DEFAULT_PATTERNS = (     # matched against program(), not the whole command line
+    r"^(xcodebuild|swift-build|swift-frontend|swift-test|swiftc|XCBBuildService|SWBBuildService)$",
+    r"^(node|npm|npx|pnpm|yarn|bun|deno|vite|supabase|next-server)\b",
+    r"^python[\d.]* -m http\.server$",
 )
+INTERPRETERS = re.compile(r"^(node|bun|deno|python[\d.]*)$")
 GRACE_STEPS = 20          # x 0.5 s between SIGTERM and SIGKILL
 PS_FORMAT = "pid=,ppid=,uid=,tty=,rss=,etime=,lstart=,command="
 LSTART_WORDS = 5          # "Thu Oct  8 12:00:00 2026"
 CLAUDE_WORKTREE = re.compile(r"^(.*?/\.claude/worktrees/[^/]+)(?:/|$)")
 NO_TTY = {"??", "?", "-"}
+GONE = "gone"
 
 
 def settings(cfg: dict | None = None) -> dict:
@@ -70,11 +75,45 @@ def run_command(cmd: list[str], timeout: int = 60) -> tuple[int, str]:
     return r.returncode, r.stdout
 
 
+class _ExitWatch:
+    """A kqueue NOTE_EXIT filter on one process. It follows the process that held the pid when it was
+    registered: if that process exits and the pid is reused, the watch still reports the exit."""
+
+    def __init__(self, kq):
+        self.kq = kq
+
+    def exited(self) -> bool:
+        return bool(self.kq.control(None, 1, 0))
+
+    def close(self) -> None:
+        self.kq.close()
+
+
+def watch_exit(pid: int):
+    """An exit watch on `pid`; GONE when no such process runs; None where kqueue is missing."""
+    try:
+        import select
+        kq = select.kqueue()
+        ev = select.kevent(pid, filter=select.KQ_FILTER_PROC, flags=select.KQ_EV_ADD, fflags=select.KQ_NOTE_EXIT)
+    except (ImportError, AttributeError, OSError):
+        return None
+    try:
+        kq.control([ev], 0, 0)
+    except ProcessLookupError:
+        kq.close()
+        return GONE
+    except OSError:
+        kq.close()
+        return None
+    return _ExitWatch(kq)
+
+
 @dataclasses.dataclass
 class Ctx:
     run: Callable = run_command
     kill: Callable = os.kill
     sleep: Callable = time.sleep
+    watch: Callable = watch_exit
     uid: int = dataclasses.field(default_factory=os.getuid)
     self_pid: int = dataclasses.field(default_factory=os.getpid)
     home: pathlib.Path = dataclasses.field(default_factory=pathlib.Path.home)
@@ -180,21 +219,28 @@ def agent_folder(path: str, rts: list[tuple[str, int]]) -> str | None:
     return None
 
 
-def why_orphan(cwd: str | None, command: str, rts: list[tuple[str, int]]) -> str:
+def why_orphan(cwd: str | None, rts: list[tuple[str, int]]) -> str:
     """The reason this process sits in a folder that is gone, or '' when it does not."""
-    seen = set()
-    if cwd:
-        folder = agent_folder(cwd, rts)
-        if folder and storage._gone(folder):
-            return f"cwd {cwd} is gone"
-        seen.add(cwd)
-    for path in re.findall(r"/[^\s\"'=:,;]+", command):
-        folder = agent_folder(path, rts)
-        if folder and folder not in seen and storage._gone(folder):
-            return f"names a deleted path {folder}"
-        if folder:
-            seen.add(folder)
-    return ""
+    folder = agent_folder(cwd, rts) if cwd else None
+    return f"cwd {cwd} is gone" if folder and storage._gone(folder) else ""
+
+
+def program(command: str) -> str:
+    """What runs: the executable's name and, for an interpreter, the script's name or `-m module`.
+    A path with a space gives a name no pattern matches, which keeps the process."""
+    words = command.split()
+    if not words:
+        return ""
+    exe = os.path.basename(words[0])
+    if not INTERPRETERS.match(exe):
+        return exe
+    rest = words[1:]
+    for i, w in enumerate(rest):
+        if w == "-m" and i + 1 < len(rest):
+            return f"{exe} -m {rest[i + 1]}"
+        if not w.startswith("-"):
+            return f"{exe} {os.path.basename(w)}"
+    return exe
 
 
 # --- finding ---------------------------------------------------------------------------------
@@ -216,7 +262,7 @@ def find(cfg: dict | None = None, ctx: Ctx | None = None) -> dict:
     skip = ancestors(procs, ctx.self_pid)
     cands = [r for r in procs
              if r["uid"] == ctx.uid and r["tty"] in NO_TTY and r["pid"] not in skip and r["pid"] > 1
-             and r["age_s"] >= s["min_age_min"] * 60 and any(rx.search(r["command"]) for rx in patterns)]
+             and r["age_s"] >= s["min_age_min"] * 60 and any(rx.search(program(r["command"])) for rx in patterns)]
     err = f"ignored invalid storage.orphan_patterns: {bad}" if bad else None
     if not cands:
         return {"orphans": [], "error": err}
@@ -228,7 +274,7 @@ def find(cfg: dict | None = None, ctx: Ctx | None = None) -> dict:
         cwd = cwds.get(r["pid"])
         if cwd is None:   # lsof did not name this process: nothing is known about where it sits
             continue
-        reason = why_orphan(cwd, r["command"], rts)
+        reason = why_orphan(cwd, rts)
         if reason:
             out.append({**{k: r[k] for k in ("pid", "ppid", "rss_kb", "age_s", "lstart", "command")}, "cwd": cwd, "reason": reason})
     out.sort(key=lambda r: -r["rss_kb"])
@@ -246,6 +292,26 @@ def _same(ctx: Ctx, row: dict) -> bool:
     """The pid still runs this process: same start time and command, not a recycled pid."""
     now = lookup(ctx, row["pid"])
     return now is not None and now["lstart"] == row["lstart"] and now["command"] == row["command"]
+
+
+def _signal(ctx: Ctx, row: dict, sig: int) -> str:
+    """Send `sig` when the pid still runs this orphan: 'sent', GONE, or why it could not be sent.
+    The exit watch goes on before the ps check and is read right before the kill."""
+    w = ctx.watch(row["pid"])
+    if w is GONE:
+        return GONE
+    try:
+        if not _same(ctx, row) or (w is not None and w.exited()):
+            return GONE
+        ctx.kill(row["pid"], sig)
+        return "sent"
+    except ProcessLookupError:
+        return GONE
+    except OSError as e:
+        return str(e)
+    finally:
+        if w is not None:
+            w.close()
 
 
 def _label(r: dict) -> str:
@@ -269,31 +335,25 @@ def reap(cfg: dict | None = None, dry: bool = False, ctx: Ctx | None = None, fou
         return {"lines": lines, "killed": [], "freed": 0, "orphans": rows, "error": found["error"]}
     pending = []
     for r in rows:
-        if not _same(ctx, r):
-            lines.append(f"skipped {_label(r)}: it is gone or the pid was reused")
-            continue
-        try:
-            ctx.kill(r["pid"], 15)
+        res = _signal(ctx, r, 15)
+        if res == "sent":
             pending.append(r)
-        except ProcessLookupError:
-            killed.append((r, "exited"))
-        except OSError as e:
-            lines.append(f"could not signal {_label(r)}: {e}")
+        elif res is GONE:
+            lines.append(f"skipped {_label(r)}: it is gone or the pid was reused")
+        else:
+            lines.append(f"could not signal {_label(r)}: {res}")
     for _ in range(GRACE_STEPS):
         if not any(lookup(ctx, r["pid"]) for r in pending):
             break
         ctx.sleep(0.5)
     for r in pending:
-        if not _same(ctx, r):                      # exited (or the pid already belongs to someone else)
-            killed.append((r, "terminated"))
-            continue
-        try:
-            ctx.kill(r["pid"], 9)
+        res = _signal(ctx, r, 9)                   # GONE: exited (or the pid already belongs to someone else)
+        if res == "sent":
             killed.append((r, "killed with SIGKILL"))
-        except ProcessLookupError:
+        elif res is GONE:
             killed.append((r, "terminated"))
-        except OSError as e:
-            lines.append(f"could not kill {_label(r)}: {e}")
+        else:
+            lines.append(f"could not kill {_label(r)}: {res}")
     for r, how in killed:
         freed += r["rss_kb"] * 1024
         lines.append(f"{how} {_label(r)} — {r['reason']}")

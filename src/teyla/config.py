@@ -30,7 +30,7 @@
                                    derived_days, codex_days, grok_days, log_days, docker_days, log_max_mb,
                                    urgent_free_gb); docker_superseded_repos = ["registry/vendor/"] lets it
                                    remove older tags of those repositories (default none)
-    orphan_patterns = [...]        `storage procs`: regexes on a command line that may be an orphaned dev process
+    orphan_patterns = [...]        `storage procs`: regexes on the program (executable name, or node/python script name or `-m module`)
                                    (default: Xcode/SwiftPM builds, node/npm/pnpm/yarn/bun/deno, vite, next,
                                    `-m http.server`, supabase)
     orphan_min_age_min = 30        a process must have run this long to count as an orphan
