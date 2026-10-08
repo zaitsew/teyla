@@ -127,6 +127,13 @@ class Session:
     # was over LONG_CONTEXT (W2); model -> usage of messages sent after 3+ failed tool calls in a
     # row (W6); repos named in tool-call paths (~/repos/<name>, ~/.worktrees/<name>/…), which is
     # where a session started in a non-repo directory did its work (W1).
+    # Per local day (YYYY-MM-DD) from each message's own timestamp, Claude Code only: day -> model ->
+    # Counter(TOKEN_KEYS) for everything the session spent (subagents included) and for the
+    # subagents alone, and one (day, model) per subagent call (a subagent file), the model being
+    # the one that wrote most of its output. `teyla spend` splits the cost by day from these.
+    day_usage: dict = dataclasses.field(default_factory=lambda: defaultdict(lambda: defaultdict(Counter)))
+    sub_day_usage: dict = dataclasses.field(default_factory=lambda: defaultdict(lambda: defaultdict(Counter)))
+    sub_calls: list = dataclasses.field(default_factory=list)
     reread_excess: Counter = dataclasses.field(default_factory=Counter)
     loop_usage: dict = dataclasses.field(default_factory=lambda: defaultdict(Counter))
     touched_repos: Counter = dataclasses.field(default_factory=Counter)
@@ -201,6 +208,8 @@ class Session:
         d["usage"] = {m: dict(c) for m, c in self.usage.items()}
         d["sub_usage"] = {m: dict(c) for m, c in self.sub_usage.items()}
         d["loop_usage"] = {m: dict(c) for m, c in self.loop_usage.items()}
+        d["day_usage"] = {day: {m: dict(c) for m, c in mm.items()} for day, mm in self.day_usage.items()}
+        d["sub_day_usage"] = {day: {m: dict(c) for m, c in mm.items()} for day, mm in self.sub_day_usage.items()}
         d["reread_excess"] = dict(self.reread_excess); d["touched_repos"] = dict(self.touched_repos)
         d["models"] = dict(self.models); d["tools"] = dict(self.tools); d["skills"] = dict(self.skills); d["repos"] = dict(self.repos)
         d["skills_read"] = dict(self.skills_read)

@@ -60,14 +60,24 @@ def _usage_row(u: dict) -> dict:
 
 
 def _add_usage(target: dict, per_message: dict) -> None:
-    for model, row in per_message.values():
+    for model, row, *_ in per_message.values():
         for k, v in row.items():
             if v:
                 target[model][k] += v
 
 
+def _add_days(target: dict, per_message: dict, fallback_day: str) -> None:
+    """day (local date) -> model -> token row, from each message's own timestamp: a transcript that
+    spans midnight, or a session resumed days later, splits its cost by the day it was incurred."""
+    for model, row, ts in per_message.values():
+        day = local_day(ts) if ts else fallback_day
+        for k, v in row.items():
+            if v:
+                target[day or fallback_day][model][k] += v
+
+
 def _add_reread(target, per_message: dict) -> None:
-    for model, row in per_message.values():
+    for model, row, *_ in per_message.values():
         ctx = row["input_tokens"] + row["cache_read_input_tokens"] + row["cache_creation_input_tokens"]
         if ctx > LONG_CONTEXT:
             target[model] += ctx - HANDOFF_CONTEXT
@@ -82,25 +92,36 @@ def _touched(inp: dict) -> list[str]:
     return [r for r in _REPO_PATH_RE.findall(text) if r not in (".", "..")]
 
 
-def _subagent_usage(f: str) -> dict:
-    """model -> token row for every message in <session>/subagents/*.jsonl, one row per message id."""
+def _subagent_usage(f: str) -> tuple[dict, list]:
+    """(per message, calls) for <session>/subagents/*.jsonl. Per message: (model, token row, timestamp),
+    one entry per message id. Calls: one (first timestamp, model) per subagent file, the model being
+    the one that wrote most of its output: a subagent file is one Agent call."""
     per_message: dict = {}
+    calls: list = []
     for sf in sorted(glob.glob(os.path.join(f[:-len(".jsonl")], "subagents", "*.jsonl"))):
         try:
             fh = open(sf, errors="replace")
         except OSError:
             continue
+        first_ts, out_by_model = None, {}
         with fh:
             for n, line in enumerate(fh):
                 try:
                     o = json.loads(line)
                 except Exception:
                     continue
+                first_ts = first_ts or o.get("timestamp")
                 if o.get("type") != "assistant":
                     continue
                 m = o.get("message", {})
-                per_message[(sf, m.get("id") or n)] = (m.get("model", "?"), _usage_row(m.get("usage") or {}))
-    return per_message
+                per_message[(sf, m.get("id") or n)] = (m.get("model", "?"), _usage_row(m.get("usage") or {}),
+                                                       o.get("timestamp"))
+        for key, (model, row, _ts) in per_message.items():
+            if key[0] == sf:
+                out_by_model[model] = out_by_model.get(model, 0) + row["output_tokens"]
+        if out_by_model:
+            calls.append((first_ts, max(out_by_model, key=out_by_model.get)))
+    return per_message, calls
 
 
 def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
@@ -164,7 +185,7 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                     s.models[model] += 1
                     if failed_in_a_row >= ERROR_LOOP:
                         loop_keys.add(key)
-                per_message[key] = (model, _usage_row(m.get("usage") or {}))
+                per_message[key] = (model, _usage_row(m.get("usage") or {}), ts)
                 said = text_of(m.get("content"))
                 if said.strip():
                     last_text = (ts, said)
@@ -234,10 +255,15 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
     _add_usage(s.usage, per_message)
     _add_usage(s.loop_usage, {k: v for k, v in per_message.items() if k in loop_keys})
     _add_reread(s.reread_excess, per_message)
-    subs = _subagent_usage(f)
+    subs, sub_calls = _subagent_usage(f)
     _add_usage(s.usage, subs)
     _add_usage(s.sub_usage, subs)
     _add_reread(s.reread_excess, subs)
+    fallback = local_day(s.last)
+    _add_days(s.day_usage, per_message, fallback)
+    _add_days(s.day_usage, subs, fallback)
+    _add_days(s.sub_day_usage, subs, fallback)
+    s.sub_calls = [(local_day(ts) if ts else fallback, model) for ts, model in sub_calls]
     return s
 
 

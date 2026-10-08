@@ -120,22 +120,6 @@ def routine_items(lines_dir: pathlib.Path | None = None) -> list[tuple[str, str]
     return out
 
 
-def spend_items(today: _dt.date | None = None) -> list[tuple[str, str]]:
-    """Today's `teyla spend --alert` lines (the daily routine writes them before doctor runs)."""
-    from . import spend
-    today = (today or _dt.date.today()).isoformat()
-    try:
-        lines = spend.alerts_path().read_text().splitlines()
-    except OSError:
-        return []
-    out = []
-    for line in lines:
-        day, _, text = line.partition("\t")
-        if day == today and text:
-            out.append((f"spend|{day}|{_short(text, 40)}", f"spend: {text}"))
-    return out
-
-
 def _doctor_checks_on_disk() -> list[dict]:
     from . import doctor
     try:
@@ -150,7 +134,6 @@ def write_banner_items(checks: list[dict] | None = None, today: _dt.date | None 
     items = doctor_items(_doctor_checks_on_disk() if checks is None else checks)
     items += routine_items()
     items += reminder_items(today=today)
-    items += spend_items(today)
     p = banner_items_path()
     try:
         p.parent.mkdir(parents=True, exist_ok=True)

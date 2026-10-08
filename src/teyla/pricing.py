@@ -11,6 +11,7 @@ two, or a model missing from PRICES, as PRICE-STALE.
 """
 import json
 import pathlib
+import re
 
 PRICES = {
     # model prefix: (input, cache_write, cache_read, output, tier, verified)  — USD per 1M tokens
@@ -107,3 +108,53 @@ def cost_usd(model: str, usage: dict) -> float | None:
     hour = min(usage.get("cache_creation_1h_input_tokens", 0), written)
     return (usage.get("input_tokens", 0) * i + (written - hour) * cw + hour * 2 * i
             + usage.get("cache_read_input_tokens", 0) * cr + usage.get("output_tokens", 0) * o) / 1e6
+
+
+def _generation(key: str) -> tuple:
+    return tuple(int(n) for n in re.findall(r"\d+", key))
+
+
+def _resolve(name: str) -> str | None:
+    """The price-table prefix an explicit `model` parameter names: a full id by longest prefix, or
+    the bare alias an Agent call takes ("opus", "sonnet[1m]", "claude-haiku") by the newest row of
+    that family. None when nothing in the table matches."""
+    n = re.sub(r"\[[^\]]*\]$", "", (name or "").strip().lower())
+    if not n:
+        return None
+    prices = effective_prices()
+    best = max((k for k in prices if n.startswith(k)), key=len, default=None)
+    if best:
+        return best
+    family = n if n.startswith("claude-") else f"claude-{n}"
+    kin = [k for k in prices if k == family or k.startswith(family + "-")]
+    return max(kin, key=_generation, default=None)
+
+
+def explicit_tier(name: str | None) -> str | None:
+    """The ladder tier of a model named in an Agent call's `model` parameter; None when the call
+    named none (it inherits the parent's) or the name resolves to nothing priced."""
+    key = _resolve(name) if name else None
+    return effective_prices()[key][4] if key else None
+
+
+def is_top_tier(name: str | None, extra=()) -> bool:
+    """True when an explicit model is on the orchestrate tier of the ladder (the tier advice A2
+    counts). A provider whose rows name no orchestrate tier has no ladder to read: there its most
+    expensive family (by output price) is the top. `extra` are names or aliases the owner counts
+    as top tier whatever the table says (config `spend.a20_models`)."""
+    if not name:
+        return False
+    low = re.sub(r"\[[^\]]*\]$", "", name.strip().lower())
+    if low in {re.sub(r"\[[^\]]*\]$", "", str(x).strip().lower()) for x in extra}:
+        return True
+    key = _resolve(name)
+    if not key:
+        return False
+    prices = effective_prices()
+    if prices[key][4] == "orchestrate":
+        return True
+    provider = key.split("-", 1)[0]
+    rows = {k: v for k, v in prices.items() if k.split("-", 1)[0] == provider}
+    if any(v[4] == "orchestrate" for v in rows.values()):
+        return False
+    return prices[key][3] >= max(v[3] for v in rows.values())
