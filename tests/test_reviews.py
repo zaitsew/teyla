@@ -63,14 +63,21 @@ def env(tmp_path, monkeypatch):
 
         def run(argv):
             calls.append(argv)
-            slug = argv[argv.index("--repo") + 1]
+            q = next(a for a in argv if a.startswith("q="))
+            slug = q.split("repo:", 1)[1].split()[0]
             if isinstance(prs_by_slug.get(slug), tuple):
                 return prs_by_slug[slug]
-            return 0, json.dumps(prs_by_slug.get(slug, [])), ""
+            return 0, json.dumps({"data": {"search": {"nodes": [_node(p) for p in prs_by_slug.get(slug, [])]}}}), ""
         run.calls = calls
         return run
     e.runner = runner_for
     return e
+
+
+def _node(pr):
+    """A `gh pr list`-shaped PR as the GraphQL search returns it."""
+    return {**pr, "commits": {"nodes": [{"commit": {"oid": c["oid"]}} for c in pr.get("commits") or []]},
+            "files": {"nodes": list(pr.get("files") or [])}}
 
 
 def _scan(e, prs, **kw):
@@ -98,8 +105,32 @@ def test_parse_ledger_counts_malformed_lines_and_never_raises():
 
 def test_parse_ledger_tolerates_a_skip_without_a_sha_and_an_empty_file():
     led = reviews.parse_ledger("2026-10-07T11:00:00Z\tapp\t\tskip\t\t\tdocs fix for PR 7\n")
-    assert led["skips"] == [{"time": "2026-10-07T11:00:00Z", "repo": "app", "sha": "", "reason": "docs fix for PR 7", "seq": 0}]
+    assert led["skips"] == [{"time": "2026-10-07T11:00:00Z", "repo": "app", "sha": "", "pr": None, "reason": "docs fix for PR 7", "seq": 0}]
     assert reviews.parse_ledger("") == {"reviews": [], "skips": [], "unparsed": 0}
+
+
+def test_parse_ledger_reads_what_codex_review_and_review_gate_write():
+    # Lines as the two scripts write them: a mode with a path list, diff-file, a dirty tree with no
+    # commit, and a review-gate skip that names the PR by URL and carries its reason in the mode.
+    text = "\n".join([
+        f"2026-10-02T10:48:35Z\tweb\t{A}\tbranch:content/lib content/load.mjs\t0\t1\tcodex:gpt-6.1-sol",
+        f"2026-10-02T10:50:00Z\tapp\t{B}\tdiff-file\t1\t0\tcodex:gpt-6.1-sol",
+        "2026-10-08T14:18:25Z\tlib\t-\tdirty\t0\t2\tcodex:gpt-6.1-sol",
+        "2026-10-03T08:26:06Z\tapi\t-\tdiff-file\t0\t0\tcodex:gpt-6.1-sol",
+        f"2026-10-02T14:30:42Z\thttps://github.com/acme/App/pull/243\t{C}\tskip:moved out of #if os(iOS)\t-\t-\treview-gate",
+    ])
+    led = reviews.parse_ledger(text)
+    assert led["unparsed"] == 0
+    assert [(r["repo"], r["mode"], r["p1"]) for r in led["reviews"]] == [("web", "branch", 0), ("app", "diff-file", 1)]
+    (skip,) = led["skips"]
+    assert (skip["repo"], skip["pr"], skip["sha"], skip["reason"]) == ("app", 243, C, "moved out of #if os(iOS)")
+
+
+def test_a_logged_skip_outranks_an_open_p1(env):
+    env.repo("app")
+    env.write(_line(A, p1=1), f"2026-10-07T12:00:00Z\thttps://github.com/acme/app/pull/9\t{D}\tskip:round cap\t-\t-\treview-gate")
+    (row,) = _scan(env, [_pr(9, [A])])["repos"]
+    assert (row["skipped"], row["open_p1"]) == (1, 0)
 
 
 # --- classification ---------------------------------------------------------------------------
@@ -199,11 +230,12 @@ def test_one_gh_call_per_repo_with_the_documented_arguments(env):
     run = env.runner({"acme/app": [], "acme/lib": []})
     reviews.scan(None, days=7, today=TODAY, runner=run)
     assert len(run.calls) == 2
-    argv = next(c for c in run.calls if "acme/app" in c)
-    assert argv[:3] == ["gh", "pr", "list"] and ["--state", "merged"] == argv[argv.index("--state"):argv.index("--state") + 2]
-    assert argv[argv.index("--search") + 1] == "merged:>=2026-10-01"
-    assert argv[argv.index("--json") + 1] == "number,title,mergedAt,additions,deletions,files,commits,url,mergeCommit,headRefOid"
-    assert argv[argv.index("--limit") + 1] == "100"
+    argv = next(c for c in run.calls if any("repo:acme/app " in a for a in c))
+    assert argv[:3] == ["gh", "api", "graphql"]
+    assert "q=repo:acme/app is:pr is:merged merged:>=2026-10-01" in argv
+    query = next(a for a in argv if a.startswith("query="))
+    assert "first:100" in query and "commits(first:100){nodes{commit{oid}}}" in query
+    assert "author" not in query          # authors made gh pr list exceed GitHub's node limit
 
 
 def test_gh_failure_skips_the_repo_with_a_note(env):
@@ -212,7 +244,7 @@ def test_gh_failure_skips_the_repo_with_a_note(env):
     rep = reviews.scan(None, days=7, today=TODAY, runner=env.runner({"acme/app": (1, "", "gh: not logged in\nrun gh auth login")}))
     assert rep["repos"] == [] and any("acme/app" in n and "not logged in" in n for n in rep["notes"])
     rep = reviews.scan(None, days=7, today=TODAY, runner=env.runner({"acme/app": (0, "not json", "")}))
-    assert rep["repos"] == [] and any("not JSON" in n for n in rep["notes"])
+    assert rep["repos"] == [] and any("not a search result" in n for n in rep["notes"])
     out = reviews.render(rep)
     assert out.startswith("review debt: 0 unreviewed") or "not checked" in out
 
