@@ -398,7 +398,12 @@ def find_reports(roots=None, since: dt.datetime | None = None, unreadable: list 
     floor = _mtime_floor(since)
     for root in (default_roots() if roots is None else roots):
         root = pathlib.Path(root)
-        if not root.is_dir():
+        try:
+            if not root.is_dir():
+                continue
+        except OSError:                  # a parent without search permission: unreadable, not absent
+            if unreadable is not None:
+                unreadable.append(str(root))
             continue
         if not os.access(root, os.R_OK | os.X_OK):
             if unreadable is not None:
@@ -714,15 +719,20 @@ def digest_candidates(days: int = DEFAULT_DAYS, roots=None, now: dt.datetime | N
 def report(days: int = DEFAULT_DAYS, roots=None, records=None, now: dt.datetime | None = None) -> dict:
     """The whole report as data: events newest first, each crash with its context and nearest jetsam,
     the advice, and the folders that could not be read."""
-    found = recent(days, roots, now)
-    evs = found.events
+    now = now or dt.datetime.now().astimezone()
+    cutoff = now - dt.timedelta(days=days)
+    # Collect two hours past the window's edge so a panic just inside it still finds the jetsam
+    # that preceded it; only events inside the window are listed.
+    found = collect(cutoff - dt.timedelta(hours=JETSAM_WINDOW_H), roots)
+    every = found.events
+    evs = [e for e in every if e.time >= cutoff]
     seen = seen_ids()
     items = []
     for ev in sorted(evs, key=lambda e: e.time, reverse=True):
         item = {"event": ev, "new": ev.kind in KINDS_CRASH and ev.id not in seen}
         if ev.kind in KINDS_CRASH:
             item["context"] = context(ev, path=records)
-            item["jetsam"] = nearest_jetsam(ev, evs)
+            item["jetsam"] = nearest_jetsam(ev, every)
         items.append(item)
     lead = next((i for i in items if i["event"].kind in KINDS_CRASH), None) or (items[0] if items else None)
     tips: list[str] = []

@@ -628,3 +628,15 @@ def test_digest_write_survives_a_failing_crash_scan(reports, home, monkeypatch):
     monkeypatch.setattr(crash, "recent", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
     assert crash.digest_candidates() == []
     assert digest.write([], [], [], today=dt.date(2026, 10, 9), notify_now=False)
+
+
+def test_a_root_whose_parent_cannot_be_searched_is_unreadable_not_a_crash(monkeypatch, tmp_path):
+    root = tmp_path / "locked" / "DiagnosticReports"
+
+    def boom(self):
+        raise PermissionError("no search permission")
+
+    monkeypatch.setattr(crash.pathlib.Path, "is_dir", boom)
+    unreadable: list = []
+    assert crash.find_reports([root], unreadable=unreadable) == []
+    assert unreadable == [str(root)]
