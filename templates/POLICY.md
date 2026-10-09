@@ -86,3 +86,24 @@ When asked whether a product ran, works, or is up ("did it run this morning?",
 names. Read code and git history only once the record shows something wrong and
 the cause is needed. Answered from the record it costs one command; answered by
 reading code it costs a session.
+
+## 10. One machine, a budget — the guard decides, not the agent
+
+Every agent on a laptop shares one CPU, one RAM and one swap file, and none of them
+sees the others. Ten sessions that each boot "just one" simulator and run "just one"
+build exhaust memory together: swap fills, load climbs into the hundreds, and the
+kernel panics. So:
+
+- **Check before heavy work.** `teyla load` gives the verdict (OK / BUSY / CRITICAL)
+  with the numbers. On CRITICAL, start nothing heavy — no build, no simulator, no
+  headless lane — and finish or stop what you started.
+- **Wait, do not retry.** When the machine guard refuses a command, run it as
+  `teyla load --wait --kind <build|sim|lane> && <command>`. It blocks until a slot is
+  free; a retry loop is the same overload with extra steps.
+- **Reuse a booted simulator.** Boot one only when none of the booted ones fits; shut
+  down every simulator your lane booted when the lane ends (`xcrun simctl shutdown <udid>`).
+- **Stop your daemons.** A lane that ran Gradle ends with `./gradlew --stop`.
+- **Parallel lanes cost memory, not only tokens.** Fan out only as wide as
+  `guard.max_builds` and `guard.max_sims` allow; queue the rest.
+- After a crash, `teyla crash` says what the machine looked like before it; read it
+  before starting the next sprint.
