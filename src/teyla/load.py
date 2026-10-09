@@ -381,14 +381,21 @@ def _driver_kind(r: Row) -> str | None:
     return None
 
 
+_DAEMON_MAIN = {
+    "org.gradle.launcher.daemon.bootstrap.GradleDaemon": "gradle",
+    "org.jetbrains.kotlin.daemon.KotlinCompileDaemon": "kotlin",
+}
+
+
 def _daemon_kind(r: Row) -> str | None:
     if r.exe != "java":
         return None
-    c = r.command
-    if "GradleDaemon" in c or "org.gradle.launcher.daemon" in c:
-        return "gradle"
-    if "KotlinCompileDaemon" in c or "kotlin-daemon" in c or "kotlin-compiler-embeddable" in c:
-        return "kotlin"
+    # The main class, as its own argument: a jar name on some other app's classpath
+    # (kotlin-compiler-embeddable is a library too) does not make that app a build daemon,
+    # and the guard agent stops idle daemons.
+    for a in r.args:
+        if a in _DAEMON_MAIN:
+            return _DAEMON_MAIN[a]
     return None
 
 

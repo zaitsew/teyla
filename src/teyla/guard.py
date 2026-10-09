@@ -143,6 +143,9 @@ def update_alert(snap: load.Snapshot, verdict: load.Verdict, conf: dict, env: En
         if path.exists():
             path.unlink(missing_ok=True)
             did.append(f"removed {path} (guard.alert is off)")
+        # Forget the incident too: alerts switched back on later start a new one, with its own
+        # "since" and its own notification.
+        _alert_state_path().unlink(missing_ok=True)
         return did
     now = env.now()
     st = _read_state()
@@ -254,6 +257,29 @@ def _is_daemon(row: dict, kind: str, start: float) -> bool:
             and began is not None and abs(began - start) <= START_TOLERANCE_S + 2)
 
 
+def _still_idle(rows: list[dict], env: Env, lines: list[str]) -> list[dict]:
+    """Look again right before the signal: a build may have started on the daemon since the
+    snapshot the idle clock came from. Any doubt (ps fails) means nobody is stopped."""
+    fresh = load.snapshot(env.run)
+    if fresh is None:
+        lines.append("skipped the daemons: the process table could not be read again")
+        return []
+    p = fresh.procs
+    if any(d.kind == "gradle" for d in p.drivers):
+        lines.append("skipped the daemons: a Gradle build started")
+        return []
+    now = {d.pid: d for d in p.daemons}
+    keep = []
+    for r in rows:
+        g, d = r["_guard"], now.get(r["_guard"]["pid"])
+        if d is None or d.cpu is None or d.cpu >= CPU_IDLE_PCT or (g["kind"] == "kotlin" and p.kotlinc > 0):
+            _forget(g["pid"])
+            lines.append(f"skipped {g['kind']} daemon pid {g['pid']}: busy again")
+            continue
+        keep.append(r)
+    return keep
+
+
 def reap(idle: list[dict], env: Env, dry: bool = False) -> list[str]:
     """Stop the idle daemons (or, with `dry`, say which)."""
     lines, rows = [], []
@@ -269,6 +295,9 @@ def reap(idle: list[dict], env: Env, dry: bool = False) -> list[str]:
             continue
         row["_guard"] = d
         rows.append(row)
+    if not rows:
+        return lines
+    rows = _still_idle(rows, env, lines)
     if not rows:
         return lines
     killed, problems = storage_procs.terminate(env.ctx, rows)

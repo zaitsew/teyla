@@ -679,3 +679,9 @@ def test_record_takes_a_lock_beside_the_file(tmp_path):
     path = load.record(snap, load.assess(snap, load.guard_conf({})), path=tmp_path / "load.tsv")
     assert (tmp_path / "load.tsv.lock").exists()
     assert len(load.read_records(path=path)) == 1
+
+
+def test_only_the_daemon_main_class_makes_a_build_daemon():
+    p = classify(ps_line(1, "/jdk/bin/java -cp /k/kotlin-compiler-embeddable-2.0.jar com.example.Server"),
+                 ps_line(2, "/jdk/bin/java -cp /k/kotlin-daemon-client.jar:/g/GradleDaemonTools.jar com.example.Tool"))
+    assert p.daemons == []

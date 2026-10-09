@@ -474,3 +474,63 @@ def test_the_command_is_registered(capsys):
     with pytest.raises(SystemExit):
         cli.main(["guard", "nonsense"])
     assert "tick" in capsys.readouterr().err
+
+
+def test_a_daemon_that_got_busy_again_before_the_signal_is_spared(m, clock):
+    m.add(100, GRADLE_DAEMON, started_s_ago=7200)
+    tick(m)
+    clock.advance(31)
+    full_ps = m.run
+    calls = {"n": 0}
+
+    def busy_on_second_look(cmd, timeout=60):
+        if cmd[0] == "ps" and cmd[1] == "-Ao":
+            calls["n"] += 1
+            if calls["n"] == 2:                           # the re-check right before the signal
+                m.procs[100]["cpu"] = "55.0"
+        return full_ps(cmd, timeout)
+
+    m.run = busy_on_second_look
+    res = tick(m)
+    assert m.signals == [] and 100 in m.procs
+    assert any("pid 100: busy again" in ln for ln in res["lines"])
+
+
+def test_a_gradle_build_started_since_the_snapshot_spares_every_daemon(m, clock):
+    m.add(100, GRADLE_DAEMON, started_s_ago=7200)
+    tick(m)
+    clock.advance(31)
+    full_ps = m.run
+    calls = {"n": 0}
+
+    def client_on_second_look(cmd, timeout=60):
+        if cmd[0] == "ps" and cmd[1] == "-Ao":
+            calls["n"] += 1
+            if calls["n"] == 2:
+                m.add(300, "/jdk/bin/java -cp /w/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain assembleDebug")
+        return full_ps(cmd, timeout)
+
+    m.run = client_on_second_look
+    res = tick(m)
+    assert m.signals == []
+    assert any("a Gradle build started" in ln for ln in res["lines"])
+
+
+def test_switching_alerts_off_forgets_the_incident(m, clock):
+    m.sysctl = CRIT_SYSCTL
+    tick(m)
+    first = alert_lines()[0]
+    tick(m, alert=False)                                  # off during the incident; it ends while off
+    clock.advance(120)
+    tick(m)                                               # back on, a later CRITICAL: a new incident
+    assert alert_lines()[0] != first and "since 22:2" in alert_lines()[0]
+    assert len(m.notes) == 2
+
+
+def test_a_jar_on_some_apps_classpath_is_not_a_build_daemon(m, clock):
+    m.add(100, "/jdk/bin/java -cp /k/kotlin-compiler-embeddable-2.0.jar:/app.jar com.example.Server", started_s_ago=7200)
+    m.add(101, "/jdk/bin/java -cp /g/gradle-launcher.jar com.example.UsesGradleTooling", started_s_ago=7200)
+    tick(m)
+    clock.advance(60)
+    tick(m)
+    assert m.signals == [] and state_files() == []
