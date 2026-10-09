@@ -166,6 +166,18 @@ def test_kotlin_daemon_is_a_daemon_not_a_build():
     assert q.daemons == []
 
 
+def test_daemons_carry_their_cpu_and_kotlinc_clients_are_counted():
+    p = classify(
+        ps_line(3, "/jdk/bin/java -cp /g/lib/gradle-launcher.jar org.gradle.launcher.daemon.bootstrap.GradleDaemon 8.10", cpu="37.5"),
+        ps_line(4, "/jdk/bin/java -cp /k/kotlin-compiler-embeddable.jar org.jetbrains.kotlin.daemon.KotlinCompileDaemon", cpu="0.0"),
+        ps_line(5, "/opt/kotlinc/bin/kotlinc Main.kt"),
+        ps_line(6, "/jdk/bin/java -cp /k/kotlin-compiler.jar org.jetbrains.kotlin.cli.jvm.K2JVMCompiler Main.kt"),
+    )
+    assert [(d.kind, d.cpu) for d in p.daemons] == [("gradle", 37.5), ("kotlin", 0.0)]
+    assert p.kotlinc == 2
+    assert classify(ps_line(1, "/bin/sh -c ls")).kotlinc == 0
+
+
 def test_claude_sessions_count_once_and_the_apps_own_processes_not_at_all():
     p = classify(
         ps_line(1, "/Applications/Claude.app/Contents/MacOS/Claude"),
@@ -291,7 +303,8 @@ def test_quiet_machine_is_ok():
 
 @pytest.mark.parametrize("kw,level", [
     (dict(pressure=4), "CRITICAL"), (dict(pressure=2), "BUSY"), (dict(pressure=1), "OK"),
-    (dict(swap_used_bytes=ram_pct(40)), "CRITICAL"), (dict(swap_used_bytes=ram_pct(39.9)), "BUSY"),
+    (dict(swap_used_bytes=ram_pct(40), pressure=2), "CRITICAL"), (dict(swap_used_bytes=ram_pct(39.9), pressure=2), "BUSY"),
+    (dict(swap_used_bytes=ram_pct(40)), "BUSY"),       # swap with no pressure left: the machine has recovered
     (dict(swap_used_bytes=ram_pct(25)), "BUSY"), (dict(swap_used_bytes=ram_pct(24.9)), "OK"),
     (dict(load1=100.0), "CRITICAL"), (dict(load1=99.9), "BUSY"), (dict(load1=40.0), "BUSY"), (dict(load1=39.9), "OK"),
     (dict(compressor_bytes=ram_pct(45)), "CRITICAL"), (dict(compressor_bytes=ram_pct(44.9)), "BUSY"),
@@ -317,7 +330,7 @@ def test_unknown_fields_trip_nothing():
 def test_reasons_carry_the_number_and_the_threshold_critical_first():
     v = load.assess(snap(swap_used_bytes=int(11.7 * GIB), load1=579.67, pressure=2, procs=procs(sims=4)), {})
     assert v.level == "CRITICAL"
-    assert v.reasons[0] == "swap 11.7 GB = 49% of RAM (critical ≥ 40%)"
+    assert v.reasons[0] == "swap 11.7 GB = 49% of RAM (critical ≥ 40% under memory pressure)"
     assert v.reasons[1] == "load 580 on 10 cores (critical ≥ 100)"
     assert any("pressure is warn" in r for r in v.reasons) and any("4 simulators booted (max 2)" in r for r in v.reasons)
     assert v.n_critical == 2
@@ -325,11 +338,11 @@ def test_reasons_carry_the_number_and_the_threshold_critical_first():
 
 
 def test_thresholds_follow_the_config():
-    s = snap(swap_used_bytes=int(3.0 * GIB))          # 12.5%
-    assert load.assess(s, {}).level == "OK"
+    s = snap(swap_used_bytes=int(3.0 * GIB), pressure=2)          # 12.5%
+    assert load.assess(s, {}).level == "BUSY"                          # the pressure alone
     assert load.assess(s, {"swap_warn_pct": 10}).level == "BUSY"
     assert load.assess(s, {"swap_warn_pct": 5, "swap_crit_pct": 12}).level == "CRITICAL"
-    assert load.assess(s, {"swap_warn_pct": "banana"}).level == "OK"      # a mistyped value falls back
+    assert load.assess(s, {"swap_warn_pct": "banana"}).level == "BUSY"      # a mistyped value falls back
 
 
 # --- admission ---------------------------------------------------------------------------------
@@ -340,7 +353,7 @@ def test_a_quiet_machine_admits_everything():
 
 
 def test_critical_refuses_every_kind_with_the_numbers():
-    s = snap(swap_used_bytes=int(11.7 * GIB))
+    s = snap(swap_used_bytes=int(11.7 * GIB), pressure=2)
     for kind in load.KINDS:
         ok, msg = load.admit(kind, s, {})
         assert not ok and "CRITICAL" in msg and "swap 11.7 GB" in msg
@@ -547,7 +560,7 @@ def args(**kw):
 
 
 def crowded() -> Machine:
-    m = Machine(sysctl_text(swap_used_mb=12000))          # 11.7 GB of 24 GB: 49%
+    m = Machine(sysctl_text(swap_used_mb=12000, pressure=2))          # 11.7 GB of 24 GB: 49%
     for i in range(3):
         m.add(100 + i, f"launchd_sim /x/Devices/{UDID_A}/data")
     return m
@@ -638,7 +651,7 @@ def test_register_wires_the_flags():
 # --- doctor ------------------------------------------------------------------------------------
 
 def test_doctor_row_warns_at_critical_and_is_info_otherwise(monkeypatch):
-    monkeypatch.setattr(load, "safe_snapshot", lambda run=None: snap(swap_used_bytes=int(11.7 * GIB)))
+    monkeypatch.setattr(load, "safe_snapshot", lambda run=None: snap(swap_used_bytes=int(11.7 * GIB), pressure=2))
     row = doctor._load_check(config.load())
     assert row["level"] == "WARN" and row["name"] == "machine:load" and row["fix"] == "teyla load"
     assert "swap 11.7 GB" in row["detail"]
@@ -666,3 +679,17 @@ def test_record_takes_a_lock_beside_the_file(tmp_path):
     path = load.record(snap, load.assess(snap, load.guard_conf({})), path=tmp_path / "load.tsv")
     assert (tmp_path / "load.tsv.lock").exists()
     assert len(load.read_records(path=path)) == 1
+
+
+def test_only_the_daemon_main_class_makes_a_build_daemon():
+    p = classify(ps_line(1, "/jdk/bin/java -cp /k/kotlin-compiler-embeddable-2.0.jar com.example.Server"),
+                 ps_line(2, "/jdk/bin/java -cp /k/kotlin-daemon-client.jar:/g/GradleDaemonTools.jar com.example.Tool"))
+    assert p.daemons == []
+
+
+def test_the_daemon_class_must_be_javas_main_class_not_a_program_argument():
+    p = classify(ps_line(1, "/jdk/bin/java -cp app.jar com.example.Server org.jetbrains.kotlin.daemon.KotlinCompileDaemon"),
+                 ps_line(2, "/jdk/bin/java -jar tool.jar org.gradle.launcher.daemon.bootstrap.GradleDaemon"),
+                 ps_line(3, "/jdk/bin/java --add-opens java.base/java.lang=ALL-UNNAMED -Xmx2g -cp /g/a.jar "
+                            "org.gradle.launcher.daemon.bootstrap.GradleDaemon 8.10"))
+    assert [(d.pid, d.kind) for d in p.daemons] == [(3, "gradle")]

@@ -9,6 +9,7 @@ import pathlib
 import stat
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -190,6 +191,47 @@ def test_session_start_context_json_is_hermes_first_turn_only(tmp_path):
     assert json.loads(proc.stdout) == {"context": "teyla: 1 warning(s) — run `teyla doctor`"}
     later = dict(first, extra={"user_message": "and now?", "is_first_turn": False})
     assert run_start(tmp_path, "--context-json", payload=later).stdout == ""
+
+
+LOAD_ALERT = ("machine CRITICAL since 20:21 — swap 11.7 GB = 45% of RAM; 4 simulators booted (max 2). "
+              "Do not start builds or boot simulators; run teyla load.")
+
+
+def _load_alert(tmp_path, age_s=10, text=LOAD_ALERT + "\n  Xcode 4.1 GB\n  Chrome 3.0 GB\n"):
+    path = tmp_path / "home" / ".teyla" / "load.alert"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    old = time.time() - age_s
+    os.utime(path, (old, old))
+
+
+def test_session_start_shows_a_fresh_load_alert_first_and_only_its_first_line(tmp_path):
+    _load_alert(tmp_path)
+    proc = run_start(tmp_path)
+    assert proc.returncode == 0
+    assert proc.stdout == f"teyla: {LOAD_ALERT}\nteyla: 1 warning(s) — run `teyla doctor`\n"
+
+
+def test_session_start_ignores_a_stale_or_empty_load_alert(tmp_path):
+    _load_alert(tmp_path, age_s=600)
+    assert run_start(tmp_path).stdout == "teyla: 1 warning(s) — run `teyla doctor`\n"
+    _load_alert(tmp_path, text="")
+    assert run_start(tmp_path).stdout == "teyla: 1 warning(s) — run `teyla doctor`\n"
+    _load_alert(tmp_path, age_s=240)
+    assert run_start(tmp_path).stdout.startswith(f"teyla: {LOAD_ALERT}\n"), "four minutes old is still current"
+
+
+def test_session_start_shows_the_load_alert_to_codex_and_hermes_too(tmp_path):
+    _load_alert(tmp_path)
+    _rollout(tmp_path, "Codex Desktop")
+    ss = _codex_payload(tmp_path, "SessionStart", source="startup")
+    assert run_start(tmp_path, "--codex", payload=ss).stdout.startswith(f"teyla: {LOAD_ALERT}\n")
+    first = {"hook_event_name": "pre_llm_call", "tool_name": None, "tool_input": None, "session_id": "s1",
+             "cwd": str(tmp_path), "extra": {"user_message": "hi", "is_first_turn": True, "platform": "cli"}}
+    ctx = json.loads(run_start(tmp_path, "--context-json", payload=first).stdout)["context"]
+    assert ctx.splitlines()[0] == f"teyla: {LOAD_ALERT}"
+    _rollout(tmp_path, "codex_exec")
+    assert run_start(tmp_path, "--codex", payload=ss).stdout == "", "a batch run still gets nothing"
 
 
 # --- 0.12: the store is outside the repo, private, and scrubbed ---------------------------

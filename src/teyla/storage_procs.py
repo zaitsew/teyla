@@ -322,18 +322,12 @@ def short(text: str, n: int) -> str:
     return text if len(text) <= n else text[:n - 1] + "…"
 
 
-def reap(cfg: dict | None = None, dry: bool = False, ctx: Ctx | None = None, found: dict | None = None) -> dict:
-    """SIGTERM every orphan, give them 10 s, SIGKILL the ones that are still the same process.
-    Returns the lines describing what was (or, with dry, would be) done, and the RSS freed (bytes)."""
-    ctx = ctx or Ctx()
-    found = found or find(cfg, ctx)
-    rows, lines, freed, killed = found["orphans"], [], 0, []
-    if found["error"] and not rows:
-        return {"lines": [found["error"]], "killed": [], "freed": 0, "orphans": rows, "error": found["error"]}
-    if dry:
-        lines = [f"would kill {_label(r)} — {r['reason']}" for r in rows]
-        return {"lines": lines, "killed": [], "freed": 0, "orphans": rows, "error": found["error"]}
-    pending = []
+def terminate(ctx: Ctx, rows: list[dict]) -> tuple[list[tuple[dict, str]], list[str]]:
+    """SIGTERM every row, give them 10 s, SIGKILL the ones that are still the same process (each
+    signal only after `_signal` has re-checked pid, start time and command). Returns
+    ([(row, how)] for the ones that ended, [line] for the ones that were skipped or could not be
+    signalled). Rows are `lookup()`-shaped dicts: pid, lstart, command, rss_kb."""
+    killed, lines, pending = [], [], []
     for r in rows:
         res = _signal(ctx, r, 15)
         if res == "sent":
@@ -354,6 +348,21 @@ def reap(cfg: dict | None = None, dry: bool = False, ctx: Ctx | None = None, fou
             killed.append((r, "terminated"))
         else:
             lines.append(f"could not kill {_label(r)}: {res}")
+    return killed, lines
+
+
+def reap(cfg: dict | None = None, dry: bool = False, ctx: Ctx | None = None, found: dict | None = None) -> dict:
+    """SIGTERM every orphan, give them 10 s, SIGKILL the ones that are still the same process.
+    Returns the lines describing what was (or, with dry, would be) done, and the RSS freed (bytes)."""
+    ctx = ctx or Ctx()
+    found = found or find(cfg, ctx)
+    rows, lines, freed = found["orphans"], [], 0
+    if found["error"] and not rows:
+        return {"lines": [found["error"]], "killed": [], "freed": 0, "orphans": rows, "error": found["error"]}
+    if dry:
+        lines = [f"would kill {_label(r)} — {r['reason']}" for r in rows]
+        return {"lines": lines, "killed": [], "freed": 0, "orphans": rows, "error": found["error"]}
+    killed, lines = terminate(ctx, rows)
     for r, how in killed:
         freed += r["rss_kb"] * 1024
         lines.append(f"{how} {_label(r)} — {r['reason']}")

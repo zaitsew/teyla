@@ -3,10 +3,10 @@
 Derived from the writers, not from memory; each line below names the module that writes it:
 
     ~/Library/LaunchAgents/com.zaitsew.teyla.{daily,weekly}.plist   routine_install  unload + remove
-    ~/Library/LaunchAgents/com.zaitsew.teyla.{sims,sweep}.plist     routine_install  unload + remove (only exist when
-                                 [storage] sims_agent / sweep_agent is on)
+    ~/Library/LaunchAgents/com.zaitsew.teyla.{sims,sweep,load}.plist  routine_install  unload + remove (only exist when
+                                 [storage] sims_agent / sweep_agent / [guard] agent is on)
     ~/Library/LaunchAgents/com.teyla.<product>.<routine>.plist      control.triggers unload + remove
-    ~/Library/Logs/teyla-{daily,weekly,sims,sweep}.log, com.teyla.*.log  routine_install, triggers  remove
+    ~/Library/Logs/teyla-{daily,weekly,sims,sweep,load}.log, com.teyla.*.log  routine_install, triggers  remove
     ~/.claude/CLAUDE.md          the `@~/.agents/POLICY.md` import   policy.sync      edit: drop that line
     ~/.codex/AGENTS.md, ~/.grok/AGENTS.md   symlinks → POLICY.md, or  policy.sync      remove, only if they point there
                                  POLICY.md + the owner's rules                    or carry the generated-by marker
@@ -191,7 +191,7 @@ def _launch_agents(home: pathlib.Path) -> list[Step]:
         if plist.exists():
             steps.append(Step("remove", plist, "its plist", lambda plist=plist: _rm(plist)))
     logs = home / "Library" / "Logs"
-    for name in ("teyla-daily.log", "teyla-weekly.log", "teyla-sims.log", "teyla-sweep.log"):
+    for name in ("teyla-daily.log", "teyla-weekly.log", "teyla-sims.log", "teyla-sweep.log", "teyla-load.log"):
         if (logs / name).exists():
             steps.append(Step("remove", logs / name, "routine log", lambda p=logs / name: _rm(p)))
     if logs.is_dir():
@@ -467,7 +467,7 @@ def _teyla_dir(home: pathlib.Path, keep_data: bool) -> list[Step]:
     if not keep_data:
         return steps + [Step("remove", d, "Teyla's state: config, caches, doctor, reminders, hooks, wrappers, control plane",
                              lambda: _rm(d))]
-    for p in (d / "hooks", d / "daily.sh", d / "weekly.sh", d / "sims.sh", d / "sweep.sh"):
+    for p in (d / "hooks", d / "daily.sh", d / "weekly.sh", d / "sims.sh", d / "sweep.sh", d / "load.sh"):
         if p.exists():
             steps.append(Step("remove", p, "code, not data (--keep-data keeps the rest)", lambda p=p: _rm(p)))
     steps.append(Step("", d, "--keep-data"))
