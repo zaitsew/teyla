@@ -9,6 +9,10 @@
 #   one-liner (~/.teyla/doctor.summary) showed on 44 of 44 starts with the same items
 #   for 13 days and stopped being read. Without banner.items (a CLI older than this
 #   hook) the summary is printed as before.
+# - If ~/.teyla/load.alert is under 5 minutes old (`teyla guard tick`, run every minute by the
+#   optional load agent, keeps it while the machine is CRITICAL), print its first line FIRST:
+#   "teyla: machine CRITICAL since 20:21 — swap …. Do not start builds or boot simulators; run
+#   teyla load." An older file is ignored: a dead agent must not cry wolf.
 # - If ~/.teyla/spend.alert exists (the daily `teyla spend --alert` writes the current spend
 #   alerts there and removes the file when there are none), print its first line and how many
 #   more: "teyla: spend alert — …". One extra line at most.
@@ -88,6 +92,11 @@ if [ "$mode" = "--codex" ]; then
 fi
 
 orientation() {
+  load_alert="$HOME/.teyla/load.alert"
+  if [ -s "$load_alert" ] && [ -n "$(find "$load_alert" -mmin -5 2>/dev/null)" ]; then
+    line=$(head -n 1 "$load_alert" 2>/dev/null)
+    [ -n "$line" ] && echo "teyla: ${line}"
+  fi
   if [ -d ".claude/rules" ]; then
     count=$(find ".claude/rules" -maxdepth 1 -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
     if [ -n "$count" ] && [ "$count" -gt 0 ] 2>/dev/null; then
