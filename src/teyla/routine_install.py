@@ -39,19 +39,26 @@ DAILY_LOG_PATH = pathlib.Path.home() / "Library" / "Logs" / "teyla-daily.log"
 STAMP_PATH = pathlib.Path.home() / ".teyla" / "weekly.last"
 DAILY_STAMP_PATH = pathlib.Path.home() / ".teyla" / "daily.last"
 
-# Optional agents, written only when config asks for them (`[storage] sims_agent`, `sweep_agent`).
-# They run on an interval, not at a calendar time, so catch-up has nothing to do for them.
+# Optional agents, written only when config asks for them (`[storage] sims_agent`, `sweep_agent`,
+# `[guard] agent`). They run on an interval, not at a calendar time, so catch-up has nothing to do
+# for them. They do local work only (no network), so safe mode (a work Mac) leaves them as they are.
 SIMS_LABEL = "com.zaitsew.teyla.sims"
 SWEEP_LABEL = "com.zaitsew.teyla.sweep"
-OPTIONAL_LABELS = (SIMS_LABEL, SWEEP_LABEL)
-# label -> (config key, seconds between runs, `teyla` arguments, wrapper name, log name, stamp name)
+LOAD_LABEL = "com.zaitsew.teyla.load"
+OPTIONAL_LABELS = (SIMS_LABEL, SWEEP_LABEL, LOAD_LABEL)
+# label -> the config flag that switches it on (`[table] key`), seconds between runs, `teyla` arguments,
+# wrapper, log and stamp names, what it does; `suggest`: doctor mentions it (INFO) while it is off.
 OPTIONAL = {
-    SIMS_LABEL: dict(key="sims_agent", interval=600, args="storage sims --reap --quiet",
+    SIMS_LABEL: dict(table="storage", key="sims_agent", interval=600, args="storage sims --reap --quiet",
                      wrapper="sims.sh", log="teyla-sims.log", stamp="sims.last",
                      what="shuts down idle iOS simulators"),
-    SWEEP_LABEL: dict(key="sweep_agent", interval=3600, args="storage sweep --temp --quiet",
+    SWEEP_LABEL: dict(table="storage", key="sweep_agent", interval=3600, args="storage sweep --temp --quiet",
                       wrapper="sweep.sh", log="teyla-sweep.log", stamp="sweep.last",
                       what="removes idle temp build output"),
+    LOAD_LABEL: dict(table="guard", key="agent", interval=60, args="guard tick --quiet",
+                     wrapper="load.sh", log="teyla-load.log", stamp="load.last",
+                     what="records the machine's load, keeps the overload alert, stops idle Gradle/Kotlin daemons",
+                     suggest="teyla config set guard.agent=true && teyla routine install"),
 }
 # The weekly wrapper's extra line when storage.sweep_agent is on.
 SWEEP_LINE = '"$TEYLA" storage sweep --quiet'
@@ -151,7 +158,7 @@ INTERVAL_PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 INTERVAL_WRAPPER_TEMPLATE = """#!/usr/bin/env bash
-# Written by `teyla routine install` because [storage] {key} is on. {what}.
+# Written by `teyla routine install` because {flag} is on. {what}.
 set -uo pipefail
 {env_sh}
 date -u +%FT%TZ > "{stamp}"
@@ -382,10 +389,18 @@ def _plist_schedule_stale(plist: pathlib.Path, label: str) -> bool:
     return got != want
 
 
+def flag_name(label: str) -> str:
+    """`[storage] sims_agent`: the config flag of an optional agent, as the user would read it."""
+    o = OPTIONAL[label]
+    return f"[{o['table']}] {o['key']}"
+
+
 def optional_enabled(label: str) -> bool:
-    """Is the optional agent `label` switched on in `[storage]`?"""
+    """Is the optional agent `label` switched on in its config table?"""
     from . import config
-    return config.truthy((config.load().get("storage") or {}).get(OPTIONAL[label]["key"]))
+    o = OPTIONAL[label]
+    table = config.load().get(o["table"])
+    return config.truthy(table.get(o["key"]) if isinstance(table, dict) else None)
 
 
 def orphan_kill_enabled() -> bool:
@@ -456,7 +471,7 @@ def _unload(plist: pathlib.Path, label: str) -> str:
 def _write_optional(label: str, teyla_bin: str, env_plist: str, env_sh: str) -> list[str]:
     o, p = OPTIONAL[label], optional_paths(label)
     p["wrapper"].parent.mkdir(parents=True, exist_ok=True)
-    p["wrapper"].write_text(INTERVAL_WRAPPER_TEMPLATE.format(key=o["key"], what=o["what"].capitalize(), env_sh=env_sh,
+    p["wrapper"].write_text(INTERVAL_WRAPPER_TEMPLATE.format(flag=flag_name(label), what=o["what"].capitalize(), env_sh=env_sh,
                                                              stamp=p["stamp"], label=label, teyla_bin=teyla_bin,
                                                              args=o["args"],
                                                              extra=PROCS_LINE + "\n" if label == SIMS_LABEL and orphan_kill_enabled() else ""))
@@ -503,7 +518,7 @@ def install(if_stale: bool = False, dry: bool = False) -> list[str]:
                 if sys.platform == "darwin":
                     out.append(f"would load {label} via launchctl bootstrap gui/{os.getuid()}")
             elif p["plist"].exists() or p["wrapper"].exists():
-                out.append(f"would unload and remove {label} ([storage] {OPTIONAL[label]['key']} is off)")
+                out.append(f"would unload and remove {label} ({flag_name(label)} is off)")
         return out + [f"teyla binary: {teyla_bin}"]
     env = launchd_env(teyla_bin)
     env_plist, env_sh = _env_plist(env), _env_sh(env)
@@ -709,7 +724,7 @@ def status() -> list[str]:
     for label in OPTIONAL_LABELS:
         o, p, on = OPTIONAL[label], optional_paths(label), optional_enabled(label)
         if not on and not p["plist"].exists():
-            lines.append(f"{label}: off ([storage] {o['key']} = false)")
+            lines.append(f"{label}: off ({flag_name(label)} = false)")
             continue
         ok, pid, code = loaded(label)
         lines.append(f"{label}: {'on' if on else 'OFF in config but still installed — run `teyla routine install`'}"
@@ -736,11 +751,14 @@ def optional_checks() -> list[tuple[str, str, str, str | None]]:
         name, o, p = f"routine:{label.rsplit('.', 1)[-1]}", OPTIONAL[label], optional_paths(label)
         if not optional_enabled(label):
             if p["plist"].exists() or p["wrapper"].exists():
-                out.append(("WARN", name, f"still installed, but [storage] {o['key']} is off", "teyla routine install   (removes it)"))
+                out.append(("WARN", name, f"still installed, but {flag_name(label)} is off", "teyla routine install   (removes it)"))
+            elif o.get("suggest"):
+                out.append(("INFO", name, f"off ({flag_name(label)} = false): nothing records the machine's load or guards it between sessions",
+                            o["suggest"]))
             continue
         ok, _, code = loaded(label)
         if not p["plist"].exists():
-            out.append(("FIX", name, f"[storage] {o['key']} is on but the agent is not installed", "teyla routine install"))
+            out.append(("FIX", name, f"{flag_name(label)} is on but the agent is not installed", "teyla routine install"))
         elif _wrapper_stale(p["wrapper"], teyla_bin, env):
             out.append(("FIX", name, f"{p['wrapper'].name} is missing, names another teyla binary or lacks the [env] in config.toml", "teyla routine install"))
         elif not ok:

@@ -86,9 +86,15 @@
     load_warn_per_core = 4.0       one-minute load average per core: BUSY at or above
     load_crit_per_core = 10.0      ... CRITICAL at or above
     wait_timeout_s = 900           `teyla load --wait` gives up (exit 3) after this long
-    agent = false                  reserved: a launchd recorder agent that runs `teyla load --record --quiet`
-    gradle_idle_min = 30           reserved: a Gradle/Kotlin daemon idle this long is reaped
-    alert = true                   reserved: write ~/.teyla/load.alert while the verdict is CRITICAL
+    agent = false                  true: `teyla routine install` writes the launchd agent com.zaitsew.teyla.load
+                                   (every 60 s, `teyla guard tick --quiet`): records a row in ~/.teyla/load.tsv,
+                                   keeps the alert file, stops idle Gradle/Kotlin daemons
+    gradle_idle_min = 30           `guard tick` stops a Gradle or Kotlin daemon idle this many minutes (no Gradle
+                                   client running, CPU ~0); 0 = never
+    alert = true                   `guard tick` keeps ~/.teyla/load.alert (one line + the top apps) while the verdict
+                                   is CRITICAL, shown first by the session-start hook while it is under 5 minutes
+                                   old, plus one macOS notification per incident (not in safe mode, at most one per
+                                   30 min); removed after three ticks below CRITICAL
     [harness]
     disabled = ["hermes", "grok"]  harnesses this machine does not use: doctor, health, `harness status|sync`
                                    and `policy sync` skip them entirely (claude-code, codex, grok, hermes,
@@ -161,7 +167,7 @@ DEFAULTS = {
     "guard": {"enabled": True, "max_sims": 2, "max_builds": 2, "max_lanes": 0,
               "swap_warn_pct": 25, "swap_crit_pct": 40, "compressor_warn_pct": 30, "compressor_crit_pct": 45,
               "load_warn_per_core": 4.0, "load_crit_per_core": 10.0, "wait_timeout_s": 900,
-              # Declared for the parts that come next (recorder agent, idle-daemon reaper, alert file).
+              # `teyla guard tick`: the launchd recorder agent (opt-in), the idle-daemon reaper, the alert file.
               "agent": False, "gradle_idle_min": 30, "alert": True},
     # The plugin's opt-in hooks (plugin/hooks/context-budget.sh, land-check.sh). Off by default: where
     # the same hooks are already wired some other way, a second copy doubles each note.

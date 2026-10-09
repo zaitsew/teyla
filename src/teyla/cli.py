@@ -29,6 +29,7 @@
   teyla remind add "<what>" <YYYY-MM-DD> [--how "..."]            file a dated to-do; doctor WARNs within 30d, FIXes once overdue
   teyla remind list | done <n>                                    everything pending; clear the n-th
   teyla load [--json] [--record] [--quiet] [--admit KIND] [--wait --kind KIND] [--timeout S]   machine load: snapshot, verdict (exit 0 OK, 1 BUSY, 2 CRITICAL), admission, wait for a slot
+  teyla guard tick [--quiet] [--dry] | status                    the guard by itself: record, alert file, stop idle Gradle/Kotlin daemons (the load agent runs tick every minute)
   teyla crash [--days N] [--json] [--ack]                         after a crash: the panic, the machine's load before it, what to change
   teyla storage [--json] [--no-sizes]                             disk and RAM held by agent work: worktrees, build output, caches
   teyla storage clean [--apply] [--auto]                          remove finished worktrees and idle build output (dry run by default)
@@ -452,6 +453,8 @@ def main(argv=None):
     tidy_mod.register(sp)
     from . import load as load_mod
     load_mod.register(sp)
+    from . import guard as guard_mod
+    guard_mod.register(sp)
     from . import crash as crash_mod
     crash_mod.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")

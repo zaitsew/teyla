@@ -86,6 +86,7 @@ class Daemon:
     kind: str                  # "gradle" | "kotlin"
     rss_bytes: int
     etime_s: int | None
+    cpu: float | None = None   # `ps` %cpu; the idle-daemon reaper treats ~0 as idle
 
 
 @dataclasses.dataclass
@@ -110,6 +111,7 @@ class Procs:
     drivers: list = dataclasses.field(default_factory=list)       # [Driver]; builds = len(drivers)
     compilers: int = 0
     compiler_rss_bytes: int = 0
+    kotlinc: int = 0                                              # running `kotlinc` clients (a Kotlin daemon's users)
     daemons: list = dataclasses.field(default_factory=list)       # [Daemon]
     claude: int = 0
     codex: int = 0
@@ -291,6 +293,7 @@ class Row:
     args: list          # words after prog
     app: str | None     # the outermost .app bundle the command lives in
     name: str           # what `top` groups by: app, else exe
+    cpu: float = 0.0    # `ps` %cpu
 
 
 def _basename(path: str) -> str:
@@ -303,9 +306,13 @@ def parse_row(line: str) -> Row | None:
     parts = line.split(None, 5)
     if len(parts) < 6:
         return None
-    pid, ppid, rss, _cpu, etime, command = parts
+    pid, ppid, rss, pcpu, etime, command = parts
     if not (pid.isdigit() and ppid.isdigit() and rss.isdigit()):
         return None
+    try:
+        cpu = float(pcpu)
+    except ValueError:
+        cpu = 0.0
     command = command.strip()
     if not command or command.startswith("("):
         return None
@@ -317,7 +324,7 @@ def parse_row(line: str) -> Row | None:
         exe = prog = _basename(inner[0]) if inner else _basename(head)
         args = inner[1:] + command[len(head):].split()
         return Row(int(pid), int(ppid), int(rss) * KIB, parse_etime(etime), command, exe, prog, args, None,
-                   f"{sim.group(1)} simulator")
+                   f"{sim.group(1)} simulator", cpu)
     if command.startswith("/") and ".app/" in head:
         i = head.find(".app/")
         app = _basename(head[:i])
@@ -347,7 +354,7 @@ def parse_row(line: str) -> Row | None:
                     prog = "claude"
                 args = args[args.index(script) + 1:]
     return Row(int(pid), int(ppid), int(rss) * KIB, parse_etime(etime), command, exe, prog, args, app,
-               _FOLD_HELPER.sub(r"\1", app or exe))
+               _FOLD_HELPER.sub(r"\1", app or exe), cpu)
 
 
 def parse_ps(text: str) -> list[Row]:
@@ -374,14 +381,41 @@ def _driver_kind(r: Row) -> str | None:
     return None
 
 
+_DAEMON_MAIN = {
+    "org.gradle.launcher.daemon.bootstrap.GradleDaemon": "gradle",
+    "org.jetbrains.kotlin.daemon.KotlinCompileDaemon": "kotlin",
+}
+
+
 def _daemon_kind(r: Row) -> str | None:
     if r.exe != "java":
         return None
-    c = r.command
-    if "GradleDaemon" in c or "org.gradle.launcher.daemon" in c:
-        return "gradle"
-    if "KotlinCompileDaemon" in c or "kotlin-daemon" in c or "kotlin-compiler-embeddable" in c:
-        return "kotlin"
+    # The main class, as its own argument: a jar name on some other app's classpath
+    # (kotlin-compiler-embeddable is a library too) does not make that app a build daemon,
+    # and the guard agent stops idle daemons.
+    return _DAEMON_MAIN.get(_java_main(r.args))
+
+
+# java options whose value is the next argument; the main class is the first argument after the options.
+_JAVA_VALUE_OPTS = {"-cp", "-classpath", "--class-path", "-p", "--module-path", "--upgrade-module-path",
+                    "--add-modules", "--add-opens", "--add-exports", "--add-reads", "--patch-module",
+                    "--limit-modules", "--enable-native-access"}
+
+
+def _java_main(args: list) -> str | None:
+    """The main class java was started with: the first argument that is neither an option nor an
+    option's value. `-jar` means a jar's manifest decides, `-m` a module: neither is a daemon class.
+    Words after the main class are the program's own arguments and never count."""
+    skip = False
+    for a in args:
+        if skip:
+            skip = False
+        elif a in ("-jar", "-m", "--module"):
+            return None
+        elif a in _JAVA_VALUE_OPTS:
+            skip = True
+        elif not a.startswith("-"):
+            return a
     return None
 
 
@@ -440,7 +474,9 @@ def classify(rows: list[Row]) -> Procs:
             out.compiler_rss_bytes += r.rss_bytes
         dk = _daemon_kind(r)
         if dk:
-            out.daemons.append(Daemon(r.pid, dk, r.rss_bytes, r.etime_s))
+            out.daemons.append(Daemon(r.pid, dk, r.rss_bytes, r.etime_s, r.cpu))
+        if (p.startswith("kotlinc") and r.exe != "java") or (r.exe == "java" and "K2JVMCompiler" in r.command):
+            out.kotlinc += 1
         if r.name == "Google Chrome":
             out.chrome_rss_bytes += r.rss_bytes
             if r.exe == "Google Chrome Helper (Renderer)":

@@ -1,4 +1,4 @@
-"""The optional launchd agents (`storage.sims_agent`, `storage.sweep_agent`), `teyla uninstall`
+"""The optional launchd agents (`storage.sims_agent`, `storage.sweep_agent`, `guard.agent`), `teyla uninstall`
 removing them, and the free-disk figure in doctor's summary line.
 
 launchctl is never called: `_load`, `_unload` and `loaded` are replaced by recorders, and every
@@ -53,14 +53,17 @@ def paths(label):
 
 def test_by_default_no_optional_agent_exists_and_the_weekly_does_not_sweep(home):
     lines = ri.install()
-    assert not paths(ri.SIMS_LABEL)["plist"].exists() and not paths(ri.SWEEP_LABEL)["plist"].exists()
+    assert not any(paths(label)["plist"].exists() for label in ri.OPTIONAL_LABELS)
     assert "storage sweep" not in ri.WRAPPER_PATH.read_text()
     assert home.calls["load"] == [ri.DAILY_LABEL, ri.LABEL] and home.calls["unload"] == []
     assert not ri.is_stale()
-    assert not any("sims" in line or "sweep" in line for line in lines)
+    assert not any(word in line for line in lines for word in ("sims", "sweep", "load.plist"))
     status = "\n".join(ri.status())
-    assert f"{ri.SIMS_LABEL}: off" in status and f"{ri.SWEEP_LABEL}: off" in status
-    assert ri.optional_checks() == []
+    assert all(f"{label}: off" in status for label in ri.OPTIONAL_LABELS)
+    assert "off ([guard] agent = false)" in status and "off ([storage] sims_agent = false)" in status
+    # the storage agents are opt-in and silent; the guard's gets one INFO line saying how to turn it on
+    (level, name, detail, fix), = ri.optional_checks()
+    assert (level, name) == ("INFO", "routine:load") and fix == "teyla config set guard.agent=true && teyla routine install"
 
 
 # --- sims_agent --------------------------------------------------------------------------------------
@@ -92,6 +95,75 @@ def test_the_sims_wrapper_goes_stale_with_the_binary_or_the_env(home):
     assert ri.is_stale()
     ri.install()
     assert "HTTPS_PROXY" in paths(ri.SIMS_LABEL)["wrapper"].read_text() and not ri.is_stale()
+
+
+# --- guard.agent: the load recorder -------------------------------------------------------------------
+
+def test_the_guard_agent_ticks_every_minute_from_the_guard_table(home):
+    ri.install()
+    config.set_value("storage.sims_agent", "true")        # another table's flag must not switch it on
+    assert not ri.optional_enabled(ri.LOAD_LABEL)
+    config.set_value("guard.agent", "true")
+    assert ri.optional_enabled(ri.LOAD_LABEL) and ri.is_stale()
+    lines = ri.install()
+    p = paths(ri.LOAD_LABEL)
+    plist = plistlib.loads(p["plist"].read_bytes())
+    assert plist["Label"] == "com.zaitsew.teyla.load" and plist["StartInterval"] == 60 and plist["RunAtLoad"] is False
+    assert plist["ProgramArguments"] == ["/bin/bash", str(p["wrapper"])]
+    assert plist["StandardOutPath"] == str(home / "Library/Logs/teyla-load.log")
+    text = p["wrapper"].read_text()
+    assert p["wrapper"] == home / ".teyla" / "load.sh" and p["stamp"] == home / ".teyla" / "load.last"
+    assert '"$TEYLA" guard tick --quiet' in text and 'TEYLA="/opt/tools/bin/teyla"' in text
+    assert "because [guard] agent is on" in text and str(p["stamp"]) in text and p["wrapper"].stat().st_mode & 0o111
+    assert ri.LOAD_LABEL in home.calls["load"] and any("load.plist" in line for line in lines)
+    assert not ri.is_stale()
+    assert "storage sweep" not in ri.WRAPPER_PATH.read_text()
+
+
+def test_the_guard_agent_goes_stale_with_the_env_and_is_removed_when_switched_off(home):
+    config.set_value("guard.agent", "true")
+    ri.install()
+    assert not ri.is_stale()
+    config.set_value("env.HTTPS_PROXY", "http://127.0.0.1:9000")
+    assert ri.is_stale()
+    ri.install()
+    p = paths(ri.LOAD_LABEL)
+    assert "HTTPS_PROXY" in p["wrapper"].read_text() and not ri.is_stale()
+    p["stamp"].write_text("2026-01-01T00:00:00Z\n")
+    config.set_value("guard.agent", "false")
+    assert ri.is_stale()
+    ri.install()
+    assert home.calls["unload"] == [ri.LOAD_LABEL]
+    assert not p["plist"].exists() and not p["wrapper"].exists() and not p["stamp"].exists()
+    assert not ri.is_stale()
+    assert ri.optional_checks()[0][0] == "INFO", "off and gone again: only the suggestion"
+
+
+def test_the_guard_agent_follows_the_storage_agents_in_safe_mode(home, monkeypatch):
+    """All three do local work only, so a work Mac (safe mode) keeps them as configured."""
+    monkeypatch.setenv("TEYLA_SAFE", "1")
+    config.set_value("guard.agent", "true")
+    ri.install()
+    assert paths(ri.LOAD_LABEL)["plist"].exists() and ri.LOAD_LABEL in home.calls["load"]
+    assert not ri.is_stale()
+
+
+def test_doctor_rows_for_the_guard_agent(home):
+    config.set_value("guard.agent", "true")
+    assert ri.optional_checks()[0][:2] == ("FIX", "routine:load") and "[guard] agent is on" in ri.optional_checks()[0][2]
+    ri.install()
+    home.calls["loaded"].add(ri.LOAD_LABEL)
+    level, name, detail, fix = ri.optional_checks()[0]
+    assert (level, name, fix) == ("OK", "routine:load", None) and "every 1 min" in detail
+    assert f"{ri.LOAD_LABEL}: on" in "\n".join(ri.status())
+    config.set_value("guard.agent", "false")
+    assert ri.optional_checks()[0][0] == "WARN" and "[guard] agent is off" in ri.optional_checks()[0][2]
+
+
+def test_a_machine_with_the_guard_agent_off_has_no_doctor_problem_from_it(home):
+    rows = [doctor._check(*row) for row in ri.optional_checks()]
+    assert rows and all(r["level"] == "INFO" for r in rows)
+    assert doctor._problems(rows) == []
 
 
 # --- sweep_agent -------------------------------------------------------------------------------------
@@ -152,7 +224,7 @@ def test_doctor_warns_about_an_agent_left_installed_after_it_was_switched_off(ho
     config.set_value("storage.sweep_agent", "true")
     ri.install()
     config.set_value("storage.sweep_agent", "false")
-    (level, name, detail, fix), = ri.optional_checks()
+    (level, name, detail, fix), = [r for r in ri.optional_checks() if r[1] == "routine:sweep"]
     assert (level, name) == ("WARN", "routine:sweep") and "is off" in detail and "teyla routine install" in fix
     assert "OFF in config but still installed" in "\n".join(ri.status())
 
@@ -168,18 +240,21 @@ def test_uninstall_removes_the_optional_agents_and_their_logs(home, monkeypatch)
     logs.mkdir(parents=True)
     for label in ri.OPTIONAL_LABELS:
         (agents / f"{label}.plist").write_text("<plist/>")
-    for n in ("teyla-sims.log", "teyla-sweep.log"):
+    for n in ("teyla-sims.log", "teyla-sweep.log", "teyla-load.log"):
         (logs / n).write_text("x")
     steps = uninstall.plan(home)
     targets = {(s.verb, s.target) for s in steps if s.fn}
     for label in ri.OPTIONAL_LABELS:
         assert ("remove", str(agents / f"{label}.plist")) in targets
     assert ("unload", ri.SIMS_LABEL) in targets and ("unload", ri.SWEEP_LABEL) not in targets, "unload only what is loaded"
+    assert ("remove", str(logs / "teyla-load.log")) in targets and ("remove", str(agents / f"{ri.LOAD_LABEL}.plist")) in targets
     assert ("remove", str(logs / "teyla-sims.log")) in targets and ("remove", str(logs / "teyla-sweep.log")) in targets
     kept = {s.target for s in uninstall.plan(home, keep_data=True) if s.fn}
     assert str(home / ".teyla" / "sims.sh") not in kept   # nothing to remove: the file does not exist
     (home / ".teyla" / "sims.sh").write_text("#!/bin/sh\n")
-    assert str(home / ".teyla" / "sims.sh") in {s.target for s in uninstall.plan(home, keep_data=True) if s.fn}
+    (home / ".teyla" / "load.sh").write_text("#!/bin/sh\n")
+    kept = {s.target for s in uninstall.plan(home, keep_data=True) if s.fn}
+    assert str(home / ".teyla" / "sims.sh") in kept and str(home / ".teyla" / "load.sh") in kept
 
 
 # --- doctor's summary line shows the free disk even when all is well ------------------------------------

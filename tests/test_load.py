@@ -166,6 +166,18 @@ def test_kotlin_daemon_is_a_daemon_not_a_build():
     assert q.daemons == []
 
 
+def test_daemons_carry_their_cpu_and_kotlinc_clients_are_counted():
+    p = classify(
+        ps_line(3, "/jdk/bin/java -cp /g/lib/gradle-launcher.jar org.gradle.launcher.daemon.bootstrap.GradleDaemon 8.10", cpu="37.5"),
+        ps_line(4, "/jdk/bin/java -cp /k/kotlin-compiler-embeddable.jar org.jetbrains.kotlin.daemon.KotlinCompileDaemon", cpu="0.0"),
+        ps_line(5, "/opt/kotlinc/bin/kotlinc Main.kt"),
+        ps_line(6, "/jdk/bin/java -cp /k/kotlin-compiler.jar org.jetbrains.kotlin.cli.jvm.K2JVMCompiler Main.kt"),
+    )
+    assert [(d.kind, d.cpu) for d in p.daemons] == [("gradle", 37.5), ("kotlin", 0.0)]
+    assert p.kotlinc == 2
+    assert classify(ps_line(1, "/bin/sh -c ls")).kotlinc == 0
+
+
 def test_claude_sessions_count_once_and_the_apps_own_processes_not_at_all():
     p = classify(
         ps_line(1, "/Applications/Claude.app/Contents/MacOS/Claude"),
@@ -667,3 +679,17 @@ def test_record_takes_a_lock_beside_the_file(tmp_path):
     path = load.record(snap, load.assess(snap, load.guard_conf({})), path=tmp_path / "load.tsv")
     assert (tmp_path / "load.tsv.lock").exists()
     assert len(load.read_records(path=path)) == 1
+
+
+def test_only_the_daemon_main_class_makes_a_build_daemon():
+    p = classify(ps_line(1, "/jdk/bin/java -cp /k/kotlin-compiler-embeddable-2.0.jar com.example.Server"),
+                 ps_line(2, "/jdk/bin/java -cp /k/kotlin-daemon-client.jar:/g/GradleDaemonTools.jar com.example.Tool"))
+    assert p.daemons == []
+
+
+def test_the_daemon_class_must_be_javas_main_class_not_a_program_argument():
+    p = classify(ps_line(1, "/jdk/bin/java -cp app.jar com.example.Server org.jetbrains.kotlin.daemon.KotlinCompileDaemon"),
+                 ps_line(2, "/jdk/bin/java -jar tool.jar org.gradle.launcher.daemon.bootstrap.GradleDaemon"),
+                 ps_line(3, "/jdk/bin/java --add-opens java.base/java.lang=ALL-UNNAMED -Xmx2g -cp /g/a.jar "
+                            "org.gradle.launcher.daemon.bootstrap.GradleDaemon 8.10"))
+    assert [(d.pid, d.kind) for d in p.daemons] == [(3, "gradle")]
