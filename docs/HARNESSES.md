@@ -26,11 +26,11 @@ teyla doctor           # the same, as OK/FIX lines
 
 | | policy | per-repo rules | skills | hooks | sessions read by `teyla monitor` |
 |---|---|---|---|---|---|
-| **Claude Code** | `@~/.agents/POLICY.md` in `~/.claude/CLAUDE.md` | `.claude/rules/*.md` (`globs:`), `CLAUDE.md` | the plugin (`teyla plugin install`) | plugin `hooks.json`: SessionStart, UserPromptSubmit, PreToolUse; opt-in PostToolUse + Stop (`[hooks]`) | `~/.claude/projects/**/*.jsonl` |
-| **Cursor** (app) | a user skill `~/.cursor/skills/teyla-policy/SKILL.md` carrying the policy text and your own rules (as for Codex) — Cursor has no global rules file (`create-rule/SKILL.md` names only `.cursor/rules/*.mdc` per project) | `AGENTS.md` at the repo root; `.cursor/rules/<slug>.mdc` when that directory exists (`teyla rule` fills both) | `~/.cursor/skills/teyla-*/SKILL.md` (`name`, `description`, `disable-model-invocation: false`) | `~/.cursor/hooks.json`: `sessionStart`, `beforeSubmitPrompt` (JSON on stdin) | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (`composerData:*`, `bubbleId:*`; model name, turns, tools; no per-message tokens) |
-| **Codex** (ChatGPT app / CLI) | `~/.codex/AGENTS.md`, generated: `POLICY.md` + your own rules from `~/.claude/CLAUDE.md` (a `POLICY.md` symlink while CLAUDE.md holds only the import) | `AGENTS.md` per directory | `~/.codex/skills/teyla-*/SKILL.md` | `~/.codex/hooks.json`: `SessionStart`, `UserPromptSubmit` (Claude Code's shape; `codex features list`: `hooks stable true`), and `Stop` while `[hooks] land_check` is on; each runs only after you trust it once in Codex | `~/.codex/sessions/**/rollout-*.jsonl` |
-| **Grok CLI** | `~/.grok/AGENTS.md`, generated as for Codex | `Agents.md`/`CLAUDE.md`/`AGENTS.md` per directory, repo root down to cwd (`12-project-rules.md`) | `~/.grok/skills/teyla-*/SKILL.md`; also scans `~/.claude/skills`, `~/.cursor/skills`, `.agents/skills` (`08-skills.md`) | `~/.grok/hooks/teyla.json`: `SessionStart`, `UserPromptSubmit`; it also loads `~/.cursor/hooks.json` and `~/.claude/settings.json` (`10-hooks.md`), so the capture hook de-duplicates | `~/.grok/sessions/<cwd>/<id>/` |
-| **Hermes** (app / CLI) | an "Operating policy" section in `~/.hermes/SOUL.md` | `AGENTS.md` chain from the git root (`context-files.md`; `.hermes.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`, first match) | `~/.hermes/skills/teyla/teyla-*/SKILL.md`, each also a slash command (`skills.md`) | a `hooks:` block in `~/.hermes/config.yaml`: `on_session_start`, and two `pre_llm_call` shell hooks (capture; first-turn orientation); Hermes asks once per hook before running it (`hooks.md`, "Shell hooks") | `~/.hermes/state.db` |
+| **Claude Code** | `@~/.agents/POLICY.md` in `~/.claude/CLAUDE.md` | `.claude/rules/*.md` (`globs:`), `CLAUDE.md` | the plugin (`teyla plugin install`) | plugin `hooks.json`: SessionStart, UserPromptSubmit, PreToolUse (kill switch; machine guard on `Bash`); opt-in PostToolUse + Stop (`[hooks]`) | `~/.claude/projects/**/*.jsonl` |
+| **Cursor** (app) | a user skill `~/.cursor/skills/teyla-policy/SKILL.md` carrying the policy text and your own rules (as for Codex) — Cursor has no global rules file (`create-rule/SKILL.md` names only `.cursor/rules/*.mdc` per project) | `AGENTS.md` at the repo root; `.cursor/rules/<slug>.mdc` when that directory exists (`teyla rule` fills both) | `~/.cursor/skills/teyla-*/SKILL.md` (`name`, `description`, `disable-model-invocation: false`) | `~/.cursor/hooks.json`: `sessionStart`, `beforeSubmitPrompt` (JSON on stdin); no machine guard | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (`composerData:*`, `bubbleId:*`; model name, turns, tools; no per-message tokens) |
+| **Codex** (ChatGPT app / CLI) | `~/.codex/AGENTS.md`, generated: `POLICY.md` + your own rules from `~/.claude/CLAUDE.md` (a `POLICY.md` symlink while CLAUDE.md holds only the import) | `AGENTS.md` per directory | `~/.codex/skills/teyla-*/SKILL.md` | `~/.codex/hooks.json`: `SessionStart`, `UserPromptSubmit`, `PreToolUse` on `Bash` (the machine guard) (Claude Code's shape; `codex features list`: `hooks stable true`), and `Stop` while `[hooks] land_check` is on; each runs only after you trust it once in Codex | `~/.codex/sessions/**/rollout-*.jsonl` |
+| **Grok CLI** | `~/.grok/AGENTS.md`, generated as for Codex | `Agents.md`/`CLAUDE.md`/`AGENTS.md` per directory, repo root down to cwd (`12-project-rules.md`) | `~/.grok/skills/teyla-*/SKILL.md`; also scans `~/.claude/skills`, `~/.cursor/skills`, `.agents/skills` (`08-skills.md`) | `~/.grok/hooks/teyla.json`: `SessionStart`, `UserPromptSubmit`, `PreToolUse` on `Bash` (the machine guard); it also loads `~/.cursor/hooks.json` and `~/.claude/settings.json` (`10-hooks.md`), so the capture hook de-duplicates | `~/.grok/sessions/<cwd>/<id>/` |
+| **Hermes** (app / CLI) | an "Operating policy" section in `~/.hermes/SOUL.md` | `AGENTS.md` chain from the git root (`context-files.md`; `.hermes.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`, first match) | `~/.hermes/skills/teyla/teyla-*/SKILL.md`, each also a slash command (`skills.md`) | a `hooks:` block in `~/.hermes/config.yaml`: `on_session_start`, and two `pre_llm_call` shell hooks (capture; first-turn orientation), no machine guard; Hermes asks once per hook before running it (`hooks.md`, "Shell hooks") | `~/.hermes/state.db` |
 
 The skills are rendered from the plugin's own `SKILL.md` files with `/teyla:rule` and
 `/teyla:correct` replaced by the CLI — `teyla rule "<sentence>" --scope <glob>` and
@@ -63,6 +63,31 @@ scripts, which read every harness's stdin shape.
 - **Correction capture** works in all five (Claude Code and Codex `UserPromptSubmit`, Cursor
   `beforeSubmitPrompt`, Grok `UserPromptSubmit`, Hermes `pre_llm_call` with
   `extra.user_message`); the skill `teyla-correct` records one by hand anywhere.
+- **The machine guard** (`machine-guard.sh`: a build, a simulator boot or a headless agent lane
+  is refused while `teyla load --admit` says the Mac is overloaded) needs a hook that runs
+  *before* a shell call and can deny it. Checked 2026-10-09 against the installed versions:
+  - **Claude Code**: plugin `hooks.json` PreToolUse, matcher `Bash`, exit 2 + stderr.
+  - **Codex** 0.159.2: wired. `codex features list` shows `hooks stable true`; the binary
+    carries `PreToolUse`; the docs (`learn.chatgpt.com/docs/hooks`) say PreToolUse fires for
+    shell calls under the name `Bash` (unified exec `exec_command` included), input
+    `tool_input.command`, exit 2 + stderr blocks. Run for real: a scratch `CODEX_HOME` with a
+    `hooks.json` (matcher `Bash`) and the trust hash from `codex_hook_hash` made `codex exec` run
+    the hook on `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo hello"}}`,
+    and with the real script and a refusing `teyla` it printed "Command blocked by PreToolUse hook:
+    teyla guard: build refused ..." and the command never ran. Teyla's hash for a PreToolUse
+    handler also matches the `trusted_hash` Codex recorded for an existing PreToolUse hook. The
+    group is appended after any PreToolUse group you already have, and needs the same one-time
+    trust as the others (`teyla harness status`: `PreToolUse untrusted`).
+  - **Grok** 1.0.0: wired, from `~/.grok/docs/user-guide/10-hooks.md` (not run: the subscription
+    may lapse). PreToolUse matcher `Bash` aliases `run_terminal_command`; input
+    `toolInput.command`; exit 2 denies, but only the first stderr line reaches the model, so the
+    command is `machine-guard.sh --grok`, which also prints the whole refusal as
+    `{"decision":"deny","reason":...}`.
+  - **Cursor**: not wired. Its `beforeShellExecution` event has a different input and output
+    contract (`permission: deny` JSON) that was not verified here.
+  - **Hermes**: not wired; its `pre_tool_call` shell-hook contract was not verified here.
+  The guard fails open everywhere (a hook that crashes or times out allows the call); `TEYLA_GUARD=0`
+  and `guard.enabled=false` switch it off for every harness.
 - **Approval, once, in the harness.** Codex runs a new or changed hook only after you trust
   it: open Codex in a terminal (`codex`), answer "Hooks need review" with *Trust all and
   continue*, or use `/hooks`. Until then it skips the hook silently, `codex exec` included

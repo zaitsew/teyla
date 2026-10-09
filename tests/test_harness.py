@@ -41,7 +41,9 @@ def test_sync_writes_skills_hooks_and_is_idempotent(home):
         assert (home / ".hermes" / "skills" / "teyla" / s / "SKILL.md").exists()
     codex = json.loads((home / ".codex" / "hooks.json").read_text())
     assert set(codex) == {"description", "hooks"}  # Codex rejects any other top-level key
-    assert set(codex["hooks"]) == {"SessionStart", "UserPromptSubmit"}
+    assert set(codex["hooks"]) == {"SessionStart", "UserPromptSubmit", "PreToolUse"}
+    assert codex["hooks"]["PreToolUse"] == [{"matcher": "Bash", "hooks": [
+        {"type": "command", "command": str(home / ".teyla" / "hooks" / "machine-guard.sh"), "timeout": 15}]}]
     assert codex["hooks"]["SessionStart"][0]["hooks"][0]["command"].endswith("/.teyla/hooks/session-start.sh --codex")
     assert codex["hooks"]["UserPromptSubmit"][0]["hooks"][0] == {
         "type": "command", "command": str(home / ".teyla" / "hooks" / "capture-correction.sh"), "timeout": 5}
@@ -49,7 +51,9 @@ def test_sync_writes_skills_hooks_and_is_idempotent(home):
     assert cur["version"] == 1 and set(cur["hooks"]) == {"sessionStart", "beforeSubmitPrompt"}
     assert cur["hooks"]["beforeSubmitPrompt"][0]["command"].endswith("/.teyla/hooks/capture-correction.sh")
     grok = json.loads((home / ".grok" / "hooks" / "teyla.json").read_text())
-    assert set(grok["hooks"]) == {"SessionStart", "UserPromptSubmit"}
+    assert set(grok["hooks"]) == {"SessionStart", "UserPromptSubmit", "PreToolUse"}
+    assert grok["hooks"]["PreToolUse"][0]["matcher"] == "Bash"
+    assert grok["hooks"]["PreToolUse"][0]["hooks"][0]["command"] == f"{home / '.teyla' / 'hooks' / 'machine-guard.sh'} --grok"
     yaml = (home / ".hermes" / "config.yaml").read_text()
     assert yaml.startswith("model:") and "hooks:\n  on_session_start:" in yaml and "pre_llm_call:" in yaml
     assert "session-start.sh --context-json" in yaml
@@ -62,12 +66,12 @@ def test_sync_writes_skills_hooks_and_is_idempotent(home):
     assert rows["cursor"]["skills"] == 7 and rows["cursor"]["hooks"] is True
     assert rows["codex"]["hooks"] is True and rows["grok"]["hooks"] is True and rows["hermes"]["hooks"] is True
     # wired is not approved: Codex and Hermes skip a hook nobody trusted
-    assert rows["codex"]["trust"] == {"approved": 0, "total": 2,
-                                      "missing": ["SessionStart untrusted", "UserPromptSubmit untrusted"]}
+    assert rows["codex"]["trust"] == {"approved": 0, "total": 3,
+                                      "missing": ["SessionStart untrusted", "UserPromptSubmit untrusted", "PreToolUse untrusted"]}
     assert rows["hermes"]["trust"]["approved"] == 0 and rows["hermes"]["trust"]["total"] == 3
     assert rows["grok"]["trust"] is None and rows["cursor"]["trust"] is None
     text = harness.render_status(harness.status(home=home))
-    assert "wired, NOT APPROVED 0/2" in text and "/hooks" in text
+    assert "wired, NOT APPROVED 0/3" in text and "/hooks" in text
 
 
 def test_sync_keeps_a_users_cursor_hooks_and_refuses_a_foreign_hermes_block(home):
@@ -208,7 +212,7 @@ def test_codex_sync_keeps_a_users_handler_that_shares_a_group_with_ours(home):
     assert len(d["UserPromptSubmit"]) == 1
     assert harness.sync(home=home) == ["in sync: cursor, codex, grok, hermes"]
     tr = {r["harness"]: r for r in harness.status(home=home)}["codex"]["trust"]
-    assert tr["total"] == 2  # the user's handler is not counted as Teyla's
+    assert tr["total"] == 3  # the user's handler is not counted as Teyla's
 
 
 def test_hermes_auto_accept_is_a_top_level_true_key_not_a_substring(home):
@@ -244,16 +248,54 @@ def test_codex_trust_is_read_from_config_toml(home):
     hooks_json = home / ".codex" / "hooks.json"
     d = json.loads(hooks_json.read_text())
     ss, ups = d["hooks"]["SessionStart"][0]["hooks"][0], d["hooks"]["UserPromptSubmit"][0]["hooks"][0]
+    pre = d["hooks"]["PreToolUse"][0]
     cfg = home / ".codex" / "config.toml"
     cfg.write_text('model = "gpt-6"\n\n'
                    f'[hooks.state."{hooks_json}:session_start:0:0"]\ntrusted_hash = "{harness.codex_hook_hash("SessionStart", ss)}"\n\n'
                    f'[hooks.state."{hooks_json}:user_prompt_submit:0:0"]\ntrusted_hash = "sha256:stale"\n')
     tr = {r["harness"]: r for r in harness.status(home=home)}["codex"]["trust"]
-    assert tr == {"approved": 1, "total": 2, "missing": ["UserPromptSubmit modified since trusted"]}
-    cfg.write_text(cfg.read_text().replace("sha256:stale", harness.codex_hook_hash("UserPromptSubmit", ups)))
+    assert tr == {"approved": 1, "total": 3, "missing": ["UserPromptSubmit modified since trusted", "PreToolUse untrusted"]}
+    cfg.write_text(cfg.read_text().replace("sha256:stale", harness.codex_hook_hash("UserPromptSubmit", ups))
+                   + f'\n[hooks.state."{hooks_json}:pre_tool_use:0:0"]\n'
+                   f'trusted_hash = "{harness.codex_hook_hash("PreToolUse", pre["hooks"][0], pre["matcher"])}"\n')
     tr = {r["harness"]: r for r in harness.status(home=home)}["codex"]["trust"]
-    assert tr == {"approved": 2, "total": 2, "missing": []}
-    assert "approved 2/2" in harness.render_status(harness.status(home=home))
+    assert tr == {"approved": 3, "total": 3, "missing": []}
+    assert "approved 3/3" in harness.render_status(harness.status(home=home))
+
+
+def test_codex_machine_guard_group_keeps_a_users_pretooluse_groups_and_is_trusted_by_its_matcher(home):
+    # The machine guard is a PreToolUse group (matcher Bash) appended after the user's own, e.g. a
+    # merge gate at group 0. Codex keys trust by group index and hashes the matcher, so status must
+    # look at index 1 with matcher "Bash". Verified end to end with `codex exec` 0.159.2: a scratch
+    # CODEX_HOME with this hash ran the hook on `tool_name: "Bash"`, `tool_input.command`, and its
+    # exit 2 + stderr blocked the command.
+    p = home / ".codex" / "hooks.json"
+    mine = {"hooks": [{"type": "command", "command": "/x/review-gate", "timeout": 15}]}
+    p.write_text(json.dumps({"hooks": {"PreToolUse": [mine]}}))
+    harness.sync(home=home)
+    groups = json.loads(p.read_text())["hooks"]["PreToolUse"]
+    assert groups[0] == mine and len(groups) == 2
+    guard = groups[1]
+    assert guard["matcher"] == "Bash" and guard["hooks"][0]["command"].endswith("/.teyla/hooks/machine-guard.sh")
+    harness.sync(home=home)
+    assert len(json.loads(p.read_text())["hooks"]["PreToolUse"]) == 2  # not duplicated
+    cfg = home / ".codex" / "config.toml"
+    cfg.write_text(f'[hooks.state."{p}:pre_tool_use:1:0"]\n'
+                   f'trusted_hash = "{harness.codex_hook_hash("PreToolUse", guard["hooks"][0], "Bash")}"\n')
+    tr = {r["harness"]: r for r in harness.status(home=home)}["codex"]["trust"]
+    assert tr["approved"] == 1 and "PreToolUse untrusted" not in tr["missing"]
+    # the hash covers the matcher: a hash taken without it is "modified since trusted"
+    cfg.write_text(cfg.read_text().replace(harness.codex_hook_hash("PreToolUse", guard["hooks"][0], "Bash"),
+                                           harness.codex_hook_hash("PreToolUse", guard["hooks"][0])))
+    assert "PreToolUse modified since trusted" in {r["harness"]: r for r in harness.status(home=home)}["codex"]["trust"]["missing"]
+
+
+def test_the_machine_guard_script_is_copied_and_executable(home):
+    harness.sync(home=home)
+    guard = home / ".teyla" / "hooks" / "machine-guard.sh"
+    assert guard.read_text() == (harness.plugin_dir() / "hooks" / "machine-guard.sh").read_text()
+    assert guard.stat().st_mode & 0o111
+    assert "machine-guard.sh" in harness.HOOK_SCRIPTS
 
 
 def test_hermes_trust_is_read_from_its_allowlist(home):

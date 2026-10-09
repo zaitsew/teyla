@@ -405,7 +405,7 @@ def test_harness_sync_wires_the_codex_stop_hook_only_while_the_key_is_on(fake_ho
     assert stop[0] == {"hooks": [{"type": "command", "command": "/x/mine.sh"}]}
     assert stop[1]["hooks"][0]["command"] == f"{fake_home / '.teyla' / 'hooks' / 'land-check.sh'} --codex"
     row = next(r for r in harness.status(home=fake_home) if r["harness"] == "codex")
-    assert row["hooks"] is True and row["trust"]["total"] == 3 and "Stop untrusted" in row["trust"]["missing"]
+    assert row["hooks"] is True and row["trust"]["total"] == 4 and "Stop untrusted" in row["trust"]["missing"]
     # off again: Teyla's handler goes, the user's stays, and status agrees
     assert config.set_value("hooks.land_check", "false").startswith("set")
     assert next(r for r in harness.status(home=fake_home) if r["harness"] == "codex")["hooks"] is False
