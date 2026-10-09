@@ -381,7 +381,7 @@ def test_advice_for_cpu_starvation_uses_the_core_count(monkeypatch):
 
 def test_advice_with_no_load_records_says_how_to_get_them_and_nothing_is_filler():
     a = crash.advice(crash.Panic(time=PANIC_AT), crash.Context(), None)
-    assert len(a) == 1 and "no load records" in a[0] and "teyla load --record" in a[0]
+    assert len(a) == 1 and "no load records" in a[0] and "guard.agent=true" in a[0]
     assert crash.advice(crash.Panic(time=PANIC_AT), crash.Context(rows=3, max_sims=1), None) == []
     assert crash.advice(crash.Jetsam(time=PANIC_AT), crash.Context(), None) == []     # a jetsam alone: no recorder nag
 

@@ -625,7 +625,7 @@ def advice(event, ctx: Context | None, jet: Jetsam | None) -> list[str]:
                    + ": cap parallel builds (`guard.max_builds`)")
     if not ctx.rows and isinstance(event, (Panic, Reset)):
         out.append("no load records, so nothing above says what was running: record every minute"
-                   " (`teyla load --record --quiet` from a launchd agent) so the next crash comes with data")
+                   " (`teyla config set guard.agent=true && teyla routine install`) so the next crash comes with data")
     return out[:4]
 
 
