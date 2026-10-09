@@ -685,3 +685,11 @@ def test_only_the_daemon_main_class_makes_a_build_daemon():
     p = classify(ps_line(1, "/jdk/bin/java -cp /k/kotlin-compiler-embeddable-2.0.jar com.example.Server"),
                  ps_line(2, "/jdk/bin/java -cp /k/kotlin-daemon-client.jar:/g/GradleDaemonTools.jar com.example.Tool"))
     assert p.daemons == []
+
+
+def test_the_daemon_class_must_be_javas_main_class_not_a_program_argument():
+    p = classify(ps_line(1, "/jdk/bin/java -cp app.jar com.example.Server org.jetbrains.kotlin.daemon.KotlinCompileDaemon"),
+                 ps_line(2, "/jdk/bin/java -jar tool.jar org.gradle.launcher.daemon.bootstrap.GradleDaemon"),
+                 ps_line(3, "/jdk/bin/java --add-opens java.base/java.lang=ALL-UNNAMED -Xmx2g -cp /g/a.jar "
+                            "org.gradle.launcher.daemon.bootstrap.GradleDaemon 8.10"))
+    assert [(d.pid, d.kind) for d in p.daemons] == [(3, "gradle")]

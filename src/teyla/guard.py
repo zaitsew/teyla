@@ -266,6 +266,8 @@ def _still_idle(rows: list[dict], env: Env, lines: list[str]) -> list[dict]:
         return []
     p = fresh.procs
     if any(d.kind == "gradle" for d in p.drivers):
+        for r in rows:                    # the build used them: their idle clocks start over
+            _forget(r["_guard"]["pid"])
         lines.append("skipped the daemons: a Gradle build started")
         return []
     now = {d.pid: d for d in p.daemons}

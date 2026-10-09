@@ -393,9 +393,29 @@ def _daemon_kind(r: Row) -> str | None:
     # The main class, as its own argument: a jar name on some other app's classpath
     # (kotlin-compiler-embeddable is a library too) does not make that app a build daemon,
     # and the guard agent stops idle daemons.
-    for a in r.args:
-        if a in _DAEMON_MAIN:
-            return _DAEMON_MAIN[a]
+    return _DAEMON_MAIN.get(_java_main(r.args))
+
+
+# java options whose value is the next argument; the main class is the first argument after the options.
+_JAVA_VALUE_OPTS = {"-cp", "-classpath", "--class-path", "-p", "--module-path", "--upgrade-module-path",
+                    "--add-modules", "--add-opens", "--add-exports", "--add-reads", "--patch-module",
+                    "--limit-modules", "--enable-native-access"}
+
+
+def _java_main(args: list) -> str | None:
+    """The main class java was started with: the first argument that is neither an option nor an
+    option's value. `-jar` means a jar's manifest decides, `-m` a module: neither is a daemon class.
+    Words after the main class are the program's own arguments and never count."""
+    skip = False
+    for a in args:
+        if skip:
+            skip = False
+        elif a in ("-jar", "-m", "--module"):
+            return None
+        elif a in _JAVA_VALUE_OPTS:
+            skip = True
+        elif not a.startswith("-"):
+            return a
     return None
 
 

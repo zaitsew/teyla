@@ -534,3 +534,10 @@ def test_a_jar_on_some_apps_classpath_is_not_a_build_daemon(m, clock):
     clock.advance(60)
     tick(m)
     assert m.signals == [] and state_files() == []
+
+
+def test_a_build_seen_on_the_second_look_restarts_the_idle_clock(m, clock):
+    test_a_gradle_build_started_since_the_snapshot_spares_every_daemon(m, clock)
+    m.procs.pop(300)                                      # the build ends before the next tick
+    tick(m)
+    assert m.signals == [] and 100 in m.procs             # idle again from now, not from before the build
