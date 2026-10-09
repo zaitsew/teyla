@@ -649,3 +649,20 @@ def test_doctor_row_warns_at_critical_and_is_info_otherwise(monkeypatch):
     assert doctor._load_check(config.load())["detail"] == "OK"
     monkeypatch.setattr(load, "safe_snapshot", lambda run=None: None)
     assert doctor._load_check(config.load())["level"] == "INFO"
+
+
+
+def test_codex_lane_with_global_options_before_exec():
+    p = classify(
+        ps_line(1, "/opt/vendor/codex/codex -m gpt-6.1-sol -c model_reasoning_effort=medium exec task"),
+        ps_line(2, "/opt/vendor/codex/codex fix the exec path in the build"),
+    )
+    assert p.codex == 2
+    assert p.lanes == 1        # only the first positional argument names the subcommand
+
+
+def test_record_takes_a_lock_beside_the_file(tmp_path):
+    snap = load.Snapshot(time="2026-10-09T20:00:00+02:00")
+    path = load.record(snap, load.assess(snap, load.guard_conf({})), path=tmp_path / "load.tsv")
+    assert (tmp_path / "load.tsv.lock").exists()
+    assert len(load.read_records(path=path)) == 1
