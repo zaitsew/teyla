@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.20.0 — 2026-10-09 — machine guard: agents stop overloading the Mac
+
+On 2026-10-09 a 24 GB Mac kernel-panicked (panicked task `simctl`) while dozens of agent sessions each
+booted simulators and ran builds in parallel: swap 11+ GB, compressor ~12 GB, load in the hundreds. Each
+agent saw only its own task. This release gives the machine one view of itself and puts it in front of
+heavy work.
+
+- **`teyla load`: how loaded the Mac is, from one `sysctl` and one `ps`.** RAM, swap, compressor, memory
+  pressure, load per core, booted simulators, builds and their compilers, Gradle/Kotlin daemons, agent
+  sessions and headless lanes, Chrome, VMs, top apps. A verdict OK / BUSY / CRITICAL with every reason's
+  number and threshold (`[guard]` in config). Swap counts as critical only while there is memory pressure,
+  because swapped pages linger after a machine recovers. `--admit build|sim|lane` is the admission check
+  (fails open), `--wait --kind KIND` blocks until a slot is free, `--record` appends to
+  `~/.teyla/load.tsv`. Doctor shows `machine:load`.
+- **The machine-guard hook refuses heavy commands on an overloaded Mac.** A PreToolUse hook (Claude Code,
+  Codex, Grok) sends `xcodebuild`, `swift build|test`, Gradle tasks, `cargo`/`bazel` builds,
+  `simctl boot|create|clone`, and headless lanes (`codex exec`, `codex-lane`, `codex-review`,
+  `claude -p`, `grok -p`) to `teyla load --admit`; a refusal tells the agent why and what to do instead
+  (reuse a booted simulator, `teyla load --wait --kind … && <command>`). Ordinary commands cost ~3 ms and
+  no Python; quoted text is never a command. It fails open; `TEYLA_GUARD=0` or `guard.enabled=false`
+  switch it off. Codex runs it after you trust it once.
+- **`teyla guard tick|status` and the `com.zaitsew.teyla.load` agent.** Every minute (opt-in:
+  `teyla config set guard.agent=true && teyla routine install`): record a load row, keep
+  `~/.teyla/load.alert` while CRITICAL (the session-start banner shows it first while fresh), one macOS
+  notification per incident, and stop Gradle/Kotlin daemons idle for `guard.gradle_idle_min` (30) with
+  no build running — identified by their main class, re-checked right before the signal.
+- **`teyla crash`: what happened and what the machine looked like before it.** Kernel panics (real time
+  from the report, panicked task, compressor, last kext), watchdog resets and jetsam events from
+  DiagnosticReports, each panic with the load rows of the 30 minutes before and the nearest jetsam's top
+  apps, and advice computed from those numbers. An unacknowledged panic makes doctor WARN `machine:crash`
+  (so the banner shows it) and heads the weekly digest; `--ack` marks it seen.
+- **Policy §10: one machine, a budget.** The template tells every harness to check `teyla load` before
+  heavy work, wait instead of retrying, reuse and shut down simulators, stop Gradle daemons, and read
+  `teyla crash` after a crash. `teyla update` merges it into your `POLICY.md` three-way.
+
 ## 0.19.4 — 2026-10-08 — `teyla lang` reads translated prose correctly
 
 - **`teyla lang` ignores quoted labels in English prose and flags a stale clone.** In a comment or doc line,
