@@ -388,6 +388,11 @@ def write(findings: list[dict] | None = None, doctor_checks: list[dict] | None =
     except Exception:  # noqa: BLE001 — same: a language pass must never stop the digest being written
         pass
     try:
+        from . import crash
+        rule_cands += crash.digest_candidates()
+    except Exception:  # noqa: BLE001 — same: a crash-report scan must never stop the digest being written
+        pass
+    try:
         from . import reviews
         review_line = reviews.digest_line()
     except Exception:  # noqa: BLE001 — same: the review pass must never stop the digest being written

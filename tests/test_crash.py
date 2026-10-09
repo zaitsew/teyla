@@ -520,3 +520,111 @@ def test_seen_file_with_blank_lines_and_a_missing_file(tmp_path):
     crash.seen_path().write_text("A\n\n  B  \n")
     assert crash.seen_ids() == {"A", "B"}
     assert crash.ack(["B", "C", None]) == 1 and crash.seen_ids() == {"A", "B", "C"}
+
+
+# --- doctor: machine:crash -> banner.items --------------------------------------------------------------------------
+
+@pytest.fixture
+def home(tmp_path, monkeypatch):
+    h = tmp_path / "home"
+    (h / ".teyla").mkdir(parents=True)
+    monkeypatch.setattr(config, "HOME", h)
+    monkeypatch.setattr(config, "TEYLA_DIR", h / ".teyla")
+    from teyla import remind, routines
+    monkeypatch.setattr(routines, "LINES_DIR", h / ".teyla" / "routines")          # the banner reads these too
+    monkeypatch.setattr(remind, "REMINDERS_PATH", h / ".teyla" / "reminders.toml")
+    return h
+
+
+def fresh_panic(main):
+    """A panic one hour ago, in terms of the real clock (doctor reads it)."""
+    at = dt.datetime.now(UTC) - dt.timedelta(hours=1)
+    write_panic(main, ps=panic_string("panic(cpu 9 caller 0x1): Kernel data abort. at pc 0x2", when=at), incident="FRESH-1")
+    return at
+
+
+def test_machine_crash_warns_on_an_unacknowledged_panic_and_the_warning_reaches_the_banner(reports, home):
+    main, _ = reports
+    fresh_panic(main)
+    row = doctor._crash_check()
+    assert row["level"] == "WARN" and row["name"] == "machine:crash"
+    assert row["detail"].startswith("kernel panic ") and "Kernel data abort (simctl)" in row["detail"]
+    assert row["fix"] == "teyla crash, then teyla crash --ack"
+    p = digest.write_banner_items([row])
+    items = p.read_text().splitlines()
+    assert len(items) == 1 and items[0].startswith("WARN|machine:crash\tmachine:crash WARN: kernel panic ")
+    assert digest.banner(p.read_text(), None).startswith("teyla: new — machine:crash WARN: kernel panic ")
+
+
+def test_machine_crash_goes_quiet_once_acknowledged_and_for_jetsam_alone(reports, home):
+    main, _ = reports
+    write_jetsam(main, dt.datetime.now(UTC) - dt.timedelta(hours=2), incident="J-ONLY")
+    row = doctor._crash_check()
+    assert row["level"] == "INFO" and row["detail"] == "no new panic or watchdog reset in 7 days; 1 jetsam event(s)"
+    assert digest.doctor_items([row]) == []
+    fresh_panic(main)
+    assert doctor._crash_check()["level"] == "WARN"
+    crash.ack(["FRESH-1"])
+    row = doctor._crash_check()
+    assert row["level"] == "INFO" and "(1 acknowledged)" in row["detail"]
+
+
+def test_machine_crash_counts_extra_incidents_and_ignores_old_ones(reports, home):
+    main, _ = reports
+    now = dt.datetime.now(UTC)
+    for i, hours in enumerate((1, 5)):
+        write_panic(main, ps=panic_string("panic(cpu 1 caller 0x1): x", when=now - dt.timedelta(hours=hours)), incident=f"P{i}",
+                    name=f"panic-{i}.panic")
+    assert doctor._crash_check()["detail"].endswith("(+1 more)")
+    write_panic(main, ps=panic_string("panic(cpu 1 caller 0x1): x", when=now - dt.timedelta(days=9)), incident="OLD", name="panic-old.panic")
+    crash.ack(["P0", "P1"])
+    assert doctor._crash_check()["level"] == "INFO"                                  # the 9-day-old one is outside the window
+
+
+def test_machine_crash_never_breaks_doctor(monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("disk on fire")
+    monkeypatch.setattr(crash, "doctor_row", boom)
+    row = doctor._crash_check()
+    assert row["level"] == "INFO" and "disk on fire" in row["detail"]
+
+
+def test_doctor_only_scans_the_reports_with_the_repo_scan(monkeypatch):
+    calls = []
+    monkeypatch.setattr(crash, "doctor_row", lambda *a, **k: (calls.append(1), ("INFO", "x", None))[1])
+    monkeypatch.setattr(doctor, "_load_check", lambda cfg: doctor._check("INFO", "machine:load", "OK"))
+    assert "machine:crash" not in {c["name"] for c in doctor.checks(scan_repos=False)} and calls == []
+
+
+# --- digest ----------------------------------------------------------------------------------------------------------
+
+def test_digest_candidate_ranks_an_unacknowledged_panic_first_and_only_then(reports):
+    main, _ = reports
+    assert crash.digest_candidates() == []
+    fresh_panic(main)
+    (c,) = crash.digest_candidates()
+    assert c["rank"] == 1 and c["id"] == "crash:panic" and c["step"] == "teyla crash" and c["cmd"] is True
+    assert c["text"].startswith("kernel panic ")
+    crash.ack(["FRESH-1"])
+    assert crash.digest_candidates() == []
+
+
+def test_digest_write_puts_the_panic_at_the_top(reports, home, monkeypatch):
+    main, _ = reports
+    fresh_panic(main)
+    from teyla import models_watch, rules_lifecycle, tidy
+    for mod in (rules_lifecycle, models_watch, tidy):
+        monkeypatch.setattr(mod, "digest_candidates", lambda *a, **k: [])
+    lines = digest.write([], [], [], today=dt.date(2026, 10, 9), notify_now=False)
+    assert any("kernel panic" in ln and "teyla crash" in ln for ln in lines), lines
+    first_item = next(ln for ln in lines if ln.lstrip().startswith("1"))
+    assert "kernel panic" in first_item
+
+
+def test_digest_write_survives_a_failing_crash_scan(reports, home, monkeypatch):
+    from teyla import models_watch, rules_lifecycle, tidy
+    for mod in (rules_lifecycle, models_watch, tidy):
+        monkeypatch.setattr(mod, "digest_candidates", lambda *a, **k: [])
+    monkeypatch.setattr(crash, "recent", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
+    assert crash.digest_candidates() == []
+    assert digest.write([], [], [], today=dt.date(2026, 10, 9), notify_now=False)

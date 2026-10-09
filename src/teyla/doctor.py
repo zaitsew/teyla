@@ -47,6 +47,17 @@ def _load_check(cfg: dict) -> dict:
     return _check("INFO", "machine:load", verdict.line().removeprefix("load: "))
 
 
+def _crash_check() -> dict:
+    """`machine:crash`: WARN for a kernel panic or watchdog reset nobody has acknowledged (`teyla crash --ack`),
+    INFO otherwise. Jetsam events alone are routine and never warn."""
+    try:
+        from . import crash
+        level, detail, fix = crash.doctor_row()
+    except Exception as e:  # noqa: BLE001 — reading the crash reports must not break doctor
+        return _check("INFO", "machine:crash", f"unknown ({e})")
+    return _check(level, "machine:crash", detail, fix)
+
+
 def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     from . import policy, update, routine_install, plugin_install
     from .adapters import claude_code, codex, grok, hermes, cursor
@@ -389,6 +400,7 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     # --- machine load: one snapshot, a verdict (WARN at CRITICAL, never FIX) ---------------
     if scan_repos:
         out.append(_load_check(cfg))
+        out.append(_crash_check())
 
     # --- policy detectors: the rules in POLICY.md that files can prove broken --------------
     from . import detect
