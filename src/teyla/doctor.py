@@ -32,6 +32,21 @@ def _check(level, name, detail, fix=None, **extra):
     return {"level": level, "name": name, "detail": detail, "fix": fix, **extra}
 
 
+def _load_check(cfg: dict) -> dict:
+    """`machine:load`: WARN when the machine is CRITICAL, INFO with the verdict line otherwise."""
+    try:
+        from . import load
+        snap = load.safe_snapshot()
+        if snap is None:
+            return _check("INFO", "machine:load", "unknown (the process table could not be read)")
+        verdict = load.assess(snap, load.guard_conf(cfg))
+    except Exception as e:  # noqa: BLE001 — a probe of the machine must not break doctor
+        return _check("INFO", "machine:load", f"unknown ({e})")
+    if verdict.level == load.CRITICAL:
+        return _check("WARN", "machine:load", "; ".join(verdict.reasons), "teyla load")
+    return _check("INFO", "machine:load", verdict.line().removeprefix("load: "))
+
+
 def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     from . import policy, update, routine_install, plugin_install
     from .adapters import claude_code, codex, grok, hermes, cursor
@@ -370,6 +385,10 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
         from . import storage
         for row in storage.doctor_checks(cfg):
             out.append(_check(row["level"], row["name"], row["detail"], row["fix"], **({"free": row["free"]} if "free" in row else {})))
+
+    # --- machine load: one snapshot, a verdict (WARN at CRITICAL, never FIX) ---------------
+    if scan_repos:
+        out.append(_load_check(cfg))
 
     # --- policy detectors: the rules in POLICY.md that files can prove broken --------------
     from . import detect
