@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+import fcntl
 import json
 import os
 import pathlib
@@ -384,9 +385,28 @@ def _daemon_kind(r: Row) -> str | None:
     return None
 
 
+# Codex global options that take a value: `codex -m X -c k=v exec ...` still runs `exec`.
+_CODEX_VALUE_OPTS = {"-m", "--model", "-c", "--config", "-p", "--profile", "-s", "--sandbox", "-a",
+                     "--ask-for-approval", "-C", "--cd", "-i", "--image", "--enable", "--disable"}
+
+
+def _codex_subcommand(args: list) -> str | None:
+    """The first positional argument after Codex's global options. `ps` prints argv unquoted, so a
+    prompt that mentions "exec" shows up as a bare word too; only the first positional counts."""
+    skip = False
+    for a in args:
+        if skip:
+            skip = False
+        elif a.startswith("-"):
+            skip = "=" not in a and a in _CODEX_VALUE_OPTS
+        else:
+            return a
+    return None
+
+
 def _is_lane(harness: str, args: list) -> bool:
     if harness == "codex":
-        return "exec" in args[:3]
+        return _codex_subcommand(args) in ("exec", "e")
     if harness == "grok":
         return any(a in ("-p", "--prompt") or a.startswith("--prompt=") for a in args)
     return any(a in ("-p", "--print") for a in args)
@@ -651,14 +671,21 @@ def record(snap: Snapshot, verdict: Verdict, path: pathlib.Path | None = None,
     """Append one TSV line to `~/.teyla/load.tsv` (header first in a new file); keep the file bounded."""
     path = pathlib.Path(path) if path else record_path()
     config.private_dir(path.parent)
-    _trim(path, max_bytes)
-    new = not path.exists() or path.stat().st_size == 0
-    text = ("#" + "\t".join(COLUMNS) + "\n" if new else "") + "\t".join(record_fields(snap, verdict)) + "\n"
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    # One lock around trim + append: a trim that read the file before another recorder's append
+    # and replaced it after would silently drop that line.
+    lock = os.open(path.with_name(path.name + ".lock"), os.O_WRONLY | os.O_CREAT, 0o600)
     try:
-        os.write(fd, text.encode())          # one write: concurrent recorders do not interleave lines
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        _trim(path, max_bytes)
+        new = not path.exists() or path.stat().st_size == 0
+        text = ("#" + "\t".join(COLUMNS) + "\n" if new else "") + "\t".join(record_fields(snap, verdict)) + "\n"
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        try:
+            os.write(fd, text.encode())
+        finally:
+            os.close(fd)
     finally:
-        os.close(fd)
+        os.close(lock)                       # closing the descriptor releases the lock
     return path
 
 
