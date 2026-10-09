@@ -32,7 +32,7 @@ the native `codex` it starts, `gradlew` and the JVM it starts) are one.
     vms         `com.apple.Virtualization.*` and `qemu-system-*`
     top         the eight apps holding the most RSS (an app's helpers fold into the app)
 
-Verdict (`assess`). CRITICAL when memory pressure is 4, swap used >= `guard.swap_crit_pct` of RAM, the
+Verdict (`assess`). CRITICAL when memory pressure is 4, swap used >= `guard.swap_crit_pct` of RAM while pressure is >= 2, the
 one-minute load >= `guard.load_crit_per_core` x cores, or the compressor >= `guard.compressor_crit_pct`
 of RAM. BUSY for the warn thresholds of the same four, or more booted simulators than
 `guard.max_sims`, or more build drivers than `guard.max_builds`.
@@ -518,8 +518,12 @@ def assess(snap: Snapshot, conf: dict | None = None) -> Verdict:
     swap = _pct(snap.swap_used_bytes, ram)
     if swap is not None:
         label = f"swap {gb(snap.swap_used_bytes)} = {swap:.0f}% of RAM"
-        if swap >= _num(conf, "swap_crit_pct"):
-            crit.append(f"{label} (critical ≥ {_num(conf, 'swap_crit_pct'):g}%)")
+        # Swapped-out pages stay in swap long after the pressure that pushed them out is gone,
+        # so swap alone is BUSY: it is CRITICAL only while the kernel still reports pressure.
+        # Otherwise a guard would refuse builds for hours on a machine that has recovered.
+        under_pressure = snap.pressure is not None and snap.pressure >= 2
+        if swap >= _num(conf, "swap_crit_pct") and under_pressure:
+            crit.append(f"{label} (critical ≥ {_num(conf, 'swap_crit_pct'):g}% under memory pressure)")
         elif swap >= _num(conf, "swap_warn_pct"):
             busy.append(f"{label} (warn ≥ {_num(conf, 'swap_warn_pct'):g}%)")
 
