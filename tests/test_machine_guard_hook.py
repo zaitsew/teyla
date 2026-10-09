@@ -63,7 +63,8 @@ class Box:
 
     def run(self, command, mode: str = "refuse", args=(), script: pathlib.Path = HOOK, payload=None, **env):
         if payload is None:
-            payload = json.dumps({"session_id": "s", "cwd": str(self.tmp), "hook_event_name": "PreToolUse",
+            payload = json.dumps({"session_id": "s", "transcript_path": "/srv/app/.claude/projects/-srv-app-repos-app/s.jsonl",
+                                  "cwd": str(self.tmp), "hook_event_name": "PreToolUse",
                                   "tool_name": "Bash", "tool_input": {"command": command, "description": "d"}})
         e = {k: v for k, v in os.environ.items() if k not in ("TEYLA_HOME", "TEYLA_GUARD", "CLAUDE_PLUGIN_ROOT", "PYTHONPATH")}
         e.update(HOME=str(self.home), TEYLA_HOME=str(self.home / ".teyla"), FAKE_CALLS=str(self.calls),
@@ -100,7 +101,7 @@ def test_an_ordinary_command_never_reaches_teyla(box, command):
 
 def test_an_ordinary_command_starts_no_awk_and_no_teyla(box):
     awk, py = box.spy("awk"), box.spy("python3")
-    for command in ("ls", "git log --oneline", "cat Package.swift"):
+    for command in ("ls", "git log --oneline", "cat Package.resolved"):
         assert box.run(command).returncode == 0
     assert not awk.exists() and not py.exists() and box.called() == []
 
@@ -353,3 +354,87 @@ def test_the_plugin_registers_it_on_bash_next_to_the_kill_switch_hook():
     assert (None, 'sh "${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.sh"', 10) in commands  # unchanged
     assert ("Bash", 'sh "${CLAUDE_PLUGIN_ROOT}/hooks/machine-guard.sh"', 15) in commands
     assert (ROOT / "plugin" / "hooks" / "machine-guard.sh").stat().st_mode & 0o111
+
+
+# --- review round 1 (Codex, PR #147): quotes, per-kind waits, option values, tabs ---------------------
+
+def test_separators_inside_quotes_do_not_split_a_command(box):
+    for command in ("git commit -m 'fix parser; xcodebuild test'", 'git commit -m "fix: a && xcodebuild test"',
+                    "echo 'a | cargo build'", "grep 'simctl boot' notes.md", 'echo "xcodebuild"',
+                    'git commit -m "wire xcodebuild; then swift build | tee"', "echo \"it's; xcodebuild test\"",
+                    "git commit -m 'x\ny; ./gradlew build'", "echo 'a' \"b;c\" && ls"):
+        r = box.run(command)
+        assert (r.returncode, r.stderr) == (0, ""), command
+    assert box.called() == []
+
+
+def test_a_separator_after_a_closed_quote_still_splits(box):
+    for command in ("echo 'a' && xcodebuild test", 'echo "a;b" && xcodebuild test', "echo 'x'; cargo build",
+                    "echo \"a\\\" b\" | swift build", "git commit -m 'm' && ./gradlew assembleDebug"):
+        assert box.run(command).returncode == 2, command
+
+
+def test_the_script_of_a_shell_dash_c_is_classified_by_the_same_rules(box):
+    heavy = ['bash -c "cd x && xcodebuild test"', "sh -c 'a; cargo build'", "bash -lc 'cd x && swift test'",
+             "bash -c \"bash -c 'xcodebuild test'\"", 'sh -c "echo hi; xcrun simctl boot ABC"',
+             "env FOO=1 bash -c 'xcodebuild test'", "bash -c xcodebuild test", "zsh -c \"cd \\\"/x y\\\" && xcodebuild test\""]
+    for command in heavy:
+        assert box.run(command).returncode == 2, command
+    for command in ("bash -c \"echo 'xcodebuild'\"", "sh -c 'echo xcodebuild; ls'", "bash -c 'git commit -m \"xcodebuild\"'",
+                    "bash -c \"grep 'simctl boot' f\"", "bash script.sh", "sh -c 'ls'"):
+        r = box.run(command)
+        assert (r.returncode, r.stderr) == (0, ""), command
+
+
+def test_a_wait_covers_only_the_kind_it_names(box):
+    cases = [
+        ("teyla load --wait --kind build && xcrun simctl boot ABC", ["sim"]),
+        ("teyla load --wait --kind sim && xcodebuild test", ["build"]),
+        ("teyla load --wait --kind=sim && xcrun simctl boot ABC && cargo build", ["build"]),
+        ("teyla load --wait && xcrun simctl boot ABC", ["sim"]),  # --kind defaults to build in the CLI
+        ("teyla load --wait --kind lane && claude -p hi && xcodebuild test", ["build"]),
+        ("xcodebuild test && teyla load --wait --kind build", ["build"]),  # a wait after the work covers nothing
+        ("teyla load --wait --kind build && xcrun simctl boot ABC && codex exec x", ["sim", "lane"]),
+    ]
+    for command, kinds in cases:
+        box.calls.write_text("")
+        box.run(command, mode="allow")
+        assert box.called() == [f"load --admit {k}" for k in kinds], command
+
+
+def test_a_wait_for_the_default_kind_covers_a_build(box):
+    for command in ("teyla load --wait && xcodebuild test", "teyla load --wait --kind build --timeout 60 && cargo test",
+                    "bash -c 'teyla load --wait --kind sim && xcrun simctl boot ABC'"):
+        r = box.run(command)
+        assert (r.returncode, r.stderr) == (0, ""), command
+    assert box.called() == []
+
+
+def test_option_values_are_not_mistaken_for_the_subcommand(box):
+    heavy = ["bazel --output_base /tmp/bazel build //app:all", "bazel --output_base=/x test //...", "bazelisk --host_jvm_args=-Xmx2g build //x",
+             "cargo --config build.jobs=2 test", "cargo +nightly -Z unstable-options test", "cargo test -- --nocapture",
+             "swift -Xswiftc -v build", "swift --package-path /tmp/p test", "cargo -q build --release"]
+    for command in heavy:
+        assert box.run(command).returncode == 2, command
+    for command in ["bazel run //x -- build", "cargo run -- test", "bazel --output_base /tmp/build info", "cargo fmt -- --check",
+                    "swift package --package-path /tmp/test resolve", "bazel query //x", "swift --version"]:
+        r = box.run(command)
+        assert (r.returncode, r.stderr) == (0, ""), command
+
+
+def test_a_tab_between_words_does_not_get_past_the_screen(box):
+    for command in ("cargo\tbuild", "swift\ttest", "xcodebuild\t-scheme\tA\ttest", "claude\t-p\thi", "grok\t-p x",
+                    "codex\texec x", "xcrun\tsimctl\tboot\tABC", "./gradlew\tassembleDebug", "bazel\tbuild //x"):
+        raw = json.dumps({"tool_input": {"command": command}})
+        assert "\\t" in raw  # a JSON \t escape, not a space
+        assert box.run("", payload=raw).returncode == 2, command
+
+
+def test_the_screen_ignores_the_transcript_path_and_cwd_that_precede_the_command(box):
+    awk = box.spy("awk")
+    payload = json.dumps({"session_id": "s", "transcript_path": "/srv/app/.claude/projects/-srv-app-repos-swift-gradle-cargo/s.jsonl",
+                          "cwd": "/srv/app/repos/codex-grok-bazel", "tool_name": "Bash", "tool_input": {"command": "ls -la"}})
+    assert box.run("", payload=payload).returncode == 0
+    assert not awk.exists()
+    # ... while a command that names a tool (a .swift file counts) goes on to the exact classifier
+    assert box.run("cat Sources/App.swift").returncode == 0 and awk.exists()

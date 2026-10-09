@@ -16,24 +16,29 @@
 # The only fail-closed control is ~/.teyla/KILL, in pre-tool-use.sh.
 #
 # Cost. It runs before EVERY Bash call, so the ordinary path is pure sh: TEYLA_GUARD=0 and a
-# coarse `case` over the raw JSON, no process started except the one that reads stdin. Only a
-# payload that mentions a heavy tool pays for one awk (to extract and classify the command),
+# coarse `case` over the raw JSON after the command key, no process started except the one that
+# reads stdin. Only a payload whose command mentions a heavy tool pays for one awk (to extract and classify the command),
 # and only a command that really is heavy pays for the config read and `teyla`.
 #
 # What is heavy. The command is split at ; & | ( ` { $( and newlines, each segment loses its
-# wrappers (VAR=1, env, time, sudo, nice, xcrun, `bash -c "`, if/then/do) and the first word
-# decides, so `cd x && xcodebuild -scheme A test` is a build, `git commit -m "xcodebuild"` and
-# `grep xcodebuild log` are not.
+# wrappers (VAR=1, env, time, sudo, nice, xcrun, if/then/do) and the first word decides, so
+# `cd x && xcodebuild -scheme A test` is a build, `git commit -m "xcodebuild"` and
+# `grep xcodebuild log` are not. Separators inside single or double quotes do not split
+# (`git commit -m 'fix; xcodebuild test'` is one harmless segment); the quoted script of
+# `sh -c` / `bash -c` is classified the same way, recursively.
 #   build  xcodebuild (not -list -showsdks -version -showBuildSettings -showdestinations -help),
-#          swift build|test, gradle/gradlew with a task, cargo build|test, bazel build|test
+#          swift|cargo|bazel with `build` or `test` among the args before any `--`,
+#          gradle/gradlew with a task
 #   sim    simctl boot|create|clone, and `simctl bootstatus ... -b` (which boots)
 #   lane   codex exec, codex-lane, codex-review, claude-review, claude -p|--print, grok -p|--prompt
 # Not gated: simctl list|io|launch|install|spawn|shutdown|terminate|erase|delete (they free
 # resources or use an already-booted device).
 #
-# Skipped (exit 0): TEYLA_GUARD=0; `[guard] enabled = false` in ~/.teyla/config.toml; a command
-# that already contains `teyla load --wait` (the agent is waiting for a slot, which is the
-# point). The idiom for an agent:  teyla load --wait --kind build && xcodebuild ...
+# Skipped (exit 0): TEYLA_GUARD=0; `[guard] enabled = false` in ~/.teyla/config.toml; and a kind
+# the command has already waited for: `teyla load --wait [--kind K]` (K defaults to build, as in
+# the CLI) covers K only, for the heavy words after it, so `teyla load --wait --kind build &&
+# xcrun simctl boot X` still puts `sim` to admission. The idiom for an agent:
+#   teyla load --wait --kind build && xcodebuild ...
 #
 # Timeout. `teyla load --admit` is one sysctl and one ps (well under 150 ms), but the hook is
 # registered with a 15 s timeout in every harness. A timed-out hook is a non-blocking error in
@@ -52,10 +57,15 @@ mode="${1:-}"
 
 payload=$(cat 2>/dev/null)
 
-# Coarse screen, no process spawned: only these substrings can start heavy work. False
-# positives (a path with "gradle" in it) just go on to the exact classifier.
-case "$payload" in
-    *xcodebuild*|*swift\ *|*gradle*|*cargo\ *|*bazel*|*simctl*|*codex\ *|*codex-*|*claude\ *|*claude-review*|*grok\ *) ;;
+# Coarse screen, no process spawned. It looks only at what follows the first "command" key, so
+# the transcript path (".claude/projects/...") and cwd that precede it never trigger it, and only
+# a command that names one of these tools goes on to the exact classifier. False positives (a
+# .swift file, a description that says "gradle") just cost that one awk. No trailing-space
+# requirement: `cargo\tbuild` arrives as a JSON \t.
+after=${payload#*\"command\"}
+[ "$after" = "$payload" ] && exit 0
+case "$after" in
+    *xcodebuild*|*swift*|*gradle*|*cargo*|*bazel*|*simctl*|*codex*|*claude*|*grok*) ;;
     *) exit 0 ;;
 esac
 
@@ -73,8 +83,63 @@ kinds=$(printf '%s' "$payload" | awk '
     return b ~ /^(env|time|sudo|nice|nohup|exec|command|caffeinate|arch|builtin|setsid|stdbuf|timeout|xcrun|if|then|do|else|elif|while|until|!)$/
   }
   function isshell(b) { return b ~ /^(sh|bash|zsh|dash)$/ }
-  # The kind of one segment ("" when it is not heavy).
-  function classify(seg,    nt, raw, tok, m, k, p, t, b, c, a, na, i, a1, ro, tasks) {
+  # Split at ; & | ( ` { $( and (already) newlines, but only OUTSIDE single and double quotes:
+  # `git commit -m "fix; xcodebuild"` is one segment, `echo "a;b" && xcodebuild test` is two.
+  function qsplit(s, out,    n, i, len, ch, q, cur) {
+    split("", out); n = 0; cur = ""; q = ""; len = length(s)
+    for (i = 1; i <= len; i++) {
+      ch = substr(s, i, 1)
+      if (q != "") {
+        cur = cur ch
+        if (ch == "\\" && q == "\"") { cur = cur substr(s, i + 1, 1); i++ }
+        else if (ch == q) q = ""
+        continue
+      }
+      if (ch == "\\") { cur = cur ch substr(s, i + 1, 1); i++; continue }
+      if (ch == "\"" || ch == "\047") { q = ch; cur = cur ch; continue }
+      if (ch == "$" && substr(s, i + 1, 1) == "(") { out[++n] = cur; cur = ""; i++; continue }
+      if (ch ~ /[;&|(`{]/) { out[++n] = cur; cur = ""; continue }
+      cur = cur ch
+    }
+    out[++n] = cur
+    return n
+  }
+  # The script of `sh -c SCRIPT`: the quoted string, unquoted (or the rest when it is bare).
+  function script_of(r,    q, i, len, ch, nx, o) {
+    sub(/^[ \t]+/, "", r); q = substr(r, 1, 1)
+    if (q != "\"" && q != "\047") return r
+    o = ""; len = length(r)
+    for (i = 2; i <= len; i++) {
+      ch = substr(r, i, 1)
+      if (q == "\"" && ch == "\\") {
+        nx = substr(r, i + 1, 1)
+        if (nx == "\"" || nx == "\\" || nx == "$") { o = o nx; i++; continue }
+        o = o ch; continue
+      }
+      if (ch == q) break
+      o = o ch
+    }
+    return o
+  }
+  function emit(k) {
+    if (k in waited) return
+    if (!(k in seen)) { seen[k] = 1; print k }
+  }
+  # Is "build" or "test" the subcommand? Looked for among the args up to a `--`, not as the
+  # first non-dash token, so `bazel --output_base /tmp/x build` and `cargo --config k=v test` count.
+  function has_sub(a, na,    i) {
+    for (i = 1; i <= na; i++) {
+      if (a[i] == "--") return 0
+      if (a[i] == "build" || a[i] == "test") return 1
+    }
+    return 0
+  }
+  function run(script, depth,    segs, n, i) {
+    n = qsplit(script, segs)
+    for (i = 1; i <= n; i++) classify(segs[i], depth)
+  }
+  # Classify one segment and emit its kind (nothing when it is not heavy).
+  function classify(seg, depth,    nt, raw, tok, m, k, p, t, b, c, a, na, i, a1, tasks, rest, hasw, kw) {
     nt = split(seg, raw, /[ \t]+/); m = 0
     for (k = 1; k <= nt; k++) if (raw[k] != "") tok[++m] = raw[k]
     p = 1
@@ -89,11 +154,16 @@ kinds=$(printf '%s' "$payload" | awk '
         }
         continue
       }
-      if (isshell(b) && p < m && strip(tok[p + 1]) ~ /^-[A-Za-z]*c$/) { p += 2; continue }
+      if (isshell(b) && p < m && strip(tok[p + 1]) ~ /^-[A-Za-z]*c$/) {
+        rest = ""
+        for (i = p + 2; i <= m; i++) rest = rest (rest == "" ? "" : " ") tok[i]
+        if (depth < 4) run(script_of(rest), depth + 1)
+        return
+      }
       if (isshell(b) && p < m && strip(tok[p + 1]) !~ /^-/) { p++; t = strip(tok[p]); b = base(t) }
       break
     }
-    if (p > m) return ""
+    if (p > m) return
     c = base(strip(tok[p])); na = 0
     for (i = p + 1; i <= m; i++) a[++na] = strip(tok[i])
     a1 = ""
@@ -102,32 +172,41 @@ kinds=$(printf '%s' "$payload" | awk '
       if (a[i] ~ /^-/ || a[i] ~ /^\+/) continue
       a1 = a[i]; break
     }
+    # `teyla load --wait [--kind K]` (K defaults to build, as in the CLI) covers K, for what follows.
+    if (c == "teyla") {
+      if (a1 != "load") return
+      hasw = 0; kw = "build"
+      for (i = 1; i <= na; i++) {
+        if (a[i] == "--wait") hasw = 1
+        if (a[i] == "--kind" && i < na) kw = a[i + 1]
+        if (a[i] ~ /^--kind=/) kw = substr(a[i], 8)
+      }
+      if (hasw && (kw == "build" || kw == "sim" || kw == "lane")) waited[kw] = 1
+      return
+    }
     if (c == "xcodebuild") {
       for (i = 1; i <= na; i++)
-        if (a[i] ~ /^-(list|showsdks|version|showBuildSettings|showBuildSettingsForIndex|showdestinations|help|usage|h|checkFirstLaunchStatus|runFirstLaunch|license)$/) return ""
-      return "build"
+        if (a[i] ~ /^-(list|showsdks|version|showBuildSettings|showBuildSettingsForIndex|showdestinations|help|usage|h|checkFirstLaunchStatus|runFirstLaunch|license)$/) return
+      emit("build"); return
     }
-    if (c == "swift") return (a1 == "build" || a1 == "test") ? "build" : ""
-    if (c == "cargo") return (a1 == "build" || a1 == "test") ? "build" : ""
-    if (c == "bazel" || c == "bazelisk") return (a1 == "build" || a1 == "test") ? "build" : ""
+    if (c == "swift" || c == "cargo" || c == "bazel" || c == "bazelisk") { if (has_sub(a, na)) emit("build"); return }
     if (c == "gradle" || c == "gradlew") {
       tasks = 0
       for (i = 1; i <= na; i++) {
-        if (a[i] ~ /^(--stop|--status|--version|-v|-version|--help|-h|-\?)$/) return ""
+        if (a[i] ~ /^(--stop|--status|--version|-v|-version|--help|-h|-\?)$/) return
         if (a[i] !~ /^-/) tasks++
       }
-      return tasks ? "build" : ""
+      if (tasks) emit("build"); return
     }
     if (c == "simctl") {
-      if (a1 == "boot" || a1 == "create" || a1 == "clone") return "sim"
-      if (a1 == "bootstatus") for (i = 1; i <= na; i++) if (a[i] == "-b") return "sim"
-      return ""
+      if (a1 == "boot" || a1 == "create" || a1 == "clone") emit("sim")
+      else if (a1 == "bootstatus") for (i = 1; i <= na; i++) if (a[i] == "-b") { emit("sim"); break }
+      return
     }
-    if (c == "codex-lane" || c == "codex-review" || c == "claude-review") return "lane"
-    if (c == "codex") { for (i = 1; i <= na; i++) if (a[i] == "exec") return "lane"; return "" }
-    if (c == "claude") { for (i = 1; i <= na; i++) if (a[i] == "-p" || a[i] == "--print") return "lane"; return "" }
-    if (c == "grok") { for (i = 1; i <= na; i++) if (a[i] == "-p" || a[i] == "--prompt") return "lane"; return "" }
-    return ""
+    if (c == "codex-lane" || c == "codex-review" || c == "claude-review") { emit("lane"); return }
+    if (c == "codex") { for (i = 1; i <= na; i++) if (a[i] == "exec") { emit("lane"); return }; return }
+    if (c == "claude") { for (i = 1; i <= na; i++) if (a[i] == "-p" || a[i] == "--print") { emit("lane"); return }; return }
+    if (c == "grok") { for (i = 1; i <= na; i++) if (a[i] == "-p" || a[i] == "--prompt") { emit("lane"); return }; return }
   }
   { all = all $0 "\n" }
   END {
@@ -144,13 +223,7 @@ kinds=$(printf '%s' "$payload" | awk '
       else if (ch == "\"") break
       else out = out ch
     }
-    cmd = unesc(out)
-    if (cmd ~ /teyla[ \t]+load[ \t]+.*--wait/) exit
-    ns = split(cmd, seg, /[;&|(`{]|\$\(/)
-    for (s = 1; s <= ns; s++) {
-      k = classify(seg[s])
-      if (k != "" && !(k in seen)) { seen[k] = 1; print k }
-    }
+    run(unesc(out), 0)
   }' 2>/dev/null)
 
 [ -n "$kinds" ] || exit 0
