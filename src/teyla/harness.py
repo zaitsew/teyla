@@ -33,6 +33,13 @@ only while the key is on: a sync with it off removes Teyla's Stop handler and ke
 The context-budget hook is not: it reads Claude Code's transcript usage records and relies on
 its autoCompactWindow, neither of which Codex has.
 
+The machine guard (`machine-guard.sh`, PreToolUse on shell calls: a build, a simulator boot or a
+headless agent lane is refused while `teyla load --admit` says the machine is overloaded) is wired
+into Codex (matcher `Bash`, `tool_input.command`, exit 2 + stderr denies) and Grok (matcher `Bash`
+aliases `run_terminal_command`, `toolInput.command`, exit 2 or a `deny` JSON; run with `--grok`).
+Both facts are from the harness's own docs and binary, see docs/HARNESSES.md. Cursor and Hermes
+are not wired: their hook contracts for a shell call were not verified.
+
 Codex parses hooks.json strictly — an unknown top-level key (anything but `description` and
 `hooks`) makes it skip the whole file with "failed to parse hooks config" — so Teyla's marker
 there is the command path under ~/.teyla/hooks/ plus the file's `description`, not a comment.
@@ -57,7 +64,7 @@ from . import __version__, plugin_dir
 
 HOME = pathlib.Path.home()
 HOOKS_DIR = HOME / ".teyla" / "hooks"
-HOOK_SCRIPTS = ("session-start.sh", "capture-correction.sh", "land-check.sh")
+HOOK_SCRIPTS = ("session-start.sh", "capture-correction.sh", "land-check.sh", "machine-guard.sh")
 PLUGIN_SKILLS = ("harvest", "adoption-review", "wiki-pass", "review", "tidy")
 CLI_SKILLS = {
     "teyla-rule": (
@@ -272,6 +279,12 @@ def _codex_hooks(existing: dict | None, land_check: bool | None = None) -> dict:
         groups = _without_teyla(hooks.get(event))
         groups.append({"hooks": [{"type": "command", "command": command, "timeout": 5}]})
         hooks[event] = groups
+    # The machine guard: PreToolUse on shell calls (`codex features list`: hooks stable; the
+    # documented matcher name for a shell call is `Bash`, input `tool_input.command`). A user's
+    # own PreToolUse groups stay; ours is appended after them.
+    guard = _without_teyla(hooks.get("PreToolUse"))
+    guard.append({"matcher": "Bash", "hooks": [{"type": "command", "command": str(HOOKS_DIR / "machine-guard.sh"), "timeout": 15}]})
+    hooks["PreToolUse"] = guard
     land = _land_check_on() if land_check is None else land_check
     before = hooks.get("Stop")
     stop = _without_teyla(before)
@@ -289,6 +302,9 @@ def _grok_hooks() -> dict:
     return {"hooks": {
         "SessionStart": [{"hooks": [{"type": "command", "command": str(HOOKS_DIR / "session-start.sh"), "timeout": 5}]}],
         "UserPromptSubmit": [{"hooks": [{"type": "command", "command": str(HOOKS_DIR / "capture-correction.sh"), "timeout": 5}]}],
+        # Grok's `Bash` matcher aliases its run_terminal_command; a PreToolUse exit 2 denies, and
+        # `--grok` also prints the full reason as JSON because Grok keeps only the first stderr line.
+        "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": f"{HOOKS_DIR / 'machine-guard.sh'} --grok", "timeout": 15}]}],
     }}
 
 
@@ -461,8 +477,10 @@ def hooks_wired(h: Harness) -> bool | None:
 # codex-rs/hooks/src/engine/discovery.rs, visible in `hooks/list` keys).
 # "stop" follows the same snake_case rule; it was not re-read from discovery.rs when the land
 # check was added, so a Stop handler reported untrusted after trusting it is the
-# first thing to check there.
-_CODEX_EVENT_LABELS = {"SessionStart": "session_start", "UserPromptSubmit": "user_prompt_submit", "Stop": "stop"}
+# first thing to check there. "pre_tool_use" is the label of the owner's own review-gate entry in
+# ~/.codex/config.toml (`hooks.json:pre_tool_use:0:0`).
+_CODEX_EVENT_LABELS = {"SessionStart": "session_start", "UserPromptSubmit": "user_prompt_submit", "Stop": "stop",
+                       "PreToolUse": "pre_tool_use"}
 
 
 def codex_hook_hash(event: str, handler: dict, matcher: str | None = None) -> str:
