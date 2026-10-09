@@ -46,6 +46,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/machine-guard.sh\"",
+            "timeout": 15
+          }
+        ]
       }
     ],
     "PostToolUse": [
