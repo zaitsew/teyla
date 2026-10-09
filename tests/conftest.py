@@ -52,3 +52,11 @@ def _no_real_transcripts(tmp_path_factory, monkeypatch):
     for mod in (claude_code, codex, cursor, grok, hermes):
         monkeypatch.setattr(mod, "DEFAULT_ROOT", str(none / mod.__name__.rsplit(".", 1)[-1]))
     monkeypatch.setattr(codex, "DEFAULT_ARCHIVE_ROOT", str(none / "codex-archive"))
+
+
+@pytest.fixture(autouse=True)
+def _no_real_crash_reports(monkeypatch):
+    """`teyla crash`, doctor's `machine:crash` and the digest read /Library/Logs/DiagnosticReports; a test
+    must not depend on whether this Mac has panicked this week. Tests that want reports pass roots."""
+    from teyla import crash
+    monkeypatch.setattr(crash, "DEFAULT_ROOTS", [])
