@@ -74,6 +74,21 @@
     context_budget_step  = 30000
     land_check     = false         Stop: once per session, uncommitted or unpushed work is named, with
                                    how to land it (merge only into a MERGE-APPROVED repo)
+    [guard]                        `teyla load`: the machine guard (snapshot, verdict, admission)
+    enabled = true                 false: `--admit` and `--wait` always let the work through
+    max_sims = 2                   booted simulators: more is BUSY; `--admit sim` refuses at this many (0 = no cap)
+    max_builds = 2                 build drivers (xcodebuild, swift-build, gradle, cargo): more is BUSY; `--admit build` refuses at this many
+    max_lanes = 0                  headless agent lanes (codex exec, grok -p, claude -p): `--admit lane` refuses at this many; 0 = no cap
+    swap_warn_pct = 25             swap used, percent of RAM: BUSY at or above
+    swap_crit_pct = 40             ... CRITICAL at or above
+    compressor_warn_pct = 30       memory compressor size, percent of RAM: BUSY at or above
+    compressor_crit_pct = 45       ... CRITICAL at or above
+    load_warn_per_core = 4.0       one-minute load average per core: BUSY at or above
+    load_crit_per_core = 10.0      ... CRITICAL at or above
+    wait_timeout_s = 900           `teyla load --wait` gives up (exit 3) after this long
+    agent = false                  reserved: a launchd recorder agent that runs `teyla load --record --quiet`
+    gradle_idle_min = 30           reserved: a Gradle/Kotlin daemon idle this long is reaped
+    alert = true                   reserved: write ~/.teyla/load.alert while the verdict is CRITICAL
     [harness]
     disabled = ["hermes", "grok"]  harnesses this machine does not use: doctor, health, `harness status|sync`
                                    and `policy sync` skip them entirely (claude-code, codex, grok, hermes,
@@ -142,6 +157,12 @@ DEFAULTS = {
     "tidy": {"max_kb": 24, "stale_days": 120},
     # `teyla reviews`: the ledger the review script appends to, and the size below which a PR is exempt.
     "review": {"ledger": "~/.cache/review-ledger.tsv", "min_lines": 7},
+    # `teyla load`: thresholds of the machine guard. Percentages are of physical RAM; load is per core.
+    "guard": {"enabled": True, "max_sims": 2, "max_builds": 2, "max_lanes": 0,
+              "swap_warn_pct": 25, "swap_crit_pct": 40, "compressor_warn_pct": 30, "compressor_crit_pct": 45,
+              "load_warn_per_core": 4.0, "load_crit_per_core": 10.0, "wait_timeout_s": 900,
+              # Declared for the parts that come next (recorder agent, idle-daemon reaper, alert file).
+              "agent": False, "gradle_idle_min": 30, "alert": True},
     # The plugin's opt-in hooks (plugin/hooks/context-budget.sh, land-check.sh). Off by default: where
     # the same hooks are already wired some other way, a second copy doubles each note.
     # The hooks read these keys from the file with awk/tomllib, not through this module.
