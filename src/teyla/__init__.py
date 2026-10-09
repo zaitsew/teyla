@@ -1,5 +1,5 @@
 """Teyla — an operating system for working with AI agents."""
-__version__ = "0.19.4"
+__version__ = "0.20.0"
 
 
 def templates_dir():
