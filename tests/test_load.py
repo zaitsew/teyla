@@ -166,6 +166,18 @@ def test_kotlin_daemon_is_a_daemon_not_a_build():
     assert q.daemons == []
 
 
+def test_daemons_carry_their_cpu_and_kotlinc_clients_are_counted():
+    p = classify(
+        ps_line(3, "/jdk/bin/java -cp /g/lib/gradle-launcher.jar org.gradle.launcher.daemon.bootstrap.GradleDaemon 8.10", cpu="37.5"),
+        ps_line(4, "/jdk/bin/java -cp /k/kotlin-compiler-embeddable.jar org.jetbrains.kotlin.daemon.KotlinCompileDaemon", cpu="0.0"),
+        ps_line(5, "/opt/kotlinc/bin/kotlinc Main.kt"),
+        ps_line(6, "/jdk/bin/java -cp /k/kotlin-compiler.jar org.jetbrains.kotlin.cli.jvm.K2JVMCompiler Main.kt"),
+    )
+    assert [(d.kind, d.cpu) for d in p.daemons] == [("gradle", 37.5), ("kotlin", 0.0)]
+    assert p.kotlinc == 2
+    assert classify(ps_line(1, "/bin/sh -c ls")).kotlinc == 0
+
+
 def test_claude_sessions_count_once_and_the_apps_own_processes_not_at_all():
     p = classify(
         ps_line(1, "/Applications/Claude.app/Contents/MacOS/Claude"),
