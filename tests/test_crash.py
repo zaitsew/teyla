@@ -386,6 +386,39 @@ def test_advice_with_no_load_records_says_how_to_get_them_and_nothing_is_filler(
     assert crash.advice(crash.Jetsam(time=PANIC_AT), crash.Context(), None) == []     # a jetsam alone: no recorder nag
 
 
+def test_advice_with_the_recorder_on_now_does_not_ask_to_switch_it_on():
+    since = PANIC_AT + dt.timedelta(hours=2)
+    a = crash.advice(crash.Panic(time=PANIC_AT), crash.Context(), None, recorder=(True, since))
+    assert a == [f"the load recorder is on now (since {since.astimezone().strftime('%Y-%m-%d %H:%M')});"
+                 " the next crash will come with data"]
+    a = crash.advice(crash.Panic(time=PANIC_AT), crash.Context(), None, recorder=(True, None))
+    assert a == ["the load recorder is on now; the next crash will come with data"]
+
+
+@pytest.fixture
+def load_agent(tmp_path, monkeypatch):
+    """Where the recorder's launchd plist would be installed; the test creates it to install it."""
+    from teyla import routine_install
+    monkeypatch.setattr(routine_install, "PLIST_PATH", tmp_path / "LaunchAgents" / "weekly.plist")
+    plist = routine_install.optional_paths(routine_install.LOAD_LABEL)["plist"]
+    plist.parent.mkdir(parents=True)
+    return plist
+
+
+def test_recorder_on_needs_guard_agent_and_the_installed_agent(tmp_path, load_agent):
+    rec = tmp_path / "load.tsv"
+    assert crash.recorder_on(rec) == (False, None)                              # default config: off
+    config.set_value("guard.agent", "true")
+    assert crash.recorder_on(rec) == (False, None)                              # the flag alone records nothing
+    load_agent.write_text("<plist/>")
+    assert crash.recorder_on(rec) == (True, None)                               # on, nothing recorded yet
+    first = PANIC_AT + dt.timedelta(hours=1)
+    record_row(rec, first)
+    record_row(rec, first + dt.timedelta(minutes=1))
+    on, since = crash.recorder_on(rec)
+    assert on and since.timestamp() == first.timestamp()
+
+
 def test_advice_is_at_most_four_lines():
     a = adv(crash.Panic(time=PANIC_AT, task="simctl"), max_sims=4, top=[("java", 5.0), ("Google Chrome", 9.0)], peak_swap_pct=60.0,
             peak_swap_bytes=14 * GIB, peak_load=900, max_builds=5, max_agents=60)
@@ -446,6 +479,21 @@ def test_report_without_records_says_the_recorder_was_off(reports, tmp_path):
     assert "no load records in the 30 minutes before — the recorder agent was off" in text
 
 
+def test_report_for_a_crash_before_the_recorder_was_switched_on(reports, tmp_path, load_agent):
+    build_scene(reports, tmp_path, with_records=False)
+    started = PANIC_AT + dt.timedelta(hours=2)                                  # switched on after the panic
+    record_row(load.record_path(), started)
+    config.set_value("guard.agent", "true")
+    assert "`teyla config set guard.agent=true && teyla routine install`" in crash.render(run_report())  # not installed
+    load_agent.write_text("<plist/>")
+    text = crash.render(run_report())
+    assert "the recorder agent was off" in text                                 # true of the window before the panic
+    assert f"the load recorder is on now (since {started.astimezone().strftime('%Y-%m-%d %H:%M')})" in text
+    assert "guard.agent=true" not in text
+    config.set_value("guard.agent", "false")
+    assert "`teyla config set guard.agent=true && teyla routine install`" in crash.render(run_report())
+
+
 def test_a_jetsam_alone_gets_advice_from_its_own_numbers(reports):
     main, _ = reports
     write_jetsam(main, NOW - dt.timedelta(hours=1))
@@ -483,6 +531,7 @@ def test_ack_round_trip(reports, tmp_path, capsys, monkeypatch):
     assert crash.cmd_crash(args(ack=True)) == 0
     out = capsys.readouterr().out
     assert "[new]" in out and "acknowledged 2 incident(s)" in out                    # the report as it was, then the ack
+    assert "unacknowledged" not in out                                                # no footer contradicting the ack
     assert crash.seen_path().read_text().split() == sorted([INCIDENT, "J1"])
     assert crash.seen_path().parent.name == "state" and (crash.seen_path().stat().st_mode & 0o077) == 0
     assert crash.unacked(crash.events()) == []
@@ -510,8 +559,11 @@ def test_ack_failure_is_reported(reports, capsys, monkeypatch):
         raise OSError("read-only")
     monkeypatch.setattr(crash, "ack", boom)
     assert crash.cmd_crash(args(days=30)) == 0
+    capsys.readouterr()
     assert crash.cmd_crash(args(days=30, ack=True)) == 1
-    assert "could not record the acknowledgement" in capsys.readouterr().err
+    cap = capsys.readouterr()
+    assert "could not record the acknowledgement" in cap.err
+    assert "1 unacknowledged" in cap.out                                              # nothing was recorded: still unacknowledged
 
 
 def test_seen_file_with_blank_lines_and_a_missing_file(tmp_path):

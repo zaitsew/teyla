@@ -589,8 +589,27 @@ def _is_jvm(name: str) -> bool:
     return name.lower() in ("java", "jvm") or "gradle" in name.lower() or "kotlin" in name.lower()
 
 
-def advice(event, ctx: Context | None, jet: Jetsam | None) -> list[str]:
-    """Two to four concrete lines, each from a number in the data. Nothing generic."""
+def recorder_on(records=None) -> tuple[bool, dt.datetime | None]:
+    """(the recorder is on, the time of its first row or None). On means `guard.agent` is set and the
+    launchd agent's plist is installed; the flag alone records nothing. A crash from before the recorder
+    was switched on has no rows, and the advice should not ask to switch it on again."""
+    from . import load, routine_install as ri
+    try:
+        on = ri.optional_enabled(ri.LOAD_LABEL) and ri.optional_paths(ri.LOAD_LABEL)["plist"].exists()
+    except Exception:  # noqa: BLE001 — forensics must not fail on a bad config
+        return False, None
+    if not on:
+        return False, None
+    try:
+        rows = load.read_records(path=records)
+    except Exception:  # noqa: BLE001
+        rows = []
+    return True, (dt.datetime.fromtimestamp(rows[0]["ts"]).astimezone() if rows else None)
+
+
+def advice(event, ctx: Context | None, jet: Jetsam | None, recorder: tuple[bool, dt.datetime | None] = (False, None)) -> list[str]:
+    """Two to four concrete lines, each from a number in the data. Nothing generic. `recorder` is
+    `recorder_on()`: when the recorder is on now, a crash without rows predates it."""
     out: list[str] = []
     ctx = ctx or Context()
     jet = jet or (event if isinstance(event, Jetsam) else None)
@@ -629,8 +648,13 @@ def advice(event, ctx: Context | None, jet: Jetsam | None) -> list[str]:
                    + (f" with {ctx.max_builds} builds" if ctx.max_builds else "")
                    + ": cap parallel builds (`guard.max_builds`)")
     if not ctx.rows and isinstance(event, (Panic, Reset)):
-        out.append("no load records, so nothing above says what was running: record every minute"
-                   " (`teyla config set guard.agent=true && teyla routine install`) so the next crash comes with data")
+        on, since = recorder
+        if on:
+            out.append("the load recorder is on now" + (f" (since {_stamp(since)})" if since else "")
+                       + "; the next crash will come with data")
+        else:
+            out.append("no load records, so nothing above says what was running: record every minute"
+                       " (`teyla config set guard.agent=true && teyla routine install`) so the next crash comes with data")
     return out[:4]
 
 
@@ -739,11 +763,12 @@ def report(days: int = DEFAULT_DAYS, roots=None, records=None, now: dt.datetime 
     if lead:
         ev = lead["event"]
         ctx = lead.get("context") or (context(ev, path=records) if isinstance(ev, Jetsam) else None)
-        tips = advice(ev, ctx, lead.get("jetsam"))
+        tips = advice(ev, ctx, lead.get("jetsam"), recorder_on(records) if ctx is not None and not ctx.rows else (False, None))
     return {"days": days, "items": items, "advice": tips, "unreadable": found.unreadable}
 
 
-def render(rep: dict) -> str:
+def render(rep: dict, acked: bool = False) -> str:
+    """The report as text. `acked`: the incidents were just acknowledged, so no "unacknowledged" footer."""
     items, out = rep["items"], []
     for it in items:
         ev = it["event"]
@@ -775,7 +800,7 @@ def render(rep: dict) -> str:
         out.append("what to change:")
         out += [f"  - {t}" for t in rep["advice"]]
     n_new = sum(1 for it in items if it["new"])
-    if n_new:
+    if n_new and not acked:
         out.append("")
         out.append(f"{n_new} unacknowledged: `teyla crash --ack` marks them seen (doctor and the banner stop warning)")
     return "\n".join(out)
@@ -800,16 +825,22 @@ def cmd_crash(args) -> int:
         print("teyla crash: --days must be 1 or more", file=sys.stderr)
         return 2
     rep = report(args.days)
-    if args.json:
-        print(json.dumps(to_json(rep), indent=1, ensure_ascii=False))
-    else:
-        print(render(rep))
+    # Acknowledge before printing, so the footer does not call incidents unacknowledged right above
+    # the line that acknowledges them. `[new]` still marks what this run acknowledged.
+    n, err = None, None
     if args.ack:
         try:
             n = ack([it["event"].id for it in rep["items"]])
         except OSError as e:
-            print(f"teyla crash: could not record the acknowledgement: {e}", file=sys.stderr)
-            return 1
+            err = e
+    if args.json:
+        print(json.dumps(to_json(rep), indent=1, ensure_ascii=False))
+    else:
+        print(render(rep, acked=n is not None))
+    if err is not None:
+        print(f"teyla crash: could not record the acknowledgement: {err}", file=sys.stderr)
+        return 1
+    if n is not None:
         print(f"acknowledged {n} incident(s)" if n else "nothing new to acknowledge", file=sys.stderr if args.json else sys.stdout)
     return 0
 
