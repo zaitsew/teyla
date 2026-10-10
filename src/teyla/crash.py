@@ -590,11 +590,12 @@ def _is_jvm(name: str) -> bool:
 
 
 def recorder_on(records=None) -> tuple[bool, dt.datetime | None]:
-    """(guard.agent is on, the time of the recorder's first row or None). A crash from before the
-    recorder was switched on has no rows, and the advice should not ask to switch it on again."""
-    from . import config, load
+    """(the recorder is on, the time of its first row or None). On means `guard.agent` is set and the
+    launchd agent's plist is installed; the flag alone records nothing. A crash from before the recorder
+    was switched on has no rows, and the advice should not ask to switch it on again."""
+    from . import load, routine_install as ri
     try:
-        on = config.load().get("guard", {}).get("agent") is True
+        on = ri.optional_enabled(ri.LOAD_LABEL) and ri.optional_paths(ri.LOAD_LABEL)["plist"].exists()
     except Exception:  # noqa: BLE001 — forensics must not fail on a bad config
         return False, None
     if not on:

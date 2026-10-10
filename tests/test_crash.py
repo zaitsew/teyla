@@ -395,10 +395,22 @@ def test_advice_with_the_recorder_on_now_does_not_ask_to_switch_it_on():
     assert a == ["the load recorder is on now; the next crash will come with data"]
 
 
-def test_recorder_on_reads_guard_agent_and_the_first_row(tmp_path):
+@pytest.fixture
+def load_agent(tmp_path, monkeypatch):
+    """Where the recorder's launchd plist would be installed; the test creates it to install it."""
+    from teyla import routine_install
+    monkeypatch.setattr(routine_install, "PLIST_PATH", tmp_path / "LaunchAgents" / "weekly.plist")
+    plist = routine_install.optional_paths(routine_install.LOAD_LABEL)["plist"]
+    plist.parent.mkdir(parents=True)
+    return plist
+
+
+def test_recorder_on_needs_guard_agent_and_the_installed_agent(tmp_path, load_agent):
     rec = tmp_path / "load.tsv"
     assert crash.recorder_on(rec) == (False, None)                              # default config: off
     config.set_value("guard.agent", "true")
+    assert crash.recorder_on(rec) == (False, None)                              # the flag alone records nothing
+    load_agent.write_text("<plist/>")
     assert crash.recorder_on(rec) == (True, None)                               # on, nothing recorded yet
     first = PANIC_AT + dt.timedelta(hours=1)
     record_row(rec, first)
@@ -467,11 +479,13 @@ def test_report_without_records_says_the_recorder_was_off(reports, tmp_path):
     assert "no load records in the 30 minutes before — the recorder agent was off" in text
 
 
-def test_report_for_a_crash_before_the_recorder_was_switched_on(reports, tmp_path):
+def test_report_for_a_crash_before_the_recorder_was_switched_on(reports, tmp_path, load_agent):
     build_scene(reports, tmp_path, with_records=False)
     started = PANIC_AT + dt.timedelta(hours=2)                                  # switched on after the panic
     record_row(load.record_path(), started)
     config.set_value("guard.agent", "true")
+    assert "`teyla config set guard.agent=true && teyla routine install`" in crash.render(run_report())  # not installed
+    load_agent.write_text("<plist/>")
     text = crash.render(run_report())
     assert "the recorder agent was off" in text                                 # true of the window before the panic
     assert f"the load recorder is on now (since {started.astimezone().strftime('%Y-%m-%d %H:%M')})" in text
