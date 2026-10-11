@@ -365,8 +365,8 @@ def cmd_routines(args):
 def cmd_routine(args):
     from . import routine_install
     if args.action == "catch-up":
-        lines = routine_install.catch_up(dry=args.dry)
-        if not args.quiet or any("MISSED" in l for l in lines):
+        lines = routine_install.catch_up(dry=args.dry, heal=True)
+        if not args.quiet or any("MISSED" in l or "REPAIR" in l for l in lines):
             for line in lines:
                 print(line)
         return 0

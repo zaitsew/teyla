@@ -394,6 +394,12 @@ launchd agents, one hook and one command:
 | every session start (plugin hook) | prints what is new in `banner.items` since the last start (nothing when nothing is), and the digest headline once per week; if the last update check is older than a day, starts `teyla update --check` in the background | `~/.teyla/update-check.json` |
 | on demand | `teyla doctor` — the checklist with a fix per line; exit 1 when a FIX is pending | `~/.teyla/doctor.json` |
 
+`teyla routine catch-up` (run by the daily wrapper and in the background at every session start)
+first repairs the routines: when `routine install --if-stale` would change anything — a plist
+deleted, a wrapper naming a binary that is gone, an optional agent switched on but not installed —
+it rewrites and reloads them and logs each line as `REPAIR:`. Wrappers and plists are written by
+rename, so a wrapper that rewrites itself while bash runs it is safe.
+
 Parallel agents also leave RAM behind: an `xcodebuild`, a `next dev` or a `python -m http.server`
 started in a worktree that was then removed keeps running. `teyla storage procs` lists them (your
 processes, no terminal, running 30+ minutes, working directory in a worktree or temp folder that no longer

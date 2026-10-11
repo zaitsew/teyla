@@ -433,6 +433,17 @@ def is_stale() -> bool:
             or any(_optional_stale(label, teyla_bin, env) for label in OPTIONAL_LABELS))
 
 
+def _write(path: pathlib.Path, text: str, mode: int = 0o644) -> None:
+    """Write by rename, never in place. The daily wrapper rewrites itself (`update` and `catch-up`
+    run `routine install` from inside it), and bash reads a running script by offset: a file
+    truncated and refilled under it runs from the middle of the new text. A rename leaves the
+    running bash on the old inode."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(text)
+    tmp.chmod(mode)
+    os.replace(tmp, path)
+
+
 def _real_launch_agents() -> pathlib.Path:
     """The LaunchAgents directory of the account launchd's gui/<uid> domain belongs to — from the
     password database, not $HOME, which a sandboxed or throwaway run may have moved."""
@@ -471,14 +482,14 @@ def _unload(plist: pathlib.Path, label: str) -> str:
 def _write_optional(label: str, teyla_bin: str, env_plist: str, env_sh: str) -> list[str]:
     o, p = OPTIONAL[label], optional_paths(label)
     p["wrapper"].parent.mkdir(parents=True, exist_ok=True)
-    p["wrapper"].write_text(INTERVAL_WRAPPER_TEMPLATE.format(flag=flag_name(label), what=o["what"].capitalize(), env_sh=env_sh,
+    _write(p["wrapper"], INTERVAL_WRAPPER_TEMPLATE.format(flag=flag_name(label), what=o["what"].capitalize(), env_sh=env_sh,
                                                              stamp=p["stamp"], label=label, teyla_bin=teyla_bin,
                                                              args=o["args"],
-                                                             extra=PROCS_LINE + "\n" if label == SIMS_LABEL and orphan_kill_enabled() else ""))
-    p["wrapper"].chmod(0o755)
+                                                             extra=PROCS_LINE + "\n" if label == SIMS_LABEL and orphan_kill_enabled() else ""),
+           0o755)
     p["log"].parent.mkdir(parents=True, exist_ok=True)
     p["plist"].parent.mkdir(parents=True, exist_ok=True)
-    p["plist"].write_text(INTERVAL_PLIST_TEMPLATE.format(label=label, wrapper=p["wrapper"], interval=o["interval"],
+    _write(p["plist"], INTERVAL_PLIST_TEMPLATE.format(label=label, wrapper=p["wrapper"], interval=o["interval"],
                                                          log=p["log"], env_plist=env_plist))
     lines = [f"wrote {p['wrapper']}", f"wrote {p['plist']}"]
     if sys.platform == "darwin":
@@ -524,14 +535,13 @@ def install(if_stale: bool = False, dry: bool = False) -> list[str]:
     env_plist, env_sh = _env_plist(env), _env_sh(env)
 
     DAILY_WRAPPER_PATH.parent.mkdir(parents=True, exist_ok=True)
-    DAILY_WRAPPER_PATH.write_text(DAILY_WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin, env_sh=env_sh,
-                                                                stamp=DAILY_STAMP_PATH, label=DAILY_LABEL,
-                                                                update_line=_update_line()))
-    DAILY_WRAPPER_PATH.chmod(0o755)
+    _write(DAILY_WRAPPER_PATH, DAILY_WRAPPER_TEMPLATE.format(teyla_bin=teyla_bin, env_sh=env_sh,
+                                                            stamp=DAILY_STAMP_PATH, label=DAILY_LABEL,
+                                                            update_line=_update_line()), 0o755)
     lines.append(f"wrote {DAILY_WRAPPER_PATH}")
     DAILY_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     DAILY_PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
-    DAILY_PLIST_PATH.write_text(DAILY_PLIST_TEMPLATE.format(label=DAILY_LABEL, wrapper=DAILY_WRAPPER_PATH,
+    _write(DAILY_PLIST_PATH, DAILY_PLIST_TEMPLATE.format(label=DAILY_LABEL, wrapper=DAILY_WRAPPER_PATH,
                                                             log=DAILY_LOG_PATH, env_plist=env_plist))
     lines.append(f"wrote {DAILY_PLIST_PATH}")
     if sys.platform == "darwin":
@@ -544,14 +554,13 @@ def install(if_stale: bool = False, dry: bool = False) -> list[str]:
                                      runs_root=_runs_root(), models_watch_line=_watch_line())
     if optional_enabled(SWEEP_LABEL):
         weekly += f"# Disk sweep ([storage] sweep_agent): old DerivedData, caches, logs, grok archive.\n{SWEEP_LINE}\n"
-    WRAPPER_PATH.write_text(weekly)
-    WRAPPER_PATH.chmod(0o755)
+    _write(WRAPPER_PATH, weekly, 0o755)
     lines.append(f"wrote {WRAPPER_PATH}")
 
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
-    PLIST_PATH.write_text(PLIST_TEMPLATE.format(label=LABEL, wrapper=WRAPPER_PATH, log=LOG_PATH, env_plist=env_plist,
+    _write(PLIST_PATH, PLIST_TEMPLATE.format(label=LABEL, wrapper=WRAPPER_PATH, log=LOG_PATH, env_plist=env_plist,
                                                 **SCHEDULE[LABEL]))
     lines.append(f"wrote {PLIST_PATH}")
 
@@ -659,10 +668,20 @@ def missed(label: str, now: "datetime.datetime | None" = None) -> "datetime.date
     return due
 
 
-def catch_up(dry: bool = False, now: "datetime.datetime | None" = None) -> list[str]:
+def catch_up(dry: bool = False, now: "datetime.datetime | None" = None, heal: bool = False) -> list[str]:
     """Run every job launchd skipped, daily first. Output goes to the job's own log, as it would
-    under launchd. The wrapper that is calling us (TEYLA_IN_ROUTINE) is never re-run."""
+    under launchd. The wrapper that is calling us (TEYLA_IN_ROUTINE) is never re-run.
+
+    heal (the CLI's catch-up, run by the daily wrapper and the session-start hook): first rewrite
+    and reload the routines when they are stale or missing. On 2026-10-10 the sims, sweep and load
+    agents vanished; doctor said FIX each morning, nobody ran it, and the next day the Mac filled
+    its disk and hung with no guard running. What doctor knows how to fix, catch-up now fixes."""
     lines = []
+    if heal and is_stale():
+        if dry:
+            lines.append("REPAIR: the routines are stale or missing — would run `teyla routine install`")
+        else:
+            lines += [f"REPAIR: {l}" for l in install(if_stale=True) if not l.startswith("to remove:")]
     calling = os.environ.get("TEYLA_IN_ROUTINE", "")
     for label in (DAILY_LABEL, LABEL):
         due = missed(label, now)
