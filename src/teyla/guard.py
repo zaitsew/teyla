@@ -337,15 +337,16 @@ def disk_sweep(snap: load.Snapshot, conf: dict, now: float, dry: bool = False) -
         return []
     stamp = _disk_sweep_stamp()
     try:
-        if now - stamp.stat().st_mtime < DISK_SWEEP_EVERY_S:
+        # The time is the tick's clock, kept in the file: an mtime would be the wall clock.
+        if 0 <= now - float(stamp.read_text().strip()) < DISK_SWEEP_EVERY_S:
             return []
-    except OSError:
+    except (OSError, ValueError):
         pass
     head = f"disk {load.gb(snap.disk_free_bytes)} free (under {urgent:g} GB): "
     if dry:
         return [head + "would run the temp sweep"]
     config.private_dir(stamp.parent)
-    stamp.touch()
+    stamp.write_text(f"{now}\n")
     res = storage_sweep.run(temp_only=True)
     storage_sweep.write_log(res["lines"])
     if res.get("busy"):
