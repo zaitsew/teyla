@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.20.1 — 2026-10-11 — the guard stays installed, and watches the disk
+
+On 2026-10-10 a test in Teyla's own suite reached the real `~/Library/LaunchAgents`: it rewrote the daily
+wrapper with a fake binary path and deleted the guard, simulator and sweep agents. Doctor said FIX every
+morning; nothing acted. On 2026-10-11 the Mac went from 16 GB to 1 GB free in one morning of agent work and
+hung without a panic report — APFS swap shares the disk, so a full disk and a memory hang are one incident.
+
+- **Tests can no longer touch launchd.** A suite-wide fixture moves every launchd path of `routine_install`
+  and `control.triggers` into tmp, refuses an unstubbed load or unload, and fails a test that runs a
+  launchctl verb that changes launchd.
+- **`teyla routine catch-up` repairs the routines.** Run by the daily wrapper and at every session start, it
+  first runs `routine install --if-stale` and logs `REPAIR:` lines: an agent whose plist vanished is back
+  within one session. The job it runs inside is never booted out (that would end the repair), and wrappers
+  are written by rename, since bash reads a running script by offset.
+- **Free disk is part of the machine guard.** `teyla load` reports it; under `guard.disk_warn_gb` (25) the
+  verdict is BUSY, under `guard.disk_crit_gb` (10) CRITICAL — heavy work is refused, the alert and
+  notification fire. `guard tick` runs the temp sweep itself under `[storage] sweep_urgent_free_gb` (20), at
+  most every 15 minutes. `load.tsv` records the free disk for `teyla crash`.
+
 ## 0.20.0 — 2026-10-09 — machine guard: agents stop overloading the Mac
 
 On 2026-10-09 a 24 GB Mac kernel-panicked (panicked task `simctl`) while dozens of agent sessions each
