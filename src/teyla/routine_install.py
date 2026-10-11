@@ -451,8 +451,23 @@ def _real_launch_agents() -> pathlib.Path:
     return pathlib.Path(pwd.getpwuid(os.getuid()).pw_dir) / "Library" / "LaunchAgents"
 
 
+def _inside(label: str) -> str | None:
+    """The line to report instead of touching `label`, when this process runs inside that job.
+
+    `launchctl bootout` of the job we run in sends it SIGTERM: the wrapper, `update`'s routine
+    install and catch-up's repair die mid-way and the job stays unloaded. So the job we run in is
+    left loaded. Its plist names `bash <wrapper>`, read afresh on every run, so a rewritten
+    wrapper still applies; a changed plist applies at the next load (login, or a `routine install`
+    run from a shell)."""
+    if os.environ.get("TEYLA_IN_ROUTINE") == label:
+        return f"left {label} loaded — this is its own run, and a bootout would end it; the rewritten plist applies at the next load"
+    return None
+
+
 def _load(plist: pathlib.Path, label: str) -> str:
     uid = os.getuid()
+    if (inside := _inside(label)):
+        return inside
     # gui/<uid> is the real account's launchd whatever $HOME says. A plist written under a moved
     # HOME has the real job's label: bootstrapping it replaced the real daily and weekly jobs with
     # ones pointing into a throwaway directory (seen when a prompt was verified under a scratch HOME).
@@ -473,6 +488,8 @@ def _load(plist: pathlib.Path, label: str) -> str:
 def _unload(plist: pathlib.Path, label: str) -> str:
     """The inverse of _load, with the same refusal to touch the real launchd from a moved HOME."""
     uid = os.getuid()
+    if (inside := _inside(label)):
+        return inside
     if plist.resolve().parent != _real_launch_agents().resolve() and os.environ.get("TEYLA_LAUNCHD_ANY_HOME") != "1":
         return f"NOT UNLOADED {label} — {plist} is outside {_real_launch_agents()} ($HOME is moved); launchd's gui/{uid} jobs were left alone"
     subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"], capture_output=True, text=True)

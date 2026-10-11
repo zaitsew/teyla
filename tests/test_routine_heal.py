@@ -10,6 +10,8 @@ import pytest
 
 from teyla import config, routine_install as ri
 
+_real_load, _real_unload = ri._load, ri._unload  # before any fixture stubs them
+
 
 def test_a_test_without_its_own_fixture_cannot_touch_the_real_home(monkeypatch):
     """No local fixture at all: the conftest net alone keeps install() in tmp and off launchd."""
@@ -73,3 +75,20 @@ def test_wrappers_are_replaced_not_rewritten_in_place(home):
     assert ri.DAILY_WRAPPER_PATH.stat().st_ino != before
     assert ri.DAILY_WRAPPER_PATH.stat().st_mode & 0o777 == 0o755
     assert not list(ri.DAILY_WRAPPER_PATH.parent.glob(".*.tmp"))
+
+
+def test_the_daily_job_repairing_itself_never_boots_itself_out(home, monkeypatch):
+    """Codex review P1: catch-up runs inside the daily job; `launchctl bootout` of that job would
+    SIGTERM the repair half-way and leave the daily unloaded."""
+    monkeypatch.setattr(ri, "_load", _real_load)
+    monkeypatch.setattr(ri, "_unload", _real_unload)
+    monkeypatch.setenv("TEYLA_LAUNCHD_ANY_HOME", "1")
+    calls = []
+    monkeypatch.setattr(ri.subprocess, "run", lambda cmd, *a, **k: calls.append(cmd) or type("R", (), {"returncode": 0, "stderr": "", "stdout": ""})())
+    config.set_value("guard.agent", "true")
+    monkeypatch.setenv("TEYLA_IN_ROUTINE", ri.DAILY_LABEL)
+    lines = ri.catch_up(heal=True)
+    assert not any(ri.DAILY_LABEL in " ".join(map(str, c)) for c in calls if c[0] == "launchctl"), calls
+    assert any(c[:2] == ["launchctl", "bootstrap"] and str(ri.optional_paths(ri.LOAD_LABEL)["plist"]) in c for c in calls), calls
+    assert any(l.startswith(f"REPAIR: left {ri.DAILY_LABEL} loaded") for l in lines), lines
+
