@@ -10,9 +10,14 @@ records into the real ~/.teyla/corrections/ before this existed. Tests that exer
 HOME-based resolution unset it themselves."""
 from __future__ import annotations
 
+import os
+import pathlib
+import subprocess
+
 import pytest
 
-from teyla import config, net, providers, update
+from teyla import config, net, providers, routine_install, update
+from teyla.control import triggers
 from teyla.adapters import claude_code, codex, cursor, grok, hermes
 
 
@@ -60,3 +65,38 @@ def _no_real_crash_reports(monkeypatch):
     must not depend on whether this Mac has panicked this week. Tests that want reports pass roots."""
     from teyla import crash
     monkeypatch.setattr(crash, "DEFAULT_ROOTS", [])
+
+
+_LAUNCHCTL_WRITES = {"bootstrap", "bootout", "load", "unload", "enable", "disable", "kickstart", "kill", "remove", "submit"}
+
+
+@pytest.fixture(autouse=True)
+def _no_real_launchd(tmp_path_factory, monkeypatch):
+    """No test reaches this Mac's launchd or ~/Library/LaunchAgents, whatever its own fixture forgets.
+
+    On 2026-10-10 a runs_root test isolated only routine_install.WRAPPER_PATH. Its install() wrote the
+    real daily.sh (naming the fake /opt/tools/bin/teyla) and the real daily and weekly plists, and,
+    since its config had the optional agents off, booted out and deleted the real sims, sweep and
+    load agents. The machine ran a day without its guard and sweep, filled its disk and hung.
+
+    Every Path constant of routine_install and control.triggers under the real home is moved into
+    a tmp home; `_real_launch_agents` names a directory nothing is written to, so `_load` and
+    `_unload` refuse any plist a test did not stub them for; and a launchctl verb that changes
+    launchd fails the test. A test that runs a fake launchctl first on PATH sets
+    TEYLA_LAUNCHD_ANY_HOME=1, as before."""
+    home = tmp_path_factory.mktemp("launchd-home")
+    real = pathlib.Path.home()
+    for mod in (routine_install, triggers):
+        for name, value in list(vars(mod).items()):
+            if isinstance(value, pathlib.Path) and value.is_relative_to(real):
+                monkeypatch.setattr(mod, name, home / value.relative_to(real))
+    monkeypatch.setattr(routine_install, "_real_launch_agents", lambda: home / "no-real-launchd")
+    real_run = subprocess.run
+
+    def run(cmd, *a, **k):
+        argv = cmd if isinstance(cmd, (list, tuple)) else str(cmd).split()
+        if (argv and os.path.basename(str(argv[0])) == "launchctl" and len(argv) > 1
+                and str(argv[1]) in _LAUNCHCTL_WRITES and os.environ.get("TEYLA_LAUNCHD_ANY_HOME") != "1"):
+            raise AssertionError(f"a test reached the real launchctl: {' '.join(map(str, argv))}")
+        return real_run(cmd, *a, **k)
+    monkeypatch.setattr(subprocess, "run", run)
