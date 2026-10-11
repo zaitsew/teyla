@@ -34,8 +34,9 @@ the native `codex` it starts, `gradlew` and the JVM it starts) are one.
 
 Verdict (`assess`). CRITICAL when memory pressure is 4, swap used >= `guard.swap_crit_pct` of RAM while pressure is >= 2, the
 one-minute load >= `guard.load_crit_per_core` x cores, or the compressor >= `guard.compressor_crit_pct`
-of RAM. BUSY for the warn thresholds of the same four, or more booted simulators than
-`guard.max_sims`, or more build drivers than `guard.max_builds`.
+of RAM, or free disk under `guard.disk_crit_gb` (APFS swap lives in the same container, so a full disk
+leaves the memory compressor nowhere to go). BUSY for the warn thresholds of the same five, or more booted
+simulators than `guard.max_sims`, or more build drivers than `guard.max_builds`.
 
 Admission (`admit`). Any kind is refused at CRITICAL. `build` is also refused while `guard.max_builds`
 drivers run, `sim` while `guard.max_sims` simulators are booted, `lane` while `guard.max_lanes` headless
@@ -56,6 +57,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import sys
 import time
 from typing import Callable
@@ -148,6 +150,7 @@ class Snapshot:
     swap_used_bytes: int | None = None
     pressure: int | None = None                # 1 normal, 2 warn, 4 critical
     compressor_bytes: int | None = None
+    disk_free_bytes: int | None = None         # the home volume
     procs: Procs = dataclasses.field(default_factory=Procs)
 
     def to_json(self) -> dict:
@@ -504,6 +507,14 @@ def classify(rows: list[Row]) -> Procs:
 Runner = Callable[..., "tuple[int, str]"]
 
 
+def disk_free() -> int | None:
+    """Free bytes on the home volume; None when it cannot be read."""
+    try:
+        return shutil.disk_usage(str(pathlib.Path.home())).free
+    except OSError:
+        return None
+
+
 def snapshot(run: Runner = run_command, now: dt.datetime | None = None) -> Snapshot | None:
     """One `sysctl` and one `ps`. None when `ps` could not answer (the processes are then
     unknown, not zero); an unreadable sysctl only leaves those fields None."""
@@ -518,7 +529,8 @@ def snapshot(run: Runner = run_command, now: dt.datetime | None = None) -> Snaps
     total, used = s["swap"]
     return Snapshot(time=when.isoformat(timespec="seconds"), ram_bytes=s["ram_bytes"], ncpu=s["ncpu"],
                     load1=load[0], load5=load[1], load15=load[2], swap_total_bytes=total, swap_used_bytes=used,
-                    pressure=s["pressure"], compressor_bytes=s["compressor_bytes"], procs=classify(rows))
+                    pressure=s["pressure"], compressor_bytes=s["compressor_bytes"], disk_free_bytes=disk_free(),
+                    procs=classify(rows))
 
 
 def safe_snapshot(run: Runner = run_command) -> Snapshot | None:
@@ -579,6 +591,15 @@ def assess(snap: Snapshot, conf: dict | None = None) -> Verdict:
         elif comp >= _num(conf, "compressor_warn_pct"):
             busy.append(f"{label} (warn ≥ {_num(conf, 'compressor_warn_pct'):g}%)")
 
+    free = snap.disk_free_bytes
+    if free is not None:
+        label = f"{gb(free)} free on disk"
+        crit_gb, warn_gb = _num(conf, "disk_crit_gb"), _num(conf, "disk_warn_gb")
+        if free < crit_gb * GIB:
+            crit.append(f"{label} (critical < {crit_gb:g} GB: swap and builds have no room left)")
+        elif free < warn_gb * GIB:
+            busy.append(f"{label} (warn < {warn_gb:g} GB)")
+
     max_sims, max_builds = _num(conf, "max_sims"), _num(conf, "max_builds")
     if max_sims > 0 and p.sims > max_sims:
         busy.append(f"{p.sims} simulators booted (max {max_sims:g})")
@@ -616,6 +637,9 @@ def admit(kind: str, snap: Snapshot, conf: dict | None = None) -> tuple[bool, st
         lines.append("Let the builds already running finish instead of starting another in parallel.")
     else:
         lines.append("Run the work in a session you already have instead of starting another lane.")
+    if snap.disk_free_bytes is not None and snap.disk_free_bytes < _num(conf, "disk_crit_gb") * GIB:
+        lines.append("Free disk first: `teyla storage sweep --temp` and `teyla storage clean --apply` remove idle"
+                     " build output and finished worktrees; `teyla storage` lists what else holds space.")
     lines.append(f"Or wait for a slot: `teyla load --wait --kind {kind}` (exit 0 when free, 3 on timeout).")
     lines.append("Or free capacity yourself: shut down the simulators you booted and stop idle Gradle/Kotlin"
                  " daemons you started; leave other agents' processes alone.")
@@ -659,9 +683,9 @@ def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, po
 
 COLUMNS = ["time", "level", "pressure", "load1", "swap_used_bytes", "ram_bytes", "compressor_bytes", "sims",
            "builds", "compiler_rss_bytes", "daemon_rss_bytes", "claude", "codex", "grok", "lanes",
-           "chrome_rss_bytes", "vm_rss_bytes", "top3"]
+           "chrome_rss_bytes", "vm_rss_bytes", "top3", "disk_free_bytes"]
 _INT_COLS = {"pressure", "swap_used_bytes", "ram_bytes", "compressor_bytes", "sims", "builds", "compiler_rss_bytes",
-             "daemon_rss_bytes", "claude", "codex", "grok", "lanes", "chrome_rss_bytes", "vm_rss_bytes"}
+             "daemon_rss_bytes", "claude", "codex", "grok", "lanes", "chrome_rss_bytes", "vm_rss_bytes", "disk_free_bytes"}
 
 
 def record_path() -> pathlib.Path:
@@ -680,7 +704,8 @@ def record_fields(snap: Snapshot, verdict: Verdict) -> list[str]:
     p = snap.procs
     vals = [snap.time, verdict.level, snap.pressure, None if snap.load1 is None else f"{snap.load1:.2f}",
             snap.swap_used_bytes, snap.ram_bytes, snap.compressor_bytes, p.sims, p.builds, p.compiler_rss_bytes,
-            p.daemon_rss_bytes, p.claude, p.codex, p.grok, p.lanes, p.chrome_rss_bytes, p.vm_rss_bytes, _top3(snap)]
+            p.daemon_rss_bytes, p.claude, p.codex, p.grok, p.lanes, p.chrome_rss_bytes, p.vm_rss_bytes, _top3(snap),
+            snap.disk_free_bytes]
     return ["" if v is None else str(v) for v in vals]
 
 
@@ -739,6 +764,8 @@ def _when(v) -> float | None:
 
 def parse_record(line: str) -> dict | None:
     cells = line.rstrip("\n").split("\t")
+    if len(cells) == len(COLUMNS) - 1:
+        cells.append("")                     # a row from before disk_free_bytes was recorded
     if len(cells) != len(COLUMNS) or line.startswith("#"):
         return None
     rec: dict = dict(zip(COLUMNS, cells))
@@ -798,6 +825,8 @@ def render(snap: Snapshot, verdict: Verdict) -> str:
     if snap.pressure is not None:
         mem.append("pressure " + {1: "normal", 2: "warn", 4: "critical"}.get(snap.pressure, str(snap.pressure)))
     lines.append("memory: " + " · ".join(mem))
+    if snap.disk_free_bytes is not None:
+        lines.append(f"disk: {gb(snap.disk_free_bytes)} free")
     if snap.load1 is not None:
         lines.append(f"cpu: load {snap.load1:.1f} / {snap.load5:.1f} / {snap.load15:.1f} on {snap.ncpu or '?'} cores")
     lines.append(f"sims: {p.sims} booted" + (f" ({', '.join(u[:8] for u in p.sim_udids)})" if p.sim_udids else ""))

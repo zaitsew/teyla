@@ -27,6 +27,11 @@
    `guard stopped <kind> daemon pid <pid> <GB> idle <min>m` goes to `~/.teyla/storage.log`. Only the
    current user's Gradle/Kotlin daemons are ever touched. A daemon an IDE keeps for itself is reaped too
    once idle; the IDE starts a new one on its next build. `--dry` reports and changes nothing at all.
+
+4. Disk (`guard.disk_sweep`, default true). Under `[storage] sweep_urgent_free_gb` (20) free, the tick runs
+   `storage sweep --temp` itself, at most once per `DISK_SWEEP_EVERY_S` (15 min): the hourly sweep agent
+   alone let a disk go from 16 GB to 1 GB free in one morning (2026-10-11). Under that threshold the sweep
+   already uses its urgent ages (temp build output idle 2 h). What it removed goes to the sweep log.
 """
 from __future__ import annotations
 
@@ -311,6 +316,43 @@ def reap(idle: list[dict], env: Env, dry: bool = False) -> list[str]:
     return lines + problems
 
 
+# --- disk ---------------------------------------------------------------------------------------------------
+
+DISK_SWEEP_EVERY_S = 15 * 60
+
+
+def _disk_sweep_stamp() -> pathlib.Path:
+    from .corrections import teyla_home
+    return teyla_home() / "state" / "guard-disk-sweep.last"
+
+
+def disk_sweep(snap: load.Snapshot, conf: dict, now: float, dry: bool = False) -> list[str]:
+    """Run the temp sweep now when the disk is under the urgent threshold and the last such run is
+    older than DISK_SWEEP_EVERY_S. Returns what was done, for the agent's log."""
+    from . import storage_sweep
+    if conf.get("disk_sweep") is False or snap.disk_free_bytes is None:
+        return []
+    urgent = storage_sweep.settings()["urgent_free_gb"]
+    if snap.disk_free_bytes >= urgent * load.GIB:
+        return []
+    stamp = _disk_sweep_stamp()
+    try:
+        if now - stamp.stat().st_mtime < DISK_SWEEP_EVERY_S:
+            return []
+    except OSError:
+        pass
+    head = f"disk {load.gb(snap.disk_free_bytes)} free (under {urgent:g} GB): "
+    if dry:
+        return [head + "would run the temp sweep"]
+    config.private_dir(stamp.parent)
+    stamp.touch()
+    res = storage_sweep.run(temp_only=True)
+    storage_sweep.write_log(res["lines"])
+    if res.get("busy"):
+        return [head + "a sweep is already running"]
+    return [head + f"temp sweep removed {load.gb(res['total'])}, {load.gb(res['free_after'])} free now"]
+
+
 # --- one tick ---------------------------------------------------------------------------------------------
 
 def tick(conf: dict | None = None, env: Env | None = None, dry: bool = False) -> dict:
@@ -335,6 +377,7 @@ def tick(conf: dict | None = None, env: Env | None = None, dry: bool = False) ->
         res["lines"] += update_alert(snap, verdict, conf, env)
     if idle_limit_min(conf) > 0:
         res["lines"] += reap(idle_daemons(snap, conf, now, record=not dry), env, dry=dry)
+    res["lines"] += disk_sweep(snap, conf, now, dry=dry)
     return res
 
 

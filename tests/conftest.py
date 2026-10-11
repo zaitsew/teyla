@@ -60,3 +60,11 @@ def _no_real_crash_reports(monkeypatch):
     must not depend on whether this Mac has panicked this week. Tests that want reports pass roots."""
     from teyla import crash
     monkeypatch.setattr(crash, "DEFAULT_ROOTS", [])
+
+
+@pytest.fixture(autouse=True)
+def _no_real_disk(monkeypatch):
+    """`load.snapshot` reads the free space of the real home volume. A verdict in a test must not
+    depend on how full this Mac is, and `guard tick` must never sweep it. Tests pass disk_free_bytes."""
+    from teyla import load
+    monkeypatch.setattr(load, "disk_free", lambda: None)
