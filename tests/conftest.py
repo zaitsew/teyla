@@ -100,3 +100,11 @@ def _no_real_launchd(tmp_path_factory, monkeypatch):
             raise AssertionError(f"a test reached the real launchctl: {' '.join(map(str, argv))}")
         return real_run(cmd, *a, **k)
     monkeypatch.setattr(subprocess, "run", run)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_disk(monkeypatch):
+    """`load.snapshot` reads the free space of the real home volume. A verdict in a test must not
+    depend on how full this Mac is, and `guard tick` must never sweep it. Tests pass disk_free_bytes."""
+    from teyla import load
+    monkeypatch.setattr(load, "disk_free", lambda: None)

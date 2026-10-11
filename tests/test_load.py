@@ -392,7 +392,8 @@ def test_guard_defaults():
     g = config.DEFAULTS["guard"]
     assert g == {"enabled": True, "max_sims": 2, "max_builds": 2, "max_lanes": 0, "swap_warn_pct": 25, "swap_crit_pct": 40,
                  "compressor_warn_pct": 30, "compressor_crit_pct": 45, "load_warn_per_core": 4.0, "load_crit_per_core": 10.0,
-                 "wait_timeout_s": 900, "agent": False, "gradle_idle_min": 30, "alert": True}
+                 "wait_timeout_s": 900, "agent": False, "gradle_idle_min": 30, "alert": True,
+                 "disk_warn_gb": 25, "disk_crit_gb": 10, "disk_sweep": True}
     assert load.guard_conf({"guard": {"max_sims": 5}})["max_sims"] == 5
     assert load.guard_conf({})["max_sims"] == 2
 
@@ -433,7 +434,7 @@ def test_record_writes_a_header_then_one_line_and_reads_back(tmp_path):
     lines = path.read_text().splitlines()
     assert lines[0] == "#" + "\t".join(load.COLUMNS) and len(lines) == 3
     assert len(lines[1].split("\t")) == len(load.COLUMNS)
-    assert lines[1].endswith("Google Chrome:11.0,a_b_c:4.0,java:2.0")
+    assert lines[1].split("\t")[load.COLUMNS.index("top3")] == "Google Chrome:11.0,a_b_c:4.0,java:2.0"
     recs = load.read_records(path=path)
     assert len(recs) == 2
     r = recs[0]

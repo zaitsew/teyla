@@ -168,7 +168,11 @@ DEFAULTS = {
               "swap_warn_pct": 25, "swap_crit_pct": 40, "compressor_warn_pct": 30, "compressor_crit_pct": 45,
               "load_warn_per_core": 4.0, "load_crit_per_core": 10.0, "wait_timeout_s": 900,
               # `teyla guard tick`: the launchd recorder agent (opt-in), the idle-daemon reaper, the alert file.
-              "agent": False, "gradle_idle_min": 30, "alert": True},
+              "agent": False, "gradle_idle_min": 30, "alert": True,
+              # Free disk on the home volume. APFS swap shares the container: a full disk leaves swap no
+              # room, and the Mac hangs under memory pressure without writing a panic (2026-10-11).
+              # disk_sweep: under [storage] sweep_urgent_free_gb, `guard tick` runs the temp sweep itself.
+              "disk_warn_gb": 25, "disk_crit_gb": 10, "disk_sweep": True},
     # The plugin's opt-in hooks (plugin/hooks/context-budget.sh, land-check.sh). Off by default: where
     # the same hooks are already wired some other way, a second copy doubles each note.
     # The hooks read these keys from the file with awk/tomllib, not through this module.
