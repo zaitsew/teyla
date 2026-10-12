@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.20.2 — 2026-10-12 — a seen model is not an adopted model
+
+Haiku 5.5 shipped on 2026-10-07 and was acknowledged with `teyla models watch --ack` the next day. The
+Saturday weekly then said "new models: none", and the list of repos still calling Haiku 4.5 went to a
+report file with no reader. Acknowledging a model said it was seen; nothing said it was not yet used.
+
+- **The digest names the adoption gap.** `teyla models watch` keeps its live superseded rows in
+  `~/.teyla/state/models-watch.json`, and the digest shows `models: N file(s) in M repo(s) still name
+  superseded ids: old → new` until a scan finds none. A scan older than 14 days is ignored.
+- **PRICE-STALE reads versions correctly.** A dated variant needs a date suffix: `claude-opus-5-5` is no
+  longer a dated `claude-opus-5`, which had flagged Opus 5 against Opus 5.5's price.
+- `pricing.py` prices `claude-haiku-5-5` ($0.10/$0.50 per 1M up to 100K prompt tokens; the 5x card above
+  that is not modelled).
+
 ## 0.20.1 — 2026-10-11 — the guard stays installed, and watches the disk
 
 On 2026-10-10 a test in Teyla's own suite reached the real `~/Library/LaunchAgents`: it rewrote the daily
