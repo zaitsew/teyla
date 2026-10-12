@@ -28,7 +28,8 @@ API spike. It posts a notification, writes `~/.teyla/spend.alert` for the sessio
 does not say the same thing again the next day unless the amount grew by a quarter.
 
 `--by-day` is the per-day view: total cost, subagent cost, and the subagents' cost and calls by
-model tier.
+model family (Opus and Sonnet share a ladder tier, so only the family shows one creeping into the
+other's work), with Opus's share. `teyla lanes` is the per-subagent-type view.
 """
 from __future__ import annotations
 
@@ -43,6 +44,7 @@ import sys
 from collections import Counter, defaultdict
 
 from . import config
+from .pricing import FAMILIES
 
 # W1/W5: a session under this is not worth a line even when it produced nothing. Spend is heavily
 # skewed: a small share of the sessions is most of the money, and below this a line costs more
@@ -415,7 +417,7 @@ def report(days: int = 7, rows=None, actions=None, with_actions: bool = True, bi
     return dict(days=days, total_usd=total, sub_usd=sum(r["sub_usd"] for r in rows), waste_usd=waste,
                 product_waste_usd=sum(f["usd"] for f in F if f["id"] == "W7"),
                 by_harness=dict(by_harness.most_common()), by_model=dict(by_model.most_common()),
-                findings=F, actions=actions,
+                findings=F, actions=actions, subagent_mix=subagent_mix(days, rows),
                 top_sessions=[{k: v for k, v in r.items() if k not in DAY_KEYS} for r in rows[:5]], sessions=len(rows), coverage=coverage,
                 providers=providers.totals(bills, days))
 
@@ -473,15 +475,29 @@ def render(rep: dict) -> str:
 
 # --- digest and daily alert ------------------------------------------------------------------
 
+def opus_candidate(rep: dict, cfg: dict | None = None) -> list[dict]:
+    """One digest line while Opus ran more than `spend.opus_share_max` of the window's subagent cost
+    (at least FINDING_FLOOR_USD of it: a share of pennies is not news). Opus and Sonnet are one ladder
+    tier, so no waste rule sees Opus creeping back into build lanes; this does."""
+    mix = rep.get("subagent_mix") or {}
+    share = mix.get("opus_share")
+    if share is None or mix.get("opus_usd", 0.0) < FINDING_FLOOR_USD or share <= setting("opus_share_max", cfg):
+        return []
+    return [dict(rank=1 if mix["opus_usd"] >= 25 else 4, id="spend:opus-share",
+                 text=f"Opus ran {share * 100:.0f}% of subagent cost ({mix['opus_calls']} lanes); "
+                      "POLICY: Opus only with a stated reason",
+                 step=f"teyla lanes --days {mix['days']}", cmd=True)]
+
+
 def digest_candidates(rep: dict) -> list[dict]:
     """Waste findings as digest candidates (teyla.digest.candidates' shape). A finding worth $25 or
-    more ranks with high advice; the rest with medium."""
+    more ranks with high advice; the rest with medium. Then the Opus share, when it is over its limit."""
     out = []
     for f in rep["findings"]:
         money = _money(f["usd"]) if f["usd"] is not None else ""
         out.append(dict(rank=1 if (f["usd"] or 0) >= 25 or f["id"] == "W8" else 4, id=f"spend:{f['id']}",
                         text=f"{f['id']} {money} {f['title']}".replace("  ", " "), step=f["fix"], cmd=False))
-    return out
+    return out + opus_candidate(rep)
 
 
 def _top(d: dict, n: int = 3) -> list[tuple[str, float]]:
@@ -637,21 +653,14 @@ def write_alert_file(lines: list[str]) -> None:
 
 # --- per day ---------------------------------------------------------------------------------
 
-TIERS = ("orchestrate", "volume", "triage", "unknown")
 
-
-def by_day(days: int = 7, rows: list[dict] | None = None, today: _dt.date | None = None) -> list[dict]:
-    """One row per local day, oldest first, for the last `days` days including today: total cost, the
-    subagents' cost, and the subagents' cost and calls by model tier (a model with no price is
-    "unknown"), with the top tier's share of the subagent cost. Cost is split by the day each message
-    was sent, not by the session's start; harnesses without per-message times book a session on its
-    last day (see _day_fields)."""
-    from .pricing import tier
+def _by_day_raw(days: int, rows: list[dict] | None, today: _dt.date | None) -> dict:
+    from .pricing import family, tier
     today = today or _dt.date.today()
     window = [(today - _dt.timedelta(days=i)).isoformat() for i in range(days - 1, -1, -1)]
     rows = session_rows(days + 1) if rows is None else rows
-    out = {d: dict(day=d, total_usd=0.0, sub_usd=0.0, sessions=0,
-                   tiers={t: dict(usd=0.0, calls=0) for t in TIERS}) for d in window}
+    out = {d: dict(day=d, total_usd=0.0, sub_usd=0.0, top_usd=0.0, sessions=0,
+                   families={f: dict(usd=0.0, calls=0) for f in FAMILIES}) for d in window}
     for r in rows:
         touched = set()
         for d, usd in (r.get("day_usd") or {}).items():
@@ -662,30 +671,60 @@ def by_day(days: int = 7, rows: list[dict] | None = None, today: _dt.date | None
             if d in out:
                 for m, usd in mm.items():
                     out[d]["sub_usd"] += usd
-                    out[d]["tiers"][tier(m)]["usd"] += usd
+                    out[d]["families"][family(m)]["usd"] += usd
+                    if tier(m) == "orchestrate":
+                        out[d]["top_usd"] += usd
         for d, m in r.get("sub_calls") or []:
             if d in out:
-                out[d]["tiers"][tier(m)]["calls"] += 1
+                out[d]["families"][family(m)]["calls"] += 1
         for d in touched:
             out[d]["sessions"] += 1
+    return out
+
+
+def _share(part: float, whole: float) -> float | None:
+    return round(part / whole, 3) if whole else None
+
+
+def by_day(days: int = 7, rows: list[dict] | None = None, today: _dt.date | None = None) -> list[dict]:
+    """One row per local day, oldest first, for the last `days` days including today: total cost, the
+    subagents' cost, and the subagents' cost and calls by model family (opus / sonnet / haiku / fable /
+    other — Opus and Sonnet are one ladder tier, so only the family shows Opus creeping into build
+    lanes), with the top (orchestrate) tier's share of the subagent cost and Opus's. Cost is split by
+    the day each message was sent, not by the session's start; harnesses without per-message times
+    book a session on its last day (see _day_fields)."""
+    out = _by_day_raw(days, rows, today)
     for row in out.values():
-        top = row["tiers"]["orchestrate"]["usd"]
-        row["top_share"] = round(top / row["sub_usd"], 3) if row["sub_usd"] else None
+        row["opus_share"] = _share(row["families"]["opus"]["usd"], row["sub_usd"])
+        row["top_share"] = _share(row.pop("top_usd"), row["sub_usd"])  # orchestrate-tier models' share
         row["total_usd"] = round(row["total_usd"], 2)
         row["sub_usd"] = round(row["sub_usd"], 2)
-        for v in row["tiers"].values():
+        for v in row["families"].values():
             v["usd"] = round(v["usd"], 2)
     return list(out.values())
 
 
+def subagent_mix(days: int = 7, rows: list[dict] | None = None, today: _dt.date | None = None) -> dict:
+    """The last `days` days of subagent cost and calls by model family, and Opus's share of that cost
+    (None when subagents cost nothing). The input of the digest line and `spend.opus_share_max`."""
+    out = _by_day_raw(days, rows, today)
+    fam = {f: dict(usd=sum(d["families"][f]["usd"] for d in out.values()),
+                   calls=sum(d["families"][f]["calls"] for d in out.values())) for f in FAMILIES}
+    sub = sum(d["sub_usd"] for d in out.values())
+    return dict(days=days, sub_usd=sub, families=fam, opus_usd=fam["opus"]["usd"],
+                opus_calls=fam["opus"]["calls"], opus_share=_share(fam["opus"]["usd"], sub))
+
+
 def render_by_day(rows: list[dict]) -> str:
     cell = lambda v: f"{_money(v['usd'])}/{v['calls']}" if v["usd"] or v["calls"] else "-"
-    L = [f"teyla spend --by-day — API list price; subagent columns are cost/calls by the tier the subagent ran on", "",
-         f"{'day':<10}  {'total':>8}  {'subagents':>9}  " + "  ".join(f"{t:>14}" for t in TIERS) + "  top-tier share"]
+    pct = lambda x: f"{x * 100:.0f}%" if x is not None else "-"
+    L = ["teyla spend --by-day — API list price; subagent columns are cost/calls by the model family the subagent ran on", "",
+         f"{'day':<10}  {'total':>8}  {'subagents':>9}  " + "  ".join(f"{f.capitalize():>13}" for f in FAMILIES)
+         + "  top-tier share  Opus share"]
     for r in rows:
-        share = f"{r['top_share'] * 100:.0f}%" if r["top_share"] is not None else "-"
         L.append(f"{r['day']:<10}  {_money(r['total_usd']):>8}  {_money(r['sub_usd']):>9}  "
-                 + "  ".join(f"{cell(r['tiers'][t]):>14}" for t in TIERS) + f"  {share:>14}")
+                 + "  ".join(f"{cell(r['families'][f]):>13}" for f in FAMILIES)
+                 + f"  {pct(r['top_share']):>14}  {pct(r['opus_share']):>10}")
     return "\n".join(L)
 
 
@@ -719,7 +758,7 @@ def register(sp):
     q.set_defaults(fn=cmd_spend)
     q.add_argument("--days", type=int, default=7)
     q.add_argument("--json", action="store_true")
-    q.add_argument("--by-day", action="store_true", help="one row per day: total, subagent cost, and subagent cost/calls by model tier")
+    q.add_argument("--by-day", action="store_true", help="one row per day: total, subagent cost, and subagent cost/calls by model family (Opus, Sonnet, Haiku, Fable, other), with Opus's share")
     q.add_argument("--alert", action="store_true",
                    help="the daily check: a session over spend.alert_session_usd in the last day, a project or the day over its budget yesterday, Actions past 80%%")
     q.add_argument("--no-write", action="store_true", help="--alert: print only; leave ~/.teyla/spend.alert and the dedupe state alone")

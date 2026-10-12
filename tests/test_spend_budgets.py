@@ -13,7 +13,7 @@ from collections import Counter
 
 import pytest
 
-from teyla import config, monitor, pricing, spend
+from teyla import config, digest, monitor, pricing, spend
 from teyla.adapters import AgentCall, Session, claude_code
 from teyla.advise import advise
 
@@ -347,6 +347,9 @@ def _fixture(tmp_path):
         _reply("2026-10-07T09:06:00Z", "c1", 100_000, "claude-sonnet-5-5"),    # $1 volume, a second call
         _reply("2026-10-07T09:07:00Z", "c2", 100_000, "claude-haiku-4-5"),     # $0.5 triage, same file
     ])
+    _write(str(d / "s1" / "subagents" / "agent-d.jsonl"), [
+        _reply("2026-10-07T09:08:00Z", "d1", 50_000, "claude-opus-5-5"),       # $1 opus: the same ladder tier as sonnet
+    ])
     _write(str(root / "-Users-me-repos-beta" / "s2.jsonl"), [
         {"type": "user", "timestamp": "2026-10-07T15:00:00Z", "cwd": "/Users/me/repos/beta",
          "message": {"role": "user", "content": "go"}},
@@ -360,24 +363,28 @@ def test_adapter_splits_cost_by_the_day_each_message_was_sent(tmp_path):
     assert s.day_usage["2026-10-06"]["claude-fable-5-1"]["output_tokens"] == 1_000_000
     assert s.day_usage["2026-10-07"]["claude-fable-5-1"]["output_tokens"] == 300_000  # 200k + the subagent's 100k
     assert set(s.sub_day_usage) == {"2026-10-07"}
-    assert sorted(s.sub_calls) == [("2026-10-07", "claude-fable-5-1"), ("2026-10-07", "claude-sonnet-5-5"),
-                                   ("2026-10-07", "claude-sonnet-5-5")]
+    assert sorted(s.sub_calls) == [("2026-10-07", "claude-fable-5-1"), ("2026-10-07", "claude-opus-5-5"),
+                                   ("2026-10-07", "claude-sonnet-5-5"), ("2026-10-07", "claude-sonnet-5-5")]
     assert s.to_dict()["day_usage"]["2026-10-06"]["claude-fable-5-1"]["output_tokens"] == 1_000_000
 
 
-def test_by_day_aggregates_total_subagent_cost_and_calls_by_tier(tmp_path):
+def test_by_day_aggregates_total_subagent_cost_and_calls_by_model_family(tmp_path):
     rows = spend.session_rows(3650, sessions=claude_code.load(root=_fixture(tmp_path)), grok_rows=[])
     out = {r["day"]: r for r in spend.by_day(3, rows, today=_dt.date(2026, 10, 8))}
     assert list(out) == ["2026-10-06", "2026-10-07", "2026-10-08"]
     assert out["2026-10-06"]["total_usd"] == 50.0 and out["2026-10-06"]["sub_usd"] == 0.0
     assert out["2026-10-06"]["top_share"] is None
     d7 = out["2026-10-07"]
-    assert d7["total_usd"] == 10 + 10 + 5 + 1 + 0.5 + 2   # main + three subagent files + the other project
-    assert d7["sub_usd"] == 16.5
-    assert d7["tiers"]["orchestrate"] == dict(usd=5.0, calls=1)
-    assert d7["tiers"]["volume"] == dict(usd=11.0, calls=2)
-    assert d7["tiers"]["triage"] == dict(usd=0.5, calls=0)  # its cost counts; the call was booked on the model that wrote most of its file
-    assert d7["top_share"] == round(5 / 16.5, 3) and d7["sessions"] == 2
+    assert d7["total_usd"] == 10 + 10 + 5 + 1 + 0.5 + 1 + 2   # main + four subagent files + the other project
+    assert d7["sub_usd"] == 17.5
+    f = d7["families"]
+    assert list(f) == ["opus", "sonnet", "haiku", "fable", "other"]
+    assert f["opus"] == dict(usd=1.0, calls=1)       # the same ladder tier as Sonnet, its own column here
+    assert f["sonnet"] == dict(usd=11.0, calls=2)
+    assert f["haiku"] == dict(usd=0.5, calls=0)      # its cost counts; the call was booked on the model that wrote most of its file
+    assert f["fable"] == dict(usd=5.0, calls=1) and f["other"] == dict(usd=0.0, calls=0)
+    assert d7["top_share"] == round(5 / 17.5, 3) and d7["opus_share"] == round(1 / 17.5, 3) and d7["sessions"] == 2
+    assert out["2026-10-06"]["opus_share"] is None
     assert out["2026-10-08"]["total_usd"] == 0.0
 
 
@@ -386,7 +393,7 @@ def test_by_day_books_a_model_without_a_price_as_unknown_and_grok_by_its_day():
                sub_calls=[("2026-10-07", "mystery-model")])
     grok = _row(sid="g", harness="grok", day_usd={"2026-10-07": 7.0})
     d = spend.by_day(1, [row, grok], today=_dt.date(2026, 10, 7))[0]
-    assert d["total_usd"] == 10.0 and d["tiers"]["unknown"] == dict(usd=3.0, calls=1)
+    assert d["total_usd"] == 10.0 and d["families"]["other"] == dict(usd=3.0, calls=1)
 
 
 def test_by_day_cli_json_and_table(monkeypatch, capsys, tmp_path):
@@ -400,7 +407,10 @@ def test_by_day_cli_json_and_table(monkeypatch, capsys, tmp_path):
     ns.json = False
     spend.cmd_spend(ns)
     out = capsys.readouterr().out
-    assert "2026-10-07" in out and "top-tier share" in out and "orchestrate" in out
+    line = next(l for l in out.splitlines() if l.startswith("2026-10-07"))
+    assert "Opus" in out and "Sonnet" in out and "Haiku" in out and "Fable" in out and "Other" in out
+    assert "top-tier share" in out and "Opus share" in out
+    assert "$1.00/1" in line and "$11/2" in line and line.rstrip().endswith("6%")
 
 
 def test_the_same_overspend_every_day_is_one_alert(_utc_and_list_prices):
@@ -413,3 +423,52 @@ def test_non_ascii_budget_keys_stay_valid_toml(tmp_path):
     import tomllib
     text = config.dump({"spend": {"budget": {"café": 40, "app-a": 10}}})
     assert tomllib.loads(text)["spend"]["budget"] == {"café": 40, "app-a": 10}
+
+
+# --- the Opus share: the digest line and spend.opus_share_max ------------------------------------
+
+def _mix(opus_usd, sub_usd, calls=4, days=7):
+    return dict(days=days, sub_usd=sub_usd, opus_usd=opus_usd, opus_calls=calls,
+                opus_share=round(opus_usd / sub_usd, 3) if sub_usd else None)
+
+
+def _rep(mix):
+    return dict(days=7, total_usd=400.0, waste_usd=0.0, findings=[], subagent_mix=mix)
+
+
+def test_subagent_mix_sums_the_window_by_family(tmp_path):
+    rows = spend.session_rows(3650, sessions=claude_code.load(root=_fixture(tmp_path)), grok_rows=[])
+    mix = spend.subagent_mix(3, rows, today=_dt.date(2026, 10, 8))
+    assert mix["sub_usd"] == 17.5 and mix["opus_usd"] == 1.0 and mix["opus_calls"] == 1
+    assert mix["opus_share"] == round(1 / 17.5, 3)
+    assert spend.subagent_mix(1, rows, today=_dt.date(2026, 10, 9))["opus_share"] is None   # no subagent cost that day
+    assert spend.report(3, rows=rows, actions=[], bills={})["subagent_mix"]["days"] == 3
+
+
+def test_digest_names_opus_over_its_share_with_the_lanes_command(monkeypatch):
+    monkeypatch.setattr(config, "load", lambda: {})
+    out = spend.digest_candidates(_rep(_mix(opus_usd=410.0, sub_usd=1000.0, calls=37)))
+    assert [c["id"] for c in out] == ["spend:opus-share"]
+    c = out[0]
+    assert c["text"] == "Opus ran 41% of subagent cost (37 lanes); POLICY: Opus only with a stated reason"
+    assert c["step"] == "teyla lanes --days 7" and c["cmd"] is True and c["rank"] == 1
+    lines, _ = digest.build([], [], [], {}, _dt.date(2026, 10, 12), _rep(_mix(410.0, 1000.0, 37)))
+    assert any("Opus ran 41%" in l and "`teyla lanes --days 7`" in l for l in lines)
+
+
+def test_opus_share_threshold_is_config_and_small_amounts_stay_quiet(monkeypatch):
+    cfg = {}
+    monkeypatch.setattr(config, "load", lambda: cfg)
+    assert config.DEFAULTS["spend"]["opus_share_max"] == 0.25
+    assert spend.digest_candidates(_rep(_mix(250.0, 1000.0))) == []      # exactly at the limit is not over it
+    assert len(spend.digest_candidates(_rep(_mix(260.0, 1000.0)))) == 1
+    cfg["spend"] = {"opus_share_max": 0.5}
+    assert spend.digest_candidates(_rep(_mix(410.0, 1000.0))) == []
+    cfg["spend"] = {"opus_share_max": "junk"}                            # unreadable: the default, not "off"
+    assert len(spend.digest_candidates(_rep(_mix(410.0, 1000.0)))) == 1
+    cfg["spend"] = {}
+    assert spend.digest_candidates(_rep(_mix(0.8, 1.0))) == []           # 80% of 1 dollar is not news
+    assert spend.digest_candidates(_rep(_mix(0.0, 0.0))) == []
+    assert spend.digest_candidates(dict(_rep(None), subagent_mix=None)) == []
+    assert spend.digest_candidates(dict(days=7, findings=[])) == []      # a report from before this field
+    assert spend.digest_candidates(_rep(_mix(5.0, 8.0)))[0]["rank"] == 4  # under $25: medium, like a small finding
