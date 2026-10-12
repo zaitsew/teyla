@@ -6,7 +6,7 @@ Table `cursorDiskKV` (key, value) holds the sessions. As inspected in Cursor 3.1
 
   composerData:<composerId>        one JSON per session ("composer"): name, createdAt and
                                    lastUpdatedAt (epoch ms), unifiedMode ("agent"/"ask"),
-                                   modelConfig.modelName (e.g. "grok-4.6"),
+                                   modelConfig.modelName (e.g. "grok-4.7"),
                                    workspaceIdentifier.uri.fsPath (the cwd),
                                    contextTokensUsed / promptTokenBreakdown (a context-window
                                    snapshot, not cumulative spend — not read as usage),

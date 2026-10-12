@@ -416,15 +416,17 @@ def snapshot(days: int = 30, refresh: bool = False, claude_used_models: list[str
 
 
 def _is_dated_variant(prefix: str, model_id: str) -> bool:
-    """Same rule pricing.lookup() relies on (a prefix match), but stricter: 'claude-opus-5-20260401'
-    is a dated variant of 'claude-opus-5' (suffix is digits/hyphens only); 'gpt-5.5-pro' is a
-    different, more expensive SKU and must NOT be treated as a variant of the bare 'gpt-5.5'."""
+    """Same rule pricing.lookup() relies on (a prefix match), but stricter: 'claude-opus-5-5-20260401'
+    is a dated variant of 'claude-opus-5-5' (the suffix is a date: six or more digits, hyphens
+    allowed); 'gpt-5.5-pro' is a different, more expensive SKU and must NOT be treated as a variant
+    of the bare 'gpt-5.5'. Nor is a short numeric suffix a date: it is the next version (Opus 5.5
+    is not a dated Opus 5), and reading it as one once priced Opus 5 from Opus 5.5's row."""
     if model_id == prefix:
         return True
     if not model_id.startswith(prefix):
         return False
     suffix = model_id[len(prefix):]
-    return bool(suffix) and re.fullmatch(r"-[\d-]+", suffix) is not None
+    return bool(suffix) and re.fullmatch(r"-\d{4}-?\d{2}-?\d{2}", suffix) is not None
 
 
 def _pct_diff(a, b) -> float:

@@ -394,6 +394,47 @@ def test_digest_line_names_at_most_three(env, capsys):
     assert c["text"].startswith("models: 5 new (") and c["text"].endswith(", +2)")
 
 
+def test_digest_keeps_the_adoption_gap_after_the_new_model_is_acknowledged(env, capsys):
+    """2026-10: Haiku 5.5 was acknowledged the day it shipped, so the weekly said "new models: none"
+    while eight repos still called Haiku 4.5, and nothing reached the digest. Acknowledging says the
+    model was seen; the repos naming what it replaced stay in the digest until a scan finds none."""
+    repo = git_repo(env.code, "alpha", {"src/app.py": 'MODEL = "claude-opus-5"\n'})
+    run(["models", "watch"], capsys)
+    assert models_watch.digest_candidates() == []  # claude-opus-5 is the ladder's own entry
+    env.publish(NEW_OPUS)
+    run(["models", "watch", "--ack"], capsys)
+    env.policy.write_text(env.policy.read_text().replace("| Opus 5, Sonnet 5 |", "| Opus 5.1, Sonnet 5 |"))
+    run(["models", "watch"], capsys)  # the ladder moved; the repo did not
+    (c,) = models_watch.digest_candidates()  # acknowledged, nothing new — the gap is still there
+    assert c["id"] == "models:adopt" and c["step"] == "teyla models watch"
+    assert c["text"] == ("models: 1 file(s) in 1 repo(s) (alpha) still name superseded ids: "
+                         "claude-opus-5 → claude-opus-5-1")  # "older than claude-opus-5-1"
+    lines, _ = digest.build([], [], [], {}, extra=[c])
+    assert any("still name superseded ids" in line for line in lines)
+    (repo / "src" / "app.py").write_text('MODEL = "claude-opus-5-1"\n')
+    run(["models", "watch"], capsys)
+    assert models_watch.digest_candidates() == []  # migrated: the line goes
+
+
+def test_adoption_line_ignores_a_stale_scan(env, capsys):
+    git_repo(env.code, "alpha", {"src/app.py": 'MODEL = "claude-opus-5"\n'})
+    run(["models", "watch"], capsys)
+    env.publish(NEW_OPUS)
+    run(["models", "watch"], capsys)  # unacknowledged: Opus 5 is the entry Opus 5.1 replaces
+    assert any(c["id"] == "models:adopt" for c in models_watch.digest_candidates())
+    data = json.loads(models_watch.last_path().read_text())
+    data["date"] = "2026-01-01"
+    models_watch.last_path().write_text(json.dumps(data))
+    assert [c["id"] for c in models_watch.digest_candidates()] == ["models:new"]
+
+
+def test_dated_variant_needs_a_date_not_the_next_version():
+    assert models._is_dated_variant("claude-opus-5", "claude-opus-5-20260401")
+    assert models._is_dated_variant("claude-haiku-4-5", "claude-haiku-4-5-20251001")
+    assert not models._is_dated_variant("claude-opus-5", "claude-opus-5-5")  # Opus 5.5, priced lower
+    assert not models._is_dated_variant("gpt-5.5", "gpt-5.5-pro")
+
+
 # --- the weekly wrapper ------------------------------------------------------------------------
 
 def _wrapper(watch_line):

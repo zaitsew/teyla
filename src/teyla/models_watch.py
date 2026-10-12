@@ -30,6 +30,8 @@ import subprocess
 from . import config, lang, models
 
 KNOWN_NAME = "models-known.json"
+LAST_NAME = "models-watch.json"  # under state/: the last scan's live superseded rows, for the digest
+LAST_MAX_AGE_DAYS = 14  # an older scan says nothing about the repos today
 MAX_FILE_BYTES = 1_000_000
 MAX_ROWS = 20
 MAX_IDS = 400  # a pattern list longer than this is a catalogue dump, not a migration list
@@ -40,6 +42,25 @@ LOCKFILES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "npm-shrinkwrap
 
 def known_path() -> pathlib.Path:
     return config.TEYLA_DIR / KNOWN_NAME  # call time: tests and a moved home redirect TEYLA_DIR
+
+
+def last_path() -> pathlib.Path:
+    return config.TEYLA_DIR / "state" / LAST_NAME
+
+
+def save_last(rep: dict) -> None:
+    """Keep the live superseded rows of this scan, so the digest can name the adoption gap without
+    scanning every repo again. Acknowledging a new model only says it was seen; the repos still
+    naming what it replaced are the work, and they stay in the digest until a scan finds none."""
+    data = dict(date=rep["date"], code_root=rep["code_root"],
+                superseded=[dict(repo=r["repo"], file=r["file"], ids=r["ids"], why=r.get("why") or {})
+                            for r in rep["superseded"]])
+    try:
+        p = last_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(data, indent=1) + "\n")
+    except OSError:
+        pass  # a read-only home must not fail the watch itself
 
 
 # --- the known list ----------------------------------------------------------------------------
@@ -463,6 +484,7 @@ def cmd_watch(args) -> int:
     except ValueError as e:
         print(f"teyla: {e}")
         return 2
+    save_last(rep)
     if args.json:
         print(json.dumps(rep, indent=2, default=str))
     else:
@@ -472,17 +494,45 @@ def cmd_watch(args) -> int:
 
 # --- the digest ----------------------------------------------------------------------------------
 
+def _adoption_candidate(today: _dt.date | None = None) -> list[dict]:
+    """One digest line while the last scan (at most LAST_MAX_AGE_DAYS old) found live code or config
+    naming a superseded model: which repos, and what replaces the ids they name."""
+    try:
+        data = json.loads(last_path().read_text())
+        when = _dt.date.fromisoformat(str(data.get("date")))
+    except (OSError, ValueError, TypeError):
+        return []
+    today = today or _dt.date.today()
+    rows = [r for r in data.get("superseded") or [] if isinstance(r, dict)]
+    if not rows or (today - when).days > LAST_MAX_AGE_DAYS:
+        return []
+    repos = sorted({str(r.get("repo")) for r in rows})
+    ids: dict[str, str] = {}
+    for r in rows:
+        for i in r.get("ids") or []:
+            ids.setdefault(i, str((r.get("why") or {}).get(i) or ""))
+    # "claude-haiku-4-5 → claude-haiku-5-5": the replacement is the last word of the reason
+    moves = sorted({f"{i} → {w.split()[-1]}" if w else i for i, w in ids.items()})
+    shown = ", ".join(moves[:3]) + (f", +{len(moves) - 3}" if len(moves) > 3 else "")
+    repo_s = ", ".join(repos[:4]) + (f", +{len(repos) - 4}" if len(repos) > 4 else "")
+    return [dict(rank=3, id="models:adopt",
+                 text=f"models: {len(rows)} file(s) in {len(repos)} repo(s) ({repo_s}) still name superseded ids: {shown}",
+                 step="teyla models watch", cmd=True)]
+
+
 def digest_candidates() -> list[dict]:
-    """One digest line when unacknowledged new models exist. Local only: the cached catalogue and
-    the known list; it never seeds, never refreshes and never touches a repo."""
+    """A digest line when unacknowledged new models exist, and one while repos still name superseded
+    ids (from the last watch scan). Local only: the cached catalogue, the known list and the last
+    scan; it never seeds, never refreshes and never touches a repo."""
+    out = _adoption_candidate()
     state = load_known()
     if state is None:
-        return []
+        return out
     models_dev, _ = models.load_models_dev_catalogue(refresh=False)
     ladder_rows = models.parse_ladder(_policy_text())
     new = new_models(models_dev, ladder_providers(ladder_rows, models_dev), state["known"], [])
     if not new:
-        return []
+        return out
     names = ", ".join(f"{n['provider']}:{n['id']}" for n in new[:3]) + (f", +{len(new) - 3}" if len(new) > 3 else "")
     return [dict(rank=4, id="models:new", text=f"models: {len(new)} new ({names})",
-                 step="teyla models watch", cmd=True)]
+                 step="teyla models watch", cmd=True)] + out
