@@ -156,7 +156,9 @@ DEFAULTS = {
     # `teyla spend` thresholds; 0 = off for the budgets. Per-project budgets are `budget.<project>`
     # keys (or a [spend.budget] table): see spend.budgets().
     "spend": {"alert_session_usd": 250.0, "w1_usd": 15.0, "daily_budget_usd": 0.0,
-              "a20_share": 0.3, "a20_min_calls": 10, "a20_models": []},
+              "a20_share": 0.3, "a20_min_calls": 10, "a20_models": [],
+              # the digest names Opus when it ran more than this share of the week's subagent cost
+              "opus_share_max": 0.25},
     # `teyla digest --write` (the weekly routine) posts a macOS notification with its headline.
     "digest": {"notify": True},
     # `teyla tidy`: size budget for a rule or memory file, and how old a dated "for now" may get.

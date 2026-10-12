@@ -100,6 +100,20 @@ def tier(model: str) -> str:
     return p[4] if p else "unknown"
 
 
+FAMILIES = ("opus", "sonnet", "haiku", "fable", "other")
+
+
+def family(model: str) -> str:
+    """The model family a model id belongs to, for splitting cost by what ran it rather than by ladder
+    tier (Opus and Sonnet share the "volume" tier, so the tier hides one creeping into the other's
+    work): opus / sonnet / haiku / fable, else "other" (any other vendor, an unpriced or empty id)."""
+    m = (model or "").lower()
+    for f in FAMILIES[:-1]:
+        if m.startswith(f"claude-{f}") or m == f:
+            return f
+    return "other"
+
+
 def cost_usd(model: str, usage: dict) -> float | None:
     p = lookup(model)
     if not p:

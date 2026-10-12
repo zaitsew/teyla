@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — Opus creeping into build lanes is visible
+
+On 2026-10-12 a usage review found that `teyla spend --by-day` lumped Opus 5.5 and Sonnet 5.5 subagent cost
+into one "volume" column: both are the volume tier, so a build project running 37 of its 90 lanes on Opus at
+about twice the cost looked the same as one running on Sonnet. Telling whether a model's lanes find more or
+fewer review P1s took two throwaway scripts.
+
+- **`teyla spend --by-day` splits subagents by model family.** The columns are Opus, Sonnet, Haiku, Fable and
+  other (cost/calls), followed by the top-tier share and a new Opus share (Opus subagent dollars over all
+  subagent dollars). The JSON rows carry `families` and `opus_share` in place of `tiers`.
+- **`teyla lanes [--days N] [--project SUBSTR] [--json]`** prints one row per (subagent type, model): units,
+  median turns, median peak context, median and total dollars, and from the review ledger the units matched to
+  a review, P1 per matched unit and units with at least one P1. A lane is matched when its transcript holds a
+  commit sha a later review covered. The footer says P1 per unit is confounded by task difficulty.
+- **The digest names an Opus share over `spend.opus_share_max`** (default 0.25, over the last 7 days):
+  "Opus ran X% of subagent cost (N lanes); POLICY: Opus only with a stated reason", step `teyla lanes --days 7`.
+  Under $1 of Opus cost it stays quiet.
+
 ## 0.20.2 — 2026-10-12 — a seen model is not an adopted model
 
 Haiku 5.5 shipped on 2026-10-07 and was acknowledged with `teyla models watch --ack` the next day. The

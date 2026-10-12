@@ -11,6 +11,8 @@
   teyla policy ack [--note TEXT]                                  record acceptance of ~/.claude/CLAUDE.md's current hash
   teyla policy refresh [--dry] [--resolved]                       three-way merge of template changes into ~/.agents/POLICY.md
   teyla harvest <path> [--project SLUG]                          tool spine + corrections for sessions touching a path
+  teyla spend [--days N] [--by-day] [--alert] [--json]           what the AI work cost, which part bought nothing; --by-day: subagent cost by model family
+  teyla lanes [--days N] [--project SUBSTR] [--json]             subagent lanes by type and model: cost, turns, peak context, review P1s
   teyla models [--days N] [--json] [--refresh]                   model ladder + price drift report
   teyla models watch [--refresh] [--json] [--ack [ID...]] [--seed FILE]  new models, what they replace, repos naming superseded ids
   teyla tidy [paths...] [--json] [--apply] [--quiet]              duplicates, dead references and whitespace junk in the rule and memory files; --apply: mechanical fixes only, backup first
@@ -449,6 +451,8 @@ def main(argv=None):
     reviews_mod.register(sp)
     from . import spend as spend_mod
     spend_mod.register(sp)
+    from . import lanes as lanes_mod
+    lanes_mod.register(sp)
     from . import tidy as tidy_mod
     tidy_mod.register(sp)
     from . import load as load_mod
