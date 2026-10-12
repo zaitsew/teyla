@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — Opus creeping into build lanes is visible
+## 0.20.3 — 2026-10-12 — Opus creeping into build lanes is visible
 
 On 2026-10-12 a usage review found that `teyla spend --by-day` lumped Opus 5.5 and Sonnet 5.5 subagent cost
 into one "volume" column: both are the volume tier, so a build project running 37 of its 90 lanes on Opus at
@@ -686,7 +686,7 @@ locally correct for someone with no second user, each a wall the moment there is
 
 - Newlines split segments; `#` is not a comment mid-token; `shell:env` is an allowlist; the run cannot read `~/.teyla` or the HMAC key; interpreters, copy tools and network tools need an explicit `shell:*` (documented as full trust); receipts carry a grants hash and both `promote` and `inbox approve` require it unchanged; `fs.write:*` is the repo root only; `net:` is exact host or `*.domain`.
 
-## Unreleased — control plane hardened again
+## 0.20.3 — 2026-10-12 — control plane hardened again
 
 A second adversarial review, against the code 0.6.1 shipped. Every item has a test
 carrying the input that worked against the hardened version, in
@@ -721,7 +721,7 @@ Interpreters, copiers and network clients (`python`, `sh`, `cp`, `tee`, `ln`,
 - `inbox approve` recomputes grants from the current manifest and refuses widening; the kill switch is re-read before every act step; `command` steps are checked against their own capabilities (**breaking**: manifests need `shell:<verb>`).
 - realpath before glob matching; `*` no longer crosses `/`; `Task`/`Skill` need grants; critic must answer exactly `PASS`; counters under flock; context hashes cover the tree; date keys use the trigger's timezone; promotion needs ten consecutive clean receipts bound to the act spec.
 
-## Unreleased — control-plane hardening
+## 0.20.3 — 2026-10-12 — control-plane hardening
 
 From an adversarial review of the 0.6.0 control plane. Every item below has a test
 carrying the input that worked before the fix, in `tests/test_control.py` §11.
