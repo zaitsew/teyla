@@ -65,6 +65,8 @@ PRODUCTIZE_BLOCK = """
 users = "owner"                         # owner | family | testers | public
 target = "family"                       # what you want next
 platforms = ["web"]                     # ios | macos | web | android | watch | extension | cli
+primary = "web"                         # the one platform features land on first (POLICY §11);
+                                        # every other entry in `platforms` names its trigger
 identity = "none"                       # none | shared-key | invite-key | supabase-auth |
                                         # supabase-auth+tokens | sign-in-with-apple | icloud
 tenancy = "single"                      # single | per-device | user_id | user_id+rls

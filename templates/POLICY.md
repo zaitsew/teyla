@@ -107,3 +107,45 @@ kernel panics. So:
   `guard.max_builds` and `guard.max_sims` allow; queue the rest.
 - After a crash, `teyla crash` says what the machine looked like before it; read it
   before starting the next sprint.
+
+## 11. Platforms and releases — one primary, ports in trains, builds that reach a person
+
+Every platform multiplies every later feature: each one is built, reviewed, tested and
+released through its own store. Building them all at once means porting features that
+are still changing, then a parity sprint to catch up with a moving target. So:
+
+- **One primary platform per product**, the one the owner actually uses it on (by
+  default, the owner's phone). Declare it in `teyla.toml` (`[productize] primary`).
+  Features are designed, built and accepted there first. A Mac tool, a web service or a
+  watch app names its own primary.
+- **A second platform needs a trigger, written down** beside it in `teyla.toml`, with the
+  date: a named person who cannot use the primary, the owner asking for that platform
+  for that product, or a `public` target once the primary is public. Completeness, spare
+  capacity and a scaffold that listed it are not triggers. Start with the cheapest form
+  that serves the trigger: a PWA before a native Android app, the same SwiftUI target
+  before a separate Mac app. A Mac build is still adapted to the Mac (pointer-sized
+  controls, windows, menus), never a stretched phone screen.
+- **Ports run in trains, not per feature.** Feature PRs touch the primary only. A
+  secondary platform catches up in one parity train when the primary ships a store
+  version, or when the owner asks. Port only settled features: in a primary build and
+  unchanged for a week. `docs/PARITY.md` keeps, per secondary, `synced-to: <commit>` and
+  what is deliberately left out; the train's brief is the primary's diff since that
+  commit, not the whole tree, and it runs on the volume model. Same day on every
+  platform: security and data-loss fixes, and backend changes that would break a shipped
+  client.
+- **A secondary nobody opened in 30 days is frozen**: no parity trains until a trigger
+  revives it. It stays installed as it is.
+- **A build is done when it reaches a person**, not when it is uploaded. A session that
+  merged a user-visible change on the primary ends with one internal upload (TestFlight
+  internal, Play internal) — at most one per app per day unless it fixes a broken build —
+  and says the build number once it is installable from the owner's tester account.
+  Secondaries upload at the end of their train.
+- **External testing starts when someone else uses it.** Start Play's closed test (14
+  days for a personal account) the day the Android trigger fires: that clock is the
+  longest pole.
+- **Store submission.** The first public release of a product is the owner's call, asked
+  with a proposal (§4). After that, keep one version in review; when it is approved,
+  release it and in the same session submit the newest build the owner has used for a
+  day without a blocking report, after the pre-release review (§2). The store version is
+  never more than two weeks behind the build the owner uses. A rejection is fixed and
+  resubmitted in the same session unless it needs the owner's account.
