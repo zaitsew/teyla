@@ -1,4 +1,4 @@
-"""teyla.productize — the [productize] block, the eight requirements, and owner steps.
+"""teyla.productize — the [productize] block, the ten requirements, and owner steps.
 
 Fixture repos are built under tmp_path; `code_root` is monkeypatched so discovery never
 looks at the real ~/repos, and the platform half is passed in rather than probed."""
@@ -20,7 +20,7 @@ name = "{name}"
 users = "owner"
 target = "{target}"
 platforms = {platforms}
-identity = "{identity}"
+{primary_line}identity = "{identity}"
 tenancy = "{tenancy}"
 backend = "{backend}"
 llm = "{llm}"
@@ -32,13 +32,14 @@ cost_cap = "{cost_cap}"
 
 [productize.distribution]
 {distribution}
-"""
+{triggers_block}"""
 
 
 def repo(tmp_path, name="thing", *, target="family", platforms='["web"]', identity="supabase-auth",
          tenancy="user_id+rls", backend="supabase:abc", llm="none", doc="docs/GETTING-STARTED.md",
          secrets="[]", cost_cap="", distribution='web = "pwa"', env_example=None, blockers="",
-         first_run="sign-in+skip", sample_data="none", make_doc=True, git=True) -> pathlib.Path:
+         first_run="sign-in+skip", sample_data="none", make_doc=True, git=True,
+         primary="", triggers=None) -> pathlib.Path:
     d = tmp_path / name
     (d / "docs").mkdir(parents=True, exist_ok=True)
     if git:
@@ -52,6 +53,8 @@ def repo(tmp_path, name="thing", *, target="family", platforms='["web"]', identi
         name=name, target=target, platforms=platforms, identity=identity, tenancy=tenancy,
         backend=backend, llm=llm, doc=doc, secrets=secrets, cost_cap=cost_cap,
         first_run=first_run, sample_data=sample_data,
+        primary_line=f'primary = "{primary}"\n' if primary else "",
+        triggers_block=("[productize.triggers]\n" + "".join(f'{k} = "{v}"\n' for k, v in triggers.items())) if triggers is not None else "",
         distribution=distribution) + blockers)
     return d
 
@@ -286,7 +289,8 @@ def test_public_needs_real_accounts_and_a_store(tmp_path):
     assert r["R4"]["met"] is False and "ios=testflight-internal" in r["R4"]["detail"]
 
     ok = repo(tmp_path, "ok", target="public", identity="supabase-auth", platforms='["ios", "android"]',
-              distribution='ios = "app-store"\nandroid = "play"')
+              distribution='ios = "app-store"\nandroid = "play"', primary="ios",
+              triggers={"android": "2026-01-15: a named tester has no iPhone"})
     assert all(q["met"] for q in reqs(ok, mail_ready=True).values())
 
 
@@ -410,7 +414,7 @@ def test_scaffold_app_writes_the_productize_files(tmp_path, kind):
     # and it parses, with the declared onboarding doc actually present
     report = productize.evaluate(productize.parse(dest / "teyla.toml"))
     assert report["declared"] and report["target"] == "family"
-    assert {q["id"] for q in report["requirements"]} == {"R1", "R2", "R3", "R4", "R5", "R6", "R7", "R9"}
+    assert {q["id"] for q in report["requirements"]} == {"R1", "R2", "R3", "R4", "R5", "R6", "R7", "R9", "R10"}
     assert reqs(dest)["R5"]["met"] is True
 
 
@@ -442,6 +446,7 @@ def test_productize_template_block_matches_the_documented_vocabulary():
                 "first_run", "sample_data", "onboarding_doc", "secrets", "cost_cap"):
         assert f"{key} =" in block
     assert "[productize.distribution]" in block
+    assert "primary =" in block and "[productize.triggers]" in block
 
 
 def test_docs_and_readme_mention_both_commands():
@@ -452,3 +457,90 @@ def test_docs_and_readme_mention_both_commands():
     readme = (root / "README.md").read_text()
     assert "teyla platform" in readme and "teyla productize" in readme
     assert "## 6b. Productizing" in (root / "docs" / "MANUAL.md").read_text()
+
+
+# --- R10 platforms --------------------------------------------------------------------
+
+MULTI = dict(platforms='["ios", "web"]', distribution='ios = "testflight-internal"\nweb = "pwa"')
+
+
+def test_r10_one_platform_needs_nothing(tmp_path):
+    r = reqs(repo(tmp_path))["R10"]
+    assert r["met"] is True
+    assert reqs(repo(tmp_path, "b", primary="web"))["R10"]["met"] is True
+
+
+def test_r10_one_platform_with_a_different_primary_is_unmet(tmp_path):
+    r = reqs(repo(tmp_path, primary="ios"))["R10"]
+    assert r["met"] is False and r["detail"] == "primary=ios is not in platforms"
+
+
+def test_r10_two_platforms_met_with_a_dated_trigger(tmp_path):
+    d = repo(tmp_path, primary="ios", triggers={"web": "2026-01-15: a named tester has no iPhone"}, **MULTI)
+    r = reqs(d)["R10"]
+    assert r["met"] is True and "primary=ios" in r["detail"]
+    assert productize.evaluate(productize.parse(d / "teyla.toml"))["blockers"] == []
+
+
+def test_r10_primary_unset_names_it_and_every_missing_trigger(tmp_path):
+    r = reqs(repo(tmp_path, **MULTI))["R10"]
+    assert r["met"] is False
+    assert r["detail"] == "primary unset, ios: no trigger, web: no trigger"
+
+
+def test_r10_primary_must_be_one_of_the_platforms(tmp_path):
+    d = repo(tmp_path, primary="android", triggers={"ios": "2026-01-15: x", "web": "2026-01-15: x"}, **MULTI)
+    r = reqs(d)["R10"]
+    assert r["met"] is False and "primary=android is not in platforms" in r["detail"]
+
+
+def test_r10_missing_trigger_for_the_secondary(tmp_path):
+    d = repo(tmp_path, primary="ios", triggers={}, **MULTI)
+    assert reqs(d)["R10"]["detail"] == "web: no trigger"
+    assert reqs(repo(tmp_path, "b", primary="ios", **MULTI))["R10"]["detail"] == "web: no trigger"
+
+
+@pytest.mark.parametrize("value,detail", [
+    ("a named tester has no iPhone", "web: trigger has no date"),
+    ("15 January 2026: reason", "web: trigger has no date"),
+    ("2026-13-45: reason", "web: trigger has no date"),
+    ("2026-01-15x reason", "web: trigger has no date"),
+    ("2026-01-15", "web: trigger has no reason"),
+    ("2026-01-15:  ", "web: trigger has no reason"),
+    ("", "web: no trigger"),
+])
+def test_r10_bad_triggers_are_named(tmp_path, value, detail):
+    d = repo(tmp_path, primary="ios", triggers={"web": value}, **MULTI)
+    r = reqs(d)["R10"]
+    assert r["met"] is False and r["detail"] == detail
+
+
+@pytest.mark.parametrize("value", ["2026-01-15: reason", "2026-01-15 reason", "2026-01-15 - reason"])
+def test_r10_accepted_trigger_shapes(tmp_path, value):
+    d = repo(tmp_path, primary="ios", triggers={"web": value}, **MULTI)
+    assert reqs(d)["R10"]["met"] is True
+
+
+def test_r10_is_agent_work_and_reaches_the_steps(tmp_path):
+    d = repo(tmp_path, **MULTI)
+    report = productize.evaluate(productize.parse(d / "teyla.toml"))
+    assert [b["who"] for b in report["blockers"]] == ["agent"]
+    steps = productize.agent_steps([report])
+    assert len(steps) == 1 and "primary unset" in steps[0] and "[productize.triggers]" in steps[0]
+    assert productize.owner_steps([report]) == []
+    assert "R10 primary unset" in productize.render_text([report])
+
+
+def test_r10_applies_to_every_shareable_target(tmp_path):
+    d = repo(tmp_path, target="testers", **MULTI)
+    assert reqs(d)["R10"]["met"] is False
+
+
+def test_scaffolded_block_with_triggers_uncommented_parses(tmp_path):
+    block = scaffold.PRODUCTIZE_BLOCK.replace("# [productize.triggers]\n# android", "[productize.triggers]\nandroid")
+    block = block.replace('platforms = ["web"]', 'platforms = ["web", "android"]')
+    d = tmp_path / "s"
+    (d / ".git").mkdir(parents=True)
+    (d / "teyla.toml").write_text('[product]\nname = "s"\n' + block)
+    r = reqs(d)["R10"]
+    assert r["met"] is True, r

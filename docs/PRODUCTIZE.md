@@ -101,9 +101,14 @@ privacy page, an account-deletion path. Do it while nobody is waiting.
 
 **One primary platform, the rest by trigger.** `primary` in `[productize]` names the
 platform features land on first; every other entry in `platforms` needs a written trigger
-(a named person who cannot use the primary, or the owner asking). Secondary platforms
-catch up in parity trains, not feature by feature. POLICY §11 has the rule and the release
-cadence that goes with it.
+(a named person who cannot use the primary, or the owner asking), one key per platform in
+`[productize.triggers]`, the value starting with an ISO date:
+`android = "2026-01-15: a named tester has no iPhone"`. R10 checks this: with more than one
+platform it is unmet until `primary` is set to one of them and every other platform has a
+dated trigger, and the detail names what is missing. It is agent work (the history and the
+owner's requests say why a platform exists), so it shows up as an agent step. Secondary
+platforms catch up in parity trains, not feature by feature. POLICY §11 has the rule and
+the release cadence that goes with it.
 
 **Config out of code.** Every host, key name and identifier in `.env.example` and in
 `secrets = [...]`, never hardcoded in a client. A value you can only change by editing
@@ -215,7 +220,7 @@ who = "owner"
 how = "App Store Connect → TestFlight → add an external group, submit for beta review"
 ```
 
-Nine requirements are checked against the target:
+Ten requirements are checked against the target:
 
 | id | requirement | fails when |
 |---|---|---|
@@ -228,6 +233,7 @@ Nine requirements are checked against the target:
 | R7 | cost_cap | empty while your key pays for other people's use |
 | R8 | mail | target is `public` and the platform has no mail sender |
 | R9 | first_run / sample_data | target is `family` or `public`, and `first_run` is `none` (or unset), or `sample_data` is `unlabelled` (or unset) |
+| R10 | platforms | more than one platform, and `primary` is unset or not in `platforms`, or another platform has no `[productize.triggers]` entry starting with an ISO date and a reason; one platform fails only if `primary` names a different one |
 
 A `public` target raises the bar rather than adding rules: accounts must be real accounts,
 iOS/macOS must be external TestFlight or the App Store, Android must be Play, an extension

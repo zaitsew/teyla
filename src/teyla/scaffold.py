@@ -66,7 +66,8 @@ users = "owner"                         # owner | family | testers | public
 target = "family"                       # what you want next
 platforms = ["web"]                     # ios | macos | web | android | watch | extension | cli
 primary = "web"                         # the one platform features land on first (POLICY §11);
-                                        # every other entry in `platforms` names its trigger
+                                        # every other entry in `platforms` needs a dated
+                                        # line in [productize.triggers] below (R10)
 identity = "none"                       # none | shared-key | invite-key | supabase-auth |
                                         # supabase-auth+tokens | sign-in-with-apple | icloud
 tenancy = "single"                      # single | per-device | user_id | user_id+rls
@@ -90,6 +91,11 @@ web = "none"                            # none | pwa | github-pages | vercel | d
 # macos = "none"                        # none | xcode | testflight | dmg-notarized | app-store
 # android = "none"                      # none | apk-sideload | pwa | play-internal | play
 # extension = "none"                    # none | unpacked-zip | chrome-web-store
+
+# One line per platform in `platforms` other than `primary`: an ISO date, then the
+# reason (a named person who cannot use the primary, or the owner asking for it).
+# [productize.triggers]
+# android = "2026-01-15: a named tester has no iPhone"
 
 # One per thing standing in the way. `who` is who can actually do it — an owner
 # blocker is an account, a payment or a signature; an agent blocker is work.
