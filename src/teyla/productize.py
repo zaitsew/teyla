@@ -296,10 +296,12 @@ def evaluate(manifest: dict, *, mail_ready: bool | None = None) -> dict:
     if not pz:
         return {"product": manifest["product"], "repo": str(manifest["repo"]), "users": users, "target": target,
                 "declared": False, "requirements": [], "blockers": []}
-    if target not in SHAREABLE:
-        return {"product": manifest["product"], "repo": str(manifest["repo"]), "users": users, "target": target,
-                "declared": True, "requirements": [], "blockers": manifest["blockers"]}
-    rows = requirements(pz, manifest["repo"], target=target, mail_ready=mail_ready)
+    if target in SHAREABLE:
+        rows = requirements(pz, manifest["repo"], target=target, mail_ready=mail_ready)
+    else:
+        # An owner-only product skips R1–R9, but not R10: a second platform built without
+        # a reason costs the same whoever it serves (caught in review, P2).
+        rows = [_platforms_row(pz, [str(p) for p in (pz.get("platforms") or [])])]
     blockers = list(manifest["blockers"])
     # R10 is agent work: the primary and the triggers are in the repo's history and the
     # owner's requests, so it becomes an agent step without anyone writing a blocker.
@@ -385,7 +387,7 @@ def render_text(reports: list[dict]) -> str:
             continue
         head = f"{r['product']:16} {r['users']}→{r['target']}"
         rows = r["requirements"]
-        if not rows:
+        if not rows or (r["target"] not in SHAREABLE and all(q["met"] for q in rows)):
             lines.append(f"{head}  nothing to meet (target is not a shared one)")
             continue
         met = sum(1 for q in rows if q["met"])

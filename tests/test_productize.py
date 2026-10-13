@@ -95,8 +95,16 @@ def test_broken_toml_is_an_error_row(tmp_path):
 def test_owner_target_has_nothing_to_meet(tmp_path):
     d = repo(tmp_path, target="owner")
     r = productize.evaluate(productize.parse(d / "teyla.toml"))
-    assert r["requirements"] == []
+    assert [q["id"] for q in r["requirements"]] == ["R10"] and productize.unmet(r) == []
     assert "nothing to meet" in productize.render_text([r])
+
+
+def test_owner_target_still_needs_a_primary_for_a_second_platform(tmp_path):
+    d = repo(tmp_path, target="owner", platforms='["ios", "web"]')
+    r = productize.evaluate(productize.parse(d / "teyla.toml"))
+    assert [q["id"] for q in productize.unmet(r)] == ["R10"]
+    assert any(s.startswith("platforms:") for s in (b["what"] for b in r["blockers"]))
+    assert "nothing to meet" not in productize.render_text([r])
 
 
 # --- R1 identity --------------------------------------------------------------------
