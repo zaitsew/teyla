@@ -275,3 +275,27 @@ def test_templates_carry_the_new_keys():
     t = teyla.templates_dir()
     assert "tester" in (t / "platform" / "platform.toml").read_text()
     assert "apple_bundle_id" in (t / "repo" / "teyla.toml").read_text()
+
+
+def test_a_declared_platform_with_no_build_is_none_not_a_pass(tmp_path, monkeypatch):
+    platform_toml(tmp_path)
+    d = product(tmp_path)
+    (d / "teyla.toml").write_text((d / "teyla.toml").read_text().replace(
+        'ios = "testflight-internal"\n', 'ios = "testflight-internal"\nmacos = "testflight"\n'))
+    fake_tool(monkeypatch, payload(plat("IOS")))
+    rows = testflight.run()
+    assert rows[0]["verdict"] == "none"
+    assert [(p["platform"], p["verdict"]) for p in rows[0]["platforms"]] == [("IOS", "current"), ("MAC_OS", "none")]
+    assert testflight.exit_code(rows) == 1
+    assert "macOS" in testflight.render_text(rows) and "nothing uploaded" in testflight.render_text(rows)
+
+
+def test_a_named_teyla_toml_that_does_not_parse_is_an_error(tmp_path, monkeypatch):
+    platform_toml(tmp_path)
+    d = product(tmp_path)
+    (d / "teyla.toml").write_text("[product\nname = ")
+    fake_tool(monkeypatch, payload(plat("IOS")))
+    rows = testflight.run([str(d)])
+    assert [r["verdict"] for r in rows] == ["error"] and "does not parse" in rows[0]["error"]
+    assert testflight.exit_code(rows) == 1
+    assert testflight.run() == []          # the sweep leaves it to `teyla productize`

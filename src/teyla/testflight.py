@@ -59,6 +59,17 @@ def in_scope(manifest: dict) -> bool:
     return False
 
 
+def declared_platforms(manifest: dict) -> list[str]:
+    """App Store Connect platform names the manifest says ship through TestFlight or the store."""
+    dist = (manifest.get("productize") or {}).get("distribution") or {}
+    out = []
+    for key, asc in (("ios", "IOS"), ("macos", "MAC_OS")):
+        v = str(dist.get(key) or "").strip().lower()
+        if v.startswith("testflight") or v == "app-store":
+            out.append(asc)
+    return out
+
+
 def _worst(verdicts: list[str]) -> str:
     return min(verdicts, key=ORDER.index) if verdicts else "error"
 
@@ -155,6 +166,11 @@ def check_product(manifest: dict, cfg: dict) -> dict:
                     line=f"{name}  the tester is not on the team: add the tester email in App Store Connect "
                          f"(Users and Access, or TestFlight > Internal Testing) and put it in a group")
     plats = [p for p in payload["platforms"] if isinstance(p, dict)]
+    # A declared platform the tool says nothing about has no build at all: that is "none",
+    # not a pass (caught in review, P2).
+    seen = {p.get("platform") for p in plats}
+    plats += [{"platform": asc, "newest_uploaded": None, "newest_installable": None,
+               "behind": 0, "blockers": []} for asc in declared_platforms(manifest) if asc not in seen]
     if not plats:
         return _row(manifest, "none", bundle_id=bundle_id, payload=payload,
                     line=f"{name}  App Store Connect has no builds for {bundle_id}")
@@ -180,7 +196,14 @@ def run(paths: list[str] | None = None) -> list[dict]:
     rows = []
     for mp in productize.find_manifests(paths):
         m = productize.parse(mp)
-        if "error" in m or not in_scope(m):
+        if "error" in m:
+            # A broken teyla.toml cannot say whether it ships through TestFlight. Named on the
+            # command line, it is an error row, never a silent pass (caught in review, P2);
+            # in the sweep over every repo, `teyla productize` already reports it.
+            if paths:
+                rows.append(_error(m, f"teyla.toml does not parse: {m['error']}"))
+            continue
+        if not in_scope(m):
             continue
         rows.append(check_product(m, cfg))
     return rows
