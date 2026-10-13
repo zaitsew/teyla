@@ -118,9 +118,10 @@ are still changing, then a parity sprint to catch up with a moving target. So:
   default, the owner's phone). Declare it in `teyla.toml` (`[productize] primary`).
   Features are designed, built and accepted there first. A Mac tool, a web service or a
   watch app names its own primary.
-- **A second platform needs a trigger, written down** beside it in `teyla.toml`, with the
-  date: a named person who cannot use the primary, the owner asking for that platform
-  for that product, or a `public` target once the primary is public. Completeness, spare
+- **A second platform needs a trigger, written down** in `teyla.toml` under
+  `[productize.triggers]`, with the date: a named person who cannot use the primary, the
+  owner asking for that platform for that product, or a `public` target once the primary
+  is public. Completeness, spare
   capacity and a scaffold that listed it are not triggers. Start with the cheapest form
   that serves the trigger: a PWA before a native Android app, the same SwiftUI target
   before a separate Mac app. A Mac build is still adapted to the Mac (pointer-sized
