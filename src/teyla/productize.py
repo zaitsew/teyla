@@ -14,6 +14,7 @@ So a repo declares what it serves today and what it should serve next, in the sa
     users = "owner"                 # owner | family | testers | public
     target = "family"
     platforms = ["ios", "web"]
+    primary = "ios"                 # R10: features land here first; see [productize.triggers]
     identity = "supabase-auth"      # none | shared-key | invite-key | supabase-auth | accounts-hub | ...
     tenancy = "user_id+rls"         # single | per-device | user_id | user_id+rls
     backend = "supabase:abcdef"     # none | local-mac | supabase:<ref> | droplet:<name> | ...
@@ -28,12 +29,15 @@ So a repo declares what it serves today and what it should serve next, in the sa
     web = "pwa"
     ios = "testflight-internal"
 
+    [productize.triggers]           # R10: every platform but `primary`, with a dated reason
+    ios = "2026-01-15: the owner asked for it"
+
     [[productize.blocker]]
     what = "external TestFlight group"
     who = "owner"
     how = "App Store Connect → TestFlight → add an external group, submit for beta review"
 
-`teyla productize [paths]` reads every such manifest under `code_root`, checks the nine
+`teyla productize [paths]` reads every such manifest under `code_root`, checks the ten
 requirements below against the declared target, and prints what is unmet. `--owner-steps`
 turns the whole set — plus whatever `teyla platform` says is missing — into one numbered
 list of things only the owner can do, platform first because those unblock several
@@ -45,8 +49,10 @@ value quoted, never raised.
 """
 from __future__ import annotations
 
+import datetime
 import json
 import pathlib
+import re
 import tomllib
 
 from . import config
@@ -68,6 +74,8 @@ DEV_ONLY_DISTRIBUTION = ("none", "", "xcode", "apk-sideload")
 # these tuples — including unset — is unmet; the message names exactly which one.
 FIRST_RUN_OK = ("sign-in", "sign-in+skip")
 SAMPLE_DATA_OK = ("none", "labelled")
+# R10 — a trigger is a dated reason: `android = "2026-01-15: a named tester has no iPhone"`.
+TRIGGER_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?=$|[\s:,;.\-])[\s:,;.\-]*(.*)$", re.S)
 # The public bar, per platform. `macos` deliberately does not accept `dmg-notarized`:
 # a notarized disk image you email to two people is a handover, not a distribution path.
 PUBLIC_DISTRIBUTION = {
@@ -233,7 +241,49 @@ def requirements(pz: dict, repo: pathlib.Path, *, target: str | None = None,
             problems.append("sample_data unset" if not sample_data else f"sample_data={sample_data}")
         rows.append(_req("R9", "first_screen", not problems,
                          ", ".join(problems) if problems else f"first_run={first_run}, sample_data={sample_data}"))
+
+    # R10 — one primary platform, the rest by written trigger (POLICY §11). Not tied to the
+    # target: a second platform built without a reason costs the same whoever it serves.
+    rows.append(_platforms_row(pz, platforms))
     return rows
+
+
+def _platforms_row(pz: dict, platforms: list[str]) -> dict:
+    primary = str(pz.get("primary") or "").strip()
+    if len(platforms) <= 1:
+        if primary and platforms and primary != platforms[0]:
+            return _req("R10", "platforms", False, f"primary={primary} is not in platforms")
+        return _req("R10", "platforms", True, f"primary={primary or platforms[0]}" if (primary or platforms)
+                    else "no platform declared")
+    triggers = pz.get("triggers") if isinstance(pz.get("triggers"), dict) else {}
+    problems = []
+    if not primary:
+        problems.append("primary unset")
+    elif primary not in platforms:
+        problems.append(f"primary={primary} is not in platforms")
+    for plat in platforms:
+        if plat == primary:
+            continue
+        value = triggers.get(plat)
+        if value is None or not str(value).strip():
+            problems.append(f"{plat}: no trigger")
+            continue
+        m = TRIGGER_RE.match(str(value).strip())
+        if not m or not _real_date(m.group(1)):
+            problems.append(f"{plat}: trigger has no date")
+        elif not m.group(2).strip():
+            problems.append(f"{plat}: trigger has no reason")
+    if problems:
+        return _req("R10", "platforms", False, ", ".join(problems))
+    return _req("R10", "platforms", True, f"primary={primary}, {len(platforms) - 1} trigger(s) dated")
+
+
+def _real_date(text: str) -> bool:
+    try:
+        datetime.date.fromisoformat(text)
+    except ValueError:
+        return False
+    return True
 
 
 def evaluate(manifest: dict, *, mail_ready: bool | None = None) -> dict:
@@ -246,12 +296,22 @@ def evaluate(manifest: dict, *, mail_ready: bool | None = None) -> dict:
     if not pz:
         return {"product": manifest["product"], "repo": str(manifest["repo"]), "users": users, "target": target,
                 "declared": False, "requirements": [], "blockers": []}
-    if target not in SHAREABLE:
-        return {"product": manifest["product"], "repo": str(manifest["repo"]), "users": users, "target": target,
-                "declared": True, "requirements": [], "blockers": manifest["blockers"]}
-    rows = requirements(pz, manifest["repo"], target=target, mail_ready=mail_ready)
+    if target in SHAREABLE:
+        rows = requirements(pz, manifest["repo"], target=target, mail_ready=mail_ready)
+    else:
+        # An owner-only product skips R1–R9, but not R10: a second platform built without
+        # a reason costs the same whoever it serves (caught in review, P2).
+        rows = [_platforms_row(pz, [str(p) for p in (pz.get("platforms") or [])])]
+    blockers = list(manifest["blockers"])
+    # R10 is agent work: the primary and the triggers are in the repo's history and the
+    # owner's requests, so it becomes an agent step without anyone writing a blocker.
+    for row in rows:
+        if row["id"] == "R10" and not row["met"]:
+            blockers.append({"what": f"platforms: {row['detail']}", "who": "agent",
+                             "how": "write [productize] primary and a dated [productize.triggers] entry "
+                                    "per other platform, from the repo's history and the owner's requests"})
     return {"product": manifest["product"], "repo": str(manifest["repo"]), "users": users, "target": target,
-            "declared": True, "requirements": rows, "blockers": manifest["blockers"]}
+            "declared": True, "requirements": rows, "blockers": blockers}
 
 
 def evaluate_all(paths: list[str] | None = None, *, mail_ready: bool | None = None) -> list[dict]:
@@ -327,7 +387,7 @@ def render_text(reports: list[dict]) -> str:
             continue
         head = f"{r['product']:16} {r['users']}→{r['target']}"
         rows = r["requirements"]
-        if not rows:
+        if not rows or (r["target"] not in SHAREABLE and all(q["met"] for q in rows)):
             lines.append(f"{head}  nothing to meet (target is not a shared one)")
             continue
         met = sum(1 for q in rows if q["met"])
