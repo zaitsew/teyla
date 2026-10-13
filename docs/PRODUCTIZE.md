@@ -99,6 +99,12 @@ app first launches, even to a group of one. Make the web app an installable PWA 
 there is a web app. The first upload is the slow one: certificates, a beta review, a
 privacy page, an account-deletion path. Do it while nobody is waiting.
 
+**One primary platform, the rest by trigger.** `primary` in `[productize]` names the
+platform features land on first; every other entry in `platforms` needs a written trigger
+(a named person who cannot use the primary, or the owner asking). Secondary platforms
+catch up in parity trains, not feature by feature. POLICY §11 has the rule and the release
+cadence that goes with it.
+
 **Config out of code.** Every host, key name and identifier in `.env.example` and in
 `secrets = [...]`, never hardcoded in a client. A value you can only change by editing
 Swift is a value the person running the app cannot change at all.
