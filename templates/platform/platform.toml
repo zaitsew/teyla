@@ -54,6 +54,7 @@ from = ""
 [apple]
 config = "~/.appstoreconnect/config.env" # ASC_KEY_ID / ASC_ISSUER_ID / ASC_TEAM_ID
 release_tool = ""                         # path to your TestFlight upload script; `teyla platform` warns while it is empty
+tester = ""                               # the email your TestFlight app is signed in with; `teyla testflight` asks whether builds reach it
 
 # Android. A PWA needs none of this and is the honest first answer; the Play Console is
 # a $25 account plus, for a personal account, a 14-day closed test before production.

@@ -673,6 +673,15 @@ because one mail sender unblocks three products at once.
 
 The full method, the cost table, and four worked case studies are in `docs/PRODUCTIZE.md`.
 
+**`teyla testflight [path...] [--json]`** answers POLICY §11's "did it reach a person". For each
+product whose `[productize.distribution]` ios or macos is a TestFlight value or `app-store`, or
+whose `teyla.toml` sets `[release] apple_bundle_id`, it runs your release tool (`[apple]
+release_tool` in `~/.teyla/platform.toml`) as `beta reached --bundle-id ID --email EMAIL --json`,
+with `[apple] tester` as the email, and prints one line per platform: newest upload, newest build
+that tester can install, and what blocks the ones in between. Exit 0 when every platform is
+current, 1 otherwise (behind, nothing installable, tester not on the team, tool error), so a
+routine can use it. It reaches Apple through your tool, so safe mode needs `--allow-network`.
+
 ## 7. Prior art, and how Teyla differs
 
 Every piece of this exists somewhere, made well, by someone else. The combination
