@@ -9,6 +9,10 @@ name = "{{name}}"
 # built-but-nobody-used-it detector — fill it in before you ship, not after.
 # usage = "./check.sh usage"
 
+# Apple distribution: the bundle id `teyla testflight` asks App Store Connect about.
+# [release]
+# apple_bundle_id = "com.example.app"
+
 {{productize}}
 # ---------------------------------------------------------------------------
 # A control-plane routine: Teyla runs this one itself.

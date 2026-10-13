@@ -103,7 +103,7 @@ def find_manifests(paths: list[str] | None = None) -> list[pathlib.Path]:
 
 
 def parse(path: pathlib.Path) -> dict:
-    """{product, repo, productize, blockers} — or {error} when the file will not parse."""
+    """{product, repo, productize, release, blockers} — or {error} when the file will not parse."""
     try:
         data = tomllib.loads(path.read_text())
     except (tomllib.TOMLDecodeError, OSError) as e:
@@ -114,6 +114,7 @@ def parse(path: pathlib.Path) -> dict:
         "product": (data.get("product") or {}).get("name", path.parent.name),
         "repo": path.parent,
         "productize": pz,
+        "release": data.get("release") if isinstance(data.get("release"), dict) else {},
         "blockers": blockers,
     }
 

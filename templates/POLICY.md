@@ -139,6 +139,7 @@ are still changing, then a parity sprint to catch up with a moving target. So:
   merged a user-visible change on the primary ends with one internal upload (TestFlight
   internal, Play internal) — at most one per app per day unless it fixes a broken build —
   and says the build number once it is installable from the owner's tester account.
+  `teyla testflight` checks it.
   Secondaries upload at the end of their train.
 - **External testing starts when someone else uses it.** Start Play's closed test (14
   days for a personal account) the day the Android trigger fires: that clock is the

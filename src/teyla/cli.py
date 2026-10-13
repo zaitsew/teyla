@@ -42,6 +42,7 @@
   teyla update [--check] [--force] [--wire] [--quiet]            newer release → install, then policy sync/refresh, plugin refresh, routines
   teyla platform [init|env-example] [--json] [--no-net]          the shared resources set up once, and the step for each missing one
   teyla productize [path...] [--json] [--owner-steps]            what stands between each product and its second user
+  teyla testflight [path...] [--json] [--allow-network]            did the build reach a person: newest upload vs newest build your tester can install
   teyla reviews [--days N] [--json] [--quiet] [repo...]            review debt: merged PRs never reviewed, merged with an open P1, skipped
   teyla products [path...]                                       real-usage counters from every repo's ./check.sh usage
   teyla routines [path...] [--json]                               routines + manual checks from every repo's teyla.toml
@@ -439,6 +440,8 @@ def main(argv=None):
     from . import platform as platform_mod, productize as productize_mod
     doctor.register(sp); update.register(sp); _config.register(sp)
     platform_mod.register(sp); productize_mod.register(sp)
+    from . import testflight as testflight_mod
+    testflight_mod.register(sp)
     wiki.register(sp); feedback.register(sp); models.register(sp)
     plugins.register(sp); plugin_install.register(sp); connectors.register(sp); control.register(sp)
     remind.register(sp); rules.register(sp); harness.register(sp); storage.register(sp)
