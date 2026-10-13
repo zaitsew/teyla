@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.21.0 — 2026-10-13 — One primary platform; a build is done when it reaches a person
+
+A product built on iOS, Android and web from day one needed a parity sprint within two weeks, and the
+other platforms kept falling behind the one the owner actually used. Builds were uploaded but did not
+reach the owner's TestFlight, and a store approved a build far older than the one being tested. The
+policy said nothing about which platform comes first or when a build goes out.
+
+- **POLICY §11 — platforms and releases.** One primary platform per product. Every other platform needs
+  a written, dated trigger. Secondary platforms catch up in parity trains, porting only settled features,
+  and the train's brief is the diff since `synced-to` in `docs/PARITY.md`. A secondary nobody opened in 30
+  days is frozen. A build counts as done once the owner can install it, with at most one internal upload
+  per app per day. After the first public release, one version is in review at a time and the store
+  stays within two weeks of the build the owner uses.
+- **`teyla productize` R10 "platforms".** `[productize] primary` plus a dated `[productize.triggers]`
+  entry for every other platform (`android = "2026-01-15: a named tester has no iPhone"`). R10 applies
+  to every target, including owner-only products, and an unmet R10 becomes an agent step.
+- **`teyla testflight [PATH...] [--json]`.** Asks your release tool (`[apple] release_tool`,
+  `beta reached --json`) whether `[apple] tester` can install the newest build of each product
+  (`[release] apple_bundle_id`). It prints one line per platform with the reason each newer build
+  can't be installed. It exits 1 when any platform is behind, so a routine can gate on it. Safe mode
+  needs `--allow-network`.
+
 ## 0.20.3 — 2026-10-12 — Opus creeping into build lanes is visible
 
 On 2026-10-12 a usage review found that `teyla spend --by-day` lumped Opus 5.5 and Sonnet 5.5 subagent cost
