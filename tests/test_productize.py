@@ -552,3 +552,14 @@ def test_scaffolded_block_with_triggers_uncommented_parses(tmp_path):
     (d / "teyla.toml").write_text('[product]\nname = "s"\n' + block)
     r = reqs(d)["R10"]
     assert r["met"] is True, r
+
+
+@pytest.mark.parametrize("watch,met", [
+    ("garmin-connect", True), ("connect-iq-store", True), ("connect-iq-sideload", False),
+])
+def test_r4_garmin_watch_distribution(tmp_path, watch, met):
+    d = repo(tmp_path, platforms='["ios", "watch"]', primary="ios",
+             triggers={"watch": "2026-01-15: the owner's own watch"},
+             distribution=f'ios = "testflight-external"\nwatch = "{watch}"')
+    r = productize.evaluate(productize.parse(d / "teyla.toml"))
+    assert next(q for q in r["requirements"] if q["id"] == "R4")["met"] is met

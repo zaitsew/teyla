@@ -69,7 +69,7 @@ METERED_LLM = ("app-key", "proxy-metered", "byo-key+proxy-metered")
 
 # A distribution value that still requires the owner's own machine, or a developer's,
 # to put the app on someone else's device.
-DEV_ONLY_DISTRIBUTION = ("none", "", "xcode", "apk-sideload")
+DEV_ONLY_DISTRIBUTION = ("none", "", "xcode", "apk-sideload", "connect-iq-sideload")
 # R9 — the first screen (see docs/PRODUCTIZE.md, "The first screen"). Any value outside
 # these tuples — including unset — is unmet; the message names exactly which one.
 FIRST_RUN_OK = ("sign-in", "sign-in+skip")
@@ -81,7 +81,9 @@ TRIGGER_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?=$|[\s:,;.\-])[\s:,;.\-]*(.*)$",
 PUBLIC_DISTRIBUTION = {
     "ios": ("testflight-external", "app-store"),
     "macos": ("testflight-external", "app-store"),
-    "watch": ("testflight-external", "app-store"),
+    # A Garmin watch either runs a Connect IQ app (sideloaded, or from the Connect IQ store)
+    # or gets nothing installed at all: workouts and data arrive through Garmin Connect sync.
+    "watch": ("testflight-external", "app-store", "connect-iq-store", "garmin-connect"),
     "android": ("play-internal", "play"),
     "extension": ("chrome-web-store",),
 }
