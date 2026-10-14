@@ -942,3 +942,35 @@ def test_launchd_wrapper_stamp_counts_as_a_run(env, monkeypatch):
     got, _ = collect(env)
     assert got["launchd:com.example.quiet"]["verdict"] == "OK"
     assert got["launchd:com.example.nostamp"]["verdict"] == "STALE"
+
+
+def _paused_repo(env):
+    repo = env.parent / "repos" / "app-a"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "teyla.toml").write_text(
+        '[product]\nname = "app-a"\n'
+        '[[routine]]\nname = "daily"\nkind = "launchd"\nlabel = "com.example.daily"\nevery = "1d"\n'
+        'paused = "2026-10-14: owner keeps it off until the product is reviewed"\n')
+
+
+def test_a_paused_routine_is_disabled_with_its_reason_and_no_problem(env, monkeypatch):
+    _paused_repo(env)
+    monkeypatch.setattr(routines, "_launchctl_list", lambda: listing())
+    full, _ = schedules.run(now=NOW, allow_network=False)
+    assert verdicts(full) == {"routines:app-a:daily": "DISABLED"}
+    e = full[0]
+    assert e["note"] == "paused: 2026-10-14: owner keeps it off until the product is reviewed"
+    assert not schedules.is_problem(e)
+    assert schedules.problem_lines(full) == []
+    assert "UNREGISTERED" not in schedules.render_text(full, NOW, show_all=True)
+    assert "no run record" in schedules.render_text(full, NOW, show_all=True)
+
+
+def test_a_paused_routine_that_is_loaded_is_a_problem_reported_once(env, monkeypatch):
+    _paused_repo(env)
+    monkeypatch.setattr(routines, "_launchctl_list", lambda: listing(("-", 0, "com.example.daily")))
+    full, _ = schedules.run(now=NOW, allow_network=False)
+    assert verdicts(full) == {"routines:app-a:daily": "PAUSED BUT LOADED"}
+    assert schedules.is_problem(full[0])
+    assert "paused in teyla.toml but loaded" in full[0]["note"]
+    assert schedules.problem_lines(full) == []   # `teyla routines` carries it in its own banner file

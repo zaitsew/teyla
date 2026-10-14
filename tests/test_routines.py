@@ -488,3 +488,131 @@ log = "{log}"
     assert row["verdict"] == "FAILING" and "SyncError: nope" in row["detail"]
     assert row["last_run"].startswith("2026-10-02T15:25:37")
     assert summarize([rep])[0] == 1
+
+
+# --- paused: declared, but deliberately off ---------------------------------------
+
+PAUSED = "2026-10-14: owner keeps it off until the product is reviewed"
+LAUNCHCTL_HEAD = "PID\tStatus\tLabel\n"
+
+
+def _paused_manifest(tmp_path, paused=f'"{PAUSED}"', extra=""):
+    return write(tmp_path, f"""
+[product]
+name = "demo-app"
+
+[[routine]]
+name = "daily"
+kind = "launchd"
+label = "com.example.demo-app.daily"
+every = "1d"
+paused = {paused}
+{extra}
+
+[[routine]]
+name = "sync"
+kind = "launchd"
+label = "com.example.demo-app.sync"
+every = "1d"
+""")
+
+
+def _evaluate_with_launchctl(monkeypatch, tmp_path, *loaded_labels, **kw):
+    from teyla import routines
+    text = LAUNCHCTL_HEAD + "".join(f"-\t0\t{lab}\n" for lab in loaded_labels)
+    monkeypatch.setattr(routines, "_launchctl_list", lambda: text)
+    monkeypatch.setattr(routines, "_crontab_l", lambda: "")
+    return evaluate(parse_manifest(_paused_manifest(tmp_path, **kw)), now=NOW)
+
+
+def test_paused_key_is_accepted_and_kept(tmp_path):
+    m = parse_manifest(_paused_manifest(tmp_path))
+    assert m["routines"][0]["paused"] == PAUSED
+    assert "paused" not in m["routines"][1]
+
+
+@pytest.mark.parametrize("bad", [
+    '"owner keeps it off"',                 # no date
+    '"2026-10-14 owner keeps it off"',      # no colon
+    '"2026-10-14:"',                        # no reason
+    '"2026-10-14: "',                       # blank reason
+    '"2026-13-45: not a date"',             # not a calendar date
+    "true",                                 # not a string
+    "2026-10-14",                           # a TOML date, not a string
+])
+def test_paused_malformed_is_a_manifest_error(tmp_path, bad):
+    with pytest.raises(ManifestError, match=r"routine 'daily' has a malformed `paused`.*ISO date"):
+        parse_manifest(_paused_manifest(tmp_path, paused=bad))
+
+
+def test_paused_on_a_control_routine_is_validated_too(tmp_path):
+    p = write(tmp_path, """
+[product]
+name = "demo-app"
+
+[[routine]]
+name = "digest"
+paused = "soon"
+step = { kind = "command", run = "echo hi" }
+""")
+    with pytest.raises(ManifestError, match="malformed `paused`"):
+        parse_manifest(p)
+
+
+def test_paused_routine_that_is_not_loaded_is_paused_and_no_problem(tmp_path, monkeypatch):
+    from teyla.routines import problem_items, summary_line, write_lines
+    rep = _evaluate_with_launchctl(monkeypatch, tmp_path, "com.example.demo-app.sync")
+    row = rep["routines"][0]
+    assert row["verdict"] == "paused" and row["paused"] == PAUSED
+    assert PAUSED in row["detail"]
+    assert rep["routines"][1]["verdict"] != "paused"
+    # nowhere a problem: counts, exit code, banner items, product line
+    only = {**rep, "routines": rep["routines"][:1]}
+    assert summarize([only]) == (0, 0, 0)
+    assert exit_code(*summarize([only])) == 0
+    assert problem_items(only) == []
+    assert counts_line([only]) == "0 routines not running, 0 checks broken, 0 untested/re-test, 1 paused"
+    line = summary_line(only)
+    assert "no active routines" in line and "1 paused (daily)" in line and "not:" not in line
+    # the row and the reason are printed
+    text = render_text([only])
+    assert "paused" in text and "owner keeps it off" in text
+    # no .problems file is written for it
+    write_lines([only], tmp_path / "lines")
+    assert not (tmp_path / "lines" / "demo-app.problems").exists()
+
+
+def test_paused_does_not_hide_the_other_routines_problems(tmp_path, monkeypatch):
+    from teyla.routines import summary_line
+    rep = _evaluate_with_launchctl(monkeypatch, tmp_path)  # nothing loaded: `sync` is NOT LOADED
+    assert [r["verdict"] for r in rep["routines"]] == ["paused", "NOT LOADED"]
+    assert summarize([rep])[0] == 1 and exit_code(*summarize([rep])) == 1
+    assert "0/1 routines running (not: sync)" in summary_line(rep) and "1 paused (daily)" in summary_line(rep)
+
+
+def test_paused_but_loaded_is_a_problem(tmp_path, monkeypatch):
+    from teyla.routines import problem_items
+    rep = _evaluate_with_launchctl(monkeypatch, tmp_path, "com.example.demo-app.daily", "com.example.demo-app.sync")
+    row = rep["routines"][0]
+    assert row["verdict"] == "PAUSED BUT LOADED"
+    assert "paused in teyla.toml but loaded" in row["detail"] and "owner keeps it off" in row["detail"]
+    assert summarize([rep])[0] == 1 and exit_code(*summarize([rep])) == 1
+    assert any("PAUSED BUT LOADED" in t for _, t in problem_items(rep))
+    assert "1 routine paused but loaded" in counts_line([rep])
+    assert counts_line([rep]).startswith("0 routines not running, 1 routine paused but loaded")
+
+
+def test_paused_ignores_a_failing_log(tmp_path, monkeypatch):
+    log = tmp_path / "runs.jsonl"
+    log.write_text(_row(False, "2026-10-02T15:25:37Z", error="old failure") + "\n")
+    rep = _evaluate_with_launchctl(monkeypatch, tmp_path, extra=f'log = "{log}"')
+    assert rep["routines"][0]["verdict"] == "paused"
+
+
+def test_paused_reaches_the_digest_as_nothing_and_paused_but_loaded_as_a_problem(tmp_path, monkeypatch):
+    from teyla import digest
+    quiet = _evaluate_with_launchctl(monkeypatch, tmp_path, "com.example.demo-app.sync")
+    assert [c for c in digest.candidates([], [], [quiet]) if c["id"].startswith("routine:")] == []
+    loud = _evaluate_with_launchctl(monkeypatch, tmp_path, "com.example.demo-app.daily", "com.example.demo-app.sync")
+    ids = [c["id"] for c in digest.candidates([], [], [loud]) if c["id"].startswith("routine:")]
+    assert ids == ["routine:demo-app:daily"]

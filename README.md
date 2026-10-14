@@ -169,6 +169,7 @@ kind = "launchd"                     # launchd | cron | pg_cron | github-actions
 label = "com.example.sync"             # launchd label / cron marker / workflow name
 every = "1d"                         # expected cadence: 15m, 1h, 1d, 7d, or any <n>m|h|d; a `script` routine may omit label and every
 log = "~/Library/Logs/app-sync.log" # optional; mtime = last run
+# paused = "2026-10-14: owner keeps it off until the product is reviewed"   # optional; see below
 
 [[check]]                            # the human tests by hand and confirms
 name = "log an entry from a photo"
@@ -185,9 +186,15 @@ confirmed = 2026-09-09               # date of last confirmation
   -L1` if `gh` is on PATH, else `unknown`; pg_cron/script: `unknown` unless a
   `log` is given) · last run (log mtime, else `?`) · verdict: `ok` /
   `NOT LOADED` / `STALE` (last run older than 2× the declared cadence) /
-  `unknown`.
+  `unknown`, or `paused` / `PAUSED BUT LOADED` (below).
 - **Check row** — name · status · confirmed · age in days · verdict: `ok` /
   `BROKEN` / `UNTESTED` / `RE-TEST` (confirmed more than 30 days ago).
+
+A routine the owner deliberately leaves off carries `paused = "<ISO date>: <reason>"`
+(a malformed value is a manifest error). Its row says `paused` with the reason, and it is never a
+problem: not in the exit code, the banner or the digest, and `teyla schedules` lists it as `DISABLED`
+(`paused: <reason>`). If it is loaded anyway, the verdict is `PAUSED BUT LOADED` — the file and the
+machine disagree — and that is a problem. Delete the key to bring the routine back under watch.
 
 It ends with one summary line — `N routines not running, M checks broken, K
 untested/re-test` — and exits 1 when `N + M > 0`, so a cron job can alert on

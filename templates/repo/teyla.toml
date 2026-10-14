@@ -74,6 +74,8 @@ caps = { max_minutes = 10, max_writes = 20, max_sends = 0 }
 # label = "com.example.sync"
 # every = "1d"                          # 15m | 1h | 1d | 7d | any <n>m|h|d (script routines may omit label and every)
 # log = "~/Library/Logs/example-sync.log"
+# paused = "2026-01-01: owner keeps it off until the product is reviewed"   # deliberately off: shown as
+#                                       # `paused`, never a problem; delete the key to watch it again
 
 
 # ---------------------------------------------------------------------------
