@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.22.0 — 2026-10-14 — Every scheduled task in one place, with proof it ran
+
+The owner found that some scheduled tasks had not run and had quietly disappeared. Nothing in Teyla knew
+they existed. Three Claude desktop tasks had a folder but no schedule record, so they never fired. Two
+launchd agents had failed every run since their sign-in expired. A cloud routine had been switched off.
+"Did it run?" had no record to answer from (POLICY §9).
+
+- **`teyla schedules [--json] [--quiet] [--all] [--allow-network]`.** Reads launchd agents, Claude
+  desktop scheduled tasks, cloud routines (from the RemoteTrigger calls in transcripts), GitHub
+  `schedule:` workflows (scheduled runs only) and `teyla.toml` routines. It keeps a registry in
+  `~/.teyla/schedules.json`, so a task that disappears shows as VANISHED instead of dropping out of
+  sight. Each task gets a verdict: OK, STALE, FAILING, UNREGISTERED, MISSING DEFINITION, NEVER RAN or
+  VANISHED, which are problems, or DISABLED, DONE or UNKNOWN. Vendor launch agents are ignored
+  (`schedules.ignore_prefixes`).
+- **`teyla testflight --quiet`.** Writes `~/.teyla/testflight.problems`. Both problem files feed the
+  session banner and the weekly digest.
+- **The daily routine runs both checks before it builds the banner.** An older `daily.sh` is
+  regenerated.
+- **POLICY §9 names `teyla schedules`** as the record to start from.
+- **`teyla productize` R4** accepts Garmin distribution: `garmin-connect` and `connect-iq-store` count
+  as public, `connect-iq-sideload` as dev-only.
+
 ## 0.21.0 — 2026-10-13 — One primary platform; a build is done when it reaches a person
 
 A product built on iOS, Android and web from day one needed a parity sprint within two weeks, and the
