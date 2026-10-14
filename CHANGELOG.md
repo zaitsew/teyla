@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.23.0 — 2026-10-14 — A routine can be off on purpose
+
+`teyla schedules` reported routines that the owner keeps off on purpose (a product's daily cycle, a paper
+trading engine) as not loaded every day, next to tasks that had really died.
+
+- **`paused = "2026-10-14: reason"` on a `[[routine]]`.** A paused routine shows as `paused` in
+  `teyla routines` and DISABLED in `teyla schedules`, and is never a problem. If it is loaded anyway, it
+  shows as PAUSED BUT LOADED, which is a problem: the declaration and the machine disagree. A malformed
+  value is a manifest error naming the routine.
+
 ## 0.22.1 — 2026-10-14 — A quiet agent is not a stale one
 
 - **`teyla schedules`** now counts the stamp a wrapper script writes on each start
