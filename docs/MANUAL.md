@@ -424,10 +424,12 @@ hold them and none of them says whether a task ran:
   status (non-zero is FAILING), not times, so the last run is the newest modification time of the
   plist's `StandardOutPath` / `StandardErrorPath`. Disabled labels (`launchctl print-disabled`) and
   plists renamed to `.bak` / `.disabled` are DISABLED. Vendor labels are skipped (`com.apple.*`, and
-  `schedules.ignore_prefixes`).
+  `schedules.ignore_prefixes`, which by default covers `com.openai.`, `com.google.`, `com.microsoft.`,
+  `com.adobe.`, `homebrew.mxcl.` and a few more).
 - Claude cloud routines have no local store. The only trace is the session transcripts in which a
-  `RemoteTrigger` call created or updated one, so the entry reads "last known as of <date>" and is
-  UNKNOWN: whether it ran can only be seen in Claude. Session crons (`CronCreate`) die with the session
+  `RemoteTrigger` call returned it (name, cron, enabled, last fired), so the entry reads "last known as
+  of <date>" and is UNKNOWN, or DISABLED when the last result said `enabled: false`: whether it ran can
+  only be seen in Claude. Session crons (`CronCreate`) die with the session
   and are only counted in one line.
 - GitHub `schedule:` crons in `<code_root>/*/.github/workflows/`. The last run needs `gh` and the
   network, so safe mode shows "last run: not checked" unless `--allow-network` is given.

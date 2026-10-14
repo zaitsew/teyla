@@ -296,6 +296,64 @@ def test_launchd_every_verdict(env, monkeypatch):
     assert "launchctl bootstrap" in got["launchd:com.example.notloaded"]["note"]
 
 
+def test_vendor_agents_are_skipped_by_default(env, monkeypatch):
+    for label in ("com.openai.atlas.update-helper", "com.google.GoogleUpdater.wake", "com.microsoft.update",
+                  "com.adobe.ccxprocess", "homebrew.mxcl.postgresql", "com.apple.thing", "com.example.mine"):
+        plist(env, label, interval=3600)
+    monkeypatch.setattr(routines, "_launchctl_list", lambda: listing(("-", 78, "com.openai.atlas.update-helper"),
+                                                                    ("-", 0, "com.example.mine")))
+    got, _ = collect(env)
+    assert [k for k in got if k.startswith("launchd")] == ["launchd:com.example.mine"]
+
+
+def test_a_vendor_agent_seen_before_the_ignore_list_covered_it_is_not_vanished(env, monkeypatch):
+    plist(env, "com.vendor.helper", interval=3600, log=log_file(env, "v.log", NOW - H))
+    monkeypatch.setattr(routines, "_launchctl_list", lambda: listing(("-", 0, "com.vendor.helper")))
+    full, _ = schedules.run(now=NOW, allow_network=False)
+    assert "launchd:com.vendor.helper" in verdicts(full)
+    (env / ".teyla" / "config.toml").write_text('[schedules]\nignore_prefixes = ["com.vendor."]\n')
+    full, _ = schedules.run(now=NOW + D, allow_network=False)
+    assert full == []
+    assert "launchd:com.vendor.helper" not in json.loads((env / ".teyla" / "schedules.json").read_text())["entries"]
+
+
+def test_plist_with_a_dashed_comment_still_parses(env, monkeypatch):
+    """launchd and plutil accept `--` inside an XML comment; expat does not (a real plist did this)."""
+    p = env / "Library" / "LaunchAgents" / "com.example.hourly.plist"
+    p.write_text("""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Hourly: only the temp part (`--temp`) of the sweep.
+     Remove:  launchctl bootout gui/$(id -u)/com.example.hourly -->
+<plist version="1.0"><dict>
+<key>Label</key><string>com.example.hourly</string>
+<key>StartInterval</key><integer>3600</integer>
+</dict></plist>
+""")
+    monkeypatch.setattr(routines, "_launchctl_list", lambda: listing(("-", 0, "com.example.hourly")))
+    got, _ = collect(env)
+    assert got["launchd:com.example.hourly"]["cadence"] == "every 1h"
+
+
+def test_plist_that_really_does_not_parse(env, monkeypatch):
+    for name in ("com.example.loaded", "com.example.off", "com.example.never"):
+        (env / "Library" / "LaunchAgents" / f"{name}.plist").write_text("<<< not a plist")
+    monkeypatch.setattr(routines, "_launchctl_list", lambda: listing(("-", 0, "com.example.loaded")))
+    monkeypatch.setattr(schedules, "_launchctl_disabled", lambda: {"com.example.off"})
+    got, _ = collect(env)
+    assert verdicts(got.values()) == {"launchd:com.example.loaded": "UNKNOWN", "launchd:com.example.off": "DISABLED",
+                                      "launchd:com.example.never": "UNREGISTERED"}
+    assert "does not parse" in got["launchd:com.example.off"]["note"]
+
+
+def test_renamed_copies_with_a_date_suffix_are_removed_entries(env):
+    plist(env, "com.example.a", calendar={"Hour": 6}, name="com.example.a.plist.bak-2026-08-26")
+    plist(env, "com.example.b", calendar={"Hour": 6}, name="com.example.b.plist.disabled-2026-10-13")
+    plist(env, "com.example.c", calendar={"Hour": 6}, name="com.example.c.plist.bak-slots-2135")
+    got, _ = collect(env)
+    assert verdicts(got.values()) == {"launchd:com.example.a": "DISABLED", "launchd:com.example.b": "DISABLED",
+                                      "launchd:com.example.c": "DISABLED"}
+
+
 def test_launchd_ignore_prefixes_are_config(env, monkeypatch):
     plist(env, "com.google.keystone.agent", interval=3600)
     plist(env, "com.vendor.helper", interval=3600)
@@ -336,58 +394,86 @@ def tool_use(when, name, inp, use_id="toolu_1"):
 
 
 def tool_result(when, use_id, text):
-    return {"timestamp": when.isoformat(), "type": "user",
+    return {"timestamp": when.isoformat().replace("+00:00", "Z"), "type": "user",
             "message": {"content": [{"type": "tool_result", "tool_use_id": use_id, "content": text}]}}
+
+
+def trigger(tid="trig_abc123", name="Nightly digest", cron="0 5 * * *", enabled=True, fired=None):
+    """A routine object as the RemoteTrigger tool returns it (field names from a real transcript)."""
+    return {"id": tid, "name": name, "cron_expression": cron, "enabled": enabled,
+            "created_at": "2026-09-30T11:47:31.414466Z", "last_fired_at": fired, "next_run_at": "2026-10-10T08:45:00Z",
+            "derived_state": {"prompt": "do the thing", "model": "claude-sonnet-5-5"}}
+
+
+def call(when, action, result_obj, use_id, **inp):
+    """A RemoteTrigger call and its result, as the two transcript lines: the result text is
+    `HTTP 200` and one JSON line."""
+    return [tool_use(when, "RemoteTrigger", {"action": action, **inp}, use_id),
+            tool_result(when, use_id, "HTTP 200\n" + json.dumps(result_obj))]
 
 
 def test_cloud_routines_from_transcripts(env):
     t0 = NOW - 10 * D
     transcript(env, "s1.jsonl", [
         {"type": "summary", "summary": "unrelated line"},
-        tool_use(t0, "RemoteTrigger", {"action": "create", "name": "Nightly digest",
-                                       "cron_expression": "0 5 * * *", "enabled": True}, "toolu_a"),
-        tool_result(t0, "toolu_a", '{"id": "trig_abc123", "name": "Nightly digest"}'),
-        tool_use(NOW - 3 * D, "RemoteTrigger", {"action": "update", "trigger_id": "trig_abc123",
-                                                "cron_expression": "30 5 * * *"}, "toolu_b"),
-        tool_use(NOW - 2 * D, "RemoteTrigger", {"action": "list"}, "toolu_c"),
+        *call(t0, "create", {"trigger": trigger(cron="0 7 * * 1")}, "toolu_a",
+              body={"name": "Nightly digest", "cron_expression": "0 7 * * 1", "enabled": True}),
+        *call(NOW - 3 * D, "update", {"trigger": trigger(cron="30 5 * * *", fired="2026-10-11T05:30:12.5Z")},
+              "toolu_b", trigger_id="trig_abc123", body={"cron_expression": "30 5 * * *"}),
         tool_use(NOW - 2 * D, "CronCreate", {"cron": "*/5 * * * *"}, "toolu_d"),
         tool_use(NOW - 40 * D, "CronCreate", {"cron": "*/5 * * * *"}, "toolu_e"),
     ])
     transcript(env, "s2.jsonl", [
-        tool_use(NOW - 5 * D, "RemoteTrigger", {"action": "create", "name": "Paused one",
-                                                "cron_expression": "0 8 * * 1", "enabled": False}),
+        *call(NOW - 5 * D, "list", {"data": [trigger("trig_two", "Paused one", "0 8 * * 1", enabled=False),
+                                             {"id": "env_x", "unrelated": True}], "has_more": False}, "toolu_l"),
+        *call(NOW - 4 * D, "run", {"trigger": trigger("trig_two", "Paused one", "0 8 * * 1", enabled=False)}, "toolu_r",
+              trigger_id="trig_two"),
         tool_use(NOW - 4 * D, "CronCreate", {"cron": "0 * * * *"}, "toolu_f"),
     ], project="proj-b")
     transcript(env, "ancient.jsonl", [
-        tool_use(NOW - 200 * D, "RemoteTrigger", {"action": "create", "name": "Ancient",
-                                                  "cron_expression": "0 1 * * *"}),
+        *call(NOW - 200 * D, "get", {"trigger": trigger("trig_old", "Ancient")}, "toolu_z"),
     ], mtime=NOW - 200 * D)
 
     got, crons = collect(env)
     cloud = {k: v for k, v in got.items() if k.startswith("cloud")}
-    assert set(cloud) == {"cloud:trig_abc123", "cloud:Paused one"}
+    assert set(cloud) == {"cloud:trig_abc123", "cloud:trig_two"}
     nightly = cloud["cloud:trig_abc123"]
-    assert nightly["name"] == "Nightly digest" and nightly["cadence"] == "daily 05:30"
-    assert nightly["verdict"] == "UNKNOWN"
+    assert nightly["name"] == "Nightly digest" and nightly["cadence"] == "daily 05:30"   # the newer update wins
+    assert nightly["verdict"] == "UNKNOWN" and nightly["last_run"] == dt.datetime(2026, 10, 11, 5, 30, 12, 500000, tzinfo=UTC)
     assert f"last known as of {(NOW - 3 * D).astimezone():%Y-%m-%d}" in nightly["note"]
-    assert cloud["cloud:Paused one"]["verdict"] == "DISABLED"
+    assert "last fired 2026-10-11" in nightly["note"]
+    paused = cloud["cloud:trig_two"]
+    assert paused["name"] == "Paused one" and paused["verdict"] == "DISABLED"
     assert crons == 2  # the 40-day-old CronCreate is outside the 30-day window
+
+
+def test_cloud_disable_after_enable_is_read_from_the_result(env):
+    transcript(env, "s.jsonl", [
+        *call(NOW - 20 * D, "get", {"trigger": trigger("trig_w", "Model watch (weekly)", "45 8 * * 6")}, "t1",
+              trigger_id="trig_w"),
+        *call(NOW - 6 * D, "update", {"trigger": trigger("trig_w", "Model watch (weekly)", "45 8 * * 6", enabled=False)},
+              "t2", trigger_id="trig_w", body={"enabled": False}),
+    ])
+    got, _ = collect(env)
+    e = got["cloud:trig_w"]
+    assert e["name"] == "Model watch (weekly)" and e["cadence"] == "weekly Sat 08:45"
+    assert e["enabled"] is False and e["verdict"] == "DISABLED"
 
 
 def test_cloud_deleted_routine_is_vanished_then_forgotten(env):
     transcript(env, "s.jsonl", [
-        tool_use(NOW - 9 * D, "RemoteTrigger", {"action": "create", "name": "Doomed", "cron_expression": "0 1 * * *"}),
-        tool_use(NOW - 8 * D, "RemoteTrigger", {"action": "delete", "name": "Doomed"}),
+        *call(NOW - 9 * D, "get", {"trigger": trigger("trig_d", "Doomed", "0 1 * * *")}, "t1", trigger_id="trig_d"),
+        tool_use(NOW - 8 * D, "RemoteTrigger", {"action": "delete", "trigger_id": "trig_d"}, "t2"),
     ])
     got, _ = collect(env)
-    assert got["cloud:Doomed"]["verdict"] == "VANISHED"
-    assert "deleted in a session on" in got["cloud:Doomed"]["note"]
+    assert got["cloud:trig_d"]["verdict"] == "VANISHED"
+    assert "deleted in a session on" in got["cloud:trig_d"]["note"]
     transcript(env, "s.jsonl", [
-        tool_use(NOW - 49 * D, "RemoteTrigger", {"action": "create", "name": "Doomed", "cron_expression": "0 1 * * *"}),
-        tool_use(NOW - 48 * D, "RemoteTrigger", {"action": "delete", "name": "Doomed"}),
+        *call(NOW - 49 * D, "get", {"trigger": trigger("trig_d", "Doomed", "0 1 * * *")}, "t1", trigger_id="trig_d"),
+        tool_use(NOW - 48 * D, "RemoteTrigger", {"action": "delete", "trigger_id": "trig_d"}, "t2"),
     ])
     got, _ = collect(env)
-    assert "cloud:Doomed" not in got
+    assert "cloud:trig_d" not in got
 
 
 # --- github ------------------------------------------------------------------------------------
@@ -511,16 +597,23 @@ def test_routines_are_reused_and_not_listed_twice(env, monkeypatch):
         '[product]\nname = "app-a"\n'
         f'[[routine]]\nname = "sync"\nkind = "launchd"\nlabel = "com.example.sync"\nevery = "1d"\nlog = "{log}"\n'
         '[[routine]]\nname = "gone"\nkind = "launchd"\nlabel = "com.example.gone"\nevery = "1d"\n'
-        '[[routine]]\nname = "web"\nkind = "script"\nhow = "container restarts"\n')
+        '[[routine]]\nname = "web"\nkind = "script"\nhow = "container restarts"\n'
+        '[[routine]]\nname = "gate"\nkind = "launchd"\nlabel = "com.example.gate"\nevery = "15m"\n'
+        f'[[routine]]\nname = "nolog"\nkind = "launchd"\nlabel = "com.example.nolog"\nevery = "1d"\nlog = "{env}/absent.log"\n')
     plist(env, "com.example.sync", calendar={"Hour": 6}, log=log)
     plist(env, "com.example.other", calendar={"Hour": 6}, log=log)
-    monkeypatch.setattr(routines, "_launchctl_list", lambda: listing(("-", 0, "com.example.sync"),
-                                                                    ("-", 0, "com.example.other")))
+    monkeypatch.setattr(routines, "_launchctl_list", lambda: listing(
+        ("-", 0, "com.example.sync"), ("-", 0, "com.example.other"), ("123", 0, "com.example.gate"),
+        ("-", 0, "com.example.nolog")))
     got, _ = collect(env)
     assert "launchd:com.example.sync" not in got      # the teyla.toml row carries it
     assert "launchd:com.example.other" in got
     assert verdicts(v for k, v in got.items() if k.startswith("routines")) == {
-        "routines:app-a:sync": "OK", "routines:app-a:gone": "UNREGISTERED", "routines:app-a:web": "UNKNOWN"}
+        "routines:app-a:sync": "OK", "routines:app-a:gone": "UNREGISTERED", "routines:app-a:web": "UNKNOWN",
+        # loaded, but no run time exists: never "OK" next to "never ran"
+        "routines:app-a:gate": "UNKNOWN", "routines:app-a:nolog": "NEVER RAN"}
+    assert "declares no log" in got["routines:app-a:gate"]["note"]
+    assert "absent.log does not exist" in got["routines:app-a:nolog"]["note"]
     assert got["routines:app-a:sync"]["cadence"] == "1d"
     assert all(e["elsewhere"] for k, e in got.items() if k.startswith("routines"))
 
@@ -567,12 +660,12 @@ def test_back_again_clears_vanished_and_keeps_first_seen(env, monkeypatch):
 
 
 def test_cloud_routine_stays_last_known_when_transcripts_age_out(env):
-    f = transcript(env, "s.jsonl", [tool_use(NOW - 5 * D, "RemoteTrigger", {
-        "action": "create", "name": "Keeper", "cron_expression": "0 5 * * *"})])
+    f = transcript(env, "s.jsonl", call(NOW - 5 * D, "get", {"trigger": trigger("trig_keep", "Keeper")}, "t1",
+                                        trigger_id="trig_keep"))
     schedules.run(now=NOW, allow_network=False)
     f.unlink()
     full, _ = schedules.run(now=NOW + 60 * D, allow_network=False)
-    e = by_id(full)["cloud:Keeper"]
+    e = by_id(full)["cloud:trig_keep"]
     assert e["verdict"] == "UNKNOWN" and "last known as of" in e["note"]
 
 

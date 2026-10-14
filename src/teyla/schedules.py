@@ -59,8 +59,7 @@ SOURCES = ("claude-desktop", "launchd", "cloud", "github", "routines")
 SEVERITY = ("FAILING", "UNREGISTERED", "MISSING DEFINITION", "NEVER RAN", "STALE", "VANISHED",
             "UNKNOWN", "DISABLED", "DONE", "OK")
 PROBLEMS = frozenset({"FAILING", "UNREGISTERED", "MISSING DEFINITION", "NEVER RAN", "STALE", "VANISHED"})
-DEFAULT_IGNORE_PREFIXES = ["com.google.", "com.microsoft.", "com.adobe.", "us.zoom.", "com.spotify.",
-                           "com.dropbox.", "org.mozilla."]
+DEFAULT_IGNORE_PREFIXES = list(config.DEFAULTS["schedules"]["ignore_prefixes"])
 VANISHED_KEEP = dt.timedelta(days=30)
 CLOUD_LOOKBACK = dt.timedelta(days=90)
 SESSION_CRON_WINDOW = dt.timedelta(days=30)
@@ -449,6 +448,9 @@ def parse_listing(text: str) -> dict[str, tuple[str | None, int | None]]:
     return out
 
 
+_REMOVED_RE = re.compile(r"\.(?:bak|disabled)(?:[-.][\w.-]*)?$")  # .bak, .disabled, .bak-2026-08-26, .disabled-slots
+
+
 def _ignored(label: str, prefixes) -> bool:
     return label.startswith("com.apple.") or any(label.startswith(p) for p in prefixes if p)
 
@@ -457,6 +459,18 @@ def ignore_prefixes(cfg: dict | None = None) -> list[str]:
     cfg = cfg if cfg is not None else config.load()
     raw = (cfg.get("schedules") or {}).get("ignore_prefixes", DEFAULT_IGNORE_PREFIXES)
     return [str(p) for p in raw] if isinstance(raw, list) else list(DEFAULT_IGNORE_PREFIXES)
+
+
+def _load_plist(data: bytes) -> dict:
+    """The plist as a dict. launchd and plutil accept XML comments with `--` inside, which expat (and
+    so plistlib) rejects, so a failed parse is retried with the comments removed."""
+    try:
+        out = plistlib.loads(data)
+    except Exception:  # noqa: BLE001
+        out = plistlib.loads(re.sub(rb"<!--.*?-->", b"", data, flags=re.S))
+    if not isinstance(out, dict):
+        raise ValueError("not a dict")
+    return out
 
 
 def read_launchd(agents_dir: pathlib.Path | None = None, *, listing: str | None = None,
@@ -475,22 +489,28 @@ def read_launchd(agents_dir: pathlib.Path | None = None, *, listing: str | None 
     for f in files:
         n = f.name
         is_live = n.endswith(".plist")
-        is_removed = n.endswith((".bak", ".disabled")) and not is_live
+        is_removed = bool(_REMOVED_RE.search(n)) and not is_live
         if not (is_live or is_removed) or not f.is_file():
             continue
         try:
-            plist = plistlib.loads(f.read_bytes())
-            if not isinstance(plist, dict):
-                raise ValueError("not a dict")
+            plist = _load_plist(f.read_bytes())
         except Exception:  # noqa: BLE001 - a plist that does not parse is reported, never fatal
             if is_live:
                 label = n[: -len(".plist")]
                 if not _ignored(label, prefixes):
-                    live[label] = entry("launchd", label, label, definition=f, verdict="UNKNOWN",
-                                        note="the plist does not parse, so launchd cannot load it",
-                                        run_known=False)
+                    e = entry("launchd", label, label, definition=f, run_known=False, since=_mtime(f),
+                              note="the plist does not parse, so launchd cannot read its schedule")
+                    if label in disabled:
+                        e.update(enabled=False, verdict="DISABLED",
+                                 note=e["note"] + "; it is disabled in launchd")
+                    elif label in loaded:
+                        e["verdict"] = "UNKNOWN"
+                    else:
+                        e.update(verdict="UNREGISTERED", note="the plist does not parse and launchd has not "
+                                 "loaded it, so it never fires")
+                    live[label] = e
             continue
-        label = str(plist.get("Label") or re.sub(r"\.plist(\.\w+)?$|\.(bak|disabled)$", "", n))
+        label = str(plist.get("Label") or re.sub(r"\.plist.*$|" + _REMOVED_RE.pattern, "", n))
         if _ignored(label, prefixes):
             continue
         cal, interval = plist.get("StartCalendarInterval"), plist.get("StartInterval")
@@ -537,9 +557,6 @@ def read_launchd(agents_dir: pathlib.Path | None = None, *, listing: str | None 
 
 # --- cloud routines (transcripts) --------------------------------------------------------------
 
-_ID_RE = re.compile(r'"?(?:trigger_id|id)"?\s*[:=]\s*"?([A-Za-z0-9_-]{6,})')
-
-
 def _blocks(obj: dict):
     msg = obj.get("message")
     content = msg.get("content") if isinstance(msg, dict) else None
@@ -558,11 +575,31 @@ def _result_text(block: dict) -> str:
     return ""
 
 
+def _triggers_in(text: str) -> list[dict]:
+    """The routine objects in a RemoteTrigger result. The real result is `HTTP 200` and a line of
+    JSON: `{"trigger": {...}}` for create/get/update/run, `{"data": [{...}, ...]}` for list. A routine
+    object has an `id` (trig_...), a `name`, a `cron_expression`, `enabled` and `last_fired_at`."""
+    i = text.find("{")
+    if i < 0:
+        return []
+    try:
+        data = json.loads(text[i:])
+    except ValueError:
+        return []
+    if not isinstance(data, dict):
+        return []
+    objs = [data["trigger"]] if isinstance(data.get("trigger"), dict) else (
+        [x for x in data["data"] if isinstance(x, dict)] if isinstance(data.get("data"), list) else [])
+    return [o for o in objs if isinstance(o.get("id"), str) and ("cron_expression" in o or "name" in o)]
+
+
 def scan_transcripts(root: str | pathlib.Path | None = None, now: dt.datetime | None = None
                      ) -> tuple[list[dict], int]:
-    """(cloud routine entries, how many session crons (CronCreate) transcripts show created in the last 30 days).
-    Only lines that mention RemoteTrigger or CronCreate are parsed; files untouched for 90 days
-    are skipped (the registry keeps what they once showed)."""
+    """(cloud routine entries, how many session crons (CronCreate) the transcripts show created in the
+    last 30 days). A routine's state is the newest RemoteTrigger result that shows it (create, get,
+    update, run and list all return it); a `delete` call marks it deleted. Only lines that mention
+    RemoteTrigger or CronCreate, or answer one of its calls, are parsed; transcripts untouched for 90
+    days are skipped (the registry keeps what they once showed)."""
     from .adapters import claude_code
     root = pathlib.Path(claude_code.DEFAULT_ROOT if root is None else root).expanduser()
     now = now or _now()
@@ -576,7 +613,7 @@ def scan_transcripts(root: str | pathlib.Path | None = None, now: dt.datetime | 
         mt = _mtime(f)
         if mt is None or now - mt > CLOUD_LOOKBACK:
             continue
-        pending: dict[str, str] = {}  # tool_use_id -> routine name, awaiting the id in the result
+        pending: set[str] = set()  # tool_use ids of RemoteTrigger calls awaiting their result
         try:
             fh = f.open("r", encoding="utf-8", errors="replace")
         except OSError:
@@ -594,59 +631,47 @@ def scan_transcripts(root: str | pathlib.Path | None = None, now: dt.datetime | 
                     continue
                 stamp = _parse_ts(obj.get("timestamp")) or mt
                 for b in _blocks(obj):
-                    kind = b.get("type")
-                    if kind == "tool_use" and str(b.get("name", "")).endswith("CronCreate"):
+                    kind, name = b.get("type"), str(b.get("name", ""))
+                    if kind == "tool_use" and name.endswith("CronCreate"):
                         if now - stamp <= SESSION_CRON_WINDOW:
                             cron_count += 1
-                    elif kind == "tool_use" and str(b.get("name", "")).endswith("RemoteTrigger"):
+                    elif kind == "tool_use" and name.endswith("RemoteTrigger"):
                         inp = b.get("input") if isinstance(b.get("input"), dict) else {}
-                        action = str(inp.get("action", "")).lower()
-                        if action not in ("create", "update", "delete"):
-                            continue
-                        tid = inp.get("trigger_id") or inp.get("id")
-                        nm = inp.get("name")
-                        key = str(tid) if tid else (f"name:{nm}" if nm else None)
-                        if key is None:
-                            continue
-                        rec = state.setdefault(key, {"name": None, "cron": None, "enabled": True,
-                                                     "stamp": stamp, "deleted": None, "file": str(f)})
-                        if nm:
-                            rec["name"] = str(nm)
-                        if inp.get("cron_expression"):
-                            rec["cron"] = str(inp["cron_expression"])
-                        if "enabled" in inp:
-                            rec["enabled"] = inp["enabled"] is not False
-                        if action == "delete":
+                        if b.get("id"):
+                            pending.add(str(b["id"]))
+                        tid = inp.get("trigger_id")
+                        if str(inp.get("action", "")).lower() == "delete" and tid:
+                            rec = state.setdefault(str(tid), {"stamp": stamp, "file": str(f)})
                             rec["deleted"] = stamp
-                        rec["stamp"] = max(rec["stamp"], stamp)
-                        if action == "create" and not tid and b.get("id") and nm:
-                            pending[str(b["id"])] = key
                     elif kind == "tool_result" and str(b.get("tool_use_id", "")) in pending:
-                        old_key = pending.pop(str(b["tool_use_id"]))
-                        m = _ID_RE.search(_result_text(b))
-                        if m and old_key in state and m.group(1) != old_key:
-                            rec = state.pop(old_key)
-                            merged = state.get(m.group(1))
-                            if merged is None:
-                                state[m.group(1)] = rec
-                            else:
-                                for k in ("name", "cron"):
-                                    merged[k] = merged[k] or rec[k]
-                                merged["stamp"] = max(merged["stamp"], rec["stamp"])
+                        pending.discard(str(b["tool_use_id"]))
+                        for o in _triggers_in(_result_text(b)):
+                            rec = state.setdefault(o["id"], {"stamp": stamp, "file": str(f)})
+                            if "name" not in rec or stamp >= rec["stamp"]:
+                                rec.update(name=o.get("name"), cron=o.get("cron_expression"),
+                                           enabled=o.get("enabled") is not False, stamp=stamp, file=str(f),
+                                           fired=_parse_ts(o.get("last_fired_at")))
     out = []
     for key, rec in sorted(state.items()):
-        name = rec["name"] or key
-        cadence, expected = parse_cron(rec["cron"]) if rec["cron"] and len(rec["cron"].split()) == 5 else (
-            (f"cron {rec['cron']}" if rec["cron"] else "schedule not seen"), None)
-        when = _date(rec["stamp"])
-        e = entry("cloud", key.removeprefix("name:"), name, cadence=cadence, expected_every=expected,
-                  enabled=rec["enabled"], definition=rec["file"], run_known=False, since=rec["stamp"],
-                  note=f"last known as of {when}; cloud runs leave no record on this machine, check its run "
-                       f"history in Claude")
-        if rec["deleted"] is not None:
-            if now - rec["deleted"] > VANISHED_KEEP:
+        if "name" not in rec:
+            continue  # only a delete call was seen: nothing to describe
+        cron = rec.get("cron")
+        cadence, expected = parse_cron(cron) if cron and len(str(cron).split()) == 5 else (
+            (f"cron {cron}" if cron else "schedule not seen"), None)
+        note = f"last known as of {_date(rec['stamp'])}"
+        if rec.get("fired"):
+            note += f"; last fired {_date(rec['fired'])}"
+        note += "; cloud runs leave no record on this machine, check its run history in Claude"
+        e = entry("cloud", key, rec.get("name") or key, cadence=cadence, expected_every=expected,
+                  enabled=rec.get("enabled", True), last_run=rec.get("fired"), definition=rec["file"],
+                  run_known=False, since=rec["stamp"], note=note)
+        if rec.get("enabled", True):
+            e["verdict"] = "UNKNOWN"  # a transcript is old news, not a run record: never STALE from here
+        deleted = rec.get("deleted")
+        if deleted is not None and deleted >= rec["stamp"]:
+            if now - deleted > VANISHED_KEEP:
                 continue
-            e.update(verdict="VANISHED", note=f"deleted in a session on {_date(rec['deleted'])}")
+            e.update(verdict="VANISHED", note=f"deleted in a session on {_date(deleted)}")
         out.append(e)
     return out, cron_count
 
@@ -778,6 +803,12 @@ def read_routines(reports: list[dict] | None = None, now: dt.datetime | None = N
             every = str(row.get("every") or "")
             expected = routines.cadence(every) if every else None
             last = _parse_ts(row.get("last_run")) if row.get("last_run") not in (None, "?") else None
+            if raw == "ok" and last is None and row.get("loaded") != routines.ON_DEMAND:
+                # Loaded, but nothing says it ever ran: "ok" with no run time is a guess.
+                if row.get("log"):
+                    verdict, note = "NEVER RAN", f"loaded, but its log {row['log']} does not exist"
+                else:
+                    verdict, note = "UNKNOWN", "loaded, but it declares no log, so there is no run time to judge"
             e = entry("routines", f"{rep['product']}:{row['name']}", f"{rep['product']}: {row['name']}",
                       cadence=("on demand" if row.get("loaded") == routines.ON_DEMAND else every or "unscheduled"),
                       expected_every=expected, last_run=last, definition=pathlib.Path(rep.get("repo", "")) / "teyla.toml",
@@ -857,6 +888,14 @@ def save_registry(reg: dict, path: pathlib.Path | None = None) -> bool:
     except OSError:
         return False
     return True
+
+
+def forget_ignored(reg: dict, prefixes: list[str]) -> None:
+    """Drop launchd ids the ignore list covers now: a vendor agent seen before the list grew is not a
+    task that vanished."""
+    book = reg.get("entries") or {}
+    for eid in [k for k in book if k.startswith("launchd:") and _ignored(k.split(":", 1)[1], prefixes)]:
+        del book[eid]
 
 
 def apply_registry(entries: list[dict], reg: dict, now: dt.datetime) -> list[dict]:
@@ -994,6 +1033,7 @@ def run(*, allow_network: bool | None = None, now: dt.datetime | None = None, **
     now = now or _now()
     entries, cron_n = collect(now, allow_network=allow_network, **kw)
     reg = load_registry()
+    forget_ignored(reg, ignore_prefixes())
     full = apply_registry(entries, reg, now)
     save_registry(reg)
     return full, cron_n
