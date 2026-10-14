@@ -881,6 +881,24 @@ def test_the_daily_wrapper_syncs_the_policy_and_an_older_one_is_rewritten(_home,
     assert not routine_install.is_stale()
 
 
+def test_a_daily_wrapper_with_the_quiet_checks_after_doctor_is_rewritten(_home, monkeypatch):
+    _install_wrappers(_home, monkeypatch)
+    path = routine_install.DAILY_WRAPPER_PATH
+    text = path.read_text()
+    assert text.index("teyla schedules --quiet") < text.index("teyla testflight --quiet") < text.index("teyla doctor --quiet")
+    assert not routine_install.is_stale()
+    # the order of the release that first shipped them: both after the banner is built
+    moved = [l for l in text.splitlines(keepends=True) if "schedules --quiet" in l or "testflight --quiet" in l]
+    kept = [l for l in text.splitlines(keepends=True) if l not in moved]
+    i = next(n for n, l in enumerate(kept) if l.startswith("teyla doctor --quiet"))
+    path.write_text("".join(kept[:i + 1] + moved + kept[i + 1:]))
+    assert routine_install.is_stale()
+    routine_install.install(if_stale=True)
+    fixed = path.read_text()
+    assert fixed.index("teyla schedules --quiet") < fixed.index("teyla doctor --quiet")
+    assert not routine_install.is_stale()
+
+
 def test_the_daily_wrapper_syncs_in_safe_mode_too(_home, monkeypatch):
     assert config.set_value("safe.enabled", "true").startswith("set")
     _install_wrappers(_home, monkeypatch)

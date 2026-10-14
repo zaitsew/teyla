@@ -118,14 +118,15 @@ TEYLA="{teyla_bin}"
 # A session over $250 in the last day or Actions past 80% of the included minutes: a notification
 # and a banner line (doctor, next, writes the banner). Silent otherwise.
 teyla spend --alert
-teyla doctor --quiet
-# Refresh ~/.teyla/routines/<product>.line, the one-liners the session-start hook shows.
-teyla routines >/dev/null 2>&1
 # Every scheduled task outside a repo (Claude desktop, launchd, cloud routines, GitHub): did it run, what
-# vanished. Updates ~/.teyla/schedules.json and the banner; a failure here never fails the daily.
+# vanished. Updates ~/.teyla/schedules.json and the problem file the banner reads; a failure here never
+# fails the daily. It runs before `doctor`, which builds the banner, so a new problem shows today.
 teyla schedules --quiet || true
 # Did the last build reach a person? Network (the release tool asks Apple): safe mode skips it.
 teyla testflight --quiet || true
+teyla doctor --quiet
+# Refresh ~/.teyla/routines/<product>.line, the one-liners the session-start hook shows.
+teyla routines >/dev/null 2>&1
 # The generated copies of the policy (Codex, Grok, Cursor, Hermes) follow ~/.agents/POLICY.md and
 # ~/.claude/CLAUDE.md; a hand edit found in one is filed in ~/.teyla/policy-inbox/ first. Local files
 # only, so safe mode runs it too.
@@ -273,6 +274,16 @@ def _teyla_bin() -> str:
     return os.path.abspath(sys.argv[0])
 
 
+def _quiet_checks_after_doctor(text: str) -> bool:
+    """True when the daily script runs `schedules --quiet` or `testflight --quiet` after `doctor --quiet`
+    (which builds the banner), so what they find is shown a day late."""
+    doctor = text.find("doctor --quiet")
+    if doctor < 0:
+        return False
+    return any(0 <= text.find(step) and text.find(step) > doctor
+               for step in ("schedules --quiet", "testflight --quiet"))
+
+
 def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | None = None) -> bool:
     """True when the wrapper does not exist, names a teyla binary other than the current one, or
     (when `env` is given) does not export exactly the environment config says it should."""
@@ -292,6 +303,9 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         return True
     if path == DAILY_WRAPPER_PATH and "schedules --quiet" not in text:
         # Written before `teyla schedules`: the daily would never record what is scheduled.
+        return True
+    if path == DAILY_WRAPPER_PATH and _quiet_checks_after_doctor(text):
+        # Written when the quiet checks ran after `doctor`: their problems reached the banner a day late.
         return True
     if path == DAILY_WRAPPER_PATH and "policy sync" not in text:
         # Written before the daily kept the generated policy copies current.
