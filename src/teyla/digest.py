@@ -8,7 +8,9 @@ had no reader: nothing opened them. And a session-start line such as "teyla: 1 f
 **Banner.** `teyla doctor` and `teyla routines` write `~/.teyla/banner.items`, one
 `key<TAB>text` line per thing that needs a human: doctor WARN/FIX rows (key = level|name, so
 a WARN turning into a FIX is news), routines not running (NOT LOADED/STALE/unknown/FAILING) and BROKEN checks from every
-product, and reminders — those only on the day they fall due, the day after, and then once a
+product, scheduled tasks that are not running (`~/.teyla/schedules.problems`, written by `teyla schedules
+--quiet`), TestFlight platforms that are behind (`~/.teyla/testflight.problems`, `teyla testflight --quiet`)
+and reminders — those only on the day they fall due, the day after, and then once a
 week (the key carries the overdue week). The plugin's session-start hook compares the keys
 with `~/.teyla/banner.seen` (the keys it showed last time) in one awk call, prints
 
@@ -121,6 +123,43 @@ def routine_items(lines_dir: pathlib.Path | None = None) -> list[tuple[str, str]
     return out
 
 
+def problem_file_items(name: str) -> list[tuple[str, str]]:
+    """The `key<TAB>text` lines of ~/.teyla/<name> (schedules.problems, testflight.problems), as
+    `routine_items` reads the per-product ones. A missing or unreadable file is no items."""
+    out = []
+    try:
+        for line in _path(name).read_text().splitlines():
+            if "\t" in line:
+                k, t = line.split("\t", 1)
+                out.append((k, t))
+    except OSError:
+        pass
+    return out
+
+
+def schedule_items() -> list[tuple[str, str]]:
+    return problem_file_items("schedules.problems")
+
+
+def testflight_items() -> list[tuple[str, str]]:
+    return problem_file_items("testflight.problems")
+
+
+def problem_file_candidates() -> list[dict]:
+    """Weekly-digest candidates from the two problem files: one line each, however many tasks or
+    platforms it names, with the command that shows the rest."""
+    out = []
+    for rank, cid, items, cmd, what in ((2, "schedules", schedule_items(), "teyla schedules", "scheduled task"),
+                                        (3, "testflight", testflight_items(), "teyla testflight",
+                                         "TestFlight platform")):
+        if items:
+            n = len(items)
+            head = f"{n} {what}{'s' if n != 1 else ''} not current" if cid == "testflight" else \
+                f"{n} {what}{'s' if n != 1 else ''} not running"
+            out.append(dict(rank=rank, id=cid, text=_short(f"{head}: {_clean(items[0][1])}", 90), step=cmd, cmd=True))
+    return out
+
+
 def _doctor_checks_on_disk() -> list[dict]:
     from . import doctor
     try:
@@ -141,6 +180,8 @@ def write_banner_items(checks: list[dict] | None = None, today: _dt.date | None 
         items = [(k, t) for k, t in items if k.split("|", 1)[-1] not in ("plugin", "plugin:pin")]
         items.append(lag)
     items += routine_items()
+    items += schedule_items()
+    items += testflight_items()
     items += reminder_items(today=today)
     p = banner_items_path()
     try:
@@ -392,6 +433,7 @@ def write(findings: list[dict] | None = None, doctor_checks: list[dict] | None =
         rule_cands += crash.digest_candidates()
     except Exception:  # noqa: BLE001 — same: a crash-report scan must never stop the digest being written
         pass
+    rule_cands += problem_file_candidates()
     try:
         from . import reviews
         review_line = reviews.digest_line()

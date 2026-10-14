@@ -42,7 +42,8 @@
   teyla update [--check] [--force] [--wire] [--quiet]            newer release → install, then policy sync/refresh, plugin refresh, routines
   teyla platform [init|env-example] [--json] [--no-net]          the shared resources set up once, and the step for each missing one
   teyla productize [path...] [--json] [--owner-steps]            what stands between each product and its second user
-  teyla testflight [path...] [--json] [--allow-network]            did the build reach a person: newest upload vs newest build your tester can install
+  teyla testflight [path...] [--json] [--quiet] [--allow-network]    did the build reach a person: newest upload vs newest build your tester can install
+  teyla schedules [--json] [--quiet] [--all] [--allow-network]    every scheduled task (Claude desktop, launchd, cloud routines, GitHub, teyla.toml): did it run, what vanished
   teyla reviews [--days N] [--json] [--quiet] [repo...]            review debt: merged PRs never reviewed, merged with an open P1, skipped
   teyla products [path...]                                       real-usage counters from every repo's ./check.sh usage
   teyla routines [path...] [--json]                               routines + manual checks from every repo's teyla.toml
@@ -452,6 +453,8 @@ def main(argv=None):
     cloud.register(sp); lang.register(sp)
     from . import reviews as reviews_mod
     reviews_mod.register(sp)
+    from . import schedules as schedules_mod
+    schedules_mod.register(sp)
     from . import spend as spend_mod
     spend_mod.register(sp)
     from . import lanes as lanes_mod

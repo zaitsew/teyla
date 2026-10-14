@@ -48,6 +48,9 @@
     [tidy]                         `teyla tidy`: the rule and memory files checked for junk
     max_kb     = 24                a file over this many KB is a finding (an always-loaded file this big is not read)
     stale_days = 120               a dated "until" / "for now" / "temporary" / "this week" / TODO line older than this is a finding
+    [schedules]                    `teyla schedules`: launchd labels it leaves out (com.apple.* always is)
+    ignore_prefixes = [...]        default: com.openai. com.google. com.microsoft. com.adobe. us.zoom.
+                                   com.spotify. com.dropbox. org.mozilla. homebrew.mxcl.
     [digest]
     notify = true                  the weekly digest posts a macOS notification when written
     [review]                       `teyla reviews`: merged PRs against the review ledger
@@ -159,6 +162,9 @@ DEFAULTS = {
               "a20_share": 0.3, "a20_min_calls": 10, "a20_models": [],
               # the digest names Opus when it ran more than this share of the week's subagent cost
               "opus_share_max": 0.25},
+    # `teyla schedules`: vendor launchd agents that are not the owner's scheduled tasks.
+    "schedules": {"ignore_prefixes": ["com.openai.", "com.google.", "com.microsoft.", "com.adobe.", "us.zoom.",
+                                      "com.spotify.", "com.dropbox.", "org.mozilla.", "homebrew.mxcl."]},
     # `teyla digest --write` (the weekly routine) posts a macOS notification with its headline.
     "digest": {"notify": True},
     # `teyla tidy`: size budget for a rule or memory file, and how old a dated "for now" may get.

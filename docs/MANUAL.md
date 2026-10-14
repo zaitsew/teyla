@@ -389,7 +389,7 @@ launchd agents, one hook and one command:
 
 | when | what | writes |
 |---|---|---|
-| daily 07:00 (`com.zaitsew.teyla.daily`) | `teyla update --quiet`, `teyla doctor --quiet`, `teyla policy sync --quiet` (local files only, safe mode too), catch-up, storage clean | `~/Library/Logs/teyla-daily.log`, `~/.teyla/doctor.summary`, `~/.teyla/banner.items` |
+| daily 07:00 (`com.zaitsew.teyla.daily`) | `teyla update --quiet`, `teyla doctor --quiet`, `teyla schedules --quiet`, `teyla testflight --quiet` (neither fails the daily; safe mode skips the second), `teyla policy sync --quiet` (local files only, safe mode too), catch-up, storage clean | `~/Library/Logs/teyla-daily.log`, `~/.teyla/doctor.summary`, `~/.teyla/banner.items`, `~/.teyla/schedules.json`, `~/.teyla/schedules.problems`, `~/.teyla/testflight.problems` |
 | Friday 20:45 (`com.zaitsew.teyla.weekly`) | `monitor --days 7`, `routines`, `products`, `models`, `models watch`, `tidy --quiet` (report only), `lang --quiet` (non-Latin text in tracked files), `reviews --quiet` (merged PRs nobody reviewed), then `digest --write` | `<ops>/runs/<date>/`, `~/.teyla/digest.md` |
 | every session start (plugin hook) | prints what is new in `banner.items` since the last start (nothing when nothing is), and the digest headline once per week; if the last update check is older than a day, starts `teyla update --check` in the background | `~/.teyla/update-check.json` |
 | on demand | `teyla doctor` — the checklist with a fix per line; exit 1 when a FIX is pending | `~/.teyla/doctor.json` |
@@ -411,6 +411,36 @@ pid that still has the same start time and did not exit since the check. `teyla 
 counts, per repo, PRs merged without a review, merged with a P1 still open, and skipped with a
 logged reason. PRs under `review.min_lines` changed lines (default 7) and docs-only PRs are exempt.
 It leaves its totals in `~/.teyla/reviews.json`; the digest shows the line while the debt is above zero.
+
+`teyla schedules` answers "did my scheduled tasks run?" for the tasks no repo declares. Four places
+hold them and none of them says whether a task ran:
+
+- Claude desktop scheduled tasks. The definition is a folder `~/.claude/scheduled-tasks/<id>/SKILL.md`;
+  the app's own record is `scheduled-tasks.json` under `~/Library/Application Support/Claude/`
+  (`claude-code-sessions/*/*/` and `local-agent-mode-sessions/*/*/`). A definition no record names is
+  UNREGISTERED: the app has no schedule for it, so it never fires. A record whose SKILL.md is gone is
+  MISSING DEFINITION; a one-shot (`fireAt`) that ran is DONE.
+- launchd agents with a `StartCalendarInterval` or `StartInterval`. `launchctl list` gives the last exit
+  status (non-zero is FAILING), not times, so the last run is the newest modification time of the
+  plist's `StandardOutPath` / `StandardErrorPath`. Disabled labels (`launchctl print-disabled`) and
+  plists renamed to `.bak` / `.disabled` are DISABLED. Vendor labels are skipped (`com.apple.*`, and
+  `schedules.ignore_prefixes`, which by default covers `com.openai.`, `com.google.`, `com.microsoft.`,
+  `com.adobe.`, `homebrew.mxcl.` and a few more).
+- Claude cloud routines have no local store. The only trace is the session transcripts in which a
+  `RemoteTrigger` call returned it (name, cron, enabled, last fired), so the entry reads "last known as
+  of <date>" and is UNKNOWN, or DISABLED when the last result said `enabled: false`: whether it ran can
+  only be seen in Claude. Session crons (`CronCreate`) die with the session
+  and are only counted in one line.
+- GitHub `schedule:` crons in `<code_root>/*/.github/workflows/`. The last run needs `gh` and the
+  network, so safe mode shows "last run: not checked" unless `--allow-network` is given.
+
+STALE means the last run is older than the expected interval x 1.5 + 2 hours; NEVER RAN, an enabled
+recurring task with no run record that is older than one interval. `~/.teyla/schedules.json` keeps every
+id ever seen (first and last day, last snapshot): an id that was there and is gone is VANISHED, with "last
+seen <date>", for 30 days. `--quiet` is the daily form: it prints nothing, updates that registry and writes
+the problems to `~/.teyla/schedules.problems`, which the session-start banner and the weekly digest read.
+`teyla testflight --quiet` does the same for builds that did not reach the tester
+(`~/.teyla/testflight.problems`).
 
 A one-off fact with a deadline — a key that expires, a trial that ends — gets its own line:
 `teyla remind add "<what>" <YYYY-MM-DD> [--how "..."]`, folded into `teyla doctor` as OK

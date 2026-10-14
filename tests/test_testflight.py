@@ -299,3 +299,69 @@ def test_a_named_teyla_toml_that_does_not_parse_is_an_error(tmp_path, monkeypatc
     assert [r["verdict"] for r in rows] == ["error"] and "does not parse" in rows[0]["error"]
     assert testflight.exit_code(rows) == 1
     assert testflight.run() == []          # the sweep leaves it to `teyla productize`
+
+
+# --- --quiet: the problems file the banner and the digest read ---------------------------------
+
+@pytest.fixture
+def problems(tmp_path, monkeypatch, _env):
+    monkeypatch.setattr(config, "TEYLA_DIR", _env / ".teyla")
+    return _env / ".teyla" / "testflight.problems"
+
+
+def test_quiet_writes_one_line_per_platform_that_is_not_current(tmp_path, monkeypatch, capsys, problems):
+    platform_toml(tmp_path)
+    product(tmp_path)
+    fake_tool(monkeypatch, payload(plat(), plat("MAC_OS", behind=2, inst=("1.8.0", "9"), up=("1.9.0", "120"),
+                                                blockers=["120: processing"])))
+    rc, cap = go(capsys, "--quiet")
+    assert rc == 1 and cap.out == "" and cap.err == ""
+    rows = [ln.split("\t") for ln in problems.read_text().splitlines()]
+    assert rows == [["testflight|app-a|MAC_OS|behind", "app-a macOS: 2 behind — 120: processing"]]
+
+
+def test_quiet_line_for_ios_behind_and_removed_when_current(tmp_path, monkeypatch, capsys, problems):
+    platform_toml(tmp_path)
+    product(tmp_path)
+    fake_tool(monkeypatch, payload(plat(behind=2, inst=("1.8.0", "118"), blockers=["120: processing"])))
+    rc, cap = go(capsys, "--quiet")
+    assert rc == 1 and cap.out == ""
+    assert problems.read_text() == "testflight|app-a|IOS|behind\tapp-a iOS: 2 behind — 120: processing\n"
+    fake_tool(monkeypatch, payload(plat()))
+    rc, cap = go(capsys, "--quiet")
+    assert rc == 0 and cap.out == "" and not problems.exists()
+
+
+def test_quiet_error_and_nothing_installable_rows(tmp_path, monkeypatch, capsys, problems):
+    platform_toml(tmp_path)
+    product(tmp_path)
+    fake_tool(monkeypatch, "", rc=2, stderr="ASC auth failed\n")
+    rc, cap = go(capsys, "--quiet")
+    assert rc == 1 and cap.out == ""
+    key, text = problems.read_text().rstrip("\n").split("\t")
+    assert key == "testflight|app-a|error" and text.startswith("app-a: the release tool exited 2")
+    fake_tool(monkeypatch, payload(plat("MAC_OS", behind=1, inst=None, blockers=["120: expired"])))
+    go(capsys, "--quiet")
+    # the manifest also declares iOS, which the tool said nothing about: no build at all
+    assert problems.read_text().splitlines() == [
+        "testflight|app-a|MAC_OS|none\tapp-a macOS: 1 behind, none installable — 120: expired",
+        "testflight|app-a|IOS|none\tapp-a iOS: none installable"]
+
+
+def test_quiet_in_safe_mode_does_nothing_and_exits_zero(tmp_path, monkeypatch, capsys, problems):
+    platform_toml(tmp_path)
+    product(tmp_path)
+    problems.write_text("testflight|app-a|IOS|behind\told answer\n")
+    monkeypatch.setattr(config, "safe_mode", lambda cfg=None: True)
+    fake_tool(monkeypatch, raises=AssertionError("the tool must not run"))
+    rc, cap = go(capsys, "--quiet")
+    assert rc == 0 and cap.out == "" and cap.err == ""
+    assert problems.read_text().startswith("testflight|app-a|IOS|behind")   # not asked, so left as it was
+
+
+def test_quiet_with_no_product_in_scope_removes_the_file(tmp_path, monkeypatch, capsys, problems):
+    platform_toml(tmp_path)
+    problems.write_text("testflight|x|IOS|behind\told\n")
+    fake_tool(monkeypatch, raises=AssertionError("the tool must not run"))
+    rc, cap = go(capsys, "--quiet")
+    assert rc == 0 and cap.out == "" and not problems.exists()

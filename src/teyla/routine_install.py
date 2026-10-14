@@ -121,6 +121,11 @@ teyla spend --alert
 teyla doctor --quiet
 # Refresh ~/.teyla/routines/<product>.line, the one-liners the session-start hook shows.
 teyla routines >/dev/null 2>&1
+# Every scheduled task outside a repo (Claude desktop, launchd, cloud routines, GitHub): did it run, what
+# vanished. Updates ~/.teyla/schedules.json and the banner; a failure here never fails the daily.
+teyla schedules --quiet || true
+# Did the last build reach a person? Network (the release tool asks Apple): safe mode skips it.
+teyla testflight --quiet || true
 # The generated copies of the policy (Codex, Grok, Cursor, Hermes) follow ~/.agents/POLICY.md and
 # ~/.claude/CLAUDE.md; a hand edit found in one is filed in ~/.teyla/policy-inbox/ first. Local files
 # only, so safe mode runs it too.
@@ -284,6 +289,9 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         return True
     if path == DAILY_WRAPPER_PATH and "storage clean" not in text:
         # Written before `teyla storage`: the daily would never clean.
+        return True
+    if path == DAILY_WRAPPER_PATH and "schedules --quiet" not in text:
+        # Written before `teyla schedules`: the daily would never record what is scheduled.
         return True
     if path == DAILY_WRAPPER_PATH and "policy sync" not in text:
         # Written before the daily kept the generated policy copies current.
