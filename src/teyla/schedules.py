@@ -1098,6 +1098,27 @@ def write_problems(entries: list[dict], path: pathlib.Path | None = None) -> pat
     return None
 
 
+def drop_problems(ids: set[str], path: pathlib.Path | None = None) -> None:
+    """Remove the lines for `ids` from the problems file and keep every other line as the last full run
+    wrote it. Rescanning here would run without the network and quietly clear a GitHub workflow's
+    FAILING or STALE line until the next daily run."""
+    p = path or problems_path()
+    try:
+        lines = p.read_text().splitlines(keepends=True)
+    except OSError:
+        return
+    keep = [ln for ln in lines if not (ln.startswith("schedule|") and ln.split("\t", 1)[0].split("|")[1] in ids)]
+    try:
+        if any(ln.strip() for ln in keep):
+            tmp = p.with_name(p.name + ".tmp")
+            tmp.write_text("".join(keep))
+            os.replace(tmp, p)
+        else:
+            p.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _clean(s: str) -> str:
     return re.sub(r"[\t\r\n]+", " ", str(s))
 
@@ -1157,7 +1178,7 @@ def forget(keys: list[str], *, now: dt.datetime | None = None, allow_network: bo
             reg.setdefault("forgotten", {})[eid] = _iso(now)
     if not save_registry(reg):
         return 1, ["could not write the registry; nothing forgotten"]
-    write_problems([e for e in full if e["id"] not in chosen])
+    drop_problems(set(chosen))
     return 0, [f"forgot {eid} ({e['name']})" for eid, e in sorted(chosen.items())]
 
 

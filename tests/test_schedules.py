@@ -795,6 +795,19 @@ def test_forget_vanished_entry_clears_registry_and_problems(env, capsys):
     assert cli.main(["schedules", "--all"]) == 0
 
 
+def test_forget_keeps_other_problem_lines_from_the_last_full_run(env, capsys):
+    """forget must not rescan: a rescan runs without the network and would clear a GitHub FAILING line."""
+    vanish(env, "old-check")
+    assert cli.main(["schedules", "--quiet"]) == 1
+    prob = env / ".teyla" / "schedules.problems"
+    gh = "schedule|github:app-c/broken.yml|FAILING\tscheduled task app-c: Broken FAILING: concluded failure\n"
+    prob.write_text(prob.read_text() + gh)
+    capsys.readouterr()
+
+    assert cli.main(["schedules", "forget", "old-check"]) == 0
+    assert prob.read_text() == gh
+
+
 def test_forget_several_keys_at_once(env):
     vanish(env, "old-check", "other-check")
     assert cli.main(["schedules", "forget", "old-check", "claude-desktop:other-check"]) == 0
