@@ -338,12 +338,13 @@ def test_cli_json_and_repo_argument(env, monkeypatch, capsys):
     run = env.runner({"acme/app": [_pr(1, [B])], "acme/lib": [_pr(2, [C])]})
     monkeypatch.setattr(reviews, "_gh_runner", run)
     monkeypatch.setattr(reviews.shutil, "which", lambda name: "/bin/gh")
-    assert cli.main(["reviews", "--json", "app"]) == 0
+    # The fixture PRs are dated; a fixed window keeps this test from expiring a week later.
+    assert cli.main(["reviews", "--json", "--days", "3650", "app"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert [r["repo"] for r in data["repos"]] == ["app"] and data["totals"]["unreviewed"] == 1
     assert len(run.calls) == 1
     assert not reviews.summary_path().exists()          # a one-repo look is not the weekly summary
-    assert cli.main(["reviews", "--quiet"]) == 0
+    assert cli.main(["reviews", "--quiet", "--days", "3650"]) == 0
     assert "2 unreviewed" in capsys.readouterr().out
     assert json.loads(reviews.summary_path().read_text())["unreviewed"] == 2
 
