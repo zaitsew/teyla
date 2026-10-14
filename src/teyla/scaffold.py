@@ -91,6 +91,8 @@ web = "none"                            # none | pwa | github-pages | vercel | d
 # macos = "none"                        # none | xcode | testflight | dmg-notarized | app-store
 # android = "none"                      # none | apk-sideload | pwa | play-internal | play
 # extension = "none"                    # none | unpacked-zip | chrome-web-store
+# watch = "none"                        # none | testflight-external | app-store |
+#                                       # connect-iq-sideload | connect-iq-store | garmin-connect
 
 # One line per platform in `platforms` other than `primary`: an ISO date, then the
 # reason (a named person who cannot use the primary, or the owner asking for it).

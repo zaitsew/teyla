@@ -227,7 +227,7 @@ Ten requirements are checked against the target:
 | R1 | identity | `none` or `shared-key` — unless tenancy is `per-device` |
 | R2 | tenancy | `single` |
 | R3 | backend | `local-mac` |
-| R4 | distribution | any declared platform has none, `xcode`, or `apk-sideload` |
+| R4 | distribution | any declared platform has none, `xcode`, `apk-sideload` or `connect-iq-sideload` (a Garmin watch fed by Garmin Connect sync is `garmin-connect`: nothing to install) |
 | R5 | onboarding_doc | unset, or the file is not in the repo |
 | R6 | secrets | a name in `secrets` is in no `.env.example` (no file anywhere: a warning) |
 | R7 | cost_cap | empty while your key pays for other people's use |
