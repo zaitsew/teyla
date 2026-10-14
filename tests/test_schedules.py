@@ -753,6 +753,131 @@ def test_corrupt_registry_is_set_aside_not_lost(env):
     assert not list((env / ".teyla").glob("*.tmp"))
 
 
+# --- forget ------------------------------------------------------------------------------------
+
+def vanish(env, *task_ids):
+    """Register desktop tasks (as UNREGISTERED), then delete their definitions: VANISHED next run."""
+    paths = [skill(env, t) for t in task_ids]
+    schedules.run(now=NOW - D, allow_network=False)
+    for sk in paths:
+        sk.unlink()
+
+
+def registry(env):
+    return json.loads((env / ".teyla" / "schedules.json").read_text())["entries"]
+
+
+def test_vanished_note_and_banner_name_the_forget_command(env):
+    vanish(env, "old-check")
+    full, _ = schedules.run(now=NOW, allow_network=False)
+    e = by_id(full)["claude-desktop:old-check"]
+    assert e["verdict"] == "VANISHED"
+    assert e["note"].endswith("removed on purpose? `teyla schedules forget claude-desktop:old-check`")
+    (_, text), = schedules.problem_lines(full)
+    assert "`teyla schedules forget claude-desktop:old-check`" in text    # the banner keeps the whole command
+
+
+def test_forget_vanished_entry_clears_registry_and_problems(env, capsys):
+    vanish(env, "old-check", "other-check")
+    assert cli.main(["schedules", "--quiet"]) == 1
+    prob = env / ".teyla" / "schedules.problems"
+    assert len(prob.read_text().splitlines()) == 2
+    capsys.readouterr()
+
+    assert cli.main(["schedules", "forget", "claude-desktop:old-check"]) == 0
+    assert "forgot claude-desktop:old-check" in capsys.readouterr().out
+    assert "claude-desktop:old-check" not in registry(env) and "claude-desktop:other-check" in registry(env)
+    assert [ln.split("\t")[0] for ln in prob.read_text().splitlines()] == ["schedule|claude-desktop:other-check|VANISHED"]
+
+    assert cli.main(["schedules", "forget", "other-check"]) == 0
+    assert registry(env) == {} and not prob.exists()               # the banner clears the same day
+    assert cli.main(["schedules", "--quiet"]) == 0                 # and stays clear on the next run
+    assert cli.main(["schedules", "--all"]) == 0
+
+
+def test_forget_several_keys_at_once(env):
+    vanish(env, "old-check", "other-check")
+    assert cli.main(["schedules", "forget", "old-check", "claude-desktop:other-check"]) == 0
+    assert registry(env) == {}
+
+
+def test_forget_matches_a_unique_name_or_suffix(env):
+    vanish(env, "mac-blank-sheets-check", "other-check")
+    assert cli.main(["schedules", "forget", "mac-blank-sheets-check"]) == 0
+    assert set(registry(env)) == {"claude-desktop:other-check"}
+
+
+def test_forget_ambiguous_name_is_refused_with_candidates(env, capsys):
+    vanish_ids = ["x:dup", "y:dup"]
+    reg = {"version": 1, "entries": {i: {"first_seen": NOW.isoformat(), "last_seen": NOW.isoformat(),
+                                         "snapshot": {"source": i[0], "name": "dup", "cadence": "", "enabled": True,
+                                                      "definition": "", "note": "", "verdict": "OK"}}
+                                     for i in vanish_ids}}
+    (env / ".teyla" / "schedules.json").write_text(json.dumps(reg))
+    assert cli.main(["schedules", "forget", "dup"]) == 1
+    err = capsys.readouterr().err
+    assert "ambiguous" in err and "x:dup" in err and "y:dup" in err and "nothing forgotten" in err
+    assert set(registry(env)) == set(vanish_ids)                   # nothing was removed
+    assert cli.main(["schedules", "forget", "x:dup"]) == 0         # the full key always works
+    assert set(registry(env)) == {"y:dup"}
+
+
+def test_forget_refuses_a_task_that_still_exists(env, monkeypatch, capsys):
+    plist(env, "com.example.job", calendar={"Hour": 6}, log=log_file(env, "j.log", NOW - H))
+    monkeypatch.setattr(routines, "_launchctl_list", lambda: listing(("-", 0, "com.example.job")))
+    vanish(env, "old-check")
+    assert cli.main(["schedules", "forget", "launchd:com.example.job"]) == 1
+    err = capsys.readouterr().err
+    assert "not VANISHED (OK)" in err and "register it again" in err
+    assert "launchd:com.example.job" in registry(env)
+    # one refused key stops the whole call: the valid one is kept too
+    assert cli.main(["schedules", "forget", "old-check", "com.example.job"]) == 1
+    assert "claude-desktop:old-check" in registry(env)
+
+
+def test_forget_unknown_key_is_refused(env, capsys):
+    vanish(env, "old-check")
+    assert cli.main(["schedules", "forget", "nope"]) == 1
+    assert "nope: no scheduled task" in capsys.readouterr().err
+    assert "claude-desktop:old-check" in registry(env)
+
+
+def test_forget_cloud_routine_deleted_in_a_session_stays_forgotten(env, capsys):
+    transcript(env, "s.jsonl", [
+        *call(NOW - 9 * D, "get", {"trigger": trigger("trig_d", "Doomed", "0 1 * * *")}, "t1", trigger_id="trig_d"),
+        tool_use(NOW - 8 * D, "RemoteTrigger", {"action": "delete", "trigger_id": "trig_d"}, "t2"),
+        tool_result(NOW - 8 * D, "t2", "HTTP 204\n"),
+    ])
+    full, _ = schedules.run(now=NOW, allow_network=False)
+    assert verdicts(full) == {"cloud:trig_d": "VANISHED"}
+    assert cli.main(["schedules", "forget", "trig_d"]) == 0
+    full, _ = schedules.run(now=NOW + D, allow_network=False)       # the transcript is still there
+    assert full == [] and "cloud:trig_d" not in registry(env)
+    # the tombstone leaves the registry once the deletion is older than the listing window
+    schedules.run(now=NOW + 40 * D, allow_network=False)
+    assert "forgotten" not in json.loads((env / ".teyla" / "schedules.json").read_text())
+
+
+def test_forget_vanished_routine(env, monkeypatch):
+    repo = env.parent / "repos" / "accounts"
+    (repo / ".git").mkdir(parents=True)
+    toml = repo / "teyla.toml"
+    toml.write_text('[product]\nname = "accounts"\n[[routine]]\nname = "example"\nkind = "launchd"\n'
+                    'label = "com.example.gone"\nevery = "1d"\n')
+    schedules.run(now=NOW - D, allow_network=False)
+    toml.write_text('[product]\nname = "accounts"\n')
+    full, _ = schedules.run(now=NOW, allow_network=False)
+    assert verdicts(full) == {"routines:accounts:example": "VANISHED"}
+    assert cli.main(["schedules", "forget", "accounts:example"]) == 0
+    assert registry(env) == {}
+
+
+def test_schedules_flags_still_work_beside_the_forget_action(env, monkeypatch, capsys):
+    scenario(env, monkeypatch)
+    assert cli.main(["schedules", "--json", "--all"]) == 1
+    assert {r["id"] for r in json.loads(capsys.readouterr().out)} >= {"launchd:com.example.sync"}
+
+
 # --- output, exit codes, --quiet ---------------------------------------------------------------
 
 def scenario(env, monkeypatch):
