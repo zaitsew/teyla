@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.22.1 — 2026-10-14 — A quiet agent is not a stale one
+
+- **`teyla schedules`** now counts the stamp a wrapper script writes on each start
+  (`date ... > "x.last"`) as evidence that a launchd job ran. Teyla's simulator agent logs only when it
+  shuts something down, so on the first live run it showed STALE although it had run minutes earlier.
+
 ## 0.22.0 — 2026-10-14 — Every scheduled task in one place, with proof it ran
 
 The owner found that some scheduled tasks had not run and had quietly disappeared. Nothing in Teyla knew
