@@ -283,7 +283,7 @@ def test_launchd_every_verdict(env, monkeypatch):
         "launchd:com.example.notloaded": "UNREGISTERED",
         "launchd:com.example.removed": "DISABLED",
         "launchd:com.example.removed2": "DISABLED",
-        "launchd:broken": "UNKNOWN",
+        "launchd:broken": "UNREGISTERED",
     }
     ok = got["launchd:com.example.ok"]
     assert ok["cadence"] == "daily 06:15" and ok["expected_every"] == D
