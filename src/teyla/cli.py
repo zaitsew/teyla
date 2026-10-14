@@ -44,6 +44,7 @@
   teyla productize [path...] [--json] [--owner-steps]            what stands between each product and its second user
   teyla testflight [path...] [--json] [--quiet] [--allow-network]    did the build reach a person: newest upload vs newest build your tester can install
   teyla schedules [--json] [--quiet] [--all] [--allow-network]    every scheduled task (Claude desktop, launchd, cloud routines, GitHub, teyla.toml): did it run, what vanished
+  teyla schedules forget KEY [KEY...]                              acknowledge VANISHED tasks removed on purpose (clears the banner)
   teyla reviews [--days N] [--json] [--quiet] [repo...]            review debt: merged PRs never reviewed, merged with an open P1, skipped
   teyla products [path...]                                       real-usage counters from every repo's ./check.sh usage
   teyla routines [path...] [--json]                               routines + manual checks from every repo's teyla.toml

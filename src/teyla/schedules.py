@@ -39,6 +39,12 @@ its last snapshot. An id seen before and gone now is VANISHED ("last seen <date>
 that is what lets a later session answer "did it disappear?". Cloud routines are the exception,
 because their only evidence is transcripts that age out; they stay "last known".
 
+A task removed on purpose is acknowledged with `teyla schedules forget KEY...`: it leaves the registry
+(and `schedules.problems`) the same day. KEY is the registry id from `--json` (`claude-desktop:my-task`)
+or a unique name or suffix of it (`my-task`). Only a VANISHED task can be forgotten: one that still exists
+would be registered again by the next run. A cloud routine deleted in a session is still found in the
+transcripts, so forgetting it leaves a tombstone in the registry for as long as it would have been listed.
+
 `--quiet` prints nothing, updates the registry and writes the problems to
 `~/.teyla/schedules.problems` (`key<TAB>text`, what the session-start banner reads), removing the
 file when there are none. Exit 1 when any problem, else 0.
@@ -51,6 +57,7 @@ import os
 import pathlib
 import plistlib
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -713,7 +720,7 @@ def scan_transcripts(root: str | pathlib.Path | None = None, now: dt.datetime | 
         if deleted is not None and deleted >= rec["stamp"]:
             if now - deleted > VANISHED_KEEP:
                 continue
-            e.update(verdict="VANISHED", note=f"deleted in a session on {_date(deleted)}")
+            e.update(verdict="VANISHED", note=f"deleted in a session on {_date(deleted)}" + forget_hint(e["id"]))
         out.append(e)
     return out, cron_count
 
@@ -943,6 +950,10 @@ def save_registry(reg: dict, path: pathlib.Path | None = None) -> bool:
     return True
 
 
+def forget_hint(eid: str) -> str:
+    return f" — removed on purpose? `teyla schedules forget {shlex.quote(eid)}`"
+
+
 def forget_ignored(reg: dict, prefixes: list[str]) -> None:
     """Drop launchd ids the ignore list covers now: a vendor agent seen before the list grew is not a
     task that vanished."""
@@ -956,6 +967,15 @@ def apply_registry(entries: list[dict], reg: dict, now: dt.datetime) -> list[dic
     entries with first_seen/last_seen, plus a VANISHED entry for every id seen before and absent now.
     Entries gone for more than 30 days leave the registry; cloud routines stay as last known."""
     book = reg.setdefault("entries", {})
+    tombs = reg.get("forgotten")
+    if isinstance(tombs, dict):  # a tombstone outlives the 30 days the deleted task would have been listed
+        for eid in [k for k, v in tombs.items() if (_parse_ts(v) is None or now - _parse_ts(v) > VANISHED_KEEP + dt.timedelta(days=1))]:
+            del tombs[eid]
+        if not tombs:
+            del reg["forgotten"]
+    else:
+        tombs = {}
+    entries = [e for e in entries if not (e["verdict"] == "VANISHED" and e["id"] in tombs)]
     current = {e["id"] for e in entries}
     for e in entries:
         rec = book.get(e["id"]) or {"first_seen": _iso(now)}
@@ -979,7 +999,7 @@ def apply_registry(entries: list[dict], reg: dict, now: dt.datetime) -> list[dic
             continue
         out.append(_from_snapshot(eid, rec, snap, verdict="VANISHED",
                                   note=f"last seen {_date(last_seen)} (first seen {_date(_parse_ts(rec.get('first_seen')))}); "
-                                       f"it is no longer on this machine"))
+                                       f"it is no longer on this machine" + forget_hint(eid)))
     return out
 
 
@@ -1054,7 +1074,10 @@ def problem_lines(entries: list[dict]) -> list[tuple[str, str]]:
     """(key, text) for the banner. The tasks `teyla routines` already reports are left out."""
     out = []
     for e in sorted((x for x in entries if is_problem(x) and not x.get("elsewhere")), key=_sort_key):
-        text = f"scheduled task {e['name']} {e['verdict']}" + (f": {_short(e['note'], 70)}" if e.get("note") else "")
+        if e["verdict"] == "VANISHED":  # the banner must carry the way out, which the note's tail holds
+            text = f"scheduled task {e['name']} VANISHED: removed on purpose? `teyla schedules forget {shlex.quote(e['id'])}`"
+        else:
+            text = f"scheduled task {e['name']} {e['verdict']}" + (f": {_short(e['note'], 70)}" if e.get("note") else "")
         out.append((f"schedule|{e['id']}|{e['verdict']}", text))
     return out
 
@@ -1075,6 +1098,27 @@ def write_problems(entries: list[dict], path: pathlib.Path | None = None) -> pat
     return None
 
 
+def drop_problems(ids: set[str], path: pathlib.Path | None = None) -> None:
+    """Remove the lines for `ids` from the problems file and keep every other line as the last full run
+    wrote it. Rescanning here would run without the network and quietly clear a GitHub workflow's
+    FAILING or STALE line until the next daily run."""
+    p = path or problems_path()
+    try:
+        lines = p.read_text().splitlines(keepends=True)
+    except OSError:
+        return
+    keep = [ln for ln in lines if not (ln.startswith("schedule|") and ln.split("\t", 1)[0].split("|")[1] in ids)]
+    try:
+        if any(ln.strip() for ln in keep):
+            tmp = p.with_name(p.name + ".tmp")
+            tmp.write_text("".join(keep))
+            os.replace(tmp, p)
+        else:
+            p.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _clean(s: str) -> str:
     return re.sub(r"[\t\r\n]+", " ", str(s))
 
@@ -1092,7 +1136,58 @@ def run(*, allow_network: bool | None = None, now: dt.datetime | None = None, **
     return full, cron_n
 
 
+def _matches(key: str, entries: list[dict]) -> list[dict]:
+    """The entries `key` names: an exact id, else every id or name that ends with it."""
+    exact = [e for e in entries if e["id"] == key]
+    if exact:
+        return exact
+    low = key.lower()
+    return [e for e in entries if e["id"].lower().endswith(":" + low) or e["name"].lower() == low]
+
+
+def forget(keys: list[str], *, now: dt.datetime | None = None, allow_network: bool = False
+           ) -> tuple[int, list[str]]:
+    """Remove VANISHED tasks from the registry and rewrite the problems file. All or nothing: when any
+    key is refused (unknown, ambiguous, not vanished) nothing is forgotten. Returns (exit code, lines)."""
+    now = now or _now()
+    entries, _ = collect(now, allow_network=allow_network)
+    reg = load_registry()
+    forget_ignored(reg, ignore_prefixes())
+    current = {e["id"] for e in entries}
+    full = apply_registry(entries, reg, now)
+    chosen: dict[str, dict] = {}
+    errors: list[str] = []
+    for key in keys:
+        hits = _matches(key, full)
+        if not hits:
+            errors.append(f"{key}: no scheduled task by that key or name (`teyla schedules --json` lists the keys)")
+        elif len(hits) > 1:
+            errors.append(f"{key}: ambiguous, name one of: " + ", ".join(sorted(e["id"] for e in hits)))
+        elif hits[0]["verdict"] != "VANISHED":
+            e = hits[0]
+            errors.append(f"{e['id']}: not VANISHED ({e['verdict']}); it still exists, so the next run would "
+                          f"register it again. Remove the task itself first")
+        else:
+            chosen[hits[0]["id"]] = hits[0]
+    if errors:
+        return 1, errors + ["nothing forgotten"]
+    book = reg.setdefault("entries", {})
+    for eid in chosen:
+        book.pop(eid, None)
+        if eid in current:  # still derived from transcripts: remember the decision
+            reg.setdefault("forgotten", {})[eid] = _iso(now)
+    if not save_registry(reg):
+        return 1, ["could not write the registry; nothing forgotten"]
+    drop_problems(set(chosen))
+    return 0, [f"forgot {eid} ({e['name']})" for eid, e in sorted(chosen.items())]
+
+
 def cmd_schedules(args) -> int:
+    if getattr(args, "schedules_action", None) == "forget":
+        rc, lines = forget(args.keys)
+        for ln in lines:
+            print(ln, file=sys.stderr if rc else sys.stdout)
+        return rc
     now = _now()
     entries, cron_n = run(now=now)
     if args.quiet:
@@ -1116,4 +1211,9 @@ def register(sp):
     q.add_argument("--all", action="store_true", help="also list the tasks that are OK")
     q.add_argument("--allow-network", action="store_true",
                    help="safe mode: let gh look up the last run of each GitHub workflow this once")
+    act = q.add_subparsers(dest="schedules_action", required=False, metavar="forget")
+    f = act.add_parser("forget", help="acknowledge VANISHED tasks that were removed on purpose: drop them from "
+                                      "the registry and the banner")
+    f.add_argument("keys", nargs="+", metavar="KEY",
+                   help="registry key from `teyla schedules --json` (claude-desktop:my-task) or a unique name/suffix")
     return q

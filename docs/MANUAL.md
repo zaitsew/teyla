@@ -437,7 +437,15 @@ hold them and none of them says whether a task ran:
 STALE means the last run is older than the expected interval x 1.5 + 2 hours; NEVER RAN, an enabled
 recurring task with no run record that is older than one interval. `~/.teyla/schedules.json` keeps every
 id ever seen (first and last day, last snapshot): an id that was there and is gone is VANISHED, with "last
-seen <date>", for 30 days. `--quiet` is the daily form: it prints nothing, updates that registry and writes
+seen <date>", for 30 days.
+A task you removed on purpose (a dropped desktop task, a routine deleted from `teyla.toml`) would show as
+VANISHED, a problem in the banner, for those 30 days. `teyla schedules forget KEY [KEY...]` acknowledges it:
+the entry leaves the registry and `schedules.problems` at once. KEY is the id `teyla schedules --json` shows
+(`claude-desktop:my-task`, `routines:accounts:example`) or a unique name or suffix (`my-task`); an ambiguous
+name is refused with the candidates, and so is a task that is not VANISHED, because one that still exists
+would be registered again by the next run. All keys are checked first: if one is refused, none is forgotten.
+A cloud routine deleted in a session is still visible in the transcripts, so forgetting it leaves a
+tombstone in the registry (`forgotten`) until the deletion is older than the listing window. `--quiet` is the daily form: it prints nothing, updates that registry and writes
 the problems to `~/.teyla/schedules.problems`, which the session-start banner and the weekly digest read.
 `teyla testflight --quiet` does the same for builds that did not reach the tester
 (`~/.teyla/testflight.problems`).
