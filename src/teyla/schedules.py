@@ -271,7 +271,7 @@ def calendar_cadence(value) -> tuple[str, dt.timedelta | None]:
             hm = ", ".join(f"{int(h):02d}:{int(m):02d}" for h, m in times if isinstance(h, int) and isinstance(m, int))
             return f"{text} {hm}".strip(), gap
     parts = [_calendar_one(d) for d in items]
-    gap = max(p[1] for p in parts)
+    gap = min(p[1] for p in parts)  # the shortest: the more frequent entry going quiet is the alarm
     shown = "; ".join(p[0] for p in parts[:3]) + (f"; +{len(parts) - 3} more" if len(parts) > 3 else "")
     return shown, gap
 
@@ -575,6 +575,14 @@ def _result_text(block: dict) -> str:
     return ""
 
 
+_HTTP_OK_RE = re.compile(r"^\s*HTTP\s+2\d\d\b")
+
+
+def _delete_succeeded(block: dict) -> bool:
+    """A RemoteTrigger delete result that shows success: `HTTP 2xx` first, and not flagged as an error."""
+    return not block.get("is_error") and bool(_HTTP_OK_RE.match(_result_text(block)))
+
+
 def _triggers_in(text: str) -> list[dict]:
     """The routine objects in a RemoteTrigger result. The real result is `HTTP 200` and a line of
     JSON: `{"trigger": {...}}` for create/get/update/run, `{"data": [{...}, ...]}` for list. A routine
@@ -614,6 +622,7 @@ def scan_transcripts(root: str | pathlib.Path | None = None, now: dt.datetime | 
         if mt is None or now - mt > CLOUD_LOOKBACK:
             continue
         pending: set[str] = set()  # tool_use ids of RemoteTrigger calls awaiting their result
+        deleting: dict[str, str] = {}  # tool_use id -> trigger id, for the delete calls among them
         try:
             fh = f.open("r", encoding="utf-8", errors="replace")
         except OSError:
@@ -639,12 +648,19 @@ def scan_transcripts(root: str | pathlib.Path | None = None, now: dt.datetime | 
                         inp = b.get("input") if isinstance(b.get("input"), dict) else {}
                         if b.get("id"):
                             pending.add(str(b["id"]))
-                        tid = inp.get("trigger_id")
-                        if str(inp.get("action", "")).lower() == "delete" and tid:
-                            rec = state.setdefault(str(tid), {"stamp": stamp, "file": str(f)})
-                            rec["deleted"] = stamp
+                            if str(inp.get("action", "")).lower() == "delete" and inp.get("trigger_id"):
+                                deleting[str(b["id"])] = str(inp["trigger_id"])
                     elif kind == "tool_result" and str(b.get("tool_use_id", "")) in pending:
-                        pending.discard(str(b["tool_use_id"]))
+                        uid = str(b["tool_use_id"])
+                        pending.discard(uid)
+                        if uid in deleting:
+                            # A delete counts only when its result says it worked; a refused or failed
+                            # one leaves the routine where it was.
+                            tid = deleting.pop(uid)
+                            if _delete_succeeded(b):
+                                rec = state.setdefault(tid, {"stamp": stamp, "file": str(f)})
+                                rec["deleted"] = stamp
+                            continue
                         for o in _triggers_in(_result_text(b)):
                             rec = state.setdefault(o["id"], {"stamp": stamp, "file": str(f)})
                             if "name" not in rec or stamp >= rec["stamp"]:
@@ -713,11 +729,12 @@ def _workflow_name(text: str, fallback: str) -> str:
 
 
 def _gh_last_run(repo: pathlib.Path, workflow: str) -> dict | None:
-    """The newest run of a workflow as {conclusion, createdAt}, or None when it has none.
+    """The newest run of a workflow that the schedule fired, as {conclusion, createdAt}, or None when
+    it has none. Pushes and manual runs do not count: they would hide a schedule that stopped firing.
     Raises RuntimeError with a one-line reason when gh cannot answer."""
     try:
-        r = subprocess.run(["gh", "run", "list", "--workflow", workflow, "--limit", "1", "--json",
-                            "conclusion,createdAt"], capture_output=True, text=True, timeout=GH_TIMEOUT_S,
+        r = subprocess.run(["gh", "run", "list", "--workflow", workflow, "--event", "schedule", "--limit", "1",
+                            "--json", "conclusion,createdAt"], capture_output=True, text=True, timeout=GH_TIMEOUT_S,
                            cwd=str(repo))
     except subprocess.TimeoutExpired:
         raise RuntimeError("gh did not answer in time") from None
@@ -754,7 +771,8 @@ def read_github(code_root: pathlib.Path | None = None, *, check_runs: bool = Fal
                 continue
             parsed = [parse_cron(c) for c in crons]
             gaps = [p[1] for p in parsed]
-            expected = None if any(g is None for g in gaps) else max(gaps)
+            # The shortest interval: a daily+weekly workflow is overdue when its daily runs stop.
+            expected = None if any(g is None for g in gaps) else min(gaps)
             cadence = "; ".join(dict.fromkeys(p[0] for p in parsed))
             e = entry("github", f"{repo.name}/{wf.name}", f"{repo.name}: {_workflow_name(text, wf.stem)}",
                       cadence=cadence, expected_every=expected, definition=wf, since=_mtime(wf), run_known=False)
@@ -812,7 +830,10 @@ def read_routines(reports: list[dict] | None = None, now: dt.datetime | None = N
             e = entry("routines", f"{rep['product']}:{row['name']}", f"{rep['product']}: {row['name']}",
                       cadence=("on demand" if row.get("loaded") == routines.ON_DEMAND else every or "unscheduled"),
                       expected_every=expected, last_run=last, definition=pathlib.Path(rep.get("repo", "")) / "teyla.toml",
-                      note=note, verdict=verdict, elsewhere=True)
+                      note=note, verdict=verdict,
+                      # `teyla routines` writes its own banner item only for the verdicts it counts as not
+                      # running; the rest (NEVER RAN on an "ok" routine) are this report's alone.
+                      elsewhere=raw in routines.NOT_RUNNING_VERDICTS)
             e["label"] = row.get("label", "")
             e["kind"] = row.get("kind", "")
             e["repo"] = rep.get("repo", "")

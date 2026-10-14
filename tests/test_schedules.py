@@ -18,6 +18,7 @@ from teyla import cli, config, digest, net, routines, schedules
 from teyla.adapters import claude_code
 
 UTC = dt.timezone.utc
+_REAL_GH_LAST_RUN = schedules._gh_last_run
 NOW = dt.datetime(2026, 10, 14, 9, 0, tzinfo=UTC)
 H = dt.timedelta(hours=1)
 D = dt.timedelta(days=1)
@@ -464,6 +465,7 @@ def test_cloud_deleted_routine_is_vanished_then_forgotten(env):
     transcript(env, "s.jsonl", [
         *call(NOW - 9 * D, "get", {"trigger": trigger("trig_d", "Doomed", "0 1 * * *")}, "t1", trigger_id="trig_d"),
         tool_use(NOW - 8 * D, "RemoteTrigger", {"action": "delete", "trigger_id": "trig_d"}, "t2"),
+        tool_result(NOW - 8 * D, "t2", "HTTP 204\n"),
     ])
     got, _ = collect(env)
     assert got["cloud:trig_d"]["verdict"] == "VANISHED"
@@ -471,9 +473,41 @@ def test_cloud_deleted_routine_is_vanished_then_forgotten(env):
     transcript(env, "s.jsonl", [
         *call(NOW - 49 * D, "get", {"trigger": trigger("trig_d", "Doomed", "0 1 * * *")}, "t1", trigger_id="trig_d"),
         tool_use(NOW - 48 * D, "RemoteTrigger", {"action": "delete", "trigger_id": "trig_d"}, "t2"),
+        tool_result(NOW - 48 * D, "t2", "HTTP 200\n{}"),
     ])
     got, _ = collect(env)
     assert "cloud:trig_d" not in got
+
+
+@pytest.mark.parametrize("result", ["HTTP 403\n{\"error\": \"forbidden\"}", "HTTP 500", "Error: not found", ""])
+def test_cloud_delete_without_a_success_result_keeps_the_routine(env, result):
+    transcript(env, "s.jsonl", [
+        *call(NOW - 9 * D, "get", {"trigger": trigger("trig_d", "Doomed", "0 1 * * *")}, "t1", trigger_id="trig_d"),
+        tool_use(NOW - 8 * D, "RemoteTrigger", {"action": "delete", "trigger_id": "trig_d"}, "t2"),
+        tool_result(NOW - 8 * D, "t2", result),
+    ])
+    got, _ = collect(env)
+    assert got["cloud:trig_d"]["verdict"] == "UNKNOWN"
+
+
+def test_cloud_delete_with_no_result_at_all_keeps_the_routine(env):
+    transcript(env, "s.jsonl", [
+        *call(NOW - 9 * D, "get", {"trigger": trigger("trig_d", "Doomed", "0 1 * * *")}, "t1", trigger_id="trig_d"),
+        tool_use(NOW - 8 * D, "RemoteTrigger", {"action": "delete", "trigger_id": "trig_d"}, "t2"),
+    ])
+    got, _ = collect(env)
+    assert got["cloud:trig_d"]["verdict"] == "UNKNOWN"
+
+
+def test_cloud_delete_flagged_as_error_keeps_the_routine(env):
+    failed = tool_result(NOW - 8 * D, "t2", "HTTP 200\n{}")
+    failed["message"]["content"][0]["is_error"] = True
+    transcript(env, "s.jsonl", [
+        *call(NOW - 9 * D, "get", {"trigger": trigger("trig_d", "Doomed", "0 1 * * *")}, "t1", trigger_id="trig_d"),
+        tool_use(NOW - 8 * D, "RemoteTrigger", {"action": "delete", "trigger_id": "trig_d"}, "t2"), failed,
+    ])
+    got, _ = collect(env)
+    assert got["cloud:trig_d"]["verdict"] == "UNKNOWN"
 
 
 # --- github ------------------------------------------------------------------------------------
@@ -515,7 +549,7 @@ def test_github_without_network_says_not_checked(env):
     assert list(gh) == ["github:app-a/nightly.yml"]
     e = gh["github:app-a/nightly.yml"]
     assert e["name"] == "app-a: Nightly build"
-    assert e["cadence"] == "daily 03:15; weekly Mon 12:00" and e["expected_every"] == 7 * D
+    assert e["cadence"] == "daily 03:15; weekly Mon 12:00" and e["expected_every"] == D
     assert e["verdict"] == "UNKNOWN" and e["last_run_text"] == "not checked"
     assert "not checked" in e["note"]
 
@@ -566,12 +600,49 @@ def test_gh_last_run_command(tmp_path, monkeypatch):
     monkeypatch.setattr(schedules.subprocess, "run", run)
     out = schedules._gh_last_run(tmp_path, "nightly.yml")
     assert out["conclusion"] == "success"
-    assert seen["cmd"] == ["gh", "run", "list", "--workflow", "nightly.yml", "--limit", "1", "--json",
-                           "conclusion,createdAt"] and seen["cwd"] == str(tmp_path)
+    assert seen["cmd"] == ["gh", "run", "list", "--workflow", "nightly.yml", "--event", "schedule", "--limit", "1",
+                           "--json", "conclusion,createdAt"] and seen["cwd"] == str(tmp_path)
     monkeypatch.setattr(schedules.subprocess, "run",
                         lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, stdout="", stderr="no auth\n"))
     with pytest.raises(RuntimeError, match="exited 1: no auth"):
         schedules._gh_last_run(tmp_path, "nightly.yml")
+
+
+def test_github_only_scheduled_runs_count(env, monkeypatch):
+    """A push or a manual run must not hide a schedule that stopped firing: the lookup asks gh for
+    schedule runs only, so a workflow with recent pushes but no scheduled run is NEVER RAN."""
+    workflow(env, "app-a", "nightly.yml", "name: N\non:\n  push:\n  schedule:\n    - cron: '0 6 * * *'\n")
+    monkeypatch.setattr(schedules.shutil, "which", lambda name: "/usr/bin/gh")
+    # a fake gh that honours --event: the push run is the only one it has
+    all_runs = [{"event": "push", "conclusion": "success", "createdAt": (NOW - H).isoformat()}]
+
+    def run(cmd, **kw):
+        want = cmd[cmd.index("--event") + 1] if "--event" in cmd else None
+        rows = [{k: r[k] for k in ("conclusion", "createdAt")} for r in all_runs if want in (None, r["event"])]
+        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(rows[:1]), stderr="")
+    monkeypatch.setattr(schedules.subprocess, "run", run)
+    # (the env fixture stubs _gh_last_run to raise; put the real one back)
+    monkeypatch.setattr(schedules, "_gh_last_run", _REAL_GH_LAST_RUN)
+    set_mtime(env.parent / "repos" / "app-a" / ".github" / "workflows" / "nightly.yml", NOW - 10 * D)
+    got, _ = collect(env, allow_network=True)
+    assert got["github:app-a/nightly.yml"]["verdict"] == "NEVER RAN"
+    all_runs.append({"event": "schedule", "conclusion": "success", "createdAt": (NOW - 3 * H).isoformat()})
+    got, _ = collect(env, allow_network=True)
+    assert got["github:app-a/nightly.yml"]["verdict"] == "OK"
+
+
+def test_github_staleness_uses_the_shortest_cron_interval(env, monkeypatch):
+    workflow(env, "app-a", "nightly.yml")  # daily 03:15 and weekly Mon 12:00
+    monkeypatch.setattr(schedules.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(schedules, "_gh_last_run", lambda repo, wf: {
+        "conclusion": "success", "createdAt": (NOW - 4 * D).isoformat()})
+    got, _ = collect(env, allow_network=True)
+    assert got["github:app-a/nightly.yml"]["verdict"] == "STALE"  # the daily runs stopped four days ago
+
+
+def test_launchd_calendar_entries_use_the_shortest_interval():
+    text, every = schedules.calendar_cadence([{"Hour": 8}, {"Weekday": 1, "Hour": 9}])
+    assert every == D
 
 
 def test_safe_mode_gate_decides_network(env, monkeypatch):
@@ -615,7 +686,11 @@ def test_routines_are_reused_and_not_listed_twice(env, monkeypatch):
     assert "declares no log" in got["routines:app-a:gate"]["note"]
     assert "absent.log does not exist" in got["routines:app-a:nolog"]["note"]
     assert got["routines:app-a:sync"]["cadence"] == "1d"
-    assert all(e["elsewhere"] for k, e in got.items() if k.startswith("routines"))
+    # elsewhere = `teyla routines` already carries the problem in its own banner file; NEVER RAN
+    # (an "ok" routine with no log) is schedules' alone
+    assert {k: e["elsewhere"] for k, e in got.items() if k.startswith("routines")} == {
+        "routines:app-a:sync": False, "routines:app-a:gone": True, "routines:app-a:web": True,
+        "routines:app-a:gate": False, "routines:app-a:nolog": False}
 
 
 # --- registry ----------------------------------------------------------------------------------
@@ -778,6 +853,22 @@ def test_routines_problems_are_not_repeated_in_schedules_problems(env, monkeypat
     assert verdicts(full) == {"routines:app-a:gone": "UNREGISTERED"}
     assert schedules.problem_lines(full) == []           # `teyla routines` writes that one already
     assert schedules.is_problem(full[0])
+
+
+def test_routine_never_ran_reaches_schedules_problems(env, monkeypatch):
+    """`teyla routines` calls a loaded routine with a missing log "ok", so its banner file stays silent;
+    schedules calls it NEVER RAN and must not suppress it as already reported."""
+    repo = env.parent / "repos" / "app-a"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "teyla.toml").write_text(
+        '[product]\nname = "app-a"\n'
+        f'[[routine]]\nname = "nolog"\nkind = "launchd"\nlabel = "com.example.nolog"\nevery = "1d"\nlog = "{env}/absent.log"\n'
+        '[[routine]]\nname = "gone"\nkind = "launchd"\nlabel = "com.example.gone"\nevery = "1d"\n')
+    monkeypatch.setattr(routines, "_launchctl_list", lambda: listing(("-", 0, "com.example.nolog")))
+    full, _ = schedules.run(now=NOW, allow_network=False)
+    assert verdicts(full) == {"routines:app-a:nolog": "NEVER RAN", "routines:app-a:gone": "UNREGISTERED"}
+    lines = schedules.problem_lines(full)
+    assert [k for k, _ in lines] == ["schedule|routines:app-a:nolog|NEVER RAN"]  # `gone` is routines' alone
 
 
 def test_session_crons_are_counted_never_listed(env):

@@ -375,9 +375,25 @@ def test_wrapper_stale_flags_wrapper_missing_storage_clean(tmp_path, monkeypatch
     wrapper_path.write_text(no_schedules)
     assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is True  # written before `teyla schedules`
 
-    fresh_text = no_schedules + "teyla schedules --quiet || true\n"
+    # `schedules` after `doctor` (the order it first shipped in) is stale: its problems reach the banner a day late
+    late = no_schedules + "teyla schedules --quiet || true\n"
+    wrapper_path.write_text(late)
+    assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is True
+    late_testflight = no_schedules.replace("teyla doctor --quiet\n", "teyla schedules --quiet || true\nteyla doctor --quiet\n") \
+        + "teyla testflight --quiet || true\n"
+    wrapper_path.write_text(late_testflight)
+    assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is True
+
+    fresh_text = no_schedules.replace("teyla doctor --quiet\n", "teyla schedules --quiet || true\n"
+                                      "teyla testflight --quiet || true\nteyla doctor --quiet\n")
     wrapper_path.write_text(fresh_text)
     assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is False
+
+
+def test_daily_wrapper_template_runs_quiet_checks_before_the_banner_is_built():
+    t = routine_install.DAILY_WRAPPER_TEMPLATE
+    doctor = t.index("\nteyla doctor --quiet")
+    assert t.index("\nteyla schedules --quiet") < doctor and t.index("\nteyla testflight --quiet") < doctor
 
 
 def test_daily_wrapper_template_runs_storage_clean_auto_quiet():
