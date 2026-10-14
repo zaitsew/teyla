@@ -26,10 +26,16 @@ one or `app-store`, or when it sets `apple_bundle_id`. Exit 0 when every in-scop
 current, 1 when any is behind, has nothing installable, or could not be read: a routine can
 use the exit code. It is a network command (the tool calls Apple), so safe mode refuses it
 without `--allow-network`.
+
+`--quiet` prints nothing: it writes one `key<TAB>text` line per platform that is behind, has nothing
+installable or could not be read to `~/.teyla/testflight.problems` (what the session-start banner and
+the digest read), and removes the file when every platform is current. The daily routine runs it; in
+safe mode it does nothing and exits 0.
 """
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -219,8 +225,59 @@ def render_text(rows: list[dict]) -> str:
     return "".join(f"{line}\n" for r in rows for line in r["lines"])
 
 
+def problems_path() -> pathlib.Path:
+    from . import config
+    return config.TEYLA_DIR / "testflight.problems"  # call time: tests and a moved home redirect it
+
+
+def problem_lines(rows: list[dict]) -> list[tuple[str, str]]:
+    """(key, text) for each platform that is not current, e.g. `app-a iOS: 2 behind — 120: processing`.
+    A row that has no platforms (an error, a tester not on the team) is one line of its own."""
+    out = []
+    for r in rows:
+        if r["verdict"] == "current":
+            continue
+        by_platform = {p.get("platform"): p for p in (r.get("payload") or {}).get("platforms") or []
+                       if isinstance(p, dict)}
+        listed = [p for p in r["platforms"] if p["verdict"] != "current"]
+        for p in listed:
+            raw = by_platform.get(p["platform"]) or {}
+            what = f"{p['behind']} behind" if p["verdict"] == "behind" else "none installable"
+            if p["verdict"] == "none" and p["behind"]:
+                what = f"{p['behind']} behind, none installable"
+            blockers = "; ".join(str(b) for b in raw.get("blockers") or [])
+            tail = f" — {blockers}" if blockers else ""
+            out.append((f"testflight|{r['product']}|{p['platform']}|{p['verdict']}",
+                        f"{r['product']} {_label(p['platform'])}: {what}{tail}"))
+        if not listed:
+            msg = str(r.get("error") or (r["lines"][0] if r.get("lines") else ""))
+            msg = msg.removeprefix(r["product"]).strip() or r["verdict"]
+            out.append((f"testflight|{r['product']}|{r['verdict']}", f"{r['product']}: {msg}"))
+    return out
+
+
+def write_problems(rows: list[dict], path: pathlib.Path | None = None) -> pathlib.Path | None:
+    p = path or problems_path()
+    items = problem_lines(rows)
+    clean = lambda s: " ".join(str(s).split())  # noqa: E731 - one line, no tabs
+    try:
+        if items:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            tmp = p.with_name(p.name + ".tmp")
+            tmp.write_text("".join(f"{clean(k)}\t{clean(t)}\n" for k, t in items))
+            os.replace(tmp, p)
+            return p
+        p.unlink(missing_ok=True)
+    except OSError:
+        pass
+    return None
+
+
 def cmd_testflight(args):
-    if not net.gate("`teyla testflight` (your release tool asks App Store Connect)"):
+    quiet = getattr(args, "quiet", False)
+    if not net.gate("`teyla testflight` (your release tool asks App Store Connect)", quiet=quiet):
+        if quiet:
+            return 0  # nothing was asked, so nothing is known: leave the last answer as it was
         if getattr(args, "json", False):
             print("[]")
         return 1
@@ -228,7 +285,9 @@ def cmd_testflight(args):
         print("teyla: no teyla.toml at " + ", ".join(args.paths), file=sys.stderr)
         return 2
     rows = run(args.paths or None)
-    if getattr(args, "json", False):
+    if quiet:
+        write_problems(rows)
+    elif getattr(args, "json", False):
         print(json.dumps([{k: v for k, v in r.items() if k != "lines"} for r in rows], indent=2))
     else:
         print(render_text(rows), end="")
@@ -240,5 +299,6 @@ def register(sp):
     q.set_defaults(fn=cmd_testflight)
     q.add_argument("paths", nargs="*")
     q.add_argument("--json", action="store_true")
+    q.add_argument("--quiet", action="store_true", help="print nothing; write ~/.teyla/testflight.problems (removed when every platform is current)")
     q.add_argument("--allow-network", action="store_true", help="safe mode: let the release tool reach App Store Connect this once")
     return q

@@ -85,7 +85,9 @@ When asked whether a product ran, works, or is up ("did it run this morning?",
 (loaded, last run, stale) and the manual checks — and the logs its `teyla.toml`
 names. Read code and git history only once the record shows something wrong and
 the cause is needed. Answered from the record it costs one command; answered by
-reading code it costs a session.
+reading code it costs a session. For scheduled tasks outside a repo — launchd jobs, Claude desktop
+scheduled tasks, cloud routines, GitHub schedules — `teyla schedules` is the record: what exists,
+when it last ran, and what vanished.
 
 ## 10. One machine, a budget — the guard decides, not the agent
 

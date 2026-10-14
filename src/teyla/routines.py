@@ -447,6 +447,7 @@ def evaluate(manifest: dict, *, now: dt.datetime | None = None) -> dict:
         verdict = routine_verdict(r, loaded, run_at, now=now, outcome=outcome)
         row = {
             "name": r["name"], "kind": r["kind"], "loaded": loaded,
+            "label": r.get("label", ""), "every": r.get("every", ""),
             "last_run": run_at.isoformat() if run_at else "?", "verdict": verdict,
             "last_receipt": outcomes.get(f"{product_name}:{r['name']}", "-"),
         }

@@ -371,7 +371,11 @@ def test_wrapper_stale_flags_wrapper_missing_storage_clean(tmp_path, monkeypatch
     wrapper_path.write_text(no_sync)
     assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is True
 
-    fresh_text = no_sync + "teyla policy sync --quiet\n"
+    no_schedules = no_sync + "teyla policy sync --quiet\n"
+    wrapper_path.write_text(no_schedules)
+    assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is True  # written before `teyla schedules`
+
+    fresh_text = no_schedules + "teyla schedules --quiet || true\n"
     wrapper_path.write_text(fresh_text)
     assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is False
 
