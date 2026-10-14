@@ -115,6 +115,24 @@ def _mtime(p: pathlib.Path) -> dt.datetime | None:
         return None
 
 
+# A wrapper that stamps every start (`date ... > "/path/x.last"`, as Teyla's own wrappers do) records
+# its runs even when its log stays quiet: a log written only when there is work to do would otherwise
+# make a healthy agent look STALE.
+_STAMP_RE = re.compile(r'^\s*date\b[^\n>]*>\s*"?([^"\s;&|]+\.last)"?', re.M)
+
+
+def _wrapper_stamp(plist: dict) -> pathlib.Path | None:
+    args = plist.get("ProgramArguments")
+    if not isinstance(args, list) or not args or not isinstance(args[-1], str) or not args[-1].endswith(".sh"):
+        return None
+    try:
+        text = pathlib.Path(args[-1]).expanduser().read_text(errors="replace")[:20000]
+    except OSError:
+        return None
+    m = _STAMP_RE.search(text)
+    return pathlib.Path(m.group(1)).expanduser() if m else None
+
+
 def _local(t: dt.datetime) -> dt.datetime:
     return t.astimezone()
 
@@ -528,7 +546,11 @@ def read_launchd(agents_dir: pathlib.Path | None = None, *, listing: str | None 
                 t = _mtime(pathlib.Path(p).expanduser())
                 if t:
                     logs.append(t)
-        has_log_path = any(isinstance(plist.get(k), str) and plist.get(k) for k in ("StandardOutPath", "StandardErrorPath"))
+        stamp = _wrapper_stamp(plist)
+        if stamp is not None and (t := _mtime(stamp)):
+            logs.append(t)
+        has_log_path = stamp is not None or any(
+            isinstance(plist.get(k), str) and plist.get(k) for k in ("StandardOutPath", "StandardErrorPath"))
         pid, status = loaded.get(label, (None, None))
         e = entry("launchd", label, label, cadence=cadence, expected_every=expected,
                   last_run=max(logs) if logs else None, last_exit=status, definition=f, since=_mtime(f),

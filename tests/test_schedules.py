@@ -921,3 +921,24 @@ def test_daily_wrapper_runs_both_quiet_steps_and_never_fails_on_them():
     from teyla import routine_install
     t = routine_install.DAILY_WRAPPER_TEMPLATE
     assert "teyla schedules --quiet || true" in t and "teyla testflight --quiet || true" in t
+
+
+def test_launchd_wrapper_stamp_counts_as_a_run(env, monkeypatch):
+    """A wrapper that stamps each start ran recently even when its log only changes when it acts."""
+    stamp = env / ".teyla" / "quiet.last"
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    stamp.write_text("2026-10-14T10:00:00Z\n")
+    set_mtime(stamp, NOW - dt.timedelta(minutes=5))
+    wrapper = env / ".teyla" / "quiet.sh"
+    wrapper.write_text(f'#!/bin/bash\nset -uo pipefail\ndate -u +%FT%TZ > "{stamp}"\nteyla storage sims --reap --quiet\n')
+    plist(env, "com.example.quiet", interval=600, log=log_file(env, "quiet.log", NOW - 3 * H),
+          extra={"ProgramArguments": ["/bin/bash", str(wrapper)]})
+    plist(env, "com.example.nostamp", interval=600, log=log_file(env, "nostamp.log", NOW - 3 * H),
+          extra={"ProgramArguments": ["/bin/bash", str(env / ".teyla" / "missing.sh")]})
+    monkeypatch.setattr(routines, "_launchctl_list", lambda: listing(
+        ("-", 0, "com.example.quiet"), ("-", 0, "com.example.nostamp")))
+    monkeypatch.setattr(schedules, "_launchctl_disabled", lambda: set())
+
+    got, _ = collect(env)
+    assert got["launchd:com.example.quiet"]["verdict"] == "OK"
+    assert got["launchd:com.example.nostamp"]["verdict"] == "STALE"
