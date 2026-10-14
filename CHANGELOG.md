@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.23.1 — 2026-10-14 — Forget a task removed on purpose
+
+- **`teyla schedules forget KEY...`** removes a task from the schedules registry and its line from the
+  problems file. A task deleted on purpose stops showing as VANISHED; every other problem line stays as
+  the last full run wrote it.
+
 ## 0.23.0 — 2026-10-14 — A routine can be off on purpose
 
 `teyla schedules` reported routines that the owner keeps off on purpose (a product's daily cycle, a paper
