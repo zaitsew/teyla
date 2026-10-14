@@ -45,6 +45,12 @@ healthy. When the last non-`dry_run` row has `ok: false` the verdict is `FAILING
 streak's start, its length and the first line of `error` in the row's detail. Any other log
 keeps the mtime behaviour, and a malformed log never raises.
 
+A routine may carry `paused = "2026-10-14: owner keeps it off until the product is reviewed"` —
+an ISO date, `: `, and a reason. The owner left it off on purpose, so the declaration and reality
+agree when it is not loaded: the row's verdict is `paused` (with the reason), it is never a problem
+and is not counted anywhere as not running. If a paused routine is in fact loaded, the verdict is
+`PAUSED BUT LOADED` — the file and the machine disagree — and that one is a problem.
+
 Exit codes: `0` clean; `1` if any routine is not running (`NOT LOADED`, `STALE`,
 `unknown`, `FAILING`) or any check is `BROKEN`; `2` if the only problems are `UNTESTED`/
 `RE-TEST` checks — unverified is not the same as broken, and this split lets a CI
@@ -113,6 +119,35 @@ def find_manifests(paths: list[str] | None = None) -> list[pathlib.Path]:
     return out
 
 
+_PAUSED_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}): (\S.*)$", re.S)
+
+
+def _check_paused(path: pathlib.Path, r: dict) -> None:
+    """`paused` is a string: an ISO date, `: `, then the reason. Anything else is a ManifestError."""
+    name = r.get("name", "?")
+    v = r["paused"]
+    m = _PAUSED_RE.match(v.strip()) if isinstance(v, str) else None
+    ok = False
+    if m:
+        try:
+            dt.date.fromisoformat(m.group(1))
+            ok = True
+        except ValueError:
+            pass
+    if not ok:
+        shown = str(v)
+        shown = shown[:60] + "…" if len(shown) > 60 else shown
+        raise ManifestError(f"{path}: routine {name!r} has a malformed `paused` ({shown!r}) — it is a string "
+                            f"that starts with an ISO date, then ': ' and a reason, "
+                            f"like paused = \"2026-10-14: owner keeps it off until the product is reviewed\"")
+
+
+def paused_reason(routine: dict) -> str | None:
+    """The `paused` string of a routine ("2026-10-14: why"), or None when it is not paused."""
+    v = routine.get("paused")
+    return v.strip() if isinstance(v, str) and v.strip() else None
+
+
 def parse_manifest(path: pathlib.Path) -> dict:
     """Parse a teyla.toml with tomllib. Raises ManifestError on missing required fields."""
     try:
@@ -126,6 +161,8 @@ def parse_manifest(path: pathlib.Path) -> dict:
 
     routines = data.get("routine") or []
     for r in routines:
+        if "paused" in r:
+            _check_paused(path, r)
         if _is_control_routine(r):
             # A control-plane routine — Teyla runs this one itself rather than reporting
             # on something scheduled elsewhere. Its real validation lives in
@@ -385,6 +422,16 @@ def failing_detail(outcome: dict) -> str:
     return f"{count}{when}: {outcome['error']}"
 
 
+PAUSED = "paused"
+PAUSED_LOADED = "PAUSED BUT LOADED"
+
+
+def is_loaded(loaded: str) -> bool:
+    """Does a `loaded_state` string say the scheduler has this routine? (`unknown`, `not loaded`,
+    `not in crontab`, `no runs yet` and `on demand` do not.)"""
+    return loaded.startswith("loaded") or loaded == "in crontab" or loaded.startswith("last run")
+
+
 def routine_verdict(routine: dict, loaded: str, run_at: dt.datetime | None, *, now: dt.datetime | None = None,
                     outcome: dict | None = None) -> str:
     now = now or dt.datetime.now(dt.timezone.utc)
@@ -442,9 +489,13 @@ def evaluate(manifest: dict, *, now: dt.datetime | None = None) -> dict:
     routine_rows = []
     for r in manifest["routines"]:
         loaded = loaded_state(r, launchctl_output=lc, crontab_output=ct)
-        outcome = log_outcome(r)
+        paused = paused_reason(r)
+        outcome = None if paused else log_outcome(r)
         run_at = (outcome or {}).get("finished_at") or last_run(r)
-        verdict = routine_verdict(r, loaded, run_at, now=now, outcome=outcome)
+        if paused:
+            verdict = PAUSED_LOADED if is_loaded(loaded) else PAUSED
+        else:
+            verdict = routine_verdict(r, loaded, run_at, now=now, outcome=outcome)
         row = {
             "name": r["name"], "kind": r["kind"], "loaded": loaded,
             "label": r.get("label", ""), "every": r.get("every", ""), "log": r.get("log", ""),
@@ -453,6 +504,10 @@ def evaluate(manifest: dict, *, now: dt.datetime | None = None) -> dict:
         }
         if verdict == "FAILING":
             row["detail"] = failing_detail(outcome)
+        if paused:
+            row["paused"] = paused
+            row["detail"] = (f"paused in teyla.toml but {loaded}: {paused}" if verdict == PAUSED_LOADED
+                             else f"paused {paused}")
         routine_rows.append(row)
 
     check_rows = []
@@ -536,8 +591,15 @@ def summary_line(report: dict, *, now: dt.datetime | None = None) -> str:
     rs = report["routines"]; cs = report["checks"]
     parts = []
     if rs:
-        bad = [r["name"] for r in rs if r["verdict"] in NOT_RUNNING_VERDICTS]
-        parts.append(f"{len(rs) - len(bad)}/{len(rs)} routines running" + (f" (not: {', '.join(bad)})" if bad else ""))
+        paused = [r["name"] for r in rs if r["verdict"] == PAUSED]
+        active = [r for r in rs if r["verdict"] != PAUSED]
+        bad = [r["name"] for r in active if r["verdict"] in NOT_RUNNING_VERDICTS]
+        if active:
+            parts.append(f"{len(active) - len(bad)}/{len(active)} routines running" + (f" (not: {', '.join(bad)})" if bad else ""))
+        else:
+            parts.append("no active routines")
+        if paused:
+            parts.append(f"{len(paused)} paused ({', '.join(paused)})")
     else:
         parts.append("no routines declared")
     if cs:
@@ -598,7 +660,10 @@ def _clean(s: str) -> str:
     return re.sub(r"[\t\r\n]+", " ", str(s))
 
 
-NOT_RUNNING_VERDICTS = {"NOT LOADED", "STALE", "unknown", "FAILING"}
+# The routine verdicts that are problems. `PAUSED BUT LOADED` is in here although the routine is not
+# "not running": the declaration and the machine disagree, which is just as much worth a line.
+# A plain `paused` is deliberately absent.
+NOT_RUNNING_VERDICTS = {"NOT LOADED", "STALE", "unknown", "FAILING", PAUSED_LOADED}
 BROKEN_CHECK_VERDICTS = {"BROKEN"}
 NEEDS_ATTENTION_CHECK_VERDICTS = {"UNTESTED", "RE-TEST"}
 
@@ -612,8 +677,12 @@ def summarize(reports: list[dict]) -> tuple[int, int, int]:
     return n, m, k
 
 
+def count_verdict(reports: list[dict], verdict: str) -> int:
+    return sum(1 for r in reports for row in r.get("routines") or [] if row.get("verdict") == verdict)
+
+
 def count_failing(reports: list[dict]) -> int:
-    return sum(1 for r in reports for row in r.get("routines") or [] if row.get("verdict") == "FAILING")
+    return count_verdict(reports, "FAILING")
 
 
 def counts_line(reports: list[dict]) -> str:
@@ -621,8 +690,12 @@ def counts_line(reports: list[dict]) -> str:
     on its own ("1 routine failing"), not under "not running"."""
     n, m, k = summarize(reports)
     f = count_failing(reports)
+    pl = count_verdict(reports, PAUSED_LOADED)
     failing = f", {f} routine{'s' if f != 1 else ''} failing" if f else ""
-    return f"{n - f} routines not running{failing}, {m} checks broken, {k} untested/re-test"
+    disagree = f", {pl} routine{'s' if pl != 1 else ''} paused but loaded" if pl else ""
+    paused = count_verdict(reports, PAUSED)
+    note = f", {paused} paused" if paused else ""
+    return f"{n - f - pl} routines not running{failing}{disagree}, {m} checks broken, {k} untested/re-test{note}"
 
 
 def exit_code(n: int, m: int, k: int) -> int:

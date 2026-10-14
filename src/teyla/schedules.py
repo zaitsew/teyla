@@ -24,6 +24,10 @@ records the machine already keeps:
 Session crons (CronCreate) die with the session and are never listed; the output carries one
 line with how many the transcripts show created in the last 30 days.
 
+A routine marked `paused = "<date>: <reason>"` in teyla.toml is DISABLED with the note
+"paused: <reason>": the owner left it off, so it is not a problem. If it is loaded anyway the verdict
+is PAUSED BUT LOADED, which is one.
+
 Verdicts: OK, STALE (last run older than the expected interval x 1.5 + 2h), FAILING (last exit
 non-zero), DISABLED, UNREGISTERED, MISSING DEFINITION, NEVER RAN, DONE (a one-shot that ran),
 VANISHED, UNKNOWN (nothing on this machine can say). The problems are STALE, FAILING,
@@ -56,9 +60,9 @@ from . import config, net, routines
 UTC = dt.timezone.utc
 SOURCES = ("claude-desktop", "launchd", "cloud", "github", "routines")
 # Worst first: the order problems are listed in.
-SEVERITY = ("FAILING", "UNREGISTERED", "MISSING DEFINITION", "NEVER RAN", "STALE", "VANISHED",
+SEVERITY = ("FAILING", "PAUSED BUT LOADED", "UNREGISTERED", "MISSING DEFINITION", "NEVER RAN", "STALE", "VANISHED",
             "UNKNOWN", "DISABLED", "DONE", "OK")
-PROBLEMS = frozenset({"FAILING", "UNREGISTERED", "MISSING DEFINITION", "NEVER RAN", "STALE", "VANISHED"})
+PROBLEMS = frozenset({"FAILING", "PAUSED BUT LOADED", "UNREGISTERED", "MISSING DEFINITION", "NEVER RAN", "STALE", "VANISHED"})
 DEFAULT_IGNORE_PREFIXES = list(config.DEFAULTS["schedules"]["ignore_prefixes"])
 VANISHED_KEEP = dt.timedelta(days=30)
 CLOUD_LOOKBACK = dt.timedelta(days=90)
@@ -823,7 +827,7 @@ def read_github(code_root: pathlib.Path | None = None, *, check_runs: bool = Fal
 # --- teyla.toml routines -----------------------------------------------------------------------
 
 _ROUTINE_VERDICTS = {"ok": "OK", "STALE": "STALE", "FAILING": "FAILING", "NOT LOADED": "UNREGISTERED",
-                     "unknown": "UNKNOWN"}
+                     "unknown": "UNKNOWN", routines.PAUSED: "DISABLED", routines.PAUSED_LOADED: "PAUSED BUT LOADED"}
 
 
 def read_routines(reports: list[dict] | None = None, now: dt.datetime | None = None) -> list[dict]:
@@ -836,7 +840,12 @@ def read_routines(reports: list[dict] | None = None, now: dt.datetime | None = N
             raw = row.get("verdict", "unknown")
             verdict = _ROUTINE_VERDICTS.get(raw, "UNKNOWN")
             note = row.get("detail") or ""
-            if raw == "NOT LOADED":
+            paused = row.get("paused")
+            if raw == routines.PAUSED:
+                note = "paused: " + str(paused)
+            elif raw == routines.PAUSED_LOADED:
+                note = f"paused in teyla.toml but {row.get('loaded', 'loaded')}: {paused}"
+            elif raw == "NOT LOADED":
                 note = "declared in teyla.toml but " + str(row.get("loaded", "not loaded"))
             elif raw in ("unknown", "STALE") and not note:
                 note = f"loaded state: {row.get('loaded', '?')}"
@@ -852,7 +861,8 @@ def read_routines(reports: list[dict] | None = None, now: dt.datetime | None = N
             e = entry("routines", f"{rep['product']}:{row['name']}", f"{rep['product']}: {row['name']}",
                       cadence=("on demand" if row.get("loaded") == routines.ON_DEMAND else every or "unscheduled"),
                       expected_every=expected, last_run=last, definition=pathlib.Path(rep.get("repo", "")) / "teyla.toml",
-                      note=note, verdict=verdict,
+                      note=note, verdict=verdict, enabled=raw != routines.PAUSED,
+                      run_known=raw != routines.PAUSED,
                       # `teyla routines` writes its own banner item only for the verdicts it counts as not
                       # running; the rest (NEVER RAN on an "ok" routine) are this report's alone.
                       elsewhere=raw in routines.NOT_RUNNING_VERDICTS)
