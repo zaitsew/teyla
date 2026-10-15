@@ -1,8 +1,8 @@
 # Teyla
 
-**Spend fewer tokens, and keep your Mac standing while a dozen agents work on it.** Teyla is a local-first CLI and Claude Code plugin for people who run Claude Code, Codex and Grok all day. It shows where the money goes and which part of it bought nothing, keeps work on the cheapest model that can do it, and stops agents from pushing the machine into swap and a kernel panic.
+**A local-first toolkit for working with AI agents.** It cuts token spend, keeps your Mac standing while a dozen agents build on it, and gives Claude Code, Codex, Grok, Hermes and Cursor one policy and the same skills and hooks, so you can switch harness without losing your rules. Routines that run without you, corrections that stick and a weekly digest of what to fix come with it.
 
-Local-first. Teyla reads the transcripts already on your disk and no data leaves your machine. The only outbound calls are GitHub release checks and self-updates (listed in [`prompts/onboard.md`](prompts/onboard.md)).
+Teyla reads the transcripts already on your disk, and no data leaves your machine. The only outbound calls are GitHub release checks and self-updates (listed in [`prompts/onboard.md`](prompts/onboard.md)).
 
 ## Spend fewer tokens
 
@@ -38,9 +38,24 @@ teyla crash                                         # after a panic: what the ma
 - **Cleanup agents.** `teyla storage sims --reap` shuts down idle simulators, `storage procs --kill` stops dev servers and builds whose worktree is gone, `storage sweep` removes what agents leave behind (DerivedData, temp builds, caches, old logs). Each checks age and running processes first, and each has a dry run.
 - **Forensics.** `teyla crash` reads the kernel panics, watchdog resets and jetsam events, and lines each up with the load records from just before it, with advice computed from those numbers.
 
-## Also in the box
+## Switch harnesses without losing your setup
 
-- **One policy for every harness.** `~/.agents/POLICY.md` plus your own rules, synced to Claude Code, Codex, Grok, Hermes and Cursor; edits made in a generated copy are kept ([The policy](#the-policy)).
+Your rules, skills and hooks usually live in one harness. Move a project from Claude Code to Codex, hand a lane to Grok, or open it in Cursor, and the model there has never heard of them. Teyla keeps one source and renders it into each harness in the form that harness reads.
+
+```bash
+teyla policy sync        # ~/.agents/POLICY.md + your own rules → Claude Code, Codex, Grok, Hermes, Cursor
+teyla harness sync       # the plugin's skills and hooks (machine guard, correction capture, session start) into the others
+teyla harness status     # what is wired where
+teyla harness verify --live   # can each harness do work now: version, auth, last quota error, one live call that checks the policy arrived
+```
+
+- **One policy, five copies.** `~/.agents/POLICY.md` is imported by `~/.claude/CLAUDE.md` and generated into `~/.codex/AGENTS.md`, `~/.grok/AGENTS.md`, Hermes' `SOUL.md` and a Cursor skill. A rule someone adds to a generated copy from inside Codex is filed in `teyla policy inbox` before the next sync, never silently overwritten.
+- **The same skills and commands.** `/teyla:rule` and `/teyla:correct` become `teyla rule` / `teyla correct` for harnesses with no slash commands, and per-repo rules go to `AGENTS.md` as well as `.claude/rules/`.
+- **One report across all of them.** `teyla monitor` and `teyla spend` read the sessions of every harness, so a lane that moved harness still shows up in the week's numbers (Cursor's store has turns and models but no token counts).
+- **Harnesses you do not use stay out of the way:** `teyla config set harness.disabled=hermes,grok`. What each harness can and cannot do is in [docs/HARNESSES.md](docs/HARNESSES.md).
+
+## Routines, rules and the rest
+
 - **Is the automated half running?** `teyla routines` and `teyla schedules` check every launchd job, cron line, desktop task and scheduled workflow against its last run ([Routines and checks](#routines-and-checks)).
 - **Corrections that stick.** The plugin captures correction-shaped prompts and turns repeats into rules ([The plugin](#the-plugin)).
 - **Review debt.** `teyla reviews` matches merged PRs against the review ledger.
