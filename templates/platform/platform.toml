@@ -62,6 +62,7 @@ tester = ""                               # the email your TestFlight app is sig
 play_console = false
 keystore = ""                            # upload keystore; back it up, it cannot be regenerated
 release_tool = ""                        # path to your Play upload script; `teyla play` runs `<tool> status --package ID --json` and `teyla platform` warns while it is empty
+account = "personal"                     # "personal" | "organization". A personal Play account needs a 14-day closed test before production; an organization account does not, and `teyla play` then never treats a missing closed test as a problem
 
 [llm]
 provider = "openai"

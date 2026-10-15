@@ -724,12 +724,15 @@ routine can use it. It reaches Apple through your tool, so safe mode needs `--al
 `[productize.distribution]` android is `play-internal` or `play`, or whose `teyla.toml` sets
 `[release] android_package`, it runs your release tool (`[android] release_tool`) as `status
 --package ID --json` and prints one line: the newest version code on the internal track and its
-release status, and whether a closed test (the `alpha` track) is live and for how many of the 14
-days a personal Play account needs. The API gives no start date, so the day count is Teyla's own,
+release status, what production serves (`completed` or `inProgress`, with the rollout fraction), and the
+closed test (the `alpha` track) with the days seen out of the 14 a personal Play account needs. An
+organization account has no such rule: `[android] account = "organization"` drops the day count and the
+requirement, and a live production release makes it moot for a personal one. The API gives no start date, so the day count is Teyla's own,
 kept in `~/.teyla/play-seen.json` (it restarts if the closed track ever has no live release). A
 young closed test is reported, not a problem. Exit 1 when nothing is on the internal track, the
-newest internal release is not `completed`, a `play` product has no live closed test, or the tool
-failed. Safe mode needs `--allow-network`.
+newest internal release is not `completed` (a first draft is reported as possibly in Google's review: the
+API does not expose review state), internal is older than production, a `play` product on a personal
+account has nothing live on production and no live closed test, or the tool failed. Safe mode needs `--allow-network`.
 
 ## 7. Prior art, and how Teyla differs
 

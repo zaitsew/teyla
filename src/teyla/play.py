@@ -7,14 +7,15 @@ exit code. This command asks the owner's release tool, which holds the service-a
     <release_tool> status --package ID --json
 
 and prints one line per product: the newest version code on the internal track and its release
-status, and whether a closed test (the `alpha` track) exists and for how many days Teyla has seen
-it live. Teyla never touches the credential; it runs the tool named in `~/.teyla/platform.toml` and
-reads the JSON it prints (`{"package": ID, "tracks": [{"track", "releases": [{"name", "status",
+status, what production holds, and the closed test (the `alpha` track) with the days Teyla has seen it
+live. Teyla never touches the credential; it runs the tool named in `~/.teyla/platform.toml` and reads
+the JSON it prints (`{"package": ID, "tracks": [{"track", "releases": [{"name", "status",
 "version_codes": [int], "user_fraction"}]}]}`).
 
     # ~/.teyla/platform.toml
     [android]
     release_tool = "/path/to/your-play-script"
+    account = "personal"             # or "organization"; personal is the default
 
     # <repo>/teyla.toml
     [release]
@@ -25,15 +26,39 @@ A product is in scope when its `[productize.distribution]` android value is `pla
 
 Verdicts, worst first: `error` (the tool or the config could not answer), `none` (nothing on the
 internal track), `behind` (the newest internal release is not `completed`, so testers cannot install
-it; or, for a product whose distribution is `play`, there is no live closed test), `current`.
+it; internal is older than what production serves; or, for a product whose distribution is `play` on a
+personal account, nothing is live on production and there is no live closed test), `current`.
+
+Account type. Google requires a closed test of 14 days before the first production release only of a
+PERSONAL developer account. An organization account has no such rule, so with
+`account = "organization"` a missing or young closed test is never a problem, the "N of 14 days" wording
+is dropped, and the closed track is shown only when it has a release. A personal account also stops
+needing the closed test the moment a production release is live (`completed` or `inProgress`): the line then
+shows the production version code and status, and the rollout fraction when it is staged.
 
 The closed-test age is Teyla's own count: the Play API says nothing about when a release went live, so
 `~/.teyla/play-seen.json` records the first day Teyla saw a live release on the closed track, and the
-count restarts if the track ever has none. A personal developer account needs 14 days of closed testing
-before production; Play also wants a minimum number of opted-in testers, which the API does not show.
-A closed test younger than 14 days is reported, not a problem. Exit 0 when every in-scope product is
-current, 1 otherwise. It is a network command (the tool calls Google), so safe mode refuses it without
-`--allow-network`.
+count restarts if the track ever has none. Play also wants a minimum number of opted-in testers, which the
+API does not show. A closed test younger than 14 days is reported, not a problem. Internal behind
+production (the internal track's newest code is lower than the live production code) is a problem: the
+testers' build is older than the users'.
+
+Review state. Google's review ("In review" in the Play Console) is not in the API. `~/ops/bin/play`
+prints, per release, only what the Play Developer API's `edits.tracks` returns: `status` (`draft`,
+`inProgress`, `halted`, `completed`), `version_codes` and `user_fraction`. The API has no field for "sent
+for review", "in review" or "approved"; a release the API calls `draft` may be exactly that in the Console
+(the tool's own docstring says the same of a commit made without sending it for review). So a first internal
+release that is still a `draft`, on an app with no non-draft release anywhere, is reported as "draft: Play
+Console may show it in review; the API does not expose review state". It still counts as not installable,
+exit 1: nothing here can tell "waiting for Google" from "never sent".
+
+`completed` on production is not proof that the app is public: one app's production release read `completed`
+through the API while the Console showed its update "In review". The line therefore says "submitted; the
+API cannot tell whether Google review has passed". Internal AHEAD of production is normal (the next release
+is in testing) and is not reported; only internal behind production is a problem.
+
+Exit 0 when every in-scope product is current, 1 otherwise. It is a network command (the tool calls Google),
+so safe mode refuses it without `--allow-network`.
 
 `--quiet` prints nothing: it writes one `key<TAB>text` line per problem to `~/.teyla/play.problems` (what
 the session-start banner and the digest read), and removes the file when every product is current. The
@@ -54,6 +79,9 @@ TIMEOUT_S = 90
 CLOSED_TRACK = "alpha"           # Play Console: "closed testing"
 CLOSED_TEST_DAYS = 14            # a personal developer account, before production
 LIVE = "completed"
+PROD_LIVE = ("completed", "inProgress")   # a production release users can get: full or staged
+ACCOUNTS = ("personal", "organization")
+DRAFT_NOTE = "draft: Play Console may show it in review; the API does not expose review state"
 # Worst first: the product's verdict is the worst of its checks.
 ORDER = ("error", "none", "behind", "current")
 
@@ -66,17 +94,30 @@ def in_scope(manifest: dict) -> bool:
     return str(dist.get("android") or "").strip().lower() in ("play-internal", "play")
 
 
-def wants_closed_test(manifest: dict) -> bool:
-    """Distribution `play` is the public path, which a personal account reaches only through a closed test."""
+def account_type(cfg: dict) -> str:
+    """`[android] account` in platform.toml: "personal" (the default) or "organization". Anything else raises
+    ValueError, so a typo is an error row and not a silently wrong rule."""
+    raw = str((cfg.get("android") or {}).get("account") or "personal").strip().lower()
+    if raw not in ACCOUNTS:
+        raise ValueError(f'`[android] account` in {_platform_path()} must be "personal" or "organization", not "{raw}"')
+    return raw
+
+
+def wants_closed_test(manifest: dict, account: str = "personal", prod_live: bool = False) -> bool:
+    """Distribution `play` is the public path, which a personal account reaches only through a closed test,
+    unless production is already live. An organization account has no such requirement."""
+    if account != "personal" or prod_live:
+        return False
     dist = (manifest.get("productize") or {}).get("distribution") or {}
     return str(dist.get("android") or "").strip().lower() == "play"
 
 
 def _row(manifest: dict, verdict: str, *, line: str, package: str = "", error: str | None = None,
-         internal: dict | None = None, closed: dict | None = None, blockers: list[str] | None = None) -> dict:
+         internal: dict | None = None, closed: dict | None = None, production: dict | None = None,
+         account: str | None = None, blockers: list[str] | None = None) -> dict:
     return {"product": manifest["product"], "repo": str(manifest["repo"]), "package": package,
-            "verdict": verdict, "error": error, "internal": internal, "closed": closed,
-            "blockers": blockers or [], "lines": [line]}
+            "verdict": verdict, "error": error, "account": account, "internal": internal, "closed": closed,
+            "production": production, "blockers": blockers or [], "lines": [line]}
 
 
 def _error(manifest: dict, msg: str, package: str = "") -> dict:
@@ -153,6 +194,28 @@ def has_live(payload: dict, track: str) -> bool:
                for r in t.get("releases") or [])
 
 
+def live_release(payload: dict, track: str, statuses: tuple[str, ...]) -> dict | None:
+    """The release on `track` with the highest version code among those whose status is in `statuses`, as
+    {"code", "name", "status", "user_fraction"}, or None."""
+    best = None
+    for t in payload.get("tracks") or []:
+        if not isinstance(t, dict) or t.get("track") != track:
+            continue
+        for r in t.get("releases") or []:
+            codes = _codes(r) if isinstance(r, dict) else []
+            if codes and r.get("status") in statuses and (best is None or max(codes) > best["code"]):
+                best = {"code": max(codes), "name": r.get("name") or "", "status": str(r["status"]),
+                        "user_fraction": r.get("user_fraction")}
+    return best
+
+
+def ever_released(payload: dict) -> bool:
+    """True when any release on any track has left `draft`: the app has been through a real release."""
+    return any(isinstance(r, dict) and _codes(r) and r.get("status") not in (None, "draft", "statusUnspecified")
+               for t in payload.get("tracks") or [] if isinstance(t, dict)
+               for r in t.get("releases") or [])
+
+
 # --- the closed-test clock ---------------------------------------------------------------------------
 
 def seen_path() -> pathlib.Path:
@@ -206,6 +269,16 @@ def _release_label(rel: dict) -> str:
     return f"code {rel['code']}{name} {rel['status']}"
 
 
+def _prod_label(rel: dict) -> str:
+    name = f' "{rel["name"]}"' if rel.get("name") else ""
+    if rel["status"] == "completed":
+        # Seen on a real app: the API said `completed` while the Console said "In review".
+        return f"code {rel['code']}{name} completed (submitted; the API cannot tell whether Google review has passed)"
+    frac = rel.get("user_fraction")
+    staged = f" at {frac * 100:g}%" if isinstance(frac, (int, float)) else ""
+    return f"code {rel['code']}{name} {rel['status']}{staged}"
+
+
 def check_product(manifest: dict, cfg: dict, today: _dt.date | None = None) -> dict:
     """One report row for one in-scope product. Never raises."""
     today = today or _dt.date.today()
@@ -221,14 +294,21 @@ def check_product(manifest: dict, cfg: dict, today: _dt.date | None = None) -> d
     if not tool.exists():
         return _error(manifest, f"the release tool named in {_platform_path()} is not at {tool}", package)
     try:
+        account = account_type(cfg)
+    except ValueError as e:
+        return _error(manifest, str(e), package)
+    try:
         payload = run_tool(tool, package)
     except RuntimeError as e:
         return _error(manifest, str(e), package)
 
     internal = newest(payload, "internal")
     closed = newest(payload, CLOSED_TRACK)
+    prod = live_release(payload, "production", PROD_LIVE)
     live = has_live(payload, CLOSED_TRACK)
     days = closed_days(package, live, today)
+    personal = account == "personal"
+    needs_closed = wants_closed_test(manifest, account, prod is not None)
     blockers: list[str] = []
     if internal is None:
         verdict = "none"
@@ -237,29 +317,42 @@ def check_product(manifest: dict, cfg: dict, today: _dt.date | None = None) -> d
     elif internal["status"] != LIVE:
         verdict = "behind"
         head = f"internal {_release_label(internal)}"
-        blockers.append(f"internal {internal['status']}: testers cannot install it")
+        if internal["status"] == "draft" and not ever_released(payload):
+            blockers.append(DRAFT_NOTE)
+        else:
+            blockers.append(f"internal {internal['status']}: testers cannot install it")
     else:
         verdict = "current"
         head = f"internal {_release_label(internal)}"
+    parts = [head]
+    if prod is not None:
+        parts.append(f"production {_prod_label(prod)}")
+        if internal is not None and internal["code"] < prod["code"]:
+            blockers.append(f"internal behind production (code {internal['code']} < {prod['code']})")
+            verdict = _worst([verdict, "behind"])
     if closed is None:
-        closed_txt = "no closed test"
-        if wants_closed_test(manifest):
+        if personal and prod is None:
+            parts.append("no closed test")
+        if needs_closed:
             blockers.append(f"no closed test (a personal account needs {CLOSED_TEST_DAYS} days before production)")
             verdict = _worst([verdict, "behind"])
     elif not live:
-        closed_txt = f"closed test {_release_label(closed)}"  # nothing on the track is live yet
-        if wants_closed_test(manifest):
+        parts.append(f"closed test {_release_label(closed)}")  # nothing on the track is live yet
+        if needs_closed:
             blockers.append(f"closed test {closed['status']}: the {CLOSED_TEST_DAYS}-day clock is not running")
             verdict = _worst([verdict, "behind"])
+    elif personal and days is not None:
+        parts.append(f"closed test {_release_label(closed)}, seen {days} of {CLOSED_TEST_DAYS} days")
     else:
-        closed_txt = (f"closed test {_release_label(closed)}, seen {days} of {CLOSED_TEST_DAYS} days"
-                      if days is not None else f"closed test {_release_label(closed)}")
+        parts.append(f"closed test {_release_label(closed)}")
     tail = "current" if verdict == "current" else "; ".join(blockers)
-    line = f"{name}  {head}; {closed_txt} — {tail}"
+    line = f"{name}  {'; '.join(parts)} — {tail}"
     internal_out = None if internal is None else {k: internal[k] for k in ("code", "name", "status")}
-    closed_out = None if closed is None else {**{k: closed[k] for k in ("code", "name", "status")}, "days_seen": days}
+    closed_out = None if closed is None else {**{k: closed[k] for k in ("code", "name", "status")},
+                                              "days_seen": days if personal else None}
+    prod_out = None if prod is None else {k: prod[k] for k in ("code", "name", "status", "user_fraction")}
     return _row(manifest, verdict, line=line, package=package, internal=internal_out, closed=closed_out,
-                blockers=blockers)
+                production=prod_out, account=account, blockers=blockers)
 
 
 def _worst(verdicts: list[str]) -> str:

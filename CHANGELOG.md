@@ -2,6 +2,17 @@
 
 ## Unreleased — Did the Android build reach a person
 
+- **`teyla play` knows the account type and production.** The 14-day closed test is a rule of personal
+  developer accounts only, and an organization account is common, so a `play` product on one could be
+  reported behind for a requirement Google does not have. `[android] account = "personal" | "organization"` in
+  `~/.teyla/platform.toml` (default `personal`, today's behaviour): for `organization` a missing or young
+  closed test is never a problem, the "N of 14 days" wording is dropped, and the closed track is shown only
+  when it has a release. `teyla play` now reads `production` too: a `completed` or `inProgress` release
+  (with its rollout fraction) shows on the line and makes the closed-test requirement moot even for a
+  personal account. An internal track older than production is a problem. Google's review state is not in
+  the Play API, so a first internal release that is still a `draft` says "Play Console may show it in
+  review; the API does not expose review state" instead of the generic wording; it still exits 1.
+
 `teyla testflight` answered POLICY §11 for iOS and macOS; Android had nothing equivalent, and `teyla platform`
 only checked that a Play Console account and a keystore existed.
 
