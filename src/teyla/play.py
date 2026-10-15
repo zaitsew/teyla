@@ -43,8 +43,8 @@ API does not show. A closed test younger than 14 days is reported, not a problem
 production (the internal track's newest code is lower than the live production code) is a problem: the
 testers' build is older than the users'.
 
-Review state. Google's review ("In review" in the Play Console) is not in the API. `~/ops/bin/play`
-prints, per release, only what the Play Developer API's `edits.tracks` returns: `status` (`draft`,
+Review state. Google's review ("In review" in the Play Console) is not in the API. A release tool can
+print, per release, only what the Play Developer API's `edits.tracks` returns: `status` (`draft`,
 `inProgress`, `halted`, `completed`), `version_codes` and `user_fraction`. The API has no field for "sent
 for review", "in review" or "approved"; a release the API calls `draft` may be exactly that in the Console
 (the tool's own docstring says the same of a commit made without sending it for review). So a first internal
