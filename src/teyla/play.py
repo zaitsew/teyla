@@ -146,6 +146,13 @@ def newest(payload: dict, track: str) -> dict | None:
     return best
 
 
+def has_live(payload: dict, track: str) -> bool:
+    """True when any release on `track` is `completed`: an older live release stays live while a newer one is a draft."""
+    return any(isinstance(r, dict) and r.get("status") == LIVE and _codes(r)
+               for t in payload.get("tracks") or [] if isinstance(t, dict) and t.get("track") == track
+               for r in t.get("releases") or [])
+
+
 # --- the closed-test clock ---------------------------------------------------------------------------
 
 def seen_path() -> pathlib.Path:
@@ -220,7 +227,7 @@ def check_product(manifest: dict, cfg: dict, today: _dt.date | None = None) -> d
 
     internal = newest(payload, "internal")
     closed = newest(payload, CLOSED_TRACK)
-    live = closed is not None and closed["status"] == LIVE
+    live = has_live(payload, CLOSED_TRACK)
     days = closed_days(package, live, today)
     blockers: list[str] = []
     if internal is None:
@@ -240,7 +247,7 @@ def check_product(manifest: dict, cfg: dict, today: _dt.date | None = None) -> d
             blockers.append(f"no closed test (a personal account needs {CLOSED_TEST_DAYS} days before production)")
             verdict = _worst([verdict, "behind"])
     elif not live:
-        closed_txt = f"closed test {_release_label(closed)}"
+        closed_txt = f"closed test {_release_label(closed)}"  # nothing on the track is live yet
         if wants_closed_test(manifest):
             blockers.append(f"closed test {closed['status']}: the {CLOSED_TEST_DAYS}-day clock is not running")
             verdict = _worst([verdict, "behind"])

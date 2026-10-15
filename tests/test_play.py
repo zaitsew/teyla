@@ -143,6 +143,16 @@ def test_the_clock_restarts_when_the_closed_track_empties(tmp_path, monkeypatch)
     assert play.run(today=TODAY + dt.timedelta(days=5))[0]["closed"]["days_seen"] == 0
 
 
+def test_an_older_live_closed_release_keeps_the_clock_while_a_newer_one_is_a_draft(tmp_path, monkeypatch):
+    platform_toml(tmp_path)
+    product(tmp_path)
+    fake_tool(monkeypatch, payload(internal=[rel(15)], closed=[rel(14)]))
+    play.run(today=TODAY)
+    fake_tool(monkeypatch, payload(internal=[rel(15)], closed=[rel(14), rel(15, "draft")]))
+    row = play.run(today=TODAY + dt.timedelta(days=4))[0]
+    assert row["closed"]["days_seen"] == 4 and row["closed"]["code"] == 15
+
+
 def test_a_public_product_without_a_closed_test_is_behind(tmp_path, monkeypatch, capsys):
     platform_toml(tmp_path)
     product(tmp_path, android='"play"')
