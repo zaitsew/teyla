@@ -346,7 +346,17 @@ def _check_android(cfg):
     p = pathlib.Path(ks).expanduser()
     if not p.exists():
         return _row("android", MISSING, f"the keystore named in {PLATFORM_PATH} is not at {p} — restore it from your backup", f"{p} absent")
-    return _row("android", OK, "-", f"Play Console, keystore {p}")
+    tool_raw = str(a.get("release_tool") or "").strip()
+    if not tool_raw:
+        return _row("android", WARN,
+                    f"no release tool configured: set release_tool = \"/path/to/your-play-script\" under [android] in {PLATFORM_PATH}",
+                    f"Play Console, keystore {p}; release_tool not set in {PLATFORM_PATH}")
+    tool = pathlib.Path(tool_raw).expanduser()
+    if not tool.exists():
+        return _row("android", WARN, f"the release tool named in {PLATFORM_PATH} is not at {tool}", f"keystore ok; {tool} absent")
+    if not os.access(tool, os.X_OK):
+        return _row("android", WARN, f"chmod +x {tool}", f"keystore ok; {tool} not executable")
+    return _row("android", OK, "-", f"Play Console, keystore {p}, {tool}")
 
 
 def _check_llm(cfg, present):

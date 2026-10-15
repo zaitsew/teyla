@@ -389,7 +389,7 @@ launchd agents, one hook and one command:
 
 | when | what | writes |
 |---|---|---|
-| daily 07:00 (`com.zaitsew.teyla.daily`) | `teyla update --quiet`, `teyla doctor --quiet`, `teyla schedules --quiet`, `teyla testflight --quiet` (neither fails the daily; safe mode skips the second), `teyla policy sync --quiet` (local files only, safe mode too), catch-up, storage clean | `~/Library/Logs/teyla-daily.log`, `~/.teyla/doctor.summary`, `~/.teyla/banner.items`, `~/.teyla/schedules.json`, `~/.teyla/schedules.problems`, `~/.teyla/testflight.problems` |
+| daily 07:00 (`com.zaitsew.teyla.daily`) | `teyla update --quiet`, `teyla doctor --quiet`, `teyla schedules --quiet`, `teyla testflight --quiet`, `teyla play --quiet` (none fails the daily; safe mode skips the last two), `teyla policy sync --quiet` (local files only, safe mode too), catch-up, storage clean | `~/Library/Logs/teyla-daily.log`, `~/.teyla/doctor.summary`, `~/.teyla/banner.items`, `~/.teyla/schedules.json`, `~/.teyla/schedules.problems`, `~/.teyla/testflight.problems`, `~/.teyla/play.problems` |
 | Friday 20:45 (`com.zaitsew.teyla.weekly`) | `monitor --days 7`, `routines`, `products`, `models`, `models watch`, `tidy --quiet` (report only), `lang --quiet` (non-Latin text in tracked files), `reviews --quiet` (merged PRs nobody reviewed), then `digest --write` | `<ops>/runs/<date>/`, `~/.teyla/digest.md` |
 | every session start (plugin hook) | prints what is new in `banner.items` since the last start (nothing when nothing is), and the digest headline once per week; if the last update check is older than a day, starts `teyla update --check` in the background | `~/.teyla/update-check.json` |
 | on demand | `teyla doctor` — the checklist with a fix per line; exit 1 when a FIX is pending | `~/.teyla/doctor.json` |
@@ -448,7 +448,7 @@ A cloud routine deleted in a session is still visible in the transcripts, so for
 tombstone in the registry (`forgotten`) until the deletion is older than the listing window. `--quiet` is the daily form: it prints nothing, updates that registry and writes
 the problems to `~/.teyla/schedules.problems`, which the session-start banner and the weekly digest read.
 `teyla testflight --quiet` does the same for builds that did not reach the tester
-(`~/.teyla/testflight.problems`).
+(`~/.teyla/testflight.problems`), and `teyla play --quiet` for Android builds that did not reach Google Play's testers (`~/.teyla/play.problems`).
 
 A one-off fact with a deadline — a key that expires, a trial that ends — gets its own line:
 `teyla remind add "<what>" <YYYY-MM-DD> [--how "..."]`, folded into `teyla doctor` as OK
@@ -719,6 +719,17 @@ with `[apple] tester` as the email, and prints one line per platform: newest upl
 that tester can install, and what blocks the ones in between. Exit 0 when every platform is
 current, 1 otherwise (behind, nothing installable, tester not on the team, tool error), so a
 routine can use it. It reaches Apple through your tool, so safe mode needs `--allow-network`.
+
+**`teyla play [path...] [--json]`** is the Android twin. For each product whose
+`[productize.distribution]` android is `play-internal` or `play`, or whose `teyla.toml` sets
+`[release] android_package`, it runs your release tool (`[android] release_tool`) as `status
+--package ID --json` and prints one line: the newest version code on the internal track and its
+release status, and whether a closed test (the `alpha` track) is live and for how many of the 14
+days a personal Play account needs. The API gives no start date, so the day count is Teyla's own,
+kept in `~/.teyla/play-seen.json` (it restarts if the closed track ever has no live release). A
+young closed test is reported, not a problem. Exit 1 when nothing is on the internal track, the
+newest internal release is not `completed`, a `play` product has no live closed test, or the tool
+failed. Safe mode needs `--allow-network`.
 
 ## 7. Prior art, and how Teyla differs
 

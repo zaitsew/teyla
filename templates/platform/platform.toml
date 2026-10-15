@@ -61,6 +61,7 @@ tester = ""                               # the email your TestFlight app is sig
 [android]
 play_console = false
 keystore = ""                            # upload keystore; back it up, it cannot be regenerated
+release_tool = ""                        # path to your Play upload script; `teyla play` runs `<tool> status --package ID --json` and `teyla platform` warns while it is empty
 
 [llm]
 provider = "openai"
