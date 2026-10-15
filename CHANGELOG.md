@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — Did the Android build reach a person
+## 0.24.0 — 2026-10-15 — Did the Android build reach a person
 
 - **`teyla play` knows the account type and production.** The 14-day closed test is a rule of personal
   developer accounts only, and an organization account is common, so a `play` product on one could be
