@@ -1,8 +1,8 @@
 # Teyla
 
-**A local-first toolkit for working with AI agents.** It cuts token spend, keeps your Mac standing while a dozen agents build on it, and gives Claude Code, Codex, Grok, Hermes and Cursor one policy and the same skills and hooks, so you can switch harness without losing your rules. Routines that run without you, corrections that stick and a weekly digest of what to fix come with it.
+**A local-first toolkit for working with AI agents.** It cuts token spend, keeps your Mac standing while a dozen agents build on it, and gives Claude Code, Codex, Grok, Hermes and Cursor one policy and the same skills and hooks, so you can switch harness without losing your rules. It also takes an app from a tool for one person to a build on someone else's phone (iOS / App Store, Android / Google Play, web), runs routines under guardrails, and makes corrections stick.
 
-Teyla reads the transcripts already on your disk, and no data leaves your machine. The only outbound calls are GitHub release checks and self-updates (listed in [`prompts/onboard.md`](prompts/onboard.md)).
+Teyla reads the transcripts already on your disk, and no data leaves your machine. Every outbound call (release checks, self-updates, `gh`, the model catalogue, the platform probes) is listed in the network table of [`prompts/onboard.md`](prompts/onboard.md), and safe mode refuses each one unless you pass `--allow-network`.
 
 ## Spend fewer tokens
 
@@ -54,12 +54,35 @@ teyla harness verify --live   # can each harness do work now: version, auth, las
 - **One report across all of them.** `teyla monitor` and `teyla spend` read the sessions of every harness, so a lane that moved harness still shows up in the week's numbers (Cursor's store has turns and models but no token counts).
 - **Harnesses you do not use stay out of the way:** `teyla config set harness.disabled=hermes,grok`. What each harness can and cannot do is in [docs/HARNESSES.md](docs/HARNESSES.md).
 
+## Ship apps to a person: iOS, Android, web
+
+A tool built for one person becomes an app for four only when it has accounts, per-user data, a backend off the laptop, a way onto other people's phones, and a build that actually reaches them. Teyla checks each of those from a `[productize]` block in the repo's `teyla.toml` and from one manifest of the resources you buy once.
+
+```bash
+teyla productize --owner-steps   # every product against R1–R10, then one numbered list of what only you can do
+teyla platform                   # shared resources: secrets, server, domain, identity, mail, Apple, Google Play, model key
+teyla testflight                 # did the newest uploaded build reach the tester, per product and platform
+teyla scaffold ~/repos/app --name app --kind ios   # a repo born with a release doc, check.sh, .env.example and teyla.toml
+```
+
+- **One primary platform (R10).** Each product names a `primary` platform, and every other platform needs a dated trigger in `[productize.triggers]`, such as `android = "2026-10-06: two testers have no iPhone"`. Secondary platforms catch up in parity trains from the `synced-to` commit in `docs/PARITY.md` (policy; no command reads that file yet).
+- **iOS and the App Store.** `teyla platform` checks the App Store Connect API key (three ids in `~/.appstoreconnect/config.env`, the `.p8` at mode 600) and that your upload tool (`[apple] release_tool`) is executable. `teyla testflight` asks that tool whether `[apple] tester` can install the newest build, and exits 1 while one is behind. The daily routine runs it, and the session banner names a build that never reached anyone. `scaffold --kind ios` writes `docs/RELEASE.md`: releases go through the API key, never the Xcode GUI or a password.
+- **Android and Google Play.** `teyla platform` checks the Play Console account and the upload keystore (back it up: it cannot be regenerated). R4 accepts `play-internal` or `play` as Android's distribution path. A personal Play account needs a 14-day closed test before production, so the policy starts it the day the Android trigger fires. Teyla does not yet read Play tracks the way `testflight` reads TestFlight.
+- **Distribution off the laptop (R4).** Each platform has its bar: TestFlight or the App Store for iOS and macOS, Play for Android, the Chrome Web Store for an extension, the Connect IQ store or Garmin Connect for a Garmin watch.
+- **The rest of the gap.** R1 accounts instead of a shared key, R2 per-user rows, R3 a backend that is not your Mac, R5 a getting-started page, R6 secrets named in `.env.example`, R7 a cost cap on a metered model key, R8 a real mail sender for a public target, R9 a first screen that signs in and never shows sample data as the user's own. `templates/platform/` provisions the shared server: a droplet, Caddy, one site per product.
+- **Release cadence.** The policy's platforms section: at most one internal upload per app per day, one version in review at a time, and a store at most two weeks behind the build the owner uses. More in [Productizing](#productizing) and [docs/PRODUCTIZE.md](docs/PRODUCTIZE.md).
+
 ## Routines, rules and the rest
 
 - **Is the automated half running?** `teyla routines` and `teyla schedules` check every launchd job, cron line, desktop task and scheduled workflow against its last run ([Routines and checks](#routines-and-checks)).
 - **Corrections that stick.** The plugin captures correction-shaped prompts and turns repeats into rules ([The plugin](#the-plugin)).
 - **Review debt.** `teyla reviews` matches merged PRs against the review ledger.
-- **Cloud sessions** and **productizing**: what a cloud VM lacks in each repo ([Cloud sessions](#cloud-sessions)), and what stands between a tool for one person and a product for four ([Productizing](#productizing)).
+- **Runs with guardrails.** `teyla run product:routine` runs a routine under capability grants (`fs.write:<glob>`, `shell:<verb>`, `net:<host>`, `send:<channel>`), caps and an idempotency key. It stops at a gate for your approval in `teyla inbox` and leaves a receipt. `teyla kill on` stops every run and denies every tool call. A routine earns gate B or C with ten consecutive clean receipts (`teyla promote`). See [docs/CONTROL-PLANE.md](docs/CONTROL-PLANE.md).
+- **Cloud sessions.** `teyla cloud check|prep|inbox`: what a cloud VM lacks in each repo, the files that give it your shipping rules, and the branches it left with no PR ([Cloud sessions](#cloud-sessions)).
+- **Connectors and plugins.** `teyla connectors` shows, per MCP server, reads and writes, the empty and error rate, and the round-trips between human turns (advice C1–C4). `teyla plugins` runs a skill / rule / fact quality pass over installed Claude Code plugins.
+- **Clean instruction files.** `teyla tidy` finds duplicates, dead imports and stale dated lines in rule and memory files. `teyla lang` keeps a repo's prose in English and leaves localization alone. `teyla rules stale` lists rules that expired or never fired. Every rule and policy write refuses invisible characters (bidi controls, zero-width, tags).
+- **A facts wiki.** `teyla wiki` keeps facts as plain markdown pages that the agent writes and you confirm ([docs/WIKI.md](docs/WIKI.md)).
+- **Maintains itself, and leaves cleanly.** `teyla update` installs new releases, `teyla routine catch-up` runs the daily or weekly job launchd skipped while the Mac was off, `teyla remind` keeps dated to-dos only you can act on, and `teyla uninstall` reverses every file Teyla wrote.
 - **An adoption report.** `teyla monitor` also reports correction rates and repeated corrections, and `--share` writes a redacted version (pseudonymous projects, connectors and private skills; no session ids, paths or correction text).
 
 ## Install
@@ -133,6 +156,7 @@ No `uv`? `pipx install git+https://github.com/zaitsew/teyla`, or `git clone` and
 |---|---|
 | `teyla policy init [--claude-md --ops-root-init]\|status\|sync\|sync-repo` | `~/.agents/POLICY.md` imported by `~/.claude/CLAUDE.md`; `~/.codex/AGENTS.md` and `~/.grok/AGENTS.md` generated from POLICY.md + your own rules in `~/.claude/CLAUDE.md` (Codex cannot import a file; a plain symlink while CLAUDE.md holds only the import); appended to Hermes `SOUL.md`; `AGENTS.md ⇄ CLAUDE.md` in repos; `sync --quiet` is what the daily routine runs (silent when nothing changed, never creates POLICY.md or edits CLAUDE.md) |
 | `teyla policy inbox [--done FILE\|--all]` | the hand edits `policy sync` found in a generated copy (a rule added to `~/.codex/AGENTS.md` from inside Codex) before it overwrote the copy, newest first with their added-line counts; `--done FILE` deletes one once you moved what should stay into `~/.agents/POLICY.md` or `~/.claude/CLAUDE.md`, `--all` deletes every one. `teyla doctor` warns `policy:inbox` while any wait |
+| `teyla policy ack [--note]` · `teyla policy refresh [--dry] [--resolved]` | `ack` records that you reviewed the current `~/.claude/CLAUDE.md` (A10 then flags only later edits); `refresh` merges template changes into `~/.agents/POLICY.md` three-way, so your edits survive |
 | `teyla harness status\|sync` | the plugin's skills and hooks, and the policy, in Cursor, Codex, Grok and Hermes — see [docs/HARNESSES.md](docs/HARNESSES.md) |
 | `teyla config set harness.disabled=hermes,grok` | harnesses this machine does not use: `doctor`, `harness status\|sync\|verify` and `policy sync` skip them entirely (no health, credit, hook or auth lines), and `doctor` prints one `disabled: hermes, grok` line. Names: claude-code, codex, grok, hermes, cursor; an unknown one is a warning |
 | `teyla harness verify [--live]` | can each harness do work now: version, auth (shape and dates, never a secret), the newest quota/auth error it recorded, interactive vs batch sessions in 7 days; `--live` sends one line through `claude -p`, `codex exec`, `grok -p`, `hermes -z` and checks the policy reached it |
@@ -144,7 +168,8 @@ No `uv`? `pipx install git+https://github.com/zaitsew/teyla`, or `git clone` and
 | command | what you get |
 |---|---|
 | `teyla routines [path...] [--json] [--issues]` | every product's `teyla.toml`: routines that must run without you (loaded? last run? stale?) and manual checks you confirm (ok / broken / untested / re-test); `--issues` opens a GitHub issue per broken check |
-| `teyla routine install\|status` | Teyla's own LaunchAgents: the daily one (update, doctor, policy sync, spend alert, schedules, testflight) and the Friday 20:45 weekly (monitor, routines, products, models, reviews) filed into a dated folder |
+| `teyla routine catch-up [--dry] [--quiet]` | runs the daily or weekly job when launchd skipped it (the Mac was off at its minute) and repairs the wrappers; `--dry` lists the missed runs. The session-start hook starts it in the background once a day |
+| `teyla routine install [--if-stale] [--dry]\|status` | Teyla's own LaunchAgents: the daily one (update, doctor, policy sync, spend alert, schedules, testflight) and the Friday 20:45 weekly (monitor, routines, products, models, reviews) filed into a dated folder |
 | `teyla schedules [--json] [--quiet] [--all] [--allow-network]` <br> `teyla schedules forget KEY [KEY...]` | every scheduled task outside a repo, and whether it ran: Claude desktop scheduled tasks (`~/.claude/scheduled-tasks/*/SKILL.md` against the app's own `scheduled-tasks.json`; a definition the app never registered is UNREGISTERED), launchd agents with a schedule (last exit from `launchctl list`, run times from the plist's log files; disabled and renamed `.bak`/`.disabled` ones too), Claude cloud routines (only as last known from session transcripts) and GitHub `schedule:` workflows (last run via `gh`, not in safe mode), plus the `teyla.toml` routines. Verdicts: OK, STALE, FAILING, DISABLED, UNREGISTERED, MISSING DEFINITION, NEVER RAN, DONE, VANISHED, UNKNOWN. `~/.teyla/schedules.json` keeps every id ever seen, so a task that disappears shows as VANISHED for 30 days. Default output lists what is not OK; `--all` lists everything, `--json` the full list, `--quiet` prints nothing and writes `~/.teyla/schedules.problems` for the banner and the digest (the daily routine runs it). Exit 1 while any task is STALE, FAILING, UNREGISTERED, MISSING DEFINITION, NEVER RAN or VANISHED. `teyla schedules forget KEY [KEY...]` acknowledges a VANISHED task you removed on purpose (a dropped desktop task, a routine deleted from `teyla.toml`): it leaves the registry and the banner the same day. KEY is the id from `--json` (`claude-desktop:my-task`) or a unique name; a task that still exists is refused, since the next run would register it again. `schedules.ignore_prefixes` in the config names vendor launchd labels to skip |
 | `teyla testflight [path...] [--json] [--quiet] [--allow-network]` | did the build reach a person (POLICY §11): for each product with a TestFlight or App Store path, asks your release tool (`[apple] release_tool`, `tester` in `~/.teyla/platform.toml`; `[release] apple_bundle_id` in the repo's `teyla.toml`) for the newest uploaded build and the newest the tester can install, one line per platform with what blocks the gap; exits 1 while any is behind, has nothing installable or could not be read. Network, so safe mode needs `--allow-network`. `--quiet` prints nothing and writes `~/.teyla/testflight.problems` (one line per platform behind, removed when all are current) for the banner and the digest; the daily routine runs it |
 | `teyla reviews [--days N] [--json] [--quiet] [repo...]` | the review debt: for each repo under `code_root` with a GitHub remote, the PRs merged in the last N days (7) against the review ledger (`review.ledger`, default `~/.cache/review-ledger.tsv`, one TSV line per review: time, repo, commit sha, mode, P1, P2, reviewer): reviewed, merged with an open P1 (the newest reviewed commit still had one), skipped (a `skip` line), exempt (under `review.min_lines` changed lines, or docs only) or unreviewed, with the URL of each PR that needs a look. One `gh` call per repo, none in safe mode (`--allow-network` for one run); the weekly routine files it and the digest names the debt |
@@ -166,10 +191,15 @@ No `uv`? `pipx install git+https://github.com/zaitsew/teyla`, or `git clone` and
 
 | command | what you get |
 |---|---|
-| `teyla scaffold <path> --name X --kind cli\|app\|service\|ios` | a repo born plug-and-play |
+| `teyla platform [init\|env-example] [--json] [--no-net]` | the resources you buy once (secrets, server, domain, identity, mail, Apple, Google Play, model key) from `~/.teyla/platform.toml`, each MISSING row with the URL and the file it goes in; `init` writes the manifest, `env-example` prints the secrets skeleton (names only); exit 1 while one is missing or unreachable |
+| `teyla productize [paths...] [--json] [--owner-steps]` | each repo's `[productize]` block against R1–R10 (identity, tenancy, backend, distribution, onboarding doc, secrets, cost cap, mail, first screen, primary platform); `--owner-steps` is one numbered list of what only you can do, platform first; exit 1 while any is unmet |
+| `teyla scaffold <path> --name X --kind cli\|app\|service\|ios [--license apache\|mit\|none]` | a repo born plug-and-play: `check.sh`, `.env.example`, `AGENTS.md`, `teyla.toml`, an ADR log, a `workflow_dispatch`-only CI; `app`/`service` add the `[productize]` block, `docs/GETTING-STARTED.md` and droplet fragments; `ios` adds `docs/RELEASE.md` |
 | `teyla products` | real-usage counters from every repo's `./check.sh usage` — the "built, not used" detector; `products.repos` in config limits which repos' code it runs |
 | `teyla run <product:routine>` | the control plane: grants, caps, idempotency, gates A/B/C, a receipt naming the rules the run obeyed — see [docs/CONTROL-PLANE.md](docs/CONTROL-PLANE.md) |
-| `teyla inbox` · `teyla kill` · `teyla triggers` · `teyla promote` · `teyla receipts` | the needs-you inbox, the kill switch, clock triggers as LaunchAgents, earned autonomy on ten clean approvals, the audit trail |
+| `teyla inbox list\|show\|approve\|reject [--note]` | runs that stopped at a gate; `approve` runs the act step under the same grants and writes a linked receipt, `reject --note` records a correction candidate |
+| `teyla kill on [--reason]\|off\|status` | the kill switch: `~/.teyla/KILL`, under which `teyla run` refuses and the PreToolUse hook denies every tool call |
+| `teyla triggers list\|install [--no-load]\|uninstall <ref>` | clock triggers as LaunchAgents (`com.teyla.<product>.<routine>`) |
+| `teyla promote <ref> --gate B\|C [--note]` · `teyla receipts <ref> [-n N]` | earned autonomy: a gate moves only after ten consecutive clean receipts at the current one; the audit trail |
 
 ### Cloud
 
@@ -183,7 +213,11 @@ No `uv`? `pipx install git+https://github.com/zaitsew/teyla`, or `git clone` and
 
 | command | what you get |
 |---|---|
-| `teyla doctor` | what Teyla can see on this machine |
+| `teyla doctor [--json] [--refresh] [--no-repos]` | everything that must be true on this machine, each FIX/WARN with its fix |
+| `teyla update [--check] [--force] [--wire]` | install a newer published release by its commit sha, then re-wire the policy, plugin and routines; `--check` only reports |
+| `teyla plugin install <src>\|uninstall <name>\|refresh [--force]` | install the Claude Code plugin by editing its registry (no `claude` CLI needed); `refresh` brings the loaded copy to this version |
+| `teyla plugins [name\|path] [--json]` | the installed Claude Code plugins: version loaded vs working copy, and a skill / rule / fact quality pass over each |
+| `teyla connectors [--days N] [--json] [--project]` | per MCP connector: calls, read/write split, empty and error rate, round-trips between human turns, rediscovery calls; advice C1–C4 |
 | `teyla feedback` | one redacted markdown file: environment, the shareable report, and a questionnaire — the way a second user tells the maintainer what is missing |
 | `teyla uninstall [--dry] [--keep-data]` | every file Teyla wrote on this machine (`--dry`), then the undo: LaunchAgents unloaded, the policy import line, symlinks, Hermes sections, harness skills and hooks, the plugin, `~/.teyla`. Touches only what carries Teyla's marker, label or symlink target; keeps and lists `~/.agents/POLICY.md` and repo-level `.teyla/` and rules |
 | `teyla prompt [name]` | the paste-able prompts (onboard, work-account-kickoff, …) that shipped with the installed version |
@@ -203,6 +237,7 @@ No `uv`? `pipx install git+https://github.com/zaitsew/teyla`, or `git clone` and
 | A9 | the same correction shape twice (fingerprints, no text in the report; retries never count) | write the rule |
 | A10 | a session wrote to `~/.claude/CLAUDE.md`: [high] only for edits after your last `teyla policy ack`, with how many; never acked → one [medium], once per version of the file | diff it; the governance file is the human's; `teyla policy ack` after reviewing |
 | A11 | `teyla models` finds ladder/price drift | `teyla models --write-policy` |
+| A12 | connector calls (`mcp__*`) are most of the tool calls | tokens are not the lever: `teyla connectors` |
 | A13 | one project is over half of the week's Grok list-price cost (and the week is over $10) | `teyla grok-cost --by session --cwd <path>`; split or cap the loop |
 | A14 | one Grok session cost over $10 | `teyla grok-cost --session <id>`; end long lanes at a merge |
 | A15 | ≥3 turns in a week ended with the agent asking permission for the next step and the human answering a bare "yes" (only when POLICY.md declares `ask-permission`) | do the step and report it; ask only about product decisions or real blockers |
@@ -324,7 +359,8 @@ someone else's device, and no page telling a newcomer what to do first. None of 
 hard. All of it is invisible until somebody is waiting.
 
 Two commands. `teyla platform` is the resources you buy once and reuse for every product —
-a server, a domain, an identity provider, a mail sender, the Apple key, a secrets file —
+a server, a domain, an identity provider, a mail sender, the Apple key and upload tool, a Play
+Console account and upload keystore, a model key, a secrets file —
 declared in `~/.teyla/platform.toml`, which holds identifiers and env-var *names* and never
 a value:
 
@@ -346,22 +382,31 @@ who it should serve, platforms, identity, tenancy, backend, distribution, secret
 — and says what is in the way:
 
 ```
-app-a     owner->family  7/7 met
-    [owner] internal TestFlight group - App Store Connect -> add two Apple IDs
-notes     owner->family  1/7 met  unmet: R1 identity=shared-key, R2 tenancy=single,
-                                        R3 backend=local-mac, R4 ios=none,
-                                        R5 onboarding_doc unset, R7 cost_cap unset (llm=app-key)
-    [agent] no per-user rows - add user_id + RLS, backfill existing rows to the owner
+app-a            owner→family  9/9 met
+    [owner] internal TestFlight group — App Store Connect -> add two Apple IDs
+notes            owner→family  1/9 met  unmet: R1 identity=shared-key, R2 tenancy=single,
+                 R3 backend=local-mac, R4 ios=none, R5 onboarding_doc unset,
+                 R7 cost_cap unset (llm=app-key), R9 first_run=none, sample_data unset,
+                 R10 primary unset, ios: no trigger, web: no trigger
+    [agent] platforms: primary unset, ios: no trigger, web: no trigger — write [productize] primary
+            and a dated [productize.triggers] entry per other platform, from the repo's history
+            and the owner's requests
+
+1 product(s) with unmet requirements, 8 requirement(s) unmet
 ```
 
-It also checks the first screen: family and public products must open on a sign-in (skippable
+It also checks the first screen (R9): family and public products must open on a sign-in (skippable
 only when the app genuinely needs no account) and must never show sample data as the user's own.
+R8 wants a mail sender the platform owns for a public target, or sign-in codes reach only your
+inbox. R10 wants one `primary` platform and a dated reason for every other one; it applies even to
+an owner-only product, and an unmet R10 becomes a step for the agent.
 
 `--owner-steps` collapses every product *and* the platform into one numbered list of things
 only you can do, platform first, because one mail sender unblocks three products.
 `teyla scaffold --kind app` writes the block, a `docs/GETTING-STARTED.md` addressed to a
 person who is not you, and `deploy/droplet/` fragments for the shared server; the server
-itself is five scripts and a runbook in `templates/platform/`.
+itself is three scripts (`provision-droplet.sh`, `setup-server.sh` for Ubuntu 24.04 with Docker,
+ufw and one Caddy, `add-product.sh <name> <port>`), a `Caddyfile` and a runbook in `templates/platform/`.
 
 The method — why this happens, what to build instead from the first commit, what the shared
 platform costs, and what changes at twenty users — is [`docs/PRODUCTIZE.md`](docs/PRODUCTIZE.md).
@@ -427,7 +472,13 @@ unless you pass `--allow-public`.
 4. **Ask about product decisions with a proposed default; never ask for permission to proceed.**
 5. **Stop only at a real blocker** (a key, a payment, a sign-in): do everything around it, open the exact page, name the exact file and line, hand over one line.
 6. **Plug-and-play is the definition of done.**
-7. **Say what is unverified.**
+7. **Merge only where you said so**; everywhere else open the PR and stop. Merge, never squash; never force-push.
+8. **Say what is unverified.**
+9. **"Did it run?" is answered from the record** (`teyla routines`, `teyla schedules`), not by reading code.
+10. **One machine, a budget**: the guard decides when a build, simulator or lane may start, not the agent.
+11. **Platforms and releases**: one primary platform, ports in trains, a build is done when it reaches a person.
+
+`templates/POLICY.work.md` is the work-laptop variant (approved providers only, same-provider reviews).
 
 **Edits to a generated copy are kept.** `policy sync` keeps the sha256 of everything it writes (`~/.teyla/state/policy-written.json`, with a copy of the text). Before it overwrites a copy whose hash no longer matches, it files the difference (the lines added and removed since the last write) in `~/.teyla/policy-inbox/<harness>-<date-time>.md`, with the instruction to move what should stay into `~/.agents/POLICY.md` or `~/.claude/CLAUDE.md`, the two sources; only then does it overwrite. For the Hermes `SOUL.md` only Teyla's own section is compared, never your text around it. With no record yet (the first sync after an upgrade) the copy is compared with what sync would write now, and only added lines count. The daily routine runs `teyla policy sync --quiet`, so an edit made in Codex today reaches the inbox tomorrow morning instead of vanishing silently at the next manual sync. `teyla policy inbox` lists what waits, `teyla doctor` warns while anything does, and the session-start line says how many.
 
@@ -438,6 +489,8 @@ unless you pass `--allow-public`.
 - `/teyla:rule <sentence> [--scope glob]` → `.claude/rules/<slug>.md` (+ mirrored into `AGENTS.md`)
 - `/teyla:correct <what was wrong>` → `~/.teyla/corrections/<repo>-<hash>.jsonl` (outside the repo, 0600, secrets replaced by `[redacted]`), then proposes the rule
 - skills: **harvest** (sessions → skill draft + candidate rules + routine manifest + a done-test *question*), **adoption-review** (`teyla monitor` → three concrete edits), **wiki-pass** (this session's facts → wiki pages as a PR you confirm or correct; see [docs/WIKI.md](docs/WIKI.md)), and **tidy** (`teyla tidy --json` → proposed rewrites of dated anecdotes, duplicates and one-off history in the rule files, as a diff you approve)
+- a `SessionStart` hook that orients each session: the machine CRITICAL alert and the spend alert first, then what is new since the last start, the weekly digest headline once, and the product's routines line; once a day it starts the update check and `teyla routine catch-up` in the background, and `teyla policy sync --quiet` when a generated copy is stale
+- a `PreToolUse` hook on every tool call: while `~/.teyla/KILL` exists every call is denied, and during a `teyla run` the run's grants and caps are enforced (it fails closed)
 - a `UserPromptSubmit` hook that captures correction-shaped prompts silently, into the same store (it needs the `teyla` CLI installed: the scrubber lives there, and with no scrubber nothing is written). `teyla corrections --recorded` lists what was stored; `teyla config set corrections.store=repo` keeps the pre-0.12 in-repo file instead. Either way `.teyla/` is added to the repo's `.git/info/exclude`, so an agent's `git add -A` cannot commit it
 - **`/teyla:review`**: one P1/P2-only review of the branch's diff before a merge — a `codex-review`/`claude-review` script on PATH when there is one (cross-provider), else one fresh sub-agent given only the diff ("same-provider review"); at most two rounds
 - **the machine guard** (`machine-guard.sh`, PreToolUse on `Bash`; on by default, no opt-in): before a shell command that starts heavy work — `xcodebuild`, `swift build|test`, `gradle`/`gradlew` with a task, `cargo build|test`, `bazel build|test` (kind `build`); `simctl boot|create|clone` (`sim`); `codex exec`, `codex-lane`, `codex-review`, `claude-review`, `claude -p`, `grok -p` (`lane`) — it asks `teyla load --admit KIND`. While the Mac is overloaded (or `guard.max_builds` / `max_sims` / `max_lanes` are reached) the call is refused with the numbers and what to do instead. Read-only invocations (`xcodebuild -list`, `simctl list|io|launch|shutdown|...`) are never gated. Agents that must build anyway wait for a slot: `teyla load --wait --kind build && xcodebuild ...`. Switch it off with `teyla config set guard.enabled=false`, or per shell with `TEYLA_GUARD=0`. It fails open (a missing or broken `teyla` never blocks work) and an ordinary command costs about 3 ms over the shell's own start and starts no Python and no `awk` (a command that merely names one of these tools, say a `.swift` file, pays one `awk`, about 2 ms more). `teyla harness sync` wires it into Codex and Grok too ([docs/HARNESSES.md](docs/HARNESSES.md))
