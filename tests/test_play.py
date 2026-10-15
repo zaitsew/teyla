@@ -31,11 +31,12 @@ def _env(tmp_path, monkeypatch):
     return home
 
 
-def platform_toml(tmp_path, *, tool=True):
+def platform_toml(tmp_path, *, tool=True, account=None):
     t = tmp_path / "play-tool"
     t.write_text("#!/bin/sh\n")
     t.chmod(0o755)
-    platform.PLATFORM_PATH.write_text("[android]\n" + (f'release_tool = "{t}"\n' if tool else ""))
+    platform.PLATFORM_PATH.write_text("[android]\n" + (f'release_tool = "{t}"\n' if tool else "")
+                                      + (f'account = "{account}"\n' if account else ""))
     return t
 
 
@@ -173,6 +174,122 @@ def test_play_internal_does_not_need_a_closed_test(tmp_path, monkeypatch, capsys
     assert go(capsys)[0] == 0
 
 
+# --- account type, production, review --------------------------------------------------------------
+
+def test_an_organization_account_without_a_closed_test_is_current(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path, account="organization")
+    product(tmp_path, android='"play"')
+    fake_tool(monkeypatch, payload(internal=[rel(14)]))
+    rc, cap = go(capsys)
+    assert rc == 0
+    assert cap.out == 'app-a  internal code 14 "1.9.0 (14)" completed — current\n'
+    assert play.run()[0]["account"] == "organization"
+
+
+def test_an_organization_account_shows_a_closed_release_without_the_day_count(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path, account="organization")
+    product(tmp_path, android='"play"')
+    fake_tool(monkeypatch, payload(internal=[rel(14)], closed=[rel(14, "draft")]))
+    rc, cap = go(capsys)
+    assert rc == 0 and "closed test code 14" in cap.out and "14 days" not in cap.out and "seen" not in cap.out
+    fake_tool(monkeypatch, payload(internal=[rel(14)], closed=[rel(14)]))
+    rc, cap = go(capsys)
+    assert rc == 0 and "closed test code 14" in cap.out and " of 14 days" not in cap.out
+    assert play.run()[0]["closed"]["days_seen"] is None
+
+
+def test_an_unknown_account_type_is_an_error(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path, account="business")
+    product(tmp_path)
+    fake_tool(monkeypatch, raises=AssertionError("the tool must not run"))
+    rc, cap = go(capsys)
+    assert rc == 1 and '`[android] account`' in cap.out and "not \"business\"" in cap.out
+    assert play.run()[0]["verdict"] == "error"
+
+
+def test_a_personal_account_with_production_live_needs_no_closed_test(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path, account="personal")
+    product(tmp_path, android='"play"')
+    fake_tool(monkeypatch, payload(internal=[rel(14)], production=[rel(14)]))
+    rc, cap = go(capsys)
+    assert rc == 0
+    assert cap.out == ('app-a  internal code 14 "1.9.0 (14)" completed; production code 14 "1.9.0 (14)" completed '
+                       '(submitted; the API cannot tell whether Google review has passed) — current\n')
+    assert play.run()[0]["production"] == {"code": 14, "name": "1.9.0 (14)", "status": "completed", "user_fraction": None}
+
+
+def test_a_staged_production_release_shows_its_fraction(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    product(tmp_path, android='"play"')
+    staged = {**rel(14, "inProgress"), "user_fraction": 0.2}
+    fake_tool(monkeypatch, payload(internal=[rel(14)], production=[rel(13), staged]))
+    rc, cap = go(capsys)
+    assert rc == 0 and 'production code 14 "1.9.0 (14)" inProgress at 20%' in cap.out
+
+
+def test_a_production_draft_does_not_waive_the_closed_test(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    product(tmp_path, android='"play"')
+    fake_tool(monkeypatch, payload(internal=[rel(14)], production=[rel(14, "draft")]))
+    rc, cap = go(capsys)
+    assert rc == 1 and "no closed test (a personal account needs 14 days before production)" in cap.out
+    assert "production" not in cap.out.split(" — ")[0]
+
+
+def test_a_personal_account_with_nothing_live_and_no_closed_test_stays_behind(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path, account="personal")
+    product(tmp_path, android='"play"')
+    fake_tool(monkeypatch, payload(internal=[rel(14)]))
+    rc, cap = go(capsys)
+    assert rc == 1 and "no closed test (a personal account needs 14 days before production)" in cap.out
+
+
+def test_internal_behind_production_is_behind(tmp_path, monkeypatch, capsys, problems):
+    platform_toml(tmp_path, account="organization")
+    product(tmp_path)
+    fake_tool(monkeypatch, payload(internal=[rel(12)], production=[rel(14)]))
+    rc, cap = go(capsys)
+    assert rc == 1 and "internal behind production (code 12 < 14)" in cap.out
+    assert play.run()[0]["verdict"] == "behind"
+    rc, _ = go(capsys, "--quiet")
+    assert rc == 1 and "internal behind production" in problems.read_text()
+    fake_tool(monkeypatch, payload(internal=[rel(14)], production=[rel(14)]))
+    assert go(capsys)[0] == 0
+
+
+def test_a_first_draft_internal_release_says_the_api_does_not_expose_review(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path, account="organization")
+    product(tmp_path)
+    fake_tool(monkeypatch, payload(internal=[rel(1, "draft")]))
+    rc, cap = go(capsys)
+    assert rc == 1
+    assert cap.out == ('app-a  internal code 1 "1.9.0 (1)" draft — draft: Play Console may show it in review; '
+                       'the API does not expose review state\n')
+    assert "testers cannot install it" not in cap.out
+    assert play.run()[0]["verdict"] == "behind"
+
+
+def test_a_draft_on_an_app_that_has_been_released_keeps_the_generic_wording(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path, account="organization")
+    product(tmp_path)
+    fake_tool(monkeypatch, payload(internal=[rel(15, "draft")], production=[rel(14)]))
+    rc, cap = go(capsys)
+    assert rc == 1 and "internal draft: testers cannot install it" in cap.out and "may show it in review" not in cap.out
+
+
+def test_payloads_printed_by_the_real_release_tool(tmp_path, monkeypatch, capsys):
+    """Shapes printed by the real release tool: production `completed` is not proof Google's review passed,
+    and internal AHEAD of production is normal, not a problem."""
+    platform_toml(tmp_path, account="organization")
+    product(tmp_path)
+    fake_tool(monkeypatch, payload(internal=[rel(2, name="1.1 (2)")], production=[rel(2, name="1.1 (2)")]))
+    rc, cap = go(capsys)
+    assert rc == 0 and 'production code 2 "1.1 (2)" completed (submitted; the API cannot tell' in cap.out
+    fake_tool(monkeypatch, payload(internal=[rel(15, name="1.10.1 (15)")], production=[rel(13, name="13 (1.9.0)")]))
+    rc, cap = go(capsys)
+    assert rc == 0 and "internal code 15" in cap.out and "behind" not in cap.out
+
+
 # --- errors ------------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("kw", [dict(raises=subprocess.TimeoutExpired("x", 1)),
@@ -274,7 +391,8 @@ def test_safe_mode_refuses_without_allow_network(tmp_path, monkeypatch, capsys):
 def test_templates_carry_the_new_keys():
     import teyla
     t = teyla.templates_dir()
-    assert "release_tool" in (t / "platform" / "platform.toml").read_text().split("[android]")[1]
+    android = (t / "platform" / "platform.toml").read_text().split("[android]")[1].split("[llm]")[0]
+    assert "release_tool" in android and 'account = "personal"' in android
     assert "android_package" in (t / "repo" / "teyla.toml").read_text()
 
 
@@ -291,8 +409,8 @@ def test_quiet_writes_one_line_per_product_that_is_not_current(tmp_path, monkeyp
     fake_tool(monkeypatch, payload(internal=[rel(14, "draft")]))
     rc, cap = go(capsys, "--quiet")
     assert rc == 1 and cap.out == "" and cap.err == ""
-    assert problems.read_text() == ("play|app-a|behind\tapp-a Play: internal draft: "
-                                    "testers cannot install it\n")
+    assert problems.read_text() == ("play|app-a|behind\tapp-a Play: draft: Play Console may show it in review; "
+                                    "the API does not expose review state\n")
     fake_tool(monkeypatch, payload(internal=[rel(14)]))
     rc, cap = go(capsys, "--quiet")
     assert rc == 0 and cap.out == "" and not problems.exists()
