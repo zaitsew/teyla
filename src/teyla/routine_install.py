@@ -124,6 +124,8 @@ teyla spend --alert
 teyla schedules --quiet || true
 # Did the last build reach a person? Network (the release tool asks Apple): safe mode skips it.
 teyla testflight --quiet || true
+# Did the last Android build reach a person? Network too (the release tool asks Google Play).
+teyla play --quiet || true
 teyla doctor --quiet
 # Refresh ~/.teyla/routines/<product>.line, the one-liners the session-start hook shows.
 teyla routines >/dev/null 2>&1
@@ -275,13 +277,13 @@ def _teyla_bin() -> str:
 
 
 def _quiet_checks_after_doctor(text: str) -> bool:
-    """True when the daily script runs `schedules --quiet` or `testflight --quiet` after `doctor --quiet`
+    """True when the daily script runs `schedules --quiet`, `testflight --quiet` or `play --quiet` after `doctor --quiet`
     (which builds the banner), so what they find is shown a day late."""
     doctor = text.find("doctor --quiet")
     if doctor < 0:
         return False
     return any(0 <= text.find(step) and text.find(step) > doctor
-               for step in ("schedules --quiet", "testflight --quiet"))
+               for step in ("schedules --quiet", "testflight --quiet", "teyla play --quiet"))
 
 
 def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | None = None) -> bool:
@@ -303,6 +305,9 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         return True
     if path == DAILY_WRAPPER_PATH and "schedules --quiet" not in text:
         # Written before `teyla schedules`: the daily would never record what is scheduled.
+        return True
+    if path == DAILY_WRAPPER_PATH and "teyla play --quiet" not in text:
+        # Written before `teyla play`: the daily would never ask whether an Android build reached a person.
         return True
     if path == DAILY_WRAPPER_PATH and _quiet_checks_after_doctor(text):
         # Written when the quiet checks ran after `doctor`: their problems reached the banner a day late.

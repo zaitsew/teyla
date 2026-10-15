@@ -43,6 +43,7 @@
   teyla platform [init|env-example] [--json] [--no-net]          the shared resources set up once, and the step for each missing one
   teyla productize [path...] [--json] [--owner-steps]            what stands between each product and its second user
   teyla testflight [path...] [--json] [--quiet] [--allow-network]    did the build reach a person: newest upload vs newest build your tester can install
+  teyla play [path...] [--json] [--quiet] [--allow-network]          did the Android build reach a person: internal track status, closed-test age on Google Play
   teyla schedules [--json] [--quiet] [--all] [--allow-network]    every scheduled task (Claude desktop, launchd, cloud routines, GitHub, teyla.toml): did it run, what vanished
   teyla schedules forget KEY [KEY...]                              acknowledge VANISHED tasks removed on purpose (clears the banner)
   teyla reviews [--days N] [--json] [--quiet] [repo...]            review debt: merged PRs never reviewed, merged with an open P1, skipped
@@ -444,6 +445,8 @@ def main(argv=None):
     platform_mod.register(sp); productize_mod.register(sp)
     from . import testflight as testflight_mod
     testflight_mod.register(sp)
+    from . import play as play_mod
+    play_mod.register(sp)
     wiki.register(sp); feedback.register(sp); models.register(sp)
     plugins.register(sp); plugin_install.register(sp); connectors.register(sp); control.register(sp)
     remind.register(sp); rules.register(sp); harness.register(sp); storage.register(sp)

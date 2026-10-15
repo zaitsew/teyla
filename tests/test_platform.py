@@ -327,6 +327,15 @@ def test_android_states(_home):
     ks = _home / "upload.jks"
     ks.write_text("x")
     manifest(_home, MINIMAL.replace("play_console = false", f'play_console = true\nkeystore = "{ks}"'))
+    r = row(platform.checks(no_net=True), "android")
+    assert r["state"] == platform.WARN and "release_tool" in r["todo"]
+
+    tool = _home / "bin" / "play"
+    tool.parent.mkdir(parents=True, exist_ok=True)
+    tool.write_text("#!/bin/sh\n")
+    tool.chmod(0o755)
+    manifest(_home, MINIMAL.replace("play_console = false",
+                                    f'play_console = true\nkeystore = "{ks}"\nrelease_tool = "{tool}"'))
     assert row(platform.checks(no_net=True), "android")["state"] == platform.OK
 
 

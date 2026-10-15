@@ -13,6 +13,9 @@ name = "{{name}}"
 # [release]
 # apple_bundle_id = "com.example.app"
 
+# Android distribution: the application id `teyla play` asks Google Play about.
+# android_package = "com.example.app"
+
 {{productize}}
 # ---------------------------------------------------------------------------
 # A control-plane routine: Teyla runs this one itself.

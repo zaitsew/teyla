@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased — Did the Android build reach a person
+
+`teyla testflight` answered POLICY §11 for iOS and macOS; Android had nothing equivalent, and `teyla platform`
+only checked that a Play Console account and a keystore existed.
+
+- **`teyla play [PATH...] [--json] [--quiet] [--allow-network]`.** Asks your release tool
+  (`[android] release_tool` in `~/.teyla/platform.toml`, run as `status --package ID --json`) about each
+  product with a `play-internal` or `play` Android path, or `[release] android_package` in its `teyla.toml`.
+  Prints the newest version code on the internal track with its release status, and whether a closed test is
+  live and for how many of the 14 days Teyla has seen it (Teyla's own count, in `~/.teyla/play-seen.json`: the
+  API gives no start date). A draft or halted internal release, nothing on internal, a `play` product without a
+  live closed test, or a tool error is a problem and exits 1. It is a separate command rather than
+  `testflight --platform android` because it has a different tool, key and verdicts, and no tester email.
+- **`teyla play --quiet`** writes `~/.teyla/play.problems`; the banner and the weekly digest read it, and the
+  daily routine runs it after `testflight`. An older `daily.sh` is regenerated. Safe mode needs `--allow-network`.
+- **`teyla platform`** warns while `[android] release_tool` is unset, missing or not executable.
+
 ## 0.23.1 — 2026-10-14 — Forget a task removed on purpose
 
 - **`teyla schedules forget KEY...`** removes a task from the schedules registry and its line from the

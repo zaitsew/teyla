@@ -384,8 +384,12 @@ def test_wrapper_stale_flags_wrapper_missing_storage_clean(tmp_path, monkeypatch
     wrapper_path.write_text(late_testflight)
     assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is True
 
-    fresh_text = no_schedules.replace("teyla doctor --quiet\n", "teyla schedules --quiet || true\n"
-                                      "teyla testflight --quiet || true\nteyla doctor --quiet\n")
+    no_play = no_schedules.replace("teyla doctor --quiet\n", "teyla schedules --quiet || true\n"
+                                   "teyla testflight --quiet || true\nteyla doctor --quiet\n")
+    wrapper_path.write_text(no_play)
+    assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is True  # written before `teyla play`
+
+    fresh_text = no_play.replace("teyla doctor --quiet\n", "teyla play --quiet || true\nteyla doctor --quiet\n")
     wrapper_path.write_text(fresh_text)
     assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is False
 
