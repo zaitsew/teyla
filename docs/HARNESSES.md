@@ -88,6 +88,10 @@ scripts, which read every harness's stdin shape.
   - **Hermes**: not wired; its `pre_tool_call` shell-hook contract was not verified here.
   The guard fails open everywhere (a hook that crashes or times out allows the call); `TEYLA_GUARD=0`
   and `guard.enabled=false` switch it off for every harness.
+- **The intent hook** (`capture-intent.sh`, `teyla intent`) rides on the same prompt event as the
+  correction hook in all four: Codex `UserPromptSubmit` and Grok `UserPromptSubmit` (`... codex`,
+  `... grok`), Cursor `beforeSubmitPrompt` (no argument; its entries read `other`) and Hermes
+  `pre_llm_call` (`... hermes`). Backfill reads only Claude Code and Codex transcripts.
 - **Approval, once, in the harness.** Codex runs a new or changed hook only after you trust
   it: open Codex in a terminal (`codex`), answer "Hooks need review" with *Trust all and
   continue*, or use `/hooks`. Until then it skips the hook silently, `codex exec` included

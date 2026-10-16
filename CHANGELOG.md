@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **`teyla intent`: your own long prompts, kept word for word.** A `UserPromptSubmit` hook (`capture-intent.sh`,
+  also wired into Codex, Grok, Cursor and Hermes by `teyla harness sync`) stores each typed prompt of 400
+  characters or more in `~/.teyla/intent/<product>.md`, scrubbed, deduplicated, outside the repo.
+  `teyla intent backfill --days 30` fills it from Claude Code and Codex transcripts, skipping prompts a script
+  or agent wrote. `teyla intent [product]` lists, `teyla intent path <product>` prints the file, session start
+  points at it, and the policy says a plan quotes the sentences it serves. No model, no summary: see `docs/INTENT.md`.
 - **Writing contract, `teyla prose`, voice chart.** The policy gains "Writing and reporting" (`templates/POLICY.md` §13, a
   shortened §11 in the work variant): three registers, answer-first rules with a ban list, and a session-end card of at
   most 12 lines. `teyla prose [--days N] [--project S] [--json]` measures the replies a human saw (words, long

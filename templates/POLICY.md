@@ -51,6 +51,10 @@ depend on the answer first, then ask — batched, at a natural checkpoint. Never
 "shall I proceed?".
 <!-- teyla:detect ask-permission — `teyla monitor` counts turns that end by asking to proceed -->
 
+Before writing a plan or a spec, read {{owner}}'s own words for the product:
+`cat "$(teyla intent path <product>)"`. Quote the source sentences each part of the plan
+serves, and never replace those words with a summary.
+
 ## 5. Stop only at a real blocker or the finished goal
 
 A blocker is something only {{owner}} can do: create an API key, approve a payment, sign

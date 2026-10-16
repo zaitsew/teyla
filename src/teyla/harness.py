@@ -21,8 +21,9 @@ CODEX_HOME holding a hooks.json:
   hermes   ~/.hermes/SOUL.md section            ~/.hermes/skills/<category>/   `hooks:` block in ~/.hermes/config.yaml
            (policy.py); AGENTS.md per repo        <name>/SKILL.md                (on_session_start, pre_llm_call ×2)
 
-Hook scripts are one copy each in ~/.teyla/hooks/ — the plugin's own session-start.sh and
-capture-correction.sh, which already read every harness's stdin shape (`prompt`, `text`,
+Hook scripts are one copy each in ~/.teyla/hooks/ — the plugin's own session-start.sh,
+capture-correction.sh and capture-intent.sh (the owner's long prompts, `teyla intent`; run as
+`capture-intent.sh codex|grok|hermes` so its entries name the harness), which already read every harness's stdin shape (`prompt`, `text`,
 `user_message`, Hermes's `extra.user_message`) and de-duplicate, since Grok also loads
 ~/.cursor/hooks.json. session-start.sh takes `--codex` (skip `codex exec` batch runs) and
 `--context-json` (Hermes: the orientation as `{"context": …}` on the first turn only).
@@ -64,7 +65,7 @@ from . import __version__, plugin_dir
 
 HOME = pathlib.Path.home()
 HOOKS_DIR = HOME / ".teyla" / "hooks"
-HOOK_SCRIPTS = ("session-start.sh", "capture-correction.sh", "land-check.sh", "machine-guard.sh")
+HOOK_SCRIPTS = ("session-start.sh", "capture-correction.sh", "capture-intent.sh", "land-check.sh", "machine-guard.sh")
 PLUGIN_SKILLS = ("harvest", "adoption-review", "wiki-pass", "review", "tidy")
 CLI_SKILLS = {
     "teyla-rule": (
@@ -221,9 +222,10 @@ def _cursor_hooks(existing: dict | None) -> dict:
     d = dict(existing or {})
     d.setdefault("version", 1)
     hooks = dict(d.get("hooks") or {})
-    for event, script in (("sessionStart", "session-start.sh"), ("beforeSubmitPrompt", "capture-correction.sh")):
+    for event, scripts in (("sessionStart", ("session-start.sh",)),
+                           ("beforeSubmitPrompt", ("capture-correction.sh", "capture-intent.sh"))):
         entries = [e for e in (hooks.get(event) or []) if not str(e.get("command", "")).startswith(str(HOOKS_DIR) + "/")]
-        entries.append({"command": str(HOOKS_DIR / script), "type": "command", "timeout": 5})
+        entries += [{"command": str(HOOKS_DIR / script), "type": "command", "timeout": 5} for script in scripts]
         hooks[event] = entries
     d["hooks"] = hooks
     return d
@@ -274,10 +276,11 @@ def _codex_hooks(existing: dict | None, land_check: bool | None = None) -> dict:
     d = dict(existing or {})
     d.setdefault("description", CODEX_DESCRIPTION)
     hooks = dict(d.get("hooks") or {})
-    for event, command in (("SessionStart", f"{HOOKS_DIR / 'session-start.sh'} --codex"),
-                           ("UserPromptSubmit", str(HOOKS_DIR / "capture-correction.sh"))):
+    for event, commands in (("SessionStart", (f"{HOOKS_DIR / 'session-start.sh'} --codex",)),
+                            ("UserPromptSubmit", (str(HOOKS_DIR / "capture-correction.sh"),
+                                                  f"{HOOKS_DIR / 'capture-intent.sh'} codex"))):
         groups = _without_teyla(hooks.get(event))
-        groups.append({"hooks": [{"type": "command", "command": command, "timeout": 5}]})
+        groups += [{"hooks": [{"type": "command", "command": c, "timeout": 5}]} for c in commands]
         hooks[event] = groups
     # The machine guard: PreToolUse on shell calls (`codex features list`: hooks stable; the
     # documented matcher name for a shell call is `Bash`, input `tool_input.command`). A user's
@@ -301,7 +304,8 @@ def _codex_hooks(existing: dict | None, land_check: bool | None = None) -> dict:
 def _grok_hooks() -> dict:
     return {"hooks": {
         "SessionStart": [{"hooks": [{"type": "command", "command": str(HOOKS_DIR / "session-start.sh"), "timeout": 5}]}],
-        "UserPromptSubmit": [{"hooks": [{"type": "command", "command": str(HOOKS_DIR / "capture-correction.sh"), "timeout": 5}]}],
+        "UserPromptSubmit": [{"hooks": [{"type": "command", "command": str(HOOKS_DIR / "capture-correction.sh"), "timeout": 5}]},
+                             {"hooks": [{"type": "command", "command": f"{HOOKS_DIR / 'capture-intent.sh'} grok", "timeout": 5}]}],
         # Grok's `Bash` matcher aliases its run_terminal_command; a PreToolUse exit 2 denies, and
         # `--grok` also prints the full reason as JSON because Grok keeps only the first stderr line.
         "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": f"{HOOKS_DIR / 'machine-guard.sh'} --grok", "timeout": 15}]}],
@@ -321,6 +325,8 @@ def hermes_block() -> str:
         "      timeout: 5",
         "  pre_llm_call:",
         f'    - command: "{HOOKS_DIR / "capture-correction.sh"}"',
+        "      timeout: 5",
+        f'    - command: "{HOOKS_DIR / "capture-intent.sh"} hermes"',
         "      timeout: 5",
         # on_session_start's output is ignored; a pre_llm_call hook's `{"context": …}` is added
         # to the user message (hermes-agent 0.20.4 agent/shell_hooks.py). --context-json prints

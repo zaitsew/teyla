@@ -22,6 +22,11 @@
 #   summary for it (~/.teyla/routines/<product>.line), print that line: "did it run?"
 #   is then answered before the question is asked, and `teyla routines .` is named
 #   for the fresh table.
+# - If ~/.teyla/intent/<product>.md exists for the session's cwd (`teyla intent`: the owner's
+#   own long prompts, kept word for word), print one line with its path, entry count and latest
+#   date, and tell the session to read it before planning. The product is worked out here in sh
+#   exactly as `teyla.intent.product_for` does (worktree paths map to their repo); no transcript
+#   is scanned and no Python started.
 # - If no update check happened in the last day and `teyla` can be found — on PATH,
 #   or at ~/.local/bin/teyla (uv tool / pipx), since a GUI app inherits no shell PATH —
 #   start one in the background, followed by `teyla routine catch-up`, which runs the
@@ -139,6 +144,34 @@ orientation() {
       echo "teyla: $(head -n 1 "$HOME/.teyla/routines/$product.line")"
     fi
   fi
+  intent_line
+}
+
+# The owner's own words for the session's product, when `teyla intent` kept any.
+intent_line() {
+  dir=$(printf '%s' "$payload" | sed -n 's/.*"cwd" *: *"\([^"]*\)".*/\1/p' 2>/dev/null)
+  [ -n "$dir" ] && [ -d "$dir" ] || dir="$PWD"
+  case "$dir" in
+    */.claude/worktrees/*) name=$(basename "${dir%%/.claude/worktrees/*}") ;;
+    */.worktrees/*) rest="${dir#*/.worktrees/}"; name="${rest%%/*}" ;;
+    *)
+      d="$dir"
+      while [ -n "$d" ] && [ "$d" != "/" ] && [ ! -e "$d/.git" ]; do d=$(dirname "$d"); done
+      if [ -f "$d/.git" ]; then  # a worktree elsewhere: its .git file names the main checkout's git dir
+        g=$(sed -n 's/^gitdir: *//p' "$d/.git" 2>/dev/null | head -n 1)
+        case "$g" in */.git/worktrees/*) d="${g%%/.git/worktrees/*}" ;; esac
+      fi
+      if [ -e "$d/.git" ]; then name=$(basename "$d"); else name=$(basename "$dir"); fi ;;
+  esac
+  name=$(printf '%s' "$name" | tr -cs 'A-Za-z0-9._-' '-' | sed 's/^[-.]*//; s/[-.]*$//')
+  [ -n "$name" ] || name=misc
+  file="${TEYLA_HOME:-$HOME/.teyla}/intent/$name.md"
+  [ -s "$file" ] || return 0
+  heads=$(grep '^## [0-9-]\{10\} [0-9:]\{5\} ' "$file" 2>/dev/null)
+  [ -n "$heads" ] || return 0
+  n=$(printf '%s\n' "$heads" | wc -l | tr -d ' ')
+  latest=$(printf '%s\n' "$heads" | sed -n 's/^## \([0-9-]\{10\}\) .*/\1/p' | sort | tail -n 1)
+  echo "Owner's own words for $name: $file ($n entries, latest $latest). Read them before planning; quote the sentences a plan serves."
 }
 
 # Claude Code's project-memory directory for the session's repo: the main checkout for a
