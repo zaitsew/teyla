@@ -170,7 +170,7 @@ intent_line() {
         g=$(sed -n 's/^gitdir: *//p' "$d/.git" 2>/dev/null | head -n 1)
         case "$g" in */.git/worktrees/*) d="${g%%/.git/worktrees/*}" ;; esac
       fi
-      if [ -e "$d/.git" ]; then name=$(basename "$d"); else name=$(basename "$dir"); fi ;;
+      if [ -e "$d/.git" ]; then name=$(basename "$d"); else name=general; fi ;;
   esac
   name=$(printf '%s' "$name" | tr -cs 'A-Za-z0-9._-' '-' | sed 's/^[-.]*//; s/[-.]*$//')
   [ -n "$name" ] || name=misc

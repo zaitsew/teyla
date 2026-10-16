@@ -20,7 +20,9 @@ wires the same script into Codex, Grok, Cursor and Hermes. Codex asks you to tru
 - A prompt of 400 characters or more (`[intent] min_chars`). `[intent] enabled = false` turns it off.
 - It goes to `~/.teyla/intent/<product>.md`, outside every repo, mode 0600, append-only.
 - The product is the repo name of the prompt's cwd. A worktree maps to its repo. A cwd outside a repo
-  maps to its directory name.
+  goes to `general`.
+- Briefs one agent session writes for another (they open with "Background (from the session that
+  started this one)") and harness events are not the owner's words and are skipped.
 - Secrets become `[redacted]` (the scrubber `teyla correct` uses) before anything is written.
 - The same text is kept once per product. `.index.json` holds the hashes and is rebuilt if lost.
 
