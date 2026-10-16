@@ -31,6 +31,27 @@ without `--allow-network`.
 installable or could not be read to `~/.teyla/testflight.problems` (what the session-start banner and
 the digest read), and removes the file when every platform is current. The daily routine runs it; in
 safe mode it does nothing and exits 0.
+
+China mainland (POLICY §15, store review). Generative AI in the China storefront needs a Chinese permit
+that none of our model providers has, and any app there needs an ICP filing, so territory `CHN` is excluded
+from the first submission. `teyla testflight --china` is the read-only check: for each in-scope product
+it asks the same release tool
+
+    <release_tool> availability --bundle-id ID --json
+
+and prints one line per product that is still available in `CHN`, with the fix; it prints nothing when no
+product is. The tool prints the app's territory availability (the App Store Connect
+`GET /v1/apps/{id}/appAvailabilityV2`, then `GET /v2/appAvailabilities/{id}/territoryAvailabilities
+?include=territory&fields[territoryAvailabilities]=available,contentStatuses,territory`; the territory id is
+under `relationships.territory.data.id` and only comes back with `include=territory`):
+
+    {"bundle_id": "com.example.app",
+     "territories": [{"territory": "CHN", "available": true}, {"territory": "USA", "available": true}]}
+
+Only the `CHN` entry is read; the tool may list every territory or just that one. A tool that cannot answer
+(no `availability` command, an app with no availability set yet) is a problem line of its own, never a pass.
+Exit 1 when any product is available in CHN or could not be read. `--quiet` also runs this check and adds its
+lines to `testflight.problems` (keys `testflight|<product>|CHN`).
 """
 from __future__ import annotations
 
@@ -46,6 +67,7 @@ TIMEOUT_S = 60
 PLATFORM_LABEL = {"IOS": "iOS", "MAC_OS": "macOS", "TV_OS": "tvOS", "VISION_OS": "visionOS"}
 # Worst first: the product's verdict is the worst of its platforms'.
 ORDER = ("error", "none", "behind", "current")
+CHINA = "CHN"  # POLICY §15: App Store territory id of the China mainland storefront
 
 
 def _label(p: str) -> str:
@@ -111,6 +133,93 @@ def run_tool(tool: pathlib.Path, bundle_id: str, tester: str) -> dict:
     if not isinstance(data, dict) or not isinstance(data.get("platforms"), list):
         raise RuntimeError("the release tool's JSON has no `platforms` list")
     return data
+
+
+def run_availability(tool: pathlib.Path, bundle_id: str) -> dict:
+    """The tool's availability JSON. Raises RuntimeError with a one-line reason on any failure."""
+    cmd = [str(tool), "availability", "--bundle-id", bundle_id, "--json"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"the release tool did not answer within {TIMEOUT_S}s") from None
+    except OSError as e:
+        raise RuntimeError(f"could not run the release tool ({e.strerror or e})") from None
+    if r.returncode != 0:
+        tail = ((r.stderr or r.stdout or "").strip().splitlines() or [""])[-1][:200]
+        raise RuntimeError(f"the release tool exited {r.returncode}" + (f": {tail}" if tail else ""))
+    try:
+        data = json.loads(r.stdout)
+    except ValueError:
+        raise RuntimeError("the release tool printed something that is not JSON "
+                           "(is it new enough to have `availability`?)") from None
+    if not isinstance(data, dict) or not isinstance(data.get("territories"), list):
+        raise RuntimeError("the release tool's JSON has no `territories` list")
+    return data
+
+
+def china_available(payload: dict) -> bool:
+    """True when the payload lists CHN with available=true. No CHN entry means not available there."""
+    for t in payload.get("territories") or []:
+        if isinstance(t, dict) and str(t.get("territory") or "").upper() == CHINA and t.get("available") is True:
+            return True
+    return False
+
+
+CHINA_FIX = ("exclude CHN in App Store Connect availability, app-wide (iOS and macOS), "
+             "and note the reason in the repo's store script")
+
+
+def check_china(manifest: dict, cfg: dict) -> dict | None:
+    """None when the product is not available in CHN. Otherwise a row (verdict `china`, or `error`
+    when the tool could not answer). Never raises."""
+    name = manifest["product"]
+    bundle_id = str((manifest.get("release") or {}).get("apple_bundle_id") or "").strip()
+    if not bundle_id:
+        return _error(manifest, f"no bundle id: add `[release] apple_bundle_id = \"com.example.app\"` "
+                                f"to {manifest['repo']}/teyla.toml")
+    tool_raw = str((cfg.get("apple") or {}).get("release_tool") or "").strip()
+    if not tool_raw:
+        return _error(manifest, f"no release tool: set `[apple] release_tool` in {_platform_path()}", bundle_id)
+    tool = pathlib.Path(tool_raw).expanduser()
+    if not tool.exists():
+        return _error(manifest, f"the release tool named in {_platform_path()} is not at {tool}", bundle_id)
+    try:
+        payload = run_availability(tool, bundle_id)
+    except RuntimeError as e:
+        return _error(manifest, f"could not read App Store availability: {e}", bundle_id)
+    if not china_available(payload):
+        return None
+    return _row(manifest, "china", bundle_id=bundle_id, payload=payload,
+                line=f"{name}  still available in China mainland (CHN), against POLICY §15: {CHINA_FIX}")
+
+
+def run_china(paths: list[str] | None = None) -> list[dict]:
+    from . import platform as platform_mod
+    cfg = platform_mod.load()
+    rows = []
+    for mp in productize.find_manifests(paths):
+        m = productize.parse(mp)
+        if "error" in m:
+            if paths:
+                rows.append(_error(m, f"teyla.toml does not parse: {m['error']}"))
+            continue
+        if not in_scope(m):
+            continue
+        row = check_china(m, cfg)
+        if row is not None:
+            rows.append(row)
+    return rows
+
+
+def china_problem_lines(rows: list[dict]) -> list[tuple[str, str]]:
+    out = []
+    for r in rows:
+        if r["verdict"] == "china":
+            out.append((f"testflight|{r['product']}|CHN", f"{r['product']}: available in China mainland (CHN); {CHINA_FIX}"))
+        else:
+            msg = str(r.get("error") or "").strip() or r["verdict"]
+            out.append((f"testflight|{r['product']}|CHN|{r['verdict']}", f"{r['product']}: {msg}"))
+    return out
 
 
 def _behind(p: dict) -> int:
@@ -256,9 +365,10 @@ def problem_lines(rows: list[dict]) -> list[tuple[str, str]]:
     return out
 
 
-def write_problems(rows: list[dict], path: pathlib.Path | None = None) -> pathlib.Path | None:
+def write_problems(rows: list[dict], path: pathlib.Path | None = None,
+                   china_rows: list[dict] | None = None) -> pathlib.Path | None:
     p = path or problems_path()
-    items = problem_lines(rows)
+    items = problem_lines(rows) + china_problem_lines(china_rows or [])
     clean = lambda s: " ".join(str(s).split())  # noqa: E731 - one line, no tabs
     try:
         if items:
@@ -284,10 +394,19 @@ def cmd_testflight(args):
     if args.paths and not productize.find_manifests(args.paths):
         print("teyla: no teyla.toml at " + ", ".join(args.paths), file=sys.stderr)
         return 2
+    if getattr(args, "china", False):
+        china = run_china(args.paths or None)
+        if getattr(args, "json", False):
+            print(json.dumps([{k: v for k, v in r.items() if k != "lines"} for r in china], indent=2))
+        else:
+            print("".join(f"{line}\n" for r in china for line in r["lines"]), end="")
+        return 1 if china else 0
     rows = run(args.paths or None)
     if quiet:
-        write_problems(rows)
-    elif getattr(args, "json", False):
+        china = run_china(args.paths or None)
+        write_problems(rows, china_rows=china)
+        return exit_code(rows) or (1 if china else 0)
+    if getattr(args, "json", False):
         print(json.dumps([{k: v for k, v in r.items() if k != "lines"} for r in rows], indent=2))
     else:
         print(render_text(rows), end="")
@@ -300,5 +419,6 @@ def register(sp):
     q.add_argument("paths", nargs="*")
     q.add_argument("--json", action="store_true")
     q.add_argument("--quiet", action="store_true", help="print nothing; write ~/.teyla/testflight.problems (removed when every platform is current)")
+    q.add_argument("--china", action="store_true", help="only check that no product is still available in China mainland (CHN), POLICY \u00a715; silent when none is")
     q.add_argument("--allow-network", action="store_true", help="safe mode: let the release tool reach App Store Connect this once")
     return q

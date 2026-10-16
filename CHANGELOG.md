@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **`teyla testflight --china`: no app stays available in China mainland.** The read-only check for POLICY §15 (store
+  review): for each product with a TestFlight or App Store path it asks your release tool
+  `availability --bundle-id ID --json` (the App Store Connect `appAvailabilityV2` /
+  `territoryAvailabilities?include=territory` read, contract in `testflight.py` and `docs/MANUAL.md`) and prints one
+  line per product still available in `CHN`, with the fix (exclude CHN in availability, app-wide). It prints nothing
+  when none is; a tool that cannot answer is a line of its own, never a pass. `--quiet` runs it too and adds the lines
+  to `~/.teyla/testflight.problems`, so the daily routine puts them in the banner and the digest. Teyla still never
+  touches the key; the release tool has to implement `availability` first (`~/ops/bin/testflight` does not yet, so the
+  daily banner will say it could not read availability until it does).
+
 - **POLICY §12, store review — pass the first time.** A pre-submission checklist built from every App Store and
   Google Play rejection so far: China mainland excluded from the first submission (generative AI needs a Chinese
   permit; any app needs an ICP filing), no model provider named in the listing, a demo account and signed-out
