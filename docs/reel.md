@@ -5,7 +5,9 @@ vertical 1080×1920 video. The video is a legible "terminal story" you can post 
 a longer episode. The reader should understand it at phone size, with the sound off, in
 under a minute: what was asked, what the agents did, and what shipped.
 
-Status: v0 spec, 2026-10-16.
+Status: shipped in 0.25.0. `list`, `story`, `check` and `render` all work; `render` needs the `reel` extra and
+`ffmpeg`. Planned and not built: the items under "Not in v0" (voice-over and music, several sessions in one reel,
+landscape and square formats, an LLM-written headline).
 
 ## Why
 

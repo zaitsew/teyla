@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **`teyla docs check [repo...] [--all] [--json] [--strict]`.** Reads a repo's README and `docs/` and names what to
+  fix: no opening paragraph (or the scaffold's placeholder) is FIX; an opening over 60 words, no shell quick start in
+  the first 80 lines, a README over 2,500 words (with its largest section), `teyla <sub>` commands the parser no
+  longer has (Teyla's own repo), docs that read as decision history, and a doc marked spec or draft that the README
+  presents as shipped are WARN. Exit 0 unless `--strict` and a FIX exists. The command table moved from the README to
+  `docs/COMMANDS.md`, and `docs/reel.md` now says what shipped.
+
 - **`teyla testflight --china`: no app stays available in China mainland.** The read-only check for POLICY §15 (store
   review): for each product with a TestFlight or App Store path it asks your release tool
   `availability --bundle-id ID --json` (the App Store Connect `appAvailabilityV2` /
