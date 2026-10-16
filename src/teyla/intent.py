@@ -80,6 +80,7 @@ _AUTOMATED_PREFIXES = (
     "Codex could not read",
     "IMPORTANT: Do NOT read",
     "Background (from the session that started this one)",   # a brief one agent session wrote for another
+    "You are reviewing a pull request diff",                 # codex-review / claude-review prompts
     "<task-notification",
     "<side-sessions-event",
     "<ci-monitor-event",
