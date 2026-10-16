@@ -665,6 +665,27 @@ def mark_done(prefixes: list[str], note: str = "", now: float | None = None) -> 
     return lines, code
 
 
+def mark_done_older(days: float, note: str = "", product: str = "", now: float | None = None) -> tuple[list[str], int]:
+    """Close every open question older than `days`, in one product when given. Reminders are
+    left alone: their age is the due date, not a question someone left."""
+    now = _now() if now is None else now
+    if days <= 0:
+        return ["--older-than needs a number of days above 0"], 1
+    cutoff = now - days * 86400
+    # look back a year past the cutoff, so --older-than 400 still sees a 500-day-old question
+    old = [a for a in collect(max(DEFAULT_DAYS, 365, int(days) + 365), now)
+           if a.status == "open" and a.kind != "reminder" and a.when < cutoff
+           and (not product or a.product == product)]
+    if not old:
+        return [f"nothing open is older than {days:g} day(s)"], 0
+    st = load_state()
+    for a in old:
+        st["done"][a.id] = {"ts": _iso(now), **({"note": note} if note else {})}
+        st["snoozed"].pop(a.id, None)
+    save_state(st, now=now)
+    return [f"done: {a.id}  {a.product}  {a.title}" for a in old] + [f"closed {len(old)}"], 0
+
+
 def snooze(prefix: str, days: float, now: float | None = None) -> tuple[str, int]:
     now = _now() if now is None else now
     if days <= 0:
@@ -847,9 +868,17 @@ def _open_file(path: pathlib.Path) -> None:
 def cmd_asks(args) -> int:
     words = list(args.words or [])
     now = _now()
+    if words and words[0] == "done" and args.older_than is not None:
+        if len(words) > 1:
+            print("give ids or --older-than, not both", file=sys.stderr)
+            return 64
+        lines, code = mark_done_older(args.older_than, args.note or "", args.product or "", now)
+        print("\n".join(lines), file=sys.stderr if code else sys.stdout)
+        return code
     if words and words[0] == "done":
         if len(words) < 2:
-            print("usage: teyla asks done <id-prefix>... [--note TEXT]", file=sys.stderr)
+            print("usage: teyla asks done <id-prefix>... | done --older-than DAYS [--product P]  [--note TEXT]",
+                  file=sys.stderr)
             return 64
         lines, code = mark_done(words[1:], args.note or "", now)
         print("\n".join(lines))
@@ -899,5 +928,7 @@ def register(sp):
     q.add_argument("-o", "--out", help="--html: write here instead")
     q.add_argument("--open", action="store_true", help="--html: open the page")
     q.add_argument("--note", help="done: why")
+    q.add_argument("--older-than", type=float, metavar="DAYS",
+                   help="done: close every open question older than this (with --product, one product)")
     q.add_argument("--quiet", action="store_true", help="only refresh ~/.teyla/asks.count (the session-start line)")
     return q

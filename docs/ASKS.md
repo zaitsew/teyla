@@ -10,6 +10,7 @@ Code sessions ended that way and 1 got an answer. `teyla asks` finds them.
     teyla asks --html --open         the same as one page (~/.teyla/asks.html), readable on a phone
     teyla asks done <id> [--note T]  close one; a prefix of 3+ characters is enough
     teyla asks snooze <id> <days>    hide one until the days pass
+    teyla asks done --older-than 3   close every question older than 3 days (--product P for one)
     teyla asks --all --json          include done and snoozed; machine-readable
     teyla asks --days 60 --product P widen the window, or keep one repo
 
