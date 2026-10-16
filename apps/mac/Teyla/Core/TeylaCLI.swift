@@ -1,0 +1,187 @@
+import Foundation
+
+enum TeylaError: LocalizedError, Equatable {
+    case binaryNotFound
+    case fixtureUnreadable(String)
+    case failed(code: Int32, message: String)
+    case badOutput(String)
+    case timedOut
+
+    var errorDescription: String? {
+        switch self {
+        case .binaryNotFound:
+            return "The teyla command was not found. Install Teyla, or set TEYLA_BIN to its path."
+        case .fixtureUnreadable(let path):
+            return "Could not read the state fixture at \(path)."
+        case .failed(let code, let message):
+            let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? "teyla exited with status \(code)." : text
+        case .badOutput(let why):
+            return "teyla printed something the app could not read (\(why))."
+        case .timedOut:
+            return "teyla did not answer in time."
+        }
+    }
+}
+
+/// Where the `teyla` binary lives. The order is part of the contract (see README).
+enum TeylaBinary {
+    static func candidates(env: [String: String], home: String) -> [String] {
+        var list: [String] = []
+        if let explicit = env["TEYLA_BIN"], !explicit.isEmpty { list.append(explicit) }
+        list.append("\(home)/.local/bin/teyla")
+        list.append("/opt/homebrew/bin/teyla")
+        list.append("/usr/local/bin/teyla")
+        return list
+    }
+
+    static func locate(env: [String: String], home: String,
+                       isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }) -> String? {
+        candidates(env: env, home: home).first(where: isExecutable)
+    }
+}
+
+private final class DataBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored = Data()
+    var data: Data {
+        get { lock.lock(); defer { lock.unlock() }; return stored }
+        set { lock.lock(); stored = newValue; lock.unlock() }
+    }
+}
+
+/// Runs the Teyla CLI. With `TEYLA_STATE_FIXTURE` set, state is read from that JSON file and
+/// every write (answer, snooze, done) is simulated, so a preview never touches a real session.
+actor TeylaCLI {
+    private let env: [String: String]
+    private let home: String
+    private let fixtureURL: URL?
+
+    init(env: [String: String] = ProcessInfo.processInfo.environment, home: String = NSHomeDirectory()) {
+        self.env = env
+        self.home = home
+        if let path = env["TEYLA_STATE_FIXTURE"], !path.isEmpty {
+            fixtureURL = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        } else {
+            fixtureURL = nil
+        }
+    }
+
+    nonisolated var usesFixture: Bool { fixtureURL != nil }
+
+    func state() async throws -> Snapshot {
+        if let url = fixtureURL {
+            guard let data = try? Data(contentsOf: url) else {
+                throw TeylaError.fixtureUnreadable(url.path)
+            }
+            return try Self.decodeSnapshot(data)
+        }
+        let out = try await run(["state", "--json"], timeout: 60)
+        guard out.status == 0 else { throw TeylaError.failed(code: out.status, message: out.stderrText) }
+        return try Self.decodeSnapshot(out.stdout)
+    }
+
+    func answer(id: String, text: String) async throws -> AnswerResult {
+        if fixtureURL != nil {
+            try? await Task.sleep(for: .milliseconds(700))
+            return AnswerResult(ok: true, via: "fixture", detail: "Simulated: the fixture is read-only", id: id)
+        }
+        let out = try await run(["answer", id, text, "--json"], timeout: 180)
+        // `teyla answer` may print a JSON verdict even when it fails; prefer that over stderr.
+        if !out.stdout.isEmpty, let result = try? JSONDecoder().decode(AnswerResult.self, from: out.stdout) {
+            if result.ok && out.status == 0 { return result }
+            let why = result.detail.isEmpty ? out.stderrText : result.detail
+            throw TeylaError.failed(code: out.status, message: why)
+        }
+        guard out.status == 0 else { throw TeylaError.failed(code: out.status, message: out.stderrText) }
+        throw TeylaError.badOutput("not JSON")
+    }
+
+    func snooze(id: String, days: Int) async throws {
+        try await simpleCommand(["asks", "snooze", id, String(days)])
+    }
+
+    func markDone(id: String) async throws {
+        try await simpleCommand(["asks", "done", id])
+    }
+
+    private func simpleCommand(_ args: [String]) async throws {
+        if fixtureURL != nil {
+            try? await Task.sleep(for: .milliseconds(400))
+            return
+        }
+        let out = try await run(args, timeout: 60)
+        guard out.status == 0 else { throw TeylaError.failed(code: out.status, message: out.stderrText) }
+    }
+
+    static func decodeSnapshot(_ data: Data) throws -> Snapshot {
+        do {
+            return try JSONDecoder().decode(Snapshot.self, from: data)
+        } catch {
+            throw TeylaError.badOutput("not a state snapshot")
+        }
+    }
+
+    // MARK: Process
+
+    struct Output: Sendable {
+        var status: Int32
+        var stdout: Data
+        var stderr: Data
+        var stderrText: String { String(decoding: stderr, as: UTF8.self) }
+    }
+
+    private func childEnvironment() -> [String: String] {
+        var e = env
+        // A Finder-launched app has a bare PATH, but `teyla answer` needs `claude` and `codex`.
+        let extra = ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+        let existing = (e["PATH"] ?? "").split(separator: ":").map(String.init)
+        e["PATH"] = (extra + existing.filter { !extra.contains($0) }).joined(separator: ":")
+        return e
+    }
+
+    private func run(_ args: [String], timeout: TimeInterval) async throws -> Output {
+        guard let bin = TeylaBinary.locate(env: env, home: home) else { throw TeylaError.binaryNotFound }
+        let environment = childEnvironment()
+        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Output, Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: bin)
+                process.arguments = args
+                process.environment = environment
+                process.standardInput = FileHandle.nullDevice
+                let outPipe = Pipe()
+                let errPipe = Pipe()
+                process.standardOutput = outPipe
+                process.standardError = errPipe
+                do { try process.run() } catch {
+                    cont.resume(throwing: error)
+                    return
+                }
+                let timedOut = DataBox()
+                let killer = DispatchWorkItem {
+                    timedOut.data = Data([1])
+                    process.terminate()
+                }
+                DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: killer)
+                // Drain stderr on its own thread so a chatty child cannot fill the pipe and stall.
+                let errBox = DataBox()
+                let group = DispatchGroup()
+                group.enter()
+                DispatchQueue.global().async {
+                    errBox.data = errPipe.fileHandleForReading.readDataToEndOfFile()
+                    group.leave()
+                }
+                let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                group.wait()
+                killer.cancel()
+                if !timedOut.data.isEmpty {
+                    cont.resume(throwing: TeylaError.timedOut)
+                } else {
+                    cont.resume(returning: Output(status: process.terminationStatus, stdout: outData, stderr: errBox.data))
+                }
+            }
+        }
+    }
+}
