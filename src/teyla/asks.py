@@ -672,7 +672,8 @@ def mark_done_older(days: float, note: str = "", product: str = "", now: float |
     if days <= 0:
         return ["--older-than needs a number of days above 0"], 1
     cutoff = now - days * 86400
-    old = [a for a in collect(max(DEFAULT_DAYS, 365), now)
+    # look back a year past the cutoff, so --older-than 400 still sees a 500-day-old question
+    old = [a for a in collect(max(DEFAULT_DAYS, 365, int(days) + 365), now)
            if a.status == "open" and a.kind != "reminder" and a.when < cutoff
            and (not product or a.product == product)]
     if not old:
