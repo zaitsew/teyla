@@ -21,6 +21,10 @@
   without them `render` still writes `story.json`, `reel.txt` and `reel.srt` and says what is missing. The Story
   gains `ticks` (numbers only) for the counters, the repo name is limited to 24 characters, and an ask is now cut
   at a sentence, never mid-sentence.
+- **`teyla reel`: the Codex desktop `exec` wrapper is read call by call.** A `tools.write_stdin(...)` poll made inside
+  the wrapper now settles the test run it names (a variable session id settles the only run still going), so a
+  completed run is no longer left out of the test beats and totals; and a rejected `apply_patch` inside a wrapper
+  that also runs a command is no longer shown as a successful edit.
 
 ## 0.24.0 — 2026-10-15 — Did the Android build reach a person
 

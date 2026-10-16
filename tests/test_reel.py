@@ -842,3 +842,91 @@ def test_a_rollout_id_that_starts_with_digits_is_not_eaten_by_the_timestamp(tmp_
     assert codex.locate("12345678", root=str(tmp_path), archive_root="") == [str(f)]
     assert codex.locate("12345678-abcd", root=str(tmp_path), archive_root="") == [str(f)]
     assert codex.locate("abcd", root=str(tmp_path), archive_root="") == []
+
+
+# --- the JS exec wrapper: every inner call on its own ---------------------------------------
+
+PATCH_JS = ('tools.apply_patch("*** Begin Patch\\n*** Update File: src/foo.py\\n@@\\n-a\\n+b\\n*** End Patch");')
+
+
+def wrapper(call_id, js, output, t=2):
+    return [item(t, {"type": "custom_tool_call", "name": "exec", "call_id": call_id, "input": js}),
+            item(t + 1, {"type": "custom_tool_call_output", "call_id": call_id, "output": output})]
+
+
+def test_a_poll_made_inside_the_exec_wrapper_settles_the_running_test(tmp_path):
+    running = json.dumps({"chunk_id": "x", "session_id": 77, "output": "..F."})
+    done = json.dumps({"chunk_id": "y", "exit_code": 1, "output": "2 failed, 3 passed in 1s"})
+    st, ev = codex_story(tmp_path, [
+        *wrapper("c1", 'await tools.exec_command({cmd: "python -m pytest -q", yield_time_ms: 100});', running),
+        *wrapper("c2", 'await tools.write_stdin({session_id: 77, chars: "", yield_time_ms: 5000});', done, t=10),
+    ], git=False)
+    cmd = [e for e in ev if e.kind == "command"][0]
+    assert cmd.exit_code == 1 and cmd.failed and cmd.session is None
+    assert [b.headline for b in st.beats if b.kind == "test"] == ["2 failed, 3 passed"]
+    assert st.totals.test_runs == 1 and (st.totals.tests_passed, st.totals.tests_failed) == (3, 2)
+
+
+def test_a_poll_that_names_its_process_with_a_variable_settles_the_only_running_one(tmp_path):
+    running = json.dumps({"chunk_id": "x", "session_id": 77, "output": "..."})
+    done = json.dumps({"chunk_id": "y", "exit_code": 0, "output": "5 passed in 1s"})
+    st, _ = codex_story(tmp_path, [
+        *wrapper("c1", 'const r = await tools.exec_command({cmd: "pytest -q"});', running),
+        *wrapper("c2", "await tools.write_stdin({session_id: r.session_id});", done, t=10),
+    ], git=False)
+    assert [b.headline for b in st.beats if b.kind == "test"] == ["5 tests passed"]
+
+
+def test_a_start_and_its_poll_in_one_wrapper(tmp_path):
+    out = json.dumps([{"i": 0, "value": {"chunk_id": "x", "session_id": 9, "output": "."}},
+                      {"i": 1, "value": {"chunk_id": "y", "exit_code": 1, "output": "1 failed, 4 passed in 1s"}}])
+    st, _ = codex_story(tmp_path, [
+        *wrapper("c1", 'await tools.exec_command({cmd: "pytest -q"}); await tools.write_stdin({session_id: 9});', out),
+    ], git=False)
+    assert [b.headline for b in st.beats if b.kind == "test"] == ["1 failed, 4 passed"]
+
+
+@pytest.mark.parametrize("js, output", [
+    # patch first, then a command; results by index
+    (PATCH_JS + 'await tools.exec_command({cmd: "git status"});',
+     json.dumps([{"i": 0, "value": {"output": "apply_patch verification failed: no match", "exit_code": 1}},
+                 {"i": 1, "value": {"exit_code": 0, "output": "clean"}}])),
+    # command first, then a patch; results by index
+    ('await tools.exec_command({cmd: "git status"});' + PATCH_JS,
+     json.dumps([{"i": 0, "value": {"exit_code": 0, "output": "clean"}},
+                 {"i": 1, "value": {"output": "patch rejected", "exit_code": 2}}])),
+    # no indices: the failure is only in the text
+    ('await tools.exec_command({cmd: "git status"});' + PATCH_JS,
+     "Script failed\nError: apply_patch verification failed: Failed to find expected lines\n"),
+])
+def test_a_rejected_patch_in_a_wrapper_with_a_command_is_not_an_edit(tmp_path, js, output):
+    st, ev = codex_story(tmp_path, wrapper("c1", js, output), git=False)
+    assert [e for e in ev if e.kind == "edit"][0].failed
+    assert not [b for b in st.beats if b.kind == "edit"] and st.totals.lines_added == 0
+
+
+def test_an_applied_patch_beside_a_failing_command_stays_an_edit(tmp_path):
+    out = json.dumps([{"i": 0, "value": {"output": "Success. Updated the following files:\nM src/foo.py", "exit_code": 0}},
+                      {"i": 1, "value": {"exit_code": 1, "output": "1 failed in 1s"}}])
+    st, ev = codex_story(tmp_path, wrapper("c1", PATCH_JS + 'await tools.exec_command({cmd: "pytest -q"});', out), git=False)
+    assert not [e for e in ev if e.kind == "edit"][0].failed
+    assert [b.headline for b in st.beats if b.kind == "edit"] == ["src/foo.py"]
+    assert [e for e in ev if e.kind == "command"][0].exit_code == 1
+
+
+def test_unindexed_results_are_consumed_in_source_order_patches_included(tmp_path):
+    out = ("Script completed\nOutput:\n"
+           + json.dumps({"chunk_id": "a", "exit_code": 0, "output": "Success. Updated the following files:\nM src/foo.py"}) + "\n"
+           + json.dumps({"chunk_id": "b", "exit_code": 1, "output": "1 failed, 4 passed in 1s"}))
+    st, ev = codex_story(tmp_path, wrapper("c1", PATCH_JS + 'await tools.exec_command({cmd: "pytest -q"});', out), git=False)
+    cmd = [e for e in ev if e.kind == "command"][0]
+    assert cmd.exit_code == 1 and cmd.failed
+    assert not [e for e in ev if e.kind == "edit"][0].failed
+    assert [b.headline for b in st.beats if b.kind == "test"] == ["1 failed, 4 passed"]
+
+
+def test_an_unindexed_patch_result_with_a_non_zero_exit_code_fails_the_patch(tmp_path):
+    out = json.dumps({"chunk_id": "a", "exit_code": 1, "output": "Permission denied"})
+    st, ev = codex_story(tmp_path, wrapper("c1", PATCH_JS, out), git=False)
+    assert [e for e in ev if e.kind == "edit"][0].failed
+    assert not [b for b in st.beats if b.kind == "edit"] and st.totals.lines_added == 0

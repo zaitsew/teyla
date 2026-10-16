@@ -163,6 +163,7 @@ def _claude_result(ev: Event, block: dict) -> None:
 _SHELLS = {"shell", "shell_command", "exec_command", "local_shell", "exec"}
 _JS_STR = r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'|`(?:[^`\\]|\\.)*`'
 _JS_EXEC = re.compile(r"tools\.exec_command\(\s*\{")
+_JS_POLL = re.compile(r"tools\.write_stdin\(\s*\{")
 _JS_PATCH = re.compile(r"tools\.apply_patch\(\s*(" + _JS_STR + ")")
 _JSON_START = re.compile(r'\[?\{"(?:chunk_id|i|exit_code|output|wall_time_seconds)"')
 _ESC = {"n": "\n", "t": "\t", "r": "\r", "b": "", "f": "", "0": ""}
@@ -189,9 +190,17 @@ def _skip_js_string(raw: str, i: int) -> int:
 
 
 def _js_object_string(raw: str, i: int, keys: tuple[str, ...]) -> str | None:
-    """The string value of the first of `keys` in the JS object literal whose `{` is at raw[i], wherever it
-    stands in the object and however its key is written (`cmd:`, `"cmd":`, `'cmd':`). Other values, nested
-    objects and arrays included, are skipped over, not read."""
+    """The string value of the first of `keys` in the JS object literal whose `{` is at raw[i]."""
+    value = _js_object_value(raw, i, keys)
+    if value is not None and len(value) >= 2 and value[0] in "\"'`" and _skip_js_string(value, 0) == len(value):
+        return _js_string(value)
+    return None
+
+
+def _js_object_value(raw: str, i: int, keys: tuple[str, ...]) -> str | None:
+    """The source text of the value of the first of `keys` in the JS object literal whose `{` is at raw[i],
+    wherever it stands in the object and however its key is written (`cmd:`, `"cmd":`, `'cmd':`). Other
+    values, nested objects and arrays included, are skipped over, not read."""
     n = len(raw)
     i += 1
     while i < n:
@@ -230,9 +239,8 @@ def _js_object_string(raw: str, i: int, keys: tuple[str, ...]) -> str | None:
             elif c == "," and depth == 0:
                 break
             i += 1
-        value = raw[start:i].strip()
-        if key in keys and len(value) >= 2 and value[0] in "\"'`" and _skip_js_string(value, 0) == len(value):
-            return _js_string(value)
+        if key in keys:
+            return raw[start:i].strip()
     return None
 
 
@@ -372,18 +380,87 @@ def _codex_output(ev_list: list[Event], raw) -> None:
         _settle(commands[0], code, out, sid)
 
 
-def _codex_write(procs: dict, sid: int, raw) -> None:
-    """The output of a `write_stdin` poll: more output for the command whose process `sid` is, and its
+def _poll(procs: dict, sid, code, out: str, still=None) -> None:
+    """More output for the command whose process is `sid` (None: the only process still running), and its
     exit status once it has one."""
+    if sid is None and len(procs) == 1:
+        sid = next(iter(procs))
     ev = procs.get(sid)
     if ev is None:
         return
-    text = raw if isinstance(raw, str) else _result_text(raw)
-    code, out, _still = _result(text)
     ev.output = _tail(ev.output + "\n" + out) if ev.output else _tail(out)
-    if code is not None:
+    if isinstance(code, int):
         ev.exit_code, ev.failed, ev.session = code, bool(code), None
         procs.pop(sid, None)
+
+
+def _codex_write(procs: dict, sid: int, raw) -> None:
+    """The output of a direct `write_stdin` call."""
+    text = raw if isinstance(raw, str) else _result_text(raw)
+    code, out, still = _result(text)
+    _poll(procs, sid, code, out, still)
+
+
+# One inner call of the desktop app's JS `exec` wrapper, in source order: ("command", Event),
+# ("patch", [edit Events]) or ("poll", process id | None when the script passes a variable).
+Slot = tuple
+
+
+def _exec_slots(raw: str, at) -> list[Slot]:
+    found = []
+    for m in _JS_EXEC.finditer(raw):
+        text = _js_object_string(raw, m.end() - 1, ("cmd", "command"))
+        if text is not None:
+            found.append((m.start(), ("command", Event("command", at, text=text, tool="exec_command"))))
+    for m in _JS_PATCH.finditer(raw):
+        text = _js_string(m.group(1))
+        if text is not None:
+            found.append((m.start(), ("patch", parse_patch(text, at))))
+    for m in _JS_POLL.finditer(raw):
+        value = _js_object_value(raw, m.end() - 1, ("session_id", "sessionId"))
+        found.append((m.start(), ("poll", int(value) if value and value.isdigit() else None)))
+    return [slot for _pos, slot in sorted(found, key=lambda x: x[0])]
+
+
+def _wrapper_output(slots: list[Slot], raw, procs: dict) -> None:
+    """The output of one `exec` wrapper, applied to each inner call on its own: a command gets its exit
+    status, a poll settles the process it names, a patch is failed when its own result says so."""
+    text = raw if isinstance(raw, str) else _result_text(raw)
+    indexed: dict[int, dict] = {}
+    loose: list[dict] = []
+    for item in _json_values(text):
+        val = item.get("value") if isinstance(item.get("value"), dict) else item
+        if isinstance(item.get("i"), int):
+            indexed[item["i"]] = val
+        else:
+            loose.append(val)
+    loose_iter = iter(loose)
+    rejected = bool(_PATCH_REJECTED.search(text))
+    plain = [sl for sl in slots if sl[0] != "patch"]
+    for n, (kind, payload) in enumerate(slots):
+        # Every inner call, a patch too, takes its own result: by index, else the next one in source order.
+        val = indexed.get(n) or next(loose_iter, None)
+        if kind == "patch":
+            if val is not None:
+                bad = bool(val.get("exit_code")) or bool(_PATCH_REJECTED.search(str(val.get("output") or "")))
+            else:
+                bad = rejected
+            if bad:
+                for e in payload:
+                    e.failed = True
+            continue
+        if val is not None:
+            code, out, sid = val.get("exit_code"), str(val.get("output") or ""), val.get("session_id")
+        elif len(plain) == 1:
+            code, out, sid = _result(text)          # a single call whose result came back as text
+        else:
+            continue
+        if kind == "command":
+            _settle(payload, code, out, sid)
+            if payload.session is not None:
+                procs[payload.session] = payload
+        else:
+            _poll(procs, payload, code, out, sid)
 
 
 def read_codex(path: str) -> list[Event]:
@@ -391,6 +468,7 @@ def read_codex(path: str) -> list[Event]:
     calls: dict[str, list[Event]] = {}
     procs: dict[int, Event] = {}          # process id -> the command still running in it
     polls: dict[str, int] = {}            # call id of a write_stdin -> the process it polls
+    wrappers: dict[str, list] = {}        # call id of a JS exec wrapper -> its inner calls
     asked = False
     for o in iter_jsonl(path):
         if o.get("type") != "response_item" or not isinstance(o.get("payload"), dict):
@@ -415,6 +493,14 @@ def read_codex(path: str) -> list[Event]:
                 if sid is not None and p.get("call_id"):
                     polls[p["call_id"]] = sid
                 continue
+            if pt == "custom_tool_call" and (p.get("name") or "").rsplit(".", 1)[-1] == "exec":
+                raw = p.get("input") if isinstance(p.get("input"), str) else ""
+                slots = _exec_slots(raw, at)
+                for kind, payload in slots:
+                    events.extend([payload] if kind == "command" else payload if kind == "patch" else [])
+                if slots and p.get("call_id"):
+                    wrappers[p["call_id"]] = slots
+                continue
             made = _codex_call(p, at)
             if made:
                 events.extend(made)
@@ -424,6 +510,10 @@ def read_codex(path: str) -> list[Event]:
             sid = polls.pop(p.get("call_id"), None)
             if sid is not None:
                 _codex_write(procs, sid, p.get("output"))
+                continue
+            slots = wrappers.pop(p.get("call_id"), None)
+            if slots:
+                _wrapper_output(slots, p.get("output"), procs)
                 continue
             made = calls.pop(p.get("call_id"), None)
             if made:
@@ -457,13 +547,9 @@ def _codex_call(p: dict, at) -> list[Event]:
         if name == "apply_patch":
             return parse_patch(raw, at)
         if name == "exec":   # the desktop app's JavaScript wrapper around its tools
-            found = [(m.start(), "command", _js_object_string(raw, m.end() - 1, ("cmd", "command"))) for m in _JS_EXEC.finditer(raw)]
-            found += [(m.start(), "patch", _js_string(m.group(1))) for m in _JS_PATCH.finditer(raw)]
             out: list[Event] = []
-            for _pos, kind, s in sorted(found, key=lambda x: x[0]):
-                if s is None:
-                    continue
-                out.extend([Event("command", at, text=s, tool="exec_command")] if kind == "command" else parse_patch(s, at))
+            for kind, payload in _exec_slots(raw, at):
+                out.extend([payload] if kind == "command" else payload if kind == "patch" else [])
             return out
         return []
     try:
