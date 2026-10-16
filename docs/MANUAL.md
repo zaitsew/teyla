@@ -720,6 +720,15 @@ that tester can install, and what blocks the ones in between. Exit 0 when every 
 current, 1 otherwise (behind, nothing installable, tester not on the team, tool error), so a
 routine can use it. It reaches Apple through your tool, so safe mode needs `--allow-network`.
 
+`teyla testflight --china` is the store-review check of POLICY §15: China mainland is excluded from the first
+submission (generative AI there needs a Chinese permit, and any app needs an ICP filing). For each in-scope
+product it runs `<release_tool> availability --bundle-id ID --json`, which prints `{"bundle_id": ID,
+"territories": [{"territory": "CHN", "available": true}, ...]}` (from App Store Connect's
+`appAvailabilityV2` and `territoryAvailabilities?include=territory`), and prints one line per product still
+available in `CHN` with the fix: exclude CHN in availability, app-wide. It prints nothing when none is. A tool
+that cannot answer is a line of its own, not a pass. Exit 1 when any line is printed. `--quiet` runs this
+check too and adds it to `testflight.problems` (key `testflight|<product>|CHN`).
+
 **`teyla play [path...] [--json]`** is the Android twin. For each product whose
 `[productize.distribution]` android is `play-internal` or `play`, or whose `teyla.toml` sets
 `[release] android_package`, it runs your release tool (`[android] release_tool`) as `status

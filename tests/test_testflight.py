@@ -70,13 +70,23 @@ def payload(*plats, found=True):
             "platforms": list(plats)}
 
 
-def fake_tool(monkeypatch, out=None, *, rc=0, stderr="", raises=None, calls=None):
+def territories(chn=False, *others):
+    """The `availability` JSON: CHN as given, plus any other territory ids that are available."""
+    return {"bundle_id": "com.example.app",
+            "territories": [{"territory": "CHN", "available": chn}] +
+                           [{"territory": t, "available": True} for t in others]}
+
+
+def fake_tool(monkeypatch, out=None, *, rc=0, stderr="", raises=None, calls=None, avail=None):
+    """`beta reached` answers `out`; `availability` answers `avail` (CHN excluded by default)."""
     def run(cmd, **kw):
         if calls is not None:
             calls.append((cmd, kw))
         if raises:
             raise raises
-        text = out if isinstance(out, str) else json.dumps(out)
+        which = avail if cmd[1] == "availability" and avail is not None else \
+            territories(False, "USA") if cmd[1] == "availability" else out
+        text = which if isinstance(which, str) else json.dumps(which)
         return subprocess.CompletedProcess(cmd, rc, stdout=text, stderr=stderr)
     monkeypatch.setattr(testflight.subprocess, "run", run)
 
@@ -198,7 +208,7 @@ def test_scope(tmp_path, monkeypatch, capsys):
     fake_tool(monkeypatch, payload(plat()), calls=seen)
     rc, cap = go(capsys)
     assert rc == 0
-    assert sorted(c[0][4] for c in seen) == ["com.example.mac", "com.example.shipped"]
+    assert sorted(c[0][4] for c in seen if c[0][1] == "beta") == ["com.example.mac", "com.example.shipped"]
     assert "web-only" not in cap.out and "dev-only" not in cap.out
 
 
@@ -338,8 +348,10 @@ def test_quiet_error_and_nothing_installable_rows(tmp_path, monkeypatch, capsys,
     fake_tool(monkeypatch, "", rc=2, stderr="ASC auth failed\n")
     rc, cap = go(capsys, "--quiet")
     assert rc == 1 and cap.out == ""
-    key, text = problems.read_text().rstrip("\n").split("\t")
-    assert key == "testflight|app-a|error" and text.startswith("app-a: the release tool exited 2")
+    # the same broken tool also fails the availability read: that is its own line, never a pass
+    first, second = [ln.split("\t") for ln in problems.read_text().splitlines()]
+    assert first[0] == "testflight|app-a|error" and first[1].startswith("app-a: the release tool exited 2")
+    assert second[0] == "testflight|app-a|CHN|error" and "could not read App Store availability" in second[1]
     fake_tool(monkeypatch, payload(plat("MAC_OS", behind=1, inst=None, blockers=["120: expired"])))
     go(capsys, "--quiet")
     # the manifest also declares iOS, which the tool said nothing about: no build at all
@@ -365,3 +377,108 @@ def test_quiet_with_no_product_in_scope_removes_the_file(tmp_path, monkeypatch, 
     fake_tool(monkeypatch, raises=AssertionError("the tool must not run"))
     rc, cap = go(capsys, "--quiet")
     assert rc == 0 and cap.out == "" and not problems.exists()
+
+
+# --- --china: POLICY §15, no product stays available in China mainland ------------------------------
+
+def test_china_available_prints_one_line_with_the_fix(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    product(tmp_path, "app-a", bundle="com.example.a")
+    product(tmp_path, "app-b", bundle="com.example.b")
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        chn = cmd[3] == "com.example.a"
+        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(territories(chn, "USA")), stderr="")
+    monkeypatch.setattr(testflight.subprocess, "run", run)
+    rc, cap = go(capsys, "--china")
+    assert rc == 1
+    lines = cap.out.strip().splitlines()
+    assert len(lines) == 1 and lines[0].startswith("app-a  ")
+    assert "CHN" in lines[0] and "POLICY \u00a715" in lines[0] and "exclude CHN" in lines[0] and "app-wide" in lines[0]
+    assert [c[1:] for c in calls] == [["availability", "--bundle-id", "com.example.a", "--json"],
+                                      ["availability", "--bundle-id", "com.example.b", "--json"]]
+
+
+def test_china_excluded_is_silent(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    product(tmp_path)
+    fake_tool(monkeypatch, payload(plat()), avail=territories(False, "USA", "FRA"))
+    rc, cap = go(capsys, "--china")
+    assert rc == 0 and cap.out == "" and cap.err == ""
+    # a tool that lists only the territories that are on, with no CHN entry at all, is also a pass
+    fake_tool(monkeypatch, payload(plat()), avail={"territories": [{"territory": "USA", "available": True}]})
+    rc, cap = go(capsys, "--china")
+    assert rc == 0 and cap.out == ""
+
+
+def test_china_reads_only_available_true(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    product(tmp_path)
+    fake_tool(monkeypatch, payload(plat()), avail={"territories": [{"territory": "chn", "available": "false"}]})
+    rc, cap = go(capsys, "--china")
+    assert rc == 0 and cap.out == ""
+
+
+@pytest.mark.parametrize("kw", [
+    dict(avail="not json"),
+    dict(avail={"unexpected": 1}),
+    dict(rc=2, stderr="unknown command: availability\n"),
+    dict(raises=subprocess.TimeoutExpired("x", 60)),
+])
+def test_china_unreadable_is_a_problem_not_a_pass(tmp_path, monkeypatch, capsys, kw):
+    platform_toml(tmp_path)
+    product(tmp_path)
+    fake_tool(monkeypatch, payload(plat()), **kw)
+    rc, cap = go(capsys, "--china")
+    assert rc == 1
+    assert len(cap.out.strip().splitlines()) == 1 and "could not read App Store availability" in cap.out
+
+
+def test_china_no_bundle_id_is_an_error_line(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    product(tmp_path, bundle=None)
+    fake_tool(monkeypatch, raises=AssertionError("the tool must not run"))
+    rc, cap = go(capsys, "--china")
+    assert rc == 1 and "no bundle id" in cap.out
+
+
+def test_china_json(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    product(tmp_path)
+    fake_tool(monkeypatch, payload(plat()), avail=territories(True))
+    rc, cap = go(capsys, "--china", "--json")
+    data = json.loads(cap.out)
+    assert rc == 1 and [d["verdict"] for d in data] == ["china"] and "lines" not in data[0]
+
+
+def test_china_safe_mode_refuses(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    product(tmp_path)
+    monkeypatch.setattr(config, "safe_mode", lambda cfg=None: True)
+    fake_tool(monkeypatch, raises=AssertionError("the tool must not run in safe mode"))
+    rc, cap = go(capsys, "--china")
+    assert rc == 1 and "safe mode is on" in cap.err and cap.out == ""
+
+
+def test_quiet_adds_china_lines_to_the_problems_file(tmp_path, monkeypatch, capsys, problems):
+    platform_toml(tmp_path)
+    product(tmp_path)
+    fake_tool(monkeypatch, payload(plat()), avail=territories(True, "USA"))
+    rc, cap = go(capsys, "--quiet")
+    assert rc == 1 and cap.out == ""
+    key, text = problems.read_text().rstrip("\n").split("\t")
+    assert key == "testflight|app-a|CHN" and "China mainland" in text and "exclude CHN" in text
+    fake_tool(monkeypatch, payload(plat()), avail=territories(False, "USA"))
+    rc, cap = go(capsys, "--quiet")
+    assert rc == 0 and not problems.exists()
+
+
+def test_china_with_quiet_writes_the_problems_file_and_prints_nothing(tmp_path, monkeypatch, capsys, problems):
+    platform_toml(tmp_path)
+    product(tmp_path)
+    fake_tool(monkeypatch, payload(plat()), avail=territories(True, "USA"))
+    rc, cap = go(capsys, "--china", "--quiet")
+    assert rc == 1 and cap.out == ""
+    assert problems.read_text().startswith("testflight|app-a|CHN\t")
