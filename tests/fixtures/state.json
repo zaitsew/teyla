@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "generated": "2026-10-16T21:40:00Z",
+  "brief": {"line": "Two answers unblock Cellar's App Store release today. Atlas is waiting on your first Claude sign-in.", "source": "rules"},
+  "totals": {"questions": 3, "running": 2, "spent_today_usd": 4.1},
+  "asks": [
+    {"id": "7c222b3d", "kind": "question", "product": "cellar", "title": "Cellar app store rejection",
+     "question": "Swap the iPhone review to the newest build, 1.1, or keep 1.0 in the queue?",
+     "context": "Mac 1.1 (18) is back in App Review. The iPhone 1.0 submission still has build 15 in its queue.",
+     "options": ["Keep iPhone 1.0", "Swap to 1.1"], "archived": true,
+     "link": "claude://claude.ai/epitaxy/local_00000000-0000-0000-0000-000000000001",
+     "pr": "https://github.com/example/cellar/pull/120", "harness": "claude-desktop", "status": "open",
+     "ts": "2026-10-16T14:40:00Z", "age_s": 25200, "unblocks": "the iPhone release", "rank": 1, "delivery": "claude"},
+    {"id": "b6b78de8", "kind": "question", "product": "cellar", "title": "Cellar Android app planning",
+     "question": "Finish the Google sign-in in your browser, then tell me.",
+     "context": "The upload still needs a Google Cloud login.", "options": ["Signed in"], "archived": false,
+     "link": "claude://claude.ai/epitaxy/local_00000000-0000-0000-0000-000000000002", "pr": "",
+     "harness": "claude-desktop", "status": "open", "ts": "2026-10-16T20:40:00Z", "age_s": 3600,
+     "unblocks": "the Android test track", "rank": 2, "delivery": "claude"},
+    {"id": "cf075610", "kind": "question", "product": "atlas", "title": "Atlas AI model integrations",
+     "question": "Connect Claude first and try a trip question?",
+     "context": "The agent connector is live. No real AI client has signed in yet.",
+     "options": ["Connected, it works", "It failed"], "archived": false,
+     "link": "codex://threads/00000000-0000-0000-0000-000000000003", "pr": "", "harness": "codex",
+     "status": "open", "ts": "2026-10-16T21:39:00Z", "age_s": 60, "unblocks": "", "rank": 3, "delivery": "codex"}
+  ],
+  "products": [
+    {"name": "atlas", "waiting": 1, "state": "waiting", "line": "iPhone 1.1.5 (126) in TestFlight", "last_activity": "2026-10-16T21:39:00Z"},
+    {"name": "cellar", "waiting": 2, "state": "waiting", "line": "Mac 1.1 (18) in App Review", "last_activity": "2026-10-16T20:40:00Z"},
+    {"name": "teyla", "waiting": 0, "state": "shipped", "line": "0.26.0 released today", "last_activity": "2026-10-16T21:00:00Z"},
+    {"name": "lens", "waiting": 0, "state": "quiet", "line": "no activity for 5 days", "last_activity": "2026-10-11T10:00:00Z"}
+  ],
+  "running": [
+    {"product": "atlas", "title": "Agent connector P2", "harness": "claude-desktop", "model": "claude-sonnet-5-5", "since": "2026-10-16T21:26:00Z", "link": "claude://claude.ai/epitaxy/local_00000000-0000-0000-0000-000000000004"},
+    {"product": "teyla", "title": "Coordinator plan", "harness": "claude-desktop", "model": "claude-opus-5-5", "since": "2026-10-16T19:40:00Z", "link": "claude://claude.ai/epitaxy/local_00000000-0000-0000-0000-000000000005"}
+  ]
+}
