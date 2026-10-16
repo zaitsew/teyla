@@ -3,8 +3,9 @@
     teyla state [--json]
 
 Open questions ranked by what they unblock, where each product stands, which sessions are running
-now, and today's spend. No model call: ranking and the brief line are rules. The snapshot is
-private (it holds session text), like `teyla asks`.
+now, and today's spend. The snapshot itself makes no model call: ranking and the brief line are
+rules, replaced by a model-written version when one is cached (below). The snapshot is private
+(it holds session text), like `teyla asks`.
 
 Ranking: score = kind weight (blocked or gate 3, question 2, reminder 0) + 3 when the text
 mentions a release (App Review, TestFlight, release, store, build, deploy, merge) + 1 when the
@@ -13,19 +14,27 @@ item is younger than 24 hours. Ties go to the newer item. Reminders show only on
 Cost: the desktop app's metadata parse is cached by `asks`; today's spend takes seconds, so it
 is read from `~/.teyla/state-spend.json` and refreshed by a detached `teyla state --refresh-spend`
 when older than 10 minutes (null until the first refresh lands).
+
+Model brief: a detached `teyla state --refresh-brief` sends the open questions (at most 15) to
+Claude Haiku in one `claude -p` call and caches the sentence and the ranking in
+`~/.teyla/state-brief.json`. The snapshot uses the cache while its `ask_ids_hash` equals the
+current set of open questions (`brief.source` is then "model"); otherwise it returns the rules and
+starts one refresh. Off with `[state] model_brief = false`, in safe mode, or without `claude`.
 """
 from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import hashlib
 import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 
-from . import asks
+from . import asks, config
 from .adapters import codex, iter_jsonl
 from .control import state as control
 
@@ -36,6 +45,15 @@ REPO_RECENT_DAYS = 30            # a repo with no session activity is listed onl
 FRESH_S = 24 * 3600
 SPEND_FRESH_S = 600
 BRIEF_WORDS = 25
+UNBLOCKS_WORDS = 5
+BRIEF_MAX_ASKS = 15
+BRIEF_FIELD_CHARS = 400
+BRIEF_FRESH_S = 1800
+BRIEF_LOCK_STALE_S = 300
+BRIEF_TIMEOUT_S = 120
+# A short summary and ranking over a few hundred words: Haiku-class work.
+BRIEF_MODEL = "claude-haiku-5-5"
+REVIEW_TITLE = "You are reviewing"      # a review lane's prompt: its desktop session is not one you work in
 KIND_WEIGHT = {"blocked": 3, "gate": 3, "question": 2, "reminder": 0}
 
 _RELEASE_SIGNAL = re.compile(r"\b(app review|testflight|release|store|build|deploy|merge)", re.I)
@@ -111,7 +129,7 @@ def running_desktop(now: float, root: str | None = None) -> list[dict]:
         return []
     out = []
     for d in asks._desktop_sessions(root):
-        if d.get("isArchived"):
+        if d.get("isArchived") or str(d.get("title") or "").startswith(REVIEW_TITLE):
             continue
         last = asks._epoch(d.get("lastActivityAt"))
         if last is None or now - last > RUNNING_WINDOW_S:
@@ -155,6 +173,8 @@ def running_codex(now: float, root: str | None = None) -> list[dict]:
         meta, model = _codex_head(f)
         if isinstance(meta.get("source"), dict) and "subagent" in meta["source"]:
             continue
+        if meta.get("source") == "exec" or meta.get("originator") == "codex_exec":
+            continue                       # headless `codex exec`: reviews and lanes, not a session you can answer
         sid = str(meta.get("session_id") or meta.get("id") or "")
         if not sid:
             continue
@@ -317,7 +337,7 @@ def _words(text: str) -> str:
 
 
 def brief_line(st: dict) -> dict:
-    """The one sentence on top. Rules for now; a model-written line plugs in here (source "model")."""
+    """The rule-based sentence on top: the fallback when no model brief is cached for the open questions."""
     items = st["asks"]
     if not items:
         return {"line": "Nothing waits on you.", "source": "rules"}
@@ -341,17 +361,223 @@ def brief_line(st: dict) -> dict:
     return {"line": _words(line), "source": "rules"}
 
 
+# --- the model brief --------------------------------------------------------------------------
+
+BRIEF_SYSTEM = (
+    "You write the morning brief for one person who runs several software products. You get their open "
+    "questions as JSON and reply with strict JSON only, no prose and no code fence:\n"
+    '{"brief": "<one sentence, at most 25 words, plain English, what matters today and why>", '
+    '"items": [{"id": "...", "rank": 1, "unblocks": "<at most 5 words, what an answer unblocks, or empty>"}]}\n'
+    "Keep the brief short, about 18 words; count them, and never go over 25. Rules: rank by what an answer unblocks for a person or a release, then by age (older first). Every id "
+    "appears once with a unique rank, 1 = first. Never invent facts that are not in the input. Leave "
+    "unblocks empty when it is unclear. A question about a small tool or a read-only command does not "
+    "unblock a release. Do not mention ids in the brief."
+)
+
+
+def _brief_cache() -> pathlib.Path:
+    return control.home() / "state-brief.json"
+
+
+def _brief_lock() -> pathlib.Path:
+    return control.home() / "state-brief.lock"
+
+
+def ask_ids_hash(rows: list[dict]) -> str:
+    return hashlib.sha256("\n".join(sorted(r["id"] for r in rows)).encode()).hexdigest()[:16]
+
+
+def model_brief_enabled() -> bool:
+    """On unless `[state] model_brief` is false, safe mode is on (session text must stay local), or
+    there is no `claude` on PATH."""
+    try:
+        cfg = config.load()
+        v = (cfg.get("state") or {}).get("model_brief", True)
+        if v is False or str(v).strip().lower() in config.FALSE_WORDS or config.safe_mode(cfg):
+            return False
+    except Exception:  # noqa: BLE001 — an unreadable config is "rules only", not a failed snapshot
+        return False
+    return shutil.which("claude") is not None
+
+
+def brief_candidates(rows: list[dict]) -> list[dict]:
+    """The questions the model sees: blocked and gate items first, then the newest, at most 15."""
+    pick = sorted(rows, key=lambda r: (r["kind"] not in ("blocked", "gate"), r["age_s"]))[:BRIEF_MAX_ASKS]
+    return [{"id": r["id"], "product": r["product"], "kind": r["kind"], "age_hours": round(r["age_s"] / 3600, 1),
+             "question": asks.clip(r["question"], BRIEF_FIELD_CHARS), "context": asks.clip(r["context"], BRIEF_FIELD_CHARS)}
+            for r in pick]
+
+
+def brief_command() -> list[str]:
+    """`claude -p` with no tools, no skills, no MCP servers, no settings files and no saved session;
+    the prompt goes in on stdin so session text never shows in `ps`."""
+    return ["claude", "-p", "--model", BRIEF_MODEL, "--output-format", "json", "--tools", "",
+            "--no-session-persistence", "--disable-slash-commands", "--strict-mcp-config",
+            "--setting-sources", "", "--system-prompt", BRIEF_SYSTEM]
+
+
+def _run_claude(cmd: list[str], input_text: str, timeout: int = BRIEF_TIMEOUT_S) -> tuple[int, str]:
+    """(exit code, stdout). Tests replace this one function; none starts a real claude."""
+    home = control.home()
+    home.mkdir(parents=True, exist_ok=True)
+    try:
+        r = subprocess.run(cmd, input=input_text, capture_output=True, text=True, timeout=timeout, cwd=str(home))
+    except (OSError, subprocess.SubprocessError):
+        return 127, ""
+    return r.returncode, r.stdout
+
+
+def _cut(text: str, n: int) -> str:
+    w = text.split()
+    return " ".join(w) if len(w) <= n else " ".join(w[:n - 1]) + "…"
+
+
+def _cut_brief(text: str) -> str:
+    """At most 25 words. A longer text is cut at the last clause break (; , :) that leaves at least
+    eight words, else at the word limit, so the line does not end mid-phrase."""
+    w = text.split()
+    if len(w) <= BRIEF_WORDS:
+        return " ".join(w)
+    head = " ".join(w[:BRIEF_WORDS])
+    cut = max(head.rfind(c) for c in ";,:")
+    if cut > 0 and len(head[:cut].split()) >= 8:
+        return head[:cut].rstrip() + "."
+    return " ".join(w[:BRIEF_WORDS - 1]) + "…"
+
+
+def validate_brief(reply, ids: set[str]) -> dict | None:
+    """{brief, items} from the model's reply, or None when it cannot be trusted. A long brief or
+    unblocks text is cut; an unknown or repeated id, a repeated or non-integer rank, or no brief
+    at all rejects the whole reply."""
+    if not isinstance(reply, dict) or not isinstance(reply.get("brief"), str) or not reply["brief"].strip():
+        return None
+    raw = reply.get("items")
+    if not isinstance(raw, list) or not raw:
+        return None
+    seen, ranks, items = set(), set(), []
+    for it in raw:
+        if not isinstance(it, dict):
+            return None
+        i, rank = it.get("id"), it.get("rank")
+        if i not in ids or i in seen or isinstance(rank, bool) or not isinstance(rank, int) or rank in ranks:
+            return None
+        seen.add(i)
+        ranks.add(rank)
+        u = it.get("unblocks")
+        items.append({"id": i, "rank": rank, "unblocks": _cut(u, UNBLOCKS_WORDS) if isinstance(u, str) else ""})
+    items.sort(key=lambda x: x["rank"])
+    return {"brief": _cut_brief(reply["brief"]), "items": items}
+
+
+def _parse_reply(stdout: str) -> tuple[object, dict]:
+    """(the model's JSON reply, usage figures) from `claude -p --output-format json`; ValueError if unusable."""
+    out = json.loads(stdout)
+    if not isinstance(out, dict) or out.get("is_error") or not isinstance(out.get("result"), str):
+        raise ValueError("claude reported an error")
+    text = out["result"].strip()
+    m = re.match(r"^```(?:json)?\s*(.*?)\s*```$", text, re.S)
+    usage = {"cost_usd": out.get("total_cost_usd"), "latency_ms": out.get("duration_ms")}
+    return json.loads(m.group(1) if m else text), usage
+
+
+def refresh_brief(now: float | None = None, *, rows: list[dict] | None = None) -> int:
+    """Ask the model once and replace the cache; on any failure keep the old cache and leave the
+    lock in place, which holds the next attempt back for the stale-lock time."""
+    now = asks._now() if now is None else now
+    if not model_brief_enabled():
+        _brief_lock().unlink(missing_ok=True)
+        return 0
+    if rows is None:
+        rows = ranked(asks.collect(asks.DEFAULT_DAYS, now), now)
+    if not rows:
+        _brief_lock().unlink(missing_ok=True)
+        return 0
+    cand = brief_candidates(rows)
+    try:
+        code, out = _run_claude(brief_command(), json.dumps({"questions": cand}, ensure_ascii=False))
+        if code != 0:
+            return 1
+        reply, usage = _parse_reply(out)
+    except (ValueError, OSError, subprocess.SubprocessError):
+        return 1
+    ok = validate_brief(reply, {c["id"] for c in cand})
+    if ok is None:
+        return 1
+    asks._atomic_write(_brief_cache(), json.dumps({"generated": _iso(now), "ask_ids_hash": ask_ids_hash(rows),
+                                                  "model": BRIEF_MODEL, **usage, **ok}))
+    _brief_lock().unlink(missing_ok=True)
+    return 0
+
+
+def _spawn_brief_refresh(now: float | None = None) -> None:
+    """Start one detached refresh. The lock is created exclusively; one older than five minutes is stale."""
+    now = asks._now() if now is None else now
+    lock = _brief_lock()
+    try:
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.close(os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+        except FileExistsError:
+            if now - lock.stat().st_mtime < BRIEF_LOCK_STALE_S:
+                return
+            os.utime(lock, (now, now))      # stale: take it over
+        subprocess.Popen([sys.executable, "-m", "teyla", "state", "--refresh-brief"], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def cached_brief(rows: list[dict], now: float) -> dict | None:
+    """The model's brief for exactly this set of open questions, or None (rules apply). A missing,
+    other-set or older-than-30-minutes cache starts one refresh."""
+    if not rows or not model_brief_enabled():
+        return None
+    try:
+        c = json.loads(_brief_cache().read_text())
+        match = c.get("ask_ids_hash") == ask_ids_hash(rows) and isinstance(c.get("brief"), str) \
+            and isinstance(c.get("items"), list)
+        fresh = now - (asks._epoch(c.get("generated")) or 0) < BRIEF_FRESH_S
+    except (OSError, ValueError, AttributeError, TypeError):
+        c, match, fresh = None, False, False
+    if not (match and fresh):
+        _spawn_brief_refresh(now)
+    return c if match else None
+
+
+def apply_model_brief(rows: list[dict], c: dict) -> list[dict]:
+    """Rows in the model's order with its `unblocks`; questions the model did not rank keep their
+    rule values and follow. Ranks are renumbered 1..n."""
+    mine = {i["id"]: i for i in c["items"] if isinstance(i, dict) and isinstance(i.get("rank"), int)}
+    first = sorted((r for r in rows if r["id"] in mine), key=lambda r: mine[r["id"]]["rank"])
+    out = []
+    for r in first:
+        u = mine[r["id"]].get("unblocks")
+        out.append({**r, "unblocks": u if isinstance(u, str) else ""})
+    out += [r for r in rows if r["id"] not in mine]
+    for n, r in enumerate(out, 1):
+        r["rank"] = n
+    return out
+
+
 # --- the snapshot -----------------------------------------------------------------------------
 
 def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dict | None = None,
           spent="cache", items: list[asks.Ask] | None = None, desktop: str | None = None,
           projects: str | None = None, codex_root: str | None = None, codex_archive: str | None = None,
-          reminders: pathlib.Path | None = None) -> dict:
+          reminders: pathlib.Path | None = None, model_brief: bool = True) -> dict:
     now = asks._now() if now is None else now
     if items is None:
         items = asks.collect(days, now, desktop=desktop, projects=projects, codex_root=codex_root,
                              codex_archive=codex_archive, reminders=reminders)
     rows = ranked(items, now)
+    model = None
+    if model_brief:
+        try:
+            model = cached_brief(rows, now)
+        except Exception:  # noqa: BLE001 — the model brief is an upgrade; the rules always work
+            model = None
+    if model:
+        rows = apply_model_brief(rows, model)
     run = running(now, desktop, codex_root)
     repos = repo_index() if repos is None else repos
     prods = products_view(rows, run, repos, now)
@@ -364,7 +590,7 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
           "totals": {"questions": len(rows), "running": len(run), "spent_today_usd": spent},
           "asks": rows, "products": prods,
           "running": [{k: v for k, v in r.items() if k != "_last"} for r in run]}
-    st["brief"] = brief_line(st)
+    st["brief"] = {"line": _words(model["brief"]), "source": "model"} if model else brief_line(st)
     return st
 
 
@@ -385,6 +611,11 @@ def render_text(st: dict, now: float) -> str:
 
 
 def cmd_state(args) -> int:
+    if args.refresh_brief:
+        try:
+            return refresh_brief()
+        except Exception:  # noqa: BLE001 — a background job
+            return 1
     if args.refresh_spend:
         try:
             refresh_spend()
@@ -402,4 +633,5 @@ def register(sp):
     q.set_defaults(fn=cmd_state)
     q.add_argument("--json", action="store_true")
     q.add_argument("--refresh-spend", action="store_true", help=argparse.SUPPRESS)
+    q.add_argument("--refresh-brief", action="store_true", help=argparse.SUPPRESS)
     return q

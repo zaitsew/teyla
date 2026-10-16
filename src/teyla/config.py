@@ -156,6 +156,8 @@ DEFAULTS = {
     # `teyla intent`: the owner's own long prompts, kept verbatim in ~/.teyla/intent/<product>.md.
     "intent": {"enabled": True, "min_chars": 400},
     "safe": {"enabled": False, "auto_update": False},
+    # `teyla state`: a model writes the brief and the ranking (off = rules only; never in safe mode).
+    "state": {"model_brief": True},
     # Harnesses to leave alone: no health line, no FIX for their hooks or credits, no sync.
     "harness": {"disabled": []},
     "products": {"repos": []},
