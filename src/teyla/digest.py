@@ -439,6 +439,11 @@ def write(findings: list[dict] | None = None, doctor_checks: list[dict] | None =
         rule_cands += crash.digest_candidates()
     except Exception:  # noqa: BLE001 — same: a crash-report scan must never stop the digest being written
         pass
+    try:
+        from . import prose
+        rule_cands += prose.digest_candidates()
+    except Exception:  # noqa: BLE001 — same: a reply-length pass must never stop the digest being written
+        pass
     rule_cands += problem_file_candidates()
     try:
         from . import reviews
