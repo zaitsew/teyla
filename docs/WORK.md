@@ -4,7 +4,7 @@ For a managed Mac: a TLS-inspecting corporate proxy, the employer's code in ever
 what runs at night. Teyla has one switch for this, **safe mode**. This page says what it
 guarantees, how to move to a new release, and what to use day to day.
 
-Setup from scratch is in the [README](../README.md#install). The step-by-step version for an
+Setup from scratch is in the [Guide](GUIDE.md#install-and-update). The step-by-step version for an
 agent is [`prompts/work-account-update.md`](../prompts/work-account-update.md).
 
 ## What safe mode guarantees
@@ -135,3 +135,17 @@ teyla update --check --allow-network
 
 It lasts for that process only. To turn safe mode off altogether, which a managed laptop should
 not need: `teyla config set safe.enabled=false`.
+
+## Install with safe mode on
+
+On a managed Mac, a TLS-inspecting proxy, the employer's code in every transcript, switch on safe mode first:
+
+```bash
+uv tool install "teyla[work] @ git+https://github.com/zaitsew/teyla"   # [work] = truststore: the OS keychain holds the proxy's root CA
+teyla policy init --work --owner "Your Name" && teyla policy sync     # approved providers only, same-provider reviews; sets safe.enabled=true
+teyla config set products.repos=<repo>,<repo>                          # the only repos whose ./check.sh usage Teyla may run
+teyla doctor                                                           # first line: safe: on (network off, no auto-update, no repo commands)
+```
+
+Safe mode (`teyla config set safe.enabled=true`, or `TEYLA_SAFE=1`): nothing reaches the network unless you pass `--allow-network` to the command you typed (`teyla update --allow-network`); the session hook and the daily routine never update Teyla (unless you opt in with `teyla config set safe.auto_update=true`: then the daily `teyla update --quiet`, and only it, may fetch the latest published release; a pin still freezes it, and the plugin's `/plugin` lines stay yours to type); `teyla products` runs `check.sh` only in `products.repos`; `routines --issues` is refused; `teyla plugin install|refresh` print the `claude plugin ...` commands instead of editing Claude Code's plugin registry (with `update.pin` set, the plugin is added at the same tag: `zaitsew/teyla#v<pin>`); no keychain query. [`docs/WORK.md`](WORK.md) is the page for a work laptop: what safe mode guarantees, how to move to a new release, daily use.
+

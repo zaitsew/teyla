@@ -343,3 +343,88 @@ What changes around twenty users, roughly in the order it bites:
 The one rule that does not change: a product with no second user has no scaling problem.
 Get one person in first. Everything above is the answer to a question you will not have
 until then.
+
+## 6. The commands, step by step
+
+This section moved here from the README.
+
+### Shipping to a person: iOS, Android, web
+
+A tool built for one person becomes an app for four only when it has accounts, per-user data, a backend off the laptop, a way onto other people's phones, and a build that actually reaches them. Teyla checks each of those from a `[productize]` block in the repo's `teyla.toml` and from one manifest of the resources you buy once.
+
+```bash
+teyla productize --owner-steps   # every product against R1–R10, then one numbered list of what only you can do
+teyla platform                   # shared resources: secrets, server, domain, identity, mail, Apple, Google Play, model key
+teyla testflight                 # did the newest uploaded build reach the tester, per product and platform
+teyla play                       # the same for Android: internal track status and closed-test age on Google Play
+teyla scaffold ~/repos/app --name app --kind ios   # a repo born with a release doc, check.sh, .env.example and teyla.toml
+```
+
+- **One primary platform (R10).** Each product names a `primary` platform, and every other platform needs a dated trigger in `[productize.triggers]`, such as `android = "2026-10-06: two testers have no iPhone"`. Secondary platforms catch up in parity trains from the `synced-to` commit in `docs/PARITY.md` (policy; no command reads that file yet).
+- **iOS and the App Store.** `teyla platform` checks the App Store Connect API key (three ids in `~/.appstoreconnect/config.env`, the `.p8` at mode 600) and that your upload tool (`[apple] release_tool`) is executable. `teyla testflight` asks that tool whether `[apple] tester` can install the newest build, and exits 1 while one is behind. The daily routine runs it, and the session banner names a build that never reached anyone. `scaffold --kind ios` writes `docs/RELEASE.md`: releases go through the API key, never the Xcode GUI or a password.
+- **Android and Google Play.** `teyla platform` checks the Play Console account and the upload keystore (back it up: it cannot be regenerated). R4 accepts `play-internal` or `play` as Android's distribution path. A personal Play account needs a 14-day closed test before production, so the policy starts it the day the Android trigger fires. `teyla play` is the Play twin of `testflight`: it asks your Play tool (`[android] release_tool`, run as `<tool> status --package ID --json`) for each product's `[release] android_package`, and reports the newest version code on the internal track with its release status (a draft or halted release is a problem: testers cannot install it; a first draft is flagged as possibly in Google's review, which the API does not expose), what production serves (version code, status, rollout fraction; `completed` there does not prove Google's review passed), and whether a closed test is live. The 14-day closed test is a personal-account rule: set `[android] account = "organization"` and a missing closed test is never a problem, and a personal account stops needing it once production is live. Internal older than production is a problem. It exits 1 while a product is behind, and the daily routine runs it into the banner and the digest like `testflight`.
+- **Distribution off the laptop (R4).** Each platform has its bar: TestFlight or the App Store for iOS and macOS, Play for Android, the Chrome Web Store for an extension, the Connect IQ store or Garmin Connect for a Garmin watch.
+- **The rest of the gap.** R1 accounts instead of a shared key, R2 per-user rows, R3 a backend that is not your Mac, R5 a getting-started page, R6 secrets named in `.env.example`, R7 a cost cap on a metered model key, R8 a real mail sender for a public target, R9 a first screen that signs in and never shows sample data as the user's own. `templates/platform/` provisions the shared server: a droplet, Caddy, one site per product.
+- **Release cadence.** The policy's platforms section: at most one internal upload per app per day, one version in review at a time, and a store at most two weeks behind the build the owner uses. More in [Productizing](PRODUCTIZE.md) and [docs/PRODUCTIZE.md](PRODUCTIZE.md).
+
+### `teyla platform` and `teyla productize` in detail
+
+An app built for one person fails to become an app for four in the same six ways every
+time: one shared key instead of accounts, no `user_id` on any table, a backend running on
+the builder's laptop, no distribution path off that laptop, the builder's own model key on
+someone else's device, and no page telling a newcomer what to do first. None of it is
+hard. All of it is invisible until somebody is waiting.
+
+Two commands. `teyla platform` is the resources you buy once and reuse for every product —
+a server, a domain, an identity provider, a mail sender, the Apple key and upload tool, a Play
+Console account and upload keystore, a model key, a secrets file —
+declared in `~/.teyla/platform.toml`, which holds identifiers and env-var *names* and never
+a value:
+
+```
+resource  state    what to do
+secrets   ok       ~/.config/teyla/platform.env 0600; 4/5 names present
+server    MISSING  provision it: bash .../provision-droplet.sh --yes (needs DIGITALOCEAN_ACCESS_TOKEN),
+                   then paste the IP as host = in ~/.teyla/platform.toml
+mail      MISSING  create the key at https://resend.com/api-keys -> paste as RESEND_API_KEY= in
+                   ~/.config/teyla/platform.env
+apple     ok       3 ids, 1 key(s), release tool found
+```
+
+Every missing row names the URL where the thing is created and the file and key where its
+value goes; the command exits 1 while anything is missing.
+
+`teyla productize` reads a `[productize]` block in each repo's `teyla.toml` — who it serves,
+who it should serve, platforms, identity, tenancy, backend, distribution, secrets, cost cap
+— and says what is in the way:
+
+```
+app-a            owner→family  9/9 met
+    [owner] internal TestFlight group — App Store Connect -> add two Apple IDs
+notes            owner→family  1/9 met  unmet: R1 identity=shared-key, R2 tenancy=single,
+                 R3 backend=local-mac, R4 ios=none, R5 onboarding_doc unset,
+                 R7 cost_cap unset (llm=app-key), R9 first_run=none, sample_data unset,
+                 R10 primary unset, ios: no trigger, web: no trigger
+    [agent] platforms: primary unset, ios: no trigger, web: no trigger — write [productize] primary
+            and a dated [productize.triggers] entry per other platform, from the repo's history
+            and the owner's requests
+
+1 product(s) with unmet requirements, 8 requirement(s) unmet
+```
+
+It also checks the first screen (R9): family and public products must open on a sign-in (skippable
+only when the app genuinely needs no account) and must never show sample data as the user's own.
+R8 wants a mail sender the platform owns for a public target, or sign-in codes reach only your
+inbox. R10 wants one `primary` platform and a dated reason for every other one; it applies even to
+an owner-only product, and an unmet R10 becomes a step for the agent.
+
+`--owner-steps` collapses every product *and* the platform into one numbered list of things
+only you can do, platform first, because one mail sender unblocks three products.
+`teyla scaffold --kind app` writes the block, a `docs/GETTING-STARTED.md` addressed to a
+person who is not you, and `deploy/droplet/` fragments for the shared server; the server
+itself is three scripts (`provision-droplet.sh`, `setup-server.sh` for Ubuntu 24.04 with Docker,
+ufw and one Caddy, `add-product.sh <name> <port>`), a `Caddyfile` and a runbook in `templates/platform/`.
+
+The method — why this happens, what to build instead from the first commit, what the shared
+platform costs, and what changes at twenty users — is [`docs/PRODUCTIZE.md`](PRODUCTIZE.md).
+
