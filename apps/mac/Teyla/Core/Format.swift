@@ -2,10 +2,20 @@ import Foundation
 
 /// Small text helpers, kept free of UI so they can be tested.
 enum Format {
-    /// "cellar" becomes "Cellar"; names that already have capitals are left alone.
+    /// "wine-cellar" becomes "Wine Cellar"; "(no repo)" becomes "Other".
     static func product(_ name: String) -> String {
-        guard let first = name.first, first.isLowercase else { return name }
-        return first.uppercased() + name.dropFirst()
+        if name.isEmpty || name.hasPrefix("(") { return "Other" }
+        return name.split(whereSeparator: { $0 == "-" || $0 == "_" })
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+    }
+
+    /// Products worth a row: something waits on the owner, a session runs there, or it shipped.
+    /// The rest is one line, so the column stays short.
+    static func splitProducts(_ products: [Product], running: [RunningSession]) -> (shown: [Product], rest: Int) {
+        let busy = Set(running.map(\.product))
+        let shown = products.filter { $0.waiting > 0 || $0.state == .shipped || busy.contains($0.name) }
+        return (shown, products.count - shown.count)
     }
 
     /// "just now", "5 min", "7h", "2d".
@@ -41,13 +51,13 @@ enum Format {
         usd.formatted(.currency(code: "USD").locale(Locale(identifier: "en_US")))
     }
 
-    /// "3 questions · 2 sessions running · $4.10 spent today"; spend is left out when unknown.
+    /// "3 questions · 2 sessions running · $4.10 at API prices today"; spend is left out when unknown.
     static func subline(questions: Int, running: Int, spentUSD: Double?) -> String {
         var parts = [
             "\(questions) \(questions == 1 ? "question" : "questions")",
             "\(running) \(running == 1 ? "session" : "sessions") running",
         ]
-        if let spentUSD { parts.append("\(spent(spentUSD)) spent today") }
+        if let spentUSD { parts.append("\(spent(spentUSD)) at API prices today") }
         return parts.joined(separator: " · ")
     }
 

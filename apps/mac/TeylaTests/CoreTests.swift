@@ -58,11 +58,13 @@ final class ModelDecodingTests: XCTestCase {
 
     func testFormatting() {
         XCTAssertEqual(Format.product("cellar"), "Cellar")
+        XCTAssertEqual(Format.product("wine-cellar"), "Wine Cellar")
+        XCTAssertEqual(Format.product("(no repo)"), "Other")
         XCTAssertEqual(Format.age(seconds: 25200), "7h")
         XCTAssertEqual(Format.age(seconds: 30), "just now")
         XCTAssertEqual(Format.model("claude-sonnet-5-5"), "Sonnet")
         XCTAssertEqual(Format.subline(questions: 3, running: 2, spentUSD: 4.1),
-                       "3 questions · 2 sessions running · $4.10 spent today")
+                       "3 questions · 2 sessions running · $4.10 at API prices today")
         XCTAssertEqual(Format.subline(questions: 1, running: 1, spentUSD: nil), "1 question · 1 session running")
     }
 }

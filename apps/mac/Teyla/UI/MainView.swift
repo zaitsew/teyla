@@ -151,8 +151,15 @@ private struct StatusColumn: View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 4) {
                 SectionLabel("Products")
-                ForEach(model.snapshot?.products ?? []) { product in
+                let split = Format.splitProducts(model.snapshot?.products ?? [], running: model.snapshot?.running ?? [])
+                ForEach(split.shown) { product in
                     ProductRow(product: product)
+                }
+                if split.rest > 0 {
+                    Text("\(split.rest) more with no question and no session running")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
                 }
                 if (model.snapshot?.products ?? []).isEmpty {
                     Text("No products yet.").foregroundStyle(.secondary)
