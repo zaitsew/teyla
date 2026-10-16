@@ -438,14 +438,17 @@ def _wrapper_output(slots: list[Slot], raw, procs: dict) -> None:
     rejected = bool(_PATCH_REJECTED.search(text))
     plain = [sl for sl in slots if sl[0] != "patch"]
     for n, (kind, payload) in enumerate(slots):
+        # Every inner call, a patch too, takes its own result: by index, else the next one in source order.
+        val = indexed.get(n) or next(loose_iter, None)
         if kind == "patch":
-            val = indexed.get(n)
-            bad = (bool(val.get("exit_code")) or bool(_PATCH_REJECTED.search(str(val.get("output") or "")))) if val else rejected
+            if val is not None:
+                bad = bool(val.get("exit_code")) or bool(_PATCH_REJECTED.search(str(val.get("output") or "")))
+            else:
+                bad = rejected
             if bad:
                 for e in payload:
                     e.failed = True
             continue
-        val = indexed.get(n) or next(loose_iter, None)
         if val is not None:
             code, out, sid = val.get("exit_code"), str(val.get("output") or ""), val.get("session_id")
         elif len(plain) == 1:

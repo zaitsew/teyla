@@ -912,3 +912,21 @@ def test_an_applied_patch_beside_a_failing_command_stays_an_edit(tmp_path):
     assert not [e for e in ev if e.kind == "edit"][0].failed
     assert [b.headline for b in st.beats if b.kind == "edit"] == ["src/foo.py"]
     assert [e for e in ev if e.kind == "command"][0].exit_code == 1
+
+
+def test_unindexed_results_are_consumed_in_source_order_patches_included(tmp_path):
+    out = ("Script completed\nOutput:\n"
+           + json.dumps({"chunk_id": "a", "exit_code": 0, "output": "Success. Updated the following files:\nM src/foo.py"}) + "\n"
+           + json.dumps({"chunk_id": "b", "exit_code": 1, "output": "1 failed, 4 passed in 1s"}))
+    st, ev = codex_story(tmp_path, wrapper("c1", PATCH_JS + 'await tools.exec_command({cmd: "pytest -q"});', out), git=False)
+    cmd = [e for e in ev if e.kind == "command"][0]
+    assert cmd.exit_code == 1 and cmd.failed
+    assert not [e for e in ev if e.kind == "edit"][0].failed
+    assert [b.headline for b in st.beats if b.kind == "test"] == ["1 failed, 4 passed"]
+
+
+def test_an_unindexed_patch_result_with_a_non_zero_exit_code_fails_the_patch(tmp_path):
+    out = json.dumps({"chunk_id": "a", "exit_code": 1, "output": "Permission denied"})
+    st, ev = codex_story(tmp_path, wrapper("c1", PATCH_JS, out), git=False)
+    assert [e for e in ev if e.kind == "edit"][0].failed
+    assert not [b for b in st.beats if b.kind == "edit"] and st.totals.lines_added == 0
