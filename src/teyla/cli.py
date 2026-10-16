@@ -71,6 +71,7 @@
   teyla cloud prep <repo> [--dry] [--allow-public] [--fix-gitignore]   AGENTS.md shipping section, hooks, rules, setup doc for cloud sessions
   teyla reel list [--since 24h] [--repo NAME] [--all]             sessions (Claude Code and Codex) with repo, span, commits, PRs
   teyla reel story|check <session-id|story.json> [--ask TEXT] [--seconds N] [-o FILE]   the redacted Story as JSON; every string a reel would show
+  teyla docs check [repo...] [--all] [--json] [--strict]         README opening, quick start, length, dead commands, decision history in docs
 """
 from __future__ import annotations
 
@@ -407,11 +408,9 @@ def cmd_scaffold(args):
         print(line)
 
 
-def main(argv=None):
-    # ~/.teyla/config.toml [env] first: under launchd or the desktop app's session hook this is
-    # the only place SSL_CERT_FILE or a proxy can come from, and it must be set before any socket.
+def build_parser() -> argparse.ArgumentParser:
+    """The whole parser, built in-process (`teyla docs check` reads its subcommands from here)."""
     from . import config as _config
-    _config.apply_env()
     p = argparse.ArgumentParser(prog="teyla", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--version", action="version", version=__version__)
     sp = p.add_subparsers(dest="cmd", required=True)
@@ -475,6 +474,8 @@ def main(argv=None):
     crash_mod.register(sp)
     from .reel import cli as reel_cli
     reel_cli.register(sp)
+    from . import docs_check as docs_check_mod
+    docs_check_mod.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
     q = sp.add_parser("routines"); q.set_defaults(fn=cmd_routines)
     q.add_argument("paths", nargs="*"); q.add_argument("--json", action="store_true")
@@ -493,7 +494,15 @@ def main(argv=None):
     q.add_argument("--kind", choices=["cli", "app", "service", "ios"], default="cli")
     q.add_argument("--license", choices=["apache", "mit", "none"], default="apache")
     q.add_argument("--owner", help="copyright holder written into the LICENSE (default: git config user.name)")
-    args = p.parse_args(argv)
+    return p
+
+
+def main(argv=None):
+    # ~/.teyla/config.toml [env] first: under launchd or the desktop app's session hook this is
+    # the only place SSL_CERT_FILE or a proxy can come from, and it must be set before any socket.
+    from . import config as _config
+    _config.apply_env()
+    args = build_parser().parse_args(argv)
     from . import net, invisible
     net.allow_for_this_command(getattr(args, "allow_network", False))
     try:
