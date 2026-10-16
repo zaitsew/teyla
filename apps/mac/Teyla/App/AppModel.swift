@@ -21,6 +21,8 @@ final class AppModel {
     private(set) var lastError: String?
     private(set) var isRefreshing = false
     private(set) var cards: [String: CardStatus] = [:]
+    /// Short-lived messages shown on a card (or running row), keyed by ask id or session id.
+    private(set) var notes: [String: String] = [:]
 
     /// Ids the user has answered, snoozed or closed. They stay hidden until a snapshot no
     /// longer lists them, so a refresh racing the CLI cannot bring a card back.
@@ -170,9 +172,23 @@ final class AppModel {
         if case .failed = cards[ask.id] { cards[ask.id] = nil }
     }
 
-    func openSession(_ link: String) {
-        guard !link.isEmpty, let url = URL(string: link) else { return }
-        NSWorkspace.shared.open(url)
+    /// Opens a URL link in its app. A link without a URL scheme is a shell command (Claude Code
+    /// sessions): it goes to the clipboard, with a note under `noteKey`, and is never handed to NSWorkspace.
+    func openSession(_ link: String, noteKey: String) {
+        switch SessionLink(link) {
+        case .none:
+            return
+        case .url(let url):
+            NSWorkspace.shared.open(url)
+        case .command(let command):
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(command, forType: .string)
+            notes[noteKey] = "Command copied: paste it in a terminal"
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                notes[noteKey] = nil
+            }
+        }
     }
 
     func copyQuestion(_ ask: Ask) {

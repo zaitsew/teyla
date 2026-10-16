@@ -245,12 +245,12 @@ private struct RunningRow: View {
     var body: some View {
         let seconds = ISODate.parse(session.since).map { model.clock().timeIntervalSince($0) }
         Button {
-            model.openSession(session.link)
+            model.openSession(session.link, noteKey: session.id)
         } label: {
             HStack(alignment: .firstTextBaseline) {
                 Text(title).lineLimit(1)
                 Spacer(minLength: 8)
-                Text(detail(seconds: seconds))
+                Text(model.notes[session.id] ?? detail(seconds: seconds))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }

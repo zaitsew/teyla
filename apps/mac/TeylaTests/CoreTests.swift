@@ -67,6 +67,22 @@ final class ModelDecodingTests: XCTestCase {
     }
 }
 
+final class AnswerAndLinkTests: XCTestCase {
+    func testAnswerTextFollowsDoubleDash() {
+        XCTAssertEqual(TeylaCLI.answerArguments(id: "7c222b3d", text: "-1, keep it"),
+                       ["answer", "7c222b3d", "--json", "--", "-1, keep it"])
+    }
+
+    func testLinkKinds() {
+        XCTAssertEqual(SessionLink("claude://claude.ai/epitaxy/local_1"),
+                       .url(URL(string: "claude://claude.ai/epitaxy/local_1")!))
+        XCTAssertEqual(SessionLink("codex://threads/0000"), .url(URL(string: "codex://threads/0000")!))
+        XCTAssertEqual(SessionLink("claude --resume abc-123"), .command("claude --resume abc-123"))
+        XCTAssertEqual(SessionLink("  "), .none)
+        XCTAssertEqual(SessionLink(""), .none)
+    }
+}
+
 final class BinaryLookupTests: XCTestCase {
     func testOrder() {
         let list = TeylaBinary.candidates(env: ["TEYLA_BIN": "/custom/teyla"], home: "/h")

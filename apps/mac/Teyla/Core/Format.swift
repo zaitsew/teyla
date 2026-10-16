@@ -68,3 +68,23 @@ enum Format {
         }
     }
 }
+
+/// A session link is either a URL (`claude://…`, `codex://…`) or, for Claude Code sessions, a
+/// shell command such as `claude --resume <id>` that has to be pasted into a terminal.
+enum SessionLink: Equatable {
+    case url(URL)
+    case command(String)
+    case none
+
+    init(_ link: String) {
+        let text = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.isEmpty {
+            self = .none
+        } else if text.range(of: #"^[A-Za-z][A-Za-z0-9+.\-]*://\S+$"#, options: .regularExpression) != nil,
+                  let url = URL(string: text) {
+            self = .url(url)
+        } else {
+            self = .command(text)
+        }
+    }
+}

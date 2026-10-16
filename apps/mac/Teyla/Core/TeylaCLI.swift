@@ -86,7 +86,7 @@ actor TeylaCLI {
             try? await Task.sleep(for: .milliseconds(700))
             return AnswerResult(ok: true, via: "fixture", detail: "Simulated: the fixture is read-only", id: id)
         }
-        let out = try await run(["answer", id, text, "--json"], timeout: 180)
+        let out = try await run(Self.answerArguments(id: id, text: text), timeout: 180)
         // `teyla answer` may print a JSON verdict even when it fails; prefer that over stderr.
         if !out.stdout.isEmpty, let result = try? JSONDecoder().decode(AnswerResult.self, from: out.stdout) {
             if result.ok && out.status == 0 { return result }
@@ -95,6 +95,11 @@ actor TeylaCLI {
         }
         guard out.status == 0 else { throw TeylaError.failed(code: out.status, message: out.stderrText) }
         throw TeylaError.badOutput("not JSON")
+    }
+
+    /// `--` ends option parsing, so an answer that starts with "-" is not read as a flag.
+    static func answerArguments(id: String, text: String) -> [String] {
+        ["answer", id, "--json", "--", text]
     }
 
     func snooze(id: String, days: Int) async throws {

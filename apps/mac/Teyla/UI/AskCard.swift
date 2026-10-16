@@ -24,6 +24,11 @@ struct AskCard: View {
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if let note = model.notes[ask.id] {
+                Label(note, systemImage: "doc.on.clipboard")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
             switch status {
             case .sending(let text):
                 HStack(spacing: 8) {
@@ -47,9 +52,12 @@ struct AskCard: View {
             Button("Snooze 1 day") { model.snooze(ask, days: 1) }
             Button("Mark done") { model.markDone(ask) }
             Divider()
-            Button("Open session") { model.openSession(ask.link) }
+            Button("Open session") { model.openSession(ask.link, noteKey: ask.id) }
                 .disabled(ask.link.isEmpty)
             Button("Copy question") { model.copyQuestion(ask) }
+        }
+        .onChange(of: status) { _, new in
+            if case .done = new { composing = false; draft = "" }
         }
         .accessibilityElement(children: .contain)
     }
@@ -121,9 +129,9 @@ struct AskCard: View {
     private func send() {
         let text = draft
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        // The draft stays until `teyla answer` succeeds, so a failed delivery loses nothing.
+        // "Back" on the error returns to the composer with the text still in it.
         model.answer(ask, text: text)
-        composing = false
-        draft = ""
     }
 
     private func failure(_ message: String) -> some View {
@@ -135,7 +143,7 @@ struct AskCard: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             HStack(spacing: 8) {
-                Button("Open session") { model.openSession(ask.link) }
+                Button("Open session") { model.openSession(ask.link, noteKey: ask.id) }
                     .buttonStyle(.borderedProminent)
                     .disabled(ask.link.isEmpty)
                 Button("Back") { model.dismissError(ask) }
