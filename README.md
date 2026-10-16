@@ -30,6 +30,16 @@ teyla asks done <id>            # close one; snooze <id> <days> hides it
 
 You get the question word for word, its age and the options the agent offered. Details: [docs/ASKS.md](docs/ASKS.md).
 
+The same list lives in one window: **Teyla for Mac** opens with a one-sentence brief, orders the questions by what each unblocks, shows the sessions running now, and sends your answer into the session that asked. It updates live and reads everything through the CLI.
+
+```bash
+cd apps/mac && ./install.sh     # builds Teyla.app into ~/Applications (macOS 15, Xcode, xcodegen)
+teyla state                     # what the window shows, in the terminal
+teyla answer <id> -- "<text>"   # send an answer without opening the session
+```
+
+Details: [apps/mac/README.md](apps/mac/README.md), [docs/APP.md](docs/APP.md).
+
 ### Your own words
 
 You write a long prompt, an agent turns it into a plan, and a later session works from the plan. The detail is gone. Teyla keeps the source.
