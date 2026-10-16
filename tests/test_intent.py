@@ -64,11 +64,18 @@ def test_a_linked_worktree_elsewhere_maps_to_the_main_checkout(tmp_path):
     assert intent.product_for(wt) == "gamma"
 
 
-def test_outside_a_repo_the_directory_name_is_the_product(tmp_path):
+def test_outside_a_repo_prompts_share_one_general_file(tmp_path):
     d = tmp_path / "notes folder"
     d.mkdir()
-    assert intent.product_for(d) == "notes-folder"
+    assert intent.product_for(d) == "general"
+    assert intent.product_for(tmp_path / "gone" / "x") == "general"
     assert intent.product_for("") != ""
+
+
+def test_a_brief_one_session_wrote_for_another_is_not_the_owners_words():
+    brief = "Background (from the session that started this one): the owner decided X. " + "y " * 300
+    assert intent.automated(brief)
+    assert intent.typed("<task-notification><task-id>x</task-id></task-notification>") is None
 
 
 # --- what is kept -------------------------------------------------------------------------
@@ -441,11 +448,11 @@ def test_session_start_points_at_the_owners_words(tmp_path):
 
 
 def test_session_start_names_the_same_product_as_python(tmp_path):
-    seed_intent(tmp_path, "notes-folder", 1)
+    seed_intent(tmp_path, "general", 1)
     d = tmp_path / "notes folder"
     d.mkdir()
-    assert intent.product_for(d) == "notes-folder"
-    assert "Owner's own words for notes-folder:" in start(tmp_path, d).stdout
+    assert intent.product_for(d) == "general"
+    assert "Owner's own words for general:" in start(tmp_path, d).stdout
 
 
 # --- wiring -------------------------------------------------------------------------------
