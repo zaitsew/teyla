@@ -109,6 +109,7 @@ class Ask:
     harness: str              # claude-desktop | claude-code | codex | teyla
     status: str = "open"      # open | done | snoozed
     due: str = ""
+    session: str = ""         # the harness's own session id (Claude cliSessionId, Codex uuid); not in the JSON
 
     def to_dict(self, now: float) -> dict:
         d = dataclasses.asdict(self)
@@ -117,6 +118,7 @@ class Ask:
         d["age_s"] = int(now - when)
         if not d["due"]:
             d.pop("due")
+        d.pop("session")          # internal: `teyla answer` needs it, the `asks --json` schema stays as it was
         return d
 
 
@@ -286,15 +288,52 @@ def find_transcript(cli_id: str, cwd: str, root: str) -> str | None:
     return found[0] if found else None
 
 
+# The desktop app's metadata files run to 400 KB each (prompt snapshots), 460 of them: parsing
+# all of them took 1.4 s of every run. Only these keys are ever read, so the parse is cached
+# by file stamp in ~/.teyla/desktop-sessions.cache.json (private, mode 600, like asks.json).
+SLIM_KEYS = ("sessionId", "cliSessionId", "cwd", "originCwd", "worktreePath", "createdAt", "lastActivityAt",
+             "isArchived", "title", "model", "permissionMode", "prs", "postTurnSummary")
+
+
+def _slim_cache_path() -> pathlib.Path:
+    return state.home() / "desktop-sessions.cache.json"
+
+
 def _desktop_sessions(root: str) -> list[dict]:
+    try:
+        cache = json.loads(_slim_cache_path().read_text())
+        cache = cache.get("files") if isinstance(cache, dict) and cache.get("version") == 1 else {}
+    except (OSError, ValueError):
+        cache = {}
+    cache = cache if isinstance(cache, dict) else {}
+    fresh: dict = {}
     out = []
     for f in sorted(glob.glob(os.path.join(root, "*", "*", "local_*.json"))):
         try:
-            d = json.loads(pathlib.Path(f).read_text(errors="replace"))
-        except (OSError, ValueError):
+            st = os.stat(f)
+        except OSError:
             continue
-        if isinstance(d, dict):
-            out.append(d)
+        stamp = [st.st_mtime_ns, st.st_size]
+        hit = cache.get(f)
+        if isinstance(hit, list) and len(hit) == 3 and hit[:2] == stamp and isinstance(hit[2], dict):
+            slim = hit[2]
+        else:
+            try:
+                d = json.loads(pathlib.Path(f).read_text(errors="replace"))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(d, dict):
+                continue
+            slim = {k: d[k] for k in SLIM_KEYS if k in d}
+        fresh[f] = [*stamp, slim]
+        out.append(slim)
+    prefix = root.rstrip(os.sep) + os.sep
+    kept = {k: v for k, v in cache.items() if not k.startswith(prefix)}
+    if {k: v for k, v in cache.items() if k.startswith(prefix)} != fresh:
+        try:
+            _atomic_write(_slim_cache_path(), json.dumps({"version": 1, "files": {**kept, **fresh}}))
+        except OSError:
+            pass
     return out
 
 
@@ -339,7 +378,7 @@ def _claude_ask(d: dict | None, ana: dict | None, cli_id: str, since: float) -> 
     return Ask(id=make_id("claude", cli_id, turn), kind=kind, product=product_of(cwd),
                title=clip(title or text.splitlines()[0], TITLE_MAX), question=clip(text, QUESTION_MAX),
                context=clip(context or "", CONTEXT_MAX), options=[clip(o, 80) for o in (ana or {}).get("options") or []],
-               when=when, archived=archived, link=link, pr=pr, harness=harness)
+               when=when, archived=archived, link=link, pr=pr, harness=harness, session=cli_id)
 
 
 def collect_claude(since: float, desktop: str | None = None, projects: str | None = None) -> list[Ask]:
@@ -518,7 +557,7 @@ def collect_codex(since: float, root: str | None = None, archive: str | None = N
                            title=clip(titles.get(r["sid"]) or r["question"].splitlines()[0], TITLE_MAX),
                            question=clip(r["question"], QUESTION_MAX), context="",
                            options=[clip(o, 80) for o in r["options"]], when=when, archived=archived,
-                           link=f"codex resume {r['sid']}", pr="", harness="codex"))
+                           link=f"codex resume {r['sid']}", pr="", harness="codex", session=r["sid"]))
     return out
 
 
