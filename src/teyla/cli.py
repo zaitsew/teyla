@@ -15,6 +15,8 @@
   teyla harvest <path> [--project SLUG]                          tool spine + corrections for sessions touching a path
   teyla asks [--days N] [--product P] [--all] [--json] [--html [-o FILE] [--open]]   every question an AI session left waiting on you
   teyla asks done <id-prefix>... [--note TEXT] | snooze <id-prefix> <days>            close one, or hide it for a while
+  teyla state [--json]                                             ranked questions, products and running sessions in one snapshot
+  teyla answer <id-prefix> <text...> [--json] [--dry]              answer a question inside the session that asked it
   teyla spend [--days N] [--by-day] [--alert] [--json]           what the AI work cost, which part bought nothing; --by-day: subagent cost by model family
   teyla lanes [--days N] [--project SUBSTR] [--json]             subagent lanes by type and model: cost, turns, peak context, review P1s
   teyla prose [--days N] [--project SUBSTR] [--json]             final reply length, long sentences, ban-list hits and preambles
@@ -485,6 +487,10 @@ def build_parser() -> argparse.ArgumentParser:
     reel_cli.register(sp)
     from . import asks as asks_mod
     asks_mod.register(sp)
+    from . import state as state_mod
+    state_mod.register(sp)
+    from . import answer as answer_mod
+    answer_mod.register(sp)
     from . import docs_check as docs_check_mod
     docs_check_mod.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
