@@ -234,10 +234,17 @@ type, no scrolling noise, nothing you did not mean to show.
 | `teyla reel list [--since 24h] [--repo NAME] [--all]` | the sessions of Claude Code and Codex in the window, with repo, span, commits and PRs |
 | `teyla reel story <session-id> [--ask TEXT] [--seconds 45] [-o story.json]` | the redacted Story: title, ask, at most a dozen beats (edits, test runs, commits, PRs, reviews, sub-agent lanes), totals |
 | `teyla reel check <session-id\|story.json>` | every string a reel would show, then how many were dropped by reason (`secret`, `private-term`, `email`, `path`, `too-long`) |
+| `teyla reel render <session-id\|story.json> [-o DIR] [--seconds 45]` | `reel.mp4` (1080×1920, 30 fps, H.264), `reel.srt`, `story.json`, `reel.txt` (every string in the video) and `contact.png` (nine keyframes) in `~/Movies/teyla-reel/<date>-<repo>-<id>/` |
 
 Redaction drops a string rather than masking it, and runs on every string before it can enter a Story. It reuses
 the secret patterns and the private-terms list of `scripts/leak_check.py` (`~/.config/teyla/private-terms.txt` or
 `$TEYLA_PRIVATE_TERMS`). Assistant prose and tool output are never read into a Story. See [`docs/reel.md`](docs/reel.md).
+
+`render` needs the optional extra and ffmpeg: `pip install 'teyla[reel]'` (Pillow) and `ffmpeg` on `PATH`
+(`brew install ffmpeg`). Frames are drawn in memory and piped to ffmpeg; no image files are written besides
+`contact.png`. Without Pillow or ffmpeg, `render` says what is missing and still writes `story.json`, `reel.txt`
+and `reel.srt` (exit 1). `--no-video` skips the mp4, `--font PATH` replaces Menlo / DejaVu Sans Mono. Check
+`reel.txt` before posting: it is the audit trail, and a string that is not in it is not in the video.
 
 ### The advice rules
 

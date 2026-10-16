@@ -20,6 +20,8 @@ dependencies = []
 # A managed laptop behind a TLS-inspecting proxy: truststore makes Python use the OS keychain,
 # where MDM installs the proxy's root CA, so no SSL_CERT_FILE has to be exported anywhere.
 work = ["truststore>=0.9"]
+# teyla reel render draws frames with Pillow and pipes them to ffmpeg (ffmpeg comes from PATH).
+reel = ["pillow>=10"]
 
 [project.scripts]
 teyla = "teyla.cli:main"

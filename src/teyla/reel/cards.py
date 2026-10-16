@@ -8,6 +8,11 @@ from __future__ import annotations
 from .story import MINUS, Story, fmt_span
 
 
+def top_bar(story: Story) -> list[str]:
+    """Strings in the top bar of every frame (the clock is session time, not a Story string)."""
+    return [story.repo, story.harness]
+
+
 def title_card(story: Story) -> list[str]:
     """Strings on the 2.5 s title card: the title, then the repo and the harness."""
     return [story.title, f"{story.repo} · {story.harness}"]
@@ -41,7 +46,7 @@ def beat_strings(beat) -> list[str]:
 
 def rendered_strings(story: Story) -> list[str]:
     """Every string the renderer may draw that came from the Story, in video order: reel.txt."""
-    out = title_card(story)
+    out = top_bar(story) + title_card(story)
     for b in story.beats:
         out.extend(beat_strings(b))
     out.extend(end_card(story))

@@ -30,6 +30,8 @@ LINES_MAX = 8
 DIFF_MAX = 10
 ASK_MAX = 140
 ASK_WINDOW = 400
+REPO_MAX = 24
+TICKS_MAX = 48
 MINUS = "−"
 HARNESS_DIRS = {".claude", ".codex", ".agents", ".grok", ".cursor", ".teyla", ".hermes"}
 
@@ -81,6 +83,8 @@ class Story:
     beats: list
     totals: Totals
     dropped: dict = dataclasses.field(default_factory=dict)
+    # [seconds, commits, tests passed, PRs opened] samples of the whole session, for the renderer's live counters
+    ticks: list = dataclasses.field(default_factory=list)
     version: int = 1
 
     def to_dict(self) -> dict:
@@ -98,7 +102,8 @@ class Story:
         return cls(id=str(d.get("id", "")), harness=str(d.get("harness", "")), repo=str(d.get("repo", "")),
                    started=str(d.get("started", "")), ended=str(d.get("ended", "")), ask=str(d.get("ask", "")),
                    title=str(d.get("title", "")), beats=beats, totals=Totals(**tot),
-                   dropped=dict(d.get("dropped") or {}), version=int(d.get("version", 1)))
+                   dropped=dict(d.get("dropped") or {}), version=int(d.get("version", 1)),
+                   ticks=[[int(x) for x in row] for row in d.get("ticks") or [] if len(row) == 4])
 
     def problems(self) -> list[str]:
         """What breaks the Story's own limits (a hand-edited story.json)."""
@@ -221,6 +226,7 @@ class _Build:
         self.sha_seen: dict[str, str] = {}      # sha -> subject, commits seen in the transcript
         self.pr_titles: dict[int, str] = {}
         self.commit_t: dict[str, float] = {}    # sha -> seconds into the session, from the transcript
+        self.tick_events: list[tuple[float, str, int]] = []   # (t, "test" | "pr" | "commit", value) for Story.ticks
 
     # redaction of one beat's strings; None when the beat must go
     def beat(self, t: float, kind: str, headline: str, lines: Iterable[str] = (), diff: list[str] | None = None) -> Beat | None:
@@ -272,7 +278,10 @@ class _Build:
         # Sentence by sentence: a sentence that holds a secret, a private term or an address is
         # left out, the rest of the ask stays (the ask itself cannot be dropped).
         kept, withheld = [], False
-        for unit in re.split(r"(?<=[.!?])\s+|\n+", window):
+        units = [u for u in re.split(r"(?<=[.!?])\s+|\n\s*\n", window) if u.strip()]
+        if len(window) < len(raw.strip()) and len(units) > 1:
+            units.pop()          # the window ended mid-sentence: a half sentence says less than none
+        for unit in units:
             if not unit.strip():
                 continue
             o = self.red.clean(unit)
@@ -341,6 +350,7 @@ class _Build:
             title = cmd.pr_title(raw) if action == "create" else cmd.pr_merge_title(ev.output)
             if action == "create":
                 t.prs_opened += 1
+                self.tick_events.append((ev.t, "pr", 1))
                 if num and title:
                     self.pr_titles[num] = title
             else:
@@ -355,6 +365,7 @@ class _Build:
             t.test_runs += 1
             if passed is not None or failed_n is not None:
                 last_counts = (passed or 0, failed_n or 0)
+                self.tick_events.append((ev.t, "test", passed or 0))
             self.cands.append(Cand("test_pass" if ok else "test_fail", ev.t, 1,
                                    render=lambda ev=ev, r=runner, ok=ok, p=passed, f=failed_n: self._test(ev, r, ok, p, f)))
         if cmd.is_commit(raw) and not ev.failed:
@@ -421,10 +432,32 @@ class _Build:
         else:
             t.files_changed, t.lines_added, t.lines_removed = len(edit_files), edits_added, edits_removed
         for sha, (subject, when, a, r, nfiles) in by_sha.items():
+            self.tick_events.append((when, "commit", 1))
+
             def render(sha=sha, subject=subject, when=when, a=a, r=r, nfiles=nfiles):
                 extra = [f"+{a} {MINUS}{r} · {nfiles} file" + ("s" if nfiles != 1 else "")] if a is not None else []
                 return self.beat(when, "commit", subject, [sha] + extra)
             self.cands.append(Cand("commit", when, 1, render=render))
+
+
+def make_ticks(tick_events: list[tuple[float, str, int]], totals: Totals) -> list[list[int]]:
+    """Cumulative [t, commits, tests passed, PRs opened] after each event, thinned to TICKS_MAX rows and
+    closed with the totals. Numbers only: nothing here can carry a string out of the transcript."""
+    commits = tests = prs = 0
+    rows = []
+    for t, kind, value in sorted(tick_events):
+        if kind == "commit":
+            commits += 1
+        elif kind == "pr":
+            prs += 1
+        else:
+            tests = value
+        rows.append([int(t), commits, tests, prs])
+    if len(rows) > TICKS_MAX - 1:
+        step = len(rows) / (TICKS_MAX - 1)
+        rows = [rows[min(len(rows) - 1, int(i * step))] for i in range(TICKS_MAX - 1)]
+    rows.append([totals.wall_clock, totals.commits, totals.tests_passed, totals.prs_opened])
+    return rows
 
 
 def find_repo(info: SessionInfo, events: list[Event]) -> str | None:
@@ -500,10 +533,11 @@ def build(info: SessionInfo, events: list[Event], *, ask: str | None = None, sec
     title_src = info.title or _sentence(ask_text) or f"{name} session"
     title = red.clean(title_src, HEADLINE_MAX)
     title_text = title.text if (title.text and not title.fatal and not title.skip) else f"{name} session"
-    repo_out = red.clean(name, 40)
+    repo_out = red.clean(name, REPO_MAX)
     dropped = {r: int(red.dropped.get(r, 0)) for r in REASONS}
     totals = b.totals
     totals.wall_clock = int((end - start).total_seconds()) if start and end else 0
     totals.cost_usd = info.cost_usd
+    ticks = make_ticks(b.tick_events, totals)
     return Story(id=info.sid, harness=info.harness, repo=repo_out.text or "repo", started=info.started, ended=info.ended,
-                 ask=ask_text, title=title_text, beats=beats, totals=totals, dropped=dropped)
+                 ask=ask_text, title=title_text, beats=beats, totals=totals, dropped=dropped, ticks=ticks)

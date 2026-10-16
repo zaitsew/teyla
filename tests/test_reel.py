@@ -415,6 +415,15 @@ def test_ask_override_is_used_after_redaction(repo, claude_root):
     assert st.dropped["email"] == 1
 
 
+def test_ask_drops_a_sentence_whole_and_never_strands_half_of_one(repo, claude_root):
+    f = shipping_log(repo).write(claude_root)
+    st = story_of(f, git=False, ask="Make the fetch helper retry.\nNobody\nlikes zebracorp billing. Keep tests green.")
+    assert st.ask == "Make the fetch helper retry. Keep tests green."
+    long = "Make the fetch helper retry. " + "Then check the cache layer carefully. " * 12 + "Nobody"
+    st = story_of(f, git=False, ask=long)
+    assert "Nobody" not in st.ask and st.ask.endswith(("…", "."))
+
+
 def test_planted_private_data_never_reaches_the_story_or_reel_txt(repo, claude_root):
     log = Log(repo)
     log.user(0, f"Ship zebracorp billing. Use {ANT_KEY} for the call. Also fix the fetch helper.")
@@ -588,7 +597,7 @@ def test_identical_beats_are_shown_once(repo, claude_root):
 def test_cards_are_built_from_the_story(repo, claude_root):
     st = story_of(shipping_log(repo).write(claude_root), git=False)
     txt = cards.rendered_strings(st)
-    assert txt[0] == st.title and "demo · claude" in txt
+    assert txt[:2] == [st.repo, st.harness] and txt[2] == st.title and "demo · claude" in txt
     end = cards.end_card(st)
     assert end[0] == "1 commit" and "5 tests passed" in end and "1 PR opened · 1 merged" in end
     assert end[-1].endswith("wall clock") or end[-1].endswith("in tokens")

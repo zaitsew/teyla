@@ -125,6 +125,34 @@ def cmd_check(args) -> int:
     return 1 if (bad or story.problems()) else 0
 
 
+def cmd_render(args) -> int:
+    from pathlib import Path
+    from . import render
+    story = _story_or_exit(args)
+    if story is None:
+        return 2
+    bad = audit(story, args.allow_repo)
+    if bad or story.problems():
+        for p in story.problems():
+            print(f"teyla reel: {p}", file=sys.stderr)
+        print(f"teyla reel: {bad} string(s) fail redaction or the Story breaks its limits; not rendering", file=sys.stderr)
+        return 1
+    out = Path(args.output).expanduser() if args.output else render.default_dir(story)
+    try:
+        res = render.render_all(story, out, seconds=args.seconds, font=args.font, video=not args.no_video)
+    except (RuntimeError, OSError) as e:
+        print(f"teyla reel: {e}", file=sys.stderr)
+        return 1
+    print(f"{res.out}  ({len(story.beats)} beats, {res.seconds:.0f} s)")
+    for name in res.written:
+        print(f"  {name}")
+    if res.missing:
+        print("teyla reel: no video, missing: " + "; ".join(res.missing), file=sys.stderr)
+        print("            story.json, reel.txt and reel.srt are written; install the missing piece and run again", file=sys.stderr)
+        return 1
+    return 0
+
+
 def register(sp) -> None:
     q = sp.add_parser("reel", help="a session and its git history as a vertical terminal-story video (docs/reel.md)")
     rs = q.add_subparsers(dest="reel_cmd", required=True)
@@ -151,3 +179,10 @@ def register(sp) -> None:
     c = rs.add_parser("check", help="every string that would be rendered, then what redaction dropped (counts only)")
     c.set_defaults(fn=cmd_check)
     common(c)
+
+    d = rs.add_parser("render", help="reel.mp4, reel.srt, story.json, reel.txt and contact.png (needs teyla[reel] and ffmpeg)")
+    d.set_defaults(fn=cmd_render)
+    common(d)
+    d.add_argument("-o", "--output", metavar="DIR", help="output directory (default ~/Movies/teyla-reel/<date>-<repo>-<id>/)")
+    d.add_argument("--font", metavar="PATH", help="a monospace font file instead of Menlo / DejaVu Sans Mono")
+    d.add_argument("--no-video", action="store_true", help="skip reel.mp4 (contact.png and the text files only)")
