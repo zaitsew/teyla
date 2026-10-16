@@ -193,3 +193,41 @@ every one is of a kind a checklist catches. Before every store or beta-review su
   Connect App Review page (the email and the API carry none). Log guideline, verbatim reason,
   cause and fix in the repo's store doc, and when it is a new class, add a bullet here in the
   same session so no other product meets it.
+
+## 13. Writing and reporting — the answer first, in short sentences
+
+Three registers, each with its own rules. Do not mix them.
+
+- **(a) Agent replies, status and internal docs:** the rules below.
+- **(b) Product UI copy:** the voice section of the product's `DESIGN.md`.
+- **(c) Marketing and social:** the product's voice chart (Teyla's `templates/voice/VOICE.md`),
+  written per language from a brief by a native-level writer or model, never translated.
+
+Register (a), after ASD-STE100 and plain-language practice:
+
+- **The answer or decision comes first**, then the reason, then the detail.
+- **One idea per sentence.** At most 20 words for an instruction, 25 for a description.
+- **Active voice.** The same word for the same thing: do not rotate "PR", "change", "patch".
+- **Numbers instead of adjectives:** "p90 12 s, was 40 s", not "much faster".
+- **Say what was not verified in the same sentence as the claim** (§8).
+- **No filler.** Banned: delve, comprehensive, robust, seamless, leverage, "it's important
+  to note", "I hope this helps", "Great question", a "Let me…" preamble, restating the request.
+
+**The session-end card.** A session that did work ends with this card, at most 12 lines.
+Detail goes in the PR or a file, never the chat.
+
+```
+<Done | Blocked | Needs you | Failed> — <product>
+Result: at most 3 bullets, each with a link (PR, file or build number)
+Needs you: one question, a proposed answer, and the default if you say nothing
+Not verified: only when something is
+```
+
+- Line 1 is a status word and the product.
+- "Needs you" holds at most one question at a time (§4).
+- Leave out "Needs you" and "Not verified" when they do not apply.
+
+**Plans and docs.** A plan fits one screen per phase. Docs describe the current state.
+Decisions and their history go in the PR or `docs/decisions/`.
+
+`teyla prose` measures register (a): reply length, long sentences, ban-list hits, preambles.

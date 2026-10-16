@@ -30,7 +30,7 @@ import json
 import os
 import re
 
-from . import AgentCall, Session, Turn, human_text, is_correction, is_retry, stale, strip_reminders, turn_end_candidate
+from . import AgentCall, Session, Turn, final_reply, human_text, is_correction, is_retry, stale, strip_reminders, turn_end_candidate
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "codex"
@@ -195,6 +195,7 @@ def parse(f: str, titles: dict | None = None) -> Session | None:
     last_usage_model = None
     pending_calls: dict = {}  # call_id -> {server, tool, turn_index}, until its function_call_output arrives
     last_text = None  # (ts, text) of the latest assistant message, until a tool call or a human turn follows
+    last_final = None  # like last_text, but never a mid-turn "commentary" message
     with open(f, errors="replace") as fh:
         for line in fh:
             line = line.strip()
@@ -253,6 +254,7 @@ def parse(f: str, titles: dict | None = None) -> Session | None:
                         s.assistant_turns += 1
                         if txt:
                             last_text = (ts, txt)
+                            last_final = None if payload.get("phase") == "commentary" else (ts, txt)
                     elif role == "user":
                         clean = strip_reminders(strip_injected(txt)) if txt else ""
                         h = human_text(clean) if clean else None
@@ -263,12 +265,15 @@ def parse(f: str, titles: dict | None = None) -> Session | None:
                             ending = turn_end_candidate(last_text[1]) if last_text else None
                             if ending:
                                 s.turn_ends.append((last_text[0], ending, reply[:200]))
-                            last_text = None
+                        if reply:
+                            if last_final and final_reply(*last_final):
+                                s.finals.append(final_reply(*last_final))
+                            last_text = last_final = None
                         if h:
                             s.user_turns.append(Turn(ts, h[:1500], is_correction(h)))
                     # role == "developer": injected instructions/skill text, not a human turn.
                 elif ptype == "function_call":
-                    last_text = None  # the turn went on after the message: it did not end there
+                    last_text = last_final = None  # the turn went on after the message: it did not end there
                     name = (payload.get("name") or "").rsplit(".", 1)[-1]
                     if name:
                         s.tools[name] += 1
@@ -306,6 +311,8 @@ def parse(f: str, titles: dict | None = None) -> Session | None:
     if not s.title:
         s.title = titles.get(s.sid)
 
+    if last_final and final_reply(*last_final):
+        s.finals.append(final_reply(*last_final))
     if not s.first:
         return None
     return s
