@@ -16,6 +16,10 @@
 # - If ~/.teyla/spend.alert exists (the daily `teyla spend --alert` writes the current spend
 #   alerts there and removes the file when there are none), print its first line and how many
 #   more: "teyla: spend alert — …". One extra line at most.
+# - If ~/.teyla/asks.count (written by `teyla asks`, which the daily routine and the background
+#   refresh below run) is under 3 days old, print its first line: "teyla: 3 questions wait for
+#   you — teyla asks". The hook reads one small file and scans nothing; at most once an hour it
+#   starts `teyla asks --quiet` in the background (stamp: ~/.teyla/asks.stamp).
 # - Once per weekly digest (~/.teyla/digest.md newer than ~/.teyla/digest.seen), print
 #   its headline: the top action of the week and its command.
 # - If ./teyla.toml names a product and the daily routine left a one-line routines
@@ -128,6 +132,11 @@ orientation() {
     [ "${n:-1}" -gt 1 ] 2>/dev/null && more=" (+$((n - 1)) more)"
     [ -n "$line" ] && echo "teyla: spend alert — ${line}${more}"
   fi
+  asks="$HOME/.teyla/asks.count"
+  if [ -s "$asks" ] && [ -n "$(find "$asks" -mmin -4320 2>/dev/null)" ]; then
+    line=$(head -n 1 "$asks" 2>/dev/null)
+    [ -n "$line" ] && echo "teyla: ${line}"
+  fi
   digest="$HOME/.teyla/digest.md"
   if [ -s "$digest" ] && { [ ! -f "$HOME/.teyla/digest.seen" ] || [ "$digest" -nt "$HOME/.teyla/digest.seen" ]; }; then
     head -n 1 "$digest"
@@ -224,13 +233,29 @@ fi
         break
       fi
     done
+    # `teyla asks --quiet` refreshes ~/.teyla/asks.count (the line orientation() prints). At most
+    # hourly; when the daily chain below starts it rides on the end of that chain instead of racing it.
+    asks_stamp="$HOME/.teyla/asks.stamp"
+    asks_due=""
+    if [ ! -f "$asks_stamp" ] || [ -n "$(find "$asks_stamp" -mmin +60 2>/dev/null)" ]; then
+      asks_due=1
+      mkdir -p "$HOME/.teyla" && touch "$asks_stamp"
+    fi
+    asks_tail=""
+    [ -n "$asks_due" ] && asks_tail="; nice \"$teyla_bin\" asks --quiet >/dev/null 2>&1"
+    chained=""
     if [ -n "$safe" ]; then
       stamp="$HOME/.teyla/doctor.json"
       if [ ! -f "$stamp" ] || [ -n "$(find "$stamp" -mmin +1440 2>/dev/null)" ]; then
-        (nohup sh -c "\"$teyla_bin\" doctor --quiet >/dev/null 2>&1; nice \"$teyla_bin\" routine catch-up --quiet >/dev/null 2>&1" >/dev/null 2>&1 &)
+        chained=1
+        (nohup sh -c "\"$teyla_bin\" doctor --quiet >/dev/null 2>&1; nice \"$teyla_bin\" routine catch-up --quiet >/dev/null 2>&1$asks_tail" >/dev/null 2>&1 &)
       fi
     elif [ ! -f "$stamp" ] || [ -n "$(find "$stamp" -mmin +1440 2>/dev/null)" ]; then
-      (nohup sh -c "\"$teyla_bin\" update --check --quiet >/dev/null 2>&1; \"$teyla_bin\" doctor --quiet >/dev/null 2>&1; nice \"$teyla_bin\" routine catch-up --quiet >/dev/null 2>&1" >/dev/null 2>&1 &)
+      chained=1
+      (nohup sh -c "\"$teyla_bin\" update --check --quiet >/dev/null 2>&1; \"$teyla_bin\" doctor --quiet >/dev/null 2>&1; nice \"$teyla_bin\" routine catch-up --quiet >/dev/null 2>&1$asks_tail" >/dev/null 2>&1 &)
+    fi
+    if [ -n "$asks_due" ] && [ -z "$chained" ]; then
+      (nohup nice "$teyla_bin" asks --quiet >/dev/null 2>&1 &)
     fi
   fi
 } 2>/dev/null

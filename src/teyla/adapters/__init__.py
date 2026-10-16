@@ -6,6 +6,7 @@ files on this machine.
 """
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import datetime as _dt
 import re
@@ -291,12 +292,24 @@ def stale(mtime: float, since: float | None) -> bool:
     return since is not None and mtime < since - PRUNE_SLACK_S
 
 
-def iter_jsonl(path: str):
+def iter_jsonl(path: str, tail_bytes: int | None = None):
     """The JSON object on each line of a transcript, skipping blank, torn and non-object lines.
-    For callers (teyla.reel) that need the raw records the adapters reduce to counts."""
+    For callers (teyla.reel, teyla.asks) that need the raw records the adapters reduce to counts.
+    With `tail_bytes`, only the last that many bytes are read (a cut first line is dropped): the
+    end of a transcript is all `teyla asks` needs, and transcripts run to tens of megabytes."""
     import json
-    with open(path, errors="replace") as fh:
-        for line in fh:
+    if tail_bytes:
+        import os
+        size = os.path.getsize(path)
+        with open(path, "rb") as fb:
+            if size > tail_bytes:
+                fb.seek(size - tail_bytes)
+                fb.readline()
+            lines = fb.read().decode("utf-8", "replace").splitlines()
+    else:
+        lines = None
+    with (open(path, errors="replace") if lines is None else contextlib.nullcontext()) as fh:
+        for line in (fh if lines is None else lines):
             try:
                 o = json.loads(line)
             except ValueError:

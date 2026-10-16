@@ -491,6 +491,12 @@ def fold_inbox() -> dict[str, dict]:
     return items
 
 
+def pending_inbox() -> list[dict]:
+    """Items nobody has approved or rejected yet, oldest first: the runs waiting on the owner."""
+    rows = [r for r in fold_inbox().values() if not r.get("decision")]
+    return sorted(rows, key=lambda r: r.get("ts") or "")
+
+
 def inbox_item(run_id: str) -> dict | None:
     return fold_inbox().get(run_id)
 

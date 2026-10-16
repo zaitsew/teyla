@@ -11,6 +11,8 @@
   teyla policy ack [--note TEXT]                                  record acceptance of ~/.claude/CLAUDE.md's current hash
   teyla policy refresh [--dry] [--resolved]                       three-way merge of template changes into ~/.agents/POLICY.md
   teyla harvest <path> [--project SLUG]                          tool spine + corrections for sessions touching a path
+  teyla asks [--days N] [--product P] [--all] [--json] [--html [-o FILE] [--open]]   every question an AI session left waiting on you
+  teyla asks done <id-prefix>... [--note TEXT] | snooze <id-prefix> <days>            close one, or hide it for a while
   teyla spend [--days N] [--by-day] [--alert] [--json]           what the AI work cost, which part bought nothing; --by-day: subagent cost by model family
   teyla lanes [--days N] [--project SUBSTR] [--json]             subagent lanes by type and model: cost, turns, peak context, review P1s
   teyla models [--days N] [--json] [--refresh]                   model ladder + price drift report
@@ -475,6 +477,8 @@ def main(argv=None):
     crash_mod.register(sp)
     from .reel import cli as reel_cli
     reel_cli.register(sp)
+    from . import asks as asks_mod
+    asks_mod.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
     q = sp.add_parser("routines"); q.set_defaults(fn=cmd_routines)
     q.add_argument("paths", nargs="*"); q.add_argument("--json", action="store_true")

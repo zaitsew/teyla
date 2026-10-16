@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **`teyla asks`: every question an AI session left waiting on you, in one list.** It reads the Claude desktop
+  app's session metadata, Claude Code transcripts, Codex rollouts, pending gated runs and due reminders (all
+  read-only), joins a desktop session with its transcript, and lists the open ones by product, oldest first, archived
+  sessions included, with the question verbatim (secrets scrubbed), a link that reopens the session and the options the
+  agent offered. `done` / `snooze` keep state in `~/.teyla/asks.json`, a later reply closes an item by itself, and
+  `--html` writes one self-contained page for your phone. Session start prints "N questions wait for you" from a count
+  the daily routine and an hourly background refresh keep (the hook scans nothing). Also fixes the doctor check that
+  looked for the gated-run inbox at `~/.teyla/inbox/*.json`; the store is `inbox.jsonl`. Details in `docs/ASKS.md`.
+
 - **`teyla testflight --china`: no app stays available in China mainland.** The read-only check for POLICY §15 (store
   review): for each product with a TestFlight or App Store path it asks your release tool
   `availability --bundle-id ID --json` (the App Store Connect `appAvailabilityV2` /

@@ -378,11 +378,10 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     kill = config.TEYLA_DIR / "kill"
     if kill.exists():
         out.append(_check("WARN", "control:kill", "kill switch is ON — no routine acts", "teyla kill off"))
-    inbox = config.TEYLA_DIR / "inbox"
-    if inbox.is_dir():
-        pending = [p for p in inbox.iterdir() if p.suffix == ".json"]
-        if pending:
-            out.append(_check("WARN", "control:inbox", f"{len(pending)} run(s) waiting for you", "teyla inbox"))
+    from .control import state as _state
+    pending = _state.pending_inbox()
+    if pending:
+        out.append(_check("WARN", "control:inbox", f"{len(pending)} run(s) waiting for you", "teyla inbox list"))
 
     # --- tools on this machine (scope, not failures) ----------------------------
     present = [t for t in ("uv", "pipx", "git", "gh", "claude", "codex", "grok", "hermes", "launchctl") if shutil.which(t)]

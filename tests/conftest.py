@@ -108,3 +108,13 @@ def _no_real_disk(monkeypatch):
     depend on how full this Mac is, and `guard tick` must never sweep it. Tests pass disk_free_bytes."""
     from teyla import load
     monkeypatch.setattr(load, "disk_free", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_asks_sources(tmp_path_factory, monkeypatch):
+    """`teyla asks` reads the Claude desktop app's session metadata and the reminders file. A test
+    that forgets to hand it a root must see an empty machine, not this Mac's open questions."""
+    from teyla import remind
+    none = tmp_path_factory.mktemp("no-asks")
+    monkeypatch.setenv("TEYLA_CLAUDE_SESSIONS", str(none / "claude-code-sessions"))
+    monkeypatch.setattr(remind, "REMINDERS_PATH", none / "reminders.toml")

@@ -52,6 +52,8 @@ SID_ASK = "zqsid004-aaaa-4bbb-8ccc-dddddddddddd"
 ASK = "All green. Want me to push zqaskcanary now?"   # a permission ask: advice A15 counts it
 REPO = "zqrepocanary"                                  # a repo with a push-triggered workflow: A16
 WORKFLOW = "zqworkflowcanary.yml"
+ASKS_Q = "Approve the zqasksneeds change before zqaskssession ships"   # a desktop session waiting on the owner
+ASKS_TITLE = "zqaskstitle session"
 
 CANARIES = [
     SLUG, "zqprojslug", SID, SID[:8], SID_ROOT, SID_ROOT[:8], CWD, CWD_ROOT, "zqcwdcanary",
@@ -60,6 +62,7 @@ CANARIES = [
     REMINDER_HOW, CORRECTION, "zqcorrection", TITLE, FIRST_PROMPT, "zqhomeuser", "zqcoderoot",
     GROK_SID, GROK_SID[:8], "zqgrokproj", "zqgroktitle",
     SID_ASK, SID_ASK[:8], ASK, "zqaskcanary", REPO, WORKFLOW, "zqworkflowcanary",
+    ASKS_Q, "zqasksneeds", "zqaskssession", ASKS_TITLE, "zqaskstitle",
 ]
 
 
@@ -166,6 +169,15 @@ def build_machine(root: pathlib.Path) -> dict:
         f.write_text(json.dumps({"remoteMcpServersConfig": [
             {"uuid": CONNECTOR_ID, "name": CONNECTOR_NAME, "url": CONNECTOR_URL}]}))
 
+    # --- a Claude desktop session blocked on the owner: `teyla asks` lists it, nothing shared may
+    sess = home / "Library" / "Application Support" / "Claude" / "claude-code-sessions" / "acc" / "ws"
+    sess.mkdir(parents=True)
+    (sess / "local_zqasks.json").write_text(json.dumps({
+        "sessionId": "local_zqasks", "cliSessionId": "zqasks-0000", "cwd": CWD, "isArchived": True, "title": ASKS_TITLE,
+        "lastActivityAt": int((dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=2)).timestamp() * 1000),
+        "postTurnSummary": {"status_category": "blocked", "status_detail": "zqasksdetail", "needs_action": ASKS_Q,
+                            "summarizes_uuid": "zqasks-uuid"}}))
+
     # --- ~/.teyla: config with the [env] a managed laptop needs, a reminder, and a fresh
     # update-check cache so doctor answers from it instead of the network.
     teyla = home / ".teyla"
@@ -176,6 +188,9 @@ def build_machine(root: pathlib.Path) -> dict:
     due = (dt.date.today() + dt.timedelta(days=5)).isoformat()
     (teyla / "reminders.toml").write_text(
         f'[[reminder]]\nwhat = "{REMINDER}"\ndue = "{due}"\nhow = "{REMINDER_HOW}"\n')
+    (teyla / "inbox.jsonl").write_text(json.dumps({
+        "ts": "2026-10-01T10:00:00+00:00", "type": "item", "id": "zqgate-run", "routine": "zqprojslug/daily", "gate": "A",
+        "state": "drafted", "summary": "zqasksneeds gated draft", "run_dir": "/srv/zqcwdcanary/run", "repo": CWD}) + "\n")
     (teyla / "update-check.json").write_text(json.dumps({
         "checked": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "repo": "zaitsew/teyla",
         "latest": "v0.0.1", "note": "releases/latest", "method": "checkout", "reachable": True}))
@@ -221,6 +236,8 @@ def machine(tmp_path_factory):
     root = tmp_path_factory.mktemp("share")
     env = build_machine(root)
     out = {
+        "asks": _teyla(env, "asks"),
+        "asks_html": _teyla(env, "asks", "--html"),
         "raw": _teyla(env, "monitor"),
         "raw_json": _teyla(env, "monitor", "--json"),
         "share": _teyla(env, "monitor", "--share"),
@@ -233,6 +250,15 @@ def machine(tmp_path_factory):
     out["home"] = env["HOME"]
     out["netlog"] = root / "net.log"
     return out
+
+
+def test_teyla_asks_does_list_the_waiting_session_and_writes_the_banner_count(machine):
+    """The canaries below are reachable by `teyla asks`: their absence from a shared output is redaction."""
+    assert ASKS_Q in machine["asks"] and "3 waiting on you (1 in archived sessions)" in machine["asks"]  # + the gate and the reminder
+    count = pathlib.Path(machine["home"]) / ".teyla" / "asks.count"
+    assert count.read_text() == "2 questions wait for you — teyla asks\n"
+    page = pathlib.Path(machine["home"]) / ".teyla" / "asks.html"
+    assert "zqasksneeds" in page.read_text()
 
 
 def test_fixture_is_real_the_unredacted_report_shows_the_canaries(machine):
