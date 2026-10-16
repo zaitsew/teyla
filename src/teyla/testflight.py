@@ -394,7 +394,7 @@ def cmd_testflight(args):
     if args.paths and not productize.find_manifests(args.paths):
         print("teyla: no teyla.toml at " + ", ".join(args.paths), file=sys.stderr)
         return 2
-    if getattr(args, "china", False):
+    if getattr(args, "china", False) and not quiet:   # --quiet always includes the check
         china = run_china(args.paths or None)
         if getattr(args, "json", False):
             print(json.dumps([{k: v for k, v in r.items() if k != "lines"} for r in china], indent=2))

@@ -473,3 +473,12 @@ def test_quiet_adds_china_lines_to_the_problems_file(tmp_path, monkeypatch, caps
     fake_tool(monkeypatch, payload(plat()), avail=territories(False, "USA"))
     rc, cap = go(capsys, "--quiet")
     assert rc == 0 and not problems.exists()
+
+
+def test_china_with_quiet_writes_the_problems_file_and_prints_nothing(tmp_path, monkeypatch, capsys, problems):
+    platform_toml(tmp_path)
+    product(tmp_path)
+    fake_tool(monkeypatch, payload(plat()), avail=territories(True, "USA"))
+    rc, cap = go(capsys, "--china", "--quiet")
+    assert rc == 1 and cap.out == ""
+    assert problems.read_text().startswith("testflight|app-a|CHN\t")
