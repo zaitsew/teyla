@@ -260,6 +260,11 @@ class _Build:
                 d.append(prefix + " " * indent + text)
             if not any(x[0] in "+-" for x in d):
                 return None
+        # A term can straddle two lines even though neither line holds it: check what a viewer reads.
+        for joined in (" ".join([h.text, *out]), " ".join(x[1:].strip() for x in d or [])):
+            if self.red.has_secret(joined) or self.red.has_term(joined):
+                self.red.dropped["private-term"] += 1
+                return None
         return Beat(int(t), kind, h.text, out[:LINES_MAX], d)
 
     def ask_beat(self) -> tuple[Beat, str]:
@@ -294,11 +299,13 @@ class _Build:
 
     def _shown(self, path: str) -> bool:
         """Only files of a checkout are shown: not a scratch file, not a harness's own memory or config."""
-        if any(path == r or path.startswith(r + "/") for r in self.red.roots):
-            return True
         parts = path.split("/")
         if any(p in HARNESS_DIRS for p in parts):
             return False
+        if not path.startswith(("/", "~")):
+            return ".." not in parts          # a path relative to the session's working directory
+        if any(path == r or path.startswith(r + "/") for r in self.red.roots):
+            return True
         return any(m in path for m in ("/repos/", "/.worktrees/", "/.codex/worktrees/"))
 
     # -- candidates ----------------------------------------------------------------------------
@@ -349,10 +356,11 @@ class _Build:
             else:
                 t.prs_merged += 1
                 title = title or self.pr_titles.get(num or 0)
-            self.cands.append(Cand("pr", ev.t, 1, render=lambda ev=ev, a=action, n=num, ti=title: self.beat(
-                ev.t, "pr", (f"PR #{n} " if n else "PR ") + ("opened" if a == "create" else "merged"), wrap(ti or "", LINE_MAX, 3))))
+            self.cands.append(Cand("pr", ev.t, 1, render=lambda ev=ev, a=action, n=num, ti=title: self._pr(ev, a, n, ti)))
         runner = cmd.test_runner(raw)
-        if runner and (ev.output or ev.exit_code is not None or ev.failed):
+        if runner and ev.session is not None:
+            pass        # the process was still running when last heard from: no verdict, so no claim either way
+        elif runner and (ev.output or ev.exit_code is not None or ev.failed):
             ok, passed, failed_n = cmd.test_outcome(runner, ev.output, ev.exit_code, ev.failed)
             t.test_runs += 1
             if passed is not None or failed_n is not None:
@@ -370,6 +378,15 @@ class _Build:
                 self.cands.append(Cand("command", ev.t, level, render=lambda ev=ev: self.beat(
                     ev.t, "command", raw.strip().splitlines()[0] if raw.strip() else "")))
         return last_counts
+
+    def _pr(self, ev: Event, action: str, num, title) -> Beat | None:
+        """The PR title is redacted whole and wrapped afterwards: wrapped first, a term could be split
+        across two lines and match neither."""
+        head = (f"PR #{num} " if num else "PR ") + ("opened" if action == "create" else "merged")
+        o = self.red.clean(title or "", LINE_MAX * 3)
+        if o.fatal:
+            return None
+        return self.beat(ev.t, "pr", head, wrap(o.text, LINE_MAX, 3) if o.text else [])
 
     def _lane(self, ev: Event):
         def render():
