@@ -76,6 +76,7 @@ def test_a_brief_one_session_wrote_for_another_is_not_the_owners_words():
     brief = "Background (from the session that started this one): the owner decided X. " + "y " * 300
     assert intent.automated(brief)
     assert intent.typed("<task-notification><task-id>x</task-id></task-notification>") is None
+    assert intent.automated("You are reviewing a pull request diff for owner/repo. " + "z " * 300)
 
 
 # --- what is kept -------------------------------------------------------------------------
