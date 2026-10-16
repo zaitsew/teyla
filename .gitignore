@@ -9,3 +9,10 @@ runs/
 .env
 .DS_Store
 .venv
+
+# Teyla for Mac (apps/mac): generated project and build output
+apps/mac/build/
+apps/mac/*.xcodeproj
+apps/mac/Teyla/Info.plist
+xcuserdata/
+DerivedData/

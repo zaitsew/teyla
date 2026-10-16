@@ -1,0 +1,59 @@
+name: Teyla
+options:
+  bundleIdPrefix: com.zaitsew
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    # Local, ad-hoc signing only. Nothing here is registered with Apple.
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "-"
+    DEVELOPMENT_TEAM: ""
+    ENABLE_APP_SANDBOX: NO
+    ENABLE_HARDENED_RUNTIME: NO
+targets:
+  Teyla:
+    type: application
+    platform: macOS
+    sources:
+      - Teyla
+    info:
+      path: Teyla/Info.plist
+      properties:
+        CFBundleName: Teyla
+        CFBundleDisplayName: Teyla
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSApplicationCategoryType: public.app-category.developer-tools
+        LSUIElement: false
+        LSMinimumSystemVersion: "15.0"
+        NSHumanReadableCopyright: "MIT License"
+    settings:
+      base:
+        PRODUCT_NAME: Teyla
+        PRODUCT_BUNDLE_IDENTIFIER: com.zaitsew.teyla
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Teyla/Info.plist
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
+  TeylaTests:
+    type: bundle.unit-test
+    platform: macOS
+    # Logic-only tests: the Core sources are compiled into the bundle, so no app is launched.
+    sources:
+      - TeylaTests
+      - Teyla/Core
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zaitsew.teyla.tests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Teyla:
+    build:
+      targets:
+        Teyla: all
+    test:
+      targets:
+        - TeylaTests
