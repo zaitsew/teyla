@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — Session Reel
+
+- **`teyla reel list | story | check`.** A Claude Code or Codex session, plus the git history it produced, as a
+  redacted, bounded **Story** (title, ask, at most a dozen beats, totals): the input of the video renderer that
+  follows. `list` shows the last day's sessions with repo, span, commits and PRs; `story <id>` writes the Story as
+  JSON; `check <id|story.json>` prints every string a reel would show and, by reason, how many were dropped
+  (counts only, never the text). Beats come from the ask, sub-agent spawns, edits (with the most telling hunk),
+  test runs, commits, `gh pr` commands and `codex-review` / `claude-review`; assistant prose and tool output beyond
+  counts are never read into a Story. Redaction drops rather than masks: secret shapes (the ones `leak_check.py`
+  knows, `NAME=value`, 32+ character runs) and private terms drop the beat, e-mail addresses and phone numbers drop
+  the line, paths become repo-relative or `…/<basename>`, URLs become their host. A repo whose own name is a
+  private term needs `--allow-repo`. No new dependencies; spec in `docs/reel.md`.
 ## 0.24.0 — 2026-10-15 — Did the Android build reach a person
 
 - **`teyla play` knows the account type and production.** The 14-day closed test is a rule of personal
