@@ -421,7 +421,11 @@ def _run_claude(cmd: list[str], input_text: str, timeout: int = BRIEF_TIMEOUT_S)
     home = control.home()
     home.mkdir(parents=True, exist_ok=True)
     try:
-        r = subprocess.run(cmd, input=input_text, capture_output=True, text=True, timeout=timeout, cwd=str(home))
+        # run from inside a Claude Code session (a hook, the coordinator), claude refuses a nested
+        # session unless the markers of the outer one are dropped
+        env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")}
+        r = subprocess.run(cmd, input=input_text, capture_output=True, text=True, timeout=timeout,
+                           cwd=str(home), env=env)
     except (OSError, subprocess.SubprocessError):
         return 127, ""
     return r.returncode, r.stdout
