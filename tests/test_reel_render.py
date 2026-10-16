@@ -279,6 +279,13 @@ def test_the_default_output_dir_names_the_day_the_repo_and_the_id():
     assert re.fullmatch(r"\d{4}-\d\d-\d\d-demo-5e55a0f1", d.name)
 
 
+def test_a_hand_edited_story_cannot_steer_the_output_directory():
+    st = make_story()
+    st.id, st.repo = "../../etc/cron", "../x/y"
+    d = render.default_dir(st)
+    assert d.parent.name == "teyla-reel" and ".." not in d.name and "/" not in d.name
+
+
 # --- the command -------------------------------------------------------------------------------
 
 def write_story(tmp_path, st=None) -> str:
@@ -311,6 +318,15 @@ def test_render_without_ffmpeg_still_writes_the_contact_sheet(tmp_path, monkeypa
 def test_render_refuses_a_story_that_fails_redaction(tmp_path, capsys):
     st = make_story()
     st.beats[1].headline = "the zebracorp migration"
+    out = tmp_path / "out"
+    rc = cli.main(["reel", "render", write_story(tmp_path, st), "-o", str(out)])
+    assert rc == 1 and "not rendering" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_render_refuses_a_string_that_redaction_would_rewrite(tmp_path, capsys):
+    st = make_story()
+    st.beats[1].lines = ["clone https://user:pass" + "word@example.com/x"[:12]]
     out = tmp_path / "out"
     rc = cli.main(["reel", "render", write_story(tmp_path, st), "-o", str(out)])
     assert rc == 1 and "not rendering" in capsys.readouterr().err

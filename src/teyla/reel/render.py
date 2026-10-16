@@ -326,8 +326,11 @@ def default_dir(story: Story) -> Path:
         day = datetime.fromisoformat(story.started.replace("Z", "+00:00")).astimezone().strftime("%Y-%m-%d")
     except ValueError:
         pass
-    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", story.repo).strip("-") or "session"
-    return Path.home() / "Movies" / "teyla-reel" / f"{day}-{slug}-{story.id[:8]}"
+    # A hand-edited story.json must not choose where the output goes: only name-safe characters survive.
+    slug = re.sub(r"[^A-Za-z0-9_-]+", "-", story.repo).strip("-.") or "session"
+    sid = re.sub(r"[^A-Za-z0-9]+", "", story.id)[:8] or "session"
+    day = re.sub(r"[^0-9-]+", "", day)[:10] or "undated"
+    return Path.home() / "Movies" / "teyla-reel" / f"{day}-{slug}-{sid}"
 
 
 @dataclasses.dataclass
