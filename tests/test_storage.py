@@ -389,7 +389,11 @@ def test_wrapper_stale_flags_wrapper_missing_storage_clean(tmp_path, monkeypatch
     wrapper_path.write_text(no_play)
     assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is True  # written before `teyla play`
 
-    fresh_text = no_play.replace("teyla doctor --quiet\n", "teyla play --quiet || true\nteyla doctor --quiet\n")
+    no_asks = no_play.replace("teyla doctor --quiet\n", "teyla play --quiet || true\nteyla doctor --quiet\n")
+    wrapper_path.write_text(no_asks)
+    assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is True  # written before `teyla asks`
+
+    fresh_text = no_asks.replace("teyla doctor --quiet\n", "teyla asks --quiet || true\nteyla doctor --quiet\n")
     wrapper_path.write_text(fresh_text)
     assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is False
 
@@ -398,6 +402,7 @@ def test_daily_wrapper_template_runs_quiet_checks_before_the_banner_is_built():
     t = routine_install.DAILY_WRAPPER_TEMPLATE
     doctor = t.index("\nteyla doctor --quiet")
     assert t.index("\nteyla schedules --quiet") < doctor and t.index("\nteyla testflight --quiet") < doctor
+    assert t.index("\nteyla asks --quiet") < doctor
 
 
 def test_daily_wrapper_template_runs_storage_clean_auto_quiet():

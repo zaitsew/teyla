@@ -13,6 +13,8 @@
   teyla policy ack [--note TEXT]                                  record acceptance of ~/.claude/CLAUDE.md's current hash
   teyla policy refresh [--dry] [--resolved]                       three-way merge of template changes into ~/.agents/POLICY.md
   teyla harvest <path> [--project SLUG]                          tool spine + corrections for sessions touching a path
+  teyla asks [--days N] [--product P] [--all] [--json] [--html [-o FILE] [--open]]   every question an AI session left waiting on you
+  teyla asks done <id-prefix>... [--note TEXT] | snooze <id-prefix> <days>            close one, or hide it for a while
   teyla spend [--days N] [--by-day] [--alert] [--json]           what the AI work cost, which part bought nothing; --by-day: subagent cost by model family
   teyla lanes [--days N] [--project SUBSTR] [--json]             subagent lanes by type and model: cost, turns, peak context, review P1s
   teyla prose [--days N] [--project SUBSTR] [--json]             final reply length, long sentences, ban-list hits and preambles
@@ -481,6 +483,8 @@ def build_parser() -> argparse.ArgumentParser:
     crash_mod.register(sp)
     from .reel import cli as reel_cli
     reel_cli.register(sp)
+    from . import asks as asks_mod
+    asks_mod.register(sp)
     from . import docs_check as docs_check_mod
     docs_check_mod.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
