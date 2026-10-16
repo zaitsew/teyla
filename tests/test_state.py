@@ -85,22 +85,25 @@ def test_the_ask_json_schema_of_teyla_asks_is_unchanged(monkeypatch):
 
 # --- running sessions --------------------------------------------------------------------------
 
-def desktop_file(root: pathlib.Path, sid: str, *, minutes_ago: float, archived=False, cwd="/Users/someone/repos/atlas"):
+def desktop_file(root: pathlib.Path, sid: str, *, minutes_ago: float, archived=False, cwd="/Users/someone/repos/atlas",
+                 title=None):
     p = root / "acct" / "work" / f"{sid}.json"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps({"sessionId": sid, "cliSessionId": sid[6:], "cwd": cwd, "isArchived": archived,
-                             "title": f"Title of {sid}", "model": "claude-sonnet-5-5",
+                             "title": title or f"Title of {sid}", "model": "claude-sonnet-5-5",
                              "createdAt": int((NOW - 7200) * 1000),
                              "lastActivityAt": int((NOW - minutes_ago * 60) * 1000)}))
     return p
 
 
-def rollout(root: pathlib.Path, sid: str, *, minutes_ago: float, cwd="/Users/someone/.worktrees/cellar/feat", source="cli"):
+def rollout(root: pathlib.Path, sid: str, *, minutes_ago: float, cwd="/Users/someone/.worktrees/cellar/feat", source="vscode",
+            originator="Codex Desktop"):
     d = root / "2026" / "10" / "16"
     d.mkdir(parents=True, exist_ok=True)
     p = d / f"rollout-2026-10-16T10-00-00-{sid}.jsonl"
     recs = [{"type": "session_meta", "timestamp": "2026-10-16T10:00:00.000Z",
-             "payload": {"id": sid, "session_id": sid, "cwd": cwd, "source": source}},
+             "payload": {"id": sid, "session_id": sid, "cwd": cwd, "source": source,
+                         "originator": originator}},
             {"type": "turn_context", "payload": {"model": "gpt-6.1-sol"}}]
     p.write_text("".join(json.dumps(r) + "\n" for r in recs))
     t = NOW - minutes_ago * 60
@@ -130,6 +133,22 @@ def test_running_codex_rollouts_are_the_ones_written_in_ten_minutes(tmp_path, mo
     assert len(rows) == 1
     assert (rows[0]["product"], rows[0]["harness"], rows[0]["model"]) == ("cellar", "codex", "gpt-6.1-sol")
     assert rows[0]["link"] == "codex://threads/11111111-0000-0000-0000-000000000001"
+
+
+def test_headless_codex_runs_and_review_sessions_are_not_running_sessions(tmp_path, monkeypatch):
+    # on a real machine: headless `codex exec` rollouts carry originator "codex_exec" and source "exec";
+    # the desktop app writes originator "Codex Desktop" and source "vscode"
+    root = tmp_path / "codex"
+    monkeypatch.setattr(codex, "DEFAULT_INDEX", str(tmp_path / "no-index.jsonl"))
+    rollout(root, "11111111-0000-0000-0000-00000000000a", minutes_ago=1)
+    rollout(root, "11111111-0000-0000-0000-00000000000b", minutes_ago=1, source="exec", originator="codex_exec")
+    rollout(root, "11111111-0000-0000-0000-00000000000c", minutes_ago=1, source="vscode", originator="codex_exec")
+    rows = state.running_codex(NOW, str(root))
+    assert [r["link"] for r in rows] == ["codex://threads/11111111-0000-0000-0000-00000000000a"]
+    desktop = tmp_path / "sessions"
+    desktop_file(desktop, "local_aaaa1111-0000-0000-0000-000000000004", minutes_ago=1, title="You are reviewing a diff")
+    desktop_file(desktop, "local_aaaa1111-0000-0000-0000-000000000005", minutes_ago=1, title="Fix the build")
+    assert [r["title"] for r in state.running_desktop(NOW, str(desktop))] == ["Fix the build"]
 
 
 def test_running_override_env_is_honoured_by_the_desktop_root(tmp_path, monkeypatch):
@@ -221,6 +240,196 @@ def test_state_command_prints_json_and_short_text(tmp_path, monkeypatch, capsys)
     assert cli.main(["state"]) == 0
     out = capsys.readouterr().out
     assert len(out.splitlines()) <= 15 and "aaaa0001" in out
+
+
+# --- the model brief ---------------------------------------------------------------------------
+
+REAL_SPAWN = state._spawn_brief_refresh        # conftest replaces the module attribute for every test
+
+
+def brief_items():
+    return [ask("aaaa0001", product="atlas", question="Add a read-only command?", hours=5),
+            ask("aaaa0002", product="cellar", question="Ship to App Review?", hours=30),
+            ask("aaaa0003", "blocked", product="cellar", question="Needs your key", hours=60)]
+
+
+def brief_rows():
+    return state.ranked(brief_items(), NOW)
+
+
+def model_reply(**over):
+    r = {"brief": "Cellar waits on a key and a review decision; Atlas can wait.",
+         "items": [{"id": "aaaa0003", "rank": 1, "unblocks": "the Cellar build"},
+                   {"id": "aaaa0002", "rank": 2, "unblocks": ""},
+                   {"id": "aaaa0001", "rank": 3, "unblocks": "a new command"}]}
+    r.update(over)
+    return r
+
+
+def claude_stdout(reply, **over):
+    out = {"type": "result", "is_error": False, "result": reply if isinstance(reply, str) else json.dumps(reply),
+           "total_cost_usd": 0.0012, "duration_ms": 2100}
+    out.update(over)
+    return json.dumps(out)
+
+
+@pytest.fixture
+def brief_env(monkeypatch):
+    monkeypatch.setattr(state, "model_brief_enabled", lambda: True)
+    spawned = []
+    monkeypatch.setattr(state, "_spawn_brief_refresh", lambda now=None: spawned.append(1))
+    return spawned
+
+
+def fake_claude(monkeypatch, code, stdout, seen=None):
+    def run(cmd, input_text, timeout=0):
+        if seen is not None:
+            seen.append((cmd, input_text))
+        return code, stdout
+    monkeypatch.setattr(state, "_run_claude", run)
+
+
+def write_brief_cache(rows, age_s=60, **over):
+    c = {"generated": asks._iso(NOW - age_s), "ask_ids_hash": state.ask_ids_hash(rows), **model_reply()}
+    c.update(over)
+    state._brief_cache().write_text(json.dumps(c))
+
+
+def snapshot(items):
+    return state.build(NOW, items=items, repos={}, spent=None, desktop="/nonexistent", codex_root="/nonexistent")
+
+
+def test_model_brief_replaces_rules_when_the_cache_matches_the_open_set(brief_env):
+    write_brief_cache(brief_rows())
+    st = snapshot(brief_items())
+    assert st["brief"] == {"line": "Cellar waits on a key and a review decision; Atlas can wait.", "source": "model"}
+    assert [(a["id"], a["rank"], a["unblocks"]) for a in st["asks"]] == [
+        ("aaaa0003", 1, "the Cellar build"), ("aaaa0002", 2, ""), ("aaaa0001", 3, "a new command")]
+    assert brief_env == []                              # fresh and matching: no refresh
+
+
+def test_cache_for_another_set_means_rules_and_one_refresh(brief_env):
+    rows = brief_rows()
+    write_brief_cache(rows, ask_ids_hash="0" * 16)
+    assert state.cached_brief(rows, NOW) is None and brief_env == [1]
+    state._brief_cache().unlink()
+    assert state.cached_brief(rows, NOW) is None and brief_env == [1, 1]
+    assert snapshot(brief_items())["brief"]["source"] == "rules"
+
+
+def test_an_old_matching_cache_is_used_and_refreshed(brief_env):
+    rows = brief_rows()
+    write_brief_cache(rows, age_s=3600)
+    assert state.cached_brief(rows, NOW)["brief"].startswith("Cellar") and brief_env == [1]
+
+
+def test_questions_the_model_did_not_rank_keep_rule_values_and_follow():
+    rows = brief_rows()
+    out = state.apply_model_brief(rows, model_reply(items=[{"id": "aaaa0001", "rank": 1, "unblocks": "x"}]))
+    assert out[0]["id"] == "aaaa0001" and [a["rank"] for a in out] == [1, 2, 3]
+    assert {a["id"]: a["unblocks"] for a in out[1:]} == {r["id"]: r["unblocks"] for r in rows if r["id"] != "aaaa0001"}
+
+
+def test_model_brief_off_in_config_safe_mode_or_without_claude(monkeypatch):
+    from teyla import config
+    monkeypatch.setattr(state.shutil, "which", lambda n: "/bin/claude")
+    monkeypatch.setattr(config, "load", lambda path=None: dict(config.DEFAULTS))
+    assert state.model_brief_enabled() is True
+    for cfg in ({"state": {"model_brief": False}}, {"state": {"model_brief": "off"}}, {"safe": {"enabled": True}}):
+        monkeypatch.setattr(config, "load", lambda path=None, cfg=cfg: {**config.DEFAULTS, **cfg})
+        assert state.model_brief_enabled() is False
+    monkeypatch.setattr(config, "load", lambda path=None: dict(config.DEFAULTS))
+    monkeypatch.setattr(state.shutil, "which", lambda n: None)
+    assert state.model_brief_enabled() is False
+
+
+def test_validate_brief():
+    ids = {"aaaa0001", "aaaa0002", "aaaa0003"}
+    ok = state.validate_brief(model_reply(), ids)
+    assert [i["id"] for i in ok["items"]] == ["aaaa0003", "aaaa0002", "aaaa0001"]
+    long = state.validate_brief(model_reply(brief=" ".join(["word"] * 40)), ids)
+    assert len(long["brief"].split()) <= 25 and long["brief"].endswith("…")
+    clause = " ".join(["word"] * 12) + ", " + " ".join(["more"] * 20)
+    assert state.validate_brief(model_reply(brief=clause), ids)["brief"] == " ".join(["word"] * 12) + "."
+    wordy = model_reply(items=[{"id": "aaaa0001", "rank": 1, "unblocks": "one two three four five six seven"}])
+    assert len(state.validate_brief(wordy, ids)["items"][0]["unblocks"].split()) <= 5
+    one = {"id": "aaaa0001", "rank": 1, "unblocks": ""}
+    for bad in (model_reply(items=[{"id": "zzzz9999", "rank": 1, "unblocks": ""}]),
+                model_reply(items=[one, {"id": "aaaa0002", "rank": 1, "unblocks": ""}]),
+                model_reply(items=[one, {"id": "aaaa0001", "rank": 2, "unblocks": ""}]),
+                model_reply(items=[{"id": "aaaa0001", "rank": "1", "unblocks": ""}]),
+                model_reply(items=[]), model_reply(brief="  "), "not a dict", None):
+        assert state.validate_brief(bad, ids) is None
+
+
+def test_the_claude_command_has_no_tools_and_takes_the_prompt_on_stdin(brief_env, monkeypatch):
+    seen = []
+    fake_claude(monkeypatch, 0, claude_stdout("```json\n" + json.dumps(model_reply()) + "\n```"), seen)
+    rows = brief_rows()
+    assert state.refresh_brief(NOW, rows=rows) == 0
+    cmd, prompt = seen[0]
+    assert cmd[:2] == ["claude", "-p"] and cmd[cmd.index("--model") + 1] == "claude-haiku-5-5"
+    assert cmd[cmd.index("--output-format") + 1] == "json"
+    assert cmd[cmd.index("--tools") + 1] == "" and "--no-session-persistence" in cmd
+    assert not any("Ship to App Review" in a for a in cmd)          # session text is not on the command line
+    assert {q["id"] for q in json.loads(prompt)["questions"]} == {"aaaa0001", "aaaa0002", "aaaa0003"}
+    c = json.loads(state._brief_cache().read_text())
+    assert c["ask_ids_hash"] == state.ask_ids_hash(rows) and c["brief"].startswith("Cellar")
+    assert c["cost_usd"] == 0.0012 and c["latency_ms"] == 2100
+    assert state._brief_cache().stat().st_mode & 0o777 == 0o600
+
+
+def test_the_prompt_is_trimmed_capped_and_blocked_first():
+    many = [ask(f"bbbb{n:04d}", question="q" * 900, context="c" * 900, hours=n + 1) for n in range(20)]
+    many.append(ask("blocked1", "blocked", hours=500))
+    cand = state.brief_candidates(state.ranked(many, NOW))
+    assert len(cand) == 15 and cand[0]["id"] == "blocked1"
+    assert all(len(c["question"]) <= 400 and len(c["context"]) <= 400 for c in cand)
+    assert [c["id"] for c in cand[1:3]] == ["bbbb0000", "bbbb0001"]    # then the newest
+
+
+@pytest.mark.parametrize("stdout", [
+    claude_stdout("not json"), claude_stdout(model_reply(brief="")), claude_stdout("x", is_error=True), "garbage",
+    claude_stdout(model_reply(items=[{"id": "zzzz9999", "rank": 1, "unblocks": ""}]))])
+def test_a_bad_reply_keeps_the_previous_cache(brief_env, monkeypatch, stdout):
+    rows = brief_rows()
+    write_brief_cache(rows, age_s=7200)
+    before = state._brief_cache().read_text()
+    fake_claude(monkeypatch, 0, stdout)
+    assert state.refresh_brief(NOW, rows=rows) == 1
+    assert state._brief_cache().read_text() == before
+
+
+def test_a_failing_claude_keeps_the_lock_as_a_back_off(brief_env, monkeypatch):
+    state._brief_lock().write_text("")
+    fake_claude(monkeypatch, 1, "")
+    assert state.refresh_brief(NOW, rows=brief_rows()) == 1
+    assert not state._brief_cache().exists() and state._brief_lock().exists()
+
+
+def test_a_successful_refresh_releases_the_lock(brief_env, monkeypatch):
+    state._brief_lock().write_text("")
+    fake_claude(monkeypatch, 0, claude_stdout(model_reply()))
+    assert state.refresh_brief(NOW, rows=brief_rows()) == 0 and not state._brief_lock().exists()
+
+
+def test_the_lock_blocks_a_second_refresh_until_it_is_stale(monkeypatch):
+    started = []
+    monkeypatch.setattr(state.subprocess, "Popen", lambda cmd, **k: started.append(cmd))
+    REAL_SPAWN(NOW)
+    assert len(started) == 1 and started[0][-2:] == ["state", "--refresh-brief"] and state._brief_lock().exists()
+    os.utime(state._brief_lock(), (NOW, NOW))
+    REAL_SPAWN(NOW + 120)                                 # a refresh is running
+    assert len(started) == 1
+    REAL_SPAWN(NOW + 400)                                 # the lock is older than five minutes: stale
+    assert len(started) == 2
+
+
+def test_refresh_does_nothing_when_off_or_when_nothing_waits(monkeypatch):
+    monkeypatch.setattr(state, "model_brief_enabled", lambda: False)
+    assert state.refresh_brief(NOW, rows=brief_rows()) == 0 and not state._brief_cache().exists()
+    monkeypatch.setattr(state, "model_brief_enabled", lambda: True)
+    assert state.refresh_brief(NOW, rows=[]) == 0 and not state._brief_cache().exists()
 
 
 # --- answer ------------------------------------------------------------------------------------

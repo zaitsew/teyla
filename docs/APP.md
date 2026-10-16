@@ -62,5 +62,15 @@ Notes on the CLI as built:
 
 - `teyla state` reads today's spend from `~/.teyla/state-spend.json` and refreshes it in a detached
   process when it is older than 10 minutes, so `spent_today_usd` is null until the first refresh lands.
+- `brief.source` is `model` when a model-written brief is cached for exactly the current set of open
+  questions (`~/.teyla/state-brief.json`, written by a detached `teyla state --refresh-brief` that sends the
+  newest 15 questions, blocked first, to Claude Haiku in one `claude -p` call with no tools). The brief and
+  the order and `unblocks` of the questions then come from the model; questions it did not rank keep their
+  rule values and follow. Otherwise `source` is `rules` and a refresh starts, so a new question shows rule
+  values for a few seconds. A failed or invalid reply keeps the previous cache; a failed attempt is not
+  repeated for 5 minutes. Off with `[state] model_brief = false`, in safe mode, or without `claude` on PATH.
+- `running[]` lists interactive sessions only: Codex rollouts started by `codex exec` (`originator`
+  `codex_exec`, `source` `exec`) and Claude desktop sessions titled "You are reviewing..." are review and
+  lane runs, not sessions you work in.
 - `running[].since` is when the session was created, not when it last moved.
 - `teyla asks --json` is unchanged; the session id `teyla answer` needs is kept off its JSON.

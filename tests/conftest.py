@@ -118,3 +118,14 @@ def _no_real_asks_sources(tmp_path_factory, monkeypatch):
     none = tmp_path_factory.mktemp("no-asks")
     monkeypatch.setenv("TEYLA_CLAUDE_SESSIONS", str(none / "claude-code-sessions"))
     monkeypatch.setattr(remind, "REMINDERS_PATH", none / "reminders.toml")
+
+
+@pytest.fixture(autouse=True)
+def _no_real_claude_for_state_brief(monkeypatch):
+    """`teyla state` starts a detached refresh that runs `claude -p`; no test may start either."""
+    from teyla import state
+
+    def _refuse(*a, **k):
+        raise AssertionError("a test reached the real claude; monkeypatch state._run_claude")
+    monkeypatch.setattr(state, "_spawn_brief_refresh", lambda *a, **k: None)
+    monkeypatch.setattr(state, "_run_claude", _refuse)
