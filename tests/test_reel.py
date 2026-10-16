@@ -14,6 +14,7 @@ import subprocess
 import pytest
 
 from teyla import cli
+from teyla.reel import cli as cli_mod
 from teyla.adapters import claude_code, codex
 from teyla.reel import cards, commands, events as E, gitlog, redact, select, story as S
 
@@ -656,3 +657,179 @@ def test_story_problems_flags_broken_limits():
 def test_leak_check_module_is_imported_not_copied():
     mod = redact._leak()
     assert mod.SECRET_RES and redact.Redactor()._secrets == list(mod.SECRET_RES)
+
+
+# --- review fixes: the audit, split terms, Codex tool shapes, resolving rollouts -------------
+
+def story_by_hand(**beat_kw) -> S.Story:
+    beat = S.Beat(10, "command", "git push", **beat_kw)
+    return S.Story(id=SID, harness="claude", repo="demo", started=iso(0), ended=iso(60), ask="Ship it", title="demo session",
+                   beats=[S.Beat(0, "ask", "The ask", ["Ship it"]), beat], totals=S.Totals(wall_clock=60))
+
+
+@pytest.mark.parametrize("line", [
+    "clone https://user:pass" + "word@example.com/x.git",     # redaction rewrites it to the host
+    "see /Users/someone/secret/notes.txt",                    # redaction rewrites it to …/notes.txt
+])
+def test_audit_rejects_a_string_that_redaction_would_rewrite(line):
+    st = story_by_hand(lines=[line[:34]])
+    assert cli_mod.audit(st) > 0
+
+
+def test_audit_accepts_a_story_the_builder_made(repo, claude_root):
+    st = story_of(shipping_log(repo).write(claude_root), git=False)
+    assert cli_mod.audit(st) == 0
+    assert cli_mod.audit(S.Story.from_dict(json.loads(json.dumps(st.to_dict())))) == 0
+
+
+def test_audit_checks_what_a_viewer_reads_across_lines(private_terms):
+    private_terms.write_text(private_terms.read_text() + "acme corporation\n")
+    st = story_by_hand(lines=["billing for the Acme", "Corporation customers"])
+    assert cli_mod.audit(st) > 0
+    assert cli_mod.audit(story_by_hand(lines=["billing for the", "Acme customers"])) == 0
+
+
+def test_a_term_split_across_two_lines_of_a_pr_title_drops_the_beat(repo, claude_root, private_terms):
+    private_terms.write_text(private_terms.read_text() + "acme corporation\n")
+    log = Log(repo)
+    log.user(0, "Ship it")
+    log.tool(10, "Bash", {"command": 'gh pr create --title "Add billing for the Acme Corporation customers" --body x'},
+             "https://github.com/o/demo/pull/9\n")
+    st = story_of(log.write(claude_root), git=False)
+    text = " ".join(" ".join([b.headline, *b.lines]) for b in st.beats).lower()
+    assert "acme" not in text and "corporation" not in text
+    assert st.dropped.get("private-term", 0) >= 1
+    assert cli_mod.audit(st) == 0
+
+
+def codex_story(tmp_path, lines, **kw):
+    cwd = tmp_path / "repos" / "demo"
+    cwd.mkdir(parents=True, exist_ok=True)
+    git(cwd, "init", "-q")
+    ask = item(1, {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Fix the parser"}]})
+    f = codex_rollout(tmp_path, cwd, [ask, *lines])
+    info = E.info_of(codex.parse(str(f)), "codex")
+    return S.build(info, E.events_of(info), **kw), E.events_of(info)
+
+
+def test_a_repo_relative_patch_path_is_an_edit_beat_and_counts_without_git(tmp_path):
+    st, _ = codex_story(tmp_path, [
+        item(2, {"type": "custom_tool_call", "name": "apply_patch", "call_id": "c1",
+                 "input": "*** Begin Patch\n*** Update File: src/foo.py\n@@\n-a = 1\n+a = 2\n+b = 3\n*** End Patch"}),
+    ], git=False)
+    edit = [b for b in st.beats if b.kind == "edit"]
+    assert [b.headline for b in edit] == ["src/foo.py"]
+    assert (st.totals.lines_added, st.totals.lines_removed, st.totals.files_changed) == (2, 1, 1)
+
+
+def test_a_relative_path_cannot_leave_the_checkout_or_enter_a_harness_dir(tmp_path):
+    st, _ = codex_story(tmp_path, [
+        item(2, {"type": "custom_tool_call", "name": "apply_patch", "call_id": "c1",
+                 "input": "*** Begin Patch\n*** Update File: ../other/x.py\n@@\n-a\n+b\n*** Update File: .claude/memory.md\n@@\n-a\n+b\n*** End Patch"}),
+    ], git=False)
+    assert not [b for b in st.beats if b.kind == "edit"]
+
+
+def _poll_rollout(first_out, poll_out=None):
+    lines = [
+        item(2, {"type": "function_call", "name": "exec_command", "call_id": "c1", "arguments": json.dumps({"cmd": "python -m pytest -q"})}),
+        item(3, {"type": "function_call_output", "call_id": "c1", "output": first_out}),
+    ]
+    if poll_out is not None:
+        lines += [
+            item(4, {"type": "function_call", "name": "write_stdin", "call_id": "c2", "arguments": json.dumps({"session_id": 77, "chars": ""})}),
+            item(5, {"type": "function_call_output", "call_id": "c2", "output": poll_out}),
+        ]
+    return lines
+
+
+RUNNING = "Chunk ID: a1\nWall time: 1.0 seconds\nProcess running with session ID 77\nOutput:\n..F.\n"
+
+
+def test_a_test_run_that_finishes_after_a_poll_gets_its_exit_status(tmp_path):
+    st, ev = codex_story(tmp_path, _poll_rollout(RUNNING, "Process exited with code 1\nOutput:\n2 failed, 3 passed in 1s\n"), git=False)
+    cmd = [e for e in ev if e.kind == "command"][0]
+    assert cmd.exit_code == 1 and cmd.failed and cmd.session is None and "2 failed" in cmd.output
+    tests = [b for b in st.beats if b.kind == "test"]
+    assert [b.headline for b in tests] == ["2 failed, 3 passed"]
+
+
+def test_a_test_run_that_passes_after_a_poll_counts_as_passed(tmp_path):
+    st, _ = codex_story(tmp_path, _poll_rollout(RUNNING, "Process exited with code 0\nOutput:\n5 passed in 1s\n"), git=False)
+    assert [b.headline for b in st.beats if b.kind == "test"] == ["5 tests passed"]
+
+
+def test_json_exec_results_follow_the_session_id_too(tmp_path):
+    running = json.dumps({"chunk_id": "x", "session_id": 77, "output": "..F."})
+    done = json.dumps({"chunk_id": "y", "exit_code": 1, "output": "1 failed, 2 passed in 1s"})
+    st, _ = codex_story(tmp_path, _poll_rollout(running, done), git=False)
+    assert [b.headline for b in st.beats if b.kind == "test"] == ["1 failed, 2 passed"]
+
+
+def test_a_run_never_heard_from_again_is_not_reported_as_passed(tmp_path):
+    st, ev = codex_story(tmp_path, _poll_rollout(RUNNING), git=False)
+    assert [e for e in ev if e.kind == "command"][0].session == 77
+    assert not [b for b in st.beats if b.kind == "test"]
+    assert st.totals.test_runs == 0
+
+
+@pytest.mark.parametrize("output", [
+    "apply_patch verification failed: Failed to find expected lines in src/foo.py",
+    json.dumps({"output": "patch rejected", "metadata": {"exit_code": 1}}),
+    "Exit code: 1\nWall time: 0.1 seconds\nOutput:\nboom",
+])
+def test_a_rejected_apply_patch_is_not_an_edit(tmp_path, output):
+    st, ev = codex_story(tmp_path, [
+        item(2, {"type": "custom_tool_call", "name": "apply_patch", "call_id": "c1",
+                 "input": "*** Begin Patch\n*** Update File: src/foo.py\n@@\n-a\n+b\n*** End Patch"}),
+        item(3, {"type": "custom_tool_call_output", "call_id": "c1", "output": output}),
+    ], git=False)
+    assert [e for e in ev if e.kind == "edit"][0].failed
+    assert not [b for b in st.beats if b.kind == "edit"] and st.totals.lines_added == 0
+
+
+def test_an_applied_patch_stays_an_edit(tmp_path):
+    st, _ = codex_story(tmp_path, [
+        item(2, {"type": "custom_tool_call", "name": "apply_patch", "call_id": "c1",
+                 "input": "*** Begin Patch\n*** Update File: src/foo.py\n@@\n-a\n+b\n*** End Patch"}),
+        item(3, {"type": "custom_tool_call_output", "call_id": "c1",
+                 "output": "Exit code: 0\nWall time: 0.1 seconds\nOutput:\nSuccess. Updated the following files:\nM src/foo.py"}),
+    ], git=False)
+    assert [b.headline for b in st.beats if b.kind == "edit"] == ["src/foo.py"]
+
+
+@pytest.mark.parametrize("js, cmd", [
+    ('await tools.exec_command({"cmd":"pytest -q"});', "pytest -q"),
+    ("await tools.exec_command({ workdir: '/w', cmd: 'cd /w && pytest -q', yield_time_ms: 500 });", "cd /w && pytest -q"),
+    ('await tools.exec_command({"workdir":"/w","env":{"A":"1,2"},"cmd":"make test"});', "make test"),
+    ("await tools.exec_command({cmd: `swift test`});", "swift test"),
+])
+def test_js_exec_commands_are_read_wherever_cmd_stands_in_the_object(tmp_path, js, cmd):
+    _st, ev = codex_story(tmp_path, [item(2, {"type": "custom_tool_call", "name": "exec", "call_id": "c1", "input": js})], git=False)
+    assert [e.text for e in ev if e.kind == "command"] == [cmd]
+
+
+def test_a_rollout_in_the_archive_resolves(tmp_path, monkeypatch):
+    live, arch = tmp_path / "sessions", tmp_path / "archived_sessions"
+    name = f"rollout-2026-01-01T12-00-00-{SID}.jsonl"
+    (arch / "2026" / "01").mkdir(parents=True)
+    (arch / "2026" / "01" / name).write_text(json.dumps(
+        {"type": "session_meta", "timestamp": iso(0), "payload": {"id": SID, "cwd": "/w/demo", "source": "vscode"}}) + "\n")
+    live.mkdir()
+    assert codex.locate(SID[:8], root=str(live), archive_root=str(arch)) == [str(arch / "2026" / "01" / name)]
+    assert codex.locate(SID[:8], root=str(live), archive_root="") == []
+    monkeypatch.setattr(codex, "DEFAULT_ROOT", str(live))
+    monkeypatch.setattr(codex, "DEFAULT_ARCHIVE_ROOT", str(arch))
+    monkeypatch.setattr(claude_code, "DEFAULT_ROOT", str(tmp_path / "none"))
+    assert E.resolve(SID[:8]).sid == SID
+
+
+def test_a_rollout_id_that_starts_with_digits_is_not_eaten_by_the_timestamp(tmp_path):
+    sid = "12345678-abcd-4000-8000-000000000001"
+    d = tmp_path / "2026" / "01" / "01"
+    d.mkdir(parents=True)
+    f = d / f"rollout-2026-01-01T12-00-00-{sid}.jsonl"
+    f.write_text("{}\n")
+    assert codex.locate("12345678", root=str(tmp_path), archive_root="") == [str(f)]
+    assert codex.locate("12345678-abcd", root=str(tmp_path), archive_root="") == [str(f)]
+    assert codex.locate("abcd", root=str(tmp_path), archive_root="") == []

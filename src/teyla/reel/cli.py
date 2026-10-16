@@ -30,15 +30,26 @@ def load_story(arg: str, args) -> Story:
                  git=not getattr(args, "no_git", False), allow_repo=getattr(args, "allow_repo", False))
 
 
+def _squash(text: str) -> str:
+    return " ".join(text.split())
+
+
 def audit(story: Story, allow_repo: bool = False) -> int:
-    """How many of a Story's strings would not survive redaction now (a hand-edited story.json)."""
+    """How many strings of a Story would not survive redaction as they stand: a hand-edited story.json.
+    A string fails when redaction drops it or *changes* it (a URL with credentials, a home path, an
+    address), and the text a viewer reads across a beat's lines is checked as well as each line."""
     red = Redactor()
     if allow_repo:
         red.allow(story.repo)
+    texts = cards.rendered_strings(story) + [story.ask, story.title, story.repo, story.harness]
+    for b in story.beats:
+        texts.append(" ".join([b.headline, *b.lines]))
+        if b.diff:
+            texts.append(" ".join(x[1:].strip() for x in b.diff))
     bad = 0
-    for s in cards.rendered_strings(story) + [story.ask]:
+    for s in texts:
         o = red.clean(s)
-        if o.fatal or o.skip:
+        if o.fatal or o.skip or _squash(o.text) != _squash(s):
             bad += 1
     return bad
 

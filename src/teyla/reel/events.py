@@ -36,6 +36,7 @@ class Event:
     output: str = ""           # command: its output (tail)
     exit_code: int | None = None
     failed: bool = False       # the tool reported an error
+    session: int | None = None  # command: id of a process still running when the call returned
 
 
 @dataclasses.dataclass
@@ -161,7 +162,7 @@ def _claude_result(ev: Event, block: dict) -> None:
 
 _SHELLS = {"shell", "shell_command", "exec_command", "local_shell", "exec"}
 _JS_STR = r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'|`(?:[^`\\]|\\.)*`'
-_JS_EXEC = re.compile(r"tools\.exec_command\(\s*\{\s*cmd\s*:\s*(" + _JS_STR + ")")
+_JS_EXEC = re.compile(r"tools\.exec_command\(\s*\{")
 _JS_PATCH = re.compile(r"tools\.apply_patch\(\s*(" + _JS_STR + ")")
 _JSON_START = re.compile(r'\[?\{"(?:chunk_id|i|exit_code|output|wall_time_seconds)"')
 _ESC = {"n": "\n", "t": "\t", "r": "\r", "b": "", "f": "", "0": ""}
@@ -176,6 +177,63 @@ def _js_string(lit: str) -> str | None:
     body = lit[1:-1]
     return re.sub(r"\\(u[0-9a-fA-F]{4}|.)", lambda m: chr(int(m.group(1)[1:], 16)) if len(m.group(1)) == 5
                   else _ESC.get(m.group(1), m.group(1)), body)
+
+
+def _skip_js_string(raw: str, i: int) -> int:
+    """Index just past the string literal that starts at raw[i]."""
+    q = raw[i]
+    i += 1
+    while i < len(raw) and raw[i] != q:
+        i += 2 if raw[i] == "\\" else 1
+    return i + 1
+
+
+def _js_object_string(raw: str, i: int, keys: tuple[str, ...]) -> str | None:
+    """The string value of the first of `keys` in the JS object literal whose `{` is at raw[i], wherever it
+    stands in the object and however its key is written (`cmd:`, `"cmd":`, `'cmd':`). Other values, nested
+    objects and arrays included, are skipped over, not read."""
+    n = len(raw)
+    i += 1
+    while i < n:
+        while i < n and raw[i] in " \t\r\n,":
+            i += 1
+        if i >= n or raw[i] == "}":
+            return None
+        if raw[i] in "\"'`":
+            end = _skip_js_string(raw, i)
+            key = _js_string(raw[i:end]) or ""
+        else:
+            m = re.compile(r"[A-Za-z_$][\w$]*").match(raw, i)
+            if not m:
+                return None
+            end, key = m.end(), m.group(0)
+        i = end
+        while i < n and raw[i] in " \t\r\n":
+            i += 1
+        if i >= n or raw[i] != ":":
+            return None
+        i += 1
+        while i < n and raw[i] in " \t\r\n":
+            i += 1
+        start, depth = i, 0
+        while i < n:
+            c = raw[i]
+            if c in "\"'`":
+                i = _skip_js_string(raw, i)
+                continue
+            if c in "{[(":
+                depth += 1
+            elif c in "}])":
+                if depth == 0:
+                    break
+                depth -= 1
+            elif c == "," and depth == 0:
+                break
+            i += 1
+        value = raw[start:i].strip()
+        if key in keys and len(value) >= 2 and value[0] in "\"'`" and _skip_js_string(value, 0) == len(value):
+            return _js_string(value)
+    return None
 
 
 def _argv_command(cmd) -> str:
@@ -222,64 +280,117 @@ def parse_patch(patch: str, at) -> list[Event]:
     return events
 
 
-def _codex_output(ev_list: list[Event], raw) -> None:
-    """Attach a tool output to the command events of one call."""
-    text = raw if isinstance(raw, str) else _result_text(raw)
-    commands = [e for e in ev_list if e.kind == "command"]
-    if not commands:
-        return
-    per_index: dict[int, dict] = {}
-    exit_code, out = None, text
-    parsed = None
-    try:
-        parsed = json.loads(text)
-    except ValueError:
-        pass
-    if isinstance(parsed, dict) and isinstance(parsed.get("metadata"), dict):   # older `shell` tool
-        exit_code = parsed["metadata"].get("exit_code")
-        out = str(parsed.get("output") or "")
-        if len(commands) == 1:
-            commands[0].output = _tail(out)
-            commands[0].exit_code = exit_code if isinstance(exit_code, int) else None
-            commands[0].failed = bool(exit_code)
-        return
-    else:
-        m = re.search(r"Exit code:\s*(-?\d+)", text)
-        if m:
-            exit_code = int(m.group(1))
-    # The exec wrapper prints one JSON blob per call (or an array of {"i", "value"} for several).
+_EXIT_TEXT = re.compile(r"(?:Exit code:|Process exited with code)\s*(-?\d+)")
+_RUNNING_TEXT = re.compile(r"Process running with session ID\s*(\d+)")
+_PATCH_REJECTED = re.compile(r"apply_patch verification failed|failed to apply|Failed to apply|patch rejected", re.I)
+
+
+def _settle(ev: Event, exit_code, out: str, session=None) -> None:
+    """Record one command's result. A process the call left running has no verdict yet (`session`)."""
+    ev.output = _tail(out)
+    ev.exit_code = exit_code if isinstance(exit_code, int) else None
+    ev.failed = bool(ev.exit_code)
+    ev.session = session if isinstance(session, int) and ev.exit_code is None else None
+
+
+def _json_values(text: str) -> list[dict]:
+    """The result objects the exec wrapper printed (one JSON blob per call, or an array of them)."""
     dec = json.JSONDecoder()
+    out = []
     for m in _JSON_START.finditer(text):
         try:
             data, _end = dec.raw_decode(text, m.start())
         except ValueError:
             continue
         for item in data if isinstance(data, list) else [data]:
-            if not isinstance(item, dict):
-                continue
-            val = item.get("value") if isinstance(item.get("value"), dict) else item
-            if isinstance(item.get("i"), int):
-                per_index[item["i"]] = val
-            elif "exit_code" in val and len(commands) == 1:
-                per_index[0] = val
+            if isinstance(item, dict):
+                out.append(item)
+    return out
+
+
+def _result(text: str) -> tuple[int | None, str, int | None]:
+    """(exit code, output, id of a process still running) in one tool output."""
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        parsed = None
+    if isinstance(parsed, dict) and isinstance(parsed.get("metadata"), dict):   # older `shell` tool
+        code = parsed["metadata"].get("exit_code")
+        return (code if isinstance(code, int) else None), str(parsed.get("output") or ""), None
+    vals = _json_values(text)
+    if vals:
+        item = vals[-1]
+        val = item.get("value") if isinstance(item.get("value"), dict) else item
+        code, sid = val.get("exit_code"), val.get("session_id")
+        return (code if isinstance(code, int) else None), str(val.get("output") or ""), (sid if isinstance(sid, int) else None)
+    m = _EXIT_TEXT.search(text)
+    code = int(m.group(1)) if m else None
+    run = _RUNNING_TEXT.search(text)
+    return code, text, (int(run.group(1)) if run and code is None else None)
+
+
+def _patch_failed(text: str) -> bool:
+    code, _out, _sid = _result(text)
+    return bool(code) or bool(_PATCH_REJECTED.search(text))
+
+
+def _codex_output(ev_list: list[Event], raw) -> None:
+    """Attach a tool output to the events of one call."""
+    text = raw if isinstance(raw, str) else _result_text(raw)
+    commands = [e for e in ev_list if e.kind == "command"]
+    if not commands:
+        if _patch_failed(text):                    # a rejected apply_patch changed nothing
+            for e in ev_list:
+                if e.kind == "edit":
+                    e.failed = True
+        return
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        parsed = None
+    if isinstance(parsed, dict) and isinstance(parsed.get("metadata"), dict):
+        if len(commands) == 1:
+            code, out, _sid = _result(text)
+            _settle(commands[0], code, out)
+        return
+    # The exec wrapper prints one JSON blob per call (or an array of {"i", "value"} for several).
+    per_index: dict[int, dict] = {}
+    for item in _json_values(text):
+        val = item.get("value") if isinstance(item.get("value"), dict) else item
+        if isinstance(item.get("i"), int):
+            per_index[item["i"]] = val
+        elif ("exit_code" in val or "session_id" in val) and len(commands) == 1:
+            per_index[0] = val
     if per_index:
         for i, ev in enumerate(commands):
             val = per_index.get(i)
             if val:
-                ev.exit_code = val.get("exit_code") if isinstance(val.get("exit_code"), int) else None
-                ev.output = _tail(str(val.get("output") or ""))
-                ev.failed = bool(ev.exit_code)
+                _settle(ev, val.get("exit_code"), str(val.get("output") or ""), val.get("session_id"))
         return
     if len(commands) == 1:
-        e = commands[0]
-        e.output = _tail(out)
-        e.exit_code = exit_code if isinstance(exit_code, int) else None
-        e.failed = bool(e.exit_code)
+        code, out, sid = _result(text)
+        _settle(commands[0], code, out, sid)
+
+
+def _codex_write(procs: dict, sid: int, raw) -> None:
+    """The output of a `write_stdin` poll: more output for the command whose process `sid` is, and its
+    exit status once it has one."""
+    ev = procs.get(sid)
+    if ev is None:
+        return
+    text = raw if isinstance(raw, str) else _result_text(raw)
+    code, out, _still = _result(text)
+    ev.output = _tail(ev.output + "\n" + out) if ev.output else _tail(out)
+    if code is not None:
+        ev.exit_code, ev.failed, ev.session = code, bool(code), None
+        procs.pop(sid, None)
 
 
 def read_codex(path: str) -> list[Event]:
     events: list[Event] = []
     calls: dict[str, list[Event]] = {}
+    procs: dict[int, Event] = {}          # process id -> the command still running in it
+    polls: dict[str, int] = {}            # call id of a write_stdin -> the process it polls
     asked = False
     for o in iter_jsonl(path):
         if o.get("type") != "response_item" or not isinstance(o.get("payload"), dict):
@@ -299,16 +410,39 @@ def read_codex(path: str) -> list[Event]:
                 asked = True
                 events.append(Event("ask", at, text=h))
         elif pt in ("function_call", "local_shell_call", "custom_tool_call"):
+            if (p.get("name") or "").rsplit(".", 1)[-1] == "write_stdin":
+                sid = _session_arg(p.get("arguments"))
+                if sid is not None and p.get("call_id"):
+                    polls[p["call_id"]] = sid
+                continue
             made = _codex_call(p, at)
             if made:
                 events.extend(made)
                 if p.get("call_id"):
                     calls[p["call_id"]] = made
         elif pt in ("function_call_output", "custom_tool_call_output"):
+            sid = polls.pop(p.get("call_id"), None)
+            if sid is not None:
+                _codex_write(procs, sid, p.get("output"))
+                continue
             made = calls.pop(p.get("call_id"), None)
             if made:
                 _codex_output(made, p.get("output"))
+                for e in made:
+                    if e.kind == "command" and e.session is not None:
+                        procs[e.session] = e
     return events
+
+
+def _session_arg(arguments) -> int | None:
+    try:
+        args = json.loads(arguments or "{}")
+    except (ValueError, TypeError):
+        return None
+    sid = args.get("session_id") if isinstance(args, dict) else None
+    if isinstance(sid, str) and sid.isdigit():
+        sid = int(sid)
+    return sid if isinstance(sid, int) else None
 
 
 def _codex_call(p: dict, at) -> list[Event]:
@@ -323,11 +457,10 @@ def _codex_call(p: dict, at) -> list[Event]:
         if name == "apply_patch":
             return parse_patch(raw, at)
         if name == "exec":   # the desktop app's JavaScript wrapper around its tools
-            found = [(m.start(), "command", m.group(1)) for m in _JS_EXEC.finditer(raw)]
-            found += [(m.start(), "patch", m.group(1)) for m in _JS_PATCH.finditer(raw)]
+            found = [(m.start(), "command", _js_object_string(raw, m.end() - 1, ("cmd", "command"))) for m in _JS_EXEC.finditer(raw)]
+            found += [(m.start(), "patch", _js_string(m.group(1))) for m in _JS_PATCH.finditer(raw)]
             out: list[Event] = []
-            for _pos, kind, lit in sorted(found):
-                s = _js_string(lit)
+            for _pos, kind, s in sorted(found, key=lambda x: x[0]):
                 if s is None:
                     continue
                 out.extend([Event("command", at, text=s, tool="exec_command")] if kind == "command" else parse_patch(s, at))
