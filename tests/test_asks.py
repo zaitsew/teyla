@@ -340,8 +340,16 @@ def test_a_codex_request_for_input_without_an_output_is_open(env):
 
 
 def test_an_answered_codex_request_is_not_open(env):
-    rollout(env, "s1", [cx_user("go"), cx_ask_call("call1"), cx_output("call1"), cx_assistant("Done.")])
+    rollout(env, "s1", [cx_user("go"), cx_ask_call("call1"), cx_output("call1"), cx_user("option B")])
     assert env.collect() == []
+
+
+def test_an_accepted_but_unanswered_codex_request_stays_open(env):
+    # request_user_input_async returns {"accepted": true} at once; the owner's answer
+    # arrives later as a user message.
+    rollout(env, "s1", [cx_user("go"), cx_ask_call("call1"), cx_output("call1"), cx_assistant("Waiting.")])
+    [item] = env.collect()
+    assert item.kind == "question"
 
 
 def test_a_codex_final_message_ending_in_a_question_is_open(env):

@@ -431,6 +431,7 @@ def scan_codex(path: str, tail_bytes: int = TAIL_BYTES) -> dict | None:
                 break
         head.close()
         pending: dict[str, tuple] = {}
+        async_ids: set[str] = set()
         last_msg = None
         last_ts = None
         human_after = False
@@ -470,11 +471,15 @@ def scan_codex(path: str, tail_bytes: int = TAIL_BYTES) -> dict | None:
                         title, opts = _codex_options(args if isinstance(args, dict) else {})
                         if title and p.get("call_id"):
                             pending[p["call_id"]] = (ts, title, opts)
+                            async_ids.add(p["call_id"])
                             last_ts = ts
                     else:
                         last_msg = None
                 elif pt in ("function_call_output", "custom_tool_call_output"):
-                    pending.pop(p.get("call_id"), None)
+                    # request_user_input_async returns at once, before the owner answers:
+                    # only a later human message closes it.
+                    if p.get("call_id") not in async_ids:
+                        pending.pop(p.get("call_id"), None)
     except OSError:
         return None
     if human_after:
@@ -642,7 +647,7 @@ def resolve(prefix: str, items: list[Ask]) -> tuple[Ask | None, str]:
 
 def mark_done(prefixes: list[str], note: str = "", now: float | None = None) -> tuple[list[str], int]:
     now = _now() if now is None else now
-    items = collect(max(DEFAULT_DAYS, 90), now)
+    items = collect(max(DEFAULT_DAYS, 365), now)
     st = load_state()
     lines, code, changed = [], 0, False
     for pre in prefixes:
@@ -664,7 +669,7 @@ def snooze(prefix: str, days: float, now: float | None = None) -> tuple[str, int
     now = _now() if now is None else now
     if days <= 0:
         return "snooze needs a number of days above 0", 1
-    items = collect(max(DEFAULT_DAYS, 90), now)
+    items = collect(max(DEFAULT_DAYS, 365), now)
     a, err = resolve(prefix, items)
     if a is None:
         return err, 1
