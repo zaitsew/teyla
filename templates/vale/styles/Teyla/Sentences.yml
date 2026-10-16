@@ -1,0 +1,12 @@
+# Sentence length. UNTESTED: Vale is not installed on the machine that wrote this file.
+# It is a `metric` rule (Vale 3.21 or later): it reports the whole document when the average
+# sentence has more than 25 words. The policy's limit is per sentence (20 words for an
+# instruction, 25 for a description), so a document can pass this rule and still hold a long
+# sentence. If Vale rejects the formula, replace this file with an `occurrence` rule:
+# `extends: occurrence`, `scope: sentence`, `max: 25`, `token: '\b[\w'']+\b'`.
+extends: metric
+message: "Average sentence length is %s words. Keep it at 25 or fewer."
+level: suggestion
+formula: |
+  words / sentences
+condition: "> 25"

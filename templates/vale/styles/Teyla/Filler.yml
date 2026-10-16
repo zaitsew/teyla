@@ -1,0 +1,30 @@
+# The writing policy's ban list. Keep it in step with BAN_LIST in src/teyla/prose.py.
+# UNTESTED: Vale is not installed on the machine that wrote this file. Try it with
+# `vale --config .vale.ini <file>`.
+extends: existence
+message: "Filler: '%s'. Say it plainly or cut it."
+level: warning
+ignorecase: true
+tokens:
+  - delve
+  - delves
+  - delved
+  - delving
+  - comprehensive
+  - robust
+  - seamless
+  - seamlessly
+  - leverage
+  - leverages
+  - leveraged
+  - leveraging
+  - cutting-edge
+  - game-changer
+  - dive into
+  - it's important to note
+  - it is important to note
+  - I hope this helps
+  - great question
+  - in today's
+  - feel free to
+  - let me know if you have any
