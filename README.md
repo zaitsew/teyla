@@ -224,6 +224,21 @@ No `uv`? `pipx install git+https://github.com/zaitsew/teyla`, or `git clone` and
 | `teyla uninstall [--dry] [--keep-data]` | every file Teyla wrote on this machine (`--dry`), then the undo: LaunchAgents unloaded, the policy import line, symlinks, Hermes sections, harness skills and hooks, the plugin, `~/.teyla`. Touches only what carries Teyla's marker, label or symlink target; keeps and lists `~/.agents/POLICY.md` and repo-level `.teyla/` and rules |
 | `teyla prompt [name]` | the paste-able prompts (onboard, work-account-kickoff, …) that shipped with the installed version |
 
+### Session Reel
+
+`teyla reel` turns one agent session and the git history it produced into a short vertical "terminal story": large
+type, no scrolling noise, nothing you did not mean to show.
+
+| command | what you get |
+|---|---|
+| `teyla reel list [--since 24h] [--repo NAME] [--all]` | the sessions of Claude Code and Codex in the window, with repo, span, commits and PRs |
+| `teyla reel story <session-id> [--ask TEXT] [--seconds 45] [-o story.json]` | the redacted Story: title, ask, at most a dozen beats (edits, test runs, commits, PRs, reviews, sub-agent lanes), totals |
+| `teyla reel check <session-id\|story.json>` | every string a reel would show, then how many were dropped by reason (`secret`, `private-term`, `email`, `path`, `too-long`) |
+
+Redaction drops a string rather than masking it, and runs on every string before it can enter a Story. It reuses
+the secret patterns and the private-terms list of `scripts/leak_check.py` (`~/.config/teyla/private-terms.txt` or
+`$TEYLA_PRIVATE_TERMS`). Assistant prose and tool output are never read into a Story. See [`docs/reel.md`](docs/reel.md).
+
 ### The advice rules
 
 | id | fires when | action |

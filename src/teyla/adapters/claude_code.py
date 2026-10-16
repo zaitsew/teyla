@@ -53,6 +53,14 @@ def load(root: str | None = None, repo_names: list[str] | None = None, since: fl
     return sessions
 
 
+def locate(prefix: str, root: str | None = None) -> list[str]:
+    """Transcript files whose session id starts with `prefix` (a session is `<root>/<slug>/<id>.jsonl`)."""
+    root = DEFAULT_ROOT if root is None else root
+    if not prefix or not re.fullmatch(r"[0-9A-Za-z-]+", prefix):
+        return []
+    return sorted(glob.glob(os.path.join(root, "*", prefix + "*.jsonl")))
+
+
 def _usage_row(u: dict) -> dict:
     row = {k: u.get(k, 0) or 0 for k in TOKEN_KEYS}
     row[CACHE_1H_KEY] = ((u.get("cache_creation") or {}).get("ephemeral_1h_input_tokens") or 0)

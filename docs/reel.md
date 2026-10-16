@@ -148,3 +148,29 @@ renderer draws only `Story` fields, and a test asserts that every text it draws 
 Voice-over and music, picture-in-picture with an iPhone screen recording (a video editor composes
 that), several sessions in one reel, landscape and square formats, and an LLM-written
 headline.
+
+## Implementation notes (v0, as built)
+
+Where the code settled a question the spec left open:
+
+- `story.json` carries two extra fields: `dropped` (counts by reason, never text; `check` prints
+  it) and `version`. `story` and `check` take `--seconds` (default 45), because the number of
+  beats kept depends on it: `int((seconds - 5.5) / 3.2)`, which is 12 for 45 s.
+- Selection runs on unrendered candidates and redaction only on the beats that can be shown. A
+  beat redaction drops is replaced by the next candidate, and two beats with the same kind,
+  headline and lines are shown once. Groups are taken round by round in the spec's order, one
+  beat from each group per round (with per-group caps), spread over session time; edits go by
+  size, one per file.
+- Edits are shown only for files of a checkout (inside the session's repo, a `~/repos/<name>` or
+  `~/.worktrees/<name>/<branch>` path), never for scratch files or a harness's own memory and
+  config directories.
+- The ask is redacted sentence by sentence: a sentence holding a secret, a private term, an
+  address or a phone number is left out and the rest stays. Only the first 400 characters are
+  considered.
+- Git numbers come from `git log --branches --no-merges` over the session's span (60 s of slack)
+  filtered to the repo's configured user, in the cwd's repository, else the one the edits landed
+  in. A commit the transcript shows but git does not list is still counted, without line counts.
+  Two sessions running in one repo at the same time see the same commits.
+- `tests_passed` / `tests_failed` are the counts the last test run that printed counts reported;
+  `test_runs` counts runs. The Story reads sub-agent spawns (`lane`), not the sub-agents' own
+  transcripts.

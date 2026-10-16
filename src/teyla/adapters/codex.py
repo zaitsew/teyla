@@ -121,6 +121,23 @@ def load(root: str | None = None, archive_root: str | None = None,
     return sessions
 
 
+_ROLLOUT_ID_RE = re.compile(r"^rollout-\d{4}-\d\d-\d\dT[\d-]+-(?P<id>.+)\.jsonl$")
+
+
+def locate(prefix: str, root: str | None = None) -> list[str]:
+    """Rollout files whose session id (the part of the name after the timestamp) starts with `prefix`."""
+    root = DEFAULT_ROOT if root is None else root
+    if not prefix or not re.fullmatch(r"[0-9A-Za-z-]+", prefix):
+        return []
+    out = []
+    for dirpath, _dirs, files in os.walk(root):
+        for name in files:
+            m = _ROLLOUT_ID_RE.match(name)
+            if m and m.group("id").startswith(prefix):
+                out.append(os.path.join(dirpath, name))
+    return sorted(out)
+
+
 def _bucket_end(parts: list[str]) -> float | None:
     """Latest POSIX time a YYYY[/MM[/DD]] bucket can cover, with a day of slack for the local
     date in the path; None when the path is not a date bucket."""

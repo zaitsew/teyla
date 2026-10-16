@@ -291,6 +291,20 @@ def stale(mtime: float, since: float | None) -> bool:
     return since is not None and mtime < since - PRUNE_SLACK_S
 
 
+def iter_jsonl(path: str):
+    """The JSON object on each line of a transcript, skipping blank, torn and non-object lines.
+    For callers (teyla.reel) that need the raw records the adapters reduce to counts."""
+    import json
+    with open(path, errors="replace") as fh:
+        for line in fh:
+            try:
+                o = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(o, dict):
+                yield o
+
+
 def load_all(roots: dict | None = None, since: float | None = None) -> list[Session]:
     """Load sessions from every adapter that finds its store on this machine. `since` (a POSIX
     timestamp, see `since_epoch`) lets adapters skip files that cannot hold a session starting

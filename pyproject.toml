@@ -38,6 +38,8 @@ packages = ["src/teyla"]
 "templates" = "teyla/templates"
 "plugin" = "teyla/plugin"
 "prompts" = "teyla/prompts"
+# teyla reel imports the leak guard's secret patterns and term loader instead of copying them.
+"scripts/leak_check.py" = "teyla/_leak_check.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

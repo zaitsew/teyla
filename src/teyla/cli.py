@@ -69,6 +69,8 @@
   teyla cloud check [repo...] [--json]                            what a cloud session would lack in each repo; exit 1 on a blocker
   teyla cloud inbox [--days N]                                    cloud branches with no PR + open PRs labelled needs-mac
   teyla cloud prep <repo> [--dry] [--allow-public] [--fix-gitignore]   AGENTS.md shipping section, hooks, rules, setup doc for cloud sessions
+  teyla reel list [--since 24h] [--repo NAME] [--all]             sessions (Claude Code and Codex) with repo, span, commits, PRs
+  teyla reel story|check <session-id|story.json> [--ask TEXT] [--seconds N] [-o FILE]   the redacted Story as JSON; every string a reel would show
 """
 from __future__ import annotations
 
@@ -471,6 +473,8 @@ def main(argv=None):
     guard_mod.register(sp)
     from . import crash as crash_mod
     crash_mod.register(sp)
+    from .reel import cli as reel_cli
+    reel_cli.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
     q = sp.add_parser("routines"); q.set_defaults(fn=cmd_routines)
     q.add_argument("paths", nargs="*"); q.add_argument("--json", action="store_true")
