@@ -12,6 +12,16 @@
   knows, `NAME=value`, 32+ character runs) and private terms drop the beat, e-mail addresses and phone numbers drop
   the line, paths become repo-relative or `…/<basename>`, URLs become their host. A repo whose own name is a
   private term needs `--allow-repo`. No new dependencies; spec in `docs/reel.md`.
+- **`teyla reel render`.** The Story as a vertical video: `reel.mp4` (1080×1920, 30 fps, H.264, no audio),
+  `reel.srt` (one caption per beat), `story.json`, `reel.txt` (every string drawn, in order) and `contact.png`
+  (nine keyframes). Large monospace type in the platform safe area, green and red diff rows, a session clock, a
+  progress bar and live commit / test / PR counters; the clock runs in session time, not video time. Pacing and
+  layout are pure functions (`reel/layout.py`); the renderer draws every string through one function that records
+  it, and a test asserts each is in `reel.txt`. Optional extra `teyla[reel]` (Pillow) and `ffmpeg` on `PATH`;
+  without them `render` still writes `story.json`, `reel.txt` and `reel.srt` and says what is missing. The Story
+  gains `ticks` (numbers only) for the counters, the repo name is limited to 24 characters, and an ask is now cut
+  at a sentence, never mid-sentence.
+
 ## 0.24.0 — 2026-10-15 — Did the Android build reach a person
 
 - **`teyla play` knows the account type and production.** The 14-day closed test is a rule of personal

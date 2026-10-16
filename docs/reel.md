@@ -174,3 +174,25 @@ Where the code settled a question the spec left open:
 - `tests_passed` / `tests_failed` are the counts the last test run that printed counts reported;
   `test_runs` counts runs. The Story reads sub-agent spawns (`lane`), not the sub-agents' own
   transcripts.
+
+### Renderer (as built)
+
+- `reel/layout.py` is pure: `plan` (segments, frame counts, the session clock each covers), `card_layout`
+  (rows, sizes, y positions), `keyframes`, `captions`, `counters_at`. `reel/render.py` only draws what they
+  describe, through `Painter`, which records every string; the tests check that each recorded string is in
+  `reel.txt` and that colour runs and wrapped rows add up to it.
+- Beat time is `2.0 + 0.3 × min(lines, 6)` seconds, plus 1.2 with a diff, clamped to 2–4 s. The beats share
+  what is left of `--seconds` after the 2.5 s title and 3 s end cards, squeezed to fit and never stretched, so a
+  session with few beats gives a shorter reel instead of a padded one. The session clock runs linearly from one
+  beat's time to the next (the last beat runs to the wall clock); the progress bar is the same clock.
+- Type: the headline is 72 px when it fits one line (23 columns), else 64 px over up to three lines, broken
+  after `/` first, then `_ -`, then `.`. Body rows are 48 px (up to 60 px for short lines) or 40 px when a
+  card with a diff is full. A card sits a little above the middle of the band between the top bar and the
+  progress bar. The repo name is limited to 24 characters so the top bar fits.
+- The Story carries `ticks`, `[seconds, commits, tests passed, PRs opened]` rows (at most 48, the last one equal
+  to the totals), so the counters tick up with the beats. A story.json without them is counted from its beats.
+- `contact.png` is a 3×3 sheet of 360×640 tiles: the title, seven beats spread over the reel, the end card.
+- ffmpeg is fed raw RGB on stdin (`-f rawvideo -pix_fmt rgb24`), `libx264 -crf 18 -preset veryfast`, `yuv420p`,
+  `+faststart`. A 40 s reel renders in about three seconds on a laptop.
+- A Story's strings are drawn as they are: the font must have the glyphs. Menlo and DejaVu Sans Mono cover Latin
+  and Cyrillic; a script they lack draws as the font's missing-glyph box (`--font PATH` picks another).
