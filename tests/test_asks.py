@@ -664,3 +664,10 @@ def test_ids_after_options_reach_the_command(env, monkeypatch):
     with pytest.raises(SystemExit):
         cli.main(["asks", "--bogus-flag"])
     assert cli.main(["asks", "done", "abc123", "--older-than", "3"]) == 64
+
+
+def test_words_after_a_double_dash_are_literal(env, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(asks, "mark_done", lambda ids, note, now: (seen.update(ids=ids, note=note) or ([], 0)))
+    assert cli.main(["asks", "done", "--note", "why", "--", "abc123", "-def456"]) == 0
+    assert seen["ids"] == ["abc123", "-def456"]
