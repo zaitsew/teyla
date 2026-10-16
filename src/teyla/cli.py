@@ -513,7 +513,14 @@ def main(argv=None):
     # the only place SSL_CERT_FILE or a proxy can come from, and it must be set before any socket.
     from . import config as _config
     _config.apply_env()
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args, extra = parser.parse_known_args(argv)
+    # argparse stops filling a positional list at the first option, so `teyla asks done --note x
+    # id1 id2` would reject id1 id2. Bare words left over go back into that command's list.
+    if extra and isinstance(getattr(args, "words", None), list) and not any(e.startswith("-") for e in extra):
+        args.words += extra
+    elif extra:
+        parser.error("unrecognized arguments: " + " ".join(extra))
     from . import net, invisible
     net.allow_for_this_command(getattr(args, "allow_network", False))
     try:

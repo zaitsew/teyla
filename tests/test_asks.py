@@ -632,3 +632,35 @@ def test_doctor_counts_pending_inbox_items_from_the_jsonl_store(tmp_path, monkey
     state.add_inbox_decision(run_id="r2", decision="reject")
     rows = [c for c in doctor.checks(scan_repos=False) if c["name"] == "control:inbox"]
     assert len(rows) == 1 and "1 run(s) waiting for you" in rows[0]["detail"]
+
+
+def test_done_older_than_closes_old_questions_and_keeps_new_ones_and_reminders(env, monkeypatch):
+    old = asks.Ask(id="old11111", kind="blocked", product="p", title="t", question="q", context="", options=[],
+                   when=NOW - 5 * 86400, archived=True, link="l", pr="", harness="claude-desktop")
+    other = asks.Ask(**{**dataclass_dict(old), "id": "oth22222", "product": "q"})
+    new = asks.Ask(**{**dataclass_dict(old), "id": "new33333", "when": NOW - 3600})
+    rem = asks.Ask(**{**dataclass_dict(old), "id": "rem44444", "kind": "reminder"})
+
+    def fake(days, now=None, **kw):
+        st = asks.load_state()
+        return asks.apply_state([asks.Ask(**dataclass_dict(a)) for a in (old, other, new, rem)], st, NOW)
+
+    monkeypatch.setattr(asks, "collect", fake)
+    lines, code = asks.mark_done_older(3, "bulk", "p", NOW)
+    assert code == 0 and lines[-1] == "closed 1" and "old11111" in lines[0]
+    lines, code = asks.mark_done_older(3, "bulk", "", NOW)
+    assert lines[-1] == "closed 1" and "oth22222" in lines[0]
+    st = json.loads(asks.state_path().read_text())
+    assert set(st["done"]) == {"old11111", "oth22222"} and st["done"]["old11111"]["note"] == "bulk"
+    assert asks.mark_done_older(3, "", "", NOW)[0] == ["nothing open is older than 3 day(s)"]
+    assert asks.mark_done_older(0, "", "", NOW)[1] == 1
+
+
+def test_ids_after_options_reach_the_command(env, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(asks, "mark_done", lambda ids, note, now: (seen.update(ids=ids, note=note) or ([], 0)))
+    assert cli.main(["asks", "done", "--note", "why", "abc123", "def456"]) == 0
+    assert seen == {"ids": ["abc123", "def456"], "note": "why"}
+    with pytest.raises(SystemExit):
+        cli.main(["asks", "--bogus-flag"])
+    assert cli.main(["asks", "done", "abc123", "--older-than", "3"]) == 64
