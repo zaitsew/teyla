@@ -79,6 +79,7 @@
   teyla reel list [--since 24h] [--repo NAME] [--all]             sessions (Claude Code and Codex) with repo, span, commits, PRs
   teyla reel story|check <session-id|story.json> [--ask TEXT] [--seconds N] [-o FILE]   the redacted Story as JSON; every string a reel would show
   teyla docs check [repo...] [--all] [--json] [--strict]         README opening, quick start, length, dead commands, decision history in docs
+  teyla ux check [repo...] [--all] [--json] [--strict]           literals instead of tokens, crowded screens, copy rules, DESIGN.md
 """
 from __future__ import annotations
 
@@ -493,6 +494,8 @@ def build_parser() -> argparse.ArgumentParser:
     answer_mod.register(sp)
     from . import docs_check as docs_check_mod
     docs_check_mod.register(sp)
+    from . import ux_check as ux_check_mod
+    ux_check_mod.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
     q = sp.add_parser("routines"); q.set_defaults(fn=cmd_routines)
     q.add_argument("paths", nargs="*"); q.add_argument("--json", action="store_true")

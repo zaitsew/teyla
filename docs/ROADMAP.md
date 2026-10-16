@@ -50,10 +50,12 @@ core plan independently.
    why it helps, then gives a five-line start. Decisions go in PRs or `docs/decisions/`.
    `teyla docs check` flags a README without that opening, commands it names that no longer
    exist, and dated narrative in docs.
-6. **UX: cut, don't add.** This work happens in each product, not in Teyla. For the largest app: take
-   the five worst screens, build two different variants of each, the owner reviews them on
-   the phone, and the agent applies only the cuts the owner accepts. The bar is one primary
-   action per screen that is obvious within five seconds.
+6. **UX: cut, don't add.** The shared standard and its audit live in Teyla:
+   `templates/design/STANDARD.md` and `teyla ux check`. Each product keeps its own design
+   system (`DESIGN.md`, tokens). The work itself happens in the product: take the five worst
+   screens, build two different variants of each, the owner reviews them on the phone, and the
+   agent applies only the cuts the owner accepts. The bar is one primary action per screen that
+   is obvious within five seconds. See [UX.md](UX.md).
 7. **Voice and computer control: trial what exists, build nothing yet.** Claude computer use
    is available in this setup. Codex's computer use may not be available in the EU, which
    is unverified. Run one bounded trial in one repo with no side effects, under `teyla load`.

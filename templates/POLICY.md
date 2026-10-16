@@ -231,6 +231,11 @@ Not verified: only when something is
 - "Needs you" holds at most one question at a time (§4).
 - Leave out "Needs you" and "Not verified" when they do not apply.
 
+**UX and UI work** follows `templates/design/STANDARD.md` in Teyla's repo (one shared standard; each
+product keeps its own `DESIGN.md` and tokens). Run `teyla ux check` before a UX PR. A new or
+reworked screen gets two variants, reviewed by the owner on the device; apply only the accepted
+cuts, and put screenshots and a cut list in the PR.
+
 **Plans and docs.** A plan fits one screen per phase. Docs describe the current state.
 Decisions and their history go in the PR or `docs/decisions/`.
 
