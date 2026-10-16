@@ -48,3 +48,7 @@ routine nor the session hook ever passes it). A version before 0.13.0 has no saf
 for a managed work laptop: bootstrap, `teyla policy init --work`, `teyla uninstall --dry` as the
 list of what Teyla owns there, `teyla prompt onboard`, the pinned update, `teyla doctor`, and a
 `teyla feedback` file that is reviewed and carried out by hand, never sent by the agent.
+
+## Handing Teyla to an agent instead of a person
+
+Paste [`prompts/onboard.md`](../prompts/onboard.md) into Claude Code, Codex or Grok on the new machine. It installs, wires the policy, installs the plugin, runs the first review, and produces the feedback file. Corporate machines: no data leaves the machine; every network call (release checks, the daily self-update) and every file Teyla writes are listed there, and `teyla uninstall --dry` lists what is on this machine (`teyla uninstall` reverses it). `teyla prompt onboard` prints the copy that shipped with the installed version.

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **README rewritten as one page (about 1,100 words, was 5,800).** It now opens with what Teyla is, a seven-line quick start,
+  and eight short sections led by `teyla asks` and `teyla intent`. The long explanations moved, not dropped: `docs/GUIDE.md`
+  (install and update, spend, machine guard, harnesses, routines and checks, cloud sessions, the policy, the plugin, prior art),
+  `docs/PRODUCTIZE.md` (section 6, the shipping commands and the `platform` / `productize` detail), `docs/WORK.md` (install with
+  safe mode on) and `docs/HANDOVER.md` (handing Teyla to an agent). `teyla docs check` reports 0 FIX and 0 WARN on it.
 - **`teyla asks`: every question an AI session left waiting on you, in one list.** It reads the Claude desktop
   app's session metadata, Claude Code transcripts, Codex rollouts, pending gated runs and due reminders (all
   read-only), joins a desktop session with its transcript, and lists the open ones by product, oldest first, archived

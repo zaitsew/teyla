@@ -87,7 +87,7 @@ Every `teyla` command with its flags; `teyla --help` prints the same list. The R
 | command | what you get |
 |---|---|
 | `teyla cloud check [repo...] [--json]` | what a cloud session (Claude Code on the web, `claude --cloud`) would lack in each repo — the VM clones the repo and nothing from your home directory: instructions that defer to a home-directory policy file, `.claude/` git-ignored, no shipping rules or cloud done state, no SessionStart/Stop hooks, a `merge-approved:` line missing or drifted from your list, Mac-only gate steps with no printed skip, secret names with no manifest, a public repo. BLOCK/WARN/OK per item, exit 1 on any BLOCK; `teyla doctor` shows `cloud-ready n/N repos` |
-| `teyla cloud prep <repo> [--dry] [--allow-public] [--fix-gitignore]` | writes what a cloud session needs into the repo, between `teyla:cloud` markers: a passive Shipping policy in `AGENTS.md` (+ `@AGENTS.md` in `CLAUDE.md`), SessionStart/Stop hooks in `.claude/settings.json`, `.claude/rules/cloud.md` (the cloud-only done steps), `docs/cloud-setup.md`. See [Cloud sessions](../README.md#cloud-sessions) |
+| `teyla cloud prep <repo> [--dry] [--allow-public] [--fix-gitignore]` | writes what a cloud session needs into the repo, between `teyla:cloud` markers: a passive Shipping policy in `AGENTS.md` (+ `@AGENTS.md` in `CLAUDE.md`), SessionStart/Stop hooks in `.claude/settings.json`, `.claude/rules/cloud.md` (the cloud-only done steps), `docs/cloud-setup.md`. See [Cloud sessions](GUIDE.md#cloud-sessions) |
 | `teyla cloud inbox [--days N]` | what cloud sessions left for a local one: branches with `Claude-Session:` commits and no PR (with the `gh pr create` line), and open PRs labelled `needs-mac` |
 
 ### Everything else
