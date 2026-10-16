@@ -153,3 +153,43 @@ are still changing, then a parity sprint to catch up with a moving target. So:
   day without a blocking report, after the pre-release review (§2). The store version is
   never more than two weeks behind the build the owner uses. A rejection is fixed and
   resubmitted in the same session unless it needs the owner's account.
+
+## 12. Store review — pass the first time
+
+A rejection costs a review round (one to six days) and usually a renamed version, and almost
+every one is of a kind a checklist catches. Before every store or beta-review submission:
+
+- **China mainland is off, from the first submission.** Generative AI in the China
+  storefront needs a Chinese permit (MIIT / CAC) that the usual model providers do not hold,
+  and any app there also needs an ICP filing, which needs a Chinese entity. Exclude `CHN` in
+  App Store availability app-wide, with the reason beside the setting in the repo's store
+  script. Re-including it is the owner's call. Google Play does not distribute in China.
+- **Model providers stay out of the store listing.** No provider or model name in the app
+  name, subtitle, description, keywords, What's New or screenshots: a listing that names one
+  reads as "associated with" it, which is what the China rejection cites. The privacy policy
+  and the in-app AI consent still name every provider that receives data.
+- **The reviewer can reach every feature.** Any build with sign-in carries a working demo
+  account in the review information (App Store, beta review, Play app access), on a plan that
+  unlocks everything. A capability declared to the store — a background mode, HealthKit,
+  Health Connect, location, microphone — works for that reviewer in the first minute; if it
+  needs content, the app bundles sample content that works signed out and offline. No
+  paywall, waitlist, region lock or bring-your-own-key in the way.
+- **Health data: name it, and ask only for what a screen shows.** HealthKit is named in the
+  UI where it is used. Each Health Connect type is requested only with a screen that displays
+  it, and its declaration says purpose · screen · benefit. Dropping a type beats defending it.
+- **The Mac app behaves like a Mac app.** Closing the main window never strands the user: a
+  Window-menu item and the File/View items reopen it. `LSApplicationCategoryType` is set.
+- **The listing is complete before submit.** Screenshots for every device class the build
+  supports, age rating and App Privacy filled, export compliance in Info.plist, support and
+  privacy URLs live.
+- **Play's moving floor.** Before an upload: `targetSdk` at the level Play currently requires
+  (read the Console's warning, not memory), a `versionCode` above every one used on any track,
+  the Data safety form matching the manifest, and in-app reporting of offensive output for any
+  generative-AI feature.
+- **The review notes say what a reviewer would otherwise ask:** the demo account, where each
+  declared capability is seen, that AI output is generated and how to report it, and why China
+  is excluded.
+- **A rejection is recorded and generalised.** The reason text is only on the App Store
+  Connect App Review page (the email and the API carry none). Log guideline, verbatim reason,
+  cause and fix in the repo's store doc, and when it is a new class, add a bullet here in the
+  same session so no other product meets it.
