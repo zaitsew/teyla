@@ -41,7 +41,10 @@ def run(cmd: list[str], cwd: str | None = None, input_text: str | None = None, t
     try:
         if detach:
             pathlib.Path(detach).parent.mkdir(parents=True, exist_ok=True)
-            with open(detach, "ab") as log:
+            # the log holds the owner's answer and the session's output: owner-only, even if it existed
+            fd = os.open(detach, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "ab") as log:
                 p = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                      start_new_session=True)
             end = time.monotonic() + DETACH_WAIT_S

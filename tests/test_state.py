@@ -382,3 +382,12 @@ def test_run_reports_missing_programs_and_timeouts(monkeypatch):
         raise subprocess.TimeoutExpired("x", 1)
     monkeypatch.setattr(subprocess, "run", boom)
     assert answer.run(["x"], timeout=1)[0] == 124
+
+
+def test_the_answer_log_is_owner_only(tmp_path):
+    from teyla import answer
+    log = tmp_path / "answer.log"
+    log.write_text("")
+    log.chmod(0o644)
+    code, _ = answer.run(["/bin/sh", "-c", "echo hi"], detach=str(log))
+    assert code == 0 and oct(log.stat().st_mode & 0o777) == "0o600"
