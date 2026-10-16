@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.26.0 — 2026-10-16 — What waits on you, and your own words
 
 - **README rewritten as one page (about 1,100 words, was 5,800).** It now opens with what Teyla is, a seven-line quick start,
   and eight short sections led by `teyla asks` and `teyla intent`. The long explanations moved, not dropped: `docs/GUIDE.md`
