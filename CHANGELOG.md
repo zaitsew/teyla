@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased — Session Reel
+## 0.25.0 — Session Reel
 
+- **`teyla update` keeps the `reel` extra.** An install with Pillow is reinstalled as `teyla[reel]` (and
+  `teyla[work,reel]` with truststore), so a daily update no longer drops what `teyla reel render` needs.
 - **`teyla reel list | story | check`.** A Claude Code or Codex session, plus the git history it produced, as a
   redacted, bounded **Story** (title, ask, at most a dozen beats, totals): the input of the video renderer that
   follows. `list` shows the last day's sessions with repo, span, commits and PRs; `story <id>` writes the Story as

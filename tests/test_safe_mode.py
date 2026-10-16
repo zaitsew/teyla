@@ -124,10 +124,19 @@ def test_teyla_update_refuses_in_safe_mode_and_runs_with_allow_network(_home, mo
 
 
 def test_install_source_keeps_the_work_extra(monkeypatch):
+    monkeypatch.setattr(update, "pillow_available", lambda: False)
     monkeypatch.setattr(update, "truststore_available", lambda: True)
     assert update.install_source("zaitsew/teyla", "v1.0.0") == "teyla[work] @ git+https://github.com/zaitsew/teyla@v1.0.0"
     monkeypatch.setattr(update, "truststore_available", lambda: False)
     assert update.install_source("zaitsew/teyla", "v1.0.0") == "git+https://github.com/zaitsew/teyla@v1.0.0"
+
+
+def test_install_source_keeps_the_reel_extra(monkeypatch):
+    monkeypatch.setattr(update, "pillow_available", lambda: True)
+    monkeypatch.setattr(update, "truststore_available", lambda: False)
+    assert update.install_source("zaitsew/teyla", "v1.0.0") == "teyla[reel] @ git+https://github.com/zaitsew/teyla@v1.0.0"
+    monkeypatch.setattr(update, "truststore_available", lambda: True)
+    assert update.install_source("zaitsew/teyla", "v1.0.0") == "teyla[work,reel] @ git+https://github.com/zaitsew/teyla@v1.0.0"
 
 
 def test_pyproject_has_the_work_extra():

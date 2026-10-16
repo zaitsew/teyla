@@ -399,12 +399,22 @@ def _uv_cache_corrupt(out: str) -> bool:
     return "unable to read sha1 file" in out or "Could not reset index file" in out or "Git operation failed" in out
 
 
+def pillow_available() -> bool:
+    try:
+        import PIL  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def install_source(repo: str, ref: str) -> str:
     """What uv/pipx/pip install. With truststore importable here the install came with the
     `work` extra (or had it added), and a plain `git+...` reinstall would drop it — the next
-    update check behind the proxy would then fail on the very release it just installed."""
+    update check behind the proxy would then fail on the very release it just installed.
+    Pillow likewise means the `reel` extra, without which `teyla reel render` makes no video."""
     url = f"git+https://github.com/{repo}@{ref}"
-    return f"teyla[work] @ {url}" if truststore_available() else url
+    extras = [name for name, present in (("work", truststore_available()), ("reel", pillow_available())) if present]
+    return f"teyla[{','.join(extras)}] @ {url}" if extras else url
 
 
 def _installer(method: str, spec: str, src: str) -> list[str] | None:
