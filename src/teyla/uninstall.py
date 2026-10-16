@@ -22,6 +22,9 @@ Derived from the writers, not from memory; each line below names the module that
                                  else the registry rows and cache copy Teyla wrote itself
     ~/.teyla/                    config, caches, doctor state, hooks, wrappers, control plane   remove
                                  (--keep-data keeps it, minus hooks/ and the wrappers: code, not data)
+    ~/.teyla/intent/             `teyla intent`: the owner's long prompts, one file per product,
+                                 and .index.json. Inside ~/.teyla/, so removed with it; --keep-data
+                                 keeps them (they are your own words: copy them out first if unsure)
 
 Reported, never deleted — they are the owner's now, or they live in the owner's repos:
 
@@ -465,12 +468,12 @@ def _teyla_dir(home: pathlib.Path, keep_data: bool) -> list[Step]:
         return steps + [Step("", inbox, f"{len(pending)} hand edit(s) to generated policy files not reviewed yet; "
                                         "read them, then rm -rf ~/.teyla")]
     if not keep_data:
-        return steps + [Step("remove", d, "Teyla's state: config, caches, doctor, reminders, hooks, wrappers, control plane",
+        return steps + [Step("remove", d, "Teyla's state: config, caches, doctor, reminders, intent files (~/.teyla/intent), hooks, wrappers, control plane",
                              lambda: _rm(d))]
     for p in (d / "hooks", d / "daily.sh", d / "weekly.sh", d / "sims.sh", d / "sweep.sh", d / "load.sh"):
         if p.exists():
             steps.append(Step("remove", p, "code, not data (--keep-data keeps the rest)", lambda p=p: _rm(p)))
-    steps.append(Step("", d, "--keep-data"))
+    steps.append(Step("", d, "--keep-data" + (" (including ~/.teyla/intent, your own prompts)" if (d / "intent").is_dir() else "")))
     return steps
 
 

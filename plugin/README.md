@@ -83,6 +83,10 @@ swallowed silently rather than surfaced.
   exist in the repo, prints a one-line count so it's visible without going to
   look. If `~/.agents/POLICY.md` exists, does nothing: Claude Code already
   imports it on its own, so there's nothing useful to add.
+- **`UserPromptSubmit`** (`hooks/capture-intent.sh`) — keeps a typed prompt of 400 characters or more,
+  word for word and scrubbed, in `~/.teyla/intent/<product>.md` (`teyla intent`; `docs/INTENT.md`).
+  Skips prompts a script or another agent wrote and everything the harness injects. Silent, exits 0.
+  `session-start.sh` points the session at that file.
 - **`UserPromptSubmit`** (`hooks/capture-correction.sh`) — the same
   correction test `teyla monitor` counts with (`teyla.adapters.is_correction`:
   pushback such as "wrong", "no, I mean…", "don't … at all", "you use too much…", plus the same phrases in Russian;

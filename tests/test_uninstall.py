@@ -229,6 +229,19 @@ def test_keep_data_keeps_the_state_but_unwires_everything(machine):
     assert (home / ".claude" / "CLAUDE.md").read_text() == OWNER_CLAUDE_MD
 
 
+def test_intent_files_go_with_teyla_unless_keep_data(machine):
+    home, env = machine["home"], machine["env"]
+    f = home / ".teyla" / "intent" / "demo.md"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("## 2026-10-16 09:00 · claude · session abcd1234\nmy words\n\n")
+    assert "intent files" in teyla(env, "uninstall", "--dry") and f.exists()
+    assert "~/.teyla/intent" in teyla(env, "uninstall", "--dry", "--keep-data")
+    teyla(env, "uninstall", "--keep-data")
+    assert f.read_text().startswith("## 2026-10-16") and not (home / ".teyla" / "hooks").exists()
+    teyla(env, "uninstall")
+    assert not (home / ".teyla").exists()
+
+
 def test_with_claude_on_path_the_plugin_goes_through_the_claude_cli(tmp_path):
     home = tmp_path / "home"
     home.mkdir()

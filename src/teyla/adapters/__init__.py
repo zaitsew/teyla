@@ -160,6 +160,9 @@ class Session:
     # question or an offer — the input to the ask-permission detector (teyla.detect). Only
     # candidates are kept (TURN_END_HINT), and only their tails, so a long session costs little.
     turn_ends: list = dataclasses.field(default_factory=list)
+    # (ts, text) of each final reply the human saw: the agent's last text before every human turn,
+    # and the session's last text. Input of `teyla prose`. Kept out of `to_dict`: it is prose, not a count.
+    finals: list = dataclasses.field(default_factory=list, repr=False)
 
     # ---- derived ----
     @property
@@ -216,6 +219,7 @@ class Session:
         d["skills_read"] = dict(self.skills_read)
         d["hours"] = self.hours; d["tokens"] = dict(self.tokens); d["n_user"] = self.n_user; d["n_corr"] = self.n_corr
         d["first_prompt"] = self.first_prompt
+        d.pop("finals", None)
         return d
 
 
@@ -242,6 +246,14 @@ NOISE_PREFIXES = ("[Request interrupted", "This session is being continued from 
 
 
 TURN_END_TAIL = 600
+FINAL_MAX_CHARS = 20_000
+
+
+def final_reply(ts: str | None, text: str | None) -> tuple | None:
+    """(ts, text) for `Session.finals`, or None for an empty text. A very long reply is cut: its
+    length is already past every threshold `teyla prose` has."""
+    text = (text or "").strip()
+    return (ts, text[:FINAL_MAX_CHARS]) if text else None
 
 
 def turn_end_candidate(text: str | None) -> str | None:

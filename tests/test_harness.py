@@ -66,12 +66,13 @@ def test_sync_writes_skills_hooks_and_is_idempotent(home):
     assert rows["cursor"]["skills"] == 7 and rows["cursor"]["hooks"] is True
     assert rows["codex"]["hooks"] is True and rows["grok"]["hooks"] is True and rows["hermes"]["hooks"] is True
     # wired is not approved: Codex and Hermes skip a hook nobody trusted
-    assert rows["codex"]["trust"] == {"approved": 0, "total": 3,
-                                      "missing": ["SessionStart untrusted", "UserPromptSubmit untrusted", "PreToolUse untrusted"]}
-    assert rows["hermes"]["trust"]["approved"] == 0 and rows["hermes"]["trust"]["total"] == 3
+    assert rows["codex"]["trust"] == {"approved": 0, "total": 4,
+                                      "missing": ["SessionStart untrusted", "UserPromptSubmit untrusted",
+                                                  "UserPromptSubmit untrusted", "PreToolUse untrusted"]}
+    assert rows["hermes"]["trust"]["approved"] == 0 and rows["hermes"]["trust"]["total"] == 4
     assert rows["grok"]["trust"] is None and rows["cursor"]["trust"] is None
     text = harness.render_status(harness.status(home=home))
-    assert "wired, NOT APPROVED 0/3" in text and "/hooks" in text
+    assert "wired, NOT APPROVED 0/4" in text and "/hooks" in text
 
 
 def test_sync_keeps_a_users_cursor_hooks_and_refuses_a_foreign_hermes_block(home):
@@ -209,10 +210,10 @@ def test_codex_sync_keeps_a_users_handler_that_shares_a_group_with_ours(home):
     d = json.loads(p.read_text())["hooks"]
     assert d["SessionStart"][0] == {"matcher": "startup", "hooks": [theirs]}
     assert len(d["SessionStart"]) == 2 and d["SessionStart"][1]["hooks"][0]["command"] == old
-    assert len(d["UserPromptSubmit"]) == 1
+    assert len(d["UserPromptSubmit"]) == 2  # the correction hook the user had, and the intent hook added after it
     assert harness.sync(home=home) == ["in sync: cursor, codex, grok, hermes"]
     tr = {r["harness"]: r for r in harness.status(home=home)}["codex"]["trust"]
-    assert tr["total"] == 3  # the user's handler is not counted as Teyla's
+    assert tr["total"] == 4  # the user's handler is not counted as Teyla's
 
 
 def test_hermes_auto_accept_is_a_top_level_true_key_not_a_substring(home):
@@ -228,9 +229,9 @@ def test_hermes_auto_accept_is_a_top_level_true_key_not_a_substring(home):
     assert approved("# hooks_auto_accept: true\n") == 0
     assert approved("agent:\n  hooks_auto_accept: true\n") == 0
     assert approved("hooks_auto_accept: false\n") == 0
-    assert approved("hooks_auto_accept: true\n") == 3
-    assert approved("hooks_auto_accept: yes  # on\n") == 3
-    assert approved("hooks_auto_accept: 'on'\n") == 3
+    assert approved("hooks_auto_accept: true\n") == 4
+    assert approved("hooks_auto_accept: yes  # on\n") == 4
+    assert approved("hooks_auto_accept: 'on'\n") == 4
 
 
 def test_codex_hook_hash_matches_what_codex_computed():
@@ -248,19 +249,23 @@ def test_codex_trust_is_read_from_config_toml(home):
     hooks_json = home / ".codex" / "hooks.json"
     d = json.loads(hooks_json.read_text())
     ss, ups = d["hooks"]["SessionStart"][0]["hooks"][0], d["hooks"]["UserPromptSubmit"][0]["hooks"][0]
+    intent_hook = d["hooks"]["UserPromptSubmit"][1]["hooks"][0]
     pre = d["hooks"]["PreToolUse"][0]
     cfg = home / ".codex" / "config.toml"
     cfg.write_text('model = "gpt-6"\n\n'
                    f'[hooks.state."{hooks_json}:session_start:0:0"]\ntrusted_hash = "{harness.codex_hook_hash("SessionStart", ss)}"\n\n'
                    f'[hooks.state."{hooks_json}:user_prompt_submit:0:0"]\ntrusted_hash = "sha256:stale"\n')
     tr = {r["harness"]: r for r in harness.status(home=home)}["codex"]["trust"]
-    assert tr == {"approved": 1, "total": 3, "missing": ["UserPromptSubmit modified since trusted", "PreToolUse untrusted"]}
+    assert tr == {"approved": 1, "total": 4, "missing": ["UserPromptSubmit modified since trusted", "UserPromptSubmit untrusted",
+                                                "PreToolUse untrusted"]}
     cfg.write_text(cfg.read_text().replace("sha256:stale", harness.codex_hook_hash("UserPromptSubmit", ups))
+                   + f'\n[hooks.state."{hooks_json}:user_prompt_submit:1:0"]\n'
+                   f'trusted_hash = "{harness.codex_hook_hash("UserPromptSubmit", intent_hook)}"\n'
                    + f'\n[hooks.state."{hooks_json}:pre_tool_use:0:0"]\n'
                    f'trusted_hash = "{harness.codex_hook_hash("PreToolUse", pre["hooks"][0], pre["matcher"])}"\n')
     tr = {r["harness"]: r for r in harness.status(home=home)}["codex"]["trust"]
-    assert tr == {"approved": 3, "total": 3, "missing": []}
-    assert "approved 3/3" in harness.render_status(harness.status(home=home))
+    assert tr == {"approved": 4, "total": 4, "missing": []}
+    assert "approved 4/4" in harness.render_status(harness.status(home=home))
 
 
 def test_codex_machine_guard_group_keeps_a_users_pretooluse_groups_and_is_trusted_by_its_matcher(home):
@@ -301,15 +306,15 @@ def test_the_machine_guard_script_is_copied_and_executable(home):
 def test_hermes_trust_is_read_from_its_allowlist(home):
     harness.sync(home=home)
     pairs = harness._hermes_pairs()
-    assert [e for e, _ in pairs] == ["on_session_start", "pre_llm_call", "pre_llm_call"]
+    assert [e for e, _ in pairs] == ["on_session_start", "pre_llm_call", "pre_llm_call", "pre_llm_call"]
     allow = home / ".hermes" / "shell-hooks-allowlist.json"
     allow.write_text(json.dumps({"approvals": [{"event": e, "command": c, "approved_at": "2026-09-29T10:00:00Z"}
                                                for e, c in pairs[:2]]}))
     tr = {r["harness"]: r for r in harness.status(home=home)}["hermes"]["trust"]
-    assert tr["approved"] == 2 and tr["missing"] == ["pre_llm_call not approved"]
+    assert tr["approved"] == 2 and tr["missing"] == ["pre_llm_call not approved"] * 2
     cfg = home / ".hermes" / "config.yaml"
     cfg.write_text(cfg.read_text() + "hooks_auto_accept: true\n")
-    assert {r["harness"]: r for r in harness.status(home=home)}["hermes"]["trust"]["approved"] == 3
+    assert {r["harness"]: r for r in harness.status(home=home)}["hermes"]["trust"]["approved"] == 4
 
 
 def test_hermes_hooks_are_recognised_after_hermes_strips_the_markers(home):
@@ -391,9 +396,9 @@ def test_hermes_auto_accept_ignores_a_column_zero_key_inside_a_multiline_flow_ma
     assert approved("agent: {\n  a: 1,\nhooks_auto_accept: true,\n  b: [1,\n2]\n}\n") == 0
     assert approved("agent:\n  tags: [x,\nhooks_auto_accept: true]\n") == 0
     # braces in quotes or comments do not open a mapping; the top-level key after one still counts
-    assert approved("name: \"{not a mapping\"  # { nor this\nhooks_auto_accept: true\n") == 3
-    assert approved("agent: {a: 1}\nhooks_auto_accept: true\n") == 3
-    assert approved("agent: {\n  a: 1\n}\nhooks_auto_accept: true\n") == 3
+    assert approved("name: \"{not a mapping\"  # { nor this\nhooks_auto_accept: true\n") == 4
+    assert approved("agent: {a: 1}\nhooks_auto_accept: true\n") == 4
+    assert approved("agent: {\n  a: 1\n}\nhooks_auto_accept: true\n") == 4
 
 
 def test_hermes_auto_accept_ignores_brackets_inside_block_scalars(home):
@@ -411,7 +416,7 @@ def test_hermes_auto_accept_ignores_brackets_inside_block_scalars(home):
     assert approved("prompt: >-\n  ]\n\n  }\nagent: {\nhooks_auto_accept: true\n}\n") == 0
     assert approved("items:\n  - note: |\n      }\n  - |\n    }\nagent: {\nhooks_auto_accept: true\n}\n") == 0
     # an opening bracket inside a block scalar does not open a mapping either
-    assert approved("prompt: |\n  {\nhooks_auto_accept: true\n") == 3
-    assert approved("prompt: |  # text\n  [ not yaml\nhooks_auto_accept: yes\n") == 3
+    assert approved("prompt: |\n  {\nhooks_auto_accept: true\n") == 4
+    assert approved("prompt: |  # text\n  [ not yaml\nhooks_auto_accept: yes\n") == 4
     # a key whose value merely contains `|` is not a block scalar
-    assert approved("agent: {\n  x: a | b\n}\nhooks_auto_accept: true\n") == 3
+    assert approved("agent: {\n  x: a | b\n}\nhooks_auto_accept: true\n") == 4

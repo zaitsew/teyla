@@ -107,3 +107,26 @@ kernel panics. So:
   `guard.max_builds` and `guard.max_sims` allow; queue the rest.
 - After a crash, `teyla crash` says what the machine looked like before it; read it
   before starting the next sprint.
+
+## 11. Writing and reporting — the answer first, in short sentences
+
+Replies, status and internal docs follow these rules:
+
+- **The answer or decision comes first**, then the reason, then the detail.
+- **One idea per sentence.** At most 20 words for an instruction, 25 for a description.
+- **Active voice, the same word for the same thing, numbers instead of adjectives.**
+- **Say what was not verified in the same sentence as the claim** (§8).
+- **No filler.** Banned: delve, comprehensive, robust, seamless, leverage, "it's important
+  to note", "I hope this helps", "Great question", a "Let me…" preamble, restating the request.
+
+**The session-end card**, at most 12 lines; detail goes in the PR or a file:
+
+```
+<Done | Blocked | Needs you | Failed> — <product>
+Result: at most 3 bullets, each with a link (PR, file or build number)
+Needs you: one question, a proposed answer, and the default if you say nothing
+Not verified: only when something is
+```
+
+A plan fits one screen per phase. Docs describe the current state; decisions go in the PR.
+`teyla prose` measures reply length, long sentences, ban-list hits and preambles.

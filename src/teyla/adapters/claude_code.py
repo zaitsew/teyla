@@ -7,7 +7,7 @@ import json
 import os
 import re
 
-from . import CACHE_1H_KEY, ERROR_LOOP, HANDOFF_CONTEXT, LONG_CONTEXT, TOKEN_KEYS, AgentCall, Session, Turn, human_text, is_correction, is_retry, local_day, stale, strip_reminders, text_of, turn_end_candidate
+from . import CACHE_1H_KEY, ERROR_LOOP, HANDOFF_CONTEXT, LONG_CONTEXT, TOKEN_KEYS, AgentCall, Session, Turn, final_reply, human_text, is_correction, is_retry, local_day, stale, strip_reminders, text_of, turn_end_candidate
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "claude-code"
@@ -139,6 +139,7 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
     active_prev = None  # last assistant/user timestamp seen, kept only to sum gaps — never a list
     last_text = None  # (ts, text) of the agent's latest text block, until a tool call or a human turn follows
     after_error = False  # the last assistant record was an API error
+    last_final = None  # like last_text, but never an API error or a synthetic "no response" turn
     # Claude Code writes one record per content block: a reply with text and three tool calls is
     # four records, each carrying the same message id and usage. Summing per record counted output
     # almost three times over. Usage is keyed by message id, the last record wins
@@ -197,9 +198,10 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                 said = text_of(m.get("content"))
                 if said.strip():
                     last_text = (ts, said)
+                    last_final = None if (after_error or model.startswith("<")) else (ts, said)
                 for b in m.get("content") or []:
                     if isinstance(b, dict) and b.get("type") == "tool_use":
-                        last_text = None  # the turn went on after the text: it did not end there
+                        last_text = last_final = None  # the turn went on after the text: it did not end there
                         name = b.get("name")
                         s.tools[name] += 1
                         inp = b.get("input", {}) or {}
@@ -253,11 +255,15 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
                     ending = turn_end_candidate(last_text[1]) if last_text else None
                     if ending:
                         s.turn_ends.append((last_text[0], ending, reply[:200]))
-                    last_text = None
+                    if last_final and final_reply(*last_final):
+                        s.finals.append(final_reply(*last_final))
+                    last_text = last_final = None
                 if h is None:
                     continue
                 s.user_turns.append(Turn(ts, h[:1500], is_correction(h)))
     s.active_hours = round(s.active_hours, 2)
+    if last_final and final_reply(*last_final):
+        s.finals.append(final_reply(*last_final))
     if not s.first:
         return None
     _add_usage(s.usage, per_message)

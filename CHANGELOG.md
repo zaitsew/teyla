@@ -10,6 +10,25 @@
   `--html` writes one self-contained page for your phone. Session start prints "N questions wait for you" from a count
   the daily routine and an hourly background refresh keep (the hook scans nothing). Also fixes the doctor check that
   looked for the gated-run inbox at `~/.teyla/inbox/*.json`; the store is `inbox.jsonl`. Details in `docs/ASKS.md`.
+- **`teyla intent`: your own long prompts, kept word for word.** A `UserPromptSubmit` hook (`capture-intent.sh`,
+  also wired into Codex, Grok, Cursor and Hermes by `teyla harness sync`) stores each typed prompt of 400
+  characters or more in `~/.teyla/intent/<product>.md`, scrubbed, deduplicated, outside the repo.
+  `teyla intent backfill --days 30` fills it from Claude Code and Codex transcripts, skipping prompts a script
+  or agent wrote. `teyla intent [product]` lists, `teyla intent path <product>` prints the file, session start
+  points at it, and the policy says a plan quotes the sentences it serves. No model, no summary: see `docs/INTENT.md`.
+- **Writing contract, `teyla prose`, voice chart.** The policy gains "Writing and reporting" (`templates/POLICY.md` §13, a
+  shortened §11 in the work variant): three registers, answer-first rules with a ban list, and a session-end card of at
+  most 12 lines. `teyla prose [--days N] [--project S] [--json]` measures the replies a human saw (words, long
+  sentences, ban-list hits, preambles) per harness and project, and the weekly digest names a median over 150 words.
+  `templates/voice/VOICE.md` is a fill-in voice chart (EN, ES, RU sections); `templates/vale/` holds an optional Vale
+  style (the sentence-length rule is untested). See `docs/WRITING.md`. `teyla policy refresh` meets a conflict if your
+  POLICY.md already has a section 13: keep yours, then `teyla policy refresh --resolved`.
+- **`teyla docs check [repo...] [--all] [--json] [--strict]`.** Reads a repo's README and `docs/` and names what to
+  fix: no opening paragraph (or the scaffold's placeholder) is FIX; an opening over 60 words, no shell quick start in
+  the first 80 lines, a README over 2,500 words (with its largest section), `teyla <sub>` commands the parser no
+  longer has (Teyla's own repo), docs that read as decision history, and a doc marked spec or draft that the README
+  presents as shipped are WARN. Exit 0 unless `--strict` and a FIX exists. The command table moved from the README to
+  `docs/COMMANDS.md`, and `docs/reel.md` now says what shipped.
 
 - **`teyla testflight --china`: no app stays available in China mainland.** The read-only check for POLICY §15 (store
   review): for each product with a TestFlight or App Store path it asks your release tool
