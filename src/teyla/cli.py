@@ -526,8 +526,10 @@ def main(argv=None):
     args, extra = parser.parse_known_args(argv)
     # argparse stops filling a positional list at the first option, so `teyla asks done --note x
     # id1 id2` would reject id1 id2. Bare words left over go back into that command's list.
-    if extra and isinstance(getattr(args, "words", None), list) and not any(e.startswith("-") for e in extra):
-        args.words += extra
+    # After "--" everything is a word, even "-x": `teyla answer <id> --json -- <text>`.
+    before, after = (extra[:extra.index("--")], extra[extra.index("--") + 1:]) if "--" in extra else (extra, [])
+    if extra and isinstance(getattr(args, "words", None), list) and not any(e.startswith("-") for e in before):
+        args.words += before + after
     elif extra:
         parser.error("unrecognized arguments: " + " ".join(extra))
     from . import net, invisible
