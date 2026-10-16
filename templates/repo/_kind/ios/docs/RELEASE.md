@@ -37,6 +37,19 @@ second certificate, and Apple allows few.
 4. Share the public link once review clears. Internal testers never need
    this step; they see new builds immediately.
 
+## Before every submission
+
+Run the store-review checklist in the owner's POLICY ("Store review — pass the first
+time"): China mainland excluded in availability, no model provider named in the listing,
+a demo account in the review information, every declared capability reachable by a
+signed-out reviewer, screenshots for every supported device class. A rejection's reason is
+only on the App Store Connect App Review page; record it under "Review history" below.
+
+## Review history
+
+| Date | Version (build) | Verdict | Guideline · reason · fix |
+|---|---|---|---|
+
 ## What never happens here
 
 No password typed into Xcode, no app-specific password, no manual upload

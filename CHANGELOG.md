@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **POLICY §12, store review — pass the first time.** A pre-submission checklist built from every App Store and
+  Google Play rejection so far: China mainland excluded from the first submission (generative AI needs a Chinese
+  permit; any app needs an ICP filing), no model provider named in the listing, a demo account and signed-out
+  sample content so a reviewer reaches every declared capability, health data named in the UI and requested only
+  with a screen that shows it, a reopenable Mac main window, a complete listing, Play's `targetSdk` /
+  `versionCode` / Data safety / AI-report floor, and each rejection logged and generalised into the policy. The iOS
+  `docs/RELEASE.md` template points at it and gains a review-history table. `teyla policy refresh` will meet a
+  conflict if you already added the same section to your POLICY.md by hand: keep yours, then
+  `teyla policy refresh --resolved`.
+
 ## 0.25.0 — Session Reel
 
 - **`teyla update` keeps the `reel` extra.** An install with Pillow is reinstalled as `teyla[reel]` (and
