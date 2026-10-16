@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **`teyla intent`: your own long prompts, kept word for word.** A `UserPromptSubmit` hook (`capture-intent.sh`,
+  also wired into Codex, Grok, Cursor and Hermes by `teyla harness sync`) stores each typed prompt of 400
+  characters or more in `~/.teyla/intent/<product>.md`, scrubbed, deduplicated, outside the repo.
+  `teyla intent backfill --days 30` fills it from Claude Code and Codex transcripts, skipping prompts a script
+  or agent wrote. `teyla intent [product]` lists, `teyla intent path <product>` prints the file, session start
+  points at it, and the policy says a plan quotes the sentences it serves. No model, no summary: see `docs/INTENT.md`.
+
 - **`teyla testflight --china`: no app stays available in China mainland.** The read-only check for POLICY §15 (store
   review): for each product with a TestFlight or App Store path it asks your release tool
   `availability --bundle-id ID --json` (the App Store Connect `appAvailabilityV2` /

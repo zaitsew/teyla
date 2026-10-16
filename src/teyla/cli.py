@@ -4,6 +4,8 @@
   teyla advise  [--days N]                                       just the findings
   teyla sessions [--days N] [--project SUBSTR]                   one line per session
   teyla corrections [--days N] [--project SUBSTR] [--recorded]   correction-shaped human turns, clustered; --recorded: the stored ones
+  teyla intent [product] [--days N] [--grep TEXT] [--json]       the owner's long prompts, verbatim, per product (~/.teyla/intent/); none: one line per product
+  teyla intent path <product> | backfill [--days 30] [--dry]     the file to read before planning; fill it from Claude Code and Codex transcripts
   teyla policy init [--owner] [--work] [--claude-md] [--ops-root-init] [--dry]   POLICY.md, global CLAUDE.md, an ops root
   teyla policy status|sync [--dry] [--quiet]                      the wiring into every harness (hand edits to a generated copy are filed first)
   teyla policy inbox [--done FILE|--all]                          hand edits found in generated policy files, waiting for review
@@ -459,6 +461,8 @@ def main(argv=None):
     cloud.register(sp); lang.register(sp)
     from . import reviews as reviews_mod
     reviews_mod.register(sp)
+    from . import intent as intent_mod
+    intent_mod.register(sp)
     from . import schedules as schedules_mod
     schedules_mod.register(sp)
     from . import spend as spend_mod

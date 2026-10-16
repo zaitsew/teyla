@@ -59,6 +59,9 @@
     [corrections]
     store = "home"                 "home": ~/.teyla/corrections/<repo-key>.jsonl (default);
                                    "repo": <repo>/.teyla/corrections.jsonl, the pre-0.12 place
+    [intent]                       `teyla intent`: long prompts kept word for word, per product
+    enabled   = true               the capture hook (and backfill) write ~/.teyla/intent/<product>.md
+    min_chars = 400                a typed prompt at least this long is kept
     [spend]                        `teyla spend`: thresholds that act (every key optional)
     alert_session_usd = 250.0      --alert: a session that cost this much in the last day
     w1_usd            = 15.0       W1/W5: a session under this is not worth a finding
@@ -150,6 +153,8 @@ DEFAULTS = {
     # Where `teyla correct` and the capture hook keep corrections; see corrections.py for why
     # the default is outside the repo.
     "corrections": {"store": "home"},
+    # `teyla intent`: the owner's own long prompts, kept verbatim in ~/.teyla/intent/<product>.md.
+    "intent": {"enabled": True, "min_chars": 400},
     "safe": {"enabled": False, "auto_update": False},
     # Harnesses to leave alone: no health line, no FIX for their hooks or credits, no sync.
     "harness": {"disabled": []},
@@ -368,7 +373,7 @@ def write(code_root: str = "~/repos", ops_root: str = "~/ops", repo: str = "zait
         # [storage], [corrections], [digest], [spend] and [hooks] are kept: they are exactly the local adaptation a rewrite must not erase
         # (a work laptop that loses `safe.enabled` here would self-update the next morning).
         old = _read(p)
-        for table in ("env", "safe", "products", "storage", "corrections", "digest", "hooks", "spend"):
+        for table in ("env", "safe", "products", "storage", "corrections", "intent", "digest", "hooks", "spend"):
             if isinstance(old.get(table), dict) and old[table]:
                 data[table] = old[table]
         if old.get("runs_root"):
