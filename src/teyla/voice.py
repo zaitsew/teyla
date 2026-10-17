@@ -42,7 +42,7 @@ MAX_EDITS = 3
 
 _URL = re.compile(r"https?://\S+")
 _WORD = re.compile(r"\w+(?:['’-]\w+)*")
-_SENTENCE_SPLIT = re.compile(r"(?<=[.!?…])\s+|\n+")
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?…])[\"'”’»)]*\s+|\n+")
 _HASHTAG = re.compile(r"(?<![\w&/#])#[^\W\d_]\w*")
 _ZWJ, _VS16, _KEYCAP = "‍", "️", "⃣"
 
@@ -423,7 +423,8 @@ def model_review(text: str, chart: Chart, fmt: str | None) -> dict:
     if not isinstance(reply, dict):
         return dict(error="the model reply was not an object")
     edits = []
-    for e in reply.get("edits") or []:
+    raw_edits = reply.get("edits")
+    for e in raw_edits if isinstance(raw_edits, list) else []:
         if isinstance(e, dict) and isinstance(e.get("quote"), str) and isinstance(e.get("fix"), str):
             edits.append(dict(quote=e["quote"], fix=e["fix"], why=str(e.get("why") or "")))
     rating = reply.get("rating")

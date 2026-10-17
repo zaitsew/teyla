@@ -173,6 +173,10 @@ def test_exclamations_and_post_length():
     assert voice.post_length(f"see {link}", "substack_intro") == 4 + len(link)
 
 
+def test_a_sentence_ends_after_a_closing_quote():
+    assert [n for n, _ in voice.sentences('"We shipped it." We measured it.')] == [3, 3]
+
+
 def test_sentences_split_on_stops_lines_and_bullets():
     got = [n for n, _ in voice.sentences("One two three. Four five!\nSix seven eight nine?\n- ten eleven\n\n```\ncode block here now\n```")]
     assert got == [3, 2, 4, 2]
@@ -304,6 +308,12 @@ def test_model_pass_returns_at_most_three_edits(charts, tmp_path, model_on, caps
     cmd, payload = seen[0]
     assert len(seen) == 1 and json.loads(payload)["draft"] == "I shipped it."
     assert "Body text the model sees." in json.loads(payload)["chart"]
+
+
+def test_model_edits_that_are_not_a_list_are_ignored(charts, tmp_path, model_on, capsys):
+    model_on(0, reply({"rating": 3, "summary": "ok", "edits": 1}))
+    code, out, _ = run([draft(tmp_path, "I shipped it."), "--chart", str(charts), "--lang", "en", "--model", "--json"], capsys)
+    assert code == 0 and json.loads(out)["model"]["edits"] == []
 
 
 def test_model_command_is_the_brief_call_with_the_voice_prompt():
