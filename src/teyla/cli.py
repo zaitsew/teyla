@@ -25,6 +25,7 @@
   teyla spend [--days N] [--by-day] [--alert] [--json]           what the AI work cost, which part bought nothing; --by-day: subagent cost by model family
   teyla lanes [--days N] [--project SUBSTR] [--json]             subagent lanes by type and model: cost, turns, peak context, review P1s
   teyla prose [--days N] [--project SUBSTR] [--json]             final reply length, long sentences, ban-list hits and preambles
+  teyla voice check <file|-> --chart <dir|file> [--lang L] [--format F] [--model] [--json]   a draft against a voice chart
   teyla models [--days N] [--json] [--refresh]                   model ladder + price drift report
   teyla models watch [--refresh] [--json] [--ack [ID...]] [--seed FILE]  new models, what they replace, repos naming superseded ids
   teyla tidy [paths...] [--json] [--apply] [--quiet]              duplicates, dead references and whitespace junk in the rule and memory files; --apply: mechanical fixes only, backup first
@@ -481,6 +482,8 @@ def build_parser() -> argparse.ArgumentParser:
     lanes_mod.register(sp)
     from . import prose as prose_mod
     prose_mod.register(sp)
+    from . import voice as voice_mod
+    voice_mod.register(sp)
     from . import tidy as tidy_mod
     tidy_mod.register(sp)
     from . import load as load_mod

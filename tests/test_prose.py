@@ -244,12 +244,13 @@ def test_policy_templates_keep_their_fences_balanced():
 
 def test_voice_template_shape():
     text = (ROOT / "templates" / "voice" / "VOICE.md").read_text()
-    assert len(text.splitlines()) <= 80
+    assert len(text.splitlines()) <= 100
     for needle in ("## Traits", "## Tone by channel", "### English", "### Spanish", "### Russian", "## Before posting",
                    "Ilyakhov", "Glavred", "Guia panhispanica de lenguaje claro", "never translate", "X / Twitter",
                    "Instagram / TikTok", "LinkedIn", "App Store", "Email"):
         assert needle.lower() in text.lower(), needle
     assert not re.search("[\u0400-\u04ff]", text)
+    assert text.startswith("---\n") and "max_sentence_words" in text and "max_post_chars" in text
 
 
 def test_vale_ban_list_matches_the_constant():
@@ -262,8 +263,9 @@ def test_vale_ban_list_matches_the_constant():
 
 def test_writing_doc_is_short_and_names_the_templates():
     text = (ROOT / "docs" / "WRITING.md").read_text()
-    assert len(text.splitlines()) <= 50
+    assert len(text.splitlines()) <= 90
     assert "templates/voice/VOICE.md" in text and "templates/vale/" in text and "teyla prose" in text
+    assert "teyla voice check" in text
 
 
 def test_a_sentence_wrapped_over_two_lines_counts_as_one():
