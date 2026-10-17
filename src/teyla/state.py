@@ -1051,20 +1051,25 @@ def review_note(pr: dict, ledger: dict | None) -> str:
     return "No review of the head commit in the ledger."
 
 
-def tasks_view(bl: dict, approved: set, ledger: dict | None, now: float) -> list[dict]:
+def tasks_view(bl: dict, approved: set, ledger: dict | None, now: float, names: dict | None = None) -> list[dict]:
     """What only the owner can do, oldest first: his open PRs in repos that are not merge-approved, and the
-    issues assigned to him."""
+    issues assigned to him. `names` maps a lowercase `owner/name` to its product name (`product_names`);
+    a repo not in it is the bare repo name."""
+    names = names or {}
+
+    def product(repo: str) -> str:
+        return names.get(repo.lower(), repo.split("/", 1)[1])
     out = []
     for pr in bl["prs"]:
         if pr.get("draft") or pr["repo"].lower() in approved:
             continue
-        out.append({"id": f"pr:{pr['repo']}#{pr['number']}", "kind": "merge", "product": pr["repo"].split("/", 1)[1],
+        out.append({"id": f"pr:{pr['repo']}#{pr['number']}", "kind": "merge", "product": product(pr["repo"]),
                     "title": asks.clip("Merge: " + pr["title"], asks.TITLE_MAX),
                     "detail": f"{review_note(pr, ledger)} The repo is not merge-approved, so it waits on you.",
                     "link": pr["url"], "age_s": max(0, int(now - pr["created"]))})
     for it in bl["issues"]:
         labels = it.get("labels") or []
-        out.append({"id": f"issue:{it['repo']}#{it['number']}", "kind": "task", "product": it["repo"].split("/", 1)[1],
+        out.append({"id": f"issue:{it['repo']}#{it['number']}", "kind": "task", "product": product(it["repo"]),
                     "title": asks.clip(it["title"], asks.TITLE_MAX),
                     "detail": "Assigned to you." + (f" Labels: {', '.join(labels[:4])}." if labels else ""),
                     "link": it["url"], "age_s": max(0, int(now - it["created"]))})
@@ -1120,7 +1125,8 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
         if bl["prs"]:
             approved = backlog.merge_approved(_cfg()) if approved is None else approved
             ledger = reviews.load_ledger(reviews.ledger_path(_cfg())) if ledger is None else ledger
-        tasks = tasks_view(bl, approved or set(), ledger, now)
+        tasks = tasks_view(bl, approved or set(), ledger, now,
+                           {i["slug"].lower(): key for key, i in info.items() if i["slug"]})
     for r in rows + run + done:
         r["product"] = alias.get(r["product"], r["product"])
     prods = products_view(rows, run, {k: v["paths"] for k, v in info.items()}, now,

@@ -1099,3 +1099,15 @@ def test_a_stale_desktop_summary_is_replaced_by_the_sessions_last_message(tmp_pa
     (tdir / f"{sid[6:]}.jsonl").write_text("\n".join(lines[:1]) + "\n")
     rows = state.done_feed(NOW, str(root), "/nonexistent", str(projects), runs=[])
     assert [(r["status"], r["needs"]) for r in rows] == [("needs_you", "Add the key")]
+
+
+def test_tasks_of_a_repo_whose_name_two_owners_share_carry_the_owner_qualified_product(tmp_path):
+    a = make_repo(tmp_path, "app-a", "https://github.com/alice/app.git", days_ago=60)
+    b = make_repo(tmp_path, "app-b", "https://github.com/bob/app.git", days_ago=60)
+    bl = backlog_data(prs=[pr_row("alice/app", 3, "a" * 40)], counts={"alice/app": 4})
+    st = state.build(NOW, items=[], repos={"app-a": a, "app-b": b}, spent=None, desktop="/nonexistent",
+                     codex_root="/nonexistent", backlog_data=bl, approved=set(), ledger=None, runs=[])
+    assert st["tasks"][0]["product"] == "alice/app"
+    by = {p["name"]: p for p in st["products"]}
+    assert sorted(by) == ["alice/app"]                 # 60 days idle, kept because a PR waits on the owner
+    assert (by["alice/app"]["prs_waiting"], by["alice/app"]["issues"]) == (1, 4)
