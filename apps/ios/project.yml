@@ -1,0 +1,71 @@
+name: Teyla
+options:
+  bundleIdPrefix: com.zaitsew
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    # Simulator builds only for now. Nothing here is registered with Apple: no team, no profile.
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+targets:
+  Teyla:
+    type: application
+    platform: iOS
+    sources:
+      - Teyla
+      # The snapshot models and text helpers are shared with the Mac app, not copied.
+      - path: ../mac/Teyla/Core/Models.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/Format.swift
+        group: Shared
+    info:
+      path: Teyla/Info.plist
+      properties:
+        CFBundleName: Teyla
+        CFBundleDisplayName: Teyla
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        # Store readiness (POLICY 15): the app only uses encryption the system provides.
+        ITSAppUsesNonExemptEncryption: false
+        NSCameraUsageDescription: Teyla uses the camera to scan the pairing code shown on your Mac. Nothing is recorded.
+        NSMicrophoneUsageDescription: Teyla listens while you dictate, to turn your voice into text on this iPhone. Audio never leaves it.
+        NSSpeechRecognitionUsageDescription: Teyla turns your speech into text on this iPhone only. Nothing is sent to a server.
+    settings:
+      base:
+        PRODUCT_NAME: Teyla
+        PRODUCT_BUNDLE_IDENTIFIER: com.zaitsew.teyla
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Teyla/Info.plist
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
+  TeylaTests:
+    type: bundle.unit-test
+    platform: iOS
+    # Logic-only tests: the Core sources are compiled into the bundle, so no app is launched.
+    sources:
+      - TeylaTests
+      - Teyla/Core
+      - path: ../mac/Teyla/Core/Models.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/Format.swift
+        group: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zaitsew.teyla.tests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Teyla:
+    build:
+      targets:
+        Teyla: all
+    test:
+      targets:
+        - TeylaTests
