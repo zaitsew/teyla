@@ -167,9 +167,19 @@ def execute(step: dict, text: str) -> tuple[bool, str]:
     return code == 0, (step.get("detail") or out) if code == 0 else (out or f"exit {code}")
 
 
-def answer(a: asks.Ask, text: str, dry: bool = False, now: float | None = None) -> dict:
+def answer(a: asks.Ask, text: str, dry: bool = False, now: float | None = None, clipboard: bool = True) -> dict:
+    """`clipboard=False` (the iPhone relay) never takes the copy-and-open fallback: that answer needs the
+    owner at the Mac, so it fails with "needs the Mac" and the question stays open."""
     steps = plan(a, text)
     base = {"ok": False, "via": "", "detail": "", "id": a.id}
+    needs_mac = False
+    if not clipboard:
+        kept = [s for s in steps if not s.get("copy")]
+        needs_mac = len(kept) < len(steps)
+        steps = kept
+        if needs_mac and not steps:
+            base["detail"] = "needs the Mac"
+            return base
     if not steps:
         base["detail"] = f"nothing to deliver to: {a.harness} items have no session (see: {a.link})"
         return base
@@ -183,7 +193,7 @@ def answer(a: asks.Ask, text: str, dry: bool = False, now: float | None = None) 
             _mark_done(a.id, s["via"], now)
             return {"ok": True, "via": s["via"], "detail": detail, "id": a.id}
         failures.append(f"{s['via']}: {detail}")
-    base["detail"] = "; ".join(failures)
+    base["detail"] = "; ".join(failures + (["needs the Mac"] if needs_mac else []))
     return base
 
 
