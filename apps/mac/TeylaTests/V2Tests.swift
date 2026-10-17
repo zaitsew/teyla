@@ -175,6 +175,19 @@ final class VoiceTests: XCTestCase {
                        "Fix the build now, please and test it")
     }
 
+    func testAnEditBeforeTheFirstResultIsKept() {
+        var text = DictationText(base: "Fix")
+        XCTAssertEqual(text.text(heard: "the build", field: "Fix please"), "Fix please the build")
+    }
+
+    func testARevisedTranscriptDoesNotBringBackWordsAfterAnEdit() {
+        var text = DictationText(base: "")
+        XCTAssertEqual(text.text(heard: "recognize speech", field: ""), "recognize speech")
+        XCTAssertEqual(text.text(heard: "Recognize speech now", field: "recognize speech,"), "recognize speech, now")
+        XCTAssertEqual(text.text(heard: "Recognize speech now today", field: "recognize speech, now"),
+                       "recognize speech, now today")
+    }
+
     func testTapStartsAndAnotherTapStops() {
         var talk = PushToTalk()
         let t0 = Date(timeIntervalSince1970: 1000)
