@@ -20,6 +20,8 @@
   teyla relay on|off|status [--json]                               the iPhone relay: switch it on or off, say where it stands
   teyla relay pair [--json] [--rotate]                             create the shared key, print the pairing string
   teyla relay sync [--quiet]                                       one pass: write the snapshot, deliver the signed outbox
+  teyla say <ref> [--json] [--dry] -- <text>                       correct a running session (Codex: queued; else copy and open)
+  teyla dispatch <product> [--harness codex|claude] [--model M] [--json] [--dry] -- <text>   start new work in a fresh worktree
   teyla spend [--days N] [--by-day] [--alert] [--json]           what the AI work cost, which part bought nothing; --by-day: subagent cost by model family
   teyla lanes [--days N] [--project SUBSTR] [--json]             subagent lanes by type and model: cost, turns, peak context, review P1s
   teyla prose [--days N] [--project SUBSTR] [--json]             final reply length, long sentences, ban-list hits and preambles
@@ -497,6 +499,8 @@ def build_parser() -> argparse.ArgumentParser:
     answer_mod.register(sp)
     from . import relay as relay_mod
     relay_mod.register(sp)
+    from . import dispatch as dispatch_mod
+    dispatch_mod.register(sp)
     from . import docs_check as docs_check_mod
     docs_check_mod.register(sp)
     from . import ux_check as ux_check_mod

@@ -15,6 +15,8 @@
                                    no repo code run, no hand-edited plugin registry — see safe_mode()
     auto_update = false            safe mode only: the daily `teyla update --quiet` may reach GitHub for
                                    the latest published release (nothing else may); `update.pin` still wins
+    [dispatch]
+    claude_permission_mode = "acceptEdits"   `teyla dispatch --harness claude`: the new session's permission mode
     [products]
     repos = ["teyla", "~/work/x"]  the only repos `teyla products` runs `./check.sh usage` in
                                    (names under code_root, or paths); unset = every repo, outside safe mode

@@ -457,6 +457,7 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setattr(codex, "DEFAULT_ARCHIVE_ROOT", "")
     w.calls = Calls()
     monkeypatch.setattr(answer, "run", w.calls)
+    monkeypatch.setattr(answer, "confirm_delivery", lambda *a, **k: True)     # tests/test_answer_confirm.py covers it
     w.collect = lambda *a, **k: w.items
     monkeypatch.setattr(asks, "collect", w.collect)
     w.items = []
@@ -522,7 +523,7 @@ def test_codex_falls_back_to_queue_which_says_it_waits(world):
     a = ask("aaaa0002", harness="codex", session=CODEX_SID, link=f"codex resume {CODEX_SID}")
     r = answer.answer(a, "yes", now=NOW)
     assert r["ok"] and r["via"] == "codex-queue" and r["detail"] == "waits until the session is opened"
-    assert world.calls.calls[1]["cmd"] == ["codex", "queue", "--thread", CODEX_SID, "--message", "yes"]
+    assert world.calls.calls[1]["cmd"] == ["codex", "queue", "--thread", CODEX_SID, "--message=yes"]
 
 
 def test_falls_back_to_clipboard_and_open_when_the_session_commands_fail(world):
