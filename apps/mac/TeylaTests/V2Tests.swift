@@ -162,6 +162,19 @@ final class VoiceTests: XCTestCase {
         XCTAssertEqual(Voice.merged(base: "typed", heard: ""), "typed")
     }
 
+    func testWordsTypedWhileListeningAreKeptAndOnlyNewSpeechIsAppended() {
+        var text = DictationText(base: "Fix")
+        XCTAssertEqual(text.text(heard: "the build", field: "Fix"), "Fix the build")
+        // nothing typed: the next result replaces the previous one
+        XCTAssertEqual(text.text(heard: "the build now", field: "Fix the build"), "Fix the build now")
+        // the owner types a correction in the field, then more speech arrives
+        XCTAssertEqual(text.text(heard: "the build now and test", field: "Fix the build now, please"),
+                       "Fix the build now, please and test")
+        // and once more, with nothing typed in between
+        XCTAssertEqual(text.text(heard: "the build now and test it", field: "Fix the build now, please and test"),
+                       "Fix the build now, please and test it")
+    }
+
     func testTapStartsAndAnotherTapStops() {
         var talk = PushToTalk()
         let t0 = Date(timeIntervalSince1970: 1000)

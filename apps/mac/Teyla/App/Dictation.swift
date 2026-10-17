@@ -28,7 +28,8 @@ final class Dictation {
     @ObservationIgnored private var recognizer: SFSpeechRecognizer?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var write: (@MainActor (String) -> Void)?
-    @ObservationIgnored private var base = ""
+    @ObservationIgnored private var read: (@MainActor () -> String)?
+    @ObservationIgnored private var text = DictationText(base: "")
     @ObservationIgnored private var heardAnything = false
 
     func isListening(_ target: String) -> Bool { activeTarget == target }
@@ -37,13 +38,16 @@ final class Dictation {
         problem?.target == target ? problem?.text : nil
     }
 
-    /// Starts listening for `target`. `current` is the text already in the field; `write` receives the full new text.
-    func start(target: String, current: String, write: @escaping @MainActor (String) -> Void) {
+    /// Starts listening for `target`. `current` is the text already in the field, `read` returns what the field
+    /// holds now (so words typed while listening are kept), and `write` receives the full new text.
+    func start(target: String, current: String, read: @escaping @MainActor () -> String,
+               write: @escaping @MainActor (String) -> Void) {
         endSession()
         generation += 1
         let mine = generation
         problem = nil
-        base = current
+        text = DictationText(base: current)
+        self.read = read
         self.write = write
         heardAnything = false
         let locale = Voice.stored()
@@ -105,7 +109,7 @@ final class Dictation {
         guard mine == generation else { return }
         if let heard, !heard.isEmpty {
             heardAnything = true
-            write?(Voice.merged(base: base, heard: heard))
+            if let write, let read { write(text.text(heard: heard, field: read())) }
         }
         if final || failure != nil {
             if let failure, !heardAnything, activeTarget != nil, let target = activeTarget {
@@ -114,6 +118,7 @@ final class Dictation {
             stop()
             task = nil
             write = nil
+            read = nil
         }
     }
 
@@ -122,6 +127,7 @@ final class Dictation {
         problem = Problem(target: target, text: text)
         activeTarget = nil
         write = nil
+        read = nil
     }
 
     private func endSession() {
@@ -129,6 +135,7 @@ final class Dictation {
         task?.cancel()
         task = nil
         write = nil
+        read = nil
     }
 
     // MARK: Callbacks that run off the main actor

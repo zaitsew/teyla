@@ -294,7 +294,7 @@ final class AppModel {
 
     func startNewTaskDictation() {
         let task = newTask
-        Dictation.shared.start(target: NewTaskModel.dictationTarget, current: task.draft) { task.draft = $0 }
+        Dictation.shared.start(target: NewTaskModel.dictationTarget, current: task.draft, read: { task.draft }) { task.draft = $0 }
     }
 
     private func isBusy(_ ask: Ask) -> Bool {
