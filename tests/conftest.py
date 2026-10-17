@@ -122,8 +122,11 @@ def _no_real_asks_sources(tmp_path_factory, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _no_real_claude_for_state_brief(monkeypatch):
-    """`teyla state` starts a detached refresh that runs `claude -p`; no test may start either."""
-    from teyla import state
+    """`teyla state` starts a detached refresh that runs `claude -p` and another that runs `gh`; no test may
+    start either."""
+    from teyla import backlog, state
+    monkeypatch.setattr(backlog, "spawn_refresh", lambda *a, **k: None)
+    monkeypatch.setattr(backlog, "default_runner", lambda argv: (127, "", "a test reached the real gh"))
 
     def _refuse(*a, **k):
         raise AssertionError("a test reached the real claude; monkeypatch state._run_claude")
