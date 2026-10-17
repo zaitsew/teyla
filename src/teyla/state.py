@@ -488,6 +488,16 @@ def _done_row(id_, product, title, card, links, ended, harness, link) -> dict:
             "harness": harness, "link": link}
 
 
+def _summary_is_stale(pts: dict, tpath: str | None) -> bool:
+    """True when the transcript's last assistant turn is not the one the desktop summary describes
+    (`summarizes_uuid`), as `asks` decides for questions. No uuid or no transcript: the summary stands."""
+    su = str(pts.get("summarizes_uuid") or "")
+    if not su or not tpath:
+        return False
+    ana = asks.scan_claude(tpath)
+    return bool(ana and ana["uuid"] and ana["uuid"] != su)
+
+
 def done_feed(now: float, desktop: str | None = None, codex_root: str | None = None, projects: str | None = None, *,
               runs: list[dict] | None = None, dk: list[dict] | None = None, cx: list[dict] | None = None,
               cc: list[dict] | None = None, skip_ids=()) -> list[dict]:
@@ -506,12 +516,17 @@ def done_feed(now: float, desktop: str | None = None, codex_root: str | None = N
             continue
         pts = d.get("postTurnSummary") if isinstance(d.get("postTurnSummary"), dict) else {}
         text = ""
-        if pts.get("status_category") or pts.get("status_detail") or pts.get("needs_action"):
+        cli = str(d.get("cliSessionId") or "")
+        has_summary = bool(pts.get("status_category") or pts.get("status_detail") or pts.get("needs_action"))
+        tpath = None
+        if cli and os.path.isdir(projects) and (not has_summary or pts.get("summarizes_uuid")):
+            tpath = asks.find_transcript(cli, d.get("cwd") or "", projects)
+        if has_summary and _summary_is_stale(pts, tpath):
+            has_summary = False                  # the session went on after the summary: read its last message
+        if has_summary:
             card = card_from_summary(pts)
             text = f"{pts.get('status_detail') or ''}\n{pts.get('needs_action') or ''}"
         else:
-            cli = str(d.get("cliSessionId") or "")
-            tpath = asks.find_transcript(cli, d.get("cwd") or "", projects) if cli and os.path.isdir(projects) else None
             text, ts = last_claude_message(tpath) if tpath else ("", None)
             card = card_from_text(text) if text else None
             last = ts or last
@@ -592,7 +607,9 @@ def products_view(items: list[dict], run: list[dict], repos: dict, now: float, k
         s["last"] = max(s["last"], r["_last"])
         s["run"] = s["run"] or r["title"]
     for name, path in repos.items():
-        last, tagged = _repo_signals(path, today)
+        sig = [_repo_signals(p, today) for p in (path if isinstance(path, (list, tuple)) else [path])]
+        last = max((t for t, _ in sig if t is not None), default=None)    # the newest of the clones
+        tagged = any(g for _, g in sig)
         if name not in by and name not in keep and (last is None or now - last > REPO_RECENT_DAYS * 86400):
             continue
         s = slot(name)
@@ -633,18 +650,34 @@ def products_view(items: list[dict], run: list[dict], repos: dict, now: float, k
 
 def product_names(repos: dict, canonical: dict) -> tuple[dict, dict]:
     """(alias, info). `alias` maps a repo folder name to its product name, `info` maps a product name to
-    {path, slug}. The product name is the GitHub repo name: GitHub answers an old name with the current one
-    (`canonical`, from the backlog cache), so two clones of one repo share a row. A folder with no GitHub
-    remote keeps its own name."""
-    alias, info = {}, {}
+    {path, paths, slug}. The product name is the GitHub repo name: GitHub answers an old name with the
+    current one (`canonical`, from the backlog cache), so two clones of one repo share a row, and `paths`
+    lists every clone. Two owners with one repo name (`alice/app`, `bob/app`) are two products, named
+    `owner/name`. A folder with no GitHub remote keeps its own name."""
+    fulls: dict[str, str] = {}
+    owners: dict[str, set] = {}
     for name, path in sorted(repos.items()):
         slug = backlog.remote_slug(path)
         full = canonical.get(slug.lower(), slug) if slug else ""
-        key = full.split("/", 1)[1] if full else name
+        fulls[name] = full
+        if full:
+            owners.setdefault(full.split("/", 1)[1].lower(), set()).add(full.split("/", 1)[0].lower())
+    alias, info, spelled = {}, {}, {}
+    for name, path in sorted(repos.items()):
+        full = fulls[name]
+        if not full:
+            key = name
+        else:
+            repo = full.split("/", 1)[1]
+            key = spelled.setdefault(full.lower(), full) if len(owners[repo.lower()]) > 1 else repo
         alias[name] = key
         have = info.get(key)
-        if have is None or (name == key and have["name"] != key):
-            info[key] = {"path": path, "slug": full, "name": name}
+        if have is None:
+            info[key] = {"path": path, "paths": [path], "slug": full, "name": name}
+            continue
+        have["paths"].append(path)
+        if name == key and have["name"] != key:
+            have.update(path=path, name=name)
     return alias, info
 
 
@@ -1018,20 +1051,25 @@ def review_note(pr: dict, ledger: dict | None) -> str:
     return "No review of the head commit in the ledger."
 
 
-def tasks_view(bl: dict, approved: set, ledger: dict | None, now: float) -> list[dict]:
+def tasks_view(bl: dict, approved: set, ledger: dict | None, now: float, names: dict | None = None) -> list[dict]:
     """What only the owner can do, oldest first: his open PRs in repos that are not merge-approved, and the
-    issues assigned to him."""
+    issues assigned to him. `names` maps a lowercase `owner/name` to its product name (`product_names`);
+    a repo not in it is the bare repo name."""
+    names = names or {}
+
+    def product(repo: str) -> str:
+        return names.get(repo.lower(), repo.split("/", 1)[1])
     out = []
     for pr in bl["prs"]:
         if pr.get("draft") or pr["repo"].lower() in approved:
             continue
-        out.append({"id": f"pr:{pr['repo']}#{pr['number']}", "kind": "merge", "product": pr["repo"].split("/", 1)[1],
+        out.append({"id": f"pr:{pr['repo']}#{pr['number']}", "kind": "merge", "product": product(pr["repo"]),
                     "title": asks.clip("Merge: " + pr["title"], asks.TITLE_MAX),
                     "detail": f"{review_note(pr, ledger)} The repo is not merge-approved, so it waits on you.",
                     "link": pr["url"], "age_s": max(0, int(now - pr["created"]))})
     for it in bl["issues"]:
         labels = it.get("labels") or []
-        out.append({"id": f"issue:{it['repo']}#{it['number']}", "kind": "task", "product": it["repo"].split("/", 1)[1],
+        out.append({"id": f"issue:{it['repo']}#{it['number']}", "kind": "task", "product": product(it["repo"]),
                     "title": asks.clip(it["title"], asks.TITLE_MAX),
                     "detail": "Assigned to you." + (f" Labels: {', '.join(labels[:4])}." if labels else ""),
                     "link": it["url"], "age_s": max(0, int(now - it["created"]))})
@@ -1087,10 +1125,11 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
         if bl["prs"]:
             approved = backlog.merge_approved(_cfg()) if approved is None else approved
             ledger = reviews.load_ledger(reviews.ledger_path(_cfg())) if ledger is None else ledger
-        tasks = tasks_view(bl, approved or set(), ledger, now)
+        tasks = tasks_view(bl, approved or set(), ledger, now,
+                           {i["slug"].lower(): key for key, i in info.items() if i["slug"]})
     for r in rows + run + done:
         r["product"] = alias.get(r["product"], r["product"])
-    prods = products_view(rows, run, {k: v["path"] for k, v in info.items()}, now,
+    prods = products_view(rows, run, {k: v["paths"] for k, v in info.items()}, now,
                           keep={t["product"] for t in tasks})
     enrich_products(prods, info, bl["counts"], tasks, done)
     if spent == "cache":
