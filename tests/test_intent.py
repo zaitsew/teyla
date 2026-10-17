@@ -132,6 +132,31 @@ def test_the_same_text_is_kept_once_per_product(tmp_path):
     assert len(idx) == 2 and all(set(v) >= {"product", "date", "session", "chars"} for v in idx.values())
 
 
+def test_prompts_that_differ_only_in_line_breaks_are_both_kept(tmp_path):
+    r = repo(tmp_path)
+    one = "Goals for the week:\n\n- ship the window\n- fix the sync\n\n" + prose(400)
+    two = "Goals for the week: - ship the window - fix the sync " + prose(400)
+    assert intent.capture(hook_payload(one, r), now=NOW) is True
+    assert intent.capture(hook_payload(two, r), now=NOW) is True        # other layout: kept as typed
+    assert intent.capture(hook_payload(one.replace("\n", "\r\n") + "  \n", r), now=NOW) is False  # CRLF, trailing blanks
+    a, b = entries_of("demo")
+    assert a["text"] == one.strip() and b["text"] == two.strip()
+
+
+def test_an_index_from_the_old_key_scheme_is_rebuilt_not_trusted(tmp_path):
+    r = repo(tmp_path)
+    t = prose(450)
+    assert intent.capture(hook_payload(t, r), now=NOW)
+    path = intent.intent_dir() / ".index.json"
+    old = json.loads(path.read_text())
+    old["version"] = 1
+    old["seen"] = {"demo:0000000000000000": next(iter(old["seen"].values()))}   # a hash the new scheme never makes
+    path.write_text(json.dumps(old))
+    assert intent.capture(hook_payload(t, r), now=NOW) is False
+    assert json.loads(path.read_text())["version"] == intent.INDEX_VERSION
+    assert len(entries_of("demo")) == 1
+
+
 def test_a_lost_index_is_rebuilt_from_the_files(tmp_path):
     r = repo(tmp_path)
     t = prose(450)
@@ -154,6 +179,33 @@ def test_a_very_long_prompt_is_cut_and_says_so(tmp_path):
     assert intent.capture(hook_payload(prose(intent.MAX_CHARS + 500), r), now=NOW)
     (e,) = entries_of("demo")
     assert e["text"].endswith("[500 more characters not kept]")
+
+
+def test_the_size_cap_is_exact(tmp_path):
+    r = repo(tmp_path)
+    assert intent.MAX_CHARS == 50_000
+    at_cap = prose(intent.MAX_CHARS - 1) + "x"
+    assert len(at_cap) == intent.MAX_CHARS
+    assert intent.capture(hook_payload(at_cap, r), now=NOW)                          # exactly at the cap: whole
+    assert intent.capture(hook_payload(at_cap + "y", r), now=NOW) is False           # same kept part: the same entry
+    over = prose(intent.MAX_CHARS, "z") + "y"
+    assert intent.capture(hook_payload(over, r), now=NOW)                            # one over: cut, and says so
+    whole, cut = entries_of("demo")
+    assert whole["text"] == at_cap
+    assert cut["text"] == over[:-1] + "\n[1 more characters not kept]"
+
+
+def test_a_cut_prompt_is_still_deduped_after_the_index_is_lost(tmp_path):
+    r = repo(tmp_path)
+    t = prose(intent.MAX_CHARS + 700)
+    assert intent.capture(hook_payload(t, r), now=NOW) is True
+    assert intent.capture(hook_payload(t, r), now=NOW) is False
+    (intent.intent_dir() / ".index.json").write_text("{broken")
+    assert intent.capture(hook_payload(t, r), now=NOW) is False          # rebuilt from the cut entry
+    assert len(entries_of("demo")) == 1
+    seen = json.loads((intent.intent_dir() / ".index.json").read_text())["seen"]
+    (row,) = seen.values()
+    assert row["chars"] == len(t.strip())                                # the full length, not the kept part
 
 
 @pytest.mark.parametrize("text", [
