@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.27.0 — 2026-10-17 — Teyla as the coordinator: one window on the Mac and the iPhone
+
+- **Teyla for Mac, version 2 (`apps/mac`).** One window in the order you work: Needs you, Only you (the PRs and issues
+  that wait on you), Done since yesterday, Products (issues, PRs waiting, the next step) and Running now. A Codex session
+  takes a one-line correction from the window (`teyla say`); the other sessions open. ⌘N starts a new task
+  (`teyla dispatch`). A mic on the answer, correction and task fields dictates on the device in English, Spanish or
+  Russian (⌥⌘Space from anywhere); words typed while listening stay. One notification per new question. Window → Teyla
+  (⌘0) reopens a closed window. Settings turn the iPhone relay on and show the pairing QR code.
+- **Teyla for iPhone (`apps/ios`).** The same brief on the phone: Today, Products, New task. You answer by text or voice,
+  correct a Codex session or start a task. The app holds no data of its own and talks to no server. Pair once by scanning
+  the Mac's QR code; the key lives in the Keychain. It reads `state.teyla` from an iCloud Drive folder and shows nothing
+  until the HMAC checks. A sent action shows "Waiting for the Mac", then the result, even after the Mac drops the
+  question or the session. Simulator builds only: no TestFlight record exists yet.
+- **`teyla state`: snapshot version 2.** Adds `tasks[]` (your open PRs in repos that are not merge-approved, with the
+  review state, and issues assigned to you), `done[]` (sessions that ended a turn in the last 24 hours, from the desktop
+  app's turn summary; a summary older than the transcript is ignored), product `issues`, `prs_waiting`, `next` and `repo`,
+  and `relay`. Two clones of one GitHub repo are one product; two owners with one repo name are two (`alice/app`).
+  GitHub data comes from `~/.teyla/state-backlog.json`, refreshed in the background. Contract in `docs/APP.md`.
+- **`teyla answer`, `teyla say`, `teyla dispatch`.** `answer` closes a question only after the transcript shows your
+  text; otherwise it says "started, not confirmed yet" and leaves the question open. `say <ref> -- <text>` corrects a
+  running Codex session through `codex queue`. `dispatch <product> -- <text>` starts a task in a fresh worktree, by
+  default through `codex-lane` behind the machine guard; `--dry` shows the plan. Both refuse in safe mode.
+- **`teyla relay on|off|status|pair|sync`.** The Mac end of the iPhone link. A launchd agent writes the signed
+  `state.teyla` and reads signed `outbox/` entries from an iCloud Drive folder: strict fields, constant-time HMAC, a time
+  window, a size cap, and a journal so an entry is delivered once and an interrupted one is never retried. An answer never
+  falls back to the clipboard. **Off by default; turn it on only when you pair a phone.** Not yet verified against a real
+  iCloud folder and a real launchd agent. See `docs/RELAY.md`.
+- **`teyla voice check <file> --chart <dir>`.** Checks a draft against a per-language voice chart (English, Spanish,
+  Russian): sentence length, post length per format, banned phrases with stems, hashtags, emoji, exclamations. `--model`
+  adds one tone pass. The chart schema is `templates/voice/VOICE.md`; your own charts stay outside the repo.
+- **`teyla intent cover <plan> --product P`.** Says which of your own sentences a plan serves and which it leaves out, by
+  content-word overlap in English, Spanish and Russian; `--model` settles what words cannot with one Haiku call. Exit 1
+  while a sentence is unserved. Also: "can you tell me how…" counts as a request, a sentence wrapped over two lines in the
+  plan is one sentence, and a long sentence goes to the model whole.
+- **`teyla ux check [repo...]`.** A static audit of a product's UI code against `templates/design/STANDARD.md`: values
+  typed into views instead of tokens, screens with too many tap targets, copy with "Please" or "!", a missing `DESIGN.md`.
+- **`teyla asks done --older-than N`.** Closes every question older than N days (`--product P` for one).
+- **Fixes.** Two tests no longer depend on the wall clock or on the machine they run on (the crash report window and the
+  weekly digest). An apostrophe inside an inline list item of a voice chart (`[don't, can't]`) parses as text. On the
+  iPhone, one tap sends one entry, and a refresh that began before re-pairing cannot show data signed with the old key.
+
 ## 0.26.0 — 2026-10-16 — What waits on you, and your own words
 
 - **README rewritten as one page (about 1,100 words, was 5,800).** It now opens with what Teyla is, a seven-line quick start,
