@@ -1,0 +1,219 @@
+{
+ "version": 2,
+ "generated": "2026-10-17T21:40:00Z",
+ "brief": {
+  "line": "Two answers unblock Cellar's App Store release today. Atlas is waiting on your first Claude sign-in.",
+  "source": "rules"
+ },
+ "totals": {
+  "questions": 3,
+  "running": 3,
+  "spent_today_usd": 4.1,
+  "tasks": 2,
+  "done": 2
+ },
+ "asks": [
+  {
+   "id": "7c222b3d",
+   "kind": "question",
+   "product": "cellar",
+   "title": "Cellar app store rejection",
+   "question": "Swap the iPhone review to the newest build, 1.1, or keep 1.0 in the queue?",
+   "context": "Mac 1.1 (18) is back in App Review. The iPhone 1.0 submission still has build 15 in its queue.",
+   "options": [
+    "Keep iPhone 1.0",
+    "Swap to 1.1"
+   ],
+   "archived": true,
+   "link": "claude://claude.ai/epitaxy/local_00000000-0000-0000-0000-000000000001",
+   "pr": "https://github.com/example/cellar/pull/120",
+   "harness": "claude-desktop",
+   "status": "open",
+   "ts": "2026-10-16T14:40:00Z",
+   "age_s": 25200,
+   "unblocks": "the iPhone release",
+   "rank": 1,
+   "delivery": "claude"
+  },
+  {
+   "id": "b6b78de8",
+   "kind": "question",
+   "product": "cellar",
+   "title": "Cellar Android app planning",
+   "question": "Finish the Google sign-in in your browser, then tell me.",
+   "context": "The upload still needs a Google Cloud login.",
+   "options": [
+    "Signed in"
+   ],
+   "archived": false,
+   "link": "claude://claude.ai/epitaxy/local_00000000-0000-0000-0000-000000000002",
+   "pr": "",
+   "harness": "claude-desktop",
+   "status": "open",
+   "ts": "2026-10-16T20:40:00Z",
+   "age_s": 3600,
+   "unblocks": "the Android test track",
+   "rank": 2,
+   "delivery": "claude"
+  },
+  {
+   "id": "cf075610",
+   "kind": "question",
+   "product": "atlas",
+   "title": "Atlas AI model integrations",
+   "question": "Connect Claude first and try a trip question?",
+   "context": "The agent connector is live. No real AI client has signed in yet.",
+   "options": [
+    "Connected, it works",
+    "It failed"
+   ],
+   "archived": false,
+   "link": "codex://threads/00000000-0000-0000-0000-000000000003",
+   "pr": "",
+   "harness": "codex",
+   "status": "open",
+   "ts": "2026-10-16T21:39:00Z",
+   "age_s": 60,
+   "unblocks": "",
+   "rank": 3,
+   "delivery": "codex"
+  }
+ ],
+ "tasks": [
+  {
+   "id": "pr:example/lens#14",
+   "kind": "merge",
+   "product": "lens",
+   "title": "Merge: shot list export",
+   "detail": "Reviewed, no open P1. The repo is not merge-approved, so it waits on you.",
+   "link": "https://github.com/example/lens/pull/14",
+   "age_s": 86400
+  },
+  {
+   "id": "issue:example/cellar#88",
+   "kind": "task",
+   "product": "cellar",
+   "title": "Create the App Store Connect record for the iPad app",
+   "detail": "Assigned to you. The upload is blocked until it exists.",
+   "link": "https://github.com/example/cellar/issues/88",
+   "age_s": 7200
+  }
+ ],
+ "done": [
+  {
+   "id": "local_00000000-0000-0000-0000-000000000006",
+   "product": "atlas",
+   "title": "Trip export PDF",
+   "status": "done",
+   "result": [
+    "PDF export of a trip, one page per day",
+    "Merged as PR #301"
+   ],
+   "needs": "",
+   "links": [
+    "https://github.com/example/atlas/pull/301"
+   ],
+   "ended": "2026-10-17T20:10:00Z",
+   "harness": "claude-desktop",
+   "link": "claude://claude.ai/epitaxy/local_00000000-0000-0000-0000-000000000006"
+  },
+  {
+   "id": "00000000-0000-0000-0000-000000000007",
+   "product": "cellar",
+   "title": "Android build 1.0 (4)",
+   "status": "needs_you",
+   "result": [
+    "Build 1.0 (4) uploaded to the internal track"
+   ],
+   "needs": "Add a tester email in the Play Console",
+   "links": [],
+   "ended": "2026-10-17T18:30:00Z",
+   "harness": "codex",
+   "link": "codex://threads/00000000-0000-0000-0000-000000000007"
+  }
+ ],
+ "products": [
+  {
+   "name": "atlas",
+   "waiting": 1,
+   "state": "waiting",
+   "line": "iPhone 1.1.5 (126) in TestFlight",
+   "last_activity": "2026-10-16T21:39:00Z",
+   "issues": 3,
+   "prs_waiting": 0,
+   "next": "Ship the PDF export in the next TestFlight build",
+   "repo": "~/repos/atlas"
+  },
+  {
+   "name": "cellar",
+   "waiting": 2,
+   "state": "waiting",
+   "line": "Mac 1.1 (18) in App Review",
+   "last_activity": "2026-10-16T20:40:00Z",
+   "issues": 12,
+   "prs_waiting": 0,
+   "next": "Swap the iPhone review to 1.1",
+   "repo": "~/repos/cellar"
+  },
+  {
+   "name": "teyla",
+   "waiting": 0,
+   "state": "shipped",
+   "line": "0.26.0 released today",
+   "last_activity": "2026-10-16T21:00:00Z",
+   "issues": 0,
+   "prs_waiting": 0,
+   "next": "",
+   "repo": "~/repos/teyla"
+  },
+  {
+   "name": "lens",
+   "waiting": 0,
+   "state": "quiet",
+   "line": "no activity for 5 days",
+   "last_activity": "2026-10-11T10:00:00Z",
+   "issues": 1,
+   "prs_waiting": 1,
+   "next": "Merge the shot list export",
+   "repo": "~/repos/lens"
+  }
+ ],
+ "running": [
+  {
+   "product": "atlas",
+   "title": "Agent connector P2",
+   "harness": "claude-desktop",
+   "model": "claude-sonnet-5-5",
+   "since": "2026-10-16T21:26:00Z",
+   "link": "claude://claude.ai/epitaxy/local_00000000-0000-0000-0000-000000000004",
+   "id": "local_00000000-0000-0000-0000-000000000004",
+   "correct": "open"
+  },
+  {
+   "product": "teyla",
+   "title": "Coordinator plan",
+   "harness": "claude-desktop",
+   "model": "claude-opus-5-5",
+   "since": "2026-10-16T19:40:00Z",
+   "link": "claude://claude.ai/epitaxy/local_00000000-0000-0000-0000-000000000005",
+   "id": "local_00000000-0000-0000-0000-000000000005",
+   "correct": "open"
+  },
+  {
+   "product": "atlas",
+   "title": "Offline maps",
+   "harness": "codex",
+   "model": "gpt-6.1-sol",
+   "since": "2026-10-17T21:30:00Z",
+   "link": "codex://threads/00000000-0000-0000-0000-000000000008",
+   "id": "00000000-0000-0000-0000-000000000008",
+   "correct": "codex-queue"
+  }
+ ],
+ "relay": {
+  "on": false,
+  "paired": false,
+  "folder": "",
+  "synced": ""
+ }
+}

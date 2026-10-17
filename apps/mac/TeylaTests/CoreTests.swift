@@ -1,13 +1,35 @@
 import XCTest
 
 final class ModelDecodingTests: XCTestCase {
-    /// tests/fixtures/state.json is the shared contract fixture at the repo root.
-    private func fixtureData() throws -> Data {
+    /// tests/fixtures/state.json (version 1) and state.v2.json are the shared contract fixtures.
+    private func fixtureData(_ name: String = "state.json") throws -> Data {
         let here = URL(fileURLWithPath: #filePath)
         let url = here.deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("tests/fixtures/state.json")
+            .appendingPathComponent("tests/fixtures/\(name)")
         return try Data(contentsOf: url)
+    }
+
+    func testDecodesVersion2Fixture() throws {
+        let snapshot = try TeylaCLI.decodeSnapshot(fixtureData("state.v2.json"))
+        XCTAssertEqual(snapshot.version, 2)
+        XCTAssertEqual(snapshot.totals.tasks, 2)
+        XCTAssertEqual(snapshot.totals.done, 2)
+        XCTAssertEqual(snapshot.tasks.map(\.kind), ["merge", "task"])
+        XCTAssertEqual(snapshot.done.map(\.status), ["done", "needs_you"])
+        XCTAssertEqual(snapshot.done[1].needs, "Add a tester email in the Play Console")
+        XCTAssertEqual(snapshot.products.first { $0.name == "lens" }?.prsWaiting, 1)
+        XCTAssertEqual(snapshot.running.last?.correct, "codex-queue")
+        XCTAssertEqual(snapshot.running.last?.ref, "00000000-0000-0000-0000-000000000008")
+        XCTAssertEqual(snapshot.relay, Relay())
+    }
+
+    func testVersion1HasEmptyVersion2Fields() throws {
+        let snapshot = try TeylaCLI.decodeSnapshot(fixtureData())
+        XCTAssertTrue(snapshot.tasks.isEmpty)
+        XCTAssertTrue(snapshot.done.isEmpty)
+        XCTAssertNil(snapshot.relay)
+        XCTAssertEqual(snapshot.running.first?.correct, "open")
     }
 
     func testDecodesFixture() throws {
