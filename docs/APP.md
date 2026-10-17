@@ -113,7 +113,7 @@ new ones, and a version 2 client treats a missing field as empty.
 | `teyla say <running-id> [--json] -- <text>` | Sends a correction to a running session. Codex: `codex queue`, which delivers it after the current turn. Claude: copies the text and opens the session. Never resumes a live session. |
 | `teyla dispatch <product> [--harness codex\|claude] [--json] [--dry] -- <text>` | Starts a new session in a fresh worktree under `~/.worktrees/<repo>/`. Codex by default, through `codex-lane` and the machine guard. |
 | `teyla relay on\|off\|status [--json]` | Turns the iPhone relay on or off. |
-| `teyla relay pair [--json]` | Creates the shared key and prints the pairing string the window shows as a QR code. |
+| `teyla relay pair [--json] [--rotate]` | Prints the pairing string the window shows as a QR code, creating the shared key the first time. `--rotate` replaces the key; every phone pairs again. |
 | `teyla relay sync` | One pass: writes the snapshot, then delivers every signed outbox entry. A launchd agent runs it when the outbox changes and every 60 s. |
 
 `say` and `dispatch` print `{ok, via, detail, id}` like `teyla answer`; `dispatch` adds
