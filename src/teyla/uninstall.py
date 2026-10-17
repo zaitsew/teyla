@@ -5,8 +5,9 @@ Derived from the writers, not from memory; each line below names the module that
     ~/Library/LaunchAgents/com.zaitsew.teyla.{daily,weekly}.plist   routine_install  unload + remove
     ~/Library/LaunchAgents/com.zaitsew.teyla.{sims,sweep,load}.plist  routine_install  unload + remove (only exist when
                                  [storage] sims_agent / sweep_agent / [guard] agent is on)
+    ~/Library/LaunchAgents/com.zaitsew.teyla.relay.plist             relay            unload + remove (only exists after `teyla relay on`)
     ~/Library/LaunchAgents/com.teyla.<product>.<routine>.plist      control.triggers unload + remove
-    ~/Library/Logs/teyla-{daily,weekly,sims,sweep,load}.log, com.teyla.*.log  routine_install, triggers  remove
+    ~/Library/Logs/teyla-{daily,weekly,sims,sweep,load,relay}.log, com.teyla.*.log  routine_install, triggers  remove
     ~/.claude/CLAUDE.md          the `@~/.agents/POLICY.md` import   policy.sync      edit: drop that line
     ~/.codex/AGENTS.md, ~/.grok/AGENTS.md   symlinks → POLICY.md, or  policy.sync      remove, only if they point there
                                  POLICY.md + the owner's rules                    or carry the generated-by marker
@@ -71,7 +72,7 @@ def _generated_by_teyla(text: str) -> bool:
     return first.startswith(SKILL_MARKERS)
 
 
-ROUTINE_LABELS = (_ri.DAILY_LABEL, _ri.LABEL, *_ri.OPTIONAL_LABELS)
+ROUTINE_LABELS = (_ri.DAILY_LABEL, _ri.LABEL, *_ri.OPTIONAL_LABELS, "com.zaitsew.teyla.relay")
 TRIGGER_PREFIX = "com.teyla."
 
 
@@ -194,7 +195,7 @@ def _launch_agents(home: pathlib.Path) -> list[Step]:
         if plist.exists():
             steps.append(Step("remove", plist, "its plist", lambda plist=plist: _rm(plist)))
     logs = home / "Library" / "Logs"
-    for name in ("teyla-daily.log", "teyla-weekly.log", "teyla-sims.log", "teyla-sweep.log", "teyla-load.log"):
+    for name in ("teyla-daily.log", "teyla-weekly.log", "teyla-sims.log", "teyla-sweep.log", "teyla-load.log", "teyla-relay.log"):
         if (logs / name).exists():
             steps.append(Step("remove", logs / name, "routine log", lambda p=logs / name: _rm(p)))
     if logs.is_dir():
