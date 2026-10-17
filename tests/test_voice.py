@@ -89,6 +89,16 @@ def test_front_matter_inline_list_keeps_quoted_commas_and_inline_map():
     assert meta["max_post_chars"] == {"x_post": 280, "linkedin_update": 900}
 
 
+def test_an_apostrophe_inside_a_plain_inline_item_is_text_not_a_quote():
+    meta, _ = voice.parse_front_matter(
+        '---\nbanned: [don\'t, it\'s a, "can\'t, ever", \'won\'t\']\nmax_post_chars: {x_post: 280}\npreferred:\n  - we\'ve shipped\n---\n')
+    assert meta["banned"] == ["don't", "it's a", "can't, ever", "won't"]
+    assert meta["preferred"] == ["we've shipped"] and meta["max_post_chars"] == {"x_post": 280}
+    # YAML's own escape: '' inside a single-quoted item is one apostrophe and does not end the item
+    meta, _ = voice.parse_front_matter("---\npreferred: ['don''t, ever', next, 'a''b']\n---\n")
+    assert meta["preferred"] == ["don't, ever", "next", "a'b"]
+
+
 @pytest.mark.parametrize("text,needle", [
     ("no front matter", "no front matter"),
     ("---\nlang: en\n", "not closed"),

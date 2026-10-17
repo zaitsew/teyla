@@ -56,7 +56,7 @@ class ChartError(ValueError):
 def _scalar(raw: str):
     s = raw.strip()
     if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
-        return s[1:-1]
+        return s[1:-1].replace("''", "'") if s[0] == "'" else s[1:-1]      # YAML: '' inside '...' is one quote
     if re.fullmatch(r"-?\d+", s):
         return int(s)
     if s.lower() in ("true", "false"):
@@ -64,14 +64,28 @@ def _scalar(raw: str):
     return s
 
 
+def _opens_quote(cur: str) -> bool:
+    """A quote mark opens a quoted item only at the start of the item (`"b, c"`, or `key: "b, c"` in a map);
+    inside a plain item it is an apostrophe (`don't`)."""
+    head = cur.strip()
+    return not head or (head.endswith(":") and ":" in head)
+
+
 def _inline_list(raw: str) -> list:
-    """`[a, "b, c", d]` -> ['a', 'b, c', 'd']."""
+    """`[a, "b, c", d]` -> ['a', 'b, c', 'd']. An apostrophe inside a plain item is text: `[don't, can't]`."""
     inner, items, cur, quote = raw.strip()[1:-1], [], "", ""
-    for ch in inner:
-        if quote:
-            quote = "" if ch == quote else quote
+    skip = False
+    for i, ch in enumerate(inner):
+        if skip:                                       # the second half of a '' inside a single-quoted item
+            skip = False
             cur += ch
-        elif ch in "\"'":
+        elif quote:
+            if ch == quote and quote == "'" and inner[i + 1:i + 2] == "'":
+                skip = True
+            else:
+                quote = "" if ch == quote else quote
+            cur += ch
+        elif ch in "\"'" and _opens_quote(cur):
             quote = ch
             cur += ch
         elif ch == ",":
