@@ -374,3 +374,9 @@ def test_the_command_reports_the_model_pass_and_gates_on_what_is_left(tmp_path, 
     monkeypatch.setattr(ic, "model_unavailable", lambda: "safe mode is on, and the owner's prompts stay on this machine")
     rc, out, _ = cover(capsys, plan, "--product", "atlas", "--model")
     assert "model pass skipped: safe mode" in out and "Needs --model (1)" in out
+
+
+def test_a_verdict_id_that_is_not_a_plain_int_rejects_the_reply():
+    for bad in (0.0, [], {}, "0", True):
+        assert ic.validate_cover({"results": [{"id": bad, "served": True}]}, {0}) is None
+    assert ic.validate_cover({"results": [{"id": 0, "served": True}]}, {0}) == {0: (True, "")}

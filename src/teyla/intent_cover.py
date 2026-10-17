@@ -329,7 +329,7 @@ def validate_cover(reply, ids: set[int]) -> dict[int, tuple[bool, str]] | None:
         if not isinstance(r, dict):
             return None
         i, v = r.get("id"), r.get("served")
-        if isinstance(i, bool) or i not in ids or i in out or not isinstance(v, bool):
+        if type(i) is not int or i not in ids or i in out or not isinstance(v, bool):
             return None
         w = r.get("where")
         out[i] = (v, " ".join(w.split()[:12]) if isinstance(w, str) else "")
