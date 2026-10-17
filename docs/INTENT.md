@@ -10,6 +10,7 @@ teyla intent backfill --days 30 --dry   # count what is in your transcripts, wri
 teyla intent backfill --days 30         # keep it
 teyla intent [product] [--grep TEXT]    # no product: one line each; else one line per entry
 cat "$(teyla intent path <product>)"    # the words themselves
+teyla intent cover docs/ROADMAP.md      # which of your sentences does this plan leave out?
 ```
 
 The `UserPromptSubmit` hook `plugin/hooks/capture-intent.sh` keeps new prompts. `teyla harness sync`
@@ -24,7 +25,9 @@ wires the same script into Codex, Grok, Cursor and Hermes. Codex asks you to tru
 - Briefs one agent session writes for another (they open with "Background (from the session that
   started this one)") and harness events are not the owner's words and are skipped.
 - Secrets become `[redacted]` (the scrubber `teyla correct` uses) before anything is written.
-- The same text is kept once per product. `.index.json` holds the hashes and is rebuilt if lost.
+- The same words on the same lines are kept once per product: spaces within a line, line endings and
+  the blank lines around the text do not count, but a different line structure is a different prompt.
+  `.index.json` holds the hashes and is rebuilt if lost, or if it comes from an older version.
 
 ```
 ## 2026-10-16 18:40 · claude · session 1a2b3c4d
@@ -37,7 +40,42 @@ wires the same script into Codex, Grok, Cursor and Hermes. Codex asks you to tru
   injected AGENTS.md text, scheduled-task prompts.
 - Turns the harness injects (system reminders, task notifications, slash commands) and images.
 - Text you paste into a prompt arrives inline and cannot be told from typing, so it is kept. A prompt
-  over 50,000 characters keeps its first 50,000 and says how many were left out.
+  over 50,000 characters keeps its first 50,000 and says how many were left out. The hash covers the
+  kept part, so a cut prompt is still recognised after the index is rebuilt.
+
+## Check a plan against your words
+
+```sh
+teyla intent cover <plan.md> [--product P] [--since YYYY-MM-DD] [--last N] [--model] [--json]
+```
+
+The source is your entries for the product (default: the repo the plan sits in). `--since` and `--last`
+narrow them. Each entry is cut into sentences and list items, in Russian and English. A sentence under
+six words is dropped, and so is chatter ("proceed", "ok, do it") and a question about the agent's own
+state ("are you done?"). Requirements, goals, constraints, complaints and examples stay. Pasted code
+blocks and quoted lines are skipped. A sentence that repeats in a later entry counts once.
+
+A sentence is served when the plan
+
+- **quotes it**: all of it, or a run of at least 60% of its words, ignoring case, punctuation and spacing;
+- **covers its words**: one plan sentence, or two next to each other, holds at least 55% of its content
+  words and at least three of them (a suffix strip stands in for stemming, in English and Russian);
+- **sets it aside**: the match sits under a heading such as "Out of scope", "Non-goals" or "Deferred", or in
+  a line that opens with one of those phrases and a colon.
+
+The output starts with `served 23 of 31`, then the unserved sentences, grouped by the entry they came
+from, with its date and session. A Russian sentence cannot match an English plan by words. Those are
+listed apart as "needs --model", not as unserved.
+
+`--model` sends the unresolved sentences and the plan to one Claude Haiku 5.5 call per 80 sentences (about
+$0.002) and takes its verdict: served only when the plan has a step, decision or target for that point, or
+lists it as out of scope. It is off by default. In safe mode it does not run, because the prompts would
+leave the machine. A failed call leaves the word-based verdicts as they were.
+
+Exit 0: every sentence is served or still waits for `--model`. Exit 1: something is unserved. Exit 2: no
+plan, no entries, or no intent for the product. A hook or a reviewer can gate on it. The check finds a
+sentence the plan does not mention. It cannot tell whether a mention does the sentence justice: read what
+it reports as served by words once.
 
 ## In a session
 

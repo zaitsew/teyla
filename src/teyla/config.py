@@ -161,7 +161,9 @@ DEFAULTS = {
     "intent": {"enabled": True, "min_chars": 400},
     "safe": {"enabled": False, "auto_update": False},
     # `teyla state`: a model writes the brief and the ranking (off = rules only; never in safe mode).
-    "state": {"model_brief": True},
+    # merge_approved: owner/repo names whose PRs the owner merges without asking, so they are not tasks;
+    # empty = read the list in ~/.claude/CLAUDE.md.
+    "state": {"model_brief": True, "merge_approved": []},
     # `teyla relay`: the iCloud Drive folder shared with the phone ("" = iCloud Drive/Teyla).
     "relay": {"folder": ""},
     # Harnesses to leave alone: no health line, no FIX for their hooks or credits, no sync.
