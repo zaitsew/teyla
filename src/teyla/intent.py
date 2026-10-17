@@ -11,6 +11,8 @@ after `corrections.scrub` has replaced secrets, and a planning session is pointe
     teyla intent                         one line per product: entries, latest date
     teyla intent <product> [--days N] [--grep TEXT] [--json]   one line per entry
     teyla intent path <product>          the file, for `cat "$(teyla intent path x)"`
+    teyla intent cover <plan.md> [--product P] [--since DATE] [--last N] [--model] [--json]
+                                         which of the owner's sentences a plan neither serves nor sets aside
     teyla intent backfill [--days 30] [--dry]   the same capture from Claude Code and Codex transcripts
     teyla intent capture                 what plugin/hooks/capture-intent.sh runs (JSON on stdin)
 
@@ -541,7 +543,10 @@ def _list_entries(args, names: list[str]) -> list[dict]:
 
 def cmd_intent(args) -> int:
     words = list(args.words or [])
-    sub = words[0] if words and words[0] in ("capture", "backfill", "path") else None
+    sub = words[0] if words and words[0] in ("capture", "backfill", "path", "cover") else None
+    if sub == "cover":
+        from . import intent_cover
+        return intent_cover.cmd_cover(args, words)
     if sub == "capture":
         hook_main()
         return 0
@@ -575,7 +580,7 @@ def cmd_intent(args) -> int:
         print(intent_dir() / f"{name}.md")
         return 0
     if len(words) > 1:
-        print("usage: teyla intent [product] [--days N] [--grep TEXT] [--json] | path <product> | backfill | capture",
+        print("usage: teyla intent [product] [--days N] [--grep TEXT] [--json] | path <product> | cover <plan.md> | backfill | capture",
               file=sys.stderr)
         return 64
     if words:
@@ -617,9 +622,13 @@ def cmd_intent(args) -> int:
 def register(sp):
     q = sp.add_parser("intent", help="the owner's long prompts, verbatim, per product: list, path, backfill")
     q.set_defaults(fn=cmd_intent)
-    q.add_argument("words", nargs="*", metavar="[product|path <product>|backfill|capture]")
+    q.add_argument("words", nargs="*", metavar="[product|path <product>|cover <plan.md>|backfill|capture]")
     q.add_argument("--days", type=int, help="list: only the last N days; backfill: the window (default 30)")
     q.add_argument("--grep", help="list: only entries containing TEXT (case-insensitive)")
     q.add_argument("--json", action="store_true", help="list: JSON, the full text of each entry")
     q.add_argument("--dry", action="store_true", help="backfill: count, write nothing")
+    q.add_argument("--product", help="cover: the product whose words the plan is checked against (default: the plan's repo)")
+    q.add_argument("--since", metavar="YYYY-MM-DD", help="cover: only entries from this date on")
+    q.add_argument("--last", type=int, metavar="N", help="cover: only the last N entries")
+    q.add_argument("--model", action="store_true", help="cover: one Claude Haiku call for what words cannot settle")
     return q
