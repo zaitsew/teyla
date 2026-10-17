@@ -145,7 +145,7 @@ requirement avoid prefer want hate stop keep every each all
 """.split())
 # Questions about the agent's own state or progress; they ask for a status, not for a feature.
 COVER_AGENT_STATE = (
-    r"\b(?:are you|did you|have you|were you|can you tell|is it (?:done|finished|ready|running|stuck|working)|"
+    r"\b(?:are you|did you|have you|were you|is it (?:done|finished|ready|running|stuck|working)|"
     r"is (?:the )?(?:sprint|build|run|lane|agent|session) (?:done|finished|ready|running|stuck|still)|"
     r"how (?:is it going|long|far)|what(?:'s| is) (?:the )?(?:status|state|progress)|where are you|"
     r"what are you (?:doing|working)|still (?:working|running|alive))\b",
