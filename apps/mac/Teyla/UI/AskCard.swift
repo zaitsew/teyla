@@ -11,43 +11,41 @@ struct AskCard: View {
     private var status: CardStatus? { model.cards[ask.id] }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.m) {
             header
             Text(ask.question)
-                .font(.system(size: 16, weight: .medium))
+                .font(Typo.lead)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             if !ask.context.isEmpty {
                 Text(ask.context)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .font(Typo.body)
+                    .foregroundStyle(Palette.textSecondary)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let note = model.notes[ask.id] {
                 Label(note, systemImage: "doc.on.clipboard")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .font(Typo.body)
+                    .foregroundStyle(Palette.textSecondary)
             }
             switch status {
             case .sending(let text):
-                HStack(spacing: 8) {
+                HStack(spacing: Space.s) {
                     ProgressView().controlSize(.small)
-                    Text(text).foregroundStyle(.secondary)
+                    Text(text).foregroundStyle(Palette.textSecondary)
                 }
             case .done(let text):
                 Label(text, systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Palette.success)
             case .failed(let message):
                 failure(message)
             case nil:
                 actions
             }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color(nsColor: .separatorColor)))
+        .card(highlighted: model.focusedAskID == ask.id)
+        .id(ask.id)
         .contextMenu {
             Button("Snooze 1 day") { model.snooze(ask, days: 1) }
             Button("Mark done") { model.markDone(ask) }
@@ -65,21 +63,21 @@ struct AskCard: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             Text("\(Format.product(ask.product)) · \(Format.age(seconds: model.age(of: ask)))")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 12)
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textSecondary)
+            Spacer(minLength: Space.m)
             if !ask.unblocks.isEmpty {
                 Text("unblocks \(ask.unblocks)")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(Color.accentColor)
+                    .font(Typo.caption.weight(.medium))
+                    .foregroundStyle(Palette.accent)
                     .multilineTextAlignment(.trailing)
             }
         }
     }
 
     private var actions: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            FlowLayout(spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.m) {
+            FlowLayout(spacing: Space.s) {
                 ForEach(Array(ask.options.enumerated()), id: \.offset) { index, option in
                     if index == 0 && !composing {
                         Button(option) { model.answer(ask, text: option) }
@@ -104,22 +102,28 @@ struct AskCard: View {
     }
 
     private var composer: some View {
-        HStack(spacing: 8) {
-            TextField("Write an answer", text: $draft, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(1...5)
-                .focused($fieldFocused)
-                .onSubmit(send)
-                .onExitCommand { composing = false; draft = "" }
-            Button("Send", action: send)
-                .buttonStyle(.borderedProminent)
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            Button("Cancel") { composing = false; draft = "" }
-                .buttonStyle(.borderless)
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: Space.xs) {
+            HStack(spacing: Space.s) {
+                TextField("Write an answer", text: $draft, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...5)
+                    .focused($fieldFocused)
+                    .onSubmit(send)
+                    .onExitCommand { composing = false; draft = "" }
+                MicButton(target: dictationTarget, text: $draft)
+                Button("Send", action: send)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Cancel") { composing = false; draft = "" }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Palette.textSecondary)
+            }
+            DictationNote(target: dictationTarget)
         }
         .onAppear { fieldFocused = true }
     }
+
+    private var dictationTarget: String { "answer:\(ask.id)" }
 
     private func beginComposing() {
         composing = true
@@ -135,14 +139,14 @@ struct AskCard: View {
     }
 
     private func failure(_ message: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s) {
             Label(message, systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
-                .font(.callout)
+                .foregroundStyle(Palette.danger)
+                .font(Typo.body)
                 .lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
-            HStack(spacing: 8) {
+            HStack(spacing: Space.s) {
                 Button("Open session") { model.openSession(ask.link, noteKey: ask.id) }
                     .buttonStyle(.borderedProminent)
                     .disabled(ask.link.isEmpty)

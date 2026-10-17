@@ -27,20 +27,36 @@ final class AppModel {
     /// Ids the user has answered, snoozed or closed. They stay hidden until a snapshot no
     /// longer lists them, so a refresh racing the CLI cannot bring a card back.
     private var hidden: Set<String> = []
-    private var knownAskIDs: Set<String> = []
-    private var firstLoadDone = false
+    private var askTracker = AskTracker()
     private var refreshQueued = false
+
+    /// The question a notification pointed at; the window scrolls to its card and marks it for a moment.
+    private(set) var focusedAskID: String?
+    /// What Settings says about the ⌥⌘Space shortcut.
+    private(set) var hotKeyLine = GlobalHotKey.describe(noErr)
+    /// The product new tasks start in by default; chosen by clicking a product. Remembered.
+    private(set) var selectedProduct: String? = UserDefaults.standard.string(forKey: "selectedProduct")
 
     /// Set by the main window so the menu bar and the Dock can reopen it after it was closed.
     var openMainWindow: (() -> Void)?
 
-    @ObservationIgnored private let cli = TeylaCLI()
+    @ObservationIgnored let cli: TeylaCLI
+    let newTask: NewTaskModel
+    let relay: RelayModel
+    @ObservationIgnored private var hotKeyTalk = PushToTalk()
     @ObservationIgnored private var watcher: SessionWatcher?
     @ObservationIgnored private var timerTask: Task<Void, Never>?
     @ObservationIgnored private var started = false
     @ObservationIgnored private let log = Logger(subsystem: "com.zaitsew.teyla", category: "app")
 
     var usesFixture: Bool { cli.usesFixture }
+
+    init() {
+        let cli = TeylaCLI()
+        self.cli = cli
+        newTask = NewTaskModel(cli: cli)
+        relay = RelayModel(cli: cli)
+    }
 
     // MARK: Derived
 
@@ -56,8 +72,13 @@ final class AppModel {
     }
 
     func age(of ask: Ask, at date: Date = Date()) -> Double {
-        guard let fetchedAt else { return ask.ageSeconds }
-        return ask.ageSeconds + max(0, date.timeIntervalSince(fetchedAt))
+        age(plus: ask.ageSeconds, at: date)
+    }
+
+    /// An age reported in the snapshot, plus the time since the snapshot was read.
+    func age(plus seconds: Double, at date: Date = Date()) -> Double {
+        guard let fetchedAt else { return seconds }
+        return seconds + max(0, date.timeIntervalSince(fetchedAt))
     }
 
     var briefLine: String {
@@ -117,13 +138,8 @@ final class AppModel {
         lastError = nil
         let ids = Set(next.asks.map(\.id))
         hidden.formIntersection(ids)
-        if firstLoadDone {
-            for ask in next.asks where !knownAskIDs.contains(ask.id) && !hidden.contains(ask.id) {
-                notify(ask)
-            }
-        }
-        knownAskIDs.formUnion(ids)
-        firstLoadDone = true
+        for ask in askTracker.fresh(in: next.asks, hidden: hidden) { notify(ask) }
+        relay.reconcile(with: next.relay, usesFixture: usesFixture)
     }
 
     // MARK: Actions
@@ -131,6 +147,7 @@ final class AppModel {
     func answer(_ ask: Ask, text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isBusy(ask) else { return }
+        Dictation.shared.stop()             // later results must not refill a field that was sent
         cards[ask.id] = .sending("Sending…")
         Task {
             do {
@@ -172,6 +189,45 @@ final class AppModel {
         if case .failed = cards[ask.id] { cards[ask.id] = nil }
     }
 
+    /// A correction for a running session (`teyla say`). The result line shows for a few seconds.
+    func say(_ session: RunningSession, text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = session.ref
+        guard !trimmed.isEmpty, !key.isEmpty else { return }
+        Dictation.shared.stop()
+        if case .sending = cards[key] { return }
+        cards[key] = .sending("Sending…")
+        Task {
+            do {
+                let result = try await cli.say(ref: key, text: trimmed)
+                cards[key] = .done(Format.saidLine(via: result.via))
+                try? await Task.sleep(for: .seconds(8))
+                if case .done = cards[key] { cards[key] = nil }
+            } catch {
+                cards[key] = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    func dismissCorrectionError(_ session: RunningSession) {
+        if case .failed = cards[session.ref] { cards[session.ref] = nil }
+    }
+
+    func selectProduct(_ name: String) {
+        selectedProduct = name
+        UserDefaults.standard.set(name, forKey: "selectedProduct")
+    }
+
+    func clearFocus() { focusedAskID = nil }
+
+    /// Registers ⌥⌘Space for push-to-talk. Called once at launch.
+    func registerHotKey() {
+        let key = GlobalHotKey.shared
+        key.onPress = { Task { @MainActor in AppModel.shared.hotKeyDown() } }
+        key.onRelease = { Task { @MainActor in AppModel.shared.hotKeyUp() } }
+        hotKeyLine = GlobalHotKey.describe(key.register())
+    }
+
     /// Opens a URL link in its app. A link without a URL scheme is a shell command (Claude Code
     /// sessions): it goes to the clipboard, with a note under `noteKey`, and is never handed to NSWorkspace.
     func openSession(_ link: String, noteKey: String) {
@@ -198,7 +254,47 @@ final class AppModel {
 
     func showMainWindow() {
         openMainWindow?()
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Opens the new-task sheet (⌘N, the toolbar, the menu bar).
+    func openNewTask() {
+        showMainWindow()
+        newTask.prepare(products: snapshot?.products ?? [], selected: selectedProduct)
+        newTask.presented = true
+    }
+
+    /// Brings a question's card forward (a clicked notification).
+    func focus(askID: String) {
+        showMainWindow()
+        focusedAskID = askID
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if focusedAskID == askID { focusedAskID = nil }
+        }
+    }
+
+    // MARK: Push-to-talk shortcut (⌥⌘Space)
+
+    /// Key down: open the new-task sheet and start listening (or stop, if it was listening).
+    func hotKeyDown() {
+        if !newTask.presented { openNewTask() } else { showMainWindow() }
+        let listening = Dictation.shared.activeTarget == NewTaskModel.dictationTarget
+        switch hotKeyTalk.press(at: Date(), listening: listening) {
+        case .start: startNewTaskDictation()
+        case .stop: Dictation.shared.stop()
+        case .none: break
+        }
+    }
+
+    /// Key up: a held key stops listening; a tap keeps listening until the next press.
+    func hotKeyUp() {
+        if hotKeyTalk.release(at: Date()) == .stop { Dictation.shared.stop() }
+    }
+
+    func startNewTaskDictation() {
+        let task = newTask
+        Dictation.shared.start(target: NewTaskModel.dictationTarget, current: task.draft) { task.draft = $0 }
     }
 
     private func isBusy(_ ask: Ask) -> Bool {
@@ -236,6 +332,7 @@ final class AppModel {
         content.title = Format.product(ask.product)
         content.body = ask.question
         content.sound = .default
+        content.userInfo = ["ask": ask.id]
         let request = UNNotificationRequest(identifier: "ask-\(ask.id)", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request) { [log] error in
             if let error { log.error("notification failed: \(error.localizedDescription, privacy: .public)") }

@@ -31,6 +31,9 @@ targets:
         LSUIElement: false
         LSMinimumSystemVersion: "15.0"
         NSHumanReadableCopyright: "MIT License"
+        # Voice input: recognised on this Mac only. Both strings are shown in the permission dialogs.
+        NSSpeechRecognitionUsageDescription: "Teyla turns your voice into text on this Mac, so you can dictate answers, corrections and new tasks. No audio leaves your Mac."
+        NSMicrophoneUsageDescription: "Teyla listens while you hold the microphone button or the shortcut, and turns your voice into text on this Mac."
     settings:
       base:
         PRODUCT_NAME: Teyla
@@ -38,6 +41,7 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Teyla/Info.plist
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
   TeylaTests:
     type: bundle.unit-test
     platform: macOS
