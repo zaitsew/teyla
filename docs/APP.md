@@ -123,22 +123,50 @@ new ones, and a version 2 client treats a missing field as empty.
 ### The relay (Mac ↔ iPhone)
 
 The relay folder is `~/Library/Mobile Documents/com~apple~CloudDocs/Teyla/` (iCloud Drive/Teyla).
-The phone picks it once with the document picker and keeps a bookmark.
+The phone picks it once with the document picker and keeps a bookmark. Anyone who can write to
+that folder is untrusted: both directions are signed with a key the two devices share.
 
-- `state.json`: the snapshot, written by the Mac. Session links stay in it; the phone opens
-  `claude://` and `codex://` links only if the app is installed there.
+- `state.teyla`: written by the Mac. Line 1 is the signature (64 hex characters), then `\n`,
+  then the snapshot JSON bytes exactly as signed. The phone verifies the signature over those
+  bytes before it decodes or shows anything; a bad signature shows "Waiting for the Mac" and
+  nothing else. One file, so iCloud never delivers a snapshot without its signature.
 - `outbox/<uuid>.json`: written by the phone, one per action:
   `{v: 1, id: <uuid>, kind: answer|say|dispatch, target: <ask id | running id | product>,
-  text, created: <ISO time>, device, sig}`.
-- `sent/<uuid>.json`: written by the Mac after delivery: `{id, ok, via, detail, done_at}`. The
-  outbox entry is removed. The phone shows the result and deletes `sent/` entries it has shown.
+  about: <hex sha256 of the text the owner saw>, text, created: <ISO time>, device, sig}`.
+  For `answer`, `about` hashes the question; for `say`, the session title; for `dispatch`, the
+  product name. The Mac refuses an entry whose `about` does not match what it has now, so a
+  question changed after the owner read it is never answered.
+- `sent/<uuid>.json`: written by the Mac: `{id, ok, via, detail, done_at}`. The outbox entry
+  is removed. The phone shows the result and deletes `sent/` entries it has shown.
 
-Signing: `sig` is the lowercase hex HMAC-SHA256 of the entry without `sig`, serialised as JSON
-with sorted keys, no spaces, UTF-8. The 32-byte key is at `~/.teyla/relay.key` (0600) on the
-Mac and in the iPhone's Keychain. The pairing string is `teyla-pair:v1:<base64url key>`.
-The Mac rejects an entry with a bad or missing signature, an `id` it has seen, a `created`
-older than 7 days or more than 10 minutes in the future, a `text` over 8,000 characters, or a
-`target` that does not exist. Rejected entries go to `sent/` with `ok: false` and the reason.
+Signing. The key is 32 random bytes: `~/.teyla/relay.key` (0600) on the Mac, the Keychain on the
+phone. The pairing string is `teyla-pair:v1:<base64url key, no padding>`. Each signature is the
+lowercase hex HMAC-SHA256 of a message:
+
+- snapshot: `teyla-state-v1\n` followed by the JSON bytes;
+- outbox entry: the lines `teyla-outbox-v1`, `v`, `id`, `kind`, `target`, `about`, `created`,
+  `device`, then `text`, joined with `\n`, UTF-8. `text` is last, so a newline inside it is safe.
+  No other field is signed and no JSON canonical form is needed.
+
+`tests/fixtures/relay-vector.json` holds a key, a snapshot, an entry and both expected
+signatures; the Mac and the phone each reproduce them in a test.
+
+Checks and delivery, at most once:
+
+1. Refuse an entry with a bad or missing signature, an `id` already in the journal, `created`
+   older than 7 days or more than 10 minutes ahead, `text` over 8,000 characters, an unknown
+   `kind`, a `target` that does not exist, or an `about` that does not match.
+2. Claim it: create `~/.teyla/relay-journal/<id>.json` with `O_EXCL` (state `claimed`), then
+   deliver, then rewrite the journal entry as `done` with the result and write `sent/`.
+3. After a crash, a `claimed` entry is never retried: `sent/` gets `ok: false`, "interrupted;
+   check the session, then send again".
+4. A relay answer never falls back to the clipboard: when only "copy and open" is possible,
+   `sent/` gets `ok: false`, "needs the Mac", and the question stays open.
+5. Rejected entries go to `sent/` with `ok: false` and the reason.
+
+Dispatched work. `teyla dispatch` appends `{id, product, harness, worktree, branch, started,
+pid, log}` to `~/.teyla/dispatch.jsonl`. `running[]` and `done[]` include headless runs whose
+working directory is a worktree in that file, although they leave out every other headless run.
 
 ### Voice
 

@@ -1,0 +1,21 @@
+{
+ "_comment": "Relay signing test vector (docs/APP.md, The relay). Clients reproduce state_sig, entry_message and entry.sig from key_hex.",
+ "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+ "pairing": "teyla-pair:v1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+ "question": "Swap the iPhone review to the newest build, 1.1, or keep 1.0 in the queue?",
+ "state_json": "{\"version\":2,\"generated\":\"2026-10-17T21:40:00Z\",\"asks\":[]}",
+ "state_sig": "5ac61fb38a00d80f52c04e823ffe10c93319e52435ed67f0a945ff5948f09fdb",
+ "state_file": "5ac61fb38a00d80f52c04e823ffe10c93319e52435ed67f0a945ff5948f09fdb\n{\"version\":2,\"generated\":\"2026-10-17T21:40:00Z\",\"asks\":[]}",
+ "entry": {
+  "v": 1,
+  "id": "6f1c2a54-9a1e-4c3b-8d0f-2b7e1f0c9a11",
+  "kind": "answer",
+  "target": "7c222b3d",
+  "about": "398ee6c2d63234bb49851fa1fa6be97ebf7adcb2b699d58edaff5c1fcdd8dd4d",
+  "created": "2026-10-17T21:45:00Z",
+  "device": "iPhone",
+  "text": "Swap to 1.1 \u2014 and check the iPad / Mac builds too.\n\u00bfVale? \u0414\u0430.",
+  "sig": "e6cc1517b3e708ca077fc12f8eef7a8c257accdc5cd03bbcfc97e7c9c41e1dbf"
+ },
+ "entry_message": "teyla-outbox-v1\n1\n6f1c2a54-9a1e-4c3b-8d0f-2b7e1f0c9a11\nanswer\n7c222b3d\n398ee6c2d63234bb49851fa1fa6be97ebf7adcb2b699d58edaff5c1fcdd8dd4d\n2026-10-17T21:45:00Z\niPhone\nSwap to 1.1 \u2014 and check the iPad / Mac builds too.\n\u00bfVale? \u0414\u0430."
+}
