@@ -41,6 +41,7 @@ final class NewTaskModel {
 
     func send() {
         guard NewTask.canSend(product: product, text: draft), !isSending, let product else { return }
+        Dictation.shared.stop()             // later results must not refill the draft after it is sent
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let harness = harness
         status = .sending("Starting…")

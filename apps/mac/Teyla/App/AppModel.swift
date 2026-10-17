@@ -147,6 +147,7 @@ final class AppModel {
     func answer(_ ask: Ask, text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isBusy(ask) else { return }
+        Dictation.shared.stop()             // later results must not refill a field that was sent
         cards[ask.id] = .sending("Sending…")
         Task {
             do {
@@ -193,6 +194,7 @@ final class AppModel {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let key = session.ref
         guard !trimmed.isEmpty, !key.isEmpty else { return }
+        Dictation.shared.stop()
         if case .sending = cards[key] { return }
         cards[key] = .sending("Sending…")
         Task {
