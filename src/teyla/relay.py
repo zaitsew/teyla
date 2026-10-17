@@ -34,6 +34,7 @@ except by `pair`.
 from __future__ import annotations
 
 import base64
+import ctypes
 import datetime as _dt
 import fcntl
 import hashlib
@@ -159,6 +160,46 @@ def _write_atomic(path: pathlib.Path, data: bytes, mode: int = 0o600) -> None:
 
 def _write_json(path: pathlib.Path, obj: dict, mode: int = 0o600) -> None:
     _write_atomic(path, (json.dumps(obj, indent=1, ensure_ascii=False) + "\n").encode("utf-8"), mode)
+
+
+def _rename_at(dfd: int, src: str, dst: str) -> None:
+    """rename(2) inside one directory descriptor. Python on macOS has no dir_fd for os.replace, so renameat
+    from libc is called directly there."""
+    if os.replace in os.supports_dir_fd:
+        os.replace(src, dst, src_dir_fd=dfd, dst_dir_fd=dfd)
+        return
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.renameat(dfd, os.fsencode(src), dfd, os.fsencode(dst)) != 0:
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err), dst)
+
+
+def _write_atomic_at(dfd: int, name: str, data: bytes, mode: int = 0o600) -> None:
+    """_write_atomic for a directory held open: no path is looked up again, so a link swapped in after the
+    folder was checked cannot redirect the write."""
+    tmp = f".{name}.{os.getpid()}.tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, mode, dir_fd=dfd)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fchmod(f.fileno(), mode)
+            os.fsync(f.fileno())
+        _rename_at(dfd, tmp, name)
+    except BaseException:
+        try:
+            os.unlink(tmp, dir_fd=dfd)
+        except OSError:
+            pass
+        raise
+
+
+def _fsync_dir(path: pathlib.Path) -> None:
+    dfd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(dfd)
+    finally:
+        os.close(dfd)
 
 
 def read_cfg() -> dict:
@@ -402,8 +443,11 @@ def _journal_file(jid: str) -> pathlib.Path:
 def _claim(e: dict, now: float) -> bool:
     """Create the journal entry exclusively. False: it exists, so this id was handled or is being handled."""
     jd = journal_dir()
+    new = not jd.is_dir()
     jd.mkdir(parents=True, exist_ok=True)
     os.chmod(jd, 0o700)
+    if new:
+        _fsync_dir(jd.parent)                   # the journal directory's own entry must survive a power cut
     try:
         fd = os.open(_journal_file(e["id"]), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     except FileExistsError:
@@ -414,11 +458,7 @@ def _claim(e: dict, now: float) -> bool:
         f.flush()
         os.fsync(f.fileno())
     # The claim must survive a power cut before anything is delivered: fsync the directory entry too.
-    dfd = os.open(jd, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        os.fsync(dfd)
-    finally:
-        os.close(dfd)
+    _fsync_dir(jd)
     return True
 
 
@@ -456,22 +496,24 @@ def prune_journal(now: float) -> int:
 
 # --- sent/ ------------------------------------------------------------------------------------
 
-def _sent_file(folder: pathlib.Path, eid: str) -> pathlib.Path:
-    return folder / "sent" / f"{eid}.json"
-
-
-def write_sent(folder: pathlib.Path, eid: str, ok: bool, via: str, detail: str, now: float) -> None:
-    _write_json(_sent_file(folder, eid), {"id": eid, "ok": ok, "via": via, "detail": _clip(detail),
-                                          "done_at": _iso(now)})
-
-
-def _unlink(path: pathlib.Path) -> None:
+def _sent_exists(dirs: "Dirs", eid: str) -> bool:
     try:
-        os.unlink(path)
+        os.stat(f"{eid}.json", dir_fd=dirs.sent, follow_symlinks=False)
     except FileNotFoundError:
-        pass
+        return False
+    return True
+
+
+def write_sent(dirs: "Dirs", eid: str, ok: bool, via: str, detail: str, now: float) -> None:
+    body = {"id": eid, "ok": ok, "via": via, "detail": _clip(detail), "done_at": _iso(now)}
+    _write_atomic_at(dirs.sent, f"{eid}.json", (json.dumps(body, indent=1, ensure_ascii=False) + "\n").encode("utf-8"))
+
+
+def _unlink(dirs: "Dirs", name: str) -> None:
+    try:
+        os.unlink(name, dir_fd=dirs.outbox)
     except OSError:
-        pass                                    # a directory or a file we may not remove: it is refused each pass
+        pass                                    # gone, a directory, or not ours to remove: refused each pass
 
 
 def folder_problem(folder: pathlib.Path) -> str:
@@ -496,6 +538,58 @@ def folder_problem(folder: pathlib.Path) -> str:
     except OSError as exc:
         return f"{folder}: {exc.strerror or exc}"
     return ""
+
+
+class Dirs:
+    """The relay folder, its outbox and sent/, each opened once without following a link and used only
+    through these descriptors for the whole pass. folder_problem() checks paths; a link swapped in after
+    that check (outbox -> the journal, say) changes nothing here, because no path is looked up again."""
+
+    _FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+    def __init__(self, folder: pathlib.Path):
+        self.folder = folder
+        self.root = self.outbox = self.sent = -1
+
+    def open(self) -> "Dirs":
+        """Open and check all three; RelayError says why the folder is refused."""
+        try:
+            self.root = os.open(self.folder, self._FLAGS)
+            self.outbox = os.open("outbox", self._FLAGS, dir_fd=self.root)
+            self.sent = os.open("sent", self._FLAGS, dir_fd=self.root)
+            ours = set()
+            for d in (ctl.home(), journal_dir()):
+                try:
+                    st = os.stat(d)
+                    ours.add((st.st_dev, st.st_ino))
+                except OSError:
+                    pass
+            for name, fd in (("folder", self.root), ("outbox", self.outbox), ("sent", self.sent)):
+                st = os.fstat(fd)
+                if st.st_uid != os.getuid():
+                    raise RelayError(f"{name} is not owned by this user")
+                if (st.st_dev, st.st_ino) in ours:
+                    raise RelayError(f"{name} is Teyla's own directory")
+        except OSError as exc:
+            self.close()
+            raise RelayError(f"{self.folder}: {exc.strerror or exc}") from exc
+        except RelayError:
+            self.close()
+            raise
+        return self
+
+    def __enter__(self) -> "Dirs":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+    def close(self) -> None:
+        for attr in ("sent", "outbox", "root"):
+            fd = getattr(self, attr)
+            if fd >= 0:
+                os.close(fd)
+                setattr(self, attr, -1)
 
 
 # --- delivery ---------------------------------------------------------------------------------
@@ -549,8 +643,8 @@ def deliver_answer(item: asks.Ask, text: str, answer_fn) -> tuple[bool, str, str
 class Pass:
     """What one pass works from: the folder, the key, the facts the phone's `about` is checked against."""
 
-    def __init__(self, folder, key, now, snap, items, answer_fn, runner, base):
-        self.folder, self.key, self.now = folder, key, now
+    def __init__(self, dirs, key, now, snap, items, answer_fn, runner, base):
+        self.dirs, self.key, self.now = dirs, key, now
         self.answers = {r["id"]: r["question"] for r in snap.get("asks", []) if isinstance(r, dict) and "id" in r}
         self.running = {r["id"]: r.get("title", "") for r in snap.get("running", []) if isinstance(r, dict) and r.get("id")}
         self.products = {r["name"] for r in snap.get("products", []) if isinstance(r, dict) and "name" in r}
@@ -558,7 +652,7 @@ class Pass:
         self.answer_fn, self.runner, self.base = answer_fn, runner, base
 
 
-def recover(folder: pathlib.Path, now: float) -> list[dict]:
+def recover(dirs: Dirs, now: float) -> list[dict]:
     """A journal entry still `claimed` was cut off before it had a result. Report it; never retry it."""
     out = []
     for f in sorted(journal_dir().glob("*.json")):
@@ -570,32 +664,32 @@ def recover(folder: pathlib.Path, now: float) -> list[dict]:
             continue
         detail = "interrupted; check the session, then send again"
         _journal_set(eid, "interrupted", now, {"ok": False, "via": "", "detail": detail})
-        write_sent(folder, eid, False, "", detail, now)
-        _unlink(folder / "outbox" / f"{eid}.json")
+        write_sent(dirs, eid, False, "", detail, now)
+        _unlink(dirs, f"{eid}.json")
         out.append({"id": eid, "ok": False, "detail": detail})
     return out
 
 
-def _reject_unsigned(p: Pass, path: pathlib.Path, stem: str, reason: str) -> dict:
+def _reject_unsigned(p: Pass, name: str, stem: str, reason: str) -> dict:
     """An entry that did not prove it came from the phone. The reason goes to sent/, unless that id has an
     outcome already: a forged copy of a real id must not overwrite the real result."""
-    if _journal_read(stem) is None and not _sent_file(p.folder, stem).exists():
-        write_sent(p.folder, stem, False, "", reason, p.now)
-    _unlink(path)
+    if _journal_read(stem) is None and not _sent_exists(p.dirs, stem):
+        write_sent(p.dirs, stem, False, "", reason, p.now)
+    _unlink(p.dirs, name)
     return {"id": stem, "ok": False, "detail": reason}
 
 
-def _replay(p: Pass, e: dict, path: pathlib.Path) -> dict:
+def _replay(p: Pass, e: dict, name: str) -> dict:
     """A signed entry whose id the journal knows: never delivered again. The real result is put back in
     sent/ if the phone has already cleared it; nothing existing is overwritten."""
     rec = _journal_read(e["id"]) or {}
     res = rec.get("result") if isinstance(rec.get("result"), dict) else None
-    if not _sent_file(p.folder, e["id"]).exists():
+    if not _sent_exists(p.dirs, e["id"]):
         if res and rec.get("state") in ("done", "rejected", "interrupted"):
-            write_sent(p.folder, e["id"], bool(res.get("ok")), str(res.get("via") or ""), str(res.get("detail") or ""), p.now)
+            write_sent(p.dirs, e["id"], bool(res.get("ok")), str(res.get("via") or ""), str(res.get("detail") or ""), p.now)
         else:
-            write_sent(p.folder, e["id"], False, "", "already handled", p.now)
-    _unlink(path)
+            write_sent(p.dirs, e["id"], False, "", "already handled", p.now)
+    _unlink(p.dirs, name)
     return {"id": e["id"], "ok": False, "detail": "replay: already handled"}
 
 
@@ -633,53 +727,52 @@ def _decide(p: Pass, e: dict) -> tuple[bool, str, str, str]:
     return ok, via, detail, "done"
 
 
-def process_one(p: Pass, path: pathlib.Path, stem: str) -> dict | None:
+def process_one(p: Pass, name: str, stem: str) -> dict | None:
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=p.dirs.outbox)
     except OSError:
-        return _reject_unsigned(p, path, stem, "malformed entry: not a readable file")
+        return _reject_unsigned(p, name, stem, "malformed entry: not a readable file")
     st = os.fstat(fd)
     if not stat.S_ISREG(st.st_mode):            # checked before fdopen, which refuses a directory
         os.close(fd)
-        return _reject_unsigned(p, path, stem, "malformed entry: not a regular file")
+        return _reject_unsigned(p, name, stem, "malformed entry: not a regular file")
     with os.fdopen(fd, "rb") as f:
         if st.st_size > MAX_FILE:
-            return _reject_unsigned(p, path, stem, "file is larger than 64 KB")
+            return _reject_unsigned(p, name, stem, "file is larger than 64 KB")
         raw = f.read(MAX_FILE + 1)
     try:
         obj = json.loads(raw.decode("utf-8"))
     except (ValueError, RecursionError):
         if p.now - st.st_mtime < YOUNG_FILE_S:
             return None                         # may still be arriving from iCloud: look again next pass
-        return _reject_unsigned(p, path, stem, "malformed entry: not JSON")
+        return _reject_unsigned(p, name, stem, "malformed entry: not JSON")
     why = entry_shape(obj)
     if not why and obj["id"] != stem:
         why = "malformed entry: id does not match the file name"
     if why:
-        return _reject_unsigned(p, path, stem, why)
+        return _reject_unsigned(p, name, stem, why)
     if not signature_ok(p.key, obj):
-        return _reject_unsigned(p, path, stem, "bad signature")
+        return _reject_unsigned(p, name, stem, "bad signature")
     if not _claim(obj, p.now):
-        return _replay(p, obj, path)
+        return _replay(p, obj, name)
     ok, via, detail, state = _decide(p, obj)
     result = {"ok": ok, "via": via, "detail": _clip(detail)}
     _journal_set(obj["id"].lower(), state, p.now, result)
-    write_sent(p.folder, obj["id"], ok, via, detail, p.now)
-    _unlink(path)
+    write_sent(p.dirs, obj["id"], ok, via, detail, p.now)
+    _unlink(p.dirs, name)
     return {"id": obj["id"], "kind": obj["kind"], **result}
 
 
 def process_outbox(p: Pass) -> list[dict]:
-    box = p.folder / "outbox"
     try:
-        names = sorted(os.listdir(box))
+        names = sorted(os.listdir(p.dirs.outbox))
     except OSError:
         return []
     out = []
     for name in names:
         if not _FILE_RE.fullmatch(name):        # iCloud placeholders (.name.json.icloud), temp files, strays
             continue
-        res = process_one(p, box / name, name[:-len(".json")])
+        res = process_one(p, name, name[:-len(".json")])
         if res is not None:
             out.append(res)
     return out
@@ -690,8 +783,8 @@ def default_source(now: float):
     return snapshot.build(now, items=items), items
 
 
-def write_snapshot(folder: pathlib.Path, key: bytes, snap: dict) -> None:
-    _write_atomic(folder / "state.teyla", state_file(key, state_bytes(snap)))
+def write_snapshot(dirs: Dirs, key: bytes, snap: dict) -> None:
+    _write_atomic_at(dirs.root, "state.teyla", state_file(key, state_bytes(snap)))
 
 
 def sync(*, now: float | None = None, source=None, answer_fn=None, runner=None, base: list[str] | None = None,
@@ -718,15 +811,20 @@ def sync(*, now: float | None = None, source=None, answer_fn=None, runner=None, 
         if why:
             return {"skipped": f"unsafe relay folder: {why}"}
         source = source or default_source
-        recovered = recover(folder, now)
-        snap, items = source(now)
-        write_snapshot(folder, key, snap)
-        p = Pass(folder, key, now, snap, items, answer_fn or answer_mod.answer, runner or run_command,
-                 base or teyla_command())
-        processed = process_outbox(p)
-        if processed or recovered:
-            snap, _ = source(now)              # what was just answered is no longer waiting
-            write_snapshot(folder, key, snap)
+        try:
+            dirs = Dirs(folder).open()
+        except RelayError as exc:
+            return {"skipped": f"unsafe relay folder: {exc}"}
+        with dirs:
+            recovered = recover(dirs, now)
+            snap, items = source(now)
+            write_snapshot(dirs, key, snap)
+            p = Pass(dirs, key, now, snap, items, answer_fn or answer_mod.answer, runner or run_command,
+                     base or teyla_command())
+            processed = process_outbox(p)
+            if processed or recovered:
+                snap, _ = source(now)          # what was just answered is no longer waiting
+                write_snapshot(dirs, key, snap)
         cfg["synced"] = snap.get("generated") if isinstance(snap.get("generated"), str) else _iso(now)
         write_cfg(cfg)
         prune_journal(now)

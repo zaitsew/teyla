@@ -496,10 +496,10 @@ def test_the_snapshot_write_is_atomic(env, monkeypatch):
     before = (env.folder / "state.teyla").read_bytes()
     env.snap["generated"] = "2026-10-17T22:00:00Z"
 
-    def fail(src, dst):
+    def fail(dfd, src, dst):
         raise OSError("disk full")
     with monkeypatch.context() as m:
-        m.setattr(os, "replace", fail)
+        m.setattr(relay, "_rename_at", fail)
         with pytest.raises(OSError):
             env.sync()
     assert (env.folder / "state.teyla").read_bytes() == before          # the old file, whole
@@ -596,6 +596,41 @@ def test_an_outbox_linked_into_the_journal_stops_the_pass(env):
     res = env.sync()
     assert res["skipped"].startswith("unsafe relay folder") and claim.exists()
     assert env.answers == [] and not (env.folder / "state.teyla").exists()
+
+
+def test_an_outbox_swapped_for_a_journal_link_during_the_pass_changes_nothing(env):
+    # The folder passes the check; then, while the snapshot is built, outbox is moved away and a link to
+    # the journal takes its place. The pass keeps working on the directories it opened.
+    import shutil
+    relay.journal_dir().mkdir(parents=True, exist_ok=True)
+    claim = relay.journal_dir() / f"{uuid.uuid4()}.json"
+    claim.write_text(json.dumps({"id": claim.stem, "state": "done"}))
+    e = env.entry()
+    env.drop(e)
+    real_source = env.source
+
+    def swap(now):
+        if not (env.folder / "outbox.old").exists():
+            (env.folder / "outbox").rename(env.folder / "outbox.old")
+            os.symlink(relay.journal_dir(), env.folder / "outbox")
+        return real_source(now)
+    res = env.sync(source=swap)
+    assert claim.exists()                                               # the journal is untouched
+    assert [r["id"] for r in res["processed"]] == [e["id"]] and len(env.answers) == 1
+    assert not (env.folder / "outbox.old" / f"{e['id']}.json").exists()
+    assert env.sent(e["id"])["ok"] is True
+    assert env.sync()["skipped"].startswith("unsafe relay folder")      # the next pass sees the link
+    shutil.rmtree(env.folder / "outbox.old")
+
+
+def test_a_new_journal_directory_is_made_durable(env, monkeypatch):
+    synced = []
+    real = relay._fsync_dir
+    monkeypatch.setattr(relay, "_fsync_dir", lambda path: (synced.append(pathlib.Path(path)), real(path)))
+    assert not relay.journal_dir().exists()
+    env.drop(env.entry())
+    env.sync()
+    assert synced[:2] == [relay.journal_dir().parent, relay.journal_dir()]
 
 
 def test_a_folder_inside_teylas_home_is_refused(env):
