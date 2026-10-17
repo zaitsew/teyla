@@ -6,7 +6,7 @@ The relay lets the iPhone app read what is waiting on you and answer from the ph
 
 ```
 teyla relay on        # creates iCloud Drive/Teyla, installs the sync agent
-teyla relay pair      # prints the pairing string: scan or paste it in the iPhone app
+teyla relay pair      # prints the pairing string (the same one again later): scan or paste it in the iPhone app
 teyla relay status    # on, paired, last snapshot
 ```
 

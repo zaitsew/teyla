@@ -168,11 +168,14 @@ def test_a_key_others_can_read_is_not_used(env):
 def test_pair_command_prints_the_pairing_string(capsys):
     assert cli.main(["relay", "pair", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
-    assert out["pairing"] == relay.pairing_string(relay.read_key())
-    assert cli.main(["relay", "pair"]) == 1
-    assert "already paired" in capsys.readouterr().err
+    assert out["pairing"] == relay.pairing_string(relay.read_key()) and out["new"] is True
+    # A second pair shows the same key again, for a second phone or a lost QR code.
+    assert cli.main(["relay", "pair", "--json"]) == 0
+    again = json.loads(capsys.readouterr().out)
+    assert again["pairing"] == out["pairing"] and again["new"] is False
     assert cli.main(["relay", "pair", "--rotate", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)["rotated"] is True
+    rotated = json.loads(capsys.readouterr().out)
+    assert rotated["rotated"] is True and rotated["pairing"] != out["pairing"]
 
 
 # --- the happy path ---------------------------------------------------------------------------

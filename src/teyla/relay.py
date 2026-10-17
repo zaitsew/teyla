@@ -704,10 +704,12 @@ def cmd_relay(args) -> int:
     act = args.action
     try:
         if act == "pair":
-            key = create_key(rotate=args.rotate)
+            existing = None if args.rotate else read_key()
+            # Pairing a second phone, or showing the QR again, reuses the key; --rotate replaces it.
+            key = existing or create_key(rotate=args.rotate)
             s = pairing_string(key)
             if args.json:
-                print(json.dumps({"pairing": s, "rotated": bool(args.rotate)}))
+                print(json.dumps({"pairing": s, "rotated": bool(args.rotate), "new": existing is None}))
             else:
                 print(s)
                 print("Scan or paste this on the iPhone. It is the key: do not share it.", file=sys.stderr)
