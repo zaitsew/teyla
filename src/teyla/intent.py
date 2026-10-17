@@ -11,6 +11,8 @@ after `corrections.scrub` has replaced secrets, and a planning session is pointe
     teyla intent                         one line per product: entries, latest date
     teyla intent <product> [--days N] [--grep TEXT] [--json]   one line per entry
     teyla intent path <product>          the file, for `cat "$(teyla intent path x)"`
+    teyla intent cover <plan.md> [--product P] [--since DATE] [--last N] [--model] [--json]
+                                         which of the owner's sentences a plan neither serves nor sets aside
     teyla intent backfill [--days 30] [--dry]   the same capture from Claude Code and Codex transcripts
     teyla intent capture                 what plugin/hooks/capture-intent.sh runs (JSON on stdin)
 
@@ -55,7 +57,8 @@ except ImportError:  # pragma: no cover
     fcntl = None
 
 MIN_CHARS = 400
-MAX_CHARS = 50_000
+MAX_CHARS = 50_000      # a longer prompt keeps its first MAX_CHARS characters; also the length the dedupe key covers
+INDEX_VERSION = 2       # 1 hashed whole prompts with every line break collapsed; an older index is rebuilt
 LOCK_WAIT_S = 1.0
 INDEX_NAME = ".index.json"
 LOCK_NAME = ".lock"
@@ -157,12 +160,28 @@ def settings(cfg: dict | None = None) -> tuple[bool, int]:
         return True, MIN_CHARS
 
 
+_CUT_RE = re.compile(r"\n\[(\d+) more characters not kept\]$")
+
+
 def normalise(text: str) -> str:
-    return " ".join((text or "").split())
+    """The dedupe form: spaces within a line collapse, line ends and the blank lines around the
+    text are ignored, but the line breaks stay. Two prompts that differ only in their layout are
+    two prompts."""
+    lines = (text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    return "\n".join(" ".join(l.split()) for l in lines).strip("\n")
 
 
 def digest(text: str) -> str:
-    return hashlib.sha256(normalise(text).encode("utf-8", "surrogatepass")).hexdigest()[:16]
+    """The dedupe key. It covers the first MAX_CHARS characters only, which is all an entry keeps,
+    so a cut entry read back from the file has the key its full text had when it was written."""
+    return hashlib.sha256(normalise(text[:MAX_CHARS]).encode("utf-8", "surrogatepass")).hexdigest()[:16]
+
+
+def kept_text(text: str) -> tuple[str, int]:
+    """(the prompt as kept, characters left out) for an entry's text: the closing
+    `[N more characters not kept]` line of a cut entry is not part of the owner's words."""
+    m = _CUT_RE.search(text or "")
+    return (text[:m.start()], int(m.group(1))) if m else (text or "", 0)
 
 
 # --- the store ----------------------------------------------------------------------------
@@ -252,7 +271,7 @@ class Store:
         try:
             data = json.loads(p.read_text())
             seen = data["seen"]
-            if isinstance(seen, dict):
+            if isinstance(seen, dict) and data.get("version") == INDEX_VERSION:
                 return seen
         except FileNotFoundError:
             if not any(self.dir.glob("*.md")):
@@ -271,15 +290,16 @@ class Store:
             except OSError:
                 continue
             for e in entries:
-                seen[f"{f.stem}:{digest(e['text'])}"] = {
+                kept, cut = kept_text(e["text"])
+                seen[f"{f.stem}:{digest(kept)}"] = {
                     "product": f.stem, "date": e["date"][:10], "session": e["session"],
-                    "harness": e["harness"], "chars": len(e["text"])}
+                    "harness": e["harness"], "chars": len(kept) + cut}
         return seen
 
     def _write_index(self) -> None:
         from . import config
         tmp = self.dir / f"{INDEX_NAME}.{os.getpid()}.tmp"
-        config.write_private(tmp, json.dumps({"version": 1, "seen": self.index}, ensure_ascii=False, sort_keys=True))
+        config.write_private(tmp, json.dumps({"version": INDEX_VERSION, "seen": self.index}, ensure_ascii=False, sort_keys=True))
         os.replace(tmp, self.dir / INDEX_NAME)
         self._dirty = False
 
@@ -523,7 +543,10 @@ def _list_entries(args, names: list[str]) -> list[dict]:
 
 def cmd_intent(args) -> int:
     words = list(args.words or [])
-    sub = words[0] if words and words[0] in ("capture", "backfill", "path") else None
+    sub = words[0] if words and words[0] in ("capture", "backfill", "path", "cover") else None
+    if sub == "cover":
+        from . import intent_cover
+        return intent_cover.cmd_cover(args, words)
     if sub == "capture":
         hook_main()
         return 0
@@ -557,7 +580,7 @@ def cmd_intent(args) -> int:
         print(intent_dir() / f"{name}.md")
         return 0
     if len(words) > 1:
-        print("usage: teyla intent [product] [--days N] [--grep TEXT] [--json] | path <product> | backfill | capture",
+        print("usage: teyla intent [product] [--days N] [--grep TEXT] [--json] | path <product> | cover <plan.md> | backfill | capture",
               file=sys.stderr)
         return 64
     if words:
@@ -599,9 +622,13 @@ def cmd_intent(args) -> int:
 def register(sp):
     q = sp.add_parser("intent", help="the owner's long prompts, verbatim, per product: list, path, backfill")
     q.set_defaults(fn=cmd_intent)
-    q.add_argument("words", nargs="*", metavar="[product|path <product>|backfill|capture]")
+    q.add_argument("words", nargs="*", metavar="[product|path <product>|cover <plan.md>|backfill|capture]")
     q.add_argument("--days", type=int, help="list: only the last N days; backfill: the window (default 30)")
     q.add_argument("--grep", help="list: only entries containing TEXT (case-insensitive)")
     q.add_argument("--json", action="store_true", help="list: JSON, the full text of each entry")
     q.add_argument("--dry", action="store_true", help="backfill: count, write nothing")
+    q.add_argument("--product", help="cover: the product whose words the plan is checked against (default: the plan's repo)")
+    q.add_argument("--since", metavar="YYYY-MM-DD", help="cover: only entries from this date on")
+    q.add_argument("--last", type=int, metavar="N", help="cover: only the last N entries")
+    q.add_argument("--model", action="store_true", help="cover: one Claude Haiku call for what words cannot settle")
     return q

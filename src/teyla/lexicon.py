@@ -96,3 +96,66 @@ STOPWORDS_RU = frozenset({
 # Character classes for splitting text into words, Latin plus Cyrillic.
 WORD_CHARS_LOWER = "a-zа-яё0-9"
 WORD_CHARS = "a-zA-Zа-яА-Я0-9"
+
+# --- intent cover: does a plan serve what the owner wrote (intent_cover.py) ---------------------
+# Words that carry no meaning for matching a source sentence to a plan sentence.
+
+COVER_STOP_EN = frozenset("""
+the and for are but not you your all any can had her was one our out has have his how its may new now old
+see two way who did get him she too use that this with from they will would there their what when where
+which while about after again also because been before being both could does doing down each even ever
+into just like make many more most much must need only other over same should some such than then them
+these those through under until very want were here said say says still well within without
+""".split())
+COVER_STOP_RU = frozenset("""
+это что как так для или еще ещё все всё был была были было быть нам вам нас вас тут там уже тоже если
+когда чтобы потому только очень можно нужно надо есть нет она они его ему ней них при без над под про
+между после перед через также либо чем кто где туда сюда этот эта эти того этой этом которые который
+которая которое свой своих мне меня тебе тебя ему мой мои моих наш наши себя себе
+""".split())
+
+# Endings stripped from a Russian word, longest first, to compare "делать" with "делаю" and "плана" with "планы".
+COVER_RU_SUFFIXES = tuple(sorted(set("""
+ами ями ого его ому ему ыми ими ией ией ать ять ить еть оть уть ают яют ует уют ают ает яет
+ают ишь ешь ете ите ала яла ила ела али яли или ели ает ует ает ется ится ются ятся
+ами ях ах ов ев ей ою ею ую юю ая яя ое ее ые ие ых их ым им ом ем ой ый ий ые
+ам ям ом ем ою ею ть ся сь ла ло ли на ны ну ты ты ть ет ут ют ит ат ят
+а я у ю ы и е о ь й
+""".split()), key=len, reverse=True))
+
+# Abbreviations whose full stop does not end a sentence.
+COVER_ABBREV = frozenset("""
+e.g i.e etc vs approx incl no fig cf al
+т.е т.д т.п т.к т.н напр см др пр г гг руб тыс млн шт англ проч
+""".split())
+
+# A sentence that opens with one of these and says nothing else is chatter, not a requirement.
+COVER_CHATTER_LEAD = frozenset("""
+ok okay yes yeah yep sure proceed continue thanks thank great nice good cool perfect fine go agreed right
+да ок окей давай продолжай спасибо отлично хорошо круто поехали запускай делай согласен ладно супер
+""".split())
+# Words that make a sentence a requirement, a goal, a constraint, a complaint or an example, so it stays.
+COVER_CUE = frozenset("""
+must should need needs needed want wants wanted never always dont cannot cant instead without only ensure
+problem issue bug wrong bad weak noise lost lose losing goal idea example because important require required
+requirement avoid prefer want hate stop keep every each all
+нужно надо хочу хотел хотела хотим должен должна должно должны чтобы проблема ошибка баг плохо слабое
+шум теряет теряется теряются теряла цель идея например важно нельзя всегда никогда без только пример
+лучше хуже сложно непонятно мешает требуется обязательно избегать вместо
+""".split())
+# Questions about the agent's own state or progress; they ask for a status, not for a feature.
+COVER_AGENT_STATE = (
+    r"\b(?:are you|did you|have you|were you|can you tell|is it (?:done|finished|ready|running|stuck|working)|"
+    r"is (?:the )?(?:sprint|build|run|lane|agent|session) (?:done|finished|ready|running|stuck|still)|"
+    r"how (?:is it going|long|far)|what(?:'s| is) (?:the )?(?:status|state|progress)|where are you|"
+    r"what are you (?:doing|working)|still (?:working|running|alive))\b",
+    r"\b(?:ты (?:уже|еще|ещё|тут|жив|закончил|закончила|работаешь|сделал|сделала|все|всё)|"
+    r"как (?:дела|успехи|идет|идёт|продвигается)|что (?:сейчас|там) (?:делаешь|происходит)|"
+    r"(?:закончил|закончила|готов|готово|завис)\b.*\?|расскажи (?:мне )?что (?:сделано|сделал|готово)|что (?:сделано|готово))",
+)
+# A heading, or a line that opens with these phrases and a colon, lists what the plan leaves out.
+COVER_OUT_OF_SCOPE = (
+    r"out[\s-]+of[\s-]+scope", r"non[\s-]?goals?", r"not (?:doing|in scope|now|yet|included)", r"deferred",
+    r"won'?t (?:do|build|ship)", r"left out", r"later\b", r"not planned", r"descoped?",
+    r"за рамками", r"вне рамок", r"не делаем", r"не входит", r"отложено", r"позже", r"не в этом",
+)
