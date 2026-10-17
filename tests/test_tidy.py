@@ -370,7 +370,7 @@ def test_weekly_wrapper_runs_tidy_report_only_and_an_older_wrapper_is_stale(env,
     assert routine_install._wrapper_stale(w, "/x/teyla")  # written before `teyla tidy`
 
 
-def test_digest_gets_one_line_only_when_there_are_findings(env):
+def test_digest_gets_one_line_only_when_there_are_findings(env, monkeypatch):
     assert tidy.digest_candidates() == []
     r = repo(env)
     put(r / "CLAUDE.md", "dirty   \n")
@@ -380,6 +380,13 @@ def test_digest_gets_one_line_only_when_there_are_findings(env):
     assert c["text"] == "md tidy: 3 finding(s) in 2 file(s)" and c["step"] == "teyla tidy" and c["cmd"] is True
     lines, _ = digest.build([], [], [], {}, extra=[c])
     assert any("md tidy: 3 finding(s) in 2 file(s)" in line and "`teyla tidy`" in line for line in lines)
+    # digest.write also asks every other source on this machine for candidates (schedules, model ids,
+    # TestFlight, reviews). Silence them, so the host's own state cannot outrank the tidy line.
+    import teyla.crash, teyla.lang, teyla.models_watch, teyla.prose, teyla.reviews, teyla.rules_lifecycle
+    for mod in (teyla.crash, teyla.lang, teyla.models_watch, teyla.prose, teyla.rules_lifecycle):
+        monkeypatch.setattr(mod, "digest_candidates", lambda *a, **k: [])
+    monkeypatch.setattr(teyla.reviews, "digest_line", lambda *a, **k: None)
+    monkeypatch.setattr(digest, "problem_file_candidates", lambda *a, **k: [])
     lines = digest.write([], [], [], today=TODAY, notify_now=False)
     assert any("md tidy: 3 finding(s) in 2 file(s)" in line for line in lines)
 
