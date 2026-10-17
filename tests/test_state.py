@@ -9,9 +9,10 @@ import pathlib
 
 import pytest
 
-from teyla import answer, asks, cli, state
+from teyla import answer, asks, backlog, cli, reviews, state
 from teyla.adapters import codex
 
+FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 NOW = dt.datetime(2026, 10, 16, 12, 0, tzinfo=dt.timezone.utc).timestamp()
 TODAY = dt.datetime.fromtimestamp(NOW).date()
 CODEX_SID = "01a14630-4c3f-7921-91ca-b89037bced86"
@@ -86,25 +87,37 @@ def test_the_ask_json_schema_of_teyla_asks_is_unchanged(monkeypatch):
 # --- running sessions --------------------------------------------------------------------------
 
 def desktop_file(root: pathlib.Path, sid: str, *, minutes_ago: float, archived=False, cwd="/Users/someone/repos/atlas",
-                 title=None):
+                 title=None, summary=None, prs=None):
     p = root / "acct" / "work" / f"{sid}.json"
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps({"sessionId": sid, "cliSessionId": sid[6:], "cwd": cwd, "isArchived": archived,
-                             "title": title or f"Title of {sid}", "model": "claude-sonnet-5-5",
-                             "createdAt": int((NOW - 7200) * 1000),
-                             "lastActivityAt": int((NOW - minutes_ago * 60) * 1000)}))
+    meta = {"sessionId": sid, "cliSessionId": sid[6:], "cwd": cwd, "isArchived": archived,
+            "title": title or f"Title of {sid}", "model": "claude-sonnet-5-5",
+            "createdAt": int((NOW - 7200) * 1000), "lastActivityAt": int((NOW - minutes_ago * 60) * 1000)}
+    if summary is not None:
+        meta["postTurnSummary"] = summary
+    if prs:
+        meta["prs"] = [{"url": u} for u in prs]
+    p.write_text(json.dumps(meta))
     return p
 
 
 def rollout(root: pathlib.Path, sid: str, *, minutes_ago: float, cwd="/Users/someone/.worktrees/cellar/feat", source="vscode",
-            originator="Codex Desktop"):
-    d = root / "2026" / "10" / "16"
+            originator="Codex Desktop", day="2026/10/16", message=None, unfinished=False):
+    """A rollout whose file time is `minutes_ago`. `message` adds a finished turn ending in it, `unfinished`
+    a turn that has started and not completed."""
+    d = root.joinpath(*day.split("/"))
     d.mkdir(parents=True, exist_ok=True)
-    p = d / f"rollout-2026-10-16T10-00-00-{sid}.jsonl"
+    p = d / f"rollout-{day.replace('/', '-')}T10-00-00-{sid}.jsonl"
     recs = [{"type": "session_meta", "timestamp": "2026-10-16T10:00:00.000Z",
              "payload": {"id": sid, "session_id": sid, "cwd": cwd, "source": source,
                          "originator": originator}},
             {"type": "turn_context", "payload": {"model": "gpt-6.1-sol"}}]
+    end = dt.datetime.fromtimestamp(NOW - minutes_ago * 60, dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    if message is not None:
+        recs += [{"type": "event_msg", "timestamp": end, "payload": {"type": "task_started"}},
+                 {"type": "event_msg", "timestamp": end, "payload": {"type": "task_complete", "last_agent_message": message}}]
+    if unfinished:
+        recs.append({"type": "event_msg", "timestamp": end, "payload": {"type": "task_started"}})
     p.write_text("".join(json.dumps(r) + "\n" for r in recs))
     t = NOW - minutes_ago * 60
     os.utime(p, (t, t))
@@ -208,13 +221,36 @@ def test_build_snapshot_matches_the_contract_fields(tmp_path):
     desktop.mkdir()
     st = state.build(NOW, items=[ask("aaaa0001", question="Ship it to App Review?")], repos={}, spent=4.1,
                      desktop=str(desktop), codex_root=str(tmp_path / "nocodex"))
-    fixture = json.loads((pathlib.Path(__file__).parent / "fixtures" / "state.json").read_text())
+    fixture = json.loads((FIXTURES / "state.v2.json").read_text())
     assert set(st) == set(fixture)
     assert set(st["totals"]) == set(fixture["totals"])
     assert set(st["asks"][0]) == set(fixture["asks"][0])
     assert set(st["products"][0]) == set(fixture["products"][0])
-    assert st["totals"] == {"questions": 1, "running": 0, "spent_today_usd": 4.1}
-    assert st["version"] == 1 and st["generated"] == asks._iso(NOW)
+    assert set(st["relay"]) == set(fixture["relay"])
+    assert st["totals"] == {"questions": 1, "running": 0, "spent_today_usd": 4.1, "tasks": 0, "done": 0}
+    assert st["version"] == 2 and st["generated"] == asks._iso(NOW)
+    assert st["relay"] == {"on": False, "paired": False, "folder": "", "synced": ""}
+
+
+def test_every_list_of_the_snapshot_has_the_keys_of_the_v2_fixture(tmp_path, monkeypatch):
+    monkeypatch.setattr(codex, "DEFAULT_INDEX", str(tmp_path / "no-index.jsonl"))
+    desktop, cx = tmp_path / "sessions", tmp_path / "codex"
+    desktop_file(desktop, "local_aaaa1111-0000-0000-0000-000000000001", minutes_ago=3)
+    desktop_file(desktop, "local_aaaa1111-0000-0000-0000-000000000002", minutes_ago=120,
+                 summary={"status_category": "completed", "status_detail": "Merged PR 5"})
+    rollout(cx, "11111111-0000-0000-0000-000000000001", minutes_ago=2)
+    rollout(cx, "11111111-0000-0000-0000-000000000002", minutes_ago=90, message="Done")
+    bl = backlog_data(prs=[pr_row("example/lens", 14, "ab" * 20)], issues=[issue_row("example/cellar", 88)])
+    st = state.build(NOW, items=[ask("aaaa0001")], repos={}, spent=None, desktop=str(desktop), codex_root=str(cx),
+                     backlog_data=bl, approved=set(), ledger=None, runs=[])
+    fixture = json.loads((FIXTURES / "state.v2.json").read_text())
+    assert {t["kind"] for t in st["tasks"]} == {"merge", "task"}
+    for t in st["tasks"]:
+        assert set(t) == set(fixture["tasks"][0])
+    assert len(st["done"]) == 2 and all(set(d) == set(fixture["done"][0]) for d in st["done"])
+    assert {r["harness"] for r in st["running"]} == {"claude-desktop", "codex"}
+    assert all(set(r) == set(fixture["running"][0]) for r in st["running"])
+    assert st["totals"]["tasks"] == 2 and st["totals"]["done"] == 2 and st["totals"]["running"] == 2
 
 
 def test_spend_comes_from_a_fresh_cache_and_a_stale_one_starts_a_refresh(monkeypatch):
@@ -601,3 +637,423 @@ def test_the_answer_log_is_owner_only(tmp_path):
     log.chmod(0o644)
     code, _ = answer.run(["/bin/sh", "-c", "echo hi"], detach=str(log))
     assert code == 0 and oct(log.stat().st_mode & 0o777) == "0o600"
+
+
+# --- version 2: done, tasks, products, relay ---------------------------------------------------
+
+def backlog_data(prs=(), issues=(), counts=None, canonical=None):
+    return {"at": NOW, "prs": list(prs), "issues": list(issues), "counts": counts or {}, "canonical": canonical or {}}
+
+
+def pr_row(repo, number, head, title="Add the export", hours=24, draft=False):
+    return {"repo": repo, "number": number, "title": title, "url": f"https://github.com/{repo}/pull/{number}",
+            "created": NOW - hours * 3600, "head": head, "draft": draft}
+
+
+def issue_row(repo, number, title="Create the record", hours=2, labels=()):
+    return {"repo": repo, "number": number, "title": title, "url": f"https://github.com/{repo}/issues/{number}",
+            "created": NOW - hours * 3600, "labels": list(labels)}
+
+
+@pytest.mark.parametrize("summary,status", [
+    ({"status_category": "completed", "status_detail": "x"}, "done"),
+    ({"status_category": "review_ready", "status_detail": "x"}, "review_ready"),
+    ({"status_category": "failed", "status_detail": "x"}, "failed"),
+    ({"status_category": "error", "status_detail": "x"}, "failed"),
+    ({"status_category": "blocked", "status_detail": "x"}, "blocked"),
+    ({"status_category": "blocked", "status_detail": "x", "needs_action": "Sign in"}, "needs_you"),
+    ({"status_category": "completed", "status_detail": "x", "needs_action": "Add a tester"}, "needs_you"),
+    ({"status_category": "something new", "status_detail": "x"}, "done"),
+])
+def test_summary_status_mapping(summary, status):
+    assert state.card_from_summary(summary)["status"] == status
+
+
+def test_summary_detail_becomes_at_most_three_result_lines_and_needs_is_kept():
+    card = state.card_from_summary({"status_category": "completed", "needs_action": "Add a tester email",
+                                    "status_detail": "Android 1.0 (4) uploaded; internal track live;\n"
+                                                     "review ready; one more; and another"})
+    assert card["result"] == ["Android 1.0 (4) uploaded", "internal track live", "review ready"]
+    assert card["needs"] == "Add a tester email"
+
+
+CARD = """Done — atlas
+Result:
+- PDF export, one page per day ([PR 301](https://github.com/example/atlas/pull/301))
+- **Merged** at 18:10
+- A third line
+- A fourth line
+Needs you: none
+Not verified: the iPad layout
+"""
+
+
+def test_parse_card_reads_status_result_bullets_and_needs():
+    c = state.parse_card(CARD)
+    assert c["status"] == "done"
+    assert c["result"] == ["PDF export, one page per day (PR 301)", "Merged at 18:10", "A third line"]
+    assert c["needs"] == ""
+
+
+@pytest.mark.parametrize("head,status", [("Blocked — cellar", "blocked"), ("Failed — cellar", "failed"),
+                                         ("Needs you — cellar", "needs_you"), ("**Done — cellar**", "done"),
+                                         ("## done - cellar", "done")])
+def test_parse_card_heads(head, status):
+    assert state.parse_card(f"{head}\nResult: it ran")["status"] == status
+
+
+def test_a_needs_line_makes_the_card_needs_you_and_inline_result_works():
+    c = state.parse_card("Done — cellar\nResult: Build 4 uploaded\nNeeds you: Add a tester email in the Play Console")
+    assert (c["status"], c["result"], c["needs"]) == ("needs_you", ["Build 4 uploaded"],
+                                                      "Add a tester email in the Play Console")
+
+
+def test_text_that_is_not_a_card_falls_back_to_its_first_line_cut_to_120_characters():
+    assert state.parse_card("Donewith it — and then some") is None
+    c = state.card_from_text("\n## " + "word " * 40 + "\nsecond line")
+    assert c["status"] == "done" and len(c["result"][0]) <= 120 and c["result"][0].endswith("…") and c["needs"] == ""
+    assert state.card_from_text("   \n") is None
+
+
+def test_links_are_the_first_three_github_pr_or_issue_urls():
+    t = ("https://github.com/a/b/pull/1 and https://github.com/a/b/issues/2 https://github.com/a/b/pull/1 "
+         "https://github.com/a/b/tree/main https://github.com/c/d/pull/3 https://github.com/e/f/pull/4")
+    assert state.links_in(t) == ["https://github.com/a/b/pull/1", "https://github.com/a/b/issues/2",
+                                 "https://github.com/c/d/pull/3"]
+    assert state.links_in("none", extra=["https://github.com/x/y/pull/9", "https://example.com"]) == [
+        "https://github.com/x/y/pull/9"]
+
+
+def test_done_comes_from_the_desktop_summary_newest_first_within_24_hours(tmp_path):
+    root = tmp_path / "sessions"
+    s = {"status_category": "completed", "status_detail": "Exported the PDF; merged PR 301",
+         "needs_action": ""}
+    desktop_file(root, "local_aaaa1111-0000-0000-0000-00000000000a", minutes_ago=60, title="Old export", summary=s,
+                 prs=["https://github.com/example/atlas/pull/301"])
+    desktop_file(root, "local_aaaa1111-0000-0000-0000-00000000000b", minutes_ago=30, cwd="/Users/someone/repos/cellar",
+                 title="Android build", summary={"status_category": "blocked", "status_detail": "stuck",
+                                                 "needs_action": "Sign in to Play"})
+    desktop_file(root, "local_aaaa1111-0000-0000-0000-00000000000c", minutes_ago=25 * 60, summary=s)       # too old
+    desktop_file(root, "local_aaaa1111-0000-0000-0000-00000000000d", minutes_ago=60, summary=s, archived=True)
+    rows = state.done_feed(NOW, str(root), "/nonexistent", "/nonexistent", runs=[])
+    assert [r["title"] for r in rows] == ["Android build", "Old export"]
+    b, a = rows
+    assert (b["status"], b["needs"], b["product"], b["harness"]) == ("needs_you", "Sign in to Play", "cellar", "claude-desktop")
+    assert b["id"] == "local_aaaa1111-0000-0000-0000-00000000000b" and b["link"].endswith(b["id"])
+    assert a["result"] == ["Exported the PDF", "merged PR 301"] and a["links"] == ["https://github.com/example/atlas/pull/301"]
+    assert a["ended"] == asks._iso(NOW - 3600)
+
+
+def test_a_session_without_a_summary_is_read_from_its_transcript_card(tmp_path):
+    root, projects = tmp_path / "sessions", tmp_path / "projects"
+    sid = "local_aaaa1111-0000-0000-0000-00000000000e"
+    desktop_file(root, sid, minutes_ago=45, cwd="/Users/someone/repos/atlas")
+    tdir = projects / "-Users-someone-repos-atlas"
+    tdir.mkdir(parents=True)
+
+    def rec(kind, content, **kw):
+        return json.dumps({"type": kind, "timestamp": "2026-10-16T11:15:00Z", "message": {"content": content}, **kw})
+    lines = [rec("user", "go"),
+             rec("assistant", [{"type": "text", "text": "Done — atlas\nResult:\n- Shipped the PDF\nNeeds you: none"}])]
+    (tdir / f"{sid[6:]}.jsonl").write_text("\n".join(lines) + "\n")
+    rows = state.done_feed(NOW, str(root), "/nonexistent", str(projects), runs=[])
+    assert [(r["status"], r["result"]) for r in rows] == [("done", ["Shipped the PDF"])]
+    # a transcript that ends in a tool call or a prompt is mid-turn: not done
+    lines.append(rec("assistant", [{"type": "tool_use", "name": "Bash", "input": {}}]))
+    (tdir / f"{sid[6:]}.jsonl").write_text("\n".join(lines) + "\n")
+    assert state.done_feed(NOW, str(root), "/nonexistent", str(projects), runs=[]) == []
+
+
+def test_done_skips_review_lanes_and_sessions_still_running(tmp_path):
+    root = tmp_path / "sessions"
+    s = {"status_category": "completed", "status_detail": "ok"}
+    desktop_file(root, "local_aaaa1111-0000-0000-0000-000000000011", minutes_ago=60, summary=s,
+                 title="You are reviewing a diff")
+    desktop_file(root, "local_aaaa1111-0000-0000-0000-000000000012", minutes_ago=60, summary=s, title="Real work")
+    desktop_file(root, "local_aaaa1111-0000-0000-0000-000000000013", minutes_ago=2, summary=s, title="Busy now")
+    run = state.running_desktop(NOW, str(root), runs=[])
+    rows = state.done_feed(NOW, str(root), "/nonexistent", "/nonexistent", runs=[], skip_ids={r["id"] for r in run})
+    assert [r["title"] for r in rows] == ["Real work"]
+
+
+def test_done_codex_reads_the_card_of_the_last_finished_interactive_turn(tmp_path, monkeypatch):
+    monkeypatch.setattr(codex, "DEFAULT_INDEX", str(tmp_path / "no-index.jsonl"))
+    root = tmp_path / "codex"
+    msg = ("Needs you — cellar\nResult:\n- Build 1.0 (4) uploaded\nNeeds you: Add a tester\n"
+           "See https://github.com/example/cellar/pull/7")
+    rollout(root, "11111111-0000-0000-0000-000000000021", minutes_ago=120, message=msg)
+    rollout(root, "11111111-0000-0000-0000-000000000022", minutes_ago=120, message="Done", source="exec",
+            originator="codex_exec")
+    rollout(root, "11111111-0000-0000-0000-000000000023", minutes_ago=120, unfinished=True)
+    rollout(root, "11111111-0000-0000-0000-000000000024", minutes_ago=26 * 60, message="Done — old")
+    rows = state.done_feed(NOW, "/nonexistent", str(root), "/nonexistent", runs=[])
+    assert len(rows) == 1
+    r = rows[0]
+    assert (r["status"], r["product"], r["harness"], r["needs"]) == ("needs_you", "cellar", "codex", "Add a tester")
+    assert r["result"] == ["Build 1.0 (4) uploaded"] and r["links"] == ["https://github.com/example/cellar/pull/7"]
+    assert r["id"] == "11111111-0000-0000-0000-000000000021" and r["link"] == "codex://threads/" + r["id"]
+
+
+def test_a_resumed_old_codex_session_is_running_because_the_file_time_decides(tmp_path, monkeypatch):
+    monkeypatch.setattr(codex, "DEFAULT_INDEX", str(tmp_path / "no-index.jsonl"))
+    root = tmp_path / "codex"
+    rollout(root, "11111111-0000-0000-0000-000000000031", minutes_ago=2, day="2026/08/01")
+    rows = state.running_codex(NOW, str(root), runs=[])
+    assert [r["id"] for r in rows] == ["11111111-0000-0000-0000-000000000031"]
+    assert rows[0]["correct"] == "codex-queue"
+
+
+def test_running_rows_carry_an_id_and_how_a_correction_reaches_them(tmp_path, monkeypatch):
+    monkeypatch.setattr(codex, "DEFAULT_INDEX", str(tmp_path / "no-index.jsonl"))
+    desktop_file(tmp_path / "s", "local_aaaa1111-0000-0000-0000-000000000041", minutes_ago=1)
+    rollout(tmp_path / "c", "11111111-0000-0000-0000-000000000042", minutes_ago=1)
+    rows = state.running(NOW, str(tmp_path / "s"), str(tmp_path / "c"), runs=[])
+    assert {(r["harness"], r["id"], r["correct"]) for r in rows} == {
+        ("claude-desktop", "local_aaaa1111-0000-0000-0000-000000000041", "open"),
+        ("codex", "11111111-0000-0000-0000-000000000042", "codex-queue")}
+
+
+def write_dispatch(*worktrees, harness="codex"):
+    state.dispatch_path().write_text("".join(json.dumps({"id": f"d{n}", "product": "atlas", "harness": harness,
+                                                         "worktree": w, "branch": "b", "started": "x", "pid": 1,
+                                                         "log": "l"}) + "\n" for n, w in enumerate(worktrees)))
+
+
+def test_dispatched_worktrees_are_the_exception_to_the_headless_rule(tmp_path, monkeypatch):
+    monkeypatch.setattr(codex, "DEFAULT_INDEX", str(tmp_path / "no-index.jsonl"))
+    wt = tmp_path / "wt" / "atlas" / "feature"
+    other = tmp_path / "wt" / "atlas" / "other"
+    write_dispatch(str(wt))
+    cx = tmp_path / "codex"
+    rollout(cx, "11111111-0000-0000-0000-000000000051", minutes_ago=1, cwd=str(wt / "sub"), source="exec",
+            originator="codex_exec")
+    rollout(cx, "11111111-0000-0000-0000-000000000052", minutes_ago=1, cwd=str(other), source="exec",
+            originator="codex_exec")
+    rollout(cx, "11111111-0000-0000-0000-000000000053", minutes_ago=90, cwd=str(wt), source="exec",
+            originator="codex_exec", message="Done — atlas\nResult: Ran it")
+    desktop = tmp_path / "sessions"
+    s = {"status_category": "completed", "status_detail": "ok"}
+    desktop_file(desktop, "local_aaaa1111-0000-0000-0000-000000000054", minutes_ago=1, cwd=str(wt),
+                 title="You are reviewing the branch")
+    desktop_file(desktop, "local_aaaa1111-0000-0000-0000-000000000055", minutes_ago=1, cwd=str(other),
+                 title="You are reviewing another branch")
+    desktop_file(desktop, "local_aaaa1111-0000-0000-0000-000000000056", minutes_ago=90, cwd=str(wt),
+                 title="You are reviewing and done", summary=s)
+    run = state.running(NOW, str(desktop), str(cx))
+    assert {r["id"] for r in run} == {"11111111-0000-0000-0000-000000000051", "local_aaaa1111-0000-0000-0000-000000000054"}
+    assert {r["correct"] for r in run if r["harness"] == "codex"} == {"open"}      # nobody to queue for in a headless run
+    done = state.done_feed(NOW, str(desktop), str(cx), "/nonexistent")
+    assert {d["id"] for d in done} == {"11111111-0000-0000-0000-000000000053", "local_aaaa1111-0000-0000-0000-000000000056"}
+
+
+def test_a_dispatched_claude_run_is_found_by_the_transcript_folder_of_its_worktree(tmp_path):
+    wt = tmp_path / "wt" / "atlas" / "fix"
+    wt.mkdir(parents=True)
+    write_dispatch(str(wt), harness="claude")
+    projects = tmp_path / "projects"
+    tdir = projects / str(wt.resolve()).replace("/", "-").replace(".", "-")
+    tdir.mkdir(parents=True)
+    t = NOW - 3600
+    recs = [{"type": "user", "timestamp": "2026-10-16T10:50:00Z", "message": {"content": "Fix the export bug"}},
+            {"type": "assistant", "timestamp": "2026-10-16T11:00:00Z", "message": {
+                "model": "claude-sonnet-5-5", "content": [{"type": "text", "text": "Done — atlas\nResult: Fixed it"}]}}]
+    f = tdir / "abc-123.jsonl"
+    f.write_text("".join(json.dumps(r) + "\n" for r in recs))
+    os.utime(f, (t, t))
+    done = state.done_feed(NOW, "/nonexistent", "/nonexistent", str(projects))
+    assert [(d["id"], d["title"], d["result"], d["harness"]) for d in done] == [
+        ("abc-123", "Fix the export bug", ["Fixed it"], "claude-code")]
+    os.utime(f, (NOW - 60, NOW - 60))
+    run = state.running(NOW, "/nonexistent", "/nonexistent", projects=str(projects))
+    assert [(r["id"], r["model"], r["correct"]) for r in run] == [("abc-123", "claude-sonnet-5-5", "open")]
+
+
+# --- tasks -------------------------------------------------------------------------------------
+
+LEDGER = "\n".join([
+    "2026-10-16T10:00:00Z\tlens\t" + "a" * 40 + "\tbranch\t0\t2\tcodex:gpt-6.1-sol",
+    "2026-10-16T10:00:00Z\tcellar\t" + "b" * 40 + "\tbranch\t1\t0\tcodex:gpt-6.1-sol",
+    "2026-10-16T10:30:00Z\tcellar\t" + "b" * 40 + "\tcommit\t0\t0\tcodex:gpt-6.1-sol",
+    "2026-10-16T10:40:00Z\tatlas\t" + "c" * 40 + "\tbranch\t2\t0\tcodex:gpt-6.1-sol",
+    "2026-10-16T11:00:00Z\thttps://github.com/example/forge/pull/9\t" + "d" * 40 + "\tskip:docs only\t-\t-\treview-gate",
+])
+
+
+def test_merge_tasks_say_what_the_ledger_knows_and_skip_approved_repos_and_drafts():
+    ledger = reviews.parse_ledger(LEDGER)
+    prs = [pr_row("example/lens", 14, "a" * 40, hours=48),
+           pr_row("example/atlas", 3, "c" * 40, hours=30),
+           pr_row("example/cellar", 5, "b" * 40, hours=26),
+           pr_row("example/forge", 9, "e" * 40, hours=20),
+           pr_row("example/forge", 10, "f" * 40, hours=10),
+           pr_row("example/draft", 1, "1" * 40, draft=True),
+           pr_row("Example/Approved", 2, "2" * 40)]
+    out = state.tasks_view(backlog_data(prs=prs), {"example/approved"}, ledger, NOW)
+    assert [t["id"] for t in out] == ["pr:example/lens#14", "pr:example/atlas#3", "pr:example/cellar#5",
+                                      "pr:example/forge#9", "pr:example/forge#10"]
+    by = {t["id"]: t for t in out}
+    assert by["pr:example/lens#14"]["detail"].startswith("Reviewed, no open P1.")
+    assert by["pr:example/atlas#3"]["detail"].startswith("Reviewed with 2 open P1.")
+    assert by["pr:example/cellar#5"]["detail"].startswith("Reviewed, no open P1.")     # the fix round has no P1
+    assert by["pr:example/forge#9"]["detail"].startswith("Review skipped: docs only.")
+    assert by["pr:example/forge#10"]["detail"].startswith("No review of the head commit in the ledger.")
+    assert all("not merge-approved" in t["detail"] for t in out)
+    t = by["pr:example/lens#14"]
+    assert (t["kind"], t["product"], t["title"], t["age_s"]) == ("merge", "lens", "Merge: Add the export", 48 * 3600)
+    assert t["link"] == "https://github.com/example/lens/pull/14"
+
+
+def test_issue_tasks_list_the_labels_and_all_tasks_are_oldest_first():
+    bl = backlog_data(prs=[pr_row("example/lens", 14, "a" * 40, hours=5)],
+                      issues=[issue_row("example/cellar", 88, hours=2, labels=["bug", "p1"]),
+                              issue_row("example/atlas", 7, hours=90)])
+    out = state.tasks_view(bl, set(), None, NOW)
+    assert [t["id"] for t in out] == ["issue:example/atlas#7", "pr:example/lens#14", "issue:example/cellar#88"]
+    assert out[2]["kind"] == "task" and out[2]["detail"] == "Assigned to you. Labels: bug, p1."
+    assert out[0]["detail"] == "Assigned to you."
+
+
+def test_build_reads_the_approved_list_and_the_ledger_when_a_pr_needs_them(tmp_path, monkeypatch):
+    md = tmp_path / "CLAUDE.md"
+    md.write_text("```\nMERGE-APPROVED REPOS\n  example/lens   # x\n```\n")
+    monkeypatch.setattr(backlog, "claude_md_path", lambda: md)
+    ledger = tmp_path / "ledger.tsv"
+    ledger.write_text(LEDGER)
+    monkeypatch.setattr(reviews, "ledger_path", lambda cfg=None: ledger)
+    bl = backlog_data(prs=[pr_row("example/lens", 14, "a" * 40), pr_row("example/atlas", 3, "c" * 40)])
+    st = state.build(NOW, items=[], repos={}, spent=None, desktop="/nonexistent", codex_root="/nonexistent",
+                     backlog_data=bl, runs=[])
+    assert [t["id"] for t in st["tasks"]] == ["pr:example/atlas#3"]
+    assert "open P1" in st["tasks"][0]["detail"]
+
+
+# --- products ----------------------------------------------------------------------------------
+
+def make_repo(tmp_path, name, remote, days_ago=1):
+    p = tmp_path / "repos" / name
+    (p / ".git" / "logs").mkdir(parents=True)
+    cfg = '[core]\n\tbare = false\n'
+    if remote:
+        cfg += f'[remote "origin"]\n\turl = {remote}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n'
+    (p / ".git" / "config").write_text(cfg)
+    h = p / ".git" / "logs" / "HEAD"
+    h.write_text("x")
+    t = NOW - days_ago * 86400
+    os.utime(h, (t, t))
+    return p
+
+
+def test_two_clones_of_one_github_repo_are_one_product_named_after_the_github_repo(tmp_path):
+    a = make_repo(tmp_path, "oldname", "https://github.com/example/newname.git")
+    b = make_repo(tmp_path, "newname", "git@github.com:example/newname.git")
+    c = make_repo(tmp_path, "renamed", "https://github.com/example/renamed-before.git")
+    d = make_repo(tmp_path, "plain", "")
+    repos = {"oldname": a, "newname": b, "renamed": c, "plain": d}
+    alias, info = state.product_names(repos, {"example/renamed-before": "example/renamed-now"})
+    assert alias == {"oldname": "newname", "newname": "newname", "renamed": "renamed-now", "plain": "plain"}
+    assert info["newname"]["path"] == b and info["newname"]["slug"] == "example/newname"
+    assert info["plain"]["slug"] == ""
+
+
+def test_the_snapshot_merges_products_and_adds_issues_prs_next_and_repo(tmp_path):
+    root = tmp_path / "sessions"
+    desktop_file(root, "local_aaaa1111-0000-0000-0000-000000000061", minutes_ago=60, cwd="/Users/someone/repos/oldname",
+                 title="Export", summary={"status_category": "completed", "status_detail": "Shipped",
+                                          "needs_action": "Add a tester"})
+    desktop_file(root, "local_aaaa1111-0000-0000-0000-000000000062", minutes_ago=1, cwd="/Users/someone/repos/newname")
+    repos = {"oldname": make_repo(tmp_path, "oldname", "https://github.com/example/newname.git"),
+             "newname": make_repo(tmp_path, "newname", "https://github.com/example/newname.git"),
+             "lens": make_repo(tmp_path, "lens", "https://github.com/example/lens", days_ago=90)}
+    bl = backlog_data(prs=[pr_row("example/lens", 14, "a" * 40)], counts={"example/newname": 12, "example/lens": 1})
+    st = state.build(NOW, items=[ask("aaaa0001", product="oldname")], repos=repos, spent=None, desktop=str(root),
+                     codex_root="/nonexistent", backlog_data=bl, approved=set(), ledger=None, runs=[])
+    by = {p["name"]: p for p in st["products"]}
+    assert sorted(by) == ["lens", "newname"]
+    n = by["newname"]
+    assert (n["issues"], n["waiting"], n["prs_waiting"], n["state"]) == (12, 1, 0, "waiting")
+    assert n["next"] == "Add a tester" and n["repo"].endswith("repos/newname")
+    assert st["asks"][0]["product"] == "newname" and st["done"][0]["product"] == "newname"
+    lens = by["lens"]                      # 90 days idle, but a PR waits on the owner
+    assert (lens["issues"], lens["prs_waiting"], lens["next"]) == (1, 1, "")
+    assert st["tasks"][0]["product"] == "lens"
+
+
+def test_repo_paths_under_the_home_folder_are_written_with_a_tilde():
+    home = str(pathlib.Path.home())
+    assert state.home_path(pathlib.Path(home) / "repos" / "atlas") == "~/repos/atlas"
+    assert state.home_path("/srv/atlas") == "/srv/atlas"
+
+
+# --- relay, text, commands ---------------------------------------------------------------------
+
+def test_relay_comes_from_relay_json_and_the_key_file():
+    assert state.relay_view() == {"on": False, "paired": False, "folder": "", "synced": ""}
+    home = state.control.home()
+    (home / "relay.json").write_text(json.dumps({"on": True, "folder": "/x/Teyla", "synced": "2026-10-16T11:00:00Z"}))
+    (home / "relay.key").write_bytes(b"k" * 32)
+    assert state.relay_view() == {"on": True, "paired": True, "folder": "/x/Teyla", "synced": "2026-10-16T11:00:00Z"}
+    (home / "relay.json").write_text("not json")
+    assert state.relay_view()["on"] is False
+    (home / "relay.json").write_text(json.dumps({"on": "yes", "folder": 3}))
+    assert state.relay_view() == {"on": False, "paired": True, "folder": "3", "synced": ""}
+
+
+def test_text_mode_has_short_done_and_tasks_sections_within_15_lines(tmp_path):
+    root = tmp_path / "sessions"
+    for n in range(4):
+        desktop_file(root, f"local_aaaa1111-0000-0000-0000-00000000007{n}", minutes_ago=60 + n, title=f"Work {n}",
+                     summary={"status_category": "completed", "status_detail": f"Result {n}"})
+    bl = backlog_data(prs=[pr_row("example/lens", n, "a" * 40) for n in range(1, 4)])
+    st = state.build(NOW, items=[ask(f"aaaa000{n}", question="Which font?") for n in range(6)], repos={}, spent=1.0,
+                     desktop=str(root), codex_root="/nonexistent", backlog_data=bl, approved=set(), ledger=None,
+                     runs=[])
+    out = state.render_text(st, NOW)
+    lines = out.splitlines()
+    assert len(lines) <= 15
+    assert "Tasks" in lines and "Done" in lines
+    assert "6 waiting, 3 tasks, 4 done, 0 running, $1.00 today" in lines[1]
+    assert any("[done]: Result 0" in ln for ln in lines) and any("lens: Merge: Add the export" in ln for ln in lines)
+    assert "  + 2 more" in lines and "  + 1 more" in lines
+
+
+def test_the_state_command_runs_the_backlog_refresh_when_asked(monkeypatch):
+    seen = []
+    monkeypatch.setattr(state, "refresh_backlog", lambda *a, **k: seen.append(1) or 0)
+    assert cli.main(["state", "--refresh-backlog"]) == 0 and seen == [1]
+    monkeypatch.setattr(state, "refresh_backlog", lambda *a, **k: 1 / 0)
+    assert cli.main(["state", "--refresh-backlog"]) == 1
+
+
+def test_active_repos_are_the_ones_that_moved_in_30_days_and_have_a_github_remote(tmp_path):
+    repos = {"new": make_repo(tmp_path, "new", "https://github.com/example/new", days_ago=2),
+             "old": make_repo(tmp_path, "old", "https://github.com/example/old", days_ago=40),
+             "local": make_repo(tmp_path, "local", "", days_ago=1)}
+    assert state.active_slugs(repos, NOW) == ["example/new"]
+
+
+def test_the_snapshot_reads_the_cache_and_never_calls_gh(monkeypatch):
+    def boom(argv):
+        raise AssertionError("the foreground ran " + " ".join(argv))
+    monkeypatch.setattr(backlog, "default_runner", boom)
+    monkeypatch.setattr(state.shutil, "which", lambda n: "/bin/" + n)
+    asks._atomic_write(backlog.cache_path(), json.dumps({"version": 1, "at": NOW, "prs": [], "issues": [],
+                                                         "counts": {"example/atlas": 3}, "canonical": {}}))
+    spawned = []
+    monkeypatch.setattr(backlog, "spawn_refresh", lambda *a, **k: spawned.append(1))
+    st = state.build(NOW, items=[], repos={}, spent=None, desktop="/nonexistent", codex_root="/nonexistent", runs=[])
+    assert st["tasks"] == [] and spawned == []                  # fresh: no refresh either
+    asks._atomic_write(backlog.cache_path(), json.dumps({"version": 1, "at": NOW - 4000}))
+    state.build(NOW, items=[], repos={}, spent=None, desktop="/nonexistent", codex_root="/nonexistent", runs=[])
+    assert spawned == [1]
+
+
+def test_no_gh_or_safe_mode_means_empty_lists_and_no_refresh(monkeypatch):
+    spawned = []
+    monkeypatch.setattr(backlog, "spawn_refresh", lambda *a, **k: spawned.append(1))
+    monkeypatch.setattr(state.shutil, "which", lambda n: None)
+    st = state.build(NOW, items=[], repos={}, spent=None, desktop="/nonexistent", codex_root="/nonexistent", runs=[])
+    assert (st["tasks"], st["done"], spawned) == ([], [], [])
+    monkeypatch.setattr(state.shutil, "which", lambda n: "/bin/gh")
+    monkeypatch.setenv("TEYLA_SAFE", "1")
+    state.build(NOW, items=[], repos={}, spent=None, desktop="/nonexistent", codex_root="/nonexistent", runs=[])
+    assert spawned == []

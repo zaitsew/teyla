@@ -106,6 +106,35 @@ new ones, and a version 2 client treats a missing field as empty.
 - `relay`: `{on, paired, folder, synced}` — whether the iPhone relay is on, whether a phone is
   paired, the folder, and when the Mac last wrote the snapshot there.
 
+Notes on the CLI as built (version 2):
+
+- `done[]` lists a Claude desktop session from its turn summary. `completed` is `done`; `review_ready` and
+  `blocked` keep their name; `failed` and `error` are `failed`; any `needs_action` makes it `needs_you`. `result` is the summary detail split at line breaks and `;`, at most 3 lines. Without a summary, the card
+  in the last assistant message of the transcript is used, else its first line cut to 120 characters. A Codex
+  rollout counts when its last event is a finished turn. A session whose turn is still open, an archived one,
+  and one listed in `running[]` are left out. At most 40 rows.
+- `links` holds up to 3 GitHub PR or issue URLs from that text, plus the PRs the desktop app recorded.
+- `tasks[]` and the issue counts come from GitHub through a cache, `~/.teyla/state-backlog.json` (0600). The
+  snapshot never calls `gh`: a detached `teyla state --refresh-backlog` rewrites the cache when it is older than
+  30 minutes. One refresh makes three calls: a PR search (`is:pr is:open author:@me`, with each head commit),
+  `gh search issues --assignee @me`, and one query for the open issue count of every repo that moved in the
+  last 30 days. In safe mode, or without `gh`, the lists are empty and nothing starts.
+- A `merge` task is listed for every open, non-draft PR of the owner in a repo that is not merge-approved.
+  `detail` says whether the head commit is in the review ledger (`review.ledger`), whether the last review of
+  it has an open P1, or whether the review was skipped. The merge-approved list is the fenced block after
+  "MERGE-APPROVED REPOS" in `~/.claude/CLAUDE.md`; `[state] merge_approved = ["owner/repo", ...]` replaces it.
+- A product is named after its GitHub repo. Two clones of one repo, or a clone whose remote was renamed, share
+  one row; the asks, tasks, results and sessions of both carry that name. Two repos with different GitHub names
+  stay two rows. `next` is the `needs` of the product's newest `done[]` row.
+- `running[]` also finds a Codex session resumed after days, because it goes by file time and not by the date
+  folder. `correct` is `codex-queue` for an interactive Codex session and `open` for everything else.
+- Runs listed in `~/.teyla/dispatch.jsonl` count as sessions you work in: a Codex `exec` run, a Claude run
+  found by the transcript folder of its worktree, and a desktop session titled "You are reviewing..." whose
+  directory is inside a dispatched worktree appear in `running[]` and `done[]`.
+- `relay` is read from `~/.teyla/relay.json` and `~/.teyla/relay.key`; without them it is `{on: false,
+  paired: false, folder: "", synced: ""}`.
+- `teyla state` (text) adds a short "Tasks" and a short "Done" section within its 15 lines.
+
 ### New commands
 
 | Command | Does |
