@@ -17,6 +17,9 @@
   teyla asks done <id-prefix>... [--note TEXT] | snooze <id-prefix> <days>            close one, or hide it for a while
   teyla state [--json]                                             ranked questions, products and running sessions in one snapshot
   teyla answer <id-prefix> <text...> [--json] [--dry]              answer a question inside the session that asked it
+  teyla relay on|off|status [--json]                               the iPhone relay: switch it on or off, say where it stands
+  teyla relay pair [--json] [--rotate]                             create the shared key, print the pairing string
+  teyla relay sync [--quiet]                                       one pass: write the snapshot, deliver the signed outbox
   teyla say <ref> [--json] [--dry] -- <text>                       correct a running session (Codex: queued; else copy and open)
   teyla dispatch <product> [--harness codex|claude] [--model M] [--json] [--dry] -- <text>   start new work in a fresh worktree
   teyla spend [--days N] [--by-day] [--alert] [--json]           what the AI work cost, which part bought nothing; --by-day: subagent cost by model family
@@ -494,6 +497,8 @@ def build_parser() -> argparse.ArgumentParser:
     state_mod.register(sp)
     from . import answer as answer_mod
     answer_mod.register(sp)
+    from . import relay as relay_mod
+    relay_mod.register(sp)
     from . import dispatch as dispatch_mod
     dispatch_mod.register(sp)
     from . import docs_check as docs_check_mod
