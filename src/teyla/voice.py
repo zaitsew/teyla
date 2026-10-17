@@ -64,14 +64,21 @@ def _scalar(raw: str):
     return s
 
 
+def _opens_quote(cur: str) -> bool:
+    """A quote mark opens a quoted item only at the start of the item (`"b, c"`, or `key: "b, c"` in a map);
+    inside a plain item it is an apostrophe (`don't`)."""
+    head = cur.strip()
+    return not head or (head.endswith(":") and ":" in head)
+
+
 def _inline_list(raw: str) -> list:
-    """`[a, "b, c", d]` -> ['a', 'b, c', 'd']."""
+    """`[a, "b, c", d]` -> ['a', 'b, c', 'd']. An apostrophe inside a plain item is text: `[don't, can't]`."""
     inner, items, cur, quote = raw.strip()[1:-1], [], "", ""
     for ch in inner:
         if quote:
             quote = "" if ch == quote else quote
             cur += ch
-        elif ch in "\"'":
+        elif ch in "\"'" and _opens_quote(cur):
             quote = ch
             cur += ch
         elif ch == ",":
