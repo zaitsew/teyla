@@ -146,7 +146,11 @@ lowercase hex HMAC-SHA256 of a message:
 - snapshot: `teyla-state-v1\n` followed by the JSON bytes;
 - outbox entry: the lines `teyla-outbox-v1`, `v`, `id`, `kind`, `target`, `about`, `created`,
   `device`, then `text`, joined with `\n`, UTF-8. `text` is last, so a newline inside it is safe.
-  No other field is signed and no JSON canonical form is needed.
+  No other field is signed and no JSON canonical form is needed. Every field but `text` must
+  match a strict pattern with no line break, so the split is unambiguous: `v` digits, `id` a UUID,
+  `kind` one of the three, `target` `[A-Za-z0-9_.:#/-]{1,200}`, `about` 64 hex, `created` an ISO
+  time, `device` `[A-Za-z0-9 ._-]{1,64}`. Both sides reject an entry that does not, before
+  checking its signature.
 
 `tests/fixtures/relay-vector.json` holds a key, a snapshot, an entry and both expected
 signatures; the Mac and the phone each reproduce them in a test.
