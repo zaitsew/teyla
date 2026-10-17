@@ -176,6 +176,10 @@ def arrived(conf: dict, before: dict[str, int], text: str) -> bool:
     if not want:
         return False
     for f in transcripts(conf):
+        # Only the session's own transcript, or a copy that appeared after the start. Another session that
+        # already existed in the same project may receive the same words; that is not this delivery.
+        if f in before and os.path.splitext(os.path.basename(f))[0] != conf["session"] and conf["kind"] == "claude":
+            continue
         try:
             with open(f, "rb") as fh:
                 fh.seek(before.get(f, 0))

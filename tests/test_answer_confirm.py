@@ -114,6 +114,18 @@ def test_a_copy_started_for_a_running_session_counts(world):
     assert r["detail"] == "out" and "aaaa0001" in done()
 
 
+def test_another_existing_session_in_the_project_does_not_confirm(world):
+    other = world.proj / "99999999-8888-7777-6666-555555555555.jsonl"
+    append(other, claude_line("earlier"))
+
+    def session(cmd, **kw):
+        append(other, claude_line("Keep 1.0"))
+        return 0, "out"
+    world.session = session
+    r = answer.answer(ask(), "Keep 1.0", now=NOW, wait_s=0)
+    assert r["detail"] == answer.NOT_CONFIRMED and "aaaa0001" not in done()
+
+
 def test_a_multi_line_answer_matches_despite_whitespace(world):
     def session(cmd, **kw):
         append(world.transcript, claude_line("Keep   1.0\n\nship it"))
