@@ -49,10 +49,11 @@ targets:
   TeylaTests:
     type: bundle.unit-test
     platform: iOS
-    # Logic-only tests: the Core sources are compiled into the bundle, so no app is launched.
+    # Logic-only tests: the Core sources and AppModel are compiled into the bundle, so no app is launched.
     sources:
       - TeylaTests
       - Teyla/Core
+      - Teyla/App/AppModel.swift
       - path: ../mac/Teyla/Core/Models.swift
         group: Shared
       - path: ../mac/Teyla/Core/Format.swift
