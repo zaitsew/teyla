@@ -55,13 +55,13 @@ private struct Content: View {
             SyncLine()
         }
 
-        let sent = model.pending.filter { $0.kind == .dispatch }
+        let sent = model.sentWithoutCard(in: snapshot)
         if !sent.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 SectionLabel("Sent from this iPhone")
                 ForEach(sent) { action in
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("New task \u{00B7} \(Format.product(action.label))")
+                        Text(heading(of: action))
                             .font(.subheadline.weight(.semibold))
                         OutcomeView(action: action) { model.dismiss(action.id) }
                     }
@@ -107,6 +107,14 @@ private struct Content: View {
             ForEach(snapshot.running) { session in
                 RunningCard(session: session, runningSeconds: PhoneFormat.secondsSince(session.since, now: now))
             }
+        }
+    }
+
+    private func heading(of action: PendingAction) -> String {
+        switch action.kind {
+        case .dispatch: return "New task \u{00B7} \(Format.product(action.label))"
+        case .answer: return "Answer \u{00B7} \(action.label)"
+        case .say: return "Correction \u{00B7} \(action.label)"
         }
     }
 

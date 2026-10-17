@@ -55,13 +55,14 @@ struct QuestionCard: View {
                     }
                 }
             }
-            Composer(text: $draft, field: "ask-\(ask.id)", placeholder: "Write an answer") {
+            Composer(text: $draft, field: "ask-\(ask.id)", placeholder: "Write an answer",
+                     isSending: model.isSending(.answer, target: ask.id)) {
                 let text = draft
                 Task {
                     if await model.send(kind: .answer, target: ask.id, aboutText: ask.question,
                                         label: ask.title.isEmpty ? Format.product(ask.product) : ask.title,
-                                        text: text) {
-                        draft = ""
+                                        text: text), draft == text {
+                        draft = ""            // words typed or dictated during the write stay
                     }
                 }
             }
@@ -223,12 +224,13 @@ struct RunningCard: View {
             if let action {
                 OutcomeView(action: action) { model.dismiss(action.id) }
             } else if canCorrect, correcting {
-                Composer(text: $draft, field: "say-\(session.ref)", placeholder: "Correct this session", sendLabel: "Send") {
+                Composer(text: $draft, field: "say-\(session.ref)", placeholder: "Correct this session", sendLabel: "Send",
+                         isSending: model.isSending(.say, target: session.ref)) {
                     let text = draft
                     Task {
                         if await model.send(kind: .say, target: session.ref, aboutText: session.title,
                                             label: session.title, text: text) {
-                            draft = ""
+                            if draft == text { draft = "" }
                             correcting = false
                         }
                     }

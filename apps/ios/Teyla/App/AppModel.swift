@@ -40,6 +40,10 @@ final class AppModel {
     private var folderURL: URL?
     private var scopedURL: URL?
     private var key: Data?
+    /// `kind:target` of the sends being written now; a second tap on the same card waits for the first.
+    private(set) var sending: Set<String> = []
+    /// A refresh was asked for while one was running (re-pairing, a new folder): run once more.
+    private var refreshAgain = false
 
     private static let finishedKey = "setupFinished"
 
@@ -145,9 +149,19 @@ final class AppModel {
     // MARK: Reading
 
     func refresh() async {
-        guard !isRefreshing else { return }
+        guard !isRefreshing else {
+            refreshAgain = true
+            return
+        }
         isRefreshing = true
         defer { isRefreshing = false }
+        repeat {
+            refreshAgain = false
+            await refreshOnce()
+        } while refreshAgain
+    }
+
+    private func refreshOnce() async {
         if let fixtureURL {
             loadFixture(fixtureURL)
             return
@@ -155,6 +169,9 @@ final class AppModel {
         guard let folderURL, let key else { return }
         let store = RelayStore(folder: folderURL)
         let read = await Task.detached(priority: .utility) { store.readState() }.value
+        // The folder or the key changed while the file was being read (a new pairing): this read was
+        // verified against the old key, so it is dropped, not shown. The refresh that pairing asked for runs next.
+        guard self.folderURL == folderURL, self.key == key else { return }
         switch read {
         case .missing, .failed:
             snapshot = nil
@@ -197,10 +214,30 @@ final class AppModel {
         pending.last { $0.kind == kind && $0.target == target }
     }
 
+    func isSending(_ kind: OutboxKind, target: String) -> Bool {
+        sending.contains("\(kind.rawValue):\(target)")
+    }
+
+    /// Sent from this phone and no longer on a card: new tasks, and answers or corrections whose question or
+    /// session the Mac has since dropped. Their result stays visible until it is dismissed.
+    func sentWithoutCard(in snapshot: Snapshot) -> [PendingAction] {
+        pending.filter { action in
+            switch action.kind {
+            case .dispatch: return true
+            case .answer: return !snapshot.asks.contains { $0.id == action.target }
+            case .say: return !snapshot.running.contains { $0.ref == action.target }
+            }
+        }
+    }
+
     /// Builds, signs and writes one outbox entry. Returns true when it was handed to the folder
     /// (or, in fixture mode, accepted), so the caller can clear its field.
     @discardableResult
     func send(kind: OutboxKind, target: String, aboutText: String, label: String, text: String) async -> Bool {
+        let slot = "\(kind.rawValue):\(target)"
+        guard !sending.contains(slot) else { return false }
+        sending.insert(slot)
+        defer { sending.remove(slot) }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let device = RelayCrypto.sanitizedDevice(UIDevice.current.name)
         if isFixture {

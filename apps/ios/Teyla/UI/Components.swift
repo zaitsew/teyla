@@ -147,6 +147,8 @@ struct Composer: View {
     let field: String
     let placeholder: String
     var sendLabel = "Send"
+    /// True while the last send is still being written: the button waits, so one tap is one entry.
+    var isSending = false
     var onSend: () -> Void
     @FocusState private var focused: Bool
 
@@ -170,7 +172,7 @@ struct Composer: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(!canSend)
+            .disabled(!canSend || isSending)
         }
     }
 }
