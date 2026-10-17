@@ -47,6 +47,7 @@ import stat
 import subprocess
 import sys
 import time
+from xml.sax.saxutils import escape as _xml
 
 from . import answer as answer_mod
 from . import asks, config
@@ -361,7 +362,7 @@ def relay_on(*, load=None) -> list[str]:
     for d in (wrapper.parent, plist.parent, log.parent):
         d.mkdir(parents=True, exist_ok=True)
     ri._write(wrapper, WRAPPER.format(env_sh=ri._env_sh(env), label=LABEL, teyla_bin=teyla_bin), 0o755)
-    ri._write(plist, PLIST.format(label=LABEL, wrapper=wrapper, outbox=folder / "outbox", log=log,
+    ri._write(plist, PLIST.format(label=LABEL, wrapper=_xml(str(wrapper)), outbox=_xml(str(folder / "outbox")), log=_xml(str(log)),
                                   env_plist=ri._env_plist(env)))
     lines += [f"wrote {wrapper}", f"wrote {plist}"]
     if sys.platform == "darwin":
@@ -412,6 +413,12 @@ def _claim(e: dict, now: float) -> bool:
         f.write(json.dumps(rec).encode("utf-8"))
         f.flush()
         os.fsync(f.fileno())
+    # The claim must survive a power cut before anything is delivered: fsync the directory entry too.
+    dfd = os.open(jd, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(dfd)
+    finally:
+        os.close(dfd)
     return True
 
 
@@ -463,6 +470,32 @@ def _unlink(path: pathlib.Path) -> None:
         os.unlink(path)
     except FileNotFoundError:
         pass
+    except OSError:
+        pass                                    # a directory or a file we may not remove: it is refused each pass
+
+
+def folder_problem(folder: pathlib.Path) -> str:
+    """Why the relay folder is unsafe to read from or write to, or "". Anyone with iCloud access may plant
+    a link: `outbox` linked to the journal would let the cleanup of refused entries delete claims and
+    reopen replays. So the folder, `outbox` and `sent` must be real directories (no link anywhere on the
+    way from the folder down), owned by this user, and nowhere inside Teyla's own home."""
+    try:
+        real = pathlib.Path(os.path.realpath(folder))
+        home = pathlib.Path(os.path.realpath(ctl.home()))
+        if real == home or home in real.parents or real in home.parents:
+            return f"{folder} overlaps Teyla's home {home}"
+        for d in (folder, folder / "outbox", folder / "sent"):
+            st = os.lstat(d)
+            if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+                return f"{d} is not a plain directory"
+            if st.st_uid != os.getuid():
+                return f"{d} is not owned by this user"
+        for sub in ("outbox", "sent"):
+            if pathlib.Path(os.path.realpath(folder / sub)) != real / sub:
+                return f"{folder / sub} resolves somewhere else"
+    except OSError as exc:
+        return f"{folder}: {exc.strerror or exc}"
+    return ""
 
 
 # --- delivery ---------------------------------------------------------------------------------
@@ -605,10 +638,11 @@ def process_one(p: Pass, path: pathlib.Path, stem: str) -> dict | None:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError:
         return _reject_unsigned(p, path, stem, "malformed entry: not a readable file")
+    st = os.fstat(fd)
+    if not stat.S_ISREG(st.st_mode):            # checked before fdopen, which refuses a directory
+        os.close(fd)
+        return _reject_unsigned(p, path, stem, "malformed entry: not a regular file")
     with os.fdopen(fd, "rb") as f:
-        st = os.fstat(f.fileno())
-        if not stat.S_ISREG(st.st_mode):
-            return _reject_unsigned(p, path, stem, "malformed entry: not a regular file")
         if st.st_size > MAX_FILE:
             return _reject_unsigned(p, path, stem, "file is larger than 64 KB")
         raw = f.read(MAX_FILE + 1)
@@ -680,6 +714,9 @@ def sync(*, now: float | None = None, source=None, answer_fn=None, runner=None, 
         except OSError:
             return {"skipped": "another pass is running"}
         now = _now() if now is None else now
+        why = folder_problem(folder)
+        if why:
+            return {"skipped": f"unsafe relay folder: {why}"}
         source = source or default_source
         recovered = recover(folder, now)
         snap, items = source(now)

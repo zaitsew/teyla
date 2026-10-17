@@ -582,3 +582,40 @@ def test_status_json_matches_the_snapshot_relay_object(env, capsys):
     st = json.loads(capsys.readouterr().out)
     assert st["on"] is True and st["paired"] is True and st["folder"] == str(env.folder)
     assert set(SNAP["relay"]) <= set(st)
+
+
+# --- an unsafe folder ------------------------------------------------------------------------
+
+def test_an_outbox_linked_into_the_journal_stops_the_pass(env):
+    import shutil
+    shutil.rmtree(env.folder / "outbox")
+    relay.journal_dir().mkdir(parents=True, exist_ok=True)
+    claim = relay.journal_dir() / "kept.json"
+    claim.write_text("{}")
+    os.symlink(relay.journal_dir(), env.folder / "outbox")
+    res = env.sync()
+    assert res["skipped"].startswith("unsafe relay folder") and claim.exists()
+    assert env.answers == [] and not (env.folder / "state.teyla").exists()
+
+
+def test_a_folder_inside_teylas_home_is_refused(env):
+    inside = relay.journal_dir().parent / "relay-inside"
+    for sub in ("outbox", "sent"):
+        (inside / sub).mkdir(parents=True)
+    assert "overlaps" in env.sync(folder=inside)["skipped"]
+
+
+def test_a_directory_named_like_an_entry_does_not_stop_the_pass(env):
+    (env.folder / "outbox" / f"{uuid.uuid4()}.json").mkdir()
+    e = env.entry()
+    env.drop(e)
+    env.sync()
+    assert env.sent(e["id"])["ok"] is True
+
+
+def test_the_plist_stays_valid_with_xml_characters_in_the_folder(tmp_path, monkeypatch):
+    folder = tmp_path / "Tom & Jerry <docs>" / "Teyla"
+    monkeypatch.setattr(relay, "configured_folder", lambda: folder)
+    relay.relay_on(load=lambda *a: "")
+    plist = plistlib.loads(relay.plist_path().read_bytes())
+    assert plist["WatchPaths"] == [str(folder / "outbox")]
