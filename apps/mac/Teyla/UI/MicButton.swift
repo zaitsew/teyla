@@ -57,7 +57,7 @@ struct MicButton: View {
 
     private func begin() {
         let binding = $text
-        dictation.start(target: target, current: text) { binding.wrappedValue = $0 }
+        dictation.start(target: target, current: text, read: { binding.wrappedValue }) { binding.wrappedValue = $0 }
     }
 }
 

@@ -54,6 +54,40 @@ enum Voice {
     }
 }
 
+/// The text of a field while it is dictated into. Recognition results are cumulative, so each one is
+/// written over the field; words typed since the last write are kept by taking the field as the new base
+/// and writing only the words heard after that point. Words are counted, not compared: the recognizer
+/// may revise the ones it already gave (case, punctuation, a better guess), and a revision must not
+/// bring them back after the owner edited the field.
+struct DictationText: Equatable {
+    private var base: String
+    private var wordsBefore = 0
+    private var lastHeard = ""
+    private var lastWritten: String
+
+    init(base: String) {
+        self.base = base
+        lastWritten = base
+    }
+
+    /// The full text for the field, given everything heard so far and what the field holds now.
+    mutating func text(heard: String, field: String) -> String {
+        if field != lastWritten {
+            base = field
+            wordsBefore = Self.words(lastHeard).count
+        }
+        lastHeard = heard
+        let spoken = Self.words(heard).dropFirst(wordsBefore).joined(separator: " ")
+        let merged = Voice.merged(base: base, heard: spoken)
+        lastWritten = merged
+        return merged
+    }
+
+    private static func words(_ text: String) -> [String] {
+        text.split(whereSeparator: \.isWhitespace).map(String.init)
+    }
+}
+
 /// Push-to-talk on a button or a key: hold to talk, or tap to start and tap again to stop.
 /// A press that is held for `holdThreshold` or longer stops on release; a shorter press keeps listening.
 struct PushToTalk: Equatable {
