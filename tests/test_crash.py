@@ -107,6 +107,10 @@ def reports(tmp_path, monkeypatch):
     main, retired = tmp_path / "Reports", tmp_path / "Reports" / "Retired"
     retired.mkdir(parents=True)
     monkeypatch.setattr(crash, "DEFAULT_ROOTS", [main, retired])
+    # The report window is relative to "now": pin it to the fixed clock so the fixtures never age out.
+    real_report = crash.report
+    monkeypatch.setattr(crash, "report", lambda days=crash.DEFAULT_DAYS, roots=None, records=None, now=None:
+                        real_report(days, roots, records, now or NOW))
     return main, retired
 
 
