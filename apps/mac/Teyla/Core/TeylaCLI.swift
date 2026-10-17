@@ -51,7 +51,7 @@ private final class DataBox: @unchecked Sendable {
 }
 
 /// Runs the Teyla CLI. With `TEYLA_STATE_FIXTURE` set, state is read from that JSON file and
-/// every write (answer, snooze, done) is simulated, so a preview never touches a real session.
+/// every write (answer, say, dispatch, relay, snooze, done) is simulated, so a preview never touches a real session.
 actor TeylaCLI {
     private let env: [String: String]
     private let home: String
@@ -86,8 +86,50 @@ actor TeylaCLI {
             try? await Task.sleep(for: .milliseconds(700))
             return AnswerResult(ok: true, via: "fixture", detail: "Simulated: the fixture is read-only", id: id)
         }
-        let out = try await run(Self.answerArguments(id: id, text: text), timeout: 180)
-        // `teyla answer` may print a JSON verdict even when it fails; prefer that over stderr.
+        return try await deliver(Self.answerArguments(id: id, text: text), timeout: 180)
+    }
+
+    /// `teyla say`: a correction for a running session.
+    func say(ref: String, text: String) async throws -> AnswerResult {
+        if fixtureURL != nil {
+            try? await Task.sleep(for: .milliseconds(700))
+            return AnswerResult(ok: true, via: "fixture", detail: "Simulated: the fixture is read-only", id: ref)
+        }
+        return try await deliver(Self.sayArguments(ref: ref, text: text), timeout: 60)
+    }
+
+    /// `teyla dispatch`: starts a new session in a fresh worktree.
+    func dispatch(product: String, harness: Harness, text: String) async throws -> AnswerResult {
+        if fixtureURL != nil {
+            try? await Task.sleep(for: .milliseconds(900))
+            return AnswerResult(ok: true, via: "fixture", detail: "Simulated: the fixture is read-only", id: "preview",
+                                worktree: "~/.worktrees/\(product)/preview", link: "https://example.com/teyla-preview")
+        }
+        return try await deliver(Self.dispatchArguments(product: product, harness: harness, text: text), timeout: 180)
+    }
+
+    /// `teyla relay on|off`. Output is not used: the next `state` carries the new `relay` block.
+    func setRelay(on: Bool) async throws {
+        try await simpleCommand(Self.relayArguments(on: on))
+    }
+
+    /// `teyla relay pair --json`: creates the shared key and returns the pairing string.
+    func relayPair() async throws -> String {
+        if fixtureURL != nil {
+            try? await Task.sleep(for: .milliseconds(500))
+            // A well-formed string with an all-zero key: a preview never creates a real key.
+            return Pairing.prefix + String(repeating: "A", count: 43)
+        }
+        let out = try await run(Self.relayPairArguments, timeout: 60)
+        guard out.status == 0 else { throw TeylaError.failed(code: out.status, message: out.stderrText) }
+        guard let pairing = Pairing.extract(from: out.stdout) else { throw TeylaError.badOutput("no pairing string") }
+        return pairing
+    }
+
+    /// Runs a delivering command (`answer`, `say`, `dispatch`) and reads its `{ok, via, detail, id}` verdict.
+    private func deliver(_ args: [String], timeout: TimeInterval) async throws -> AnswerResult {
+        let out = try await run(args, timeout: timeout)
+        // These commands may print a JSON verdict even when they fail; prefer that over stderr.
         if !out.stdout.isEmpty, let result = try? JSONDecoder().decode(AnswerResult.self, from: out.stdout) {
             if result.ok && out.status == 0 { return result }
             let why = result.detail.isEmpty ? out.stderrText : result.detail
@@ -101,6 +143,20 @@ actor TeylaCLI {
     static func answerArguments(id: String, text: String) -> [String] {
         ["answer", id, "--json", "--", text]
     }
+
+    static func sayArguments(ref: String, text: String) -> [String] {
+        ["say", ref, "--json", "--", text]
+    }
+
+    static func dispatchArguments(product: String, harness: Harness, text: String) -> [String] {
+        ["dispatch", product, "--harness", harness.rawValue, "--json", "--", text]
+    }
+
+    static func relayArguments(on: Bool) -> [String] {
+        ["relay", on ? "on" : "off"]
+    }
+
+    static let relayPairArguments = ["relay", "pair", "--json"]
 
     func snooze(id: String, days: Int) async throws {
         try await simpleCommand(["asks", "snooze", id, String(days)])

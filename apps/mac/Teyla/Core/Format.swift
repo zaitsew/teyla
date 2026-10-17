@@ -14,7 +14,7 @@ enum Format {
     /// The rest is one line, so the column stays short.
     static func splitProducts(_ products: [Product], running: [RunningSession]) -> (shown: [Product], rest: Int) {
         let busy = Set(running.map(\.product))
-        let shown = products.filter { $0.waiting > 0 || $0.state == .shipped || busy.contains($0.name) }
+        let shown = products.filter { $0.waiting > 0 || $0.prsWaiting > 0 || $0.state == .shipped || busy.contains($0.name) }
         return (shown, products.count - shown.count)
     }
 
@@ -66,6 +66,72 @@ enum Format {
         let s = max(0, secondsAgo)
         if s < 60 { return "Live · updated \(s) s ago" }
         return "Live · updated \(s / 60) min ago"
+    }
+
+    /// "3 issues · 1 PR waiting"; a count of zero is left out, and nothing is returned when both are zero.
+    static func counts(issues: Int, prsWaiting: Int) -> String {
+        var parts: [String] = []
+        if issues > 0 { parts.append("\(issues) \(issues == 1 ? "issue" : "issues")") }
+        if prsWaiting > 0 { parts.append("\(prsWaiting) \(prsWaiting == 1 ? "PR" : "PRs") waiting") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// The chip on a result card: `done`, `needs_you`, `blocked`, `failed`, `review_ready`.
+    /// An unknown status is shown as written, with the underscores removed.
+    static func statusLabel(_ status: String) -> String {
+        switch status {
+        case "done": return "Done"
+        case "needs_you": return "Needs you"
+        case "blocked": return "Blocked"
+        case "failed": return "Failed"
+        case "review_ready": return "Ready for review"
+        default:
+            let text = status.replacingOccurrences(of: "_", with: " ")
+            return text.prefix(1).uppercased() + text.dropFirst()
+        }
+    }
+
+    /// The kind of an owner task: `merge` or `task`.
+    static func taskKind(_ kind: String) -> String {
+        kind == "merge" ? "Merge" : "Task"
+    }
+
+    /// A short label for a link on a result card: a GitHub pull request or issue becomes
+    /// "example/atlas#301"; any other URL is shown as host and path.
+    static func linkLabel(_ link: String) -> String {
+        guard let url = URL(string: link), let host = url.host else { return link }
+        let parts = url.path.split(separator: "/").map(String.init)
+        if host == "github.com", parts.count >= 4, parts[2] == "pull" || parts[2] == "issues" {
+            return "\(parts[0])/\(parts[1])#\(parts[3])"
+        }
+        let path = url.path == "/" ? "" : url.path
+        return host + path
+    }
+
+    /// The relay line in Settings: "Paired · synced 2 min ago".
+    static func relayLine(_ relay: Relay?, now: Date) -> String {
+        guard let relay, relay.on else { return "Relay is off." }
+        if !relay.paired { return "Relay is on. No iPhone is paired." }
+        guard let synced = ISODate.parse(relay.synced) else { return "Paired · not synced yet" }
+        let ago = age(seconds: now.timeIntervalSince(synced))
+        return ago == "just now" ? "Paired · synced just now" : "Paired · synced \(ago) ago"
+    }
+
+    /// The line under a delivered correction (`teyla say`).
+    static func saidLine(via: String) -> String {
+        switch via {
+        case "codex-queue": return "Queued: Codex reads it after the current turn"
+        case "opened": return "Copied to the clipboard and opened the session"
+        case "fixture": return "Queued (preview only, nothing was delivered)"
+        case "": return "Sent to the session"
+        default: return "Sent to the session via \(via)"
+        }
+    }
+
+    /// The line under a started task (`teyla dispatch`).
+    static func startedLine(via: String, worktree: String) -> String {
+        let how = via == "fixture" ? "Started (preview only, nothing was started)" : "Started"
+        return worktree.isEmpty ? how : "\(how) in \(worktree)"
     }
 
     /// The line under a delivered answer.
