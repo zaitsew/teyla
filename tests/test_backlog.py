@@ -58,7 +58,7 @@ def test_remote_slug_reads_the_origin_url_of_a_clone(tmp_path):
     origin = '[remote "upstream"]\n\turl = https://github.com/other/thing\n[remote "origin"]\n\turl = %s\n'
     assert backlog.remote_slug(clone("a", origin % "https://github.com/Example/Atlas.git")) == "Example/Atlas"
     assert backlog.remote_slug(clone("b", origin % "git@github.com:example/cellar.git")) == "example/cellar"
-    assert backlog.remote_slug(clone("c", origin % "https://token" + "@github.com/example/lens")) == "example/lens"
+    assert backlog.remote_slug(clone("c", origin % ("https://token" + "@github.com/example/lens"))) == "example/lens"
     assert backlog.remote_slug(clone("d", origin % "https://gitlab.com/example/lens.git")) == ""
     assert backlog.remote_slug(clone("e", "[core]\n")) == ""
     assert backlog.remote_slug(tmp_path / "missing") == ""
