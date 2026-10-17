@@ -10,14 +10,19 @@ Tried in order, and the first that works is reported as `via`:
    in the session's directory (worktree if it still exists), via `claude-bg`.
 3. Fallback `opened`: the text goes to the clipboard and the session's link is opened.
 
-On success the item is marked done with the note "answered in Teyla via <via>". `--dry` prints
-the commands and runs nothing. Every subprocess goes through `run`, so tests replace one function.
+A started process is not a delivered answer. After a `codex-resume` or `claude-bg` start, the
+session's own transcript must gain a user entry holding the text, within a short bounded wait.
+Confirmed: the item is marked done with the note "answered in Teyla via <via>". Not confirmed in
+time: the result is ok with the detail "started, not confirmed yet" and the item stays open (the
+asks scan closes it once the reply shows in the transcript). `--dry` prints the commands and runs
+nothing. Every subprocess goes through `run`, so tests replace one function.
 """
 from __future__ import annotations
 
 import json
 import os
 import pathlib
+import glob
 import shlex
 import subprocess
 import sys
@@ -28,6 +33,9 @@ from .adapters import claude_code, codex
 
 TIMEOUT = 30
 DETACH_WAIT_S = 3.0
+CONFIRM_WAIT_S = 10.0        # after a start: how long the transcript may take to show the text
+CONFIRM_POLL_S = 0.5
+NOT_CONFIRMED = "started, not confirmed yet"
 PERMISSION_MODES = ("acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan")
 OPENABLE = ("claude://", "codex://", "https://")
 QUEUE_DETAIL = "waits until the session is opened"
@@ -117,6 +125,88 @@ def claude_cwd(cli_id: str, meta: dict) -> str | None:
     return None
 
 
+# --- did it arrive ----------------------------------------------------------------------------
+
+def transcripts(conf: dict) -> list[str]:
+    """The files that may take the text. Codex: the session's rollout. Claude: its transcript and the
+    files beside it, because `--bg --resume` of a session that is running starts a copy under a new id."""
+    if conf["kind"] == "codex":
+        return codex.locate(conf["session"])
+    own = glob.glob(os.path.join(claude_code.DEFAULT_ROOT, "*", f"{conf['session']}.jsonl"))
+    files: list[str] = []
+    for d in {os.path.dirname(f) for f in own}:
+        files += glob.glob(os.path.join(d, "*.jsonl"))
+    return files
+
+
+def snapshot(conf: dict) -> dict[str, int]:
+    """{file: size} before the start; a file that is not here yet counts as empty."""
+    out = {}
+    for f in transcripts(conf):
+        try:
+            out[f] = os.stat(f).st_size
+        except OSError:
+            continue
+    return out
+
+
+def _user_texts(o: dict, kind: str) -> list[str]:
+    if kind == "claude":
+        m = o.get("message")
+        content = m.get("content") if isinstance(m, dict) else None
+        if o.get("type") != "user" or (isinstance(content, list) and any(
+                isinstance(b, dict) and b.get("type") == "tool_result" for b in content)):
+            return []
+        return [asks.text_of(content)]
+    p = o.get("payload") if isinstance(o.get("payload"), dict) else {}
+    if o.get("type") == "response_item" and p.get("type") == "message" and p.get("role") == "user":
+        return [codex._text_of(p.get("content"))]
+    if o.get("type") == "event_msg" and p.get("type") == "user_message":
+        return [str(p.get("message") or "")]
+    return []
+
+
+def _squash(text: str) -> str:
+    return " ".join(str(text).split())
+
+
+def arrived(conf: dict, before: dict[str, int], text: str) -> bool:
+    """Has a user entry holding `text` been appended since `before`?"""
+    want = _squash(text)
+    if not want:
+        return False
+    for f in transcripts(conf):
+        # Only the session's own transcript, or a copy that appeared after the start. Another session that
+        # already existed in the same project may receive the same words; that is not this delivery.
+        if f in before and os.path.splitext(os.path.basename(f))[0] != conf["session"] and conf["kind"] == "claude":
+            continue
+        try:
+            with open(f, "rb") as fh:
+                fh.seek(before.get(f, 0))
+                new = fh.read().decode("utf-8", errors="replace")
+        except OSError:
+            continue
+        for line in new.splitlines():
+            try:
+                o = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(o, dict) and any(want in _squash(t) for t in _user_texts(o, conf["kind"])):
+                return True
+    return False
+
+
+def confirm_delivery(conf: dict, before: dict[str, int], text: str, wait_s: float) -> bool:
+    """Poll the transcript for at most `wait_s` seconds; always looks at least once."""
+    end = time.monotonic() + wait_s
+    while True:
+        if arrived(conf, before, text):
+            return True
+        if time.monotonic() >= end:
+            return False
+        time.sleep(CONFIRM_POLL_S)
+
+
 # --- the plan ---------------------------------------------------------------------------------
 
 def open_target(a: asks.Ask) -> str:
@@ -131,8 +221,9 @@ def plan(a: asks.Ask, text: str) -> list[dict]:
     if a.harness == "codex" and a.session:
         cwd = codex_cwd(a.session) or str(pathlib.Path.home())
         steps.append({"via": "codex-resume", "cmd": ["codex", "exec", "resume", a.session, *_flag_text(text)],
-                      "cwd": cwd, "detach": str(asks.state.home() / "answer.log")})
-        steps.append({"via": "codex-queue", "cmd": ["codex", "queue", "--thread", a.session, "--message", text],
+                      "cwd": cwd, "detach": str(asks.state.home() / "answer.log"),
+                      "confirm": {"kind": "codex", "session": a.session}})
+        steps.append({"via": "codex-queue", "cmd": ["codex", "queue", "--thread", a.session, f"--message={text}"],
                       "cwd": None, "detail": QUEUE_DETAIL})
     elif a.harness in ("claude-desktop", "claude-code") and a.session:
         meta = claude_meta(a.session)
@@ -142,7 +233,8 @@ def plan(a: asks.Ask, text: str) -> list[dict]:
             cmd = ["claude", "--bg", "--resume", a.session]
             if mode in PERMISSION_MODES:
                 cmd += ["--permission-mode", mode]
-            steps.append({"via": "claude-bg", "cmd": cmd + _flag_text(text), "cwd": cwd})
+            steps.append({"via": "claude-bg", "cmd": cmd + _flag_text(text), "cwd": cwd,
+                          "confirm": {"kind": "claude", "session": a.session}})
     target = open_target(a)
     if target:
         steps.append({"via": "opened", "cmd": ["open", target], "cwd": None, "copy": True})
@@ -167,23 +259,39 @@ def execute(step: dict, text: str) -> tuple[bool, str]:
     return code == 0, (step.get("detail") or out) if code == 0 else (out or f"exit {code}")
 
 
-def answer(a: asks.Ask, text: str, dry: bool = False, now: float | None = None) -> dict:
+def answer(a: asks.Ask, text: str, dry: bool = False, now: float | None = None,
+           wait_s: float | None = None, clipboard: bool = True) -> dict:
+    """`clipboard=False` (the iPhone relay) never takes the copy-and-open fallback: that answer needs the
+    owner at the Mac, so it fails with "needs the Mac" and the question stays open."""
     steps = plan(a, text)
     base = {"ok": False, "via": "", "detail": "", "id": a.id}
+    needs_mac = False
+    if not clipboard:
+        kept = [s for s in steps if not s.get("copy")]
+        needs_mac = len(kept) < len(steps)
+        steps = kept
+        if needs_mac and not steps:
+            base["detail"] = "needs the Mac"
+            return base
     if not steps:
         base["detail"] = f"nothing to deliver to: {a.harness} items have no session (see: {a.link})"
         return base
     if dry:
         return {"ok": True, "via": steps[0]["via"], "detail": "would run: " + "  ||  ".join(describe(s) for s in steps),
                 "id": a.id, "dry": True}
+    wait_s = CONFIRM_WAIT_S if wait_s is None else wait_s
     failures = []
     for s in steps:
+        conf = s.get("confirm")
+        before = snapshot(conf) if conf else {}
         ok, detail = execute(s, text)
+        if ok and conf and not confirm_delivery(conf, before, text, wait_s):
+            return {"ok": True, "via": s["via"], "detail": NOT_CONFIRMED, "id": a.id}
         if ok:
             _mark_done(a.id, s["via"], now)
             return {"ok": True, "via": s["via"], "detail": detail, "id": a.id}
         failures.append(f"{s['via']}: {detail}")
-    base["detail"] = "; ".join(failures)
+    base["detail"] = "; ".join(failures + (["needs the Mac"] if needs_mac else []))
     return base
 
 
