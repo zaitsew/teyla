@@ -380,3 +380,51 @@ def test_a_verdict_id_that_is_not_a_plain_int_rejects_the_reply():
     for bad in (0.0, [], {}, "0", True):
         assert ic.validate_cover({"results": [{"id": bad, "served": True}]}, {0}) is None
     assert ic.validate_cover({"results": [{"id": 0, "served": True}]}, {0}) == {0: (True, "")}
+
+
+# --- review round: "can you tell", wrapped plan sentences, long source sentences ------------------
+
+def test_can_you_tell_me_how_is_a_requirement_but_a_status_question_still_is_not():
+    assert not ic.chatter("Can you tell me how the lens should guide the shot before every capture?")
+    assert ic.chatter("Can you tell me what is the status of the sprint right now?")
+
+
+def test_a_plan_sentence_wrapped_over_two_lines_is_one_sentence():
+    plan = "The window lists every open\nquestion on one screen, ranked by what it unblocks."
+    units = ic.plan_units(plan)
+    assert units[0]["text"] == "The window lists every open question on one screen, ranked by what it unblocks."
+    res = run(plan, "The window lists every open question on one screen, ranked by what it unblocks.")
+    assert res["served"] == 1
+    # a heading, a list item and a blank line still end a block
+    assert [u["text"] for u in ic.plan_units("# Goals\nOne thing here.\n- Two things here.\n\nThree things here.")] \
+        == ["Goals", "One thing here.", "Two things here.", "Three things here."]
+
+
+def test_a_long_source_sentence_goes_to_the_model_whole_and_is_served_only_when_every_part_is(monkeypatch):
+    long_s = "The camera must show a level guide before every shot " + "and keep the guide steady " * 30 + "until the shot is taken."
+    assert len(long_s) > ic.SENTENCE_CHARS
+    parts = ic.sentence_parts(long_s)
+    assert all(len(p) <= ic.SENTENCE_CHARS for p in parts) and " ".join(parts) == long_s and len(parts) == 2
+    monkeypatch.setattr(ic, "model_unavailable", lambda: None)
+    sent = []
+
+    def call(cmd, input_text):
+        sent.append(json.loads(input_text))
+        return reply([{"id": 0, "served": True, "where": "level guide"}, {"id": 1, "served": False, "where": ""}])
+    monkeypatch.setattr(ic, "_call", call)
+    res = run("The window lists every open question.", long_s, model=True)
+    assert [s["text"] for s in sent[0]["sentences"]] == parts
+    assert res["items"][0]["status"] == "unserved" and res["model"]["judged"] == 1
+    monkeypatch.setattr(ic, "_call", lambda cmd, t: reply([{"id": 0, "served": True, "where": "a"}, {"id": 1, "served": True, "where": "b"}]))
+    res = run("The window lists every open question.", long_s, model=True)
+    assert res["items"][0]["status"] == "served" and res["items"][0]["via"] == "model"
+
+
+def test_a_failed_batch_leaves_a_split_sentence_as_it_was(monkeypatch):
+    long_s = "The camera must show a level guide before every shot " + "and keep the guide steady " * 30 + "until the shot is taken."
+    monkeypatch.setattr(ic, "model_unavailable", lambda: None)
+    monkeypatch.setattr(ic, "BATCH", 1)
+    answers = [reply([{"id": 0, "served": True, "where": "x"}]), (1, "")]
+    monkeypatch.setattr(ic, "_call", lambda cmd, t: answers.pop(0))
+    res = run("The window lists every open question.", long_s, model=True)
+    assert res["items"][0]["status"] != "served" and res["model"]["error"] == "claude exited 1"

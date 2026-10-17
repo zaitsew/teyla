@@ -42,7 +42,7 @@ RUN_MIN = 6            # ...and at least this many words
 RU_PLAN_SHARE = 0.2    # a plan with less Cyrillic than this is an English plan
 BATCH = 80             # sentences per model call
 PLAN_CHARS = 60_000    # the plan text a model call carries
-SENTENCE_CHARS = 600   # a source sentence clipped to this in a model call
+SENTENCE_CHARS = 600   # a source sentence longer than this goes to the model in parts of this size
 SHOW_CHARS = 170
 
 _WORD_RE = re.compile(r"[^\W_]+")
@@ -182,6 +182,26 @@ def source_sentences(entries: list[dict]) -> list[dict]:
 
 # --- the plan ------------------------------------------------------------------------------
 
+def _plan_blocks(text: str) -> list[str]:
+    """The plan's lines with a wrapped sentence joined: a plain line that follows a plain or list line
+    continues it, so a sentence broken across two physical lines is one sentence. A blank line, heading,
+    list item, table row, fence or out-of-scope line starts a block of its own (a blank line is kept)."""
+    out: list[str] = []
+    open_block = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        plain = (line and not _HEADING_RE.match(line) and not _FENCE_RE.match(line) and not line.startswith("|")
+                 and not _LIST_MARK_RE.match(raw) and not _OOS_LINE_RE.match(_plain(line)))
+        if plain and open_block:
+            out[-1] = out[-1] + " " + line
+            continue
+        out.append(raw)
+        # a line that can be continued: prose or a list item, not a heading, fence, table row or blank
+        open_block = bool(line and not _HEADING_RE.match(line) and not _FENCE_RE.match(line) and not line.startswith("|")
+                          and not _TABLE_SEP_RE.match(line))
+    return out
+
+
 def plan_units(text: str) -> list[dict]:
     """Pieces of the plan a source sentence can match: every sentence, every two next to each other
     and, for a short block, the whole block. Each carries its content words and whether it sits under
@@ -189,7 +209,7 @@ def plan_units(text: str) -> list[dict]:
     units: list[dict] = []
     oos_level = None      # heading level of the open out-of-scope section
     oos_block = False     # an out-of-scope line, until the next blank line or heading
-    for raw in (text or "").splitlines():
+    for raw in _plan_blocks(text or ""):
         line = raw.strip()
         if not line:
             oos_block = False
@@ -336,6 +356,26 @@ def validate_cover(reply, ids: set[int]) -> dict[int, tuple[bool, str]] | None:
     return out
 
 
+def sentence_parts(text: str) -> list[str]:
+    """The sentence in pieces of at most SENTENCE_CHARS characters, cut at spaces; short ones whole."""
+    if len(text) <= SENTENCE_CHARS:
+        return [text]
+    parts, cur = [], ""
+    for w in text.split():
+        while len(w) > SENTENCE_CHARS:                 # a "word" longer than a part: cut it
+            if cur:
+                parts.append(cur)
+                cur = ""
+            parts.append(w[:SENTENCE_CHARS])
+            w = w[SENTENCE_CHARS:]
+        if cur and len(cur) + 1 + len(w) > SENTENCE_CHARS:
+            parts.append(cur)
+            cur = w
+        else:
+            cur = f"{cur} {w}" if cur else w
+    return parts + [cur] if cur else parts
+
+
 def model_pass(items: list[dict], plan_text: str) -> tuple[list[dict], dict]:
     """Ask the model about every unresolved item (status unserved or needs_model), BATCH at a time.
     Returns (items with the verdicts applied, {calls, judged, cost_usd, error}). A failed batch leaves
@@ -344,10 +384,15 @@ def model_pass(items: list[dict], plan_text: str) -> tuple[list[dict], dict]:
     todo = [i for i, it in enumerate(items) if it["status"] != "served"]
     info = {"calls": 0, "judged": 0, "cost_usd": 0.0, "error": ""}
     out = [dict(it) for it in items]
-    for b in range(0, len(todo), BATCH):
-        chunk = todo[b:b + BATCH]
+    # A sentence longer than SENTENCE_CHARS goes out in parts, each whole, and is served only when every
+    # part is: clipping it would let the model judge a sentence whose end it never saw.
+    parts = [(i, part) for i in todo for part in sentence_parts(items[i]["text"])]
+    want = {i: sum(1 for j, _ in parts if j == i) for i in todo}
+    got: dict[int, list[tuple[bool, str]]] = {}
+    for b in range(0, len(parts), BATCH):
+        chunk = parts[b:b + BATCH]
         payload = {"plan": plan_text[:PLAN_CHARS],
-                   "sentences": [{"id": n, "text": items[i]["text"][:SENTENCE_CHARS]} for n, i in enumerate(chunk)]}
+                   "sentences": [{"id": n, "text": text} for n, (_, text) in enumerate(chunk)]}
         info["calls"] += 1
         try:
             code, raw = _call(cover_command(), json.dumps(payload, ensure_ascii=False))
@@ -363,12 +408,17 @@ def model_pass(items: list[dict], plan_text: str) -> tuple[list[dict], dict]:
             info["error"] = "the reply did not validate"
             break
         info["cost_usd"] += float(usage.get("cost_usd") or 0)
-        for n, (served, where) in verdicts.items():
-            it = out[chunk[n]]
-            it["status"] = "served" if served else "unserved"
-            it["via"] = "model" if served else ""
-            it["plan"] = where
-            info["judged"] += 1
+        for n, verdict in verdicts.items():
+            got.setdefault(chunk[n][0], []).append(verdict)
+    for i, vs in got.items():
+        if len(vs) < want[i]:
+            continue                                  # a failed batch took some of its parts: left as it was
+        served = all(v[0] for v in vs)
+        it = out[i]
+        it["status"] = "served" if served else "unserved"
+        it["via"] = "model" if served else ""
+        it["plan"] = next((w for ok, w in vs if ok == served and w), "")
+        info["judged"] += 1
     return out, info
 
 
