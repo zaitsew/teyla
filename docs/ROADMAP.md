@@ -1,88 +1,86 @@
-# Roadmap: Teyla as chief of staff
+# Roadmap: Teyla as the coordinator
 
-Status: 2026-10-16. Sprint 1 is in progress.
+Status: 2026-10-17. Night sprint 2 starts today.
 
-Teyla takes on four jobs: it collects every question waiting on the owner, it keeps the
-owner's own words, it sets a writing contract, and it keeps docs honest. It does not become
-a project manager, a design tool, a memory service or a voice agent. Linear, Figma, a company knowledge base
-and the harnesses already do those jobs.
+Teyla is the owner's coordinator for sessions, projects and products. It owns four standards
+across every product: how agents write, the UX bar, what a session reports, and what docs say.
+One window on the Mac and on the iPhone shows what waits on the owner, what got done, what is
+running and what comes next, and the owner works from it, by voice too.
 
-Sources: a Codex (GPT-6.1 Sol) consult, a Grok 4.7 consult, two web-research lanes (Sonnet
-5.5) and two local surveys (Haiku 5.5), all on 2026-10-16. Both consults reached the same
-core plan independently.
+Sources: the owner's request of 2026-10-16 and his corrections that evening and on 2026-10-17
+(`teyla intent teyla`); a Codex (GPT-6.1 Sol) and a Grok 4.7 consult on 2026-10-16.
 
-## The evidence
+## What he asked, what exists, what 10/10 is
 
-| Problem | What the survey found |
-|---|---|
-| Lost questions | In 14 days, 40 Claude Code sessions ended on a question to the owner. 38 of them are archived. 1 got an answer. The desktop app marks 40 sessions `blocked` with a `needs_action` line, and no tool reads it. |
-| Untracked tasks | Linear is connected, but no issue changed in 30 days. |
-| Lost context | In 30 days the owner wrote 231 prompts over 400 characters (208 in Claude, 23 in Codex). Nothing keeps them apart from the raw transcripts. |
-| Verbose output | No limit and no measure. |
-| Weak UX (the largest app) | The largest app has a design system (`DesignSystem.swift`, `docs/DESIGN.md`), but also 469 SwiftUI views, 170 hard-coded font sizes and 24 `UX-*.md` sprint files. Too many things on each screen is the problem. A missing design system is not. |
-| Stale docs | Teyla's README has 11,017 words. Its command table takes 48% of them. `docs/MANUAL.md` carries its revision history. The README presents `reel` as shipped, but `docs/reel.md` calls it a v0 spec. |
+Quotes are translated from Russian; the source is in `~/.teyla/intent/teyla.md`.
+
+| He asked | Exists on 2026-10-17 | Now | 10/10 means |
+|---|---|---|---|
+| "Teyla could take the role of coordinator of sessions / projects / products (become a Product / Project manager)" | A Mac window with questions and running sessions | 5 | One window, Mac and iPhone, answers: what needs me, what got done, what runs, what is next per product. It also starts work. |
+| 1. "AI models write very voluminously and unclearly … work out a tone of voice in three languages at once (English, Spanish, Russian)" | Policy §16 writing contract, `teyla prose`, a voice-chart template | 5 | Median agent reply under 150 words and a card on 90% of session ends, measured weekly. A voice chart per language for the owner's social channel, and `teyla voice check` on every draft. |
+| 2. "see all open questions to me / tasks only I can do, across all sessions, on one screen, and work with them"; "these tasks / bugs are not recorded anywhere" | `teyla asks`, `teyla answer`, the Mac window | 6 | Questions, owner-only tasks (a key to create, a PR to merge) and each product's bug backlog on one screen, Mac and iPhone. No question older than 3 days without an answer or a snooze. |
+| 3. "Claude made an md plan that was very far from the original ideas, and lost the valuable information" | Verbatim capture in `~/.teyla/intent/`, a pointer at session start, the §4 rule | 6 | `teyla intent cover <plan>` lists every source sentence a plan neither quotes nor marks out of scope. Plans pass it before work starts. |
+| 4. "UX / UI … the weakest link … a lot of noise and little logic … several versions / iterations for me to review" | `templates/design/STANDARD.md`, `teyla ux check` | 3 | The largest app's five worst screens rebuilt in two variants each, reviewed by the owner on the phone, and the accepted cuts applied. `teyla ux check` on that app moves from FIX to WARN. Every UI repo has a `DESIGN.md`. |
+| 5. "visualise and present status, questions to me and the result more clearly, so I can process it many times faster" | The session-end card in the policy | 4 | A results feed: every session that ended in the last 24 h as one card (status, result, links, what it needs) in the window. |
+| 6. "a README must say clearly what the product is and how it helps … internal docs describe the decision process rather than the end state" | `teyla docs check`, Teyla's README rewritten | 6 | `teyla docs check --all` is clean on every public repo. Decisions live in PRs and `docs/decisions/`. |
+| "delegate to AI agents as much as possible … give commands by voice … correct actions in real time, give tasks, answer questions … the primary tool here should probably be Codex" | Nothing | 1 | Push-to-talk in the window turns speech into an answer, a correction to a running session, or a new task in a product. New tasks run on Codex by default. A computer-use trial ran on one bounded task. |
 
 ## Decisions
 
-1. **Questions: Teyla collects them, and the session stays the place to answer.** `teyla asks`
-   reads Claude desktop session metadata, Claude Code transcripts, Codex rollouts and Teyla's
-   own inbox. It lists every open question in one place, archived sessions included, with
-   the question word for word, its age and a link that reopens the session. Bugs with a repro
-   go to Linear (products) or GitHub Issues (open source). Questions never go to Linear.
-2. **Context: keep the owner's words verbatim, outside the repo.** Prompts of 400 characters
-   or more go to `~/.teyla/intent/<repo>.md`, append-only, with secrets scrubbed. A session
-   that plans is pointed at that file, and the policy says a plan quotes the sentences it
-   serves. No LLM summarises the log: the earlier drift came from a summary standing in for
-   the source. The company knowledge base stays the place for company facts and gbrain for code search.
-3. **Writing: one contract in the policy, three registers.**
-   - Agent replies and internal docs follow STE-like rules: the answer first, one idea per
-     sentence, at most 20 words per instruction, active voice, and a ban list.
-   - Product UI strings follow each product's `DESIGN.md` voice section.
-   - Social posts follow a voice chart per language (EN, ES, RU). Each language's post is
-     written from the brief and never translated from English.
+1. **Teyla is the coordinator.** The window is the place to work; sessions are where agents
+   work. Teyla reads the session stores, it does not replace them.
+2. **Backlog: GitHub Issues per repo.** They are free, agents already use `gh`, and Linear had
+   no activity in 30 days. The window counts open issues and PRs that wait on the owner's merge.
+   A session that finds a bug it does not fix files an issue.
+3. **iPhone: a client of the Mac, through an iCloud Drive folder.** The Mac writes the
+   snapshot to `iCloud Drive/Teyla/`; the phone writes answers, corrections and new tasks to
+   an outbox there; the Mac delivers them. No server, no cost. Each outbox entry is signed with
+   a key the two devices share once by QR code, and the Mac refuses anything unsigned. The
+   snapshot is visible to Apple unless Advanced Data Protection is on; the relay is off until
+   the owner turns it on (`teyla relay on`).
+   POLICY §14 trigger: the owner asked for iOS on 2026-10-17. Cheapest form: the same SwiftUI
+   code as an iOS target, read and answer only, no Mac-side features.
+4. **Voice: on-device speech recognition** (Apple Speech, `requiresOnDeviceRecognition`), in
+   English, Spanish and Russian. No audio leaves the device. Push-to-talk in the window and a
+   global shortcut on the Mac.
+5. **New tasks: `teyla dispatch <product> -- <text>`** starts a session in a fresh worktree
+   under `~/.worktrees/<repo>/`, Codex by default (`codex-lane`, behind the machine guard),
+   Claude on request. Corrections to a running session go through `codex queue` or open the
+   session; Teyla never resumes a session that is live, so two writers never share one transcript.
+6. **Voice charts are the owner's, not the repo's.** They live in `~/.teyla/voice/<channel>/`,
+   one file per language, each written from the brief by a native-level model, never translated.
+   The repo keeps the template and `teyla voice check`.
+7. **UX work happens in the product, the review happens in the window.** Variants are built in
+   the product's repo; the owner reviews them on the phone; only accepted cuts are applied.
+8. **Computer use: one bounded trial, attended.** It needs the owner present to grant app
+   access, so it is not part of a night sprint.
 
-   `teyla prose` measures the reply side. Vale and Glavred (a Russian clarity checker) are optional linters. No paid
-   tone tool: Writer starts at $29 per seat per month, and Jasper at $59 per month.
-4. **Session output: a card, not an essay.** Each session ends with a card: status word,
-   result in at most three bullets, at most one need with a proposed answer, links. The
-   policy defines it, and `teyla asks` shows the need.
-5. **Docs: current state only.** A README opens with what the product is, who it is for and
-   why it helps, then gives a five-line start. Decisions go in PRs or `docs/decisions/`.
-   `teyla docs check` flags a README without that opening, commands it names that no longer
-   exist, and dated narrative in docs.
-6. **UX: cut, don't add.** The shared standard and its audit live in Teyla:
-   `templates/design/STANDARD.md` and `teyla ux check`. Each product keeps its own design
-   system (`DESIGN.md`, tokens). The work itself happens in the product: take the five worst
-   screens, build two different variants of each, the owner reviews them on the phone, and the
-   agent applies only the cuts the owner accepts. The bar is one primary action per screen that
-   is obvious within five seconds. See [UX.md](UX.md).
-7. **Voice and computer control: trial what exists, build nothing yet.** Claude computer use
-   is available in this setup. Codex's computer use may not be available in the EU, which
-   is unverified. Run one bounded trial in one repo with no side effects, under `teyla load`.
-   Do not try it on mail, the stores or payments.
-
-## Sprint 1: Teyla 0.26 (autonomous, from 2026-10-16)
+## Night sprint 2 (2026-10-17)
 
 | Lane | Ships | Model |
 |---|---|---|
-| A | `teyla asks`: collector, CLI, a one-page HTML view, a banner count, `done` / `snooze`. Also fixes the doctor check that looked for the inbox at the wrong path. | Sonnet 5.5 |
-| B | `teyla intent`: a capture hook, a 30-day backfill, a list command, and a pointer at session start. | Sonnet 5.5 |
-| C | A writing contract and session card in the policy template, `teyla prose`, and a voice-chart template. | Sonnet 5.5 |
-| D | `teyla docs check`, then a one-page README with the command table moved to `docs/COMMANDS.md`. | Sonnet 5.5 |
+| 0 | This roadmap and the snapshot contract v2 (`docs/APP.md`, fixture, Swift models) | Opus 5.5 |
+| A | `teyla state` v2: results feed, owner tasks, issue backlog, product dedupe | Sonnet 5.5 |
+| B | `teyla relay`: iCloud Drive mirror, signed outbox, pairing key | Sonnet 5.5 |
+| C | Mac window v2: results, tasks, new task, push-to-talk, corrections, pairing QR, icon, ⌘0 | Sonnet 5.5 |
+| D | iPhone client: the same views, voice, answer and new task through the relay | Sonnet 5.5 |
+| E | `teyla dispatch` and `teyla say` (corrections); the answer-delivery check | Sonnet 5.5 |
+| F | Voice charts EN / ES / RU for the owner's build-in-public channel; `teyla voice check` | Sonnet 5.5 |
+| G | `teyla intent cover` | Sonnet 5.5 |
+| H | The largest app: five worst screens in two variants each, for review (its own session, in that repo) | Sonnet 5.5 |
 
-Every lane gets a cross-provider review (`codex-review`), passes `./check.sh` and lands as its
-own PR. Fable 5.1 orchestrates and reviews.
+Every lane lands as its own PR with a cross-provider review (`codex-review`; `--high` for B and
+E, which carry the owner's data and start work). Opus 5.5 orchestrates, reviews and merges.
 
-## Later
+## Next
 
-- A UX pass on the largest app (five screens, two variants each), run in that repo.
-- An intent coverage check: which of the owner's source sentences a plan does not serve.
-- A voice and computer-use trial (decision 7).
-- Linear for bugs only, if the owner wants a backlog.
+- iPhone in TestFlight once its App Store Connect record exists (owner step).
+- Notifications on the iPhone for a new question (needs a push path; the relay folder cannot wake the phone).
+- The computer-use trial (decision 8).
+- UX passes for the other apps that `teyla ux check` rates FIX.
+- `teyla docs check --all` fixes, one PR per repo.
 
 ## Owner decisions
 
-- **Focus.** Codex recommends choosing two active products and parking the rest. Teyla can
-  show the load, but the choice is the owner's.
-- **Auto-archive on PR close** (Claude app setting, currently on). Once `teyla asks` lists
-  archived sessions, archiving no longer hides questions, so it can stay on.
+- **Focus.** Codex recommends two active products and the rest parked. The window shows the load; the choice is the owner's.
+- **Relay on or off.** Default off. Turning it on puts the snapshot in iCloud Drive.
