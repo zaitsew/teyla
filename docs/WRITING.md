@@ -29,10 +29,40 @@ median is over the target. The ban list is `BAN_LIST` in `src/teyla/prose.py`.
 
 ## Write a voice chart: `templates/voice/VOICE.md`
 
-Copy it into the product repo (for example `docs/VOICE.md`) and fill in the placeholders.
-It holds 3 or 4 traits ("We are X, not Y"), a tone table per channel, one section each for
-English, Spanish and Russian, and a checklist before posting. Write each language from the
-same brief. Never translate one language into another.
+A voice chart is one Markdown file per language, in that language, with a YAML front matter
+that a tool can enforce. Keep a channel's charts together, outside the repo if they hold
+personal voice (for example `~/.teyla/voice/<channel>/`):
+
+```
+BRIEF.md   who writes, who reads, goals, topics, what is never posted (shared)
+en.md  es.md  ru.md   one chart each, written from the brief, never translated
+```
+
+Copy the template to `<lang>.md`, set `lang`, and fill it in. The front matter holds
+`max_sentence_words`, `max_post_chars` per format, `emoji_max`, `hashtags_max`,
+`exclamations_max`, `banned` and `preferred`. The body holds 3 or 4 traits ("We are X, not Y"),
+tone by channel, the language's register (Spanish: Spain or Latin America, tu or usted;
+Russian: ty or vy), and six sample pieces that pass the check.
+
+## Check a draft: `teyla voice check`
+
+```
+teyla voice check <file|-> --chart <dir|file> [--lang en|es|ru] [--format F] [--model] [--json]
+```
+
+`--chart` takes a chart directory (the draft's language, or `--lang`, picks `<lang>.md`) or one
+chart file. `--format` is `x_post`, `x_thread_tweet`, `substack_intro`, `video_hook_15s` or
+`linkedin_update`. These checks run on the machine and are exact:
+
+- the longest sentence against `max_sentence_words`
+- the length against `max_post_chars` for `--format` (an X link counts 23 characters)
+- banned phrases: whole words, any case, any script; a trailing `*` matches any ending
+- emoji, hashtags and exclamation marks against their limits
+
+Each failed rule exits 1. A draft that reads as another language than the chart only warns:
+the guess comes from script and stop words. `--model` adds one Claude Haiku pass that rates the
+draft against the chart's traits and suggests at most three edits. It sends the draft and the
+chart to the API, so safe mode refuses it. Exit 2 means a usage or chart error.
 
 ## Lint with Vale (optional)
 
