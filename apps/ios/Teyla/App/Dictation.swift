@@ -51,6 +51,10 @@ final class Dictation {
     private var task: SFSpeechRecognitionTask?
     private var onText: ((String) -> Void)?
     private var base = ""
+    /// Bumped by every toggle and stop: a start still waiting on a permission prompt, or a late
+    /// recognition callback, from an older generation does nothing.
+    private var generation = 0
+    private var tapInstalled = false
 
     func isRecording(_ field: String) -> Bool { activeField == field }
 
@@ -65,14 +69,17 @@ final class Dictation {
         }
         stop()
         message = nil
-        Task { await start(field: field, language: language, current: current, onText: onText) }
+        let mine = generation
+        Task { await start(field: field, language: language, current: current, onText: onText, generation: mine) }
     }
 
     func stop() {
-        guard activeField != nil || engine.isRunning else { return }
-        if engine.isRunning {
-            engine.stop()
+        generation += 1
+        guard activeField != nil || engine.isRunning || tapInstalled else { return }
+        if engine.isRunning { engine.stop() }
+        if tapInstalled {
             engine.inputNode.removeTap(onBus: 0)
+            tapInstalled = false
         }
         box?.request.endAudio()
         task?.cancel()
@@ -84,15 +91,17 @@ final class Dictation {
     }
 
     private func start(field: String, language: DictationLanguage, current: String,
-                       onText: @escaping (String) -> Void) async {
+                       onText: @escaping (String) -> Void, generation mine: Int) async {
         guard await Self.speechAllowed() else {
             message = "Speech recognition is off for Teyla. Turn it on in Settings > Teyla."
             return
         }
+        guard mine == generation else { return }
         guard await AVAudioApplication.requestRecordPermission() else {
             message = "The microphone is off for Teyla. Turn it on in Settings > Teyla."
             return
         }
+        guard mine == generation, !tapInstalled else { return }   // stopped, or another start won
         guard let recognizer = SFSpeechRecognizer(locale: language.locale), recognizer.isAvailable else {
             message = "\(language.title) dictation is not available right now."
             return
@@ -110,21 +119,22 @@ final class Dictation {
             box.request.shouldReportPartialResults = true
             let input = engine.inputNode
             Self.installTap(on: input, box: box)
+            tapInstalled = true
             engine.prepare()
             try engine.start()
             self.box = box
             self.onText = onText
             self.base = current
             activeField = field
-            task = Self.makeTask(recognizer: recognizer, box: box, owner: self)
+            task = Self.makeTask(recognizer: recognizer, box: box, owner: self, generation: mine)
         } catch {
             message = "Could not start the microphone: \(error.localizedDescription)"
             stop()
         }
     }
 
-    private func receive(text: String?, finished: Bool) {
-        guard activeField != nil else { return }
+    private func receive(text: String?, finished: Bool, generation mine: Int) {
+        guard activeField != nil, mine == generation else { return }
         if let text, !text.isEmpty {
             let separator = base.isEmpty || base.hasSuffix(" ") || base.hasSuffix("\n") ? "" : " "
             onText?(base + separator + text)
@@ -142,12 +152,12 @@ final class Dictation {
     }
 
     private nonisolated static func makeTask(recognizer: SFSpeechRecognizer, box: RequestBox,
-                                             owner: Dictation) -> SFSpeechRecognitionTask {
+                                             owner: Dictation, generation: Int) -> SFSpeechRecognitionTask {
         let weakOwner = WeakOwner(owner)
         return recognizer.recognitionTask(with: box.request) { result, error in
             let text = result?.bestTranscription.formattedString
             let finished = (result?.isFinal ?? false) || error != nil
-            Task { @MainActor in weakOwner.value?.receive(text: text, finished: finished) }
+            Task { @MainActor in weakOwner.value?.receive(text: text, finished: finished, generation: generation) }
         }
     }
 
