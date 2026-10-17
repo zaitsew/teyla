@@ -101,6 +101,8 @@
                                    is CRITICAL, shown first by the session-start hook while it is under 5 minutes
                                    old, plus one macOS notification per incident (not in safe mode, at most one per
                                    30 min); removed after three ticks below CRITICAL
+    [relay]
+    folder = ""                    `teyla relay on`: the folder shared with the iPhone app ("" = iCloud Drive/Teyla)
     [harness]
     disabled = ["hermes", "grok"]  harnesses this machine does not use: doctor, health, `harness status|sync`
                                    and `policy sync` skip them entirely (claude-code, codex, grok, hermes,
@@ -158,6 +160,8 @@ DEFAULTS = {
     "safe": {"enabled": False, "auto_update": False},
     # `teyla state`: a model writes the brief and the ranking (off = rules only; never in safe mode).
     "state": {"model_brief": True},
+    # `teyla relay`: the iCloud Drive folder shared with the phone ("" = iCloud Drive/Teyla).
+    "relay": {"folder": ""},
     # Harnesses to leave alone: no health line, no FIX for their hooks or credits, no sync.
     "harness": {"disabled": []},
     "products": {"repos": []},
