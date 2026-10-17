@@ -1057,3 +1057,45 @@ def test_no_gh_or_safe_mode_means_empty_lists_and_no_refresh(monkeypatch):
     monkeypatch.setenv("TEYLA_SAFE", "1")
     state.build(NOW, items=[], repos={}, spent=None, desktop="/nonexistent", codex_root="/nonexistent", runs=[])
     assert spawned == []
+
+
+def test_two_owners_with_one_repo_name_are_two_products(tmp_path):
+    a = make_repo(tmp_path, "app-a", "https://github.com/alice/app.git")
+    b = make_repo(tmp_path, "app-b", "https://github.com/bob/app.git")
+    c = make_repo(tmp_path, "app-c", "https://github.com/Alice/App.git")
+    alias, info = state.product_names({"app-a": a, "app-b": b, "app-c": c}, {})
+    assert alias == {"app-a": "alice/app", "app-b": "bob/app", "app-c": "alice/app"}
+    assert sorted(info) == ["alice/app", "bob/app"]
+    assert info["alice/app"]["paths"] == [a, c] and info["bob/app"]["paths"] == [b]
+
+
+def test_a_product_with_two_clones_takes_the_newest_activity_and_any_tag(tmp_path):
+    old = make_repo(tmp_path, "old", "https://github.com/example/lens.git", days_ago=40)
+    new = make_repo(tmp_path, "new", "https://github.com/example/lens.git", days_ago=1)
+    alias, info = state.product_names({"old": old, "new": new}, {})
+    assert sorted(info["lens"]["paths"]) == sorted([new, old])
+    by = {p["name"]: p for p in state.products_view([], [], {k: v["paths"] for k, v in info.items()}, NOW)}
+    assert by["lens"]["state"] == "active"                 # the clone touched yesterday, not the 40-day one
+
+
+def test_a_stale_desktop_summary_is_replaced_by_the_sessions_last_message(tmp_path):
+    root, projects = tmp_path / "sessions", tmp_path / "projects"
+    sid = "local_aaaa1111-0000-0000-0000-0000000000f1"
+    stale = {"status_category": "blocked", "status_detail": "waiting for the key", "needs_action": "Add the key",
+             "summarizes_uuid": "turn-1"}
+    desktop_file(root, sid, minutes_ago=45, cwd="/Users/someone/repos/atlas", summary=stale)
+    tdir = projects / "-Users-someone-repos-atlas"
+    tdir.mkdir(parents=True)
+
+    def rec(kind, content, uuid):
+        return json.dumps({"type": kind, "uuid": uuid, "timestamp": "2026-10-16T11:15:00Z", "message": {"content": content}})
+    card = "Done — atlas\nResult:\n- Shipped the PDF\nNeeds you: none"
+    lines = [rec("assistant", [{"type": "text", "text": "Blocked"}], "turn-1"), rec("user", "key is in", "u2"),
+             rec("assistant", [{"type": "text", "text": card}], "turn-2")]
+    (tdir / f"{sid[6:]}.jsonl").write_text("\n".join(lines) + "\n")
+    rows = state.done_feed(NOW, str(root), "/nonexistent", str(projects), runs=[])
+    assert [(r["status"], r["result"], r["needs"]) for r in rows] == [("done", ["Shipped the PDF"], "")]
+    # the same summary, still describing the last turn, stands
+    (tdir / f"{sid[6:]}.jsonl").write_text("\n".join(lines[:1]) + "\n")
+    rows = state.done_feed(NOW, str(root), "/nonexistent", str(projects), runs=[])
+    assert [(r["status"], r["needs"]) for r in rows] == [("needs_you", "Add the key")]
