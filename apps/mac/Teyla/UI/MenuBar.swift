@@ -5,7 +5,7 @@ struct MenuBarLabel: View {
 
     var body: some View {
         let count = model.visibleAsks.count
-        HStack(spacing: 3) {
+        HStack(spacing: Space.xs) {
             Image(systemName: count > 0 ? "bubble.left.fill" : "bubble.left")
             if count > 0 { Text("\(count)") }
         }
@@ -18,7 +18,7 @@ struct MenuBarContent: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.m) {
             Text(model.briefLine)
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
@@ -28,9 +28,9 @@ struct MenuBarContent: View {
                 Divider()
                 ForEach(top) { ask in
                     Button {
-                        show()
+                        model.focus(askID: ask.id)
                     } label: {
-                        VStack(alignment: .leading, spacing: 1) {
+                        VStack(alignment: .leading, spacing: Space.xxs) {
                             Text(Format.product(ask.product))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -48,18 +48,19 @@ struct MenuBarContent: View {
             Divider()
             HStack {
                 Button("Open Teyla", action: show)
+                Button("New task") { model.openNewTask() }
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }
                     .keyboardShortcut("q")
             }
         }
-        .padding(14)
-        .frame(width: 320)
+        .padding(Space.l)
+        .frame(width: Space.menuWidth)
         .onAppear { model.openMainWindow = { openWindow(id: "main") } }
     }
 
     private func show() {
         openWindow(id: "main")
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
     }
 }

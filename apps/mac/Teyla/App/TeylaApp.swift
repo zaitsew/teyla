@@ -8,7 +8,8 @@ struct TeylaApp: App {
     private let model = AppModel.shared
 
     var body: some Scene {
-        // A single window with a fixed id: the Window menu lists it as "Teyla" and shows ⌘0.
+        // A single window with a fixed id. Closing it never strands the user: the Window menu
+        // lists it as "Teyla" with ⌘0, and the menu-bar item opens it too.
         Window("Teyla", id: "main") {
             MainView()
                 .environment(model)
@@ -16,6 +17,12 @@ struct TeylaApp: App {
         }
         .defaultSize(width: 1040, height: 720)
         .keyboardShortcut("0")
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("New Task…") { model.openNewTask() }
+                    .keyboardShortcut("n")
+            }
+        }
 
         MenuBarExtra {
             MenuBarContent()
@@ -24,6 +31,11 @@ struct TeylaApp: App {
             MenuBarLabel(model: model)
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            SettingsView()
+                .environment(model)
+        }
     }
 }
 
@@ -34,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             UNUserNotificationCenter.current().delegate = self
         }
         AppModel.shared.start()
+        AppModel.shared.registerHotKey()
     }
 
     /// Clicking the Dock icon with no window open brings the window back.
@@ -47,8 +60,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         [.banner, .sound]
     }
 
+    /// A clicked notification brings the window forward and marks the card it was about.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse) async {
-        await MainActor.run { AppModel.shared.showMainWindow() }
+        let askID = response.notification.request.content.userInfo["ask"] as? String
+        await MainActor.run {
+            if let askID { AppModel.shared.focus(askID: askID) } else { AppModel.shared.showMainWindow() }
+        }
     }
 }
