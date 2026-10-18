@@ -264,6 +264,10 @@ if [ -z "$teyla" ] && [ -d "$src/teyla" ]; then
 fi
 [ -n "$teyla" ] || [ -n "$py" ] || exit 0
 
+# The decision log (~/.teyla/guard-decisions.tsv) names the harness; Grok's hook runs in no
+# environment that gives it away.
+[ "$mode" = "--grok" ] && export TEYLA_HARNESS=grok
+
 for kind in $kinds; do
     if [ -n "$teyla" ]; then
         out=$("$teyla" load --admit "$kind" 2>/dev/null)

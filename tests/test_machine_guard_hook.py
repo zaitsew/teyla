@@ -21,6 +21,7 @@ REFUSAL = "teyla guard: build refused — swap is 91% of RAM (threshold 75%)\nWa
 
 FAKE_TEYLA = """#!/bin/sh
 echo "$@" >> "$FAKE_CALLS"
+echo "${TEYLA_HARNESS:-}" >> "$FAKE_CALLS.harness"
 case "$FAKE_MODE" in
   refuse) echo "teyla guard: $3 refused — swap is 91% of RAM (threshold 75%)"; echo "Wait for a slot: teyla load --wait --kind $3"; exit 2 ;;
   refuse-sim) if [ "$3" = sim ]; then echo "teyla guard: sim refused — two simulators are booted"; exit 2; fi; exit 0 ;;
@@ -223,6 +224,15 @@ def test_grok_mode_also_prints_the_full_reason_as_a_deny_decision(box):
     assert r.returncode == 2 and r.stderr == REFUSAL + "\n"
     d = json.loads(r.stdout)
     assert d["decision"] == "deny" and d["reason"] == REFUSAL + "\n"
+
+
+def test_grok_mode_names_itself_to_the_decision_log_and_the_others_do_not(box):
+    harness = pathlib.Path(str(box.calls) + ".harness")
+    box.run("xcodebuild test", mode="allow", args=("--grok",))
+    assert harness.read_text().strip() == "grok"
+    harness.unlink()
+    box.run("xcodebuild test", mode="allow")
+    assert harness.read_text().strip() == ""
 
 
 def test_grok_mode_allowing_prints_nothing(box):
