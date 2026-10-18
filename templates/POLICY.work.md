@@ -94,9 +94,11 @@ sees the others. Ten sessions that each boot "just one" simulator and run "just 
 build exhaust memory together: swap fills, load climbs into the hundreds, and the
 kernel panics. So:
 
-- **Check before heavy work.** `teyla load` gives the verdict (OK / BUSY / CRITICAL)
-  with the numbers. On CRITICAL, start nothing heavy — no build, no simulator, no
-  headless lane — and finish or stop what you started.
+- **Check before heavy work.** `teyla load` gives the verdict (OK / BUSY / WORSENING /
+  CRITICAL) with the numbers and the trend of the last 15 minutes. On CRITICAL, start
+  nothing heavy — no build, no simulator, no headless lane — and finish or stop what you
+  started. While memory is getting worse, and for 10 minutes after, the guard refuses a
+  new simulator or build whatever the count; running work is not touched.
 - **Wait, do not retry.** When the machine guard refuses a command, run it as
   `teyla load --wait --kind <build|sim|lane> && <command>`. It blocks until a slot is
   free; a retry loop is the same overload with extra steps.

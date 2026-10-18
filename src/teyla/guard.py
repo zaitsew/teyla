@@ -7,7 +7,10 @@
 (`teyla config set guard.agent=true && teyla routine install`). It is cheap (one `sysctl`, one `ps`; no
 `simctl`, no `lsof`) and it never raises: any failure goes to stderr and the exit status is 0.
 
-1. Record. `load.snapshot()` + `load.assess()` -> one line in `~/.teyla/load.tsv`.
+1. Record. `load.snapshot()` + `load.assess()` with the trend of the last minutes (`load.current_trend()`)
+   -> one line in `~/.teyla/load.tsv`, with the swap-out and page-out counters and rates. The level written is
+   what the admission hook's hold reads back: a CRITICAL or WORSENING row keeps new simulators and builds
+   waiting for `guard.hold_min` minutes.
 
 2. Alert (`guard.alert`, default true). While the verdict is CRITICAL, `~/.teyla/load.alert` holds one
    line for the next session to read ("machine CRITICAL since 20:21 — swap 11.7 GB = 45% of RAM; ...
@@ -265,7 +268,7 @@ def _is_daemon(row: dict, kind: str, start: float) -> bool:
 def _still_idle(rows: list[dict], env: Env, lines: list[str]) -> list[dict]:
     """Look again right before the signal: a build may have started on the daemon since the
     snapshot the idle clock came from. Any doubt (ps fails) means nobody is stopped."""
-    fresh = load.snapshot(env.run)
+    fresh = load.snapshot(env.run, vm=False)
     if fresh is None:
         lines.append("skipped the daemons: the process table could not be read again")
         return []
@@ -361,7 +364,7 @@ def tick(conf: dict | None = None, env: Env | None = None, dry: bool = False) ->
     Raises only what the runners raise; `cmd_tick` swallows everything."""
     conf = conf if conf is not None else load.guard_conf()
     env = env or Env()
-    res: dict = {"verdict": None, "lines": [], "snapshot": None}
+    res: dict = {"verdict": None, "lines": [], "snapshot": None, "trend": None}
     if not load.enabled(conf):
         return res
     now = env.now()
@@ -369,8 +372,9 @@ def tick(conf: dict | None = None, env: Env | None = None, dry: bool = False) ->
     if snap is None:
         res["lines"].append("could not read the process table (ps failed); nothing changed")
         return res
-    verdict = load.assess(snap, conf)
-    res.update(verdict=verdict, snapshot=snap)
+    trend = load.current_trend(snap, conf)
+    verdict = load.assess(snap, conf, trend)
+    res.update(verdict=verdict, snapshot=snap, trend=trend)
     if dry:
         res["lines"].append("dry run: nothing is recorded, written or stopped")
     else:
@@ -401,7 +405,7 @@ def cmd_tick(args, env: Env | None = None) -> int:
 def _row_line(r: dict) -> str:
     swap = f"swap {load.gb(r['swap_used_bytes'])}/{load.gb(r['ram_bytes'])}" if r["swap_used_bytes"] is not None else "swap ?"
     load1 = "?" if r["load1"] is None else f"{r['load1']:.1f}"
-    return (f"{r['time']}  {r['level']:8} {swap}  load {load1}  sims {r['sims']}  builds {r['builds']}"
+    return (f"{r['time']}  {r['level']:9} {swap}  load {load1}  sims {r['sims']}  builds {r['builds']}"
             f"  daemons {load.gb(r['daemon_rss_bytes'])}")
 
 

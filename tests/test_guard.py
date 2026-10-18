@@ -150,7 +150,7 @@ def test_tick_makes_no_simctl_or_lsof_call(m):
     base = m.run
     m.run = lambda cmd, timeout=60: seen.append(cmd[0]) or base(cmd, timeout)
     tick(m)
-    assert set(seen) == {"ps", "sysctl"}
+    assert set(seen) == {"ps", "sysctl", "vm_stat"}
 
 
 # --- the alert file -----------------------------------------------------------------------------------------
@@ -541,3 +541,33 @@ def test_a_build_seen_on_the_second_look_restarts_the_idle_clock(m, clock):
     m.procs.pop(300)                                      # the build ends before the next tick
     tick(m)
     assert m.signals == [] and 100 in m.procs             # idle again from now, not from before the build
+
+
+# --- the trend ----------------------------------------------------------------------------------------
+
+def swap_sysctl(used_gb: float) -> str:
+    return ("25769803776\n10\n{ 1.50 2.00 3.00 }\n"
+            f"total = 16384.00M  used = {used_gb * 1024:.2f}M  free = 1.00M  (encrypted)\n1\n1073741824\n")
+
+
+def test_tick_judges_with_the_trend_and_records_the_level_the_hold_reads_back(m, clock):
+    levels = []
+    for minute in range(10):
+        m.sysctl = swap_sysctl(4 + 0.6 * minute)
+        res = tick(m)
+        levels.append(res["verdict"].level)
+        clock.advance(1)
+    assert levels[:3] == ["OK"] * 3 and "WORSENING" in levels and res["trend"].swap_gb_30m > 4
+    assert [r["level"] for r in load.read_records()] == levels
+    assert alert_lines() is None and m.notes == []                          # worsening is not an incident of its own
+    m.sysctl = swap_sysctl(4 + 0.6 * 9)
+    clock.advance(1)
+    held = tick(m)["trend"]
+    assert held.held_level == "WORSENING" and held.hold_left_s() is not None
+
+
+def test_a_calm_machine_with_a_lot_of_swap_stays_ok(m, clock):
+    for _ in range(10):
+        m.sysctl = swap_sysctl(14)
+        assert tick(m)["verdict"].level == "OK"
+        clock.advance(1)
