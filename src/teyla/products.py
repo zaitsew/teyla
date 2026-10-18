@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 import subprocess
 
 
@@ -85,6 +86,9 @@ def table(paths: list[str] | None = None, cfg: dict | None = None) -> str:
 # with the token `supabase login` already stored, and prints the first row as key=value lines.
 
 SUPABASE_API = "https://api.supabase.com/v1/projects/{ref}/database/query/read-only"
+# A project ref is 20 lowercase letters. Anything else could rewrite the path (`<ref>/database/query?`
+# would reach the writable endpoint), so it is refused before a request is built.
+REF_RE = re.compile(r"[a-z]{20}")
 
 
 def supabase_token() -> str | None:
@@ -125,6 +129,8 @@ def probe_sql(ref: str, sql: str, prefix: str = "", timeout: int = 30) -> tuple[
     from . import config
     if config.safe_mode():
         return 0, [f"{prefix}probe=safe_mode"]
+    if not REF_RE.fullmatch(ref or ""):
+        return 2, [f"{prefix}probe=bad_ref"]
     tok = supabase_token()
     if not tok:
         return 0, [f"{prefix}probe=needs_key"]  # supabase login, or SUPABASE_ACCESS_TOKEN

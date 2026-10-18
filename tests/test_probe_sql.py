@@ -19,7 +19,7 @@ def test_probe_sql_without_token(monkeypatch):
     monkeypatch.delenv("TEYLA_SAFE", raising=False)
     monkeypatch.setattr("teyla.config.safe_mode", lambda cfg=None: False)
     monkeypatch.setattr(products, "supabase_token", lambda: None)
-    assert products.probe_sql("ref", "select 1", "app_") == (0, ["app_probe=needs_key"])
+    assert products.probe_sql("abcdefghijklmnopqrst", "select 1", "app_") == (0, ["app_probe=needs_key"])
 
 
 def test_supabase_token_decodes_cli_keychain(monkeypatch):
@@ -28,3 +28,11 @@ def test_supabase_token_decodes_cli_keychain(monkeypatch):
     enc = "go-keyring-base64:" + base64.b64encode(b"sbp_abc").decode()
     monkeypatch.setattr("teyla.providers.keychain", lambda service: enc)
     assert products.supabase_token() == "sbp_abc"
+
+
+def test_probe_sql_refuses_a_ref_that_rewrites_the_path(monkeypatch):
+    monkeypatch.setattr("teyla.config.safe_mode", lambda cfg=None: False)
+    monkeypatch.setattr(products, "supabase_token", lambda: "tok")
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: (_ for _ in ()).throw(AssertionError("network")))
+    for bad in ("abcdefghijklmnopqrst/database/query?", "../x", "", "ABCDEFGHIJKLMNOPQRST"):
+        assert products.probe_sql(bad, "delete from t") == (2, ["probe=bad_ref"])
