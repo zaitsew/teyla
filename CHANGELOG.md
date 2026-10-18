@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.28.0 — 2026-10-18 — One analytics standard for every product
+
+- **Analytics standard (`templates/analytics/STANDARD.md`, POLICY §14).** What a product measures, with which tool,
+  and when it adds the next one. The tier follows `[productize] users`: `owner` counts from its own store through
+  `./check.sh usage` and uses the platform's crash reports; `family` / `testers` add weekly active people and 7-day
+  retention from the backend; `public` adds the store's analytics, one cookieless web tool and Sentry (EU); PostHog
+  Cloud EU comes only with a written funnel question in `docs/ANALYTICS.md`. Events are allowlisted, carry no
+  content, stay anonymous and set no cookie. The privacy policy and store labels change in the same PR.
+- **`teyla probe-sql <ref> "<query>"`.** One read-only query on a Supabase project for a usage probe; the first row
+  prints as `key=value`. It uses the Management API's read-only endpoint with `SUPABASE_ACCESS_TOKEN` or the Supabase
+  CLI login, refuses a ref that is not 20 lowercase letters, and sends nothing in safe mode.
+
 ## 0.27.0 — 2026-10-17 — Teyla as the coordinator: one window on the Mac and the iPhone
 
 - **Teyla for Mac, version 2 (`apps/mac`).** One window in the order you work: Needs you, Only you (the PRs and issues
