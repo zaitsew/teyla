@@ -1125,6 +1125,23 @@ def test_wait_blocks_through_the_hold_and_goes_on_when_it_has_passed():
                      trend_fn=lambda s: held) == 3 and "held after CRITICAL" in out.text         # the hold outlasts the timeout
 
 
+def test_a_wait_poll_that_sees_critical_leaves_a_mark_so_the_next_poll_is_held():
+    clock, out, err = Clock(), Sink(), Sink()
+    now = dt.datetime.now().astimezone().isoformat(timespec="seconds")
+    states = iter([snap(time=now, swap_used_bytes=12 * GIB, pressure=4)] + [snap(time=now)] * 10)
+    code = load.wait("sim", {}, 60, poll_s=15, clock=clock.now, sleeper=clock.sleep, snap_fn=lambda: next(states), out=out, err=err)
+    assert code == 3 and "held after CRITICAL" in out.text                       # the spike cleared, the hold did not
+    rows = decisions()
+    assert rows[0]["verdict"] == "CRITICAL" and rows[0]["decision"] == "refused" and rows[0]["reason"].startswith("wait: the machine is CRITICAL")
+    assert [r["verdict"] for r in rows].count("CRITICAL") == 1                   # one mark, not one per poll
+
+
+def test_an_admitted_row_ends_a_refusal_episode():
+    rows = [rec_row(f"2026-10-18T10:{m:02d}:00+02:00", pressure=4 if m in (0, 12) else 1) for m in range(0, 21)]
+    d = load.replay(rows, {}, ncpu=10)[0]
+    assert d["episodes"] == 2 and d["longest_min"] <= 11.5                       # two waits, not one 22-minute wait
+
+
 def test_the_text_report_shows_the_trend_and_the_hold_and_json_carries_them(capsys, tmp_path):
     quiet = Machine(sysctl_text(swap_used_mb=4300))
     quiet.add(1, "/bin/ls")

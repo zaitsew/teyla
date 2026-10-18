@@ -911,6 +911,7 @@ def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, po
     timeout = _num(conf, "wait_timeout_s") if timeout_s is None else timeout_s
     start = clock()
     last_progress: float | None = None
+    last_bad: tuple[str, float] | None = None      # (level, time) of the last bad verdict this wait logged
     while True:
         snap = snap_fn()
         if snap is None:
@@ -926,6 +927,11 @@ def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, po
             log_decision(kind, d.level, False, f"timeout after {int(elapsed)}s: {d.reason}", via="wait")
             print(d.message, file=out)
             return EXIT_TIMEOUT
+        # A WORSENING or CRITICAL poll leaves a mark in the decision log, or a spike that clears between two
+        # polls (or two ticks) would let the next poll through with no hold.
+        if d.level in BAD and (last_bad is None or last_bad[0] != d.level or now - last_bad[1] >= PROGRESS_EVERY_S):
+            last_bad = (d.level, now)
+            log_decision(kind, d.level, False, d.reason, via="wait")
         if last_progress is None or now - last_progress >= PROGRESS_EVERY_S:
             last_progress = now
             first = d.message.splitlines()[0].removeprefix("teyla guard: ")
@@ -1243,8 +1249,8 @@ def replay(records: list[dict], conf: dict | None = None, ncpu: int | None = Non
                 episode = {"day": day["day"], "start": rec["ts"], "end": rec["ts"] + dur}
             else:
                 episode["end"] = rec["ts"] + dur
-        elif episode and rec["ts"] - episode["end"] > 0:
-            close()
+        elif episode:
+            close()                    # an admitted row ends the wait: the agent's next poll gets through
         if detail is not None:
             detail.append({"time": rec["time"], "level": level, "held": held, "sim": allowed["sim"], "build": allowed["build"],
                            "why": decide("sim", snap, conf, trend).reason})
