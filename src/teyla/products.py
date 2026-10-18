@@ -75,3 +75,72 @@ def table(paths: list[str] | None = None, cfg: dict | None = None) -> str:
                      "teyla config set products.repos=<name>,<name>")
     lines.append("Zero everywhere means the next sprint is 'make one input free', not a feature.")
     return "\n".join(lines)
+
+
+# --- `teyla probe-sql`: one read-only query for a usage probe -------------------------------
+# A probe for a product on Supabase needs its counters from the project's database. Every repo
+# writing its own curl + Keychain snippet is six copies of the same token handling, so the probe
+# calls this instead:  teyla probe-sql <project-ref> "select count(*) as trips_7d from trips …"
+# It uses the Management API's read-only endpoint (the query runs in a read-only transaction),
+# with the token `supabase login` already stored, and prints the first row as key=value lines.
+
+SUPABASE_API = "https://api.supabase.com/v1/projects/{ref}/database/query/read-only"
+
+
+def supabase_token() -> str | None:
+    """SUPABASE_ACCESS_TOKEN, else the token the Supabase CLI keeps in the Keychain."""
+    tok = os.environ.get("SUPABASE_ACCESS_TOKEN")
+    if tok:
+        return tok.strip()
+    from .providers import keychain
+    tok = keychain("Supabase CLI")
+    if tok and tok.startswith("go-keyring-base64:"):
+        import base64
+        try:
+            tok = base64.b64decode(tok.split(":", 1)[1]).decode()
+        except ValueError:
+            return None
+    return tok or None
+
+
+def query_lines(rows: list, prefix: str = "") -> list[str]:
+    """The first row as `key=value` lines; no row means zero, which is a finding."""
+    if not rows:
+        return [f"{prefix}rows=0"]
+    out = []
+    for k, v in rows[0].items():
+        v = "" if v is None else v
+        if isinstance(v, float):
+            v = f"{v:g}"
+        out.append(f"{prefix}{k}={v}")
+    return out
+
+
+def probe_sql(ref: str, sql: str, prefix: str = "", timeout: int = 30) -> tuple[int, list[str]]:
+    """(exit code, lines). Never raises: a probe prints what went wrong and `teyla products`
+    shows it in the table instead of a stack trace."""
+    import json
+    import urllib.error
+    import urllib.request
+    from . import config
+    if config.safe_mode():
+        return 0, [f"{prefix}probe=safe_mode"]
+    tok = supabase_token()
+    if not tok:
+        return 0, [f"{prefix}probe=needs_key"]  # supabase login, or SUPABASE_ACCESS_TOKEN
+    from .update import ssl_context
+    req = urllib.request.Request(SUPABASE_API.format(ref=ref), method="POST",
+                                 data=json.dumps({"query": sql}).encode(),
+                                 headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json",
+                                          "User-Agent": "teyla-probe"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=ssl_context()) as r:  # noqa: S310 — fixed host
+            rows = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        msg = e.read().decode(errors="replace")[:200].replace("\n", " ")
+        return 1, [f"{prefix}probe=http_{e.code}", f"# {msg}"]
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+        return 1, [f"{prefix}probe=unreachable", f"# {e}"]
+    if not isinstance(rows, list):
+        return 1, [f"{prefix}probe=bad_answer"]
+    return 0, query_lines(rows, prefix)
