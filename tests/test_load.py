@@ -9,6 +9,8 @@ import argparse
 import datetime as dt
 import json
 import math
+import os
+import time
 
 import pytest
 
@@ -556,7 +558,8 @@ def test_wait_with_a_zero_timeout_checks_once():
 # --- the command -------------------------------------------------------------------------------
 
 def args(**kw):
-    base = dict(json=False, record=False, quiet=False, admit=None, wait=False, kind="build", timeout=None)
+    base = dict(json=False, record=False, quiet=False, admit=None, wait=False, kind="build", timeout=None,
+                replay=False, days=7)
     return argparse.Namespace(**{**base, **kw})
 
 
@@ -694,3 +697,182 @@ def test_the_daemon_class_must_be_javas_main_class_not_a_program_argument():
                  ps_line(3, "/jdk/bin/java --add-opens java.base/java.lang=ALL-UNNAMED -Xmx2g -cp /g/a.jar "
                             "org.gradle.launcher.daemon.bootstrap.GradleDaemon 8.10"))
     assert [(d.pid, d.kind) for d in p.daemons] == [(3, "gradle")]
+
+
+# --- the decision log --------------------------------------------------------------------------
+
+def decisions():
+    return load.read_decisions()
+
+
+def test_decide_carries_the_verdict_and_a_one_line_reason():
+    d = load.decide("build", snap(procs=procs(builds=2)), {})
+    assert not d.allowed and d.level == "OK"          # at the cap is not above it
+    assert d.reason == "2 builds already run (max 2)" and d.message.startswith("teyla guard: build refused")
+    d = load.decide("sim", snap(swap_used_bytes=12 * GIB, pressure=4), {})
+    assert not d.allowed and d.level == "CRITICAL" and d.reason.startswith("the machine is CRITICAL: ")
+    ok = load.decide("lane", snap(), {})
+    assert ok.allowed and ok.message == "" and ok.reason == "" and ok.level == "OK"
+    assert load.admit("build", snap(procs=procs(builds=2)), {}) == (False, load.decide("build", snap(procs=procs(builds=2)), {}).message)
+
+
+def test_admit_logs_each_decision_with_cwd_and_harness(capsys, monkeypatch, tmp_path):
+    monkeypatch.setenv("TEYLA_HARNESS", "codex")
+    monkeypatch.chdir(tmp_path)
+    quiet = Machine(sysctl_text())
+    quiet.add(1, "/bin/ls")
+    assert load.cmd_load(args(admit="build"), run=quiet.run) == 0
+    assert load.cmd_load(args(admit="sim"), run=crowded().run) == 2
+    capsys.readouterr()
+    ok, refused = decisions()
+    assert (ok["kind"], ok["verdict"], ok["decision"], ok["reason"]) == ("build", "OK", "admitted", "")
+    assert (refused["kind"], refused["verdict"], refused["decision"]) == ("sim", "CRITICAL", "refused")
+    assert "swap" in refused["reason"] and refused["cwd"] == os.getcwd() and refused["harness"] == "codex"
+    header = load.decisions_path().read_text().splitlines()[0]
+    assert header == "#" + "\t".join(["time", "kind", "verdict", "decision", "reason", "cwd", "harness"])
+
+
+def test_a_dead_ps_is_logged_as_unknown_and_a_disabled_guard_logs_nothing(tmp_path):
+    m = crowded()
+    m.ps_fails = True
+    assert load.cmd_load(args(admit="build"), run=m.run) == 0
+    (row,) = decisions()
+    assert (row["verdict"], row["decision"]) == ("unknown", "admitted") and "snapshot failed" in row["reason"]
+    off = tmp_path / "off.toml"
+    config.CONFIG_PATH = off
+    assert config.set_value("guard.enabled", "false", off).startswith("set")
+    assert load.cmd_load(args(admit="sim"), run=crowded().run) == 0
+    assert len(decisions()) == 1
+
+
+def test_wait_logs_once_when_it_ends_not_once_per_poll():
+    clock, out, err = Clock(), Sink(), Sink()
+    states = [snap(procs=procs(builds=3))] * 3 + [snap(procs=procs(builds=1))]
+    it = iter(states)
+    assert load.wait("build", {}, 900, poll_s=15, clock=clock.now, sleeper=clock.sleep, snap_fn=lambda: next(it), out=out, err=err) == 0
+    (row,) = decisions()
+    assert (row["kind"], row["decision"], row["reason"]) == ("build", "admitted", "wait: after 45s wait")
+    clock2 = Clock()
+    busy = snap(procs=procs(sims=2))
+    assert load.wait("sim", {}, 60, poll_s=15, clock=clock2.now, sleeper=clock2.sleep, snap_fn=lambda: busy, out=out, err=err) == 3
+    last = decisions()[-1]
+    assert (last["kind"], last["decision"]) == ("sim", "refused")
+    assert last["reason"] == "wait: timeout after 60s: 2 simulators are already booted (max 2)"
+    assert len(decisions()) == 2
+
+
+def test_an_immediate_wait_logs_an_empty_reason_and_a_failed_snapshot_is_let_through():
+    clock, out, err = Clock(), Sink(), Sink()
+    assert load.wait("build", {}, 10, clock=clock.now, sleeper=clock.sleep, snap_fn=lambda: snap(), out=out, err=err) == 0
+    assert load.wait("build", {}, 10, clock=clock.now, sleeper=clock.sleep, snap_fn=lambda: None, out=out, err=err) == 0
+    first, second = decisions()
+    assert first["reason"] == "wait" and second["verdict"] == "unknown"
+
+
+def test_the_log_keeps_one_line_per_decision_and_its_newest_half(tmp_path, monkeypatch):
+    path = tmp_path / "d.tsv"
+    load.log_decision("build", "BUSY", False, "a\tb\nc", path=path)
+    (row,) = load.read_decisions(path=path)
+    assert row["reason"] == "a b c"
+    monkeypatch.setattr(load, "DECISIONS_MAX_BYTES", 600)
+    for i in range(30):
+        load.log_decision("sim", "OK", True, f"n{i}", path=path)
+    rows = load.read_decisions(path=path)
+    assert rows[-1]["reason"] == "n29" and len(rows) < 30
+    assert path.read_text().startswith("#time")
+
+
+def test_logging_never_raises(tmp_path):
+    blocker = tmp_path / "file"
+    blocker.write_text("x")
+    load.log_decision("build", "OK", True, "", path=blocker / "sub" / "d.tsv")      # the parent is a file
+
+
+def test_harness_name_reads_the_environment():
+    assert load.harness_name({"TEYLA_HARNESS": "grok", "CLAUDECODE": "1"}) == "grok"
+    assert load.harness_name({"CLAUDECODE": "1"}) == "claude"
+    assert load.harness_name({"CODEX_THREAD_ID": "x"}) == "codex"
+    assert load.harness_name({"GROK_SESSION": "x"}) == "grok"
+    assert load.harness_name({"PATH": "/bin"}) == ""
+
+
+def test_decision_summary_counts_the_last_hour(tmp_path):
+    path = tmp_path / "d.tsv"
+    now = dt.datetime(2026, 10, 19, 12, 0, tzinfo=dt.timezone.utc)
+    old = now - dt.timedelta(hours=2)
+    for t, kind, ok in ((old, "sim", False), (now - dt.timedelta(minutes=50), "build", True),
+                        (now - dt.timedelta(minutes=10), "sim", False), (now - dt.timedelta(minutes=5), "sim", False),
+                        (now - dt.timedelta(minutes=1), "build", False)):
+        load.log_decision(kind, "BUSY", ok, "r", path=path, now=t)
+    assert load.decision_summary(now.timestamp(), path=path) == "guard, last hour: 1 admitted, 3 refused (build 1, sim 2)"
+    assert load.decision_summary(now.timestamp() + 7200, path=path) == ""
+
+
+def test_the_text_report_ends_with_the_last_hours_decisions(capsys):
+    quiet = Machine(sysctl_text())
+    quiet.add(1, "/bin/ls")
+    load.log_decision("sim", "BUSY", False, "x")
+    load.cmd_load(args(), run=quiet.run)
+    assert capsys.readouterr().out.splitlines()[-1] == "guard, last hour: 0 admitted, 1 refused (sim 1)"
+
+
+# --- replay ------------------------------------------------------------------------------------
+
+def rec_row(tsv_time, **kw):
+    base = dict(time=tsv_time, ts=0, level="OK", pressure=1, load1=1.0, swap_used_bytes=0, ram_bytes=24 * GIB,
+                compressor_bytes=0, sims=0, builds=0, compiler_rss_bytes=0, daemon_rss_bytes=0, claude=1, codex=0,
+                grok=0, lanes=0, chrome_rss_bytes=0, vm_rss_bytes=0, top3=[], disk_free_bytes=50 * GIB)
+    return {**base, **kw}
+
+
+def test_replay_counts_levels_and_admissions_per_day():
+    rows = [rec_row("2026-10-17T10:00:00+02:00"),
+            rec_row("2026-10-17T10:01:00+02:00", sims=2),                       # BUSY? no: at the cap, not above it
+            rec_row("2026-10-18T10:00:00+02:00", pressure=2),                   # BUSY
+            rec_row("2026-10-18T10:01:00+02:00", pressure=4, builds=1)]         # CRITICAL
+    days = load.replay(rows, {}, ncpu=10)
+    assert [d["day"] for d in days] == ["2026-10-17", "2026-10-18"]
+    d17, d18 = days
+    assert d17["levels"] == {"OK": 2, "BUSY": 0, "CRITICAL": 0} and d17["sim"] == {"OK": 1, "BUSY": 0, "CRITICAL": 0}
+    assert d17["build"]["OK"] == 2
+    assert d18["levels"] == {"OK": 0, "BUSY": 1, "CRITICAL": 1}
+    assert d18["sim"] == {"OK": 0, "BUSY": 1, "CRITICAL": 0} and d18["build"] == {"OK": 0, "BUSY": 1, "CRITICAL": 0}
+
+
+def test_replay_reads_the_thresholds_from_the_config():
+    rows = [rec_row("2026-10-18T10:00:00+02:00", swap_used_bytes=7 * GIB)]       # 29% of RAM
+    assert load.replay(rows, {}, ncpu=10)[0]["levels"]["BUSY"] == 1
+    assert load.replay(rows, {"swap_warn_pct": 40}, ncpu=10)[0]["levels"]["OK"] == 1
+
+
+def test_replay_turns_a_record_back_into_a_snapshot():
+    s = load.snapshot_from_record(rec_row("2026-10-18T10:00:00+02:00", builds=2, sims=1, lanes=3, pressure=2), ncpu=8)
+    assert (s.procs.builds, s.procs.sims, s.procs.lanes, s.pressure, s.ncpu) == (2, 1, 3, 2, 8)
+
+
+def test_render_replay_has_a_row_per_day_and_a_total():
+    days = load.replay([rec_row("2026-10-17T10:00:00+02:00"), rec_row("2026-10-18T10:00:00+02:00", pressure=2)], {}, ncpu=10)
+    lines = load.render_replay(days).splitlines()
+    assert lines[0].split()[:5] == ["day", "rows", "OK", "BUSY", "CRIT"]
+    assert lines[1].startswith("2026-10-17") and lines[3].startswith("total")
+    assert lines[3].split()[1:5] == ["2", "1", "1", "0"]
+    assert "no recorded rows" in load.render_replay([])
+
+
+def test_replay_command_reads_load_tsv_for_the_last_n_days(capsys):
+    now = dt.datetime.now().astimezone()
+    for days_ago, pressure in ((10, 4), (1, 2)):
+        when = now - dt.timedelta(days=days_ago)
+        snap_ = load.Snapshot(time=when.isoformat(timespec="seconds"), ram_bytes=24 * GIB, ncpu=10, load1=1.0, pressure=pressure,
+                              swap_used_bytes=0, compressor_bytes=0, disk_free_bytes=50 * GIB)
+        load.record(snap_, load.assess(snap_, {}))
+    assert load.cmd_load(args(replay=True, days=3)) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 3 and lines[-1].split()[:5] == ["total", "1", "0", "1", "0"]
+
+
+def test_register_wires_replay():
+    p = argparse.ArgumentParser()
+    load.register(p.add_subparsers())
+    a = p.parse_args(["load", "--replay", "--days", "3"])
+    assert a.replay and a.days == 3.0 and p.parse_args(["load", "--replay"]).days == 7

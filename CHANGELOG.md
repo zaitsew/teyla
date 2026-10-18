@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — The machine guard stops starting heavy work while memory runs out
+
+- **Decision log and replay.** Every `teyla load --admit` and finished `--wait` appends to `~/.teyla/guard-decisions.tsv`
+  (time, kind, verdict, admitted or refused, reason, cwd, harness). `teyla load` ends with the last hour's counts.
+  `teyla load --replay [--days N]` runs the verdict and the admission over `load.tsv`, per day.
+
 ## 0.28.0 — 2026-10-18 — One analytics standard for every product
 
 - **Analytics standard (`templates/analytics/STANDARD.md`, POLICY §14).** What a product measures, with which tool,

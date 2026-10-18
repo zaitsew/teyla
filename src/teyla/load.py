@@ -3,6 +3,7 @@
     teyla load [--json] [--record] [--quiet]     snapshot + verdict; exit 0 OK, 1 BUSY, 2 CRITICAL
     teyla load --admit build|sim|lane            silent exit 0 when allowed; the refusal and exit 2 when not
     teyla load --wait --kind build|sim|lane      poll until a slot is free (exit 0) or the timeout (exit 3)
+    teyla load --replay [--days N]               the verdict and the admissions over the recorded days
 
 On 2026-10-09 a 24 GB Mac kernel-panicked while agents ran ~36 Claude Code sessions, 17 Codex
 sessions, three booted simulators, parallel `xcodebuild`s, Gradle/Kotlin daemons, a VM and Chrome:
@@ -47,6 +48,16 @@ Recorder (`record`, `read_records`). One TSV line per snapshot in `~/.teyla/load
 moves it), a `#` header first. Past ~2 MB the file is rewritten with its newest half, atomically.
 `--json`, `--quiet` and `--record` never exit non-zero because of the load; the text report does,
 so a script can branch on it.
+
+Decision log (`log_decision`). Every `--admit` and every `--wait` appends what it decided to
+`~/.teyla/guard-decisions.tsv`: time, kind, verdict, admitted or refused, reason, cwd, harness. A wait
+logs once, when it ends (admitted after N s, or refused at the timeout), not once per poll. The file keeps
+its newest half past 512 KB. `teyla load` prints the last hour's counts.
+
+Replay (`replay`). `teyla load --replay [--days N]` runs `assess` and `admit` over `load.tsv` and prints,
+per day, how many samples come out OK, BUSY and CRITICAL and how many of them would let a simulator or a
+build start. The recorded rows lack some inputs (cores, swap total), so a replay is an estimate for tuning
+thresholds, not a reconstruction.
 """
 from __future__ import annotations
 
@@ -77,6 +88,8 @@ SYSCTL_KEYS = ["hw.memsize", "hw.ncpu", "vm.loadavg", "vm.swapusage",
 PS_FORMAT = "pid=,ppid=,rss=,pcpu=,etime=,command="
 TOP_N = 8
 RECORD_MAX_BYTES = 2 * 1024 * 1024
+DECISIONS_MAX_BYTES = 512 * 1024
+DECISION_WINDOW_S = 3600
 PROGRESS_EVERY_S = 60
 
 
@@ -611,9 +624,16 @@ def assess(snap: Snapshot, conf: dict | None = None) -> Verdict:
 
 # --- admission --------------------------------------------------------------------------------------
 
-def admit(kind: str, snap: Snapshot, conf: dict | None = None) -> tuple[bool, str]:
-    """(allowed, message). The message is empty when allowed; when refused it is for an AI agent:
-    why, with the numbers, then what to do instead."""
+@dataclasses.dataclass
+class Decision:
+    allowed: bool
+    message: str = ""                                             # for an AI agent; empty when allowed
+    level: str = OK                                               # the verdict it was made under
+    reason: str = ""                                              # one line, for the log
+
+
+def decide(kind: str, snap: Snapshot, conf: dict | None = None) -> Decision:
+    """The admission decision for `kind`, with the verdict it was made under and a one-line reason."""
     verdict = assess(snap, conf)
     p = snap.procs
     why: list[str] = []
@@ -627,7 +647,7 @@ def admit(kind: str, snap: Snapshot, conf: dict | None = None) -> tuple[bool, st
     elif kind == "lane" and cap > 0 and p.lanes >= cap:
         why.append(f"{p.lanes} headless agent lanes already run (max {cap:g})")
     if not why:
-        return True, ""
+        return Decision(True, "", verdict.level, "")
     lines = [f"teyla guard: {kind} refused — " + "; ".join(why)]
     if kind == "sim":
         udids = ", ".join(p.sim_udids)
@@ -643,7 +663,14 @@ def admit(kind: str, snap: Snapshot, conf: dict | None = None) -> tuple[bool, st
     lines.append(f"Or wait for a slot: `teyla load --wait --kind {kind}` (exit 0 when free, 3 on timeout).")
     lines.append("Or free capacity yourself: shut down the simulators you booted and stop idle Gradle/Kotlin"
                  " daemons you started; leave other agents' processes alone.")
-    return False, "\n".join(lines)
+    return Decision(False, "\n".join(lines), verdict.level, "; ".join(why))
+
+
+def admit(kind: str, snap: Snapshot, conf: dict | None = None) -> tuple[bool, str]:
+    """(allowed, message). The message is empty when allowed; when refused it is for an AI agent:
+    why, with the numbers, then what to do instead."""
+    d = decide(kind, snap, conf)
+    return d.allowed, d.message
 
 
 def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, poll_s: float = 15,
@@ -663,18 +690,21 @@ def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, po
     while True:
         snap = snap_fn()
         if snap is None:
+            log_decision(kind, "unknown", True, "snapshot failed: let through", via="wait")
             return 0
-        allowed, msg = admit(kind, snap, conf)
-        if allowed:
-            return 0
+        d = decide(kind, snap, conf)
         now = clock()
         elapsed = now - start
+        if d.allowed:
+            log_decision(kind, d.level, True, f"after {int(elapsed)}s wait" if elapsed >= 1 else "", via="wait")
+            return 0
         if elapsed >= timeout:
-            print(msg, file=out)
+            log_decision(kind, d.level, False, f"timeout after {int(elapsed)}s: {d.reason}", via="wait")
+            print(d.message, file=out)
             return EXIT_TIMEOUT
         if last_progress is None or now - last_progress >= PROGRESS_EVERY_S:
             last_progress = now
-            first = msg.splitlines()[0].removeprefix("teyla guard: ")
+            first = d.message.splitlines()[0].removeprefix("teyla guard: ")
             print(f"teyla load: waiting ({int(elapsed)}s of {int(timeout)}s) — {first}", file=err)
         sleeper(max(0.0, min(poll_s, timeout - elapsed)))
 
@@ -731,10 +761,8 @@ def _trim(path: pathlib.Path, max_bytes: int) -> None:
             pass
 
 
-def record(snap: Snapshot, verdict: Verdict, path: pathlib.Path | None = None,
-           max_bytes: int = RECORD_MAX_BYTES) -> pathlib.Path:
-    """Append one TSV line to `~/.teyla/load.tsv` (header first in a new file); keep the file bounded."""
-    path = pathlib.Path(path) if path else record_path()
+def _append(path: pathlib.Path, columns: list[str], fields: list[str], max_bytes: int) -> None:
+    """Append one TSV line (header first in a new file); keep the file bounded."""
     config.private_dir(path.parent)
     # One lock around trim + append: a trim that read the file before another recorder's append
     # and replaced it after would silently drop that line.
@@ -743,7 +771,7 @@ def record(snap: Snapshot, verdict: Verdict, path: pathlib.Path | None = None,
         fcntl.flock(lock, fcntl.LOCK_EX)
         _trim(path, max_bytes)
         new = not path.exists() or path.stat().st_size == 0
-        text = ("#" + "\t".join(COLUMNS) + "\n" if new else "") + "\t".join(record_fields(snap, verdict)) + "\n"
+        text = ("#" + "\t".join(columns) + "\n" if new else "") + "\t".join(fields) + "\n"
         fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
         try:
             os.write(fd, text.encode())
@@ -751,6 +779,13 @@ def record(snap: Snapshot, verdict: Verdict, path: pathlib.Path | None = None,
             os.close(fd)
     finally:
         os.close(lock)                       # closing the descriptor releases the lock
+
+
+def record(snap: Snapshot, verdict: Verdict, path: pathlib.Path | None = None,
+           max_bytes: int = RECORD_MAX_BYTES) -> pathlib.Path:
+    """Append one TSV line to `~/.teyla/load.tsv` (header first in a new file); keep the file bounded."""
+    path = pathlib.Path(path) if path else record_path()
+    _append(path, COLUMNS, record_fields(snap, verdict), max_bytes)
     return path
 
 
@@ -806,6 +841,141 @@ def read_records(since=None, until=None, path: pathlib.Path | None = None) -> li
     return out
 
 
+# --- the decision log -----------------------------------------------------------------------------------
+
+DECISION_COLUMNS = ["time", "kind", "verdict", "decision", "reason", "cwd", "harness"]
+_FIELD_UNSAFE = re.compile(r"[\t\r\n]+")
+
+
+def decisions_path() -> pathlib.Path:
+    from .corrections import teyla_home
+    return teyla_home() / "guard-decisions.tsv"
+
+
+def harness_name(env: dict | None = None) -> str:
+    """Which agent harness is asking: `TEYLA_HARNESS` (the Grok hook sets it), else what the environment
+    gives away; "" when unknown."""
+    env = os.environ if env is None else env
+    if env.get("TEYLA_HARNESS"):
+        return env["TEYLA_HARNESS"]
+    if env.get("CLAUDECODE") or env.get("CLAUDE_CODE_ENTRYPOINT"):
+        return "claude"
+    for prefix, name in (("CODEX_", "codex"), ("GROK_", "grok")):
+        if any(k.startswith(prefix) for k in env):
+            return name
+    return ""
+
+
+def log_decision(kind: str, level: str, allowed: bool, reason: str, via: str = "admit",
+                 path: pathlib.Path | None = None, now: dt.datetime | None = None) -> None:
+    """Append one decision to `~/.teyla/guard-decisions.tsv`. Never raises: the log must not block work."""
+    try:
+        when = now or dt.datetime.now().astimezone()
+        reason = f"wait: {reason}" if via == "wait" and reason else "wait" if via == "wait" else reason
+        try:
+            cwd = os.getcwd()
+        except OSError:
+            cwd = ""
+        fields = [when.isoformat(timespec="seconds"), kind, level, "admitted" if allowed else "refused", reason, cwd,
+                  harness_name()]
+        _append(pathlib.Path(path) if path else decisions_path(), DECISION_COLUMNS,
+                [_FIELD_UNSAFE.sub(" ", f) for f in fields], DECISIONS_MAX_BYTES)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def read_decisions(since=None, path: pathlib.Path | None = None) -> list[dict]:
+    """The logged decisions as dicts (`ts` epoch seconds added), oldest first."""
+    path = pathlib.Path(path) if path else decisions_path()
+    lo = _when(since)
+    out = []
+    try:
+        text = path.read_text(errors="replace")
+    except OSError:
+        return out
+    for line in text.splitlines():
+        cells = line.split("\t")
+        if line.startswith("#") or len(cells) != len(DECISION_COLUMNS):
+            continue
+        rec = dict(zip(DECISION_COLUMNS, cells))
+        try:
+            rec["ts"] = dt.datetime.fromisoformat(rec["time"]).timestamp()
+        except ValueError:
+            continue
+        if lo is None or rec["ts"] >= lo:
+            out.append(rec)
+    return out
+
+
+def decision_summary(now: float | None = None, window_s: int = DECISION_WINDOW_S,
+                     path: pathlib.Path | None = None) -> str:
+    """"guard, last hour: 5 admitted, 2 refused (sim 1, build 1)"; "" when nothing was decided."""
+    now = time.time() if now is None else now
+    rows = read_decisions(since=now - window_s, path=path)
+    if not rows:
+        return ""
+    refused = [r for r in rows if r["decision"] == "refused"]
+    by_kind: dict[str, int] = {}
+    for r in refused:
+        by_kind[r["kind"]] = by_kind.get(r["kind"], 0) + 1
+    detail = " (" + ", ".join(f"{k} {n}" for k, n in sorted(by_kind.items())) + ")" if by_kind else ""
+    span = "last hour" if window_s == 3600 else f"last {window_s // 60} min"
+    return f"guard, {span}: {len(rows) - len(refused)} admitted, {len(refused)} refused{detail}"
+
+
+# --- replay ------------------------------------------------------------------------------------------------
+
+def snapshot_from_record(rec: dict, ncpu: int | None = None) -> Snapshot:
+    """A `load.tsv` row as a snapshot. The row has no core count, swap total or load5/15; `ncpu` stands in
+    for the first, and `load1` for the others."""
+    procs = Procs(sims=rec["sims"] or 0, drivers=[Driver(0, "xcodebuild", 0, None) for _ in range(rec["builds"] or 0)],
+                  compiler_rss_bytes=rec["compiler_rss_bytes"] or 0, claude=rec["claude"] or 0, codex=rec["codex"] or 0,
+                  grok=rec["grok"] or 0, lanes=rec["lanes"] or 0, chrome_rss_bytes=rec["chrome_rss_bytes"] or 0)
+    return Snapshot(time=rec["time"], ram_bytes=rec["ram_bytes"], ncpu=ncpu or os.cpu_count() or 1, load1=rec["load1"],
+                    load5=rec["load1"], load15=rec["load1"], swap_used_bytes=rec["swap_used_bytes"],
+                    pressure=rec["pressure"], compressor_bytes=rec["compressor_bytes"],
+                    disk_free_bytes=rec["disk_free_bytes"], procs=procs)
+
+
+def replay(records: list[dict], conf: dict | None = None, ncpu: int | None = None) -> list[dict]:
+    """Run `assess` and `decide` over the recorded rows, oldest first. One dict per local day:
+    {day, n, levels: {OK, BUSY, CRITICAL}, sim: {level: allowed}, build: {level: allowed}}."""
+    days: dict[str, dict] = {}
+    for rec in records:
+        snap = snapshot_from_record(rec, ncpu)
+        d = days.setdefault(rec["time"][:10], {"day": rec["time"][:10], "n": 0, "levels": dict.fromkeys(EXIT, 0),
+                                                "sim": dict.fromkeys(EXIT, 0), "build": dict.fromkeys(EXIT, 0)})
+        level = assess(snap, conf).level
+        d["n"] += 1
+        d["levels"][level] += 1
+        for kind in ("sim", "build"):
+            if decide(kind, snap, conf).allowed:
+                d[kind][level] += 1
+    return list(days.values())
+
+
+def render_replay(days: list[dict]) -> str:
+    """Per day: samples, the OK / BUSY / CRITICAL counts, and how many samples would let a simulator or a
+    build start, split by the verdict they were made under (OK/BUSY/CRITICAL)."""
+    if not days:
+        return "no recorded rows in that window (is `guard.agent` on? `teyla load --record` writes them)"
+    head = f"{'day':<11}{'rows':>6}{'OK':>6}{'BUSY':>6}{'CRIT':>6}   {'sim allowed OK/BUSY/CRIT':<26}{'build allowed OK/BUSY/CRIT'}"
+    lines = [head]
+    total = {"day": "total", "n": 0, "levels": dict.fromkeys(EXIT, 0), "sim": dict.fromkeys(EXIT, 0), "build": dict.fromkeys(EXIT, 0)}
+    for d in days + [None]:
+        if d is None:
+            d = total
+        else:
+            total["n"] += d["n"]
+            for key in ("levels", "sim", "build"):
+                for lv in EXIT:
+                    total[key][lv] += d[key][lv]
+        lv = d["levels"]
+        cell = lambda key: "/".join(str(d[key][x]) for x in (OK, BUSY, CRITICAL))  # noqa: E731
+        lines.append(f"{d['day']:<11}{d['n']:>6}{lv[OK]:>6}{lv[BUSY]:>6}{lv[CRITICAL]:>6}   {cell('sim'):<26}{cell('build')}")
+    return "\n".join(lines)
+
+
 # --- the report ----------------------------------------------------------------------------------------
 
 def _mins(s: int | None) -> str:
@@ -847,15 +1017,21 @@ def render(snap: Snapshot, verdict: Verdict) -> str:
 
 def cmd_load(args, run: Runner = run_command) -> int:
     conf = guard_conf()
+    if args.replay:
+        since = time.time() - args.days * 86400
+        print(render_replay(replay(read_records(since=since), conf)))
+        return 0
     if args.admit:
         if not enabled(conf):
             return 0
         snap = safe_snapshot(run)
         if snap is None:
+            log_decision(args.admit, "unknown", True, "snapshot failed: let through")
             return 0
-        allowed, msg = admit(args.admit, snap, conf)
-        if not allowed:
-            print(msg)
+        d = decide(args.admit, snap, conf)
+        log_decision(args.admit, d.level, d.allowed, d.reason)
+        if not d.allowed:
+            print(d.message)
             return 2
         return 0
     if args.wait:
@@ -878,6 +1054,9 @@ def cmd_load(args, run: Runner = run_command) -> int:
     if args.quiet:
         return 0
     print(render(snap, verdict))
+    recent = decision_summary()
+    if recent:
+        print(recent)
     return verdict.exit_code
 
 
@@ -891,5 +1070,7 @@ def register(sp):
     q.add_argument("--admit", choices=KINDS, metavar="KIND", help="build|sim|lane: silent exit 0 when allowed; the refusal and exit 2 when not")
     q.add_argument("--wait", action="store_true", help="poll until --kind is allowed (exit 0) or the timeout (exit 3)")
     q.add_argument("--kind", choices=KINDS, default="build", help="what --wait waits to start (default build)")
+    q.add_argument("--replay", action="store_true", help="run the verdict and admission over ~/.teyla/load.tsv: per day, the OK/BUSY/CRITICAL counts and how many samples would admit a sim or a build")
+    q.add_argument("--days", type=float, default=7, metavar="N", help="--replay: how many days back (default 7)")
     q.add_argument("--timeout", type=float, default=None, metavar="S", help="--wait: give up after S seconds (default guard.wait_timeout_s)")
     return q
