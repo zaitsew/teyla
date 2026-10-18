@@ -9,6 +9,8 @@ cd "$(dirname "$0")"
 # --- usage mode: real-usage counters, read by `teyla products` --------------
 # Print key=value lines from the product's own store: rows logged, messages
 # sent, sessions this week, active users. Zero is a finding, not an error.
+# What to count per tier: templates/analytics/STANDARD.md in Teyla's repo. A
+# Supabase product reads its counters with: teyla probe-sql <ref> "select …"
 case "${1:-}" in
   usage)
     # EDIT ME: replace with real counters, e.g.

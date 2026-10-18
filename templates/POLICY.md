@@ -240,3 +240,24 @@ cuts, and put screenshots and a cut list in the PR.
 Decisions and their history go in the PR or `docs/decisions/`.
 
 `teyla prose` measures register (a): reply length, long sentences, ban-list hits, preambles.
+
+## 14. Analytics — count what the product already stores, add a tool when a question needs it
+
+The full rules are `templates/analytics/STANDARD.md` in Teyla's repo. In short:
+
+- **The tier follows `[productize] users`** in `teyla.toml`. `owner`: `./check.sh usage` from the
+  product's own store, plus the platform's built-in crash reports. `family` / `testers`: add
+  weekly active and 7-day retention from the backend; still no SDK. `public`: add the store's
+  analytics, one cookieless web analytics tool on public pages, and Sentry (EU) for web and
+  backend errors. A product-analytics SDK (PostHog Cloud EU) comes only with an open funnel
+  question written in `docs/ANALYTICS.md`.
+- **Every repo has a usage probe.** `./check.sh usage` prints `key=value` counters; `teyla
+  products` shows them all in one table. `teyla probe-sql <ref> "<query>"` reads a Supabase
+  project read-only for it. A probe that is missing or prints `not_implemented` is the first
+  finding.
+- **Never:** IDFA or ATT prompts, ad SDKs, Firebase or Google Analytics in apps, session replay
+  in a product that shows personal data, free text in event properties.
+- **The paperwork ships in the same PR:** privacy policy, `PrivacyInfo.xcprivacy`, App Privacy
+  answers, Play Data safety, `docs/ANALYTICS.md`. A product whose policy says "no analytics"
+  keeps that true until the owner decides otherwise.
+- A paid tier of any tool is a charge: state the price and ask the owner twice.

@@ -362,6 +362,13 @@ def cmd_products(args):
     print(table(args.paths or None))
 
 
+def cmd_probe_sql(args):
+    from .products import probe_sql
+    code, lines = probe_sql(args.ref, args.sql, args.prefix)
+    print("\n".join(lines))
+    return code
+
+
 
 
 def cmd_routines(args):
@@ -510,6 +517,10 @@ def build_parser() -> argparse.ArgumentParser:
     from . import ux_check as ux_check_mod
     ux_check_mod.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
+    q = sp.add_parser("probe-sql", help="one read-only Supabase query for ./check.sh usage; prints key=value")
+    q.set_defaults(fn=cmd_probe_sql); q.add_argument("ref", help="Supabase project ref")
+    q.add_argument("sql", help="a query returning one row; column aliases become the keys")
+    q.add_argument("--prefix", default="", help="prepended to every key, e.g. hub_")
     q = sp.add_parser("routines"); q.set_defaults(fn=cmd_routines)
     q.add_argument("paths", nargs="*"); q.add_argument("--json", action="store_true")
     q.add_argument("--issues", action="store_true", help="open one GitHub issue per BROKEN check (needs gh)")
