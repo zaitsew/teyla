@@ -9,7 +9,11 @@ covers idle simulators. This sweeps the rest, each category with its own age and
 
 - temp builds      Xcode DerivedData and .xcresult folders in /tmp, $TMPDIR and session scratchpads
                    idle >= sweep_temp_hours (24); only the parts Xcode wrote go, never anything
-                   inside a git checkout. Under sweep_urgent_free_gb (20) free, 2 hours is enough.
+                   inside a git checkout, and no mount point is entered. Under sweep_urgent_free_gb (20)
+                   free, 2 hours is enough.
+- temp dirs        `tmp.XXXXXXXXXX` (mktemp -d) and `*-verify*` folders, with their sibling `<name>.log`, directly
+                   in /tmp and $TMPDIR; same idle rule as temp builds, plus no open file (`lsof +D`). Never a
+                   mount point (or a folder holding one), a git checkout, or a tree with .pem/.key/.p8/.p12 files
 - release leftovers  XcodeDistPipeline.* folders `xcodebuild -exportArchive` leaves in $TMPDIR,
                    idle >= sweep_release_days (3)
 - simulators       devices named by storage.sim_prune_pattern, shut down and unused >= sweep_sim_days
@@ -39,6 +43,7 @@ import collections
 import contextlib
 import dataclasses
 import datetime as _dt
+import fnmatch
 import json
 import os
 import pathlib
@@ -61,6 +66,12 @@ MAX_FIND_DEPTH = 7
 EXPORT_NAME = re.compile(r"XcodeDistPipeline\.~~~[A-Za-z0-9]{6}")
 EXPORT_INSIDE = re.compile(r"Packages|Root|Symbols|entitlements~~~[A-Za-z0-9]{6}")
 RESULT_BUNDLE_INSIDE = {"Info.plist", "Data"}
+# What marks a folder as DerivedData-shaped next to its Build directory.
+DD_SIBLINGS = ("Logs", "info.plist", "Index.noindex", "CompilationCache.noindex", "ModuleCache.noindex")
+TMP_DIR_NAME = re.compile(r"tmp\.[A-Za-z0-9]{6,12}")   # mktemp -d
+VERIFY_GLOB = "*-verify*"
+SECRET_SUFFIXES = (".pem", ".key", ".p8", ".p12")
+LSOF_TIMEOUT_S = 120
 
 
 def settings(cfg: dict | None = None) -> dict:
@@ -117,6 +128,10 @@ def default_tmp_roots() -> list[pathlib.Path]:
     return roots
 
 
+def _dev(path) -> int:
+    return os.lstat(path).st_dev
+
+
 @dataclasses.dataclass
 class Ctx:
     cfg: dict
@@ -129,7 +144,9 @@ class Ctx:
     run: Callable = run_command
     have: Callable = have_tool
     du: Callable = storage.du
+    dev: Callable = _dev   # st_dev of a path: a different one than its parent's is a mount point
     uid: int = dataclasses.field(default_factory=os.getuid)
+    claimed: list = dataclasses.field(default_factory=list)   # folders `temp dirs` took whole
 
     def named(self, path) -> bool:
         """A live process names `path` on its command line (as /tmp/x or /private/tmp/x). Unknown
@@ -142,6 +159,13 @@ class Ctx:
 
     def size(self, *paths) -> int:
         return sum(self.du(p) for p in paths)
+
+    def mount_point(self, path) -> bool:
+        """`path` is on another device than its parent (a mounted DMG or volume). Unreadable: assume yes."""
+        try:
+            return self.dev(path) != self.dev(os.path.dirname(os.path.abspath(path)))
+        except OSError:
+            return True
 
 
 def make_ctx(cfg: dict | None = None, dry: bool = False, now: float | None = None) -> Ctx:
@@ -232,9 +256,11 @@ def _age_days(ctx: Ctx, path) -> float:
 
 # --- temp builds ------------------------------------------------------------------------------
 
-def _temp_candidates(roots, uid: int) -> list[pathlib.Path]:
-    """`*.xcresult` and `Build` directories owned by `uid` under the roots, down to depth 7. A
-    match is not descended into; .git, node_modules, *.noindex and *.xcarchive are never entered."""
+def _temp_candidates(ctx: Ctx) -> list[pathlib.Path]:
+    """`*.xcresult` and `Build` directories owned by `ctx.uid` under the roots, down to depth 7. A
+    match is not descended into; .git, node_modules, *.noindex, *.xcarchive and mount points (a
+    mounted DMG is read-only and not ours) are never entered."""
+    roots, uid = ctx.tmp_roots, ctx.uid
     found, seen = [], set()
     for root in roots:
         root = str(root)
@@ -249,6 +275,8 @@ def _temp_candidates(roots, uid: int) -> list[pathlib.Path]:
                 try:
                     mine = os.lstat(full).st_uid == uid
                 except OSError:
+                    continue
+                if mine and ctx.mount_point(full):
                     continue
                 if mine and (n.endswith(".xcresult") or n == "Build"):
                     if full not in seen:
@@ -281,7 +309,7 @@ def temp_builds(ctx: Ctx) -> Result:
         r.bytes += size
         r.items += 1
 
-    for p in _temp_candidates(ctx.tmp_roots, ctx.uid):
+    for p in _temp_candidates(ctx):
         if p.name.endswith(".xcresult"):
             d = p
             if not ((d / "Info.plist").is_file() and (d / "Data").is_dir() and only_has(d, RESULT_BUNDLE_INSIDE)):
@@ -289,11 +317,19 @@ def temp_builds(ctx: Ctx) -> Result:
             parts = [d]
         else:
             d = p.parent
-            if not ((p / "Intermediates.noindex").is_dir() or (p / "Products").is_dir()):
+            # A verify build that stopped early has no Intermediates.noindex or Products, and a
+            # scripted one may have no Logs or info.plist: a *.noindex sibling is Xcode's mark too.
+            if not ((p / "Intermediates.noindex").is_dir() or (p / "Products").is_dir()
+                    or (d / "CompilationCache.noindex").is_dir() or (d / "Index.noindex").is_dir()):
                 continue
-            if not ((d / "Logs").is_dir() or (d / "info.plist").is_file()):
+            if not any(os.path.lexists(d / x) for x in DD_SIBLINGS):
                 continue
             parts = [d / x for x in DD_PARTS if os.path.lexists(d / x)]
+        if any(c == d or c in d.parents for c in ctx.claimed):
+            continue
+        # Key files stay whoever removes them: the Xcode parts of a tree that holds some are not ours.
+        if any(_holds_keys_or_mount(ctx, x) for x in parts if x.is_dir()):
+            continue
         if not os.path.lexists(d) or in_checkout(d, parts) or not idle(ctx, d, minutes):
             continue
         # xcodebuild drops hundreds of tiny ResultBundle_*.xcresult into $TMPDIR: those share one
@@ -312,6 +348,111 @@ def temp_builds(ctx: Ctx) -> Result:
             for d in small_dirs:
                 with contextlib.suppress(OSError):
                     d.rmdir()
+    return r
+
+
+# --- temp dirs --------------------------------------------------------------------------------
+
+def _holds_keys_or_mount(ctx: Ctx, d) -> str:
+    """Why the whole tree under `d` must stay: it holds key files, or a mount point (rmtree would
+    reach into the mounted volume), or cannot be read. "" when neither."""
+    def unreadable(e: OSError):
+        raise e
+
+    try:
+        for dirpath, dirnames, filenames in os.walk(d, onerror=unreadable):
+            if any(n.lower().endswith(SECRET_SUFFIXES) for n in filenames):
+                return "it holds key files"
+            if any(not os.path.islink(os.path.join(dirpath, n)) and ctx.mount_point(os.path.join(dirpath, n))
+                   for n in dirnames):
+                return "it holds a mount point"
+    except OSError:
+        return "it cannot be read"
+    return ""
+
+
+def _open_files(ctx: Ctx, d) -> bool:
+    """A process has a file under `d` open or has it as its working directory (`lsof +D`). No lsof, a
+    timeout or any output: assume yes."""
+    if not ctx.have("lsof"):
+        return True
+    cmd = ["lsof", "-t", "--", str(d)] if os.path.isfile(d) else ["lsof", "-t", "+D", str(d)]
+    rc, out = ctx.run(cmd, LSOF_TIMEOUT_S)
+    return rc != 1 or bool(out.strip())
+
+
+def _temp_dir_candidates(ctx: Ctx) -> list[pathlib.Path]:
+    found = []
+    for root in ctx.tmp_roots:
+        try:
+            entries = sorted(pathlib.Path(root).iterdir())
+        except OSError:
+            continue
+        for d in entries:
+            if not (TMP_DIR_NAME.fullmatch(d.name) or fnmatch.fnmatchcase(d.name, VERIFY_GLOB)):
+                continue
+            try:
+                mine = os.lstat(d).st_uid == ctx.uid
+            except OSError:
+                continue
+            if mine and d.is_dir() and not d.is_symlink():
+                found.append(d)
+    return found
+
+
+def temp_dirs(ctx: Ctx) -> Result:
+    r = Result("temp dirs")
+    hours = 2 if ctx.free < ctx.cfg["urgent_free_gb"] * GIB else ctx.cfg["temp_hours"]
+    minutes = hours * 60
+
+    def keep(d, why: str) -> None:
+        if ctx.dry:   # the hourly run stays quiet about folders it leaves
+            r.lines.append(f"kept temp dir {str(d).removeprefix('/private')}: {why}")
+
+    small, big = [], []
+    for d in _temp_dir_candidates(ctx):
+        # Cheap checks first: lsof +D reads the whole tree.
+        if ctx.mount_point(d):
+            keep(d, "it is a mount point")
+            continue
+        if in_checkout(d, [d]):
+            keep(d, "it is a git checkout")
+            continue
+        if not idle(ctx, d, minutes):
+            keep(d, f"used in the last {hours}h")
+            continue
+        why = _holds_keys_or_mount(ctx, d)
+        if why:
+            keep(d, why)
+            continue
+        if _open_files(ctx, d):
+            keep(d, "a process has files in it open")
+            continue
+        parts = [d]
+        log = d.with_name(d.name + ".log")
+        if (log.is_file() and not log.is_symlink() and not _any_newer(log, ctx.now - minutes * 60)
+                and not _open_files(ctx, log)):
+            parts.append(log)
+        ctx.claimed.append(d)   # temp builds leaves it alone: a dry run would count its bytes twice
+        (big if ctx.size(*parts) >= SMALL_BUILD else small).append(parts)
+
+    def gone(label: str, groups: list) -> None:
+        parts = [p for g in groups for p in g]
+        size = ctx.size(*parts)
+        if ctx.dry:
+            r.lines.append(f"would remove {label} ({_fmt(size)})")
+        elif all([_rm(p) for p in parts]):
+            r.lines.append(f"removed {label} ({_fmt(size)})")
+        else:
+            r.lines.append(f"could not remove all of {label}")
+            return
+        r.bytes += size
+        r.items += len(groups)
+
+    for g in big:
+        gone(f"temp dir {str(g[0]).removeprefix('/private')}", [g])
+    if small:
+        gone(f"{len(small)} small temp dirs", small)
     return r
 
 
@@ -752,7 +893,9 @@ def routine_logs(ctx: Ctx) -> Result:
 # --- the run ----------------------------------------------------------------------------------
 
 # (name, function, part of --temp)
-CATEGORIES = (("temp builds", temp_builds, True), ("release leftovers", release_leftovers, True),
+# temp dirs runs before temp builds: what it takes whole is not counted again as Xcode output.
+CATEGORIES = (("temp dirs", temp_dirs, True), ("temp builds", temp_builds, True),
+              ("release leftovers", release_leftovers, True),
               ("simulators", simulators, False), ("DerivedData", derived_data, False),
               ("codex runtimes", codex_runtimes, False), ("package caches", package_caches, False),
               ("docker", docker, False), ("grok sessions", grok_sessions, False),
