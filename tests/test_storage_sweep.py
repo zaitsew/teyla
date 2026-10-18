@@ -219,7 +219,7 @@ def lsof_tools(open_for=None):
     class R(Runner):
         def run(self, cmd, timeout=600):
             self.calls.append(list(cmd))
-            if cmd[:3] == ["lsof", "-t", "+D"]:
+            if cmd[:2] == ["lsof", "-t"]:
                 return (0, "4242\n") if open_for and str(cmd[3]) == str(open_for) else (1, "")
             return 1, ""
     return R(tools={"lsof"})
@@ -332,6 +332,20 @@ def test_xcode_shaped_build_dirs_without_products_are_found_in_a_tmp_tree(tmp_pa
     age(d, 2 * DAY)
     res = sw.temp_builds(make_ctx(tmp_path))
     assert res.items == 1 and not (d / "Build").exists() and (d / "notes.md").exists()
+
+
+def test_temp_builds_leave_key_files_alone_and_an_open_log_is_kept(tmp_path):
+    root = tmp_path / "tmp"
+    d = root / "tmp.Signing00001"
+    for sub in ("Build", "Index.noindex"):
+        (d / sub).mkdir(parents=True)
+    (d / "Build" / "signing.p12").write_text("secret")
+    age(d, 2 * DAY)
+    assert sw.temp_builds(make_ctx(tmp_path)).items == 0 and (d / "Build" / "signing.p12").exists()
+    v = verify_dir(root, "svc-verify")
+    log = root / "svc-verify.log"
+    res = sw.temp_dirs(make_ctx(tmp_path, runner=lsof_tools(open_for=log)))
+    assert not v.exists() and log.exists() and res.items == 1, "the log a process holds open stays"
 
 
 def test_other_users_tmp_dirs_and_symlinks_stay(tmp_path):

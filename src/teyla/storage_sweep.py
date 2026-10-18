@@ -327,6 +327,9 @@ def temp_builds(ctx: Ctx) -> Result:
             parts = [d / x for x in DD_PARTS if os.path.lexists(d / x)]
         if any(c == d or c in d.parents for c in ctx.claimed):
             continue
+        # Key files stay whoever removes them: the Xcode parts of a tree that holds some are not ours.
+        if any(_holds_keys_or_mount(ctx, x) for x in parts if x.is_dir()):
+            continue
         if not os.path.lexists(d) or in_checkout(d, parts) or not idle(ctx, d, minutes):
             continue
         # xcodebuild drops hundreds of tiny ResultBundle_*.xcresult into $TMPDIR: those share one
@@ -373,7 +376,8 @@ def _open_files(ctx: Ctx, d) -> bool:
     timeout or any output: assume yes."""
     if not ctx.have("lsof"):
         return True
-    rc, out = ctx.run(["lsof", "-t", "+D", str(d)], LSOF_TIMEOUT_S)
+    cmd = ["lsof", "-t", "--", str(d)] if os.path.isfile(d) else ["lsof", "-t", "+D", str(d)]
+    rc, out = ctx.run(cmd, LSOF_TIMEOUT_S)
     return rc != 1 or bool(out.strip())
 
 
@@ -426,7 +430,8 @@ def temp_dirs(ctx: Ctx) -> Result:
             continue
         parts = [d]
         log = d.with_name(d.name + ".log")
-        if log.is_file() and not log.is_symlink() and not _any_newer(log, ctx.now - minutes * 60):
+        if (log.is_file() and not log.is_symlink() and not _any_newer(log, ctx.now - minutes * 60)
+                and not _open_files(ctx, log)):
             parts.append(log)
         ctx.claimed.append(d)   # temp builds leaves it alone: a dry run would count its bytes twice
         (big if ctx.size(*parts) >= SMALL_BUILD else small).append(parts)
