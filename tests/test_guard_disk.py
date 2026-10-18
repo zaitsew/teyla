@@ -52,9 +52,9 @@ def test_the_report_and_the_recorder_carry_the_disk(tmp_path):
 
 def test_a_row_recorded_before_the_disk_column_still_reads(tmp_path):
     s = snap(50)
-    old = "\t".join(load.record_fields(s, load.assess(s, conf()))[:-1])
+    old = "\t".join(load.record_fields(s, load.assess(s, conf()))[:load._MIN_COLUMNS])
     path = tmp_path / "load.tsv"
-    path.write_text("#" + "\t".join(load.COLUMNS[:-1]) + "\n" + old + "\n")
+    path.write_text("#" + "\t".join(load.COLUMNS[:load._MIN_COLUMNS]) + "\n" + old + "\n")
     rows = load.read_records(path=path)
     assert len(rows) == 1 and rows[0]["disk_free_bytes"] is None
 

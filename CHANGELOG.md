@@ -5,6 +5,12 @@
 - **Decision log and replay.** Every `teyla load --admit` and finished `--wait` appends to `~/.teyla/guard-decisions.tsv`
   (time, kind, verdict, admitted or refused, reason, cwd, harness). `teyla load` ends with the last hour's counts.
   `teyla load --replay [--days N]` runs the verdict and the admission over `load.tsv`, per day.
+- **The verdict follows the trend.** A new state, WORSENING, sits between BUSY and CRITICAL: the swap-out rate
+  (`vm_stat`, now a column in `load.tsv`), swap growing faster than 4 GB per 30 min, or free disk on course to fall
+  under `disk_crit_gb` within 30 min. While WORSENING, and for `guard.hold_min` (10) minutes after the last CRITICAL or
+  WORSENING sample, a new simulator or build is refused whatever the count; running work and lanes are not touched.
+  Swap used alone no longer makes the machine BUSY (it did on 70-95% of samples every day). `max_sims` and `max_builds`
+  stay 2. `teyla load` prints the trend and the hold; `--replay` shows what the thresholds decide on the recorded days.
 
 ## 0.28.0 — 2026-10-18 — One analytics standard for every product
 

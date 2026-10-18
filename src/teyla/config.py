@@ -87,8 +87,13 @@
     max_sims = 2                   booted simulators: more is BUSY; `--admit sim` refuses at this many (0 = no cap)
     max_builds = 2                 build drivers (xcodebuild, swift-build, gradle, cargo): more is BUSY; `--admit build` refuses at this many
     max_lanes = 0                  headless agent lanes (codex exec, grok -p, claude -p): `--admit lane` refuses at this many; 0 = no cap
-    swap_warn_pct = 25             swap used, percent of RAM: BUSY at or above
-    swap_crit_pct = 40             ... CRITICAL at or above
+    swap_crit_pct = 40             swap used, percent of RAM: CRITICAL at or above, while memory pressure is warn or worse
+                                   (swap used alone says nothing: pages stay swapped out after the pressure is gone)
+    swapout_mb_s = 20              WORSENING when the swap-out rate over the last 3 minutes is at or above this (0 = off)
+    swap_grow_gb_30m = 4           ... or swap used is growing faster than this per 30 minutes (and still growing)
+    trend_window_min = 15          the history the swap and disk slopes are fitted over
+    hold_min = 10                  after CRITICAL or WORSENING, new simulators and builds wait this many minutes
+                                   without either (0 = no hold); running work is never touched
     compressor_warn_pct = 30       memory compressor size, percent of RAM: BUSY at or above
     compressor_crit_pct = 45       ... CRITICAL at or above
     load_warn_per_core = 4.0       one-minute load average per core: BUSY at or above
@@ -188,7 +193,8 @@ DEFAULTS = {
     "review": {"ledger": "~/.cache/review-ledger.tsv", "min_lines": 7},
     # `teyla load`: thresholds of the machine guard. Percentages are of physical RAM; load is per core.
     "guard": {"enabled": True, "max_sims": 2, "max_builds": 2, "max_lanes": 0,
-              "swap_warn_pct": 25, "swap_crit_pct": 40, "compressor_warn_pct": 30, "compressor_crit_pct": 45,
+              "swap_crit_pct": 40, "swapout_mb_s": 20, "swap_grow_gb_30m": 4,
+              "trend_window_min": 15, "hold_min": 10, "compressor_warn_pct": 30, "compressor_crit_pct": 45,
               "load_warn_per_core": 4.0, "load_crit_per_core": 10.0, "wait_timeout_s": 900,
               # `teyla guard tick`: the launchd recorder agent (opt-in), the idle-daemon reaper, the alert file.
               "agent": False, "gradle_idle_min": 30, "alert": True,
