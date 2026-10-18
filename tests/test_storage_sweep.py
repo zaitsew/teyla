@@ -191,6 +191,161 @@ def test_someone_elses_build_directory_is_not_touched(tmp_path):
     assert sw.temp_builds(ctx).items == 0 and (d / "Build").exists()
 
 
+# --- temp dirs --------------------------------------------------------------------------------------
+
+def swift_tmp(root: pathlib.Path, name="tmp.AbCd1234Ef", seconds=2 * DAY, size=2048) -> pathlib.Path:
+    """What `mktemp -d` and SwiftPM leave: TemporaryDirectory.* folders with build output."""
+    d = root / name
+    (d / "TemporaryDirectory.x1y2z3").mkdir(parents=True)
+    (d / "TemporaryDirectory.x1y2z3" / "out.o").write_bytes(b"0" * size)
+    age(d, seconds)
+    return d
+
+
+def verify_dir(root: pathlib.Path, name="app-verify-9f3a", seconds=2 * DAY, size=2048) -> pathlib.Path:
+    """DerivedData-shaped, as `xcodebuild -derivedDataPath` leaves it, with a sibling log."""
+    d = root / name
+    for sub in ("Build", "CompilationCache.noindex", "Index.noindex"):
+        (d / sub).mkdir(parents=True)
+    (d / "Build" / "app.o").write_bytes(b"0" * size)
+    root.joinpath(name + ".log").write_text("build log")
+    age(d, seconds)
+    age(root / (name + ".log"), seconds)
+    return d
+
+
+def lsof_tools(open_for=None):
+    """A Runner whose lsof reports `open_for` (a path) as having an open file, nothing else."""
+    class R(Runner):
+        def run(self, cmd, timeout=600):
+            self.calls.append(list(cmd))
+            if cmd[:3] == ["lsof", "-t", "+D"]:
+                return (0, "4242\n") if open_for and str(cmd[3]) == str(open_for) else (1, "")
+            return 1, ""
+    return R(tools={"lsof"})
+
+
+def test_idle_tmp_and_verify_dirs_go_with_their_log_and_dry_lists_them(tmp_path):
+    root = tmp_path / "tmp"
+    a = swift_tmp(root)
+    b = verify_dir(root)
+    c = verify_dir(root, "tool-verify")
+    other = root / "keep-me"
+    other.mkdir()
+    (other / "f").write_text("x")
+    age(other, 2 * DAY)
+    res = sw.temp_dirs(make_ctx(tmp_path, dry=True, runner=lsof_tools()))
+    assert a.exists() and b.exists() and res.items == 3 and res.bytes > 0
+    assert sum(line.startswith("would remove temp dir") or "small temp dirs" in line for line in res.lines) >= 1
+    res = sw.temp_dirs(make_ctx(tmp_path, runner=lsof_tools()))
+    assert not a.exists() and not b.exists() and not c.exists()
+    assert not (root / "app-verify-9f3a.log").exists() and not (root / "tool-verify.log").exists()
+    assert other.exists() and res.items == 3 and "removed" in res.lines[0]
+
+
+def test_dry_run_on_the_full_sweep_counts_a_verify_dir_once(tmp_path):
+    root = tmp_path / "tmp"
+    d = verify_dir(root, size=4096)
+    rep = sw.run(temp_only=True, ctx=make_ctx(tmp_path, dry=True, runner=lsof_tools()))
+    assert d.exists()
+    by = {c["name"]: c for c in rep["categories"]}
+    assert by["temp dirs"]["items"] == 1 and by["temp builds"]["items"] == 0
+    assert rep["total"] == by["temp dirs"]["bytes"]
+
+
+def test_recent_tmp_dirs_stay(tmp_path):
+    root = tmp_path / "tmp"
+    fresh = swift_tmp(root, seconds=1 * H)
+    old_but_slow = swift_tmp(root, "tmp.ZzZz9999Zz", seconds=3 * H)   # 3 h idle, 24 h needed at 50 GB free
+    res = sw.temp_dirs(make_ctx(tmp_path, free=50 * GIB, runner=lsof_tools()))
+    assert res.items == 0 and fresh.exists() and old_but_slow.exists()
+    res = sw.temp_dirs(make_ctx(tmp_path, free=5 * GIB, runner=lsof_tools()))   # urgent: 2 h is enough
+    assert res.items == 1 and fresh.exists() and not old_but_slow.exists()
+
+
+def test_tmp_dirs_with_open_files_or_a_named_process_stay(tmp_path):
+    root = tmp_path / "tmp"
+    opened = swift_tmp(root, "tmp.OpenFile001")
+    named = swift_tmp(root, "tmp.Named000001")
+    res = sw.temp_dirs(make_ctx(tmp_path, runner=lsof_tools(open_for=opened),
+                                procs=[f"swift-build --scratch-path {named}"]))
+    assert res.items == 0 and opened.exists() and named.exists()
+    # No lsof on PATH: unknown means in use.
+    assert sw.temp_dirs(make_ctx(tmp_path, runner=Runner())).items == 0 and opened.exists()
+    # Unknown process list: the same.
+    assert sw.temp_dirs(make_ctx(tmp_path, procs=None, runner=lsof_tools())).items == 0 and named.exists()
+
+
+def test_a_mount_point_is_skipped_and_not_counted(tmp_path):
+    root = tmp_path / "tmp"
+    dmg = swift_tmp(root, "tmp.MountedDmg1")
+    holder = swift_tmp(root, "tmp.HoldsMount1")
+    (holder / "TemporaryDirectory.x1y2z3" / "vol").mkdir()
+    age(holder, 2 * DAY)
+    plain = swift_tmp(root, "tmp.PlainOne001")
+
+    def dev(path):
+        p = str(path)
+        return 99 if p == str(dmg) or p.endswith("/vol") else 1
+
+    ctx = make_ctx(tmp_path, runner=lsof_tools())
+    ctx.dev = dev
+    res = sw.temp_dirs(ctx)
+    assert dmg.exists() and holder.exists() and not plain.exists()
+    assert res.items == 1, "the mounts are not counted"
+    ctx = make_ctx(tmp_path, dry=True, runner=lsof_tools())
+    ctx.dev = dev
+    res = sw.temp_dirs(ctx)
+    assert any("mount point" in line for line in res.lines) and res.items == 0
+
+
+def test_a_mounted_volume_is_not_entered_by_the_temp_build_walk(tmp_path):
+    root = tmp_path / "tmp"
+    mounted = derived_dir(root / "com.docker.install", "DockerDesktop-4.1")
+    ctx = make_ctx(tmp_path)
+    ctx.dev = lambda path: 99 if "DockerDesktop" in str(path) else 1
+    res = sw.temp_builds(ctx)
+    assert res.items == 0 and res.bytes == 0 and (mounted / "Build").exists()
+
+
+def test_tmp_dirs_with_key_files_or_a_checkout_stay(tmp_path):
+    root = tmp_path / "tmp"
+    keys = swift_tmp(root, "tmp.HasKeyFile01")
+    (keys / "TemporaryDirectory.x1y2z3" / "signing.PEM").write_text("secret")
+    age(keys, 2 * DAY)
+    repo = swift_tmp(root, "tmp.HasGitRepo1")
+    (repo / ".git").mkdir()
+    age(repo, 2 * DAY)
+    res = sw.temp_dirs(make_ctx(tmp_path, runner=lsof_tools()))
+    assert res.items == 0 and keys.exists() and repo.exists()
+    res = sw.temp_dirs(make_ctx(tmp_path, dry=True, runner=lsof_tools()))
+    assert any("key files" in line for line in res.lines)
+
+
+def test_xcode_shaped_build_dirs_without_products_are_found_in_a_tmp_tree(tmp_path):
+    root = tmp_path / "tmp"
+    d = root / "tmp.Shape0000001"
+    for sub in ("Build", "CompilationCache.noindex", "Index.noindex"):
+        (d / sub).mkdir(parents=True)
+    (d / "Build" / "x.o").write_bytes(b"0" * 100)
+    (d / "notes.md").write_text("mine")
+    age(d, 2 * DAY)
+    res = sw.temp_builds(make_ctx(tmp_path))
+    assert res.items == 1 and not (d / "Build").exists() and (d / "notes.md").exists()
+
+
+def test_other_users_tmp_dirs_and_symlinks_stay(tmp_path):
+    root = tmp_path / "tmp"
+    real = swift_tmp(root / "elsewhere", "tmp.RealTarget01")
+    (root / "tmp.LinkToIt0001").symlink_to(real)
+    foreign = swift_tmp(root, "tmp.NotMine00001")
+    ctx = make_ctx(tmp_path, runner=lsof_tools())
+    ctx.uid = os.getuid() + 1
+    assert sw.temp_dirs(ctx).items == 0 and foreign.exists()
+    sw.temp_dirs(make_ctx(tmp_path, runner=lsof_tools()))
+    assert real.exists() and not foreign.exists()
+
+
 # --- release leftovers --------------------------------------------------------------------------
 
 def test_export_leftovers_go_when_they_hold_only_what_xcodebuild_writes(tmp_path):
@@ -542,7 +697,7 @@ def test_temp_mode_runs_only_the_temp_categories_and_is_silent_when_idle(tmp_pat
     runner = Runner(tools={"uv"})
     ctx = make_ctx(tmp_path, runner=runner)
     rep = sw.run(temp_only=True, ctx=ctx)
-    assert [c["name"] for c in rep["categories"]] == ["temp builds", "release leftovers"]
+    assert [c["name"] for c in rep["categories"]] == ["temp dirs", "temp builds", "release leftovers"]
     assert rep["lines"] == [] and runner.calls == []
 
 
