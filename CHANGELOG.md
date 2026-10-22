@@ -2,6 +2,13 @@
 
 ## Unreleased — The machine guard stops starting heavy work while memory runs out
 
+- **Plugin directory readiness (0.29.0).** The Claude Code plugin now carries the metadata, `LICENSE` and README the Claude
+  directory checks (install line, a Privacy section that lists every path read and written and every network use). Every
+  skill and command checks for the `teyla` CLI first and prints one install line when it is missing; hooks stay silent
+  and exit 0. `session-start.sh` starts the CLI's daily chain only on a machine with `~/.teyla/config.toml`, so installing
+  the plugin never installs launchd agents. Skill text no longer names private paths or products.
+  `scripts/build_openai_plugin.py` builds the skills-only archive for OpenAI's directory; `docs/DIRECTORY.md` holds the
+  listing text, data-handling answers and the submission checklist for both.
 - **Decision log and replay.** Every `teyla load --admit` and finished `--wait` appends to `~/.teyla/guard-decisions.tsv`
   (time, kind, verdict, admitted or refused, reason, cwd, harness). `teyla load` ends with the last hour's counts.
   `teyla load --replay [--days N]` runs the verdict and the admission over `load.tsv`, per day.

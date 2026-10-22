@@ -1,6 +1,6 @@
 ---
 name: harvest
-description: Turn past sessions that touched a given path into a proposed skill, a candidate-rules list, and a routine.yml manifest. Use after doing a task manually two or more times, or when asked to "harvest this", "turn this into a skill", "codify what we've been doing in <path>", or "make a routine for this". Reads real transcripts — never invents a procedure that was not actually run.
+description: Turn past Claude Code sessions that touched a given path into a proposed skill, a candidate-rules list, and a routine.yml manifest. Reads your local session transcripts and never invents a procedure that was not actually run. Works best with the `teyla` CLI; has an inline fallback without it. Use after doing a task manually two or more times, or when asked to "harvest this", "turn this into a skill", "codify what we've been doing in <path>" or "make a routine for this".
 argument-hint: <path> — the folder whose work should be harvested, relative to the current repo
 ---
 
@@ -28,6 +28,18 @@ an open question and freezes an arbitrary choice. Surface it instead.
 Two runs is the minimum. With one run you cannot tell a procedure from an
 accident — say so and stop.
 
+## Step 0 — check the CLI
+
+```sh
+{ command -v teyla || ls "$HOME/.local/bin/teyla"; } >/dev/null 2>&1 && echo "teyla: found" || echo "teyla: MISSING"
+```
+
+If it prints `teyla: MISSING`, tell the user this one line, then continue with the inline fallback in step 1–2 (this skill is the one exception that still works without the CLI):
+
+> The Teyla CLI gives a fuller harvest. Install it any time: `uv tool install git+https://github.com/zaitsew/teyla` (or `pipx install git+https://github.com/zaitsew/teyla`). Python 3.11 or newer.
+
+If the CLI is found only at `~/.local/bin/teyla` (not on PATH), use that full path wherever a command below says `teyla`.
+
 ## Step 1–2 — get the harvest input
 
 Run:
@@ -42,7 +54,7 @@ refuses below two sessions, and prints — per matching session — its ordered
 tool spine and its correction-shaped human turns. If it reports fewer than two
 sessions, stop and report that. Do not harvest from a single session.
 
-If `teyla` is not installed on this machine, fall back to the inline
+If the CLI is missing (step 0), use the inline
 equivalent. First find the sessions:
 
 ```sh
@@ -55,7 +67,7 @@ If that returns fewer than two files, stop and report it. Otherwise pull the
 tool spine per matching session:
 
 ```sh
-/usr/bin/python3 - "$TARGET" ~/.claude/projects/"$SLUG"/*.jsonl <<'PY'
+python3 - "$TARGET" ~/.claude/projects/"$SLUG"/*.jsonl <<'PY'
 import json, sys, collections
 target, files = sys.argv[1], sys.argv[2:]
 for f in files:
@@ -136,9 +148,8 @@ should be scoped to. Do not promote anything to `.claude/rules/` yourself — us
 
 ### 3. `routine.yml`
 
-Fill the `routine.yml` template (see `<ops_root>/.claude/templates/routine.yml` if
-present, otherwise emit the same shape from memory: `routine`, `trigger`,
-`skill`, `scope`, `context`, `gate`, `capabilities`, `done`). Propose values for
+Fill the `routine.yml` shape: `routine`, `trigger`,
+`skill`, `scope`, `context`, `gate`, `capabilities`, `done`. Propose values for
 `artifact`, `trigger`, `scope`, and `capabilities`.
 
 **`capabilities` lists only tools you actually observed being used** in step 2's

@@ -1,157 +1,156 @@
-# teyla (plugin)
+# Teyla for Claude Code
 
-A Claude Code plugin for the file-only half of Teyla: nothing here talks to a
-server or a database, and nothing is uploaded. Rules live in the repo it runs in, in git;
-corrections live in `~/.teyla/corrections/`, outside every repo. The one outbound call: when
-the `teyla` CLI is installed, the session-start hook starts a background `teyla update --check`
-(a GitHub release lookup) at most once a day, never in safe mode. `teyla uninstall` removes the
-plugin with the rest.
+Teyla turns repeated work into skills and rules. It reads the sessions you already ran,
+proposes a skill from what you did the same way every time, records your corrections
+outside the repo, reviews a diff before you merge, and tidies the rule files that load into
+every session. Everything is a local file. There is no server, no account and no upload.
 
 ## Install
 
 ```sh
-claude plugin add ~/repos/teyla/plugin
+/plugin install teyla --marketplace zaitsew/teyla
 ```
 
-(A marketplace entry may follow later; for now this is a local path install.)
+That is all you need for `/teyla:rule`, the `review` skill and the hooks. The `harvest`,
+`tidy`, `wiki-pass` and `adoption-review` skills and `/teyla:correct` call the separate
+Teyla CLI. Install it once (Python 3.11 or newer):
 
-**No `claude` binary on PATH** (Claude Code running only as the desktop app — the normal
-case on a managed laptop; check with `command -v claude`)? The commands above, and the
-documented `claude plugin marketplace add <path>` fallback, all need that missing binary.
-Run `teyla plugin install zaitsew/teyla` (or a local path to this repo) instead — it clones
-the marketplace if needed, copies `plugin/` into `~/.claude/plugins/cache/...`, and writes
-the same `known_marketplaces.json` / `installed_plugins.json` entries `claude plugin
-install` would, backing up both registry files first. `teyla plugin uninstall teyla`
-reverses it. See `src/teyla/plugin_install.py`.
+```sh
+uv tool install git+https://github.com/zaitsew/teyla      # or: pipx install git+https://github.com/zaitsew/teyla
+```
 
-**Codex has no CLI either** on a machine like that — it lives inside the ChatGPT desktop
-app and is not on PATH — so there is no equivalent install step to run for it; treat it as
-a harness `teyla doctor` can read logs from, not one you can drive from a shell.
+Without the CLI each of those skills and commands says so in one line and stops. `harvest`
+is the exception: it falls back to a plain `grep` and `python3` pass over your transcripts.
+Every hook exits 0 without a sound when the CLI is missing, so a session never breaks.
 
-## What's in it
+No `claude` binary on PATH (the desktop app only)? Install the CLI, then run
+`teyla plugin install zaitsew/teyla`. It writes the same registry entries
+`/plugin install` would, after backing both files up. `teyla plugin uninstall teyla`
+reverses it.
+
+## What is in it
 
 ### Skills
 
-- **`harvest`** (`.claude/skills` auto-load, or ask for it by name) — turns
-  sessions that repeatedly touched a path into a proposed skill, a
-  candidate-rules list, and a routine manifest. Calls `teyla harvest <path>`
-  (the `teyla` CLI, from `src/teyla` in this repo) when installed, and falls
-  back to an inline grep+python equivalent when it isn't. Writes four files
-  into `<path>/harvest-<date>/`: `SKILL.draft.md`, `candidate-rules.md`,
-  `routine.yml`, `done-test.md`. Never overwrites an existing skill or rules
-  file, and never promotes a rule on its own.
-- **`adoption-review`** — runs `teyla monitor --days 30 --out
-  runs/teyla/<date>.md`, reads the findings, and turns the top three into
-  concrete changes: a rule (via `/teyla:rule`), a `model:` override, or a
-  flagged session split. Requires the `teyla` CLI — there's no fallback for
-  `monitor`, since it needs the full session-adapter set, not a one-off parse.
-- **`tidy`** — editorial cleanup of the always-loaded rule and memory files: runs
-  `teyla tidy --json`, then proposes (never applies) rewrites that turn dated
-  anecdotes into rules, merge near-duplicates and move one-off history out, as a
-  diff it asks about. Protected blocks (code fences, `MERGE-APPROVED`,
-  `<!-- teyla:protect -->`) are never touched.
-- **`review`** (`/teyla:review`) — one review pass on the branch's diff
-  (`git diff $(git merge-base origin/<default> HEAD)`, or one fix commit in
-  round two), P1/P2 only, `P1 path:line — defect — scenario` or exactly
-  `No P1/P2`. Uses a `codex-review`/`claude-review` script
-  on PATH when one exists (cross-provider); otherwise one fresh sub-agent given
-  only the diff, labelled "same-provider review". At most two rounds.
+| Skill | What it does | Needs the CLI |
+|---|---|---|
+| `harvest` | Turns sessions that repeatedly touched a path into `SKILL.draft.md`, `candidate-rules.md`, `routine.yml` and `done-test.md` in `<path>/harvest-<date>/`. Only steps done the same way every time go into the skill. Never overwrites a skill or a rules file. | No (fallback) |
+| `review` | One review pass on the branch diff, P1/P2 only, at most two rounds. Uses a second-provider review script when one is on PATH, otherwise one fresh sub-agent that sees only the diff. | No |
+| `tidy` | Proposes edits that shorten `CLAUDE.md`, `AGENTS.md`, `.claude/rules` and memory files: dated anecdotes become rules, near-duplicates merge. Shows a diff and writes only what you approve. | Yes |
+| `wiki-pass` | Files this session's facts into a markdown wiki, marked agent-drafted until a person confirms them. | Yes |
+| `adoption-review` | Runs `teyla monitor` over the last 30 days and turns the top three findings into a rule, a `model:` override or a session split. | Yes |
 
 ### Commands
 
-- **`/teyla:rule <text> [--scope <glob>]`** — appends a one-sentence rule to
-  `.claude/rules/<slug>.md` in the current repo, with a `globs:` frontmatter
-  (default `**`), following the conventions in
-  `<ops_root>/.claude/rules/README.md`. Refuses to duplicate a rule that's already
-  there — it greps first and just reports the existing file. Also mirrors the
-  rule into a `## Rules` section of `AGENTS.md`, but only if `AGENTS.md` is a
-  real file in the repo (not a symlink onto `CLAUDE.md` or similar — mirroring
-  into a symlink would write through it and double the rule).
-- **`/teyla:correct <what was wrong>`** — runs `teyla correct`, which appends
-  `{ts, text, cwd, source}` to `~/.teyla/corrections/<repo>-<hash>.jsonl` (secrets
-  replaced by `[redacted]`), then drafts a candidate rule
-  sentence and scope and asks whether to promote it with `/teyla:rule`. Never
-  promotes on its own.
+- **`/teyla:rule <text> [--scope <glob>]`** appends a one-sentence rule to
+  `.claude/rules/<slug>.md` with a `globs:` front matter. It refuses to duplicate a rule. It
+  mirrors the rule into the `## Rules` section of `AGENTS.md` only when that is a real file,
+  not a symlink. No CLI needed.
+- **`/teyla:correct <what was wrong>`** runs `teyla correct`: the text goes to
+  `~/.teyla/corrections/` with tokens, keys and `password=` values replaced by `[redacted]`.
+  Then it drafts a rule and asks before promoting it with `/teyla:rule`.
 
 ### Hooks
 
-All are POSIX `sh`, exit 0 unconditionally — a broken hook must never break a
-session, so every failure path (missing files, bad JSON, no `python3`) is
-swallowed silently rather than surfaced.
+Hooks run in Claude Code and Cowork. Claude chat on the web ignores them. All are POSIX `sh`
+(one also runs a stdlib-only Python file), and every failure path exits 0 without output.
 
-- **`SessionStart`** (`hooks/session-start.sh`) — if `.claude/rules/*.md`
-  exist in the repo, prints a one-line count so it's visible without going to
-  look. If `~/.agents/POLICY.md` exists, does nothing: Claude Code already
-  imports it on its own, so there's nothing useful to add.
-- **`UserPromptSubmit`** (`hooks/capture-intent.sh`) — keeps a typed prompt of 400 characters or more,
-  word for word and scrubbed, in `~/.teyla/intent/<product>.md` (`teyla intent`; `docs/INTENT.md`).
-  Skips prompts a script or another agent wrote and everything the harness injects. Silent, exits 0.
-  `session-start.sh` points the session at that file.
-- **`UserPromptSubmit`** (`hooks/capture-correction.sh`) — the same
-  correction test `teyla monitor` counts with (`teyla.adapters.is_correction`:
-  pushback such as "wrong", "no, I mean…", "don't … at all", "you use too much…", plus the same phrases in Russian;
-  not instructions like "don't forget
-  to…"), skipping retries and headless runs (`claude -p`, `grok -p` via the
-  `<user_query>` envelope, `hermes -z`). On a match, appends `{ts, cwd, text[:500]}` to `~/.teyla/corrections/<repo>-<hash>.jsonl`
-  for the repo the prompt was submitted in (worktrees count as their main
-  checkout), after `teyla.corrections.scrub` has replaced tokens, keys, JWTs,
-  `password=`-style values and long base64/hex blobs with `[redacted]`. It runs
-  the installed `teyla`'s own interpreter, or a `python3` that will not pop the
-  macOS developer-tools dialog; with neither, it records nothing. Turns the harness injects as if the
-  user typed them — `<task-notification>` (a background subagent finished),
-  `<system-reminder>`, `[SYSTEM NOTIFICATION …]`, slash-command expansions —
-  are skipped before the heuristic runs; they are not corrections, and their
-  boilerplate matches it. Produces **no stdout**, match or not —
-  `UserPromptSubmit` stdout is injected into the model's context, and a
-  "logged your correction" note on every turn is exactly the kind of narration
-  that gets a tool turned off.
-- **`Stop`** (`hooks/land-check.sh`) — **opt-in**, `[hooks] land_check = true`.
-  Once per session, when the repo has uncommitted files or commits on no remote
-  (`git log HEAD --not --remotes`: without `HEAD` a never-pushed repo reads as
-  pushed), it tells the model the fact and how to land it: one PR/MR per
-  logical unit; merge only when origin's `owner/repo` (GitHub) or `host/group/repo`
-  (any other host, nested groups whole) is in the `MERGE-APPROVED REPOS` block of `~/.claude/CLAUDE.md`,
-  else open the PR/MR and stop. `additionalContext`, never a block. Not a judge
-  of whether the work is *done* — only of whether it reached a remote.
-- **Context budget** (`hooks/context-budget.sh` → `context-budget.py`) —
-  **opt-in**, `[hooks] context_budget = true`. On `UserPromptSubmit` and every
-  `PostToolUse` it reads the transcript's last usage record; at 240k tokens of
-  context (`context_budget_first`) and every 30k after (`context_budget_step`)
-  it asks the model to write a handoff to `~/.teyla/handoff/<session>.md`; on
-  `SessionStart` with source `compact` it puts that handoff back, once. Pair it
-  with `"autoCompactWindow": 335000` in `~/.claude/settings.json` (compaction at
-  about 300k). Off, the
-  wrapper is one `awk` over `~/.teyla/config.toml` and starts no Python.
+| Event | Script | What it does | Default |
+|---|---|---|---|
+| `SessionStart` | `session-start.sh` | Prints how many `.claude/rules/*.md` files the repo has. With the CLI, adds its one-line notices (see Privacy). | on |
+| `UserPromptSubmit` | `capture-correction.sh` | Records prompts that look like a correction, scrubbed, in `~/.teyla/corrections/`. Writes nothing without the CLI. | on, CLI only |
+| `UserPromptSubmit` | `capture-intent.sh` | Keeps a prompt of 400 characters or more, scrubbed, in `~/.teyla/intent/<repo>.md`. Writes nothing without the CLI. | on, CLI only |
+| `PreToolUse` | `pre-tool-use.sh` | The kill switch. It denies every tool call while `~/.teyla/KILL` exists, and it enforces capability grants only for a run you started with `teyla run`. Without those files it allows the call. | on |
+| `PreToolUse` (Bash) | `machine-guard.sh` | Refuses a build, a simulator boot or a headless agent while the machine is out of memory. Needs the CLI, otherwise allows. It fails open. | on, CLI only |
+| `Stop` | `land-check.sh` | Once per session, notes work that never reached a remote. | off (`teyla config set hooks.land_check=true`) |
+| `SessionStart`, `UserPromptSubmit`, `PostToolUse` | `context-budget.sh` | Asks the model to write a handoff note before a long session compacts, and puts it back after. | off (`teyla config set hooks.context_budget=true`) |
 
-Both opt-in hooks are off by default because a machine that already runs its
-own equivalents would get every note twice.
+`pre-tool-use.sh` is the one script that can exit 2 on purpose: only when you created
+`~/.teyla/KILL` or started a `teyla run` with grants. A plain install has neither.
 
-## Where data goes
+The two opt-in hooks stay off because a machine that already runs its own copies would see
+every note twice.
 
-Corrections are kept outside the repo: they are raw prompt text, and a work
-repo that does not ignore `.teyla/` would commit them with the next
-`git add -A`. Everything else is repo-local, mirroring the `runs/` convention in
-`~/ops/CLAUDE.md`:
+## Privacy
 
-| Path | Written by | Contents |
+**Short answer:** this plugin uploads nothing. Its hook scripts and skills contain no
+network call. Everything it reads and writes is on your machine, in the places listed
+below. Claude Code already sends your session to Claude; Teyla adds no second destination,
+with the one optional exception under Network.
+
+### What it reads
+
+- The input each hook receives from Claude Code: your prompt text, the tool name, the Bash
+  command about to run, the working directory, the session id and the transcript path.
+- Session transcripts under `~/.claude/projects/`: when you run `harvest` or
+  `adoption-review`, and, if you turn on `context-budget`, the last usage record.
+- `.claude/rules/*.md`, `AGENTS.md` and `CLAUDE.md` in your repo and home folder: by
+  `/teyla:rule`, `tidy`, the rule count, and `land-check` (it reads the
+  `MERGE-APPROVED REPOS` block of `~/.claude/CLAUDE.md`, if you have one).
+- Git state of the current repo (status, remote URL, diff): by `review` and `land-check`.
+
+### What it writes
+
+| Where | Written by | Contents |
 |---|---|---|
-| `~/.teyla/corrections/<repo>-<hash>.jsonl` | `UserPromptSubmit` hook, `/teyla:correct` | one JSON object per line: `ts`, `text`, `cwd`; 0600, outside the repo |
-| `.claude/rules/<slug>.md` | `/teyla:rule`, or you, by hand | committed — rules are decisions, not data |
-| `AGENTS.md` (`## Rules` section) | `/teyla:rule`, when the file is real | committed, mirrors `.claude/rules/` |
-| `<path>/harvest-<date>/*` | `harvest` skill | proposals for a human to review and merge |
-| `runs/teyla/<date>.md` | `adoption-review` skill (via `teyla monitor`) | one monitor report per run |
+| `.claude/rules/<slug>.md`, `AGENTS.md` (`## Rules`) | `/teyla:rule` | the rule you gave |
+| `<path>/harvest-<date>/` | `harvest` | four proposal files for you to review |
+| `runs/teyla/<date>.md` | `adoption-review` | one monitor report |
+| wiki pages, `index.md`, `log.md`, `inbox.md` | `wiki-pass` | facts you or the session established |
+| your rule and memory files | `tidy` | only the edits you approve |
+| `~/.teyla/corrections/<repo>-<hash>.jsonl` (mode 0600) | `/teyla:correct`, `capture-correction.sh` | timestamp, text, directory; secrets replaced by `[redacted]` |
+| `~/.teyla/intent/<repo>.md` (mode 0600) | `capture-intent.sh` | prompts of 400+ characters, word for word, secrets scrubbed |
+| `~/.teyla/handoff/<session>.md` (mode 0600) | `context-budget` (opt-in) | the model's own handoff note |
+| `$TMPDIR/teyla-land-check/<session>` | `land-check` (opt-in) | an empty marker file |
+| `~/.teyla/*` (stamps, notice files) | the CLI and `session-start.sh`, on a machine where Teyla is set up | small state files |
 
-A pre-0.12 `<repo>/.teyla/corrections.jsonl` is still read (never moved or
-deleted), and the first time Teyla touches such a repo it adds `.teyla/` to
-`.git/info/exclude`. `teyla config set corrections.store=repo` keeps writing
-there instead of `~/.teyla/corrections/`; the exclude is added either way. Add
-`runs/teyla/` to `.gitignore` in any repo where you don't want generated reports
-committed.
+Corrections and intent live outside the repo on purpose: they are raw prompt text, and a
+work repo would commit them with the next `git add -A`. The two capture hooks write only
+when the CLI is installed, because the secret scrubber is in it. Without the CLI the hook
+writes nothing instead of an unscrubbed prompt. Turn the intent capture off with
+`teyla config set intent.enabled=false`.
 
-## What it needs
+Nothing is deleted or expired automatically. Remove `~/.teyla/` to remove what the hooks
+kept. `teyla uninstall --dry` lists everything Teyla put on a machine, and
+`teyla uninstall` reverses it.
 
-The `teyla` CLI (`uv tool install git+https://github.com/zaitsew/teyla`, or
-`pip install -e .` from this repo) for `harvest`, `monitor`, `/teyla:correct`
-and the capture hook: the secret scrubber and the correction store are in it,
-and without them the hook writes nothing rather than an unscrubbed prompt. If
-it's missing, the hooks just do nothing, same as any other failure mode.
+### Network
+
+- **The plugin's own files** (hooks, skills, commands): none. Searching `plugin/` for
+  `curl`, `wget`, `socket`, `urllib` and `ssh` finds no call (two comments in
+  `land-check.sh` mention ssh remote URLs), and the only URLs are text: the install lines
+  and links to documentation.
+- **`review`, optional second reviewer.** If a `codex-review` or `claude-review` script is on
+  your PATH, the skill runs it, and that script sends the diff to the provider it wraps. The
+  skill labels the result "cross-provider review". Without such a script, a sub-agent of
+  your own Claude session reviews the diff and nothing else is contacted.
+- **`wiki-pass`.** When your wiki is a git repository, it pushes a branch and opens a pull
+  request with `gh` or `glab`, to your own git host.
+- **The Teyla CLI, started in the background by `session-start.sh`.** Only on a machine
+  where `~/.teyla/config.toml` exists (written by `teyla policy init` or `teyla config set`,
+  never by installing the plugin or the CLI). At most once a day it starts
+  `teyla update --check` (a read-only release lookup on `api.github.com`; it sends no
+  session data), `teyla doctor`, `teyla routine catch-up` (runs Teyla's own scheduled jobs
+  that macOS skipped, and may rewrite them) and `teyla asks`. It also runs
+  `teyla policy sync` when a Teyla-generated `~/.codex/AGENTS.md` or `~/.grok/AGENTS.md` is
+  out of date. What each command reads, writes and contacts is documented in
+  [docs/WORK.md](https://github.com/zaitsew/teyla/blob/main/docs/WORK.md). Set
+  `TEYLA_SAFE=1` (or `teyla config set safe.enabled=true`) and the CLI makes no network
+  request unless you type `--allow-network`.
+
+### Not for children
+
+Teyla is a developer tool. It is not directed at people under 18 and collects no account
+or profile data.
+
+## Uninstall
+
+```sh
+/plugin uninstall teyla
+rm -r ~/.teyla        # only if you also want the recorded corrections and notes gone
+```
+
+## Support and license
+
+Questions and bugs: <https://github.com/zaitsew/teyla/issues>. Source and the full manual:
+<https://github.com/zaitsew/teyla>. Apache-2.0, see `LICENSE`.

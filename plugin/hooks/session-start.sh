@@ -31,7 +31,8 @@
 #   date, and tell the session to read it before planning. The product is worked out here in sh
 #   exactly as `teyla.intent.product_for` does (worktree paths map to their repo); no transcript
 #   is scanned and no Python started.
-# - If no update check happened in the last day and `teyla` can be found — on PATH,
+# - If Teyla was set up here (~/.teyla/config.toml exists) and no update check happened in the last day
+#   and `teyla` can be found — on PATH,
 #   or at ~/.local/bin/teyla (uv tool / pipx), since a GUI app inherits no shell PATH —
 #   start one in the background, followed by `teyla routine catch-up`, which runs the
 #   daily or weekly launchd job if the Mac was off at its minute (launchd skips those).
@@ -241,7 +242,12 @@ fi
     val=$(sed -n '/^\[safe\]/,/^\[/p' "$HOME/.teyla/config.toml" 2>/dev/null | sed -n 's/^enabled *= *//p' | head -n 1 | tr -d '" \r' | tr 'A-Z' 'a-z')
     case "$val" in ""|false|0|no|off) ;; *) safe=1 ;; esac
   fi
-  if [ -n "$teyla_bin" ]; then
+  # Background work (update check, doctor, routine catch-up, asks, policy sync) starts only on a
+  # machine where Teyla was set up on purpose: ~/.teyla/config.toml is written by `teyla policy
+  # init` and `teyla config set`, never by installing the CLI or the plugin. Without it a
+  # plugin install starts nothing: `routine catch-up` can write launchd agents and `update
+  # --check` reaches api.github.com, and neither may happen before the owner asked for Teyla.
+  if [ -n "$teyla_bin" ] && [ -f "$HOME/.teyla/config.toml" ]; then
     # The generated file is stale when a source is newer: POLICY.md, CLAUDE.md, or a file
     # CLAUDE.md pulls in with an `@~/...` line (Codex review, P2). A symlink still
     # pointing at POLICY.md is stale once CLAUDE.md changes after the last sync — it may have

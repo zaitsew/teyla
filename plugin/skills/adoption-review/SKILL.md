@@ -1,6 +1,6 @@
 ---
 name: adoption-review
-description: Run the Teyla adoption review: `teyla monitor`, read the findings, and turn the top three into concrete changes (a rule in .claude/rules, a model: override, a session split). Trigger phrases: "adoption review", "how am I using AI", "token report", "teyla report".
+description: Review how AI coding sessions were used over the last 30 days with the Teyla CLI (`teyla monitor`), then turn the top three findings into concrete changes (a rule in .claude/rules, a model override, a session split). Needs the `teyla` CLI. Use when asked for an "adoption review", "how am I using AI", "token report" or "teyla report".
 argument-hint: (none) — reviews the last 30 days by default
 ---
 
@@ -10,6 +10,18 @@ A monitor run is diagnosis, not action. It tells you what happened; it does not
 by itself change anything. This skill closes that loop: run it, read it, and
 turn the findings into edits that actually land in the repo.
 
+## Step 0 — check the CLI
+
+```sh
+{ command -v teyla || ls "$HOME/.local/bin/teyla"; } >/dev/null 2>&1 && echo "teyla: found" || echo "teyla: MISSING"
+```
+
+If it prints `teyla: MISSING`, say only this one line and stop; do not run anything else:
+
+> This needs the Teyla CLI. Install it, then ask again: `uv tool install git+https://github.com/zaitsew/teyla` (or `pipx install git+https://github.com/zaitsew/teyla`). Python 3.11 or newer.
+
+If the CLI is found only at `~/.local/bin/teyla` (not on PATH), use that full path wherever a command below says `teyla`.
+
 ## Step 1 — run the monitor
 
 ```sh
@@ -17,9 +29,8 @@ mkdir -p runs/teyla
 teyla monitor --days 30 --out "runs/teyla/$(date +%F).md"
 ```
 
-If `teyla` is not installed, say so and stop — this skill has no fallback for
-`monitor` (unlike `harvest`, it needs the full adapter set, not a one-off
-grep-and-parse).
+This skill has no fallback without the CLI: `monitor` needs the full adapter set, not a
+one-off grep-and-parse.
 
 ## Step 2 — read it
 
@@ -40,7 +51,7 @@ direction. "Write better prompts" is not a change; these are:
   agent definition, with the finding's evidence as the reason in the commit
   message or a comment.
 - **A session split** — naming the specific task that should stop sharing a
-  session with another (e.g. "stop running X inside the ops root session; give
+  session with another (e.g. "stop running X inside the shared root session; give
   it its own project root"), when the evidence is long-session token bloat or
   cross-task drift.
 

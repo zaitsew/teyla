@@ -384,6 +384,7 @@ def _start_with_fake_teyla(tmp_path):
     home = tmp_path / "home"
     (home / ".teyla").mkdir(parents=True, exist_ok=True)
     (home / ".teyla" / "update-check.json").write_text("{}")  # fresh: no daily update chain
+    (home / ".teyla" / "config.toml").write_text("")  # set up on purpose: the hook may start background work
     bin_ = tmp_path / "bin"
     bin_.mkdir(exist_ok=True)
     log = tmp_path / "teyla-calls"
