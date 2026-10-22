@@ -5,6 +5,18 @@ argument-hint: <what was wrong>
 
 Record this correction: $ARGUMENTS
 
+## 0. Check the CLI
+
+```sh
+{ command -v teyla || ls "$HOME/.local/bin/teyla"; } >/dev/null 2>&1 && echo "teyla: found" || echo "teyla: MISSING"
+```
+
+If it prints `teyla: MISSING`, say only this one line and stop; do not record the correction any other way, because a hand-written copy would skip the secret scrubber:
+
+> This needs the Teyla CLI. Install it, then ask again: `uv tool install git+https://github.com/zaitsew/teyla` (or `pipx install git+https://github.com/zaitsew/teyla`). Python 3.11 or newer.
+
+If the CLI is found only at `~/.local/bin/teyla` (not on PATH), use that full path wherever a command below says `teyla`.
+
 ## 1. Record it
 
 Run `teyla correct` with the argument text above, verbatim — do not tidy it or
@@ -21,11 +33,6 @@ It appends `{ts, text, cwd, source: "correct"}` to this repo's file under `~/.te
 — outside the repo, so it can never be committed, with tokens, keys and
 `password=`-style values replaced by `[redacted]` — and prints the file and how
 many corrections it holds.
-
-If `teyla` is not installed (`command -v teyla || ls ~/.local/bin/teyla`), do
-not write the record some other way: say it was not recorded and that
-`uv tool install git+https://github.com/zaitsew/teyla` makes this command work.
-A hand-written copy would skip the secret scrubber.
 
 ## 2. Propose a rule
 

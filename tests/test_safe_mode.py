@@ -182,6 +182,8 @@ def _run_hook(home: pathlib.Path, extra_env: dict | None = None) -> list[str]:
     fake = bin_dir / "teyla"
     fake.write_text('#!/bin/sh\necho "$*" >> "$HOME/calls"\n')
     fake.chmod(0o755)
+    (home / ".teyla").mkdir(exist_ok=True)
+    (home / ".teyla" / "config.toml").touch()  # background work starts only where Teyla was set up on purpose
     env = {"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin", **(extra_env or {})}
     r = subprocess.run(["sh", str(HOOK)], cwd=home, env=env, capture_output=True, text=True, timeout=10)
     assert r.returncode == 0

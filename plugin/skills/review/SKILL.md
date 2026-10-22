@@ -6,7 +6,7 @@ argument-hint: "[--commit <sha>] — review only that fix commit (round two)"
 
 # Review
 
-POLICY §2, without needing any CLI: one pass on the **diff**, never the whole tree; P1/P2
+No Teyla CLI needed: one pass on the **diff**, never the whole tree; P1/P2
 only; at most two rounds per change. A diff review costs a fraction of a whole-tree pass
 (~90k tokens against ~310k) and catches the bug before anything is built on it.
 
@@ -24,7 +24,7 @@ config and dependency bumps with no code; say it was skipped and why.
 ## 2. Who reviews — the first that exists
 
 1. **Another provider.** A `codex-review` or `claude-review`
-   script on PATH (for example `~/ops/bin/codex-review`). Run it from the repo (`--commit <sha>` for round two), in the
+   script on PATH (the diff goes to that provider; use it only if that is acceptable for this repo) (for example one that sends the diff to a second AI provider). Run it from the repo (`--commit <sha>` for round two), in the
    background, and wait for it: no polling, no second copy. Label the result
    "cross-provider review".
 2. **Otherwise one fresh sub-agent** of this harness. In Claude Code: the Agent tool with

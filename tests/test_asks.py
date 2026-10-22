@@ -565,6 +565,7 @@ def _hook(tmp_path, *, count=None, count_age_s=0, stamp_age_s=None, fake_teyla=F
     home = tmp_path / "home"
     (home / ".teyla").mkdir(parents=True, exist_ok=True)
     (home / ".teyla" / "update-check.json").write_text("{}")
+    (home / ".teyla" / "config.toml").write_text("")  # set up on purpose: the hook may start background work
     if count is not None:
         f = home / ".teyla" / "asks.count"
         f.write_text(count)

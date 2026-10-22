@@ -425,7 +425,7 @@ def test_codex_stop_group_alone_is_dropped_when_the_key_goes_off():
 def test_review_skill_is_lean_and_synced_to_the_other_harnesses(fake_home):
     text = (ROOT / "plugin" / "skills" / "review" / "SKILL.md").read_text()
     assert text.startswith("---\nname: review\n")
-    for must in ("No P1/P2", "same-provider review", "cross-provider", "~/ops/bin/codex-review", "--commit <sha>",
+    for must in ("No P1/P2", "same-provider review", "cross-provider", "codex-review", "--commit <sha>",
                  "git merge-base", "P1 path:line — defect — scenario", "No round three", 'model: "opus"'):
         assert must in text, must
     assert len(text.splitlines()) < 80, "under one screen"

@@ -1,22 +1,34 @@
 ---
 name: wiki-pass
-description: File this session's facts into the LLM-maintained wiki — write or update markdown pages from sources, mark them agent-drafted, and let a human confirm. Trigger phrases — "wiki pass", "update the wiki", "file this in the wiki", "what do we know about X", "add to the wiki". Not for how-tos (that's a skill) or never/always constraints (that's a rule) — this skill only files facts, and says where the rest goes.
-argument-hint: [path to the wiki] [fact or topic] — both optional; defaults below
+description: File this session's facts into the LLM-maintained wiki — write or update markdown pages from sources, mark them agent-drafted, and let a human confirm. Needs the `teyla` CLI (`teyla wiki`). Trigger phrases — "wiki pass", "update the wiki", "file this in the wiki", "what do we know about X", "add to the wiki". Not for how-tos (that's a skill) or never/always constraints (that's a rule) — this skill only files facts, and says where the rest goes.
+argument-hint: "[path to the wiki] [fact or topic] — both optional; defaults below"
 ---
 
 # Wiki pass
 
 File what this session (or the human) knows as facts into a wiki: a
 directory of markdown pages a human reviews rather than writes. See
-docs/WIKI.md for the full conventions (frontmatter, bi-temporal bodies, the
-90-day staleness rule). This skill is the mechanism; it never writes a
+https://github.com/zaitsew/teyla/blob/main/docs/WIKI.md for the full conventions
+(frontmatter, bi-temporal bodies, the 90-day staleness rule). This skill is the mechanism; it never writes a
 how-to or a constraint into a page — see step 3.
+
+## Step 0 — check the CLI
+
+```sh
+{ command -v teyla || ls "$HOME/.local/bin/teyla"; } >/dev/null 2>&1 && echo "teyla: found" || echo "teyla: MISSING"
+```
+
+If it prints `teyla: MISSING`, say only this one line and stop; do not run anything else:
+
+> This needs the Teyla CLI. Install it, then ask again: `uv tool install git+https://github.com/zaitsew/teyla` (or `pipx install git+https://github.com/zaitsew/teyla`). Python 3.11 or newer.
+
+If the CLI is found only at `~/.local/bin/teyla` (not on PATH), use that full path wherever a command below says `teyla`.
 
 ## Step 1 — locate the wiki
 
 In order: the path given as an argument; else `wiki/` in the current
-directory; else `~/ops/wiki`. If none of those exist, offer to run
-`teyla wiki init <path>` and stop until the human picks a location.
+directory. If neither exists, offer to run `teyla wiki init <path>` and stop
+until the human picks a location.
 
 ## Step 2 — gather the sources
 
@@ -33,7 +45,7 @@ For each fact, in order:
 1. **Is it a how-to or a constraint, not a fact?** A "how do I do X" is a
    skill; a "must always/never be true" is a rule. Do not write it into the
    wiki. Say where it actually belongs (`.claude/skills/` or
-   `.claude/rules/`, per docs/MANUAL.md §1) and move on.
+   `.claude/rules/`, per https://github.com/zaitsew/teyla/blob/main/docs/MANUAL.md) and move on.
 2. **Does an existing page in `pages/` already cover this topic?** Update it
    in place, bi-temporally — never delete the old fact, supersede it:
    *"Until <date>, X. Since then, Y."*
@@ -67,8 +79,7 @@ If `<path>` is inside a git working tree: create a branch, commit the pages
 you touched with a message naming the topic, and open a PR (`gh pr create`)
 or GitLab MR (`glab mr create` if available; otherwise print the exact
 `git push` command and the MR URL pattern to open by hand). If it is not a
-git repo (e.g. a plain folder in `~/ops` tracked by the ops repo itself),
-just leave the files written — the ops repo's own commit conventions apply.
+git repo, just leave the files written.
 
 ## Report
 

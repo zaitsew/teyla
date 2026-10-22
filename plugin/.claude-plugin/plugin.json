@@ -1,15 +1,24 @@
 {
   "name": "teyla",
-  "version": "0.28.0",
-  "description": "File-only Claude Code adoption toolkit: harvest skills from past sessions, run adoption reviews, and record rules and corrections straight into the repo. No server, no database, nothing leaves the machine.",
+  "displayName": "Teyla",
+  "version": "0.29.0",
+  "description": "Turn repeated work into skills and rules. Harvest skills from past sessions, record corrections, review a diff, tidy rule files. Nothing is uploaded: transcripts, prompts and rules stay on your machine.",
   "author": {
-    "name": "Ivan Zaitsev"
+    "name": "Ivan Zaitsev",
+    "url": "https://github.com/zaitsew"
   },
   "homepage": "https://github.com/zaitsew/teyla",
+  "repository": "https://github.com/zaitsew/teyla",
+  "license": "Apache-2.0",
+  "documentationUrl": "https://github.com/zaitsew/teyla/blob/main/plugin/README.md",
+  "supportUrl": "https://github.com/zaitsew/teyla/issues",
+  "privacyPolicyUrl": "https://github.com/zaitsew/teyla/blob/main/plugin/README.md#privacy",
   "keywords": [
     "routines",
     "corrections",
     "rules",
+    "skills",
+    "code-review",
     "adoption"
   ]
 }
