@@ -107,6 +107,12 @@ columns; the Cowork column follows its statement that hooks run there and has no
 
 ## 6. OpenAI plugin directory, skills-only
 
+**Status 2026-10-23: closed to skills-only plugins.** The portable zip uploaded, and the portal's
+metadata check answered "We are not accepting more skills-only submissions at this time." The draft
+stays in the maintainer's OpenAI organization; try again when OpenAI reopens skills-only submissions. The
+same check also asked for a subtitle of at most 30 characters, website, support, privacy and terms
+URLs, and an app icon.
+
 The guide accepts a Claude Code plugin as a skills-only upload when the archive root, or its single
 top-level folder, holds `.claude-plugin/plugin.json` with a non-empty `description` and at least one
 `skills/<name>/SKILL.md`. The portal then generates `.codex-plugin/plugin.json` itself, so this repo
@@ -141,28 +147,19 @@ Steps:
 The account needs completed identity verification and write access in Apps Management. Both are in
 the checklist below.
 
-## 7. Morning checklist (the maintainer)
+## 7. Submission status
 
-Claude directory, about 15 minutes:
+Claude directory: submitted 2026-10-23 from `main @ 199acf8` (path `plugin`), new versions by the
+scheduled check (about every 6 hours), auto-publish off. Validation passed with 4 warnings and 6 policy
+holds that go to a human reviewer: an image file the code could run (the icon), a credential read
+from the user's machine (3 findings), `hooks/context-budget.sh` not followed, and the name "teyla"
+close to the "tella" connector. Watch the status at <https://claude.ai/directory/manage>: Scanning,
+In review, Approved, Published. Fix a **Needs changes** result from the plugin's page.
 
-1. Merge the PR for this branch after review. The directory scans the repo's default branch.
-2. Check the repo is public: <https://github.com/zaitsew/teyla/settings> (it is, as of this writing).
-3. Sign in at <https://claude.ai/directory/manage> and choose **Plugin bundle**.
-4. **Source:** connect GitHub on claude.ai when the portal asks. If the repo were private, install the
-   Claude GitHub App on `zaitsew/teyla` first; for a public repo the portal needs no app. Enter the plugin path `plugin`.
-5. **Validate:** wait for the check. A failure names the file and the fix.
-6. **Listing details:** paste section 1 above.
-7. **Data handling:** paste section 2.
-8. **Compliance:** enter the contact email, read the four acknowledgements, tick them.
-9. **Review and submit:** choose the push-webhook trigger if offered (otherwise the scheduled check).
-   Leave auto-publish off for the first version, so a reviewer's approval does not publish by surprise.
-10. Watch the status: Scanning, In review, Approved, Published. Fix a **Needs changes** result from the plugin's page.
+To submit again from scratch: <https://claude.ai/directory/manage> > **Submit new** > **Plugin
+bundle**, repository `zaitsew/teyla`, path `plugin`, then sections 1 to 3 above.
 
-OpenAI directory, about 10 minutes:
-
-1. Complete individual verification at <https://platform.openai.com/settings/organization/general>.
-2. Confirm the account has write access under Apps Management in the same organization settings.
-3. Run `scripts/build_openai_plugin.py`, then follow section 6 from step 2.
+OpenAI directory: closed to skills-only plugins (section 6).
 
 ## 8. Versioning
 
