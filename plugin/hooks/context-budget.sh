@@ -35,7 +35,8 @@ awk '
   }
   END { exit on ? 0 : 1 }' "$cfg" 2>/dev/null || exit 0
 
-hook_dir=$(cd "$(dirname "$0")" 2>/dev/null && pwd) || exit 0
+# Claude Code sets CLAUDE_PLUGIN_ROOT to this plugin's folder; without it there is nothing to run.
+[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] || exit 0
 py=""
 if [ -n "$TEYLA_PYTHON" ] && [ -x "$TEYLA_PYTHON" ]; then
   py="$TEYLA_PYTHON"
@@ -63,5 +64,5 @@ if [ -z "$py" ]; then
 fi
 [ -n "$py" ] || exit 0
 
-"$py" "$hook_dir/context-budget.py" 2>/dev/null
+"$py" "${CLAUDE_PLUGIN_ROOT}/hooks/context-budget.py" 2>/dev/null
 exit 0

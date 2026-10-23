@@ -243,37 +243,18 @@ if [ -f "$cfg" ]; then
       END { exit off ? 0 : 1 }' "$cfg" 2>/dev/null && exit 0
 fi
 
-# The plugin ships inside the teyla repo, so its sources sit one level up. Used only as a
-# fallback, when teyla is not installed on this machine (same as pre-tool-use.sh).
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
-    src="${CLAUDE_PLUGIN_ROOT}/../src"
-else
-    src="${0%/*}/../../src"
-fi
-
+# Only the installed `teyla` CLI answers; with none on this machine the guard allows.
 teyla=$(command -v teyla 2>/dev/null)
 [ -n "$teyla" ] && [ -x "$teyla" ] || teyla=""
 [ -n "$teyla" ] || { [ -x "$HOME/.local/bin/teyla" ] && teyla="$HOME/.local/bin/teyla"; }
-py=""
-if [ -z "$teyla" ] && [ -d "$src/teyla" ]; then
-    py=$(command -v python3 2>/dev/null)
-    # /usr/bin/python3 on a Mac without the developer tools pops an install dialog instead of running.
-    if [ "$py" = /usr/bin/python3 ] && [ "$(uname -s 2>/dev/null)" = Darwin ]; then
-        xcode-select -p >/dev/null 2>&1 || py=""
-    fi
-fi
-[ -n "$teyla" ] || [ -n "$py" ] || exit 0
+[ -n "$teyla" ] || exit 0
 
 # The decision log (~/.teyla/guard-decisions.tsv) names the harness; Grok's hook runs in no
 # environment that gives it away.
 [ "$mode" = "--grok" ] && export TEYLA_HARNESS=grok
 
 for kind in $kinds; do
-    if [ -n "$teyla" ]; then
-        out=$("$teyla" load --admit "$kind" 2>/dev/null)
-    else
-        out=$(PYTHONPATH="$src${PYTHONPATH:+:$PYTHONPATH}" "$py" -m teyla load --admit "$kind" 2>/dev/null)
-    fi
+    out=$("$teyla" load --admit "$kind" 2>/dev/null)
     status=$?
     # Exit 2 is also what argparse says to an older teyla that has no --admit; only the
     # guard's own refusal, which starts with this prefix, blocks.

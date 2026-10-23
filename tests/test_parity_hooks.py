@@ -26,7 +26,8 @@ GIT_ID = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
 
 def _env(tmp_path: pathlib.Path, **extra) -> dict:
     env = {k: v for k, v in os.environ.items() if k not in ("TEYLA_HOME", "TEYLA_SAFE")}
-    env.update(HOME=str(tmp_path / "home"), TMPDIR=str(tmp_path / "tmp"), TEYLA_PYTHON=sys.executable, **GIT_ID)
+    env.update(HOME=str(tmp_path / "home"), TMPDIR=str(tmp_path / "tmp"), TEYLA_PYTHON=sys.executable,
+               CLAUDE_PLUGIN_ROOT=str(ROOT / "plugin"), **GIT_ID)
     env.update(extra)
     (tmp_path / "home" / ".teyla").mkdir(parents=True, exist_ok=True)
     (tmp_path / "tmp").mkdir(exist_ok=True)

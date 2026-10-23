@@ -21,6 +21,8 @@ PLUGIN = ROOT / "plugin"
 INSTALL_LINE = "uv tool install git+https://github.com/zaitsew/teyla"
 MARKETPLACE_LINE = "/plugin install teyla --marketplace zaitsew/teyla"
 SHIPPED = [p for p in sorted(PLUGIN.rglob("*")) if p.is_file()]
+ICON = PLUGIN / ".claude-plugin" / "icon.png"
+TEXT = [p for p in SHIPPED if p != ICON]  # the icon is the one binary file the plugin ships
 SKILLS = sorted(PLUGIN.glob("skills/*/SKILL.md"))
 COMMANDS = sorted(PLUGIN.glob("commands/*.md"))
 # Components that run the separately installed CLI, and the ones that must not need it.
@@ -88,11 +90,19 @@ def test_plugin_folder_passes_the_file_checks():
         assert not p.is_symlink(), rel
         assert p.name not in {".DS_Store", "Thumbs.db", "desktop.ini"} and "__MACOSX" not in rel.parts, rel
         assert p.stat().st_size < 256 * 1024, rel
-        assert b"\0" not in p.read_bytes(), f"{rel} is binary: the directory holds binary files for a reviewer"
+        assert p == ICON or b"\0" not in p.read_bytes(), f"{rel} is binary: the directory holds binary files for a reviewer"
         assert not re.search(r'[:<>"|?*]|[. ]$', p.name), f"{rel}: name invalid on Windows"
     assert not (PLUGIN / ".mcp.json").exists() and not (PLUGIN / "bin").exists()
     lower = [str(p.relative_to(PLUGIN)).lower() for p in SHIPPED]
     assert len(lower) == len(set(lower)), "two names differ only by case"
+
+
+def test_icon_is_a_square_png_under_2_mb():
+    data = ICON.read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n" and data[12:16] == b"IHDR"
+    width, height = int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+    assert width == height >= 512
+    assert len(data) < 2 * 1024 * 1024
 
 
 @pytest.mark.parametrize("path", SKILLS + COMMANDS, ids=lambda p: f"{p.parent.name}/{p.name}")
@@ -120,7 +130,7 @@ PRIVATE_PATHS = re.compile(r"~/ops\b|/ops/|/Users/|/home/[a-z]")
 
 def test_no_private_name_or_path_ships_in_the_plugin_folder():
     hits = [f"{p.relative_to(ROOT)}:{n}: {line.strip()[:80]}"
-            for p in SHIPPED for n, line in enumerate(p.read_text().splitlines(), 1) if PRIVATE_PATHS.search(line)]
+            for p in TEXT for n, line in enumerate(p.read_text().splitlines(), 1) if PRIVATE_PATHS.search(line)]
     assert hits == []
 
 
@@ -133,7 +143,7 @@ def test_the_private_term_list_finds_nothing_in_the_plugin_folder():
     if not cfg.terms:
         pytest.skip("no private term list on this machine")
     found = []
-    for p in SHIPPED + [ROOT / "docs" / "DIRECTORY.md"]:
+    for p in TEXT + [ROOT / "docs" / "DIRECTORY.md"]:
         found += lc.scan_lines(str(p.relative_to(ROOT)), str(p.relative_to(ROOT)),
                                enumerate(p.read_text().splitlines(), 1), cfg)
     assert [f for f in found if "LICENSE" not in f.path] == []
@@ -238,6 +248,17 @@ def test_every_command_in_hooks_json_is_one_of_the_scripts_above():
     assert {re.search(r"hooks/([a-z-]+\.sh)", c).group(1) for c in cmds} == set(PAYLOADS)
 
 
+def test_hook_scripts_name_no_path_above_the_plugin_and_run_no_inline_python():
+    """The directory validator blocks `..` in a command's path (COMMAND_PATH_ABOVE_PLUGIN) and a path the shell
+    computes (COMMAND_PATH_COMPUTED, `dirname "$0"`, an inline `python3 -c` program). The code the hooks run
+    is the installed package's, reached with `python -m`."""
+    bad = re.compile(r"\.\./|\bpython3? +-c\b|\"\$py\" +-c\b|dirname \"\$0\"|\$\{0%|\bperl +-e\b|\bnode +-e\b")
+    hits = [f"{p.name}:{n}: {line.strip()[:80]}" for p in sorted((PLUGIN / "hooks").glob("*.sh"))
+            for n, line in enumerate(p.read_text().splitlines(), 1)
+            if not line.lstrip().startswith("#") and bad.search(line)]
+    assert hits == []
+
+
 def test_session_start_prints_only_the_rule_count_without_the_cli(tmp_path):
     cache, env = hook_sandbox(tmp_path)
     repo = tmp_path / "repo"; (repo / ".claude" / "rules").mkdir(parents=True)
@@ -294,7 +315,7 @@ NETWORK = re.compile(r"\b(curl|wget|socket|urllib|requests|http\.client|nc|netca
 
 
 def test_no_plugin_script_or_skill_makes_a_network_call():
-    files = [p for p in SHIPPED if p.suffix in {".sh", ".py", ".md", ".json"} and p.name not in {"README.md", "LICENSE"}]
+    files = [p for p in TEXT if p.suffix in {".sh", ".py", ".md", ".json"} and p.name not in {"README.md", "LICENSE"}]
     hits = []
     for p in files:
         for n, line in enumerate(p.read_text().splitlines(), 1):

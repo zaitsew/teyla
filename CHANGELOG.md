@@ -9,6 +9,11 @@
   the plugin never installs launchd agents. Skill text no longer names private paths or products.
   `scripts/build_openai_plugin.py` builds the skills-only archive for OpenAI's directory; `docs/DIRECTORY.md` holds the
   listing text, data-handling answers and the submission checklist for both.
+- **Plugin hooks pass the directory validator.** The hooks no longer reach `../src` or run inline `python3 -c` programs:
+  `pre-tool-use.sh`, `capture-correction.sh` and `capture-intent.sh` run the installed package with `python -m teyla...`
+  (from a checkout, set `PYTHONPATH=src`), `machine-guard.sh` needs the `teyla` CLI, and `context-budget.sh` runs the
+  script at `${CLAUDE_PLUGIN_ROOT}/hooks/`. `session-start.sh --context-json` escapes its JSON in sh. The plugin ships
+  `.claude-plugin/icon.png` (1024 px).
 - **Decision log and replay.** Every `teyla load --admit` and finished `--wait` appends to `~/.teyla/guard-decisions.tsv`
   (time, kind, verdict, admitted or refused, reason, cwd, harness). `teyla load` ends with the last hour's counts.
   `teyla load --replay [--days N]` runs the verdict and the admission over `load.tsv`, per day.
