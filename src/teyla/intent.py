@@ -632,3 +632,7 @@ def register(sp):
     q.add_argument("--last", type=int, metavar="N", help="cover: only the last N entries")
     q.add_argument("--model", action="store_true", help="cover: one Claude Haiku call for what words cannot settle")
     return q
+
+
+if __name__ == "__main__":  # pragma: no cover - `python -m teyla.intent [harness]`, run by capture-intent.sh
+    hook_main(harness=sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else None)

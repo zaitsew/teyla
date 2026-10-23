@@ -73,9 +73,12 @@ policy changes. Read each one in the portal before ticking it.
 
 What the scan and a reviewer will see, so none of it surprises the maintainer:
 
-- The hooks live in a subfolder plugin. The docs say scripts with inline Python, command substitution,
-  non-shell files or `../src` fallbacks are held for a human reviewer rather than blocked. Expect a
-  hold on `plugin/hooks/context-budget.py` (a Python file) and on `$(...)` and `python3 -c` in several
+- The hooks live in a subfolder plugin. The validator blocks a command path that climbs above the
+  plugin (`../src`) and a path the shell computes (`dirname "$0"`, an inline `python3 -c` program).
+  The hooks name neither: they run the installed package with `python3 -m teyla...`, and
+  `context-budget.sh` runs `${CLAUDE_PLUGIN_ROOT}/hooks/context-budget.py`. Scripts with command
+  substitution and non-shell files are held for a human reviewer rather than blocked. Expect a hold on
+  `plugin/hooks/context-budget.py` (a Python file) and on `$(...)` and `awk '...'` programs in several
   scripts. The README documents each hook, its default and what it writes.
 - Hooks do not run in Claude chat on the web. Skills and commands do load there.
 - A passing version is not live until the card says **Published**. **Approved** is not installable.

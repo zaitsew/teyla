@@ -517,3 +517,7 @@ def hook_main(stream=None) -> None:
         capture(json.load(stream or sys.stdin))
     except Exception:  # noqa: BLE001 — a hook must never fail the session
         pass
+
+
+if __name__ == "__main__":  # pragma: no cover - `python -m teyla.corrections`, run by capture-correction.sh
+    hook_main()

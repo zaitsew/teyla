@@ -212,7 +212,11 @@ memory_index() {
 if [ "$mode" = "--context-json" ]; then
   text=$(orientation 2>/dev/null)
   if [ -n "$text" ]; then
-    printf '%s' "$text" | python3 -c 'import json, sys; print(json.dumps({"context": sys.stdin.read().strip()}))' 2>/dev/null
+    # JSON-escape in sh: \ and " escaped, one \n per line, tabs and other control characters
+    # turned into spaces.
+    esc=$(printf '%s' "$text" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/$/\\n/' \
+      | tr '\000-\011\013-\037' ' ' | tr -d '\n')
+    printf '{"context": "%s"}\n' "${esc%\\n}"
   fi
   exit 0
 fi

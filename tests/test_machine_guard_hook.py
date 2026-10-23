@@ -252,7 +252,7 @@ def test_a_broken_teyla_never_blocks(box, mode):
 
 def test_a_missing_teyla_never_blocks(box, tmp_path):
     (box.bin / "teyla").unlink()
-    # a copy of the script away from the repo, so there is no ../../src to fall back on
+    # a copy of the script away from the repo; the only answer is the CLI, and there is none
     lone = tmp_path / "plugin" / "hooks"
     lone.mkdir(parents=True)
     shutil.copy(HOOK, lone / "machine-guard.sh")
@@ -265,19 +265,6 @@ def test_teyla_in_dot_local_bin_is_found_when_it_is_not_on_path(box):
     shutil.move(box.bin / "teyla", box.home / ".local" / "bin" / "teyla")
     r = box.run("xcodebuild test")
     assert r.returncode == 2 and r.stderr == REFUSAL + "\n"
-
-
-@pytest.mark.skipif(sys.platform != "darwin", reason="`teyla load` reads macOS sysctl keys")
-def test_without_teyla_on_path_the_plugins_own_sources_answer(box, tmp_path):
-    # The repo's src is the fallback (pre-tool-use.sh does the same). Thresholds this low make any
-    # machine CRITICAL, so the real `teyla load --admit` refuses without the fake.
-    (box.bin / "teyla").unlink()
-    py = box.bin / "python3"
-    py.symlink_to(sys.executable)
-    box.config("[guard]\nload_crit_per_core = 0.0001\nload_warn_per_core = 0.00001\n")
-    r = box.run("xcodebuild test", CLAUDE_PLUGIN_ROOT=str(ROOT / "plugin"))
-    assert r.returncode == 2, r.stderr
-    assert r.stderr.startswith("teyla guard: build refused")
 
 
 # --- the ways out -------------------------------------------------------------------------------

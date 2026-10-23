@@ -47,38 +47,17 @@ if [ -z "${TEYLA_GRANTS:-}" ]; then
     fi
 fi
 
-# The plugin ships inside the teyla repo, so its sources sit one level up. Used
-# only as a fallback, when teyla is not installed as a package on this machine.
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
-    TEYLA_HOOK_SRC="${CLAUDE_PLUGIN_ROOT}/../src"
-else
-    TEYLA_HOOK_SRC="${0%/*}/../../src"
-fi
-export TEYLA_HOOK_SRC
-
-python3 -c '
-import os, sys
-
-src = os.environ.get("TEYLA_HOOK_SRC")
-try:
-    from teyla.control.hook import main
-except Exception:
-    if src and os.path.isdir(src):
-        sys.path.insert(0, os.path.abspath(src))
-    try:
-        from teyla.control.hook import main
-    except Exception as e:
-        sys.stderr.write(
-            "teyla: this call runs under TEYLA_GRANTS but capability enforcement could not be "
-            "loaded (%s), so it is refused. Install teyla, or unset TEYLA_GRANTS.\n" % e
-        )
-        raise SystemExit(2)
-
-raise SystemExit(main())
-'
+# The enforcement code is `teyla.control.hook`, from the installed `teyla` package (or from
+# PYTHONPATH, when run from a checkout). There is no copy of it in the plugin. Its own exits
+# are 0 (allow) and 2 (block); any other status means the interpreter or the import failed.
+python3 -m teyla.control.hook
 status=$?
 
 # Anything other than allow/block is normalised to block: a crashed interpreter
 # under an armed run is a denial, not a permission.
+if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
+    echo "teyla: this call runs under TEYLA_GRANTS but capability enforcement could not be" \
+         "loaded (python3 exited $status), so it is refused. Install teyla, or unset TEYLA_GRANTS." >&2
+fi
 [ "$status" -eq 0 ] && exit 0
 exit 2

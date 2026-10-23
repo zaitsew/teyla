@@ -19,7 +19,6 @@
 # path exits 0.
 
 {
-  hook_dir=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
   py=""
   if [ -n "$TEYLA_PYTHON" ] && [ -x "$TEYLA_PYTHON" ]; then
     py="$TEYLA_PYTHON"
@@ -46,17 +45,7 @@
   fi
   [ -n "$py" ] || exit 0
 
-  "$py" -c '
-import os, sys
-src = os.path.join(sys.argv[1], "..", "..", "src") if len(sys.argv) > 1 and sys.argv[1] else ""
-if src and os.path.isfile(os.path.join(src, "teyla", "intent.py")):
-    sys.path.insert(0, os.path.abspath(src))
-try:
-    from teyla.intent import hook_main
-except Exception:
-    sys.exit(0)
-hook_main(harness=sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else None)
-' "$hook_dir" "$1"
+  "$py" -m teyla.intent "$1"
 } >/dev/null 2>&1
 
 exit 0

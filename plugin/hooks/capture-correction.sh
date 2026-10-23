@@ -17,10 +17,10 @@
 #      every prompt, so it asks `xcode-select -p` first and stays silent if the tools
 #      are absent.
 #
-# When the script runs from a checkout (plugin/hooks/ beside src/teyla), that source is
-# put first on sys.path, so the hook and the code it calls are the same version. With no
-# importable `teyla` at all, nothing is recorded: writing an unscrubbed prompt is the
-# failure this design exists to prevent.
+# The interpreter runs `python -m teyla.corrections`, so the code that records is the
+# installed package's (or PYTHONPATH's, when run from a checkout) and the plugin carries no
+# copy of it. With no importable `teyla` at all, nothing is recorded: writing an unscrubbed
+# prompt is the failure this design exists to prevent.
 #
 # Not every prompt is the human typing (`is_noise_turn` drops `<task-notification>`,
 # `<system-reminder>`, `[SYSTEM NOTIFICATION …]` …), and the prompt arrives under
@@ -37,7 +37,6 @@
 # never fails the session — every error path below still exits 0.
 
 {
-  hook_dir=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
   py=""
   if [ -n "$TEYLA_PYTHON" ] && [ -x "$TEYLA_PYTHON" ]; then
     py="$TEYLA_PYTHON"
@@ -65,17 +64,7 @@
   fi
   [ -n "$py" ] || exit 0
 
-  "$py" -c '
-import os, sys
-src = os.path.join(sys.argv[1], "..", "..", "src") if len(sys.argv) > 1 and sys.argv[1] else ""
-if src and os.path.isfile(os.path.join(src, "teyla", "corrections.py")):
-    sys.path.insert(0, os.path.abspath(src))
-try:
-    from teyla.corrections import hook_main
-except Exception:
-    sys.exit(0)
-hook_main()
-' "$hook_dir"
+  "$py" -m teyla.corrections
 } >/dev/null 2>&1
 
 exit 0
