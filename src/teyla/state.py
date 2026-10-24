@@ -1130,6 +1130,15 @@ def relay_view() -> dict:
     return out
 
 
+def notes_view() -> dict:
+    """Open notes (`teyla note`): {"inbox": n, "by_product": {id: n}}."""
+    from . import notes
+    try:
+        return notes.counts()
+    except Exception:  # noqa: BLE001 — the snapshot never fails for a note file
+        return {"inbox": 0, "by_product": {}}
+
+
 # --- the snapshot -----------------------------------------------------------------------------
 
 def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dict | None = None,
@@ -1137,7 +1146,7 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
           projects: str | None = None, codex_root: str | None = None, codex_archive: str | None = None,
           reminders: pathlib.Path | None = None, model_brief: bool = True, runs: list[dict] | None = None,
           backlog_data: dict | None = None, approved: set | None = None, ledger: dict | None = None,
-          relay: dict | None = None) -> dict:
+          relay: dict | None = None, notes: dict | None = None) -> dict:
     now = asks._now() if now is None else now
     if items is None:
         items = asks.collect(days, now, desktop=desktop, projects=projects, codex_root=codex_root,
@@ -1185,7 +1194,8 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
                      "tasks": len(tasks), "done": len(done)},
           "asks": rows, "tasks": tasks, "done": done, "products": prods,
           "running": [{k: v for k, v in r.items() if k != "_last"} for r in run],
-          "relay": relay_view() if relay is None else relay}
+          "relay": relay_view() if relay is None else relay,
+          "notes": notes_view() if notes is None else notes}
     st["brief"] = {"line": _words(model["brief"]), "source": "model"} if model else brief_line(st)
     return st
 

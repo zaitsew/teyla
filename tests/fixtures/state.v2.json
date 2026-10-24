@@ -239,5 +239,11 @@
   "paired": false,
   "folder": "",
   "synced": ""
+ },
+ "notes": {
+  "inbox": 1,
+  "by_product": {
+   "cellar": 2
+  }
  }
 }
