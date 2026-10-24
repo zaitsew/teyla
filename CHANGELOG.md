@@ -2,6 +2,15 @@
 
 ## Unreleased — The machine guard stops starting heavy work while memory runs out
 
+- **Text notes (`teyla note`, `teyla notes`).** Quick ideas are kept as typed, linked to a product, and counted in the snapshot.
+  `teyla note "text"` writes one event to `~/.teyla/notes/notes.jsonl` (append-only, 0600, under a flock) and prints its id,
+  product, how the product was chosen and the first 60 characters. Without `--product` the product is the one the text
+  names, else the registered product of the current directory, else `inbox`; an unknown `--product` is refused with the
+  close names. `link`, `drop` and `undrop` are appended events that the reader folds. A note linked to a registered
+  product is also added, as typed, to that product's `teyla intent` file; `link` adds it under the new product. `teyla
+  notes [--product P | --inbox] [--all] [--json]` lists them newest first, and `teyla state --json` gains `notes:
+  {inbox, by_product}`. Voice, shaping a note into a task and the Mac capture panel come later. `docs/NOTES.md`.
+
 - **Product registry (`teyla product`).** The product of a session is no longer guessed from its working directory. A file,
   `~/.teyla/products.toml`, maps repos, extra paths and aliases to products, with a stage, a primary platform and a focus
   flag. A session resolves in this order: an `[assign]` correction for its session or ask id; the longest registered repo

@@ -112,6 +112,9 @@ new ones, and a version 2 client treats a missing field as empty.
   can be queued into the live session, `open` when the window can only open it.
 - `relay`: `{on, paired, folder, synced}` — whether the iPhone relay is on, whether a phone is
   paired, the folder, and when the Mac last wrote the snapshot there.
+- `notes`: `{inbox, by_product}` — how many open text notes (`teyla note`, `docs/NOTES.md`) wait with no
+  product yet, and how many per registered product. Dropped notes are not counted; without a notes file it
+  is `{inbox: 0, by_product: {}}`. An additive field, so the version stays 2.
 
 Notes on the CLI as built (version 2):
 
