@@ -24,6 +24,9 @@ from teyla.adapters import claude_code, codex, cursor, grok, hermes
 @pytest.fixture(autouse=True)
 def _teyla_home_in_tmp(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("TEYLA_HOME", str(tmp_path_factory.mktemp("teyla-home")))
+    # corrections.grok_headless reads Grok's session store; never this Mac's ~/.grok.
+    monkeypatch.setenv("GROK_HOME", str(tmp_path_factory.mktemp("grok-home")))
+    monkeypatch.delenv("GROK_SESSION_ID", raising=False)
     # The capture hook skips headless runs by these (corrections.headless); a suite started
     # from `claude -p` or `hermes -z` would otherwise see every hook test record nothing.
     for var in ("CLAUDE_CODE_ENTRYPOINT", "HERMES_YOLO_MODE", "HERMES_ACCEPT_HOOKS", "HERMES_INTERACTIVE",
