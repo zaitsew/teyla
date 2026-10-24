@@ -2,6 +2,14 @@
 
 ## Unreleased — The machine guard stops starting heavy work while memory runs out
 
+- **`teyla asks` groups by product, and a parked product stays quiet.** The default listing prints one header per product,
+  `<name>  <n> waiting  [stage]`, with `focus` products first, then the oldest ask, and `unassigned` last; `--flat` keeps the
+  old list. `--json` adds `groups`, `muted` and `muted_products` beside the unchanged keys, and `--html` gets the same headings.
+  An ask in a `parked` product is left out of the list and of the session-start count, and the listing ends with `N muted in
+  parked products (a, b) — teyla asks --all, or teyla product wake <id>`. `--all` or `--product <parked id>` shows them. A
+  `blocked` ask, or one naming security, money or a release failure (`CRITICAL_TERMS`), is never muted and shows marked
+  `parked`. `teyla state --json` (still version 2) adds `muted` to `asks[]` and `muted` to `products[]`, where `waiting` now
+  counts unmuted asks only; muted asks rank last and stay out of the brief. `docs/ASKS.md`, `docs/PRODUCTS.md`.
 - **Text notes (`teyla note`, `teyla notes`).** Quick ideas are kept as typed, linked to a product, and counted in the snapshot.
   `teyla note "text"` writes one event to `~/.teyla/notes/notes.jsonl` (append-only, 0600, under a flock) and prints its id,
   product, how the product was chosen and the first 60 characters. Without `--product` the product is the one the text

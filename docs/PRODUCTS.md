@@ -63,11 +63,21 @@ The old placeholders `(no repo)`, `(home)`, `(scratch)` and `unknown` no longer 
 
 `teyla products` (plural) is the usage table and is unchanged.
 
+## What parking does
+
+A parked product is quiet. `teyla asks` leaves its asks out of the list and out of the session-start
+count, and ends with one line that names the products and how many asks it hid. Critical asks (a
+`blocked` session, or security, money and release-failure words) still show, marked `parked`. `teyla
+asks --all` or `--product <id>` shows the rest, and `teyla product wake <id>` ends the muting. In the
+state snapshot the product's `waiting` counts only unmuted asks and `muted` counts the others. See
+[ASKS.md](ASKS.md).
+
 ## In the state snapshot
 
 `teyla state --json` takes the product names from this file. `products[]` keeps its fields and adds
 `id` (the registry id, same as `name`), `display_name`, `stage`, `focus`, `primary` and `registered`
-(false for a product that only exists because sessions ran in a repo). Every registered product is
+(false for a product that only exists because sessions ran in a repo). `waiting` counts the asks that
+are not muted and `muted` the asks hidden by parking. Every registered product is
 listed, parked ones with stage `parked`; `unassigned` is listed last, and only when something waits
 under it.
 

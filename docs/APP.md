@@ -51,7 +51,10 @@ continuation of an archived session without reopening it, and `codex exec resume
   - `unblocks`: short text such as "the iPhone release", or "".
   - `rank`: 1 = first.
   - `delivery`: `codex`, `claude`, or `open` — what `teyla answer` will try first.
-- `products[]`: `{name, waiting, state, line, last_activity}`.
+  - `muted`: true for an ask in a parked product that is not critical. It is ranked last and is not in the
+    brief or in `totals.questions`. The app hides it by default.
+- `products[]`: `{name, waiting, muted, state, line, last_activity}`. `waiting` counts the asks that are not
+  muted; `muted` counts the asks hidden by parking.
   - `state` is `waiting`, `active`, `shipped` or `quiet`.
   - `line` is one line of status, for example "iPhone 1.1.5 (126) in TestFlight".
 - `running[]`: sessions active in the last 10 minutes: `{product, title, harness, model, since, link}`.

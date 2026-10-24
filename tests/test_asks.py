@@ -474,7 +474,9 @@ def test_text_header_counts_archived_and_groups_by_product(env):
     items = sample(env)
     out = asks.render_text(items, NOW)
     assert out.splitlines()[0] == "2 waiting on you (1 in archived sessions)"
-    assert out.index("app (1)") < out.index("other (1)")
+    assert out.index("app  1 waiting") < out.index("other  1 waiting")
+    flat = asks.render_text(items, NOW, flat=True)
+    assert flat.index("app (1)") < flat.index("other (1)")
     assert "Approve the change" in out and "claude://claude.ai/epitaxy/local_c1" in out
     assert asks.render_text([], NOW) == "nothing is waiting on you."
 
