@@ -4,11 +4,14 @@ A session ends on a question, the desktop app archives it, and nobody reads it a
 days 40 Claude Code sessions ended that way; 38 sat in the archive and 1 got an answer. This
 module reads what is already on disk, read-only, and lists the open ones in one place.
 
-    teyla asks [--days 21] [--product P] [--all] [--json]    open items, grouped by product, oldest first
+    teyla asks [--days 21] [--product P] [--all] [--flat] [--json]   open items, grouped by product (focus first)
     teyla asks done <id-prefix>... [--note TEXT]              close one (or several)
     teyla asks snooze <id-prefix> <days>                      hide one for N days
     teyla asks --html [-o FILE] [--open]                      one self-contained page (default ~/.teyla/asks.html)
     teyla asks --quiet                                        refresh ~/.teyla/asks.count only (what the hook reads)
+
+An ask in a parked product is muted: left out of the list and the count, and summed up in one line at
+the end. `--all` or `--product <id>` shows it. A critical ask is never muted (`CRITICAL_TERMS`).
 
 Sources (nothing is written to them; `docs/ASKS.md` has the field-by-field detail):
 
@@ -120,6 +123,46 @@ class Ask:
             d.pop("due")
         d.pop("session")          # internal: `teyla answer` needs it, the `asks --json` schema stays as it was
         return d
+
+
+# --- parked products: what stays quiet, and what never does ------------------------------------
+
+# A parked product is muted, except for an ask that must not be missed: a `blocked` session, or text
+# naming a security, money or release-failure matter. Case-insensitive, whole words; a trailing * lets
+# the word go on (`leak*` is leak, leaked, leaks). One tuple, so the list is easy to read and to change.
+CRITICAL_TERMS = (
+    # security
+    "security", "vulnerab*", "leak*", "secret*", "credential*", "token expired",
+    # money
+    "charge*", "billing", "invoice", "payment", "price",
+    # release failure
+    "rejected", "rejection", "crash*", "build failed", "release failed", "upload failed",
+)
+
+
+def _term_pattern(term: str) -> str:
+    stem = re.escape(term.rstrip("*")).replace(r"\ ", r"\s+")
+    return stem + (r"\w*" if term.endswith("*") else "")
+
+
+_CRITICAL_RE = re.compile(r"\b(?:" + "|".join(_term_pattern(t) for t in CRITICAL_TERMS) + r")\b", re.I)
+
+
+def is_critical(a: "Ask") -> bool:
+    return a.kind == "blocked" or bool(_CRITICAL_RE.search(f"{a.title}\n{a.question}\n{a.context}"))
+
+
+def stage_of(reg: dict, product: str) -> str:
+    return (reg["product"].get(product) or {}).get("stage") or ""
+
+
+def is_parked(a: "Ask", reg: dict) -> bool:
+    return stage_of(reg, a.product) == "parked"
+
+
+def is_muted(a: "Ask", reg: dict) -> bool:
+    """In a parked product and not critical."""
+    return is_parked(a, reg) and not is_critical(a)
 
 
 def _iso(epoch: float) -> str:
@@ -764,34 +807,85 @@ def header(items: list[Ask]) -> str:
     return f"{n} waiting on you ({m} in archived sessions)"
 
 
-def group(items: list[Ask]) -> list[tuple[str, list[Ask]]]:
+def group(items: list[Ask], reg: dict | None = None, flat: bool = False) -> list[tuple[str, list[Ask]]]:
+    """(product, asks) pairs. Focus products first, then by the oldest ask in the group, `unassigned`
+    last. The asks of a group keep the order they came in (oldest first). `flat`: the old order, by the
+    oldest ask alone."""
+    reg = registry.load() if reg is None else reg
     by: dict[str, list[Ask]] = {}
     for a in items:
         by.setdefault(a.product, []).append(a)
-    return sorted(by.items(), key=lambda kv: min(a.when for a in kv[1]))
+    if flat:
+        return sorted(by.items(), key=lambda kv: min(a.when for a in kv[1]))
+    return sorted(by.items(), key=lambda kv: (kv[0] == registry.UNASSIGNED,
+                                              not (reg["product"].get(kv[0]) or {}).get("focus"),
+                                              min(a.when for a in kv[1])))
 
 
-def render_text(items: list[Ask], now: float) -> str:
+def display_name(reg: dict, product: str) -> str:
+    return (reg["product"].get(product) or {}).get("name") or ("Unassigned" if product == registry.UNASSIGNED else product)
+
+
+def group_head(reg: dict, product: str, n: int) -> str:
+    stage = stage_of(reg, product)
+    return f"{display_name(reg, product)}  {n} waiting" + (f"  [{stage}]" if stage else "")
+
+
+def muted_line(muted: list[Ask]) -> str:
+    """The one line that says what the default list left out; empty when nothing was."""
+    if not muted:
+        return ""
+    names = sorted({a.product for a in muted})
+    return f"{len(muted)} muted in parked products ({', '.join(names)}) — teyla asks --all, or teyla product wake <id>"
+
+
+def _flags(a: Ask, reg: dict) -> list[str]:
+    return (["archived"] if a.archived else []) + ([a.status] if a.status != "open" else []) \
+        + (["parked"] if is_parked(a, reg) else []) + [a.kind]
+
+
+def _ask_lines(a: Ask, now: float, reg: dict) -> list[str]:
+    lines = [f"  {a.id}  {fmt_age(now - a.when):>5}  [{', '.join(_flags(a, reg))}]  {a.title}",
+             "      " + a.question.replace("\n", "\n      ")]
+    if a.context:
+        lines.append("      -- " + a.context.replace("\n", " "))
+    if a.options:
+        lines.append("      options: " + " | ".join(a.options))
+    lines.append(f"      open: {a.link}" + (f"    pr: {a.pr}" if a.pr else ""))
+    return lines
+
+
+def render_text(items: list[Ask], now: float, *, flat: bool = False, muted: list[Ask] | None = None,
+                reg: dict | None = None) -> str:
+    """Grouped by product with a header per product; `flat` keeps the old list, one `product (n)` header each."""
+    reg = registry.load() if reg is None else reg
     lines = [header(items)]
-    for product, rows in group(items):
-        lines += ["", f"{product} ({len(rows)})"]
+    for product, rows in group(items, reg, flat):
+        lines += ["", f"{product} ({len(rows)})" if flat else group_head(reg, product, len(rows))]
         for a in rows:
-            flags = (["archived"] if a.archived else []) + ([a.status] if a.status != "open" else []) + [a.kind]
-            lines.append(f"  {a.id}  {fmt_age(now - a.when):>5}  [{', '.join(flags)}]  {a.title}")
-            lines.append("      " + a.question.replace("\n", "\n      "))
-            if a.context:
-                lines.append("      -- " + a.context.replace("\n", " "))
-            if a.options:
-                lines.append("      options: " + " | ".join(a.options))
-            lines.append(f"      open: {a.link}" + (f"    pr: {a.pr}" if a.pr else ""))
+            lines += _ask_lines(a, now, reg)
     if items:
         lines += ["", "close one: teyla asks done <id>   hide for a while: teyla asks snooze <id> <days>"]
+    note = muted_line(muted or [])
+    if note:
+        lines += ["", note]
     return "\n".join(lines)
 
 
-def render_json(items: list[Ask], now: float) -> str:
+def group_dicts(items: list[Ask], reg: dict) -> list[dict]:
+    return [{"product": product, "display_name": display_name(reg, product), "stage": stage_of(reg, product),
+             "focus": bool((reg["product"].get(product) or {}).get("focus")), "count": len(rows),
+             "ids": [a.id for a in rows]}
+            for product, rows in group(items, reg)]
+
+
+def render_json(items: list[Ask], now: float, *, muted: list[Ask] | None = None, reg: dict | None = None) -> str:
+    reg = registry.load() if reg is None else reg
+    muted = muted or []
     return json.dumps({"waiting": len(items), "archived": sum(1 for a in items if a.archived),
-                       "generated": _iso(now), "items": [a.to_dict(now) for a in items]}, indent=1)
+                       "generated": _iso(now), "items": [a.to_dict(now) for a in items],
+                       "groups": group_dicts(items, reg),
+                       "muted": len(muted), "muted_products": sorted({a.product for a in muted})}, indent=1)
 
 
 _CSS = """
@@ -825,7 +919,9 @@ def _e(s) -> str:
     return html.escape(str(s), quote=True)
 
 
-def render_html(items: list[Ask], now: float) -> str:
+def render_html(items: list[Ask], now: float, *, flat: bool = False, muted: list[Ask] | None = None,
+                reg: dict | None = None) -> str:
+    reg = registry.load() if reg is None else reg
     kinds = {}
     for a in items:
         kinds[a.kind] = kinds.get(a.kind, 0) + 1
@@ -840,14 +936,16 @@ def render_html(items: list[Ask], now: float) -> str:
              + f' &middot; as of {_e(_iso(now))}</p>']
     if not items:
         parts.append('<p class="none">Nothing is waiting on you.</p>')
-    for product, rows in group(items):
-        parts.append(f'<h2>{_e(product)} &middot; {len(rows)}</h2>')
+    for product, rows in group(items, reg, flat):
+        parts.append(f'<h2>{_e(product)} &middot; {len(rows)}</h2>' if flat else
+                     f'<h2>{_e(group_head(reg, product, len(rows)))}</h2>')
         for a in rows:
             done_cmd = f"teyla asks done {a.id}"
             parts.append('<section class="card"><div class="meta">'
                          f'<span>{_e(product)}</span><span>{_e(fmt_age(now - a.when))}</span>'
                          f'<span class="badge">{_e(a.kind)}</span>'
                          + ('<span class="badge arch">archived</span>' if a.archived else '')
+                         + ('<span class="badge">parked</span>' if is_parked(a, reg) else '')
                          + (f'<span class="badge">{_e(a.status)}</span>' if a.status != "open" else '')
                          + f'<span>{_e(a.id)}</span></div>')
             parts.append(f'<div class="q">{_e(a.question)}</div>')
@@ -864,13 +962,16 @@ def render_html(items: list[Ask], now: float) -> str:
                 parts.append(f'<a class="open" href="{_e(a.pr)}">PR</a>')
             parts.append(f'<button type="button" data-cmd="{_e(done_cmd)}">copy &ldquo;done&rdquo; command</button>')
             parts.append('</div></section>')
+    note = muted_line(muted or [])
+    if note:
+        parts.append(f'<p class="sum">{_e(note)}</p>')
     parts.append(f'</main><script>{_JS}</script></body></html>')
     return "".join(parts)
 
 
-def write_html(items: list[Ask], now: float, out: str | None = None) -> pathlib.Path:
+def write_html(items: list[Ask], now: float, out: str | None = None, **kw) -> pathlib.Path:
     p = pathlib.Path(out).expanduser() if out else html_path()
-    _atomic_write(p, render_html(items, now))
+    _atomic_write(p, render_html(items, now, **kw))
     return p
 
 
@@ -918,20 +1019,26 @@ def cmd_asks(args) -> int:
         return 64
     days = args.days or DEFAULT_DAYS
     everything = collect(days, now)
+    reg = registry.load()
     if not args.product and days == DEFAULT_DAYS and not args.all:
-        write_count(everything)
+        write_count([a for a in everything if not is_muted(a, reg)])      # what the default list shows
     if args.quiet:
         return 0
     items = [a for a in everything if args.all or a.status == "open"]
     if args.product:
         items = [a for a in items if a.product == args.product]
+    muted: list[Ask] = []
+    if not args.all and stage_of(reg, args.product or "") != "parked":
+        muted = [a for a in items if is_muted(a, reg)]
+        items = [a for a in items if not is_muted(a, reg)]
     if args.html:
-        p = write_html(items, now, args.out)
+        p = write_html(items, now, args.out, flat=args.flat, muted=muted, reg=reg)
         print(f"{header(items)}\n{p}")
         if args.open:
             _open_file(p)
         return 0
-    print(render_json(items, now) if args.json else render_text(items, now))
+    print(render_json(items, now, muted=muted, reg=reg) if args.json
+          else render_text(items, now, flat=args.flat, muted=muted, reg=reg))
     return 0
 
 
@@ -940,8 +1047,9 @@ def register(sp):
     q.set_defaults(fn=cmd_asks)
     q.add_argument("words", nargs="*", help="done <id-prefix>... | snooze <id-prefix> <days>; none lists")
     q.add_argument("--days", type=int, help=f"look back this far (default {DEFAULT_DAYS})")
-    q.add_argument("--product", help="one product (repo name)")
-    q.add_argument("--all", action="store_true", help="include done and snoozed items")
+    q.add_argument("--product", help="one product (registry id); a parked product shows its muted asks")
+    q.add_argument("--all", action="store_true", help="include done and snoozed items, and the asks of parked products")
+    q.add_argument("--flat", action="store_true", help="one list by product, not one group per product with its stage")
     q.add_argument("--json", action="store_true")
     q.add_argument("--html", action="store_true", help="write one self-contained page (default ~/.teyla/asks.html)")
     q.add_argument("-o", "--out", help="--html: write here instead")

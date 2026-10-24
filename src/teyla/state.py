@@ -120,14 +120,17 @@ def _due(a: asks.Ask, today: _dt.date) -> bool:
         return False
 
 
-def ranked(items: list[asks.Ask], now: float) -> list[dict]:
+def ranked(items: list[asks.Ask], now: float, reg: dict | None = None) -> list[dict]:
+    """The open asks, most important first. `muted` marks an ask of a parked product that is not critical
+    (`asks.is_muted`); it stays in the list so the app can show it, and the brief leaves it out."""
+    reg = registry.load() if reg is None else reg
     today = _dt.datetime.fromtimestamp(now).date()
     open_ = [a for a in items if a.status == "open" and (a.kind != "reminder" or _due(a, today))]
-    open_.sort(key=lambda a: (-score(a, now), -a.when))
+    open_.sort(key=lambda a: (asks.is_muted(a, reg), -score(a, now), -a.when))
     out = []
     for i, a in enumerate(open_, 1):
         d = a.to_dict(now)
-        d.update(unblocks=unblocks(a), rank=i, delivery=delivery(a))
+        d.update(unblocks=unblocks(a), rank=i, delivery=delivery(a), muted=asks.is_muted(a, reg))
         out.append(d)
     return out
 
@@ -600,12 +603,15 @@ def products_view(items: list[dict], run: list[dict], repos: dict, now: float, k
     by: dict[str, dict] = {}
 
     def slot(name):
-        return by.setdefault(name, {"waiting": 0, "last": 0.0, "title": "", "title_ts": 0.0, "run": "", "tag": False})
+        return by.setdefault(name, {"waiting": 0, "muted": 0, "last": 0.0, "title": "", "title_ts": 0.0, "run": "", "tag": False})
     for a in items:
         s = slot(a["product"])
-        s["waiting"] += 1
         ts = asks._epoch(a["ts"]) or 0.0
         s["last"] = max(s["last"], ts)
+        if a.get("muted"):          # a parked product's ask: counted, but it is not the product's line
+            s["muted"] += 1
+            continue
+        s["waiting"] += 1
         if ts >= s["title_ts"]:
             s["title"], s["title_ts"] = a["title"], ts
     for r in run:
@@ -651,7 +657,7 @@ def products_view(items: list[dict], run: list[dict], repos: dict, now: float, k
         else:
             line = "active today"
         r = reg["product"].get(name) or {}
-        out.append({"name": name, "waiting": s["waiting"], "state": st, "line": line,
+        out.append({"name": name, "waiting": s["waiting"], "muted": s["muted"], "state": st, "line": line,
                     "last_activity": _iso(s["last"]) if s["last"] else "",
                     "id": name, "display_name": r.get("name") or ("Unassigned" if name == registry.UNASSIGNED else name), "stage": r.get("stage") or "",
                     "focus": bool(r.get("focus")), "primary": r.get("primary") or "",
@@ -803,7 +809,7 @@ def _words(text: str) -> str:
 
 def brief_line(st: dict) -> dict:
     """The rule-based sentence on top: the fallback when no model brief is cached for the open questions."""
-    items = st["asks"]
+    items = [a for a in st["asks"] if not a.get("muted")]
     if not items:
         return {"line": "Nothing waits on you.", "source": "rules"}
     top = items[:5]
@@ -958,6 +964,7 @@ def refresh_brief(now: float | None = None, *, rows: list[dict] | None = None) -
         return 0
     if rows is None:
         rows = ranked(asks.collect(asks.DEFAULT_DAYS, now), now)
+    rows = [r for r in rows if not r.get("muted")]          # a parked product's asks are not briefed
     if not rows:
         _brief_lock().unlink(missing_ok=True)
         return 0
@@ -1151,11 +1158,12 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
     if items is None:
         items = asks.collect(days, now, desktop=desktop, projects=projects, codex_root=codex_root,
                              codex_archive=codex_archive, reminders=reminders)
-    rows = ranked(items, now)
+    reg = registry.load()
+    rows = ranked(items, now, reg)
     model = None
     if model_brief:
         try:
-            model = cached_brief(rows, now)
+            model = cached_brief([r for r in rows if not r["muted"]], now)
         except Exception:  # noqa: BLE001 — the model brief is an upgrade; the rules always work
             model = None
     if model:
@@ -1169,7 +1177,6 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
     repos = repo_index() if repos is None else repos
     bl = backlog_view(now) if backlog_data is None else backlog_data
     alias, info = product_names(repos, bl["canonical"])
-    reg = registry.load()
     alias, info = registry_names(reg, alias, info)
     tasks = []
     if bl["prs"] or bl["issues"]:
@@ -1190,7 +1197,7 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
         except Exception:  # noqa: BLE001
             spent = None
     st = {"version": VERSION, "generated": _iso(now), "brief": None,
-          "totals": {"questions": len(rows), "running": len(run), "spent_today_usd": spent,
+          "totals": {"questions": sum(1 for r in rows if not r["muted"]), "running": len(run), "spent_today_usd": spent,
                      "tasks": len(tasks), "done": len(done)},
           "asks": rows, "tasks": tasks, "done": done, "products": prods,
           "running": [{k: v for k, v in r.items() if k != "_last"} for r in run],
@@ -1206,12 +1213,13 @@ def render_text(st: dict, now: float) -> str:
     lines = [st["brief"]["line"] if st["brief"] else "",
              f"{t['questions']} waiting, {t.get('tasks', 0)} tasks, {t.get('done', 0)} done, "
              f"{t['running']} running, {spent} today"]
-    for a in st["asks"][:4]:
+    live = [a for a in st["asks"] if not a.get("muted")]
+    for a in live[:4]:
         why = f"  [{a['unblocks']}]" if a["unblocks"] else ""
         q = a["question"].replace("\n", " ")
         lines.append(f"{a['rank']}. {a['id']} {a['product']}: {q[:70]}{'…' if len(q) > 70 else ''}{why}")
-    if len(st["asks"]) > 4:
-        lines.append(f"   + {len(st['asks']) - 4} more (teyla asks)")
+    if len(live) > 4:
+        lines.append(f"   + {len(live) - 4} more (teyla asks)")
     tasks = st.get("tasks") or []
     if tasks:
         lines.append("Tasks")
