@@ -244,6 +244,28 @@ def test_the_intent_store_being_busy_does_not_lose_the_note(two_products, monkey
     assert n["intent"] is False and notes.listing()[0]["id"] == n["id"]
 
 
+
+def test_a_repeat_link_retries_an_intent_copy_a_busy_store_skipped(two_products, monkeypatch):
+    real = intent.Store.__enter__
+    def busy(*a, **k):
+        raise TimeoutError("intent store is locked")
+    monkeypatch.setattr(intent.Store, "__enter__", busy)
+    n = notes.add("kept while busy", "app-a")
+    assert n["intent"] is False
+    monkeypatch.setattr(intent.Store, "__enter__", real)
+    _, changed = notes.link(n["id"], "app-a")
+    assert changed is False and texts("app-a") == ["kept while busy"]
+    notes.link(n["id"], "app-a")
+    assert texts("app-a") == ["kept while busy"]                      # the store de-duplicates the retry
+
+
+def test_unicode_line_separators_inside_a_note_do_not_lose_it(two_products):
+    text = "first part\u2028second part\u2029third part\x85end"
+    n = notes.add(text, "app-a")
+    assert notes.load()[n["id"]]["text"] == text
+    assert [r["id"] for r in notes.listing()] == [n["id"]]
+    assert notes.counts()["by_product"] == {"app-a": 1}
+
 # --- files ------------------------------------------------------------------------------------
 
 def test_the_store_is_private(two_products):

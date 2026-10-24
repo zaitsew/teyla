@@ -118,7 +118,7 @@ def _events() -> list[dict]:
     except OSError:
         return []
     out = []
-    for line in raw.splitlines():
+    for line in raw.split("\n"):              # not splitlines(): U+2028/U+2029 inside a note are text, not line ends
         try:
             ev = json.loads(line)
         except ValueError:
@@ -270,13 +270,13 @@ def link(ref: str, product: str) -> tuple[dict, bool]:
         note = find(load(), ref)
         if note["dropped"]:
             raise NoteError(f"{note['id']} is dropped; `teyla note undrop {note['id']}` first")
-        if note["product"] == pid and note["linked_by"] == "owner":
-            return note, False
-        _append({"ev": "link", "id": note["id"], "product": pid, "linked_by": "owner", "at": _now()})
-        note = find(load(), note["id"])
+        changed = not (note["product"] == pid and note["linked_by"] == "owner")
+        if changed:
+            _append({"ev": "link", "id": note["id"], "product": pid, "linked_by": "owner", "at": _now()})
+            note = find(load(), note["id"])
     if pid != INBOX:
-        _to_intent(note, pid)
-    return note, True
+        _to_intent(note, pid)       # also on a repeat: it retries a copy a busy intent store skipped; the store de-duplicates
+    return note, changed
 
 
 def set_dropped(ref: str, dropped: bool) -> tuple[dict, bool]:
