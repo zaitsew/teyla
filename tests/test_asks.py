@@ -12,8 +12,10 @@ import time
 
 import pytest
 
-from teyla import asks, cli, config, doctor, remind, routine_install
+from teyla import asks, cli, config, doctor, registry, remind, routine_install
 from teyla.control import state
+
+pytestmark = pytest.mark.usefixtures("fake_code_root")
 
 NOW = dt.datetime(2026, 10, 16, 12, 0, tzinfo=dt.timezone.utc).timestamp()
 HOME = "/Users/someone"          # a placeholder user, as the leak check allows
@@ -110,13 +112,13 @@ def env(tmp_path):
     (f"{HOME}/repos/app/.claude/worktrees/funny-name-1a2b", "app"),
     (f"{HOME}/.worktrees/app/feat-thing", "app"),
     (f"{HOME}/.worktrees/app", "app"),
-    (f"{HOME}/repos", "(no repo)"),
-    (f"{HOME}/ops", "ops"),
-    ("/private/tmp/claude-501/x/scratch", "(scratch)"),
-    ("", "unknown"),
+    (f"{HOME}/repos", "unassigned"),
+    (f"{HOME}/ops", "unassigned"),
+    ("/private/tmp/claude-501/x/scratch", "unassigned"),
+    ("", "unassigned"),
 ])
-def test_product_of_maps_worktrees_to_their_repo(cwd, product):
-    assert asks.product_of(cwd) == product
+def test_a_working_directory_maps_to_its_repo_or_to_unassigned(cwd, product):
+    assert registry.resolve(cwd) == product
 
 
 # --- the end of a Claude Code transcript --------------------------------------------------------

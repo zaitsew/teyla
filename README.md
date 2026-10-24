@@ -11,6 +11,7 @@ teyla plugin install zaitsew/teyla     # Claude Code plugin: hooks, skills, mach
 teyla routine install                  # daily and weekly checks under launchd
 teyla doctor                           # what must be true here, and the fix for each gap
 teyla asks                             # every question an AI session left waiting on you
+teyla product init                     # which repo is which product (proposal; --write saves it)
 teyla spend --days 7                   # what the week cost, and which part bought nothing
 ```
 
@@ -138,7 +139,7 @@ On a managed work laptop, switch on safe mode: `teyla policy init --work`. Nothi
 - [CONTROL-PLANE](docs/CONTROL-PLANE.md): runs, gates, receipts and the kill switch
 - [WIKI](docs/WIKI.md): the facts store
 - [WORK](docs/WORK.md): safe mode for a work laptop
-- [ASKS](docs/ASKS.md), [INTENT](docs/INTENT.md), [WRITING](docs/WRITING.md): the three newest commands
+- [ASKS](docs/ASKS.md), [INTENT](docs/INTENT.md), [WRITING](docs/WRITING.md), [PRODUCTS](docs/PRODUCTS.md): the newest commands
 - [ROADMAP](docs/ROADMAP.md): what is next
 
 ## License

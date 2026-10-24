@@ -12,7 +12,11 @@ Code sessions ended that way and 1 got an answer. `teyla asks` finds them.
     teyla asks snooze <id> <days>    hide one until the days pass
     teyla asks done --older-than 3   close every question older than 3 days (--product P for one)
     teyla asks --all --json          include done and snoozed; machine-readable
-    teyla asks --days 60 --product P widen the window, or keep one repo
+    teyla asks --days 60 --product P widen the window, or keep one product
+    teyla product assign <id> <P>    a question sits under the wrong product: move its session
+
+The product of an item comes from the product registry, not from a guess at the directory name:
+see [PRODUCTS.md](PRODUCTS.md). Sessions the registry does not place are listed under `unassigned`.
 
 The header reads "N waiting on you (M in archived sessions)". Each item shows the question
 word for word, a short context line, the options the agent offered, and a link that reopens the

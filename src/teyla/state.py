@@ -42,7 +42,7 @@ import shutil
 import subprocess
 import sys
 
-from . import asks, backlog, config, net, reviews
+from . import asks, backlog, config, net, registry, reviews
 from .adapters import claude_code, codex, iter_jsonl, text_of
 from .control import state as control
 
@@ -199,7 +199,8 @@ def running_desktop(now: float, root: str | None = None, runs: list[dict] | None
         if last is None or now - last > RUNNING_WINDOW_S:
             continue
         sid = str(d.get("sessionId") or "")
-        out.append({"product": asks.product_of(d.get("cwd") or d.get("originCwd")),
+        out.append({"product": registry.resolve(d.get("cwd") or d.get("originCwd"),
+                                                session=(str(d.get("cliSessionId") or ""), sid)),
                     "title": asks.clip(d.get("title") or "(untitled)", asks.TITLE_MAX),
                     "harness": "claude-desktop", "model": str(d.get("model") or ""),
                     "since": _iso(asks._epoch(d.get("createdAt")) or last),
@@ -273,7 +274,8 @@ def running_codex(now: float, root: str | None = None, runs: list[dict] | None =
     for s in codex_sessions(now, root, runs) if sessions is None else sessions:
         if now - s["_last"] > RUNNING_WINDOW_S:
             continue
-        out.append({"product": asks.product_of(s["cwd"]), "title": asks.clip(s["title"] or "Codex session", asks.TITLE_MAX),
+        out.append({"product": registry.resolve(s["cwd"], session=s["sid"]),
+                    "title": asks.clip(s["title"] or "Codex session", asks.TITLE_MAX),
                     "harness": "codex", "model": s["model"], "since": _iso(s["created"]),
                     "link": f"codex://threads/{s['sid']}", "id": s["sid"],
                     # `codex queue` reaches a live interactive session; a headless run has nobody to queue for
@@ -316,7 +318,7 @@ def claude_dispatch_sessions(now: float, projects: str | None, runs: list[dict])
 
 
 def running_claude_dispatch(now: float, sessions: list[dict]) -> list[dict]:
-    return [{"product": asks.product_of(s["cwd"]), "title": s["title"] or "Claude session", "harness": "claude-code",
+    return [{"product": registry.resolve(s["cwd"], session=s["id"]), "title": s["title"] or "Claude session", "harness": "claude-code",
              "model": s["model"], "since": _iso(s["created"]), "link": f"claude --resume {s['id']}",
              "id": s["id"], "correct": "open", "_last": s["_last"]}
             for s in sessions if now - s["_last"] <= RUNNING_WINDOW_S]
@@ -533,7 +535,8 @@ def done_feed(now: float, desktop: str | None = None, codex_root: str | None = N
         if not card:
             continue
         prs = [p.get("url") for p in d.get("prs") or [] if isinstance(p, dict)]
-        out.append(_done_row(sid, asks.product_of(d.get("cwd") or d.get("originCwd")), d.get("title") or "(untitled)",
+        out.append(_done_row(sid, registry.resolve(d.get("cwd") or d.get("originCwd"), session=(cli, sid)),
+                             d.get("title") or "(untitled)",
                              card, links_in(text, extra=prs), last, "claude-desktop", asks.OPEN_LINK + sid
                              if sid.startswith("local_") else ""))
     for s in codex_sessions(now, codex_root, runs) if cx is None else cx:
@@ -543,7 +546,7 @@ def done_feed(now: float, desktop: str | None = None, codex_root: str | None = N
         card = card_from_text(text) if text else None
         if not card or (ts or s["_last"]) < cut:
             continue
-        out.append(_done_row(s["sid"], asks.product_of(s["cwd"]), s["title"] or card["result"][0] or "Codex session",
+        out.append(_done_row(s["sid"], registry.resolve(s["cwd"], session=s["sid"]), s["title"] or card["result"][0] or "Codex session",
                              card, links_in(text), ts or s["_last"], "codex", f"codex://threads/{s['sid']}"))
     for s in claude_dispatch_sessions(now, projects, runs) if cc is None else cc:
         if s["id"] in skip_ids:
@@ -551,7 +554,7 @@ def done_feed(now: float, desktop: str | None = None, codex_root: str | None = N
         text, ts = last_claude_message(s["path"])
         card = card_from_text(text) if text else None
         if card:
-            out.append(_done_row(s["id"], asks.product_of(s["cwd"]), s["title"] or card["result"][0] or "Claude session",
+            out.append(_done_row(s["id"], registry.resolve(s["cwd"], session=s["id"]), s["title"] or card["result"][0] or "Claude session",
                                  card, links_in(text), ts or s["_last"], "claude-code", f"claude --resume {s['id']}"))
     out.sort(key=lambda r: r["ended"], reverse=True)
     return out[:DONE_MAX]
@@ -587,9 +590,12 @@ def _repo_signals(path: pathlib.Path, today: _dt.date) -> tuple[float | None, bo
     return last, tagged
 
 
-def products_view(items: list[dict], run: list[dict], repos: dict, now: float, keep=()) -> list[dict]:
+def products_view(items: list[dict], run: list[dict], repos: dict, now: float, keep=(),
+                  reg: dict | None = None) -> list[dict]:
     """One row per product. A repo is listed when it moved in the last 30 days, or has a name in `keep`
-    (a product with a task waiting on the owner)."""
+    (a product with a task waiting on the owner). A product in the registry `reg` is always listed, with
+    its display name, stage, focus and primary platform; "unassigned" comes last."""
+    reg = {"product": {}, "assign": {}} if reg is None else reg
     today = _dt.datetime.fromtimestamp(now).date()
     by: dict[str, dict] = {}
 
@@ -615,9 +621,11 @@ def products_view(items: list[dict], run: list[dict], repos: dict, now: float, k
         s = slot(name)
         s["last"] = max(s["last"], last or 0.0)
         s["tag"] = tagged
+    for pid in reg["product"]:
+        slot(pid)
     out = []
     for name, s in by.items():
-        if not s["waiting"] and (name.startswith("(") or name in ("unknown", "reminders")):
+        if not s["waiting"] and (name.startswith("(") or name in ("unknown", "reminders", registry.UNASSIGNED)):
             continue
         idle_days = int((now - s["last"]) // 86400) if s["last"] else None
         if s["waiting"]:
@@ -642,9 +650,14 @@ def products_view(items: list[dict], run: list[dict], repos: dict, now: float, k
             line = f"no activity for {idle_days} days" if idle_days != 1 else "no activity for 1 day"
         else:
             line = "active today"
+        r = reg["product"].get(name) or {}
         out.append({"name": name, "waiting": s["waiting"], "state": st, "line": line,
-                    "last_activity": _iso(s["last"]) if s["last"] else ""})
-    out.sort(key=lambda p: (-p["waiting"], p["state"] == "quiet", -(asks._epoch(p["last_activity"]) or 0), p["name"]))
+                    "last_activity": _iso(s["last"]) if s["last"] else "",
+                    "id": name, "display_name": r.get("name") or ("Unassigned" if name == registry.UNASSIGNED else name), "stage": r.get("stage") or "",
+                    "focus": bool(r.get("focus")), "primary": r.get("primary") or "",
+                    "registered": name in reg["product"]})
+    out.sort(key=lambda p: (p["id"] == registry.UNASSIGNED, -p["waiting"], p["state"] == "quiet",
+                            -(asks._epoch(p["last_activity"]) or 0), p["name"]))
     return out
 
 
@@ -679,6 +692,33 @@ def product_names(repos: dict, canonical: dict) -> tuple[dict, dict]:
         if name == key and have["name"] != key:
             have.update(path=path, name=name)
     return alias, info
+
+
+def registry_names(reg: dict, alias: dict, info: dict) -> tuple[dict, dict]:
+    """`product_names` keyed by registry id. A repo the registry holds takes the id of the product that
+    holds it, so its issue counts, waiting PRs, tasks and path land on that product's row and not on a
+    second row named after the GitHub repo. Two repos of one product share the row."""
+    held = {}
+    for pid, p in reg["product"].items():
+        for d in p["repos"]:
+            held[registry.abs_path(d)] = pid
+    moves = {}
+    for key, i in info.items():
+        pid = next((held[q] for q in (registry.abs_path(x) for x in i["paths"]) if q in held), None)
+        if pid:
+            moves[key] = pid
+    if not moves:
+        return alias, info
+    out: dict[str, dict] = {}
+    for key, i in info.items():
+        pid = moves.get(key, key)
+        have = out.get(pid)
+        if have is None:
+            out[pid] = dict(i, paths=list(i["paths"]))
+        else:
+            have["paths"] += [x for x in i["paths"] if x not in have["paths"]]
+            have["slug"] = have["slug"] or i["slug"]
+    return {n: moves.get(k, k) for n, k in alias.items()}, out
 
 
 def home_path(path) -> str:
@@ -1120,6 +1160,8 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
     repos = repo_index() if repos is None else repos
     bl = backlog_view(now) if backlog_data is None else backlog_data
     alias, info = product_names(repos, bl["canonical"])
+    reg = registry.load()
+    alias, info = registry_names(reg, alias, info)
     tasks = []
     if bl["prs"] or bl["issues"]:
         if bl["prs"]:
@@ -1127,10 +1169,11 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
             ledger = reviews.load_ledger(reviews.ledger_path(_cfg())) if ledger is None else ledger
         tasks = tasks_view(bl, approved or set(), ledger, now,
                            {i["slug"].lower(): key for key, i in info.items() if i["slug"]})
-    for r in rows + run + done:
-        r["product"] = alias.get(r["product"], r["product"])
+    for r in rows + run + done:         # a registered id is the owner's word; only repo folder names get the GitHub name
+        if r["product"] not in reg["product"]:
+            r["product"] = alias.get(r["product"], r["product"])
     prods = products_view(rows, run, {k: v["paths"] for k, v in info.items()}, now,
-                          keep={t["product"] for t in tasks})
+                          keep={t["product"] for t in tasks}, reg=reg)
     enrich_products(prods, info, bl["counts"], tasks, done)
     if spent == "cache":
         try:
