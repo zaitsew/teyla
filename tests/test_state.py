@@ -12,6 +12,8 @@ import pytest
 from teyla import answer, asks, backlog, cli, reviews, state
 from teyla.adapters import codex
 
+pytestmark = pytest.mark.usefixtures("fake_code_root")
+
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 NOW = dt.datetime(2026, 10, 16, 12, 0, tzinfo=dt.timezone.utc).timestamp()
 TODAY = dt.datetime.fromtimestamp(NOW).date()

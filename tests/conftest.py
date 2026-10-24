@@ -132,3 +132,15 @@ def _no_real_claude_for_state_brief(monkeypatch):
         raise AssertionError("a test reached the real claude; monkeypatch state._run_claude")
     monkeypatch.setattr(state, "_spawn_brief_refresh", lambda *a, **k: None)
     monkeypatch.setattr(state, "_run_claude", _refuse)
+
+
+@pytest.fixture
+def fake_code_root(monkeypatch):
+    """Every directory directly under /Users/someone/repos is an unregistered git checkout under
+    code_root, so the placeholder paths the asks and state tests use keep their repo name as the
+    product without a real tree on disk."""
+    from teyla import registry
+    root = pathlib.Path("/Users/someone/repos")
+    monkeypatch.setattr(config, "code_root", lambda cfg=None: root)
+    monkeypatch.setattr(registry, "_is_checkout", lambda d: d.parent == root)
+    return root

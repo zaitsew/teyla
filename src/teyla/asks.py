@@ -43,7 +43,7 @@ import subprocess
 import sys
 import tempfile
 
-from . import corrections
+from . import corrections, registry
 from .adapters import (claude_code, codex, human_text, is_noise_turn, is_retry, iter_jsonl,
                        strip_reminders, text_of, turn_end_candidate)
 from .control import state
@@ -144,29 +144,6 @@ def clip(text, limit: int) -> str:
     """Scrubbed, then cut at `limit` characters with an ellipsis. The text is otherwise verbatim."""
     t = corrections.scrub(str(text or "")).strip()
     return t if len(t) <= limit else t[: limit - 1].rstrip() + "…"
-
-
-def product_of(cwd) -> str:
-    """The repo a working directory belongs to; a worktree maps to its repo."""
-    if not cwd:
-        return "unknown"
-    raw = str(cwd).rstrip("/")
-    parts = [p for p in pathlib.PurePosixPath(raw).parts if p != "/"]
-    for i in range(1, len(parts) - 1):
-        if parts[i] == ".claude" and parts[i + 1] == "worktrees":
-            return parts[i - 1]
-    if ".worktrees" in parts:
-        i = parts.index(".worktrees")
-        if i + 1 < len(parts):
-            return parts[i + 1]
-    if "repos" in parts:
-        i = parts.index("repos")
-        return parts[i + 1] if i + 1 < len(parts) else "(no repo)"
-    if raw == str(pathlib.Path.home()).rstrip("/"):
-        return "(home)"
-    if parts and parts[0] in ("tmp", "private", "var"):
-        return "(scratch)"
-    return parts[-1] if parts else "unknown"
 
 
 # --- questions in text ------------------------------------------------------------------------
@@ -375,7 +352,8 @@ def _claude_ask(d: dict | None, ana: dict | None, cli_id: str, since: float) -> 
     if when < since:
         return None
     turn = (ana or {}).get("uuid") or su
-    return Ask(id=make_id("claude", cli_id, turn), kind=kind, product=product_of(cwd),
+    aid = make_id("claude", cli_id, turn)
+    return Ask(id=aid, kind=kind, product=registry.resolve(cwd, session=cli_id, ask_id=aid),
                title=clip(title or text.splitlines()[0], TITLE_MAX), question=clip(text, QUESTION_MAX),
                context=clip(context or "", CONTEXT_MAX), options=[clip(o, 80) for o in (ana or {}).get("options") or []],
                when=when, archived=archived, link=link, pr=pr, harness=harness, session=cli_id)
@@ -553,7 +531,8 @@ def collect_codex(since: float, root: str | None = None, archive: str | None = N
             when = r["ts"] or os.stat(f).st_mtime
             if when < since:
                 continue
-            out.append(Ask(id=make_id("codex", r["sid"], r["turn"]), kind=r["kind"], product=product_of(r["cwd"]),
+            aid = make_id("codex", r["sid"], r["turn"])
+            out.append(Ask(id=aid, kind=r["kind"], product=registry.resolve(r["cwd"], session=r["sid"], ask_id=aid),
                            title=clip(titles.get(r["sid"]) or r["question"].splitlines()[0], TITLE_MAX),
                            question=clip(r["question"], QUESTION_MAX), context="",
                            options=[clip(o, 80) for o in r["options"]], when=when, archived=archived,
@@ -568,8 +547,9 @@ def collect_gates() -> list[Ask]:
     for it in state.pending_inbox():
         when = _epoch(it.get("ts")) or 0.0
         rid = str(it.get("id") or "")
-        out.append(Ask(id=make_id("gate", rid, str(it.get("ts") or "")), kind="gate",
-                       product=product_of(it.get("repo")) if it.get("repo") else "teyla",
+        aid = make_id("gate", rid, str(it.get("ts") or ""))
+        out.append(Ask(id=aid, kind="gate",
+                       product=registry.resolve(it.get("repo"), ask_id=aid) if it.get("repo") else "teyla",
                        title=clip(it.get("routine") or "gated run", TITLE_MAX),
                        question=clip(it.get("summary") or "A gated run is waiting for approval.", QUESTION_MAX),
                        context=clip(f"gate {it.get('gate', '?')}, state {it.get('state', '?')}", CONTEXT_MAX),

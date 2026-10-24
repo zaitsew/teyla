@@ -142,7 +142,13 @@
    "issues": 3,
    "prs_waiting": 0,
    "next": "Ship the PDF export in the next TestFlight build",
-   "repo": "~/repos/atlas"
+   "repo": "~/repos/atlas",
+   "id": "atlas",
+   "display_name": "Atlas",
+   "stage": "building",
+   "focus": false,
+   "primary": "ios",
+   "registered": true
   },
   {
    "name": "cellar",
@@ -153,7 +159,13 @@
    "issues": 12,
    "prs_waiting": 0,
    "next": "Swap the iPhone review to 1.1",
-   "repo": "~/repos/cellar"
+   "repo": "~/repos/cellar",
+   "id": "cellar",
+   "display_name": "Cellar",
+   "stage": "building",
+   "focus": false,
+   "primary": "ios",
+   "registered": true
   },
   {
    "name": "teyla",
@@ -164,7 +176,13 @@
    "issues": 0,
    "prs_waiting": 0,
    "next": "",
-   "repo": "~/repos/teyla"
+   "repo": "~/repos/teyla",
+   "id": "teyla",
+   "display_name": "Teyla",
+   "stage": "live",
+   "focus": false,
+   "primary": "macos",
+   "registered": true
   },
   {
    "name": "lens",
@@ -175,7 +193,13 @@
    "issues": 1,
    "prs_waiting": 1,
    "next": "Merge the shot list export",
-   "repo": "~/repos/lens"
+   "repo": "~/repos/lens",
+   "id": "lens",
+   "display_name": "Lens",
+   "stage": "building",
+   "focus": false,
+   "primary": "ios",
+   "registered": true
   }
  ],
  "running": [
