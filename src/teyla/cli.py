@@ -16,6 +16,8 @@
   teyla harvest <path> [--project SLUG]                          tool spine + corrections for sessions touching a path
   teyla asks [--days N] [--product P] [--all] [--json] [--html [-o FILE] [--open]]   every question an AI session left waiting on you
   teyla asks done <id-prefix>... [--note TEXT] | snooze <id-prefix> <days>            close one, or hide it for a while
+  teyla product [list] [--json] | init [--write] | add <id> [--repo P] | set <id> k=v... | park|wake <id>   the product registry (~/.teyla/products.toml)
+  teyla product assign <ask-id-prefix|session-id> <id> [--ask-only]   file a session's asks under another product
   teyla state [--json]                                             ranked questions, products and running sessions in one snapshot
   teyla answer <id-prefix> <text...> [--json] [--dry]              answer a question inside the session that asked it
   teyla relay on|off|status [--json]                               the iPhone relay: switch it on or off, say where it stands
@@ -504,6 +506,8 @@ def build_parser() -> argparse.ArgumentParser:
     reel_cli.register(sp)
     from . import asks as asks_mod
     asks_mod.register(sp)
+    from . import registry as registry_mod
+    registry_mod.register(sp)
     from . import state as state_mod
     state_mod.register(sp)
     from . import answer as answer_mod
