@@ -2,6 +2,16 @@
 
 ## Unreleased — The machine guard stops starting heavy work while memory runs out
 
+- **Product registry (`teyla product`).** The product of a session is no longer guessed from its working directory. A file,
+  `~/.teyla/products.toml`, maps repos, extra paths and aliases to products, with a stage, a primary platform and a focus
+  flag. A session resolves in this order: an `[assign]` correction for its session or ask id; the longest registered repo
+  or path (worktrees map to their repo); an unregistered git checkout under `code_root` by its directory name; else
+  `unassigned`. `(no repo)`, `(home)`, `(scratch)`, `unknown` and folder-name products are gone. `teyla product
+  [list|init|add|set|park|wake|assign]` edits it: `init --write` adds the repos not yet registered and never overwrites an
+  edit, `park` remembers the old stage for `wake`, `assign <ask-id> <product>` moves a session's questions.
+  `registry.match_text()` finds products named in a text. `teyla state --json` `products[]` adds `id`, `display_name`,
+  `stage`, `focus`, `primary` and `registered`, lists parked products with stage `parked`, and puts `unassigned` last.
+  `docs/PRODUCTS.md`.
 - **Plugin directory readiness (0.29.0).** The Claude Code plugin now carries the metadata, `LICENSE` and README the Claude
   directory checks (install line, a Privacy section that lists every path read and written and every network use). Every
   skill and command checks for the `teyla` CLI first and prints one install line when it is missing; hooks stay silent

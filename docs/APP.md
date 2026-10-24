@@ -98,6 +98,13 @@ new ones, and a version 2 client treats a missing field as empty.
   - `result`: at most 3 short lines. `needs`: one line, or "".
   - Source: the Claude desktop turn summary (`postTurnSummary`), else the last assistant message's
     session-end card, else its first line. Headless lane and review runs are left out.
+- `products[]` also carries the product registry (`~/.teyla/products.toml`, `docs/PRODUCTS.md`): `id` (the registry id;
+  equal to `name`), `display_name`, `stage` (`idea`, `building`, `beta`, `live`, `parked`, or ""), `focus` (bool),
+  `primary` (`ios`, `web`, ... or "") and `registered` (false when the product is only a repo with activity).
+  Every registered product is listed, parked ones too, with stage `parked`. `unassigned` is a product like the others
+  (`registered` false) and comes last; it is listed only when something waits under it. `asks[].product`,
+  `running[].product` and `done[].product` are registry ids, or `unassigned`: the old `(no repo)`, `(home)`,
+  `(scratch)` and `unknown` are gone.
 - `products[]`: adds `issues` (open GitHub issues), `prs_waiting` (open PRs that wait on the
   owner's merge), `next` (one line, the next step, or "") and `repo` (its path, or "").
   Products that are one repo under two names are merged into one row.
