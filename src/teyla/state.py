@@ -694,6 +694,33 @@ def product_names(repos: dict, canonical: dict) -> tuple[dict, dict]:
     return alias, info
 
 
+def registry_names(reg: dict, alias: dict, info: dict) -> tuple[dict, dict]:
+    """`product_names` keyed by registry id. A repo the registry holds takes the id of the product that
+    holds it, so its issue counts, waiting PRs, tasks and path land on that product's row and not on a
+    second row named after the GitHub repo. Two repos of one product share the row."""
+    held = {}
+    for pid, p in reg["product"].items():
+        for d in p["repos"]:
+            held[registry.abs_path(d)] = pid
+    moves = {}
+    for key, i in info.items():
+        pid = next((held[q] for q in (registry.abs_path(x) for x in i["paths"]) if q in held), None)
+        if pid:
+            moves[key] = pid
+    if not moves:
+        return alias, info
+    out: dict[str, dict] = {}
+    for key, i in info.items():
+        pid = moves.get(key, key)
+        have = out.get(pid)
+        if have is None:
+            out[pid] = dict(i, paths=list(i["paths"]))
+        else:
+            have["paths"] += [x for x in i["paths"] if x not in have["paths"]]
+            have["slug"] = have["slug"] or i["slug"]
+    return {n: moves.get(k, k) for n, k in alias.items()}, out
+
+
 def home_path(path) -> str:
     """A path with the home folder written as ~."""
     s = str(path)
@@ -1133,6 +1160,8 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
     repos = repo_index() if repos is None else repos
     bl = backlog_view(now) if backlog_data is None else backlog_data
     alias, info = product_names(repos, bl["canonical"])
+    reg = registry.load()
+    alias, info = registry_names(reg, alias, info)
     tasks = []
     if bl["prs"] or bl["issues"]:
         if bl["prs"]:
@@ -1140,7 +1169,6 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
             ledger = reviews.load_ledger(reviews.ledger_path(_cfg())) if ledger is None else ledger
         tasks = tasks_view(bl, approved or set(), ledger, now,
                            {i["slug"].lower(): key for key, i in info.items() if i["slug"]})
-    reg = registry.load()
     for r in rows + run + done:         # a registered id is the owner's word; only repo folder names get the GitHub name
         if r["product"] not in reg["product"]:
             r["product"] = alias.get(r["product"], r["product"])

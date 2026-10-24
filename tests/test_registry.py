@@ -300,3 +300,71 @@ def test_products_view_keeps_the_old_fields_and_adds_the_registry_ones():
 
 def test_unassigned_without_asks_is_not_listed():
     assert state.products_view([], [], {}, NOW, reg=reg_with()) == []
+
+
+# --- review round: P2 fixes ---------------------------------------------------------------------
+
+def test_an_ask_assignment_beats_a_session_assignment(tree):
+    registry.save(reg_with(**{"app-a": {}, "app-b": {}, "tool-c": {}}))
+    items = [ask("abcd1234", "sess-1"), ask("abce5678", "sess-1")]
+    assert registry.assign("abcd1234", "app-a", items=items)[1] == 0                  # the session -> app-a
+    lines, code = registry.assign("abcd1234", "app-b", ask_only=True, items=items)    # this ask -> app-b
+    assert code == 0
+    assert registry.resolve(tree / "tool-c", session="sess-1", ask_id="abcd1234") == "app-b"
+    assert registry.resolve(tree / "tool-c", session="sess-1", ask_id="abce5678") == "app-a"
+    # a later session move does not claim the ask that has its own assignment
+    lines, _ = registry.assign("abce5678", "tool-c", items=items)
+    assert [l.split()[0] for l in lines[1:]] == ["abce5678"]
+
+
+def desktop_session(sid, cli, cwd):
+    return {"sessionId": sid, "cliSessionId": cli, "cwd": str(cwd), "isArchived": False, "title": "T",
+            "createdAt": int(NOW * 1000), "lastActivityAt": int(NOW * 1000),
+            "postTurnSummary": {"status_category": "blocked", "needs_action": "Which db?", "status_detail": ""}}
+
+
+def test_a_desktop_session_id_assignment_moves_its_questions(tree):
+    registry.save({"product": {"app-b": registry.new_product("app-b")}, "assign": {"local_cli-1": "app-b"}})
+    d = desktop_session("local_cli-1", "cli-1", tree / "app-a")
+    assert asks._claude_ask(d, None, "cli-1", NOW - 86400).product == "app-b"
+    assert asks._claude_ask(desktop_session("local_cli-2", "cli-2", tree / "app-a"), None, "cli-2", NOW - 86400).product == "app-a"
+
+
+def test_registry_names_move_repo_metadata_and_tasks_to_the_registry_id(tree):
+    reg = reg_with(portal={"repos": [str(tree / "app-a")]})
+    alias = {"app-a": "app-a", "app-b": "app-b"}
+    info = {"app-a": {"path": tree / "app-a", "paths": [tree / "app-a"], "slug": "example/app-a", "name": "app-a"},
+            "app-b": {"path": tree / "app-b", "paths": [tree / "app-b"], "slug": "example/app-b", "name": "app-b"}}
+    alias2, info2 = state.registry_names(reg, alias, info)
+    assert set(info2) == {"portal", "app-b"} and info2["portal"]["slug"] == "example/app-a"
+    assert alias2 == {"app-a": "portal", "app-b": "app-b"}
+    bl = {"prs": [{"repo": "example/app-a", "number": 3, "title": "t", "url": "u", "created": NOW - 60, "draft": False}],
+          "issues": []}
+    tasks = state.tasks_view(bl, set(), None, NOW, {i["slug"].lower(): k for k, i in info2.items()})
+    assert [t["product"] for t in tasks] == ["portal"]
+    prods = state.enrich_products([{"name": "portal"}], info2, {"example/app-a": 4}, tasks, [])
+    assert (prods[0]["issues"], prods[0]["prs_waiting"]) == (4, 1) and prods[0]["repo"].endswith("app-a")
+
+
+def test_strings_with_control_characters_survive_a_save(tree):
+    reg = reg_with(**{"app-a": {"name": 'Line one\nline "two"\t\\ end\x01'}})
+    reg["assign"]['we"ird\nkey'] = "app-a"
+    registry.save(reg)
+    again = registry.load(strict=True)
+    assert again["product"]["app-a"]["name"] == 'Line one\nline "two"\t\\ end\x01'
+    assert again["assign"] == {'we"ird\nkey': "app-a"}
+    assert cli.main(["product", "set", "app-a", "name=a\nb"]) == 0
+    assert registry.load(strict=True)["product"]["app-a"]["name"] == "a\nb"
+
+
+def test_an_unreadable_file_warns_once_and_is_not_written_over(tree, capsys):
+    registry._warned.clear()
+    registry.path().write_text('[product.x]\nname = "a\nb"\n')
+    assert registry.load()["product"] == {}
+    assert registry.load()["product"] == {}
+    err = capsys.readouterr().err
+    assert err.count("does not parse") == 1
+    for argv in (["product", "init", "--write"], ["product", "add", "y"], ["product", "list"],
+                 ["product", "park", "x"], ["product", "assign", "abcd", "x"]):
+        assert cli.main(argv) == 1
+    assert registry.path().read_text() == '[product.x]\nname = "a\nb"\n'

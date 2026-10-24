@@ -12,7 +12,7 @@ any repo landed under "(no repo)", one that ran in the wrong repo under the wron
 scratch folder became a product named after the folder. This module replaces the guess with a file,
 `~/.teyla/products.toml`, and one rule that never invents a name:
 
-1. `[assign]`: the owner filed this session (or this ask) by hand. Wins over everything.
+1. `[assign]`: the owner filed this ask, else this session, by hand. Wins over everything.
 2. The longest `repos` / `paths` entry that contains the directory. A worktree
    (`<repo>/.claude/worktrees/<x>`, `~/.worktrees/<repo>/<branch>`) maps to its repo.
 3. A git checkout under `code_root` that nobody registered: its repo directory name.
@@ -83,6 +83,13 @@ def _normalise(raw: dict) -> dict:
 
 
 _cache: dict = {}
+_warned: set = set()
+
+
+def _warn_once(msg: str) -> None:
+    if msg not in _warned:
+        _warned.add(msg)
+        print(f"teyla: {msg}", file=sys.stderr)
 
 
 def load(strict: bool = False) -> dict:
@@ -104,13 +111,32 @@ def load(strict: bool = False) -> dict:
     except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as e:
         if strict:
             raise RegistryError(f"{p} does not parse ({e}); fix it by hand first") from e
+        _warn_once(f"{p} does not parse ({e}); no product is registered until it is fixed")
         return _empty()
     _cache["reg"] = (stamp, reg)
     return reg
 
 
+_ESCAPES = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\t": "\\t", "\r": "\\r", "\b": "\\b", "\f": "\\f"}
+
+
+def _str(v: str) -> str:
+    """A TOML basic string. `config._toml_value` escapes only the backslash and the quote; a name
+    with a line break would write a file that does not parse."""
+    return '"' + "".join(_ESCAPES.get(c) or (f"\\u{ord(c):04x}" if ord(c) < 0x20 or ord(c) == 0x7F else c)
+                         for c in v) + '"'
+
+
+def _val(v) -> str:
+    if isinstance(v, (list, tuple)):
+        return "[" + ", ".join(_val(x) for x in v) + "]"
+    if isinstance(v, (bool, int, float)):
+        return config._toml_value(v)
+    return _str(str(v))
+
+
 def _key(k: str) -> str:
-    return k if _BARE_KEY_RE.match(k) else config._toml_value(k)
+    return k if _BARE_KEY_RE.match(k) else _str(k)
 
 
 def dump(reg: dict) -> str:
@@ -121,11 +147,11 @@ def dump(reg: dict) -> str:
         lines.append(f"[product.{_key(pid)}]")
         keys = [k for k in _FIELDS if k in p] + [k for k in p if k not in _FIELDS]
         for k in keys:
-            lines.append(f"{_key(k)} = {config._toml_value(p[k])}")
+            lines.append(f"{_key(k)} = {_val(p[k])}")
         lines.append("")
     lines.append("[assign]")
     for k, v in reg["assign"].items():
-        lines.append(f"{_key(k)} = {config._toml_value(v)}")
+        lines.append(f"{_key(k)} = {_val(v)}")
     return "\n".join(lines) + "\n"
 
 
@@ -153,7 +179,7 @@ def worktree_repo(cwd) -> tuple[pathlib.Path | None, str]:
     return None, ""
 
 
-def _abs(p) -> pathlib.Path:
+def abs_path(p) -> pathlib.Path:
     q = pathlib.Path(str(p)).expanduser()
     try:
         return q.resolve()
@@ -171,15 +197,15 @@ def _is_checkout(d: pathlib.Path) -> bool:
 
 def _code_root(root) -> pathlib.Path | None:
     if root is not None:
-        return _abs(root)
+        return abs_path(root)
     try:
-        return _abs(config.code_root())
+        return abs_path(config.code_root())
     except Exception:  # noqa: BLE001 — no readable config is "no code root", not a failed attribution
         return None
 
 
 def _entries(reg: dict) -> list[tuple[pathlib.Path, str]]:
-    return [(_abs(d), pid) for pid, p in reg["product"].items() for d in (*p["repos"], *p["paths"])]
+    return [(abs_path(d), pid) for pid, p in reg["product"].items() for d in (*p["repos"], *p["paths"])]
 
 
 def resolve(cwd, session=None, ask_id=None, reg: dict | None = None, root=None) -> str:
@@ -187,13 +213,13 @@ def resolve(cwd, session=None, ask_id=None, reg: dict | None = None, root=None) 
     desktop session has two). The order is in the module docstring; the answer is a registered id, a repo directory name under `code_root`, or "unassigned"."""
     reg = load() if reg is None else reg
     assign = reg["assign"]
-    keys = [*(session if isinstance(session, (list, tuple, set)) else [session]), ask_id]
+    keys = [ask_id, *(session if isinstance(session, (list, tuple, set)) else [session])]   # the ask is the narrower correction
     for key in keys:
         if key and str(key) in assign:
             return assign[str(key)]
     if not cwd:
         return UNASSIGNED
-    here = _abs(cwd)
+    here = abs_path(cwd)
     best, best_len = "", -1
     for base, pid in _entries(reg):
         if _within(here, base) and len(base.parts) > best_len:
@@ -203,7 +229,7 @@ def resolve(cwd, session=None, ask_id=None, reg: dict | None = None, root=None) 
     wt_root, wt_name = worktree_repo(cwd)
     if wt_name:                      # a worktree whose checkout lives elsewhere: match it by name
         for pid, p in reg["product"].items():
-            if any(_abs(d).name == wt_name for d in p["repos"]):
+            if any(abs_path(d).name == wt_name for d in p["repos"]):
                 return pid
     code = _code_root(root)
     if code is None:
@@ -301,7 +327,7 @@ def set_field(reg: dict, pid: str, key: str, value: str) -> str:
         slot = "repos" if key == "add-repo" else "paths"
         if not value:
             raise ValueError(f"{key} needs a directory")
-        v = _tilde(_abs(value))
+        v = _tilde(abs_path(value))
         if v not in p[slot]:
             p[slot].append(v)
     else:
@@ -338,7 +364,7 @@ def propose(reg: dict, now: float | None = None, root=None) -> dict:
     for d in sorted(code.iterdir()):
         if not d.is_dir() or d.name.startswith(".") or not _is_checkout(d):
             continue
-        if d.name in reg["product"] or _abs(d) in held:
+        if d.name in reg["product"] or abs_path(d) in held:
             continue
         last = _last_commit(d)
         parked = last is None or now - last > PARK_AFTER_DAYS * 86400
@@ -370,7 +396,9 @@ def _known(reg: dict, pid: str) -> bool:
 
 
 def cmd_list(args) -> int:
-    reg = load()
+    reg = _load_for_edit()
+    if reg is None:
+        return 1
     if args.json:
         rows = [{"id": pid, **p} for pid, p in reg["product"].items()]
         print(json.dumps({"products": rows, "assign": reg["assign"]}, indent=1))
@@ -414,7 +442,7 @@ def cmd_add(args) -> int:
     if args.id in reg["product"]:
         print(f"{args.id} is already registered; use `teyla product set`.", file=sys.stderr)
         return 1
-    repos = [_abs(args.repo)] if args.repo else []
+    repos = [abs_path(args.repo)] if args.repo else []
     reg["product"][args.id] = new_product(args.id, repos=repos, stage=args.stage or "", name=args.name or "")
     save(reg)
     print(_row(args.id, reg["product"][args.id]))
@@ -481,7 +509,8 @@ def assign(target: str, pid: str, ask_only: bool = False, items=None, now: float
         if hit is None:
             return [err], 1
         key = hit.id if ask_only or not hit.session else hit.session
-    moved = [a for a in items if (a.id == key or a.session == key) and a.product != pid]
+    moved = [a for a in items if (a.id == key or (a.session == key and a.id not in reg["assign"]))
+             and a.product != pid]
     reg["assign"][key] = pid
     save(reg)
     what = "ask" if key == hit.id else "session"

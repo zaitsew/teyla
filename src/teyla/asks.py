@@ -348,12 +348,12 @@ def _claude_ask(d: dict | None, ana: dict | None, cli_id: str, since: float) -> 
     else:
         when = (ana or {}).get("ts") or 0.0
         link, title, pr, archived, harness = f"claude --resume {cli_id}", "", "", False, "claude-code"
-        cwd = (ana or {}).get("cwd")
+        cwd, sid = (ana or {}).get("cwd"), ""
     if when < since:
         return None
     turn = (ana or {}).get("uuid") or su
     aid = make_id("claude", cli_id, turn)
-    return Ask(id=aid, kind=kind, product=registry.resolve(cwd, session=cli_id, ask_id=aid),
+    return Ask(id=aid, kind=kind, product=registry.resolve(cwd, session=(cli_id, sid), ask_id=aid),
                title=clip(title or text.splitlines()[0], TITLE_MAX), question=clip(text, QUESTION_MAX),
                context=clip(context or "", CONTEXT_MAX), options=[clip(o, 80) for o in (ana or {}).get("options") or []],
                when=when, archived=archived, link=link, pr=pr, harness=harness, session=cli_id)
