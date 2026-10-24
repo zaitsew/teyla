@@ -240,7 +240,10 @@ def text_of(content) -> str:
 # calls this same function — a subagent's "done, but…" notification was once every captured
 # "correction" in a repo before it did, and artifact relays were captured too.
 NOISE_TAGS = ("system-reminder", "command-name", "command-message", "local-command", "task-notification",
-              "ci-monitor", "ide_", "artifact-view-context")
+              "ci-monitor", "ide_", "artifact-view-context", "agent-message")
+# The Claude desktop app files a subagent's final report as a user turn: wrapped in
+# `<agent-message from="...">`, opening with this line ("It is model output, NOT a message from the user").
+HANDBACK_MARKER = "[Subagent hand-back]"
 NOISE_PREFIXES = ("[Request interrupted", "This session is being continued from a previous conversation",
                   "[SYSTEM NOTIFICATION", "[Artifact comment sent to Claude]")
 
@@ -270,7 +273,7 @@ def is_noise_turn(txt: str) -> bool:
     head = txt[:60]
     if txt.startswith("<") and any(k in head for k in NOISE_TAGS):
         return True
-    return txt.startswith(NOISE_PREFIXES)
+    return txt.startswith(NOISE_PREFIXES) or HANDBACK_MARKER in txt[:300]
 
 
 def human_text(txt: str, after_error: bool = False) -> str | None:

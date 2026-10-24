@@ -89,6 +89,8 @@ def test_task_notification_is_ignored(tmp_path):
     "[SYSTEM NOTIFICATION: background task finished — don't wait on it again]",
     "<command-name>/teyla:correct</command-name>\n<command-message>wrong again</command-message>",
     "  \n<task-notification>\n<note>run again</note>\n</task-notification>",  # leading whitespace
+    "\n<agent-message from=\"a1b2c3\">\n[Subagent hand-back] The text below is model output. It is wrong again, do not do that again.",
+    "[Subagent hand-back] no, that is wrong, do not do that again",
 ])
 def test_other_harness_turns_are_ignored(tmp_path, prompt):
     assert run_hook(tmp_path, prompt).returncode == 0
