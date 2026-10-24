@@ -433,6 +433,53 @@ def all_records(cfg: dict | None = None) -> list[tuple[str, dict]]:
 
 # --- the capture hook ---------------------------------------------------------------------
 
+_GROK_SID_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z-]{5,63}$")   # a path component, never a path
+_GROK_NON_INTERACTIVE_RE = re.compile(r'"is_non_interactive"\s*:\s*(true|false)')
+
+
+def grok_headless(sid, env=None) -> bool | None:
+    """Whether Grok's own session store calls session `sid` (a full id or its first characters)
+    a `grok -p` run: True or False, or None when the store cannot say.
+
+    Grok writes `$GROK_HOME/sessions/<cwd>/<id>/summary.json` with `"session_kind": "headless"`
+    for `-p`, `--prompt-file` and `--prompt-json`, and `prompt_context.json` with
+    `"is_non_interactive": true`. Both read true for the one-shot review brief that reached the
+    intent store (session 01a16f50, 2026-10-24). Grok's bundled `learn` skill drops
+    `session_kind == "headless"` sessions the same way. Grok documents no hook env var or payload
+    field for it (`10-hooks.md` lists GROK_SESSION_ID and the workspace root only). Read-only; no
+    credential file is touched.
+    """
+    env = os.environ if env is None else env
+    if not isinstance(sid, str) or not _GROK_SID_RE.match(sid):
+        return None
+    home = env.get("GROK_HOME") or os.path.join(os.path.expanduser("~"), ".grok")
+    root = pathlib.Path(home) / "sessions"
+    try:
+        dirs = [d for d in root.glob(f"*/{sid}*") if d.is_dir()]
+    except OSError:
+        return None
+    verdicts = set()
+    for d in dirs:
+        v = None
+        try:
+            kind = json.loads((d / "summary.json").read_text()).get("session_kind")
+            if isinstance(kind, str):
+                v = kind == "headless"
+        except (OSError, ValueError, AttributeError):
+            pass
+        if v is None:
+            try:
+                with open(d / "prompt_context.json", "rb") as fh:
+                    m = _GROK_NON_INTERACTIVE_RE.search(fh.read(1 << 20).decode("utf-8", "replace"))
+                if m:
+                    v = m.group(1) == "true"
+            except OSError:
+                pass
+        if v is not None:
+            verdicts.add(v)
+    return verdicts.pop() if len(verdicts) == 1 else None   # no session, or a prefix that fits two
+
+
 def headless(data: dict, env=None) -> bool:
     """The prompt came from a script or another agent, not a person — the hook cannot see the
     session's batch flag the monitor uses, so it reads what the harness leaves in reach:
@@ -444,6 +491,11 @@ def headless(data: dict, env=None) -> bool:
       Grok hands ~/.cursor/hooks.json. Many captured records were `claude -p`/`grok -p`
       review briefs in that envelope, and none was typed by a person: in an interactive Grok session the same prompt also reaches Grok's own hook
       unwrapped, so nothing a person types is lost by skipping the envelope.
+    - A Grok-shaped payload (`GROK_SESSION_ID` in the hook's env, or a camelCase `sessionId` with
+      `hookEventName`) is looked up in Grok's session store: `session_kind` "headless" is `grok -p`
+      (see `grok_headless`). The unwrapped brief of a `grok -p` call reaches Grok's own hook with
+      no envelope, so this is the only test that catches it. If the store cannot be read at hook
+      time (no session dir yet), the prompt is not called headless; `teyla intent clean` re-checks.
     """
     env = os.environ if env is None else env
     if str(env.get("CLAUDE_CODE_ENTRYPOINT") or "").startswith("sdk-"):
@@ -465,6 +517,10 @@ def headless(data: dict, env=None) -> bool:
                     return True
         except OSError:
             pass
+    if isinstance(data, dict):
+        sid = env.get("GROK_SESSION_ID") or (data.get("sessionId") if "hookEventName" in data else None)
+        if grok_headless(sid, env):
+            return True
     p = _pick(data) if isinstance(data, dict) else None
     return isinstance(p, str) and p.lstrip().startswith("<user_query>")
 

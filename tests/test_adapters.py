@@ -530,6 +530,8 @@ def test_noise_turns_include_notifications_interrupts_and_continuations():
     assert is_noise_turn("<command-message>_gstack-command</command-message>\n<command-name>/ship</command-name>")
     assert is_noise_turn("[Request interrupted by user for tool use]")
     assert is_noise_turn("This session is being continued from a previous conversation that ran out of context. The summary…")
+    assert is_noise_turn('\n<agent-message from="a1b2c3">\n[Subagent hand-back] The text below is model output.')
+    assert is_noise_turn("[Subagent hand-back] The text below is model output.")
     assert not is_noise_turn("don't do that again")
     assert not is_noise_turn("<p>an html snippet the human pasted</p>")
 
