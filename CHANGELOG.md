@@ -2,6 +2,13 @@
 
 ## Unreleased — The machine guard stops starting heavy work while memory runs out
 
+- **`teyla intent` stores only the owner's own words.** Two kinds of text the owner never typed had reached the store.
+  The Claude desktop app files a subagent's final report as a user turn (`<agent-message from="...">`, opening with
+  `[Subagent hand-back]`); both are now automated turns, in `intent` and, through `human_text`, in `teyla correct` and
+  the monitor's human-turn counts. A `grok -p` review brief reached Grok's hook unwrapped; the hook now reads
+  `session_kind` (`headless`) from Grok's session store, with `is_non_interactive` in `prompt_context.json` as the
+  fallback. New `teyla intent clean [--dry]` re-checks every stored entry under the current rules, copies each changed
+  file to `<file>.bak-<UTC time>` (0600) first, and rewrites file and index atomically under the store lock.
 - **Plugin directory readiness (0.29.0).** The Claude Code plugin now carries the metadata, `LICENSE` and README the Claude
   directory checks (install line, a Privacy section that lists every path read and written and every network use). Every
   skill and command checks for the `teyla` CLI first and prints one install line when it is missing; hooks stay silent

@@ -11,6 +11,7 @@ teyla intent backfill --days 30         # keep it
 teyla intent [product] [--grep TEXT]    # no product: one line each; else one line per entry
 cat "$(teyla intent path <product>)"    # the words themselves
 teyla intent cover docs/ROADMAP.md      # which of your sentences does this plan leave out?
+teyla intent clean --dry                # entries you did not type, under today's rules; writes nothing
 ```
 
 The `UserPromptSubmit` hook `plugin/hooks/capture-intent.sh` keeps new prompts. `teyla harness sync`
@@ -36,12 +37,35 @@ wires the same script into Codex, Grok, Cursor and Hermes. Codex asks you to tru
 
 ## What is not kept
 
-- Prompts a script or another agent wrote: `claude -p`, `codex exec`, review and subagent briefs,
-  injected AGENTS.md text, scheduled-task prompts.
-- Turns the harness injects (system reminders, task notifications, slash commands) and images.
+- Prompts a script or another agent wrote: `claude -p`, `codex exec`, `grok -p`, review and subagent
+  briefs, injected AGENTS.md text, scheduled-task prompts.
+- Turns the harness injects (system reminders, task notifications, slash commands) and images. That
+  includes a subagent's final report, which the Claude desktop app files as a user turn: it is wrapped
+  in `<agent-message from="...">` and opens with `[Subagent hand-back]`.
+- A Grok prompt from a headless run. Grok's hook gets a `grok -p` brief unwrapped, like a typed
+  prompt, and documents no flag for it. The hook looks the session up in Grok's own store:
+  `$GROK_HOME/sessions/<cwd>/<id>/summary.json` says `"session_kind": "headless"` (and
+  `prompt_context.json` says `"is_non_interactive": true`) for `grok -p`, `--prompt-file` and
+  `--prompt-json`. If the store has no answer yet, the prompt is kept, and `clean` removes it later.
 - Text you paste into a prompt arrives inline and cannot be told from typing, so it is kept. A prompt
   over 50,000 characters keeps its first 50,000 and says how many were left out. The hash covers the
   kept part, so a cut prompt is still recognised after the index is rebuilt.
+
+## Repairing the store: `teyla intent clean`
+
+Entries stored before a rule existed stay in the files. `teyla intent clean` checks every entry in every
+product file against today's rules (the text rules above, and for `grok` entries the session store's
+headless flag) and removes the ones you did not type.
+
+```sh
+teyla intent clean --dry   # one line per entry it would remove (product, date, harness, session, first 60 characters)
+teyla intent clean         # remove them
+```
+
+It copies each file it changes to `<product>.md.bak-<UTC time>` (mode 0600) first, then replaces the
+file and `.index.json` atomically under the store lock. Entries it keeps are not rewritten: they stay
+byte for byte as they were. To undo a clean, copy the backup over the product file and delete `.index.json`
+(it is rebuilt from the files).
 
 ## Check a plan against your words
 
