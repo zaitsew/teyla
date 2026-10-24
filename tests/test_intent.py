@@ -679,3 +679,9 @@ def test_the_plugin_and_every_harness_run_the_hook():
     assert any("capture-intent.sh grok" in h["command"] for g in harness._grok_hooks()["hooks"]["UserPromptSubmit"] for h in g["hooks"])
     assert any("capture-intent.sh" in e["command"] for e in harness._cursor_hooks(None)["hooks"]["beforeSubmitPrompt"])
     assert "capture-intent.sh hermes" in harness.hermes_block()
+
+
+def test_owner_prompt_quoting_the_handback_marker_is_kept():
+    """Only a turn that opens with the marker is a hand-back; an owner who quotes it is not."""
+    text = "Why did the hook store a turn with the [Subagent hand-back] line in it? " + prose(450, "q")
+    assert not intent.automated(text)

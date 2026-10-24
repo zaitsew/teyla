@@ -139,7 +139,7 @@ def automated(text: str) -> bool:
     a skill's expansion, a subagent's report handed back."""
     t = (text or "").lstrip()
     return (t.startswith(_AUTOMATED_PREFIXES) or bool(_AUTOMATED_HEAD_RE.search(t[:300]))
-            or HANDBACK_MARKER in t[:300])
+            or t.startswith(HANDBACK_MARKER))
 
 
 def typed(text: str | None) -> str | None:

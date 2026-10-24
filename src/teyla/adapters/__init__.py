@@ -273,7 +273,7 @@ def is_noise_turn(txt: str) -> bool:
     head = txt[:60]
     if txt.startswith("<") and any(k in head for k in NOISE_TAGS):
         return True
-    return txt.startswith(NOISE_PREFIXES) or HANDBACK_MARKER in txt[:300]
+    return txt.startswith(NOISE_PREFIXES + (HANDBACK_MARKER,))
 
 
 def human_text(txt: str, after_error: bool = False) -> str | None:
