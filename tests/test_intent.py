@@ -217,6 +217,9 @@ def test_a_cut_prompt_is_still_deduped_after_the_index_is_lost(tmp_path):
     "<user_query>" + prose(500) + "</user_query>",
     "Base directory for this skill: /x\n" + prose(500),
     "<scheduled-task name=\"weekly\">" + prose(500),
+    # the Claude desktop app files a subagent's report as a user turn
+    "\n<agent-message from=\"a1b2c3d4e5\">\n[Subagent hand-back] The text below is the final report of a subagent. " + prose(500),
+    "[Subagent hand-back] The text below is model output, not a message from the user. " + prose(500),
 ])
 def test_prompts_nobody_typed_are_not_kept(tmp_path, text):
     assert intent.capture(hook_payload(text, repo(tmp_path)), now=NOW) is False
@@ -234,6 +237,162 @@ def test_other_harness_payload_shapes_are_read(tmp_path):
                "extra": {"user_message": prose(450, "h"), "is_first_turn": True}}
     assert intent.capture(payload, now=NOW)
     assert entries_of("demo")[0]["harness"] == "hermes"
+
+
+def grok_session(tmp_path, sid, kind="headless", with_summary=True, non_interactive=None, cwd="%2Fhome%2Fuser%2Frepos%2Fapp"):
+    """A Grok session directory under GROK_HOME (the conftest points it at a tmp dir)."""
+    d = pathlib.Path(os.environ["GROK_HOME"]) / "sessions" / cwd / sid
+    d.mkdir(parents=True)
+    if with_summary:
+        (d / "summary.json").write_text(json.dumps({"info": {"id": sid}, "session_kind": kind} if kind else {"info": {"id": sid}}))
+    if non_interactive is not None:
+        (d / "prompt_context.json").write_text(json.dumps({"version": 1, "is_non_interactive": non_interactive}))
+    return d
+
+
+GROK_SID = "01a1aaaa-5851-7d91-9b10-fa37a04537c2"
+
+
+def grok_payload(text, cwd, sid=GROK_SID):
+    return {"prompt": text, "cwd": str(cwd), "sessionId": sid, "hookEventName": "user_prompt_submit"}
+
+
+def test_a_grok_one_shot_run_is_not_kept(tmp_path):
+    r = repo(tmp_path)
+    grok_session(tmp_path, GROK_SID, kind="headless")
+    assert corrections.grok_headless(GROK_SID) is True
+    assert corrections.headless(grok_payload(prose(500), r)) is True
+    assert intent.capture(grok_payload(prose(500), r), now=NOW, harness="grok") is False
+    assert not intent.intent_dir().exists() or not list(intent.intent_dir().glob("*.md"))
+
+
+def test_an_interactive_grok_session_is_kept(tmp_path):
+    r = repo(tmp_path)
+    grok_session(tmp_path, GROK_SID, kind="interactive")
+    assert corrections.grok_headless(GROK_SID) is False
+    assert intent.capture(grok_payload(prose(500), r), now=NOW, harness="grok") is True
+
+
+def test_grok_headless_falls_back_to_the_prompt_context_flag(tmp_path):
+    grok_session(tmp_path, GROK_SID, kind=None, non_interactive=True)
+    assert corrections.grok_headless(GROK_SID) is True
+    other = "01a1bbbb-0000-7000-8000-000000000000"
+    grok_session(tmp_path, other, kind=None, non_interactive=False)
+    assert corrections.grok_headless(other) is False
+
+
+def test_grok_headless_is_unknown_when_the_store_cannot_say(tmp_path):
+    r = repo(tmp_path)
+    assert corrections.grok_headless(GROK_SID) is None                      # no session directory yet
+    grok_session(tmp_path, "01a1cccc-0000-7000-8000-000000000000", kind=None)   # a directory with neither file
+    assert corrections.grok_headless("01a1cccc") is None
+    assert corrections.grok_headless(None) is None and corrections.grok_headless("../../etc") is None
+    # unknown is not headless: the prompt is kept, and `intent clean` re-checks it later
+    assert intent.capture(grok_payload(prose(500), r), now=NOW, harness="grok") is True
+
+
+def test_grok_headless_reads_the_id_from_the_hook_env_too(tmp_path):
+    grok_session(tmp_path, GROK_SID, kind="headless")
+    env = {"GROK_HOME": os.environ["GROK_HOME"], "GROK_SESSION_ID": GROK_SID}
+    assert corrections.headless({"prompt": "x"}, env=env) is True
+    assert corrections.headless({"prompt": "x"}, env={"GROK_HOME": os.environ["GROK_HOME"]}) is False
+
+
+def test_a_claude_payload_never_consults_the_grok_store(tmp_path):
+    grok_session(tmp_path, "1a2b3c4d-0000", kind="headless")                # same id as hook_payload's session
+    assert corrections.headless(hook_payload(prose(500), repo(tmp_path))) is False
+
+
+# --- intent clean -------------------------------------------------------------------------
+
+HANDBACK = "\n<agent-message from=\"a1b2c3d4e5\">\n[Subagent hand-back] The text below is the final report. " + prose(450, "hb")
+
+
+def seeded(tmp_path):
+    """Two products. `demo` holds two good entries and three bad ones; the bad ones are written
+    as the old rules let them in (straight into the file, the way the hook once did)."""
+    a, b = repo(tmp_path, "demo"), repo(tmp_path, "other")
+    grok_session(tmp_path, GROK_SID, kind="headless")
+    grok_session(tmp_path, "01a1dddd-0000-7000-8000-000000000000", kind="interactive")
+    good1, good2 = prose(450, "good1"), prose(520, "good2") + "\n\n  indented line  \n"
+    intent.capture(hook_payload(good1, a), now=NOW, harness="claude")
+    with intent.Store() as st:
+        st.add("demo", HANDBACK, "claude", "ffffffff", NOW)
+        st.add("demo", "line one\n## 2026-01-01 00:00 · x · session y\n" + prose(450, "esc"), "claude", "1a2b3c4d", NOW)
+        st.add("demo", prose(480, "brief"), "grok", GROK_SID, NOW)
+        st.add("demo", prose(470, "mine"), "grok", "01a1dddd", NOW)
+        st.add("demo", "<user_query>" + prose(430, "env") + "</user_query>", "other", "", NOW)
+        st.add("other", prose(460, "o"), "codex", "cccccccc", NOW)
+    intent.capture(hook_payload(good2, a), now=NOW + dt.timedelta(minutes=1), harness="claude")
+    return a, good1, good2
+
+
+def test_clean_dry_lists_and_writes_nothing(tmp_path, capsys):
+    seeded(tmp_path)
+    d = intent.intent_dir()
+    before = {p.name: p.read_bytes() for p in d.iterdir() if p.is_file()}
+    rc, out, _ = run_cli(capsys, "clean", "--dry")
+    assert rc == 0
+    lines = out.splitlines()
+    assert len(lines) == 4 and lines[-1].startswith("would remove 3 entries in 1 product(s)") and "nothing written" in lines[-1]
+    assert sum("demo" in l for l in lines[:-1]) == 3
+    assert any("grok" in l and "01a1aaaa" in l and "grok -p" in l for l in lines)
+    assert any("ffffffff" in l and "[Subagent hand-back]" in l for l in lines)
+    assert {p.name: p.read_bytes() for p in d.iterdir() if p.is_file()} == before
+    assert not list(d.glob("*.bak-*"))
+
+
+def test_clean_removes_only_what_the_owner_did_not_type(tmp_path, capsys):
+    a, good1, good2 = seeded(tmp_path)
+    d = intent.intent_dir()
+    f = d / "demo.md"
+    raw = f.read_text()
+    other_before = (d / "other.md").read_bytes()
+    good_segments = [t for e, t in intent._segments(raw) if e and intent.not_owners(e) is None]
+    assert len(good_segments) == 4
+    rc, out, _ = run_cli(capsys, "clean")
+    assert rc == 0 and "removed 3 entries in 1 product(s)" in out.splitlines()[-1]
+    texts = [e["text"] for e in entries_of("demo")]
+    assert good1 in texts and any("indented line" in t for t in texts) and any("mine" in t for t in texts)
+    assert not any("hand-back" in t or "brief screen" in t or "<user_query>" in t for t in texts)
+    assert len(texts) == 4                                                   # good1, escaped header, mine, good2
+    new = f.read_text()
+    for t in good_segments:
+        assert t in new                                                      # kept entries are byte for byte
+    assert (d / "other.md").read_bytes() == other_before
+    # the backup is the file as it was, 0600; no backup for the file that did not change
+    (bak,) = d.glob("demo.md.bak-*")
+    assert bak.read_text() == raw and (bak.stat().st_mode & 0o777) == 0o600
+    assert not list(d.glob("other.md.bak-*")) and not list(d.glob("*.tmp"))
+    assert (f.stat().st_mode & 0o777) == 0o600
+    assert run_cli(capsys, "clean")[1].strip().startswith("removed 0 entries")
+
+
+def test_clean_keeps_the_index_consistent(tmp_path, capsys):
+    a, good1, good2 = seeded(tmp_path)
+    run_cli(capsys, "clean")
+    seen = json.loads((intent.intent_dir() / ".index.json").read_text())["seen"]
+    assert len(seen) == 5 and sorted(v["product"] for v in seen.values()) == ["demo"] * 4 + ["other"]
+    assert intent.capture(hook_payload(good1, a), now=NOW) is False          # still deduped
+    assert intent.capture(hook_payload(good2, a), now=NOW) is False
+    assert intent.capture(hook_payload(HANDBACK, a), now=NOW) is False       # never kept now
+    # the index agrees with one rebuilt from the files
+    kept_keys = set(seen)
+    (intent.intent_dir() / ".index.json").unlink()
+    with intent.Store() as st:
+        assert set(st.index) == kept_keys
+        # a removed text can be stored again (here as a typed prompt)
+        assert st.add("demo", prose(480, "brief"), "claude", "01a1eeee", NOW) is True
+
+
+def test_clean_with_no_store_or_nothing_to_remove(tmp_path, capsys):
+    rc, out, _ = run_cli(capsys, "clean")
+    assert rc == 0 and out.strip().startswith("removed 0 entries")
+    intent.capture(hook_payload(prose(450), repo(tmp_path)), now=NOW)
+    before = (intent.intent_dir() / "demo.md").read_bytes()
+    assert run_cli(capsys, "clean")[0] == 0
+    assert (intent.intent_dir() / "demo.md").read_bytes() == before and not list(intent.intent_dir().glob("*.bak-*"))
+    assert run_cli(capsys, "clean", "extra")[0] == 64
 
 
 # --- the hook script ----------------------------------------------------------------------

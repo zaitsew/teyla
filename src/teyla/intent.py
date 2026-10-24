@@ -14,6 +14,7 @@ after `corrections.scrub` has replaced secrets, and a planning session is pointe
     teyla intent cover <plan.md> [--product P] [--since DATE] [--last N] [--model] [--json]
                                          which of the owner's sentences a plan neither serves nor sets aside
     teyla intent backfill [--days 30] [--dry]   the same capture from Claude Code and Codex transcripts
+    teyla intent clean [--dry]           drop stored entries the owner did not type, under today's rules
     teyla intent capture                 what plugin/hooks/capture-intent.sh runs (JSON on stdin)
 
 An entry:
@@ -25,12 +26,16 @@ Product is the repo name of the prompt's cwd. A worktree (`<repo>/.claude/worktr
 `~/.worktrees/<repo>/<branch>`, or any checkout whose `.git` file points at a main checkout)
 maps to its repo; a cwd outside any repo goes to `general`.
 
-What is not stored: prompts a script or another agent wrote (`claude -p`, `codex exec`, Codex
-review briefs, subagent briefs, injected AGENTS.md text), harness-injected turns (system
-reminders, task notifications, slash-command expansions) and images. Text pasted into a prompt
+What is not stored: prompts a script or another agent wrote (`claude -p`, `codex exec`, `grok -p`,
+Codex review briefs, subagent briefs, injected AGENTS.md text), harness-injected turns (system
+reminders, task notifications, a subagent's report handed back, slash-command expansions) and images. Text pasted into a prompt
 arrives inline and cannot be told from typing; a prompt over MAX_CHARS keeps its first MAX_CHARS
 characters and says how many were left out. A line of a prompt that looks like an entry
 header gets a backslash in front, so the file stays parseable.
+
+`clean` is the repair for entries stored before a rule existed: it re-checks every entry against the
+current rules, copies each file it changes to `<file>.bak-<UTC time>` (0600) and rewrites file and
+index under the same lock. Entries it keeps stay byte for byte as they were.
 
 Writes are safe under concurrent hooks: one flock around "read index, append, write index",
 the file written with O_APPEND and fsynced, the index replaced atomically. A hook that cannot
@@ -50,6 +55,7 @@ import sys
 import time
 
 from . import corrections
+from .adapters import HANDBACK_MARKER
 
 try:  # POSIX only; without it the lock is skipped and dedupe is best effort
     import fcntl
@@ -87,6 +93,7 @@ _AUTOMATED_PREFIXES = (
     "<task-notification",
     "<side-sessions-event",
     "<ci-monitor-event",
+    "<agent-message",                                        # a subagent's report, filed by the Claude desktop app as a user turn
 )
 _AUTOMATED_HEAD_RE = re.compile(r"One-pass code review")
 _IMAGE_TAG_RE = re.compile(r"</?image\b[^>]*>")
@@ -129,9 +136,10 @@ def product_for(cwd) -> str:
 
 def automated(text: str) -> bool:
     """A prompt the owner did not type: an injected AGENTS.md, a review brief, a scheduled task,
-    a skill's expansion."""
+    a skill's expansion, a subagent's report handed back."""
     t = (text or "").lstrip()
-    return t.startswith(_AUTOMATED_PREFIXES) or bool(_AUTOMATED_HEAD_RE.search(t[:300]))
+    return (t.startswith(_AUTOMATED_PREFIXES) or bool(_AUTOMATED_HEAD_RE.search(t[:300]))
+            or HANDBACK_MARKER in t[:300])
 
 
 def typed(text: str | None) -> str | None:
@@ -522,6 +530,105 @@ def backfill(days: int = 30, dry: bool = False, cfg: dict | None = None, roots: 
     return out
 
 
+# --- clean --------------------------------------------------------------------------------
+
+def not_owners(e: dict) -> str | None:
+    """Why a stored entry (as `parse` returns it) is not the owner's own words under today's
+    rules, or None when it is. The rules are the ones the hook applies, as far as a stored entry
+    lets them be checked: the text tests, and for Grok the session store's headless flag."""
+    from .adapters import is_noise_turn
+    kept, _ = kept_text(e["text"])
+    t = kept.lstrip()
+    if automated(t) or is_noise_turn(t):
+        return "automated"
+    if t.startswith("<user_query>"):
+        return "headless envelope"
+    if e["harness"] == "grok" and corrections.grok_headless(e["session"]) is True:
+        return "grok -p"
+    return None
+
+
+def _segments(raw: str) -> list[tuple[dict | None, str]]:
+    """A product file as (parsed entry or None, its exact text): the lines before the first header
+    come first with None. The texts joined are `raw`, byte for byte."""
+    lines = raw.split("\n")
+    heads = [i for i, l in enumerate(lines) if HEADER_RE.match(l)]
+    cuts = ([0] if not heads or heads[0] else []) + heads + [len(lines)]
+    out = []
+    for a, b in zip(cuts, cuts[1:]):
+        text = "\n".join(lines[a:b]) + ("\n" if b < len(lines) else "")
+        m = HEADER_RE.match(lines[a])
+        if not m:
+            out.append((None, text))
+            continue
+        body = _unescape("\n".join(lines[a + 1:b]).strip("\n"))
+        out.append(({"date": m.group(1), "harness": m.group(2), "session": m.group(3), "text": body}, text))
+    return out
+
+
+def _write_new(path: pathlib.Path, data: bytes) -> None:
+    """A new 0600 file, fsynced; fails if `path` exists."""
+    from . import config
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        config.write_all(fd, data)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def clean(dry: bool = False, now: _dt.datetime | None = None) -> list[dict]:
+    """Remove the stored entries `not_owners` names. [{product, date, harness, session, text,
+    why}] for what was removed (or, with `dry`, would be). Each changed file is first copied to
+    `<file>.bak-<UTC time>`; then file and index are replaced atomically, under the store lock."""
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    stamp = now.astimezone(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out: list[dict] = []
+    if not intent_dir().is_dir():
+        return out
+    with Store(wait_s=30.0, dry=dry) as st:
+        for f in sorted(st.dir.glob("*.md")):
+            try:
+                raw = f.read_bytes().decode("utf-8", "surrogateescape")
+            except OSError:
+                continue
+            keep, dropped = [], []
+            for e, text in _segments(raw):
+                why = not_owners(e) if e else None
+                if why:
+                    dropped.append((e, why))
+                else:
+                    keep.append(text)
+            if not dropped:
+                continue
+            for e, why in dropped:
+                out.append({"product": f.stem, "date": e["date"], "harness": e["harness"], "session": e["session"],
+                            "text": e["text"], "why": why})
+            if dry:
+                continue
+            data = raw.encode("utf-8", "surrogateescape")
+            bak, n = st.dir / f"{f.name}.bak-{stamp}", 1
+            while True:
+                try:
+                    _write_new(bak, data)
+                    break
+                except FileExistsError:
+                    n += 1
+                    bak = st.dir / f"{f.name}.bak-{stamp}-{n}"
+            tmp = st.dir / f"{f.name}.{os.getpid()}.tmp"
+            try:
+                _write_new(tmp, "".join(keep).encode("utf-8", "surrogateescape"))
+                os.replace(tmp, f)
+            finally:
+                with contextlib.suppress(OSError):
+                    tmp.unlink()
+            for e, _ in dropped:
+                kept, _cut = kept_text(e["text"])
+                st.index.pop(f"{f.stem}:{digest(kept)}", None)
+            st._dirty = True
+    return out
+
+
 # --- commands -----------------------------------------------------------------------------
 
 def _line(e: dict, product: bool = False) -> str:
@@ -543,7 +650,7 @@ def _list_entries(args, names: list[str]) -> list[dict]:
 
 def cmd_intent(args) -> int:
     words = list(args.words or [])
-    sub = words[0] if words and words[0] in ("capture", "backfill", "path", "cover") else None
+    sub = words[0] if words and words[0] in ("capture", "backfill", "path", "cover", "clean") else None
     if sub == "cover":
         from . import intent_cover
         return intent_cover.cmd_cover(args, words)
@@ -567,6 +674,23 @@ def cmd_intent(args) -> int:
         print(f"{'total':24} found {sum(r['found'] for r in res.values()):4}   {verb} {sum(r['new'] for r in res.values()):4}"
               f"   in {len(res)} product(s), last {days} days")
         return 0
+    if sub == "clean":
+        if len(words) != 1:
+            print("usage: teyla intent clean [--dry]", file=sys.stderr)
+            return 64
+        try:
+            gone = clean(dry=args.dry)
+        except TimeoutError:
+            print("teyla: the intent store is locked; try again in a moment", file=sys.stderr)
+            return 1
+        verb = "would remove" if args.dry else "removed"
+        for g in gone:
+            first = " ".join(g["text"].split())[:60]
+            print(f"{g['product']:18} {g['date'][:10]}  {g['harness']:7} {g['session']:8}  {g['why']:17} {first}")
+        n = len({g["product"] for g in gone})
+        print(f"{verb} {len(gone)} entr{'y' if len(gone) == 1 else 'ies'} in {n} product(s)"
+              + ("; nothing written" if args.dry else "; each changed file was copied to <file>.bak-<time> first"))
+        return 0
     if sub == "path":
         if len(words) != 2:
             print("usage: teyla intent path <product>", file=sys.stderr)
@@ -580,7 +704,7 @@ def cmd_intent(args) -> int:
         print(intent_dir() / f"{name}.md")
         return 0
     if len(words) > 1:
-        print("usage: teyla intent [product] [--days N] [--grep TEXT] [--json] | path <product> | cover <plan.md> | backfill | capture",
+        print("usage: teyla intent [product] [--days N] [--grep TEXT] [--json] | path <product> | cover <plan.md> | backfill | clean | capture",
               file=sys.stderr)
         return 64
     if words:
@@ -622,11 +746,11 @@ def cmd_intent(args) -> int:
 def register(sp):
     q = sp.add_parser("intent", help="the owner's long prompts, verbatim, per product: list, path, backfill")
     q.set_defaults(fn=cmd_intent)
-    q.add_argument("words", nargs="*", metavar="[product|path <product>|cover <plan.md>|backfill|capture]")
+    q.add_argument("words", nargs="*", metavar="[product|path <product>|cover <plan.md>|backfill|clean|capture]")
     q.add_argument("--days", type=int, help="list: only the last N days; backfill: the window (default 30)")
     q.add_argument("--grep", help="list: only entries containing TEXT (case-insensitive)")
     q.add_argument("--json", action="store_true", help="list: JSON, the full text of each entry")
-    q.add_argument("--dry", action="store_true", help="backfill: count, write nothing")
+    q.add_argument("--dry", action="store_true", help="backfill, clean: report, write nothing")
     q.add_argument("--product", help="cover: the product whose words the plan is checked against (default: the plan's repo)")
     q.add_argument("--since", metavar="YYYY-MM-DD", help="cover: only entries from this date on")
     q.add_argument("--last", type=int, metavar="N", help="cover: only the last N entries")
