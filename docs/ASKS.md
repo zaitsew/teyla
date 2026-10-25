@@ -10,6 +10,7 @@ Code sessions ended that way and 1 got an answer. `teyla asks` finds them.
     teyla asks --flat                the old list: one header per product, oldest product first
     teyla asks --html --open         the same as one page (~/.teyla/asks.html), readable on a phone
     teyla asks done <id> [--note T]  close one; a prefix of 3+ characters is enough
+    teyla asks undo <id>...          reopen a done one, or an ask Teyla closed (see below)
     teyla asks snooze <id> <days>    hide one until the days pass
     teyla asks done --older-than 3   close every question older than 3 days (--product P for one)
     teyla asks --all --json          include done, snoozed and muted items; machine-readable
@@ -26,6 +27,48 @@ product's asks under it, oldest first. Products with `focus = true` come first, 
 oldest ask, and `unassigned` is last. `--flat` prints the old list. `--json` keeps its keys and adds
 `groups`, `[{product, display_name, stage, focus, count, ids}]`, plus `muted` (a count) and
 `muted_products`. `--html` uses the same groups, with headings only.
+
+## Asks you can trust: resolved and collapsed
+
+Two kinds of ask never needed you, and `teyla asks` closes them itself. The default listing hides
+both and ends with one line:
+
+    filtered: 3 resolved (PR merged/closed), 2 duplicates — teyla asks --all
+
+`teyla asks --all` shows them, marked `done` or `duplicate`, with the reason under the question.
+`teyla asks undo <id>` brings one back.
+
+**Resolved by PR state.** An ask whose `pr` link points to a PR that is MERGED or CLOSED, and became
+so after the ask's last activity, is done. It is recorded in `~/.teyla/asks.json` like a manual
+`done`, with the note `auto: PR merged <url>` (or `closed`). A PR merged before the ask was written
+does not count. The state is read from, in order:
+
+1. the open PRs in the backlog cache (`state-backlog.json`, when under 30 minutes old): open;
+2. `~/.teyla/pr-state.json`, entries under 30 minutes old;
+3. one batched `gh api graphql` query for the rest (state, `mergedAt`, `closedAt`).
+
+Only `teyla asks` runs the query. `teyla state`, the relay and the other readers use the caches and
+never wait on the network. Without `gh`, in safe mode, with no network, on an error or an answer that
+does not parse, nothing resolves and nothing fails. After a failed query the next one waits five minutes.
+
+**Duplicates.** Within one product, a `question` ask that repeats a newer one collapses into the newer:
+
+- the same session and the same normalised question (lower case, whitespace collapsed, `*`, `_` and
+  backticks removed); or
+- a token-set Jaccard of at least 0.8 over the words of 3 or more letters, when both questions have at
+  least 6 such words.
+
+The kept ask shows `(+N similar)`, and `--json` gives it `dupes: [ids]`. The collapsed ones are hidden,
+not marked done. When the kept ask is done, its duplicates are done too, with the note
+`auto: duplicate of <id>`. Asks of different products never collapse; neither do `blocked` asks,
+gates and reminders. An older ask that was already closed by hand stays as it is.
+
+**Undo.** `teyla asks undo <id>...` removes the done mark. An ask you undo is remembered (`undone` in
+`asks.json`): neither check touches it again. Undoing a kept ask also puts the duplicates that were
+closed because of it back under it; undoing a hidden duplicate shows it as its own ask.
+
+`teyla asks --json` adds `resolved` and `duplicates` (counts); `teyla state --json` adds the same two
+numbers to `totals`. The version of the snapshot stays 2.
 
 ## Parked products stay quiet
 

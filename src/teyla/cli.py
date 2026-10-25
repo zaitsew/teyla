@@ -15,7 +15,7 @@
   teyla policy refresh [--dry] [--resolved]                       three-way merge of template changes into ~/.agents/POLICY.md
   teyla harvest <path> [--project SLUG]                          tool spine + corrections for sessions touching a path
   teyla asks [--days N] [--product P] [--all] [--json] [--html [-o FILE] [--open]]   every question an AI session left waiting on you
-  teyla asks done <id-prefix>... [--note TEXT] | snooze <id-prefix> <days>            close one, or hide it for a while
+  teyla asks done <id-prefix>... [--note TEXT] | undo <id-prefix>... | snooze <id-prefix> <days>   close one, reopen one, or hide one
   teyla product [list] [--json] | init [--write] | add <id> [--repo P] | set <id> k=v... | park|wake <id>   the product registry (~/.teyla/products.toml)
   teyla product assign <ask-id-prefix|session-id> <id> [--ask-only]   file a session's asks under another product
   teyla note "text" [--product P] | link <id> <product> | drop|undrop <id>   keep a text idea, linked to a product (~/.teyla/notes/)

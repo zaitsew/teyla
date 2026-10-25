@@ -229,7 +229,8 @@ def test_build_snapshot_matches_the_contract_fields(tmp_path):
     assert set(st["asks"][0]) == set(fixture["asks"][0])
     assert set(st["products"][0]) == set(fixture["products"][0])
     assert set(st["relay"]) == set(fixture["relay"])
-    assert st["totals"] == {"questions": 1, "running": 0, "spent_today_usd": 4.1, "tasks": 0, "done": 0}
+    assert st["totals"] == {"questions": 1, "running": 0, "spent_today_usd": 4.1, "tasks": 0, "done": 0,
+                            "resolved": 0, "duplicates": 0}
     assert st["version"] == 2 and st["generated"] == asks._iso(NOW)
     assert st["relay"] == {"on": False, "paired": False, "folder": "", "synced": ""}
 

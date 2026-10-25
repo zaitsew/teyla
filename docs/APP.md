@@ -90,6 +90,8 @@ new ones, and a version 2 client treats a missing field as empty.
 
 - `version`: 2.
 - `totals`: adds `tasks` and `done` (counts of the lists below).
+- `totals`: also `resolved` (asks closed because their PR is merged or closed) and `duplicates` (asks collapsed
+  into a newer one). Both are already left out of `asks[]` and `questions`; an `asks[]` item may carry `dupes: [ids]`.
 - `tasks[]`: things only the owner can do that are not questions, oldest first:
   `{id, kind, product, title, detail, link, age_s}`.
   - `kind: merge`: an open PR in a repo that is not merge-approved (the list in
