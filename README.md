@@ -26,7 +26,7 @@ uv tool install --python 3.12 git+https://github.com/zaitsew/teyla
 teyla start          # the diagnosis, then each change: yes, no or explain
 ```
 
-Try it first, with nothing installed and nothing written:
+Try it first without installing it. It changes no setting of your tools; it keeps its counts in `~/.teyla`:
 
 ```bash
 uvx --python 3.12 --from git+https://github.com/zaitsew/teyla teyla start
