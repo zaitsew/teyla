@@ -34,6 +34,10 @@ final class AppModel {
     private(set) var focusedAskID: String?
     /// What Settings says about the ⌥⌘Space shortcut.
     private(set) var hotKeyLine = GlobalHotKey.describe(noErr)
+    /// The quick-note shortcut the owner set (nil: turned off), and the one actually registered (nil: none works).
+    private(set) var quickNoteSetting: Shortcut? = ShortcutStore().load()
+    private(set) var quickNoteActive: Shortcut?
+    private(set) var quickNoteLine = QuickNoteShortcut.describe(ShortcutStore().load(), status: nil)
     /// The product new tasks start in by default; chosen by clicking a product. Remembered.
     private(set) var selectedProduct: String? = UserDefaults.standard.string(forKey: "selectedProduct")
 
@@ -43,6 +47,8 @@ final class AppModel {
     @ObservationIgnored let cli: TeylaCLI
     let newTask: NewTaskModel
     let relay: RelayModel
+    let quickNote: QuickNoteModel
+    let noteList: NotesModel
     @ObservationIgnored private var hotKeyTalk = PushToTalk()
     @ObservationIgnored private var watcher: SessionWatcher?
     @ObservationIgnored private var timerTask: Task<Void, Never>?
@@ -56,6 +62,16 @@ final class AppModel {
         self.cli = cli
         newTask = NewTaskModel(cli: cli)
         relay = RelayModel(cli: cli)
+        quickNote = QuickNoteModel(cli: cli)
+        noteList = NotesModel(cli: cli)
+        let names: () -> [String] = { [weak self] in
+            NewTask.products(self?.snapshot?.products ?? []).map(\.name)
+        }
+        quickNote.productNames = names
+        noteList.productNames = names
+        quickNote.saved = { [weak self] note in self?.noteList.saved(note) }
+        quickNote.learnedCandidates = { [weak self] list in self?.noteList.setCandidates(list) }
+        quickNote.close = { [weak self] in self?.closeQuickNote() }
     }
 
     // MARK: Derived
@@ -109,6 +125,7 @@ final class AppModel {
     }
 
     func refresh() {
+        noteList.refresh()
         if isRefreshing {
             refreshQueued = true
             return
@@ -220,12 +237,56 @@ final class AppModel {
 
     func clearFocus() { focusedAskID = nil }
 
-    /// Registers ⌥⌘Space for push-to-talk. Called once at launch.
+    /// Registers ⌥⌘Space for push-to-talk and the quick-note shortcut. Called once at launch.
     func registerHotKey() {
         let key = GlobalHotKey.shared
         key.onPress = { Task { @MainActor in AppModel.shared.hotKeyDown() } }
         key.onRelease = { Task { @MainActor in AppModel.shared.hotKeyUp() } }
         hotKeyLine = GlobalHotKey.describe(key.register())
+        GlobalHotKey.quickNote.onPress = { Task { @MainActor in AppModel.shared.toggleQuickNote() } }
+        applyQuickNoteShortcut()
+    }
+
+    // MARK: Quick note
+
+    /// Registers what is stored (or nothing, when the owner cleared it). A failure leaves the shortcut off and says why.
+    func applyQuickNoteShortcut() {
+        let wanted = ShortcutStore().load()
+        quickNoteSetting = wanted
+        guard let wanted else {
+            GlobalHotKey.quickNote.unregister()
+            quickNoteActive = nil
+            quickNoteLine = QuickNoteShortcut.describe(nil, status: nil)
+            return
+        }
+        let status = GlobalHotKey.quickNote.register(wanted)
+        quickNoteActive = status == noErr ? wanted : nil
+        quickNoteLine = QuickNoteShortcut.describe(wanted, status: status)
+    }
+
+    /// Saves the recorded shortcut (nil turns it off) and registers it at once.
+    func setQuickNoteShortcut(_ shortcut: Shortcut?) {
+        ShortcutStore().save(shortcut)
+        applyQuickNoteShortcut()
+    }
+
+    /// While the recorder listens, the shortcut is released so pressing it reaches the recorder.
+    func pauseQuickNoteShortcut() {
+        GlobalHotKey.quickNote.unregister()
+        quickNoteActive = nil
+    }
+
+    func openQuickNote() {
+        QuickNotePanelController.shared.show(model: self)
+    }
+
+    func closeQuickNote() {
+        QuickNotePanelController.shared.hide()
+    }
+
+    /// The shortcut: open the panel, or close it when it is already open.
+    func toggleQuickNote() {
+        if QuickNotePanelController.shared.isVisible { closeQuickNote() } else { openQuickNote() }
     }
 
     /// Opens a URL link in its app. A link without a URL scheme is a shell command (Claude Code

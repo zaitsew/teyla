@@ -158,6 +158,9 @@ Notes on the CLI as built (version 2):
 | `teyla dispatch <product> [--harness codex\|claude] [--json] [--dry] -- <text>` | Starts a new session in a fresh worktree under `~/.worktrees/<repo>/`. Codex by default, through `codex-lane` and the machine guard. |
 | `teyla relay on\|off\|status [--json]` | Turns the iPhone relay on or off. |
 | `teyla relay pair [--json] [--rotate]` | Prints the pairing string the window shows as a QR code, creating the shared key the first time. `--rotate` replaces the key; every phone pairs again. |
+| `teyla note --suggest "<text>" --json [--cwd DIR]` | The product a note would get, how (`text`, `cwd` or `""`), and the picker's `candidates` (registered ids, focus first, parked last). Writes nothing. `-` reads the text from stdin. |
+| `teyla note - --product <id> --json` | Keeps the note read from stdin and prints it as JSON (the `teyla notes --json` keys, plus `intent`). `link <id> <product>` and `drop <id>` take `--json` too. |
+| `teyla notes --json` | The open notes, newest first, as a list of `{id, text, product, source, created, updated, linked_by, dropped}`. |
 | `teyla relay sync` | One pass: writes the snapshot, then delivers every signed outbox entry. A launchd agent runs it when the outbox changes and every 60 s. |
 
 `say` and `dispatch` print `{ok, via, detail, id}` like `teyla answer`; `dispatch` adds
@@ -221,3 +224,21 @@ working directory is a worktree in that file, although they leave out every othe
 Speech is recognised on the device (Apple Speech, on-device only) in English, Spanish and
 Russian; no audio leaves it. Push-to-talk fills the text field; nothing is sent until the owner
 taps Send. The Mac window has a global shortcut for push-to-talk.
+
+### Notes (quick note and the Notes section)
+
+The Mac keeps no notes; `teyla note` and `teyla notes` do ([NOTES.md](NOTES.md)).
+
+- **Quick note.** A global shortcut opens a small floating panel without bringing Teyla forward. The
+  shortcut is optional and recorded in Settings; it is ⌥Space until the owner records another or clears
+  it. Return saves, Shift-Return adds a line, Esc closes and keeps the draft. While the owner types, the
+  app asks `teyla note --suggest` (300 ms after the last key) and pre-selects the product; the chip row
+  changes it with a click or ⌘0 (Inbox) and ⌘1–⌘9 (the first nine candidates). Save runs
+  `teyla note - --product <id> --json` with the text on stdin. A failed save keeps the panel open with
+  the error and the text.
+- **Shortcut rules.** A recorded combination needs ⌘, ⌥ or ⌃, and cannot be push-to-talk (⌥⌘Space). If
+  registration fails (another app owns it), Settings says so and the shortcut stays off; the menu-bar item
+  still opens the panel. Labels in the menu bar and the Notes section show the shortcut that is active, or none.
+- **Notes section.** Under "Needs you": the Inbox count and the newest five open notes with their product
+  chip, age and two lines of text. Link… runs `teyla note link`, Drop runs `teyla note drop`; the list is
+  read again after each action. The data is `teyla notes --json`, not the snapshot.

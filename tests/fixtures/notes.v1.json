@@ -1,0 +1,9 @@
+[
+ {"id": "nb3m4k", "text": "Weekly digest should list parked products too, with the day each one went quiet", "product": "cellar", "source": "owner", "created": "2026-10-17T21:22:00Z", "updated": "2026-10-17T21:22:00Z", "linked_by": "text", "dropped": false},
+ {"id": "nq7w2d", "text": "Something like streaks, but for shipping: one small release a day keeps the chain", "product": "inbox", "source": "owner", "created": "2026-10-17T21:11:00Z", "updated": "2026-10-17T21:11:00Z", "linked_by": "", "dropped": false},
+ {"id": "nf5x9a", "text": "Try a dark icon for the settings page\nand check it against the light one", "product": "atlas", "source": "owner", "created": "2026-10-17T18:40:00Z", "updated": "2026-10-17T18:40:00Z", "linked_by": "owner", "dropped": false},
+ {"id": "nh2c6t", "text": "Lens could name the lens in the photo caption", "product": "lens", "source": "owner", "created": "2026-10-16T09:05:00Z", "updated": "2026-10-16T09:05:00Z", "linked_by": "text", "dropped": false},
+ {"id": "nd8p3e", "text": "A timer for each stage, with a tap on the watch", "product": "cellar", "source": "owner", "created": "2026-10-14T20:30:00Z", "updated": "2026-10-14T20:30:00Z", "linked_by": "owner", "dropped": false},
+ {"id": "nk4r7y", "text": "Evening plan could use events from the city feed", "product": "atlas", "source": "owner", "created": "2026-10-11T08:15:00Z", "updated": "2026-10-11T08:15:00Z", "linked_by": "cwd", "dropped": false},
+ {"id": "nm6v2j", "text": "A tool that reads my training log and suggests dinner", "product": "inbox", "source": "owner", "created": "2026-10-10T19:50:00Z", "updated": "2026-10-10T19:50:00Z", "linked_by": "", "dropped": false}
+]

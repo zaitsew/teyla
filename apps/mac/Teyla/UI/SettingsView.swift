@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings: voice language and shortcut, and the iPhone relay with its pairing QR code.
+/// Settings: voice language and shortcut, the quick-note shortcut, and the iPhone relay with its pairing QR code.
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @AppStorage(Voice.defaultsKey) private var localeID = Voice.locales[0].id
@@ -20,6 +20,13 @@ struct SettingsView: View {
                 Text(model.hotKeyLine)
                     .font(Typo.caption)
                     .foregroundStyle(Palette.textSecondary)
+            }
+            Section("Quick note") {
+                LabeledContent("Shortcut") { ShortcutRecorder() }
+                Text("A note is kept as typed, filed under a product, and passed on as your own words.")
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Section("iPhone") {
                 Toggle("iPhone relay", isOn: Binding(

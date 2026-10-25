@@ -32,6 +32,7 @@ Requires macOS 15 and Xcode. The app is ad-hoc signed for local use only.
 | Only you | `tasks[]`: a PR to merge, an issue assigned to you, with its age. | Open (the link). |
 | Done since yesterday | `done[]` as cards: status chip, product, title, at most 3 result lines, the needs line, links. Four show; the rest are one click away. | Open session. |
 | Products | State, issues and PRs waiting, the next step. Click a product to make it the default for new tasks. | |
+| Notes | The Inbox count and the newest five open notes: product chip, age, the text clipped to two lines. | Link… (a product menu) or Drop; New note opens the panel. |
 | Running now | Each session active in the last 10 minutes. | Codex: a one-line correction field (`teyla say`). Others: Open. |
 
 Notes:
@@ -46,7 +47,15 @@ Notes:
   Text lands in the field; nothing is sent until Send.
 - **⌥⌘Space** (Carbon `RegisterEventHotKey`, no Accessibility permission): brings the window forward
   and dictates into the new-task sheet. Settings shows whether the shortcut registered.
-- **Settings** (⌘,): voice language; iPhone relay on or off (`teyla relay on|off`); **Pair iPhone**
+- **Quick note**: a global shortcut (default **⌥Space**, optional) opens a small floating panel
+  over any app, without bringing Teyla forward. Type, and the product chip pre-selects itself
+  ("named in the text" or "from Inbox", 300 ms after you stop typing); ⌘1–⌘9 or a click changes it,
+  ⌘0 is the Inbox. ⏎ saves (`teyla note - --product <id> --json`, the text on stdin), ⇧⏎ adds a
+  line, Esc closes and keeps the draft. A failed save keeps the panel open with the error. The
+  menu-bar item "Quick note" opens it too and shows the shortcut that is active, or none.
+- **Settings** (⌘,): **Quick note shortcut**: click the field, press a combination with ⌘, ⌥ or ⌃;
+  Esc cancels, Clear turns the shortcut off. ⌥⌘Space is refused (push-to-talk). If another app owns
+  the combination, Settings says so and the shortcut stays off; the menu-bar item still works. Voice language; iPhone relay on or off (`teyla relay on|off`); **Pair iPhone**
   runs `teyla relay pair --json` and shows the pairing string as a QR code (cleared after 5 minutes
   and when Settings closes), with when the Mac last synced.
 - **Notifications**: one local notification per new question, with the question as text. Clicking
@@ -59,13 +68,16 @@ Notes:
 - `teyla state --json` for the snapshot. Actions: `teyla answer <id> --json -- <text>`,
   `teyla say <running-id> --json -- <text>`, `teyla dispatch <product> --harness codex|claude --json -- <text>`,
   `teyla relay on|off`, `teyla relay pair --json`, `teyla asks snooze`, `teyla asks done`. Free text
-  always follows `--`. The binary is looked up in this order: `$TEYLA_BIN`, `~/.local/bin/teyla`,
+  always follows `--`. Notes: `teyla notes --json`, `teyla note --suggest - --json --cwd <home>` and
+  `teyla note - --product <id> --json` (both with the text on stdin, never as an argument),
+  `teyla note link <id> <product> --json`, `teyla note drop <id> --json` ([NOTES.md](../../docs/NOTES.md)). The binary is looked up in this order: `$TEYLA_BIN`, `~/.local/bin/teyla`,
   `/opt/homebrew/bin/teyla`, `/usr/local/bin/teyla`.
 - It re-reads within 2 s of a change under `~/Library/Application Support/Claude/claude-code-sessions`,
   `~/.claude/projects` and `~/.codex/sessions` (missing ones are skipped), every 60 s, and when
   the window gets focus.
 - `TEYLA_STATE_FIXTURE=<path>` reads a JSON file instead of running the CLI and simulates every
-  write. Use `tests/fixtures/state.v2.json`.
+  write. Use `tests/fixtures/state.v2.json`. The notes come from `notes.v1.json` beside it
+  (or `TEYLA_NOTES_FIXTURE`); link and drop change the list on screen only.
 - The pairing string is read from any string value of the `relay pair --json` output, or from plain
   text, and shown only if it matches `teyla-pair:v1:` plus 43 base64url characters.
 
@@ -78,7 +90,9 @@ teyla load --wait --kind build && xcodebuild test -project Teyla.xcodeproj -sche
 
 The tests cover model decoding, formatting, CLI argument building (free text after `--`), fixture
 writes, the pairing string and its QR code (read back with `CIDetector`), voice rules and
-push-to-talk, the new-task defaults and the one-notification-per-question tracker. They compile the
+push-to-talk, the new-task defaults, the one-notification-per-question tracker, the note commands
+(text on stdin, checked against a stand-in `teyla`), the suggestion and notes JSON, the picker keys,
+and the shortcut keymap, storage and conflict rule. They compile the
 `Teyla/Core` sources directly, so no app is launched. The generated `Teyla.xcodeproj` and `build/`
 are not committed.
 
@@ -88,12 +102,13 @@ Views use the tokens in `Teyla/UI/Tokens.swift` (spacing, type, colour roles); n
 
 **Screenshots.** With `TEYLA_STATE_FIXTURE` set, these variables shape the preview (they are ignored
 otherwise): `TEYLA_PREVIEW_APPEARANCE=light|dark`, `TEYLA_PREVIEW_SIZE=<w>x<h>`,
-`TEYLA_PREVIEW_SCROLL=end`, `TEYLA_PREVIEW_OPEN=new-task|settings|pair|focus:<ask id>` and
+`TEYLA_PREVIEW_SCROLL=end`, `TEYLA_PREVIEW_OPEN=new-task|quick-note|settings|pair|focus:<ask id>` and
 `TEYLA_PREVIEW_DRAFT=<text>`. Capture a window with `screencapture -l <window id>`.
 
 ## Not verified on a real run
 
-Notification delivery and click-through, the ⌥⌘Space press and on-device recognition need a
+The quick-note shortcut press, typing into the panel from another app, and the recorder's key capture
+were built to the APIs but not exercised headlessly. Notification delivery and click-through, the ⌥⌘Space press and on-device recognition need a
 logged-in desktop with the permissions granted; they were built to the APIs but not exercised
 headlessly. `teyla say`, `dispatch` and `relay` are called as documented in `docs/APP.md`; the
 `relay pair --json` key name is not in the contract, so the app searches for the string.

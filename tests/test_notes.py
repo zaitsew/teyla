@@ -292,6 +292,98 @@ def test_concurrent_appends_stay_valid_jsonl(two_products):
     assert len(notes.load()) == 48 and len(notes.listing()) == 36
 
 
+# --- the suggestion for the Mac panel -----------------------------------------------------------
+
+def suggest_json(capsys, *argv):
+    rc, out, err = run(capsys, "note", "--suggest", *argv, "--json")
+    return rc, (json.loads(out) if out.strip() else None), err
+
+
+def test_suggest_prints_the_choice_and_the_candidates_and_writes_nothing(two_products, capsys):
+    rc, found, _ = suggest_json(capsys, "Alpha needs a settings page")
+    assert rc == 0
+    assert found == {"product": "app-a", "linked_by": "text", "candidates": ["app-a", "tool-b"]}
+    assert not notes.store_path().exists() and not notes.notes_dir().exists()
+    assert notes.listing() == []
+    assert not intent.intent_dir().exists() or not list(intent.intent_dir().iterdir())
+
+
+def test_suggest_order_matches_notes_suggest(two_products, tmp_path, monkeypatch, capsys):
+    for text, where in (("Alpha needs a settings page", "elsewhere"), ("no product word here", "b"),
+                        ("nobody at all", "elsewhere"), ("alpha and tool-b both", "a")):
+        monkeypatch.chdir(tmp_path / where)
+        rc, found, _ = suggest_json(capsys, text)
+        product, how = notes.suggest(text)
+        assert rc == 0 and (found["product"], found["linked_by"]) == (product, how)
+        saved = notes.add(text)                                                                 # and add agrees
+        assert (saved["product"], saved["linked_by"]) == (product, how)
+
+
+def test_suggest_takes_the_directory_from_cwd(two_products, tmp_path, capsys):
+    rc, found, _ = suggest_json(capsys, "plain words", "--cwd", str(tmp_path / "b"))
+    assert rc == 0 and (found["product"], found["linked_by"]) == ("tool-b", "cwd")
+    rc, found, _ = suggest_json(capsys, "plain words", "--cwd", str(tmp_path / "elsewhere"))
+    assert (found["product"], found["linked_by"]) == ("inbox", "")
+
+
+def test_suggest_reads_stdin_and_takes_empty_text(two_products, capsys, monkeypatch):
+    import io
+    monkeypatch.setattr("sys.stdin", io.StringIO("--alpha\nin a long thought"))
+    rc, found, _ = suggest_json(capsys, "-")
+    assert rc == 0 and found["product"] == "app-a"
+    rc, found, _ = suggest_json(capsys)                                  # nothing typed yet: only the list matters
+    assert rc == 0 and found["product"] == "inbox" and found["candidates"] == ["app-a", "tool-b"]
+
+
+def test_candidates_put_focus_first_and_parked_last(capsys):
+    register(**{"p-one": {}, "p-two": {"focus": True}, "p-three": {"stage": "parked"}, "p-four": {}, "p-five": {"focus": True}})
+    assert notes.candidates() == ["p-two", "p-five", "p-one", "p-four", "p-three"]
+    rc, found, _ = suggest_json(capsys, "x")
+    assert found["candidates"] == notes.candidates()
+
+
+def test_suggest_without_a_registry_lists_no_candidates(capsys):
+    rc, found, _ = suggest_json(capsys, "an idea")
+    assert rc == 0 and found == {"product": "inbox", "linked_by": "", "candidates": []}
+
+
+def test_suggest_refuses_product(two_products, capsys):
+    assert run(capsys, "note", "--suggest", "x", "--product", "app-a", "--json")[0] == 2
+
+
+def test_suggest_without_json_is_one_readable_line(two_products, capsys):
+    rc, out, _ = run(capsys, "note", "--suggest", "Alpha first")
+    assert rc == 0 and out.startswith("app-a  (named in the text)") and len(out.strip().splitlines()) == 1
+
+
+def test_note_json_prints_the_saved_note(two_products, capsys, monkeypatch):
+    import io
+    monkeypatch.setattr("sys.stdin", io.StringIO("an idea\nover two lines\n"))
+    rc, out, _ = run(capsys, "note", "-", "--product", "alpha", "--json")
+    n = json.loads(out)
+    assert rc == 0 and n["text"] == "an idea\nover two lines" and n["product"] == "app-a" and n["linked_by"] == "owner"
+    assert n["dropped"] is False and n["source"] == "owner" and n["intent"] is True
+    assert {"id", "text", "product", "source", "created", "updated", "linked_by", "dropped"} <= set(n)
+    (listed,) = notes.listing()
+    assert listed["id"] == n["id"]
+
+
+def test_note_json_without_product_uses_the_cwd_option(two_products, tmp_path, capsys):
+    rc, out, _ = run(capsys, "note", "no product word", "--cwd", str(tmp_path / "a"), "--json")
+    n = json.loads(out)
+    assert rc == 0 and (n["product"], n["linked_by"]) == ("app-a", "cwd")
+
+
+def test_link_and_drop_print_the_note_as_json(two_products, capsys):
+    n = notes.add("an idea")
+    rc, out, _ = run(capsys, "note", "link", n["id"], "tool-b", "--json")
+    assert rc == 0 and json.loads(out)["product"] == "tool-b" and json.loads(out)["linked_by"] == "owner"
+    rc, out, _ = run(capsys, "note", "drop", n["id"], "--json")
+    assert rc == 0 and json.loads(out)["dropped"] is True
+    rc, out, _ = run(capsys, "notes", "--json")
+    assert json.loads(out) == []                                          # an open-notes list: the app shows no dropped ones
+
+
 # --- the snapshot -----------------------------------------------------------------------------
 
 def test_state_counts_open_notes_by_product(two_products, tmp_path):

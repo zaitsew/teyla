@@ -250,9 +250,11 @@
   "synced": ""
  },
  "notes": {
-  "inbox": 1,
+  "inbox": 2,
   "by_product": {
-   "cellar": 2
+   "atlas": 2,
+   "cellar": 2,
+   "lens": 1
   }
  }
 }

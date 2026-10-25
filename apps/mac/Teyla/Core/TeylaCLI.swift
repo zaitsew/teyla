@@ -56,6 +56,7 @@ actor TeylaCLI {
     private let env: [String: String]
     private let home: String
     private let fixtureURL: URL?
+    private let notesFixtureURL: URL?
 
     init(env: [String: String] = ProcessInfo.processInfo.environment, home: String = NSHomeDirectory()) {
         self.env = env
@@ -64,6 +65,12 @@ actor TeylaCLI {
             fixtureURL = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
         } else {
             fixtureURL = nil
+        }
+        if let path = env["TEYLA_NOTES_FIXTURE"], !path.isEmpty {
+            notesFixtureURL = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        } else {
+            // The notes sample sits beside the state sample, when there is one.
+            notesFixtureURL = fixtureURL?.deletingLastPathComponent().appendingPathComponent("notes.v1.json")
         }
     }
 
@@ -106,6 +113,56 @@ actor TeylaCLI {
                                 worktree: "~/.worktrees/\(product)/preview", link: "https://example.com/teyla-preview")
         }
         return try await deliver(Self.dispatchArguments(product: product, harness: harness, text: text), timeout: 180)
+    }
+
+    // MARK: Notes (docs/NOTES.md)
+
+    /// `teyla notes --json`: the open notes, newest first. With a fixture, the sample beside it (none is an empty list).
+    func notes() async throws -> [NoteItem] {
+        if fixtureURL != nil {
+            guard let url = notesFixtureURL, let data = try? Data(contentsOf: url) else { return [] }
+            return try Notes.decodeNotes(data)
+        }
+        let out = try await run(Notes.listArguments, timeout: 30)
+        guard out.status == 0 else { throw TeylaError.failed(code: out.status, message: Self.oneLine(out.stderrText)) }
+        return try Notes.decodeNotes(out.stdout)
+    }
+
+    /// `teyla note --suggest`: the product the text would get and the picker's list. Writes nothing.
+    /// With a fixture, `products` stand in for the registry.
+    func suggestNote(text: String, products: [String]) async throws -> NoteSuggestion {
+        if fixtureURL != nil { return Notes.simulate(text: text, products: products) }
+        let out = try await run(Notes.suggestArguments(cwd: home), timeout: 15, stdin: Data(text.utf8))
+        guard out.status == 0 else { throw TeylaError.failed(code: out.status, message: Self.oneLine(out.stderrText)) }
+        return try Notes.decodeSuggestion(out.stdout)
+    }
+
+    /// `teyla note - --product <id> --json` with the text on stdin. Returns the saved note.
+    func saveNote(text: String, product: String) async throws -> NoteItem {
+        if fixtureURL != nil {
+            try? await Task.sleep(for: .milliseconds(300))
+            return NoteItem(id: "nfixture", text: text, product: product,
+                            created: ISODate.format(Date()), updated: ISODate.format(Date()), linkedBy: "owner")
+        }
+        let out = try await run(Notes.saveArguments(product: product), timeout: 30, stdin: Data(text.utf8))
+        guard out.status == 0 else { throw TeylaError.failed(code: out.status, message: Self.oneLine(out.stderrText)) }
+        return try Notes.decodeNote(out.stdout)
+    }
+
+    /// `teyla note link <id> <product>`.
+    func linkNote(id: String, product: String) async throws {
+        try await simpleCommand(Notes.linkArguments(id: id, product: product))
+    }
+
+    /// `teyla note drop <id>`.
+    func dropNote(id: String) async throws {
+        try await simpleCommand(Notes.dropArguments(id: id))
+    }
+
+    /// The CLI's refusal is one line that starts with "teyla: "; the window shows the rest.
+    static func oneLine(_ stderr: String) -> String {
+        let text = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.hasPrefix("teyla: ") ? String(text.dropFirst("teyla: ".count)) : text
     }
 
     /// `teyla relay on|off`. Output is not used: the next `state` carries the new `relay` block.
@@ -172,7 +229,7 @@ actor TeylaCLI {
             return
         }
         let out = try await run(args, timeout: 60)
-        guard out.status == 0 else { throw TeylaError.failed(code: out.status, message: out.stderrText) }
+        guard out.status == 0 else { throw TeylaError.failed(code: out.status, message: Self.oneLine(out.stderrText)) }
     }
 
     static func decodeSnapshot(_ data: Data) throws -> Snapshot {
@@ -201,7 +258,7 @@ actor TeylaCLI {
         return e
     }
 
-    private func run(_ args: [String], timeout: TimeInterval) async throws -> Output {
+    private func run(_ args: [String], timeout: TimeInterval, stdin: Data? = nil) async throws -> Output {
         guard let bin = TeylaBinary.locate(env: env, home: home) else { throw TeylaError.binaryNotFound }
         let environment = childEnvironment()
         return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Output, Error>) in
@@ -210,7 +267,8 @@ actor TeylaCLI {
                 process.executableURL = URL(fileURLWithPath: bin)
                 process.arguments = args
                 process.environment = environment
-                process.standardInput = FileHandle.nullDevice
+                let inPipe = stdin == nil ? nil : Pipe()
+                process.standardInput = inPipe ?? FileHandle.nullDevice
                 let outPipe = Pipe()
                 let errPipe = Pipe()
                 process.standardOutput = outPipe
@@ -218,6 +276,15 @@ actor TeylaCLI {
                 do { try process.run() } catch {
                     cont.resume(throwing: error)
                     return
+                }
+                if let inPipe, let stdin {
+                    // Written off this thread so a long text cannot fill the pipe and stall the read below.
+                    // A child that exits early closes the pipe; the write then fails quietly instead of raising SIGPIPE.
+                    signal(SIGPIPE, SIG_IGN)
+                    DispatchQueue.global().async {
+                        try? inPipe.fileHandleForWriting.write(contentsOf: stdin)
+                        try? inPipe.fileHandleForWriting.close()
+                    }
                 }
                 let timedOut = DataBox()
                 let killer = DispatchWorkItem {

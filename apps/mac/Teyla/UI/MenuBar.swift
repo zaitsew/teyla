@@ -46,6 +46,14 @@ struct MenuBarContent: View {
             }
 
             Divider()
+            Button {
+                model.openQuickNote()
+            } label: {
+                Text(QuickNoteShortcut.menuTitle(model.quickNoteActive))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
             HStack {
                 Button("Open Teyla", action: show)
                 Button("New task") { model.openNewTask() }
