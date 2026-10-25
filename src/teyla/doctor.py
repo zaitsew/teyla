@@ -226,7 +226,9 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
             out.append(_check("FIX", f"policy:{k}", f"not wired: {why[0]}" if why else "not wired",
                               why[1] if why else "teyla policy sync"))
     if policy.POLICY.exists():
-        if policy.CONFLICT_PATH.exists():
+        if policy.is_own():
+            out.append(_check("OK", "policy:template", "your own policy text; template changes are not merged into it"))
+        elif policy.CONFLICT_PATH.exists():
             out.append(_check("FIX", "policy:template", f"merge conflict waiting in {policy.CONFLICT_PATH}",
                               f"resolve, copy into {policy.POLICY}, then: teyla policy refresh --resolved"))
         elif policy.PROPOSED_PATH.exists():

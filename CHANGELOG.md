@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **An AI agent can set Teyla up from the repo URL.** `AGENTS.md` at the root tells an agent asked to "set up
+  https://github.com/zaitsew/teyla" how to install it (`uv tool install git+https://github.com/zaitsew/teyla`, `pipx` as the
+  fallback), run `teyla start --agent`, show the summary, and ask about each offer on its own before `teyla apply <id> --yes`.
+  It lists what never happens without a yes (settings writes, hooks, launchd jobs, the policy), the undo commands, the
+  common `teyla doctor` fixes and the Codex hook-trust step. `CLAUDE.md` sends an installing agent there and a contributor to
+  `CONTRIBUTING.md`. `uvx --from git+https://github.com/zaitsew/teyla teyla start` runs the diagnosis with nothing installed.
+  `tests/test_agents_md.py` parses every `teyla ...` command in the guide.
+- **`templates/POLICY.md` is a 70-line generic starter.** It was the long policy of one person, with store-review, platform and
+  release rules. The starter keeps the model ladder (markers for `teyla models --write-policy`), second opinions from another
+  provider, "ask about decisions, not permission", merge only where allowed, the laptop as the gate, the price before anything
+  paid, honest reporting and the session-end card, with `<placeholders>` to edit. It stamps `<!-- teyla-template: starter -->`.
+  `teyla policy refresh` merges template changes only into a policy that carries the template's marker; a policy without one
+  (written from the old long template, or by hand) is yours and is never merged, and `teyla doctor` says so. Nothing changes in an
+  existing `~/.agents/POLICY.md`. `docs/GUIDE.md`.
+- **Every network call is listed.** `docs/PRIVACY.md` has 21 rows, one per call: the command, the host, what is sent, whether it
+  runs without a flag, and what safe mode does. "Nothing leaves your machine" was not true as stated; one of the rows, the model brief (`teyla state` sends up to 15 open questions to Anthropic through `claude -p`), is on by default when
+  `claude` is installed. `tests/test_privacy_calls.py` fails when a module under `src/teyla` starts using a network
+  library, `gh`/`ssh`/`curl`, a git remote operation, a model CLI, a release tool or the iCloud folder and is not in its
+  allowlist, and when the allowlist and the table disagree.
+- `docs/DIRECTORY.md` no longer names a version in the example archive names (`dist/` is untracked build output).
 - **`teyla start`: diagnose your agent spend and fix it with one keystroke.** Reads the sessions on disk (no network, no
   write) and prints a card of at most 12 lines: the window's cost at list price, the share spent re-reading and storing
   context, sessions past 250k tokens, Opus's share of subagent cost, questions waiting. Then seven offers, each with its
@@ -15,7 +35,6 @@
   splits a cost into input, cache write, cache read and output. The window is the last N local days and counts only turns
   inside it. O5 to O7 run the existing syncs as they are and are logged as commands; `teyla undo` points to `teyla uninstall`
   for them. `docs/START.md`.
-
 - **Mac: quick note on a shortcut you choose, and Notes in the window.** A global shortcut (⌥Space by default, recorded in
   Settings, optional, never push-to-talk's ⌥⌘Space) opens a floating panel: type, ⏎ saves, ⇧⏎ adds a line, Esc keeps the
   draft. The product chip pre-selects from `teyla note --suggest` and changes in one click or ⌘0–⌘9. The window gets a Notes

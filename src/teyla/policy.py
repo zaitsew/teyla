@@ -49,6 +49,7 @@ TEMPLATE = __import__("teyla").templates_dir() / "POLICY.md"
 # variant it is by the marker line, so `refresh` keeps merging from the template it came from.
 TEMPLATE_WORK = __import__("teyla").templates_dir() / "POLICY.work.md"
 WORK_MARKER = "<!-- teyla-template: work"
+TEMPLATE_MARKER_RE = __import__("re").compile(r"<!-- teyla-template: (\w+)")
 IMPORT_LINE = "@~/.agents/POLICY.md"
 HERMES_MARK = "## Operating policy"
 HERMES_BLOCK = f"""
@@ -87,6 +88,27 @@ def is_work(text: str | None = None) -> bool:
     if text is None:
         text = POLICY.read_text() if POLICY.exists() else ""
     return WORK_MARKER in text
+
+
+def template_kind(text: str) -> str | None:
+    """The variant a template stamps into the file it seeds ("starter", "work"), or None."""
+    m = TEMPLATE_MARKER_RE.search(text)
+    return m.group(1) if m else None
+
+
+def is_own(text: str | None = None) -> bool:
+    """Whether the installed POLICY.md is its owner's own text rather than a copy of the shipped
+    template: the template stamps a `teyla-template:` marker, this file does not carry the same
+    one. Template changes are never merged into such a file. The case: a policy written from an
+    older, longer template (or by hand), where a merge against today's short starter would
+    propose to delete the person's rules. A template without a marker (a test's) merges as before."""
+    if text is None:
+        text = POLICY.read_text() if POLICY.exists() else ""
+    try:
+        shipped = template_kind(template_path(is_work(text)).read_text())
+    except OSError:
+        return False
+    return shipped is not None and template_kind(text) != shipped
 
 
 def template_path(work: bool = False) -> pathlib.Path:
@@ -974,6 +996,9 @@ def refresh(dry: bool = False) -> list[str]:
     if not POLICY.exists():
         return ["no POLICY.md yet — run `teyla policy sync`"]
     local = POLICY.read_text()
+    if is_own(local):
+        return [f"{POLICY} is your own policy text (it carries no `teyla-template:` marker): "
+                f"template changes are never merged into it"]
     new = render_template(_owner_from(local))
     if not BASE_PATH.exists():
         n = sum(1 for l in difflib.unified_diff(new.splitlines(), local.splitlines(), lineterm="", n=0)

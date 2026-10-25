@@ -225,19 +225,18 @@ unless you pass `--allow-public`.
 
 ## The policy
 
-`templates/POLICY.md` is the one file every harness reads. Its spine:
+`templates/POLICY.md` is a short generic starter (about 70 lines) that `teyla policy init` copies to `~/.agents/POLICY.md`; every harness then reads that one file. Replace its `<placeholders>` with your own. Its spine:
 
-1. **The model ladder.** The most capable model of a provider orchestrates; cheaper tiers do volume and triage (for Anthropic: Fable → Opus / Sonnet → Haiku). Say which model did what. `teyla models` keeps this table current against models.dev, each CLI's own cache, and which credentials are actually on this machine; `--write-policy` proposes the update.
-2. **Second opinions across providers** before non-trivial designs and anything touching money, credentials or other people's data. One pass.
-3. **Tool ladder**: connector/MCP → CLI/API → browser extension → computer use. Fall one rung at a time and say so.
-4. **Ask about product decisions with a proposed default; never ask for permission to proceed.**
-5. **Stop only at a real blocker** (a key, a payment, a sign-in): do everything around it, open the exact page, name the exact file and line, hand over one line.
-6. **Plug-and-play is the definition of done.**
-7. **Merge only where you said so**; everywhere else open the PR and stop. Merge, never squash; never force-push.
-8. **Say what is unverified.**
-9. **"Did it run?" is answered from the record** (`teyla routines`, `teyla schedules`), not by reading code.
-10. **One machine, a budget**: the guard decides when a build, simulator or lane may start, not the agent.
-11. **Platforms and releases**: one primary platform, ports in trains, a build is done when it reaches a person.
+1. **The model ladder.** The most capable model of a provider orchestrates; cheaper tiers do volume and triage. Say which model did what. `teyla models` keeps this table current against models.dev, each CLI's own cache, and which credentials are actually on this machine; `--write-policy` proposes the update.
+2. **Second opinions from another provider** before non-trivial designs and anything touching money, credentials or other people's data. One pass.
+3. **Ask about product decisions with a proposed default; never ask for permission to proceed.**
+4. **Merge only where you allowed it**; everywhere else open the PR and stop. Merge, never squash; never force-push.
+5. **The laptop is the gate**: run your check before every push; no CI on every push.
+6. **State the price before anything paid.**
+7. **Say what is unverified.**
+8. **Writing and reporting**: the answer first, short sentences, a session-end card.
+
+A policy written from an older, longer template, or by hand, carries no `teyla-template:` marker. `teyla policy refresh` never merges template changes into such a file; it is yours.
 
 `templates/POLICY.work.md` is the work-laptop variant (approved providers only, same-provider reviews).
 
