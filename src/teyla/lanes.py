@@ -35,6 +35,10 @@ from . import config
 _HEX = re.compile(r"(?<![0-9A-Za-z])[0-9a-f]{7,40}(?![0-9A-Za-z])")
 _ESCAPES = re.compile(r"\\[nrt]")
 FIRST_ROUND = ("branch", "diff", "diff-file")
+# A unit that calls none of these changed no file: a read-only lane (`teyla start`'s scout offer).
+WRITE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+# `explicit` on a unit when no .meta.json says whether the Agent call named a model.
+UNKNOWN_MODEL = "?"
 
 
 def _when(ts: str | None) -> _dt.datetime | None:
@@ -45,13 +49,15 @@ def _when(ts: str | None) -> _dt.datetime | None:
     return d if d.tzinfo else d.replace(tzinfo=_dt.timezone.utc)
 
 
-def _scan_file(path: str, cutoff: _dt.datetime | None) -> dict | None:
-    """One subagent file as a unit, or None when no message of it falls in the window."""
+def _scan_file(path: str, cutoff: _dt.datetime | None, want_tokens: bool = True) -> dict | None:
+    """One subagent file as a unit, or None when no message of it falls in the window. `want_tokens`
+    False skips collecting the commit-sha tokens review matching needs (about half the scan time)."""
     from .adapters import claude_code
     from .pricing import cost_usd
     seen: dict = {}
     tokens: set = set()
     first = None
+    writes = False
     try:
         fh = open(path, errors="replace")
     except OSError:
@@ -59,7 +65,8 @@ def _scan_file(path: str, cutoff: _dt.datetime | None) -> dict | None:
     with fh:
         for n, line in enumerate(fh):
             # JSON writes a newline as \n: without this a sha after one reads as part of a word.
-            tokens.update(_HEX.findall(_ESCAPES.sub(" ", line)))
+            if want_tokens:
+                tokens.update(_HEX.findall(_ESCAPES.sub(" ", line)))
             if '"usage"' not in line:
                 continue
             try:
@@ -77,28 +84,39 @@ def _scan_file(path: str, cutoff: _dt.datetime | None) -> dict | None:
             if cutoff is not None and (at is None or at < cutoff):
                 continue
             first = first or ts
+            if not writes and any(isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") in WRITE_TOOLS
+                                  for b in (m.get("content") if isinstance(m.get("content"), list) else [])):
+                writes = True
             seen[(m.get("id") or ("line", n), o.get("requestId"))] = (model, claude_code._usage_row(m.get("usage") or {}))
     if not seen:
         return None
     usd, peak, out_by_model = 0.0, 0, defaultdict(int)
+    usage: dict = {}
     for model, row in seen.values():
         usd += cost_usd(model, row) or 0.0
+        into = usage.setdefault(model, {})
+        for k, v in row.items():
+            into[k] = into.get(k, 0) + v
         peak = max(peak, row["input_tokens"] + row["cache_creation_input_tokens"] + row["cache_read_input_tokens"])
         out_by_model[model] += row["output_tokens"]
-    kind = ""
+    kind, explicit = "", UNKNOWN_MODEL
     try:
         meta = json.loads(pathlib.Path(path[:-len(".jsonl")] + ".meta.json").read_text())
         kind = str(meta.get("agentType") or "")
+        # The Agent call's own `model` parameter; a meta file without one means the call named none.
+        explicit = str(meta["model"]) if meta.get("model") else None
     except (OSError, ValueError, AttributeError):
         pass
     return dict(agent=os.path.basename(path)[:-len(".jsonl")], type=kind or "(untyped)", turns=len(seen), peak=peak,
-                usd=usd, model=max(out_by_model, key=out_by_model.get), first=first, tokens=tokens)
+                usd=usd, model=max(out_by_model, key=out_by_model.get), first=first, tokens=tokens,
+                usage=usage, explicit=explicit, writes=writes)
 
 
 def scan(days: int | None = 7, project: str | None = None, root: str | None = None,
-         now: _dt.datetime | None = None) -> list[dict]:
+         now: _dt.datetime | None = None, want_tokens: bool = True) -> list[dict]:
     """Every subagent unit with a message in the last `days` days (None: all), optionally only the
-    projects whose transcript folder name contains `project`."""
+    projects whose transcript folder name contains `project`. `want_tokens` False leaves each unit's
+    `tokens` empty (nothing but review matching reads them)."""
     from .adapters import claude_code, since_epoch, stale
     root = claude_code.DEFAULT_ROOT if root is None else root   # at call time, so tests can move it
     now = now or _dt.datetime.now(_dt.timezone.utc)
@@ -114,7 +132,7 @@ def scan(days: int | None = 7, project: str | None = None, root: str | None = No
                 continue
         except OSError:
             continue
-        u = _scan_file(f, cutoff)
+        u = _scan_file(f, cutoff, want_tokens)
         if u:
             u["project"] = proj
             units.append(u)

@@ -7,6 +7,8 @@
   teyla intent [product] [--days N] [--grep TEXT] [--json]       the owner's long prompts, verbatim, per product (~/.teyla/intent/); none: one line per product
   teyla intent path <product> | backfill [--days 30] [--dry]     the file to read before planning; fill it from Claude Code and Codex transcripts
   teyla intent cover <plan.md> [--product P] [--since DATE] [--last N] [--model] [--json]   which of his sentences the plan neither serves nor sets aside; exit 1 if any
+  teyla start [--days N] [--agent|--json] [--yes]                 diagnose your agent spend, then offer one-keystroke fixes (--agent: JSON for an AI to relay, writes nothing)
+  teyla apply OFFER... [--yes] [--dry] | undo CHANGE_OR_OFFER... [--force] | changes [--json]   make, revert and list the changes `start` offers
   teyla policy init [--owner] [--work] [--claude-md] [--ops-root-init] [--dry]   POLICY.md, global CLAUDE.md, an ops root
   teyla policy status|sync [--dry] [--quiet]                      the wiring into every harness (hand edits to a generated copy are filed first)
   teyla policy inbox [--done FILE|--all]                          hand edits found in generated policy files, waiting for review
@@ -525,6 +527,8 @@ def build_parser() -> argparse.ArgumentParser:
     docs_check_mod.register(sp)
     from . import ux_check as ux_check_mod
     ux_check_mod.register(sp)
+    from . import start as start_mod
+    start_mod.register(sp)
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
     q = sp.add_parser("probe-sql", help="one read-only Supabase query for ./check.sh usage; prints key=value")
     q.set_defaults(fn=cmd_probe_sql); q.add_argument("ref", help="Supabase project ref")
