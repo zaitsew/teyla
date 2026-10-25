@@ -51,6 +51,7 @@ ALLOWED = {
     "providers.py": {19},
     "products.py": {20},
     "relay.py": {21},
+    "web/server.py": {22},
 }
 
 

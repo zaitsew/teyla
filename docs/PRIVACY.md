@@ -57,6 +57,12 @@ These use your own `claude`, `codex` or `grok` login. The text goes to that prov
 |---|---|---|---|---|
 | 21 | `teyla relay on` | A folder in iCloud Drive (`~/Library/Mobile Documents/com~apple~CloudDocs/Teyla`) | The text of your open questions and your session titles, signed. Apple holds the keys unless you turn on Advanced Data Protection. See [RELAY.md](RELAY.md). | No |
 
+## A server on your own Mac
+
+| # | Trigger | Where | What is sent | Default on |
+|---|---|---|---|---|
+| 22 | `teyla web` | `127.0.0.1` only, a random port, until you stop it or 2 hours pass with no request | Nothing leaves the Mac. Your browser on this Mac reads the dashboard; every request needs a per-run token. See [WEB.md](WEB.md). | No |
+
 ## Not a call
 
 `teyla cloud prep` writes a setup script for a cloud sandbox that contains a `curl` line for the `uv`

@@ -25,6 +25,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
     ],
     "Daily": [
         ("today", "What waits on you, the Inbox, the week's spend, one next step"),
+        ("web", "Open the dashboard in your browser (this machine only)"),
         ("asks", "Every question an AI session left waiting on you"),
         ("note", "Keep a note, linked to a product"),
         ("notes", "List your notes, newest first"),
@@ -103,7 +104,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
 # The commands the default help names. The rest of a group is counted.
 FEATURED = {
     "Start": ["start", "apply", "undo", "doctor"],
-    "Daily": ["today", "asks", "note", "answer"],
+    "Daily": ["today", "web", "asks", "note", "answer"],
     "Products": ["products", "product", "testflight"],
     "Spend": ["spend", "monitor", "lanes"],
     "Setup": ["config", "policy", "update", "uninstall"],

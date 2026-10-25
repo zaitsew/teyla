@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **`teyla web`: a local dashboard for the diagnosis, today, products and notes.** One command opens a page in your
+  browser with five tabs. Start shows the diagnosis card and the seven offers, each with Apply (one confirm step that
+  names the file and the key) and Undo (the message of `teyla undo` is shown, including the refusal for O5 to O7). Today
+  is `teyla today`. Products lists stage, focus, waiting questions and notes, with a page per product (questions, notes,
+  recent sessions and cost, repos). Notes adds, links and drops. Spend shows this week against last by day, model and
+  product, with inline-SVG bars. It is a stdlib server on 127.0.0.1 with a random port, a per-run token that becomes an
+  HttpOnly SameSite=Strict cookie, a Host allowlist, a token header on every POST, a strict content policy, and a stop after
+  two hours idle. The diagnosis runs in the background, so the page opens with the last count. No npm, CDN or web fonts.
+  `docs/WEB.md`.
 - **An AI agent can set Teyla up from the repo URL.** `AGENTS.md` at the root tells an agent asked to "set up
   https://github.com/zaitsew/teyla" how to install it (`uv tool install git+https://github.com/zaitsew/teyla`, `pipx` as the
   fallback), run `teyla start --agent`, show the summary, and ask about each offer on its own before `teyla apply <id> --yes`.
@@ -40,6 +49,7 @@
   Advanced in under 40 lines; `teyla help --all` lists every one, and a test fails for a command without a group. An unknown
   command prints the nearest match and the help (exit 2); a missing package or unreadable `~/.teyla` file prints one line
   with the fix (`TEYLA_DEBUG=1` restores the traceback). `NO_COLOR`, `TERM=dumb` and pipes give plain text. `docs/TODAY.md`.
+
 - **`teyla start`: diagnose your agent spend and fix it with one keystroke.** Reads the sessions on disk (no network, no
   write) and prints a card of at most 12 lines: the window's cost at list price, the share spent re-reading and storing
   context, sessions past 250k tokens, Opus's share of subagent cost, questions waiting. Then seven offers, each with its
