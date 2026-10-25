@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Writes the brand concepts: per-concept SVG files and the comparison board.
+"""Writes the brand: per-concept SVG files, the chosen set in brand/, and the comparison board.
 
     python3 brand/build.py
 
@@ -26,6 +26,7 @@ GLYPHS = {
             '<rect x="8" y="42" width="40" height="9" rx="4.5" fill="{P}"/>'
         ),
         "term": "lanes",
+        "word": "round",
     },
     "2": {
         "name": "Meter",
@@ -37,6 +38,7 @@ GLYPHS = {
             '<circle cx="32" cy="54" r="3.5" fill="{A}"/>'
         ),
         "term": "meter",
+        "word": "round",
     },
     "3": {
         "name": "Cursor",
@@ -46,19 +48,40 @@ GLYPHS = {
             '<rect x="45" y="12" width="10" height="17" rx="2.5" fill="{A}"/>'
         ),
         "term": "cursor",
+        "word": "block",
     },
 }
 
-# --- Wordmark "Teyla": geometric monoline, stroke 7, round ends. Box 0..150 x 0..68. -
-WORD = (
-    '<g fill="none" stroke="{C}" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">'
-    '<path d="M0 8H28M14 8V48"/>'                      # T
-    '<path d="M33 34H61A14 14 0 1 0 57.72 43"/>'        # e
-    '<path d="M72 20L86.29 45.5M96 20L80 62"/>'         # y
-    '<path d="M107 6V48"/>'                             # l
-    '<circle cx="132" cy="34" r="14"/><path d="M146 20V48"/>'  # a
-    "</g>"
-)
+# --- Wordmark "Teyla", box 0..150 x 0..66. Two cuts of one skeleton: ------------------
+# "round" (stroke 7, round ends) sits with the soft marks 1 and 2; "block" (stroke 9, cut
+# ends, square joins) is fitted to the Cursor mark's blocks: cap top and baseline line up
+# with the T's bar and stem.
+WORDS = {
+    "round": (
+        '<g fill="none" stroke="{C}" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M0 8H28M14 8V48"/>'                      # T
+        '<path d="M33 34H61A14 14 0 1 0 57.72 43"/>'        # e
+        '<path d="M72 20L86.29 45.5M96 20L80 62"/>'         # y
+        '<path d="M107 6V48"/>'                             # l
+        '<circle cx="132" cy="34" r="14"/><path d="M146 20V48"/>'  # a
+        "</g>"
+    ),
+    "block": (
+        '<g fill="none" stroke="{C}" stroke-width="9" stroke-linecap="butt" stroke-linejoin="miter">'
+        '<path d="M0 8H28M14 3.5V51.5"/>'                   # T
+        '<path d="M33 34H61A14 14 0 1 0 57.72 43"/>'        # e
+        '<path d="M72 15.5L85.2 45M96 15.5L79 62"/>'        # y
+        '<path d="M107 3.5V51.5"/>'                         # l
+        '<circle cx="132" cy="34" r="14"/><path d="M146 15.5V51.5"/>'  # a
+        "</g>"
+    ),
+}
+# Per cut: lockup viewBox width and the wordmark's place beside the 64-unit mark.
+LOCKUP = {"round": (204, "translate(73 9) scale(0.8)"), "block": (201, "translate(67 9.08) scale(0.8333)")}
+
+# The concept in use. The top-level brand/*.svg files and the app icons are made from it;
+# change it, run this script, then `swift apps/mac/Tools/make_icon.swift`.
+CHOSEN = "3"
 
 
 def glyph(cid, p, a):
@@ -71,8 +94,13 @@ def svg(view, body, w=None, h=None, title="Teyla"):
             f'aria-label="{title}"><title>{title}</title>{body}</svg>\n')
 
 
+def lockup_view(cid):
+    return f"0 0 {LOCKUP[GLYPHS[cid]['word']][0]} 64"
+
+
 def lockup_body(cid, p, a, ink):
-    return glyph(cid, p, a) + f'<g transform="translate(73 9) scale(0.8)">{WORD.format(C=ink)}</g>'
+    cut = GLYPHS[cid]["word"]
+    return glyph(cid, p, a) + f'<g transform="{LOCKUP[cut][1]}">{WORDS[cut].format(C=ink)}</g>'
 
 
 def icon_body(cid, uid):
@@ -86,16 +114,20 @@ def icon_body(cid, uid):
     )
 
 
+def write_set(d, cid, name):
+    d.mkdir(exist_ok=True)
+    view, (w, _) = lockup_view(cid), LOCKUP[GLYPHS[cid]["word"]]
+    (d / "mark.svg").write_text(svg("0 0 64 64", glyph(cid, L["primary"], MARK["accent-light"]), 64, 64, name))
+    (d / "mark-dark.svg").write_text(svg("0 0 64 64", glyph(cid, D["primary"], D["needs-you"]), 64, 64, name))
+    (d / "lockup.svg").write_text(svg(view, lockup_body(cid, L["primary"], MARK["accent-light"], L["text"]), w * 2, 128, name))
+    (d / "lockup-dark.svg").write_text(svg(view, lockup_body(cid, D["primary"], D["needs-you"], D["text"]), w * 2, 128, name))
+    (d / "icon.svg").write_text(svg("0 0 1024 1024", icon_body(cid, cid), 1024, 1024, name))
+
+
 def write_files():
     for cid in GLYPHS:
-        d = HERE / f"concept-{cid}"
-        d.mkdir(exist_ok=True)
-        name = f"Teyla, concept {cid}: {GLYPHS[cid]['name']}"
-        (d / "mark.svg").write_text(svg("0 0 64 64", glyph(cid, L["primary"], MARK["accent-light"]), 64, 64, name))
-        (d / "mark-dark.svg").write_text(svg("0 0 64 64", glyph(cid, D["primary"], D["needs-you"]), 64, 64, name))
-        (d / "lockup.svg").write_text(svg("0 0 204 64", lockup_body(cid, L["primary"], MARK["accent-light"], L["text"]), 408, 128, name))
-        (d / "lockup-dark.svg").write_text(svg("0 0 204 64", lockup_body(cid, D["primary"], D["needs-you"], D["text"]), 408, 128, name))
-        (d / "icon.svg").write_text(svg("0 0 1024 1024", icon_body(cid, cid), 1024, 1024, name))
+        write_set(HERE / f"concept-{cid}", cid, f"Teyla, concept {cid}: {GLYPHS[cid]['name']}")
+    write_set(HERE, CHOSEN, "Teyla")
 
 
 # --- Board ----------------------------------------------------------------------------
@@ -125,7 +157,7 @@ def terminal(cid):
 
 
 def readme(cid):
-    lock = inline("0 0 204 64", lockup_body(cid, L["primary"], MARK["accent-light"], L["text"]), 0, "lockup")
+    lock = inline(lockup_view(cid), lockup_body(cid, L["primary"], MARK["accent-light"], L["text"]), 0, "lockup")
     return (f'<div class="readme"><div class="gh-bar"><span>README.md</span></div><div class="gh-body">'
             f'<div class="hero">{lock}</div>'
             f'<p class="promise">Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost '
@@ -165,7 +197,7 @@ def concept_card(cid):
         ink = L["text"] if theme == "light" else D["text"]
         acc = MARK["accent-light"] if theme == "light" else D["needs-you"]
         prim = L["primary"] if theme == "light" else D["primary"]
-        lock = inline("0 0 204 64", lockup_body(cid, prim, acc, ink), 0, "lockup")
+        lock = inline(lockup_view(cid), lockup_body(cid, prim, acc, ink), 0, "lockup")
         return f'<div class="panel {theme}"><div class="sizes">{cells}</div><div class="lock-row">{lock}</div></div>'
 
     icon = icon_body(cid, f"b{cid}")
@@ -241,7 +273,7 @@ figure {{ margin:0; display:flex; flex-direction:column; align-items:center; gap
 figcaption {{ font-size:11px; color:var(--text2); font-family:var(--mono); }}
 .dark figcaption, .darkdesk figcaption {{ color:var(--dtext2); }}
 .lock-row {{ margin-top:16px; }}
-.lockup {{ height:56px; width:auto; aspect-ratio:204/64; display:block; }}
+.lockup {{ height:56px; width:auto; display:block; }}
 .iconrow {{ display:grid; grid-template-columns:512px 1fr; gap:24px; margin-bottom:16px; align-items:start; }}
 .big svg {{ display:block; }}
 .iconside {{ display:flex; flex-direction:column; gap:16px; }}
@@ -270,12 +302,12 @@ footer p {{ max-width:880px; margin:0 0 6px; }}
 </style></head>
 <body><main>
 <h1>Teyla brand concepts</h1>
-<p class="sub">Three marks, one wordmark, one token set. Pick one mark; the wordmark and tokens follow it.</p>
+<p class="sub">Three marks, one wordmark in two cuts, one token set. Concept {CHOSEN} is in use; the other two stay here as alternatives.</p>
 <div class="tokens"><div class="swatches">{sw_l}</div><div class="swatches">{sw_d}</div></div>
 {cards}
-<footer><h2>Recommendation: concept 3, Cursor</h2>
-<p>{T["recommendation"]}</p>
-<p>The wordmark is shared on purpose, so the board compares marks only. Type: {T["type"]["sans"].split(",")[0]} for UI, {T["type"]["mono"].split(",")[0]} for code and the terminal.</p></footer>
+<footer><h2>In use: concept {CHOSEN}, {GLYPHS[CHOSEN]["name"]}</h2>
+<p>{T["brand"]["why"]}</p>
+<p>Concepts 1 and 2 share the round cut of the wordmark; Cursor uses the block cut, fitted to its bars. Type: {T["type"]["sans"].split(",")[0]} for UI, {T["type"]["mono"].split(",")[0]} for code and the terminal.</p></footer>
 </main>
 <script>
 // Rasterises each mark to a real 16 or 32 px bitmap, then shows it enlarged with hard pixels.

@@ -1,7 +1,9 @@
+import AppKit
 import SwiftUI
 
 // The design tokens for Teyla for Mac. Views use these names and never a literal size, colour
-// or gap (templates/design/STANDARD.md, Part 2). Light and dark come from the system colours.
+// or gap (templates/design/STANDARD.md, Part 2). The colours mirror brand/tokens.json, the single
+// source; tests/test_brand.py fails when the two differ. Each role carries its light and dark value.
 
 /// Spacing on a 4-based scale.
 enum Space {
@@ -32,17 +34,37 @@ enum Typo {
     static let caption = Font.caption
 }
 
-/// Colour roles.
+/// Colour roles, from brand/tokens.json. Amber means "waiting on you" and green means money saved,
+/// everywhere; neither is decoration.
 enum Palette {
-    static let surface = Color(nsColor: .controlBackgroundColor)
-    static let border = Color(nsColor: .separatorColor)
-    static let background = Color(nsColor: .windowBackgroundColor)
-    static let textSecondary = Color.secondary
-    static let accent = Color.accentColor
-    static let success = Color.green
-    static let warning = Color.orange
-    static let danger = Color.red
-    static let info = Color.blue
+    static let background = Color(light: 0xF7F7F9, dark: 0x0E1015)
+    static let surface = Color(light: 0xFFFFFF, dark: 0x171A21)
+    static let border = Color(light: 0xDCDEE5, dark: 0x2B2F3A)
+    static let text = Color(light: 0x14161D, dark: 0xECEDF2)
+    static let textSecondary = Color(light: 0x585E6D, dark: 0xA2A7B5)
+    static let primary = Color(light: 0x3A4AA8, dark: 0x9AA7F2)
+    static let onPrimary = Color(light: 0xFFFFFF, dark: 0x0E1015)
+    static let needsYou = Color(light: 0xA65400, dark: 0xF2B04B)
+    static let saving = Color(light: 0x13734A, dark: 0x4CC98A)
+    static let danger = Color(light: 0xB42318, dark: 0xF87166)
+
+    // The names views already use, mapped onto the brand roles.
+    static let accent = primary
+    static let info = primary
+    static let warning = needsYou
+    static let success = saving
+}
+
+extension Color {
+    /// A colour that follows the window's appearance: `light` in Aqua, `dark` in Dark Aqua. Values are sRGB hex.
+    init(light: UInt32, dark: UInt32) {
+        self.init(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let hex = isDark ? dark : light
+            return NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
+                           blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+        })
+    }
 }
 
 /// A card: a quiet surface with a hairline border. `highlighted` marks the card a notification pointed at.
