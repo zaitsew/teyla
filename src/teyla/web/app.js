@@ -323,7 +323,7 @@
       const links = { offer: ["#start", "Open Start"], inbox: ["#notes", "Open Notes"] };
       const l = links[s.kind];
       return h("section", { class: "card", "aria-label": "Next" },
-        h("div", { class: "cap" }, "Next"), h("p", { style: null, class: "lead" }, s.text),
+        h("div", { class: "cap" }, "Next"), h("p", { class: "lead" }, s.text),
         s.command ? h("div", { class: "actions" }, code(s.command), l ? h("a", { class: "btn", href: l[0] }, l[1]) : null) : null);
     }
 
@@ -436,7 +436,7 @@
       } else {
         sessions = empty("No sessions in the last 14 days", "Work on this product with Claude Code or Codex, and its sessions and cost appear here.");
       }
-      const facts = h("section", { class: "card" }, h("dl", { class: "facts", style: null },
+      const facts = h("section", { class: "card" }, h("dl", { class: "facts" },
         h("dt", null, "Primary"), h("dd", null, p.primary || "not set"),
         h("dt", null, "Stage"), h("dd", null, p.stage || "not set"),
         h("dt", null, "Repos"), h("dd", null, p.repos.length ? p.repos.map((r) => h("div", null, code(r))) : ["None registered. ", code("teyla product set " + p.id + " add-repo=PATH")]),

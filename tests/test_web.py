@@ -367,12 +367,40 @@ def test_refresh_starts_a_recount_and_knows_what_it_can_refresh(web):
 
 # --- Today ------------------------------------------------------------------------------------
 
-def test_today_is_the_today_snapshot_or_a_clear_503(web):
-    status, body = web.get("/api/today")
-    if status == 503:
-        assert "teyla today" in body["error"]
-    else:
-        assert status == 200 and {"suggestion", "questions", "notes"} <= set(body)
+def test_today_is_the_cli_snapshot_and_shares_the_spend_count(web):
+    from teyla import figures
+    status, d = web.get("/api/today")
+    assert status == 200 and {"version", "generated", "sessions", "questions", "notes", "spend", "suggestion"} <= set(d)
+    assert d["sessions"] is True                                           # spend is null until the count is done: the page polls
+    web.settle("spend")
+    status, d = web.get("/api/today")
+    s = web.get("/api/spend")[1]["spend"]
+    assert d["spend"]["this_week"] == s["this_week"] and d["spend"]["last_week"] == s["last_week"]
+    assert figures.cached("spend")[0]["this_week"] == s["this_week"]       # `teyla today` reads the same figure
+
+
+def test_today_does_not_start_a_second_count_while_the_page_counts(web, monkeypatch):
+    from teyla import figures
+    gate = threading.Event()
+    spawned = []
+    monkeypatch.setattr(figures, "spawn_refresh", lambda *a, **k: spawned.append(1))
+    monkeypatch.setattr(api_mod, "_spend_compute", lambda: gate.wait(10) and {"this_week": 1.0, "last_week": 0.0})
+    web.srv.api.jobs["spend"].fn = api_mod._spend_compute
+    assert web.get("/api/today")[0] == 200
+    assert web.srv.api.jobs["spend"].get()["refreshing"] is True
+    assert not figures._lock().exists()                                      # taken for the call, released after it
+    gate.set()
+    web.srv.api.jobs["spend"].join(10)
+
+
+def test_the_diagnosis_and_an_apply_reach_the_first_screen(web):
+    from teyla import figures
+    web.settle("start")
+    rep = figures.start_report()
+    assert rep["finished"] is False and rep["total_usd"] > 0 and rep["offers"][0]["id"] == "O1"
+    assert web.post("/api/apply", {"offer": "O1", "confirm": True})[0] == 200
+    assert figures.start_report()["finished"] is True
+    web.srv.api.jobs["start"].join(60)
 
 
 # --- Products ---------------------------------------------------------------------------------

@@ -8,7 +8,7 @@ import pathlib
 
 import pytest
 
-from teyla import asks, changes, cli, diagnose, offers, pricing, start
+from teyla import asks, changes, cli, diagnose, figures, offers, pricing, start
 
 
 @pytest.fixture(autouse=True)
@@ -440,6 +440,51 @@ def test_interactive_end_of_input_quits(machine, capsys, monkeypatch):
     monkeypatch.setattr(builtins, "input", eof)
     snap = machine.tree()
     assert _run(["start"], capsys)[0] == 0 and machine.tree() == snap
+
+
+# --- what the first screen learns from a run ---------------------------------------------------------
+
+def test_the_first_screen_hears_of_a_run_that_was_answered(machine, capsys, monkeypatch):
+    _tty(monkeypatch, ["n"] * 10)
+    assert _run(["start"], capsys)[0] == 0
+    rep = figures.start_report()
+    assert rep["finished"] is True and rep["offers"] and all("id" in o for o in rep["offers"])
+    assert figures.onboarded()
+
+
+def test_quitting_at_once_keeps_the_diagnosis_but_is_not_finished(machine, capsys, monkeypatch):
+    _tty(monkeypatch, ["q"])
+    _run(["start"], capsys)
+    rep = figures.start_report()
+    assert rep["finished"] is False and rep["offers"]
+    assert not figures.onboarded()
+
+
+def test_without_a_terminal_the_run_is_recorded_but_not_finished(machine, capsys):
+    _run(["start"], capsys)
+    assert figures.start_report()["finished"] is False and not figures.onboarded()
+
+
+def test_agent_and_json_runs_write_nothing_for_the_first_screen(machine, capsys):
+    assert _run(["start", "--agent"], capsys)[0] == 0 and _run(["start", "--json"], capsys)[0] == 0
+    assert not figures.start_report_path().exists()
+
+
+def test_start_yes_finishes_and_the_applied_offers_are_in_force(machine, capsys):
+    assert _run(["start", "--yes"], capsys)[0] in (0, 1)
+    assert figures.start_report()["finished"] is True
+    assert figures.applied_offers() >= {"O1"}
+
+
+def test_apply_marks_the_run_finished_and_a_command_change_stays_in_force(machine, capsys, _no_real_routine, monkeypatch):
+    monkeypatch.setattr(offers.sys, "platform", "darwin")
+    _run(["start"], capsys)                                            # a diagnosis nobody answered
+    assert not figures.start_report()["finished"]
+    assert _run(["apply", "O7", "--yes"], capsys)[0] == 0              # O7 is logged as a command
+    assert figures.start_report()["finished"] is True
+    assert "O7" in figures.applied_offers()
+    assert _run(["undo", "O7"], capsys)[0] == 1                        # undo refuses a command change...
+    assert "O7" in figures.applied_offers()                            # ...so it stays in force
 
 
 def test_changes_on_a_clean_machine(fake_home, capsys):

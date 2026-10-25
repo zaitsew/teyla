@@ -24,7 +24,7 @@ import threading
 import time
 from urllib.parse import unquote
 
-from .. import asks, changes, corrections, notes, registry
+from .. import asks, changes, corrections, figures, notes, registry
 from .. import offers as offers_mod
 from .. import start as start_mod
 
@@ -233,10 +233,24 @@ class Api:
         saved = _read_cache(self.cache)
         self.write_lock = threading.Lock()        # one apply or undo at a time (changes.py also holds a file lock)
         self.cache_lock = threading.Lock()
+        self.figures_lock = threading.Lock()      # `figures.write_cache` merges read-modify-write: one writer at a time here
         self.jobs = {
-            "start": Job("diagnosis", _start_compute, START_TTL_S, saved.get("start"), lambda: self._save("start")),
-            "spend": Job("spend", _spend_compute, SPEND_TTL_S, saved.get("spend"), lambda: self._save("spend")),
+            "start": Job("diagnosis", _start_compute, START_TTL_S, saved.get("start"), lambda: self._done("start")),
+            "spend": Job("spend", _spend_compute, SPEND_TTL_S, saved.get("spend"), lambda: self._done("spend")),
         }
+
+    def _done(self, name: str) -> None:
+        """A count finished: keep it for the next page load, and hand it to the first screen too, so that
+        `teyla today` and `teyla` read the figure this page just counted instead of counting it again."""
+        self._save(name)
+        g = self.jobs[name].get()
+        if g["data"] is None:
+            return
+        with self.figures_lock:
+            if name == "start":
+                figures.record_start(g["data"], False)
+            else:
+                figures.write_cache(spend={"this_week": g["data"]["this_week"], "last_week": g["data"]["last_week"], "at": g["at"]})
 
     def _save(self, name: str) -> None:
         with self.cache_lock:
@@ -334,6 +348,7 @@ class Api:
                 raise ApiError(409, str(e)) from None
             except Exception as e:  # noqa: BLE001 — a sync that fails half-way says so
                 raise ApiError(500, f"{o.id} failed: {type(e).__name__}: {e}") from None
+        figures.record_start(None, True)          # the first screen stops asking for `teyla start`, as after `teyla apply`
         self._patch_offer(o.id)
         self.jobs["start"].ensure(force=True)
         return {"change": rec, "lines": lines[:6], "undoable": rec.get("kind") != "command",
@@ -365,11 +380,18 @@ class Api:
     # -- Today --
 
     def get_today(self, query, body, **_):
+        from .. import today
+        job = self.jobs["spend"]
+        job.ensure()
+        # Our own count of the spend is running: hold the first screen's refresh lock, so `snapshot` does not
+        # start a second process that counts the same sessions. A count that is not ours keeps the lock.
+        held = job.get()["refreshing"] and figures.acquire_lock()
         try:
-            from .. import today
-        except ImportError:
-            raise ApiError(503, "this version of Teyla has no `teyla today`: update Teyla and restart `teyla web`") from None
-        return today.snapshot(wait=False)
+            with self.figures_lock:
+                return today.snapshot(wait=False)
+        finally:
+            if held:
+                figures.release_lock()
 
     # -- Products --
 

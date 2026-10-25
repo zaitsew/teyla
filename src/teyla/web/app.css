@@ -56,6 +56,8 @@ h1 { font-size: 28px; line-height: 1.2; font-weight: 600; margin: 0 0 var(--xs);
 h2 { font-size: 16px; line-height: 1.3; font-weight: 500; margin: var(--xl) 0 var(--s); }
 h3 { font-size: 13px; font-weight: 600; margin: 0; }
 .sub { color: var(--text-2); margin: 0 0 var(--l); }
+.lead { font-size: 16px; line-height: 1.4; margin: var(--xs) 0 0; }
+.pre { white-space: pre-wrap; }
 .cap { font-size: 11px; color: var(--text-2); }
 .muted { color: var(--text-2); }
 .back { display: inline-block; margin-bottom: var(--m); }

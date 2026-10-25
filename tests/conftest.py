@@ -222,6 +222,8 @@ class FakeHome:
         for root in (self.home, pathlib.Path(os.environ["TEYLA_HOME"])):
             for dirpath, _dirs, files in os.walk(root):
                 for name in files:
+                    if name == "start-report.json":     # what `teyla start` leaves for the first screen: not a change to a tool
+                        continue
                     p = pathlib.Path(dirpath, name)
                     out[str(p)] = p.read_bytes()
         return out

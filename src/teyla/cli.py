@@ -1,5 +1,8 @@
 """teyla — command line.
 
+  teyla                                                          the welcome: your numbers and the next three commands (never an error)
+  teyla today [--json] [--fresh]                                 the daily screen: waiting questions by product, the Inbox, the week's spend, one next step
+  teyla help [--all | COMMAND]                                   the commands in six groups; --all lists every one
   teyla monitor [--days N] [--json] [--samples] [--share] [--out FILE]   adoption report from local harness logs
   teyla advise  [--days N]                                       just the findings
   teyla sessions [--days N] [--project SUBSTR]                   one line per session
@@ -432,16 +435,41 @@ def cmd_prompt(args):
     return 0
 
 
+def cmd_help(args):
+    from .helpgroups import cmd_help as grouped
+    return grouped(list(args.words or []))
+
+
 def cmd_scaffold(args):
     from .scaffold import scaffold
     for line in scaffold(args.path, name=args.name, kind=args.kind, license=args.license, owner=args.owner):
         print(line)
 
 
+class _Parser(argparse.ArgumentParser):
+    """The top-level parser prints the grouped help (`teyla --help`) and a one-line error. A
+    subcommand's parser is the plain argparse one: its own options are what `teyla X --help` shows."""
+    _top = False
+
+    def format_help(self) -> str:
+        if self._top:
+            from . import helpgroups
+            from .ui import Style
+            return helpgroups.render(False, Style(sys.stdout)) + "\n"
+        return super().format_help()
+
+    def error(self, message: str):
+        if self._top:
+            print(f"teyla: {message}. Run `teyla help` for the commands.", file=sys.stderr)
+            raise SystemExit(2)
+        super().error(message)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The whole parser, built in-process (`teyla docs check` reads its subcommands from here)."""
     from . import config as _config
-    p = argparse.ArgumentParser(prog="teyla", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = _Parser(prog="teyla", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p._top = True
     p.add_argument("--version", action="version", version=__version__)
     sp = p.add_subparsers(dest="cmd", required=True)
     for name, fn in (("monitor", cmd_monitor), ("advise", cmd_advise), ("sessions", cmd_sessions), ("corrections", cmd_corrections)):
@@ -512,6 +540,10 @@ def build_parser() -> argparse.ArgumentParser:
     reel_cli.register(sp)
     from . import asks as asks_mod
     asks_mod.register(sp)
+    from . import today as today_mod
+    today_mod.register(sp)
+    q = sp.add_parser("help", help="the commands in six groups; --all lists every one; help COMMAND shows its options")
+    q.set_defaults(fn=cmd_help); q.add_argument("words", nargs="*", metavar="[--all | COMMAND]")
     from . import registry as registry_mod
     registry_mod.register(sp)
     from . import notes as notes_mod
@@ -557,12 +589,45 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _commands(parser: argparse.ArgumentParser) -> list[str]:
+    for act in parser._actions:
+        if isinstance(act, argparse._SubParsersAction):
+            return list(act.choices)
+    return []
+
+
+def _friendly(e: Exception, cmd: str) -> str:
+    """One line for a failure a new user can hit: what is missing and how to fix it."""
+    from .control import state as control
+    if isinstance(e, ModuleNotFoundError) and e.name and not e.name.startswith("teyla"):
+        pkg = {"PIL": "pillow"}.get(e.name.split(".")[0], e.name.split(".")[0])
+        return (f"teyla: `teyla {cmd}` needs the Python package '{pkg}', which is not installed. "
+                f"Fix: uv tool install --force --with {pkg} git+https://github.com/zaitsew/teyla")
+    if isinstance(e, OSError) and getattr(e, "filename", None):
+        where = str(e.filename)
+        if where.startswith(str(control.home())):
+            return (f"teyla: cannot read {where} ({e.strerror or type(e).__name__}). "
+                    "`teyla doctor` shows what is missing or has the wrong permissions.")
+    return f"teyla: `teyla {cmd}` failed: {type(e).__name__}: {e}. Set TEYLA_DEBUG=1 for the traceback."
+
+
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
     # ~/.teyla/config.toml [env] first: under launchd or the desktop app's session hook this is
     # the only place SSL_CERT_FILE or a proxy can come from, and it must be set before any socket.
     from . import config as _config
     _config.apply_env()
+    # The first screen, and the help, need no parser: they must stay fast and never fail.
+    if not argv:
+        from . import welcome
+        return welcome.run()
+    if argv[0] in ("-h", "--help", "help"):
+        from . import helpgroups
+        return helpgroups.cmd_help(argv[1:])
     parser = build_parser()
+    if not argv[0].startswith("-") and argv[0] not in _commands(parser):
+        from . import helpgroups
+        return helpgroups.unknown(argv[0], _commands(parser))
     args, extra = parser.parse_known_args(argv)
     # argparse stops filling a positional list at the first option, so `teyla asks done --note x
     # id1 id2` would reject id1 id2. Bare words left over go back into that command's list.
@@ -580,6 +645,14 @@ def main(argv=None):
         # Any rule or policy write that met a hidden character: nothing was written; say where.
         print(f"teyla: {e}", file=sys.stderr)
         return 2
+    except KeyboardInterrupt:
+        print(file=sys.stderr)
+        return 130
+    except Exception as e:  # noqa: BLE001 — a person typing a command gets one line, not a traceback
+        if os.environ.get("TEYLA_DEBUG"):
+            raise
+        print(_friendly(e, getattr(args, "cmd", "") or argv[0]), file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
