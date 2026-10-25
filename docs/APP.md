@@ -72,7 +72,7 @@ Notes on the CLI as built:
   the order and `unblocks` of the questions then come from the model; questions it did not rank keep their
   rule values and follow. Otherwise `source` is `rules` and a refresh starts, so a new question shows rule
   values for a few seconds. A failed or invalid reply keeps the previous cache; a failed attempt is not
-  repeated for 5 minutes. Off with `[state] model_brief = false`, in safe mode, or without `claude` on PATH.
+  repeated for 5 minutes. Opt-in: it runs only with `[state] model_brief = true` (`teyla config set state.model_brief=true`), never in safe mode, and not without `claude` on PATH.
 - `running[]` lists interactive sessions only: Codex rollouts started by `codex exec` (`originator`
   `codex_exec`, `source` `exec`) and Claude desktop sessions titled "You are reviewing..." are review and
   lane runs, not sessions you work in.

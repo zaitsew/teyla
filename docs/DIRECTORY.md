@@ -121,8 +121,8 @@ carries no Codex manifest.
 Build the archive:
 
 ```sh
-scripts/build_openai_plugin.py                  # portable profile: review + rule  -> dist/teyla-openai-portable-0.29.0.zip
-scripts/build_openai_plugin.py --profile full   # all skills and commands          -> dist/teyla-openai-full-0.29.0.zip
+scripts/build_openai_plugin.py                  # portable profile: review + rule  -> dist/teyla-openai-portable-<version>.zip
+scripts/build_openai_plugin.py --profile full   # all skills and commands          -> dist/teyla-openai-full-<version>.zip
 ```
 
 | Carries over | Does not |

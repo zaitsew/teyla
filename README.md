@@ -2,6 +2,8 @@
 
 Teyla is the operating layer for one person who runs many products through AI coding agents on one Mac. It keeps you in charge: what waits on you, your own words, how agents write, what it costs, whether the machine survives, and whether a build reached a person. It runs locally.
 
+Setting this up with an AI agent? It reads [AGENTS.md](AGENTS.md). Every call that leaves your machine is listed in [docs/PRIVACY.md](docs/PRIVACY.md).
+
 ## Quick start
 
 ```bash

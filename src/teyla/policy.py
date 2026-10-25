@@ -49,6 +49,7 @@ TEMPLATE = __import__("teyla").templates_dir() / "POLICY.md"
 # variant it is by the marker line, so `refresh` keeps merging from the template it came from.
 TEMPLATE_WORK = __import__("teyla").templates_dir() / "POLICY.work.md"
 WORK_MARKER = "<!-- teyla-template: work"
+TEMPLATE_MARKER_RE = __import__("re").compile(r"<!-- teyla-template: (\w+)")
 IMPORT_LINE = "@~/.agents/POLICY.md"
 HERMES_MARK = "## Operating policy"
 HERMES_BLOCK = f"""
@@ -87,6 +88,27 @@ def is_work(text: str | None = None) -> bool:
     if text is None:
         text = POLICY.read_text() if POLICY.exists() else ""
     return WORK_MARKER in text
+
+
+def template_kind(text: str) -> str | None:
+    """The variant a template stamps into the file it seeds ("starter", "work"), or None."""
+    m = TEMPLATE_MARKER_RE.search(text)
+    return m.group(1) if m else None
+
+
+def is_own(text: str | None = None) -> bool:
+    """Whether the installed POLICY.md is its owner's own text rather than a copy of the shipped
+    template: the template stamps a `teyla-template:` marker, this file does not carry the same
+    one. Template changes are never merged into such a file. The case: a policy written from an
+    older, longer template (or by hand), where a merge against today's short starter would
+    propose to delete the person's rules. A template without a marker (a test's) merges as before."""
+    if text is None:
+        text = POLICY.read_text() if POLICY.exists() else ""
+    try:
+        shipped = template_kind(template_path(is_work(text)).read_text())
+    except OSError:
+        return False
+    return shipped is not None and template_kind(text) != shipped
 
 
 def template_path(work: bool = False) -> pathlib.Path:
@@ -588,6 +610,13 @@ def imports_agents(text: str) -> bool:
     return any(live and IMPORT_RE.match(line) for line, live in _live_lines(text))
 
 
+def names_agents(text: str) -> bool:
+    """True when `text` imports AGENTS.md or names it outside a fenced code block (a link, or the
+    file name in prose or backticks): a CLAUDE.md that points at AGENTS.md is linked to it even when
+    the two files hold different text, as in a repo whose AGENTS.md is a guide for installers."""
+    return imports_agents(text) or any(live and "AGENTS.md" in line for line, live in _live_lines(text))
+
+
 # ---------------------------------------------------------------------------
 # The owner's rules for harnesses that cannot import: ~/.codex/AGENTS.md, ~/.grok/AGENTS.md and
 # the Cursor skill get POLICY.md + ~/.claude/CLAUDE.md as one generated text.
@@ -974,6 +1003,9 @@ def refresh(dry: bool = False) -> list[str]:
     if not POLICY.exists():
         return ["no POLICY.md yet — run `teyla policy sync`"]
     local = POLICY.read_text()
+    if is_own(local):
+        return [f"{POLICY} is your own policy text (it carries no `teyla-template:` marker): "
+                f"template changes are never merged into it"]
     new = render_template(_owner_from(local))
     if not BASE_PATH.exists():
         n = sum(1 for l in difflib.unified_diff(new.splitlines(), local.splitlines(), lineterm="", n=0)
@@ -1100,9 +1132,9 @@ def repos_status(root: pathlib.Path) -> list[tuple[str, str]]:
         if a.exists() and c.exists():
             # ok = one source of truth: a symlink, identical text, or CLAUDE.md that imports
             # AGENTS.md (`@AGENTS.md` on a line of its own — what `teyla cloud prep` writes, and
-            # what a repo with Claude-only lines needs). Claude Code expands the import, so the two
+            # what a repo with Claude-only lines needs — or a CLAUDE.md that names AGENTS.md in a link). Claude Code expands the import, so the two
             # files cannot drift; comparing their text would flag exactly the layout we recommend.
-            if a.is_symlink() or c.is_symlink() or a.read_text() == c.read_text() or imports_agents(c.read_text()):
+            if a.is_symlink() or c.is_symlink() or a.read_text() == c.read_text() or names_agents(c.read_text()):
                 out.append(("ok", d.name))
             else:
                 out.append(("differ", d.name))

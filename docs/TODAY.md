@@ -13,7 +13,7 @@ Three screens, each short enough to read without scrolling. None of them changes
 ```
 T█ Teyla 0.30.0
 Teyla reads your Claude Code and Codex sessions on your Mac, shows what they
-cost and what's waiting on you, and fixes the waste. Nothing leaves your machine.
+cost and what's waiting on you, and fixes the waste. Nothing about your sessions leaves your Mac unless you turn it on.
 
   $412      spent in the last 7 days       teyla spend
   3         questions waiting on you       teyla asks

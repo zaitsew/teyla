@@ -84,7 +84,7 @@ def test_with_sessions_it_shows_three_numbers_each_with_its_command(sessions, ca
     out = welcome_text(capsys)
     lines = out.splitlines()
     assert lines[0] == f"T█ Teyla {__version__}"
-    assert "Nothing leaves your machine." in " ".join(out.split())
+    assert "Nothing about your sessions leaves your Mac unless you turn it on." in " ".join(out.split())
     assert any(re.match(r"  \$412\s+spent in the last 7 days\s+teyla spend$", ln) for ln in lines)
     assert any(re.match(r"  3\s+questions waiting on you\s+teyla asks$", ln) for ln in lines)
     assert any(re.match(r"  1\s+note in your Inbox\s+teyla notes --inbox$", ln) for ln in lines)

@@ -19,7 +19,7 @@ Model brief: a detached `teyla state --refresh-brief` sends the open questions (
 Claude Haiku in one `claude -p` call and caches the sentence and the ranking in
 `~/.teyla/state-brief.json`. The snapshot uses the cache while its `ask_ids_hash` equals the
 current set of open questions (`brief.source` is then "model"); otherwise it returns the rules and
-starts one refresh. Off with `[state] model_brief = false`, in safe mode, or without `claude`.
+starts one refresh. Opt-in: `teyla config set state.model_brief=true`; never in safe mode or without `claude`.
 
 Version 2 adds three things (`docs/APP.md`, "Version 2"). `done` lists the sessions that ended a turn in
 the last 24 hours with a status, result lines and what they need. `tasks` lists what only the owner can
@@ -859,12 +859,12 @@ def ask_ids_hash(rows: list[dict]) -> str:
 
 
 def model_brief_enabled() -> bool:
-    """On unless `[state] model_brief` is false, safe mode is on (session text must stay local), or
-    there is no `claude` on PATH."""
+    """Off unless `[state] model_brief` is true; also off in safe mode (session text must stay local)
+    or without `claude` on PATH. The brief sends question text to Anthropic, so it is opt-in."""
     try:
         cfg = config.load()
-        v = (cfg.get("state") or {}).get("model_brief", True)
-        if v is False or str(v).strip().lower() in config.FALSE_WORDS or config.safe_mode(cfg):
+        v = (cfg.get("state") or {}).get("model_brief", False)
+        if not config.truthy(v) or config.safe_mode(cfg):
             return False
     except Exception:  # noqa: BLE001 — an unreadable config is "rules only", not a failed snapshot
         return False

@@ -2,7 +2,7 @@
 
     T█ Teyla 0.31.0
     Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost
-    and what's waiting on you, and fixes the waste. Nothing leaves your machine.
+    and what's waiting on you, and fixes the waste. Nothing about your sessions leaves your Mac unless you turn it on.
 
       $412   spent in the last 7 days        teyla spend
       3      questions waiting on you        teyla asks
@@ -27,13 +27,11 @@ from __future__ import annotations
 import sys
 import textwrap
 
-from . import __version__, figures
+from . import PROMISE, __version__, figures  # PROMISE: the one constant, in teyla/__init__.py
 from .spend import _money
 from .ui import Style, pad
 
 MAX_LINES = 15
-PROMISE = ("Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's "
-           "waiting on you, and fixes the waste. Nothing leaves your machine.")
 NO_SESSIONS = "No agent sessions found yet. Use Claude Code or Codex for a day, then run `teyla start`."
 
 START = ("teyla start", "Find where the money goes, and fix it one change at a time")
