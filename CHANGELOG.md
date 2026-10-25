@@ -2,6 +2,14 @@
 
 ## Unreleased — The machine guard stops starting heavy work while memory runs out
 
+- **`teyla asks` hides what never needed you: merged PRs and repeats.** An ask whose `pr` link points to a merged or closed PR
+  (after the ask) is done, note `auto: PR merged <url>`; the state comes from the backlog cache, then `~/.teyla/pr-state.json`
+  (30 minutes), then one batched `gh api graphql` query that only `teyla asks` runs and that fails quietly. Within one product,
+  a `question` asked twice (same session and question, or a token Jaccard of 0.8 on 6+ words) collapses into the newest, which
+  shows `(+N similar)` and `dupes: [ids]` in `--json`; when it is done, the repeats are done too (`auto: duplicate of <id>`).
+  The listing ends with `filtered: N resolved (PR merged/closed), M duplicates — teyla asks --all`. New `teyla asks undo <id>`
+  reopens one and keeps it from being closed again. `teyla state --json` (still version 2) adds `resolved` and `duplicates` to
+  `totals`. `docs/ASKS.md`, `docs/APP.md`.
 - **`teyla asks` groups by product, and a parked product stays quiet.** The default listing prints one header per product,
   `<name>  <n> waiting  [stage]`, with `focus` products first, then the oldest ask, and `unassigned` last; `--flat` keeps the
   old list. `--json` adds `groups`, `muted` and `muted_products` beside the unchanged keys, and `--html` gets the same headings.

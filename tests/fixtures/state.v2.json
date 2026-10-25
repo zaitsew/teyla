@@ -10,7 +10,9 @@
   "running": 3,
   "spent_today_usd": 4.1,
   "tasks": 2,
-  "done": 2
+  "done": 2,
+  "resolved": 1,
+  "duplicates": 2
  },
  "asks": [
   {

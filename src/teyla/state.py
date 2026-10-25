@@ -1160,6 +1160,7 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
                              codex_archive=codex_archive, reminders=reminders)
     reg = registry.load()
     rows = ranked(items, now, reg)
+    resolved, duplicates = asks.filtered_counts(items)      # asks closed by a merged PR, or collapsed into a newer one
     model = None
     if model_brief:
         try:
@@ -1198,7 +1199,8 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
             spent = None
     st = {"version": VERSION, "generated": _iso(now), "brief": None,
           "totals": {"questions": sum(1 for r in rows if not r["muted"]), "running": len(run), "spent_today_usd": spent,
-                     "tasks": len(tasks), "done": len(done)},
+                     "tasks": len(tasks), "done": len(done),
+                     "resolved": resolved, "duplicates": duplicates},
           "asks": rows, "tasks": tasks, "done": done, "products": prods,
           "running": [{k: v for k, v in r.items() if k != "_last"} for r in run],
           "relay": relay_view() if relay is None else relay,

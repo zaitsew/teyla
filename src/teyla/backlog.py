@@ -14,6 +14,10 @@ two local clones of one repo (`vpn`, `home-vpn`) end up under one product.
 
 No `gh`, safe mode, or a failing call: the lists are empty or keep their last value, never an error.
 A failed refresh leaves its lock in place, which holds the next attempt back for five minutes.
+
+`pr_states` answers a different question for `teyla asks`: is the PR an ask points to merged or closed? It
+reads the open PRs above first, then `~/.teyla/pr-state.json` (entries live 30 minutes), and asks GitHub
+once for the rest, in batches. Any failure leaves a URL unknown, never an error.
 """
 from __future__ import annotations
 
@@ -27,7 +31,7 @@ import subprocess
 import sys
 from typing import Callable
 
-from . import asks
+from . import asks, net
 from .control import state as control
 
 FRESH_S = 1800
@@ -44,6 +48,12 @@ PR_QUERY = ("query($q:String!){search(query:$q,type:ISSUE,first:%d){nodes{... on
 _SLUG = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _REMOTE = re.compile(r'\[remote "origin"\][^\[]*?\burl\s*=\s*(\S+)')
 _GITHUB_URL = re.compile(r"github\.com[:/]+([^/\s]+)/([^/\s]+?)(?:\.git)?/?$")
+
+PR_TTL_S = 1800                    # a PR state read from GitHub is trusted this long
+PR_BACKOFF_S = 300                 # after a failed query, no new one for this long
+PR_KEEP_S = 7 * 86400
+PR_BATCH = 40                      # PRs per GraphQL query
+_PR_URL = re.compile(r"^https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/pull/(\d+)(?:[/?#].*)?$")
 
 EMPTY = {"at": 0.0, "prs": [], "issues": [], "counts": {}, "canonical": {}}
 
@@ -282,3 +292,113 @@ def refresh(slugs: list[str], now: float | None = None, runner: Runner | None = 
         return 1
     lock_path().unlink(missing_ok=True)
     return 0
+
+
+# --- PR state, for `teyla asks` ----------------------------------------------------------------
+
+def pr_state_path() -> pathlib.Path:
+    return control.home() / "pr-state.json"
+
+
+def canonical_pr_url(url) -> str:
+    """`https://github.com/owner/repo/pull/N`, lower case; "" when `url` is not a GitHub PR link."""
+    m = _PR_URL.match(str(url or "").strip())
+    return f"https://github.com/{m.group(1)}/{m.group(2)}/pull/{int(m.group(3))}".lower() if m else ""
+
+
+def pr_states_query(refs: list[tuple[str, str, int]]) -> str:
+    parts = [f'p{i}: repository(owner: "{o}", name: "{n}") {{ pullRequest(number: {num}) '
+             f'{{ state mergedAt closedAt }} }}' for i, (o, n, num) in enumerate(refs)]
+    return "query { " + " ".join(parts) + " }"
+
+
+def fetch_pr_states(urls: list[str], runner: Runner) -> dict | None:
+    """{canonical url: {"state": OPEN|MERGED|CLOSED, "at": epoch of the merge or close, 0 when open}}.
+    A PR GitHub does not know is left out. None when a call or its parsing failed. gh exits 1 on a
+    partial answer, so the body is read either way."""
+    refs = []
+    for u in sorted({canonical_pr_url(x) for x in urls} - {""}):
+        o, n, num = u.split("/")[3], u.split("/")[4], int(u.split("/")[6])
+        if _SLUG.match(f"{o}/{n}"):
+            refs.append((o, n, num))
+    out: dict[str, dict] = {}
+    for i in range(0, len(refs), PR_BATCH):
+        chunk = refs[i:i + PR_BATCH]
+        try:
+            _rc, body, _err = runner(["gh", "api", "graphql", "-f", f"query={pr_states_query(chunk)}"])
+            data = json.loads(body or "")["data"]
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        for j, (o, n, num) in enumerate(chunk):
+            r = data.get(f"p{j}")
+            pr = r.get("pullRequest") if isinstance(r, dict) else None
+            if not isinstance(pr, dict):
+                continue
+            state = str(pr.get("state") or "").upper()
+            if state not in ("OPEN", "MERGED", "CLOSED"):
+                continue
+            when = _epoch(pr.get("mergedAt") if state == "MERGED" else pr.get("closedAt")) if state != "OPEN" else 0.0
+            out[f"https://github.com/{o}/{n}/pull/{num}".lower()] = {"state": state, "at": when}
+    return out
+
+
+def _load_pr_cache() -> dict:
+    try:
+        c = json.loads(pr_state_path().read_text())
+    except (OSError, ValueError):
+        c = {}
+    if not isinstance(c, dict) or c.get("version") != VERSION or not isinstance(c.get("prs"), dict):
+        return {"version": VERSION, "failed": 0.0, "prs": {}}
+    try:
+        failed = float(c.get("failed") or 0)
+    except (TypeError, ValueError):
+        failed = 0.0
+    prs = {k: v for k, v in c["prs"].items() if isinstance(v, dict) and v.get("state") in ("OPEN", "MERGED", "CLOSED")}
+    return {"version": VERSION, "failed": failed, "prs": prs}
+
+
+def pr_states(urls: list[str], now: float, *, runner: Runner | None = None, fetch: bool = True) -> dict:
+    """{canonical url: {"state", "at"}} for the PR links in `urls` whose state is known; others are left out.
+
+    Order: the open PRs of the backlog cache (when that cache is under 30 minutes old), then
+    `pr-state.json` entries under 30 minutes old, then one batched GraphQL query. Without `fetch`
+    (`teyla state` must stay fast) a cache entry of any age is used and GitHub is not asked. Without
+    `gh`, in safe mode, after a failed query within five minutes, or on a parse error, the unknown stay unknown."""
+    wanted = {canonical_pr_url(u) for u in urls} - {""}
+    known: dict[str, dict] = {}
+    bl = load()
+    if now - bl["at"] < FRESH_S:
+        open_now = {canonical_pr_url(p.get("url")) for p in bl["prs"] if isinstance(p, dict)}
+        known.update({u: {"state": "OPEN", "at": 0.0} for u in wanted & open_now})
+    cache = _load_pr_cache()
+    for u in wanted - set(known):
+        e = cache["prs"].get(u)
+        try:
+            seen = float((e or {}).get("seen") or 0)
+        except (TypeError, ValueError):
+            seen = 0.0
+        if e and (not fetch or now - seen < PR_TTL_S):
+            known[u] = {"state": e["state"], "at": float(e.get("at") or 0)}
+    missing = sorted(wanted - set(known))
+    if not (fetch and missing) or now - cache["failed"] < PR_BACKOFF_S or not net.allowed():
+        return known                        # safe mode closes the network here, as everywhere
+    if runner is None:
+        if not shutil.which("gh"):
+            return known
+        runner = default_runner
+    got = fetch_pr_states(missing, runner)
+    if got is None:
+        cache["failed"] = now
+    else:
+        cache["failed"] = 0.0
+        known.update(got)
+        for u, e in got.items():
+            cache["prs"][u] = {**e, "seen": now}
+    cache["prs"] = {u: e for u, e in cache["prs"].items() if now - float(e.get("seen") or 0) < PR_KEEP_S}
+    try:
+        asks._atomic_write(pr_state_path(), json.dumps(cache))
+    except OSError:
+        pass
+    return known

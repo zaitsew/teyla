@@ -6,6 +6,7 @@ module reads what is already on disk, read-only, and lists the open ones in one 
 
     teyla asks [--days 21] [--product P] [--all] [--flat] [--json]   open items, grouped by product (focus first)
     teyla asks done <id-prefix>... [--note TEXT]              close one (or several)
+    teyla asks undo <id-prefix>...                            reopen a done one; an auto-closed ask stays open
     teyla asks snooze <id-prefix> <days>                      hide one for N days
     teyla asks --html [-o FILE] [--open]                      one self-contained page (default ~/.teyla/asks.html)
     teyla asks --quiet                                        refresh ~/.teyla/asks.count only (what the hook reads)
@@ -23,6 +24,10 @@ Sources (nothing is written to them; `docs/ASKS.md` has the field-by-field detai
 3. Codex rollouts: a `request_user_input_async` call with no output, or a final message that ends
    with a question. `codex exec` runs and spawned agents are automation and are skipped.
 4. Teyla's own needs-you queue: pending gated runs (`teyla inbox`) and reminders due within 7 days.
+
+Two things close an ask without you. A PR link in the ask that points to a merged or closed PR (after the ask
+was written) closes it, note `auto: PR merged <url>`. The same request asked twice in one product collapses into
+the newest ask, which shows `(+N similar)`. Both show again with `--all`; `undo` reverses either.
 
 A desktop session and its transcript are one record. An item closes by itself when a later human
 prompt appears in its session; `done` and `snooze` live in `~/.teyla/asks.json`. Question text
@@ -110,9 +115,11 @@ class Ask:
     link: str
     pr: str
     harness: str              # claude-desktop | claude-code | codex | teyla
-    status: str = "open"      # open | done | snoozed
+    status: str = "open"      # open | done | snoozed | duplicate (collapsed into a newer ask, see `settle`)
     due: str = ""
     session: str = ""         # the harness's own session id (Claude cliSessionId, Codex uuid); not in the JSON
+    note: str = ""            # why it is done or a duplicate; "auto: ..." when Teyla decided; not in the JSON
+    dupes: list = dataclasses.field(default_factory=list)    # ids collapsed into this ask; in the JSON when any
 
     def to_dict(self, now: float) -> dict:
         d = dataclasses.asdict(self)
@@ -122,6 +129,9 @@ class Ask:
         if not d["due"]:
             d.pop("due")
         d.pop("session")          # internal: `teyla answer` needs it, the `asks --json` schema stays as it was
+        d.pop("note")
+        if not d["dupes"]:
+            d.pop("dupes")
         return d
 
 
@@ -634,6 +644,7 @@ def load_state(path: pathlib.Path | None = None) -> dict:
         d = {}
     d.setdefault("done", {})
     d.setdefault("snoozed", {})
+    d.setdefault("undone", {})
     return d
 
 
@@ -642,7 +653,8 @@ def save_state(st: dict, path: pathlib.Path | None = None, now: float | None = N
     cut = _iso((now or _now()) - STATE_KEEP_DAYS * 86400)
     st = {"version": 1,
           "done": {k: v for k, v in st["done"].items() if str(v.get("ts", "")) >= cut},
-          "snoozed": {k: v for k, v in st["snoozed"].items() if str(v.get("until", "")) >= cut}}
+          "snoozed": {k: v for k, v in st["snoozed"].items() if str(v.get("until", "")) >= cut},
+          "undone": {k: v for k, v in st.get("undone", {}).items() if str(v.get("ts", "")) >= cut}}
     _atomic_write(p, json.dumps(st, indent=1, sort_keys=True) + "\n")
 
 
@@ -670,17 +682,134 @@ def apply_state(items: list[Ask], st: dict, now: float) -> list[Ask]:
     for a in items:
         if a.id in st["done"]:
             a.status = "done"
+            a.note = str(st["done"][a.id].get("note") or "")
         elif a.id in st["snoozed"] and str(st["snoozed"][a.id].get("until", "")) > _iso(now):
             a.status = "snoozed"
     return items
+
+
+# --- settling: resolve by PR state, collapse duplicates ----------------------------------------
+
+AUTO_PR = "auto: PR "                  # note of an ask closed because its PR was merged or closed
+AUTO_DUP = "auto: duplicate of "       # note of an ask that repeats a newer one
+SIMILAR_MIN_WORDS = 6                  # both questions need this many words of 3+ letters for a Jaccard match
+SIMILAR_JACCARD = 0.8
+_MD_MARKS = re.compile(r"[*_`]")
+_WORDS = re.compile(r"[^\W\d_]{3,}")
+
+
+def norm_question(text) -> str:
+    """Lower case, markdown `*_` and backticks dropped, whitespace collapsed."""
+    return " ".join(_MD_MARKS.sub("", str(text or "")).lower().split())
+
+
+def question_words(text) -> set[str]:
+    return set(_WORDS.findall(norm_question(text)))
+
+
+def same_request(a: "Ask", b: "Ask") -> bool:
+    """One request asked twice: the same session and the same normalised question, or a token-set Jaccard
+    of at least 0.8 over words of 3+ letters when both questions have at least 6 such words."""
+    na, nb = norm_question(a.question), norm_question(b.question)
+    if not na or not nb:
+        return False
+    if a.session and a.session == b.session and na == nb:
+        return True
+    wa, wb = question_words(na), question_words(nb)
+    if len(wa) < SIMILAR_MIN_WORDS or len(wb) < SIMILAR_MIN_WORDS:
+        return False
+    return len(wa & wb) / len(wa | wb) >= SIMILAR_JACCARD
+
+
+def _auto_done(a: "Ask", st: dict, now: float, note: str) -> None:
+    st["done"][a.id] = {"ts": _iso(now), "note": note}
+    st["snoozed"].pop(a.id, None)
+    a.status, a.note = "done", note
+
+
+def _resolve_prs(items: list["Ask"], st: dict, now: float, *, fetch: bool, runner) -> bool:
+    cand = [a for a in items if a.status in ("open", "snoozed") and a.pr and a.id not in st["undone"]]
+    if not cand:
+        return False
+    from . import backlog                 # backlog imports this module
+    try:
+        states = backlog.pr_states([a.pr for a in cand], now, runner=runner, fetch=fetch)
+    except Exception:  # noqa: BLE001 — GitHub is an extra: no gh, no network or a bad answer resolves nothing
+        return False
+    changed = False
+    for a in cand:
+        s = states.get(backlog.canonical_pr_url(a.pr))
+        if s and s["state"] in ("MERGED", "CLOSED") and s["at"] > a.when:
+            _auto_done(a, st, now, f"{AUTO_PR}{s['state'].lower()} {a.pr}")
+            changed = True
+    return changed
+
+
+def _collapse(items: list["Ask"], st: dict, now: float) -> bool:
+    """Collapse the repeats of an ask into the newest one, product by product. A repeat of an ask that is
+    done is done too, and that is recorded; a repeat of an open ask is hidden (status `duplicate`) and
+    listed in the kept ask's `dupes`."""
+    by: dict[str, list[Ask]] = {}
+    for a in items:
+        if a.kind == "question" and a.status in ("open", "snoozed", "done") and not a.note.startswith(AUTO_DUP):
+            by.setdefault(a.product, []).append(a)
+    changed = False
+    for rows in by.values():
+        rows.sort(key=lambda a: (-a.when, a.id))
+        gone: set[str] = set()
+        for i, k in enumerate(rows):
+            if k.id in gone:
+                continue
+            for c in rows[i + 1:]:
+                if c.id in gone or c.status == "done" or c.id in st["undone"] or not same_request(k, c):
+                    continue
+                gone.add(c.id)
+                if k.status == "done":
+                    _auto_done(c, st, now, AUTO_DUP + k.id)
+                    changed = True
+                else:
+                    c.status, c.note = "duplicate", AUTO_DUP + k.id
+                    k.dupes.append(c.id)
+    return changed
+
+
+def settle(items: list["Ask"], now: float, *, st: dict | None = None, fetch: bool = False, runner=None) -> None:
+    """Close what is already settled, in place. An ask whose PR was merged or closed after the ask is done
+    (`auto: PR merged <url>`); the repeats of a newer ask collapse into it. Both go through the done store, so
+    `undo` reverses them and an undone ask is not touched again. `fetch` lets one batched `gh` query run for
+    PRs the caches do not know; without it only caches are read. With `st` given the caller owns the store."""
+    own = st is None
+    st = load_state() if own else st
+    changed = _resolve_prs(items, st, now, fetch=fetch, runner=runner)
+    changed = _collapse(items, st, now) or changed
+    if changed and own:
+        try:
+            save_state(st, now=now)
+        except OSError:
+            pass
+
+
+def filtered_counts(items: list["Ask"]) -> tuple[int, int]:
+    """(closed because the PR is merged or closed, repeats of a newer ask)."""
+    resolved = sum(1 for a in items if a.status == "done" and a.note.startswith(AUTO_PR))
+    dupes = sum(1 for a in items if a.status == "duplicate" or (a.status == "done" and a.note.startswith(AUTO_DUP)))
+    return resolved, dupes
+
+
+def filtered_line(resolved: int, dupes: int) -> str:
+    if not (resolved or dupes):
+        return ""
+    return f"filtered: {resolved} resolved (PR merged/closed), {dupes} duplicates — teyla asks --all"
 
 
 # --- collecting everything --------------------------------------------------------------------
 
 def collect(days: int = DEFAULT_DAYS, now: float | None = None, desktop: str | None = None,
             projects: str | None = None, codex_root: str | None = None, codex_archive: str | None = None,
-            reminders: pathlib.Path | None = None, st: dict | None = None) -> list[Ask]:
-    """Every waiting item from the four sources, state applied, oldest first. Deduped by id."""
+            reminders: pathlib.Path | None = None, st: dict | None = None, fetch: bool = False,
+            runner=None) -> list[Ask]:
+    """Every waiting item from the four sources, state applied and settled (`settle`), oldest first. Deduped
+    by id. `fetch` lets the PR check ask GitHub; without it only the caches are read."""
     now = _now() if now is None else now
     since = now - days * 86400
     items = (collect_claude(since, desktop, projects) + collect_codex(since, codex_root, codex_archive)
@@ -691,6 +820,7 @@ def collect(days: int = DEFAULT_DAYS, now: float | None = None, desktop: str | N
             seen.add(a.id)
             unique.append(a)
     apply_state(unique, load_state() if st is None else st, now)
+    settle(unique, now, st=st, fetch=fetch, runner=runner)
     unique.sort(key=lambda a: a.when)
     return unique
 
@@ -721,6 +851,34 @@ def mark_done(prefixes: list[str], note: str = "", now: float | None = None) -> 
         st["done"][a.id] = {"ts": _iso(now), **({"note": note} if note else {})}
         st["snoozed"].pop(a.id, None)
         lines.append(f"done: {a.id}  {a.product}  {a.title}")
+        changed = True
+    if changed:
+        save_state(st, now=now)
+    return lines, code
+
+
+def undo(prefixes: list[str], now: float | None = None) -> tuple[list[str], int]:
+    """Reopen done asks. An ask closed by Teyla (a merged PR, a repeat) is remembered as undone and is
+    not closed again. Asks that were closed as repeats of the reopened one go back under it."""
+    now = _now() if now is None else now
+    items = collect(max(DEFAULT_DAYS, 365), now)
+    st = load_state()
+    lines, code, changed = [], 0, False
+    for pre in prefixes:
+        a, err = resolve(pre, items)
+        if a is None:
+            lines.append(err)
+            code = 1
+            continue
+        if a.id not in st["done"] and a.status != "duplicate":
+            lines.append(f"not done: {a.id}  {a.product}  {a.title}")
+            code = 1
+            continue
+        st["done"].pop(a.id, None)
+        st["undone"][a.id] = {"ts": _iso(now)}
+        for k in [k for k, v in st["done"].items() if v.get("note") == AUTO_DUP + a.id]:
+            del st["done"][k]
+        lines.append(f"reopened: {a.id}  {a.product}  {a.title}")
         changed = True
     if changed:
         save_state(st, now=now)
@@ -845,8 +1003,11 @@ def _flags(a: Ask, reg: dict) -> list[str]:
 
 
 def _ask_lines(a: Ask, now: float, reg: dict) -> list[str]:
-    lines = [f"  {a.id}  {fmt_age(now - a.when):>5}  [{', '.join(_flags(a, reg))}]  {a.title}",
+    similar = f"  (+{len(a.dupes)} similar)" if a.dupes else ""
+    lines = [f"  {a.id}  {fmt_age(now - a.when):>5}  [{', '.join(_flags(a, reg))}]  {a.title}{similar}",
              "      " + a.question.replace("\n", "\n      ")]
+    if a.note:
+        lines.append("      -- " + a.note)
     if a.context:
         lines.append("      -- " + a.context.replace("\n", " "))
     if a.options:
@@ -856,7 +1017,7 @@ def _ask_lines(a: Ask, now: float, reg: dict) -> list[str]:
 
 
 def render_text(items: list[Ask], now: float, *, flat: bool = False, muted: list[Ask] | None = None,
-                reg: dict | None = None) -> str:
+                reg: dict | None = None, filtered: str = "") -> str:
     """Grouped by product with a header per product; `flat` keeps the old list, one `product (n)` header each."""
     reg = registry.load() if reg is None else reg
     lines = [header(items)]
@@ -869,6 +1030,8 @@ def render_text(items: list[Ask], now: float, *, flat: bool = False, muted: list
     note = muted_line(muted or [])
     if note:
         lines += ["", note]
+    if filtered:
+        lines += ["", filtered] if not note else [filtered]
     return "\n".join(lines)
 
 
@@ -879,13 +1042,15 @@ def group_dicts(items: list[Ask], reg: dict) -> list[dict]:
             for product, rows in group(items, reg)]
 
 
-def render_json(items: list[Ask], now: float, *, muted: list[Ask] | None = None, reg: dict | None = None) -> str:
+def render_json(items: list[Ask], now: float, *, muted: list[Ask] | None = None, reg: dict | None = None,
+                counts: tuple[int, int] = (0, 0)) -> str:
     reg = registry.load() if reg is None else reg
     muted = muted or []
     return json.dumps({"waiting": len(items), "archived": sum(1 for a in items if a.archived),
                        "generated": _iso(now), "items": [a.to_dict(now) for a in items],
                        "groups": group_dicts(items, reg),
-                       "muted": len(muted), "muted_products": sorted({a.product for a in muted})}, indent=1)
+                       "muted": len(muted), "muted_products": sorted({a.product for a in muted}),
+                       "resolved": counts[0], "duplicates": counts[1]}, indent=1)
 
 
 _CSS = """
@@ -920,7 +1085,7 @@ def _e(s) -> str:
 
 
 def render_html(items: list[Ask], now: float, *, flat: bool = False, muted: list[Ask] | None = None,
-                reg: dict | None = None) -> str:
+                reg: dict | None = None, filtered: str = "") -> str:
     reg = registry.load() if reg is None else reg
     kinds = {}
     for a in items:
@@ -947,6 +1112,7 @@ def render_html(items: list[Ask], now: float, *, flat: bool = False, muted: list
                          + ('<span class="badge arch">archived</span>' if a.archived else '')
                          + ('<span class="badge">parked</span>' if is_parked(a, reg) else '')
                          + (f'<span class="badge">{_e(a.status)}</span>' if a.status != "open" else '')
+                         + (f'<span class="badge">+{len(a.dupes)} similar</span>' if a.dupes else '')
                          + f'<span>{_e(a.id)}</span></div>')
             parts.append(f'<div class="q">{_e(a.question)}</div>')
             if a.context:
@@ -962,9 +1128,9 @@ def render_html(items: list[Ask], now: float, *, flat: bool = False, muted: list
                 parts.append(f'<a class="open" href="{_e(a.pr)}">PR</a>')
             parts.append(f'<button type="button" data-cmd="{_e(done_cmd)}">copy &ldquo;done&rdquo; command</button>')
             parts.append('</div></section>')
-    note = muted_line(muted or [])
-    if note:
-        parts.append(f'<p class="sum">{_e(note)}</p>')
+    for note in (muted_line(muted or []), filtered):
+        if note:
+            parts.append(f'<p class="sum">{_e(note)}</p>')
     parts.append(f'</main><script>{_JS}</script></body></html>')
     return "".join(parts)
 
@@ -1003,6 +1169,13 @@ def cmd_asks(args) -> int:
         lines, code = mark_done(words[1:], args.note or "", now)
         print("\n".join(lines))
         return code
+    if words and words[0] == "undo":
+        if len(words) < 2:
+            print("usage: teyla asks undo <id-prefix>...", file=sys.stderr)
+            return 64
+        lines, code = undo(words[1:], now)
+        print("\n".join(lines), file=sys.stderr if code else sys.stdout)
+        return code
     if words and words[0] == "snooze":
         try:
             if len(words) != 3:
@@ -1015,10 +1188,10 @@ def cmd_asks(args) -> int:
         print(line, file=sys.stderr if code else sys.stdout)
         return code
     if words:
-        print(f"unknown action {words[0]!r}: expected done or snooze", file=sys.stderr)
+        print(f"unknown action {words[0]!r}: expected done, undo or snooze", file=sys.stderr)
         return 64
     days = args.days or DEFAULT_DAYS
-    everything = collect(days, now)
+    everything = collect(days, now, fetch=True)
     reg = registry.load()
     if not args.product and days == DEFAULT_DAYS and not args.all:
         write_count([a for a in everything if not is_muted(a, reg)])      # what the default list shows
@@ -1027,25 +1200,27 @@ def cmd_asks(args) -> int:
     items = [a for a in everything if args.all or a.status == "open"]
     if args.product:
         items = [a for a in items if a.product == args.product]
+    counts = filtered_counts([a for a in everything if not args.product or a.product == args.product])
+    filtered = "" if args.all else filtered_line(*counts)
     muted: list[Ask] = []
     if not args.all and stage_of(reg, args.product or "") != "parked":
         muted = [a for a in items if is_muted(a, reg)]
         items = [a for a in items if not is_muted(a, reg)]
     if args.html:
-        p = write_html(items, now, args.out, flat=args.flat, muted=muted, reg=reg)
+        p = write_html(items, now, args.out, flat=args.flat, muted=muted, reg=reg, filtered=filtered)
         print(f"{header(items)}\n{p}")
         if args.open:
             _open_file(p)
         return 0
-    print(render_json(items, now, muted=muted, reg=reg) if args.json
-          else render_text(items, now, flat=args.flat, muted=muted, reg=reg))
+    print(render_json(items, now, muted=muted, reg=reg, counts=counts) if args.json
+          else render_text(items, now, flat=args.flat, muted=muted, reg=reg, filtered=filtered))
     return 0
 
 
 def register(sp):
     q = sp.add_parser("asks", help="every question an AI session left waiting on you, in one list")
     q.set_defaults(fn=cmd_asks)
-    q.add_argument("words", nargs="*", help="done <id-prefix>... | snooze <id-prefix> <days>; none lists")
+    q.add_argument("words", nargs="*", help="done <id-prefix>... | undo <id-prefix>... | snooze <id-prefix> <days>; none lists")
     q.add_argument("--days", type=int, help=f"look back this far (default {DEFAULT_DAYS})")
     q.add_argument("--product", help="one product (registry id); a parked product shows its muted asks")
     q.add_argument("--all", action="store_true", help="include done and snoozed items, and the asks of parked products")
