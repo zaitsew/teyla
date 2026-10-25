@@ -8,6 +8,7 @@ undone. It never changes anything without a yes.
 teyla start                 # the summary card, then each offer: [y]es / [n]o / [e]xplain / [q]uit
 teyla start --days 14       # another window; savings are scaled to a month
 teyla apply O1 O3 --yes     # make those changes without the questions (--dry shows them and writes nothing)
+teyla apply O5 --owner NAME # O5 only: the name the starter POLICY.md carries (default: the login name)
 teyla changes               # every change Teyla made, and whether it is undone
 teyla undo O1               # put back only the key Teyla wrote
 ```
@@ -30,8 +31,10 @@ teyla undo O1               # put back only the key Teyla wrote
    `teyla start` prints the card and the `teyla apply` commands instead.
 
 For an AI agent that relays the result to you, `teyla start --agent` (or `--json`) prints
-`{summary_text, diagnosis, offers}` and applies nothing. The agent reads `summary_text` to you, then runs
-`teyla apply <ids> --yes` for the offers you accept.
+`{summary_text, diagnosis, offers}` and applies nothing. Each offer carries `preview`, the command that shows its change
+and writes nothing (`teyla apply <id> --dry`). Under `--agent`, `summary_text` leaves out the closing line that tells a
+person at a terminal to go on with `teyla start` or apply several offers; the interactive card and `--json` keep it. The
+agent reads `summary_text` to you, asks one question per offer, then runs `teyla apply <id> --yes` for each yes.
 
 `--agent` writes none of your settings. The one side effect is the existing cache of Claude desktop sessions
 under `~/.teyla`, which `teyla asks` already keeps; it is refreshed only when a Claude desktop store exists.
@@ -52,8 +55,12 @@ active.
 | O3 | a read-only `scout` agent on Haiku | `~/.claude/agents/scout.md`, only if absent | dollars |
 | O4 | Codex `model_reasoning_effort` = `medium` | `~/.codex/config.toml`, one line | benefit text |
 | O5 | `teyla policy sync` | the rules links of each installed harness | benefit text |
-| O6 | `teyla harness sync` | hooks and skills in each installed harness | benefit text |
+| O6 | `teyla harness sync`, and `teyla plugin install zaitsew/teyla` when Claude Code has no Teyla plugin | hooks and skills in each installed harness; the Claude Code plugin | benefit text |
 | O7 | `teyla routine install` | two launchd jobs | benefit text |
+
+O6's title names the harnesses it will hook on this machine ("Keep your prompts and questions in Claude Code and Codex"),
+worked out when the diagnosis runs. A harness counts as installed when its home directory exists (`~/.codex`, `~/.cursor`,
+...): `harness sync`, `harness status`, O6 and `teyla doctor` use that one test.
 
 O1 to O4 are applicable only when the tool is installed and the setting is not already set. O4 is offered only
 when Codex is at least $5 and 10% of the window's spend, and its effort is `high` or `xhigh`. O5 to O7 show no
@@ -103,6 +110,7 @@ JSON key order, the indent and the file mode. A symlinked settings file is follo
   command and exits 1, because Teyla's sync owns those files and its uninstall removes them. No targeted uninstall
   exists, so `teyla uninstall` (`--dry` lists the steps first) removes all of Teyla's hooks, links and data;
   `teyla routine install` prints the `launchctl bootout` and `rm` commands for the two jobs. The O6 sync replaces
-  Teyla's own hook files, including any edits made to them.
+  Teyla's own hook files, including any edits made to them. When O6 also installed the Claude Code plugin, `teyla plugin uninstall teyla`
+(or `claude plugin uninstall teyla@teyla`) removes that part.
 
 A file that is not valid JSON is never written: the offer reports it and changes nothing.

@@ -74,6 +74,17 @@ def python_spec(cfg: dict | None = None) -> str:
     return str(pinned) if pinned else f"{sys.version_info.major}.{sys.version_info.minor}"
 
 
+# The interpreters Teyla is tested on. `uv tool install` takes the newest Python it can find or download, so
+# a Mac whose system Python is 3.9 gets the latest release; installing with `--python 3.12` keeps it in range.
+PYTHON_MIN, PYTHON_MAX = (3, 11), (3, 13)
+PYTHON_RANGE = "3.11 to 3.13"
+REINSTALL_ON_312 = "uv tool install --force --python 3.12 git+https://github.com/zaitsew/teyla   (may download about 25 MB)"
+
+
+def python_supported(version: tuple[int, int]) -> bool:
+    return PYTHON_MIN <= tuple(version[:2]) <= PYTHON_MAX
+
+
 def python_executable_for(spec: str) -> str:
     """A concrete interpreter for pipx's --python: the running interpreter's base (outside the
     venv) when it matches `spec`, else `python<spec>` for PATH lookup."""
@@ -120,7 +131,7 @@ def truststore_available() -> bool:
 # `pip install 'teyla[work]'` is Teyla plus truststore: the OS keychain, which on a managed Mac
 # already holds the TLS-inspecting proxy's root CA, so no SSL_CERT_FILE has to be exported.
 WORK_EXTRA_HINT = ("behind a proxy without truststore: reinstall with the work extra so Python uses the OS "
-                   "keychain — uv tool install --force 'teyla[work] @ git+https://github.com/zaitsew/teyla'")
+                   "keychain — uv tool install --force --python 3.12 'teyla[work] @ git+https://github.com/zaitsew/teyla'")
 
 
 def ssl_context():
@@ -158,7 +169,7 @@ def explain_tls_error(note: str | None) -> str | None:
         return ("Python does not trust the certificate chain (git/curl may, via the OS keychain). Point it at a "
                 "bundle that includes the proxy's root CA: teyla config set env.SSL_CERT_FILE=/path/to/bundle.pem; "
                 "or install the work extra (truststore, the OS keychain): "
-                "uv tool install --force 'teyla[work] @ git+https://github.com/zaitsew/teyla'")
+                "uv tool install --force --python 3.12 'teyla[work] @ git+https://github.com/zaitsew/teyla'")
     return None
 
 
@@ -188,6 +199,10 @@ def install_method() -> tuple[str, pathlib.Path | None]:
     return "pip", None
 
 
+RATE_LIMIT_CODES = (403, 429)
+RATE_LIMIT_NOTE = "GitHub rate limit; try later"
+
+
 def latest_release(repo: str, timeout: int = 10) -> tuple[str | None, str]:
     tag, note, _ = lookup_release(repo, timeout)
     return tag, note
@@ -210,6 +225,8 @@ def lookup_release(repo: str, timeout: int = 10, tag: str | None = None) -> tupl
     try:
         data = _get_json(url, timeout)
     except urllib.error.HTTPError as e:
+        if e.code in RATE_LIMIT_CODES:          # GitHub answers an unauthenticated burst with 403 or 429
+            return None, f"{endpoint}: {RATE_LIMIT_NOTE} (HTTP {e.code})", True
         return None, f"{endpoint}: {e}", True  # 404 just means no (such) release
     except (urllib.error.URLError, TimeoutError, ValueError, OSError) as e:
         return None, f"{endpoint}: {e}", False
@@ -358,7 +375,7 @@ def check(repo: str | None = None, refresh: bool = True, max_age_hours: int = 24
     rec = {"checked": now.isoformat(timespec="seconds"), "repo": repo, "installed": __version__,
            "latest": tag, "sha": sha, "pin": pin, "channel": channel,
            "note": note, "method": method, "checkout": str(root) if root else None,
-           "newer": _wanted(tag, sha, pin), "reachable": reachable,
+           "newer": _wanted(tag, sha, pin), "reachable": reachable, "rate_limited": RATE_LIMIT_NOTE in note,
            "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
            "python_pin": python_spec(cfg), "executable": sys.executable, "trust": trust_source(),
            "proxy": proxy_in_use(), "from_cache": False}

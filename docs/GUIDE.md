@@ -7,7 +7,7 @@ Productizing is in [PRODUCTIZE.md](PRODUCTIZE.md) and the work-laptop setup is i
 ## Install and update
 
 ```bash
-uv tool install git+https://github.com/zaitsew/teyla      # or: pipx install git+https://github.com/zaitsew/teyla
+uv tool install --python 3.12 git+https://github.com/zaitsew/teyla      # or: pipx install git+https://github.com/zaitsew/teyla
 teyla policy init --owner "Your Name" && teyla policy sync   # one POLICY.md (+ your CLAUDE.md rules) → Claude Code, Codex, Grok, Hermes, Cursor
 teyla plugin install zaitsew/teyla   # the Claude Code plugin with the machine guard (or: claude plugin marketplace add zaitsew/teyla)
 teyla harness sync                   # the same skills and hooks in Cursor, Codex, Grok and Hermes

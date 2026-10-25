@@ -25,6 +25,15 @@ def _no_real_routine(monkeypatch):
     return calls
 
 
+@pytest.fixture(autouse=True)
+def _no_real_plugin_install(monkeypatch):
+    """O6 installs Teyla's plugin by cloning from github.com; no test here may. Tests that apply it see this stub."""
+    from teyla import plugin_install
+    calls = []
+    monkeypatch.setattr(plugin_install, "install", lambda source, plugins_dir=None: calls.append((source, plugins_dir)) or ["stub: plugin installed"])
+    return calls
+
+
 OPUS = "claude-opus-5-5"
 SONNET = "claude-sonnet-5-5"
 SETTINGS = '{\n  "model": "opus",\n  "theme": "dark"\n}\n'
@@ -113,7 +122,7 @@ def test_o1_prices_only_turns_past_the_compaction_point(machine):
     net = 40 * 250_000 * 0.2 / 1e6 - (300_000 * 0.2 + 10_000 * 20 + 50_000 * 8) / 1e6
     assert net == pytest.approx(1.34)
     assert o["O1"].saving_usd_month == {"low": round(net * 0.5, 2), "high": round(net, 2)}
-    assert "40 turns in 1 sessions" in o["O1"].basis and o["O1"].benefit is None
+    assert "40 turns in 1 session went past" in o["O1"].basis and o["O1"].benefit is None
     only_280k = [s for s in inp.sessions if s.sid == "s2bbbb"]
     assert offers.o1_net(only_280k) == (0.0, 0, 0)
 
@@ -314,7 +323,7 @@ def test_apply_o5_and_o6_run_the_syncs_and_log_them_as_commands(machine, capsys)
     assert (machine.home / ".codex" / "hooks.json").exists()
     rows = changes.changes()
     assert [(r["offer"], r["kind"], r["command"]) for r in rows] == [
-        ("O5", "command", "teyla policy sync"), ("O6", "command", "teyla harness sync")]
+        ("O5", "command", "teyla policy sync"), ("O6", "command", "teyla harness sync && teyla plugin install zaitsew/teyla")]
     assert "teyla uninstall" in out and "teyla undo O5-" not in out
     assert "teyla policy sync" in _run(["changes"], capsys)[1]
 
@@ -365,7 +374,8 @@ def test_start_agent_writes_nothing_and_prints_the_json_shape(machine, capsys):
 def test_start_json_is_the_same_payload(machine, capsys):
     a = json.loads(_run(["start", "--agent"], capsys)[1])
     b = json.loads(_run(["start", "--json"], capsys)[1])
-    assert a["summary_text"] == b["summary_text"] and a["offers"] == b["offers"]
+    assert a["offers"] == b["offers"]
+    assert b["summary_text"].splitlines()[:-1] == a["summary_text"].splitlines()   # --json keeps the closing line for a person
 
 
 def test_the_summary_card_is_short_and_numbers_first(machine, capsys):
@@ -526,7 +536,7 @@ def test_o1_leaves_out_turns_sent_before_the_window(fake_home):
     o, _ = _offers(fake_home, 1)
     assert o["O1"].saving_usd_month is None and "saves nothing" in o["O1"].basis
     o, _ = _offers(fake_home, 60)
-    assert "120 turns in 1 sessions" in o["O1"].basis and o["O1"].saving_usd_month["high"] > 2
+    assert "120 turns in 1 session went past" in o["O1"].basis and o["O1"].saving_usd_month["high"] > 2
 
 
 # --- speed: the same numbers, less work ----------------------------------------------------------------
@@ -592,7 +602,7 @@ def test_the_card_has_one_line_per_applicable_offer(machine, capsys):
 def test_an_offer_without_a_figure_shows_what_it_brings(machine, capsys):
     d = json.loads(_run(["start", "--agent"], capsys)[1])
     o6 = [l for l in d["summary_text"].splitlines() if l.startswith("  O6 ")]
-    assert o6 == ["  O6 Keep your prompts and questions: keeps your corrections and open questions"]
+    assert o6 == ["  O6 Keep your prompts and questions in Claude Code: keeps your corrections and open questions"]
 
 
 def test_the_card_says_when_nothing_applies(machine):
@@ -615,3 +625,87 @@ def test_the_card_fits_twelve_lines_with_all_seven_offers(machine):
     assert [l.split()[0] for l in lines if l.startswith("  O")] == [f"O{n}" for n in range(1, 8)]
     diag["long_sessions"] = 0
     assert len(start.summary_text(diag, list(o.values())).splitlines()) <= 12
+
+
+# --- the frictions a stranger's agent met (install by agent) ----------------------------------------------
+
+def test_the_agent_card_drops_the_line_for_a_person_at_a_terminal(machine, capsys):
+    agent = json.loads(_run(["start", "--agent"], capsys)[1])["summary_text"]
+    asjson = json.loads(_run(["start", "--json"], capsys)[1])["summary_text"]
+    assert "teyla apply" not in agent and "Go through them" not in agent
+    assert asjson.splitlines()[-1].startswith("Go through them with `teyla start`, or apply some: `teyla apply ")
+    assert asjson.splitlines()[:-1] == agent.splitlines()
+    code, out, _ = _run(["start"], capsys)
+    assert "Go through them with `teyla start`" in out
+
+
+def test_every_offer_names_the_command_that_previews_it(machine, capsys):
+    d = json.loads(_run(["start", "--agent"], capsys)[1])
+    assert [o["preview"] for o in d["offers"]] == [f"teyla apply O{n} --dry" for n in range(1, 8)]
+
+
+def test_counts_in_sentences_agree_with_their_noun(machine):
+    o, _ = _offers(machine)
+    assert "40 turns in 1 session went past" in o["O1"].basis
+    assert offers.plural(1, "session") == "1 session" and offers.plural(0, "day") == "0 days" and offers.plural(2, "call") == "2 calls"
+    diag = dict(diagnose.diagnose(30, _offers(machine)[1], with_asks=False), waiting_asks=1, days=1)
+    text = start.summary_text(diag, [])
+    assert "1 question is waiting" in text and "Last 1 day:" in text and "1 sessions" not in text and "1 days" not in text
+
+
+def test_o5_takes_the_owner_name_for_the_starter_policy(machine, capsys):
+    (machine.home / ".codex").mkdir()
+    code, out, err = _run(["apply", "O5", "--owner", "Ada Example", "--yes"], capsys)
+    assert code == 0, err
+    assert "Ada Example" in (machine.home / ".agents" / "POLICY.md").read_text()
+    assert _run(["apply", "O5", "--owner", " ", "--yes"], capsys)[0] == 2
+
+
+def test_o6_names_the_harnesses_it_hooks_here(machine):
+    o = _offers(machine)[0]["O6"]
+    assert o.title == "Keep your prompts and questions in Claude Code" and o.applies
+    (machine.home / ".codex").mkdir()
+    o = _offers(machine)[0]["O6"]
+    assert o.title == "Keep your prompts and questions in Claude Code and Codex"
+    assert "Claude Code and Codex" in o.benefit
+    (machine.home / ".cursor").mkdir()
+    assert _offers(machine)[0]["O6"].title.endswith("in Claude Code, Cursor and Codex")
+
+
+def test_o6_installs_the_plugin_when_claude_code_has_none(machine, capsys, _no_real_plugin_install):
+    (machine.home / ".codex").mkdir()
+    o = _offers(machine)[0]["O6"]
+    assert o.change["command"] == "teyla harness sync && teyla plugin install zaitsew/teyla"
+    assert "teyla plugin uninstall teyla" in o.undo and "claude plugin uninstall teyla@teyla" in o.undo
+    code, out, err = _run(["apply", "O6", "--yes"], capsys)
+    assert code == 0, err
+    assert _no_real_plugin_install == [("zaitsew/teyla", machine.home / ".claude" / "plugins")]
+    assert (machine.home / ".codex" / "hooks.json").exists() and "stub: plugin installed" in out
+    assert changes.changes()[0]["command"] == "teyla harness sync && teyla plugin install zaitsew/teyla"
+
+
+def test_o6_leaves_the_plugin_alone_when_it_is_installed(machine, _no_real_plugin_install):
+    plugins = machine.home / ".claude" / "plugins"
+    plugins.mkdir()
+    (plugins / "installed_plugins.json").write_text(json.dumps({"version": 2, "plugins": {"teyla@teyla": [{"version": "1.0.0"}]}}))
+    (machine.home / ".codex").mkdir()
+    o = _offers(machine)[0]["O6"]
+    assert o.change["command"] == "teyla harness sync" and "plugin" not in o.undo
+    plugins_only = _offers(machine)[0]
+    import shutil
+    shutil.rmtree(machine.home / ".codex")
+    assert not _offers(machine)[0]["O6"].applies
+    assert _no_real_plugin_install == []
+
+
+def test_a_failed_plugin_install_is_a_line_and_the_hooks_stay_logged(machine, capsys, monkeypatch):
+    from teyla import plugin_install
+
+    def boom(source, plugins_dir=None):
+        raise OSError("no network")
+    monkeypatch.setattr(plugin_install, "install", boom)
+    (machine.home / ".codex").mkdir()
+    code, out, err = _run(["apply", "O6", "--yes"], capsys)
+    assert code == 1 and "plugin not installed: OSError: no network" in out
+    assert "O6: partly applied" in err
+    assert (machine.home / ".codex" / "hooks.json").exists() and len(changes.changes()) == 1

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Install by agent: fixes from a stranger's run.** Every install line pins `--python 3.12` (uv no longer picks a newer
+  Python on a Mac with only 3.9; a download of about 25 MB may follow). `teyla start --agent` leaves out the closing line meant
+  for a person at a terminal. `harness sync`, `harness status`, O6 and `doctor` share one "installed" test (the harness's
+  home directory), so doctor prints no FIX for a harness it calls absent. O6 names the harnesses it hooks and installs the
+  Claude Code plugin when it is missing; `teyla apply O5 --owner NAME` names the policy's owner; every offer carries
+  `preview`. `doctor` says it writes files and makes one update check, calls a GitHub 403/429 INFO ("rate limit; try
+  later"), finds Codex the same way in `tools` and `health`, and prints Setup before Machine. Counts agree with their noun.
+
 - **`teyla web`: a local dashboard for the diagnosis, today, products and notes.** One command opens a page in your
   browser with five tabs. Start shows the diagnosis card and the seven offers, each with Apply (one confirm step that
   names the file and the key) and Undo (the message of `teyla undo` is shown, including the refusal for O5 to O7). Today

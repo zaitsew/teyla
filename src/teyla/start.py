@@ -16,6 +16,7 @@ import json
 import sys
 
 from . import changes, diagnose, figures, offers as offers_mod
+from .offers import plural
 from .spend import _money
 
 CARD_MAX_LINES = 12
@@ -28,26 +29,29 @@ def _range(o) -> str:
     return hi if lo == hi else f"{lo}-{hi}"
 
 
-def summary_text(diag: dict, offers: list) -> str:
-    """The card a human reads first: numbers first, at most CARD_MAX_LINES lines."""
+def summary_text(diag: dict, offers: list, for_agent: bool = False) -> str:
+    """The card a human reads first: numbers first, at most CARD_MAX_LINES lines. `for_agent` leaves out the
+    closing line that tells a person at a terminal how to go on: an agent asks one offer per question
+    (AGENTS.md), and that line would tell it to apply several at once."""
     if diag["empty"]:
         return diagnose.EMPTY_MESSAGE
     L = []
     harnesses = ", ".join(f"{h} {_money(v)}" for h, v in list(diag["by_harness"].items())[:3] if v >= 1)
-    L.append(f"Last {diag['days']} days: {_money(diag['total_usd'])} at API list price over {diag['sessions']} sessions "
-             f"on {diag['active_days']} days" + (f" ({harnesses})." if harnesses else "."))
+    L.append(f"Last {plural(diag['days'], 'day')}: {_money(diag['total_usd'])} at API list price over {plural(diag['sessions'], 'session')} "
+             f"on {plural(diag['active_days'], 'day')}" + (f" ({harnesses})." if harnesses else "."))
     bits = []
     if diag["context_usd"]:
         bits.append(f"{diag['context_share'] * 100:.0f}% of it ({_money(diag['context_usd'])}) was re-reading and storing context")
     if diag["long_sessions"]:
-        bits.append(f"{diag['long_sessions']} sessions ran past {diag['long_context_tokens'] // 1000}k tokens of context "
+        bits.append(f"{plural(diag['long_sessions'], 'session')} ran past {diag['long_context_tokens'] // 1000}k tokens of context "
                     f"and cost {_money(diag['long_sessions_usd'])}")
     if bits:
         L.append("; ".join(bits) + ".")
     if diag["subagent_usd"]:
         L.append(f"Subagents cost {_money(diag['subagent_usd'])}; Opus ran {diag['subagent_opus_share'] * 100:.0f}% of that.")
     if diag["waiting_asks"]:
-        L.append(f"{diag['waiting_asks']} questions are waiting on you (`teyla asks`).")
+        n = diag["waiting_asks"]
+        L.append(f"{plural(n, 'question')} {'is' if n == 1 else 'are'} waiting on you (`teyla asks`).")
     live = [o for o in offers if o.applies]
     if not live or len(L) + 1 + len(live) + 1 <= CARD_MAX_LINES:
         L.append(diag["note"])                # with no room it is dropped here and stays in the JSON
@@ -55,21 +59,23 @@ def summary_text(diag: dict, offers: list) -> str:
         L.append(NOTHING_TO_SUGGEST)
     else:
         go = "Go through them with `teyla start`, or apply some: `teyla apply " + " ".join(o.id for o in live[:2]) + " --yes`."
-        room = CARD_MAX_LINES - len(L) - 1
+        room = CARD_MAX_LINES - len(L) - (0 if for_agent else 1)
         shown = live if len(live) <= room else live[:max(0, room - 1)]
         for o in shown:
             L.append(f"  {o.id} {o.title}: " + (f"about {_range(o)} a month" if o.saving_usd_month else o.short))
         if len(shown) < len(live):
             L.append(f"  +{len(live) - len(shown)} more: " + ", ".join(o.id for o in live[len(shown):]))
-        L.append(go)
+        if not for_agent:
+            L.append(go)
     return "\n".join(L[:CARD_MAX_LINES])
 
 
-def payload(days: int, inputs=None) -> tuple[dict, list]:
+def payload(days: int, inputs=None, for_agent: bool = False) -> tuple[dict, list]:
     inp = inputs or diagnose.collect(days)
     diag = diagnose.diagnose(days, inp)
     offers = offers_mod.build(days, inp, diag)
-    return dict(summary_text=summary_text(diag, offers), diagnosis=diag, offers=[o.to_dict() for o in offers]), offers
+    return dict(summary_text=summary_text(diag, offers, for_agent), diagnosis=diag,
+                offers=[o.to_dict() for o in offers]), offers
 
 
 # --- showing an offer --------------------------------------------------------------------------
@@ -88,9 +94,9 @@ def offer_block(o, explain: bool = False) -> str:
     return "\n".join(L)
 
 
-def _apply_one(o, out) -> bool:
+def _apply_one(o, out, owner: str | None = None) -> bool:
     try:
-        rec, lines = offers_mod.apply(o)
+        rec, lines = offers_mod.apply(o, owner=owner)
     except changes.ChangeError as e:
         print(f"{o.id}: {e}", file=sys.stderr)
         return False
@@ -100,6 +106,9 @@ def _apply_one(o, out) -> bool:
     out.append((o, rec))
     for line in lines[:6]:
         print(f"  {line}")
+    if any(str(line).startswith(offers_mod.PLUGIN_FAILED) for line in lines):
+        print(f"{o.id}: partly applied: the hooks are in place, Teyla's Claude Code plugin is not.", file=sys.stderr)
+        return False
     return True
 
 
@@ -163,8 +172,8 @@ def _interactive(offers: list, pl: dict) -> int:
 def cmd_start(args) -> int:
     if not (args.agent or args.json):       # stdout stays the card; the wait is announced on stderr
         n = diagnose.count_sessions(args.days)
-        print(f"Reading {n if n is not None else 'your'} sessions from the last {args.days} days…", file=sys.stderr)
-    pl, offers = payload(args.days)
+        print(f"Reading {plural(n, 'session') if n is not None else 'your sessions'} from the last {plural(args.days, 'day')}…", file=sys.stderr)
+    pl, offers = payload(args.days, for_agent=bool(args.agent))
     if args.agent or args.json:
         print(json.dumps(pl, indent=2))
         return 0
@@ -190,6 +199,10 @@ def cmd_start(args) -> int:
 
 
 def cmd_apply(args) -> int:
+    owner = (args.owner or "").strip() or None
+    if args.owner is not None and not owner:
+        print("--owner needs a name", file=sys.stderr)
+        return 2
     offers = {o.id: o for o in offers_mod.build(with_savings=False)}
     code = 0
     done: list = []
@@ -211,7 +224,7 @@ def cmd_apply(args) -> int:
                 continue
             if _ask("Apply it? [y]es / [n]o  ") not in ("y", "yes"):
                 continue
-        if not _apply_one(o, done):
+        if not _apply_one(o, done, owner if o.id == "O5" else None):
             code = 1
     if args.dry:
         print("\n--dry: nothing was written.")
@@ -274,6 +287,7 @@ def register(sp):
     q.add_argument("offers", nargs="+", metavar="OFFER")
     q.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     q.add_argument("--dry", action="store_true", help="show the changes, write nothing")
+    q.add_argument("--owner", metavar="NAME", help="O5: the name the starter POLICY.md carries (default: the login name)")
     q = sp.add_parser("undo", help="revert a change by its id or by its offer id; touches only the key Teyla wrote")
     q.set_defaults(fn=cmd_undo)
     q.add_argument("refs", nargs="+", metavar="CHANGE_OR_OFFER")

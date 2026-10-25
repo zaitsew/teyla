@@ -7,11 +7,10 @@ Setting this up with an AI agent? It reads [AGENTS.md](AGENTS.md). Every call th
 ## Quick start
 
 ```bash
-uv tool install git+https://github.com/zaitsew/teyla    # or: pipx install ...; Python 3.11+
-teyla policy init --owner "Your Name" && teyla policy sync   # one POLICY.md for every harness
-teyla plugin install zaitsew/teyla     # Claude Code plugin: hooks, skills, machine guard
+uv tool install --python 3.12 git+https://github.com/zaitsew/teyla   # or: pipx install ...; Python 3.11+. uv may download Python 3.12 (about 25 MB) if you have none
+teyla start                            # what your agents cost, and seven fixes you can accept one by one and undo; a yes to O6 also installs the Claude Code plugin
+teyla policy init --owner "Your Name" && teyla policy sync   # one POLICY.md for every harness (offer O5 does this too)
 teyla routine install                  # daily and weekly checks under launchd
-teyla start                            # what your agents cost, and seven fixes you can accept one by one and undo
 teyla doctor                           # what must be true here, and the fix for each gap
 teyla asks                             # every question an AI session left waiting on you
 teyla product init                     # which repo is which product (proposal; --write saves it)

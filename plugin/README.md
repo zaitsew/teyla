@@ -16,7 +16,7 @@ That is all you need for `/teyla:rule`, the `review` skill and the hooks. The `h
 Teyla CLI. Install it once (Python 3.11 or newer):
 
 ```sh
-uv tool install git+https://github.com/zaitsew/teyla      # or: pipx install git+https://github.com/zaitsew/teyla
+uv tool install --python 3.12 git+https://github.com/zaitsew/teyla      # or: pipx install git+https://github.com/zaitsew/teyla
 ```
 
 Without the CLI each of those skills and commands says so in one line and stops. `harvest`

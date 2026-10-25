@@ -6,7 +6,7 @@ say: **"Set up Teyla from https://github.com/zaitsew/teyla."**
 ## What to do
 
 1. **Install**, stopping at the first that works:
-   - `uv tool install git+https://github.com/zaitsew/teyla`
+   - `uv tool install --python 3.12 git+https://github.com/zaitsew/teyla`
    - `pipx install git+https://github.com/zaitsew/teyla`
    - `git clone https://github.com/zaitsew/teyla ~/repos/teyla && cd ~/repos/teyla`, then use
      `PYTHONPATH=src python3 -m teyla <cmd>` instead of `teyla` below.

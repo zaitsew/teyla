@@ -141,7 +141,7 @@ not need: `teyla config set safe.enabled=false`.
 On a managed Mac, a TLS-inspecting proxy, the employer's code in every transcript, switch on safe mode first:
 
 ```bash
-uv tool install "teyla[work] @ git+https://github.com/zaitsew/teyla"   # [work] = truststore: the OS keychain holds the proxy's root CA
+uv tool install --python 3.12 "teyla[work] @ git+https://github.com/zaitsew/teyla"   # [work] = truststore: the OS keychain holds the proxy's root CA
 teyla policy init --work --owner "Your Name" && teyla policy sync     # approved providers only, same-provider reviews; sets safe.enabled=true
 teyla config set products.repos=<repo>,<repo>                          # the only repos whose ./check.sh usage Teyla may run
 teyla doctor                                                           # first line: safe: on (network off, no auto-update, no repo commands)

@@ -9,7 +9,10 @@ different tool scope, not a broken install.
 Writes ~/.teyla/doctor.json (full), ~/.teyla/doctor.summary (one line, kept for hooks
 installed before the banner existed) and ~/.teyla/banner.items, from which the session-start
 hook shows only what is new since the last session (teyla.digest) without running Python.
-Exit status: 1 if any FIX, else 0.
+The version check also writes ~/.teyla/update-check.json and makes one call to api.github.com
+(docs/PRIVACY.md row 1); safe mode makes none.
+Exit status: 1 if any FIX, else 0. The checks come in two groups, set-up items first and
+machine facts (load, crashes, disk) last; `render` prints them under "Setup" and "Machine".
 """
 from __future__ import annotations
 
@@ -26,6 +29,9 @@ from . import __version__, config
 
 DOCTOR_JSON = config.TEYLA_DIR / "doctor.json"
 DOCTOR_SUMMARY = config.TEYLA_DIR / "doctor.summary"
+# The same form AGENTS.md gives an agent: the starter policy carries the owner's name, and the login name
+# is rarely it. An empty `git config user.name` is the person's to answer.
+POLICY_INIT_FIX = 'teyla policy init --owner "$(git config user.name)" && teyla policy sync'
 
 
 def _check(level, name, detail, fix=None, **extra):
@@ -117,6 +123,8 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
         out.append(_check("FIX" if rec.get("newer") else "OK", "version",
                           f"{__version__} ({method}); pinned commit {rec['sha'][:12]} {state}; {how}",
                           "teyla update" if rec.get("newer") else None))
+    elif rec.get("latest") is None and rec.get("rate_limited"):
+        out.append(_check("INFO", "version", f"{__version__} ({method}); latest unknown ({update.RATE_LIMIT_NOTE}) ({how})"))
     elif rec.get("latest") is None:
         out.append(_check("WARN", "version", f"{__version__} ({method}); latest unknown — see network ({how})"))
     elif rec.get("newer"):
@@ -144,12 +152,18 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
         out.append(_check("INFO", "network", f"not probed (safe mode) — {facts}", tls_fix))
     elif rec.get("latest") is not None or rec.get("sha"):
         out.append(_check("OK", "network", f"github.com reachable for {repo} — {facts}"))
+    elif rec.get("rate_limited"):
+        out.append(_check("INFO", "network", f"github.com answered {repo} with a rate limit ({how}): try later — {facts}"))
     elif rec.get("reachable"):
         out.append(_check("WARN", "network", f"github.com reachable for {repo} but no published release found ({how}): {rec.get('note')} — {facts}"))
     else:
         hint = update.explain_tls_error(rec.get("note"))
         out.append(_check("FIX", "network", f"github.com UNREACHABLE for {repo} ({how}): {rec.get('note')} — {facts}",
                           hint or tls_fix or "check the proxy/VPN, then: teyla update --check   (retries now)"))
+    if not update.python_supported(sys.version_info[:2]):
+        out.append(_check("INFO", "network:python-range", f"running on python {py_running}; Teyla is tested on "
+                          f"{update.PYTHON_RANGE} (uv picks the newest Python when none of those is on PATH)",
+                          update.REINSTALL_ON_312))
     if pin != py_running:
         out.append(_check("WARN", "network:python", f"running on python {py_running} but `[update] python` pins {pin}: the next update moves the install",
                           f"teyla config set update.python={py_running}   (or teyla update --force to move now)"))
@@ -174,11 +188,14 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
 
     # --- harness stores --------------------------------------------------------
     loaded = {}
+    from . import harness as _harness
     for mod in (claude_code, codex, grok, hermes, cursor):
         if mod.NAME in off:
             continue
         root = getattr(mod, "DEFAULT_ROOT", None)
-        ok = bool(root) and os.path.exists(os.path.expanduser(root))
+        # Absent means both tests fail: the session store, and the home directory `harness sync`
+        # and `harness status` go by. A harness doctor calls absent never gets a FIX line below.
+        ok = (bool(root) and os.path.exists(os.path.expanduser(root))) or _harness.installed(mod.NAME)
         if not ok:
             out.append(_check("INFO", f"harness:{mod.NAME}", "absent on this machine"))
             continue
@@ -209,7 +226,7 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     # --- policy wiring ----------------------------------------------------------
     st = policy.status()
     if not st.get("policy-file"):
-        out.append(_check("FIX", "policy:file", f"{policy.POLICY} missing", "teyla policy init && teyla policy sync"))
+        out.append(_check("FIX", "policy:file", f"{policy.POLICY} missing", POLICY_INIT_FIX))
     else:
         out.append(_check("OK", "policy:file", str(policy.POLICY)))
     for k, v in st.items():
@@ -311,7 +328,6 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     out += hook_checks(cfg)
 
     # --- the other harnesses: skills + hooks ------------------------------------------
-    from . import harness as _harness
     for row in _harness.status():
         if not row["present"]:
             continue
@@ -397,10 +413,25 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
                       "questions to Anthropic through `claude -p`)"))
 
     # --- tools on this machine (scope, not failures) ----------------------------
-    present = [t for t in ("uv", "pipx", "git", "gh", "claude", "codex", "grok", "hermes", "launchctl") if shutil.which(t)]
-    absent = [t for t in ("uv", "git", "gh", "claude", "codex", "grok") if not shutil.which(t)]
+    # One detector for the harness CLIs, the one `health:<harness>` uses (PATH, then the app bundles and
+    # ~/.local/bin); a binary found off PATH is named with its path.
+    from . import health as _health
+    harness_of = {v: k for k, v in _health.BINARY.items()}
+
+    def _found(tool: str) -> tuple[str | None, bool]:
+        on_path = shutil.which(tool)
+        if on_path:
+            return on_path, True
+        return (_health.find_binary(harness_of[tool]) if tool in harness_of else None), False
+    present, absent = [], []
+    for tool in ("uv", "pipx", "git", "gh", "claude", "codex", "grok", "hermes", "launchctl"):
+        path, on_path = _found(tool)
+        if path:
+            present.append(tool if on_path else f"{tool} (at {path}, not on PATH)")
+        elif tool in ("uv", "git", "gh", "claude", "codex", "grok"):
+            absent.append(tool)
     out.append(_check("INFO", "tools", f"present: {', '.join(present) or '-'}; absent: {', '.join(absent) or '-'}"))
-    if not shutil.which("codex") and not shutil.which("grok"):
+    if not _found("codex")[0] and not _found("grok")[0]:
         out.append(_check("INFO", "tools:second-opinion", "no second-provider CLI: policy §2 falls back to a fresh same-provider session"))
 
     # --- storage: free space, and worktrees agents finished with ---------------------
@@ -454,7 +485,20 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
                 out.append(_check(c["level"], c["name"], c["detail"], c["fix"]))
             except Exception as e:  # noqa: BLE001 — a readiness line must never take doctor down
                 out.append(_check("INFO", "cloud", f"readiness not computed: {e}"))
-    return out
+    return ordered(out)
+
+
+MACHINE_PREFIXES = ("machine:", "storage:")
+
+
+def is_machine_fact(c: dict) -> bool:
+    """Load, crashes, memory and disk: facts about the Mac, not about Teyla's set-up."""
+    return c["name"].startswith(MACHINE_PREFIXES)
+
+
+def ordered(cs: list[dict]) -> list[dict]:
+    """Set-up items first, machine facts last; each group keeps the order it was checked in."""
+    return [c for c in cs if not is_machine_fact(c)] + [c for c in cs if is_machine_fact(c)]
 
 
 def hook_checks(cfg: dict) -> list[dict]:
@@ -555,9 +599,14 @@ def write_state(cs: list[dict]) -> None:
 
 def render(cs: list[dict], quiet: bool = False) -> str:
     lines = [f"teyla {__version__}"]
-    for c in cs:
+    heading = None
+    for c in ordered(cs):
         if quiet and c["level"] in ("OK", "INFO"):
             continue
+        group = "Machine" if is_machine_fact(c) else "Setup"
+        if group != heading:
+            lines.append(group)
+            heading = group
         lines.append(f"{c['level']:4} {c['name']:22} {c['detail']}")
         if c["fix"] and c["level"] != "OK":
             lines.append(f"{'':4} {'':22} → {c['fix']}")

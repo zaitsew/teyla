@@ -84,3 +84,20 @@ def test_the_promise_is_one_sentence_used_everywhere():
     assert tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["description"] == PROMISE
     assert PROMISE.endswith("Nothing about your sessions leaves your Mac unless you turn it on.")
     assert "Teyla reads files on your Mac. It sends nothing about your sessions anywhere unless you turn on a feature" in " ".join(TEXT.split())
+
+
+def test_agents_md_carries_what_a_stranger_s_agent_tripped_on():
+    assert 'export PATH="$HOME/.local/bin:$PATH"' in TEXT                       # uv's installer edits only the profile
+    assert "uv tool install --python 3.12 git+https://github.com/zaitsew/teyla" in TEXT and "about 25 MB" in TEXT
+    assert 'teyla apply O5 --owner "<name>" --yes' in TEXT and "read `git config user.name` before the O5 question" in TEXT
+    assert "Act only on `FIX` lines that run `teyla`." in TEXT and "mention them once" in TEXT
+    assert "`~/.teyla/doctor.json`" in TEXT and "api.github.com" in TEXT              # doctor writes files and makes one call
+    assert "`preview`" in TEXT
+
+
+def test_every_install_line_in_the_repo_pins_python_3_12():
+    import subprocess
+    out = subprocess.run(["git", "grep", "-n", "uv tool install", "--", ".", ":(exclude)CHANGELOG.md", ":(exclude)tests",
+                          ":(exclude)apps"], cwd=ROOT, capture_output=True, text=True).stdout
+    bad = [l for l in out.splitlines() if "zaitsew/teyla" in l and "--python 3.12" not in l]
+    assert not bad, bad
