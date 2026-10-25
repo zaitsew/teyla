@@ -298,3 +298,102 @@ def test_a_piece_that_was_already_in_place_undoes_to_nothing(fake_home):
     rec, _ = changes.apply_piece("O6", "hooks", lambda: ["in sync"], fake_home.home)
     assert rec["created"] == []
     assert "nothing to remove" in changes.revert(rec)[0]
+
+
+# --- a piece: what it overwrites is backed up, and undo takes back only what it wrote -----------------
+
+def _hooks_sync(home):
+    from teyla import harness
+    return lambda: harness.sync(home=home)
+
+
+def test_a_piece_backs_up_a_file_it_overwrites_and_undo_restores_it_byte_for_byte(fake_home):
+    grok = fake_home.home / ".grok" / "hooks"
+    grok.mkdir(parents=True)
+    mine = b'{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "/my/own/handler.sh"}]}]}}\n'
+    (grok / "teyla.json").write_bytes(mine)
+    rec, _ = changes.apply_piece("O6", "hooks", _hooks_sync(fake_home.home), fake_home.home)
+    row = next(f for f in rec["files"] if f["path"].endswith(".grok/hooks/teyla.json"))
+    assert row["op"] == "modified"
+    assert row["sha_before"] == changes._sha(mine) and row["sha_after"] != row["sha_before"]
+    bak = pathlib.Path(row["backup"])
+    assert bak.read_bytes() == mine and ".teyla-bak-" in bak.name
+    assert stat.S_IMODE(bak.stat().st_mode) == 0o600
+    assert b"/my/own/handler.sh" not in (grok / "teyla.json").read_bytes()      # the sync did overwrite it
+    changes.revert(rec)
+    assert (grok / "teyla.json").read_bytes() == mine
+
+
+def test_undo_keeps_a_file_edited_after_the_apply_and_a_file_the_user_added(fake_home):
+    home = fake_home.home
+    (home / ".cursor").mkdir()
+    rec, _ = changes.apply_piece("O6", "hooks", _hooks_sync(home), home)
+    made = [f for f in rec["files"] if f["op"] == "created" and f["path"].startswith(str(home / ".cursor" / "skills"))]
+    assert made, "the sync should have created Cursor skills"
+    edited = pathlib.Path(made[0]["path"])
+    edited.write_text(edited.read_text() + "\nmy own note\n")
+    mine = edited.parent / "personal.md"
+    mine.write_text("keep me\n")
+    out = "\n".join(changes.revert(rec))
+    assert edited.exists() and "my own note" in edited.read_text()
+    assert mine.read_text() == "keep me\n"
+    assert edited.parent.is_dir()                                       # not empty, so not removed
+    assert "Left in place" in out and str(edited) in out
+    others = [pathlib.Path(f["path"]) for f in made[1:]]
+    assert all(not p.exists() for p in others if p.parent != edited.parent)   # untouched files did go
+
+
+def test_undo_removes_a_directory_only_when_it_is_empty(fake_home):
+    home = fake_home.home
+    (home / ".cursor").mkdir()
+    rec, _ = changes.apply_piece("O6", "hooks", _hooks_sync(home), home)
+    assert rec["dirs"]
+    stray = pathlib.Path(rec["dirs"][0]) / "notes.txt"                 # the deepest directory it made
+    stray.write_text("mine\n")
+    changes.revert(rec)
+    assert stray.read_text() == "mine\n"
+
+
+def test_a_hook_added_next_to_an_existing_teyla_hook_is_recorded_and_undone(fake_home):
+    from teyla import harness
+    home = fake_home.home
+    codex = home / ".codex"
+    codex.mkdir()
+    old = {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command":
+           f"{harness.HOOKS_DIR / 'session-start.sh'} --codex", "timeout": 5}]}]}}
+    mine = {"type": "command", "command": "/my/own/handler.sh"}
+    old["hooks"]["Stop"] = [{"hooks": [mine]}]
+    (codex / "hooks.json").write_text(json.dumps(old, indent=2) + "\n")
+    rec, _ = changes.apply_piece("O6", "hooks", _hooks_sync(home), home)
+    added = [h for h in rec["hook_entries"] if h["file"].endswith(".codex/hooks.json")]
+    assert added and {h["event"] for h in added} >= {"UserPromptSubmit"}
+    # The user edits the file after the apply, so an exact restore is no longer possible.
+    d = json.loads((codex / "hooks.json").read_text())
+    d["hooks"]["PostToolUse"] = [{"hooks": [{"type": "command", "command": "/another.sh"}]}]
+    (codex / "hooks.json").write_text(json.dumps(d, indent=2) + "\n")
+    changes.revert(rec)
+    left = json.loads((codex / "hooks.json").read_text())
+    cmds = [h["command"] for g in sum(left["hooks"].values(), []) for h in g.get("hooks", [])]
+    assert f"{harness.HOOKS_DIR / 'session-start.sh'} --codex" in cmds         # it was there before the apply
+    assert "/my/own/handler.sh" in cmds and "/another.sh" in cmds
+    assert not any("capture-correction.sh" in c or "machine-guard.sh" in c for c in cmds)
+
+
+def test_force_restores_the_old_value_of_a_key_the_user_removed(settings):
+    _write(settings, '{"model": "opus", "effort": "high"}\n')
+    rec = changes.apply_json("O4", settings, ["effort"], "medium")
+    _write(settings, '{"model": "opus"}\n')                               # the user deleted the key
+    with pytest.raises(changes.ChangeError):
+        changes.revert(rec)
+    changes.revert(rec, force=True)
+    assert json.loads(settings.read_text()) == {"model": "opus", "effort": "high"}
+    assert changes.load_log()[-1].get("undo_of") == rec["id"]
+
+
+def test_force_restores_the_old_value_of_a_toml_key_the_user_removed(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('model = "x"\nmodel_reasoning_effort = "high"\n')
+    rec = changes.apply_toml("O4", p, "model_reasoning_effort", "medium")
+    p.write_text('model = "x"\n')
+    changes.revert(rec, force=True)
+    assert 'model_reasoning_effort = "high"' in p.read_text()

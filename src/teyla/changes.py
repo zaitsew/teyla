@@ -18,8 +18,11 @@ rules, and `teyla undo` depends on all of them:
 
 Three kinds of change share the log: `json` (a key path in a JSON file), `toml` (one top-level key in a
 TOML file, edited as text so comments and other keys stay), `file` (a new file Teyla creates only when
-absent), and `piece` (a set of files written by an existing sync; undone with the uninstall steps for that
-piece, limited to what the apply created).
+absent), and `piece` (the files an existing sync wrote). A piece is logged file by file: each file it created
+or changed with its hashes before and after, a copy of every file it overwrote, the directories it created and
+each hook handler it added. Its undo removes or restores a file only while the file still has the hash the apply
+left, takes back only the recorded hook handlers from a file edited since, removes a directory only when it is
+empty, and names everything it leaves in place.
 """
 from __future__ import annotations
 
@@ -361,21 +364,159 @@ def apply_file(offer: str, path: pathlib.Path, content: str, now: _dt.datetime |
     return rec
 
 
+# --- a piece: files written by an existing sync ----------------------------------------------------
+
+SNAP_MAX = 2_000_000          # a file larger than this is compared by size and mtime, not read
+# What each sync may write, relative to HOME. `files` are exact paths (plus their `<name>.*` siblings,
+# where a sync leaves a copy); `trees` are directories walked to a depth (None: all the way down, 1: the
+# files directly inside). A piece's undo can only touch what this lists, so it names every path.
+_WATCH = {
+    "policy": dict(files=[".agents/POLICY.md", ".claude/CLAUDE.md", ".codex/AGENTS.md", ".grok/AGENTS.md",
+                          ".hermes/SOUL.md", ".cursor/skills/teyla-policy/SKILL.md"],
+                   trees=[(".agents", 1)]),
+    "hooks": dict(files=[".cursor/hooks.json", ".codex/hooks.json", ".grok/hooks/teyla.json", ".hermes/config.yaml"],
+                  trees=[(".cursor/skills", None), (".codex/skills", None), (".grok/skills", None),
+                         (".hermes/skills/teyla", None), (".teyla/hooks", None)]),
+    "routine": dict(files=[], trees=[(".teyla", 1), ("Library/LaunchAgents", 1)]),
+}
+
+
+def _snap_one(p: pathlib.Path):
+    """('link', target) | ('file', sha, bytes or None) | None for a path that is absent or not a file."""
+    import stat as _stat
+    try:
+        st = os.lstat(p)
+    except OSError:
+        return None
+    if _stat.S_ISLNK(st.st_mode):
+        return ("link", os.readlink(p))
+    if not _stat.S_ISREG(st.st_mode):
+        return None
+    if st.st_size > SNAP_MAX:
+        return ("file", f"big:{st.st_size}:{st.st_mtime_ns}", None)
+    try:
+        data = p.read_bytes()
+    except OSError:
+        return None
+    return ("file", _sha(data), data)
+
+
+def _snapshot(piece: str, home: pathlib.Path) -> tuple[dict, set]:
+    """(path -> snapshot of every file the piece's sync may write, the set of directories that exist
+    on the way to them)."""
+    spec = _WATCH[piece]
+    paths: set = set()
+    dirs: set = set()
+    roots: list = []
+    for rel in spec["files"]:
+        f = home / rel
+        paths.add(f)
+        roots.append(f.parent)
+        if f.parent.is_dir():
+            paths.update(x for x in f.parent.glob(f.name + ".*"))
+    for rel, depth in spec["trees"]:
+        root = home / rel
+        roots.append(root)
+        if not root.is_dir() or root.is_symlink():
+            continue
+        for dp, dn, fn in os.walk(root, followlinks=False):
+            dpp = pathlib.Path(dp)
+            level = len(dpp.relative_to(root).parts)
+            dirs.add(str(dpp))
+            for name in fn:
+                paths.add(dpp / name)
+            for name in list(dn):
+                if (dpp / name).is_symlink():
+                    paths.add(dpp / name)
+                    dn.remove(name)
+            if depth is not None and level + 1 >= depth:
+                dn[:] = []
+    for r in roots:
+        for anc in [r, *r.parents]:
+            if anc == home or home not in anc.parents:
+                break
+            if anc.is_dir() and not anc.is_symlink():
+                dirs.add(str(anc))
+    snap = {}
+    for f in paths:
+        e = _snap_one(f)
+        if e is not None:
+            snap[str(f)] = e
+    return snap, dirs
+
+
+def _hook_handlers(raw: bytes | None) -> list:
+    """[(event, handler dict)] of a hooks.json in either shape: Cursor's entries are the handlers,
+    Codex's and Grok's hold them in a group's `hooks` list."""
+    if not raw:
+        return []
+    try:
+        d = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return []
+    out = []
+    hooks = d.get("hooks") if isinstance(d, dict) else None
+    for event, items in (hooks.items() if isinstance(hooks, dict) else []):
+        for it in items if isinstance(items, list) else []:
+            if isinstance(it, dict) and isinstance(it.get("hooks"), list):
+                out += [(event, h) for h in it["hooks"] if isinstance(h, dict)]
+            elif isinstance(it, dict):
+                out.append((event, it))
+    return out
+
+
+def _added_handlers(before: bytes | None, after: bytes | None) -> list:
+    """The hook handlers present after a sync that were not there before, one row per addition."""
+    from collections import Counter
+    key = lambda eh: (eh[0], json.dumps(eh[1], sort_keys=True))
+    have = Counter(key(x) for x in _hook_handlers(before))
+    out = []
+    for x in _hook_handlers(after):
+        k = key(x)
+        if have[k] > 0:
+            have[k] -= 1
+        else:
+            out.append(x)
+    return out
+
+
 def apply_piece(offer: str, piece: str, run, home: pathlib.Path | None = None,
                 now: _dt.datetime | None = None) -> tuple[dict, list[str]]:
-    """Run `run()` (an existing sync that returns its output lines) and log which uninstall steps of
-    `piece` it created, so `undo` removes only those. Returns (record, the sync's lines)."""
+    """Run `run()` (an existing sync that returns its output lines) and log what it did to the files
+    in `_WATCH[piece]`: each file it created or changed, with its hashes before and after, and a copy
+    of every file it overwrote (`<file>.teyla-bak-<UTC>`, mode 0600). Also logged: the directories it
+    created and each hook handler it added. `undo` works from that list and nothing else.
+    Returns (record, the sync's lines)."""
     from . import uninstall
     now = now or _now()
     home = home or pathlib.Path.home()
     with _locked():
-        before = {(s.verb, s.target) for s in uninstall.piece_steps(piece, home) if s.fn}
+        steps_before = {(s.verb, s.target) for s in uninstall.piece_steps(piece, home) if s.fn}
+        snap_before, dirs_before = _snapshot(piece, home)
         lines = run()
-        after = [(s.verb, s.target) for s in uninstall.piece_steps(piece, home) if s.fn]
-        created = [[v, t] for v, t in after if (v, t) not in before]
+        snap_after, dirs_after = _snapshot(piece, home)
+        created = [[v, t] for v, t in ((s.verb, s.target) for s in uninstall.piece_steps(piece, home) if s.fn)
+                   if (v, t) not in steps_before]
+        files, hooks = [], []
+        for path in sorted(snap_after):
+            a, b = snap_after[path], snap_before.get(path)
+            if b is not None and b[:2] == a[:2]:
+                continue
+            f = dict(path=path, op="modified" if b is not None else "created", kind=a[0],
+                     sha_after=a[1] if a[0] == "file" else None, link_after=a[1] if a[0] == "link" else None,
+                     before_kind=b[0] if b else None, sha_before=b[1] if b and b[0] == "file" else None,
+                     link_before=b[1] if b and b[0] == "link" else None, backup=None)
+            if b is not None and b[0] == "file" and b[2] is not None:
+                f["backup"] = str(_backup(pathlib.Path(path), b[2], now))
+            files.append(f)
+            if path.endswith("hooks.json") or path.endswith("hooks/teyla.json"):
+                for event, h in _added_handlers(b[2] if b and b[0] == "file" else None,
+                                                a[2] if a[0] == "file" else None):
+                    hooks.append(dict(file=path, event=event, handler=h))
+        new_dirs = sorted(dirs_after - dirs_before, key=len, reverse=True)
         rec = _record(offer, "piece", pathlib.Path(f"({piece})"), [], None, False, piece, now, sha_before=None,
                       sha_after=None, backup=None, existed=True, piece=piece, created=created,
-                      home=str(home))
+                      files=files, dirs=new_dirs, hook_entries=hooks, home=str(home))
         _append(rec)
     return rec, list(lines or [])
 
@@ -445,9 +586,9 @@ def _revert_json(rec: dict, force: bool) -> list[str]:
     if not have or cur != rec["new"]:
         if not force:
             raise ChangeError(_mismatch(rec, have, cur))
-        if not have:
+        if not have and not rec.get("old_present"):
             return [f"{where} is already absent in {path}; nothing to revert."]
-    if _sha(raw) == rec.get("sha256_after") and _restore_exact(rec, real):
+    if have and cur == rec["new"] and _sha(raw) == rec.get("sha256_after") and _restore_exact(rec, real):
         return [f"restored {path} exactly as it was before {rec['offer']}" if rec.get("file_existed")
                 else f"removed {path} (Teyla created it)"]
     if rec.get("old_present"):
@@ -471,9 +612,9 @@ def _revert_toml(rec: dict, force: bool) -> list[str]:
     if not have or cur != rec["new"]:
         if not force:
             raise ChangeError(_mismatch(rec, have, cur))
-        if not have:
+        if not have and not rec.get("old_present"):
             return [f"{key} is already absent in {path}; nothing to revert."]
-    if _sha(raw) == rec.get("sha256_after") and _restore_exact(rec, real):
+    if have and cur == rec["new"] and _sha(raw) == rec.get("sha256_after") and _restore_exact(rec, real):
         return [f"restored {path} exactly as it was before {rec['offer']}" if rec.get("file_existed")
                 else f"removed {path} (Teyla created it)"]
     out = toml_set(text, key, rec["old"]) if rec.get("old_present") else toml_del(text, key)
@@ -494,25 +635,134 @@ def _revert_file(rec: dict, force: bool) -> list[str]:
     return [f"removed {path} (Teyla created it)"]
 
 
+def _same(cur, want_kind: str, sha, link) -> bool:
+    if cur is None:
+        return False
+    return cur[0] == "link" and want_kind == "link" and cur[1] == link or \
+        cur[0] == "file" and want_kind == "file" and cur[1] == sha
+
+
+def _drop_handlers(raw: bytes, rows: list) -> bytes | None:
+    """`raw` (a hooks.json) without the handlers in `rows`; every other handler, group and key stays.
+    None when none of them is there any more."""
+    d = json.loads(raw.decode("utf-8"))
+    hooks = d.get("hooks") if isinstance(d, dict) else None
+    if not isinstance(hooks, dict):
+        return None
+    removed = 0
+    for row in rows:
+        items = hooks.get(row["event"])
+        if not isinstance(items, list):
+            continue
+        for it in list(items):
+            if isinstance(it, dict) and isinstance(it.get("hooks"), list):
+                if row["handler"] in it["hooks"]:
+                    it["hooks"].remove(row["handler"])
+                    removed += 1
+                    if not it["hooks"]:
+                        items.remove(it)
+                    break
+            elif it == row["handler"]:
+                items.remove(it)
+                removed += 1
+                break
+        if not items:
+            hooks.pop(row["event"], None)
+    return _dump_json(d, raw.decode("utf-8")) if removed else None
+
+
 def _revert_piece(rec: dict) -> list[str]:
+    """Undo a piece from its ledger. A file is removed or restored only while it is still exactly what
+    the apply left (its hash is `sha_after`); a directory goes only when it is empty afterwards.
+    Anything the user changed since stays where it is and is named in the output."""
     from . import uninstall
     home = pathlib.Path(rec.get("home") or pathlib.Path.home())
-    made = {(v, t) for v, t in rec.get("created") or []}
-    lines = []
-    if not made:
+    files = rec.get("files") or []
+    lines, left = [], []
+    if not files and not rec.get("dirs"):
         return [f"{rec['offer']} created nothing on this machine (it was already in place); nothing to remove."]
-    failed = []
-    for s in uninstall.piece_steps(rec["piece"], home):
-        if s.fn is None or (s.verb, s.target) not in made:
-            continue
+    made = {(v, t) for v, t in rec.get("created") or []}
+    by_path = {f["path"]: f for f in files}
+    steps = [s for s in uninstall.piece_steps(rec["piece"], home) if s.fn is not None and (s.verb, s.target) in made]
+    ran_step: set = set()
+
+    def run_step(s) -> bool:
         try:
             res = s.fn()
         except Exception as e:  # noqa: BLE001
             res = (1, f"{type(e).__name__}: {e}")
         if isinstance(res, tuple) and len(res) == 2 and isinstance(res[0], int) and res[0] != 0:
-            failed.append(f"{s.verb} {s.target}: {str(res[1]).strip()[-200:]}")
+            left.append(f"{s.verb} {s.target}: {str(res[1]).strip()[-200:]}")
+            return False
+        ran_step.add(s.target)
+        lines.append(f"{s.verb} {s.target}")
+        return True
+
+    if rec["piece"] == "routine":     # launchd jobs are unloaded before their files go, and only untouched ones
+        for s in steps:
+            f = by_path.get(str(s.target))
+            if f and not _same(_snap_one(pathlib.Path(f["path"])), f["kind"], f["sha_after"], f["link_after"]):
+                left.append(f"{s.target}: it changed after Teyla wrote it; not unloaded")
+                continue
+            run_step(s)
+    for f in reversed(files):
+        p = pathlib.Path(f["path"])
+        cur = _snap_one(p)
+        if cur is None:
+            continue
+        if _same(cur, f["kind"], f["sha_after"], f["link_after"]):
+            if f["op"] == "created":
+                p.unlink()
+                lines.append(f"removed {p}")
+            elif f.get("before_kind") == "link":
+                p.unlink()
+                os.symlink(f["link_before"], p)
+                lines.append(f"restored the link {p}")
+            else:
+                try:
+                    raw = pathlib.Path(f["backup"] or "").read_bytes()
+                except OSError:
+                    raw = None
+                if raw is None or _sha(raw) != f["sha_before"]:
+                    left.append(f"{p}: the copy Teyla made of it is missing or changed ({f['backup']}); left as it is")
+                    continue
+                if p.is_symlink():
+                    p.unlink()
+                _atomic_write(p, raw)
+                lines.append(f"restored {p} exactly as it was before {rec['offer']}")
+            continue
+        # The file changed after the apply. Take back only what the apply added, if that can be told.
+        mine = [h for h in rec.get("hook_entries") or [] if h["file"] == f["path"]]
+        if mine and cur[0] == "file" and cur[2] is not None:
+            try:
+                out = _drop_handlers(cur[2], mine)
+            except (ValueError, UnicodeDecodeError):
+                out = None
+            if out is not None:
+                _atomic_write(p, out)
+                lines.append(f"removed {len(mine)} hook handler(s) Teyla added from {p}; your other entries stay")
+                continue
+        step = next((s for s in steps if str(s.target) == f["path"] and s.target not in ran_step), None)
+        if f["op"] == "modified" and step is not None and run_step(step):
+            continue
+        if f["op"] == "created":
+            left.append(f"{p}: it changed after Teyla created it; left in place")
         else:
-            lines.append(f"{s.verb} {s.target}")
-    if failed:
-        raise ChangeError("could not finish undoing " + rec["offer"] + ": " + "; ".join(failed))
+            left.append(f"{p}: it changed after Teyla changed it; left in place"
+                        + (f" (the copy from before is {f['backup']})" if f.get("backup") else ""))
+    for step in steps:                 # steps the file list did not cover (a launchd job with no file change)
+        if step.target not in ran_step and str(step.target) not in by_path and rec["piece"] == "routine":
+            run_step(step)
+    for d in rec.get("dirs") or []:    # deepest first, and only while empty
+        dp = pathlib.Path(d)
+        if dp.is_symlink() or not dp.is_dir():
+            continue
+        try:
+            dp.rmdir()
+            lines.append(f"removed the empty directory {dp}")
+        except OSError:
+            left.append(f"{dp}: not empty; left in place")
+    if left:
+        lines.append("Left in place (not removed, because it is not what Teyla wrote):")
+        lines += [f"  {x}" for x in left]
     return lines or [f"{rec['offer']}: nothing left to remove"]

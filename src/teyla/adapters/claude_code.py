@@ -92,10 +92,10 @@ def _add_reread(target, per_message: dict) -> None:
 
 
 def _long_msgs(target: list, per_message: dict, source) -> None:
-    """Append (model, context, run) for each message past LONG_CONTEXT. `source(key)` names the
-    transcript a message came from; a run is consecutive long messages of one transcript."""
+    """Append (model, context, run, local day) for each message past LONG_CONTEXT. `source(key)` names
+    the transcript a message came from; a run is consecutive long messages of one transcript."""
     run, prev_src, n = None, None, 0
-    for key, (model, row, *_) in per_message.items():
+    for key, (model, row, ts) in per_message.items():
         src = source(key)
         ctx = row["input_tokens"] + row["cache_read_input_tokens"] + row["cache_creation_input_tokens"]
         if ctx <= LONG_CONTEXT:
@@ -105,7 +105,7 @@ def _long_msgs(target: list, per_message: dict, source) -> None:
             n += 1
             run = f"{src}:{n}"
         prev_src = src
-        target.append((model, ctx, run))
+        target.append((model, ctx, run, local_day(ts) if ts else ""))
 
 
 # ~/repos/<name>/… or ~/.worktrees/<name>/<branch>/… inside a tool call's path or command.

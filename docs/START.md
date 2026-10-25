@@ -20,6 +20,9 @@ teyla undo O1               # put back only the key Teyla wrote
 2. **Summarise.** A card of at most 12 lines, numbers first: the total at API list price, the share spent
    re-reading and storing context, the sessions that ran past 250k tokens, what subagents cost and how much of
    that was Opus, and the questions waiting on you. A subscription bills differently, and the card says so.
+   An interactive `teyla start` prints one progress line to stderr first ("Reading 612 sessions from the last
+   30 days..."); `--agent` and `--json` keep stdout and stderr clean. The card ends with one line per applicable
+   offer, `O6 <title>: <saving or benefit>`, or says "No changes to suggest: your settings already match."
 3. **Offer.** Seven offers, in order. An offer whose setting is already in place, or whose tool is not
    installed, is left out and the reason is kept for `--json`. Each shows the change, the saving (or what it
    brings when no honest dollar figure exists), the trade-off and the undo.
@@ -32,6 +35,13 @@ For an AI agent that relays the result to you, `teyla start --agent` (or `--json
 
 `--agent` writes none of your settings. The one side effect is the existing cache of Claude desktop sessions
 under `~/.teyla`, which `teyla asks` already keeps; it is refreshed only when a Claude desktop store exists.
+
+## The window
+
+The window is the last N local calendar days, today included (30 by default). Only turns whose own timestamp
+falls inside it are counted, so a long session resumed today adds today's turns and not its history. Codex,
+Hermes and Grok record no per-message time, so a session of those books all its cost on the day it was last
+active.
 
 ## The offers
 
@@ -85,9 +95,13 @@ JSON key order, the indent and the file mode. A symlinked settings file is follo
 - When the file is byte-for-byte what Teyla wrote, undo restores the backup exactly, or deletes the file if
   Teyla created it.
 - When you edited the file since, undo reverts only the key Teyla wrote and leaves your edits.
-- When the key itself was changed since, undo stops and says so. `--force` reverts it anyway.
+- When the key itself was changed since, or you removed it, undo stops and says so. `--force` puts the old value back anyway.
 - A file Teyla created (`scout.md`) is removed only while it is unchanged.
-- O5 to O7 undo only the steps their apply created, using the same steps `teyla uninstall` runs. A policy
-  file, a hook script or a routine you already had is not removed.
+- O5 to O7 log each file the sync created or changed (hash before, hash after), each directory it created and
+  each hook entry it added. Before the sync overwrites a file, the file is copied to `<file>.teyla-bak-<UTC time>`
+  (mode 0600). Undo restores an overwritten file from that copy and removes a created file only while its hash
+  still equals the hash after the apply. A directory goes only when it is empty. A file you edited since stays,
+  except that the hook entries Teyla added are taken out of it; anything left in place is listed in the output.
+  A policy file, a hook script or a routine you already had is not removed.
 
 A file that is not valid JSON is never written: the offer reports it and changes nothing.

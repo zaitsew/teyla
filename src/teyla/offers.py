@@ -27,8 +27,8 @@ import re
 import sys
 from collections import defaultdict
 
-from . import changes, config, pricing
-from .adapters import CACHE_1H_KEY, HANDOFF_CONTEXT
+from . import changes, config, diagnose as diagnose_mod, pricing
+from .adapters import CACHE_1H_KEY, HANDOFF_CONTEXT, local_day
 
 # O1: a session compacts about AUTOCOMPACT_MARGIN under the window; after a compaction it resumes at HANDOFF_CONTEXT.
 COMPACT_AT = config.AUTOCOMPACT_RECOMMENDED - config.AUTOCOMPACT_MARGIN
@@ -72,6 +72,7 @@ class Offer:
     applies: bool
     reason: str = ""                  # why `applies` is False
     explain: str = ""                 # the longer text behind [e]xplain
+    short: str = ""                   # what it brings, in a few words: the summary card shows it when there is no figure
 
     def to_dict(self) -> dict:
         return dataclasses.asdict(self)
@@ -83,6 +84,17 @@ class Offer:
     @property
     def low(self) -> float:
         return (self.saving_usd_month or {}).get("low", 0.0)
+
+
+SHORT = {
+    "O1": "caps what a long session re-reads",
+    "O2": "subagents stop inheriting Opus",
+    "O3": "reading tasks run on Haiku",
+    "O4": "fewer reasoning tokens on Codex",
+    "O5": "one rules file for every harness",
+    "O6": "keeps your corrections and open questions",
+    "O7": "a daily check, run for you",
+}
 
 
 def _money(x: float) -> str:
@@ -159,7 +171,7 @@ def compaction_cost(model: str) -> float:
     return (COMPACT_AT * cr + SUMMARY_OUT_TOKENS * o + HANDOFF_CONTEXT * 2 * i) / 1e6
 
 
-def o1_net(sessions) -> tuple[float, int, int]:
+def o1_net(sessions, since_day: str = "") -> tuple[float, int, int]:
     """(net dollars, turns, sessions) that autoCompactWindow 335000 would have saved.
 
     Only a turn whose context went past the compaction point (~300k) counts. With the setting that turn
@@ -171,8 +183,8 @@ def o1_net(sessions) -> tuple[float, int, int]:
     runs: dict = defaultdict(lambda: dict(usd=0.0, n=0, model=""))
     turns, sids = 0, set()
     for s in sessions:
-        for model, ctx, run in s.long_msgs:
-            if ctx <= COMPACT_AT:
+        for model, ctx, run, day in s.long_msgs:
+            if ctx <= COMPACT_AT or (day or local_day(s.last)) < since_day:
                 continue
             n = (ctx - HANDOFF_CONTEXT) // drop
             r = runs[(s.sid, run)]
@@ -262,7 +274,8 @@ def _o1(inp, home, settings, with_savings) -> Offer:
     elif settings.get("autoCompactWindow") is not None:
         applies, reason = False, f"autoCompactWindow is already {settings['autoCompactWindow']}"
     elif with_savings and inp is not None:
-        net, turns, sessions = o1_net(s for s in inp.sessions if s.harness == "claude-code" and not s.sidechain)
+        net, turns, sessions = o1_net((s for s in inp.sessions if s.harness == "claude-code" and not s.sidechain),
+                                      diagnose_mod.window_start(inp.days))
         if net * _scale(inp.days) >= 1.0:
             saving = _range(net, O1_LOW_SHARE, inp.days)
             basis = (f"{turns} turns in {sessions} sessions went past {COMPACT_AT // 1000}k tokens of context. "
@@ -410,7 +423,7 @@ def _o5(home) -> Offer:
         "One rules file is read by Claude Code, Codex and the others, so a correction made once holds everywhere.",
         "Teyla writes a starter policy to ~/.agents/POLICY.md when you have none, and adds one import line to ~/.claude/CLAUDE.md; "
         "edit the policy to match how you work.",
-        "teyla undo O5 removes the links and the import line it created; the policy file stays, it is yours.",
+        "teyla undo O5 puts every file it changed back from its backup and removes the ones it created, while you have not edited them; the policy file goes only if it is still the starter.",
         applies, reason,
         "`teyla policy sync` writes ~/.agents/POLICY.md if it is missing, links or generates ~/.codex/AGENTS.md and ~/.grok/AGENTS.md, "
         "and adds `@~/.agents/POLICY.md` to ~/.claude/CLAUDE.md. It never touches a harness that is not installed.")
@@ -465,8 +478,11 @@ def build(days: int = 30, inputs=None, diag: dict | None = None, with_savings: b
     if diag is None and with_savings and inputs is not None:
         from . import diagnose
         diag = diagnose.diagnose(days, inputs, with_asks=False)
-    return [_o1(inputs, home, settings, with_savings), _o2(inputs, home, settings, with_savings),
-            _o3(inputs, home, with_savings), _o4(inputs, diag, home), _o5(home), _o6(home), _o7(home)]
+    built = [_o1(inputs, home, settings, with_savings), _o2(inputs, home, settings, with_savings),
+             _o3(inputs, home, with_savings), _o4(inputs, diag, home), _o5(home), _o6(home), _o7(home)]
+    for o in built:
+        o.short = SHORT[o.id]
+    return built
 
 
 # --- applying ------------------------------------------------------------------------------------

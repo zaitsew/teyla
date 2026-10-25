@@ -49,8 +49,9 @@ def _when(ts: str | None) -> _dt.datetime | None:
     return d if d.tzinfo else d.replace(tzinfo=_dt.timezone.utc)
 
 
-def _scan_file(path: str, cutoff: _dt.datetime | None) -> dict | None:
-    """One subagent file as a unit, or None when no message of it falls in the window."""
+def _scan_file(path: str, cutoff: _dt.datetime | None, want_tokens: bool = True) -> dict | None:
+    """One subagent file as a unit, or None when no message of it falls in the window. `want_tokens`
+    False skips collecting the commit-sha tokens review matching needs (about half the scan time)."""
     from .adapters import claude_code
     from .pricing import cost_usd
     seen: dict = {}
@@ -64,7 +65,8 @@ def _scan_file(path: str, cutoff: _dt.datetime | None) -> dict | None:
     with fh:
         for n, line in enumerate(fh):
             # JSON writes a newline as \n: without this a sha after one reads as part of a word.
-            tokens.update(_HEX.findall(_ESCAPES.sub(" ", line)))
+            if want_tokens:
+                tokens.update(_HEX.findall(_ESCAPES.sub(" ", line)))
             if '"usage"' not in line:
                 continue
             try:
@@ -111,9 +113,10 @@ def _scan_file(path: str, cutoff: _dt.datetime | None) -> dict | None:
 
 
 def scan(days: int | None = 7, project: str | None = None, root: str | None = None,
-         now: _dt.datetime | None = None) -> list[dict]:
+         now: _dt.datetime | None = None, want_tokens: bool = True) -> list[dict]:
     """Every subagent unit with a message in the last `days` days (None: all), optionally only the
-    projects whose transcript folder name contains `project`."""
+    projects whose transcript folder name contains `project`. `want_tokens` False leaves each unit's
+    `tokens` empty (nothing but review matching reads them)."""
     from .adapters import claude_code, since_epoch, stale
     root = claude_code.DEFAULT_ROOT if root is None else root   # at call time, so tests can move it
     now = now or _dt.datetime.now(_dt.timezone.utc)
@@ -129,7 +132,7 @@ def scan(days: int | None = 7, project: str | None = None, root: str | None = No
                 continue
         except OSError:
             continue
-        u = _scan_file(f, cutoff)
+        u = _scan_file(f, cutoff, want_tokens)
         if u:
             u["project"] = proj
             units.append(u)

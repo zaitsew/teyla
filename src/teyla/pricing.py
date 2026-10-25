@@ -77,22 +77,43 @@ def _load_overrides() -> dict:
     return out
 
 
+_merged: dict = {"stamp": None, "prices": None, "hits": {}}
+
+
+def _stamp():
+    try:
+        st = OVERRIDE_PATH.stat()
+        return (str(OVERRIDE_PATH), st.st_mtime_ns, st.st_size)
+    except OSError:
+        return (str(OVERRIDE_PATH), None, None)
+
+
 def effective_prices() -> dict:
-    """PRICES with ~/.teyla/prices.json layered on top (override wins per prefix). Reloaded on
-    every call — cheap (a small local file) and picks up a fresh --write-prices without a restart."""
-    merged = dict(PRICES)
-    merged.update(_load_overrides())
-    return merged
+    """PRICES with ~/.teyla/prices.json layered on top (override wins per prefix). The file is
+    re-read whenever its path, mtime or size changes, so a fresh --write-prices is picked up without a
+    restart; between changes the merged table is reused (a session scan prices a million messages)."""
+    stamp = _stamp()
+    if _merged["stamp"] != stamp or _merged["prices"] is None:
+        merged = dict(PRICES)
+        merged.update(_load_overrides())
+        _merged.update(stamp=stamp, prices=merged, hits={})
+    return _merged["prices"]
 
 
 def lookup(model: str):
     """Longest-prefix match so 'claude-opus-5-20260401' resolves to 'claude-opus-5'."""
     prices = effective_prices()
+    own = _merged["prices"] is prices          # a test may swap effective_prices(); its table is not cached
+    if own and model in _merged["hits"]:
+        return _merged["hits"][model]
     best = None
     for k in prices:
         if model.startswith(k) and (best is None or len(k) > len(best)):
             best = k
-    return prices.get(best) if best else None
+    out = prices.get(best) if best else None
+    if own:
+        _merged["hits"][model] = out
+    return out
 
 
 def tier(model: str) -> str:

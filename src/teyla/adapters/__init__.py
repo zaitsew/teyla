@@ -136,7 +136,7 @@ class Session:
     sub_day_usage: dict = dataclasses.field(default_factory=lambda: defaultdict(lambda: defaultdict(Counter)))
     sub_calls: list = dataclasses.field(default_factory=list)
     reread_excess: Counter = dataclasses.field(default_factory=Counter)
-    # Every message whose context was past LONG_CONTEXT, in order: (model, context tokens, run), where
+    # Every message whose context was past LONG_CONTEXT, in order: (model, context tokens, run, local day), where
     # a run is a stretch of consecutive such messages in one transcript. Input of `teyla start`'s
     # autoCompactWindow offer, which prices the turns past a compaction point. Claude Code only.
     long_msgs: list = dataclasses.field(default_factory=list, repr=False)

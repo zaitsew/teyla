@@ -12,7 +12,9 @@
   is untouched since, and stops when the key changed (`--force`). `teyla changes` lists them. `teyla start --agent` prints
   `{summary_text, diagnosis, offers}` for an AI agent to relay and applies nothing. Sessions now record the messages past 250k
   tokens (`Session.long_msgs`), lane units record usage, the explicit model and whether they wrote, and `pricing.cost_parts`
-  splits a cost into input, cache write, cache read and output. `docs/START.md`.
+  splits a cost into input, cache write, cache read and output. The window is the last N local days and counts only turns
+  inside it. A piece offer (O5 to O7) backs up every file it overwrites and logs each file, directory and hook entry it
+  wrote, so undo removes only what is still as Teyla left it. `docs/START.md`.
 
 - **Mac: quick note on a shortcut you choose, and Notes in the window.** A global shortcut (⌥Space by default, recorded in
   Settings, optional, never push-to-talk's ⌥⌘Space) opens a floating panel: type, ⏎ saves, ⇧⏎ adds a line, Esc keeps the

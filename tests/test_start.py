@@ -99,8 +99,8 @@ def test_long_message_runs_split_where_the_context_drops(fake_home):
     fake_home.session("runs00", msgs)
     from teyla.adapters import claude_code
     s = claude_code.parse(str(fake_home.projects / "-work-demo" / "runs00.jsonl"))
-    assert [ctx for _m, ctx, _r in s.long_msgs] == [320_000, 330_000, 340_000]
-    runs = [r for _m, _c, r in s.long_msgs]
+    assert [ctx for _m, ctx, _r, _d in s.long_msgs] == [320_000, 330_000, 340_000]
+    runs = [r for _m, _c, r, _d in s.long_msgs]
     assert runs[0] == runs[1] != runs[2]
 
 
@@ -426,3 +426,128 @@ def test_interactive_end_of_input_quits(machine, capsys, monkeypatch):
 def test_changes_on_a_clean_machine(fake_home, capsys):
     assert _run(["changes"], capsys)[1].strip() == "Teyla has changed nothing on this machine yet."
     assert json.loads(_run(["changes", "--json"], capsys)[1]) == []
+
+
+# --- the window counts turns, not whole resumed sessions --------------------------------------------
+
+def _resumed(h, old_days=40):
+    """One transcript: 120 turns at 320k context `old_days` ago and one turn today."""
+    recs = [h._assistant(h.ts(old_days, i), f"old{i}", OPUS, h.usage(cread=320_000, out=100)) for i in range(120)]
+    recs.append(h._assistant(h.ts(0, 0), "new0", OPUS, h.usage(cread=10_000, out=100_000)))
+    h._write(h.projects / "-work-demo" / "resumed0.jsonl", recs)
+    return 10_000 * 0.2 / 1e6 + 100_000 * 20 / 1e6
+
+
+def test_a_resumed_session_counts_only_the_turns_inside_the_window(fake_home):
+    today_cost = _resumed(fake_home)
+    d = diagnose.diagnose(1, with_asks=False)
+    assert d["total_usd"] == pytest.approx(today_cost, abs=0.01) and d["sessions"] == 1
+    assert d["active_days"] == 1 and d["long_sessions"] == 0 and d["long_sessions_usd"] == 0
+    assert d["by_harness"] == {"claude-code": d["total_usd"]}
+    assert d["cache_read_usd"] == pytest.approx(10_000 * 0.2 / 1e6, abs=0.01)
+    wide = diagnose.diagnose(60, with_asks=False)                   # the old turns are inside a 60-day window
+    assert wide["total_usd"] > 7 and wide["long_sessions"] == 1 and wide["active_days"] == 2
+
+
+def test_a_window_never_shows_more_active_days_than_it_has(fake_home):
+    for age in range(0, 40, 2):
+        fake_home.session(f"d{age:02d}", [(OPUS, fake_home.usage(cread=1_000, out=10))], age_days=age)
+    d = diagnose.diagnose(30, with_asks=False)
+    assert d["active_days"] <= 30 and d["window_start"] == diagnose.window_start(30)
+
+
+def test_o1_leaves_out_turns_sent_before_the_window(fake_home):
+    _resumed(fake_home)
+    (fake_home.home / ".claude").mkdir(exist_ok=True)
+    o, _ = _offers(fake_home, 1)
+    assert o["O1"].saving_usd_month is None and "saves nothing" in o["O1"].basis
+    o, _ = _offers(fake_home, 60)
+    assert "120 turns in 1 sessions" in o["O1"].basis and o["O1"].saving_usd_month["high"] > 2
+
+
+# --- speed: the same numbers, less work ----------------------------------------------------------------
+
+def test_a_lane_scan_without_sha_tokens_keeps_every_other_field(machine):
+    from teyla import lanes
+    full, lean = lanes.scan(30), lanes.scan(30, want_tokens=False)
+    assert len(full) == len(lean) == 4
+    strip = lambda us: sorted(({k: v for k, v in u.items() if k != "tokens"} for u in us), key=lambda u: u["agent"])
+    assert strip(full) == strip(lean) and all(u["tokens"] == set() for u in lean)
+
+
+def test_start_collects_without_the_sha_scan(machine, monkeypatch):
+    from teyla import lanes
+    seen = []
+    real = lanes.scan
+    monkeypatch.setattr(lanes, "scan", lambda *a, **k: seen.append(k) or real(*a, **k))
+    diagnose.collect(30)
+    assert seen == [{"want_tokens": False}]
+
+
+def test_price_overrides_are_reread_when_the_file_changes(tmp_path, monkeypatch):
+    f = tmp_path / "prices.json"
+    monkeypatch.setattr(pricing, "OVERRIDE_PATH", f)
+    base = pricing.lookup("claude-opus-5-5")
+    f.write_text(json.dumps({"claude-opus-5-5": {"input": 1.0, "output": 2.0}}))
+    assert pricing.lookup("claude-opus-5-5")[0] == 1.0
+    f.write_text(json.dumps({"claude-opus-5-5": {"input": 3.5, "output": 2.0}}))
+    assert pricing.lookup("claude-opus-5-5")[0] == 3.5
+    f.unlink()
+    assert pricing.lookup("claude-opus-5-5") == base
+
+
+def test_a_swapped_price_table_is_not_cached(monkeypatch):
+    pricing.lookup("acme-big")
+    monkeypatch.setattr(pricing, "effective_prices", lambda: {"acme-big": (5, 5, 1, 30, "volume", False)})
+    assert pricing.lookup("acme-big")[0] == 5
+    monkeypatch.undo()
+    assert pricing.lookup("acme-big") is None
+
+
+def test_the_progress_line_goes_to_stderr_and_only_for_the_card(machine, capsys):
+    code, out, err = _run(["start"], capsys)
+    assert code == 0 and err.strip() == "Reading 2 sessions from the last 30 days…" and "Reading" not in out
+    code, out, err = _run(["start", "--agent"], capsys)
+    assert err == "" and json.loads(out)["summary_text"]
+    code, out, err = _run(["start", "--json"], capsys)
+    assert err == "" and json.loads(out)["offers"]
+
+
+# --- the summary card -----------------------------------------------------------------------------------
+
+def test_the_card_has_one_line_per_applicable_offer(machine, capsys):
+    d = json.loads(_run(["start", "--agent"], capsys)[1])
+    lines = d["summary_text"].splitlines()
+    got = [l for l in lines if l.startswith("  O")]
+    assert [l.split()[0] for l in got] == [o["id"] for o in d["offers"] if o["applies"]]
+    assert any(l.startswith("  O2 Run subagents on Sonnet unless they say otherwise: about $7.00-$10 a month") for l in got), d["summary_text"]
+    assert any(l.startswith("  O1 Compact long sessions earlier: about $0.67-$1.34") for l in got), d["summary_text"]
+    assert "brings no dollar figure" not in d["summary_text"]
+
+
+def test_an_offer_without_a_figure_shows_what_it_brings(machine, capsys):
+    d = json.loads(_run(["start", "--agent"], capsys)[1])
+    o6 = [l for l in d["summary_text"].splitlines() if l.startswith("  O6 ")]
+    assert o6 == ["  O6 Keep your prompts and questions: keeps your corrections and open questions"]
+
+
+def test_the_card_says_when_nothing_applies(machine):
+    o, inp = _offers(machine)
+    diag = diagnose.diagnose(30, inp, with_asks=False)
+    for x in o.values():
+        x.applies = False
+    text = start.summary_text(diag, list(o.values()))
+    assert text.splitlines()[-1] == "No changes to suggest: your settings already match."
+    assert "  O" not in text and len(text.splitlines()) <= 12
+
+
+def test_the_card_fits_twelve_lines_with_all_seven_offers(machine):
+    o, inp = _offers(machine)
+    diag = dict(diagnose.diagnose(30, inp, with_asks=False), waiting_asks=4)
+    for x in o.values():
+        x.applies = True
+    lines = start.summary_text(diag, list(o.values())).splitlines()
+    assert len(lines) <= 12
+    assert [l.split()[0] for l in lines if l.startswith("  O")] == [f"O{n}" for n in range(1, 8)]
+    diag["long_sessions"] = 0
+    assert len(start.summary_text(diag, list(o.values())).splitlines()) <= 12

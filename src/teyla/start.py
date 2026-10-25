@@ -19,6 +19,7 @@ from . import changes, diagnose, offers as offers_mod
 from .spend import _money
 
 CARD_MAX_LINES = 12
+NOTHING_TO_SUGGEST = "No changes to suggest: your settings already match."
 
 
 def _range(o) -> str:
@@ -35,31 +36,32 @@ def summary_text(diag: dict, offers: list) -> str:
     harnesses = ", ".join(f"{h} {_money(v)}" for h, v in list(diag["by_harness"].items())[:3] if v >= 1)
     L.append(f"Last {diag['days']} days: {_money(diag['total_usd'])} at API list price over {diag['sessions']} sessions "
              f"on {diag['active_days']} days" + (f" ({harnesses})." if harnesses else "."))
+    bits = []
     if diag["context_usd"]:
-        L.append(f"{diag['context_share'] * 100:.0f}% of it ({_money(diag['context_usd'])}) was re-reading and storing context.")
+        bits.append(f"{diag['context_share'] * 100:.0f}% of it ({_money(diag['context_usd'])}) was re-reading and storing context")
     if diag["long_sessions"]:
-        L.append(f"{diag['long_sessions']} sessions ran past {diag['long_context_tokens'] // 1000}k tokens of context "
-                 f"and cost {_money(diag['long_sessions_usd'])}.")
+        bits.append(f"{diag['long_sessions']} sessions ran past {diag['long_context_tokens'] // 1000}k tokens of context "
+                    f"and cost {_money(diag['long_sessions_usd'])}")
+    if bits:
+        L.append("; ".join(bits) + ".")
     if diag["subagent_usd"]:
         L.append(f"Subagents cost {_money(diag['subagent_usd'])}; Opus ran {diag['subagent_opus_share'] * 100:.0f}% of that.")
     if diag["waiting_asks"]:
         L.append(f"{diag['waiting_asks']} questions are waiting on you (`teyla asks`).")
-    L.append(diag["note"])
     live = [o for o in offers if o.applies]
-    priced = [o for o in live if o.saving_usd_month]
+    if not live or len(L) + 1 + len(live) + 1 <= CARD_MAX_LINES:
+        L.append(diag["note"])                # with no room it is dropped here and stays in the JSON
     if not live:
-        L.append("Nothing to change: every setting Teyla checks is already in place.")
+        L.append(NOTHING_TO_SUGGEST)
     else:
-        if priced:
-            lo, hi = sum(o.low for o in priced), sum(o.high for o in priced)
-            span = _money(hi) if round(lo) == round(hi) else f"{_money(lo)}-{_money(hi)}"
-            L.append(f"{len(priced)} offer{'s' if len(priced) != 1 else ''} would save about {span} a month:")
-            L += [f"  {o.id} {o.title}: {_range(o)}" for o in priced[:3]]
-        unpriced = len(live) - len(priced)
-        if unpriced:
-            L.append(f"{unpriced} {'offer brings' if unpriced == 1 else 'offers bring'} no dollar figure; "
-                     f"`teyla start` explains {'it' if unpriced == 1 else 'each'}.")
-        L.append("Go through them with `teyla start`, or apply some: `teyla apply " + " ".join(o.id for o in live[:2]) + " --yes`.")
+        go = "Go through them with `teyla start`, or apply some: `teyla apply " + " ".join(o.id for o in live[:2]) + " --yes`."
+        room = CARD_MAX_LINES - len(L) - 1
+        shown = live if len(live) <= room else live[:max(0, room - 1)]
+        for o in shown:
+            L.append(f"  {o.id} {o.title}: " + (f"about {_range(o)} a month" if o.saving_usd_month else o.short))
+        if len(shown) < len(live):
+            L.append(f"  +{len(live) - len(shown)} more: " + ", ".join(o.id for o in live[len(shown):]))
+        L.append(go)
     return "\n".join(L[:CARD_MAX_LINES])
 
 
@@ -146,6 +148,9 @@ def _interactive(offers: list) -> int:
 
 
 def cmd_start(args) -> int:
+    if not (args.agent or args.json):       # stdout stays the card; the wait is announced on stderr
+        n = diagnose.count_sessions(args.days)
+        print(f"Reading {n if n is not None else 'your'} sessions from the last {args.days} days…", file=sys.stderr)
     pl, offers = payload(args.days)
     if args.agent or args.json:
         print(json.dumps(pl, indent=2))
