@@ -284,6 +284,14 @@ enum OfferStatus: Equatable {
     case applying
     case applied(String)
     case failed(String)
+
+    /// Whether the confirm sheet may open for an offer in this state: a new offer, or one whose last try failed.
+    static func allowsConfirmation(_ status: OfferStatus?) -> Bool {
+        switch status {
+        case nil, .failed: return true
+        case .applying, .applied: return false
+        }
+    }
 }
 
 /// Where the diagnosis is.

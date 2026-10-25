@@ -335,3 +335,48 @@ final class FirstRunFixtureModeTests: XCTestCase {
         XCTAssertNotNil(present)
     }
 }
+
+final class ReviewFixTests: XCTestCase {
+    func testAFailedOfferCanBeAskedAgain() {
+        XCTAssertTrue(OfferStatus.allowsConfirmation(nil))
+        XCTAssertTrue(OfferStatus.allowsConfirmation(.failed("no")))
+        XCTAssertFalse(OfferStatus.allowsConfirmation(.applying))
+        XCTAssertFalse(OfferStatus.allowsConfirmation(.applied("done")))
+    }
+
+    func testAWriteForAnotherProductLeavesThePageAlone() {
+        var page = ProductPageData(product: ProductHeader(id: "b", stage: "idea"))
+        let applied = page.applyWrite(to: "a") { $0.stage = "live" }
+        XCTAssertFalse(applied)
+        XCTAssertEqual(page.product.stage, "idea")
+    }
+
+    func testAWriteForThisProductChangesIt() {
+        var page = ProductPageData(product: ProductHeader(id: "a", stage: "idea"))
+        XCTAssertTrue(page.applyWrite(to: "a") { $0.focus = true })
+        XCTAssertTrue(page.product.focus)
+    }
+
+    func testTheNotesFollowTheWindowListOnceItIsRead() {
+        let first = ProductNote(id: "n1", text: "old")
+        let list = [
+            NoteItem(id: "n2", text: "added later", product: "a"),
+            NoteItem(id: "n1", text: "old", product: "a"),
+            NoteItem(id: "n3", text: "elsewhere", product: "b"),
+            NoteItem(id: "n4", text: "gone", product: "a", dropped: true),
+        ]
+        let shown = ProductNotes.shown(productID: "a", page: [first], list: list, listLoaded: true)
+        XCTAssertEqual(shown.map(\.id), ["n2", "n1"])
+    }
+
+    func testTheNotesFallBackToThePageBeforeTheListIsRead() {
+        let shown = ProductNotes.shown(productID: "a", page: [ProductNote(id: "n1", text: "x")], list: [], listLoaded: false)
+        XCTAssertEqual(shown.map(\.id), ["n1"])
+        XCTAssertEqual(shown.first?.product, "a")
+    }
+
+    func testALinkedNoteLeavesThePage() {
+        let list = [NoteItem(id: "n1", text: "x", product: "b")]
+        XCTAssertTrue(ProductNotes.shown(productID: "a", page: [ProductNote(id: "n1")], list: list, listLoaded: true).isEmpty)
+    }
+}

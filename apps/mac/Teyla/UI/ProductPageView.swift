@@ -221,15 +221,9 @@ private struct ProductNotesSection: View {
     let productID: String
     let notes: [ProductNote]
 
-    /// The notes still filed here: once the list in the window knows a note was linked elsewhere or dropped, it leaves.
+    /// The notes filed here now: the window's note list once it is read, so a note added or linked after the page loaded shows.
     private var shown: [NoteItem] {
-        let list = model.noteList
-        return notes.compactMap { note in
-            if list.loaded {
-                return list.items.first { $0.id == note.id && $0.product == productID && !$0.dropped }
-            }
-            return note.item(product: productID)
-        }
+        ProductNotes.shown(productID: productID, page: notes, list: model.noteList.items, listLoaded: model.noteList.loaded)
     }
 
     var body: some View {

@@ -47,7 +47,7 @@ final class FirstRunModel {
     func status(of offer: StartOffer) -> OfferStatus? { offers[offer.id] }
 
     func ask(_ offer: StartOffer) {
-        guard offers[offer.id] == nil else { return }
+        guard OfferStatus.allowsConfirmation(offers[offer.id]) else { return }
         pending = offer
     }
 
@@ -57,7 +57,7 @@ final class FirstRunModel {
     func confirm() {
         guard let offer = pending else { return }
         pending = nil
-        guard offers[offer.id] == nil || isFailed(offer) else { return }
+        guard OfferStatus.allowsConfirmation(offers[offer.id]) else { return }
         offers[offer.id] = .applying
         Task {
             do {

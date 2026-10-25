@@ -16,6 +16,8 @@ final class NotesModel {
 
     @ObservationIgnored private let cli: TeylaCLI
     @ObservationIgnored var productNames: () -> [String] = { [] }
+    /// Called after a note was saved, linked or dropped, so an open product page re-reads.
+    @ObservationIgnored var changed: () -> Void = {}
     @ObservationIgnored private var refreshing = false
     @ObservationIgnored private var refreshQueued = false
 
@@ -73,6 +75,7 @@ final class NotesModel {
         items.removeAll { $0.id == note.id }
         items.insert(note, at: 0)
         loaded = true
+        changed()
         if !cli.usesFixture { refresh() }
     }
 
@@ -87,6 +90,7 @@ final class NotesModel {
                     items[at].linkedBy = "owner"
                 }
                 rows[note.id] = nil
+                changed()
                 if !cli.usesFixture { refresh() }
             } catch {
                 rows[note.id] = .failed(error.localizedDescription)
@@ -102,6 +106,7 @@ final class NotesModel {
                 try await cli.dropNote(id: note.id)
                 withAnimation(.easeOut(duration: 0.2)) { items.removeAll { $0.id == note.id } }
                 rows[note.id] = nil
+                changed()
                 if !cli.usesFixture { refresh() }
             } catch {
                 rows[note.id] = .failed(error.localizedDescription)

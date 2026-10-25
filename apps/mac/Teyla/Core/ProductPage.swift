@@ -209,6 +209,14 @@ struct ProductPageData: Decodable, Equatable, Sendable {
         self.spend = spend
     }
 
+    /// Applies a finished stage or focus write, only if this page is still the product it was written for.
+    @discardableResult
+    mutating func applyWrite(to productID: String, _ edit: (inout ProductHeader) -> Void) -> Bool {
+        guard product.id == productID else { return false }
+        edit(&product)
+        return true
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         version = c.lenient(.version, 1)
@@ -233,5 +241,16 @@ struct ProductPageData: Decodable, Equatable, Sendable {
         } catch {
             throw TeylaError.badOutput("not a product page")
         }
+    }
+}
+
+enum ProductNotes {
+    /// The notes of one product page. Once the window's note list is read it is the truth (a note added or linked
+    /// here after the page loaded shows; one dropped or linked elsewhere leaves). Before that, the page's own notes.
+    static func shown(productID: String, page: [ProductNote], list: [NoteItem], listLoaded: Bool) -> [NoteItem] {
+        if listLoaded {
+            return list.filter { $0.product == productID && !$0.dropped }
+        }
+        return page.map { $0.item(product: productID) }
     }
 }

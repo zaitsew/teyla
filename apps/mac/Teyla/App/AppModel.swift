@@ -81,6 +81,7 @@ final class AppModel {
         quickNote.close = { [weak self] in self?.closeQuickNote() }
         firstRun.applied = { [weak self] in self?.refresh() }
         productPage.changed = { [weak self] in self?.refresh() }
+        noteList.changed = { [weak self] in self?.productPage.refreshQuick() }
     }
 
     /// The welcome alone, with no sidebar: nothing to read yet, one button to press.
@@ -140,6 +141,7 @@ final class AppModel {
 
     func refresh() {
         noteList.refresh()
+        if case .product = route { productPage.refreshQuick() }
         if isRefreshing {
             refreshQueued = true
             return
