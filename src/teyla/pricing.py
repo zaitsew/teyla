@@ -114,7 +114,9 @@ def family(model: str) -> str:
     return "other"
 
 
-def cost_usd(model: str, usage: dict) -> float | None:
+def cost_parts(model: str, usage: dict) -> dict | None:
+    """The four parts of `cost_usd`, in dollars: input, cache_write, cache_read, output. None when
+    the model is not priced. `teyla start` reads the cache parts as the cost of context."""
     p = lookup(model)
     if not p:
         return None
@@ -123,6 +125,19 @@ def cost_usd(model: str, usage: dict) -> float | None:
     # The 1-hour share of the writes (adapters.CACHE_1H_KEY) bills at 2x input; the rest at the
     # 5-minute rate. Claude Code writes only 1-hour cache, so pricing it at 1.25x under-counted.
     hour = min(usage.get("cache_creation_1h_input_tokens", 0), written)
+    return dict(input=usage.get("input_tokens", 0) * i / 1e6,
+                cache_write=((written - hour) * cw + hour * 2 * i) / 1e6,
+                cache_read=usage.get("cache_read_input_tokens", 0) * cr / 1e6,
+                output=usage.get("output_tokens", 0) * o / 1e6)
+
+
+def cost_usd(model: str, usage: dict) -> float | None:
+    p = lookup(model)
+    if not p:
+        return None
+    i, cw, cr, o = p[:4]
+    written = usage.get("cache_creation_input_tokens", 0)
+    hour = min(usage.get("cache_creation_1h_input_tokens", 0), written)  # see cost_parts
     return (usage.get("input_tokens", 0) * i + (written - hour) * cw + hour * 2 * i
             + usage.get("cache_read_input_tokens", 0) * cr + usage.get("output_tokens", 0) * o) / 1e6
 

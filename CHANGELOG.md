@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **`teyla start`: diagnose your agent spend and fix it with one keystroke.** Reads the sessions on disk (no network, no
+  write) and prints a card of at most 12 lines: the window's cost at list price, the share spent re-reading and storing
+  context, sessions past 250k tokens, Opus's share of subagent cost, questions waiting. Then seven offers, each with its
+  change, a saving range (or a benefit when no honest figure exists), the trade-off and the undo: O1 `autoCompactWindow`, O2
+  `CLAUDE_CODE_SUBAGENT_MODEL=sonnet`, O3 a Haiku `scout` agent, O4 Codex `model_reasoning_effort=medium`, O5 `policy sync`,
+  O6 `harness sync`, O7 `routine install`. `teyla apply` makes a change after a 0600 backup (atomic write, JSON order and
+  indent kept) and logs it in `~/.teyla/changes.jsonl`; `teyla undo` reverts only the key it wrote, byte for byte when the file
+  is untouched since, and stops when the key changed (`--force`). `teyla changes` lists them. `teyla start --agent` prints
+  `{summary_text, diagnosis, offers}` for an AI agent to relay and applies nothing. Sessions now record the messages past 250k
+  tokens (`Session.long_msgs`), lane units record usage, the explicit model and whether they wrote, and `pricing.cost_parts`
+  splits a cost into input, cache write, cache read and output. `docs/START.md`.
+
 - **Mac: quick note on a shortcut you choose, and Notes in the window.** A global shortcut (⌥Space by default, recorded in
   Settings, optional, never push-to-talk's ⌥⌘Space) opens a floating panel: type, ⏎ saves, ⇧⏎ adds a line, Esc keeps the
   draft. The product chip pre-selects from `teyla note --suggest` and changes in one click or ⌘0–⌘9. The window gets a Notes

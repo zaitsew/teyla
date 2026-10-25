@@ -9,6 +9,7 @@ uv tool install git+https://github.com/zaitsew/teyla    # or: pipx install ...; 
 teyla policy init --owner "Your Name" && teyla policy sync   # one POLICY.md for every harness
 teyla plugin install zaitsew/teyla     # Claude Code plugin: hooks, skills, machine guard
 teyla routine install                  # daily and weekly checks under launchd
+teyla start                            # what your agents cost, and seven fixes you can accept one by one and undo
 teyla doctor                           # what must be true here, and the fix for each gap
 teyla asks                             # every question an AI session left waiting on you
 teyla product init                     # which repo is which product (proposal; --write saves it)
@@ -131,6 +132,7 @@ On a managed work laptop, switch on safe mode: `teyla policy init --work`. Nothi
 
 ## Docs
 
+- [START](docs/START.md): `teyla start`: the diagnosis, the seven offers, how a saving is counted, how to undo
 - [COMMANDS](docs/COMMANDS.md): every command with its flags (`teyla --help` prints the same list)
 - [GUIDE](docs/GUIDE.md): install and update, the plugin, the policy, routines, cloud sessions
 - [MANUAL](docs/MANUAL.md): the whole method and the numbers behind each threshold

@@ -91,6 +91,23 @@ def _add_reread(target, per_message: dict) -> None:
             target[model] += ctx - HANDOFF_CONTEXT
 
 
+def _long_msgs(target: list, per_message: dict, source) -> None:
+    """Append (model, context, run) for each message past LONG_CONTEXT. `source(key)` names the
+    transcript a message came from; a run is consecutive long messages of one transcript."""
+    run, prev_src, n = None, None, 0
+    for key, (model, row, *_) in per_message.items():
+        src = source(key)
+        ctx = row["input_tokens"] + row["cache_read_input_tokens"] + row["cache_creation_input_tokens"]
+        if ctx <= LONG_CONTEXT:
+            run = None
+            continue
+        if run is None or src != prev_src:
+            n += 1
+            run = f"{src}:{n}"
+        prev_src = src
+        target.append((model, ctx, run))
+
+
 # ~/repos/<name>/… or ~/.worktrees/<name>/<branch>/… inside a tool call's path or command.
 _REPO_PATH_RE = re.compile(r"/(?:repos|\.worktrees)/([A-Za-z0-9._-]+)")
 
@@ -269,10 +286,12 @@ def parse(f: str, repo_names: list[str] | None = None) -> Session | None:
     _add_usage(s.usage, per_message)
     _add_usage(s.loop_usage, {k: v for k, v in per_message.items() if k in loop_keys})
     _add_reread(s.reread_excess, per_message)
+    _long_msgs(s.long_msgs, per_message, lambda key: "main")
     subs, sub_calls = _subagent_usage(f)
     _add_usage(s.usage, subs)
     _add_usage(s.sub_usage, subs)
     _add_reread(s.reread_excess, subs)
+    _long_msgs(s.long_msgs, subs, lambda key: key[0])
     fallback = local_day(s.last)
     _add_days(s.day_usage, per_message, fallback)
     _add_days(s.day_usage, subs, fallback)
