@@ -538,6 +538,9 @@ def build(days: int = 30, inputs=None, diag: dict | None = None, with_savings: b
 
 # --- applying ------------------------------------------------------------------------------------
 
+PLUGIN_FAILED = "plugin not installed:"   # the line `teyla apply` reads as a partial apply (exit 1)
+
+
 def _plugin_step(home: pathlib.Path) -> list[str]:
     """O6's second step: Teyla's plugin into Claude Code. A failure is a line, not an exception: the
     hooks the first step wrote are in place and the change must be logged."""
@@ -545,7 +548,7 @@ def _plugin_step(home: pathlib.Path) -> list[str]:
     try:
         lines = plugin_install.install(PLUGIN_SOURCE, plugins_dir=home / ".claude" / "plugins")
     except Exception as e:  # noqa: BLE001 — a failed clone or a registry that does not parse
-        return [f"plugin not installed: {type(e).__name__}: {e}. Run `{PLUGIN_INSTALL}` when it can reach github.com."]
+        return [f"{PLUGIN_FAILED} {type(e).__name__}: {e}. Run `{PLUGIN_INSTALL}` when it can reach github.com."]
     return (["safe mode: Teyla edits no plugin registry; run these in a terminal:"] if plugin_install._safe() else []) + lines
 
 

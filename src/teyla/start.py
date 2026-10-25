@@ -106,6 +106,9 @@ def _apply_one(o, out, owner: str | None = None) -> bool:
     out.append((o, rec))
     for line in lines[:6]:
         print(f"  {line}")
+    if any(str(line).startswith(offers_mod.PLUGIN_FAILED) for line in lines):
+        print(f"{o.id}: partly applied: the hooks are in place, Teyla's Claude Code plugin is not.", file=sys.stderr)
+        return False
     return True
 
 

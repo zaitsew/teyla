@@ -706,5 +706,6 @@ def test_a_failed_plugin_install_is_a_line_and_the_hooks_stay_logged(machine, ca
     monkeypatch.setattr(plugin_install, "install", boom)
     (machine.home / ".codex").mkdir()
     code, out, err = _run(["apply", "O6", "--yes"], capsys)
-    assert code == 0 and "plugin not installed: OSError: no network" in out
+    assert code == 1 and "plugin not installed: OSError: no network" in out
+    assert "O6: partly applied" in err
     assert (machine.home / ".codex" / "hooks.json").exists() and len(changes.changes()) == 1
