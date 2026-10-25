@@ -8,8 +8,10 @@ the person only for a yes on a change. Change nothing in their settings without 
 
 ## What Teyla is
 
-Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's waiting
-on you, and fixes the waste. It has no server and no account. Which calls leave the machine: `docs/PRIVACY.md`.
+Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's waiting on you, and fixes the waste. Nothing about your sessions leaves your Mac unless you turn it on.
+
+Teyla reads files on your Mac. It sends nothing about your sessions anywhere unless you turn on a feature
+that says so (`docs/PRIVACY.md` lists every call). It has no server and no account.
 
 ## Install
 

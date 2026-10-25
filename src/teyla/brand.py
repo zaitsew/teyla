@@ -83,3 +83,10 @@ def paint(text: str, role: str, stream: TextIO | None = None, env: Mapping[str, 
     if not enabled(stream, env):
         return text
     return f"{code(role, env)}{text}{RESET}"
+
+
+def bold(text: str, stream: TextIO | None = None, env: Mapping[str, str] | None = None) -> str:
+    """`text` in bold, or unchanged when colour is off. Combine with `paint` by wrapping: bold(paint(...))."""
+    if not enabled(stream, env):
+        return text
+    return f"\033[1m{text}{RESET}"

@@ -52,16 +52,7 @@ def test_agents_md_names_the_commands_an_agent_needs():
     assert any(c[:2] == ["undo", "O1"] for c in _commands(TEXT))
 
 
-# Commands the guide names that land with another open change. Not strict: the mark just stops mattering once they exist.
-PENDING = {"today"}
-
-
-def _case(argv):
-    mark = pytest.mark.xfail(reason="lands with the terminal-first-screen change", strict=False) if argv[0] in PENDING else ()
-    return pytest.param(argv, marks=mark, id="teyla " + " ".join(argv))
-
-
-@pytest.mark.parametrize("argv", [_case(a) for a in _commands(TEXT)])
+@pytest.mark.parametrize("argv", _commands(TEXT), ids=lambda a: "teyla " + " ".join(a))
 def test_every_teyla_command_in_agents_md_parses(argv):
     assert _parses(argv), f"AGENTS.md names `teyla {' '.join(argv)}` and the parser rejects it"
 
@@ -83,3 +74,13 @@ def test_claude_md_points_installers_to_agents_md_and_contributors_to_contributi
     assert claude.splitlines()[0].find("AGENTS.md") != -1
     assert "CONTRIBUTING.md" in claude
     assert (ROOT / "CONTRIBUTING.md").is_file()
+
+
+def test_the_promise_is_one_sentence_used_everywhere():
+    import tomllib
+    from teyla import PROMISE, welcome
+    assert welcome.PROMISE is PROMISE
+    assert PROMISE in " ".join(TEXT.split())
+    assert tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["description"] == PROMISE
+    assert PROMISE.endswith("Nothing about your sessions leaves your Mac unless you turn it on.")
+    assert "Teyla reads files on your Mac. It sends nothing about your sessions anywhere unless you turn on a feature" in " ".join(TEXT.split())

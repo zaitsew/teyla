@@ -1,7 +1,8 @@
 # Privacy: every call that leaves your machine
 
 Teyla reads your session logs, your repos and your config on your Mac. It has no server, no account,
-no telemetry and no analytics SDK. It never uploads a transcript.
+no telemetry and no analytics SDK. It never uploads a transcript. Nothing about your sessions leaves your Mac unless you turn on a feature that says so; today
+that is one row (14, the model brief), off by default.
 
 It does make the calls below. Each row names the command that triggers it, the host, what is sent,
 and whether it runs without you asking. "Default on" means it runs with a stock install and no flag.
@@ -14,7 +15,7 @@ with `--allow-network`. The gate is `src/teyla/net.py`.
 
 | # | Trigger | Host | What is sent | Default on | Safe mode |
 |---|---|---|---|---|---|
-| 1 | The update check: `teyla doctor` (when the cached answer is over a day old), the session-start hook (once a day, in the background, once Teyla is set up), `teyla update --check` | `api.github.com` | A GET for the latest release and commit of `zaitsew/teyla`. No user data. The result is cached in `~/.teyla/update-check.json`. | Yes | closed |
+| 1 | The update check: `teyla doctor` (when the cached answer is over a day old), the session-start hook (once a day, in the background, once Teyla is set up), `teyla update --check` | `api.github.com` | A GET for the latest release and commit of `zaitsew/teyla`. It sends only the version, as the User-Agent `teyla/<version>`. The result is cached in `~/.teyla/update-check.json`. | Yes | closed |
 | 2 | `teyla update` (the daily routine runs it, if you installed the routine) | `github.com`, and `pypi.org` for build tools | `uv tool install` or `pip` fetches the new release. No user data. | Only if the routine is installed | closed |
 | 3 | `teyla models --refresh` | `models.dev` | A GET of the public model catalogue. No user data. | No (needs `--refresh`) | closed |
 | 4 | `teyla plugin install owner/repo` | `github.com` | `git clone` or `git pull` of the repo you named. | No (you name the repo) | closed |
@@ -42,7 +43,7 @@ These use your own `claude`, `codex` or `grok` login. The text goes to that prov
 
 | # | Trigger | Host | What is sent | Default on | Safe mode |
 |---|---|---|---|---|---|
-| 14 | The model brief: `teyla state` and the Mac app start `teyla state --refresh-brief` in the background | Anthropic, through `claude -p` (Haiku) | Up to 15 open questions from your sessions, each field cut to 400 characters. No tools, no settings, no saved session. | **Yes, when `claude` is on PATH**; `teyla config set state.model_brief=false` turns it off | closed |
+| 14 | The model brief, only when you turn it on: `teyla state` and the Mac app start `teyla state --refresh-brief` in the background | Anthropic, through `claude -p` (Haiku) | Up to 15 open questions from your sessions, each field cut to 400 characters. No tools, no settings, no saved session. | **No, opt-in**: `teyla config set state.model_brief=true` turns it on, `=false` turns it off | closed |
 | 15 | `teyla intent cover ... --model` | Anthropic, through `claude -p` | The plan file and the unresolved sentences from your own prompts. | No (needs `--model`) | closed |
 | 16 | `teyla voice check ... --model` | Anthropic, through `claude -p` | The draft text. | No (needs `--model`) | closed |
 | 17 | `teyla harness verify --live` | Each installed provider, through its CLI | One fixed line asking for a policy section title. | No (needs `--live`; no routine or hook runs it) | not gated |

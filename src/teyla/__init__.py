@@ -1,6 +1,13 @@
 """Teyla — an operating system for working with AI agents."""
 __version__ = "0.30.0"
 
+# The one-sentence promise. bare `teyla` prints it, AGENTS.md opens with it and pyproject.toml uses it as
+# the package description; tests/test_agents_md.py fails when they drift apart.
+PROMISE = (
+    "Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's waiting on you, "
+    "and fixes the waste. Nothing about your sessions leaves your Mac unless you turn it on."
+)
+
 
 def templates_dir():
     """The templates directory: inside the installed package, or the repo root when run from a checkout."""

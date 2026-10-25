@@ -17,11 +17,29 @@
   (written from the old long template, or by hand) is yours and is never merged, and `teyla doctor` says so. Nothing changes in an
   existing `~/.agents/POLICY.md`. `docs/GUIDE.md`.
 - **Every network call is listed.** `docs/PRIVACY.md` has 21 rows, one per call: the command, the host, what is sent, whether it
-  runs without a flag, and what safe mode does. "Nothing leaves your machine" was not true as stated; one of the rows, the model brief (`teyla state` sends up to 15 open questions to Anthropic through `claude -p`), is on by default when
-  `claude` is installed. `tests/test_privacy_calls.py` fails when a module under `src/teyla` starts using a network
+  runs without a flag, and what safe mode does. The only call that carried session text, the model brief (`teyla state` sends up
+  to 15 open questions to Anthropic through `claude -p`), is now opt-in. The update check stays on and sends only the version.
   library, `gh`/`ssh`/`curl`, a git remote operation, a model CLI, a release tool or the iCloud folder and is not in its
   allowlist, and when the allowlist and the table disagree.
+- **The model brief is off for a new install.** A config with no `state.model_brief` key means off; turn it on with
+  `teyla config set state.model_brief=true`. `teyla doctor` prints one line, "Model brief: on/off", with the command to switch it.
+  Rule-based briefs are unchanged. An existing config that sets the key keeps its value.
+- **`teyla doctor` accepts a `CLAUDE.md` that names `AGENTS.md`.** A link or an `@AGENTS.md` import now passes the
+  `repos:agents-md` check; the two files no longer have to match text for text.
+- **One promise.** `teyla.PROMISE` is the sentence in the welcome screen, in `AGENTS.md` and in the package description; a test
+  keeps them equal.
 - `docs/DIRECTORY.md` no longer names a version in the example archive names (`dist/` is untracked build output).
+
+- **A first screen: `teyla` shows a welcome, `teyla today` the day, `teyla help` six groups.** Bare `teyla` used to end in an
+  argparse error. It now prints at most 15 lines: the brand mark and version, the one-line promise, three live numbers (spend
+  of the last 7 days at list price, questions waiting, notes in the Inbox) each with the command that opens it, and the next
+  three commands, `teyla start` first until you have applied or declined an offer. Spend and questions come from
+  `~/.teyla/first-screen.json`, refreshed in the background, so the call takes tens of milliseconds. `teyla today
+  [--json] [--fresh]` is the daily screen (questions by product, the Inbox, the week against the week before, one suggested
+  action by a written rule). `teyla --help` and `teyla help` list the commands in Start, Daily, Products, Spend, Setup and
+  Advanced in under 40 lines; `teyla help --all` lists every one, and a test fails for a command without a group. An unknown
+  command prints the nearest match and the help (exit 2); a missing package or unreadable `~/.teyla` file prints one line
+  with the fix (`TEYLA_DEBUG=1` restores the traceback). `NO_COLOR`, `TERM=dumb` and pipes give plain text. `docs/TODAY.md`.
 - **`teyla start`: diagnose your agent spend and fix it with one keystroke.** Reads the sessions on disk (no network, no
   write) and prints a card of at most 12 lines: the window's cost at list price, the share spent re-reading and storing
   context, sessions past 250k tokens, Opus's share of subagent cost, questions waiting. Then seven offers, each with its
