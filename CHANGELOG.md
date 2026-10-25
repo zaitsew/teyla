@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — The machine guard stops starting heavy work while memory runs out
+## 0.30.0 — 2026-10-25 — Products you can trust: a registry, text notes, asks by product; a guard that watches memory
 
 - **`teyla asks` files an ask under the product it is about, and shows the whole question.** A session that ran outside any
   repo, or in the wrong one, used to land under `unassigned` or another product. `registry.attribute()` now decides by `[assign]`,
