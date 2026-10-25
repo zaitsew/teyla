@@ -864,13 +864,14 @@ def undo(prefixes: list[str], now: float | None = None) -> tuple[list[str], int]
     items = collect(max(DEFAULT_DAYS, 365), now)
     st = load_state()
     lines, code, changed = [], 0, False
+    was_done = set(st["done"])            # before any cascade: `undo <kept> <dupe>` must not depend on the order
     for pre in prefixes:
         a, err = resolve(pre, items)
         if a is None:
             lines.append(err)
             code = 1
             continue
-        if a.id not in st["done"] and a.status != "duplicate":
+        if a.id not in was_done and a.status != "duplicate":
             lines.append(f"not done: {a.id}  {a.product}  {a.title}")
             code = 1
             continue

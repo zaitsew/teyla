@@ -363,8 +363,9 @@ def pr_states(urls: list[str], now: float, *, runner: Runner | None = None, fetc
     """{canonical url: {"state", "at"}} for the PR links in `urls` whose state is known; others are left out.
 
     Order: the open PRs of the backlog cache (when that cache is under 30 minutes old), then
-    `pr-state.json` entries under 30 minutes old, then one batched GraphQL query. Without `fetch`
-    (`teyla state` must stay fast) a cache entry of any age is used and GitHub is not asked. Without
+    `pr-state.json` entries under 30 minutes old (a MERGED entry at any age: a merge is final), then one
+    batched GraphQL query. Without `fetch` (`teyla state` must stay fast) GitHub is not asked, and an expired
+    CLOSED or OPEN entry counts as unknown: a reopened PR must not close its ask for good. Without
     `gh`, in safe mode, after a failed query within five minutes, or on a parse error, the unknown stay unknown."""
     wanted = {canonical_pr_url(u) for u in urls} - {""}
     known: dict[str, dict] = {}
@@ -379,7 +380,7 @@ def pr_states(urls: list[str], now: float, *, runner: Runner | None = None, fetc
             seen = float((e or {}).get("seen") or 0)
         except (TypeError, ValueError):
             seen = 0.0
-        if e and (not fetch or now - seen < PR_TTL_S):
+        if e and (e["state"] == "MERGED" or now - seen < PR_TTL_S):   # a merge is final; a closed PR can reopen
             known[u] = {"state": e["state"], "at": float(e.get("at") or 0)}
     missing = sorted(wanted - set(known))
     if not (fetch and missing) or now - cache["failed"] < PR_BACKOFF_S or not net.allowed():

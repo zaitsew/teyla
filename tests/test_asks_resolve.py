@@ -131,6 +131,15 @@ def test_pr_state_is_cached_for_thirty_minutes():
     assert len(gh.calls) == 2                                  # `teyla state` never asks
 
 
+def test_a_cache_only_reader_trusts_an_old_merge_but_not_an_old_close():
+    gh = FakeGh({PR1: ("MERGED", 0), PR2: ("CLOSED", 0)})
+    backlog.pr_states([PR1, PR2], NOW, runner=gh)
+    later = backlog.pr_states([PR1, PR2], NOW + 2 * DAY, runner=gh, fetch=False)
+    assert later[PR1.lower()]["state"] == "MERGED"             # a merge is final
+    assert PR2.lower() not in later                            # a closed PR may have been reopened
+    assert len(gh.calls) == 1
+
+
 def test_a_pr_open_in_the_backlog_cache_is_not_asked_about():
     backlog.cache_path().write_text(json.dumps({"version": 1, "at": NOW - 60, "issues": [], "counts": {},
                                                 "canonical": {}, "prs": [{"url": PR1, "repo": "example/lens"}]}))
@@ -277,6 +286,18 @@ def test_undoing_a_hidden_duplicate_shows_it_again(monkeypatch):
     asks.settle([a, b], NOW, st=asks.load_state())
     assert (a.status, b.status) == ("open", "open")
 
+
+
+def test_undo_of_the_kept_ask_and_its_repeat_together_does_not_depend_on_order(monkeypatch):
+    old, new = ask("aaa00001", days_ago=4, question=BASE), ask("aaa00002", days_ago=1, question=NEAR)
+    new.status = "done"
+    st = settle([old, new], None)
+    st["done"]["aaa00002"] = {"ts": iso(0), "note": "manual"}
+    asks.save_state(st, now=NOW)
+    monkeypatch.setattr(asks, "collect", lambda *a, **k: [old, new])
+    assert asks.undo(["aaa00002", "aaa00001"], NOW)[1] == 0
+    saved = asks.load_state()
+    assert saved["done"] == {} and {"aaa00001", "aaa00002"} <= set(saved["undone"])
 
 # --- the report ----------------------------------------------------------------------------------
 
