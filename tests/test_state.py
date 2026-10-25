@@ -369,17 +369,37 @@ def test_questions_the_model_did_not_rank_keep_rule_values_and_follow():
     assert {a["id"]: a["unblocks"] for a in out[1:]} == {r["id"]: r["unblocks"] for r in rows if r["id"] != "aaaa0001"}
 
 
-def test_model_brief_off_in_config_safe_mode_or_without_claude(monkeypatch):
+def test_model_brief_is_opt_in_and_never_in_safe_mode_or_without_claude(monkeypatch):
     from teyla import config
     monkeypatch.setattr(state.shutil, "which", lambda n: "/bin/claude")
     monkeypatch.setattr(config, "load", lambda path=None: dict(config.DEFAULTS))
-    assert state.model_brief_enabled() is True
-    for cfg in ({"state": {"model_brief": False}}, {"state": {"model_brief": "off"}}, {"safe": {"enabled": True}}):
+    assert state.model_brief_enabled() is False, "a config with no state.model_brief key means off"
+    assert config.DEFAULTS["state"]["model_brief"] is False
+    monkeypatch.setattr(config, "load", lambda path=None: {**config.DEFAULTS, "state": {}})
+    assert state.model_brief_enabled() is False
+    for on in (True, "true", "on", "yes", 1):
+        monkeypatch.setattr(config, "load", lambda path=None, on=on: {**config.DEFAULTS, "state": {"model_brief": on}})
+        assert state.model_brief_enabled() is True, on
+    for cfg in ({"state": {"model_brief": False}}, {"state": {"model_brief": "off"}},
+                {"state": {"model_brief": True}, "safe": {"enabled": True}}):
         monkeypatch.setattr(config, "load", lambda path=None, cfg=cfg: {**config.DEFAULTS, **cfg})
         assert state.model_brief_enabled() is False
-    monkeypatch.setattr(config, "load", lambda path=None: dict(config.DEFAULTS))
+    monkeypatch.setattr(config, "load", lambda path=None: {**config.DEFAULTS, "state": {"model_brief": True}})
     monkeypatch.setattr(state.shutil, "which", lambda n: None)
     assert state.model_brief_enabled() is False
+
+
+def test_doctor_has_one_offer_free_line_about_the_model_brief(monkeypatch):
+    from teyla import config, doctor
+    def line(cfg):
+        monkeypatch.setattr(config, "load", lambda path=None: {**config.DEFAULTS, **cfg})
+        rows = [c for c in doctor.checks(scan_repos=False) if c["name"] == "state:brief"]
+        assert len(rows) == 1 and rows[0]["level"] == "INFO"
+        return rows[0]["detail"]
+    off = line({})
+    assert off.startswith("Model brief: off (turn on: teyla config set state.model_brief=true")
+    assert line({"state": {"model_brief": True}}).startswith("Model brief: on (")
+    assert line({"state": {"model_brief": True}, "safe": {"enabled": True}}).startswith("Model brief: off")
 
 
 def test_validate_brief():

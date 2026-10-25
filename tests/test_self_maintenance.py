@@ -255,6 +255,36 @@ def test_an_agents_import_inside_a_code_fence_is_not_a_link(tmp_path):
     assert "already linked" in policy.sync_repo(str(root / "live"), dry=True)
 
 
+def test_a_claude_md_that_names_agents_md_is_consistent_even_when_the_text_differs(tmp_path):
+    """A repo whose AGENTS.md is a guide for installers and whose CLAUDE.md is for contributors:
+    CLAUDE.md links to the guide, so the pair is intended, not drift."""
+    root = tmp_path / "repos"
+    cases = {
+        "link": "See [the install guide](AGENTS.md).\n\nContributors: CONTRIBUTING.md.\n",
+        "backticks": "To install Teyla, follow `AGENTS.md`.\n\n# Working on it\n",
+        "plain": "Installing? Read AGENTS.md first.\n",
+        "unrelated": "# Contributors only\n\nNo pointer here.\n",
+        "fence_only": "```\nsee AGENTS.md\n```\nDivergent.\n",
+    }
+    for name, claude in cases.items():
+        d = root / name; (d / ".git").mkdir(parents=True)
+        (d / "AGENTS.md").write_text("# install guide\n")
+        (d / "CLAUDE.md").write_text(claude)
+    st = dict((n, s) for s, n in policy.repos_status(root))
+    assert st == {"link": "ok", "backticks": "ok", "plain": "ok", "unrelated": "differ", "fence_only": "differ"}
+
+
+def test_doctor_reports_agents_md_consistent_for_a_named_pointer(tmp_path, monkeypatch):
+    from teyla import config, doctor
+    root = tmp_path / "repos"
+    d = root / "app"; (d / ".git").mkdir(parents=True)
+    (d / "AGENTS.md").write_text("# install guide\n")
+    (d / "CLAUDE.md").write_text("Installing? Follow `AGENTS.md`.\n\n# Contributing\n")
+    monkeypatch.setattr(config, "code_root", lambda cfg=None: root)
+    rows = [c for c in doctor.checks(scan_repos=True) if c["name"] == "repos:agents-md"]
+    assert rows and rows[0]["level"] == "OK" and "consistent" in rows[0]["detail"]
+
+
 # --- routine staleness ------------------------------------------------------------------
 
 def test_wrapper_stale_detects_moved_binary(_home):

@@ -165,10 +165,11 @@ DEFAULTS = {
     # `teyla intent`: the owner's own long prompts, kept verbatim in ~/.teyla/intent/<product>.md.
     "intent": {"enabled": True, "min_chars": 400},
     "safe": {"enabled": False, "auto_update": False},
-    # `teyla state`: a model writes the brief and the ranking (off = rules only; never in safe mode).
+    # `teyla state`: a model writes the brief and the ranking. Off unless turned on (it sends the open
+    # questions to Anthropic through `claude -p`); never in safe mode. Off = rules only.
     # merge_approved: owner/repo names whose PRs the owner merges without asking, so they are not tasks;
     # empty = read the list in ~/.claude/CLAUDE.md.
-    "state": {"model_brief": True, "merge_approved": []},
+    "state": {"model_brief": False, "merge_approved": []},
     # `teyla relay`: the iCloud Drive folder shared with the phone ("" = iCloud Drive/Teyla).
     "relay": {"folder": ""},
     # Harnesses to leave alone: no health line, no FIX for their hooks or credits, no sync.

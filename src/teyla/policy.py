@@ -610,6 +610,13 @@ def imports_agents(text: str) -> bool:
     return any(live and IMPORT_RE.match(line) for line, live in _live_lines(text))
 
 
+def names_agents(text: str) -> bool:
+    """True when `text` imports AGENTS.md or names it outside a fenced code block (a link, or the
+    file name in prose or backticks): a CLAUDE.md that points at AGENTS.md is linked to it even when
+    the two files hold different text, as in a repo whose AGENTS.md is a guide for installers."""
+    return imports_agents(text) or any(live and "AGENTS.md" in line for line, live in _live_lines(text))
+
+
 # ---------------------------------------------------------------------------
 # The owner's rules for harnesses that cannot import: ~/.codex/AGENTS.md, ~/.grok/AGENTS.md and
 # the Cursor skill get POLICY.md + ~/.claude/CLAUDE.md as one generated text.
@@ -1125,9 +1132,9 @@ def repos_status(root: pathlib.Path) -> list[tuple[str, str]]:
         if a.exists() and c.exists():
             # ok = one source of truth: a symlink, identical text, or CLAUDE.md that imports
             # AGENTS.md (`@AGENTS.md` on a line of its own — what `teyla cloud prep` writes, and
-            # what a repo with Claude-only lines needs). Claude Code expands the import, so the two
+            # what a repo with Claude-only lines needs — or a CLAUDE.md that names AGENTS.md in a link). Claude Code expands the import, so the two
             # files cannot drift; comparing their text would flag exactly the layout we recommend.
-            if a.is_symlink() or c.is_symlink() or a.read_text() == c.read_text() or imports_agents(c.read_text()):
+            if a.is_symlink() or c.is_symlink() or a.read_text() == c.read_text() or names_agents(c.read_text()):
                 out.append(("ok", d.name))
             else:
                 out.append(("differ", d.name))

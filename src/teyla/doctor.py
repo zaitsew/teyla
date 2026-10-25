@@ -385,6 +385,17 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     if pending:
         out.append(_check("WARN", "control:inbox", f"{len(pending)} run(s) waiting for you", "teyla inbox list"))
 
+    # --- the model brief: opt-in, because it sends question text to Anthropic ----
+    try:
+        brief_on = config.truthy((cfg.get("state") or {}).get("model_brief")) and not config.safe_mode(cfg)
+    except Exception:  # noqa: BLE001 — a config that cannot be read is "off"
+        brief_on = False
+    out.append(_check("INFO", "state:brief",
+                      "Model brief: on (sends up to 15 open questions to Anthropic through `claude -p`; turn off: "
+                      "teyla config set state.model_brief=false)" if brief_on else
+                      "Model brief: off (turn on: teyla config set state.model_brief=true; it sends up to 15 open "
+                      "questions to Anthropic through `claude -p`)"))
+
     # --- tools on this machine (scope, not failures) ----------------------------
     present = [t for t in ("uv", "pipx", "git", "gh", "claude", "codex", "grok", "hermes", "launchctl") if shutil.which(t)]
     absent = [t for t in ("uv", "git", "gh", "claude", "codex", "grok") if not shutil.which(t)]
