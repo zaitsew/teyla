@@ -16,10 +16,46 @@ The app holds no data of its own. It runs two commands of the Teyla CLI:
 |---|---|
 | `teyla state --json` | One snapshot: the brief, questions, products, running sessions, today's spend. |
 | `teyla answer <id> <text> [--json]` | Delivers an answer to the session behind a question, then marks it done. |
+| `teyla start --json` | The first-run diagnosis and its offers (read-only). |
+| `teyla apply <offer id> --yes` | Makes one offered change, after a backup. |
+| `teyla product show <id> --json [--quick]` | One product's page. |
+| `teyla product set <id> stage=<s>` · `focus=true\|false` | Changes a product's stage or focus. |
 
 The app re-runs `teyla state --json` within 2 s of a change under the session stores
 (`~/Library/Application Support/Claude/claude-code-sessions`, `~/.claude/projects`,
 `~/.codex/sessions`), and every 60 s otherwise.
+
+## The window: first run, sidebar, product pages
+
+The window has three states.
+
+1. **`teyla` not found.** The command is looked for in this order: the file picked with "Choose…" (stored in
+   UserDefaults), `$TEYLA_BIN`, the `PATH` of a login shell (`/bin/zsh -lc 'command -v teyla'`, asked once and
+   remembered until "Check again"), then `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`. When none runs,
+   the window shows `uv tool install git+https://github.com/zaitsew/teyla` with Copy, "Check again" and "Choose…".
+2. **Welcome.** `teyla` runs, and the snapshot has no question, product, session, task or result: the window shows the
+   lockup, the promise sentence and "Run diagnosis". The button runs `teyla start --json` and the window shows a
+   seconds counter, since it reads 30 days of sessions. When the report arrives the sidebar appears and the
+   Diagnosis page shows it. If `teyla start` fails, the window shows the error and "Try again".
+3. **The shell.** A sidebar (Today, Diagnosis, Products) and the page it points at. Products lists the registered
+   products (and `unassigned` when it has anything), with the focus star and the waiting count.
+
+**Diagnosis page.** The total at API list price and the facts under it (`diagnosis` in `teyla start --json`),
+then one card per applicable offer: title, saving or benefit, trade-off, undo, and "Apply…". Offers that do not
+apply sit under "Left out" with the reason. "Apply…" opens one sheet that names the file and the key
+(`change.file`, `change.key_path`) or the command, and says a backup is made first; an offer whose undo
+text names `teyla uninstall` (O5 to O7) says that `teyla undo` does not reverse it. Confirm runs `teyla apply <id>
+--yes` and shows the lines it printed under "Changed:". Offer ids are checked (`O` and digits) before they reach
+the command line. The diagnosis is not kept between launches.
+
+**Product page.** From `teyla product show <id> --json` (`docs/PRODUCTS.md`). The app asks for `--quick` first
+(header, questions, notes) and then for the full page (sessions, spend), because the second reads 30 days of
+sessions. The stage menu runs `teyla product set <id> stage=<stage>`, the star `focus=true|false`. Questions that
+the window also has are shown as the usual cards, so they can be answered there; notes use the Notes section's row
+(Link…, Drop). A registered product has a page; a repo that only shows activity does not.
+
+Sample data for previews: `TEYLA_STATE_FIXTURE` also reads `start.v1.json` and `product.v1.json` beside it
+(`TEYLA_START_FIXTURE`, `TEYLA_PRODUCT_FIXTURE` name other files); applying and setting are simulated.
 
 ## Delivering an answer
 

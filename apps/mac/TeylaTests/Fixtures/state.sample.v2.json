@@ -1,0 +1,92 @@
+{
+ "version": 2,
+ "generated": "2026-10-25T09:15:54Z",
+ "brief": {
+  "line": "1 question waits for you, the first one in sample-app.",
+  "source": "rules"
+ },
+ "totals": {
+  "questions": 1,
+  "running": 0,
+  "spent_today_usd": null,
+  "tasks": 0,
+  "done": 0,
+  "resolved": 0,
+  "duplicates": 0
+ },
+ "asks": [
+  {
+   "id": "809c2dbd",
+   "kind": "question",
+   "product": "sample-app",
+   "title": "Should the login button use the system accent colour?",
+   "question": "Should the login button use the system accent colour?",
+   "context": "",
+   "options": [],
+   "archived": false,
+   "link": "claude --resume 00000000-0000-4000-8000-000000000002",
+   "pr": "",
+   "harness": "claude-code",
+   "status": "open",
+   "ts": "2026-10-23T11:09:30Z",
+   "age_s": 165984,
+   "unblocks": "a sign-in only you can do",
+   "rank": 1,
+   "delivery": "claude",
+   "muted": false
+  }
+ ],
+ "tasks": [],
+ "done": [],
+ "products": [
+  {
+   "name": "sample-app",
+   "waiting": 1,
+   "muted": 0,
+   "state": "waiting",
+   "line": "Should the login button use the system accent colour?",
+   "last_activity": "2026-10-25T09:15:48Z",
+   "id": "sample-app",
+   "display_name": "Sample App",
+   "stage": "beta",
+   "focus": true,
+   "primary": "ios",
+   "registered": true,
+   "issues": 0,
+   "prs_waiting": 0,
+   "next": "",
+   "repo": "~/repos/sample-app"
+  },
+  {
+   "name": "sample-tool",
+   "waiting": 0,
+   "muted": 0,
+   "state": "active",
+   "line": "active today",
+   "last_activity": "2026-10-25T09:15:48Z",
+   "id": "sample-tool",
+   "display_name": "Sample Tool",
+   "stage": "building",
+   "focus": false,
+   "primary": "macos",
+   "registered": true,
+   "issues": 0,
+   "prs_waiting": 0,
+   "next": "",
+   "repo": "~/repos/sample-tool"
+  }
+ ],
+ "running": [],
+ "relay": {
+  "on": false,
+  "paired": false,
+  "folder": "",
+  "synced": ""
+ },
+ "notes": {
+  "inbox": 1,
+  "by_product": {
+   "sample-app": 1
+  }
+ }
+}

@@ -43,7 +43,7 @@ private struct ProductRow: View {
         let selected = model.selectedProduct == product.name
         VStack(alignment: .leading, spacing: Space.xs) {
             HStack {
-                Text(Format.product(product.name)).font(Typo.body.weight(.semibold))
+                Text(product.title).font(Typo.body.weight(.semibold))
                 Spacer(minLength: Space.s)
                 StatePill(state: product.state, waiting: product.waiting)
             }
@@ -77,11 +77,14 @@ private struct ProductRow: View {
         }
         .overlay(alignment: .bottom) { Divider() }
         .contentShape(Rectangle())
-        .onTapGesture { model.selectProduct(product.name) }
+        .onTapGesture {
+            // A registered product opens its page, which has the "start tasks here" switch; a bare repo only selects.
+            if product.hasPage { model.openProduct(product.name) } else { model.selectProduct(product.name) }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-        .accessibilityHint("Makes this the product for new tasks")
-        .help("Click to start new tasks in \(Format.product(product.name))")
+        .accessibilityHint(product.hasPage ? "Opens the product page" : "Makes this the product for new tasks")
+        .help(product.hasPage ? "Open the \(product.title) page" : "Click to start new tasks in \(Format.product(product.name))")
     }
 }
 

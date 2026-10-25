@@ -1,0 +1,32 @@
+{
+ "version": 2,
+ "generated": "2026-10-25T09:15:57Z",
+ "brief": {
+  "line": "Nothing waits on you.",
+  "source": "rules"
+ },
+ "totals": {
+  "questions": 0,
+  "running": 0,
+  "spent_today_usd": null,
+  "tasks": 0,
+  "done": 0,
+  "resolved": 0,
+  "duplicates": 0
+ },
+ "asks": [],
+ "tasks": [],
+ "done": [],
+ "products": [],
+ "running": [],
+ "relay": {
+  "on": false,
+  "paired": false,
+  "folder": "",
+  "synced": ""
+ },
+ "notes": {
+  "inbox": 0,
+  "by_product": {}
+ }
+}

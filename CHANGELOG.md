@@ -29,7 +29,18 @@
 - **One promise.** `teyla.PROMISE` is the sentence in the welcome screen, in `AGENTS.md` and in the package description; a test
   keeps them equal.
 - `docs/DIRECTORY.md` no longer names a version in the example archive names (`dist/` is untracked build output).
-
+- **Mac: a first run that says what to do, and a page per product.** On a Mac where Teyla has seen no sessions, the window
+  shows the lockup, the one-line promise and one button, "Run diagnosis". It runs `teyla start --json` in the background
+  (a seconds counter; up to a minute on a large machine) and then shows the cost, the facts under it and each offer with its
+  saving or benefit, its trade-off and its undo. "Apply…" opens one sheet that names the file and the key (or the command),
+  then runs `teyla apply <id> --yes`; an offer whose undo is `teyla uninstall` says so there. "Diagnosis" stays in the new
+  sidebar (Today, Diagnosis, Products). When `teyla` is not found, the window gives the exact install command with Copy,
+  "Check again" and "Choose…" (the file is stored and tried first); the app asks a login shell (`/bin/zsh -lc 'command -v
+  teyla'`) once before the fixed paths. Clicking a product in the questions, the Notes chips, the Products column or the
+  sidebar opens its page: name, stage menu, focus star, primary platform, the questions waiting (answerable there), the
+  notes with Link and Drop, the last 10 sessions and the spend over 7 and 30 days. Stage and focus call `teyla product set`.
+  New: `teyla product show <id> [--json] [--quick]` is the page's data. `apps/mac/Tools/make_fixtures.py` regenerates the
+  app's JSON samples from the real CLI. `docs/APP.md`, `docs/PRODUCTS.md`.
 - **A first screen: `teyla` shows a welcome, `teyla today` the day, `teyla help` six groups.** Bare `teyla` used to end in an
   argparse error. It now prints at most 15 lines: the brand mark and version, the one-line promise, three live numbers (spend
   of the last 7 days at list price, questions waiting, notes in the Inbox) each with the command that opens it, and the next

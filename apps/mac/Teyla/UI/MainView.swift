@@ -1,11 +1,125 @@
 import SwiftUI
 
-/// Variant B, "morning brief": one sentence on what matters, then the questions ranked by what
-/// they unblock, the tasks only you can do, and what got done. The side column holds products and running sessions.
+/// The window: the not-found screen, the welcome, or the sidebar and the page it points at.
 struct MainView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        Group {
+            if model.teylaMissing {
+                NotFoundView()
+            } else if model.showsWelcomeOnly {
+                WelcomeView()
+            } else {
+                NavigationSplitView {
+                    SidebarView()
+                        .navigationSplitViewColumnWidth(min: Space.sidebarMin, ideal: Space.sidebarIdeal, max: Space.sidebarMax)
+                } detail: {
+                    DetailView()
+                }
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) { LiveIndicator() }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            model.refresh()
+                        } label: {
+                            Label("Refresh", systemImage: "arrow.clockwise")
+                        }
+                        .help("Refresh now")
+                        .disabled(model.isRefreshing)
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            model.openNewTask()
+                        } label: {
+                            Label("New task", systemImage: "square.and.pencil")
+                        }
+                        .help("New task (⌘N)")
+                    }
+                }
+            }
+        }
+        .background(Palette.background)
+        .tint(Palette.primary)
+        .navigationTitle("Teyla")
+        .sheet(isPresented: Bindable(model.newTask).presented) {
+            NewTaskSheet()
+                .environment(model)
+        }
+        .onAppear {
+            model.openMainWindow = { openWindow(id: "main") }
+            Preview.runOnce(model: model, openSettings: { openSettings() })
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            model.refresh()
+        }
+    }
+}
+
+private struct DetailView: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        switch model.route {
+        case .today: TodayView()
+        case .diagnosis: DiagnosisView()
+        case .product(let id): ProductPageView(id: id)
+        }
+    }
+}
+
+/// Today, Diagnosis, and a page per registered product.
+private struct SidebarView: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let products = (model.snapshot?.products ?? []).filter(\.hasPage)
+        List(selection: Binding(get: { model.route }, set: { model.go($0 ?? .today) })) {
+            Label {
+                Text("Today")
+            } icon: {
+                Image(systemName: "sun.max")
+            }
+            .badge(model.visibleAsks.count)
+            .tag(AppRoute.today)
+            Label("Diagnosis", systemImage: "stethoscope")
+                .tag(AppRoute.diagnosis)
+            if !products.isEmpty {
+                Section("Products") {
+                    ForEach(products) { product in
+                        HStack(spacing: Space.xs) {
+                            Text(product.title).lineLimit(1)
+                            if product.focus {
+                                Image(systemName: "star.fill")
+                                    .font(Typo.caption)
+                                    .foregroundStyle(Palette.warning)
+                                    .accessibilityLabel("In focus")
+                            }
+                        }
+                        .badge(product.waiting)
+                        .tag(AppRoute.product(product.name))
+                    }
+                }
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            HStack(spacing: Space.s) {
+                BrandMark()
+                Text("Teyla").font(Typo.lead)
+                Spacer()
+            }
+            .padding(.horizontal, Space.m)
+            .padding(.vertical, Space.s)
+        }
+    }
+}
+
+/// Variant B, "morning brief": one sentence on what matters, then the questions ranked by what
+/// they unblock, the tasks only you can do, and what got done. The side column holds products and running sessions.
+private struct TodayView: View {
+    @Environment(AppModel.self) private var model
 
     var body: some View {
         ScrollViewReader { reader in
@@ -38,38 +152,7 @@ struct MainView: View {
             }
         }
         .background(Palette.background)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) { LiveIndicator() }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    model.refresh()
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-                .help("Refresh now")
-                .disabled(model.isRefreshing)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    model.openNewTask()
-                } label: {
-                    Label("New task", systemImage: "square.and.pencil")
-                }
-                .help("New task (⌘N)")
-            }
-        }
-        .navigationTitle("Teyla")
-        .sheet(isPresented: Bindable(model.newTask).presented) {
-            NewTaskSheet()
-                .environment(model)
-        }
-        .onAppear {
-            model.openMainWindow = { openWindow(id: "main") }
-            Preview.runOnce(model: model, openSettings: { openSettings() })
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            model.refresh()
-        }
+        .navigationTitle("Today")
     }
 
     private var header: some View {

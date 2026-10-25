@@ -597,8 +597,13 @@ def cmd_assign(args) -> int:
     return code
 
 
+def cmd_show(args) -> int:
+    from . import product_page
+    return product_page.cmd_show(args)
+
+
 def cmd_product(args) -> int:
-    return {"list": cmd_list, "init": cmd_init, "add": cmd_add, "set": cmd_set, "park": cmd_park_wake,
+    return {"list": cmd_list, "show": cmd_show, "init": cmd_init, "add": cmd_add, "set": cmd_set, "park": cmd_park_wake,
             "wake": cmd_park_wake, "assign": cmd_assign}[args.cmd or "list"](args)
 
 
@@ -609,6 +614,9 @@ def register(sp):
     q.add_argument("--json", action="store_true", help="list: machine-readable")
     sub = q.add_subparsers(dest="cmd")
     s = sub.add_parser("list", help="one line per product"); s.add_argument("--json", action="store_true")
+    s = sub.add_parser("show", help="one product's page: waiting questions, notes, recent sessions, 7 and 30 day spend")
+    s.add_argument("id"); s.add_argument("--json", action="store_true")
+    s.add_argument("--quick", action="store_true", help="leave out the sessions and the spend (they read 30 days of sessions)")
     s = sub.add_parser("init", help="propose products from the git repos under code_root")
     s.add_argument("--write", action="store_true", help="add the proposed products that are not registered yet")
     s = sub.add_parser("add", help="register one product")

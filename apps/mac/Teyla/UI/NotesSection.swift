@@ -50,7 +50,7 @@ struct NotesSection: View {
     }
 }
 
-private struct NoteRow: View {
+struct NoteRow: View {
     @Environment(AppModel.self) private var model
     let note: NoteItem
 
@@ -59,7 +59,7 @@ private struct NoteRow: View {
         let row = list.rows[note.id]
         VStack(alignment: .leading, spacing: Space.xs) {
             HStack(spacing: Space.s) {
-                Chip(text: Notes.productLabel(note.product), color: note.isInbox ? Palette.warning : Palette.info)
+                chip
                 Text(age)
                     .font(Typo.caption)
                     .foregroundStyle(Palette.textSecondary)
@@ -92,6 +92,19 @@ private struct NoteRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottom) { Divider() }
         .accessibilityElement(children: .contain)
+    }
+
+    /// The product chip; a click opens that product's page.
+    @ViewBuilder
+    private var chip: some View {
+        let chip = Chip(text: Notes.productLabel(note.product), color: note.isInbox ? Palette.warning : Palette.info)
+        if !note.isInbox && model.hasPage(note.product) {
+            Button { model.openProduct(note.product) } label: { chip }
+                .buttonStyle(.plain)
+                .help("Open the \(Notes.productLabel(note.product)) page")
+        } else {
+            chip
+        }
     }
 
     private func linkMenu(_ list: NotesModel) -> some View {
