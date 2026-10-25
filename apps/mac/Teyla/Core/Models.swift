@@ -1,6 +1,6 @@
 import Foundation
 
-// The snapshot contract (versions 1 and 2) is documented in docs/APP.md. Decoding is lenient on
+// The snapshot contract (versions 1 to 3) is documented in docs/APP.md. Decoding is lenient on
 // purpose: unknown fields are ignored, and a missing or null field falls back to an empty
 // value, so a newer CLI never blanks the window.
 
@@ -37,14 +37,16 @@ struct Snapshot: Decodable, Equatable, Sendable {
     var done: [DoneItem]
     /// Version 2: the iPhone relay; nil from a version 1 CLI.
     var relay: Relay?
+    /// Version 3: where every product stands, per platform; nil from an older CLI.
+    var portfolio: Portfolio?
 
     enum CodingKeys: String, CodingKey {
-        case version, generated, brief, totals, asks, products, running, tasks, done, relay
+        case version, generated, brief, totals, asks, products, running, tasks, done, relay, portfolio
     }
 
     init(version: Int = 1, generated: String = "", brief: Brief? = nil, totals: Totals = Totals(),
          asks: [Ask] = [], products: [Product] = [], running: [RunningSession] = [],
-         tasks: [OwnerTask] = [], done: [DoneItem] = [], relay: Relay? = nil) {
+         tasks: [OwnerTask] = [], done: [DoneItem] = [], relay: Relay? = nil, portfolio: Portfolio? = nil) {
         self.version = version
         self.generated = generated
         self.brief = brief
@@ -55,6 +57,7 @@ struct Snapshot: Decodable, Equatable, Sendable {
         self.tasks = tasks
         self.done = done
         self.relay = relay
+        self.portfolio = portfolio
     }
 
     init(from decoder: Decoder) throws {
@@ -75,6 +78,7 @@ struct Snapshot: Decodable, Equatable, Sendable {
         self.tasks = tasks.compactMap(\.value)
         self.done = done.compactMap(\.value)
         relay = c.optional(.relay)
+        portfolio = c.optional(.portfolio)
     }
 
     var generatedDate: Date? { ISODate.parse(generated) }
@@ -414,6 +418,260 @@ struct Relay: Decodable, Equatable, Sendable {
         paired = c.lenient(.paired, false)
         folder = c.lenient(.folder, "")
         synced = c.lenient(.synced, "")
+    }
+}
+
+// MARK: Version 3: the portfolio
+
+/// Where every registered product stands. Worst health first, as the CLI sends it.
+struct Portfolio: Decodable, Equatable, Sendable {
+    var version: Int
+    /// When the network pass last read the stores and GitHub; "" when never.
+    var checkedStores: String
+    var checkedGitHub: String
+    var counts: HealthCounts
+    var products: [PortfolioProduct]
+
+    enum CodingKeys: String, CodingKey { case version, checked, counts, products }
+    enum CheckedKeys: String, CodingKey { case stores, github }
+
+    init(version: Int = 1, checkedStores: String = "", checkedGitHub: String = "",
+         counts: HealthCounts = HealthCounts(), products: [PortfolioProduct] = []) {
+        self.version = version
+        self.checkedStores = checkedStores
+        self.checkedGitHub = checkedGitHub
+        self.counts = counts
+        self.products = products
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = c.lenient(.version, 1)
+        let checked = try? c.nestedContainer(keyedBy: CheckedKeys.self, forKey: .checked)
+        checkedStores = checked?.lenient(.stores, "") ?? ""
+        checkedGitHub = checked?.lenient(.github, "") ?? ""
+        counts = c.lenient(.counts, HealthCounts())
+        let products: [LossyBox<PortfolioProduct>] = c.lenient(.products, [])
+        self.products = products.compactMap(\.value)
+    }
+
+    func product(_ id: String) -> PortfolioProduct? { products.first { $0.id == id } }
+}
+
+struct HealthCounts: Decodable, Equatable, Sendable {
+    var onTrack: Int
+    var atRisk: Int
+    var offTrack: Int
+    var parked: Int
+
+    enum CodingKeys: String, CodingKey {
+        case parked
+        case onTrack = "on_track"
+        case atRisk = "at_risk"
+        case offTrack = "off_track"
+    }
+
+    init(onTrack: Int = 0, atRisk: Int = 0, offTrack: Int = 0, parked: Int = 0) {
+        self.onTrack = onTrack
+        self.atRisk = atRisk
+        self.offTrack = offTrack
+        self.parked = parked
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        onTrack = c.lenient(.onTrack, 0)
+        atRisk = c.lenient(.atRisk, 0)
+        offTrack = c.lenient(.offTrack, 0)
+        parked = c.lenient(.parked, 0)
+    }
+}
+
+/// Unknown values decode as `.onTrack` for health and `.unknown` for a platform state.
+enum Health: String, Sendable {
+    case onTrack = "on_track", atRisk = "at_risk", offTrack = "off_track", parked
+}
+
+enum PlatformState: String, Sendable {
+    case live, inReview = "in_review", current, behind, blocked, none, unknown
+}
+
+struct PlatformStatus: Decodable, Equatable, Identifiable, Sendable {
+    var platform: String
+    var role: String
+    var channel: String
+    var version: String
+    var build: String
+    var stateRaw: String
+    var detail: String
+    var asOf: String
+    var link: String
+
+    var id: String { "\(platform)/\(channel)" }
+    var state: PlatformState { PlatformState(rawValue: stateRaw) ?? .unknown }
+    var isPrimary: Bool { role == "primary" }
+
+    enum CodingKeys: String, CodingKey {
+        case platform, role, channel, version, build, detail, link
+        case stateRaw = "state"
+        case asOf = "as_of"
+    }
+
+    init(platform: String, role: String = "secondary", channel: String = "", version: String = "", build: String = "",
+         state: String = "unknown", detail: String = "", asOf: String = "", link: String = "") {
+        self.platform = platform
+        self.role = role
+        self.channel = channel
+        self.version = version
+        self.build = build
+        self.stateRaw = state
+        self.detail = detail
+        self.asOf = asOf
+        self.link = link
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        platform = try c.decode(String.self, forKey: .platform)
+        role = c.lenient(.role, "secondary")
+        channel = c.lenient(.channel, "")
+        version = c.lenient(.version, "")
+        build = c.lenient(.build, "")
+        stateRaw = c.lenient(.stateRaw, "unknown")
+        detail = c.lenient(.detail, "")
+        asOf = c.lenient(.asOf, "")
+        link = c.lenient(.link, "")
+    }
+}
+
+struct PRCounts: Decodable, Equatable, Sendable {
+    var open: Int
+    var waiting: Int
+    var merged7d: Int
+    var unreviewed7d: Int
+
+    enum CodingKeys: String, CodingKey {
+        case open, waiting
+        case merged7d = "merged_7d"
+        case unreviewed7d = "unreviewed_7d"
+    }
+
+    init(open: Int = 0, waiting: Int = 0, merged7d: Int = 0, unreviewed7d: Int = 0) {
+        self.open = open
+        self.waiting = waiting
+        self.merged7d = merged7d
+        self.unreviewed7d = unreviewed7d
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        open = c.lenient(.open, 0)
+        waiting = c.lenient(.waiting, 0)
+        merged7d = c.lenient(.merged7d, 0)
+        unreviewed7d = c.lenient(.unreviewed7d, 0)
+    }
+}
+
+struct Activity: Decodable, Equatable, Sendable {
+    var last: String
+    var sessions7d: Int
+    var spend7dUSD: Double
+
+    enum CodingKeys: String, CodingKey {
+        case last
+        case sessions7d = "sessions_7d"
+        case spend7dUSD = "spend_7d_usd"
+    }
+
+    init(last: String = "", sessions7d: Int = 0, spend7dUSD: Double = 0) {
+        self.last = last
+        self.sessions7d = sessions7d
+        self.spend7dUSD = spend7dUSD
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        last = c.lenient(.last, "")
+        sessions7d = c.lenient(.sessions7d, 0)
+        spend7dUSD = c.lenient(.spend7dUSD, 0)
+    }
+}
+
+struct PortfolioProduct: Decodable, Equatable, Identifiable, Sendable {
+    var id: String
+    var title: String
+    var stage: String
+    var focus: Bool
+    var primary: String
+    var users: String
+    var target: String
+    var healthRaw: String
+    var reasons: [String]
+    var platforms: [PlatformStatus]
+    var prs: PRCounts
+    var activity: Activity
+    var waiting: Int
+    var oldestWaitDays: Double
+    var tasks: Int
+    var milestone: String
+    var next: String
+    var repo: String
+
+    var health: Health { Health(rawValue: healthRaw) ?? .onTrack }
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, stage, focus, primary, users, target, reasons, platforms, prs, activity
+        case waiting, tasks, milestone, next, repo
+        case healthRaw = "health"
+        case oldestWaitDays = "oldest_wait_days"
+    }
+
+    init(id: String, title: String = "", stage: String = "", focus: Bool = false, primary: String = "",
+         users: String = "", target: String = "", health: String = "on_track", reasons: [String] = [],
+         platforms: [PlatformStatus] = [], prs: PRCounts = PRCounts(), activity: Activity = Activity(),
+         waiting: Int = 0, oldestWaitDays: Double = 0, tasks: Int = 0, milestone: String = "", next: String = "",
+         repo: String = "") {
+        self.id = id
+        self.title = title
+        self.stage = stage
+        self.focus = focus
+        self.primary = primary
+        self.users = users
+        self.target = target
+        self.healthRaw = health
+        self.reasons = reasons
+        self.platforms = platforms
+        self.prs = prs
+        self.activity = activity
+        self.waiting = waiting
+        self.oldestWaitDays = oldestWaitDays
+        self.tasks = tasks
+        self.milestone = milestone
+        self.next = next
+        self.repo = repo
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        title = c.lenient(.title, "")
+        stage = c.lenient(.stage, "")
+        focus = c.lenient(.focus, false)
+        primary = c.lenient(.primary, "")
+        users = c.lenient(.users, "")
+        target = c.lenient(.target, "")
+        healthRaw = c.lenient(.healthRaw, "on_track")
+        reasons = c.lenient(.reasons, [])
+        let platforms: [LossyBox<PlatformStatus>] = c.lenient(.platforms, [])
+        self.platforms = platforms.compactMap(\.value)
+        prs = c.lenient(.prs, PRCounts())
+        activity = c.lenient(.activity, Activity())
+        waiting = c.lenient(.waiting, 0)
+        oldestWaitDays = c.lenient(.oldestWaitDays, 0)
+        tasks = c.lenient(.tasks, 0)
+        milestone = c.lenient(.milestone, "")
+        next = c.lenient(.next, "")
+        repo = c.lenient(.repo, "")
     }
 }
 
