@@ -213,21 +213,38 @@ struct Product: Decodable, Equatable, Identifiable, Sendable {
     var prsWaiting: Int
     var next: String
     var repo: String
+    /// The registry (docs/PRODUCTS.md): the name to show, the stage ("" when unset), the focus star, the primary platform.
+    var displayName: String
+    var stage: String
+    var focus: Bool
+    var primary: String
+    /// False for a repo that only shows activity and has no registry entry: it gets no product page.
+    var registered: Bool
 
     var id: String { name }
+    var title: String { displayName.isEmpty ? Format.product(name) : displayName }
+    /// A registered product has a page, and so does `unassigned`, the bucket for sessions nobody filed.
+    var hasPage: Bool { registered || name == "unassigned" }
     /// Unknown states are treated as quiet.
     var state: ProductState { ProductState(rawValue: stateRaw) ?? .quiet }
 
     enum CodingKeys: String, CodingKey {
-        case name, waiting, line, issues, next, repo
+        case name, waiting, line, issues, next, repo, stage, focus, primary, registered
+        case displayName = "display_name"
         case stateRaw = "state"
         case lastActivity = "last_activity"
         case prsWaiting = "prs_waiting"
     }
 
     init(name: String, waiting: Int = 0, state: String = "quiet", line: String = "", lastActivity: String = "",
-         issues: Int = 0, prsWaiting: Int = 0, next: String = "", repo: String = "") {
+         issues: Int = 0, prsWaiting: Int = 0, next: String = "", repo: String = "",
+         displayName: String = "", stage: String = "", focus: Bool = false, primary: String = "", registered: Bool = false) {
         self.name = name
+        self.displayName = displayName
+        self.stage = stage
+        self.focus = focus
+        self.primary = primary
+        self.registered = registered
         self.waiting = waiting
         self.stateRaw = state
         self.line = line
@@ -249,6 +266,11 @@ struct Product: Decodable, Equatable, Identifiable, Sendable {
         prsWaiting = c.lenient(.prsWaiting, 0)
         next = c.lenient(.next, "")
         repo = c.lenient(.repo, "")
+        displayName = c.lenient(.displayName, "")
+        stage = c.lenient(.stage, "")
+        focus = c.lenient(.focus, false)
+        primary = c.lenient(.primary, "")
+        registered = c.lenient(.registered, false)
     }
 }
 

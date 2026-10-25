@@ -62,9 +62,19 @@ struct AskCard: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("\(Format.product(ask.product)) · \(Format.age(seconds: model.age(of: ask)))")
-                .font(Typo.caption)
-                .foregroundStyle(Palette.textSecondary)
+            HStack(spacing: 0) {
+                if model.hasPage(ask.product) {
+                    Button(Format.product(ask.product)) { model.openProduct(ask.product) }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Palette.primary)
+                        .help("Open the \(Format.product(ask.product)) page")
+                } else {
+                    Text(Format.product(ask.product))
+                }
+                Text(" · \(Format.age(seconds: model.age(of: ask)))")
+            }
+            .font(Typo.caption)
+            .foregroundStyle(Palette.textSecondary)
             Spacer(minLength: Space.m)
             if !ask.unblocks.isEmpty {
                 Text("unblocks \(ask.unblocks)")

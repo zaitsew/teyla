@@ -4,7 +4,11 @@ import Foundation
 /// Hooks for taking screenshots of the app with sample data. They work only with
 /// `TEYLA_STATE_FIXTURE` set, so a real run never reads them.
 ///
-///     TEYLA_PREVIEW_OPEN   new-task | quick-note | settings | pair | focus:<ask id>
+///     TEYLA_PREVIEW_OPEN   new-task | quick-note | settings | pair | focus:<ask id> | diagnosis | product:<id>
+///     TEYLA_START_FIXTURE / TEYLA_PRODUCT_FIXTURE  the diagnosis and product-page samples (default: start.v1.json and
+///                         product.v1.json beside the state sample)
+///     TEYLA_PREVIEW_START_DELAY  seconds the simulated diagnosis takes (default 1.5)
+///     TEYLA_PREVIEW_NO_BINARY    pretend the teyla command is not installed (the not-found screen)
 ///     TEYLA_PREVIEW_SIZE   <width>x<height>, the content size of the main window
 ///     TEYLA_PREVIEW_DRAFT  text for the new-task sheet or the quick-note panel
 ///     TEYLA_PREVIEW_APPEARANCE  light | dark, for this app only
@@ -53,6 +57,10 @@ enum Preview {
                 model.openQuickNote()
             case "settings", "pair":
                 openSettings()
+            case "diagnosis":
+                model.runDiagnosis()
+            case let product where product.hasPrefix("product:"):
+                model.openProduct(String(product.dropFirst("product:".count)))
             case let focus where focus.hasPrefix("focus:"):
                 model.focus(askID: String(focus.dropFirst("focus:".count)))
             default:

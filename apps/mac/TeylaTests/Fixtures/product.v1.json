@@ -1,0 +1,57 @@
+{
+ "version": 1,
+ "generated": "2026-10-25T09:15:53Z",
+ "product": {
+  "id": "sample-app",
+  "name": "Sample App",
+  "stage": "beta",
+  "focus": true,
+  "primary": "ios",
+  "repos": [
+   "~/repos/sample-app"
+  ],
+  "aliases": [
+   "sampleapp"
+  ],
+  "registered": true
+ },
+ "asks": [
+  {
+   "id": "809c2dbd",
+   "age_s": 165983,
+   "severity": "normal",
+   "question": "Should the login button use the system accent colour?",
+   "link": "claude --resume 00000000-0000-4000-8000-000000000002"
+  }
+ ],
+ "notes": [
+  {
+   "id": "nvju3ja",
+   "text": "Dark mode for the settings screen",
+   "created": "2026-10-25T09:15:49Z",
+   "age_s": 4
+  }
+ ],
+ "sessions": [
+  {
+   "id": "00000000-0000-4000-8000-000000000002",
+   "at": "2026-10-23T11:09:30Z",
+   "harness": "claude-code",
+   "model": "claude-opus-5-5",
+   "cost_usd": 8.78,
+   "title": "Fix the settings crash"
+  },
+  {
+   "id": "00000000-0000-4000-8000-000000000001",
+   "at": "2026-10-23T09:39:42Z",
+   "harness": "claude-code",
+   "model": "claude-opus-5-5",
+   "cost_usd": 8.78,
+   "title": "Add a login button"
+  }
+ ],
+ "spend": {
+  "days_7": 17.57,
+  "days_30": 17.57
+ }
+}

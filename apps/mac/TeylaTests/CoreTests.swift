@@ -119,17 +119,17 @@ final class BinaryLookupTests: XCTestCase {
     }
 
     func testFirstExecutableWins() {
-        let found = TeylaBinary.locate(env: [:], home: "/h") { $0 == "/opt/homebrew/bin/teyla" || $0 == "/usr/local/bin/teyla" }
+        let found = TeylaBinary.locate(env: [:], home: "/h", isExecutable: { $0 == "/opt/homebrew/bin/teyla" || $0 == "/usr/local/bin/teyla" })
         XCTAssertEqual(found, "/opt/homebrew/bin/teyla")
     }
 
     func testExplicitOverrideBeatsEverything() {
-        let found = TeylaBinary.locate(env: ["TEYLA_BIN": "/x/teyla"], home: "/h") { _ in true }
+        let found = TeylaBinary.locate(env: ["TEYLA_BIN": "/x/teyla"], home: "/h", isExecutable: { _ in true })
         XCTAssertEqual(found, "/x/teyla")
     }
 
     func testNoneFound() {
-        XCTAssertNil(TeylaBinary.locate(env: [:], home: "/h") { _ in false })
+        XCTAssertNil(TeylaBinary.locate(env: [:], home: "/h", isExecutable: { _ in false }))
     }
 }
 
@@ -147,7 +147,8 @@ final class FixtureModeTests: XCTestCase {
     }
 
     func testMissingBinaryIsReported() async {
-        let cli = TeylaCLI(env: ["PATH": ""], home: "/nonexistent-home")
+        // No chosen file and no login shell: only the fixed paths are tried, and none of them is real.
+        let cli = TeylaCLI(env: ["PATH": ""], home: "/nonexistent-home", chosen: { nil }, shellPath: { nil })
         // Only meaningful where no system-wide teyla exists; skip otherwise.
         guard TeylaBinary.locate(env: [:], home: "/nonexistent-home") == nil else { return }
         do {
