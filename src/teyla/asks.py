@@ -119,10 +119,16 @@ class Ask:
     due: str = ""
     session: str = ""         # the harness's own session id (Claude cliSessionId, Codex uuid); not in the JSON
     note: str = ""            # why it is done or a duplicate; "auto: ..." when Teyla decided; not in the JSON
+    attributed_by: str = ""   # which registry rule chose the product: assign | pr | path | text | checkout | unassigned
+    evidence: str = ""        # what that rule matched, for `--why`; not in the JSON
     dupes: list = dataclasses.field(default_factory=list)    # ids collapsed into this ask; in the JSON when any
 
-    def to_dict(self, now: float) -> dict:
+    def to_dict(self, now: float, attribution: bool = False) -> dict:
+        """The JSON row. `attribution` adds `attributed_by` (`asks --json`); the `teyla state` snapshot
+        keeps its version 2 keys."""
         d = dataclasses.asdict(self)
+        if not attribution:
+            d.pop("attributed_by")
         when = d.pop("when")
         d["ts"] = _iso(when)
         d["age_s"] = int(now - when)
@@ -130,6 +136,7 @@ class Ask:
             d.pop("due")
         d.pop("session")          # internal: `teyla answer` needs it, the `asks --json` schema stays as it was
         d.pop("note")
+        d.pop("evidence")
         if not d["dupes"]:
             d.pop("dupes")
         return d
@@ -210,25 +217,91 @@ def _paragraph_asks(p: str) -> bool:
     return core.endswith(("?", "？")) or "?" in p[-250:] or "let me know" in p.lower()
 
 
+_SENTENCE_END = re.compile(r"(?<=[.!?])[\"')\]*_`”»]*\s+|\n\s*\n")
+_FRAGMENT_START = re.compile(r"^(?:…|\.\.\.|[a-z]|[)\]}>,;:.!?\"'”»*_`-])")
+IMPERATIVES = frozenset((
+    "say", "tell", "ask", "run", "start", "launch", "go", "proceed", "continue", "merge", "ship", "fix", "check",
+    "approve", "confirm", "reply", "send", "let", "make", "use", "add", "remove", "delete", "wait", "stop", "pick",
+    "choose", "decide", "open", "try", "review", "do", "keep", "move", "push", "pull", "release", "retry"))
+SHORT_WORDS = 7
+
+
+def is_fragment(text) -> bool:
+    """True when `text` starts mid-sentence: an ellipsis, a lowercase letter, or a closing bracket or
+    punctuation mark."""
+    return bool(_FRAGMENT_START.match(str(text or "").lstrip()))
+
+
+def sentence_start(text: str, i: int, blank_lines: bool = True) -> int:
+    """The offset of the start of the sentence that holds offset `i` in `text`: just after the last
+    sentence end (and, unless `blank_lines` is False, blank line) at or before `i`, else 0."""
+    start = 0
+    for m in _SENTENCE_END.finditer(text, 0, i):
+        if m.end() <= i and (blank_lines or text[m.start()] != "\n"):
+            start = m.end()
+    return start
+
+
+def _next_sentence_start(text: str, i: int) -> int | None:
+    m = _SENTENCE_END.search(text, i)
+    return m.end() if m and m.end() < len(text) else None
+
+
+def is_bare_imperative(question) -> bool:
+    """A short instruction that makes no sense without its session: fewer than SHORT_WORDS words, no
+    question mark, and an imperative verb or a lowercase letter first."""
+    words = str(question or "").split()
+    if not words or len(words) >= SHORT_WORDS or "?" in str(question):
+        return False
+    first = words[0].strip("…\"'*_`").lower()
+    return first in IMPERATIVES or words[0][:1].islower()
+
+
+def with_title_lead(title: str, question: str) -> str:
+    """`<title>: <question>` for a bare imperative, else the question."""
+    t = str(title or "").strip()
+    q = str(question or "").strip()
+    if not t or not is_bare_imperative(q) or q.lower() in t.lower():
+        return q
+    return f"{clip(t, TITLE_MAX).rstrip(':.')}: {q}"      # a long title must not crowd out the instruction
+
+
 def trailing_question(text) -> str | None:
     """The last paragraph of an agent's final text when it asks something, else None. A question
-    followed by a short list of options is returned with the list. At most TRAILING_MAX characters,
-    cut from the front so the question itself survives."""
+    followed by a short list of options is returned with the list. At most TRAILING_MAX characters
+    when it can be cut at a sentence start, else cut from the front so the question itself
+    survives. It never starts mid-sentence: a clipped tail is backed up to the start of its
+    sentence in the text (at most QUESTION_MAX characters), else moved on to the next sentence."""
     if not text or not turn_end_candidate(text):
         return None
-    paras = [p.strip() for p in re.split(r"\n\s*\n", str(text).strip()) if p.strip()]
+    full = str(text).strip()
+    spans = [(m.start(), m.end()) for m in re.finditer(r"\S.*?(?=\n\s*\n|\Z)", full, re.S)]
+    paras = [(full[a:b].strip(), a) for a, b in spans if full[a:b].strip()]
     if not paras:
         return None
-    last = paras[-1]
+    last, qstart = paras[-1]
     if all(_LIST_LINE.match(l) for l in last.splitlines() if l.strip()) and len(paras) > 1:
-        if not _paragraph_asks(paras[-2]):
+        if not _paragraph_asks(paras[-2][0]):
             return None
-        last = paras[-2] + "\n" + last
+        last, qstart = paras[-2][0] + "\n" + last, paras[-2][1]
     elif not _paragraph_asks(last):
         return None
-    if len(last) > TRAILING_MAX:
-        last = "…" + last[-(TRAILING_MAX - 1):].lstrip()
-    return last
+    if len(full) - qstart > TRAILING_MAX:
+        cut = len(full) - TRAILING_MAX
+        back = sentence_start(full, cut)
+        fwd = _next_sentence_start(full, cut)
+        if len(full) - back <= QUESTION_MAX - 1:
+            start = back
+        elif fwd is not None:
+            start = fwd
+        else:
+            return "…" + full[len(full) - (TRAILING_MAX - 1):].lstrip()
+    elif is_fragment(last):                  # a paragraph that starts lowercase continues the one before
+        j = sentence_start(full, qstart, blank_lines=False)
+        start = j if len(full) - j <= QUESTION_MAX - 1 else qstart
+    else:
+        return last
+    return re.sub(r"\n\s*\n", "\n", full[start:])
 
 
 def _is_reply(txt: str) -> bool:
@@ -406,10 +479,13 @@ def _claude_ask(d: dict | None, ana: dict | None, cli_id: str, since: float) -> 
         return None
     turn = (ana or {}).get("uuid") or su
     aid = make_id("claude", cli_id, turn)
-    return Ask(id=aid, kind=kind, product=registry.resolve(cwd, session=(cli_id, sid), ask_id=aid),
-               title=clip(title or text.splitlines()[0], TITLE_MAX), question=clip(text, QUESTION_MAX),
+    question = with_title_lead(title, text)
+    product, how, why = registry.explain(cwd, session=(cli_id, sid), ask_id=aid, pr=pr, texts=(title, text))
+    return Ask(id=aid, kind=kind, product=product,
+               title=clip(title or text.splitlines()[0], TITLE_MAX), question=clip(question, QUESTION_MAX),
                context=clip(context or "", CONTEXT_MAX), options=[clip(o, 80) for o in (ana or {}).get("options") or []],
-               when=when, archived=archived, link=link, pr=pr, harness=harness, session=cli_id)
+               when=when, archived=archived, link=link, pr=pr, harness=harness, session=cli_id,
+               attributed_by=how, evidence=why)
 
 
 def collect_claude(since: float, desktop: str | None = None, projects: str | None = None) -> list[Ask]:
@@ -585,11 +661,15 @@ def collect_codex(since: float, root: str | None = None, archive: str | None = N
             if when < since:
                 continue
             aid = make_id("codex", r["sid"], r["turn"])
-            out.append(Ask(id=aid, kind=r["kind"], product=registry.resolve(r["cwd"], session=r["sid"], ask_id=aid),
-                           title=clip(titles.get(r["sid"]) or r["question"].splitlines()[0], TITLE_MAX),
-                           question=clip(r["question"], QUESTION_MAX), context="",
+            title = titles.get(r["sid"]) or ""
+            question = with_title_lead(title, r["question"])
+            product, how, why = registry.explain(r["cwd"], session=r["sid"], ask_id=aid, texts=(title, r["question"]))
+            out.append(Ask(id=aid, kind=r["kind"], product=product,
+                           title=clip(title or r["question"].splitlines()[0], TITLE_MAX),
+                           question=clip(question, QUESTION_MAX), context="",
                            options=[clip(o, 80) for o in r["options"]], when=when, archived=archived,
-                           link=f"codex resume {r['sid']}", pr="", harness="codex", session=r["sid"]))
+                           link=f"codex resume {r['sid']}", pr="", harness="codex", session=r["sid"],
+                           attributed_by=how, evidence=why))
     return out
 
 
@@ -601,8 +681,9 @@ def collect_gates() -> list[Ask]:
         when = _epoch(it.get("ts")) or 0.0
         rid = str(it.get("id") or "")
         aid = make_id("gate", rid, str(it.get("ts") or ""))
-        out.append(Ask(id=aid, kind="gate",
-                       product=registry.resolve(it.get("repo"), ask_id=aid) if it.get("repo") else "teyla",
+        product, how, why = (registry.explain(it.get("repo"), ask_id=aid) if it.get("repo")
+                             else ("teyla", "", ""))
+        out.append(Ask(id=aid, kind="gate", product=product, attributed_by=how, evidence=why,
                        title=clip(it.get("routine") or "gated run", TITLE_MAX),
                        question=clip(it.get("summary") or "A gated run is waiting for approval.", QUESTION_MAX),
                        context=clip(f"gate {it.get('gate', '?')}, state {it.get('state', '?')}", CONTEXT_MAX),
@@ -837,6 +918,16 @@ def resolve(prefix: str, items: list[Ask]) -> tuple[Ask | None, str]:
     return hits[0], ""
 
 
+def why_line(prefix: str, items: list[Ask]) -> tuple[str, int]:
+    """`<id> → <product> (by <how>: <evidence>)` for one ask."""
+    a, err = resolve(prefix, items)
+    if a is None:
+        return err, 1
+    if not a.attributed_by:
+        return f"{a.id} → {a.product} (fixed: not chosen by the registry)", 0
+    return f"{a.id} → {a.product} (by {a.attributed_by}: {a.evidence})", 0
+
+
 def mark_done(prefixes: list[str], note: str = "", now: float | None = None) -> tuple[list[str], int]:
     now = _now() if now is None else now
     items = collect(max(DEFAULT_DAYS, 365), now)
@@ -1048,7 +1139,7 @@ def render_json(items: list[Ask], now: float, *, muted: list[Ask] | None = None,
     reg = registry.load() if reg is None else reg
     muted = muted or []
     return json.dumps({"waiting": len(items), "archived": sum(1 for a in items if a.archived),
-                       "generated": _iso(now), "items": [a.to_dict(now) for a in items],
+                       "generated": _iso(now), "items": [a.to_dict(now, attribution=True) for a in items],
                        "groups": group_dicts(items, reg),
                        "muted": len(muted), "muted_products": sorted({a.product for a in muted}),
                        "resolved": counts[0], "duplicates": counts[1]}, indent=1)
@@ -1155,6 +1246,13 @@ def _open_file(path: pathlib.Path) -> None:
 def cmd_asks(args) -> int:
     words = list(args.words or [])
     now = _now()
+    if args.why:
+        if words:
+            print("--why takes one ask id and no action", file=sys.stderr)
+            return 64
+        line, code = why_line(args.why, collect(args.days or DEFAULT_DAYS, now))
+        print(line, file=sys.stderr if code else sys.stdout)
+        return code
     if words and words[0] == "done" and args.older_than is not None:
         if len(words) > 1:
             print("give ids or --older-than, not both", file=sys.stderr)
@@ -1230,6 +1328,7 @@ def register(sp):
     q.add_argument("--html", action="store_true", help="write one self-contained page (default ~/.teyla/asks.html)")
     q.add_argument("-o", "--out", help="--html: write here instead")
     q.add_argument("--open", action="store_true", help="--html: open the page")
+    q.add_argument("--why", metavar="ID", help="print which rule put one ask under its product, and what it matched")
     q.add_argument("--note", help="done: why")
     q.add_argument("--older-than", type=float, metavar="DAYS",
                    help="done: close every open question older than this (with --product, one product)")

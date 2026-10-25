@@ -13,11 +13,15 @@ scratch folder became a product named after the folder. This module replaces the
 `~/.teyla/products.toml`, and one rule that never invents a name:
 
 1. `[assign]`: the owner filed this ask, else this session, by hand. Wins over everything.
-2. The longest `repos` / `paths` entry that contains the directory. A worktree
+2. Title: the session title names exactly one registered product. Two or more make no match.
+3. The repo of a pull request link the session produced, when a registered product owns that repo.
+4. The longest `repos` / `paths` entry that contains the directory. A worktree
    (`<repo>/.claude/worktrees/<x>`, `~/.worktrees/<repo>/<branch>`) maps to its repo.
-3. A git checkout under `code_root` that nobody registered: its repo directory name.
-4. Otherwise the literal `unassigned`.
+5. Question text names exactly one registered product, only when rule 4 found none.
+6. A git checkout under `code_root` that nobody registered: its repo directory name.
+7. Otherwise the literal `unassigned`.
 
+`attribute()` returns the product and which rule decided; `resolve()` returns the product only.
 `docs/PRODUCTS.md` has the file format.
 """
 from __future__ import annotations
@@ -208,54 +212,120 @@ def _entries(reg: dict) -> list[tuple[pathlib.Path, str]]:
     return [(abs_path(d), pid) for pid, p in reg["product"].items() for d in (*p["repos"], *p["paths"])]
 
 
-def resolve(cwd, session=None, ask_id=None, reg: dict | None = None, root=None) -> str:
-    """The product id for a session that ran in `cwd`. `session` is one session id or several (a
-    desktop session has two). The order is in the module docstring; the answer is a registered id, a repo directory name under `code_root`, or "unassigned"."""
+HOW = ("assign", "title", "pr", "path", "text", "checkout", "unassigned")
+_PR_RE = re.compile(r"github\.com/(?P<owner>[^/\s]+)/(?P<repo>[^/\s?#]+)/pull/\d+", re.I)
+
+
+def _registered_path(here: pathlib.Path, cwd, reg: dict) -> tuple[str, str]:
+    """(product, evidence) of the longest registered repo/path holding `here`, else ("", "")."""
+    best, best_len, best_dir = "", -1, None
+    for base, pid in _entries(reg):
+        if _within(here, base) and len(base.parts) > best_len:
+            best, best_len, best_dir = pid, len(base.parts), base
+    if best:
+        return best, _tilde(best_dir)
+    wt_root, wt_name = worktree_repo(cwd)
+    if wt_name:                      # a worktree whose checkout lives elsewhere: match it by name
+        for pid, p in reg["product"].items():
+            if any(abs_path(d).name == wt_name for d in p["repos"]):
+                return pid, f"worktree of {wt_name}"
+    return "", ""
+
+
+def _pr_product(pr, reg: dict) -> tuple[str, str]:
+    """(product, evidence) for the repo of a GitHub pull request URL, else ("", ""). A product whose
+    `repos` entry has the repo's directory name wins; else one whose id or alias is the repo name.
+    Two products at the same level make no match."""
+    m = _PR_RE.search(str(pr or ""))
+    if not m:
+        return "", ""
+    repo = m.group("repo").lower()
+    if repo.endswith(".git"):
+        repo = repo[:-4]
+    by_dir = [pid for pid, p in reg["product"].items() if any(abs_path(d).name.lower() == repo for d in p["repos"])]
+    by_name = [pid for pid, p in reg["product"].items() if pid.lower() == repo or repo in p["aliases"]]
+    for hits in (by_dir, by_name):
+        if len(hits) == 1:
+            return hits[0], f"{m.group('owner')}/{m.group('repo')}"
+        if hits:
+            return "", ""
+    return "", ""
+
+
+def _only(text, reg: dict) -> str:
+    """The one registered product `text` names, else "" (none, or two or more)."""
+    hits = match_text(text, reg)
+    return hits[0] if len(hits) == 1 else ""
+
+
+def attribute(cwd, *, session=None, ask_id=None, pr="", texts=(), reg: dict | None = None, root=None,
+              ) -> tuple[str, str]:
+    """(product, how) for an ask. `how` is one of HOW. See the module docstring for the order.
+    `texts` is (session title, question); `pr` the last pull request link of the session."""
+    product, how, _ = explain(cwd, session=session, ask_id=ask_id, pr=pr, texts=texts, reg=reg, root=root)
+    return product, how
+
+
+def explain(cwd, *, session=None, ask_id=None, pr="", texts=(), reg: dict | None = None, root=None,
+            ) -> tuple[str, str, str]:
+    """`attribute` plus the evidence: (product, how, what decided it)."""
     reg = load() if reg is None else reg
     assign = reg["assign"]
     keys = [ask_id, *(session if isinstance(session, (list, tuple, set)) else [session])]   # the ask is the narrower correction
     for key in keys:
         if key and str(key) in assign:
-            return assign[str(key)]
-    if not cwd:
-        return UNASSIGNED
-    here = abs_path(cwd)
-    best, best_len = "", -1
-    for base, pid in _entries(reg):
-        if _within(here, base) and len(base.parts) > best_len:
-            best, best_len = pid, len(base.parts)
-    if best:
-        return best
+            return assign[str(key)], "assign", f"[assign] {key}"
+    title, question = (list(texts) + ["", ""])[:2]
+    product = _only(title, reg)
+    if product:
+        return product, "title", f"title names {product}"
+    product, ev = _pr_product(pr, reg)
+    if product:
+        return product, "pr", f"PR {ev}"
+    here = abs_path(cwd) if cwd else None
+    cwd_product, cwd_ev = _registered_path(here, cwd, reg) if here else ("", "")
+    if cwd_product:
+        return cwd_product, "path", cwd_ev
+    product = _only(question, reg)
+    if product:
+        return product, "text", f"question names {product}"
+    if here is None:
+        return UNASSIGNED, "unassigned", "no working directory"
     wt_root, wt_name = worktree_repo(cwd)
-    if wt_name:                      # a worktree whose checkout lives elsewhere: match it by name
-        for pid, p in reg["product"].items():
-            if any(abs_path(d).name == wt_name for d in p["repos"]):
-                return pid
     code = _code_root(root)
     if code is None:
-        return UNASSIGNED
+        return UNASSIGNED, "unassigned", "no code root"
     if wt_name and not wt_root and _is_checkout(code / wt_name):
-        return wt_name
+        return wt_name, "checkout", f"worktree of {wt_name}"
     if _within(here, code) and here != code:
         top = code / here.relative_to(code).parts[0]
         if _is_checkout(top):
-            return top.name
-    return UNASSIGNED
+            return top.name, "checkout", top.name
+    return UNASSIGNED, "unassigned", "no rule matched"
+
+
+def resolve(cwd, session=None, ask_id=None, reg: dict | None = None, root=None) -> str:
+    """The product id for a session that ran in `cwd`, by the working directory alone (`attribute`
+    without a PR link or text). `session` is one session id or several (a desktop session has two).
+    The answer is a registered id, a repo directory name under `code_root`, or "unassigned"."""
+    return attribute(cwd, session=session, ask_id=ask_id, reg=reg, root=root)[0]
+
+
+def _term_pattern(term: str) -> str:
+    """A whole-word pattern for `term`; a space, hyphen or underscore in it matches any run of those."""
+    words = [w for w in re.split(r"[\s_-]+", term.strip()) if w]
+    return r"(?<!\w)" + r"[\s_-]+".join(re.escape(w) for w in words) + r"(?!\w)"
 
 
 def match_text(text, reg: dict | None = None) -> list[str]:
-    """The products whose id, name or alias appears in `text` as a whole word, ignoring case, in
-    registry order."""
+    """The products whose id, display name or alias appears in `text` as a whole word, ignoring case,
+    in registry order. An id's hyphens match spaces ("tool-c" finds "Tool C")."""
     reg = load() if reg is None else reg
     t = str(text or "")
     out = []
     for pid, p in reg["product"].items():
-        for term in {pid, p.get("name") or "", *p["aliases"]}:
-            term = term.strip()
-            if not term:
-                continue
-            pat = r"(?<!\w)" + r"\s+".join(re.escape(w) for w in term.split()) + r"(?!\w)"
-            if re.search(pat, t, re.IGNORECASE):
+        for term in {pid, p.get("name") or "", p.get("display_name") or "", *p["aliases"]}:
+            if term.strip() and re.search(_term_pattern(term), t, re.IGNORECASE):
                 out.append(pid)
                 break
     return out

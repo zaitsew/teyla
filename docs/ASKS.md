@@ -15,10 +15,42 @@ Code sessions ended that way and 1 got an answer. `teyla asks` finds them.
     teyla asks done --older-than 3   close every question older than 3 days (--product P for one)
     teyla asks --all --json          include done, snoozed and muted items; machine-readable
     teyla asks --days 60 --product P widen the window, or keep one product
+    teyla asks --why <id>            which rule put one ask under its product, and what it matched
     teyla product assign <id> <P>    a question sits under the wrong product: move its session
 
 The product of an item comes from the product registry, not from a guess at the directory name:
 see [PRODUCTS.md](PRODUCTS.md). Sessions the registry does not place are listed under `unassigned`.
+
+## Which product, and why
+
+An ask is filed by this order: your `[assign]` correction, the one product the session title names,
+the repo of the session's PR link, the registered directory the session ran in, the one product the
+question names (only when the directory is not registered), an unregistered checkout, else
+`unassigned`. A session that ran outside any repo, or asked about another product, still lands on the
+right one when its title or PR link names it. `--json` gives each ask
+`attributed_by` (`assign`, `title`, `pr`, `path`, `text`, `checkout` or `unassigned`), and `--why` prints the
+evidence on one line:
+
+    teyla asks --why 4dba3b64
+    4dba3b64 → app-b (by pr: PR example/app-b)
+
+Gates and reminders have a fixed product and an empty `attributed_by`.
+
+## Whole questions
+
+A question never starts in the middle of a sentence.
+
+- **A clipped tail.** A final message is cut to 400 characters from the front so the question
+  survives. When the cut falls inside a sentence, the question starts at that sentence's first word
+  instead, up to the 600-character limit; a sentence too long for that is skipped, and the question
+  starts at the next one. A question that begins with an ellipsis, a lowercase letter or a closing
+  bracket or punctuation mark is backed up the same way, across a paragraph break if need be. Text with no
+  sentence end keeps the old cut and its leading ellipsis.
+- **A bare instruction.** A short instruction that makes no sense alone (fewer than 7 words, no
+  question mark, an imperative verb or a lowercase letter first) is stored as `<session title>:
+  <instruction>`.
+
+Both change the stored question, not only the display. The limit stays 600 characters.
 
 ## Grouped by product
 
@@ -109,7 +141,7 @@ session (`claude://claude.ai/epitaxy/local_...`, or `codex resume <id>` for Code
 A desktop session and its transcript are one item. Question text priority: the `ask`, then
 `needs_action`, then the trailing question. `codex exec` runs, spawned agents and `claude -p`
 sessions are automation and are skipped. Everything is read-only; secrets are scrubbed and
-text is cut at 600 characters.
+text is cut at 600 characters (see Whole questions).
 
 An item closes by itself when a later human prompt appears in its session. Done and snoozed
 items live in `~/.teyla/asks.json`. The default window is 21 days.
