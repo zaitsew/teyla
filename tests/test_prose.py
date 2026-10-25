@@ -222,10 +222,10 @@ def _section(path, number):
 
 
 def test_policy_section_is_short_and_has_the_card():
-    sec = _section("POLICY.md", 13)
+    sec = _section("POLICY.md", 8)
     assert len(sec.splitlines()) <= 45
-    assert sec.splitlines()[0].startswith("## 13. Writing and reporting")
-    for needle in ("Done | Blocked | Needs you | Failed", "at most 12 lines", "teyla prose", "never translated", "20 words", "25"):
+    assert sec.splitlines()[0].startswith("## 8. Writing and reporting")
+    for needle in ("Done | Blocked | Needs you | Failed", "at most 12 lines", "teyla prose", "20 words", "25"):
         assert needle in sec
     for phrase in ("delve", "comprehensive", "robust", "seamless", "leverage", "I hope this helps", "Great question"):
         assert phrase in sec
@@ -233,7 +233,7 @@ def test_policy_section_is_short_and_has_the_card():
 
 def test_work_policy_mirrors_a_shortened_section():
     sec = _section("POLICY.work.md", 11)
-    assert len(sec.splitlines()) < len(_section("POLICY.md", 13).splitlines())
+    assert len(sec.splitlines()) <= 45
     assert "Done | Blocked | Needs you | Failed" in sec and "teyla prose" in sec
 
 

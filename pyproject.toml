@@ -1,7 +1,7 @@
 [project]
 name = "teyla"
 version = "0.30.0"
-description = "Teyla — an operating system for working with AI agents: adoption monitor, policy, routines, corrections that stick."
+description = "Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's waiting on you, and fixes the waste. Nothing about your sessions leaves your Mac unless you turn it on."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"

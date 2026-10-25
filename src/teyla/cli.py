@@ -295,7 +295,7 @@ def cmd_policy(args):
             print(f"layout from policy: code_root={layout.get('code_root', '-')} ops_root={layout.get('ops_root', '-')}")
         if not args.dry:
             print(config.write(code_root=args.code_root, ops_root=args.ops_root, force=args.force))
-            if policy.POLICY.exists() and (not policy.BASE_PATH.exists() or msg.startswith("wrote")):
+            if policy.POLICY.exists() and not policy.is_own() and (not policy.BASE_PATH.exists() or msg.startswith("wrote")):
                 # A freshly written policy is the template itself; its base must be that same
                 # template, or the first refresh after `--work --force` merges the home one back in.
                 policy.BASE_PATH.parent.mkdir(parents=True, exist_ok=True)

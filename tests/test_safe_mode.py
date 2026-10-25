@@ -476,11 +476,11 @@ def test_policy_sync_rewrites_the_cursor_skill_after_switching_to_work(_home, mo
     monkeypatch.setitem(policy.TARGETS, "cursor", skill)
     policy.init(owner="Ann")
     policy.sync()
-    assert "`grok -p`" in skill.read_text()
+    assert "from another provider" in skill.read_text()
     policy.init(owner="Ann", work=True, force=True)
     assert policy.status()["cursor"] is False
     policy.sync()
-    assert policy.is_work(skill.read_text()) and "`grok -p`" not in skill.read_text()
+    assert policy.is_work(skill.read_text()) and "from another provider" not in skill.read_text()
 
 
 # --- caught in review, round two ---------------------------------------------------------

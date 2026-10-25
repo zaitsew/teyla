@@ -226,7 +226,9 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
             out.append(_check("FIX", f"policy:{k}", f"not wired: {why[0]}" if why else "not wired",
                               why[1] if why else "teyla policy sync"))
     if policy.POLICY.exists():
-        if policy.CONFLICT_PATH.exists():
+        if policy.is_own():
+            out.append(_check("OK", "policy:template", "your own policy text; template changes are not merged into it"))
+        elif policy.CONFLICT_PATH.exists():
             out.append(_check("FIX", "policy:template", f"merge conflict waiting in {policy.CONFLICT_PATH}",
                               f"resolve, copy into {policy.POLICY}, then: teyla policy refresh --resolved"))
         elif policy.PROPOSED_PATH.exists():
@@ -382,6 +384,17 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     pending = _state.pending_inbox()
     if pending:
         out.append(_check("WARN", "control:inbox", f"{len(pending)} run(s) waiting for you", "teyla inbox list"))
+
+    # --- the model brief: opt-in, because it sends question text to Anthropic ----
+    try:
+        brief_on = config.truthy((cfg.get("state") or {}).get("model_brief")) and not config.safe_mode(cfg)
+    except Exception:  # noqa: BLE001 — a config that cannot be read is "off"
+        brief_on = False
+    out.append(_check("INFO", "state:brief",
+                      "Model brief: on (sends up to 15 open questions to Anthropic through `claude -p`; turn off: "
+                      "teyla config set state.model_brief=false)" if brief_on else
+                      "Model brief: off (turn on: teyla config set state.model_brief=true; it sends up to 15 open "
+                      "questions to Anthropic through `claude -p`)"))
 
     # --- tools on this machine (scope, not failures) ----------------------------
     present = [t for t in ("uv", "pipx", "git", "gh", "claude", "codex", "grok", "hermes", "launchctl") if shutil.which(t)]
