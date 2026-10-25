@@ -23,7 +23,7 @@ def test_the_welcome_promise_is_the_cli_promise():
 def test_the_install_command_is_the_readme_command():
     binary = (MAC / "Teyla" / "Core" / "TeylaBinary.swift").read_text()
     command = swift_string(binary, "installCommand")
-    assert command == "uv tool install git+https://github.com/zaitsew/teyla"
+    assert command == "uv tool install --python 3.12 git+https://github.com/zaitsew/teyla"
     assert command in (ROOT / "README.md").read_text()
 
 

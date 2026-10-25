@@ -26,7 +26,7 @@ Requires macOS 15 and Xcode. The app is ad-hoc signed for local use only.
 
 ## First run
 
-- **No `teyla` found:** the window gives `uv tool install git+https://github.com/zaitsew/teyla` with Copy, "Check again"
+- **No `teyla` found:** the window gives `uv tool install --python 3.12 git+https://github.com/zaitsew/teyla` with Copy, "Check again"
   and "Choose…". The file you choose is stored in UserDefaults (`teylaBinaryPath`) and tried first.
 - **No data yet:** the window shows the Teyla lockup, the promise and "Run diagnosis". It runs `teyla start --json` (read-only,
   up to about a minute) and then lists each offer with its saving or benefit, trade-off and undo. "Apply…" shows one sheet

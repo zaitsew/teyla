@@ -6,7 +6,7 @@ enum TeylaBinary {
     /// UserDefaults key of the file picked with "Choose…".
     static let defaultsKey = "teylaBinaryPath"
     /// What the not-found screen shows and copies.
-    static let installCommand = "uv tool install git+https://github.com/zaitsew/teyla"
+    static let installCommand = "uv tool install --python 3.12 git+https://github.com/zaitsew/teyla"
 
     static func fixedPaths(home: String) -> [String] {
         ["\(home)/.local/bin/teyla", "/opt/homebrew/bin/teyla", "/usr/local/bin/teyla"]

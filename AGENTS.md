@@ -25,7 +25,7 @@ that says so (`docs/PRIVACY.md` lists every call). It has no server and no accou
    `~/.local/bin/teyla --version`.
 
 To look before installing, run the diagnosis straight from the repo; nothing is installed or written:
-`uvx --from git+https://github.com/zaitsew/teyla teyla start --agent`. Install properly before any
+`uvx --python 3.12 --from git+https://github.com/zaitsew/teyla teyla start --agent`. Install properly before any
 step that sets up a launchd job, because the job must name a `teyla` that stays on disk.
 
 If a command needs the person's name, read `git config user.name`; if it is empty, ask once.

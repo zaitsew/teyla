@@ -32,7 +32,7 @@ The window has three states.
 1. **`teyla` not found.** The command is looked for in this order: the file picked with "Choose…" (stored in
    UserDefaults), `$TEYLA_BIN`, the `PATH` of a login shell (`/bin/zsh -lc 'command -v teyla'`, asked once and
    remembered until "Check again"), then `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`. When none runs,
-   the window shows `uv tool install git+https://github.com/zaitsew/teyla` with Copy, "Check again" and "Choose…".
+   the window shows `uv tool install --python 3.12 git+https://github.com/zaitsew/teyla` with Copy, "Check again" and "Choose…".
 2. **Welcome.** `teyla` runs, and the snapshot has no question, product, session, task or result: the window shows the
    lockup, the promise sentence and "Run diagnosis". The button runs `teyla start --json` and the window shows a
    seconds counter, since it reads 30 days of sessions. When the report arrives the sidebar appears and the

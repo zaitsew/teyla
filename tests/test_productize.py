@@ -462,7 +462,7 @@ def test_docs_and_readme_mention_both_commands():
     if not (root / "README.md").exists():
         pytest.skip("not a checkout")
     assert (root / "docs" / "PRODUCTIZE.md").exists()
-    readme = (root / "README.md").read_text()
+    readme = (root / "docs" / "GUIDE.md").read_text()      # the README links to the guide; the guide holds the productize block
     assert "teyla platform" in readme and "teyla productize" in readme
     assert "## 6b. Productizing" in (root / "docs" / "MANUAL.md").read_text()
 

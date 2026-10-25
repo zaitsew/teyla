@@ -274,7 +274,7 @@ final class BinarySearchOrderTests: XCTestCase {
     }
 
     func testTheInstallCommandIsExact() {
-        XCTAssertEqual(TeylaBinary.installCommand, "uv tool install git+https://github.com/zaitsew/teyla")
+        XCTAssertEqual(TeylaBinary.installCommand, "uv tool install --python 3.12 git+https://github.com/zaitsew/teyla")
     }
 }
 
