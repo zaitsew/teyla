@@ -26,6 +26,12 @@ GLYPHS = {
             '<rect x="8" y="42" width="40" height="9" rx="4.5" fill="{P}"/>'
         ),
         "term": "lanes",
+        "small": (
+            '<rect x="6" y="8" width="20" height="4" rx="2" fill="{P}"/>'
+            '<rect x="6" y="14" width="12" height="4" rx="2" fill="{P}"/>'
+            '<rect x="22" y="14" width="4" height="4" rx="2" fill="{A}"/>'
+            '<rect x="6" y="20" width="16" height="4" rx="2" fill="{P}"/>'
+        ),
         "word": "round",
     },
     "2": {
@@ -38,6 +44,12 @@ GLYPHS = {
             '<circle cx="32" cy="54" r="3.5" fill="{A}"/>'
         ),
         "term": "meter",
+        "small": (
+            '<path d="M11.05 21.95A7 7 0 1 1 20.95 21.95" fill="none" stroke="{P}" stroke-width="4" stroke-linecap="round"/>'
+            '<path d="M16 17L12.5 13.5" stroke="{P}" stroke-width="4" stroke-linecap="round"/>'
+            '<circle cx="16" cy="17" r="3" fill="{P}"/>'
+            '<circle cx="16" cy="25.5" r="2" fill="{A}"/>'
+        ),
         "word": "round",
     },
     "3": {
@@ -48,6 +60,11 @@ GLYPHS = {
             '<rect x="45" y="12" width="10" height="17" rx="2.5" fill="{A}"/>'
         ),
         "term": "cursor",
+        "small": (
+            '<rect x="6" y="8" width="14" height="4" fill="{P}"/>'
+            '<rect x="14" y="8" width="4" height="16" fill="{P}"/>'
+            '<rect x="22" y="8" width="4" height="8" fill="{A}"/>'
+        ),
         "word": "block",
     },
 }
@@ -114,6 +131,19 @@ def icon_body(cid, uid):
     )
 
 
+def icon_small_body(cid, uid):
+    """The small-size icon master, for 16, 32 and 16@2x px. A 32-unit canvas: every edge is on an
+    even unit, so it lands on whole pixels at 16 px and at 32 px. Less padding (the body is 28 of
+    32), a heavier glyph, and no shadow. Lanes and Cursor are snapped; Meter's curves cannot be."""
+    top, bottom = MARK["icon-top"], MARK["icon-bottom"]
+    return (
+        f'<defs><linearGradient id="s{uid}" x1="0" y1="0" x2="0" y2="1">'
+        f'<stop offset="0" stop-color="{top}"/><stop offset="1" stop-color="{bottom}"/></linearGradient></defs>'
+        f'<rect x="2" y="2" width="28" height="28" rx="6" fill="url(#s{uid})"/>'
+        + GLYPHS[cid]["small"].format(P=MARK["on-icon"], A=MARK["accent-on-icon"])
+    )
+
+
 def write_set(d, cid, name):
     d.mkdir(exist_ok=True)
     view, (w, _) = lockup_view(cid), LOCKUP[GLYPHS[cid]["word"]]
@@ -122,6 +152,7 @@ def write_set(d, cid, name):
     (d / "lockup.svg").write_text(svg(view, lockup_body(cid, L["primary"], MARK["accent-light"], L["text"]), w * 2, 128, name))
     (d / "lockup-dark.svg").write_text(svg(view, lockup_body(cid, D["primary"], D["needs-you"], D["text"]), w * 2, 128, name))
     (d / "icon.svg").write_text(svg("0 0 1024 1024", icon_body(cid, cid), 1024, 1024, name))
+    (d / "icon-small.svg").write_text(svg("0 0 32 32", icon_small_body(cid, cid), 32, 32, name))
 
 
 def write_files():
@@ -180,7 +211,7 @@ RATIONALE = {
     "3": ("The CLI's own letter: a T whose right arm is a waiting cursor.",
           "A heavy T built from blocks. Its right arm is a separate amber block, the cursor a terminal shows when "
           "it waits for input. It is a monogram that belongs to a command-line tool, and it carries the "
-          "\"waiting on you\" idea without a bubble. At 16 px it is a solid T plus one 2.5 by 4 px block. It is "
+          "\"waiting on you\" idea without a bubble. At 16 px the small-size icon is a T with 2 px strokes on whole pixels, plus a 2 by 4 px block. It is "
           "the most legible of the three and works as a one-character banner in the terminal."),
 }
 
@@ -201,7 +232,9 @@ def concept_card(cid):
         return f'<div class="panel {theme}"><div class="sizes">{cells}</div><div class="lock-row">{lock}</div></div>'
 
     icon = icon_body(cid, f"b{cid}")
-    icons = "".join(f'<figure>{inline("0 0 1024 1024", icon, s)}<figcaption>{s}</figcaption></figure>' for s in sizes)
+    small = icon_small_body(cid, f"b{cid}")
+    icons = "".join(f'<figure>{inline("0 0 32 32", small, s) if s <= 32 else inline("0 0 1024 1024", icon, s)}'
+                    f'<figcaption>{s}</figcaption></figure>' for s in sizes)
     pix = "".join(
         f'<figure><canvas class="pix" data-concept="{cid}" data-kind="{k}" data-px="{p}"></canvas>'
         f'<figcaption>{label}</figcaption></figure>'
@@ -213,7 +246,7 @@ def concept_card(cid):
   <p class="why">{para}</p>
   <div class="two">{strip(m_l, "light")}{strip(m_d, "dark")}</div>
   <div class="iconrow">
-    <figure class="big">{inline("0 0 1024 1024", icon, 512)}<figcaption>app icon, 1024 canvas, shown at 50%</figcaption></figure>
+    <figure class="big">{inline("0 0 1024 1024", icon, 512)}<figcaption>app icon, 1024 canvas, shown at 50%; 16 and 32 px use the small-size master</figcaption></figure>
     <div class="iconside">
       <div class="panel desk light"><div class="sizes">{icons}</div></div>
       <div class="panel desk darkdesk"><div class="sizes">{icons}</div></div>
@@ -231,7 +264,7 @@ def swatch(label, hexv, fg):
 def board():
     marks_js = {cid: {"mark": svg("0 0 64 64", glyph(cid, L["primary"], MARK["accent-light"])),
                       "markdark": svg("0 0 64 64", glyph(cid, D["primary"], D["needs-you"])),
-                      "icon": svg("0 0 1024 1024", icon_body(cid, "p" + cid))} for cid in GLYPHS}
+                      "icon": svg("0 0 32 32", icon_small_body(cid, "p" + cid))} for cid in GLYPHS}
     sw_l = "".join(swatch(k, L[k], L["text"] if k not in ("primary", "text", "text-secondary", "needs-you", "saving", "danger") else "#FFFFFF")
                    for k in ("background", "surface", "border", "text", "text-secondary", "primary", "needs-you", "saving", "danger"))
     sw_d = "".join(swatch(k, D[k], D["text"] if k in ("background", "surface", "border") else D["background"])

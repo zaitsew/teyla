@@ -14,8 +14,9 @@ for input. The T is Teyla; the amber block is what waits on you.
 - **Wordmark.** "Teyla" in the block cut: stroke 9, cut ends, square joins. Its cap top and
   baseline line up with the T's bar and stem. The wordmark is drawn as paths; never set it in a
   font.
-- **Small sizes.** The mark holds at 16 px: a solid T and one 2.5 by 4 px block. Below 16 px,
-  use the T alone.
+- **Small sizes.** The app icon has a second master for 16 and 32 px: less padding, a T with
+  2 px strokes on whole pixels at 16 px, and a 2 by 4 px amber block. Below 16 px, use the T
+  alone.
 - **Clear space.** Keep the width of the amber block free on every side.
 - **Terminal.** The CLI's two-character mark is a bold `T` in `primary`, then `█` in `needs-you`.
 
@@ -26,6 +27,7 @@ for input. The T is Teyla; the amber block is what waits on you.
 | `brand/mark.svg`, `brand/mark-dark.svg` | the mark for light and dark backgrounds |
 | `brand/lockup.svg`, `brand/lockup-dark.svg` | mark and wordmark |
 | `brand/icon.svg` | the macOS icon artwork: 1024 canvas, 824 body at 100, 185 corner |
+| `brand/icon-small.svg` | the icon for 16, 16@2x and 32 px: a 32-unit canvas snapped to whole pixels, no shadow |
 | `brand/tokens.json` | colours, contrast, ANSI 256, type, space and radius: the single source |
 | `brand/board.html`, `brand/board.png` | the three concepts compared at every size |
 | `brand/concept-{1,2,3}/` | Lanes, Meter and Cursor, kept as alternatives |
@@ -35,7 +37,7 @@ To change the mark, edit `brand/build.py` (`CHOSEN` picks the concept), then run
 
 ```bash
 python3 brand/build.py                  # SVGs and the board
-swift apps/mac/Tools/make_icon.swift    # Mac app icon, every size, and the plugin icon
+swift apps/mac/Tools/make_icon.swift    # Mac app icon (small master for 16 and 32 px) and plugin icon
 ```
 
 Three places mirror `brand/tokens.json`: the colours in `apps/mac/Teyla/UI/Tokens.swift`, the
