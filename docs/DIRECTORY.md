@@ -19,7 +19,7 @@ Sources read for this pack (checked 2026-10-23):
 | Name | Teyla |
 | Plugin path in the repo | `plugin` |
 | Repository | <https://github.com/zaitsew/teyla> (public, Apache-2.0) |
-| Version | 0.29.0 |
+| Version | 0.30.0 |
 | Install line | `/plugin install teyla --marketplace zaitsew/teyla` |
 | Category | Developer tools (if the portal offers Productivity, use it as the second choice) |
 | Keywords | routines, corrections, rules, skills, code-review, adoption |
