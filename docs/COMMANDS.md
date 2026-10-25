@@ -1,6 +1,14 @@
 # Commands
 
-Every `teyla` command with its flags; `teyla --help` prints the same list. The README says what Teyla is for.
+Every `teyla` command with its flags; `teyla help --all` prints the same list in six groups (`teyla help` is the short form, `docs/TODAY.md` says how the first screens work). The README says what Teyla is for.
+
+### The first screen
+
+| command | what you get |
+|---|---|
+| `teyla` | a welcome of at most 15 lines: what Teyla is, three live numbers (spend of the last 7 days at list price, questions waiting, notes in the Inbox) each with the command that opens it, and the next three commands. `teyla start` comes first until you have applied or declined an offer. Never an error, never a traceback; spend and questions come from a cache (`docs/TODAY.md`) |
+| `teyla today [--json] [--fresh]` | the daily screen, about 25 lines: waiting questions by product (focus first, 3 per product, critical first), the Inbox (count and newest 3), spend of the last 7 days against the 7 before with the change in percent, and one suggested action chosen by a written rule (an offer with a saving, else the oldest critical question, else the Inbox, else the oldest question). `--json` is the same facts for the Mac app and the web page; `--fresh` counts the spend again |
+| `teyla help [--all \| COMMAND]` | the commands in six groups (Start, Daily, Products, Spend, Setup, Advanced) in under 40 lines; `--all` lists every command with one line; `COMMAND` is the same as `teyla COMMAND --help`. A word that is not a command prints the nearest match and this help, and exits 2 |
 
 ### Tokens and spend
 

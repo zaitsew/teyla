@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import sys
 
-from . import changes, diagnose, offers as offers_mod
+from . import changes, diagnose, figures, offers as offers_mod
 from .spend import _money
 
 CARD_MAX_LINES = 12
@@ -130,8 +130,12 @@ def _ask(prompt: str) -> str:
         return "q"
 
 
-def _interactive(offers: list) -> int:
+def _interactive(offers: list, pl: dict) -> int:
+    """Walk the offers. The first screen learns of the run (`figures.record_start`) on every way out:
+    `finished` once the person has answered an offer."""
     done: list = []
+    answered = False
+    figures.record_start(pl, False)                 # the 60 s diagnosis is kept even if the run is interrupted
     for o in [x for x in offers if x.applies]:
         print("\n" + offer_block(o))
         while True:
@@ -140,15 +144,19 @@ def _interactive(offers: list) -> int:
                 print("  " + o.explain)
             elif a in ("y", "yes"):
                 _apply_one(o, done)
+                answered = True
                 break
             elif a in ("n", "no", ""):
+                answered = True
                 break
             elif a in ("q", "quit"):
                 _done_summary(done)
+                figures.record_start(pl, answered)
                 return 0
             else:
                 print("  y, n, e or q")
     _done_summary(done)
+    figures.record_start(pl, True)
     return 0
 
 
@@ -161,10 +169,9 @@ def cmd_start(args) -> int:
         print(json.dumps(pl, indent=2))
         return 0
     print(pl["summary_text"])
-    if pl["diagnosis"]["empty"]:
-        return 0
     live = [o for o in offers if o.applies]
-    if not live:
+    if pl["diagnosis"]["empty"] or not live:        # nothing to answer: the first screen can move on
+        figures.record_start(pl, not live and not pl["diagnosis"]["empty"])
         return 0
     if args.yes:
         done: list = []
@@ -172,12 +179,14 @@ def cmd_start(args) -> int:
             print("\n" + offer_block(o))
             _apply_one(o, done)
         _done_summary(done)
+        figures.record_start(pl, True)
         return 0 if len(done) == len(live) else 1
     if not _is_tty():
+        figures.record_start(pl, False)
         print("\nNot a terminal, so nothing was asked. To apply: teyla apply "
               + " ".join(o.id for o in live) + " --yes   (add --dry to see each change first)")
         return 0
-    return _interactive(offers)
+    return _interactive(offers, pl)
 
 
 def cmd_apply(args) -> int:
@@ -208,6 +217,8 @@ def cmd_apply(args) -> int:
         print("\n--dry: nothing was written.")
     else:
         _done_summary(done)
+        if done:
+            figures.record_start(None, True)        # the first screen stops asking for `teyla start`
     return code
 
 
