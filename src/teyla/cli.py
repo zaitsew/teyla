@@ -537,6 +537,10 @@ def build_parser() -> argparse.ArgumentParser:
     reel_cli.register(sp)
     from . import asks as asks_mod
     asks_mod.register(sp)
+    from . import today as today_mod
+    today_mod.register(sp)
+    q = sp.add_parser("help", help="the commands in six groups; --all lists every one; help COMMAND shows its options")
+    q.set_defaults(fn=cmd_help); q.add_argument("words", nargs="*", metavar="[--all | COMMAND]")
     from . import registry as registry_mod
     registry_mod.register(sp)
     from . import notes as notes_mod
@@ -553,10 +557,6 @@ def build_parser() -> argparse.ArgumentParser:
     docs_check_mod.register(sp)
     from . import ux_check as ux_check_mod
     ux_check_mod.register(sp)
-    from . import today as today_mod
-    today_mod.register(sp)
-    q = sp.add_parser("help", help="the commands in six groups; --all lists every one; help COMMAND shows its options")
-    q.set_defaults(fn=cmd_help); q.add_argument("words", nargs="*", metavar="[--all | COMMAND]")
     q = sp.add_parser("products"); q.set_defaults(fn=cmd_products); q.add_argument("paths", nargs="*")
     q = sp.add_parser("probe-sql", help="one read-only Supabase query for ./check.sh usage; prints key=value")
     q.set_defaults(fn=cmd_probe_sql); q.add_argument("ref", help="Supabase project ref")
