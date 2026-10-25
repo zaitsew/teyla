@@ -101,8 +101,8 @@ final class KeyTextView: NSTextView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if flags == .command, let digit = event.charactersIgnoringModifiers.flatMap({ Int($0) }), onDigit?(digit) == true {
+        // Caps Lock, Fn and the numeric-pad flag can be set on any press; only ⌘ ⌥ ⌃ ⇧ count.
+        if Shortcut.isCommandOnly(event.modifierFlags), let digit = event.charactersIgnoringModifiers.flatMap({ Int($0) }), onDigit?(digit) == true {
             return true
         }
         return super.performKeyEquivalent(with: event)

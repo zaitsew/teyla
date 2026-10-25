@@ -4,13 +4,6 @@ import SwiftUI
 import UserNotifications
 import os
 
-/// What a card is doing right now. A card with no entry is idle.
-enum CardStatus: Equatable {
-    case sending(String)
-    case done(String)
-    case failed(String)
-}
-
 @MainActor
 @Observable
 final class AppModel {
@@ -270,10 +263,18 @@ final class AppModel {
         applyQuickNoteShortcut()
     }
 
-    /// While the recorder listens, the shortcut is released so pressing it reaches the recorder.
-    func pauseQuickNoteShortcut() {
+    /// While the recorder listens, both global shortcuts are released, so pressing either one reaches the
+    /// recorder (and push-to-talk does not start dictation instead of showing the refusal).
+    func pauseShortcuts() {
         GlobalHotKey.quickNote.unregister()
+        GlobalHotKey.shared.unregister()
         quickNoteActive = nil
+    }
+
+    /// The recorder is done (a shortcut was saved, or it was cancelled): push-to-talk and the quick-note shortcut are registered again.
+    func resumeShortcuts() {
+        hotKeyLine = GlobalHotKey.describe(GlobalHotKey.shared.register())
+        applyQuickNoteShortcut()
     }
 
     func openQuickNote() {

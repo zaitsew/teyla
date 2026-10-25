@@ -1,5 +1,4 @@
 import Observation
-import SwiftUI
 
 /// State of the quick-note panel. The draft lives here, not in the view, so Esc keeps it until the next open.
 @MainActor
@@ -25,6 +24,8 @@ final class QuickNoteModel {
     @ObservationIgnored var learnedCandidates: ([String]) -> Void = { _ in }
     @ObservationIgnored private let cli: TeylaCLI
     @ObservationIgnored private var suggestTask: Task<Void, Never>?
+    /// True from the moment a suggestion is scheduled until its answer is applied or abandoned.
+    @ObservationIgnored private(set) var suggestionPending = false
     @ObservationIgnored private var closeTask: Task<Void, Never>?
 
     init(cli: TeylaCLI) {
@@ -71,30 +72,54 @@ final class QuickNoteModel {
 
     func save() {
         guard canSave else { return }
+        Task { await performSave() }
+    }
+
+    /// Saves the draft. When a suggestion for the text is still pending and the owner did not pick a product,
+    /// the debounce is skipped and the suggestion is fetched now, so the note goes under the product the text
+    /// names, not the one the previous text named. A product picked by hand is never replaced.
+    func performSave() async {
+        guard canSave else { return }
         let text = draft
-        let target = product
         status = .sending("Saving…")
-        Task {
-            do {
-                let note = try await cli.saveNote(text: text, product: target)
-                // Text typed while the save ran stays: only the saved text is cleared.
-                if draft == text { draft = "" }
-                chosen = false
-                product = NoteItem.inbox
-                linkedBy = ""
-                status = .done("Saved to \(Notes.productLabel(note.product))")
-                saved(note)
-                closeTask?.cancel()
-                closeTask = Task {
-                    try? await Task.sleep(for: Self.confirmation)
-                    guard !Task.isCancelled else { return }
-                    if case .done = status { status = nil }
-                    close?()
-                }
-            } catch {
-                // The panel stays open and the text stays as typed.
-                status = .failed(error.localizedDescription)
+        if suggestionPending && !chosen {
+            suggestTask?.cancel()
+            suggestionPending = false
+            if let found = try? await cli.suggestNote(text: text, products: productNames()) {
+                apply(found)
             }
+        }
+        let target = product
+        do {
+            let note = try await cli.saveNote(text: text, product: target)
+            // Text typed while the save ran stays: only the saved text is cleared.
+            if draft == text { draft = "" }
+            chosen = false
+            product = NoteItem.inbox
+            linkedBy = ""
+            status = .done("Saved to \(Notes.productLabel(note.product))")
+            saved(note)
+            closeTask?.cancel()
+            closeTask = Task {
+                try? await Task.sleep(for: Self.confirmation)
+                guard !Task.isCancelled else { return }
+                if case .done = status { status = nil }
+                close?()
+            }
+        } catch {
+            // The panel stays open and the text stays as typed.
+            status = .failed(error.localizedDescription)
+        }
+    }
+
+    private func apply(_ found: NoteSuggestion) {
+        if !found.candidates.isEmpty {
+            candidates = found.candidates
+            learnedCandidates(found.candidates)
+        }
+        if !chosen {
+            product = found.product
+            linkedBy = found.linkedBy
         }
     }
 
@@ -102,20 +127,15 @@ final class QuickNoteModel {
         suggestTask?.cancel()
         let text = draft
         let products = productNames()
+        suggestionPending = true
         suggestTask = Task {
             if delay > .zero { try? await Task.sleep(for: delay) }
             guard !Task.isCancelled else { return }
-            guard let found = try? await cli.suggestNote(text: text, products: products) else { return }
+            let found = try? await cli.suggestNote(text: text, products: products)
             // A result for text that has changed since is stale.
             guard !Task.isCancelled, text == draft else { return }
-            if !found.candidates.isEmpty {
-                candidates = found.candidates
-                learnedCandidates(found.candidates)
-            }
-            if !chosen {
-                product = found.product
-                linkedBy = found.linkedBy
-            }
+            suggestionPending = false
+            if let found { apply(found) }
         }
     }
 }

@@ -320,3 +320,91 @@ final class ShortcutLabelTests: XCTestCase {
         XCTAssertEqual(QuickNoteShortcut.menuTitle(nil), "Quick note")
     }
 }
+
+@MainActor
+final class QuickNoteSaveTests: XCTestCase {
+    private func model(saved: @escaping (NoteItem) -> Void) -> QuickNoteModel {
+        let state = repoFile("tests/fixtures/state.v2.json").path
+        let cli = TeylaCLI(env: ["TEYLA_STATE_FIXTURE": state], home: "/Users/someone")
+        let model = QuickNoteModel(cli: cli)
+        model.productNames = { ["atlas", "cellar", "lens"] }
+        model.saved = saved
+        return model
+    }
+
+    /// Longer than the 300 ms debounce, so the suggestion for the current text has been applied.
+    private func settle() async {
+        try? await Task.sleep(for: .milliseconds(500))
+    }
+
+    func testSaveUsesTheSuggestionForTheTextNotTheOneForTheTextBefore() async {
+        var kept: [NoteItem] = []
+        let model = model { kept.append($0) }
+        model.draft = "Atlas needs an icon"
+        model.draftChanged()
+        await settle()
+        XCTAssertEqual(model.product, "atlas")
+
+        // Replace the text and press Return before the 300 ms are up.
+        model.draft = "Cellar needs a label"
+        model.draftChanged()
+        XCTAssertTrue(model.suggestionPending)
+        XCTAssertEqual(model.product, "atlas", "the old suggestion is still shown while the new one is pending")
+        await model.performSave()
+
+        XCTAssertEqual(kept.map(\.product), ["cellar"])
+        XCTAssertEqual(kept.first?.text, "Cellar needs a label")
+        XCTAssertFalse(model.suggestionPending)
+    }
+
+    func testAProductPickedByHandIsNeverReplacedBySavingEarly() async {
+        var kept: [NoteItem] = []
+        let model = model { kept.append($0) }
+        model.draft = "Atlas needs an icon"
+        model.draftChanged()
+        model.choose("lens")
+        await model.performSave()
+        XCTAssertEqual(kept.map(\.product), ["lens"])
+        XCTAssertEqual(kept.first?.linkedBy, "owner")
+    }
+
+    func testSaveWithNothingPendingKeepsTheSuggestedProduct() async {
+        var kept: [NoteItem] = []
+        let model = model { kept.append($0) }
+        model.draft = "Lens could name itself"
+        model.draftChanged()
+        await settle()
+        XCTAssertFalse(model.suggestionPending)
+        await model.performSave()
+        XCTAssertEqual(kept.map(\.product), ["lens"])
+        XCTAssertEqual(model.draft, "")
+        XCTAssertEqual(model.product, "inbox")
+    }
+
+    func testABlankDraftIsNotSaved() async {
+        var kept: [NoteItem] = []
+        let model = model { kept.append($0) }
+        model.draft = " \n "
+        await model.performSave()
+        XCTAssertTrue(kept.isEmpty)
+        XCTAssertNil(model.status)
+    }
+}
+
+final class ChordFlagsTests: XCTestCase {
+    func testCommandAloneCountsWithCapsLockFnAndNumericPadSet() {
+        XCTAssertTrue(Shortcut.isCommandOnly([.command]))
+        XCTAssertTrue(Shortcut.isCommandOnly([.command, .capsLock]))
+        XCTAssertTrue(Shortcut.isCommandOnly([.command, .function, .numericPad]))
+        XCTAssertTrue(Shortcut.isCommandOnly([.command, .capsLock, .function, .numericPad]))
+    }
+
+    func testOtherModifiersStillCount() {
+        XCTAssertFalse(Shortcut.isCommandOnly([]))
+        XCTAssertFalse(Shortcut.isCommandOnly([.capsLock]))
+        XCTAssertFalse(Shortcut.isCommandOnly([.command, .shift]))
+        XCTAssertFalse(Shortcut.isCommandOnly([.command, .option, .capsLock]))
+        XCTAssertFalse(Shortcut.isCommandOnly([.control]))
+        XCTAssertEqual(Shortcut.chord(from: [.shift, .capsLock, .numericPad]), [.shift])
+    }
+}

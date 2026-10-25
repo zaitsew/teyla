@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Records a global shortcut: click the field, press a combination with ⌘, ⌥ or ⌃. Esc cancels, Clear turns it off.
-/// While it listens, the registered shortcut is released so pressing it reaches the field.
+/// While it listens, push-to-talk and the quick-note shortcut are released so pressing them reaches the field.
 struct ShortcutRecorder: View {
     @Environment(AppModel.self) private var model
     @State private var recording = false
@@ -48,7 +48,7 @@ struct ShortcutRecorder: View {
     private func start() {
         refusal = nil
         recording = true
-        model.pauseQuickNoteShortcut()
+        model.pauseShortcuts()
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let result = ShortcutRules.check(keyCode: UInt32(event.keyCode),
                                              modifiers: Shortcut.carbonModifiers(from: event.modifierFlags))
@@ -72,6 +72,6 @@ struct ShortcutRecorder: View {
         recording = false
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
-        model.applyQuickNoteShortcut()
+        model.resumeShortcuts()
     }
 }

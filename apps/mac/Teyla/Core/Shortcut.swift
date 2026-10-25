@@ -27,6 +27,17 @@ struct Shortcut: Equatable, Hashable, Sendable {
         return bits
     }
 
+    /// The modifiers that count in a key press: ⌘ ⌥ ⌃ ⇧. Caps Lock, Fn and the numeric-pad flag ride along on
+    /// some presses and are not part of a chord.
+    static func chord(from flags: NSEvent.ModifierFlags) -> NSEvent.ModifierFlags {
+        flags.intersection([.command, .option, .control, .shift])
+    }
+
+    /// True for ⌘ alone (with any of Caps Lock, Fn and numeric pad also set).
+    static func isCommandOnly(_ flags: NSEvent.ModifierFlags) -> Bool {
+        chord(from: flags) == .command
+    }
+
     /// "⌥Space", "⌃⌥Space", "⇧⌘K": modifiers in the order macOS menus use (⌃⌥⇧⌘), then the key.
     var display: String {
         var text = ""
