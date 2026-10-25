@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **`teyla web`: a local dashboard for the diagnosis, today, products and notes.** One command opens a page in your
+  browser with five tabs. Start shows the diagnosis card and the seven offers, each with Apply (one confirm step that
+  names the file and the key) and Undo (the message of `teyla undo` is shown, including the refusal for O5 to O7). Today
+  is `teyla today`. Products lists stage, focus, waiting questions and notes, with a page per product (questions, notes,
+  recent sessions and cost, repos). Notes adds, links and drops. Spend shows this week against last by day, model and
+  product, with inline-SVG bars. It is a stdlib server on 127.0.0.1 with a random port, a per-run token that becomes an
+  HttpOnly SameSite=Strict cookie, a Host allowlist, a token header on every POST, a strict content policy, and a stop after
+  two hours idle. The diagnosis runs in the background, so the page opens with the last count. No npm, CDN or web fonts.
+  `docs/WEB.md`.
+
 - **`teyla start`: diagnose your agent spend and fix it with one keystroke.** Reads the sessions on disk (no network, no
   write) and prints a card of at most 12 lines: the window's cost at list price, the share spent re-reading and storing
   context, sessions past 250k tokens, Opus's share of subagent cost, questions waiting. Then seven offers, each with its
