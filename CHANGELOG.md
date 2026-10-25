@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **A first screen: `teyla` shows a welcome, `teyla today` the day, `teyla help` six groups.** Bare `teyla` used to end in an
+  argparse error. It now prints at most 15 lines: the brand mark and version, the one-line promise, three live numbers (spend
+  of the last 7 days at list price, questions waiting, notes in the Inbox) each with the command that opens it, and the next
+  three commands, `teyla start` first until you have applied or declined an offer. Spend and questions come from
+  `~/.teyla/first-screen.json`, refreshed in the background, so the call takes tens of milliseconds. `teyla today
+  [--json] [--fresh]` is the daily screen (questions by product, the Inbox, the week against the week before, one suggested
+  action by a written rule). `teyla --help` and `teyla help` list the commands in Start, Daily, Products, Spend, Setup and
+  Advanced in under 40 lines; `teyla help --all` lists every one, and a test fails for a command without a group. An unknown
+  command prints the nearest match and the help (exit 2); a missing package or unreadable `~/.teyla` file prints one line
+  with the fix (`TEYLA_DEBUG=1` restores the traceback). `NO_COLOR`, `TERM=dumb` and pipes give plain text. `docs/TODAY.md`.
 - **Mac: quick note on a shortcut you choose, and Notes in the window.** A global shortcut (⌥Space by default, recorded in
   Settings, optional, never push-to-talk's ⌥⌘Space) opens a floating panel: type, ⏎ saves, ⇧⏎ adds a line, Esc keeps the
   draft. The product chip pre-selects from `teyla note --suggest` and changes in one click or ⌘0–⌘9. The window gets a Notes
