@@ -729,6 +729,8 @@ def verdict(name: str, row: dict, live_ok: bool = False) -> dict:
     error) but not a broken install (caught in review, P2)."""
     parts, level, fix = [], "OK", None
     parts.append(row.get("version") or (f"no `{BINARY[name]}` on PATH" if not row.get("binary") else "version ?"))
+    if row.get("binary") and shutil.which(BINARY[name]) != row["binary"]:
+        parts[-1] += f" (at {row['binary']}, not on PATH)"          # the same finder doctor's `tools` line uses
     if row.get("version_error"):
         level, fix = "FIX", f"the `{BINARY[name]}` install does not start: {row['version_error']}"
         parts[-1] = "broken install"

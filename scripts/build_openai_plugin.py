@@ -94,7 +94,7 @@ def readme(profile: str, version: str, spec: dict) -> str:
     cli = ""
     if any(n in CLI_SKILLS for n in names):
         cli = ("\nSkills marked as needing the CLI check for it first. When it is missing they print one line,\n"
-               "`uv tool install git+https://github.com/zaitsew/teyla` (Python 3.11 or newer), and stop.\n"
+               "`uv tool install --python 3.12 git+https://github.com/zaitsew/teyla` (Python 3.11 or newer), and stop.\n"
                "`harvest` instead continues with a plain `grep` and `python3` pass.\n")
     writes = ("- Writes only files in the repo you work in (`.claude/rules/`, `AGENTS.md`)." if profile == "portable" else
               "- Writes files in the repo you work in (`.claude/rules/`, `AGENTS.md`, the folders named in each skill) and,\n"

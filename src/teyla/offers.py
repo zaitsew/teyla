@@ -10,7 +10,7 @@ figure. `applies` is False when the setting is already there or the harness is n
   O3  a read-only `scout` agent on Haiku
   O4  Codex reasoning effort high -> medium
   O5  one rules file synced to every harness      (`teyla policy sync`)
-  O6  hooks that keep your prompts and questions  (`teyla harness sync`)
+  O6  hooks that keep your prompts and questions  (`teyla harness sync`, and the Claude Code plugin when it is missing)
   O7  a daily routine                             (`teyla routine install`)
 
 A 30-day window is a month as it is; any other window scales linearly to 30 days.
@@ -73,6 +73,7 @@ class Offer:
     reason: str = ""                  # why `applies` is False
     explain: str = ""                 # the longer text behind [e]xplain
     short: str = ""                   # what it brings, in a few words: the summary card shows it when there is no figure
+    preview: str = ""                 # the command that shows the change and writes nothing
 
     def to_dict(self) -> dict:
         return dataclasses.asdict(self)
@@ -95,6 +96,11 @@ SHORT = {
     "O6": "keeps your corrections and open questions",
     "O7": "a daily check, run for you",
 }
+
+
+def plural(n: int, word: str) -> str:
+    """`1 session`, `2 sessions`, `0 sessions`: a count with its noun, so no sentence says "1 sessions"."""
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
 
 
 def _money(x: float) -> str:
@@ -278,13 +284,13 @@ def _o1(inp, home, settings, with_savings) -> Offer:
                                       diagnose_mod.window_start(inp.days))
         if net * _scale(inp.days) >= 1.0:
             saving = _range(net, O1_LOW_SHARE, inp.days)
-            basis = (f"{turns} turns in {sessions} sessions went past {COMPACT_AT // 1000}k tokens of context. "
+            basis = (f"{plural(turns, 'turn')} in {plural(sessions, 'session')} went past {COMPACT_AT // 1000}k tokens of context. "
                      f"Each would have re-read 250k fewer cached tokens per compaction, minus the cost of the "
                      f"compaction itself. Sessions between 250k and {COMPACT_AT // 1000}k are not counted. "
                      f"The low end halves it, because a session grows back after it compacts.")
             benefit = None
         else:
-            basis = f"No turn in the last {inp.days} days went past {COMPACT_AT // 1000}k tokens, so this saves nothing today."
+            basis = f"No turn in the last {plural(inp.days, 'day')} went past {COMPACT_AT // 1000}k tokens, so this saves nothing today."
     return Offer(
         id="O1", title="Compact long sessions earlier", change=change, saving_usd_month=saving, basis=basis,
         benefit=benefit,
@@ -316,12 +322,12 @@ def _o2(inp, home, settings, with_savings) -> Offer:
         net, calls, total = o2_net(inp.units, home)
         if net * _scale(inp.days) >= 1.0:
             saving = _range(net, O2_LOW_SHARE, inp.days)
-            basis = (f"{calls} of {total} subagent calls ran on Opus without naming a model; the same tokens at "
+            basis = (f"{calls} of {plural(total, 'subagent call')} ran on Opus without naming a model; the same tokens at "
                      f"Sonnet 5.5's list price cost less. Calls that named their model, or whose agent pins one, are not counted. "
                      f"The low end allows 30% more tokens on Sonnet.")
             benefit = None
         else:
-            basis = f"{total} subagent calls in the last {inp.days} days; none ran on Opus by default, so this saves nothing today."
+            basis = f"{plural(total, 'subagent call')} in the last {plural(inp.days, 'day')}; none ran on Opus by default, so this saves nothing today."
     return Offer(
         id="O2", title="Run subagents on Sonnet unless they say otherwise", change=change, saving_usd_month=saving,
         basis=basis, benefit=benefit,
@@ -348,12 +354,12 @@ def _o3(inp, home, with_savings) -> Offer:
         net, calls = o3_net(inp.units, home)
         if net * _scale(inp.days) >= 1.0:
             saving = _range(net, O3_LOW_SHARE, inp.days, O3_HIGH_SHARE)
-            basis = (f"{calls} read-only subagent calls (no Edit or Write) ran on a dearer model than Haiku. "
+            basis = (f"{plural(calls, 'read-only subagent call')} (no Edit or Write) ran on a dearer model than Haiku. "
                      f"The range assumes {int(O3_LOW_SHARE * 100)}% to {int(O3_HIGH_SHARE * 100)}% of them would use the scout agent. "
                      f"Calls O2 already covers and prompts past {HAIKU_SHORT_PROMPT // 1000}k tokens are left out.")
             benefit = None
         else:
-            basis = f"No read-only subagent call in the last {inp.days} days ran on a dearer model than Haiku."
+            basis = f"No read-only subagent call in the last {plural(inp.days, 'day')} ran on a dearer model than Haiku."
     return Offer(
         id="O3", title="Add a cheap read-only scout agent", change=change, saving_usd_month=saving, basis=basis,
         benefit=benefit,
@@ -426,28 +432,71 @@ def _o5(home) -> Offer:
         "`teyla undo` does not reverse it. No targeted command exists: `teyla uninstall` removes all of Teyla's policy links, hooks and data (`teyla uninstall --dry` lists them first).",
         applies, reason,
         "`teyla policy sync` writes ~/.agents/POLICY.md if it is missing, links or generates ~/.codex/AGENTS.md and ~/.grok/AGENTS.md, "
-        "and adds `@~/.agents/POLICY.md` to ~/.claude/CLAUDE.md. It never touches a harness that is not installed.")
+        "and adds `@~/.agents/POLICY.md` to ~/.claude/CLAUDE.md. It never touches a harness that is not installed. "
+        "The starter policy carries the owner's name; `teyla apply O5 --owner NAME` sets it (otherwise it is the login name).")
+
+
+HARNESS_LABEL = {"claude-code": "Claude Code", "cursor": "Cursor", "codex": "Codex", "grok": "Grok", "hermes": "Hermes"}
+PLUGIN_SOURCE = "zaitsew/teyla"
+HARNESS_SYNC = "teyla harness sync"
+PLUGIN_INSTALL = f"teyla plugin install {PLUGIN_SOURCE}"
+
+
+def _join(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def o6_targets(home: pathlib.Path) -> dict:
+    """What O6 would hook on this machine, worked out at diagnosis time: `labels` (the harnesses it
+    names), `sync` (a present harness lacks Teyla's skills or hooks) and `plugin` (Claude Code is
+    installed and Teyla's plugin is not)."""
+    from . import harness, plugin_install
+    off = config.disabled_harnesses()[0]
+    claude = (home / ".claude").is_dir() and "claude-code" not in off
+    plugin = claude and plugin_install.installed_version(plugins_dir=home / ".claude" / "plugins") is None
+    rows = [r for r in harness.status(home) if r.get("present")]
+    sync = any(r.get("hooks") is False or r.get("skills", 0) < r.get("skills_total", 0) for r in rows)
+    labels = (["Claude Code"] if claude else []) + [HARNESS_LABEL.get(r["harness"], r["harness"]) for r in rows]
+    return dict(labels=labels, sync=sync, plugin=plugin)
 
 
 def _o6(home) -> Offer:
-    from . import harness
     applies, reason = False, "hooks and skills are already in place"
+    where, plugin, sync = [], False, False
     try:
-        applies = any(r.get("present") and (r.get("hooks") is False or r.get("skills", 0) < r.get("skills_total", 0))
-                      for r in harness.status())
+        tg = o6_targets(home)
+        where, plugin, sync = tg["labels"], tg["plugin"], tg["sync"]
+        applies = plugin or sync
         reason = "" if applies else reason
     except Exception as e:  # noqa: BLE001
         reason = f"could not read the harness wiring ({type(e).__name__})"
+    where_text = _join(where) if where else ""
+    if sync or not plugin:
+        command = HARNESS_SYNC + (f" && {PLUGIN_INSTALL}" if plugin else "")
+    else:
+        command = PLUGIN_INSTALL
+    parts = ([f"skills and hooks into {_join([w for w in where if w != 'Claude Code'])}"] if sync else []) + \
+            (["the Claude Code plugin (hooks, skills, machine guard)"] if plugin else [])
+    undo = ("`teyla undo` does not reverse it. No targeted command exists for the hooks: remove them with `teyla uninstall`, "
+            "which removes all of Teyla's hooks (`--dry` lists them first).")
+    if plugin:
+        undo += (" The Claude Code plugin comes out with `teyla plugin uninstall teyla` "
+                 "(or `claude plugin uninstall teyla@teyla`).")
+    tradeoff = ("Each hook runs a small script from ~/.teyla/hooks on every prompt; Codex asks you to approve a new hook once. "
+                "The sync replaces Teyla's own hook files, including any edits made to them.")
+    if plugin:
+        tradeoff += (f" The plugin is cloned from github.com/{PLUGIN_SOURCE}; its hooks run a small script at session "
+                     "start and before each tool call in Claude Code.")
     return _command(
-        "O6", "Keep your prompts and questions", "teyla harness sync",
-        "run `teyla harness sync`: skills and hooks into Cursor, Codex, Grok and Hermes",
-        "Hooks record the corrections you type and the questions agents leave unanswered, so Teyla can list what is waiting on you.",
-        "Each hook runs a small script from ~/.teyla/hooks on every prompt; Codex asks you to approve a new hook once. "
-        "The sync replaces Teyla's own hook files, including any edits made to them.",
-        "`teyla undo` does not reverse it. No targeted command exists: remove with `teyla uninstall`, which removes all of Teyla's hooks (`--dry` lists them first).",
-        applies, reason,
-        "`teyla harness sync` copies five small scripts to ~/.teyla/hooks and registers them in each installed harness's hooks file. "
-        "Nothing leaves the machine.")
+        "O6", "Keep your prompts and questions" + (f" in {where_text}" if where_text else ""), command,
+        f"run `{command}`: " + " and ".join(parts or ["skills and hooks"]),
+        "Hooks record the corrections you type and the questions agents leave unanswered, so Teyla can list what is waiting on you."
+        + (f" They go into {where_text} on this machine." if where_text else ""),
+        tradeoff, undo, applies, reason,
+        "`teyla harness sync` copies five small scripts to ~/.teyla/hooks and registers them in each installed harness's hooks file; "
+        "it skips a harness that is not installed. "
+        + (f"`teyla plugin install {PLUGIN_SOURCE}` adds Teyla's plugin to Claude Code, which has none yet. " if plugin else "")
+        + "Nothing about your sessions leaves the machine.")
 
 
 def _o7(home) -> Offer:
@@ -483,13 +532,26 @@ def build(days: int = 30, inputs=None, diag: dict | None = None, with_savings: b
              _o3(inputs, home, with_savings), _o4(inputs, diag, home), _o5(home), _o6(home), _o7(home)]
     for o in built:
         o.short = SHORT[o.id]
+        o.preview = f"teyla apply {o.id} --dry"
     return built
 
 
 # --- applying ------------------------------------------------------------------------------------
 
-def apply(offer: Offer, home: pathlib.Path | None = None) -> tuple[dict, list[str]]:
-    """Make the offer's change. Returns (the change record, lines to show). Raises changes.ChangeError."""
+def _plugin_step(home: pathlib.Path) -> list[str]:
+    """O6's second step: Teyla's plugin into Claude Code. A failure is a line, not an exception: the
+    hooks the first step wrote are in place and the change must be logged."""
+    from . import plugin_install
+    try:
+        lines = plugin_install.install(PLUGIN_SOURCE, plugins_dir=home / ".claude" / "plugins")
+    except Exception as e:  # noqa: BLE001 — a failed clone or a registry that does not parse
+        return [f"plugin not installed: {type(e).__name__}: {e}. Run `{PLUGIN_INSTALL}` when it can reach github.com."]
+    return (["safe mode: Teyla edits no plugin registry; run these in a terminal:"] if plugin_install._safe() else []) + lines
+
+
+def apply(offer: Offer, home: pathlib.Path | None = None, owner: str | None = None) -> tuple[dict, list[str]]:
+    """Make the offer's change. Returns (the change record, lines to show). Raises changes.ChangeError.
+    `owner` is the name O5's starter policy carries."""
     home = home or pathlib.Path.home()
     c = offer.change
     if c["kind"] == "json":
@@ -502,6 +564,15 @@ def apply(offer: Offer, home: pathlib.Path | None = None) -> tuple[dict, list[st
         rec = changes.apply_file(offer.id, home / pathlib.Path(c["file"].removeprefix("~/")), SCOUT_AGENT)
         return rec, [offer.change["summary"]]
     from . import harness, policy, routine_install
-    run = {"teyla policy sync": lambda: policy.sync(), "teyla harness sync": lambda: harness.sync(),
-           "teyla routine install": lambda: routine_install.install()}[c["command"]]
+    def o6() -> list[str]:
+        synced: list[str] = []
+        plugin: list[str] = []
+        for part in c["command"].split(" && "):
+            if part == HARNESS_SYNC:
+                synced = harness.sync()
+            else:
+                plugin = _plugin_step(home)
+        return plugin + synced              # the caller shows the first lines: the plugin's result, or its failure, must be among them
+    run = {"teyla policy sync": lambda: policy.sync(owner=owner), "teyla routine install": lambda: routine_install.install()
+           }.get(c["command"]) or o6
     return changes.apply_command(offer.id, c["command"], run, offer.undo)

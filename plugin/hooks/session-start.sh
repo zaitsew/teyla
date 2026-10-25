@@ -234,7 +234,7 @@ fi
   if [ -z "$teyla_bin" ] && [ -f "$HOME/.teyla/config.toml" ]; then
     # Teyla was set up here (config exists) but no binary answers: a failed
     # `uv tool install --force` removes the old tool before building the new one.
-    echo "teyla: no \`teyla\` binary found although ~/.teyla/config.toml exists — reinstall: uv tool install --force git+https://github.com/zaitsew/teyla (or pipx)"
+    echo "teyla: no \`teyla\` binary found although ~/.teyla/config.toml exists — reinstall: uv tool install --force --python 3.12 git+https://github.com/zaitsew/teyla (or pipx)"
   fi
   safe=""
   case "$TEYLA_SAFE" in 1|true|TRUE|True|yes|on) safe=1 ;; esac

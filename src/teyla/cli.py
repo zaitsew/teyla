@@ -11,7 +11,7 @@
   teyla intent path <product> | backfill [--days 30] [--dry]     the file to read before planning; fill it from Claude Code and Codex transcripts
   teyla intent cover <plan.md> [--product P] [--since DATE] [--last N] [--model] [--json]   which of his sentences the plan neither serves nor sets aside; exit 1 if any
   teyla start [--days N] [--agent|--json] [--yes]                 diagnose your agent spend, then offer one-keystroke fixes (--agent: JSON for an AI to relay, writes nothing)
-  teyla apply OFFER... [--yes] [--dry] | undo CHANGE_OR_OFFER... [--force] | changes [--json]   make, revert and list the changes `start` offers
+  teyla apply OFFER... [--yes] [--dry] [--owner NAME] | undo CHANGE_OR_OFFER... [--force] | changes [--json]   make, revert and list the changes `start` offers
   teyla policy init [--owner] [--work] [--claude-md] [--ops-root-init] [--dry]   POLICY.md, global CLAUDE.md, an ops root
   teyla policy status|sync [--dry] [--quiet]                      the wiring into every harness (hand edits to a generated copy are filed first)
   teyla policy inbox [--done FILE|--all]                          hand edits found in generated policy files, waiting for review
@@ -599,7 +599,7 @@ def _friendly(e: Exception, cmd: str) -> str:
     if isinstance(e, ModuleNotFoundError) and e.name and not e.name.startswith("teyla"):
         pkg = {"PIL": "pillow"}.get(e.name.split(".")[0], e.name.split(".")[0])
         return (f"teyla: `teyla {cmd}` needs the Python package '{pkg}', which is not installed. "
-                f"Fix: uv tool install --force --with {pkg} git+https://github.com/zaitsew/teyla")
+                f"Fix: uv tool install --force --python 3.12 --with {pkg} git+https://github.com/zaitsew/teyla")
     if isinstance(e, OSError) and getattr(e, "filename", None):
         where = str(e.filename)
         if where.startswith(str(control.home())):

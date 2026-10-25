@@ -18,7 +18,7 @@ turn the findings into edits that actually land in the repo.
 
 If it prints `teyla: MISSING`, say only this one line and stop; do not run anything else:
 
-> This needs the Teyla CLI. Install it, then ask again: `uv tool install git+https://github.com/zaitsew/teyla` (or `pipx install git+https://github.com/zaitsew/teyla`). Python 3.11 or newer.
+> This needs the Teyla CLI. Install it, then ask again: `uv tool install --python 3.12 git+https://github.com/zaitsew/teyla` (or `pipx install git+https://github.com/zaitsew/teyla`). Python 3.11 or newer.
 
 If the CLI is found only at `~/.local/bin/teyla` (not on PATH), use that full path wherever a command below says `teyla`.
 

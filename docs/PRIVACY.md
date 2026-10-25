@@ -15,10 +15,10 @@ with `--allow-network`. The gate is `src/teyla/net.py`.
 
 | # | Trigger | Host | What is sent | Default on | Safe mode |
 |---|---|---|---|---|---|
-| 1 | The update check: `teyla doctor` (when the cached answer is over a day old), the session-start hook (once a day, in the background, once Teyla is set up), `teyla update --check` | `api.github.com` | A GET for the latest release and commit of `zaitsew/teyla`. It sends only the version, as the User-Agent `teyla/<version>`. The result is cached in `~/.teyla/update-check.json`. | Yes | closed |
+| 1 | The update check: `teyla doctor` (when the cached answer is over a day old), the session-start hook (once a day, in the background, once Teyla is set up), `teyla update --check` | `api.github.com` | A GET for the latest release and commit of `zaitsew/teyla`. It sends only the version, as the User-Agent `teyla/<version>`. The result is cached in `~/.teyla/update-check.json`. `teyla doctor` is not read-only: it also writes `~/.teyla/doctor.json`, `doctor.summary` and `banner.items`, and makes this one call when the cache is stale (`teyla doctor --refresh` always). | Yes | closed |
 | 2 | `teyla update` (the daily routine runs it, if you installed the routine) | `github.com`, and `pypi.org` for build tools | `uv tool install` or `pip` fetches the new release. No user data. | Only if the routine is installed | closed |
 | 3 | `teyla models --refresh` | `models.dev` | A GET of the public model catalogue. No user data. | No (needs `--refresh`) | closed |
-| 4 | `teyla plugin install owner/repo` | `github.com` | `git clone` or `git pull` of the repo you named. | No (you name the repo) | closed |
+| 4 | `teyla plugin install owner/repo`, and offer O6 of `teyla start` when you say yes and Claude Code has no Teyla plugin (it installs `zaitsew/teyla`) | `github.com` | `git clone` or `git pull` of the repo you named, or of `zaitsew/teyla` for O6. | No (you name the repo, or say yes to O6) | closed |
 
 ## Calls through tools you already have
 

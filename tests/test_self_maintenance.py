@@ -999,3 +999,106 @@ def test_harness_disabled_is_set_from_the_cli(_home, capsys):
     from teyla import cli
     assert cli.main(["config", "set", "harness.disabled=hermes,grok"]) in (0, None)
     assert 'disabled = ["hermes", "grok"]' in config.CONFIG_PATH.read_text()
+
+
+# --- install by agent: what a stranger's agent tripped on ---------------------------------------
+
+def _rate_limited(monkeypatch, code=403):
+    def urlopen(req, timeout=10, context=None):
+        raise update.urllib.error.HTTPError(req.full_url, code, "rate limit exceeded", {}, None)
+    monkeypatch.setattr(update.urllib.request, "urlopen", urlopen)
+    monkeypatch.delenv("HTTPS_PROXY", raising=False); monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.setattr(update.urllib.request, "getproxies", lambda: {})
+
+
+@pytest.mark.parametrize("code", [403, 429])
+def test_a_github_rate_limit_is_info_not_a_warning(_home, monkeypatch, code):
+    _rate_limited(monkeypatch, code)
+    rec = update.check(refresh=True)
+    assert rec["latest"] is None and rec["rate_limited"] is True and "GitHub rate limit; try later" in rec["note"]
+    by = {c["name"]: c for c in doctor.checks(refresh_update=True, scan_repos=False)}
+    assert by["version"]["level"] == "INFO" and "latest unknown (GitHub rate limit; try later)" in by["version"]["detail"]
+    assert by["network"]["level"] == "INFO" and "rate limit" in by["network"]["detail"]
+
+
+def test_other_http_errors_still_warn(_home, monkeypatch):
+    def urlopen(req, timeout=10, context=None):
+        raise update.urllib.error.HTTPError(req.full_url, 500, "boom", {}, None)
+    monkeypatch.setattr(update.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(update.urllib.request, "getproxies", lambda: {})
+    by = {c["name"]: c for c in doctor.checks(refresh_update=True, scan_repos=False)}
+    assert by["version"]["level"] == "WARN" and update.check(refresh=False)["rate_limited"] is False
+
+
+def test_python_3_11_to_3_13_is_in_range_and_others_get_an_info_line(_home, monkeypatch):
+    assert [update.python_supported((3, m)) for m in (10, 11, 12, 13, 14, 15)] == [False, True, True, True, False, False]
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: _Resp({"tag_name": "v0.0.0"}))
+    monkeypatch.setattr(update, "python_supported", lambda v: True)
+    by = {c["name"]: c for c in doctor.checks(refresh_update=True, scan_repos=False)}
+    assert "network:python-range" not in by and "network:python" not in by
+    monkeypatch.setattr(update, "python_supported", lambda v: False)
+    by = {c["name"]: c for c in doctor.checks(refresh_update=True, scan_repos=False)}
+    row = by["network:python-range"]
+    assert row["level"] == "INFO" and "--python 3.12" in row["fix"] and "3.11 to 3.13" in row["detail"]
+
+
+def test_doctor_never_prints_fix_for_a_harness_it_reports_absent(_home, monkeypatch):
+    from teyla import harness, health
+    for d in (".claude",):
+        (_home / d).mkdir(exist_ok=True)
+    monkeypatch.setattr(harness, "HOME", _home)
+    monkeypatch.setattr(health, "HOME", _home)
+    monkeypatch.setattr(health, "find_binary", lambda n: None)
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: _Resp({"tag_name": "v0.0.0"}))
+    cs = {c["name"]: c for c in doctor.checks(refresh_update=False, scan_repos=False)}
+    assert cs["harness:cursor"]["detail"] == "absent on this machine"
+    assert "FIX" != cs["harness:cursor"]["level"]
+    absent = {n.split(":")[1] for n, c in cs.items() if n.startswith("harness:") and c["detail"] == "absent on this machine"}
+    assert {"cursor", "codex", "grok", "hermes"} <= absent
+    assert not [n for n, c in cs.items() if c["level"] == "FIX" and n.startswith("harness:") and n.split(":")[1] in absent]
+    (_home / ".cursor").mkdir()
+    cs = {c["name"]: c for c in doctor.checks(refresh_update=False, scan_repos=False)}
+    assert cs["harness:cursor"]["level"] == "FIX" and cs["harness:cursor"]["fix"] == "teyla harness sync"
+
+
+def test_harness_sync_leaves_a_machine_without_the_harness_alone(_home, monkeypatch):
+    from teyla import harness
+    monkeypatch.setattr(harness, "HOME", _home)
+    app = _home / "Applications" / "Cursor.app"
+    app.mkdir(parents=True)                               # an app on disk is not a home directory in this HOME
+    assert harness.installed("cursor") is False and harness.installed("claude-code") is False
+    assert harness.sync()[0].startswith("no other harness on this machine")
+    assert not (_home / ".cursor").exists()
+
+
+def test_the_tools_line_and_the_health_line_use_one_codex_detector(_home, monkeypatch):
+    from teyla import health
+    bundle = str(_home / "Apps" / "codex")
+    monkeypatch.setattr(health, "find_binary", lambda n: bundle if n == "codex" else None)
+    monkeypatch.setattr(doctor.shutil, "which", lambda t: None)
+    monkeypatch.setattr(health.shutil, "which", lambda t: None)
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: _Resp({"tag_name": "v0.0.0"}))
+    by = {c["name"]: c for c in doctor.checks(refresh_update=False, scan_repos=False)}
+    tools = by["tools"]["detail"]
+    assert f"codex (at {bundle}, not on PATH)" in tools and "absent: " in tools and "codex" not in tools.split("absent:")[1]
+    assert "tools:second-opinion" not in by
+    row = health.verdict("codex", {"binary": bundle, "version": "0.1.0", "auth": {"ok": True, "detail": "x"}})
+    assert f"0.1.0 (at {bundle}, not on PATH)" in row["detail"]
+
+
+def test_doctor_prints_setup_first_and_machine_facts_last_under_one_setup_heading(_home, monkeypatch):
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: _Resp({"tag_name": "v0.0.0"}))
+    cs = doctor.checks(refresh_update=False, scan_repos=True)
+    names = [c["name"] for c in cs]
+    machine = [i for i, n in enumerate(names) if n.startswith(("machine:", "storage:"))]
+    assert machine and machine == list(range(len(names) - len(machine), len(names)))
+    text = doctor.render(cs)
+    assert text.count("\nSetup\n") == 1 and text.index("\nSetup\n") < text.index("\nMachine\n")
+    assert text.index("machine:load") > text.index("\nMachine\n") and text.index("version") < text.index("\nMachine\n")
+
+
+def test_the_missing_policy_fix_uses_the_owner_form_agents_md_gives(_home, monkeypatch):
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=10, context=None: _Resp({"tag_name": "v0.0.0"}))
+    by = {c["name"]: c for c in doctor.checks(refresh_update=False, scan_repos=False)}
+    assert by["policy:file"]["fix"] == 'teyla policy init --owner "$(git config user.name)" && teyla policy sync'
+    assert by["policy:file"]["fix"] in (pathlib.Path(teyla.__file__).resolve().parents[2] / "AGENTS.md").read_text()

@@ -4,7 +4,7 @@ You are setting up how this account works with AI agents, using Teyla — https:
 
 ## 1. Install Teyla and the operating policy
 
-Install: `uv tool install git+https://github.com/zaitsew/teyla` (fallbacks: `pipx`, or `git clone https://github.com/zaitsew/teyla && PYTHONPATH=src python3 -m teyla`). Then follow the onboarding prompt **that shipped with the version you just installed**: `teyla prompt onboard` prints it (from a clone: `prompts/onboard.md` in that checkout). Do not fetch prompts from the repository's `main` branch — instructions must match the code that runs them. Then `teyla doctor`.
+Install: `uv tool install --python 3.12 git+https://github.com/zaitsew/teyla` (fallbacks: `pipx`, or `git clone https://github.com/zaitsew/teyla && PYTHONPATH=src python3 -m teyla`). Then follow the onboarding prompt **that shipped with the version you just installed**: `teyla prompt onboard` prints it (from a clone: `prompts/onboard.md` in that checkout). Do not fetch prompts from the repository's `main` branch — instructions must match the code that runs them. Then `teyla doctor`.
 
 Then create the operating layer in one command, adapting the values:
 
@@ -15,7 +15,7 @@ teyla policy init --work --owner "<my name>" --claude-md --ops-root-init \
 teyla policy sync
 ```
 
-`--work` switches on safe mode (`safe.enabled = true` in `~/.teyla/config.toml`): Teyla reaches the network only when a command I type carries `--allow-network`, never updates itself, runs no repo's `check.sh` outside `products.repos`, and prints `claude plugin ...` commands instead of editing the plugin registry. `teyla doctor`'s first line must read `safe: on`. Behind the proxy, install with the work extra: `uv tool install "teyla[work] @ git+https://github.com/zaitsew/teyla"`.
+`--work` switches on safe mode (`safe.enabled = true` in `~/.teyla/config.toml`): Teyla reaches the network only when a command I type carries `--allow-network`, never updates itself, runs no repo's `check.sh` outside `products.repos`, and prints `claude plugin ...` commands instead of editing the plugin registry. `teyla doctor`'s first line must read `safe: on`. Behind the proxy, install with the work extra: `uv tool install --python 3.12 "teyla[work] @ git+https://github.com/zaitsew/teyla"`.
 
 This writes `~/.agents/POLICY.md` from the work template (model ladder for approved providers only, same-provider second opinions, tool ladder, ask-with-a-default, blocker protocol, plug-and-play, merge rule), `~/.claude/CLAUDE.md` (shipping rules, layout, secrets, reporting), and `~/work-ops` (skill / rule / fact split, `runs/` ignored). It links the policy into Codex (`~/.codex/AGENTS.md`), Grok and Hermes where they exist. Read https://github.com/zaitsew/teyla/blob/main/docs/HANDOVER.md — it lists every practice and what to adapt — then edit `~/.agents/POLICY.md`: keep only the providers this laptop has and name the top tier for each (the ladder is: the most capable model orchestrates and reviews; cheaper models read, draft and do boilerplate; one cross-provider review before anything touching money, credentials or other people's data). Edit `~/.claude/CLAUDE.md` if the team mandates squash merges or a different layout.
 

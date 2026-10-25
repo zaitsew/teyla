@@ -18,7 +18,7 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PLUGIN = ROOT / "plugin"
-INSTALL_LINE = "uv tool install git+https://github.com/zaitsew/teyla"
+INSTALL_LINE = "uv tool install --python 3.12 git+https://github.com/zaitsew/teyla"
 MARKETPLACE_LINE = "/plugin install teyla --marketplace zaitsew/teyla"
 SHIPPED = [p for p in sorted(PLUGIN.rglob("*")) if p.is_file()]
 ICON = PLUGIN / ".claude-plugin" / "icon.png"

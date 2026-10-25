@@ -121,22 +121,33 @@ not yet a rule.
 
 
 class Harness:
-    def __init__(self, name, home, skills_dir, hooks_path=None, hooks_kind=None, app=None):
-        self.name, self.home, self.skills_dir, self.hooks_path, self.hooks_kind, self.app = name, home, skills_dir, hooks_path, hooks_kind, app
+    def __init__(self, name, home, skills_dir, hooks_path=None, hooks_kind=None):
+        self.name, self.home, self.skills_dir, self.hooks_path, self.hooks_kind = name, home, skills_dir, hooks_path, hooks_kind
 
     def present(self) -> bool:
-        return self.home.is_dir() or (self.app is not None and pathlib.Path(self.app).exists())
+        """The one test for "installed here": the harness's home directory exists. `harness sync`, `harness status`,
+        offer O6 and doctor all ask it. An app in /Applications does not count: with another HOME (a sandbox, a
+        second user) syncing would create the directory in a place the person never used that harness."""
+        return self.home.is_dir()
 
 
 def harnesses(home: pathlib.Path | None = None) -> dict[str, Harness]:
     h = home or HOME
     return {
-        "cursor": Harness("cursor", h / ".cursor", h / ".cursor" / "skills", h / ".cursor" / "hooks.json", "cursor",
-                          app="/Applications/Cursor.app"),
+        "cursor": Harness("cursor", h / ".cursor", h / ".cursor" / "skills", h / ".cursor" / "hooks.json", "cursor"),
         "codex": Harness("codex", h / ".codex", h / ".codex" / "skills", h / ".codex" / "hooks.json", "codex"),
         "grok": Harness("grok", h / ".grok", h / ".grok" / "skills", h / ".grok" / "hooks" / "teyla.json", "grok"),
         "hermes": Harness("hermes", h / ".hermes", h / ".hermes" / "skills" / "teyla", h / ".hermes" / "config.yaml", "hermes"),
     }
+
+
+def installed(name: str, home: pathlib.Path | None = None) -> bool:
+    """`present()` by harness name, Claude Code included (it has no entry in `harnesses()`: the plugin, not
+    `harness sync`, serves it)."""
+    if name == "claude-code":
+        return ((home or HOME) / ".claude").is_dir()
+    h = harnesses(home).get(name)
+    return bool(h and h.present())
 
 
 # --- skills ---------------------------------------------------------------------------------

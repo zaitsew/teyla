@@ -36,7 +36,7 @@ accident — say so and stop.
 
 If it prints `teyla: MISSING`, tell the user this one line, then continue with the inline fallback in step 1–2 (this skill is the one exception that still works without the CLI):
 
-> The Teyla CLI gives a fuller harvest. Install it any time: `uv tool install git+https://github.com/zaitsew/teyla` (or `pipx install git+https://github.com/zaitsew/teyla`). Python 3.11 or newer.
+> The Teyla CLI gives a fuller harvest. Install it any time: `uv tool install --python 3.12 git+https://github.com/zaitsew/teyla` (or `pipx install git+https://github.com/zaitsew/teyla`). Python 3.11 or newer.
 
 If the CLI is found only at `~/.local/bin/teyla` (not on PATH), use that full path wherever a command below says `teyla`.
 
