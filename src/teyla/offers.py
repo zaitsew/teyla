@@ -63,7 +63,7 @@ that changes state. If the question needs a change, say what you would change an
 class Offer:
     id: str
     title: str
-    change: dict                      # kind, file, key_path, old, new, summary; piece offers name the piece
+    change: dict                      # kind, file, key_path, old, new, summary; command offers name the command
     saving_usd_month: dict | None     # {"low": x, "high": y} or None
     basis: str
     benefit: str | None
@@ -401,9 +401,9 @@ def _o4(inp, diag, home) -> Offer:
                  "and table as it is, after a backup."))
 
 
-def _piece(oid, title, piece, change_text, benefit, tradeoff, undo, applies, reason, explain) -> Offer:
-    return Offer(id=oid, title=title, change=dict(kind="piece", piece=piece, file="", key_path=[], old=None, new=piece,
-                                                  summary=change_text),
+def _command(oid, title, command, change_text, benefit, tradeoff, undo, applies, reason, explain) -> Offer:
+    return Offer(id=oid, title=title, change=dict(kind="command", command=command, file="", key_path=[], old=None,
+                                                  new=command, summary=change_text),
                  saving_usd_month=None, basis="", benefit=benefit, tradeoff=tradeoff, undo=undo,
                  applies=applies, reason=reason, explain=explain)
 
@@ -417,13 +417,13 @@ def _o5(home) -> Offer:
         reason = "" if applies else reason
     except Exception as e:  # noqa: BLE001
         reason = f"could not read the policy wiring ({type(e).__name__})"
-    return _piece(
-        "O5", "Give every agent the same rules", "policy",
+    return _command(
+        "O5", "Give every agent the same rules", "teyla policy sync",
         "run `teyla policy sync`: one policy file, linked into the AGENTS.md or CLAUDE.md of each installed harness",
         "One rules file is read by Claude Code, Codex and the others, so a correction made once holds everywhere.",
         "Teyla writes a starter policy to ~/.agents/POLICY.md when you have none, and adds one import line to ~/.claude/CLAUDE.md; "
         "edit the policy to match how you work.",
-        "teyla undo O5 puts every file it changed back from its backup and removes the ones it created, while you have not edited them; the policy file goes only if it is still the starter.",
+        "`teyla undo` does not reverse it. No targeted command exists: `teyla uninstall` removes all of Teyla's policy links, hooks and data (`teyla uninstall --dry` lists them first).",
         applies, reason,
         "`teyla policy sync` writes ~/.agents/POLICY.md if it is missing, links or generates ~/.codex/AGENTS.md and ~/.grok/AGENTS.md, "
         "and adds `@~/.agents/POLICY.md` to ~/.claude/CLAUDE.md. It never touches a harness that is not installed.")
@@ -438,12 +438,13 @@ def _o6(home) -> Offer:
         reason = "" if applies else reason
     except Exception as e:  # noqa: BLE001
         reason = f"could not read the harness wiring ({type(e).__name__})"
-    return _piece(
-        "O6", "Keep your prompts and questions", "hooks",
+    return _command(
+        "O6", "Keep your prompts and questions", "teyla harness sync",
         "run `teyla harness sync`: skills and hooks into Cursor, Codex, Grok and Hermes",
         "Hooks record the corrections you type and the questions agents leave unanswered, so Teyla can list what is waiting on you.",
-        "Each hook runs a small script from ~/.teyla/hooks on every prompt; Codex asks you to approve a new hook once.",
-        "teyla undo O6 removes the hook entries and skills it created; your own hooks stay.",
+        "Each hook runs a small script from ~/.teyla/hooks on every prompt; Codex asks you to approve a new hook once. "
+        "The sync replaces Teyla's own hook files, including any edits made to them.",
+        "`teyla undo` does not reverse it. No targeted command exists: remove with `teyla uninstall`, which removes all of Teyla's hooks (`--dry` lists them first).",
         applies, reason,
         "`teyla harness sync` copies five small scripts to ~/.teyla/hooks and registers them in each installed harness's hooks file. "
         "Nothing leaves the machine.")
@@ -456,12 +457,12 @@ def _o7(home) -> Offer:
         applies, reason = False, "the daily routine uses launchd, which is macOS only"
     elif ri.DAILY_PLIST_PATH.exists():
         applies, reason = False, "the daily routine is already installed"
-    return _piece(
-        "O7", "Check in every morning", "routine",
+    return _command(
+        "O7", "Check in every morning", "teyla routine install",
         "run `teyla routine install`: a daily and a weekly launchd job",
         "A daily run keeps Teyla current, refreshes the waiting-asks count and flags problems before you hit them.",
         "Two launchd jobs run on your Mac at fixed times; they use no network except the update check, and `teyla config set safe.enabled=true` turns that off.",
-        "teyla undo O7 unloads and removes the jobs it created.",
+        "`teyla undo` does not reverse it. `teyla routine install` prints the `launchctl bootout` and `rm` commands that remove the two jobs; `teyla uninstall` removes them with the rest of Teyla.",
         applies, reason,
         "`teyla routine install` writes two wrapper scripts to ~/.teyla and two plists to ~/Library/LaunchAgents, then loads them with launchctl.")
 
@@ -501,7 +502,6 @@ def apply(offer: Offer, home: pathlib.Path | None = None) -> tuple[dict, list[st
         rec = changes.apply_file(offer.id, home / pathlib.Path(c["file"].removeprefix("~/")), SCOUT_AGENT)
         return rec, [offer.change["summary"]]
     from . import harness, policy, routine_install
-    run = {"policy": lambda: policy.sync(), "hooks": lambda: harness.sync(),
-           "routine": lambda: routine_install.install()}[c["piece"]]
-    rec, lines = changes.apply_piece(offer.id, c["piece"], run, home)
-    return rec, lines
+    run = {"teyla policy sync": lambda: policy.sync(), "teyla harness sync": lambda: harness.sync(),
+           "teyla routine install": lambda: routine_install.install()}[c["command"]]
+    return changes.apply_command(offer.id, c["command"], run, offer.undo)

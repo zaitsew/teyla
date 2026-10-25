@@ -110,8 +110,13 @@ def _done_summary(done: list) -> None:
     print("\nChanged:")
     for o, rec in done:
         print(f"  {rec['id']}  {o.change['summary']}")
-    print("Undo any of them: " + "  ".join(f"teyla undo {rec['id']}" for _, rec in done)
-          + "\nSee them all: teyla changes")
+    undoable = [rec for _, rec in done if rec.get("kind") != "command"]
+    if undoable:
+        print("Undo any of them: " + "  ".join(f"teyla undo {rec['id']}" for rec in undoable))
+    for o, rec in done:
+        if rec.get("kind") == "command":
+            print(f"{o.id}: {o.undo}")
+    print("See them all: teyla changes")
 
 
 def _is_tty() -> bool:
@@ -236,7 +241,10 @@ def cmd_changes(args) -> int:
         print("Teyla has changed nothing on this machine yet.")
         return 0
     for c in rows:
-        what = ".".join(c["key_path"]) or c.get("piece") or "file"
+        if c.get("kind") == "command":
+            print(f"{c['id']}  {c['offer']}  ran `{c['command']}` at {c['at']}  [{'undone ' + c['undone'] if c['undone'] else 'active; teyla uninstall reverses it'}]")
+            continue
+        what = ".".join(c["key_path"]) or "file"
         state = f"undone {c['undone']}" if c["undone"] else "active"
         old = changes.ABSENT if not c.get("old_present") else json.dumps(c["old"])
         print(f"{c['id']}  {c['offer']}  {c['file']}  {what}: {old} -> {json.dumps(c['new'])}  [{state}]")

@@ -244,11 +244,10 @@ def _policy_links(home: pathlib.Path) -> list[Step]:
     return steps
 
 
-def _hermes(home: pathlib.Path, part: str | None = None) -> list[Step]:
-    """The Hermes steps: `part` "soul" is the policy section, "config" the hooks block, None both."""
+def _hermes(home: pathlib.Path) -> list[Step]:
     steps = []
     soul = home / ".hermes" / "SOUL.md"
-    if soul.is_file() and part in (None, "soul"):
+    if soul.is_file():
         text = soul.read_text()
         if _policy.HERMES_BLOCK in text:
             def edit_soul():
@@ -258,7 +257,7 @@ def _hermes(home: pathlib.Path, part: str | None = None) -> list[Step]:
         elif _policy.HERMES_MARK in text:
             steps.append(Step("", soul, f"has a \"{_policy.HERMES_MARK}\" section that is not the text Teyla writes (edited, or written by hand) — remove it by hand"))
     cfg = home / ".hermes" / "config.yaml"
-    if cfg.is_file() and part in (None, "config"):
+    if cfg.is_file():
         text = cfg.read_text()
         a, b = text.find(_harness.HERMES_BEGIN), text.find(_harness.HERMES_END)
         if a >= 0 and b > a:
@@ -512,24 +511,6 @@ def _reports(home: pathlib.Path, cfg: dict) -> list[Step]:
     if runs.is_dir():
         steps.append(Step("", runs, "the weekly routine's reports"))
     return steps
-
-
-# What `teyla start` applies as one piece (offers O5-O7) and the uninstall steps that undo that piece.
-PIECES = ("policy", "hooks", "routine")
-
-
-def piece_steps(piece: str, home: pathlib.Path | None = None) -> list[Step]:
-    """The uninstall steps of one piece: "policy" (the import line, the AGENTS.md links, Hermes's section),
-    "hooks" (hook entries, generated skills, Hermes's hook block) or "routine" (the launchd agents).
-    Read-only: builds the list, changes nothing."""
-    home = home or pathlib.Path.home()
-    if piece == "policy":
-        return _hermes(home, "soul") + _policy_links(home) + _claude_md(home)
-    if piece == "hooks":
-        return _hooks(home) + _skills(home) + _hermes(home, "config")
-    if piece == "routine":
-        return _launch_agents(home)
-    raise ValueError(f"unknown piece {piece!r}: expected one of {', '.join(PIECES)}")
 
 
 def plan(home: pathlib.Path | None = None, keep_data: bool = False) -> list[Step]:

@@ -305,24 +305,43 @@ def test_apply_a_file_that_does_not_parse_changes_nothing(machine, capsys):
     assert changes.changes() == []
 
 
-def test_apply_o5_and_o6_write_into_the_fake_home_and_undo_removes_what_they_made(machine, capsys):
+def test_apply_o5_and_o6_run_the_syncs_and_log_them_as_commands(machine, capsys):
     (machine.home / ".codex").mkdir()
     (machine.home / ".agents").mkdir()
     (machine.home / ".agents" / "POLICY.md").write_text("# policy\n\n## 1. rules\n\ntext\n")
-    code, _out, err = _run(["apply", "O5", "O6", "--yes"], capsys)
+    code, out, err = _run(["apply", "O5", "O6", "--yes"], capsys)
     assert code == 0, err
-    assert (machine.home / ".codex" / "AGENTS.md").exists() or (machine.home / ".codex" / "AGENTS.md").is_symlink()
     assert (machine.home / ".codex" / "hooks.json").exists()
-    assert _run(["undo", "O5", "O6"], capsys)[0] == 0
-    assert not (machine.home / ".codex" / "hooks.json").exists()
-    assert not (machine.home / ".codex" / "AGENTS.md").is_symlink() and not (machine.home / ".codex" / "AGENTS.md").exists()
+    rows = changes.changes()
+    assert [(r["offer"], r["kind"], r["command"]) for r in rows] == [
+        ("O5", "command", "teyla policy sync"), ("O6", "command", "teyla harness sync")]
+    assert "teyla uninstall" in out and "teyla undo O5-" not in out
+    assert "teyla policy sync" in _run(["changes"], capsys)[1]
 
 
-def test_apply_o7_runs_the_routine_install_and_logs_the_piece(machine, capsys, _no_real_routine, monkeypatch):
+def test_undo_of_a_command_prints_the_uninstall_command_and_exits_1(machine, capsys):
+    (machine.home / ".codex").mkdir()
+    assert _run(["apply", "O6", "--yes"], capsys)[0] == 0
+    hooks = (machine.home / ".codex" / "hooks.json").read_bytes()
+    code, out, err = _run(["undo", "O6"], capsys)
+    assert code == 1
+    assert "Teyla's sync owns these files; its uninstall removes them" in err and "teyla uninstall" in err
+    assert (machine.home / ".codex" / "hooks.json").read_bytes() == hooks      # nothing was touched
+    assert changes.changes()[0]["undone"] is None
+
+
+def test_o6_says_the_sync_replaces_teyla_hook_files_including_edits(machine):
+    o = _offers(machine)[0]["O6"]
+    assert "replaces Teyla's own hook files, including any edits made to them" in o.tradeoff
+    for oid in ("O5", "O6", "O7"):
+        assert "teyla uninstall" in _offers(machine)[0][oid].undo
+
+
+def test_apply_o7_runs_the_routine_install_and_logs_the_command(machine, capsys, _no_real_routine, monkeypatch):
     monkeypatch.setattr(offers.sys, "platform", "darwin")
     code, out, _ = _run(["apply", "O7", "--yes"], capsys)
     assert code == 0 and _no_real_routine == [1]
-    assert changes.changes()[0]["piece"] == "routine"
+    assert changes.changes()[0]["command"] == "teyla routine install"
 
 
 # --- the commands ----------------------------------------------------------------------------------------

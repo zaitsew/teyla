@@ -97,11 +97,12 @@ JSON key order, the indent and the file mode. A symlinked settings file is follo
 - When you edited the file since, undo reverts only the key Teyla wrote and leaves your edits.
 - When the key itself was changed since, or you removed it, undo stops and says so. `--force` puts the old value back anyway.
 - A file Teyla created (`scout.md`) is removed only while it is unchanged.
-- O5 to O7 log each file the sync created or changed (hash before, hash after), each directory it created and
-  each hook entry it added. Before the sync overwrites a file, the file is copied to `<file>.teyla-bak-<UTC time>`
-  (mode 0600). Undo restores an overwritten file from that copy and removes a created file only while its hash
-  still equals the hash after the apply. A directory goes only when it is empty. A file you edited since stays,
-  except that the hook entries Teyla added are taken out of it; anything left in place is listed in the output.
-  A policy file, a hook script or a routine you already had is not removed.
+- O5 to O7 run the existing `teyla policy sync`, `teyla harness sync` and `teyla routine install` exactly as those
+  commands do. Teyla does not wrap, snapshot or hash them. The ledger records `kind: "command"` with the offer, the
+  command and the time, and `teyla changes` shows it. `teyla undo O6` does not reverse it: it prints the uninstall
+  command and exits 1, because Teyla's sync owns those files and its uninstall removes them. No targeted uninstall
+  exists, so `teyla uninstall` (`--dry` lists the steps first) removes all of Teyla's hooks, links and data;
+  `teyla routine install` prints the `launchctl bootout` and `rm` commands for the two jobs. The O6 sync replaces
+  Teyla's own hook files, including any edits made to them.
 
 A file that is not valid JSON is never written: the offer reports it and changes nothing.
