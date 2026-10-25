@@ -249,3 +249,9 @@ def test_the_collector_puts_the_lead_in_the_question(tree, saved):
 
 def test_the_question_limit_is_unchanged():
     assert asks.QUESTION_MAX == 600
+
+
+def test_a_long_title_never_crowds_out_the_instruction():
+    from teyla import asks
+    q = asks.with_title_lead("word " * 200, "Approve the deployment")
+    assert q.endswith(": Approve the deployment") and len(q) < asks.QUESTION_MAX

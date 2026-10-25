@@ -263,7 +263,7 @@ def with_title_lead(title: str, question: str) -> str:
     q = str(question or "").strip()
     if not t or not is_bare_imperative(q) or q.lower() in t.lower():
         return q
-    return f"{t.rstrip(':.')}: {q}"
+    return f"{clip(t, TITLE_MAX).rstrip(':.')}: {q}"      # a long title must not crowd out the instruction
 
 
 def trailing_question(text) -> str | None:
