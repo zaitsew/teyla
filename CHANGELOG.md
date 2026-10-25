@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.31.0 — 2026-10-25 — Start here: a diagnosis with undoable fixes, a dashboard, a Mac first run, setup by your agent
 
 - **A README a stranger can act on, and a guide that holds the depth.** The README is 93 lines: the lockup, the one-line promise,
   a screenshot of the Start page, then the line to paste into Claude Code or Codex ("Set up https://github.com/zaitsew/teyla"),
