@@ -38,15 +38,29 @@ write refuse to touch it until you fix it.
 
 ## How a session finds its product
 
-The first rule that matches wins.
+The first rule that matches wins. `registry.attribute()` returns the product and which rule chose it:
+`assign`, `pr`, `path`, `text`, `checkout` or `unassigned`. `teyla asks --why <id>` prints it.
 
-1. `[assign]`: the session id, or the ask id, is listed.
-2. The longest `repos` or `paths` entry that contains the session's directory. A worktree maps to
-   its repo: `<repo>/.claude/worktrees/<x>` by path, `~/.worktrees/<repo>/<branch>` by the repo's
-   directory name.
-3. A git checkout directly under `code_root` that nobody registered: its directory name. This is a
-   fact about the disk, not a guess.
-4. Otherwise `unassigned`.
+1. `[assign]` (`assign`): the ask id, else the session id, is listed.
+   Example: `"019a2b3c-..." = "app-b"` files that session under `app-b`.
+2. The PR link (`pr`). The repo of a `github.com/<owner>/<repo>/pull/<n>` link the session produced
+   names a registered product: one whose `repos` entry has that directory name, else one whose id or
+   alias is `<repo>`. Two products at the same level make no match. Example: a session in `app-a`'s
+   directory ends with a link to `.../app-b/pull/7`; the ask is about `app-b`.
+3. The longest `repos` or `paths` entry that contains the session's directory (`path`). A worktree
+   maps to its repo: `<repo>/.claude/worktrees/<x>` by path, `~/.worktrees/<repo>/<branch>` by the
+   repo's directory name. Example: `~/repos/app-a/ios` is `app-a`.
+4. Text (`text`). `registry.match_text` over the session title, then over the question. A text that
+   names exactly one registered product decides; one that names two makes no match.
+   - It is used when rule 3 found no registered product. Example: a session run in a scratch folder,
+     titled "Bee Hive pricing", is `app-b`.
+   - It replaces rule 3's product only when the **title** names exactly one product, that product is
+     not rule 3's, and the title does not name rule 3's. Example: a session in `app-a`'s directory
+     titled "Bee Hive checkout flow" is `app-b`; titled "App A and Bee Hive" it stays `app-a`.
+   - Question text alone never replaces a registered directory.
+5. A git checkout directly under `code_root` that nobody registered (`checkout`): its directory name.
+   This is a fact about the disk, not a guess.
+6. Otherwise `unassigned`.
 
 The old placeholders `(no repo)`, `(home)`, `(scratch)` and `unknown` no longer appear.
 
@@ -83,5 +97,9 @@ under it.
 
 ## For other commands
 
-`registry.match_text(text)` returns the products whose id, name or alias appears in a text as a whole
-word, ignoring case.
+`registry.match_text(text)` returns the products whose id, display name (`name`) or alias appears in a
+text as a whole word, ignoring case. A space, hyphen or underscore in the term matches any run of
+those, so the id `tool-c` finds "Tool C" and "tool_c".
+
+`registry.attribute(cwd, session=, ask_id=, pr=, texts=)` returns `(product, how)`; `registry.resolve()`
+is the same decision by directory alone, and returns the product.

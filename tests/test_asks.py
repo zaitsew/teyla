@@ -211,7 +211,7 @@ def test_a_blocked_desktop_session_without_a_transcript_is_a_blocked_item(env):
             prs=[{"prNumber": 4, "repo": "o/r", "state": "open", "url": "https://github.com/o/r/pull/4"}])
     [item] = env.collect()
     assert (item.kind, item.product, item.archived, item.harness) == ("blocked", "app", True, "claude-desktop")
-    assert item.question == "Approve the checksum change" and item.context == "Waiting on a flag."
+    assert item.question == "A session: Approve the checksum change" and item.context == "Waiting on a flag."
     assert item.link == "claude://claude.ai/epitaxy/local_c1" and item.pr.endswith("/pull/4")
     assert item.id == asks.make_id("claude", "c1", "a9")
 
@@ -235,7 +235,7 @@ def test_needs_action_beats_a_trailing_question(env):
     env.transcript("c1", [u("u1", "go"), a("a1", "Done.\n\nWant me to also rename it?")])
     desktop(env.desktop, "c1", needs="Confirm the rename", summarizes="a1")
     [item] = env.collect()
-    assert item.question == "Confirm the rename" and item.kind == "question"
+    assert item.question == "A session: Confirm the rename" and item.kind == "question"
 
 
 def test_a_trailing_question_alone_is_found_without_a_desktop_summary(env):
