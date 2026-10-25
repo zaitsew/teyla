@@ -34,7 +34,7 @@ from . import api as api_mod
 IDLE_S = 2 * 60 * 60
 WATCH_S = 5.0
 MAX_BODY = 64 * 1024
-COOKIE = "teyla_web"
+COOKIE = "teyla_web"            # the name gets the port: a cookie is shared by every port of 127.0.0.1
 STATIC = pathlib.Path(__file__).parent
 FILES = {"/app.js": ("app.js", "text/javascript; charset=utf-8"), "/app.css": ("app.css", "text/css; charset=utf-8")}
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; "
@@ -49,6 +49,7 @@ class Server(ThreadingHTTPServer):
         super().__init__(("127.0.0.1", port), Handler)
         self.token = token or secrets.token_urlsafe(32)
         self.port = self.server_address[1]
+        self.cookie = f"{COOKIE}_{self.port}"
         self.api = api or api_mod.Api()
         self.idle_s, self.watch_s = idle_s, watch_s
         self.last_request = time.monotonic()
@@ -125,7 +126,7 @@ class Handler(BaseHTTPRequestHandler):
             jar = SimpleCookie(raw)
         except Exception:  # noqa: BLE001 — a malformed Cookie header is no cookie
             return False
-        m = jar.get(COOKIE)
+        m = jar.get(self.server.cookie)
         return bool(m) and hmac.compare_digest(m.value.encode(), self.server.token.encode())
 
     def _origin_ok(self) -> bool:
@@ -174,7 +175,7 @@ class Handler(BaseHTTPRequestHandler):
             if not hmac.compare_digest(query["t"][0].encode(), srv.token.encode()):
                 return self._error(403, "wrong token: open the address `teyla web` printed")
             return self._send(302, b"", "text/plain", {
-                "Location": "/", "Set-Cookie": f"{COOKIE}={srv.token}; HttpOnly; SameSite=Strict; Path=/"})
+                "Location": "/", "Set-Cookie": f"{srv.cookie}={srv.token}; HttpOnly; SameSite=Strict; Path=/"})
         if not self._cookie_ok():
             return self._error(403, "no token: open the address `teyla web` printed, with ?t=... at the end")
         body: dict = {}

@@ -545,3 +545,19 @@ def test_app_js_parses():
         pytest.skip("node is not installed; the browser is the only thing that runs app.js")
     r = subprocess.run([node, "--check", str(ROOT / "src" / "teyla" / "web" / "app.js")], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+
+
+def test_two_dashboards_on_one_machine_keep_their_own_cookie(web, tmp_path):
+    other = server_mod.Server(port=0, api=api_mod.Api(cache=tmp_path / "other.json"), idle_s=3600, watch_s=0.05)
+    t = threading.Thread(target=other.serve, daemon=True)
+    t.start()
+    try:
+        w2 = Web(other)
+        w2.login()
+        assert web.cookie.split("=")[0] != w2.cookie.split("=")[0]
+        jar = web.cookie + "; " + w2.cookie                      # a browser sends both: ports do not separate cookies
+        assert web.raw("GET", "/api/notes", headers={"Cookie": jar})[0] == 200
+        assert w2.raw("GET", "/api/notes", headers={"Cookie": jar})[0] == 200
+    finally:
+        other.shutdown()
+        t.join(5)

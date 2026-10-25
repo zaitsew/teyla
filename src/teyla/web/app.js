@@ -409,6 +409,9 @@
 
     async function draw() {
       if (gen !== generation) return;
+      // The page is drawn again while the spend is counted: keep what is typed in the note box.
+      const box = document.getElementById("note-text");
+      const draft = box ? box.value : "", typing = box === document.activeElement;
       const sp = p.spend;
       const spendNum = sp ? money(sp.this_week) : "-";
       const stats = h("div", { class: "stats" },
@@ -450,6 +453,9 @@
         h("h2", null, "Notes"), noteList, noteForm({ product: p.id, candidates: null, onAdded: reload }),
         h("h2", null, "Recent sessions"), sessions,
         h("h2", null, "Repos and platform"), facts);
+      const again = document.getElementById("note-text");
+      if (again && draft) again.value = draft;
+      if (again && typing) again.focus();
     }
 
     async function reload() {
