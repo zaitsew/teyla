@@ -4,9 +4,9 @@
 
 - **`teyla asks` files an ask under the product it is about, and shows the whole question.** A session that ran outside any
   repo, or in the wrong one, used to land under `unassigned` or another product. `registry.attribute()` now decides by `[assign]`,
-  then the repo of the session's PR link, then the registered directory, then a product the title names (the title may replace
-  the directory's product only when it names exactly one other product; question text alone never does), then an unregistered
-  checkout. `--json` adds `attributed_by`, and `teyla asks --why <id>` prints the rule and its evidence. `match_text` also takes
+  then the one product the session title names, then the repo of the session's PR link (the last PR is not always the
+  subject), then the registered directory, then the one product the question names (only without a registered directory),
+  then an unregistered checkout. `--json` adds `attributed_by`, and `teyla asks --why <id>` prints the rule and its evidence. `match_text` also takes
   hyphens as spaces and the display name. A question clipped to its tail now starts at its sentence, and a bare instruction
   gets the session title as its lead. `docs/PRODUCTS.md`, `docs/ASKS.md`.
 - **`teyla asks` hides what never needed you: merged PRs and repeats.** An ask whose `pr` link points to a merged or closed PR

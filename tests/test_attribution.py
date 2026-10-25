@@ -42,7 +42,8 @@ def test_each_rule_names_itself(tree, tmp_path):
     assert attr(tree, tree / "app-a", reg=reg, session="sess-1") == ("shop-e", "assign")
     assert attr(tree, tree / "app-a", reg=reg, pr=PR_B) == ("app-b", "pr")
     assert attr(tree, tree / "app-a", reg=reg) == ("app-a", "path")
-    assert attr(tree, tmp_path / "scratch", reg=reg, texts=("plan the Bee Hive launch", "")) == ("app-b", "text")
+    assert attr(tree, tmp_path / "scratch", reg=reg, texts=("plan the Bee Hive launch", "")) == ("app-b", "title")
+    assert attr(tree, tmp_path / "scratch", reg=reg, texts=("A session", "should Bee Hive ship?")) == ("app-b", "text")
     assert attr(tree, tree / "tool-c", reg=reg) == ("tool-c", "checkout")
     assert attr(tree, tmp_path / "scratch", reg=reg) == ("unassigned", "unassigned")
     assert attr(tree, None, reg=reg) == ("unassigned", "unassigned")
@@ -56,9 +57,19 @@ def test_assign_beats_pr_and_the_ask_beats_the_session(tree):
     assert attr(tree, tree / "app-b", reg=reg, session="sess-1", ask_id="abcd1234", pr=PR_B) == ("shop-e", "assign")
 
 
-def test_pr_beats_path_and_text(tree):
+def test_title_beats_pr_and_pr_beats_path(tree):
     reg = reg_with(tree)
-    assert attr(tree, tree / "app-a", reg=reg, pr=PR_B, texts=("App A review", "")) == ("app-b", "pr")
+    pr_a = "https://github.com/example/app-a/pull/3"
+    assert attr(tree, tree / "app-a", reg=reg, pr=PR_B, texts=("Shop E labels", "")) == ("shop-e", "title")
+    assert attr(tree, tree / "app-a", reg=reg, pr=pr_a, texts=("Bee Hive pricing", "")) == ("app-b", "title")
+    assert attr(tree, tree / "tool-c", reg=reg, pr=PR_B, texts=("A session", "")) == ("app-b", "pr")
+    assert attr(tree, tree / "app-a", reg=reg, pr=PR_B, texts=("A session", "App A?")) == ("app-b", "pr")
+
+
+def test_assign_beats_the_title(tree):
+    reg = reg_with(tree)
+    reg["assign"]["sess-1"] = "app-a"
+    assert attr(tree, tree / "app-a", reg=reg, session="sess-1", texts=("Bee Hive pricing", "")) == ("app-a", "assign")
 
 
 def test_pr_repo_matches_a_repo_directory_an_id_or_an_alias(tree):
@@ -79,28 +90,24 @@ def test_a_repo_name_held_by_two_products_makes_no_pr_match(tree):
 # --- text --------------------------------------------------------------------------------------
 
 def test_the_title_overrides_the_cwd_product(tree):
-    assert attr(tree, tree / "app-a", texts=("Bee Hive checkout flow", "any question")) == ("app-b", "text")
+    assert attr(tree, tree / "app-a", texts=("Bee Hive checkout flow", "any question")) == ("app-b", "title")
 
 
-def test_the_title_does_not_override_when_it_also_names_the_cwd_product(tree):
-    assert attr(tree, tree / "app-a", texts=("App A and Bee Hive", "")) == ("app-a", "path")
+def test_two_products_in_the_title_fall_through_to_the_pr_then_the_cwd(tree):
+    both = ("Bee Hive and App A", "")
+    assert attr(tree, tree / "app-a", pr=PR_B, texts=both) == ("app-b", "pr")
+    assert attr(tree, tree / "app-a", texts=("Bee Hive and Shop E", "")) == ("app-a", "path")
 
 
-def test_the_title_naming_the_cwd_product_keeps_it(tree):
-    assert attr(tree, tree / "app-a", texts=("App A polish", "ask about Bee Hive")) == ("app-a", "path")
-
-
-def test_question_text_alone_never_overrides_a_registered_cwd(tree):
+def test_question_text_never_beats_a_registered_cwd(tree):
     assert attr(tree, tree / "app-a", texts=("A session", "should Bee Hive get a dark mode?")) == ("app-a", "path")
 
 
-def test_text_fills_in_when_the_cwd_gave_no_registered_product(tree):
-    """Title first, then the question; an unregistered checkout is below text."""
+def test_question_text_fills_in_below_the_cwd_and_above_a_checkout(tree):
     assert attr(tree, tree / "tool-c", texts=("A session", "should Bee Hive get a dark mode?")) == ("app-b", "text")
-    assert attr(tree, tree / "tool-c", texts=("Shop E labels", "Bee Hive?")) == ("shop-e", "text")
 
 
-def test_two_products_named_make_no_text_match(tree, tmp_path):
+def test_two_products_in_the_question_make_no_text_match(tree, tmp_path):
     assert attr(tree, tmp_path / "scratch", texts=("Bee Hive and Shop E", "")) == ("unassigned", "unassigned")
     assert attr(tree, tmp_path / "scratch", texts=("A session", "Bee Hive or Shop E?")) == ("unassigned", "unassigned")
     assert attr(tree, tree / "app-a", texts=("Bee Hive and Shop E", "")) == ("app-a", "path")
@@ -150,7 +157,7 @@ def test_an_ask_records_how_it_was_attributed(tree, saved):
     b = asks._claude_ask(session(tree, prs=[{"url": PR_B}]), None, "cli-1", NOW - 86400)
     assert (b.product, b.attributed_by, b.pr) == ("app-b", "pr", PR_B)
     c = asks._claude_ask(session(tree, title="Bee Hive pricing"), None, "cli-1", NOW - 86400)
-    assert (c.product, c.attributed_by) == ("app-b", "text")
+    assert (c.product, c.attributed_by) == ("app-b", "title")
 
 
 def test_json_has_attributed_by_and_not_the_evidence(tree, saved):
@@ -167,7 +174,7 @@ def test_why_prints_one_line_with_the_evidence(tree, saved, monkeypatch, capsys)
     monkeypatch.setattr(asks, "collect", lambda *a_, **k: [a, b])
     assert cli.main(["asks", "--why", a.id[:4]]) == 0
     out = capsys.readouterr().out.strip().splitlines()
-    assert out == [f"{a.id} → app-b (by text: title names app-b, not app-a (cwd))"]
+    assert out == [f"{a.id} → app-b (by title: title names app-b)"]
     assert cli.main(["asks", "--why", b.id]) == 0
     assert capsys.readouterr().out.strip() == f"{b.id} → app-b (by pr: PR example/app-b)"
     assert cli.main(["asks", "--why", "zzz999"]) == 1

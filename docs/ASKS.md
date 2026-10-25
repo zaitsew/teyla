@@ -23,11 +23,12 @@ see [PRODUCTS.md](PRODUCTS.md). Sessions the registry does not place are listed 
 
 ## Which product, and why
 
-An ask is filed by this order: your `[assign]` correction, the repo of the session's PR link, the
-registered directory the session ran in, a product named in the session title or the question, an
-unregistered checkout, else `unassigned`. A session that ran outside any repo, or asked about another
-product, still lands on the right one when its PR link or title names it. `--json` gives each ask
-`attributed_by` (`assign`, `pr`, `path`, `text`, `checkout` or `unassigned`), and `--why` prints the
+An ask is filed by this order: your `[assign]` correction, the one product the session title names,
+the repo of the session's PR link, the registered directory the session ran in, the one product the
+question names (only when the directory is not registered), an unregistered checkout, else
+`unassigned`. A session that ran outside any repo, or asked about another product, still lands on the
+right one when its title or PR link names it. `--json` gives each ask
+`attributed_by` (`assign`, `title`, `pr`, `path`, `text`, `checkout` or `unassigned`), and `--why` prints the
 evidence on one line:
 
     teyla asks --why 4dba3b64

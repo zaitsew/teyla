@@ -13,14 +13,13 @@ scratch folder became a product named after the folder. This module replaces the
 `~/.teyla/products.toml`, and one rule that never invents a name:
 
 1. `[assign]`: the owner filed this ask, else this session, by hand. Wins over everything.
-2. The repo of a pull request link the session produced, when a registered product owns that repo.
-3. The longest `repos` / `paths` entry that contains the directory. A worktree
+2. Title: the session title names exactly one registered product. Two or more make no match.
+3. The repo of a pull request link the session produced, when a registered product owns that repo.
+4. The longest `repos` / `paths` entry that contains the directory. A worktree
    (`<repo>/.claude/worktrees/<x>`, `~/.worktrees/<repo>/<branch>`) maps to its repo.
-4. Text: the session title, else the question, names exactly one registered product. It fills in
-   when rule 3 found nothing; it replaces rule 3's product only when the title alone names one
-   other product and not rule 3's.
-5. A git checkout under `code_root` that nobody registered: its repo directory name.
-6. Otherwise the literal `unassigned`.
+5. Question text names exactly one registered product, only when rule 4 found none.
+6. A git checkout under `code_root` that nobody registered: its repo directory name.
+7. Otherwise the literal `unassigned`.
 
 `attribute()` returns the product and which rule decided; `resolve()` returns the product only.
 `docs/PRODUCTS.md` has the file format.
@@ -213,7 +212,7 @@ def _entries(reg: dict) -> list[tuple[pathlib.Path, str]]:
     return [(abs_path(d), pid) for pid, p in reg["product"].items() for d in (*p["repos"], *p["paths"])]
 
 
-HOW = ("assign", "pr", "path", "text", "checkout", "unassigned")
+HOW = ("assign", "title", "pr", "path", "text", "checkout", "unassigned")
 _PR_RE = re.compile(r"github\.com/(?P<owner>[^/\s]+)/(?P<repo>[^/\s?#]+)/pull/\d+", re.I)
 
 
@@ -253,17 +252,10 @@ def _pr_product(pr, reg: dict) -> tuple[str, str]:
     return "", ""
 
 
-def _text_product(texts, reg: dict) -> tuple[str, str, bool]:
-    """(product, evidence, from_title). The first non-empty text that names any product decides: it
-    must name exactly one, else there is no match. `texts` is (title, question)."""
-    for i, t in enumerate(texts):
-        hits = match_text(t, reg)
-        if not hits:
-            continue
-        if len(hits) > 1:
-            return "", "", False
-        return hits[0], ("title" if i == 0 else "question") + f" names {hits[0]}", i == 0
-    return "", "", False
+def _only(text, reg: dict) -> str:
+    """The one registered product `text` names, else "" (none, or two or more)."""
+    hits = match_text(text, reg)
+    return hits[0] if len(hits) == 1 else ""
 
 
 def attribute(cwd, *, session=None, ask_id=None, pr="", texts=(), reg: dict | None = None, root=None,
@@ -283,19 +275,20 @@ def explain(cwd, *, session=None, ask_id=None, pr="", texts=(), reg: dict | None
     for key in keys:
         if key and str(key) in assign:
             return assign[str(key)], "assign", f"[assign] {key}"
+    title, question = (list(texts) + ["", ""])[:2]
+    product = _only(title, reg)
+    if product:
+        return product, "title", f"title names {product}"
     product, ev = _pr_product(pr, reg)
     if product:
         return product, "pr", f"PR {ev}"
     here = abs_path(cwd) if cwd else None
     cwd_product, cwd_ev = _registered_path(here, cwd, reg) if here else ("", "")
-    tprod, tev, from_title = _text_product(texts, reg)
-    if tprod:
-        if not cwd_product:
-            return tprod, "text", tev
-        if from_title and tprod != cwd_product:
-            return tprod, "text", f"{tev}, not {cwd_product} (cwd)"
     if cwd_product:
         return cwd_product, "path", cwd_ev
+    product = _only(question, reg)
+    if product:
+        return product, "text", f"question names {product}"
     if here is None:
         return UNASSIGNED, "unassigned", "no working directory"
     wt_root, wt_name = worktree_repo(cwd)
