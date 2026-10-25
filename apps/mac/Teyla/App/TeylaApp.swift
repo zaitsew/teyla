@@ -13,9 +13,9 @@ struct TeylaApp: App {
         Window("Teyla", id: "main") {
             MainView()
                 .environment(model)
-                .frame(minWidth: 520, minHeight: 420)
+                .frame(minWidth: 760, minHeight: 460)
         }
-        .defaultSize(width: 1040, height: 720)
+        .defaultSize(width: 1180, height: 760)
         .keyboardShortcut("0")
         .commands {
             CommandGroup(replacing: .newItem) {

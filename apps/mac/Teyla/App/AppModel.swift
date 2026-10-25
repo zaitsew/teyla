@@ -34,6 +34,16 @@ final class AppModel {
     /// The product new tasks start in by default; chosen by clicking a product. Remembered.
     private(set) var selectedProduct: String? = UserDefaults.standard.string(forKey: "selectedProduct")
 
+    /// What the detail pane shows; the sidebar sets it.
+    var route: AppRoute = .today
+    /// The teyla command was not found: the window shows how to install it, or lets the owner choose the file.
+    private(set) var teylaMissing = false
+    /// "Check again" is looking, and whether the last look found nothing.
+    private(set) var recheckingBinary = false
+    private(set) var recheckFailed = false
+    /// What "Copy" last copied, for a moment.
+    private(set) var installCopied = false
+
     /// Set by the main window so the menu bar and the Dock can reopen it after it was closed.
     var openMainWindow: (() -> Void)?
 
@@ -42,6 +52,8 @@ final class AppModel {
     let relay: RelayModel
     let quickNote: QuickNoteModel
     let noteList: NotesModel
+    let firstRun: FirstRunModel
+    let productPage: ProductPageModel
     @ObservationIgnored private var hotKeyTalk = PushToTalk()
     @ObservationIgnored private var watcher: SessionWatcher?
     @ObservationIgnored private var timerTask: Task<Void, Never>?
@@ -57,6 +69,8 @@ final class AppModel {
         relay = RelayModel(cli: cli)
         quickNote = QuickNoteModel(cli: cli)
         noteList = NotesModel(cli: cli)
+        firstRun = FirstRunModel(cli: cli)
+        productPage = ProductPageModel(cli: cli)
         let names: () -> [String] = { [weak self] in
             NewTask.products(self?.snapshot?.products ?? []).map(\.name)
         }
@@ -65,6 +79,14 @@ final class AppModel {
         quickNote.saved = { [weak self] note in self?.noteList.saved(note) }
         quickNote.learnedCandidates = { [weak self] list in self?.noteList.setCandidates(list) }
         quickNote.close = { [weak self] in self?.closeQuickNote() }
+        firstRun.applied = { [weak self] in self?.refresh() }
+        productPage.changed = { [weak self] in self?.refresh() }
+        noteList.changed = { [weak self] in self?.productPage.refreshQuick() }
+    }
+
+    /// The welcome alone, with no sidebar: nothing to read yet, one button to press.
+    var showsWelcomeOnly: Bool {
+        Shell.showsWelcomeOnly(snapshot: snapshot, diagnosis: firstRun.phase, teylaMissing: teylaMissing)
     }
 
     // MARK: Derived
@@ -119,6 +141,7 @@ final class AppModel {
 
     func refresh() {
         noteList.refresh()
+        if case .product = route { productPage.refreshQuick() }
         if isRefreshing {
             refreshQueued = true
             return
@@ -137,15 +160,82 @@ final class AppModel {
                 apply(next)
             } catch {
                 lastError = error.localizedDescription
+                if let failure = error as? TeylaError, failure == .binaryNotFound { teylaMissing = true }
                 log.error("state failed: \(error.localizedDescription, privacy: .public)")
             }
         }
+    }
+
+    // MARK: The teyla command
+
+    /// "Check again": asks a login shell afresh, then reads state if the command is there.
+    func recheckBinary() {
+        guard !recheckingBinary else { return }
+        recheckingBinary = true
+        Task {
+            cli.forgetBinary()
+            let found = await cli.binaryPath()
+            recheckingBinary = false
+            recheckFailed = found == nil
+            teylaMissing = found == nil
+            if found != nil { refresh() }
+        }
+    }
+
+    /// "Choose…": the owner picks the file; it is stored and tried first.
+    func chooseBinary() {
+        let panel = NSOpenPanel()
+        panel.message = "Choose the teyla command"
+        panel.prompt = "Choose"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.treatsFilePackagesAsDirectories = true
+        panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".local/bin")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        TeylaBinary.choose(url.path)
+        recheckBinary()
+    }
+
+    func copyInstallCommand() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(TeylaBinary.installCommand, forType: .string)
+        installCopied = true
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            installCopied = false
+        }
+    }
+
+    // MARK: Diagnosis and product pages
+
+    func runDiagnosis() {
+        go(.diagnosis)
+        firstRun.run()
+    }
+
+    /// The sidebar and every link to a product go through here, so a product page always reads its data.
+    func go(_ next: AppRoute) {
+        route = next
+        if case .product(let id) = next { productPage.open(id) }
+    }
+
+    func openProduct(_ id: String) {
+        guard ProductCommands.isProductID(id), !id.hasPrefix("(") else { return }
+        showMainWindow()
+        go(.product(id))
+    }
+
+    /// Whether a product name from an ask or a note has a page to open.
+    func hasPage(_ id: String) -> Bool {
+        snapshot?.products.first { $0.name == id }?.hasPage ?? false
     }
 
     private func apply(_ next: Snapshot) {
         snapshot = next
         fetchedAt = Date()
         lastError = nil
+        teylaMissing = false
         let ids = Set(next.asks.map(\.id))
         hidden.formIntersection(ids)
         for ask in askTracker.fresh(in: next.asks, hidden: hidden) { notify(ask) }

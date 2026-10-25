@@ -10,7 +10,7 @@ enum TeylaError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .binaryNotFound:
-            return "The teyla command was not found. Install Teyla, or set TEYLA_BIN to its path."
+            return "The teyla command was not found. Install Teyla, or choose the file."
         case .fixtureUnreadable(let path):
             return "Could not read the state fixture at \(path)."
         case .failed(let code, let message):
@@ -21,23 +21,6 @@ enum TeylaError: LocalizedError, Equatable {
         case .timedOut:
             return "teyla did not answer in time."
         }
-    }
-}
-
-/// Where the `teyla` binary lives. The order is part of the contract (see README).
-enum TeylaBinary {
-    static func candidates(env: [String: String], home: String) -> [String] {
-        var list: [String] = []
-        if let explicit = env["TEYLA_BIN"], !explicit.isEmpty { list.append(explicit) }
-        list.append("\(home)/.local/bin/teyla")
-        list.append("/opt/homebrew/bin/teyla")
-        list.append("/usr/local/bin/teyla")
-        return list
-    }
-
-    static func locate(env: [String: String], home: String,
-                       isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }) -> String? {
-        candidates(env: env, home: home).first(where: isExecutable)
     }
 }
 
@@ -57,10 +40,19 @@ actor TeylaCLI {
     private let home: String
     private let fixtureURL: URL?
     private let notesFixtureURL: URL?
+    private let startFixtureURL: URL?
+    private let productFixtureURL: URL?
+    /// The file the owner picked with "Choose…", and what a login shell finds. Injected so a test never runs the real ones.
+    private let chosen: @Sendable () -> String?
+    private let shellPath: @Sendable () -> String?
 
-    init(env: [String: String] = ProcessInfo.processInfo.environment, home: String = NSHomeDirectory()) {
+    init(env: [String: String] = ProcessInfo.processInfo.environment, home: String = NSHomeDirectory(),
+         chosen: @escaping @Sendable () -> String? = { TeylaBinary.chosenPath() },
+         shellPath: @escaping @Sendable () -> String? = { TeylaBinary.loginShellPath() }) {
         self.env = env
         self.home = home
+        self.chosen = chosen
+        self.shellPath = shellPath
         if let path = env["TEYLA_STATE_FIXTURE"], !path.isEmpty {
             fixtureURL = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
         } else {
@@ -72,11 +64,29 @@ actor TeylaCLI {
             // The notes sample sits beside the state sample, when there is one.
             notesFixtureURL = fixtureURL?.deletingLastPathComponent().appendingPathComponent("notes.v1.json")
         }
+        // The diagnosis and the product page have samples beside the state sample too.
+        startFixtureURL = Self.fixtureURL(env["TEYLA_START_FIXTURE"], beside: fixtureURL, named: "start.v1.json")
+        productFixtureURL = Self.fixtureURL(env["TEYLA_PRODUCT_FIXTURE"], beside: fixtureURL, named: "product.v1.json")
     }
+
+    private static func fixtureURL(_ path: String?, beside state: URL?, named name: String) -> URL? {
+        if let path, !path.isEmpty { return URL(fileURLWithPath: (path as NSString).expandingTildeInPath) }
+        return state?.deletingLastPathComponent().appendingPathComponent(name)
+    }
+
+    /// Where `teyla` is, or nil. A fixture preview answers "found" without looking, unless `TEYLA_PREVIEW_NO_BINARY` is set.
+    func binaryPath() -> String? {
+        if fixtureURL != nil && env["TEYLA_PREVIEW_NO_BINARY"] == nil { return "fixture" }
+        return TeylaBinary.locate(env: env, home: home, chosen: chosen(), shellPath: shellPath)
+    }
+
+    /// "Check again": the login shell is asked afresh.
+    nonisolated func forgetBinary() { TeylaBinary.forgetShellAnswer() }
 
     nonisolated var usesFixture: Bool { fixtureURL != nil }
 
     func state() async throws -> Snapshot {
+        if fixtureURL != nil && env["TEYLA_PREVIEW_NO_BINARY"] != nil { throw TeylaError.binaryNotFound }
         if let url = fixtureURL {
             guard let data = try? Data(contentsOf: url) else {
                 throw TeylaError.fixtureUnreadable(url.path)
@@ -113,6 +123,68 @@ actor TeylaCLI {
                                 worktree: "~/.worktrees/\(product)/preview", link: "https://example.com/teyla-preview")
         }
         return try await deliver(Self.dispatchArguments(product: product, harness: harness, text: text), timeout: 180)
+    }
+
+    // MARK: First run (docs/START.md)
+
+    /// `teyla start --json`: the read-only diagnosis. It reads 30 days of sessions and can take up to a minute.
+    func start() async throws -> StartReport {
+        if fixtureURL != nil {
+            let seconds = Double(env["TEYLA_PREVIEW_START_DELAY"] ?? "") ?? 1.5
+            try? await Task.sleep(for: .milliseconds(Int(max(0, seconds) * 1000)))
+            guard let url = startFixtureURL, let data = try? Data(contentsOf: url) else {
+                throw TeylaError.fixtureUnreadable(startFixtureURL?.path ?? "start.v1.json")
+            }
+            return try StartDecoding.decode(data)
+        }
+        let out = try await run(FirstRun.startArguments, timeout: 180)
+        guard out.status == 0 else { throw TeylaError.failed(code: out.status, message: Self.oneLine(out.stderrText)) }
+        return try StartDecoding.decode(out.stdout)
+    }
+
+    /// `teyla apply <id> --yes`: makes one change and prints what it changed. Returns those lines.
+    func apply(offerID: String) async throws -> String {
+        guard FirstRun.isOfferID(offerID) else { throw TeylaError.failed(code: 2, message: "\(offerID) is not an offer id.") }
+        if fixtureURL != nil {
+            try? await Task.sleep(for: .milliseconds(700))
+            return "Simulated: the fixture is read-only"
+        }
+        let out = try await run(FirstRun.applyArguments(offerID: offerID), timeout: 120)
+        guard out.status == 0 else {
+            let why = out.stderrText.isEmpty ? String(decoding: out.stdout, as: UTF8.self) : out.stderrText
+            throw TeylaError.failed(code: out.status, message: Self.oneLine(why))
+        }
+        return StartDecoding.appliedLines(String(decoding: out.stdout, as: UTF8.self))
+    }
+
+    // MARK: Product page (docs/PRODUCTS.md)
+
+    /// `teyla product show <id> --json`. `quick` leaves out the sessions and the spend.
+    func productPage(id: String, quick: Bool) async throws -> ProductPageData {
+        guard ProductCommands.isProductID(id) else { throw TeylaError.failed(code: 2, message: "\(id) is not a product id.") }
+        if fixtureURL != nil {
+            guard let url = productFixtureURL, let data = try? Data(contentsOf: url) else {
+                throw TeylaError.fixtureUnreadable(productFixtureURL?.path ?? "product.v1.json")
+            }
+            var page = try ProductPageData.decode(data)
+            if quick { page.sessions = nil; page.spend = nil }
+            return page
+        }
+        let out = try await run(ProductCommands.showArguments(id: id, quick: quick), timeout: quick ? 30 : 180)
+        guard out.status == 0 else { throw TeylaError.failed(code: out.status, message: Self.oneLine(out.stderrText)) }
+        return try ProductPageData.decode(out.stdout)
+    }
+
+    /// `teyla product set <id> stage=<stage>`.
+    func setStage(id: String, stage: ProductStage) async throws {
+        guard ProductCommands.isProductID(id) else { throw TeylaError.failed(code: 2, message: "\(id) is not a product id.") }
+        try await simpleCommand(ProductCommands.stageArguments(id: id, stage: stage))
+    }
+
+    /// `teyla product set <id> focus=true|false`.
+    func setFocus(id: String, focus: Bool) async throws {
+        guard ProductCommands.isProductID(id) else { throw TeylaError.failed(code: 2, message: "\(id) is not a product id.") }
+        try await simpleCommand(ProductCommands.focusArguments(id: id, focus: focus))
     }
 
     // MARK: Notes (docs/NOTES.md)
@@ -259,7 +331,9 @@ actor TeylaCLI {
     }
 
     private func run(_ args: [String], timeout: TimeInterval, stdin: Data? = nil) async throws -> Output {
-        guard let bin = TeylaBinary.locate(env: env, home: home) else { throw TeylaError.binaryNotFound }
+        guard let bin = TeylaBinary.locate(env: env, home: home, chosen: chosen(), shellPath: shellPath) else {
+            throw TeylaError.binaryNotFound
+        }
         let environment = childEnvironment()
         return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Output, Error>) in
             DispatchQueue.global(qos: .userInitiated).async {

@@ -1,0 +1,185 @@
+{
+  "summary_text": "No agent sessions found yet in ~/.claude or ~/.codex. Use Claude Code or Codex for a day, then run `teyla start` again.",
+  "diagnosis": {
+    "days": 30,
+    "empty": true,
+    "total_usd": 0.0,
+    "by_harness": {},
+    "by_model": {},
+    "context_usd": 0,
+    "context_share": 0.0,
+    "cache_read_usd": 0,
+    "cache_write_usd": 0,
+    "codex_output_usd": 0.0,
+    "long_context_tokens": 250000,
+    "long_sessions": 0,
+    "long_sessions_usd": 0.0,
+    "subagent_usd": 0.0,
+    "subagent_opus_usd": 0,
+    "subagent_opus_share": 0.0,
+    "waiting_asks": 0,
+    "sessions": 0,
+    "active_days": 0,
+    "window_start": "2026-09-26",
+    "note": "List price is what these tokens would cost through the API; a subscription bills differently."
+  },
+  "offers": [
+    {
+      "id": "O1",
+      "title": "Compact long sessions earlier",
+      "change": {
+        "kind": "json",
+        "file": "~/.claude/settings.json",
+        "key_path": [
+          "autoCompactWindow"
+        ],
+        "old": null,
+        "new": 335000,
+        "summary": "set autoCompactWindow to 335000 in ~/.claude/settings.json"
+      },
+      "saving_usd_month": null,
+      "basis": "",
+      "benefit": "A long session re-reads its whole context on every turn; compacting at about 300k tokens caps that cost.",
+      "tradeoff": "A session compacts at about 300k tokens instead of running on, so very long tasks meet a summary sooner and can lose detail the summary leaves out.",
+      "undo": "teyla undo O1 removes autoCompactWindow again; nothing else in the file is touched.",
+      "applies": false,
+      "reason": "Claude Code is not installed",
+      "explain": "Claude Code compacts a session about 35k tokens under autoCompactWindow. Without the setting, a session grows until the model's own limit and pays for the whole context on every turn. This writes \"autoCompactWindow\": 335000 to ~/.claude/settings.json, after copying the file to ~/.claude/settings.json.teyla-bak-<time>.",
+      "short": "caps what a long session re-reads"
+    },
+    {
+      "id": "O2",
+      "title": "Run subagents on Sonnet unless they say otherwise",
+      "change": {
+        "kind": "json",
+        "file": "~/.claude/settings.json",
+        "key_path": [
+          "env",
+          "CLAUDE_CODE_SUBAGENT_MODEL"
+        ],
+        "old": null,
+        "new": "sonnet",
+        "summary": "set env.CLAUDE_CODE_SUBAGENT_MODEL to \"sonnet\" in ~/.claude/settings.json"
+      },
+      "saving_usd_month": null,
+      "basis": "",
+      "benefit": "Subagents that name no model stop inheriting the Opus or Fable of the session that spawned them.",
+      "tradeoff": "Subagents that name no model run on Sonnet 5.5 instead of your session's model. A task that needs Opus must ask for it with the Agent call's model parameter. Needs Claude Code 2.1.251 or newer: older versions let this setting override a model a call asked for.",
+      "undo": "teyla undo O2 removes the setting again; the other keys in env stay.",
+      "applies": false,
+      "reason": "Claude Code is not installed",
+      "explain": "CLAUDE_CODE_SUBAGENT_MODEL is a default: a model passed in the Agent call, or pinned in an agent's definition, still wins. This writes it under \"env\" in ~/.claude/settings.json, after a backup.",
+      "short": "subagents stop inheriting Opus"
+    },
+    {
+      "id": "O3",
+      "title": "Add a cheap read-only scout agent",
+      "change": {
+        "kind": "file",
+        "file": "~/.claude/agents/scout.md",
+        "key_path": [],
+        "old": null,
+        "new": "a read-only agent on Haiku",
+        "summary": "create ~/.claude/agents/scout.md, a read-only agent on Haiku (Read, Grep, Glob, Bash)"
+      },
+      "saving_usd_month": null,
+      "basis": "",
+      "benefit": "Surveys, audits and \"where is X\" searches can run on Haiku, at a fraction of Sonnet's price.",
+      "tradeoff": "Haiku reads less carefully than Sonnet on subtle questions; the agent can only read, so it cannot break anything.",
+      "undo": "teyla undo O3 deletes the file, unless you edited it; then it asks first.",
+      "applies": false,
+      "reason": "Claude Code is not installed",
+      "explain": "Claude Code picks an agent by its description. The scout's says it is for surveys, audits and lookups, so reading work goes to it. Teyla writes the file only when no scout agent exists.",
+      "short": "reading tasks run on Haiku"
+    },
+    {
+      "id": "O4",
+      "title": "Run Codex at medium reasoning effort",
+      "change": {
+        "kind": "toml",
+        "file": "~/.codex/config.toml",
+        "key_path": [
+          "model_reasoning_effort"
+        ],
+        "old": null,
+        "new": "medium",
+        "summary": "set model_reasoning_effort to \"medium\" in ~/.codex/config.toml"
+      },
+      "saving_usd_month": null,
+      "basis": "",
+      "benefit": "Reasoning tokens bill as output; medium effort uses fewer of them.",
+      "tradeoff": "Hard problems get less thinking time per turn; raise it for one run with `codex -c model_reasoning_effort=high`.",
+      "undo": "teyla undo O4 puts the old value back; the rest of config.toml is untouched.",
+      "applies": false,
+      "reason": "Codex is not installed",
+      "explain": "This changes one line in ~/.codex/config.toml (currently \"None\"), keeping every other line, comment and table as it is, after a backup.",
+      "short": "fewer reasoning tokens on Codex"
+    },
+    {
+      "id": "O5",
+      "title": "Give every agent the same rules",
+      "change": {
+        "kind": "command",
+        "command": "teyla policy sync",
+        "file": "",
+        "key_path": [],
+        "old": null,
+        "new": "teyla policy sync",
+        "summary": "run `teyla policy sync`: one policy file, linked into the AGENTS.md or CLAUDE.md of each installed harness"
+      },
+      "saving_usd_month": null,
+      "basis": "",
+      "benefit": "One rules file is read by Claude Code, Codex and the others, so a correction made once holds everywhere.",
+      "tradeoff": "Teyla writes a starter policy to ~/.agents/POLICY.md when you have none, and adds one import line to ~/.claude/CLAUDE.md; edit the policy to match how you work.",
+      "undo": "`teyla undo` does not reverse it. No targeted command exists: `teyla uninstall` removes all of Teyla's policy links, hooks and data (`teyla uninstall --dry` lists them first).",
+      "applies": false,
+      "reason": "every harness already reads the same rules",
+      "explain": "`teyla policy sync` writes ~/.agents/POLICY.md if it is missing, links or generates ~/.codex/AGENTS.md and ~/.grok/AGENTS.md, and adds `@~/.agents/POLICY.md` to ~/.claude/CLAUDE.md. It never touches a harness that is not installed.",
+      "short": "one rules file for every harness"
+    },
+    {
+      "id": "O6",
+      "title": "Keep your prompts and questions",
+      "change": {
+        "kind": "command",
+        "command": "teyla harness sync",
+        "file": "",
+        "key_path": [],
+        "old": null,
+        "new": "teyla harness sync",
+        "summary": "run `teyla harness sync`: skills and hooks into Cursor, Codex, Grok and Hermes"
+      },
+      "saving_usd_month": null,
+      "basis": "",
+      "benefit": "Hooks record the corrections you type and the questions agents leave unanswered, so Teyla can list what is waiting on you.",
+      "tradeoff": "Each hook runs a small script from ~/.teyla/hooks on every prompt; Codex asks you to approve a new hook once. The sync replaces Teyla's own hook files, including any edits made to them.",
+      "undo": "`teyla undo` does not reverse it. No targeted command exists: remove with `teyla uninstall`, which removes all of Teyla's hooks (`--dry` lists them first).",
+      "applies": true,
+      "reason": "",
+      "explain": "`teyla harness sync` copies five small scripts to ~/.teyla/hooks and registers them in each installed harness's hooks file. Nothing leaves the machine.",
+      "short": "keeps your corrections and open questions"
+    },
+    {
+      "id": "O7",
+      "title": "Check in every morning",
+      "change": {
+        "kind": "command",
+        "command": "teyla routine install",
+        "file": "",
+        "key_path": [],
+        "old": null,
+        "new": "teyla routine install",
+        "summary": "run `teyla routine install`: a daily and a weekly launchd job"
+      },
+      "saving_usd_month": null,
+      "basis": "",
+      "benefit": "A daily run keeps Teyla current, refreshes the waiting-asks count and flags problems before you hit them.",
+      "tradeoff": "Two launchd jobs run on your Mac at fixed times; they use no network except the update check, and `teyla config set safe.enabled=true` turns that off.",
+      "undo": "`teyla undo` does not reverse it. `teyla routine install` prints the `launchctl bootout` and `rm` commands that remove the two jobs; `teyla uninstall` removes them with the rest of Teyla.",
+      "applies": true,
+      "reason": "",
+      "explain": "`teyla routine install` writes two wrapper scripts to ~/.teyla and two plists to ~/Library/LaunchAgents, then loads them with launchctl.",
+      "short": "a daily check, run for you"
+    }
+  ]
+}

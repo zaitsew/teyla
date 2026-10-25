@@ -68,6 +68,7 @@ The old placeholders `(no repo)`, `(home)`, `(scratch)` and `unknown` no longer 
 | Command | What it does |
 |---|---|
 | `teyla product [list] [--json]` | One line per product: id, stage, focus star, primary platform, repos. |
+| `teyla product show <id> [--json] [--quick]` | One product's page: the header (stage, focus, primary platform, repos, aliases), the questions waiting on you, the open notes, the last 10 sessions and the spend over 7 and 30 days. An unknown id prints one line and exits 2. |
 | `teyla product init [--write]` | Proposes products from the git repos under `code_root`. No commit for 30 days proposes `parked`, else `building`. `--write` adds only products not yet present and never changes an existing one. |
 | `teyla product add <id> [--repo PATH] [--name N] [--stage S]` | Registers one product. |
 | `teyla product set <id> key=value...` | `name`, `stage`, `primary`, `focus`, `aliases` (comma list), `add-repo`, `add-path`. |
@@ -75,6 +76,31 @@ The old placeholders `(no repo)`, `(home)`, `(scratch)` and `unknown` no longer 
 | `teyla product assign <ask-id-prefix\|session-id> <id> [--ask-only]` | Files the session behind an ask under a product and lists the asks that moved. `--ask-only` moves that one ask. |
 
 `teyla products` (plural) is the usage table and is unchanged.
+
+### `teyla product show`
+
+The id is a registered product, or `unassigned` (the sessions nobody filed). Nothing on the page is a new
+figure: the product is its registry entry, the questions are `teyla asks` for it (a parked product's muted
+asks left out, critical ones first, then the oldest), the notes are `teyla notes` for it, and the sessions and
+the spend are the session rows `teyla spend` reads, filed under the product the same way a question is.
+Spend is the price at the API list, like everywhere else in Teyla.
+
+Reading the sessions of the last 30 days can take a minute on a large machine. `--quick` leaves out the
+sessions and the spend (both are `null`); the Mac app asks for the quick form first, so the page shows at
+once, then for the full one. `--json`, version 1:
+
+```json
+{"version": 1, "generated": "2026-10-25T09:00:00Z",
+ "product": {"id": "sample-app", "name": "Sample App", "stage": "beta", "focus": true, "primary": "ios",
+             "repos": ["~/repos/sample-app"], "aliases": ["sampleapp"], "registered": true},
+ "asks":     [{"id": "809c2dbd", "age_s": 165983, "severity": "normal|critical", "question": "...", "link": "..."}],
+ "notes":    [{"id": "nvju3ja", "text": "...", "created": "2026-10-25T09:15:49Z", "age_s": 60}],
+ "sessions": [{"id": "...", "at": "2026-10-23T11:01:37Z", "harness": "claude-code", "model": "claude-opus-5-5",
+               "cost_usd": 8.78, "title": "..."}],
+ "spend":    {"days_7": 17.57, "days_30": 17.57}}
+```
+
+Unknown fields are ignored by the Mac app, so the shape can grow without a new version.
 
 ## What parking does
 

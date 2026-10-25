@@ -24,6 +24,16 @@ open -n --env TEYLA_STATE_FIXTURE="$PWD/../../tests/fixtures/state.v2.json" ~/Ap
 
 Requires macOS 15 and Xcode. The app is ad-hoc signed for local use only.
 
+## First run
+
+- **No `teyla` found:** the window gives `uv tool install git+https://github.com/zaitsew/teyla` with Copy, "Check again"
+  and "Choose…". The file you choose is stored in UserDefaults (`teylaBinaryPath`) and tried first.
+- **No data yet:** the window shows the Teyla lockup, the promise and "Run diagnosis". It runs `teyla start --json` (read-only,
+  up to about a minute) and then lists each offer with its saving or benefit, trade-off and undo. "Apply…" shows one sheet
+  that names the file and key, then runs `teyla apply <id> --yes`. "Diagnosis" stays in the sidebar.
+- **Product pages:** click a product in a question, a note chip, the Products column or the sidebar. The page shows the stage
+  (menu), the focus star, waiting questions, notes (Link…, Drop), the last 10 sessions and the spend over 7 and 30 days.
+
 ## What the window shows
 
 | Section | Content | Action |
@@ -31,7 +41,7 @@ Requires macOS 15 and Xcode. The app is ad-hoc signed for local use only.
 | Needs you | Questions, ranked by what they unblock. | Answer with an option or text; snooze; mark done. |
 | Only you | `tasks[]`: a PR to merge, an issue assigned to you, with its age. | Open (the link). |
 | Done since yesterday | `done[]` as cards: status chip, product, title, at most 3 result lines, the needs line, links. Four show; the rest are one click away. | Open session. |
-| Products | State, issues and PRs waiting, the next step. Click a product to make it the default for new tasks. | |
+| Products | State, issues and PRs waiting, the next step. Click a registered product to open its page. | Open the page; the page's "Start new tasks here" sets the default for new tasks. |
 | Notes | The Inbox count and the newest five open notes: product chip, age, the text clipped to two lines. | Link… (a product menu) or Drop; New note opens the panel. |
 | Running now | Each session active in the last 10 minutes. | Codex: a one-line correction field (`teyla say`). Others: Open. |
 
@@ -70,13 +80,16 @@ Notes:
   `teyla relay on|off`, `teyla relay pair --json`, `teyla asks snooze`, `teyla asks done`. Free text
   always follows `--`. Notes: `teyla notes --json`, `teyla note --suggest - --json --cwd <home>` and
   `teyla note - --product <id> --json` (both with the text on stdin, never as an argument),
-  `teyla note link <id> <product> --json`, `teyla note drop <id> --json` ([NOTES.md](../../docs/NOTES.md)). The binary is looked up in this order: `$TEYLA_BIN`, `~/.local/bin/teyla`,
-  `/opt/homebrew/bin/teyla`, `/usr/local/bin/teyla`.
+  `teyla note link <id> <product> --json`, `teyla note drop <id> --json` ([NOTES.md](../../docs/NOTES.md)). The binary is looked up in this order: the file chosen in the app, `$TEYLA_BIN`, the `PATH` of a login shell
+  (`/bin/zsh -lc 'command -v teyla'`, asked once), `~/.local/bin/teyla`, `/opt/homebrew/bin/teyla`, `/usr/local/bin/teyla`.
+  The first screen also runs `teyla start --json` and `teyla apply <id> --yes`; product pages run `teyla product show <id> --json [--quick]`
+  and `teyla product set <id> stage=<s>|focus=<bool>`.
 - It re-reads within 2 s of a change under `~/Library/Application Support/Claude/claude-code-sessions`,
   `~/.claude/projects` and `~/.codex/sessions` (missing ones are skipped), every 60 s, and when
   the window gets focus.
 - `TEYLA_STATE_FIXTURE=<path>` reads a JSON file instead of running the CLI and simulates every
-  write. Use `tests/fixtures/state.v2.json`. The notes come from `notes.v1.json` beside it
+  write. Use `tests/fixtures/state.v2.json`, or `apps/mac/TeylaTests/Fixtures/state.sample.v2.json` for the first run
+  and the product page: `start.v1.json` and `product.v1.json` beside it are the diagnosis and the page. The notes come from `notes.v1.json` beside it
   (or `TEYLA_NOTES_FIXTURE`); link and drop change the list on screen only.
 - The pairing string is read from any string value of the `relay pair --json` output, or from plain
   text, and shown only if it matches `teyla-pair:v1:` plus 43 base64url characters.
@@ -92,18 +105,23 @@ The tests cover model decoding, formatting, CLI argument building (free text aft
 writes, the pairing string and its QR code (read back with `CIDetector`), voice rules and
 push-to-talk, the new-task defaults, the one-notification-per-question tracker, the note commands
 (text on stdin, checked against a stand-in `teyla`), the suggestion and notes JSON, the picker keys,
-and the shortcut keymap, storage and conflict rule. They compile the
+the shortcut keymap, storage and conflict rule, the diagnosis and product-page JSON (samples from the real CLI), the
+binary search order, and the apply and product-set commands. They compile the
 `Teyla/Core` sources directly, so no app is launched. The generated `Teyla.xcodeproj` and `build/`
 are not committed.
 
 Views use the tokens in `Teyla/UI/Tokens.swift` (spacing, type, colour roles); no literals.
 
+**Samples.** `python3 Tools/make_fixtures.py` rebuilds `TeylaTests/Fixtures/*.json` from the real CLI, run on a made-up HOME
+(`--keep` prints its path). Run it again when the CLI's JSON changes.
+
 **Icon.** `swift Tools/make_icon.swift` redraws every size into `Teyla/Assets.xcassets`.
 
 **Screenshots.** With `TEYLA_STATE_FIXTURE` set, these variables shape the preview (they are ignored
 otherwise): `TEYLA_PREVIEW_APPEARANCE=light|dark`, `TEYLA_PREVIEW_SIZE=<w>x<h>`,
-`TEYLA_PREVIEW_SCROLL=end`, `TEYLA_PREVIEW_OPEN=new-task|quick-note|settings|pair|focus:<ask id>` and
-`TEYLA_PREVIEW_DRAFT=<text>`. Capture a window with `screencapture -l <window id>`.
+`TEYLA_PREVIEW_SCROLL=end`, `TEYLA_PREVIEW_OPEN=new-task|quick-note|settings|pair|diagnosis|product:<id>|focus:<ask id>`,
+`TEYLA_PREVIEW_DRAFT=<text>`, `TEYLA_PREVIEW_START_DELAY=<seconds>` (how long the simulated diagnosis takes)
+and `TEYLA_PREVIEW_NO_BINARY=1` (shows the not-found screen). The welcome is `state.empty.v1.json`. Capture a window with `screencapture -l <window id>`.
 
 ## Not verified on a real run
 
