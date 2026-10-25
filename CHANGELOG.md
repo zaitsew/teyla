@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Mac: quick note on a shortcut you choose, and Notes in the window.** A global shortcut (⌥Space by default, recorded in
+  Settings, optional, never push-to-talk's ⌥⌘Space) opens a floating panel: type, ⏎ saves, ⇧⏎ adds a line, Esc keeps the
+  draft. The product chip pre-selects from `teyla note --suggest` and changes in one click or ⌘0–⌘9. The window gets a Notes
+  section (Inbox count, newest five, Link…, Drop). CLI: `teyla note --suggest "<text>" --json [--cwd DIR]` writes nothing and
+  prints `{product, linked_by, candidates}`; `teyla note … --json` (also `link`, `drop`) prints the note. `docs/NOTES.md`,
+  `docs/APP.md`, `apps/mac/README.md`.
+
 ## 0.30.0 — 2026-10-25 — Products you can trust: a registry, text notes, asks by product; a guard that watches memory
 
 - **`teyla asks` files an ask under the product it is about, and shows the whole question.** A session that ran outside any

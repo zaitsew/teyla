@@ -4,9 +4,9 @@ import Foundation
 /// Hooks for taking screenshots of the app with sample data. They work only with
 /// `TEYLA_STATE_FIXTURE` set, so a real run never reads them.
 ///
-///     TEYLA_PREVIEW_OPEN   new-task | settings | pair | focus:<ask id>
+///     TEYLA_PREVIEW_OPEN   new-task | quick-note | settings | pair | focus:<ask id>
 ///     TEYLA_PREVIEW_SIZE   <width>x<height>, the content size of the main window
-///     TEYLA_PREVIEW_DRAFT  text for the new-task sheet
+///     TEYLA_PREVIEW_DRAFT  text for the new-task sheet or the quick-note panel
 ///     TEYLA_PREVIEW_APPEARANCE  light | dark, for this app only
 ///     TEYLA_PREVIEW_SCROLL  end: scroll the main window to its bottom
 @MainActor
@@ -48,6 +48,9 @@ enum Preview {
             case "new-task":
                 if let draft = env["TEYLA_PREVIEW_DRAFT"] { model.newTask.draft = draft }
                 model.openNewTask()
+            case "quick-note":
+                if let draft = env["TEYLA_PREVIEW_DRAFT"] { model.quickNote.draft = draft }
+                model.openQuickNote()
             case "settings", "pair":
                 openSettings()
             case let focus where focus.hasPrefix("focus:"):

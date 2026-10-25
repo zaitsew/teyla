@@ -153,6 +153,7 @@ private struct MainColumn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.xl) {
             questions
+            NotesSection()
             if !tasks.isEmpty { onlyYou }
             done
         }

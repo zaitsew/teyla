@@ -1,9 +1,10 @@
 """`teyla note` / `teyla notes` — quick text ideas, linked to a product, kept as typed.
 
-    teyla note "text" [--product P]        keep one note; "-" reads it from stdin
+    teyla note "text" [--product P] [--json]   keep one note; "-" reads it from stdin; --json prints the note
+    teyla note --suggest "text" --json [--cwd DIR]   the product a note would get, and the picker's list; writes nothing
     teyla notes [--product P | --inbox] [--all] [--json]    newest first; dropped ones only with --all
-    teyla note link <id> <product>         file a note under another product (or `inbox`)
-    teyla note drop <id> | undrop <id>     set a note aside, or bring it back
+    teyla note link <id> <product>         file a note under another product (or `inbox`); --json prints the note
+    teyla note drop <id> | undrop <id>     set a note aside, or bring it back; --json prints the note
 
 The owner said it in one line: "add a notes section - i want to quickly add ideas in text or voice and link
 them to some of the product and later launch the development of them". This is the text half.
@@ -223,6 +224,24 @@ def suggest(text: str, cwd=None, reg: dict | None = None) -> tuple[str, str]:
     return INBOX, ""
 
 
+def candidates(reg: dict | None = None) -> list[str]:
+    """The registered ids a note can be filed under, for a picker: focus products first, parked ones last,
+    registry order inside each group. `inbox` is always available and is not listed."""
+    reg = registry.load() if reg is None else reg
+    rows = list(reg["product"].items())
+    return ([pid for pid, p in rows if p["focus"]]
+            + [pid for pid, p in rows if not p["focus"] and p["stage"] != "parked"]
+            + [pid for pid, p in rows if not p["focus"] and p["stage"] == "parked"])
+
+
+def suggestion(text: str, cwd=None, reg: dict | None = None) -> dict:
+    """`{"product", "linked_by", "candidates"}`: what `add` would choose for `text`, and the picker's list.
+    Reads the registry and the directory; writes nothing."""
+    reg = registry.load() if reg is None else reg
+    product, how = suggest((text or "").strip(), cwd, reg)
+    return {"product": product, "linked_by": how, "candidates": candidates(reg)}
+
+
 # --- write ------------------------------------------------------------------------------------
 
 def _to_intent(note: dict, product: str) -> bool:
@@ -329,9 +348,27 @@ def _fail(e: NoteError) -> int:
     return 1
 
 
+def _show(note: dict, as_json: bool, prefix: str = "") -> None:
+    print(json.dumps(note, ensure_ascii=False) if as_json else prefix + _line(note))
+
+
 def cmd_note(args) -> int:
     words = list(args.words or [])
     verbs = {"link": 3, "drop": 2, "undrop": 2}
+    if args.suggest:
+        if args.product:
+            print("teyla: --suggest chooses the product; it does not take --product", file=sys.stderr)
+            return 2
+        text = sys.stdin.read() if words == ["-"] else " ".join(words)
+        try:
+            found = suggestion(text, args.cwd)
+        except OSError as e:
+            return _fail(NoteError(str(e)))
+        if args.json:
+            print(json.dumps(found, ensure_ascii=False))
+        else:
+            print(f"{found['product']}  ({_HOW.get(found['linked_by'], found['linked_by'])})  of {', '.join(found['candidates']) or 'no registered product'}")
+        return 0
     if words and words[0] in verbs and len(words) == verbs[words[0]]:
         if args.product:
             print(f"teyla: --product goes with a new note; `teyla note link <id> <product>` moves one", file=sys.stderr)
@@ -339,11 +376,11 @@ def cmd_note(args) -> int:
         try:
             if words[0] == "link":
                 note, changed = link(words[1], words[2])
-                print(("moved " if changed else "already in place: ") + _line(note))
+                _show(note, args.json, "moved " if changed else "already in place: ")
             else:
                 note, changed = set_dropped(words[1], words[0] == "drop")
                 verb = "dropped" if words[0] == "drop" else "restored"
-                print((f"{verb} " if changed else f"already {verb}: ") + _line(note))
+                _show(note, args.json, f"{verb} " if changed else f"already {verb}: ")
         except NoteError as e:
             return _fail(e)
         return 0
@@ -352,10 +389,10 @@ def cmd_note(args) -> int:
         return 2
     text = sys.stdin.read() if words == ["-"] else " ".join(words)
     try:
-        note = add(text, args.product)
+        note = add(text, args.product, cwd=args.cwd)
     except NoteError as e:
         return _fail(e)
-    print(_line(note))
+    _show(note, args.json)
     return 0
 
 
@@ -384,6 +421,9 @@ def register(sp):
     q.set_defaults(fn=cmd_note)
     q.add_argument("words", nargs="*", metavar='["text"|-|link <id> <product>|drop <id>|undrop <id>]')
     q.add_argument("--product", help="the registered product (id or alias); without it the text, then the directory, then `inbox` decide")
+    q.add_argument("--suggest", action="store_true", help="print the product the text would get and the list of candidates; writes nothing (use with --json)")
+    q.add_argument("--cwd", metavar="DIR", help="the directory that decides when the text names no product (default: the current one)")
+    q.add_argument("--json", action="store_true", help="print the note (or, with --suggest, the suggestion) as JSON")
     q = sp.add_parser("notes", help="list notes, newest first")
     q.set_defaults(fn=cmd_notes)
     q.add_argument("--product", help="only this product's notes")

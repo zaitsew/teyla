@@ -18,10 +18,19 @@ enum Space {
     static let menuWidth: CGFloat = 320
     /// Width at which the window shows two columns.
     static let wideWindow: CGFloat = 800
+    /// The quick-note panel: its size, and how far from the top of the screen it sits (a fraction of the height).
+    static let capturePanelWidth: CGFloat = 580
+    static let capturePanelHeight: CGFloat = 244
+    static let captureTopFraction: CGFloat = 0.16
+    /// The quick-note text area.
+    static let captureFieldHeight: CGFloat = 72
+    /// The shortcut field in Settings.
+    static let shortcutFieldWidth: CGFloat = 160
 }
 
 enum Radius {
     static let card: CGFloat = 10
+    static let panel: CGFloat = 14
 }
 
 /// Type: the brief, a lead line, body text and fine print. Hierarchy comes from weight and colour first.

@@ -52,3 +52,16 @@ linked. The intent store scrubs secret-shaped text on the way in; the notes file
 ## In the snapshot
 
 `teyla state --json` carries `notes: {"inbox": n, "by_product": {id: n}}`, open notes only ([APP.md](APP.md)).
+
+## In the Mac app
+
+The Mac app is a second way to write and file notes; it keeps no copy. See [APP.md](APP.md#notes-quick-note-and-the-notes-section).
+
+- A global shortcut (⌥Space by default; recorded or cleared in Settings, never push-to-talk's ⌥⌘Space)
+  opens a quick-note panel. The text goes to `teyla note - --product <id> --json` on stdin.
+- While you type, the panel calls `teyla note --suggest - --json` and pre-selects the product. It prints
+  `{"product", "linked_by", "candidates"}` and writes nothing; `candidates` are the registered ids, focus
+  products first and parked ones last, for the picker. The choice is the one `add` would make.
+- The window's Notes section lists the Inbox count and the newest five open notes, with Link… and Drop.
+- `--json` on `teyla note` (also `link`, `drop`, `undrop`) prints the note instead of a line.
+  `--cwd DIR` sets the directory that decides when the text names no product.

@@ -434,4 +434,8 @@ enum ISODate {
         let fractional = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
         return try? Date(s, strategy: fractional)
     }
+
+    static func format(_ date: Date) -> String {
+        date.formatted(.iso8601)
+    }
 }
