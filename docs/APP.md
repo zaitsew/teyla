@@ -278,3 +278,52 @@ The Mac keeps no notes; `teyla note` and `teyla notes` do ([NOTES.md](NOTES.md))
 - **Notes section.** Under "Needs you": the Inbox count and the newest five open notes with their product
   chip, age and two lines of text. Link… runs `teyla note link`, Drop runs `teyla note drop`; the list is
   read again after each action. The data is `teyla notes --json`, not the snapshot.
+
+## Version 3: the portfolio (from 2026-10-26)
+
+Version 3 adds one object, `portfolio`: where every registered product stands, per platform, and
+whether it is on track. The window draws the Portfolio screen and the platform row on each product
+page from it; the phone gets it through the relay with no new file. Every other field is as in
+version 2. `apps/mac/TeylaTests/Fixtures/state.sample.v3.json` is the reference.
+
+- `portfolio.version`: 1.
+- `portfolio.checked`: `{stores, github}` — when the network pass last read App Store Connect and
+  Google Play (`stores`) and GitHub (`github`); "" when never. The snapshot never calls the network:
+  `teyla portfolio --refresh` runs that pass and writes `~/.teyla/portfolio-cache.json` (0600), and
+  `teyla state` starts it detached when the cache is older than 6 hours.
+- `portfolio.counts`: `{on_track, at_risk, off_track, parked}`.
+- `portfolio.products[]`, worst health first, then focus, then last activity:
+  - `id`, `title`, `stage`, `focus`, `primary`, `repo`: as in `products[]`.
+  - `users`, `target`: `[productize]` in the repo's `teyla.toml` (`owner`, `family`, `testers`,
+    `public`, or "").
+  - `health`: `on_track`, `at_risk`, `off_track` or `parked`. `reasons[]`: at most 3 short lines
+    that explain it, worst first; empty when on track.
+  - `platforms[]`, primary first: `{platform, role, channel, version, build, state, detail, as_of, link}`.
+    `platform`: `ios`, `macos`, `android`, `web`, `watch`. `role`: `primary` or `secondary`.
+    `channel`: `testflight`, `app_store`, `play`, `web` or `local`. `state`: `live` (public store
+    version or a site that answers), `in_review`, `current` (the newest build reached the owner),
+    `behind` (a newer build exists that the owner cannot install yet), `blocked` (only the owner can
+    clear it; `detail` says how), `none` (no build yet) or `unknown` (not checked, or the check failed).
+    `detail` is one line for a person. `as_of` is when that row was read.
+  - `prs`: `{open, waiting, merged_7d, unreviewed_7d}` — open PRs, PRs that wait on the owner's
+    merge, PRs merged in 7 days, and merged in 7 days with no review in the ledger.
+  - `activity`: `{last, sessions_7d, spend_7d_usd}`.
+  - `waiting`, `oldest_wait_days`, `tasks`: open questions, the age of the oldest, owner tasks.
+  - `milestone`: the next `[productize]` target and what is left ("family: 2 of 9 requirements
+    left"), or "". `next`: one line, the next step, or "".
+
+Health rules, applied in order; the first that matches wins and every match adds a reason:
+
+1. `parked` when the stage is `parked`.
+2. `off_track` when the primary platform is `blocked`, or `behind` for more than 2 days; when a
+   question waits more than 7 days; or when a PR merged in 7 days has an open P1.
+3. `at_risk` when any platform is `blocked` or `behind`; when a question waits more than 3 days;
+   when a PR merged in 7 days was never reviewed; or when a `building` or `beta` product had no
+   session for 14 days.
+4. `on_track` otherwise.
+
+### New command
+
+| Command | Does |
+|---|---|
+| `teyla portfolio [--json] [--refresh] [--product ID]` | The portfolio object; text is one line per product. `--refresh` runs the network pass first (TestFlight, Play, GitHub), within safe mode's rules. |
