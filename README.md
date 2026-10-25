@@ -1,150 +1,93 @@
-# Teyla
+<h1 align="center"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="brand/lockup-dark.svg">
+  <img alt="Teyla" src="brand/lockup.svg" width="200">
+</picture></h1>
 
-Teyla is the operating layer for one person who runs many products through AI coding agents on one Mac. It keeps you in charge: what waits on you, your own words, how agents write, what it costs, whether the machine survives, and whether a build reached a person. It runs locally.
+Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's waiting on you, and fixes the waste. Nothing about your sessions leaves your Mac unless you turn it on.
 
-Setting this up with an AI agent? It reads [AGENTS.md](AGENTS.md). Every call that leaves your machine is listed in [docs/PRIVACY.md](docs/PRIVACY.md).
+![The Start page of teyla web: what 30 days of sessions cost, and the first changes that would save money](docs/img/web-start.png)
 
-## Quick start
+## Set it up with your agent
 
-```bash
-uv tool install --python 3.12 git+https://github.com/zaitsew/teyla   # or: pipx install ...; Python 3.11+. uv may download Python 3.12 (about 25 MB) if you have none
-teyla start                            # what your agents cost, and seven fixes you can accept one by one and undo; a yes to O6 also installs the Claude Code plugin
-teyla policy init --owner "Your Name" && teyla policy sync   # one POLICY.md for every harness (offer O5 does this too)
-teyla routine install                  # daily and weekly checks under launchd
-teyla doctor                           # what must be true here, and the fix for each gap
-teyla asks                             # every question an AI session left waiting on you
-teyla product init                     # which repo is which product (proposal; --write saves it)
-teyla spend --days 7                   # what the week cost, and which part bought nothing
+Paste this into Claude Code or Codex:
+
+```
+Set up https://github.com/zaitsew/teyla
 ```
 
-Teyla works with Claude Code, Codex, Grok, Cursor and Hermes. It reads the session files already on your disk.
+The agent reads [AGENTS.md](AGENTS.md), installs Teyla, and shows you what your sessions cost. It then asks about each change on its own, with the saving and the way back, and changes no setting without your yes.
 
-## What it does
+## Or by hand
 
-### What waits on you
-
-A session ends on a question, the desktop app archives it, and nobody reads it again. In 14 days, 40 Claude Code sessions ended that way and 1 got an answer.
+You need a Mac and [uv](https://docs.astral.sh/uv/). It downloads Python 3.12 (about 25 MB) if the Mac has no Python 3.11 to 3.13.
 
 ```bash
-teyla asks                      # open questions by product, oldest first, with a link that reopens the session
-teyla asks --html --open        # the same as one page for your phone
-teyla asks done <id>            # close one; snooze <id> <days> hides it
+uv tool install --python 3.12 git+https://github.com/zaitsew/teyla
+teyla start          # the diagnosis, then each change: yes, no or explain
 ```
 
-You get the question word for word, its age and the options the agent offered. Details: [docs/ASKS.md](docs/ASKS.md).
-
-The same list lives in one window: **Teyla for Mac** opens with a one-sentence brief, orders the questions by what each unblocks, shows the sessions running now, and sends your answer into the session that asked. It updates live and reads everything through the CLI.
+Try it first, with nothing installed and nothing written:
 
 ```bash
-cd apps/mac && ./install.sh     # builds Teyla.app into ~/Applications (macOS 15, Xcode, xcodegen)
-teyla state                     # what the window shows, in the terminal
-teyla answer <id> -- "<text>"   # send an answer without opening the session
+uvx --python 3.12 --from git+https://github.com/zaitsew/teyla teyla start
 ```
 
-Details: [apps/mac/README.md](apps/mac/README.md), [docs/APP.md](docs/APP.md).
+## Cost and waste
 
-### Your own words
+`teyla start` reads the Claude Code, Codex, Grok, Cursor and Hermes sessions already on your disk and prints a card like this one (the numbers are made up):
 
-You write a long prompt, an agent turns it into a plan, and a later session works from the plan. The detail is gone. Teyla keeps the source.
+```
+Last 30 days: $1,840 at API list price over 212 sessions on 24 days (claude-code $1,610, codex $230).
+41% of it ($754) was re-reading and storing context; 9 sessions ran past 250k tokens of context and cost $402.
+Subagents cost $390; Opus ran 64% of that.
+  O1 Compact long sessions earlier: about $95-$190 a month
+  O2 Run subagents on Sonnet unless they say otherwise: about $60-$140 a month
+```
+
+*List price* is what the tokens would cost through the API; a subscription bills differently. *Context* is everything a session has read so far, and the agent re-reads all of it on every turn. A *subagent* is a helper agent a session starts for one side task. Each change shows its saving, its trade-off and its undo. `teyla spend --days 7` and `teyla web` show the same numbers later.
+
+## What's waiting on you
+
+A session ends on a question, the desktop app archives it, and nobody reads it again. `teyla today` is the daily screen: the questions waiting by product, the notes in your Inbox, this week's spend against last week's, and one next step. `teyla asks` lists every open question, oldest first, with a link that reopens the session.
+
+## Your products and notes
+
+A *product* is a repo, or a few, that you ship as one thing. `teyla product init` proposes the list from your repos; `--write` saves it. `teyla product` lists them with their stage. `teyla note "try a dark icon"` keeps an idea as you typed it and files it under a product, or in your Inbox. `teyla notes` lists them. The Mac app adds a quick note on a shortcut (⌥Space by default).
+
+## One policy for every agent
+
+Your rules live in one tool; switch to another and it has never heard of them. `teyla policy init --owner "Your Name"` writes one `POLICY.md`, and `teyla policy sync` hands it to Claude Code, Codex, Grok, Cursor and Hermes. `teyla harness sync` adds *hooks* to them: small scripts an agent runs at set moments, such as session start. The offer in `teyla start` that runs it also installs the Claude Code plugin. `teyla routine install` schedules a daily and a weekly check. [GUIDE](docs/GUIDE.md) has the detail.
+
+## The Mac app
+
+Teyla for Mac is a window and a menu-bar icon: today's brief, the questions you can answer in place, the diagnosis and your products. It runs the `teyla` command, so install that first. The app is built from this repo for local use (macOS 15, Xcode):
 
 ```bash
-teyla intent backfill --days 30   # keep the long prompts already in your transcripts
-teyla intent [product]            # list them; `teyla intent path <product>` prints the file
+brew install xcodegen && git clone https://github.com/zaitsew/teyla && cd teyla/apps/mac && ./install.sh
 ```
 
-Prompts of 400 characters or more go to `~/.teyla/intent/<product>.md`, outside the repo, with secrets scrubbed. No model summarises them. Session start points at the file, and the policy says a plan quotes the sentences it serves. Details: [docs/INTENT.md](docs/INTENT.md).
+## Privacy
 
-### How agents write
+Teyla reads files on your Mac. It sends nothing about your sessions unless you run one of these:
 
-Replies run long and open with filler. The policy sets one contract: the answer first, short sentences, a ban list, and a session-end card of at most 12 lines.
+- **Update check.** On by default: once a day, to GitHub, with the version number and nothing else.
+- **Lookups through `gh`, `git` or `ssh` under your own login.** Examples: `teyla spend`, `teyla reviews`, `teyla state`. They send repo names, PR numbers and your login and org names.
+- **Text to your model provider under your own login.** Only when you ask: `teyla answer`, `teyla run`, `--model` flags and `harness verify --live`. The one-line morning brief is off until you turn it on.
+- **`teyla relay on`** writes your open questions and session titles to a folder in iCloud Drive. Off by default.
+
+`teyla web` listens on 127.0.0.1 only. Safe mode, `teyla config set safe.enabled=true`, closes most of these calls; one you type by hand can open with `--allow-network`. Every call, with its host and what it sends: [docs/PRIVACY.md](docs/PRIVACY.md).
+
+## Undo and uninstall
 
 ```bash
-teyla prose --days 7   # reply length, long sentences, ban-list hits and preambles, per harness and project
+teyla changes              # every change Teyla made, and whether it is undone
+teyla undo O1              # put back only the setting Teyla wrote (O1 to O4)
+teyla uninstall --dry      # list what Teyla would remove: links, hooks, jobs
+teyla uninstall && uv tool uninstall teyla
 ```
 
-You get numbers per project, and the weekly digest names a median over 150 words. Details: [docs/WRITING.md](docs/WRITING.md).
+Each setting change makes a backup first. `teyla undo` does not reverse O5, O6 or O7 (policy, hooks, routines); `teyla uninstall` does.
 
-### What it costs
+## Links
 
-Usage dashboards do not name the habits that burn tokens: subagents that inherit the top model, build lanes that drift up to Opus, sessions that re-read 300k tokens each turn.
-
-```bash
-teyla spend --days 7     # cost at API list price; the part that bought nothing, with a fix for each
-teyla lanes --days 7     # per subagent type and model: turns, peak context, dollars, review P1s
-teyla monitor --days 30  # tokens by model and project, cache-read ratio, giant sessions, advice
-```
-
-`teyla spend --alert` runs daily and puts a budget breach in the next session's first line.
-
-### Whether the machine survives
-
-Ten agents that each start "just one" build or simulator fill swap together, and the kernel panics. Teyla is the scheduler they lack.
-
-```bash
-teyla load                                         # OK, BUSY or CRITICAL, with the numbers
-teyla load --wait --kind build && xcodebuild ...   # wait for a free slot instead of piling on
-teyla crash                                        # after a panic: the machine's load before it
-```
-
-The plugin's machine guard refuses a build, simulator or headless lane while the Mac is overloaded. It fails open. `teyla storage` lists what holds disk and RAM.
-
-### One policy for every harness
-
-Your rules live in one harness. Switch to another and the model has never heard of them.
-
-```bash
-teyla policy sync            # ~/.agents/POLICY.md and your own rules into Claude Code, Codex, Grok, Hermes, Cursor
-teyla harness sync           # the same skills and hooks in the others
-teyla harness verify --live  # can each harness do work now, and did the policy arrive
-```
-
-An edit made inside a generated copy is filed in `teyla policy inbox`, never overwritten silently. What each harness can and cannot do: [docs/HARNESSES.md](docs/HARNESSES.md).
-
-### Whether a build reached a person
-
-An app for one person becomes an app for four only with accounts, per-user data, a backend off your laptop and a build on other people's phones.
-
-```bash
-teyla productize --owner-steps   # every product against R1 to R10, then one list of what only you can do
-teyla platform                   # the shared resources you buy once: server, domain, mail, Apple, Google Play
-teyla testflight                 # did the newest uploaded build reach your tester (iOS)
-teyla play                       # the same for the Android internal track
-```
-
-Each product names one primary platform; any other needs a dated trigger. Details: [docs/PRODUCTIZE.md](docs/PRODUCTIZE.md).
-
-### Whether the automated half ran
-
-Launchd jobs, cron lines, desktop tasks and scheduled workflows fail silently.
-
-```bash
-teyla routines     # every routine and manual check in each repo's teyla.toml: ok, NOT LOADED, STALE
-teyla schedules    # every scheduled task on this machine, its last run, and what vanished
-teyla reviews      # merged PRs that never got a review
-```
-
-`teyla run product:routine` runs a routine under capability grants and stops at a gate for your approval in `teyla inbox`. Details: [docs/CONTROL-PLANE.md](docs/CONTROL-PLANE.md).
-
-## Privacy and safe mode
-
-Teyla reads the transcripts already on your disk, and no data leaves your machine. Every outbound call is listed in the network table of [`prompts/onboard.md`](prompts/onboard.md).
-
-On a managed work laptop, switch on safe mode: `teyla policy init --work`. Nothing then reaches the network unless you pass `--allow-network` to the command you typed. Safe mode also stops self-update and runs repo commands only in the repos you list. `teyla uninstall --dry` lists every file Teyla wrote. See [docs/WORK.md](docs/WORK.md).
-
-## Docs
-
-- [START](docs/START.md): `teyla start`: the diagnosis, the seven offers, how a saving is counted, how to undo
-- [COMMANDS](docs/COMMANDS.md): every command with its flags (`teyla --help` prints the same list)
-- [GUIDE](docs/GUIDE.md): install and update, the plugin, the policy, routines, cloud sessions
-- [MANUAL](docs/MANUAL.md): the whole method and the numbers behind each threshold
-- [HARNESSES](docs/HARNESSES.md): what each harness reads and what differs
-- [PRODUCTIZE](docs/PRODUCTIZE.md): from an app you use to an app four people use
-- [CONTROL-PLANE](docs/CONTROL-PLANE.md): runs, gates, receipts and the kill switch
-- [WIKI](docs/WIKI.md): the facts store
-- [WORK](docs/WORK.md): safe mode for a work laptop
-- [ASKS](docs/ASKS.md), [INTENT](docs/INTENT.md), [WRITING](docs/WRITING.md), [PRODUCTS](docs/PRODUCTS.md): the newest commands
-- [ROADMAP](docs/ROADMAP.md): what is next
-
-## License
-
-Apache-2.0.
+[Guide](docs/GUIDE.md) · [Commands](docs/COMMANDS.md) · [`teyla start`](docs/START.md) · [`teyla web`](docs/WEB.md) · [Privacy](docs/PRIVACY.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [License](LICENSE) (Apache-2.0)

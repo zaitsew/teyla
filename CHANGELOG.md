@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **A README a stranger can act on, and a guide that holds the depth.** The README is 93 lines: the lockup, the one-line promise,
+  a screenshot of the Start page, then the line to paste into Claude Code or Codex ("Set up https://github.com/zaitsew/teyla"),
+  the install by hand (`uv tool install --python 3.12 git+https://github.com/zaitsew/teyla`, then `teyla start`) and a try-first
+  `uvx` line. Four short blocks follow, each with the command that opens it: cost and waste, what waits on you, products and
+  notes, one policy for every agent. Then the Mac app, privacy (the calls that can leave your Mac, with a link to the full table),
+  undo and uninstall. Terms are defined where they first appear. `docs/GUIDE.md` is rebuilt by the same four blocks and keeps
+  every section the old README and guide had, with new sections for `teyla start`, the daily screen, `teyla web`, the Mac app,
+  products, notes, privacy and undo, and a list of every document. `tests/test_readme.py` parses every `teyla` command in both
+  files with the CLI parser, checks each relative link and anchor, and keeps the README to 120 lines.
+  The Mac app's "teyla not found" screen now shows the same pinned install command (not rebuilt in this change), and the `uvx` line in `AGENTS.md` pins Python 3.12 too.
 - **Install by agent: fixes from a stranger's run.** Every install line pins `--python 3.12` (uv no longer picks a newer
   Python on a Mac with only 3.9; a download of about 25 MB may follow). `teyla start --agent` leaves out the closing line meant
   for a person at a terminal. `harness sync`, `harness status`, O6 and `doctor` share one "installed" test (the harness's
@@ -9,7 +19,6 @@
   Claude Code plugin when it is missing; `teyla apply O5 --owner NAME` names the policy's owner; every offer carries
   `preview`. `doctor` says it writes files and makes one update check, calls a GitHub 403/429 INFO ("rate limit; try
   later"), finds Codex the same way in `tools` and `health`, and prints Setup before Machine. Counts agree with their noun.
-
 - **`teyla web`: a local dashboard for the diagnosis, today, products and notes.** One command opens a page in your
   browser with five tabs. Start shows the diagnosis card and the seven offers, each with Apply (one confirm step that
   names the file and the key) and Undo (the message of `teyla undo` is shown, including the refusal for O5 to O7). Today
