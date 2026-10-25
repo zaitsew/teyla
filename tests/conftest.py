@@ -147,3 +147,109 @@ def fake_code_root(monkeypatch):
     monkeypatch.setattr(config, "code_root", lambda cfg=None: root)
     monkeypatch.setattr(registry, "_is_checkout", lambda d: d.parent == root)
     return root
+
+
+# --- `teyla start`: a whole fake machine ------------------------------------------------------
+
+class FakeHome:
+    """A temporary HOME with generic Claude Code / Codex session stores and builders for synthetic
+    transcripts. Nothing here names a real product, person or path."""
+
+    def __init__(self, home: pathlib.Path):
+        self.home = home
+        self.projects = home / ".claude" / "projects"
+
+    @property
+    def settings(self) -> pathlib.Path:
+        return self.home / ".claude" / "settings.json"
+
+    @staticmethod
+    def ts(age_days: float, step: int = 0) -> str:
+        import datetime as dt
+        t = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=age_days) + dt.timedelta(seconds=step)
+        return t.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+    @staticmethod
+    def usage(cread=0, out=0, inp=0, cwrite=0) -> dict:
+        return {"input_tokens": inp, "output_tokens": out, "cache_read_input_tokens": cread,
+                "cache_creation_input_tokens": cwrite}
+
+    def _write(self, path: pathlib.Path, records: list[dict]) -> None:
+        import json
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(json.dumps(r) + "\n" for r in records))
+
+    def _assistant(self, ts: str, mid: str, model: str, usage: dict, tools=()) -> dict:
+        content = [{"type": "text", "text": "ok"}]
+        content += [{"type": "tool_use", "id": f"toolu_{mid}_{n}", "name": t, "input": {}} for n, t in enumerate(tools)]
+        return {"type": "assistant", "timestamp": ts, "cwd": "/work/demo", "message": {
+            "id": mid, "role": "assistant", "model": model, "usage": usage, "content": content}}
+
+    def session(self, sid: str, messages: list[tuple[str, dict]], project: str = "-work-demo", age_days: float = 2.0) -> pathlib.Path:
+        """A Claude Code transcript: one assistant message per (model, usage) pair."""
+        recs = [self._assistant(self.ts(age_days, i), f"{sid}-m{i}", model, usage)
+                for i, (model, usage) in enumerate(messages)]
+        p = self.projects / project / f"{sid}.jsonl"
+        self._write(p, recs)
+        return p
+
+    def subagent(self, sid: str, agent: str, model: str, usage: dict, explicit: str | None = None,
+                 kind: str = "general-purpose", tools=(), project: str = "-work-demo", age_days: float = 2.0) -> None:
+        """One subagent call of session `sid`. `explicit`: the model the Agent call named (None: it named none)."""
+        import json
+        d = self.projects / project / sid / "subagents"
+        self._write(d / f"agent-{agent}.jsonl", [self._assistant(self.ts(age_days, 1), f"{agent}-m0", model, usage, tools)])
+        meta = {"agentType": kind, "description": "d", "toolUseId": f"toolu_{agent}"}
+        if explicit:
+            meta["model"] = explicit
+        (d / f"agent-{agent}.meta.json").write_text(json.dumps(meta))
+
+    def codex_session(self, sid: str, model: str, input_tokens: int, output_tokens: int, age_days: float = 2.0) -> None:
+        import json
+        import datetime as dt
+        day = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=age_days))
+        p = self.home / ".codex" / "sessions" / day.strftime("%Y/%m/%d") / f"rollout-{day.strftime('%Y-%m-%dT%H-%M-%S')}-{sid}.jsonl"
+        self._write(p, [
+            {"type": "session_meta", "timestamp": self.ts(age_days), "payload": {"id": sid, "cwd": "/work/demo"}},
+            {"type": "turn_context", "timestamp": self.ts(age_days, 1), "payload": {"model": model}},
+            {"type": "event_msg", "timestamp": self.ts(age_days, 2), "payload": {"type": "token_count", "info": {
+                "total_token_usage": {"input_tokens": input_tokens, "output_tokens": output_tokens}}}}])
+
+    def tree(self) -> dict:
+        """Every file under HOME and TEYLA_HOME with its bytes: what a read-only command must leave alone."""
+        import os
+        out = {}
+        for root in (self.home, pathlib.Path(os.environ["TEYLA_HOME"])):
+            for dirpath, _dirs, files in os.walk(root):
+                for name in files:
+                    if name == "start-report.json":     # what `teyla start` leaves for the first screen: not a change to a tool
+                        continue
+                    p = pathlib.Path(dirpath, name)
+                    out[str(p)] = p.read_bytes()
+        return out
+
+
+@pytest.fixture
+def fake_home(tmp_path_factory, monkeypatch):
+    """A fake HOME for `teyla start` tests: session stores, harness and policy paths all moved into it, and
+    the launchd listing emptied. The real ~/.claude, ~/.codex and ~/Library are never read or written."""
+    from teyla import harness, policy, uninstall
+    home = tmp_path_factory.mktemp("start-home")
+    (home / ".claude" / "projects").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(config, "HOME", home)
+    monkeypatch.setattr(claude_code, "DEFAULT_ROOT", str(home / ".claude" / "projects"))
+    monkeypatch.setattr(codex, "DEFAULT_ROOT", str(home / ".codex" / "sessions"))
+    monkeypatch.setattr(codex, "DEFAULT_ARCHIVE_ROOT", str(home / ".codex" / "archived_sessions"))
+    monkeypatch.setattr(harness, "HOME", home)
+    monkeypatch.setattr(harness, "HOOKS_DIR", home / ".teyla" / "hooks")
+    monkeypatch.setattr(policy, "HOME", home)
+    monkeypatch.setattr(policy, "POLICY", home / ".agents" / "POLICY.md")
+    monkeypatch.setattr(policy, "TARGETS", {
+        "claude-code": home / ".claude" / "CLAUDE.md", "codex": home / ".codex" / "AGENTS.md",
+        "grok": home / ".grok" / "AGENTS.md", "hermes": home / ".hermes" / "SOUL.md",
+        "cursor": home / ".cursor" / "skills" / "teyla-policy" / "SKILL.md"})
+    monkeypatch.setattr(policy, "CLAUDE_GLOBAL", home / ".claude" / "CLAUDE.md")
+    monkeypatch.setattr(policy, "ACK_PATH", home / ".teyla" / "ack.json")
+    monkeypatch.setattr(uninstall, "_launchctl_list", lambda: "")
+    return FakeHome(home)

@@ -4,13 +4,10 @@ Every command is in exactly one group of `GROUPS`; `tests/test_help.py` fails wh
 has none. The default help names the commands in `FEATURED` and counts the rest; `teyla help --all`
 lists every command with its one-line description; `teyla help <command>` and `teyla <command> --help`
 show one command's own options.
-
-A command that this version does not have yet (`NEEDS`) is left out of the listing instead of named.
 """
 from __future__ import annotations
 
 import difflib
-import importlib.util
 import sys
 
 from . import __version__
@@ -113,9 +110,6 @@ FEATURED = {
     "Advanced": [],
 }
 
-# Commands added by a change that may not be in this checkout yet: listed only when the module exists.
-NEEDS = {"start": "start", "apply": "start", "undo": "start", "changes": "start"}
-
 MAX_LINES = 39                   # "under 40 lines"
 
 
@@ -126,16 +120,11 @@ def group_of(command: str) -> str | None:
     return None
 
 
-def present(command: str) -> bool:
-    mod = NEEDS.get(command)
-    return mod is None or importlib.util.find_spec(f"teyla.{mod}") is not None
-
-
 def groups(everything: bool = False) -> list[tuple[str, list[tuple[str, str]], int]]:
-    """(group, rows to show, commands left out) for each group, skipping commands this version lacks."""
+    """(group, rows to show, commands left out) for each group."""
     out = []
     for g, rows in GROUPS.items():
-        rows = [(c, d) for c, d in rows if present(c)]
+        rows = list(rows)
         if everything:
             out.append((g, rows, 0))
             continue
@@ -157,14 +146,14 @@ def render(everything: bool = False, st: Style | None = None) -> str:
         if everything:
             L.append("")
     if not everything:
-        L += ["", f"Run {st.command('teyla')} for your numbers" + (f", or {st.command('teyla start')} to begin." if present("start") else ".")]
+        L += ["", f"Run {st.command('teyla')} for your numbers, or {st.command('teyla start')} to begin."]
     return "\n".join(L).rstrip("\n")
 
 
 def unknown(word: str, commands, err=None) -> int:
     """`teyla x` for a word that is no command: one line, the nearest command, then the help. Exit 2."""
     err = sys.stderr if err is None else err
-    real = sorted({c for c in commands if present(c)} | {"help"})
+    real = sorted(set(commands) | {"help"})
     near = difflib.get_close_matches(word, real, n=1, cutoff=0.6)
     hint = f" Did you mean '{near[0]}'?" if near else ""
     print(f"Unknown command '{word}'.{hint}", file=err)

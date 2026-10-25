@@ -28,7 +28,8 @@ Next
 - **No sessions on the machine:** one line says so ("Use Claude Code or Codex for a day, then run
   `teyla start`") instead of the numbers, and `teyla start` comes first.
 - **The first next command** is `teyla start` until you have applied or declined an offer: there is a change in
-  `~/.teyla/changes.jsonl`, or a finished `teyla start` is on record. After that it is `teyla today`, then `teyla spend`
+  `~/.teyla/changes.jsonl` (of any kind, including the `command` changes O5 to O7 that `teyla undo` refuses, and including
+  one that was undone later), or a finished `teyla start` is on record. After that it is `teyla today`, then `teyla spend`
   and `teyla help`.
 - **One more line** appears while `teyla start` has offers with a dollar saving that are not in force: "2 changes could
   save about $120-$240 a month".
@@ -42,7 +43,7 @@ Counting spend means reading every session of two weeks (5 seconds to a minute),
 
 | figure | source | how stale it can be |
 |---|---|---|
-| spend, last 7 days | cache | A cache older than 10 minutes starts one background refresh (`teyla today --refresh-cache`, at most once per 5 minutes). Shown with "as of 3h ago" once older than 6 hours. Not shown after 7 days. |
+| spend, last 7 days | cache | A cache older than 10 minutes starts one background refresh (`teyla today --refresh-cache`, at most once per 5 minutes: the refresh takes an exclusive lock file, so two calls at once start one). Shown with "as of 3h ago" once older than 6 hours. Not shown after 7 days. |
 | questions waiting | cache | Same rules. `teyla today` and the refresh store it. |
 | notes in the Inbox | read now | Not stale. One small file. |
 | "could save" line | `~/.teyla/start-report.json`, written by `teyla start` | As old as the last `teyla start`. |

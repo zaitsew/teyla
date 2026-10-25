@@ -52,9 +52,9 @@ def test_group_names_and_featured_commands_are_known():
         assert all(c in dict(helpgroups.GROUPS[g]) for c in picked), g
 
 
-def test_every_listed_command_exists_except_those_a_pending_change_adds():
+def test_every_listed_command_exists():
     cmds = set(registered())
-    stray = [c for rows in helpgroups.GROUPS.values() for c, _ in rows if c not in cmds and c not in helpgroups.NEEDS]
+    stray = [c for rows in helpgroups.GROUPS.values() for c, _ in rows if c not in cmds]
     assert not stray
 
 
@@ -93,11 +93,7 @@ def test_help_all_lists_every_registered_command_once(capsys):
             assert len(re.findall(rf"^  {re.escape(c)}\s", out, re.M)) == 1, c
 
 
-def test_help_names_a_command_only_when_this_version_has_it(capsys, monkeypatch):
-    monkeypatch.setattr(helpgroups, "present", lambda c: c != "start")
-    _, out, _ = run(capsys, "help")
-    assert not re.search(r"^  start\s", out, re.M) and "teyla start" not in out
-    monkeypatch.setattr(helpgroups, "present", lambda c: True)
+def test_help_names_teyla_start(capsys):
     _, out, _ = run(capsys, "help")
     assert re.search(r"^  start\s", out, re.M) and "teyla start" in out
 
@@ -138,10 +134,9 @@ def test_unknown_command_with_no_near_match_still_shows_the_help(capsys):
     assert "Start" in err
 
 
-def test_unknown_command_never_suggests_one_this_version_lacks(capsys, monkeypatch):
-    monkeypatch.setattr(helpgroups, "present", lambda c: c not in ("start", "apply", "undo", "changes"))
+def test_unknown_command_suggests_start(capsys):
     _, _, err = run(capsys, "strt")
-    assert "Did you mean 'start'" not in err
+    assert "Did you mean 'start'" in err
 
 
 def test_an_option_in_place_of_a_command_is_one_line(capsys):

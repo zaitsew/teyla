@@ -10,6 +10,7 @@ import re
 import pytest
 
 from teyla import __version__, cli, figures, notes, welcome
+from teyla import changes as changes_mod
 from teyla.adapters import claude_code
 from teyla.ui import Style
 
@@ -36,7 +37,6 @@ def _no_computing(monkeypatch):
     monkeypatch.setattr(figures, "compute_spend", refuse)
     from teyla import spend
     monkeypatch.setattr(spend, "session_rows", refuse)
-    monkeypatch.setattr(figures, "start_available", lambda: True)
     return spawned
 
 
@@ -146,12 +146,6 @@ def test_without_sessions_it_says_so_in_one_line_and_starts_with_teyla_start(cap
     assert "questions waiting" not in out and spawned == []
 
 
-def test_without_sessions_and_without_teyla_start_it_never_names_it(capsys, monkeypatch):
-    monkeypatch.setattr(figures, "start_available", lambda: False)
-    out = welcome_text(capsys)
-    assert "teyla start" not in out and "teyla doctor" in out
-
-
 # --- the next commands ----------------------------------------------------------------------------
 
 def next_commands(out: str) -> list[str]:
@@ -174,15 +168,29 @@ def test_after_a_finished_start_the_first_next_command_is_teyla_today(sessions, 
 
 def test_after_an_applied_change_the_first_next_command_is_teyla_today(sessions, capsys):
     cache()
-    figures.changes_path().write_text(json.dumps({"id": "c1", "offer": "O1", "file": "x", "key_path": ["k"]}) + "\n")
+    changes_mod.log_path().write_text(json.dumps({"id": "c1", "offer": "O1", "kind": "json", "file": "x", "key_path": ["k"]}) + "\n")
     assert next_commands(welcome_text(capsys))[0] == "teyla today"
 
 
-def test_where_this_version_has_no_start_the_first_command_is_today(sessions, capsys, monkeypatch):
+def test_a_command_change_that_undo_refuses_counts_as_applied(sessions, capsys):
     cache()
-    monkeypatch.setattr(figures, "start_available", lambda: False)
-    out = welcome_text(capsys)
-    assert next_commands(out)[0] == "teyla today" and "teyla start" not in out
+    changes_mod.log_path().write_text(json.dumps({"id": "c1", "offer": "O5", "kind": "command", "command": "teyla policy sync"}) + "\n")
+    assert next_commands(welcome_text(capsys))[0] == "teyla today"
+    assert figures.applied_offers() == {"O5"}              # no undo row can ever follow: it stays in force
+
+
+def test_an_undone_change_still_means_the_person_has_been_through_start(sessions, capsys):
+    cache()
+    changes_mod.log_path().write_text(json.dumps({"id": "c1", "offer": "O1", "kind": "json"}) + "\n"
+                                      + json.dumps({"undo_of": "c1", "offer": "O1"}) + "\n")
+    assert figures.onboarded() and figures.applied_offers() == set()
+    assert next_commands(welcome_text(capsys))[0] == "teyla today"
+
+
+def test_a_machine_with_no_changes_log_gets_teyla_start_first(sessions, capsys):
+    cache()
+    assert not changes_mod.log_path().exists()
+    assert next_commands(welcome_text(capsys))[0] == "teyla start"
 
 
 def test_unapplied_offers_with_a_saving_get_one_line_quoting_the_last_diagnosis(sessions, capsys):
@@ -191,9 +199,9 @@ def test_unapplied_offers_with_a_saving_get_one_line_quoting_the_last_diagnosis(
     out = welcome_text(capsys)
     (line,) = [ln for ln in out.splitlines() if "could save" in ln]
     assert "1 change could save about $120-$240 a month" in line and line.endswith("teyla start")
-    figures.changes_path().write_text(json.dumps({"id": "c1", "offer": "O1"}) + "\n")      # applied: nothing left to quote
+    changes_mod.log_path().write_text(json.dumps({"id": "c1", "offer": "O1", "kind": "json"}) + "\n")      # applied: nothing left to quote
     assert "could save" not in welcome_text(capsys)
-    figures.changes_path().write_text(json.dumps({"id": "c1", "offer": "O1"}) + "\n" + json.dumps({"undo_of": "c1"}) + "\n")
+    changes_mod.log_path().write_text(json.dumps({"id": "c1", "offer": "O1", "kind": "json"}) + "\n" + json.dumps({"undo_of": "c1", "offer": "O1"}) + "\n")
     assert "could save" in welcome_text(capsys)            # undone: it is open again
 
 
@@ -280,6 +288,69 @@ def test_the_refresh_starts_once_per_five_minutes(monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", lambda cmd, **k: started.append(cmd))
     assert REAL_SPAWN_REFRESH() is True and REAL_SPAWN_REFRESH() is False
     assert len(started) == 1 and started[0][-3:] == ["teyla", "today", "--refresh-cache"]
+
+
+def _race(n: int = 16) -> list[bool]:
+    import threading
+    barrier, got = threading.Barrier(n), []
+
+    def go():
+        barrier.wait()
+        got.append(figures.acquire_lock())
+    threads = [threading.Thread(target=go) for _ in range(n)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    return got
+
+
+def test_two_acquirers_get_one_lock():
+    assert figures.acquire_lock() is True
+    assert figures.acquire_lock() is False
+    assert oct(figures._lock().stat().st_mode & 0o777) == "0o600"
+    figures.release_lock()
+    assert figures.acquire_lock() is True
+
+
+def test_sixteen_callers_at_once_get_exactly_one_lock():
+    for _ in range(5):
+        figures.release_lock()
+        got = _race()
+        assert got.count(True) == 1 and len(got) == 16
+
+
+def test_a_lock_older_than_five_minutes_is_taken_over_by_exactly_one_caller():
+    import os
+    figures.release_lock()
+    assert figures.acquire_lock()
+    old = figures.now() - figures.LOCK_STALE_S - 60
+    os.utime(figures._lock(), (old, old))
+    assert _race().count(True) == 1
+    assert figures.now() - figures._lock().stat().st_mtime < figures.LOCK_STALE_S    # the new holder's lock is fresh
+    assert [p.name for p in figures.home().iterdir() if p.name.startswith("first-screen.lock.")] == []
+
+
+def test_a_lock_younger_than_five_minutes_is_respected():
+    import os
+    assert figures.acquire_lock()
+    young = figures.now() - figures.LOCK_STALE_S + 60
+    os.utime(figures._lock(), (young, young))
+    assert figures.acquire_lock() is False
+
+
+def test_two_refreshes_never_start_together(monkeypatch):
+    import subprocess
+    started = []
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **k: started.append(cmd))
+    import threading
+    out, barrier = [], threading.Barrier(8)
+
+    def go():
+        barrier.wait()
+        out.append(REAL_SPAWN_REFRESH())
+    ts = [threading.Thread(target=go) for _ in range(8)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert out.count(True) == 1 and len(started) == 1
 
 
 def test_the_cache_is_private_and_a_broken_one_is_replaced(sessions):

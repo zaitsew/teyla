@@ -77,22 +77,43 @@ def _load_overrides() -> dict:
     return out
 
 
+_merged: dict = {"stamp": None, "prices": None, "hits": {}}
+
+
+def _stamp():
+    try:
+        st = OVERRIDE_PATH.stat()
+        return (str(OVERRIDE_PATH), st.st_mtime_ns, st.st_size)
+    except OSError:
+        return (str(OVERRIDE_PATH), None, None)
+
+
 def effective_prices() -> dict:
-    """PRICES with ~/.teyla/prices.json layered on top (override wins per prefix). Reloaded on
-    every call — cheap (a small local file) and picks up a fresh --write-prices without a restart."""
-    merged = dict(PRICES)
-    merged.update(_load_overrides())
-    return merged
+    """PRICES with ~/.teyla/prices.json layered on top (override wins per prefix). The file is
+    re-read whenever its path, mtime or size changes, so a fresh --write-prices is picked up without a
+    restart; between changes the merged table is reused (a session scan prices a million messages)."""
+    stamp = _stamp()
+    if _merged["stamp"] != stamp or _merged["prices"] is None:
+        merged = dict(PRICES)
+        merged.update(_load_overrides())
+        _merged.update(stamp=stamp, prices=merged, hits={})
+    return _merged["prices"]
 
 
 def lookup(model: str):
     """Longest-prefix match so 'claude-opus-5-20260401' resolves to 'claude-opus-5'."""
     prices = effective_prices()
+    own = _merged["prices"] is prices          # a test may swap effective_prices(); its table is not cached
+    if own and model in _merged["hits"]:
+        return _merged["hits"][model]
     best = None
     for k in prices:
         if model.startswith(k) and (best is None or len(k) > len(best)):
             best = k
-    return prices.get(best) if best else None
+    out = prices.get(best) if best else None
+    if own:
+        _merged["hits"][model] = out
+    return out
 
 
 def tier(model: str) -> str:
@@ -114,7 +135,9 @@ def family(model: str) -> str:
     return "other"
 
 
-def cost_usd(model: str, usage: dict) -> float | None:
+def cost_parts(model: str, usage: dict) -> dict | None:
+    """The four parts of `cost_usd`, in dollars: input, cache_write, cache_read, output. None when
+    the model is not priced. `teyla start` reads the cache parts as the cost of context."""
     p = lookup(model)
     if not p:
         return None
@@ -123,6 +146,19 @@ def cost_usd(model: str, usage: dict) -> float | None:
     # The 1-hour share of the writes (adapters.CACHE_1H_KEY) bills at 2x input; the rest at the
     # 5-minute rate. Claude Code writes only 1-hour cache, so pricing it at 1.25x under-counted.
     hour = min(usage.get("cache_creation_1h_input_tokens", 0), written)
+    return dict(input=usage.get("input_tokens", 0) * i / 1e6,
+                cache_write=((written - hour) * cw + hour * 2 * i) / 1e6,
+                cache_read=usage.get("cache_read_input_tokens", 0) * cr / 1e6,
+                output=usage.get("output_tokens", 0) * o / 1e6)
+
+
+def cost_usd(model: str, usage: dict) -> float | None:
+    p = lookup(model)
+    if not p:
+        return None
+    i, cw, cr, o = p[:4]
+    written = usage.get("cache_creation_input_tokens", 0)
+    hour = min(usage.get("cache_creation_1h_input_tokens", 0), written)  # see cost_parts
     return (usage.get("input_tokens", 0) * i + (written - hour) * cw + hour * 2 * i
             + usage.get("cache_read_input_tokens", 0) * cr + usage.get("output_tokens", 0) * o) / 1e6
 

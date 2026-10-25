@@ -18,7 +18,6 @@ Rules (docs/TODAY.md has the same list):
     saying so, and `teyla start` first.
   - The first next command is `teyla start` until the person has applied or declined an offer (a
     change in ~/.teyla/changes.jsonl, or a finished `teyla start`). After that it is `teyla today`.
-    Where this version has no `teyla start`, it is never named.
   - Nothing here is computed. Spend and questions come from the cache in `figures` (see there for how
     stale they can be); the notes are one small file. A cache that is missing or older than 10 minutes
     starts one background refresh. The call takes tens of milliseconds, not the minute a diagnosis takes.
@@ -36,7 +35,6 @@ MAX_LINES = 15
 PROMISE = ("Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's "
            "waiting on you, and fixes the waste. Nothing leaves your machine.")
 NO_SESSIONS = "No agent sessions found yet. Use Claude Code or Codex for a day, then run `teyla start`."
-NO_SESSIONS_NO_START = "No agent sessions found yet. Use Claude Code or Codex for a day, then run `teyla` again."
 
 START = ("teyla start", "Find where the money goes, and fix it one change at a time")
 TODAY = ("teyla today", "What waits on you, the Inbox and the week's spend")
@@ -45,11 +43,11 @@ DOCTOR = ("teyla doctor", "Check that Teyla can see your tools, with the fix for
 HELP = ("teyla help", "Every command, in groups")
 
 
-def next_commands(sessions: bool, onboarded: bool, start: bool) -> list[tuple[str, str]]:
+def next_commands(sessions: bool, onboarded: bool) -> list[tuple[str, str]]:
     """The three commands to try next. See the module docstring for the rule."""
     if not sessions:
-        return [START, DOCTOR, HELP] if start else [DOCTOR, TODAY, HELP]
-    if start and not onboarded:
+        return [START, DOCTOR, HELP]
+    if not onboarded:
         return [START, TODAY, HELP]
     return [TODAY, SPEND, HELP]
 
@@ -102,7 +100,7 @@ def offers_line(st: Style) -> str:
 
 def render(st: Style | None = None, at: float | None = None) -> str:
     st = st or Style()
-    sessions, start = figures.has_sessions(), figures.start_available()
+    sessions = figures.has_sessions()
     L = [f"{st.mark()} {st.bold('Teyla')} {__version__}"]
     L += textwrap.wrap(PROMISE, width=min(st.width(), 80))
     L.append("")
@@ -112,9 +110,9 @@ def render(st: Style | None = None, at: float | None = None) -> str:
         if extra:
             L.append(extra)
     else:
-        L.append(NO_SESSIONS if start else NO_SESSIONS_NO_START)
+        L.append(NO_SESSIONS)
     L += ["", st.bold("Next")]
-    L += [f"  {pad(st.command(c), 13)}{d}" for c, d in next_commands(sessions, figures.onboarded(), start)]
+    L += [f"  {pad(st.command(c), 13)}{d}" for c, d in next_commands(sessions, figures.onboarded())]
     return "\n".join(L[:MAX_LINES])
 
 

@@ -10,6 +10,7 @@ import re
 import pytest
 
 from teyla import asks, cli, figures, notes, registry, spend, today
+from teyla import changes as changes_mod
 from teyla.ui import Style
 
 REAL_COMPUTE_SPEND = figures.compute_spend            # the autouse fixture replaces the module attribute
@@ -36,7 +37,6 @@ def machine(monkeypatch):
         return {"this_week": 200.0, "last_week": 100.0, "at": NOW}
     monkeypatch.setattr(figures, "compute_spend", compute)
     monkeypatch.setattr(asks, "collect", lambda *a, **k: list(state["asks"]))
-    monkeypatch.setattr(figures, "start_available", lambda: True)
     return state
 
 
@@ -294,7 +294,7 @@ def test_an_offer_already_applied_is_not_suggested_again(machine, capsys):
     cache_spend()
     figures.record_start({"diagnosis": {}, "offers": [{"id": "O1", "title": "Compact earlier", "applies": True,
                                                          "saving_usd_month": {"low": 100, "high": 240}}]}, False)
-    figures.changes_path().write_text(json.dumps({"id": "c1", "offer": "O1"}) + "\n")
+    changes_mod.log_path().write_text(json.dumps({"id": "c1", "offer": "O1", "kind": "json"}) + "\n")
     out, _ = run(capsys)
     assert "Apply O1" not in out
 
