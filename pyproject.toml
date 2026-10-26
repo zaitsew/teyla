@@ -1,6 +1,6 @@
 [project]
 name = "teyla"
-version = "0.31.0"
+version = "0.32.0"
 description = "Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's waiting on you, and fixes the waste. Nothing about your sessions leaves your Mac unless you turn it on."
 readme = "README.md"
 requires-python = ">=3.11"
