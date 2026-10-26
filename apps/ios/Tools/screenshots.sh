@@ -49,6 +49,10 @@ shot() {
   xcrun simctl launch "$udid" "$bundle" "$@" >/dev/null
   sleep 3
   xcrun simctl io "$udid" screenshot --type=png "$out/$name.png" >/dev/null
+  # The store refuses screenshots with an alpha channel; a JPEG round trip drops it, then back to PNG.
+  sips -s format jpeg "$out/$name.png" --out "$out/$name.jpg" >/dev/null
+  sips -s format png "$out/$name.jpg" --out "$out/$name.png" >/dev/null
+  rm -f "$out/$name.jpg"
   echo "$out/$name.png"
 }
 
