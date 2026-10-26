@@ -168,7 +168,11 @@ struct SyncLine: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 20)) { context in
-            if model.connection == .fixture {
+            if model.connection == .sample {
+                Label("Sample data", systemImage: "eye")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else if model.connection == .fixture {
                 Label("Preview data", systemImage: "eye")
                     .font(.footnote)
                     .foregroundStyle(.secondary)

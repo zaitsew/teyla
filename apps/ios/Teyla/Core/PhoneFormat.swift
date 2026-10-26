@@ -75,6 +75,7 @@ enum PhoneFormat {
 
     /// The `sent/` line under a card: what the Mac did with the entry.
     static func outcomeLine(_ outcome: PendingAction.Outcome) -> String {
+        if outcome.via == SampleData.via { return SampleData.notice }
         if outcome.ok { return Format.sentLine(via: outcome.via) }
         let detail = outcome.detail.trimmingCharacters(in: .whitespacesAndNewlines)
         return detail.isEmpty ? "The Mac could not deliver this" : String(detail.prefix(300))

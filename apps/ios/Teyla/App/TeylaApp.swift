@@ -71,7 +71,34 @@ struct RootView: View {
                 ProductsView(showNewTask: $showNewTask)
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if model.isSample { SampleBanner() }
+        }
         .sheet(isPresented: $showNewTask) { NewTaskView() }
         .sheet(isPresented: $showSettings) { SettingsView() }
+    }
+}
+
+/// Always visible in sample mode, so nobody mistakes made-up data for their own.
+struct SampleBanner: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "eye").accessibilityHidden(true)
+            Text(SampleData.bannerText)
+                .font(.footnote)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Button("Pair") { model.leaveSample() }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
+        .accessibilityElement(children: .contain)
     }
 }
