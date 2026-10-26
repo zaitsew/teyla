@@ -2,20 +2,21 @@
 
 The text to paste into App Store Connect for `com.zaitsew.teyla` (iPhone). It follows POLICY section 15:
 no model provider in the listing, a reviewer who reaches every feature without an account, China
-mainland off. The Mac app has its own record and notes (phase 4 of
-[the 0.32 plan](decisions/2026-10-26-portfolio-and-stores.md)).
+mainland off. The Mac store build shares the record; its text is in `apps/store/listing/macos/`.
 
-Nothing here is registered with Apple yet. The App Store Connect record is created in the website
-(Apps, +, New App) with the fields below; the API cannot create it.
+The App Store Connect record exists since 2026-10-26: app id **6827052748**, one record for iOS and macOS
+(both builds share `com.zaitsew.teyla`), name "Teyla — AI studio inbox", SKU `teyla`, Full Access. The
+listing is written by `apps/store/app-store.py` from `apps/store/listing/`; this file keeps the reasons.
 
 ## Record
 
 | Field | Value |
 |---|---|
-| Platform | iOS, iPhone only (`TARGETED_DEVICE_FAMILY` 1) |
+| App id | 6827052748 |
+| Platform | iOS (iPhone only, `TARGETED_DEVICE_FAMILY` 1) and macOS (the `TeylaStore` target) |
 | Name (30 max) | Teyla — AI studio inbox (23). Fallback if taken: Teyla: Studio Inbox (19) |
 | Bundle ID | `com.zaitsew.teyla` |
-| SKU | `teyla-ios` |
+| SKU | `teyla` |
 | Primary language | English (U.S.) |
 | User access | Full Access |
 | Category | Developer Tools (secondary: Productivity) |
