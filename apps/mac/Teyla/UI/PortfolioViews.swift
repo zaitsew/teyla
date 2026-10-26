@@ -315,7 +315,7 @@ struct ProductFiguresColumn: View {
                 Image(systemName: PlatformSymbol.name(for: platform.platform)).foregroundStyle(Palette.textSecondary)
                 Text(PortfolioText.platformName(platform.platform)).font(Typo.body.weight(.semibold))
                 let channel = PortfolioText.channelName(platform.channel)
-                if !channel.isEmpty { Text(channel).font(Typo.caption).foregroundStyle(Palette.textSecondary) }
+                if !channel.isEmpty, channel != PortfolioText.platformName(platform.platform) { Text(channel).font(Typo.caption).foregroundStyle(Palette.textSecondary) }
                 Spacer(minLength: Space.s)
                 Chip(text: PortfolioText.stateWord(platform.state), color: platform.state.color)
             }
@@ -323,7 +323,8 @@ struct ProductFiguresColumn: View {
             if !build.isEmpty {
                 Text(build).font(Typo.body).foregroundStyle(Palette.textSecondary).monospacedDigit()
             }
-            if !platform.detail.isEmpty {
+            // The link line already says the address; do not repeat it as detail.
+            if !platform.detail.isEmpty, platform.detail != Format.linkLabel(platform.link) {
                 Text(platform.detail)
                     .font(Typo.body)
                     .foregroundStyle(Palette.textSecondary)

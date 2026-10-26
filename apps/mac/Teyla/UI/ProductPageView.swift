@@ -7,43 +7,80 @@ struct ProductPageView: View {
 
     var body: some View {
         let page = model.productPage
-        ScrollView {
-            VStack(alignment: .leading, spacing: Space.xl) {
-                if let data = page.page, data.product.id == id {
-                    ProductHeaderView(header: data.product, spend: data.spend, reading: page.readingSessions)
-                    ProductAsksSection(asks: data.asks)
-                    ProductNotesSection(productID: id, notes: data.notes)
-                    ProductSessionsSection(sessions: data.sessions, reading: page.readingSessions)
-                    if let error = page.error {
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .font(Typo.caption)
-                            .foregroundStyle(Palette.warning)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
-                    }
-                } else if let error = page.error {
-                    VStack(alignment: .leading, spacing: Space.s) {
-                        Label("Could not read \(Format.product(id))", systemImage: "exclamationmark.triangle")
-                            .font(Typo.lead)
-                            .foregroundStyle(Palette.warning)
-                        Text(error)
-                            .foregroundStyle(Palette.textSecondary)
-                            .textSelection(.enabled)
-                        Button("Try again") { page.reload() }
-                    }
-                } else {
-                    HStack(spacing: Space.s) {
-                        ProgressView().controlSize(.small)
-                        Text("Reading \(Format.product(id))…").foregroundStyle(Palette.textSecondary)
+        let portfolioProduct = model.snapshot?.portfolio?.product(id)
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.xl) {
+                    if let data = page.page, data.product.id == id {
+                        ProductHeaderView(header: data.product, spend: data.spend, reading: page.readingSessions,
+                                          portfolio: portfolioProduct)
+                        content(data, page: page, portfolio: portfolioProduct, wide: proxy.size.width >= Space.wideWindow)
+                    } else if let error = page.error {
+                        VStack(alignment: .leading, spacing: Space.s) {
+                            Label("Could not read \(Format.product(id))", systemImage: "exclamationmark.triangle")
+                                .font(Typo.lead)
+                                .foregroundStyle(Palette.warning)
+                            Text(error)
+                                .foregroundStyle(Palette.textSecondary)
+                                .textSelection(.enabled)
+                            Button("Try again") { page.reload() }
+                        }
+                    } else {
+                        // The snapshot already knows the product's health and platforms, so they show while the page reads.
+                        if let portfolioProduct {
+                            Text(portfolioProduct.title).font(Typo.brief)
+                            ProductStatusBlock(product: portfolioProduct)
+                        }
+                        ReadingLine(text: "Reading \(Format.product(id))…")
                     }
                 }
+                .padding(.horizontal, Space.xl + Space.xs)
+                .padding(.vertical, Space.xl)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, Space.xl + Space.xs)
-            .padding(.vertical, Space.xl)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Palette.background)
         .navigationTitle(model.snapshot?.products.first { $0.name == id }?.title ?? Format.product(id))
+    }
+
+    /// The sections stop at the reading width. On a wide window the platform details take the room beside them.
+    @ViewBuilder
+    private func content(_ data: ProductPageData, page: ProductPageModel, portfolio: PortfolioProduct?, wide: Bool) -> some View {
+        let sections = VStack(alignment: .leading, spacing: Space.xl) {
+            ProductAsksSection(asks: data.asks)
+            ProductNotesSection(productID: id, notes: data.notes)
+            ProductSessionsSection(sessions: data.sessions, reading: page.readingSessions)
+            if let error = page.error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+        }
+        .readingWidth()
+        if wide, let portfolio {
+            HStack(alignment: .top, spacing: Space.xxl) {
+                sections
+                ProductFiguresColumn(product: portfolio)
+                    .frame(minWidth: Space.sideColumn, maxWidth: Space.sideColumnMax, alignment: .leading)
+            }
+        } else {
+            sections
+        }
+    }
+}
+
+/// A quiet inline progress line: a tiny spinner and small grey text.
+struct ReadingLine: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: Space.xs + Space.xxs) {
+            ProgressView().controlSize(.mini)
+            Text(text).font(Typo.caption).foregroundStyle(Palette.textSecondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -52,6 +89,7 @@ private struct ProductHeaderView: View {
     let header: ProductHeader
     let spend: ProductSpend?
     let reading: Bool
+    let portfolio: PortfolioProduct?
 
     var body: some View {
         let page = model.productPage
@@ -98,6 +136,7 @@ private struct ProductHeaderView: View {
                     EmptyView()
                 }
             }
+            if let portfolio { ProductStatusBlock(product: portfolio) }
             spendLine
         }
     }
@@ -147,22 +186,11 @@ private struct ProductHeaderView: View {
                 .foregroundStyle(Palette.textSecondary)
                 .monospacedDigit()
         } else if reading {
-            HStack(spacing: Space.s) {
-                ProgressView().controlSize(.small)
-                Text("Reading the last 30 days of sessions…").foregroundStyle(Palette.textSecondary)
-            }
+            ReadingLine(text: "Reading the last 30 days of sessions…")
         }
     }
 
-    private func platform(_ id: String) -> String {
-        switch id.lowercased() {
-        case "ios": return "iOS"
-        case "macos": return "macOS"
-        case "web": return "Web"
-        case "android": return "Android"
-        default: return id.prefix(1).uppercased() + id.dropFirst()
-        }
-    }
+    private func platform(_ id: String) -> String { PortfolioText.platformName(id) }
 }
 
 private struct ProductAsksSection: View {
@@ -170,20 +198,30 @@ private struct ProductAsksSection: View {
     let asks: [ProductAsk]
 
     var body: some View {
+        let open = asks.filter { !model.isHidden($0.id) }
+        let split = AskFold.partition(open) { model.age(plus: $0.ageSeconds) }
         VStack(alignment: .leading, spacing: Space.m) {
-            SectionLabel(asks.isEmpty ? "Needs you" : "Needs you · \(asks.count)")
-            if asks.isEmpty {
+            SectionLabel(open.isEmpty ? "Needs you" : "Needs you · \(open.count)")
+            if open.isEmpty {
                 Label("Nothing is waiting for an answer.", systemImage: "checkmark.circle")
                     .foregroundStyle(Palette.textSecondary)
             }
-            ForEach(asks) { item in
-                // The live card when the window has the question (it can be answered here); otherwise the page's own line.
-                if let ask = model.visibleAsks.first(where: { $0.id == item.id }) {
-                    AskCard(ask: ask)
-                } else {
-                    ProductAskRow(item: item)
+            ForEach(split.fresh) { item in card(item, older: false) }
+            if !split.older.isEmpty {
+                OlderGroup(count: split.older.count, revealsFocus: split.older.contains { $0.id == model.focusedAskID }) {
+                    ForEach(split.older) { item in card(item, older: true) }
                 }
             }
+        }
+    }
+
+    /// The live card when the window has the question (it can be answered here); otherwise the page's own line.
+    @ViewBuilder
+    private func card(_ item: ProductAsk, older: Bool) -> some View {
+        if let ask = model.visibleAsks.first(where: { $0.id == item.id }) {
+            AskCard(ask: ask, older: older)
+        } else {
+            ProductAskRow(item: item, older: older)
         }
     }
 }
@@ -191,6 +229,7 @@ private struct ProductAsksSection: View {
 private struct ProductAskRow: View {
     @Environment(AppModel.self) private var model
     let item: ProductAsk
+    var older = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s) {
@@ -200,6 +239,13 @@ private struct ProductAskRow: View {
                     .font(Typo.caption)
                     .foregroundStyle(Palette.textSecondary)
                 Spacer(minLength: Space.s)
+                if older, model.cards[item.id] == nil {
+                    Button(AskCard.closeLabel) { model.markDone(id: item.id) }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .font(Typo.caption)
+                        .foregroundStyle(Palette.textSecondary)
+                }
                 if !item.link.isEmpty {
                     Button("Open session") { model.openSession(item.link, noteKey: item.id) }
                         .controlSize(.small)
@@ -210,6 +256,19 @@ private struct ProductAskRow: View {
                 .textSelection(.enabled)
             if let note = model.notes[item.id] {
                 Text(note).font(Typo.caption).foregroundStyle(Palette.textSecondary)
+            }
+            switch model.cards[item.id] {
+            case .sending(let text):
+                ReadingLine(text: text)
+            case .done(let text):
+                Label(text, systemImage: "checkmark.circle.fill").font(Typo.caption).foregroundStyle(Palette.success)
+            case .failed(let message):
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.danger)
+                    .textSelection(.enabled)
+            case nil:
+                EmptyView()
             }
         }
         .card()
