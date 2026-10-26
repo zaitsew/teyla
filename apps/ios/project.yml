@@ -8,9 +8,10 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     IPHONEOS_DEPLOYMENT_TARGET: "18.0"
-    # The release script (~/ops/bin/testflight release) passes the team id; it is empty in the repo.
+    # The archive takes the team from the project (~/ops/bin/testflight release does not pass it).
+    # The publisher's team; a team id is not a secret. Building with another team: override it.
     CODE_SIGN_STYLE: Automatic
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: VWH2FKV78Q
 targets:
   Teyla:
     type: application
