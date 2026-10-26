@@ -68,9 +68,11 @@ final class AppModel {
         let requested = (environment["TEYLA_SAMPLE"] ?? defaults.string(forKey: "TEYLA_SAMPLE")).map {
             ["1", "yes", "true"].contains($0.lowercased())
         } ?? false
-        isSample = fixtureURL == nil && (requested || defaults.bool(forKey: Self.sampleKey))
-        pendingStore = fixtureURL == nil && !isSample ? DefaultsPendingStore(defaults: defaults) : MemoryPendingStore()
-        pending = pendingStore.load()
+        let sample = fixtureURL == nil && (requested || defaults.bool(forKey: Self.sampleKey))
+        isSample = sample
+        let store: PendingStore = fixtureURL == nil && !sample ? DefaultsPendingStore(defaults: defaults) : MemoryPendingStore()
+        pendingStore = store
+        pending = store.load()
         let loaded = fixtureURL == nil ? keyStore.load() : nil
         key = loaded
         hasKey = loaded != nil

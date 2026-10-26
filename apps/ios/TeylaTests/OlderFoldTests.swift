@@ -20,8 +20,8 @@ final class OlderFoldTests: XCTestCase {
         let asks = [ask("a", days: 6.5)]
         let snapshot = Snapshot(generated: generated, asks: asks)
         XCTAssertEqual(PhoneFormat.splitAsks(asks, snapshot: snapshot, now: now).older.count, 0)
-        // Twelve hours later the same question has waited more than 7 days.
-        let later = now.addingTimeInterval(12 * 3600)
+        // Fourteen hours later the same question has waited more than 7 days.
+        let later = now.addingTimeInterval(14 * 3600)
         XCTAssertEqual(PhoneFormat.splitAsks(asks, snapshot: snapshot, now: later).older.map(\.id), ["a"])
     }
 
