@@ -300,8 +300,8 @@ version 2. `apps/mac/TeylaTests/Fixtures/state.sample.v3.json` is the reference.
     that explain it, worst first; empty when on track.
   - `platforms[]`, primary first: `{platform, role, channel, version, build, state, detail, as_of, link}`.
     `platform`: `ios`, `macos`, `android`, `web`, `watch`. `role`: `primary` or `secondary`.
-    `channel`: `testflight`, `app_store`, `play`, `web` or `local`. `state`: `live` (public store
-    version or a site that answers), `in_review`, `current` (the newest build reached the owner),
+    `channel`: `testflight`, `app_store`, `play`, `web` or `local`. `state`: `live` (a public store
+    version, or a site URL the repo's `teyla.toml` declares; Teyla does not fetch it), `in_review`, `current` (the newest build reached the owner),
     `behind` (a newer build exists that the owner cannot install yet), `blocked` (only the owner can
     clear it; `detail` says how), `none` (no build yet) or `unknown` (not checked, or the check failed).
     `detail` is one line for a person. `as_of` is when that row was read.
