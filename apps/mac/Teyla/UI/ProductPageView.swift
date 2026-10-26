@@ -231,6 +231,14 @@ private struct ProductAskRow: View {
     let item: ProductAsk
     var older = false
 
+    /// Close shows when nothing is in flight; after a failed close it shows again, so the owner can retry.
+    private var canClose: Bool {
+        switch model.cards[item.id] {
+        case nil, .failed: return true
+        default: return false
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s) {
             HStack(spacing: Space.s) {
@@ -239,7 +247,7 @@ private struct ProductAskRow: View {
                     .font(Typo.caption)
                     .foregroundStyle(Palette.textSecondary)
                 Spacer(minLength: Space.s)
-                if older, model.cards[item.id] == nil {
+                if older, canClose {
                     Button(AskCard.closeLabel) { model.markDone(id: item.id) }
                         .buttonStyle(.borderless)
                         .controlSize(.small)

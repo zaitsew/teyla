@@ -124,11 +124,15 @@ final class AppModel {
     /// A fixture snapshot has a fixed `generated` time, so it is not counted against the clock.
     func syncIndicator(at date: Date = Date()) -> SyncIndicator {
         var pageLoading = false
-        if case .product = route { pageLoading = productPage.readingSessions }
+        var pageError: String?
+        if case .product = route {
+            pageLoading = productPage.readingSessions
+            pageError = productPage.error
+        }
         let portfolio = snapshot?.portfolio
         return SyncStatus.indicator(
             now: date, fetchedAt: fetchedAt, generated: usesFixture ? nil : snapshot?.generatedDate,
-            refreshing: isRefreshing, pageLoading: pageLoading, error: lastError,
+            refreshing: isRefreshing, pageLoading: pageLoading, error: lastError ?? pageError,
             checkedStores: portfolio.flatMap { ISODate.parse($0.checkedStores) },
             checkedGitHub: portfolio.flatMap { ISODate.parse($0.checkedGitHub) },
             hasPortfolio: portfolio != nil)

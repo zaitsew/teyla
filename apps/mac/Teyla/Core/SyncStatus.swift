@@ -53,7 +53,7 @@ enum SyncStatus {
         }
 
         var lines: [String] = []
-        if let error { lines.append("Could not read state: \(error)") }
+        if let error { lines.append("Could not read: \(error)") }
         if pageLoading { lines.append("The product page is still reading sessions.") }
         if let fetchedAt { lines.append("Read by the app at \(clock(fetchedAt, calendar))") }
         if let generated { lines.append("Snapshot made at \(clock(generated, calendar))") }
