@@ -131,12 +131,13 @@ private struct TodayView: View {
                             EmptyStateView()
                         } else if proxy.size.width >= Space.wideWindow {
                             HStack(alignment: .top, spacing: Space.xxl) {
-                                MainColumn().frame(maxWidth: .infinity, alignment: .leading)
-                                StatusColumn().frame(width: Space.sideColumn)
+                                // The cards stop at the reading width; extra room goes to the side column.
+                                MainColumn().readingWidth()
+                                StatusColumn().frame(minWidth: Space.sideColumn, maxWidth: Space.sideColumnMax, alignment: .leading)
                             }
                         } else {
                             VStack(alignment: .leading, spacing: Space.xl) {
-                                MainColumn()
+                                MainColumn().readingWidth()
                                 StatusColumn()
                             }
                         }
@@ -255,16 +256,25 @@ private struct MainColumn: View {
     private var tasks: [OwnerTask] { model.snapshot?.tasks ?? [] }
 
     private var questions: some View {
-        VStack(alignment: .leading, spacing: Space.m) {
+        let asks = AskFold.partition(model.visibleAsks) { model.age(of: $0) }
+        return VStack(alignment: .leading, spacing: Space.m) {
             SectionLabel("Needs you — ordered by what it unblocks")
             if model.visibleAsks.isEmpty {
                 Label("Nothing is waiting for an answer.", systemImage: "checkmark.circle")
                     .foregroundStyle(Palette.textSecondary)
                     .padding(.vertical, Space.s)
             } else {
-                ForEach(model.visibleAsks) { ask in
+                ForEach(asks.fresh) { ask in
                     AskCard(ask: ask)
                         .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                }
+                if !asks.older.isEmpty {
+                    OlderGroup(count: asks.older.count, revealsFocus: asks.older.contains { $0.id == model.focusedAskID }) {
+                        ForEach(asks.older) { ask in
+                            AskCard(ask: ask, older: true)
+                                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                        }
+                    }
                 }
             }
         }

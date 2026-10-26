@@ -293,18 +293,24 @@ final class AppModel {
         }
     }
 
-    func markDone(_ ask: Ask) {
-        guard !isBusy(ask) else { return }
-        cards[ask.id] = .sending("Marking done…")
+    func markDone(_ ask: Ask) { markDone(id: ask.id) }
+
+    /// Closes a question by id (`teyla asks done`). The product page uses it for questions the window does not hold as cards.
+    func markDone(id: String) {
+        guard !isBusy(id: id) else { return }
+        cards[id] = .sending("Marking done…")
         Task {
             do {
-                try await cli.markDone(id: ask.id)
-                finish(ask, message: "Marked done")
+                try await cli.markDone(id: id)
+                finish(id: id, message: "Marked done")
             } catch {
-                cards[ask.id] = .failed(error.localizedDescription)
+                cards[id] = .failed(error.localizedDescription)
             }
         }
     }
+
+    /// Whether the owner already answered, snoozed or closed this question in this window.
+    func isHidden(_ id: String) -> Bool { hidden.contains(id) }
 
     func dismissError(_ ask: Ask) {
         if case .failed = cards[ask.id] { cards[ask.id] = nil }
@@ -470,19 +476,23 @@ final class AppModel {
         Dictation.shared.start(target: NewTaskModel.dictationTarget, current: task.draft, read: { task.draft }) { task.draft = $0 }
     }
 
-    private func isBusy(_ ask: Ask) -> Bool {
-        if case .sending = cards[ask.id] { return true }
+    private func isBusy(_ ask: Ask) -> Bool { isBusy(id: ask.id) }
+
+    private func isBusy(id: String) -> Bool {
+        if case .sending = cards[id] { return true }
         return false
     }
 
+    private func finish(_ ask: Ask, message: String) { finish(id: ask.id, message: message) }
+
     /// Show the confirmation line for a moment, then remove the card.
-    private func finish(_ ask: Ask, message: String) {
-        cards[ask.id] = .done(message)
+    private func finish(id: String, message: String) {
+        cards[id] = .done(message)
         Task {
             try? await Task.sleep(for: .seconds(3))
             withAnimation(.easeOut(duration: 0.25)) {
-                hidden.insert(ask.id)
-                cards[ask.id] = nil
+                hidden.insert(id)
+                cards[id] = nil
             }
             refresh()
         }

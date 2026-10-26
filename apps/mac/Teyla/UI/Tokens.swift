@@ -16,6 +16,14 @@ enum Space {
     static let xxl: CGFloat = 32
     /// The width of the products and running column.
     static let sideColumn: CGFloat = 340
+    /// How far the side column may grow when the window is wide: the extra room goes here, not to the cards.
+    static let sideColumnMax: CGFloat = 480
+    /// Ask cards, done cards, task rows and prose stop here (45 to 75 characters a line).
+    static let readingCard: CGFloat = 720
+    /// The Portfolio rows stop here, so the platform strip stays readable.
+    static let portfolioMax: CGFloat = 1100
+    /// The figures column on a Portfolio row.
+    static let portfolioFigures: CGFloat = 220
     /// The width of the menu-bar popover.
     static let menuWidth: CGFloat = 320
     /// Width at which the window shows two columns.
@@ -109,20 +117,32 @@ extension View {
     }
 }
 
-/// A small coloured label: a status on a result card, a state on a product.
+/// A small coloured label: a status on a result card, a state on a product. With a symbol it never
+/// relies on colour alone.
 struct Chip: View {
     let text: String
     let color: Color
+    var symbol: String?
 
     var body: some View {
-        Text(text)
-            .font(Typo.caption.weight(.medium))
-            .padding(.horizontal, Space.s)
-            .padding(.vertical, Space.xxs)
-            // The text leans toward the primary colour so it stays readable on the pale tint, in light and dark.
-            .foregroundStyle(color.mix(with: .primary, by: 0.35))
-            .background(color.opacity(0.16), in: Capsule())
-            .fixedSize()
+        HStack(spacing: Space.xs) {
+            if let symbol { Image(systemName: symbol).imageScale(.small) }
+            Text(text)
+        }
+        .font(Typo.caption.weight(.medium))
+        .padding(.horizontal, Space.s)
+        .padding(.vertical, Space.xxs)
+        // The text leans toward the primary colour so it stays readable on the pale tint, in light and dark.
+        .foregroundStyle(color.mix(with: .primary, by: 0.35))
+        .background(color.opacity(0.16), in: Capsule())
+        .fixedSize()
+    }
+}
+
+extension View {
+    /// Stops a card or a line of prose at the reading width, left-aligned.
+    func readingWidth() -> some View {
+        frame(maxWidth: Space.readingCard, alignment: .leading)
     }
 }
 
