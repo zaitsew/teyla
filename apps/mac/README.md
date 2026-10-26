@@ -38,7 +38,7 @@ Requires macOS 15 and Xcode. The app is ad-hoc signed for local use only.
 
 | Section | Content | Action |
 |---|---|---|
-| Needs you | Questions, ranked by what they unblock. | Answer with an option or text; snooze; mark done. |
+| Needs you | Questions, ranked by what they unblock; those older than 7 days fold into "Older · N". | Answer with an option or text; snooze; mark done; "Close — no longer needed" on an older one. |
 | Only you | `tasks[]`: a PR to merge, an issue assigned to you, with its age. | Open (the link). |
 | Done since yesterday | `done[]` as cards: status chip, product, title, at most 3 result lines, the needs line, links. Four show; the rest are one click away. | Open session. |
 | Products | State, issues and PRs waiting, the next step. Click a registered product to open its page. | Open the page; the page's "Start new tasks here" sets the default for new tasks. |
@@ -72,6 +72,15 @@ Notes:
   it scrolls to the card. Questions already open at launch are not announced.
 - **Window**: closing it never strands you. Window → Teyla (⌘0), the menu-bar item and the Dock icon
   reopen it. `LSApplicationCategoryType` is `public.app-category.developer-tools`.
+
+- **Portfolio** (sidebar, needs `teyla` 0.32): one row per registered product with its health (on track, at risk,
+  off track, parked), the first reason, a strip of platforms with version, build and state, PR counts, waiting
+  questions, last activity and 7-day spend. Filter: All or Needs attention; parked products are hidden until you
+  tick "Show parked". A click opens the product page, which shows the same health and platform details.
+- **Status** (toolbar): "Updating…" while the state or the open product page loads, "Up to date" under 2 minutes,
+  "Stale · N min" when older (a sleep, a hung command), "Offline" on an error. The tooltip shows exact times and when
+  the stores and GitHub were last checked. The window also refreshes when the Mac wakes.
+- **Width**: cards and prose stop at 720 pt; extra room goes to the side column.
 
 ## Where it reads data
 
