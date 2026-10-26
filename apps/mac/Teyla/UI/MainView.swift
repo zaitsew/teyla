@@ -64,6 +64,7 @@ private struct DetailView: View {
     var body: some View {
         switch model.route {
         case .today: TodayView()
+        case .portfolio: PortfolioView()
         case .diagnosis: DiagnosisView()
         case .product(let id): ProductPageView(id: id)
         }
@@ -84,6 +85,9 @@ private struct SidebarView: View {
             }
             .badge(model.visibleAsks.count)
             .tag(AppRoute.today)
+            Label("Portfolio", systemImage: "square.grid.2x2")
+                .badge(model.snapshot?.portfolio.map { $0.counts.offTrack + $0.counts.atRisk } ?? 0)
+                .tag(AppRoute.portfolio)
             Label("Diagnosis", systemImage: "stethoscope")
                 .tag(AppRoute.diagnosis)
             if !products.isEmpty {
