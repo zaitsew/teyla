@@ -19,6 +19,12 @@ Preview without a Mac: launch with `TEYLA_STATE_FIXTURE=<repo>/tests/fixtures/st
 environment variable or the launch argument `-TEYLA_STATE_FIXTURE <path>`). The app then skips onboarding
 and signature checks, and sends nothing.
 
+No Mac yet? Onboarding offers "See a sample": the whole app with made-up data from
+`Teyla/Resources/sample-state.json`, a banner with a Pair button, and every send simulated
+("Sample: nothing was sent"). Launch with `TEYLA_SAMPLE=1` (or `-TEYLA_SAMPLE YES`) to start there, and with
+`-TEYLA_TAB portfolio`, `-TEYLA_OPEN <product>` or `-TEYLA_OLDER open` to open a tab, a product or the
+"Older" fold. `Tools/screenshots.sh` uses these to make the store screenshots.
+
 Requires iOS 18 and Xcode. Camera scanning needs a real device; on a simulator, paste the string.
 
 ## How it works
@@ -52,6 +58,12 @@ signature, and decode `tests/fixtures/state.v2.json`.
 
 ## Release
 
-Simulator builds only for now. TestFlight waits on an App Store Connect record for `com.zaitsew.teyla`,
-which only the owner can create. `ITSAppUsesNonExemptEncryption` is already `NO`, and the app is
-iPhone-only. No app icon is set yet.
+The store listing, review notes and App Privacy answers are in [`docs/APP-STORE.md`](../../docs/APP-STORE.md).
+Store readiness (POLICY 15): the icon is `Teyla/Assets.xcassets/AppIcon.appiconset` (one opaque 1024 px
+image, made by `swift Tools/make_icon.swift`); `Teyla/PrivacyInfo.xcprivacy` declares no tracking, no collected
+data and one required-reason API (UserDefaults, `CA92.1`); `ITSAppUsesNonExemptEncryption` is `NO`; the target is
+iPhone only (`TARGETED_DEVICE_FAMILY` 1). The version is 0.32.0; the build number is `CURRENT_PROJECT_VERSION`
+and `DEVELOPMENT_TEAM` is empty, so the release script passes both.
+
+TestFlight waits on an App Store Connect record for `com.zaitsew.teyla`, which is made in the website
+(Apps, +, New App); see `docs/APP-STORE.md` for the fields.

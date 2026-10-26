@@ -1,0 +1,18 @@
+Teyla is the inbox for a one-person software studio. It shows what waits on you, where every product stands, and what got done while you were away.
+
+Today
+- One sentence on what matters now, then the questions only you can answer, ranked by what they unblock.
+- Answer by text or by voice. Voice is turned into text on your iPhone; nothing is sent until you tap Send.
+- The tasks only you can do: a pull request to merge, an issue assigned to you.
+- What finished since yesterday, and what runs now.
+- Questions that have waited more than a week fold into one "Older" section, so fresh ones stay on top.
+
+Portfolio
+- Every product with a health word: off track, at risk, on track or parked, and the reason in one line.
+- Each platform on its own line: iOS, macOS, Android, web. Version, build and state, such as "current" or "behind".
+- Open pull requests, pull requests that wait on you, recent activity and the next step.
+
+How it works
+Teyla for iPhone is the companion of Teyla for Mac. The Mac does the work. The iPhone reads a folder in your own iCloud Drive and leaves signed answers there. There is no Teyla server and no account, and the app collects no data. No Mac yet? Tap "See a sample" to try every screen with made-up data.
+
+Teyla for iPhone needs Teyla on a Mac to show your own products. It is free and open source.

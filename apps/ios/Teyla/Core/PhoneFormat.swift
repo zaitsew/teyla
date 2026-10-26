@@ -36,6 +36,24 @@ enum PhoneFormat {
         return ageSeconds + base
     }
 
+    /// A question that has waited longer than this folds into "Older" on Today.
+    static let olderAfter: TimeInterval = 7 * 86_400
+
+    /// Splits the open questions into fresh ones and ones that waited more than 7 days. Both keep the
+    /// order the Mac ranked them in.
+    static func splitAsks(_ asks: [Ask], snapshot: Snapshot, now: Date) -> (fresh: [Ask], older: [Ask]) {
+        var fresh: [Ask] = []
+        var older: [Ask] = []
+        for ask in asks {
+            if age(ask.ageSeconds, snapshot: snapshot, now: now) > olderAfter {
+                older.append(ask)
+            } else {
+                fresh.append(ask)
+            }
+        }
+        return (fresh, older)
+    }
+
     /// How long ago an ISO time was, in seconds; nil when it does not parse.
     static func secondsSince(_ iso: String, now: Date) -> Double? {
         ISODate.parse(iso).map { max(0, now.timeIntervalSince($0)) }
@@ -57,6 +75,7 @@ enum PhoneFormat {
 
     /// The `sent/` line under a card: what the Mac did with the entry.
     static func outcomeLine(_ outcome: PendingAction.Outcome) -> String {
+        if outcome.via == SampleData.via { return SampleData.notice }
         if outcome.ok { return Format.sentLine(via: outcome.via) }
         let detail = outcome.detail.trimmingCharacters(in: .whitespacesAndNewlines)
         return detail.isEmpty ? "The Mac could not deliver this" : String(detail.prefix(300))

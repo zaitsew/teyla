@@ -1,0 +1,52 @@
+HOW TO SEE EVERYTHING (no account, no paired folder needed)
+Teyla for Mac from the App Store is a sandboxed companion of the teyla command-line tool. A reviewer has no relay folder, so the app has a sample mode.
+1. Launch the app. The first screen is "Connect Teyla on this Mac". Click "See a sample".
+2. The window opens on Today with made-up data and a banner "Sample data - connect to see yours".
+   - Today: questions, tasks, finished work, running sessions. Older questions are under "Older".
+   - Portfolio (sidebar): products with health, platforms and reasons. Click a row for its detail.
+   - Products (sidebar section): one page per product.
+   - Settings (Cmd-comma): the "Mac" section shows the connection state.
+3. Every send action (answering a question, "New task") works in the sample, but nothing is sent.
+   The app says "Sample: nothing was sent". The banner's Connect button leaves sample mode.
+
+WINDOW AND MENUS
+Closing the main window never strands the user. Window > Teyla (Cmd-0) reopens it. The menu-bar item
+("Open Teyla") and a click on the Dock icon reopen it too.
+
+WHAT THE APP DOES WITH A MAC
+The owner installs the teyla command (free, open source: https://github.com/zaitsew/teyla) and runs "teyla relay on".
+That writes a signed state file into a folder named Teyla in the owner's own iCloud Drive. In this app the user clicks
+"Choose folder..." and picks that folder in the system open panel, then pastes the pairing string that
+"teyla relay pair" prints. The app verifies the signature before it shows anything and leaves signed answers in the
+folder for the teyla command. Teyla runs no server and receives nothing.
+
+DECLARED CAPABILITIES
+- App Sandbox, with these entitlements: user-selected files read/write and app-scope bookmarks (only the folder the
+  user picks in the open panel), and audio input (dictation). There is no network client entitlement: the app makes
+  no network requests. There is no iCloud entitlement.
+- Keychain: the pairing key, in the app's own item.
+- Microphone and Speech Recognition: dictation in the answer field. Recognition runs on the device only
+  (requiresOnDeviceRecognition); there is no server fallback, and nothing is sent until the user presses Send.
+  Both permissions are asked only when the user first starts dictation.
+- Notifications: the app asks at launch for permission to show local notifications when a question needs the
+  user. No push notifications.
+- No camera, location, contacts, photos or HealthKit, and no background modes.
+
+PRIVACY AND DATA
+The app collects no data and has no analytics or tracking. App Privacy: Data Not Collected. PrivacyInfo.xcprivacy
+declares no tracking and one required-reason API (UserDefaults, CA92.1). It does not use the VPN APIs, and it does
+not collect data using a VPN.
+
+AI CONTENT
+The app does not generate content. It shows text that coding tools wrote on the user's own Mac, such as a question
+for the owner. Nothing is generated or filtered in the app, so there is no in-app reporting flow. Questions and
+issues go to the support URL above.
+
+BUSINESS MODEL
+Teyla for Mac is free. Nothing is sold: no in-app purchase, no subscription, no ads, no paid features, no
+bring-your-own-key field, and no payment of any kind. The full app that runs the teyla command is a separate free,
+open-source build on GitHub. It is not sold and unlocks nothing in this app.
+
+REGIONS
+China mainland is excluded. The teyla command runs AI coding tools, and the generative-AI rules there need a permit
+that no model provider we use holds.

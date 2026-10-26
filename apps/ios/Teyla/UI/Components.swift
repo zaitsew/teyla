@@ -80,10 +80,12 @@ struct OutcomeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let outcome = action.outcome {
+                let simulated = outcome.via == SampleData.via
                 Label(PhoneFormat.outcomeLine(outcome),
-                      systemImage: outcome.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                      systemImage: simulated ? "info.circle.fill"
+                          : outcome.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                     .font(.callout)
-                    .foregroundStyle(outcome.ok ? Color.green : Color.red)
+                    .foregroundStyle(simulated ? Color.secondary : outcome.ok ? Color.green : Color.red)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(action.text)
                     .font(.footnote)

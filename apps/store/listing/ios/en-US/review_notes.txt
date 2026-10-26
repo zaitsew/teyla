@@ -1,0 +1,42 @@
+HOW TO SEE EVERYTHING (no account, no Mac needed)
+Teyla for iPhone is the companion of Teyla for Mac. A reviewer has no paired Mac, so the app has a sample mode.
+1. Launch the app. Tap "See a sample" at the bottom of the first screen.
+2. The app opens on Today with made-up data and a banner "Sample data - pair with your Mac to see yours".
+   - Today: questions, tasks, finished work, running sessions. Older questions are under "Older".
+   - Portfolio: products with health, platforms and reasons. Tap a row for its detail. "Needs attention" filters it.
+   - Products: one card per product.
+   - Settings (gear icon, top left): version, voice language.
+3. Every send action (answering a question, "New task", "Correct") works in the sample, but nothing is sent.
+   The app says "Sample: nothing was sent". The banner's Pair button leaves sample mode.
+
+WHAT THE APP DOES WITH A MAC
+With Teyla for Mac installed (free, open source: https://github.com/zaitsew/teyla), the owner runs "teyla relay on".
+That creates a folder named Teyla in the owner's own iCloud Drive. The iPhone app asks the user to pick that folder
+in the system document picker, and pairs by scanning a QR code or pasting a string. The Mac writes a signed state
+file there; the iPhone verifies the signature before it shows anything and leaves signed answers for the Mac.
+Teyla runs no server and receives nothing.
+
+DECLARED CAPABILITIES
+- Camera: scans the pairing QR code shown on the Mac. Needed only when pairing; sample mode never asks for it.
+  Camera scanning does not work in the simulator.
+- Microphone and Speech Recognition: dictation in the answer field. Recognition runs on the device only
+  (requiresOnDeviceRecognition); there is no server fallback, and nothing is sent until the user taps Send.
+- No location, no HealthKit, no background modes, no push notifications, no iCloud entitlement (the folder is
+  opened through the document picker).
+
+PRIVACY AND DATA
+The app collects no data and has no analytics or tracking. App Privacy: Data Not Collected. It does not use the
+VPN APIs, and it does not collect data using a VPN.
+
+AI CONTENT
+The app does not generate content. It shows text that coding tools wrote on the user's own Mac, such as a question
+for the owner. Nothing is generated or filtered on the phone, so there is no in-app reporting flow. Questions and
+issues go to the support URL above.
+
+BUSINESS MODEL
+Teyla for iPhone is free. Nothing is sold: no in-app purchase, no subscription, no ads, no paid features, no
+bring-your-own-key field, and no payment of any kind. The app is the free companion of an open-source tool.
+
+REGIONS
+China mainland is excluded. The Mac companion runs AI coding tools, and the generative-AI rules there need a permit
+that no model provider we use holds.
