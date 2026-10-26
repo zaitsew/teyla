@@ -22,7 +22,32 @@ No CLI yet? Preview with the sample data (writes are simulated, nothing is deliv
 open -n --env TEYLA_STATE_FIXTURE="$PWD/../../tests/fixtures/state.v2.json" ~/Applications/Teyla.app
 ```
 
-Requires macOS 15 and Xcode. The app is ad-hoc signed for local use only.
+Requires macOS 15 and Xcode. The app is ad-hoc signed for local use only. Its bundle id is `com.zaitsew.teyla.local`;
+a first launch copies the settings kept under the old id `com.zaitsew.teyla` (see below).
+
+## Two builds
+
+| Target | Bundle id | For |
+|---|---|---|
+| `Teyla` | `com.zaitsew.teyla.local` | The full app `install.sh` installs: runs the `teyla` command, not sandboxed. |
+| `TeylaStore` | `com.zaitsew.teyla` | The Mac App Store and TestFlight build: App Sandboxed, reads the signed relay folder like the iPhone app, no command line. Version 0.32.0. |
+
+The store build's design is in [`docs/APP.md`](../../docs/APP.md#the-store-build-mac-app-store-and-testflight). It has no
+network access; its entitlements are `app-sandbox`, `files.user-selected.read-write`, `files.bookmarks.app-scope`
+and `device.audio-input` (`Teyla/TeylaStore.entitlements`). Without a paired Mac it shows "Connect Teyla on this Mac"
+and a "See a sample" button; the sample is bundled (`Teyla/Store/sample.v3.json`, rebuilt by
+`python3 Tools/make_store_sample.py`) and every send in it is simulated.
+
+```sh
+# Build it unsigned, for a compile check
+teyla load --wait --kind build && xcodebuild -project Teyla.xcodeproj -scheme TeylaStore \
+    -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+# Preview the sample without a pairing (an argument-domain default, not stored):
+open -n path/to/Teyla.app --args -storeSampleMode YES
+```
+
+Signing and upload use the App Store Connect key, never a password: `DEVELOPMENT_TEAM` stays empty in the project and
+the release script passes the team. Version 0.32.0, build number `CURRENT_PROJECT_VERSION` starting at 1.
 
 ## First run
 
@@ -110,13 +135,14 @@ cd apps/mac && teyla load --wait --kind build && xcodegen generate
 teyla load --wait --kind build && xcodebuild test -project Teyla.xcodeproj -scheme Teyla -destination 'platform=macOS'
 ```
 
-The tests cover model decoding, formatting, CLI argument building (free text after `--`), fixture
+The tests cover the store build's logic (the signed snapshot, a bad signature showing nothing, the outbox entry against
+`tests/fixtures/relay-vector.json`, simulated sample sends, the settings move), model decoding, formatting, CLI argument building (free text after `--`), fixture
 writes, the pairing string and its QR code (read back with `CIDetector`), voice rules and
 push-to-talk, the new-task defaults, the one-notification-per-question tracker, the note commands
 (text on stdin, checked against a stand-in `teyla`), the suggestion and notes JSON, the picker keys,
 the shortcut keymap, storage and conflict rule, the diagnosis and product-page JSON (samples from the real CLI), the
 binary search order, and the apply and product-set commands. They compile the
-`Teyla/Core` sources directly, so no app is launched. The generated `Teyla.xcodeproj` and `build/`
+`Teyla/Core` sources, the store backend and the iPhone app's relay client directly, so no app is launched. The generated `Teyla.xcodeproj` and `build/`
 are not committed.
 
 Views use the tokens in `Teyla/UI/Tokens.swift` (spacing, type, colour roles); no literals.

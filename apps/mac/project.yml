@@ -58,13 +58,16 @@ targets:
         excludes:
           - "Info.plist"
           - "*.entitlements"
+          # The sandboxed build runs no commands: the CLI client, the binary finder, the session watcher
+          # and the "teyla not found" screen are left out of the binary altogether.
+          - "Core/TeylaCLI.swift"
+          - "Core/TeylaBinary.swift"
+          - "Core/SessionWatcher.swift"
+          - "UI/NotFoundView.swift"
       # The relay client of the iPhone app: signing, the folder reader and the key/pending storage. Read-only.
       - path: ../ios/Teyla/Core/RelayStore.swift
       - path: ../ios/Teyla/Core/RelayCrypto.swift
       - path: ../ios/Teyla/Core/Storage.swift
-      # The sample the store build shows until a Mac is paired (and the one App Review sees).
-      - path: TeylaTests/Fixtures/state.sample.v3.json
-        buildPhase: resources
     info:
       path: TeylaStore/Info.plist
       properties:
@@ -99,6 +102,12 @@ targets:
     sources:
       - TeylaTests
       - Teyla/Core
+      - Teyla/Store/StoreBackend.swift
+      - Teyla/Store/StoreSession.swift
+      - Teyla/Store/MacKeyStore.swift
+      - ../ios/Teyla/Core/RelayStore.swift
+      - ../ios/Teyla/Core/RelayCrypto.swift
+      - ../ios/Teyla/Core/Storage.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.zaitsew.teyla.tests
