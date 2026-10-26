@@ -15,9 +15,9 @@ final class NewTaskModel {
     private(set) var status: CardStatus?
     private(set) var result: AnswerResult?
 
-    @ObservationIgnored private let cli: TeylaCLI
+    @ObservationIgnored private let cli: any TeylaBackend
 
-    init(cli: TeylaCLI) {
+    init(cli: any TeylaBackend) {
         self.cli = cli
     }
 
@@ -90,10 +90,10 @@ final class RelayModel {
     /// The switch as the owner set it, until the next snapshot confirms it.
     private(set) var pendingOn: Bool?
 
-    @ObservationIgnored private let cli: TeylaCLI
+    @ObservationIgnored private let cli: any TeylaBackend
     @ObservationIgnored private var clearTask: Task<Void, Never>?
 
-    init(cli: TeylaCLI) {
+    init(cli: any TeylaBackend) {
         self.cli = cli
     }
 
