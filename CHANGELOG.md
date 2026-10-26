@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.32.0 — 2026-10-26 — Where every product stands: the portfolio, an honest status, Teyla for iPhone and the App Store builds
+
+- **`teyla portfolio`: each product's health, with the reason.** Each product gets one word (off track, at risk, on track or
+  parked) and one line saying why, such as "iPhone build 15 is waiting for App Review" or "a question has waited 9 days".
+  The rules are in `docs/APP.md`: off track when the primary platform is blocked or more than two days behind, a question
+  has waited more than seven days, or a merged pull request has an open P1; at risk for any blocked or behind platform,
+  a question older than three days, an unreviewed merge in seven days, or a building product with no session in fourteen.
+  Each platform gets a line: version, build and state (live, in review, current, behind, blocked, no build). Pull requests,
+  activity, spend and the next step sit beside it. `--refresh` asks TestFlight, Google Play and GitHub once and writes
+  `~/.teyla/portfolio-cache.json` (mode 600); every other read, `teyla state` included, uses that cache. The snapshot
+  contract is version 3.
+- **The Mac window tells the truth about its data.** The green dot said "Live" whenever the last command returned, even
+  while a product page was loading or after the Mac slept. The toolbar now says "Updating…", "Up to date" in a neutral
+  colour, "Stale · N min" after two minutes, or "Offline" with the error in its tooltip, and "Sample data" for made-up
+  data. Question cards are at most 720 pt wide, so "Needs you" reads at a glance. A Portfolio page lists every product with
+  its health, platforms and reasons, with a "Needs attention" filter. A close that failed can be tried again.
+- **Teyla for iPhone 0.32.** A Portfolio tab with the same health, platform lines and detail pages. Questions older than a
+  week fold into "Older". An unsent answer survives the fold and a refresh. "See a sample" shows every screen with made-up
+  data before pairing, and nothing is sent from it. App icon, privacy manifest (no tracking, no data collected) and an
+  iPhone-only target.
+- **A Mac App Store build.** The store requires App Sandbox, and a sandboxed app cannot run the `teyla` command. So the new
+  `TeylaStore` target (`com.zaitsew.teyla`) is a companion like the iPhone app: it reads the signed iCloud relay folder,
+  checks the signature before it decodes anything, and leaves signed answers. The full app built by `install.sh` is now
+  `com.zaitsew.teyla.local` and copies its old settings once.
+- **One script writes the App Store record.** `apps/store/app-store.py` (`status`, `push`, `screenshots`, `submit`,
+  `--platform ios|macos`) writes the listing from `apps/store/listing/`. China mainland stays off, with the reason beside
+  the setting. The age rating is 4+. The script refuses a field over Apple's limit or a model provider's name in the listing.
+  The reviewer contact comes from the environment.
+- **README: the chief of staff for a one-person software studio.** The README opens with what Teyla is for now, and has a new
+  "Where every product stands" section and the iPhone and store companions under "The Mac app".
+
 ## 0.31.0 — 2026-10-25 — Start here: a diagnosis with undoable fixes, a dashboard, a Mac first run, setup by your agent
 
 - **A README a stranger can act on, and a guide that holds the depth.** The README is 93 lines: the lockup, the one-line promise,
