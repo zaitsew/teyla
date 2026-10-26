@@ -80,7 +80,7 @@ def test_the_readme_fits_two_screens_and_opens_with_the_promise():
 def test_the_readme_has_its_parts_in_order():
     heads = re.findall(r"(?m)^## (.+)$", README)
     assert heads == ["Set it up with your agent", "Or by hand", "Cost and waste", "What's waiting on you",
-                     "Your products and notes", "One policy for every agent", "The Mac app", "Privacy",
+                     "Where every product stands", "Your products and notes", "One policy for every agent", "The Mac app", "Privacy",
                      "Undo and uninstall", "Links"]
 
 

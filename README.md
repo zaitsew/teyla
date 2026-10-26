@@ -3,6 +3,8 @@
   <img alt="Teyla" src="brand/lockup.svg" width="200">
 </picture></h1>
 
+Teyla is the chief of staff for a one-person software studio: one screen says what waits on you, where every product stands on every platform, and what the agents cost.
+
 Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's waiting on you, and fixes the waste. Nothing about your sessions leaves your Mac unless you turn it on.
 
 ![The Start page of teyla web: what 30 days of sessions cost, and the first changes that would save money](docs/img/web-start.png)
@@ -50,6 +52,10 @@ Subagents cost $390; Opus ran 64% of that.
 
 A session ends on a question, the desktop app archives it, and nobody reads it again. `teyla today` is the daily screen: the questions waiting by product, the notes in your Inbox, this week's spend against last week's, and one next step. `teyla asks` lists every open question, oldest first, with a link that reopens the session.
 
+## Where every product stands
+
+`teyla portfolio` gives each product a health word (off track, at risk, on track or parked) and the reason in one line, such as "iPhone build 15 is waiting for App Review" or "a question has waited 9 days". Each platform gets a line with its version, build and state: live, in review, current, behind or blocked. Open pull requests, merged ones without a review, recent activity and spend sit beside it. `teyla portfolio --refresh` asks TestFlight, Google Play and GitHub, and keeps the answers in `~/.teyla/portfolio-cache.json`; every other read uses that cache. The Mac and iPhone apps show the same Portfolio screen.
+
 ## Your products and notes
 
 A *product* is a repo, or a few, that you ship as one thing. `teyla product init` proposes the list from your repos; `--write` saves it. `teyla product` lists them with their stage. `teyla note "try a dark icon"` keeps an idea as you typed it and files it under a product, or in your Inbox. `teyla notes` lists them. The Mac app adds a quick note on a shortcut (⌥Space by default).
@@ -60,11 +66,13 @@ Your rules live in one tool; switch to another and it has never heard of them. `
 
 ## The Mac app
 
-Teyla for Mac is a window and a menu-bar icon: today's brief, the questions you can answer in place, the diagnosis and your products. It runs the `teyla` command, so install that first. The app is built from this repo for local use (macOS 15, Xcode):
+Teyla for Mac is a window and a menu-bar icon: today's brief, the questions you can answer in place, the portfolio, the diagnosis and your products. The full app runs the `teyla` command, so install that first. Build it from this repo (macOS 15, Xcode):
 
 ```bash
 brew install xcodegen && git clone https://github.com/zaitsew/teyla && cd teyla/apps/mac && ./install.sh
 ```
+
+Teyla for iPhone and the App Store build of the Mac app are companions. They read a signed folder in your own iCloud Drive that `teyla relay on` keeps current, and leave signed answers there. There is no Teyla server and no account. "See a sample" shows every screen with made-up data before you pair. [APP.md](docs/APP.md) has the contract.
 
 ## Privacy
 
