@@ -28,6 +28,7 @@
   teyla note --suggest "text" --json [--cwd DIR]                   the product a note would get, plus the picker list; writes nothing
   teyla notes [--product P | --inbox] [--all] [--json]             your notes, newest first
   teyla state [--json]                                             ranked questions, products and running sessions in one snapshot
+  teyla portfolio [--json] [--refresh] [--product ID]              where every product stands: health, platforms, PRs, spend
   teyla answer <id-prefix> <text...> [--json] [--dry]              answer a question inside the session that asked it
   teyla relay on|off|status [--json]                               the iPhone relay: switch it on or off, say where it stands
   teyla relay pair [--json] [--rotate]                             create the shared key, print the pairing string
@@ -550,6 +551,8 @@ def build_parser() -> argparse.ArgumentParser:
     notes_mod.register(sp)
     from . import state as state_mod
     state_mod.register(sp)
+    from . import portfolio as portfolio_mod
+    portfolio_mod.register(sp)
     from . import answer as answer_mod
     answer_mod.register(sp)
     from . import relay as relay_mod

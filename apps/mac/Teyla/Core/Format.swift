@@ -61,11 +61,20 @@ enum Format {
         return parts.joined(separator: " · ")
     }
 
-    /// The toolbar text: "Live · updated 4 s ago".
-    static func updated(secondsAgo: Int) -> String {
-        let s = max(0, secondsAgo)
-        if s < 60 { return "Live · updated \(s) s ago" }
-        return "Live · updated \(s / 60) min ago"
+    /// "45 s", "5 min", "3 h", "2 d": an elapsed time without "ago", for a label that has its own words.
+    static func elapsed(seconds: Double) -> String {
+        let s = max(0, Int(seconds))
+        switch s {
+        case ..<60: return "\(s) s"
+        case ..<3600: return "\(s / 60) min"
+        case ..<86_400: return "\(s / 3600) h"
+        default: return "\(s / 86_400) d"
+        }
+    }
+
+    /// "just now", "5 min ago", "3 h ago", "2 d ago".
+    static func ago(seconds: Double) -> String {
+        seconds < 60 ? "just now" : "\(elapsed(seconds: seconds)) ago"
     }
 
     /// "3 issues · 1 PR waiting"; a count of zero is left out, and nothing is returned when both are zero.

@@ -3,12 +3,16 @@ import SwiftUI
 struct AskCard: View {
     @Environment(AppModel.self) private var model
     let ask: Ask
+    /// A question that waited more than a week sits in the "Older" fold; it offers a one-click close.
+    var older = false
 
     @State private var composing = false
     @State private var draft = ""
     @FocusState private var fieldFocused: Bool
 
     private var status: CardStatus? { model.cards[ask.id] }
+
+    static let closeLabel = "Close — no longer needed"
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.m) {
@@ -17,6 +21,12 @@ struct AskCard: View {
                 .font(Typo.lead)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
+            if !ask.unblocks.isEmpty {
+                Text("Unblocks \(ask.unblocks)")
+                    .font(Typo.caption.weight(.medium))
+                    .foregroundStyle(Palette.accent)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if !ask.context.isEmpty {
                 Text(ask.context)
                     .font(Typo.body)
@@ -48,7 +58,7 @@ struct AskCard: View {
         .id(ask.id)
         .contextMenu {
             Button("Snooze 1 day") { model.snooze(ask, days: 1) }
-            Button("Mark done") { model.markDone(ask) }
+            Button(older ? Self.closeLabel : "Mark done") { model.markDone(ask) }
             Divider()
             Button("Open session") { model.openSession(ask.link, noteKey: ask.id) }
                 .disabled(ask.link.isEmpty)
@@ -76,11 +86,13 @@ struct AskCard: View {
             .font(Typo.caption)
             .foregroundStyle(Palette.textSecondary)
             Spacer(minLength: Space.m)
-            if !ask.unblocks.isEmpty {
-                Text("unblocks \(ask.unblocks)")
-                    .font(Typo.caption.weight(.medium))
-                    .foregroundStyle(Palette.accent)
-                    .multilineTextAlignment(.trailing)
+            if older, status == nil {
+                Button(Self.closeLabel) { model.markDone(ask) }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .help("Close this question without answering it")
             }
         }
     }
