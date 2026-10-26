@@ -77,6 +77,20 @@ private struct Header: View {
     let portfolio: Portfolio
     @Binding var filter: PortfolioFilter
 
+    @ViewBuilder private var chips: some View {
+        ForEach(PortfolioFilter.allCases) { option in
+            Button {
+                filter = option
+            } label: {
+                Label(option.title, systemImage: filter == option ? "checkmark" : "line.3.horizontal.decrease")
+                    .lineLimit(1)
+            }
+            .buttonStyle(.bordered)
+            .tint(filter == option ? Color.brandPrimary : Color.secondary)
+            .accessibilityAddTraits(filter == option ? .isSelected : [])
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(PortfolioFormat.headline(for: portfolio))
@@ -87,18 +101,9 @@ private struct Header: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             SyncLine()
-            FlowLayout(spacing: 8) {
-                ForEach(PortfolioFilter.allCases) { option in
-                    Button {
-                        filter = option
-                    } label: {
-                        Label(option.title, systemImage: filter == option ? "checkmark" : "line.3.horizontal.decrease")
-                            .labelStyle(.titleAndIcon)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(filter == option ? Color.brandPrimary : Color.secondary)
-                    .accessibilityAddTraits(filter == option ? .isSelected : [])
-                }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { chips }
+                VStack(alignment: .leading, spacing: 8) { chips }
             }
             .padding(.top, 6)
         }

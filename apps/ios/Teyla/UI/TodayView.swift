@@ -11,7 +11,8 @@ struct TodayView: View {
         NavigationStack {
             ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 28) {
+                // Not lazy: a few dozen cards at most, and the "Older" fold must exist to be scrolled to.
+                VStack(alignment: .leading, spacing: 28) {
                     if let snapshot = model.snapshot {
                         Content(snapshot: snapshot)
                     } else {

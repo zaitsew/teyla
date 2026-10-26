@@ -85,16 +85,16 @@ struct SampleBanner: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "eye").accessibilityHidden(true)
+            Image(systemName: "eye").accessibilityHidden(true).foregroundStyle(.secondary)
             Text(SampleData.bannerText)
                 .font(.footnote)
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
             Button("Pair") { model.leaveSample() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
         }
-        .foregroundStyle(.secondary)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
