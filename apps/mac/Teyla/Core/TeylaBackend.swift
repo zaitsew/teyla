@@ -64,7 +64,6 @@ protocol TeylaBackend: Sendable {
 extension TeylaBackend {
     private static var none: TeylaError { .unavailable("This needs the teyla command, which this version of Teyla does not run.") }
 
-    func binaryPath() async -> String? { nil }
     func forgetBinary() {}
     func snooze(id: String, days: Int) async throws { throw Self.none }
     func markDone(id: String) async throws { throw Self.none }

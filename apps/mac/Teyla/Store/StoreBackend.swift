@@ -200,6 +200,12 @@ final class StoreBackend: TeylaBackend, Sendable {
         throw StoreError.noReply
     }
 
+    // MARK: The command line
+
+    /// There is no command to find. (Not a protocol default: on a concrete `TeylaCLI` an async default would
+    /// win over the actor's own method and answer nil.)
+    func binaryPath() async -> String? { nil }
+
     // MARK: Product pages
 
     func productPage(id: String, quick: Bool) async throws -> ProductPageData {

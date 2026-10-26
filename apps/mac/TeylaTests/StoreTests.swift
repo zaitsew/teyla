@@ -172,8 +172,9 @@ final class StoreSigningTests: XCTestCase {
         let result = try await backend.answer(id: ask.id, text: "  Ship it.  ")
         XCTAssertTrue(result.ok)
         XCTAssertEqual(result.via, "claude-queue")
-        let entry = try XCTUnwrap(try await mac.value)
-        XCTAssertEqual(entry.kind, OutboxKind.answer.rawValue)
+        let received = try await mac.value
+        let entry = try XCTUnwrap(received)
+        XCTAssertEqual(entry.kind, .answer)
         XCTAssertEqual(entry.target, ask.id)
         XCTAssertEqual(entry.about, RelayCrypto.sha256Hex(ask.question))
         XCTAssertEqual(entry.text, "Ship it.", "the text is trimmed before it is signed")
@@ -218,7 +219,8 @@ final class StoreSigningTests: XCTestCase {
         let backend = StoreBackend(timing: .init(poll: .milliseconds(20), reply: .milliseconds(150), simulated: .milliseconds(1)))
         backend.useRelay(folder: folder, key: testKey)
         try signedState(sampleJSON()).write(to: folder.appendingPathComponent("state.teyla"))
-        let ask = try XCTUnwrap(try await backend.state().asks.first)
+        let loaded = try await backend.state()
+        let ask = try XCTUnwrap(loaded.asks.first)
         do { _ = try await backend.answer(id: ask.id, text: "Yes"); XCTFail("nobody answered") } catch {
             XCTAssertEqual(error as? StoreError, .noReply)
         }
@@ -269,7 +271,7 @@ final class StoreSampleTests: XCTestCase {
             XCTAssertEqual(page.product.id, product.name)
             XCTAssertFalse(page.product.name.isEmpty)
         }
-        XCTAssertTrue(snapshot.products.contains { !StoreBackend.page(for: $0.name, in: snapshot, quick: false).sessions.isEmpty })
+        XCTAssertTrue(snapshot.products.contains { !(StoreBackend.page(for: $0.name, in: snapshot, quick: false).sessions ?? []).isEmpty })
         XCTAssertTrue(snapshot.products.contains { !StoreBackend.page(for: $0.name, in: snapshot, quick: false).asks.isEmpty })
     }
 
