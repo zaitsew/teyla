@@ -20,6 +20,9 @@ struct TodayView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
                 .padding(.bottom, 32)
+                // A comfortable measure: cards stop at 640 pt however wide the screen is.
+                .frame(maxWidth: 640)
+                .frame(maxWidth: .infinity)
             }
             .scrollDismissesKeyboard(.interactively)
             .background(Color(.systemGroupedBackground))
@@ -41,9 +44,11 @@ struct TodayView: View {
 private struct Content: View {
     @Environment(AppModel.self) private var model
     let snapshot: Snapshot
+    @State private var olderOpen = LaunchOptions().olderOpen
 
     var body: some View {
         let now = Date()
+        let split = PhoneFormat.splitAsks(snapshot.asks, snapshot: snapshot, now: now)
         VStack(alignment: .leading, spacing: 8) {
             Text(briefLine)
                 .font(.title2.weight(.semibold))
@@ -75,9 +80,41 @@ private struct Content: View {
             if snapshot.asks.isEmpty {
                 Label("Nothing is waiting for an answer.", systemImage: "checkmark.circle")
                     .foregroundStyle(.secondary)
+            } else if split.fresh.isEmpty {
+                Label("Nothing new is waiting.", systemImage: "checkmark.circle")
+                    .foregroundStyle(.secondary)
             }
-            ForEach(snapshot.asks) { ask in
+            ForEach(split.fresh) { ask in
                 QuestionCard(ask: ask, ageSeconds: PhoneFormat.age(ask.ageSeconds, snapshot: snapshot, now: now))
+            }
+        }
+
+        if !split.older.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) { olderOpen.toggle() }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text("Older \u{00B7} \(split.older.count)")
+                            .font(.subheadline.weight(.semibold))
+                        Text("waiting more than 7 days")
+                            .font(.footnote)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Image(systemName: olderOpen ? "chevron.up" : "chevron.down")
+                            .font(.footnote.weight(.semibold))
+                    }
+                    .foregroundStyle(.secondary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityValue(olderOpen ? "expanded" : "collapsed")
+                if olderOpen {
+                    ForEach(split.older) { ask in
+                        QuestionCard(ask: ask, ageSeconds: PhoneFormat.age(ask.ageSeconds, snapshot: snapshot, now: now))
+                    }
+                }
             }
         }
 

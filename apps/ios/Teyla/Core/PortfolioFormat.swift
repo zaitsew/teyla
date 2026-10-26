@@ -167,6 +167,8 @@ enum PortfolioFormat {
 struct LaunchOptions: Equatable, Sendable {
     var tab: String?
     var openProduct: String?
+    /// Opens the "Older" fold on Today.
+    var olderOpen: Bool
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment,
          defaults: UserDefaults = .standard) {
@@ -176,5 +178,6 @@ struct LaunchOptions: Equatable, Sendable {
         }
         tab = read("TEYLA_TAB")
         openProduct = read("TEYLA_OPEN")
+        olderOpen = read("TEYLA_OLDER") == "open"
     }
 }
