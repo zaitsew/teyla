@@ -117,11 +117,17 @@ final class StoreBackend: TeylaBackend, Sendable {
             // A reconnect while the file was read: this answer belongs to the old pairing, so it is dropped.
             guard case .relay(let now, let nowKey) = inner.withLock({ $0.source }),
                   now.folder == store.folder, nowKey == key else { return try await state() }
-            switch read {
-            case .missing: throw StoreError.waiting
-            case .downloading: throw StoreError.downloading
-            case .failed(let why): throw StoreError.unreadable(why)
-            case .data(let file): return remember(try Self.snapshot(from: file, key: key))
+            do {
+                switch read {
+                case .missing: throw StoreError.waiting
+                case .downloading: throw StoreError.downloading
+                case .failed(let why): throw StoreError.unreadable(why)
+                case .data(let file): return remember(try Self.snapshot(from: file, key: key))
+                }
+            } catch let failure as StoreError where failure.clearsSnapshot {
+                // Nothing from a file that is gone or no longer verifies may be answered from the cache.
+                inner.withLock { $0.last = nil }
+                throw failure
             }
         }
     }

@@ -127,6 +127,24 @@ final class StoreSnapshotTests: XCTestCase {
             XCTAssertTrue((error as? StoreError)?.clearsSnapshot ?? false, "the window must drop what it showed")
         }
     }
+
+    func testAnUntrustedFileForgetsTheCachedQuestions() async throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let backend = StoreBackend()
+        backend.useRelay(folder: folder, key: testKey)
+        try signedState(sampleJSON()).write(to: folder.appendingPathComponent("state.teyla"))
+        let first = try await backend.state().asks.first
+        let ask = try XCTUnwrap(first)
+
+        try Data("not signed".utf8).write(to: folder.appendingPathComponent("state.teyla"))
+        do { _ = try await backend.state(); XCTFail("a broken file") } catch {
+            XCTAssertEqual(error as? StoreError, .untrusted)
+        }
+        do { _ = try await backend.answer(id: ask.id, text: "Yes"); XCTFail("answered from a stale cache") } catch {
+            guard case .gone = error as? StoreError else { return XCTFail("expected .gone, got \(error)") }
+        }
+    }
 }
 
 final class StoreSigningTests: XCTestCase {

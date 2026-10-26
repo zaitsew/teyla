@@ -141,6 +141,10 @@ final class AppModel {
     /// The toolbar indicator: whether the data on screen is being read, current, old, or failed.
     /// A fixture snapshot has a fixed `generated` time, so it is not counted against the clock.
     func syncIndicator(at date: Date = Date()) -> SyncIndicator {
+        // Made-up data is never "up to date"; say what it is.
+        if usesFixture {
+            return SyncIndicator(state: .upToDate, label: "Sample data", tooltip: "Made-up data. Nothing is read or sent.")
+        }
         var pageLoading = false
         var pageError: String?
         if case .product = route {
@@ -224,7 +228,13 @@ final class AppModel {
                 if let failure = error as? TeylaError, failure == .binaryNotFound { teylaMissing = true }
                 #if STORE
                 // An unsigned snapshot, or none, shows nothing; a slow iCloud download keeps what was on screen.
-                if let failure = error as? StoreError, failure.clearsSnapshot { snapshot = nil }
+                if let failure = error as? StoreError, failure.clearsSnapshot {
+                    snapshot = nil
+                    if case .product = route {
+                        route = .today
+                        productPage.reset()
+                    }
+                }
                 #endif
                 log.error("state failed: \(error.localizedDescription, privacy: .public)")
             }
