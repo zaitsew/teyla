@@ -1,0 +1,1 @@
+Teyla for Mac now has a Portfolio screen with every product's health and platforms. Questions older than a week fold away. "See a sample" lets you try every screen without a connection.
