@@ -173,32 +173,42 @@ private struct TodayView: View {
     }
 }
 
+/// The toolbar status. It says what the data on screen is doing, not whether the command once answered:
+/// updating (a refresh or the open page is reading), up to date, stale (older than two minutes) or offline.
+/// Green is reserved for money saved, so "up to date" is a neutral dot.
 private struct LiveIndicator: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
+            let indicator = model.syncIndicator(at: context.date)
             HStack(spacing: Space.xs + Space.xxs) {
-                Circle()
-                    .fill(model.lastError == nil ? Palette.success : Palette.warning)
-                    .frame(width: Space.s - Space.xxs, height: Space.s - Space.xxs)
-                Text(label(at: context.date))
+                switch indicator.state {
+                case .updating:
+                    ProgressView().controlSize(.mini)
+                case .upToDate:
+                    dot(Palette.textSecondary)
+                case .stale:
+                    dot(Palette.warning)
+                case .offline:
+                    dot(Palette.danger)
+                }
+                Text(indicator.label)
                     .font(Typo.caption)
                     .foregroundStyle(Palette.textSecondary)
                     .monospacedDigit()
                     .lineLimit(1)
             }
-            .help(model.lastError ?? "Teyla re-reads your sessions when they change, and every minute.")
+            .help(indicator.tooltip)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(indicator.label)
         }
     }
 
-    private func label(at date: Date) -> String {
-        guard let fetchedAt = model.fetchedAt else {
-            return model.lastError == nil ? "Reading…" : "Offline"
-        }
-        let seconds = Int(date.timeIntervalSince(fetchedAt))
-        if model.lastError != nil { return "Stale · updated \(max(0, seconds)) s ago" }
-        return Format.updated(secondsAgo: seconds)
+    private func dot(_ color: Color) -> some View {
+        Circle()
+            .fill(color)
+            .frame(width: Space.s - Space.xxs, height: Space.s - Space.xxs)
     }
 }
 

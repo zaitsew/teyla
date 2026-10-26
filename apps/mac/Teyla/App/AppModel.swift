@@ -57,6 +57,7 @@ final class AppModel {
     @ObservationIgnored private var hotKeyTalk = PushToTalk()
     @ObservationIgnored private var watcher: SessionWatcher?
     @ObservationIgnored private var timerTask: Task<Void, Never>?
+    @ObservationIgnored private var wakeObserver: NSObjectProtocol?
     @ObservationIgnored private var started = false
     @ObservationIgnored private let log = Logger(subsystem: "com.zaitsew.teyla", category: "app")
 
@@ -119,6 +120,20 @@ final class AppModel {
         return n == 0 ? "Nothing needs you right now." : "\(n) \(n == 1 ? "question needs" : "questions need") you."
     }
 
+    /// The toolbar indicator: whether the data on screen is being read, current, old, or failed.
+    /// A fixture snapshot has a fixed `generated` time, so it is not counted against the clock.
+    func syncIndicator(at date: Date = Date()) -> SyncIndicator {
+        var pageLoading = false
+        if case .product = route { pageLoading = productPage.readingSessions }
+        let portfolio = snapshot?.portfolio
+        return SyncStatus.indicator(
+            now: date, fetchedAt: fetchedAt, generated: usesFixture ? nil : snapshot?.generatedDate,
+            refreshing: isRefreshing, pageLoading: pageLoading, error: lastError,
+            checkedStores: portfolio.flatMap { ISODate.parse($0.checkedStores) },
+            checkedGitHub: portfolio.flatMap { ISODate.parse($0.checkedGitHub) },
+            hasPortfolio: portfolio != nil)
+    }
+
     // MARK: Lifecycle
 
     func start() {
@@ -130,6 +145,12 @@ final class AppModel {
         }
         if !watcher.start() { log.info("No session store directory exists yet; relying on the 60 s timer") }
         self.watcher = watcher
+        // The 60 s timer does not run while the Mac sleeps; read again as soon as it wakes.
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refresh() }
+        }
         timerTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
