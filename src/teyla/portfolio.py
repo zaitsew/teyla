@@ -299,7 +299,9 @@ def testflight_rows(row: dict, now: float, prev: dict | None = None, declared: l
             behind = 0
         owner = next((b for b in blockers if _TF_OWNER.search(b)), "")
         old = prev.get(key) or {}
-        since = _epoch(up.get("uploaded")) or (old.get("_since") if old.get("state") in ("behind", "blocked") else None) or now
+        # The clock starts when the platform first fell behind; a newer upload does not reset it.
+        kept = old.get("_since") if old.get("state") in ("behind", "blocked") else None
+        since = kept or _epoch(up.get("uploaded")) or now
         if v["verdict"] == "current":
             out[key] = _row(key, "testflight", "current", "Installable from your tester account",
                             version=inst.get("version"), build=inst.get("build"), as_of=as_of)
@@ -718,16 +720,17 @@ def cmd_portfolio(args) -> int:
     if args.refresh:
         background = getattr(args, "background", False)
         lock = lock_path()
+        if not background:
+            # A refused run must not delete the lock of the run that holds it.
+            lock.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                os.close(os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+            except FileExistsError:
+                if now - lock.stat().st_mtime < LOCK_STALE_S:
+                    print("teyla: a portfolio refresh is already running", file=sys.stderr)
+                    return 1
+                os.utime(lock, (now, now))
         try:
-            if not background:
-                lock.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    os.close(os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
-                except FileExistsError:
-                    if now - lock.stat().st_mtime < LOCK_STALE_S:
-                        print("teyla: a portfolio refresh is already running", file=sys.stderr)
-                        return 1
-                    os.utime(lock, (now, now))
             if not background and not net.allowed():
                 print(net.refusal("the store and GitHub reads of `teyla portfolio --refresh`"), file=sys.stderr)
             code = refresh(now)
