@@ -47,6 +47,9 @@ final class AppModel {
     private var key: Data?
     /// `kind:target` of the sends being written now; a second tap on the same card waits for the first.
     private(set) var sending: Set<String> = []
+    /// Unsent answers by question id, kept here so a card that leaves the screen
+    /// (the Older fold closing, a refresh) does not drop what was typed.
+    var drafts: [String: String] = [:]
     /// A refresh was asked for while one was running (re-pairing, a new folder): run once more.
     private var refreshAgain = false
 

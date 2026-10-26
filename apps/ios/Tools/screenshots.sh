@@ -24,6 +24,7 @@ if [ -z "$udid" ]; then
   udid="$booted"
 fi
 mkdir -p "$out"
+out="$(cd "$out" && pwd)"   # absolute: the script changes directory below
 
 cd "$here"
 xcodegen generate >/dev/null
