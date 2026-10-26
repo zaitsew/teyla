@@ -22,13 +22,13 @@ final class QuickNoteModel {
     @ObservationIgnored var productNames: () -> [String] = { [] }
     @ObservationIgnored var saved: (NoteItem) -> Void = { _ in }
     @ObservationIgnored var learnedCandidates: ([String]) -> Void = { _ in }
-    @ObservationIgnored private let cli: TeylaCLI
+    @ObservationIgnored private let cli: any TeylaBackend
     @ObservationIgnored private var suggestTask: Task<Void, Never>?
     /// True from the moment a suggestion is scheduled until its answer is applied or abandoned.
     @ObservationIgnored private(set) var suggestionPending = false
     @ObservationIgnored private var closeTask: Task<Void, Never>?
 
-    init(cli: TeylaCLI) {
+    init(cli: any TeylaBackend) {
         self.cli = cli
     }
 

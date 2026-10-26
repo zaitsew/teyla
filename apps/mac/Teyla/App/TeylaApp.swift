@@ -5,7 +5,15 @@ import UserNotifications
 @main
 struct TeylaApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    private let model = AppModel.shared
+    private let model: AppModel
+
+    init() {
+        // Before the model reads its settings: the full app keeps what it stored under its old bundle id.
+        #if !STORE
+        DefaultsMigration.run()
+        #endif
+        model = AppModel.shared
+    }
 
     var body: some Scene {
         // A single window with a fixed id. Closing it never strands the user: the Window menu

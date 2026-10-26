@@ -15,13 +15,13 @@ final class ProductPageModel {
     /// What a stage or focus change is doing, or why it failed.
     private(set) var change: CardStatus?
 
-    @ObservationIgnored private let cli: TeylaCLI
+    @ObservationIgnored private let cli: any TeylaBackend
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var quickGeneration = 0
     /// Called after the registry changed, so the sidebar and the Today list re-read state.
     @ObservationIgnored var changed: () -> Void = {}
 
-    init(cli: TeylaCLI) {
+    init(cli: any TeylaBackend) {
         self.cli = cli
     }
 
@@ -34,6 +34,17 @@ final class ProductPageModel {
             change = nil
         }
         reload()
+    }
+
+    /// Forgets the open product, for a data source that just changed.
+    func reset() {
+        generation += 1
+        quickGeneration += 1
+        id = nil
+        page = nil
+        error = nil
+        change = nil
+        readingSessions = false
     }
 
     func reload() {

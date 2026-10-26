@@ -19,6 +19,13 @@ struct MenuBarContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.m) {
+            #if STORE
+            if model.store.isSample {
+                Text(StoreSetup.bannerText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            #endif
             Text(model.briefLine)
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
@@ -46,14 +53,16 @@ struct MenuBarContent: View {
             }
 
             Divider()
-            Button {
-                model.openQuickNote()
-            } label: {
-                Text(QuickNoteShortcut.menuTitle(model.quickNoteActive))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+            if model.capabilities.notes {
+                Button {
+                    model.openQuickNote()
+                } label: {
+                    Text(QuickNoteShortcut.menuTitle(model.quickNoteActive))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
             HStack {
                 Button("Open Teyla", action: show)
                 Button("New task") { model.openNewTask() }

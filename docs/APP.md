@@ -327,3 +327,43 @@ Health rules, applied in order; the first that matches wins and every match adds
 | Command | Does |
 |---|---|
 | `teyla portfolio [--json] [--refresh] [--product ID]` | The portfolio object; text is one line per product. `--refresh` runs the network pass first (TestFlight, Play, GitHub), within safe mode's rules. |
+
+## The store build (Mac App Store and TestFlight)
+
+The Mac App Store requires App Sandbox, and a sandboxed app cannot run `teyla`, read `~/.claude` or
+open a login shell. So the store build is a client of the signed relay folder, like the iPhone app
+(see "The relay"), and the build `install.sh` makes stays the full, unsandboxed app.
+
+| | Full app (`Teyla` target) | Store build (`TeylaStore` target) |
+|---|---|---|
+| Bundle id | `com.zaitsew.teyla.local` | `com.zaitsew.teyla` (the iPhone app's id: universal purchase) |
+| Sandbox | off, ad-hoc signed | on, hardened runtime, `STORE` compile condition |
+| Data | runs `teyla state --json` | reads `state.teyla` from the relay folder, verifies the signature, decodes snapshot v3 |
+| Actions | `teyla answer`, `say`, `dispatch` | signed `outbox/<uuid>.json` entries; the result is `sent/<uuid>.json` |
+| Refresh | session-store watcher, 60 s timer | folder watcher, 10 s timer |
+
+Entitlements: `app-sandbox`, `files.user-selected.read-write` (the folder the owner picks),
+`files.bookmarks.app-scope` (the folder stays chosen across launches) and `device.audio-input`
+(dictation). No network, no temporary exceptions. Voice stays on the device.
+
+Setup. With no folder bookmark and no key, the window shows "Connect Teyla on this Mac": install the
+command, run `teyla relay on` and `teyla relay pair`, then choose the `Teyla` folder in iCloud Drive and
+paste the pairing string. The key goes to the login Keychain and the folder to a security-scoped bookmark.
+
+Sample mode. "See a sample" (also what App Review sees) loads the bundled `Teyla/Store/sample.v3.json`, a
+made-up snapshot with questions, tasks, running and finished sessions, products and a portfolio, so every screen
+has content. A banner reads "Sample data — connect to see yours" until the owner connects. Every send is
+simulated and says "Sample: nothing was sent"; nothing is written to disk. `Tools/make_store_sample.py` rebuilds
+the file from `tests/fixtures/state.v2.json`.
+
+What the store build leaves out, because it needs the command line: notes and the quick-note panel, the first-run
+diagnosis, editing a product's stage or focus, snooze and "mark done", the Codex/Claude choice for a new task (the
+Mac chooses) and pairing an iPhone. These controls are not drawn, rather than drawn and disabled. Product pages are
+built from the snapshot: the open questions and the recent sessions, without spend.
+
+A bad signature shows nothing from the file ("The snapshot's signature does not match your pairing"). The
+snapshot and the answers sit in iCloud Drive as readable text, which Apple can read unless the owner turns on
+Advanced Data Protection; the signature stops others from forging an action, not from reading.
+
+First launch of the full app after the id change copies the four settings it keeps (the `teyla` file, the default
+product, the voice language and the quick-note shortcut) from the old `com.zaitsew.teyla` domain, once.

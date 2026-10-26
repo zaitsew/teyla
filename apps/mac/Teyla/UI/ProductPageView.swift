@@ -48,7 +48,7 @@ struct ProductPageView: View {
     private func content(_ data: ProductPageData, page: ProductPageModel, portfolio: PortfolioProduct?, wide: Bool) -> some View {
         let sections = VStack(alignment: .leading, spacing: Space.xl) {
             ProductAsksSection(asks: data.asks)
-            ProductNotesSection(productID: id, notes: data.notes)
+            if model.capabilities.notes { ProductNotesSection(productID: id, notes: data.notes) }
             ProductSessionsSection(sessions: data.sessions, reading: page.readingSessions)
             if let error = page.error {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -103,7 +103,14 @@ private struct ProductHeaderView: View {
                 Spacer(minLength: Space.s)
             }
             HStack(spacing: Space.s) {
-                if header.registered { stageMenu }
+                if header.registered {
+                    if model.capabilities.editProducts {
+                        stageMenu
+                    } else if !header.stage.isEmpty {
+                        Chip(text: header.stage.capitalized, color: Palette.textSecondary)
+                            .help("Stage")
+                    }
+                }
                 if !header.primary.isEmpty {
                     Chip(text: platform(header.primary), color: Palette.textSecondary)
                         .help("Primary platform")
@@ -141,7 +148,21 @@ private struct ProductHeaderView: View {
         }
     }
 
-    private var focusStar: some View {
+    @ViewBuilder private var focusStar: some View {
+        if !model.capabilities.editProducts {
+            if header.focus {
+                Image(systemName: "star.fill")
+                    .font(Typo.lead)
+                    .foregroundStyle(Palette.warning)
+                    .help("In focus")
+                    .accessibilityLabel("In focus")
+            }
+        } else {
+            focusButton
+        }
+    }
+
+    private var focusButton: some View {
         Button {
             model.productPage.setFocus(!header.focus)
         } label: {
@@ -247,7 +268,7 @@ private struct ProductAskRow: View {
                     .font(Typo.caption)
                     .foregroundStyle(Palette.textSecondary)
                 Spacer(minLength: Space.s)
-                if older, canClose {
+                if older, canClose, model.capabilities.closeQuestions {
                     Button(AskCard.closeLabel) { model.markDone(id: item.id) }
                         .buttonStyle(.borderless)
                         .controlSize(.small)
@@ -350,9 +371,11 @@ private struct ProductSessionsSection: View {
                     .lineLimit(1)
             }
             Spacer(minLength: Space.s)
-            Text(Format.spent(session.costUSD))
-                .monospacedDigit()
-                .foregroundStyle(Palette.textSecondary)
+            if session.costUSD > 0 {
+                Text(Format.spent(session.costUSD))
+                    .monospacedDigit()
+                    .foregroundStyle(Palette.textSecondary)
+            }
         }
         .padding(.vertical, Space.s)
         .frame(maxWidth: .infinity, alignment: .leading)

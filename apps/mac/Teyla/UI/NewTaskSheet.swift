@@ -20,13 +20,16 @@ struct NewTaskSheet: View {
                 }
                 .fixedSize()
                 Spacer(minLength: Space.s)
-                Picker("Run with", selection: Bindable(task).harness) {
-                    ForEach(Harness.allCases) { harness in
-                        Text(harness.label).tag(harness)
+                // The relay carries a product and a text; the Mac picks the tool.
+                if model.capabilities.chooseHarness {
+                    Picker("Run with", selection: Bindable(task).harness) {
+                        ForEach(Harness.allCases) { harness in
+                            Text(harness.label).tag(harness)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
                 }
-                .pickerStyle(.segmented)
-                .fixedSize()
             }
             .disabled(task.isSending)
 

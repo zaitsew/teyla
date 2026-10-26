@@ -14,5 +14,6 @@ runs/
 apps/mac/build/
 apps/mac/*.xcodeproj
 apps/mac/Teyla/Info.plist
+apps/mac/TeylaStore/Info.plist
 xcuserdata/
 DerivedData/

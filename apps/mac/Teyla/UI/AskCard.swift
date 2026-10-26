@@ -57,9 +57,11 @@ struct AskCard: View {
         .card(highlighted: model.focusedAskID == ask.id)
         .id(ask.id)
         .contextMenu {
-            Button("Snooze 1 day") { model.snooze(ask, days: 1) }
-            Button(older ? Self.closeLabel : "Mark done") { model.markDone(ask) }
-            Divider()
+            if model.capabilities.closeQuestions {
+                Button("Snooze 1 day") { model.snooze(ask, days: 1) }
+                Button(older ? Self.closeLabel : "Mark done") { model.markDone(ask) }
+                Divider()
+            }
             Button("Open session") { model.openSession(ask.link, noteKey: ask.id) }
                 .disabled(ask.link.isEmpty)
             Button("Copy question") { model.copyQuestion(ask) }
@@ -86,7 +88,7 @@ struct AskCard: View {
             .font(Typo.caption)
             .foregroundStyle(Palette.textSecondary)
             Spacer(minLength: Space.m)
-            if older, status == nil {
+            if older, status == nil, model.capabilities.closeQuestions {
                 Button(Self.closeLabel) { model.markDone(ask) }
                     .buttonStyle(.borderless)
                     .controlSize(.small)

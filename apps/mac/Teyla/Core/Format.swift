@@ -132,6 +132,7 @@ enum Format {
         case "codex-queue": return "Queued: Codex reads it after the current turn"
         case "opened": return "Copied to the clipboard and opened the session"
         case "fixture": return "Queued (preview only, nothing was delivered)"
+        case "sample": return "Sample: nothing was sent"
         case "": return "Sent to the session"
         default: return "Sent to the session via \(via)"
         }
@@ -139,7 +140,8 @@ enum Format {
 
     /// The line under a started task (`teyla dispatch`).
     static func startedLine(via: String, worktree: String) -> String {
-        let how = via == "fixture" ? "Started (preview only, nothing was started)" : "Started"
+        let how = via == "fixture" ? "Started (preview only, nothing was started)"
+            : via == "sample" ? "Sample: nothing was sent" : "Started"
         return worktree.isEmpty ? how : "\(how) in \(worktree)"
     }
 
@@ -148,6 +150,7 @@ enum Format {
         switch via {
         case "opened": return "Copied to the clipboard and opened the session"
         case "fixture": return "Sent (preview only, nothing was delivered)"
+        case "sample": return "Sample: nothing was sent"
         case "": return "Sent to the session"
         default: return "Sent to the session via \(via)"
         }

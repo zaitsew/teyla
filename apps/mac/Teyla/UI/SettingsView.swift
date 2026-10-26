@@ -21,6 +21,7 @@ struct SettingsView: View {
                     .font(Typo.caption)
                     .foregroundStyle(Palette.textSecondary)
             }
+            if model.capabilities.notes {
             Section("Quick note") {
                 LabeledContent("Shortcut") { ShortcutRecorder() }
                 Text("A note is kept as typed, filed under a product, and passed on as your own words.")
@@ -28,6 +29,8 @@ struct SettingsView: View {
                     .foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            }
+            if model.capabilities.pairPhone {
             Section("iPhone") {
                 Toggle("iPhone relay", isOn: Binding(
                     get: { relay.isOn(snapshot: model.snapshot?.relay) },
@@ -53,6 +56,10 @@ struct SettingsView: View {
                     .foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            }
+            #if STORE
+            StoreSettingsSection()
+            #endif
         }
         .formStyle(.grouped)
         .frame(width: 460)

@@ -14,14 +14,14 @@ final class NotesModel {
     /// What each note's row is doing (linking, dropping, or a failure to show).
     private(set) var rows: [String: CardStatus] = [:]
 
-    @ObservationIgnored private let cli: TeylaCLI
+    @ObservationIgnored private let cli: any TeylaBackend
     @ObservationIgnored var productNames: () -> [String] = { [] }
     /// Called after a note was saved, linked or dropped, so an open product page re-reads.
     @ObservationIgnored var changed: () -> Void = {}
     @ObservationIgnored private var refreshing = false
     @ObservationIgnored private var refreshQueued = false
 
-    init(cli: TeylaCLI) {
+    init(cli: any TeylaBackend) {
         self.cli = cli
     }
 

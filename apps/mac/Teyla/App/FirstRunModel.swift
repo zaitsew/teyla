@@ -12,12 +12,12 @@ final class FirstRunModel {
     /// The offer the confirm sheet is about.
     var pending: StartOffer?
 
-    @ObservationIgnored private let cli: TeylaCLI
+    @ObservationIgnored private let cli: any TeylaBackend
     @ObservationIgnored private var running: Task<Void, Never>?
     /// Called after an offer was applied, so the window re-reads state.
     @ObservationIgnored var applied: () -> Void = {}
 
-    init(cli: TeylaCLI) {
+    init(cli: any TeylaBackend) {
         self.cli = cli
     }
 

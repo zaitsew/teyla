@@ -47,7 +47,13 @@ final class AppModel {
     /// Set by the main window so the menu bar and the Dock can reopen it after it was closed.
     var openMainWindow: (() -> Void)?
 
-    @ObservationIgnored let cli: TeylaCLI
+    @ObservationIgnored let cli: any TeylaBackend
+    /// What this build offers: the store build hides everything the relay folder cannot carry.
+    let capabilities = Capabilities.current
+    #if STORE
+    /// The store build's source: the relay folder, the bundled sample, or nothing yet (the setup screen).
+    let store: StoreSession
+    #endif
     let newTask: NewTaskModel
     let relay: RelayModel
     let quickNote: QuickNoteModel
@@ -55,7 +61,9 @@ final class AppModel {
     let firstRun: FirstRunModel
     let productPage: ProductPageModel
     @ObservationIgnored private var hotKeyTalk = PushToTalk()
+    #if !STORE
     @ObservationIgnored private var watcher: SessionWatcher?
+    #endif
     @ObservationIgnored private var timerTask: Task<Void, Never>?
     @ObservationIgnored private var wakeObserver: NSObjectProtocol?
     @ObservationIgnored private var started = false
@@ -64,7 +72,13 @@ final class AppModel {
     var usesFixture: Bool { cli.usesFixture }
 
     init() {
-        let cli = TeylaCLI()
+        #if STORE
+        let session = StoreSession()
+        store = session
+        let cli: any TeylaBackend = session.backend
+        #else
+        let cli: any TeylaBackend = TeylaCLI()
+        #endif
         self.cli = cli
         newTask = NewTaskModel(cli: cli)
         relay = RelayModel(cli: cli)
@@ -83,11 +97,15 @@ final class AppModel {
         firstRun.applied = { [weak self] in self?.refresh() }
         productPage.changed = { [weak self] in self?.refresh() }
         noteList.changed = { [weak self] in self?.productPage.refreshQuick() }
+        #if STORE
+        session.changed = { [weak self] in self?.storeSourceChanged() }
+        #endif
     }
 
     /// The welcome alone, with no sidebar: nothing to read yet, one button to press.
     var showsWelcomeOnly: Bool {
-        Shell.showsWelcomeOnly(snapshot: snapshot, diagnosis: firstRun.phase, teylaMissing: teylaMissing)
+        capabilities.diagnosis
+            && Shell.showsWelcomeOnly(snapshot: snapshot, diagnosis: firstRun.phase, teylaMissing: teylaMissing)
     }
 
     // MARK: Derived
@@ -123,6 +141,10 @@ final class AppModel {
     /// The toolbar indicator: whether the data on screen is being read, current, old, or failed.
     /// A fixture snapshot has a fixed `generated` time, so it is not counted against the clock.
     func syncIndicator(at date: Date = Date()) -> SyncIndicator {
+        // Made-up data is never "up to date"; say what it is.
+        if usesFixture {
+            return SyncIndicator(state: .upToDate, label: "Sample data", tooltip: "Made-up data. Nothing is read or sent.")
+        }
         var pageLoading = false
         var pageError: String?
         if case .product = route {
@@ -144,11 +166,16 @@ final class AppModel {
         guard !started else { return }
         started = true
         requestNotificationPermission()
+        #if STORE
+        // The relay folder changes when the Mac writes the snapshot or an answer's result.
+        store.watch { Task { @MainActor in AppModel.shared.refresh() } }
+        #else
         let watcher = SessionWatcher { [weak self] in
             Task { @MainActor in self?.refresh() }
         }
         if !watcher.start() { log.info("No session store directory exists yet; relying on the 60 s timer") }
         self.watcher = watcher
+        #endif
         // The 60 s timer does not run while the Mac sleeps; read again as soon as it wakes.
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
@@ -157,15 +184,28 @@ final class AppModel {
         }
         timerTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(60))
+                try? await Task.sleep(for: Self.pollInterval)
                 self?.refresh()
             }
         }
         refresh()
     }
 
+    /// The command is read every minute; the relay folder every 10 seconds, as well as when it changes.
+    private static let pollInterval: Duration = {
+        #if STORE
+        return .seconds(10)
+        #else
+        return .seconds(60)
+        #endif
+    }()
+
     func refresh() {
-        noteList.refresh()
+        #if STORE
+        // Nothing to read until a Mac is paired or the sample is chosen.
+        guard store.mode != .setup else { return }
+        #endif
+        if capabilities.notes { noteList.refresh() }
         if case .product = route { productPage.refreshQuick() }
         if isRefreshing {
             refreshQueued = true
@@ -186,6 +226,16 @@ final class AppModel {
             } catch {
                 lastError = error.localizedDescription
                 if let failure = error as? TeylaError, failure == .binaryNotFound { teylaMissing = true }
+                #if STORE
+                // An unsigned snapshot, or none, shows nothing; a slow iCloud download keeps what was on screen.
+                if let failure = error as? StoreError, failure.clearsSnapshot {
+                    snapshot = nil
+                    if case .product = route {
+                        route = .today
+                        productPage.reset()
+                    }
+                }
+                #endif
                 log.error("state failed: \(error.localizedDescription, privacy: .public)")
             }
         }
@@ -193,6 +243,21 @@ final class AppModel {
 
     // MARK: The teyla command
 
+    #if STORE
+    /// The source changed (sample, a newly paired Mac, or forgotten): nothing from the old one stays on screen.
+    private func storeSourceChanged() {
+        snapshot = nil
+        fetchedAt = nil
+        lastError = nil
+        hidden = []
+        cards = [:]
+        notes = [:]
+        askTracker = AskTracker()
+        route = .today
+        productPage.reset()
+        refresh()
+    }
+    #else
     /// "Check again": asks a login shell afresh, then reads state if the command is there.
     func recheckBinary() {
         guard !recheckingBinary else { return }
@@ -231,6 +296,7 @@ final class AppModel {
             installCopied = false
         }
     }
+    #endif
 
     // MARK: Diagnosis and product pages
 
@@ -358,7 +424,8 @@ final class AppModel {
         key.onRelease = { Task { @MainActor in AppModel.shared.hotKeyUp() } }
         hotKeyLine = GlobalHotKey.describe(key.register())
         GlobalHotKey.quickNote.onPress = { Task { @MainActor in AppModel.shared.toggleQuickNote() } }
-        applyQuickNoteShortcut()
+        // Notes are the command's; the store build has no quick note, so it takes no global shortcut for it.
+        if capabilities.notes { applyQuickNoteShortcut() } else { quickNoteActive = nil }
     }
 
     // MARK: Quick note
@@ -414,6 +481,16 @@ final class AppModel {
     /// Opens a URL link in its app. A link without a URL scheme is a shell command (Claude Code
     /// sessions): it goes to the clipboard, with a note under `noteKey`, and is never handed to NSWorkspace.
     func openSession(_ link: String, noteKey: String) {
+        #if STORE
+        if store.isSample {
+            notes[noteKey] = "Sample: nothing was opened"
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                notes[noteKey] = nil
+            }
+            return
+        }
+        #endif
         switch SessionLink(link) {
         case .none:
             return

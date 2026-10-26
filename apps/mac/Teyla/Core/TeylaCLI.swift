@@ -1,29 +1,5 @@
 import Foundation
 
-enum TeylaError: LocalizedError, Equatable {
-    case binaryNotFound
-    case fixtureUnreadable(String)
-    case failed(code: Int32, message: String)
-    case badOutput(String)
-    case timedOut
-
-    var errorDescription: String? {
-        switch self {
-        case .binaryNotFound:
-            return "The teyla command was not found. Install Teyla, or choose the file."
-        case .fixtureUnreadable(let path):
-            return "Could not read the state fixture at \(path)."
-        case .failed(let code, let message):
-            let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
-            return text.isEmpty ? "teyla exited with status \(code)." : text
-        case .badOutput(let why):
-            return "teyla printed something the app could not read (\(why))."
-        case .timedOut:
-            return "teyla did not answer in time."
-        }
-    }
-}
-
 private final class DataBox: @unchecked Sendable {
     private let lock = NSLock()
     private var stored = Data()
@@ -35,7 +11,7 @@ private final class DataBox: @unchecked Sendable {
 
 /// Runs the Teyla CLI. With `TEYLA_STATE_FIXTURE` set, state is read from that JSON file and
 /// every write (answer, say, dispatch, relay, snooze, done) is simulated, so a preview never touches a real session.
-actor TeylaCLI {
+actor TeylaCLI: TeylaBackend {
     private let env: [String: String]
     private let home: String
     private let fixtureURL: URL?

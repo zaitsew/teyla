@@ -8,18 +8,17 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     MACOSX_DEPLOYMENT_TARGET: "15.0"
-    # Local, ad-hoc signing only. Nothing here is registered with Apple.
     CODE_SIGN_STYLE: Automatic
-    CODE_SIGN_IDENTITY: "-"
     DEVELOPMENT_TEAM: ""
-    ENABLE_APP_SANDBOX: NO
-    ENABLE_HARDENED_RUNTIME: NO
 targets:
   Teyla:
     type: application
     platform: macOS
     sources:
-      - Teyla
+      - path: Teyla
+        excludes:
+          - "Store/**"
+          - "*.entitlements"
     info:
       path: Teyla/Info.plist
       properties:
@@ -37,11 +36,65 @@ targets:
     settings:
       base:
         PRODUCT_NAME: Teyla
-        PRODUCT_BUNDLE_IDENTIFIER: com.zaitsew.teyla
+        # The full app, installed by install.sh. Its own id, so it can live beside the store build
+        # (com.zaitsew.teyla). A first launch copies the old settings over (Core/DefaultsMigration.swift).
+        PRODUCT_BUNDLE_IDENTIFIER: com.zaitsew.teyla.local
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Teyla/Info.plist
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Local, ad-hoc signing only. Nothing here is registered with Apple.
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: NO
+  # The Mac App Store and TestFlight build: App Sandboxed, a client of the signed relay folder (docs/APP.md,
+  # "The store build"). Same product name and bundle id as the iPhone app (universal purchase). Signing is
+  # automatic here, with no identity override; the release script passes the team and signs by hand.
+  TeylaStore:
+    type: application
+    platform: macOS
+    sources:
+      - path: Teyla
+        excludes:
+          - "Info.plist"
+          - "*.entitlements"
+          # The sandboxed build runs no commands: the CLI client, the binary finder, the session watcher
+          # and the "teyla not found" screen are left out of the binary altogether.
+          - "Core/TeylaCLI.swift"
+          - "Core/TeylaBinary.swift"
+          - "Core/SessionWatcher.swift"
+          - "UI/NotFoundView.swift"
+      # The relay client of the iPhone app: signing, the folder reader and the key/pending storage. Read-only.
+      - path: ../ios/Teyla/Core/RelayStore.swift
+      - path: ../ios/Teyla/Core/RelayCrypto.swift
+      - path: ../ios/Teyla/Core/Storage.swift
+    info:
+      path: TeylaStore/Info.plist
+      properties:
+        CFBundleName: Teyla
+        CFBundleDisplayName: Teyla
+        CFBundleShortVersionString: "0.32.0"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSApplicationCategoryType: public.app-category.developer-tools
+        LSUIElement: false
+        LSMinimumSystemVersion: "15.0"
+        ITSAppUsesNonExemptEncryption: false
+        NSHumanReadableCopyright: "MIT License"
+        NSSpeechRecognitionUsageDescription: "Teyla turns your voice into text on this Mac, so you can dictate answers, corrections and new tasks. No audio leaves your Mac."
+        NSMicrophoneUsageDescription: "Teyla listens while you hold the microphone button or the shortcut, and turns your voice into text on this Mac."
+    settings:
+      base:
+        PRODUCT_NAME: Teyla
+        PRODUCT_BUNDLE_IDENTIFIER: com.zaitsew.teyla
+        CURRENT_PROJECT_VERSION: 1
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: TeylaStore/Info.plist
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) STORE"
+        ENABLE_APP_SANDBOX: YES
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: Teyla/TeylaStore.entitlements
   TeylaTests:
     type: bundle.unit-test
     platform: macOS
@@ -49,10 +102,19 @@ targets:
     sources:
       - TeylaTests
       - Teyla/Core
+      - Teyla/Store/StoreBackend.swift
+      - Teyla/Store/StoreSession.swift
+      - Teyla/Store/MacKeyStore.swift
+      - ../ios/Teyla/Core/RelayStore.swift
+      - ../ios/Teyla/Core/RelayCrypto.swift
+      - ../ios/Teyla/Core/Storage.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.zaitsew.teyla.tests
         GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: NO
 schemes:
   Teyla:
     build:
@@ -61,3 +123,7 @@ schemes:
     test:
       targets:
         - TeylaTests
+  TeylaStore:
+    build:
+      targets:
+        TeylaStore: all
