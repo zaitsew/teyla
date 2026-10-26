@@ -12,6 +12,7 @@ Apple wants them:
   apps/store/app-store.py push --dry-run         # every request it would send
   apps/store/app-store.py push                   # listing, answers, review detail
   apps/store/app-store.py screenshots DIR        # DIR/iphone69/en-US/*.png, DIR/mac/en-US/*.png
+  apps/store/app-store.py screenshots DIR --replace   # again, when Apple's processing stalled
   apps/store/app-store.py submit --build 3       # attach the build, send to App Review
 
   apps/store/app-store.py --platform macos push  # the same, for the macOS version
@@ -494,7 +495,7 @@ def _upload(ctx: Ctx, set_id: str, path: Path) -> None:
         "attributes": {"uploaded": True, "sourceFileChecksum": hashlib.md5(data).hexdigest()}}})
 
 
-def push_screenshots(ctx: Ctx, root: Path) -> None:
+def push_screenshots(ctx: Ctx, root: Path, replace: bool = False) -> None:
     version = the_version(ctx)
     locs = {l["attributes"]["locale"]: l for l in
             ctx.all(f"/v1/appStoreVersions/{version['id']}/appStoreVersionLocalizations")}
@@ -515,8 +516,16 @@ def push_screenshots(ctx: Ctx, root: Path) -> None:
             if sets["data"]:
                 set_id = sets["data"][0]["id"]
                 shots = ctx.all(f"/v1/appScreenshotSets/{set_id}/appScreenshots")
-                if [(s["attributes"].get("sourceFileChecksum") or "") for s in shots] == sums:
+                stuck = [s["attributes"].get("fileName") for s in shots
+                         if ((s["attributes"].get("assetDeliveryState") or {}).get("state")) != "COMPLETE"]
+                if not replace and [(s["attributes"].get("sourceFileChecksum") or "") for s in shots] == sums:
                     print(f"· {folder}/{locale}: {len(files)} already there")
+                    # Apple sometimes never finishes processing an upload (UPLOAD_COMPLETE for
+                    # hours, 2026-10-26), and App Review then refuses the version with
+                    # ASSET_IN_POST_PROCESSING. The same file again does not count as a change.
+                    if stuck:
+                        print(f"  still processing at Apple: {', '.join(stuck)}"
+                              " - if it stays so, run again with --replace")
                     continue
                 for s in shots:
                     ctx.write(f"/v1/appScreenshots/{s['id']}", "DELETE")
@@ -623,6 +632,8 @@ def build_parser() -> argparse.ArgumentParser:
     shots = sub.add_parser("screenshots", parents=[both], help="upload DIR/<folder>/en-US/*.png")
     shots.add_argument("dir", type=Path)
     shots.add_argument("--dry-run", action="store_true", help="print every request instead of sending it")
+    shots.add_argument("--replace", action="store_true",
+                       help="upload every set again, even when the files are already there")
     sm = sub.add_parser("submit", parents=[both], help="attach a build and send the version to App Review")
     sm.add_argument("--build", required=True, help="the build number (CFBundleVersion)")
     sm.add_argument("--dry-run", action="store_true", help="print every request instead of sending it")
@@ -664,7 +675,7 @@ def main(argv: list[str] | None = None) -> int:
         push_version(ctx, version)
         push_review_detail(ctx, version)
     elif args.cmd == "screenshots":
-        push_screenshots(ctx, args.dir)
+        push_screenshots(ctx, args.dir, replace=args.replace)
     elif args.cmd == "submit":
         submit(ctx, args.build)
     return 0

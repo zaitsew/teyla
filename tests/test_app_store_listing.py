@@ -160,3 +160,49 @@ def test_screenshot_sizes_are_checked(tmp_path):
     assert len(problems) == 1 and "2.png is 1290x2796, expected 1320x2868" in problems[0]
     _png(tmp_path / "mac" / "en-US" / "1.png", 2880, 1800)
     assert store.check_screenshots(tmp_path, store.SHOT_SLOTS_MAC) == []
+
+
+class _FakeShots:
+    """Just enough of Ctx for push_screenshots: one set holding the same files, one still processing."""
+
+    def __init__(self, files):
+        import hashlib
+        self.dry = False
+        self.writes = []
+        self.shots = [{"id": f"s{i}", "attributes": {
+            "fileName": f.name, "sourceFileChecksum": hashlib.md5(f.read_bytes()).hexdigest(),
+            "assetDeliveryState": {"state": "COMPLETE" if i else "UPLOAD_COMPLETE"}}}
+            for i, f in enumerate(files)]
+
+    def get(self, path, soft=()):
+        return {"data": [{"id": "set1"}]}
+
+    def all(self, path):
+        if path.endswith("appStoreVersionLocalizations"):
+            return [{"id": "loc1", "attributes": {"locale": "en-US"}}]
+        return self.shots
+
+    def write(self, path, method, body=None):
+        self.writes.append((method, path))
+        return {}
+
+
+@pytest.mark.parametrize("replace", [False, True])
+def test_screenshots_name_a_stalled_upload_and_replace_it_on_request(tmp_path, monkeypatch, capsys, replace):
+    folder = tmp_path / "iphone69" / "en-US"
+    folder.mkdir(parents=True)
+    files = [folder / "01.png", folder / "02.png"]
+    for i, f in enumerate(files):
+        f.write_bytes(b"png" + bytes([i]))
+    uploaded = []
+    monkeypatch.setattr(store, "SHOT_SLOTS", store.SHOT_SLOTS_IOS)
+    monkeypatch.setattr(store, "the_version", lambda ctx: {"id": "v1"})
+    monkeypatch.setattr(store, "_upload", lambda ctx, set_id, path: uploaded.append(path.name))
+    ctx = _FakeShots(files)
+    store.push_screenshots(ctx, tmp_path, replace=replace)
+    out = capsys.readouterr().out
+    if replace:
+        assert [m for m, _ in ctx.writes] == ["DELETE", "DELETE"] and uploaded == ["01.png", "02.png"]
+    else:
+        assert "still processing at Apple: 01.png" in out and "--replace" in out
+        assert ctx.writes == [] and uploaded == []
