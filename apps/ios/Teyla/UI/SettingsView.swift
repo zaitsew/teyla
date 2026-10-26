@@ -20,7 +20,12 @@ struct SettingsView: View {
                             Text(date, format: .dateTime.month().day().hour().minute())
                         }
                     }
-                    if !model.isFixture {
+                    if model.isSample {
+                        Button("Pair with your Mac") {
+                            model.leaveSample()
+                            dismiss()
+                        }
+                    } else if !model.isFixture {
                         Button("Choose another folder") { showFolderPicker = true }
                         Button("Pair again") {
                             model.restartPairing()
@@ -69,6 +74,7 @@ struct SettingsView: View {
         switch model.connection {
         case .live: return "Connected"
         case .fixture: return "Preview data"
+        case .sample: return "Sample data"
         case .syncing: return "Syncing"
         case .waiting: return "Waiting for the Mac"
         case .reading: return "Reading"

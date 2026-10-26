@@ -9,8 +9,10 @@ struct TodayView: View {
 
     var body: some View {
         NavigationStack {
+            ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 28) {
+                // Not lazy: a few dozen cards at most, and the "Older" fold must exist to be scrolled to.
+                VStack(alignment: .leading, spacing: 28) {
                     if let snapshot = model.snapshot {
                         Content(snapshot: snapshot)
                     } else {
@@ -20,10 +22,20 @@ struct TodayView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
                 .padding(.bottom, 32)
+                // A comfortable measure: cards stop at 640 pt however wide the screen is.
+                .frame(maxWidth: 640)
+                .frame(maxWidth: .infinity)
+            }
+            .task {
+                // Screenshots: `-TEYLA_OLDER open` also scrolls the fold into view.
+                guard LaunchOptions().olderOpen else { return }
+                try? await Task.sleep(for: .milliseconds(800))
+                withAnimation { proxy.scrollTo("older", anchor: .top) }
             }
             .scrollDismissesKeyboard(.interactively)
             .background(Color(.systemGroupedBackground))
             .refreshable { await model.refresh() }
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -41,9 +53,11 @@ struct TodayView: View {
 private struct Content: View {
     @Environment(AppModel.self) private var model
     let snapshot: Snapshot
+    @State private var olderOpen = LaunchOptions().olderOpen
 
     var body: some View {
         let now = Date()
+        let split = PhoneFormat.splitAsks(snapshot.asks, snapshot: snapshot, now: now)
         VStack(alignment: .leading, spacing: 8) {
             Text(briefLine)
                 .font(.title2.weight(.semibold))
@@ -75,9 +89,42 @@ private struct Content: View {
             if snapshot.asks.isEmpty {
                 Label("Nothing is waiting for an answer.", systemImage: "checkmark.circle")
                     .foregroundStyle(.secondary)
+            } else if split.fresh.isEmpty {
+                Label("Nothing new is waiting.", systemImage: "checkmark.circle")
+                    .foregroundStyle(.secondary)
             }
-            ForEach(snapshot.asks) { ask in
+            ForEach(split.fresh) { ask in
                 QuestionCard(ask: ask, ageSeconds: PhoneFormat.age(ask.ageSeconds, snapshot: snapshot, now: now))
+            }
+        }
+
+        if !split.older.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Color.clear.frame(height: 0).id("older")
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) { olderOpen.toggle() }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text("Older \u{00B7} \(split.older.count)")
+                            .font(.subheadline.weight(.semibold))
+                        Text("waiting more than 7 days")
+                            .font(.footnote)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Image(systemName: olderOpen ? "chevron.up" : "chevron.down")
+                            .font(.footnote.weight(.semibold))
+                    }
+                    .foregroundStyle(.secondary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityValue(olderOpen ? "expanded" : "collapsed")
+                if olderOpen {
+                    ForEach(split.older) { ask in
+                        QuestionCard(ask: ask, ageSeconds: PhoneFormat.age(ask.ageSeconds, snapshot: snapshot, now: now))
+                    }
+                }
             }
         }
 
@@ -131,7 +178,10 @@ struct SyncLine: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 20)) { context in
-            if model.connection == .fixture {
+            if model.connection == .sample {
+                // The banner above every tab already says "Sample data".
+                EmptyView()
+            } else if model.connection == .fixture {
                 Label("Preview data", systemImage: "eye")
                     .font(.footnote)
                     .foregroundStyle(.secondary)

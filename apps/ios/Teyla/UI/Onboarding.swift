@@ -33,6 +33,7 @@ struct OnboardingView: View {
                     }
                 }
                 .transition(.opacity)
+                if step < 2 { sampleOffer }
             }
             .padding(24)
             .frame(maxWidth: 520, alignment: .leading)
@@ -141,6 +142,24 @@ struct OnboardingView: View {
                 Text("Open Teyla").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+    }
+
+    /// No Mac yet, or an app reviewer: the whole app with made-up data. Nothing is sent from it.
+    private var sampleOffer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
+            Text("No Mac yet?").font(.subheadline.weight(.semibold))
+            Text("Try every screen with made-up data. Nothing is read from iCloud or sent.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Button {
+                model.startSample()
+            } label: {
+                Label("See a sample", systemImage: "eye").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
             .controlSize(.large)
         }
     }

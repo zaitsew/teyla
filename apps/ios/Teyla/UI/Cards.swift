@@ -6,22 +6,43 @@ struct QuestionCard: View {
     @Environment(AppModel.self) private var model
     let ask: Ask
     let ageSeconds: Double
-    @State private var draft = ""
+    private var draft: String {
+        get { model.drafts[ask.id] ?? "" }
+        nonmutating set { model.drafts[ask.id] = newValue.isEmpty ? nil : newValue }
+    }
+    private var draftBinding: Binding<String> {
+        Binding(get: { draft }, set: { draft = $0 })
+    }
 
     private var action: PendingAction? { model.action(for: .answer, target: ask.id) }
 
+    private var productLine: some View {
+        Text("\(Format.product(ask.product)) \u{00B7} \(Format.age(seconds: ageSeconds))")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder private var unblocksNote: some View {
+        if !ask.unblocks.isEmpty {
+            Text("unblocks \(ask.unblocks)")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(Color.accentColor)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("\(Format.product(ask.product)) \u{00B7} \(Format.age(seconds: ageSeconds))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 8)
-                if !ask.unblocks.isEmpty {
-                    Text("unblocks \(ask.unblocks)")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(Color.accentColor)
-                        .multilineTextAlignment(.trailing)
+            // One line when it fits; the "unblocks" note drops under the product at large text sizes.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline) {
+                    productLine
+                    Spacer(minLength: 8)
+                    unblocksNote.multilineTextAlignment(.trailing)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    productLine
+                    unblocksNote
                 }
             }
             Text(ask.question)
@@ -55,7 +76,7 @@ struct QuestionCard: View {
                     }
                 }
             }
-            Composer(text: $draft, field: "ask-\(ask.id)", placeholder: "Write an answer",
+            Composer(text: draftBinding, field: "ask-\(ask.id)", placeholder: "Write an answer",
                      isSending: model.isSending(.answer, target: ask.id)) {
                 let text = draft
                 Task {

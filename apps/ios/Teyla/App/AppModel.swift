@@ -13,6 +13,8 @@ enum Connection: Equatable {
     case live
     /// Sample data from `TEYLA_STATE_FIXTURE`; nothing is read or written.
     case fixture
+    /// The bundled sample, shown while no Mac is paired; nothing is read or written.
+    case sample
 }
 
 @MainActor
@@ -33,31 +35,47 @@ final class AppModel {
 
     let fixtureURL: URL?
     var isFixture: Bool { fixtureURL != nil }
+    /// True while the bundled sample is shown instead of a paired Mac. Every send is simulated.
+    private(set) var isSample: Bool
 
     private let keyStore: KeyStore
-    private let pendingStore: PendingStore
+    private let sampleData: () -> Data?
+    private var pendingStore: PendingStore
     private let defaults: UserDefaults
     private var folderURL: URL?
     private var scopedURL: URL?
     private var key: Data?
     /// `kind:target` of the sends being written now; a second tap on the same card waits for the first.
     private(set) var sending: Set<String> = []
+    /// Unsent answers by question id, kept here so a card that leaves the screen
+    /// (the Older fold closing, a refresh) does not drop what was typed.
+    var drafts: [String: String] = [:]
     /// A refresh was asked for while one was running (re-pairing, a new folder): run once more.
     private var refreshAgain = false
 
     private static let finishedKey = "setupFinished"
+    private static let sampleKey = "sampleMode"
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment,
          defaults: UserDefaults = .standard,
-         keyStore: KeyStore = KeychainKeyStore()) {
+         keyStore: KeyStore = KeychainKeyStore(),
+         sampleData: @escaping () -> Data? = { SampleData.bundled() }) {
         self.defaults = defaults
         self.keyStore = keyStore
+        self.sampleData = sampleData
         let fixturePath = environment["TEYLA_STATE_FIXTURE"] ?? defaults.string(forKey: "TEYLA_STATE_FIXTURE")
         fixtureURL = fixturePath.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
         forcedStep = (environment["TEYLA_ONBOARDING_STEP"] ?? defaults.string(forKey: "TEYLA_ONBOARDING_STEP"))
             .flatMap(Int.init)
-        pendingStore = fixtureURL == nil ? DefaultsPendingStore(defaults: defaults) : MemoryPendingStore()
-        pending = pendingStore.load()
+        // `TEYLA_SAMPLE=1` (or `-TEYLA_SAMPLE YES`) starts in sample mode; the owner's choice is kept in defaults.
+        let requested = (environment["TEYLA_SAMPLE"] ?? defaults.string(forKey: "TEYLA_SAMPLE")).map {
+            ["1", "yes", "true"].contains($0.lowercased())
+        } ?? false
+        let sample = fixtureURL == nil && (requested || defaults.bool(forKey: Self.sampleKey))
+        isSample = sample
+        let store: PendingStore = fixtureURL == nil && !sample ? DefaultsPendingStore(defaults: defaults) : MemoryPendingStore()
+        pendingStore = store
+        pending = store.load()
         let loaded = fixtureURL == nil ? keyStore.load() : nil
         key = loaded
         hasKey = loaded != nil
@@ -72,7 +90,7 @@ final class AppModel {
     /// 0 folder, 1 pair, 2 done, 3 the main screen.
     var setupStep: Int {
         if let forcedStep { return min(max(forcedStep, 0), 3) }
-        if isFixture { return 3 }
+        if isFixture || isSample { return 3 }
         if !hasFolder { return 0 }
         if !hasKey { return 1 }
         return setupFinished ? 3 : 2
@@ -103,8 +121,28 @@ final class AppModel {
         }
         key = newKey
         hasKey = true
+        if isSample { leaveSample() }
         Task { await refresh() }
         return true
+    }
+
+    /// Shows the bundled sample. Nothing is read from the folder, and every send is simulated.
+    func startSample() {
+        isSample = true
+        defaults.set(true, forKey: Self.sampleKey)
+        pendingStore = MemoryPendingStore()
+        pending = []
+        loadSample()
+    }
+
+    /// Back to onboarding: the folder, the pairing and whatever was waiting to be sent come back as they were.
+    func leaveSample() {
+        isSample = false
+        defaults.set(false, forKey: Self.sampleKey)
+        snapshot = nil
+        connection = .reading
+        pendingStore = DefaultsPendingStore(defaults: defaults)
+        pending = pendingStore.load()
     }
 
     func finishSetup() {
@@ -162,6 +200,10 @@ final class AppModel {
     }
 
     private func refreshOnce() async {
+        if isSample {
+            loadSample()
+            return
+        }
         if let fixtureURL {
             loadFixture(fixtureURL)
             return
@@ -196,6 +238,16 @@ final class AppModel {
         }
         await collectSent(store)
         prune()
+    }
+
+    private func loadSample() {
+        guard let data = sampleData(), let decoded = SampleData.snapshot(from: data) else {
+            snapshot = nil
+            connection = .waiting
+            return
+        }
+        snapshot = decoded
+        connection = .sample
     }
 
     private func loadFixture(_ url: URL) {
@@ -240,14 +292,18 @@ final class AppModel {
         defer { sending.remove(slot) }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let device = RelayCrypto.sanitizedDevice(UIDevice.current.name)
-        if isFixture {
+        if isFixture || isSample {
             guard let entry = try? OutboxEntry.make(kind: kind, target: target, aboutText: aboutText, text: trimmed,
                                                     device: device, key: Data(repeating: 0, count: 32)) else {
                 sendError = "That cannot be sent."
                 return false
             }
             record(entry, label: label)
-            simulateReply(id: entry.id)
+            if isSample {
+                apply(SentResult(id: entry.id, ok: true, via: SampleData.via))
+            } else {
+                simulateReply(id: entry.id)
+            }
             return true
         }
         guard let folderURL, let key else {
