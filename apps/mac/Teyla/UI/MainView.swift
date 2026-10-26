@@ -31,9 +31,6 @@ struct MainView: View {
             StoreSetupView()
         } else {
             window
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    if model.store.isSample { SampleBanner() }
-                }
         }
         #else
         if model.teylaMissing { NotFoundView() } else { window }
@@ -78,6 +75,16 @@ private struct DetailView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
+        page
+        #if STORE
+            // Under the toolbar, above the page: the sample is never taken for the owner's own data.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if model.store.isSample { SampleBanner() }
+            }
+        #endif
+    }
+
+    @ViewBuilder private var page: some View {
         switch model.route {
         case .today: TodayView()
         case .portfolio: PortfolioView()
