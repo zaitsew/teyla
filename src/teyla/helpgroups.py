@@ -39,6 +39,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
     "Products": [
         ("products", "Usage of every product, in one table"),
         ("product", "The product registry: repos, aliases, stage"),
+        ("portfolio", "Where every product stands: health, platforms, PRs"),
         ("productize", "What stands between each product and its second user"),
         ("platform", "The shared resources every product reuses"),
         ("testflight", "Did the iOS build reach a person"),
