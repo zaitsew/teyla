@@ -9,6 +9,7 @@ struct TodayView: View {
 
     var body: some View {
         NavigationStack {
+            ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 28) {
                     if let snapshot = model.snapshot {
@@ -24,9 +25,16 @@ struct TodayView: View {
                 .frame(maxWidth: 640)
                 .frame(maxWidth: .infinity)
             }
+            .task {
+                // Screenshots: `-TEYLA_OLDER open` also scrolls the fold into view.
+                guard LaunchOptions().olderOpen else { return }
+                try? await Task.sleep(for: .milliseconds(800))
+                withAnimation { proxy.scrollTo("older", anchor: .top) }
+            }
             .scrollDismissesKeyboard(.interactively)
             .background(Color(.systemGroupedBackground))
             .refreshable { await model.refresh() }
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -91,6 +99,7 @@ private struct Content: View {
 
         if !split.older.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
+                Color.clear.frame(height: 0).id("older")
                 Button {
                     withAnimation(.easeOut(duration: 0.2)) { olderOpen.toggle() }
                 } label: {
