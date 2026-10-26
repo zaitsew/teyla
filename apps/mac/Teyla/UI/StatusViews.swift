@@ -45,7 +45,12 @@ private struct ProductRow: View {
             HStack {
                 Text(product.title).font(Typo.body.weight(.semibold))
                 Spacer(minLength: Space.s)
-                StatePill(state: product.state, waiting: product.waiting)
+                // The portfolio's health when the snapshot has it; the older activity state otherwise.
+                if let health = model.snapshot?.portfolio?.product(product.name)?.health {
+                    HealthPill(health: health)
+                } else {
+                    StatePill(state: product.state, waiting: product.waiting)
+                }
             }
             if !product.line.isEmpty {
                 Text(product.line)

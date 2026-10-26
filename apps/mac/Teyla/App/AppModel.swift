@@ -57,6 +57,7 @@ final class AppModel {
     @ObservationIgnored private var hotKeyTalk = PushToTalk()
     @ObservationIgnored private var watcher: SessionWatcher?
     @ObservationIgnored private var timerTask: Task<Void, Never>?
+    @ObservationIgnored private var wakeObserver: NSObjectProtocol?
     @ObservationIgnored private var started = false
     @ObservationIgnored private let log = Logger(subsystem: "com.zaitsew.teyla", category: "app")
 
@@ -119,6 +120,24 @@ final class AppModel {
         return n == 0 ? "Nothing needs you right now." : "\(n) \(n == 1 ? "question needs" : "questions need") you."
     }
 
+    /// The toolbar indicator: whether the data on screen is being read, current, old, or failed.
+    /// A fixture snapshot has a fixed `generated` time, so it is not counted against the clock.
+    func syncIndicator(at date: Date = Date()) -> SyncIndicator {
+        var pageLoading = false
+        var pageError: String?
+        if case .product = route {
+            pageLoading = productPage.readingSessions
+            pageError = productPage.error
+        }
+        let portfolio = snapshot?.portfolio
+        return SyncStatus.indicator(
+            now: date, fetchedAt: fetchedAt, generated: usesFixture ? nil : snapshot?.generatedDate,
+            refreshing: isRefreshing, pageLoading: pageLoading, error: lastError ?? pageError,
+            checkedStores: portfolio.flatMap { ISODate.parse($0.checkedStores) },
+            checkedGitHub: portfolio.flatMap { ISODate.parse($0.checkedGitHub) },
+            hasPortfolio: portfolio != nil)
+    }
+
     // MARK: Lifecycle
 
     func start() {
@@ -130,6 +149,12 @@ final class AppModel {
         }
         if !watcher.start() { log.info("No session store directory exists yet; relying on the 60 s timer") }
         self.watcher = watcher
+        // The 60 s timer does not run while the Mac sleeps; read again as soon as it wakes.
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refresh() }
+        }
         timerTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
@@ -272,18 +297,24 @@ final class AppModel {
         }
     }
 
-    func markDone(_ ask: Ask) {
-        guard !isBusy(ask) else { return }
-        cards[ask.id] = .sending("Marking done…")
+    func markDone(_ ask: Ask) { markDone(id: ask.id) }
+
+    /// Closes a question by id (`teyla asks done`). The product page uses it for questions the window does not hold as cards.
+    func markDone(id: String) {
+        guard !isBusy(id: id) else { return }
+        cards[id] = .sending("Marking done…")
         Task {
             do {
-                try await cli.markDone(id: ask.id)
-                finish(ask, message: "Marked done")
+                try await cli.markDone(id: id)
+                finish(id: id, message: "Marked done")
             } catch {
-                cards[ask.id] = .failed(error.localizedDescription)
+                cards[id] = .failed(error.localizedDescription)
             }
         }
     }
+
+    /// Whether the owner already answered, snoozed or closed this question in this window.
+    func isHidden(_ id: String) -> Bool { hidden.contains(id) }
 
     func dismissError(_ ask: Ask) {
         if case .failed = cards[ask.id] { cards[ask.id] = nil }
@@ -449,19 +480,23 @@ final class AppModel {
         Dictation.shared.start(target: NewTaskModel.dictationTarget, current: task.draft, read: { task.draft }) { task.draft = $0 }
     }
 
-    private func isBusy(_ ask: Ask) -> Bool {
-        if case .sending = cards[ask.id] { return true }
+    private func isBusy(_ ask: Ask) -> Bool { isBusy(id: ask.id) }
+
+    private func isBusy(id: String) -> Bool {
+        if case .sending = cards[id] { return true }
         return false
     }
 
+    private func finish(_ ask: Ask, message: String) { finish(id: ask.id, message: message) }
+
     /// Show the confirmation line for a moment, then remove the card.
-    private func finish(_ ask: Ask, message: String) {
-        cards[ask.id] = .done(message)
+    private func finish(id: String, message: String) {
+        cards[id] = .done(message)
         Task {
             try? await Task.sleep(for: .seconds(3))
             withAnimation(.easeOut(duration: 0.25)) {
-                hidden.insert(ask.id)
-                cards[ask.id] = nil
+                hidden.insert(id)
+                cards[id] = nil
             }
             refresh()
         }

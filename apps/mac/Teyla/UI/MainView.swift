@@ -64,6 +64,7 @@ private struct DetailView: View {
     var body: some View {
         switch model.route {
         case .today: TodayView()
+        case .portfolio: PortfolioView()
         case .diagnosis: DiagnosisView()
         case .product(let id): ProductPageView(id: id)
         }
@@ -84,6 +85,9 @@ private struct SidebarView: View {
             }
             .badge(model.visibleAsks.count)
             .tag(AppRoute.today)
+            Label("Portfolio", systemImage: "square.grid.2x2")
+                .badge(model.snapshot?.portfolio.map { $0.counts.offTrack + $0.counts.atRisk } ?? 0)
+                .tag(AppRoute.portfolio)
             Label("Diagnosis", systemImage: "stethoscope")
                 .tag(AppRoute.diagnosis)
             if !products.isEmpty {
@@ -131,12 +135,13 @@ private struct TodayView: View {
                             EmptyStateView()
                         } else if proxy.size.width >= Space.wideWindow {
                             HStack(alignment: .top, spacing: Space.xxl) {
-                                MainColumn().frame(maxWidth: .infinity, alignment: .leading)
-                                StatusColumn().frame(width: Space.sideColumn)
+                                // The cards stop at the reading width; extra room goes to the side column.
+                                MainColumn().readingWidth()
+                                StatusColumn().frame(minWidth: Space.sideColumn, maxWidth: Space.sideColumnMax, alignment: .leading)
                             }
                         } else {
                             VStack(alignment: .leading, spacing: Space.xl) {
-                                MainColumn()
+                                MainColumn().readingWidth()
                                 StatusColumn()
                             }
                         }
@@ -173,32 +178,42 @@ private struct TodayView: View {
     }
 }
 
+/// The toolbar status. It says what the data on screen is doing, not whether the command once answered:
+/// updating (a refresh or the open page is reading), up to date, stale (older than two minutes) or offline.
+/// Green is reserved for money saved, so "up to date" is a neutral dot.
 private struct LiveIndicator: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
+            let indicator = model.syncIndicator(at: context.date)
             HStack(spacing: Space.xs + Space.xxs) {
-                Circle()
-                    .fill(model.lastError == nil ? Palette.success : Palette.warning)
-                    .frame(width: Space.s - Space.xxs, height: Space.s - Space.xxs)
-                Text(label(at: context.date))
+                switch indicator.state {
+                case .updating:
+                    ProgressView().controlSize(.mini)
+                case .upToDate:
+                    dot(Palette.textSecondary)
+                case .stale:
+                    dot(Palette.warning)
+                case .offline:
+                    dot(Palette.danger)
+                }
+                Text(indicator.label)
                     .font(Typo.caption)
                     .foregroundStyle(Palette.textSecondary)
                     .monospacedDigit()
                     .lineLimit(1)
             }
-            .help(model.lastError ?? "Teyla re-reads your sessions when they change, and every minute.")
+            .help(indicator.tooltip)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(indicator.label)
         }
     }
 
-    private func label(at date: Date) -> String {
-        guard let fetchedAt = model.fetchedAt else {
-            return model.lastError == nil ? "Reading…" : "Offline"
-        }
-        let seconds = Int(date.timeIntervalSince(fetchedAt))
-        if model.lastError != nil { return "Stale · updated \(max(0, seconds)) s ago" }
-        return Format.updated(secondsAgo: seconds)
+    private func dot(_ color: Color) -> some View {
+        Circle()
+            .fill(color)
+            .frame(width: Space.s - Space.xxs, height: Space.s - Space.xxs)
     }
 }
 
@@ -245,16 +260,25 @@ private struct MainColumn: View {
     private var tasks: [OwnerTask] { model.snapshot?.tasks ?? [] }
 
     private var questions: some View {
-        VStack(alignment: .leading, spacing: Space.m) {
+        let asks = AskFold.partition(model.visibleAsks) { model.age(of: $0) }
+        return VStack(alignment: .leading, spacing: Space.m) {
             SectionLabel("Needs you — ordered by what it unblocks")
             if model.visibleAsks.isEmpty {
                 Label("Nothing is waiting for an answer.", systemImage: "checkmark.circle")
                     .foregroundStyle(Palette.textSecondary)
                     .padding(.vertical, Space.s)
             } else {
-                ForEach(model.visibleAsks) { ask in
+                ForEach(asks.fresh) { ask in
                     AskCard(ask: ask)
                         .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                }
+                if !asks.older.isEmpty {
+                    OlderGroup(count: asks.older.count, revealsFocus: asks.older.contains { $0.id == model.focusedAskID }) {
+                        ForEach(asks.older) { ask in
+                            AskCard(ask: ask, older: true)
+                                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                        }
+                    }
                 }
             }
         }
