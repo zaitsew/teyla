@@ -223,7 +223,7 @@ def test_build_snapshot_matches_the_contract_fields(tmp_path):
     desktop.mkdir()
     st = state.build(NOW, items=[ask("aaaa0001", question="Ship it to App Review?")], repos={}, spent=4.1,
                      desktop=str(desktop), codex_root=str(tmp_path / "nocodex"))
-    fixture = json.loads((FIXTURES / "state.v2.json").read_text())
+    fixture = json.loads((FIXTURES / "state.v3.json").read_text())
     assert set(st) == set(fixture)
     assert set(st["totals"]) == set(fixture["totals"])
     assert set(st["asks"][0]) == set(fixture["asks"][0])
@@ -231,7 +231,7 @@ def test_build_snapshot_matches_the_contract_fields(tmp_path):
     assert set(st["relay"]) == set(fixture["relay"])
     assert st["totals"] == {"questions": 1, "running": 0, "spent_today_usd": 4.1, "tasks": 0, "done": 0,
                             "resolved": 0, "duplicates": 0}
-    assert st["version"] == 2 and st["generated"] == asks._iso(NOW)
+    assert st["version"] == 3 and st["generated"] == asks._iso(NOW)
     assert st["relay"] == {"on": False, "paired": False, "folder": "", "synced": ""}
 
 
@@ -246,7 +246,7 @@ def test_every_list_of_the_snapshot_has_the_keys_of_the_v2_fixture(tmp_path, mon
     bl = backlog_data(prs=[pr_row("example/lens", 14, "ab" * 20)], issues=[issue_row("example/cellar", 88)])
     st = state.build(NOW, items=[ask("aaaa0001")], repos={}, spent=None, desktop=str(desktop), codex_root=str(cx),
                      backlog_data=bl, approved=set(), ledger=None, runs=[])
-    fixture = json.loads((FIXTURES / "state.v2.json").read_text())
+    fixture = json.loads((FIXTURES / "state.v3.json").read_text())
     assert {t["kind"] for t in st["tasks"]} == {"merge", "task"}
     for t in st["tasks"]:
         assert set(t) == set(fixture["tasks"][0])

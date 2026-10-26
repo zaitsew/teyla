@@ -272,7 +272,7 @@ def test_state_marks_muted_asks_and_counts_them_per_product(tmp_path):
     assert (rows["lens"]["waiting"], rows["lens"]["muted"]) == (0, 2)
     assert (rows["cellar"]["waiting"], rows["cellar"]["muted"]) == (1, 0)
     assert st["totals"]["questions"] == 2
-    assert st["version"] == 2
+    assert st["version"] == 3
 
 
 def test_state_brief_ignores_muted_asks(tmp_path):

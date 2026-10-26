@@ -35,7 +35,7 @@ sends its own, from your own login.
 | 10 | `teyla spend`: GitHub Actions minutes (`gh api /user`, `/user/orgs`, `/orgs/<org>`) | `api.github.com` via `gh` | Your `gh` token; your login and org names. | Yes, when `gh` is installed | closed |
 | 11 | `teyla dispatch` (`git fetch origin` in the repo you name) | The repo's own remote | Nothing beyond what `git fetch` sends. | When you run `teyla dispatch` | refused |
 | 12 | `teyla platform ...`: the server and domain probes (`ssh`, DNS lookup) | The hosts you list in `~/.teyla/platform.toml` | `ssh -o BatchMode=yes <user>@<host> true`; a DNS lookup of each domain. | When you run `teyla platform` (`--no-net` skips them) | closed |
-| 13 | `teyla testflight` and `teyla play` (the daily routine runs both) | App Store Connect, Google Play, through the release tool you set in `[apple] release_tool` and `[android] release_tool` | The bundle id or package name and your tester e-mail from `teyla.toml`. Teyla holds no key; your tool does. | Only for products whose `teyla.toml` names a bundle id or package | closed |
+| 13 | `teyla testflight` and `teyla play` (the daily routine runs both) | App Store Connect, Google Play, through the release tool you set in `[apple] release_tool` and `[android] release_tool` | The bundle id or package name and your tester e-mail from `teyla.toml`. Teyla holds no key; your tool does. | Only for products whose `teyla.toml` names a bundle id or package. `teyla portfolio --refresh` (started detached by `teyla state` when its cache is over 6 hours old) runs these same calls and the `gh` calls of row 5 and the review ledger; it adds no new destination and caches the result in `~/.teyla/portfolio-cache.json` (mode 0600) | closed |
 
 ## Calls that carry content to a model provider
 

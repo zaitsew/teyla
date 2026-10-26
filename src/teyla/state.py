@@ -42,11 +42,11 @@ import shutil
 import subprocess
 import sys
 
-from . import asks, backlog, config, net, registry, reviews
+from . import asks, backlog, config, net, portfolio, registry, reviews
 from .adapters import claude_code, codex, iter_jsonl, text_of
 from .control import state as control
 
-VERSION = 2
+VERSION = 3
 RUNNING_WINDOW_S = 600
 QUIET_DAYS = 3
 REPO_RECENT_DAYS = 30            # a repo with no session activity is listed only when it moved this recently
@@ -1137,6 +1137,20 @@ def relay_view() -> dict:
     return out
 
 
+def portfolio_view(now: float, reg: dict, prods: list[dict], rows: list[dict], tasks: list[dict], bl: dict,
+                   ledger: dict | None) -> dict:
+    """Version 3: the portfolio, from the registry and the caches (`portfolio.py`). It makes no network call; a
+    missing or old cache starts one detached `teyla portfolio --refresh`."""
+    try:
+        cache = portfolio.load_cache()
+        portfolio.maybe_refresh(cache, now)
+        if ledger is None and cache["github"]:       # the review ledger matters only once merged PRs are cached
+            ledger = reviews.load_ledger(reviews.ledger_path(_cfg()))
+        return portfolio.build(now, reg=reg, prods=prods, ask_rows=rows, tasks=tasks, bl=bl, ledger=ledger, cache=cache)
+    except Exception:  # noqa: BLE001 — the portfolio is an extra; the rest of the snapshot always works
+        return portfolio.empty()
+
+
 def notes_view() -> dict:
     """Open notes (`teyla note`): {"inbox": n, "by_product": {id: n}}."""
     from . import notes
@@ -1197,6 +1211,7 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
             spent = spent_today(now)
         except Exception:  # noqa: BLE001
             spent = None
+    pf = portfolio_view(now, reg, prods, rows, tasks, bl, ledger)
     st = {"version": VERSION, "generated": _iso(now), "brief": None,
           "totals": {"questions": sum(1 for r in rows if not r["muted"]), "running": len(run), "spent_today_usd": spent,
                      "tasks": len(tasks), "done": len(done),
@@ -1204,7 +1219,7 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
           "asks": rows, "tasks": tasks, "done": done, "products": prods,
           "running": [{k: v for k, v in r.items() if k != "_last"} for r in run],
           "relay": relay_view() if relay is None else relay,
-          "notes": notes_view() if notes is None else notes}
+          "notes": notes_view() if notes is None else notes, "portfolio": pf}
     st["brief"] = {"line": _words(model["brief"]), "source": "model"} if model else brief_line(st)
     return st
 
