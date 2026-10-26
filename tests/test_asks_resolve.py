@@ -368,7 +368,7 @@ def test_the_state_snapshot_counts_resolved_and_duplicates(machine, tmp_path, ca
                      codex_root=str(tmp_path / "nocodex"), runs=[], backlog_data=dict(backlog.EMPTY, prs=[], issues=[],
                                                                                      counts={}, canonical={}))
     assert st["totals"]["resolved"] == 1 and st["totals"]["duplicates"] == 1 and st["totals"]["questions"] == 2
-    assert {a["id"] for a in st["asks"]} == {"aaa00003", "aaa00004"} and st["version"] == 2
+    assert {a["id"] for a in st["asks"]} == {"aaa00003", "aaa00004"} and st["version"] == 3
 
 
 def test_collect_alone_never_reaches_gh(machine):
