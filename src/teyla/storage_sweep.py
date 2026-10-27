@@ -22,7 +22,7 @@ covers idle simulators. This sweeps the rest, each category with its own age and
                    a folder without info.plist is a cache every project shares and stays
 - codex runtimes   ~/.cache/codex-runtimes/codex-runtime-install-* an update left, >= sweep_codex_days (2)
 - app caches       in ~/Library/Caches: Playwright browser revisions older than the newest of the same
-                   browser, and app-updater downloads (`*.ShipIt/update.*`, `*-updater`), each idle
+                   browser that no installed Playwright pins (`.links`), and app-updater downloads (`*.ShipIt/update.*`, `*-updater`), each idle
                    >= sweep_app_cache_days (7) and named by no process
 - package caches   `uv cache prune`, `pnpm store prune`, `npm cache verify`, each its own tool; under
                    sweep_critical_free_gb (10) free, `npm cache clean --force` and `deno clean` instead
@@ -594,13 +594,37 @@ PLAYWRIGHT_REV = re.compile(r"(.+)-(\d+)")   # chromium-1243, chromium_headless_
 UPDATER_GLOBS = ("*.ShipIt/update.*", "*-updater")   # Squirrel.Mac and electron-updater downloads
 
 
+def _playwright_pinned(pw: pathlib.Path) -> set[str] | None:
+    """Browser folder names an installed Playwright still uses. Each file in `.links` names a
+    playwright-core folder whose browsers.json lists its revisions; a folder that is gone is a removed
+    project. None when a live one cannot be read: then no revision is known to be free."""
+    pinned = set()
+    links = pw / ".links"
+    if not links.is_dir():
+        return pinned
+    for link in links.iterdir():
+        try:
+            core = pathlib.Path(link.read_text().strip())
+            if not core.is_dir():
+                continue
+        except (OSError, ValueError):   # unreadable, or not a path at all
+            return None
+        try:
+            browsers = json.loads((core / "browsers.json").read_text())["browsers"]
+            pinned |= {f"{b['name'].replace('-', '_')}-{b['revision']}" for b in browsers}
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            return None
+    return pinned
+
+
 def _app_cache_dirs(ctx: Ctx) -> list[tuple[str, pathlib.Path]]:
     caches = ctx.home / "Library" / "Caches"
     if not caches.is_dir():
         return []
     found = []
     pw = caches / "ms-playwright"
-    if pw.is_dir():
+    pinned = _playwright_pinned(pw) if pw.is_dir() else None
+    if pinned is not None:
         revs = []
         for d in pw.iterdir():
             m = PLAYWRIGHT_REV.fullmatch(d.name)
@@ -609,7 +633,8 @@ def _app_cache_dirs(ctx: Ctx) -> list[tuple[str, pathlib.Path]]:
         newest = {}
         for name, rev, _ in revs:
             newest[name] = max(newest.get(name, rev), rev)
-        found += [(f"Playwright {d.name}", d) for name, rev, d in sorted(revs) if rev < newest[name]]
+        found += [(f"Playwright {d.name}", d) for name, rev, d in sorted(revs)
+                  if rev < newest[name] and d.name not in pinned]
     for pattern in UPDATER_GLOBS:
         found += [(f"update download {d.relative_to(caches)}", d) for d in sorted(caches.glob(pattern))
                   if d.is_dir() and not d.is_symlink()]

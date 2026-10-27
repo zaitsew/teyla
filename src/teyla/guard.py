@@ -360,13 +360,13 @@ def disk_sweep(snap: load.Snapshot, conf: dict, now: float, dry: bool = False) -
     if dry:
         return [head + f"would run the {kind} sweep"]
     config.private_dir(stamp.parent)
-    # The full sweep holds the temp categories too: both clocks restart.
-    for st in (stamp, full_stamp) if full else (stamp,):
-        st.write_text(f"{now}\n")
+    stamp.write_text(f"{now}\n")
     res = storage_sweep.run(temp_only=not full)
     storage_sweep.write_log(res["lines"])
     if res.get("busy"):
-        return [head + "a sweep is already running"]
+        return [head + "a sweep is already running"]   # a full one is tried again in 15 minutes
+    if full:
+        full_stamp.write_text(f"{now}\n")
     return [head + f"{kind} sweep removed {load.gb(res['total'])}, {load.gb(res['free_after'])} free now"]
 
 

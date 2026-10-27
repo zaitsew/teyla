@@ -95,6 +95,23 @@ def test_under_the_urgent_threshold_the_tick_sweeps_in_full_every_6_hours_and_te
     assert sweeps == [False, True, False], "the full sweep is due again after 6 hours"
 
 
+def test_a_full_sweep_that_finds_another_sweep_running_is_tried_again_in_15_minutes(monkeypatch, tmp_path):
+    monkeypatch.setattr(storage, "LOG_PATH", tmp_path / "storage.log")
+    runs = []
+
+    def busy_once(temp_only=False, **k):
+        runs.append(temp_only)
+        return {"busy": len(runs) == 1, "total": 0, "free_after": 8 * GIB, "lines": []}
+    monkeypatch.setattr(storage_sweep, "run", busy_once)
+    monkeypatch.setattr(storage_sweep, "write_log", lambda lines: None)
+    clock = Clock()
+    res = tick_at(monkeypatch, clock, 8)
+    assert any("already running" in l for l in res["lines"])
+    clock.advance(16)
+    tick_at(monkeypatch, clock, 8)
+    assert runs == [False, False]
+
+
 def test_no_sweep_with_room_left_when_off_or_dry(sweeps, monkeypatch):
     clock = Clock()
     tick_at(monkeypatch, clock, 40)

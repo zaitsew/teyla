@@ -519,6 +519,16 @@ def app_cache(tmp_path, rel, seconds=30 * DAY) -> pathlib.Path:
     return d
 
 
+def write_link(tmp_path, name, *browsers) -> pathlib.Path:
+    core = tmp_path / "projects" / name / "playwright-core"
+    core.mkdir(parents=True)
+    (core / "browsers.json").write_text(json.dumps({"browsers": [{"name": n, "revision": r} for n, r in browsers]}))
+    links = tmp_path / "home" / "Library" / "Caches" / "ms-playwright" / ".links"
+    links.mkdir(parents=True, exist_ok=True)
+    (links / name).write_text(str(core))
+    return core
+
+
 def test_older_playwright_revisions_go_and_the_newest_of_each_browser_stays(tmp_path):
     old = app_cache(tmp_path, "ms-playwright/chromium-1208")
     newest = app_cache(tmp_path, "ms-playwright/chromium-1243")
@@ -528,13 +538,34 @@ def test_older_playwright_revisions_go_and_the_newest_of_each_browser_stays(tmp_
     used = app_cache(tmp_path, "ms-playwright/firefox-1400")
     app_cache(tmp_path, "ms-playwright/firefox-1500")
     only = app_cache(tmp_path, "ms-playwright/ffmpeg-1011")
-    links = app_cache(tmp_path, "ms-playwright/.links")
+    write_link(tmp_path, "project", ("chromium", "1243"))
+    links = tmp_path / "home" / "Library" / "Caches" / "ms-playwright" / ".links"
     dry = sw.app_caches(make_ctx(tmp_path, dry=True, procs=[f"{used}/firefox"]))
     assert old.exists() and dry.items == 2 and dry.bytes == 1000
     res = sw.app_caches(make_ctx(tmp_path, procs=[f"{used}/firefox"]))
     assert not old.exists() and not shell_old.exists() and res.items == 2
     assert all(p.exists() for p in (newest, shell_new, fresh, used, only, links)), "newest, recent, in use or alone"
     assert "removed Playwright chromium-1208" in res.lines[0]
+
+
+def test_a_playwright_revision_an_installed_project_pins_stays(tmp_path):
+    pinned = app_cache(tmp_path, "ms-playwright/chromium_headless_shell-1208")
+    free = app_cache(tmp_path, "ms-playwright/chromium-1208")
+    app_cache(tmp_path, "ms-playwright/chromium-1243")
+    app_cache(tmp_path, "ms-playwright/chromium_headless_shell-1243")
+    write_link(tmp_path, "pinned", ("chromium-headless-shell", "1208"))
+    gone = tmp_path / "home" / "Library" / "Caches" / "ms-playwright" / ".links" / "removed-project"
+    gone.write_text(str(tmp_path / "nowhere"))
+    res = sw.app_caches(make_ctx(tmp_path))
+    assert pinned.exists() and not free.exists() and res.items == 1
+
+
+def test_an_unreadable_playwright_link_keeps_every_revision(tmp_path):
+    old = app_cache(tmp_path, "ms-playwright/chromium-1208")
+    app_cache(tmp_path, "ms-playwright/chromium-1243")
+    core = write_link(tmp_path, "broken")
+    (core / "browsers.json").write_text("{not json")
+    assert sw.app_caches(make_ctx(tmp_path)).items == 0 and old.exists()
 
 
 def test_idle_update_downloads_go_and_a_recent_one_stays(tmp_path):
