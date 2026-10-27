@@ -575,7 +575,7 @@ def test_wait_with_a_zero_timeout_checks_once():
 
 def args(**kw):
     base = dict(json=False, record=False, quiet=False, admit=None, wait=False, kind="build", timeout=None,
-                replay=False, days=7, day=None)
+                replay=False, days=7, day=None, cwd=None)
     return argparse.Namespace(**{**base, **kw})
 
 
@@ -1302,6 +1302,45 @@ def test_the_same_worktree_is_not_held_by_its_own_lease():
     assert load.decide("sim", _at(30), {}, lease=lease, cwd="/work/tree-a").allowed          # its build, then its tests
     assert not load.decide("sim", _at(30), {}, lease=lease, cwd="/work/tree-b").allowed      # another worktree waits
     assert not load.decide("sim", _at(30), {}, lease=load.Lease("build", load.snap_ts(_at(0)), ""), cwd="").allowed
+
+
+def test_worktree_of_finds_the_checkout_or_linked_worktree_root(tmp_path, monkeypatch):
+    main, linked = tmp_path / "main", tmp_path / "linked"
+    (main / ".git").mkdir(parents=True)
+    (main / "App" / "Sources").mkdir(parents=True)
+    linked.mkdir()
+    (linked / ".git").write_text("gitdir: /elsewhere\n")                     # a linked worktree has a .git file
+    (linked / "sub").mkdir()
+    real = lambda p: os.path.realpath(p)
+    assert load.worktree_of(str(main / "App" / "Sources")) == real(main)
+    assert load.worktree_of(str(linked / "sub")) == real(linked)
+    assert load.worktree_of(str(tmp_path / "none" / "x")) == real(tmp_path / "none" / "x")   # no checkout: the dir
+    assert load.worktree_of("") == "" and load.worktree_of("relative/dir") == ""
+    monkeypatch.setenv("HOME", str(main))
+    assert load.worktree_of("~/App") == real(main)
+
+
+def test_a_command_in_a_subdirectory_of_the_lease_worktree_is_not_held(tmp_path):
+    wt = tmp_path / "tree-a"
+    (wt / ".git").mkdir(parents=True)
+    (wt / "ios").mkdir()
+    lf, kf = tmp_path / "lease.json", tmp_path / "lock"
+    assert load.decide_leased("build", _at(0), {}, lease_file=lf, lock_file=kf, cwd=str(wt)).allowed
+    assert load.decide_leased("sim", _at(30), {}, lease_file=lf, lock_file=kf, cwd=str(wt / "ios")).allowed
+    assert not load.decide_leased("sim", _at(40), {}, lease_file=lf, lock_file=kf, cwd="").allowed          # unknown
+    assert not load.decide_leased("sim", _at(40), {}, lease_file=lf, lock_file=kf, cwd=str(tmp_path / "tree-b")).allowed
+
+
+def test_admit_with_cwd_takes_the_lease_for_that_worktree(tmp_path, capsys):
+    quiet = Machine(sysctl_text())
+    quiet.add(1, "/bin/ls")
+    a, b = tmp_path / "a", tmp_path / "b"
+    for d in (a, b):
+        (d / ".git").mkdir(parents=True)
+    assert load.cmd_load(args(admit="build", cwd=str(a)), run=quiet.run) == 0
+    assert load.read_lease().cwd == os.path.realpath(a)
+    assert load.cmd_load(args(admit="sim", cwd=str(a)), run=quiet.run) == 0      # its own build, then its tests
+    assert load.cmd_load(args(admit="sim", cwd=str(b)), run=quiet.run) == 2      # another worktree waits
 
 
 def test_lanes_and_settle_s_zero_take_no_lease(tmp_path):

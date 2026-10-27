@@ -1099,12 +1099,33 @@ def decide(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | N
     return Decision(False, "\n".join(lines), verdict.level, "; ".join(why))
 
 
+def worktree_of(path: str | None) -> str:
+    """The git worktree a directory belongs to: the nearest ancestor holding `.git` (a directory in a
+    checkout, a file in a linked worktree), else the directory itself. `~` is expanded. "" for a path that
+    is empty or not absolute after that: an unknown place, which no lease treats as its own."""
+    if not path:
+        return ""
+    p = os.path.expanduser(path)
+    if not os.path.isabs(p):
+        return ""
+    p = os.path.realpath(p)
+    d = p
+    while True:
+        if os.path.exists(os.path.join(d, ".git")):
+            return d
+        up = os.path.dirname(d)
+        if up == d:
+            return p
+        d = up
+
+
 def decide_leased(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | None = None,
                   lease_file: pathlib.Path | None = None, lock_file: pathlib.Path | None = None,
                   cwd: str | None = None) -> Decision:
     """`decide`, then (a `sim` or a `build` that was let in, `guard.settle_s` > 0) the lease write, all under the
     guard lock: two processes that decide at the same moment are serialised, the first takes the lease and the
-    second reads it. This is what `--admit` and `--wait` call."""
+    second reads it. This is what `--admit` and `--wait` call. `cwd` is where the work runs (the hook passes
+    the command's `cd` target; None means this process's cwd); the lease keeps its git worktree."""
     if kind not in HEAVY or settle_s(conf) <= 0:
         return decide(kind, snap, conf, trend)
     if cwd is None:
@@ -1112,6 +1133,7 @@ def decide_leased(kind: str, snap: Snapshot, conf: dict | None = None, trend: Tr
             cwd = os.getcwd()
         except OSError:
             cwd = ""
+    cwd = worktree_of(cwd)
     with guard_lock(lock_file):
         d = decide(kind, snap, conf, trend, read_lease(lease_file), cwd)
         if d.allowed:
@@ -1129,7 +1151,7 @@ def admit(kind: str, snap: Snapshot, conf: dict | None = None) -> tuple[bool, st
 def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, poll_s: float = 15,
          clock: Callable[[], float] | None = None, sleeper: Callable[[float], None] | None = None,
          snap_fn: Callable[[], Snapshot | None] | None = None, out=None, err=None,
-         trend_fn: Callable[[Snapshot], Trend | None] | None = None) -> int:
+         trend_fn: Callable[[Snapshot], Trend | None] | None = None, cwd: str | None = None) -> int:
     """Poll `snap_fn` + `admit` until allowed (0) or `timeout_s` (default `guard.wait_timeout_s`) runs
     out (3, the last refusal printed to `out`). One progress line per minute at most, to `err`.
     A snapshot that fails lets the work through (0)."""
@@ -1148,7 +1170,7 @@ def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, po
         if snap is None:
             log_decision(kind, "unknown", True, "snapshot failed: let through", via="wait")
             return 0
-        d = decide_leased(kind, snap, conf, trend_fn(snap))
+        d = decide_leased(kind, snap, conf, trend_fn(snap), cwd=cwd)
         now = clock()
         elapsed = now - start
         if d.allowed:
@@ -1685,7 +1707,7 @@ def cmd_load(args, run: Runner = run_command) -> int:
         if snap is None:
             log_decision(args.admit, "unknown", True, "snapshot failed: let through")
             return 0
-        d = decide_leased(args.admit, snap, conf, current_trend(snap, conf))
+        d = decide_leased(args.admit, snap, conf, current_trend(snap, conf), cwd=args.cwd)
         log_decision(args.admit, d.level, d.allowed, d.reason)
         if not d.allowed:
             print(d.message)
@@ -1694,7 +1716,7 @@ def cmd_load(args, run: Runner = run_command) -> int:
     if args.wait:
         if not enabled(conf):
             return 0
-        return wait(args.kind, conf, args.timeout)
+        return wait(args.kind, conf, args.timeout, cwd=args.cwd)
     snap = safe_snapshot(run)
     if snap is None:
         print("teyla load: could not read the process table (ps failed); load unknown", file=sys.stderr)
@@ -1734,4 +1756,6 @@ def register(sp):
     q.add_argument("--days", type=float, default=7, metavar="N", help="--replay: how many days back (default 7)")
     q.add_argument("--day", metavar="YYYY-MM-DD", help="--replay: one line per change of state on that day, instead of the table")
     q.add_argument("--timeout", type=float, default=None, metavar="S", help="--wait: give up after S seconds (default guard.wait_timeout_s)")
+    q.add_argument("--cwd", default=None, metavar="DIR", help="--admit/--wait: where the work runs (default: here); the settle lease"
+                   " does not hold the git worktree that took it. The hook passes the command's cd target; empty = unknown")
     return q
