@@ -878,7 +878,7 @@ def decide(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | N
     else:
         lines.append("Run the work in a session you already have instead of starting another lane.")
     if snap.disk_free_bytes is not None and snap.disk_free_bytes < _num(conf, "disk_crit_gb") * GIB:
-        lines.append("Free disk first: `teyla storage sweep --temp` and `teyla storage clean --apply` remove idle"
+        lines.append("Free disk first: `teyla storage sweep` and `teyla storage clean --apply` remove idle"
                      " build output and finished worktrees; `teyla storage` lists what else holds space.")
     if waiting:
         lines.append("Work already running is not affected.")

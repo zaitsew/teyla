@@ -157,6 +157,7 @@ DEFAULTS = {
                 "sweep_sim_days": 7, "sweep_derived_days": 14, "sweep_codex_days": 2, "sweep_grok_days": 14,
                 "sweep_log_days": 14, "sweep_docker_days": 7, "sweep_log_max_mb": 50,
                 "sweep_log_glob": "*.log", "docker_superseded_repos": [],
+                "sweep_critical_free_gb": 10, "sweep_app_cache_days": 7,
                 # Optional launchd agents, written by `teyla routine install`.
                 "sims_agent": False, "sweep_agent": False},
     # Where `teyla correct` and the capture hook keep corrections; see corrections.py for why
@@ -201,7 +202,7 @@ DEFAULTS = {
               "agent": False, "gradle_idle_min": 30, "alert": True,
               # Free disk on the home volume. APFS swap shares the container: a full disk leaves swap no
               # room, and the Mac hangs under memory pressure without writing a panic (2026-10-11).
-              # disk_sweep: under [storage] sweep_urgent_free_gb, `guard tick` runs the temp sweep itself.
+              # disk_sweep: under [storage] sweep_urgent_free_gb, `guard tick` runs the sweep itself (full every 6 h).
               "disk_warn_gb": 25, "disk_crit_gb": 10, "disk_sweep": True},
     # The plugin's opt-in hooks (plugin/hooks/context-budget.sh, land-check.sh). Off by default: where
     # the same hooks are already wired some other way, a second copy doubles each note.

@@ -96,6 +96,7 @@ def test_settings_defaults_and_garbage():
     s = sw.settings({})
     assert (s["temp_hours"], s["release_days"], s["sim_days"], s["derived_days"], s["grok_days"], s["log_days"],
             s["docker_days"], s["log_max_mb"], s["urgent_free_gb"]) == (24, 3, 7, 14, 14, 14, 7, 50, 20)
+    assert (s["critical_free_gb"], s["app_cache_days"]) == (10, 7)
     assert s["docker_repos"] == [] and s["sim_pattern"] == ""
     s = sw.settings({"storage": {"sweep_temp_hours": "6", "sweep_grok_days": "soon", "docker_superseded_repos": "a/, b/c"}})
     assert s["temp_hours"] == 6 and s["grok_days"] == 14 and s["docker_repos"] == ["a/", "b/c"]
@@ -497,6 +498,93 @@ def test_package_caches_run_each_tool_only_when_present_and_only_when_not_dry(tm
     assert res.bytes == 800 and "uv cache prune: ok" in res.lines[0] and "npm cache verify: failed (exit 3)" in res.lines[1]
 
 
+def test_under_the_critical_threshold_the_caches_go_whole(tmp_path):
+    tools = {"uv", "pnpm", "npm", "deno"}
+    runner = Runner({(t,): (0, "") for t in tools}, tools=tools)
+    sw.package_caches(make_ctx(tmp_path, free=15 * GIB, runner=runner))
+    assert ["npm", "cache", "verify"] in runner.calls and not runner.ran("deno"), "urgent is not critical"
+    runner = Runner({(t,): (0, "") for t in tools}, tools=tools)
+    res = sw.package_caches(make_ctx(tmp_path, free=5 * GIB, runner=runner))
+    assert ["npm", "cache", "clean", "--force"] in runner.calls and ["deno", "clean"] in runner.calls
+    assert not runner.ran("npm", "cache", "verify") and len(res.lines) == 4
+
+
+# --- app caches --------------------------------------------------------------------------------------
+
+def app_cache(tmp_path, rel, seconds=30 * DAY) -> pathlib.Path:
+    d = tmp_path / "home" / "Library" / "Caches" / rel
+    d.mkdir(parents=True)
+    (d / "blob").write_bytes(b"0" * 500)
+    age(d, seconds)
+    return d
+
+
+def write_link(tmp_path, name, *browsers) -> pathlib.Path:
+    core = tmp_path / "projects" / name / "playwright-core"
+    core.mkdir(parents=True)
+    (core / "browsers.json").write_text(json.dumps({"browsers": [{"name": n, "revision": r} for n, r in browsers]}))
+    links = tmp_path / "home" / "Library" / "Caches" / "ms-playwright" / ".links"
+    links.mkdir(parents=True, exist_ok=True)
+    (links / name).write_text(str(core))
+    return core
+
+
+def test_older_playwright_revisions_go_and_the_newest_of_each_browser_stays(tmp_path):
+    old = app_cache(tmp_path, "ms-playwright/chromium-1208")
+    newest = app_cache(tmp_path, "ms-playwright/chromium-1243")
+    shell_old = app_cache(tmp_path, "ms-playwright/chromium_headless_shell-1217")
+    shell_new = app_cache(tmp_path, "ms-playwright/chromium_headless_shell-1243", seconds=DAY)
+    fresh = app_cache(tmp_path, "ms-playwright/chromium-1234", seconds=DAY)
+    used = app_cache(tmp_path, "ms-playwright/firefox-1400")
+    app_cache(tmp_path, "ms-playwright/firefox-1500")
+    only = app_cache(tmp_path, "ms-playwright/ffmpeg-1011")
+    write_link(tmp_path, "project", ("chromium", "1243"))
+    links = tmp_path / "home" / "Library" / "Caches" / "ms-playwright" / ".links"
+    dry = sw.app_caches(make_ctx(tmp_path, dry=True, procs=[f"{used}/firefox"]))
+    assert old.exists() and dry.items == 2 and dry.bytes == 1000
+    res = sw.app_caches(make_ctx(tmp_path, procs=[f"{used}/firefox"]))
+    assert not old.exists() and not shell_old.exists() and res.items == 2
+    assert all(p.exists() for p in (newest, shell_new, fresh, used, only, links)), "newest, recent, in use or alone"
+    assert "removed Playwright chromium-1208" in res.lines[0]
+
+
+def test_a_playwright_revision_an_installed_project_pins_stays(tmp_path):
+    pinned = app_cache(tmp_path, "ms-playwright/chromium_headless_shell-1208")
+    free = app_cache(tmp_path, "ms-playwright/chromium-1208")
+    app_cache(tmp_path, "ms-playwright/chromium-1243")
+    app_cache(tmp_path, "ms-playwright/chromium_headless_shell-1243")
+    write_link(tmp_path, "pinned", ("chromium-headless-shell", "1208"))
+    gone = tmp_path / "home" / "Library" / "Caches" / "ms-playwright" / ".links" / "removed-project"
+    gone.write_text(str(tmp_path / "nowhere"))
+    res = sw.app_caches(make_ctx(tmp_path))
+    assert pinned.exists() and not free.exists() and res.items == 1
+
+
+def test_an_unreadable_playwright_link_keeps_every_revision(tmp_path):
+    old = app_cache(tmp_path, "ms-playwright/chromium-1208")
+    app_cache(tmp_path, "ms-playwright/chromium-1243")
+    core = write_link(tmp_path, "broken")
+    (core / "browsers.json").write_text("{not json")
+    assert sw.app_caches(make_ctx(tmp_path)).items == 0 and old.exists()
+
+
+def test_idle_update_downloads_go_and_a_recent_one_stays(tmp_path):
+    ship = app_cache(tmp_path, "com.example.app.ShipIt/update.7DPY08O")
+    state = tmp_path / "home" / "Library" / "Caches" / "com.example.app.ShipIt" / "ShipItState.plist"
+    state.write_text("<plist/>")
+    electron = app_cache(tmp_path, "@example-updater")
+    recent = app_cache(tmp_path, "other-updater", seconds=DAY)
+    res = sw.app_caches(make_ctx(tmp_path))
+    assert not ship.exists() and not electron.exists() and recent.exists() and state.exists()
+    assert res.items == 2
+
+
+def test_unknown_process_list_removes_no_app_cache(tmp_path):
+    old = app_cache(tmp_path, "ms-playwright/chromium-1208")
+    app_cache(tmp_path, "ms-playwright/chromium-1243")
+    assert sw.app_caches(make_ctx(tmp_path, procs=None)).items == 0 and old.exists()
+
+
 # --- docker ------------------------------------------------------------------------------------------
 
 def image_line(iid, created, tagged, size, *tags):
@@ -546,6 +634,13 @@ def test_docker_prunes_and_reports_what_it_reclaimed(tmp_path):
     assert ["docker", "builder", "prune", "-f", "--filter", "until=168h"] in r.calls
     assert ["docker", "image", "prune", "-f", "--filter", "until=168h"] in r.calls, "a fresh dangling image stays"
     assert res.bytes == 1_500_000_000 + 500_000_000
+
+
+def test_under_the_critical_threshold_docker_prunes_every_unused_image(tmp_path):
+    r = docker_runner([])
+    sw.docker(make_ctx(tmp_path, free=5 * GIB, runner=r))
+    assert ["docker", "image", "prune", "-f", "-a", "--filter", "until=168h"] in r.calls
+    assert "(unused)" in sw.docker(make_ctx(tmp_path, dry=True, free=5 * GIB, runner=docker_runner([]))).lines[0]
 
 
 def test_superseded_images_go_only_for_configured_repositories(tmp_path):
