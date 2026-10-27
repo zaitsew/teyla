@@ -9,6 +9,13 @@
   `teyla load` now reads `ri_phys_footprint` with one `proc_pid_rusage` call per process (about 5 ms for 1,200
   processes) and keeps the RSS for a process it cannot read (root-owned ones, other systems). The `load.tsv` column
   names are unchanged so `--replay` still reads old files; their values are footprint from this release on.
+- **One heavy admission at a time.** Each waiter polled on its own. At 19:41:32 a build and at 19:41:39 a simulator, which
+  had waited 35 and 16 minutes, were both admitted on the same OK reading, and the load went 90, 175, 205 on 10 cores
+  within two minutes: a job just let in does not show in the counts until its processes appear. `--admit` and `--wait`
+  now write a lease (`~/.teyla/guard-lease.json`) when they let a simulator or a build in, and a new simulator or build
+  is refused for `guard.settle_s` (default 180; 0 = off) seconds after it: "a simulator was let in 40 s ago; waiting for
+  it to settle". Deciding and taking the lease happen under one `flock`, so two waiters polling in the same second
+  cannot both pass. Lanes are unaffected. A broken lock or lease file lets the work through.
 ## 0.32.1 — 2026-10-27 — A low disk gets the full sweep
 
 - **The guard runs the full sweep when the disk is low.** Under `sweep_urgent_free_gb` (20 GB) free, the guard ran only

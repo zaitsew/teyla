@@ -409,7 +409,7 @@ def test_guard_defaults():
     assert g == {"enabled": True, "max_sims": 2, "max_builds": 2, "max_lanes": 0, "swap_crit_pct": 40,
                  "swapout_mb_s": 20, "swap_grow_gb_30m": 4, "trend_window_min": 15, "hold_min": 10,
                  "compressor_warn_pct": 30, "compressor_crit_pct": 45, "load_warn_per_core": 4.0, "load_crit_per_core": 10.0,
-                 "wait_timeout_s": 900, "agent": False, "gradle_idle_min": 30, "alert": True,
+                 "wait_timeout_s": 900, "settle_s": 180, "agent": False, "gradle_idle_min": 30, "alert": True,
                  "disk_warn_gb": 25, "disk_crit_gb": 10, "disk_sweep": True}
     assert load.guard_conf({"guard": {"max_sims": 5}})["max_sims"] == 5
     assert load.guard_conf({})["max_sims"] == 2
@@ -769,7 +769,7 @@ def test_wait_logs_once_when_it_ends_not_once_per_poll():
     assert (row["kind"], row["decision"], row["reason"]) == ("build", "admitted", "wait: after 45s wait")
     clock2 = Clock()
     busy = snap(procs=procs(sims=2))
-    assert load.wait("sim", {}, 60, poll_s=15, clock=clock2.now, sleeper=clock2.sleep, snap_fn=lambda: busy, out=out, err=err) == 3
+    assert load.wait("sim", {"settle_s": 0}, 60, poll_s=15, clock=clock2.now, sleeper=clock2.sleep, snap_fn=lambda: busy, out=out, err=err) == 3
     last = decisions()[-1]
     assert (last["kind"], last["decision"]) == ("sim", "refused")
     assert last["reason"] == "wait: timeout after 60s: 2 simulators are already booted (max 2)"
@@ -1245,3 +1245,126 @@ def test_native_footprints_reads_this_process_without_root():
     fp = load.native_footprints([os.getpid(), 2 ** 30])           # the second pid does not exist
     assert 2 ** 30 not in fp
     assert 1 * 1024 ** 2 < fp[os.getpid()] < 64 * GIB             # a Python process: tens of MB, never zero or garbage
+
+
+# --- one heavy admission at a time -----------------------------------------------------------------
+
+def _at(seconds: int, **kw) -> load.Snapshot:
+    base = dt.datetime(2026, 10, 27, 19, 41, 0, tzinfo=dt.timezone.utc) + dt.timedelta(seconds=seconds)
+    return snap(time=base.isoformat(timespec="seconds"), **kw)
+
+
+def test_a_lease_younger_than_settle_s_refuses_a_new_sim_or_build():
+    lease = load.Lease("sim", load.snap_ts(_at(0)))
+    d = load.decide("build", _at(40), {}, lease=lease)
+    assert not d.allowed and "a simulator was let in 40 s ago; waiting for it to settle" in d.reason
+    assert "teyla load --wait --kind build" in d.message and "Work already running is not affected" in d.message
+    assert not load.decide("sim", _at(179), {}, lease=lease).allowed
+    assert load.decide("sim", _at(180), {}, lease=lease).allowed             # settled
+    assert load.decide("build", _at(40), {"settle_s": 0}, lease=lease).allowed    # switched off
+    assert load.decide("lane", _at(40), {}, lease=lease).allowed                  # lanes are unaffected
+    assert load.decide("build", _at(40), {}).allowed                              # no lease, no refusal
+
+
+def test_a_lease_from_the_future_or_of_an_unknown_kind_is_ignored():
+    assert load.decide("sim", _at(0), {}, lease=load.Lease("sim", load.snap_ts(_at(60)))).allowed
+    assert load.decide("sim", _at(10), {}, lease=load.Lease("lane", load.snap_ts(_at(0)))).allowed
+
+
+def test_two_admissions_in_a_row_second_refused_then_admitted_after_settle_s(tmp_path):
+    lf, kf = tmp_path / "lease.json", tmp_path / "lock"
+    first = load.decide_leased("sim", _at(0), {}, lease_file=lf, lock_file=kf)
+    second = load.decide_leased("build", _at(7), {}, lease_file=lf, lock_file=kf)       # the herd: seven seconds later
+    assert first.allowed and not second.allowed
+    assert "a simulator was let in 7 s ago" in second.reason
+    assert kf.exists()                                                                   # the lock path was used
+    assert load.read_lease(lf).kind == "sim"                                             # a refusal takes no lease
+    third = load.decide_leased("build", _at(181), {}, lease_file=lf, lock_file=kf)
+    assert third.allowed and load.read_lease(lf).kind == "build"
+
+
+def test_lanes_and_settle_s_zero_take_no_lease(tmp_path):
+    lf, kf = tmp_path / "lease.json", tmp_path / "lock"
+    assert load.decide_leased("lane", _at(0), {}, lease_file=lf, lock_file=kf).allowed
+    assert load.decide_leased("sim", _at(0), {"settle_s": 0}, lease_file=lf, lock_file=kf).allowed
+    assert not lf.exists()
+
+
+def test_a_refused_decision_for_another_reason_takes_no_lease(tmp_path):
+    lf, kf = tmp_path / "lease.json", tmp_path / "lock"
+    assert not load.decide_leased("build", _at(0, procs=procs(builds=2)), {}, lease_file=lf, lock_file=kf).allowed
+    assert not lf.exists()
+
+
+def test_the_lease_records_kind_epoch_and_cwd_and_a_bad_file_reads_as_none(tmp_path, monkeypatch):
+    lf, kf = tmp_path / "lease.json", tmp_path / "lock"
+    monkeypatch.chdir(tmp_path)
+    load.decide_leased("sim", _at(5), {}, lease_file=lf, lock_file=kf)
+    raw = json.loads(lf.read_text())
+    assert raw == {"kind": "sim", "ts": load.snap_ts(_at(5)), "cwd": os.getcwd()}
+    for junk in ("", "[]", "{", '{"kind": "lane", "ts": 1}', '{"kind": "sim", "ts": "x"}', '{"kind": "sim", "ts": true}'):
+        lf.write_text(junk)
+        assert load.read_lease(lf) is None
+    assert load.read_lease(tmp_path / "missing.json") is None
+
+
+def test_the_lock_serialises_two_processes_and_fails_open_when_it_is_held_too_long(tmp_path):
+    import fcntl
+    import multiprocessing as mp
+    kf = tmp_path / "lock"
+    held = os.open(kf, os.O_RDWR | os.O_CREAT)
+    fcntl.flock(held, fcntl.LOCK_EX)
+    t0 = time.monotonic()
+    with load.guard_lock(kf, timeout_s=0.2):                   # held by us (another open file description): waits, then goes on
+        waited = time.monotonic() - t0
+    assert 0.15 <= waited < 2
+    fcntl.flock(held, fcntl.LOCK_UN)
+    os.close(held)
+    # two real processes decide at the same moment: exactly one is admitted
+    lf = tmp_path / "lease.json"
+    ctx = mp.get_context("fork")
+    q = ctx.Queue()
+    gate = ctx.Event()
+
+    def worker(kind):
+        gate.wait(5)
+        q.put(load.decide_leased(kind, _at(0), {}, lease_file=lf, lock_file=kf).allowed)
+
+    ps = [ctx.Process(target=worker, args=(k,)) for k in ("sim", "build")]
+    for p in ps:
+        p.start()
+    gate.set()
+    for p in ps:
+        p.join(10)
+    assert sorted([q.get(timeout=5), q.get(timeout=5)]) == [False, True]
+
+
+def test_an_unwritable_lease_directory_lets_the_work_through(tmp_path):
+    blocker = tmp_path / "file"
+    blocker.write_text("x")
+    d = load.decide_leased("sim", _at(0), {}, lease_file=blocker / "lease.json", lock_file=blocker / "lock")
+    assert d.allowed
+
+
+def test_wait_takes_the_lease_when_it_lets_a_sim_in_and_the_next_wait_has_to_wait():
+    clock, out, err = Clock(), Sink(), Sink()
+    quiet = _at(0)
+    assert load.wait("sim", {}, 900, poll_s=15, clock=clock.now, sleeper=clock.sleep, snap_fn=lambda: quiet, out=out, err=err) == 0
+    assert load.read_lease().kind == "sim"
+    later = iter(_at(s) for s in range(7, 1000, 15))
+    code = load.wait("build", {}, 900, poll_s=15, clock=clock.now, sleeper=clock.sleep, snap_fn=lambda: next(later), out=out, err=err)
+    assert code == 0 and sum(clock.slept) >= 165                  # it waited out the 180 s, not just the first poll
+    assert "let in 7 s ago" in err.text and load.read_lease().kind == "build"
+
+
+def test_admit_through_the_command_takes_a_lease_and_refuses_the_next_heavy_start(capsys):
+    quiet = Machine(sysctl_text())
+    quiet.add(1, "/bin/ls")
+    assert load.cmd_load(args(admit="sim"), run=quiet.run) == 0
+    assert load.cmd_load(args(admit="build"), run=quiet.run) == 2
+    out = capsys.readouterr().out
+    assert "a simulator was let in" in out and "waiting for it to settle" in out
+    assert load.cmd_load(args(admit="lane"), run=quiet.run) == 0
+    rows = load.read_decisions()
+    assert [(r["kind"], r["decision"]) for r in rows] == [("sim", "admitted"), ("build", "refused"), ("lane", "admitted")]
+    assert "settle" in rows[1]["reason"]

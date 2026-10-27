@@ -67,6 +67,16 @@ also refused while `guard.max_builds` drivers run, `sim` while `guard.max_sims` 
 while `guard.max_lanes` headless lanes run. A cap of 0 means no cap. The refusal is written for an AI agent:
 why, with the numbers, then what to do instead. `--wait` polls until the refusal clears or `guard.wait_timeout_s`.
 
+One heavy admission at a time (`Lease`, `decide_leased`). A job that was let in does not show in the counts until
+its processes and memory appear, so on 2026-10-27 a build and a simulator that had waited 35 and 16 minutes were both
+admitted on the same OK reading, seven seconds apart, and the load went 90 -> 175 -> 205 on 10 cores. Now `--admit`
+and `--wait` write a lease (`~/.teyla/guard-lease.json`: kind, epoch, cwd) when they let a `sim` or a `build` in,
+and `decide` refuses a new `sim` or `build` while that lease is younger than `guard.settle_s` (default 180; 0 = off):
+"a simulator was let in 40 s ago; waiting for it to settle". The decision and the lease write happen under an
+`fcntl.flock` on `~/.teyla/guard.lock`, so two waiters polling in the same second cannot both pass; a lock that
+cannot be taken in 2 s, or a lease file that cannot be read or written, lets the work through (fail open). Lanes
+neither take a lease nor wait for one. `admit()` itself stays a pure check and writes nothing.
+
 Recorder (`record`, `read_records`). One TSV line per snapshot in `~/.teyla/load.tsv` (`TEYLA_HOME`
 moves it), a `#` header first. Past ~2 MB the file is rewritten with its newest half, atomically.
 `--json`, `--quiet` and `--record` never exit non-zero because of the load; the text report does,
@@ -76,6 +86,14 @@ Decision log (`log_decision`). Every `--admit` and every `--wait` appends what i
 `~/.teyla/guard-decisions.tsv`: time, kind, verdict, admitted or refused, reason, cwd, harness. A wait
 logs once, when it ends (admitted after N s, or refused at the timeout), not once per poll. The file keeps
 its newest half past 512 KB. `teyla load` prints the last hour's counts.
+
+Bypass report (`find_bypassed`, `report_bypassed`). The hook sees a `simctl boot` typed in a shell, not one a script
+runs inside itself (a pool script booted a simulator at 19:45 during a CRITICAL hold on 2026-10-27, and nothing
+recorded it). `guard tick` and `teyla load` take the booted simulators (a `launchd_sim` process each; the boot time is
+the snapshot time minus its etime) and look for an admitted `sim` decision in the 5 minutes before the boot (each
+admission covers one boot). A simulator with none is "booted without the guard": the tick logs one decision row for it
+(kind `sim`, decision `bypassed`, once per UDID per boot) and `teyla load` names it. `bypassed` rows are neither
+admitted nor refused: `decision_summary` counts them on their own, and the hold ignores them.
 
 Replay (`replay`). `teyla load --replay [--days N]` runs `assess` and `decide` over `load.tsv` with the same
 history the live guard has (levels recomputed, not the recorded ones) and prints, per day, how many samples come
@@ -903,6 +921,94 @@ def current_trend(snap: Snapshot, conf: dict | None = None, records: pathlib.Pat
         return None
 
 
+# --- the lease: one heavy admission at a time -------------------------------------------------------
+
+HEAVY = ("sim", "build")        # the kinds that take a lease and wait for one
+LEASE_NAME = "guard-lease.json"
+LOCK_NAME = "guard.lock"
+LOCK_WAIT_S = 2.0               # a lock held longer than this is ignored: the guard fails open
+
+
+@dataclasses.dataclass
+class Lease:
+    kind: str                   # "sim" | "build"
+    ts: float                   # epoch seconds of the snapshot the admission was decided on
+    cwd: str = ""
+
+
+def _home() -> pathlib.Path:
+    from .corrections import teyla_home
+    return teyla_home()
+
+
+def lease_path() -> pathlib.Path:
+    return _home() / LEASE_NAME
+
+
+def lock_path() -> pathlib.Path:
+    return _home() / LOCK_NAME
+
+
+def read_lease(path: pathlib.Path | None = None) -> Lease | None:
+    """The last lease, or None when there is none or the file is unreadable."""
+    try:
+        d = json.loads(pathlib.Path(path or lease_path()).read_text())
+        ts = d["ts"]
+        if d["kind"] not in HEAVY or isinstance(ts, bool) or not isinstance(ts, (int, float)):
+            return None
+        return Lease(d["kind"], float(ts), str(d.get("cwd") or ""))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def write_lease(lease: Lease, path: pathlib.Path | None = None) -> None:
+    """Atomic (temp file + rename). Never raises: a lease that cannot be written is no lease."""
+    path = pathlib.Path(path or lease_path())
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps({"kind": lease.kind, "ts": lease.ts, "cwd": lease.cwd}))
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+@contextlib.contextmanager
+def guard_lock(path: pathlib.Path | None = None, timeout_s: float = LOCK_WAIT_S):
+    """An exclusive `flock` on the guard's lock file, so reading the lease, deciding and writing the lease are
+    one step across processes. Waits up to `timeout_s`, then goes on without the lock (fail open); the lock goes
+    with the process if it dies."""
+    fd = None
+    try:
+        p = pathlib.Path(path or lock_path())
+        p.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(p, os.O_RDWR | os.O_CREAT, 0o600)
+        end = None
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                end = time.monotonic() + timeout_s if end is None else end
+                if time.monotonic() >= end:
+                    break
+                time.sleep(0.02)
+    except OSError:
+        pass
+    try:
+        yield
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)                    # closing the descriptor drops the flock
+            except OSError:
+                pass
+
+
+def settle_s(conf: dict | None) -> float:
+    return max(0.0, float(_num(conf, "settle_s")))
+
+
 # --- admission --------------------------------------------------------------------------------------
 
 @dataclasses.dataclass
@@ -913,13 +1019,15 @@ class Decision:
     reason: str = ""                                              # one line, for the log
 
 
-def decide(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | None = None) -> Decision:
+def decide(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | None = None,
+           lease: Lease | None = None) -> Decision:
     """The admission decision for `kind`, with the verdict it was made under and a one-line reason.
 
     CRITICAL refuses every kind. A new simulator or build is also refused, whatever the count, while the
     machine is WORSENING and for `guard.hold_min` minutes after the last CRITICAL or WORSENING sample (the
     hold: the alert flapped four times in 30 minutes on 2026-10-18 and a simulator and a second build were
-    admitted in the gaps). Running work is never touched. Lanes are agent sessions, not memory hogs: only
+    admitted in the gaps). A new simulator or build is also refused while `lease`, the last one let in, is younger
+    than `guard.settle_s`. Running work is never touched. Lanes are agent sessions, not memory hogs: only
     CRITICAL stops them."""
     verdict = assess(snap, conf, trend)
     p = snap.procs
@@ -935,6 +1043,13 @@ def decide(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | N
         why.append(f"held after {trend.held_level} {int(trend.held_ago_s // 60)} min ago: new simulators and builds wait"
                    f" until {_num(conf, 'hold_min'):g} min pass without it ({math.ceil(left / 60)} min left)")
         waiting = True
+    if kind in HEAVY and lease is not None and lease.kind in HEAVY and settle_s(conf) > 0:
+        age = snap_ts(snap) - lease.ts
+        if 0 <= age < settle_s(conf):
+            what = "a simulator" if lease.kind == "sim" else "a build"
+            why.append(f"{what} was let in {int(age)} s ago; waiting for it to settle"
+                       f" ({math.ceil(settle_s(conf) - age)} s left of {settle_s(conf):g})")
+            waiting = True
     cap = _num(conf, {"build": "max_builds", "sim": "max_sims", "lane": "max_lanes"}.get(kind, ""))
     if kind == "build" and cap > 0 and p.builds >= cap:
         why.append(f"{p.builds} builds already run (max {cap:g})")
@@ -964,9 +1079,27 @@ def decide(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | N
     return Decision(False, "\n".join(lines), verdict.level, "; ".join(why))
 
 
+def decide_leased(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | None = None,
+                  lease_file: pathlib.Path | None = None, lock_file: pathlib.Path | None = None) -> Decision:
+    """`decide`, then (a `sim` or a `build` that was let in, `guard.settle_s` > 0) the lease write, all under the
+    guard lock: two processes that decide at the same moment are serialised, the first takes the lease and the
+    second reads it. This is what `--admit` and `--wait` call."""
+    if kind not in HEAVY or settle_s(conf) <= 0:
+        return decide(kind, snap, conf, trend)
+    with guard_lock(lock_file):
+        d = decide(kind, snap, conf, trend, read_lease(lease_file))
+        if d.allowed:
+            try:
+                cwd = os.getcwd()
+            except OSError:
+                cwd = ""
+            write_lease(Lease(kind, snap_ts(snap), cwd), lease_file)
+        return d
+
+
 def admit(kind: str, snap: Snapshot, conf: dict | None = None) -> tuple[bool, str]:
     """(allowed, message). The message is empty when allowed; when refused it is for an AI agent:
-    why, with the numbers, then what to do instead."""
+    why, with the numbers, then what to do instead. A pure check: it neither reads nor writes a lease."""
     d = decide(kind, snap, conf)
     return d.allowed, d.message
 
@@ -993,7 +1126,7 @@ def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, po
         if snap is None:
             log_decision(kind, "unknown", True, "snapshot failed: let through", via="wait")
             return 0
-        d = decide(kind, snap, conf, trend_fn(snap))
+        d = decide_leased(kind, snap, conf, trend_fn(snap))
         now = clock()
         elapsed = now - start
         if d.allowed:
@@ -1463,7 +1596,7 @@ def cmd_load(args, run: Runner = run_command) -> int:
         if snap is None:
             log_decision(args.admit, "unknown", True, "snapshot failed: let through")
             return 0
-        d = decide(args.admit, snap, conf, current_trend(snap, conf))
+        d = decide_leased(args.admit, snap, conf, current_trend(snap, conf))
         log_decision(args.admit, d.level, d.allowed, d.reason)
         if not d.allowed:
             print(d.message)
