@@ -11,8 +11,8 @@ the compressor held ~12 GB, swap was 11 of 12 GB, the load average passed 500. N
 machine knew; each agent saw only its own task. This module is the foundation of a machine guard:
 other parts (an admission hook, a recorder agent, crash forensics) import it.
 
-The snapshot is cheap on purpose: ONE `sysctl` and ONE `ps` call, no `simctl`, no `lsof`
-(`snapshot()` runs in well under 150 ms). Every field that cannot be read is None, and a None
+The snapshot is cheap on purpose: ONE `sysctl` and ONE `ps` call, no `simctl`, no `lsof`, plus one
+`proc_pid_rusage` per process (`snapshot()` runs in well under 150 ms). Every field that cannot be read is None, and a None
 never triggers a verdict. `snapshot()` returns None when `ps` fails: "unknown", and the callers
 that gate work (`--admit`, `--wait`) then let the work through: the guard fails open, it must never
 block work because of its own bug.
@@ -31,7 +31,17 @@ the native `codex` it starts, `gradlew` and the JVM it starts) are one.
                 (`codex exec`, `grok -p`, `claude -p`)
     browsers    Chrome renderers, and all of Chrome
     vms         `com.apple.Virtualization.*` and `qemu-system-*`
-    top         the eight apps holding the most RSS (an app's helpers fold into the app)
+    top         the eight apps holding the most memory (an app's helpers fold into the app)
+
+Memory sizes are physical footprint, not RSS (from the release after 0.32.1). RSS counts a shared page once in every process
+that maps it: two iOS simulators (454 processes) showed 18.4 GB of RSS, one sample 40.6 GB on a 24 GB Mac,
+while the footprint `top` shows in its MEM column was 6.3 GB. RSS also misses what a process keeps compressed
+or in a VM: Docker's `com.apple.Virtualization.VirtualMachine` showed 0.8 GB of RSS and 5.05 GB of footprint
+(2026-10-27). `snapshot()` reads `ri_phys_footprint` with one `proc_pid_rusage(pid, RUSAGE_INFO_V2)` call per
+process (`native_footprints`, ctypes on libSystem; the provider is injectable). A process the call cannot read
+(another user's, a pid that exited, any non-macOS system) keeps its RSS. The fields keep their `rss_bytes`
+names and the `load.tsv` columns keep theirs (`compiler_rss_bytes`, `daemon_rss_bytes`, `chrome_rss_bytes`, ...)
+so `--replay` reads old files; their values are footprint from that release on, and rows written before it hold RSS.
 
 Verdict (`assess`). CRITICAL when memory pressure is 4, swap used >= `guard.swap_crit_pct` of RAM while pressure is >= 2, the
 one-minute load >= `guard.load_crit_per_core` x cores, or the compressor >= `guard.compressor_crit_pct`
@@ -57,6 +67,16 @@ also refused while `guard.max_builds` drivers run, `sim` while `guard.max_sims` 
 while `guard.max_lanes` headless lanes run. A cap of 0 means no cap. The refusal is written for an AI agent:
 why, with the numbers, then what to do instead. `--wait` polls until the refusal clears or `guard.wait_timeout_s`.
 
+One heavy admission at a time (`Lease`, `decide_leased`). A job that was let in does not show in the counts until
+its processes and memory appear, so on 2026-10-27 a build and a simulator that had waited 35 and 16 minutes were both
+admitted on the same OK reading, seven seconds apart, and the load went 90 -> 175 -> 205 on 10 cores. Now `--admit`
+and `--wait` write a lease (`~/.teyla/guard-lease.json`: kind, epoch, cwd) when they let a `sim` or a `build` in,
+and `decide` refuses a new `sim` or `build` while that lease is younger than `guard.settle_s` (default 180; 0 = off):
+"a simulator was let in 40 s ago; waiting for it to settle". The decision and the lease write happen under an
+`fcntl.flock` on `~/.teyla/guard.lock`, so two waiters polling in the same second cannot both pass; a lock that
+cannot be taken in 2 s, or a lease file that cannot be read or written, lets the work through (fail open). Lanes
+neither take a lease nor wait for one. `admit()` itself stays a pure check and writes nothing.
+
 Recorder (`record`, `read_records`). One TSV line per snapshot in `~/.teyla/load.tsv` (`TEYLA_HOME`
 moves it), a `#` header first. Past ~2 MB the file is rewritten with its newest half, atomically.
 `--json`, `--quiet` and `--record` never exit non-zero because of the load; the text report does,
@@ -66,6 +86,14 @@ Decision log (`log_decision`). Every `--admit` and every `--wait` appends what i
 `~/.teyla/guard-decisions.tsv`: time, kind, verdict, admitted or refused, reason, cwd, harness. A wait
 logs once, when it ends (admitted after N s, or refused at the timeout), not once per poll. The file keeps
 its newest half past 512 KB. `teyla load` prints the last hour's counts.
+
+Bypass report (`find_bypassed`, `report_bypassed`). The hook sees a `simctl boot` typed in a shell, not one a script
+runs inside itself (a pool script booted a simulator at 19:45 during a CRITICAL hold on 2026-10-27, and nothing
+recorded it). `guard tick` and `teyla load` take the booted simulators (a `launchd_sim` process each; the boot time is
+the snapshot time minus its etime) and look for an admitted `sim` decision in the 5 minutes before the boot (each
+admission covers one boot). A simulator with none is "booted without the guard": the tick logs one decision row for it
+(kind `sim`, decision `bypassed`, once per UDID per boot) and `teyla load` names it. `bypassed` rows are neither
+admitted nor refused: `decision_summary` counts them on their own, and the hold ignores them.
 
 Replay (`replay`). `teyla load --replay [--days N]` runs `assess` and `decide` over `load.tsv` with the same
 history the live guard has (levels recomputed, not the recorded ones) and prints, per day, how many samples come
@@ -77,6 +105,9 @@ estimate for tuning thresholds, not a reconstruction.
 from __future__ import annotations
 
 import dataclasses
+import contextlib
+import ctypes
+import ctypes.util
 import datetime as dt
 import fcntl
 import json
@@ -148,6 +179,7 @@ class Vm:
 class Procs:
     sims: int = 0
     sim_udids: list = dataclasses.field(default_factory=list)
+    sim_boots: list = dataclasses.field(default_factory=list)     # [[UDID (or "pid N"), seconds since it booted]]
     drivers: list = dataclasses.field(default_factory=list)       # [Driver]; builds = len(drivers)
     compilers: int = 0
     compiler_rss_bytes: int = 0
@@ -542,10 +574,15 @@ def classify(rows: list[Row]) -> Procs:
         if r.exe.startswith("com.apple.Virtualization") or p.startswith("qemu-system"):
             out.vms.append(Vm(r.pid, r.exe if r.exe.startswith("com.apple.") else p, r.rss_bytes))
     out.sims = len(sims)
+    boots: dict[str, int] = {}
     for r in sims:
         m = _UDID.search(r.command)
         if m and m.group(1).upper() not in out.sim_udids:
             out.sim_udids.append(m.group(1).upper())
+        if r.etime_s is not None:
+            label = m.group(1).upper() if m else f"pid {r.pid}"
+            boots[label] = max(boots.get(label, 0), r.etime_s)
+    out.sim_boots = [[u, age] for u, age in boots.items()]
     pids = {r.pid for r, _ in drivers}
     out.drivers = [Driver(r.pid, k, r.rss_bytes, r.etime_s) for r, k in drivers if r.ppid not in pids or r.ppid == r.pid]
     for name, rs in harness.items():
@@ -559,6 +596,76 @@ def classify(rows: list[Row]) -> Procs:
 # --- the snapshot --------------------------------------------------------------------------------
 
 Runner = Callable[..., "tuple[int, str]"]
+Footprints = Callable[[list], "dict[int, int]"]     # pids -> physical footprint bytes, for the pids it could read
+
+RUSAGE_INFO_V2 = 2
+
+
+class RusageInfoV2(ctypes.Structure):
+    """`struct rusage_info_v2` from <sys/resource.h>, field for field: a 16-byte uuid, then 18 uint64 (160 bytes).
+    The kernel writes the whole struct, so the buffer must be exactly this, never a hand-counted size."""
+    _fields_ = [("ri_uuid", ctypes.c_uint8 * 16)] + [(name, ctypes.c_uint64) for name in (
+        "ri_user_time", "ri_system_time", "ri_pkg_idle_wkups", "ri_interrupt_wkups", "ri_pageins",
+        "ri_wired_size", "ri_resident_size", "ri_phys_footprint", "ri_proc_start_abstime",
+        "ri_proc_exit_abstime", "ri_child_user_time", "ri_child_system_time", "ri_child_pkg_idle_wkups",
+        "ri_child_interrupt_wkups", "ri_child_pageins", "ri_child_elapsed_abstime", "ri_diskio_bytesread",
+        "ri_diskio_byteswritten")]
+
+_proc_pid_rusage = None           # the libSystem function, resolved once; False when this system has none
+
+
+def _rusage_fn():
+    global _proc_pid_rusage
+    if _proc_pid_rusage is None:
+        _proc_pid_rusage = False
+        if sys.platform == "darwin":
+            try:
+                lib = ctypes.CDLL(ctypes.util.find_library("System") or "/usr/lib/libSystem.B.dylib", use_errno=True)
+                fn = lib.proc_pid_rusage
+                fn.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_void_p]
+                fn.restype = ctypes.c_int
+                _proc_pid_rusage = fn
+            except (OSError, AttributeError):
+                pass
+    return _proc_pid_rusage
+
+
+def native_footprints(pids: list) -> dict:
+    """`ri_phys_footprint` of each pid, one `proc_pid_rusage(pid, RUSAGE_INFO_V2)` call each. A pid the kernel
+    refuses (another user's process, one that exited since `ps`) is left out, and so is everything on a system
+    without the call: the caller keeps the RSS for those. Never raises."""
+    fn = _rusage_fn()
+    if not fn:
+        return {}
+    out: dict[int, int] = {}
+    info = RusageInfoV2()
+    for pid in pids:
+        try:
+            if fn(pid, RUSAGE_INFO_V2, ctypes.byref(info)) == 0:
+                size = int(info.ri_phys_footprint)
+                if size > 0:
+                    out[pid] = size
+        except Exception:  # noqa: BLE001 — a failing call is "unknown", never a reason to stop the snapshot
+            continue
+    return out
+
+
+def default_footprints(pids: list) -> dict:
+    """What `snapshot` uses when no provider is passed; the test suite replaces this one, never `native_footprints`."""
+    return native_footprints(pids)
+
+
+def with_footprints(rows: list, provider: Footprints | None = None) -> list:
+    """Pure but for the provider: `rows` with `rss_bytes` set to the footprint the provider knows, RSS otherwise.
+    A provider that fails or answers nonsense leaves every row as it was."""
+    try:
+        known = (provider or default_footprints)([r.pid for r in rows])
+    except Exception:  # noqa: BLE001
+        return rows
+    if not isinstance(known, dict) or not known:
+        return rows
+    return [dataclasses.replace(r, rss_bytes=known[r.pid]) if isinstance(known.get(r.pid), int) and known[r.pid] > 0 else r
+            for r in rows]
 
 
 def disk_free() -> int | None:
@@ -569,14 +676,17 @@ def disk_free() -> int | None:
         return None
 
 
-def snapshot(run: Runner = run_command, now: dt.datetime | None = None, vm: bool = True) -> Snapshot | None:
-    """One `sysctl`, one `ps` and (`vm`) one `vm_stat`. None when `ps` could not answer (the processes
+def snapshot(run: Runner = run_command, now: dt.datetime | None = None, vm: bool = True,
+             footprints: Footprints | None = None) -> Snapshot | None:
+    """One `sysctl`, one `ps`, (`vm`) one `vm_stat`, and the physical footprint of every process (`footprints`,
+    default `native_footprints`; RSS where it cannot be read). None when `ps` could not answer (the processes
     are then unknown, not zero); an unreadable sysctl or vm_stat only leaves those fields None."""
     when = now or dt.datetime.now().astimezone()
     rc, out = run(["ps", "-Ao", PS_FORMAT], 15)
     rows = parse_ps(out) if rc == 0 else []
     if not rows:
         return None
+    rows = with_footprints(rows, footprints)
     _, sysout = run(["sysctl", "-n", *SYSCTL_KEYS], 5)
     s = parse_sysctl(sysout or "")
     swapouts = pageouts = None
@@ -592,10 +702,10 @@ def snapshot(run: Runner = run_command, now: dt.datetime | None = None, vm: bool
                     swapout_bytes=swapouts, pageout_bytes=pageouts, procs=classify(rows))
 
 
-def safe_snapshot(run: Runner = run_command) -> Snapshot | None:
+def safe_snapshot(run: Runner = run_command, footprints: Footprints | None = None) -> Snapshot | None:
     """`snapshot`, with any failure of the guard's own code read as "unknown"."""
     try:
-        return snapshot(run)
+        return snapshot(run, footprints=footprints)
     except Exception:  # noqa: BLE001 — the guard must never block work because of its own bug
         return None
 
@@ -787,7 +897,7 @@ def compute_trend(history: list[dict], snap: Snapshot, conf: dict | None = None,
     t.hold_s = _num(conf, "hold_min") * 60
     if t.hold_s > 0:
         bad = [(h["ts"], h["level"]) for h in history if h.get("level") in BAD]
-        bad += [(d["ts"], d["verdict"]) for d in decisions if d.get("verdict") in BAD]
+        bad += [(d["ts"], d["verdict"]) for d in decisions if d.get("verdict") in BAD and d.get("decision") != "bypassed"]
         bad = [b for b in bad if now - t.hold_s <= b[0] <= now]
         if bad:
             ts, level = max(bad)
@@ -827,6 +937,94 @@ def current_trend(snap: Snapshot, conf: dict | None = None, records: pathlib.Pat
         return None
 
 
+# --- the lease: one heavy admission at a time -------------------------------------------------------
+
+HEAVY = ("sim", "build")        # the kinds that take a lease and wait for one
+LEASE_NAME = "guard-lease.json"
+LOCK_NAME = "guard.lock"
+LOCK_WAIT_S = 2.0               # a lock held longer than this is ignored: the guard fails open
+
+
+@dataclasses.dataclass
+class Lease:
+    kind: str                   # "sim" | "build"
+    ts: float                   # epoch seconds of the snapshot the admission was decided on
+    cwd: str = ""
+
+
+def _home() -> pathlib.Path:
+    from .corrections import teyla_home
+    return teyla_home()
+
+
+def lease_path() -> pathlib.Path:
+    return _home() / LEASE_NAME
+
+
+def lock_path() -> pathlib.Path:
+    return _home() / LOCK_NAME
+
+
+def read_lease(path: pathlib.Path | None = None) -> Lease | None:
+    """The last lease, or None when there is none or the file is unreadable."""
+    try:
+        d = json.loads(pathlib.Path(path or lease_path()).read_text())
+        ts = d["ts"]
+        if d["kind"] not in HEAVY or isinstance(ts, bool) or not isinstance(ts, (int, float)):
+            return None
+        return Lease(d["kind"], float(ts), str(d.get("cwd") or ""))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def write_lease(lease: Lease, path: pathlib.Path | None = None) -> None:
+    """Atomic (temp file + rename). Never raises: a lease that cannot be written is no lease."""
+    path = pathlib.Path(path or lease_path())
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps({"kind": lease.kind, "ts": lease.ts, "cwd": lease.cwd}))
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+@contextlib.contextmanager
+def guard_lock(path: pathlib.Path | None = None, timeout_s: float = LOCK_WAIT_S):
+    """An exclusive `flock` on the guard's lock file, so reading the lease, deciding and writing the lease are
+    one step across processes. Waits up to `timeout_s`, then goes on without the lock (fail open); the lock goes
+    with the process if it dies."""
+    fd = None
+    try:
+        p = pathlib.Path(path or lock_path())
+        p.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(p, os.O_RDWR | os.O_CREAT, 0o600)
+        end = None
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                end = time.monotonic() + timeout_s if end is None else end
+                if time.monotonic() >= end:
+                    break
+                time.sleep(0.02)
+    except OSError:
+        pass
+    try:
+        yield
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)                    # closing the descriptor drops the flock
+            except OSError:
+                pass
+
+
+def settle_s(conf: dict | None) -> float:
+    return max(0.0, float(_num(conf, "settle_s")))
+
+
 # --- admission --------------------------------------------------------------------------------------
 
 @dataclasses.dataclass
@@ -837,13 +1035,16 @@ class Decision:
     reason: str = ""                                              # one line, for the log
 
 
-def decide(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | None = None) -> Decision:
+def decide(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | None = None,
+           lease: Lease | None = None, cwd: str = "") -> Decision:
     """The admission decision for `kind`, with the verdict it was made under and a one-line reason.
 
     CRITICAL refuses every kind. A new simulator or build is also refused, whatever the count, while the
     machine is WORSENING and for `guard.hold_min` minutes after the last CRITICAL or WORSENING sample (the
     hold: the alert flapped four times in 30 minutes on 2026-10-18 and a simulator and a second build were
-    admitted in the gaps). Running work is never touched. Lanes are agent sessions, not memory hogs: only
+    admitted in the gaps). A new simulator or build is also refused while `lease`, the last one let in, is younger
+    than `guard.settle_s`, unless it was let in from the same `cwd`: a build and then its tests in one worktree are
+    one job, and the herd is different worktrees starting together. Running work is never touched. Lanes are agent sessions, not memory hogs: only
     CRITICAL stops them."""
     verdict = assess(snap, conf, trend)
     p = snap.procs
@@ -859,6 +1060,16 @@ def decide(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | N
         why.append(f"held after {trend.held_level} {int(trend.held_ago_s // 60)} min ago: new simulators and builds wait"
                    f" until {_num(conf, 'hold_min'):g} min pass without it ({math.ceil(left / 60)} min left)")
         waiting = True
+    same_job = bool(cwd) and lease is not None and lease.cwd == cwd
+    if kind in HEAVY and lease is not None and lease.kind in HEAVY and settle_s(conf) > 0 and not same_job:
+        # A lease up to settle_s newer than this snapshot was taken by a decider that got the lock first with a
+        # fresher reading: it holds too. One further ahead than that is a broken clock, and is ignored.
+        age = max(0.0, snap_ts(snap) - lease.ts) if lease.ts - snap_ts(snap) < settle_s(conf) else None
+        if age is not None and age < settle_s(conf):
+            what = "a simulator" if lease.kind == "sim" else "a build"
+            why.append(f"{what} was let in {int(age)} s ago; waiting for it to settle"
+                       f" ({math.ceil(settle_s(conf) - age)} s left of {settle_s(conf):g})")
+            waiting = True
     cap = _num(conf, {"build": "max_builds", "sim": "max_sims", "lane": "max_lanes"}.get(kind, ""))
     if kind == "build" and cap > 0 and p.builds >= cap:
         why.append(f"{p.builds} builds already run (max {cap:g})")
@@ -888,9 +1099,29 @@ def decide(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | N
     return Decision(False, "\n".join(lines), verdict.level, "; ".join(why))
 
 
+def decide_leased(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | None = None,
+                  lease_file: pathlib.Path | None = None, lock_file: pathlib.Path | None = None,
+                  cwd: str | None = None) -> Decision:
+    """`decide`, then (a `sim` or a `build` that was let in, `guard.settle_s` > 0) the lease write, all under the
+    guard lock: two processes that decide at the same moment are serialised, the first takes the lease and the
+    second reads it. This is what `--admit` and `--wait` call."""
+    if kind not in HEAVY or settle_s(conf) <= 0:
+        return decide(kind, snap, conf, trend)
+    if cwd is None:
+        try:
+            cwd = os.getcwd()
+        except OSError:
+            cwd = ""
+    with guard_lock(lock_file):
+        d = decide(kind, snap, conf, trend, read_lease(lease_file), cwd)
+        if d.allowed:
+            write_lease(Lease(kind, snap_ts(snap), cwd), lease_file)
+        return d
+
+
 def admit(kind: str, snap: Snapshot, conf: dict | None = None) -> tuple[bool, str]:
     """(allowed, message). The message is empty when allowed; when refused it is for an AI agent:
-    why, with the numbers, then what to do instead."""
+    why, with the numbers, then what to do instead. A pure check: it neither reads nor writes a lease."""
     d = decide(kind, snap, conf)
     return d.allowed, d.message
 
@@ -917,7 +1148,7 @@ def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, po
         if snap is None:
             log_decision(kind, "unknown", True, "snapshot failed: let through", via="wait")
             return 0
-        d = decide(kind, snap, conf, trend_fn(snap))
+        d = decide_leased(kind, snap, conf, trend_fn(snap))
         now = clock()
         elapsed = now - start
         if d.allowed:
@@ -1118,8 +1349,9 @@ def harness_name(env: dict | None = None) -> str:
 
 
 def log_decision(kind: str, level: str, allowed: bool, reason: str, via: str = "admit",
-                 path: pathlib.Path | None = None, now: dt.datetime | None = None) -> None:
-    """Append one decision to `~/.teyla/guard-decisions.tsv`. Never raises: the log must not block work."""
+                 path: pathlib.Path | None = None, now: dt.datetime | None = None, decision: str | None = None) -> None:
+    """Append one decision to `~/.teyla/guard-decisions.tsv`. `decision` overrides admitted / refused (the
+    tick writes `bypassed`). Never raises: the log must not block work."""
     try:
         when = now or dt.datetime.now().astimezone()
         reason = f"wait: {reason}" if via == "wait" and reason else "wait" if via == "wait" else reason
@@ -1127,7 +1359,7 @@ def log_decision(kind: str, level: str, allowed: bool, reason: str, via: str = "
             cwd = os.getcwd()
         except OSError:
             cwd = ""
-        fields = [when.isoformat(timespec="seconds"), kind, level, "admitted" if allowed else "refused", reason, cwd,
+        fields = [when.isoformat(timespec="seconds"), kind, level, decision or ("admitted" if allowed else "refused"), reason, cwd,
                   harness_name()]
         _append(pathlib.Path(path) if path else decisions_path(), DECISION_COLUMNS,
                 [_FIELD_UNSAFE.sub(" ", f) for f in fields], DECISIONS_MAX_BYTES)
@@ -1160,18 +1392,81 @@ def read_decisions(since=None, path: pathlib.Path | None = None, tail: bool = Fa
 
 def decision_summary(now: float | None = None, window_s: int = DECISION_WINDOW_S,
                      path: pathlib.Path | None = None) -> str:
-    """"guard, last hour: 5 admitted, 2 refused (sim 1, build 1)"; "" when nothing was decided."""
+    """"guard, last hour: 5 admitted, 2 refused (sim 1, build 1)"; "" when nothing was decided. Simulators the
+    tick found booted without the guard (`bypassed` rows) are counted apart: "..., 1 bypassed"."""
     now = time.time() if now is None else now
     rows = read_decisions(since=now - window_s, path=path)
     if not rows:
         return ""
     refused = [r for r in rows if r["decision"] == "refused"]
+    admitted = [r for r in rows if r["decision"] == "admitted"]
+    bypassed = [r for r in rows if r["decision"] == "bypassed"]
     by_kind: dict[str, int] = {}
     for r in refused:
         by_kind[r["kind"]] = by_kind.get(r["kind"], 0) + 1
     detail = " (" + ", ".join(f"{k} {n}" for k, n in sorted(by_kind.items())) + ")" if by_kind else ""
     span = "last hour" if window_s == 3600 else f"last {window_s // 60} min"
-    return f"guard, {span}: {len(rows) - len(refused)} admitted, {len(refused)} refused{detail}"
+    skipped = f", {len(bypassed)} bypassed" if bypassed else ""
+    return f"guard, {span}: {len(admitted)} admitted, {len(refused)} refused{detail}{skipped}"
+
+
+# --- simulators booted without the guard ---------------------------------------------------------------------
+
+BYPASS_WINDOW_S = 300        # an admitted `sim` decision this long before the boot covers it
+BOOT_SLACK_S = 10            # ... or this long after (the boot time comes from a whole-second etime)
+
+
+def find_bypassed(snap: Snapshot, decisions: list[dict]) -> list[dict]:
+    """Pure. The booted simulators that no admitted `sim` decision in `decisions` covers: one dict each with
+    `udid`, `boot_ts` (epoch) and `boot` (ISO). A simulator is covered by an admitted `sim` decision in the
+    5 minutes before its boot, and each admission covers one boot. A simulator that booted before the log's oldest row cannot be judged (the log
+    keeps only its newest half) and is left out; so is one whose uptime `ps` did not give."""
+    boots = snap.procs.sim_boots
+    if not boots:
+        return []
+    now = snap_ts(snap)
+    admitted = sorted(d["ts"] for d in decisions if d.get("kind") == "sim" and d.get("decision") == "admitted")
+    # The log's oldest row bounds what can be judged; `bypassed` rows are the tick's own findings, not history.
+    first = min((d["ts"] for d in decisions if d.get("decision") != "bypassed"), default=None)
+    out = []
+    for udid, age in sorted(boots, key=lambda b: -b[1]):     # oldest boot first
+        boot_ts = now - age
+        if first is not None and boot_ts - BYPASS_WINDOW_S < first:
+            continue
+        # One admission covers one boot: the earliest unused one in the window is used up.
+        cover = next((t for t in admitted if boot_ts - BYPASS_WINDOW_S <= t <= boot_ts + BOOT_SLACK_S), None)
+        if cover is not None:
+            admitted.remove(cover)
+            continue
+        out.append({"udid": udid, "boot_ts": boot_ts,
+                    "boot": dt.datetime.fromtimestamp(boot_ts).astimezone().isoformat(timespec="seconds")})
+    return out
+
+
+def report_bypassed(snap: Snapshot, level: str = "unknown", log: bool = True, path: pathlib.Path | None = None) -> tuple[list[dict], list[dict]]:
+    """(all bypassed simulators, the ones not logged yet). With `log`, one `bypassed` decision row goes to the
+    decision log for each new one, once per UDID per boot (a row from this boot, found by UDID, counts as logged).
+    Never raises; ([], []) when anything fails."""
+    try:
+        if not snap.procs.sim_boots:
+            return [], []
+        rows = read_decisions(path=path)
+        found = find_bypassed(snap, rows)
+        logged = [d for d in rows if d.get("kind") == "sim" and d.get("decision") == "bypassed"]
+        new = [b for b in found if not any(b["udid"] in d["reason"] and d["ts"] >= b["boot_ts"] - 5 for d in logged)]
+        if log:
+            when = dt.datetime.fromtimestamp(snap_ts(snap)).astimezone()       # the time of the snapshot that saw it
+            for b in new:
+                log_decision("sim", level, False, f"UDID {b['udid']} booted {b['boot']} without an admitted sim decision"
+                             f" in the {BYPASS_WINDOW_S // 60} min before it", via="tick", path=path, now=when, decision="bypassed")
+        return found, new
+    except Exception:  # noqa: BLE001 — a report must never break the tick or the command
+        return [], []
+
+
+def bypass_line(found: list[dict]) -> str:
+    n = len(found)
+    return f"{n} simulator{'s' if n != 1 else ''} booted without the guard ({', '.join(b['udid'] for b in found)})"
 
 
 # --- replay ------------------------------------------------------------------------------------------------
@@ -1329,7 +1624,8 @@ def trend_lines(trend: Trend | None, conf: dict | None = None) -> list[str]:
     return out
 
 
-def render(snap: Snapshot, verdict: Verdict, trend: Trend | None = None, conf: dict | None = None) -> str:
+def render(snap: Snapshot, verdict: Verdict, trend: Trend | None = None, conf: dict | None = None,
+           bypassed: list | None = None) -> str:
     p = snap.procs
     lines = [verdict.line()]
     mem = [f"{gb(snap.ram_bytes)} RAM"]
@@ -1348,6 +1644,8 @@ def render(snap: Snapshot, verdict: Verdict, trend: Trend | None = None, conf: d
     if snap.load1 is not None:
         lines.append(f"cpu: load {snap.load1:.1f} / {snap.load5:.1f} / {snap.load15:.1f} on {snap.ncpu or '?'} cores")
     lines.append(f"sims: {p.sims} booted" + (f" ({', '.join(u[:8] for u in p.sim_udids)})" if p.sim_udids else ""))
+    if bypassed:
+        lines.append("sims: " + bypass_line(bypassed))
     drivers = ", ".join(f"{d.kind}{_mins(d.etime_s)}" for d in p.drivers)
     lines.append(f"builds: {p.builds} running" + (f" ({drivers})" if drivers else "")
                  + f"; compilers {p.compilers} ({gb(p.compiler_rss_bytes)})")
@@ -1387,7 +1685,7 @@ def cmd_load(args, run: Runner = run_command) -> int:
         if snap is None:
             log_decision(args.admit, "unknown", True, "snapshot failed: let through")
             return 0
-        d = decide(args.admit, snap, conf, current_trend(snap, conf))
+        d = decide_leased(args.admit, snap, conf, current_trend(snap, conf))
         log_decision(args.admit, d.level, d.allowed, d.reason)
         if not d.allowed:
             print(d.message)
@@ -1408,13 +1706,14 @@ def cmd_load(args, run: Runner = run_command) -> int:
             record(snap, verdict)
         except OSError as e:
             print(f"teyla load: could not record: {e}", file=sys.stderr)
+    bypassed, _ = report_bypassed(snap, verdict.level, log=False)
     if args.json:
         print(json.dumps({"snapshot": snap.to_json(), "verdict": verdict.to_json(),
-                          "trend": trend.to_json() if trend else None}, indent=1))
+                          "trend": trend.to_json() if trend else None, "bypassed": bypassed}, indent=1))
         return 0
     if args.quiet:
         return 0
-    print(render(snap, verdict, trend, conf))
+    print(render(snap, verdict, trend, conf, bypassed))
     recent = decision_summary()
     if recent:
         print(recent)

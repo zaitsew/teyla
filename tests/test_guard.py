@@ -7,6 +7,7 @@ process table, sends a signal or notifies.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import os
 import time
 
@@ -151,6 +152,35 @@ def test_tick_makes_no_simctl_or_lsof_call(m):
     m.run = lambda cmd, timeout=60: seen.append(cmd[0]) or base(cmd, timeout)
     tick(m)
     assert set(seen) == {"ps", "sysctl", "vm_stat"}
+
+
+# --- simulators booted without the guard -----------------------------------------------------------
+
+UDID = "739ACE86-D869-4278-A1BA-612044100EBA"
+
+
+def test_tick_logs_a_bypassed_simulator_once_and_says_so_once(m, clock):
+    m.add(40, f"launchd_sim /x/Devices/{UDID}/data/var/run/launchd_bootstrap.plist", started_s_ago=120)
+    load.log_decision("sim", "OK", True, "", now=dt.datetime.fromtimestamp(clock.t - 3600).astimezone())   # the log reaches back
+    res = tick(m)
+    assert res["lines"] == [f"1 simulator booted without the guard ({UDID})"]
+    assert [b["udid"] for b in res["bypassed"]] == [UDID]
+    byp = [r for r in load.read_decisions() if r["decision"] == "bypassed"]
+    assert len(byp) == 1 and byp[0]["kind"] == "sim" and UDID in byp[0]["reason"]
+    clock.advance(1)
+    res = tick(m)
+    assert res["lines"] == [] and len(res["bypassed"]) == 1                    # still bypassed, already logged
+    assert len([r for r in load.read_decisions() if r["decision"] == "bypassed"]) == 1
+
+
+def test_tick_does_not_flag_a_simulator_the_hook_admitted_and_dry_logs_nothing(m, clock):
+    m.add(40, f"launchd_sim /x/Devices/{UDID}/data", started_s_ago=900)
+    load.log_decision("sim", "OK", True, "", now=dt.datetime.fromtimestamp(clock.t - 950).astimezone())
+    assert tick(m)["bypassed"] == []
+    m.add(41, "launchd_sim /x/Devices/B3C0CC25-8299-478F-84E6-1CA573D22842/data", started_s_ago=30)
+    res = tick(m, dry=True)
+    assert [b["udid"][:8] for b in res["bypassed"]] == ["B3C0CC25"] and "without the guard" in res["lines"][-1]
+    assert [r for r in load.read_decisions() if r["decision"] == "bypassed"] == []
 
 
 # --- the alert file -----------------------------------------------------------------------------------------

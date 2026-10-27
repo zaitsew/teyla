@@ -14,7 +14,7 @@
 
 2. Alert (`guard.alert`, default true). While the verdict is CRITICAL, `~/.teyla/load.alert` holds one
    line for the next session to read ("machine CRITICAL since 20:21 — swap 11.7 GB = 45% of RAM; ...
-   Do not start builds or boot simulators; run teyla load.") and the three apps holding the most RSS.
+   Do not start builds or boot simulators; run teyla load.") and the three apps holding the most memory (physical footprint, not RSS).
    The "since" time survives consecutive CRITICAL ticks (`~/.teyla/state/guard-alert.json`). The file goes
    away after three consecutive ticks that are not CRITICAL, so a verdict that flaps does not flap the
    file. Entering CRITICAL posts one macOS notification, at most one per 30 minutes; not in safe mode, not
@@ -31,7 +31,13 @@
    current user's Gradle/Kotlin daemons are ever touched. A daemon an IDE keeps for itself is reaped too
    once idle; the IDE starts a new one on its next build. `--dry` reports and changes nothing at all.
 
-4. Disk (`guard.disk_sweep`, default true). Under `[storage] sweep_urgent_free_gb` (20) free, the tick runs
+4. Bypass. Booted simulators (a `launchd_sim` process each) that no admitted `sim` decision in
+   `guard-decisions.tsv` covers in the 5 minutes before their boot were started without the admission
+   hook (a script that runs `simctl boot` inside itself). The tick logs one `bypassed` decision row per UDID
+   per boot and prints "N simulators booted without the guard (UDID...)"; `teyla load` shows the same line.
+   The row is a record, not a refusal: the simulator keeps running.
+
+5. Disk (`guard.disk_sweep`, default true). Under `[storage] sweep_urgent_free_gb` (20) free, the tick runs
    `storage sweep --temp` itself, at most once per `DISK_SWEEP_EVERY_S` (15 min): the hourly sweep agent
    alone let a disk go from 16 GB to 1 GB free in one morning (2026-10-11). Under that threshold the sweep
    already uses its urgent ages (temp build output idle 2 h). At most once per `DISK_FULL_SWEEP_EVERY_S`
@@ -91,7 +97,7 @@ _THRESHOLD = re.compile(r"\s*\((?:critical|warn) ≥ [^)]*\)$")
 
 
 def alert_text(snap: load.Snapshot, verdict: load.Verdict, since: float) -> str:
-    """The alert file: the one line a session reads, then the top apps by RSS."""
+    """The alert file: the one line a session reads, then the top apps by footprint."""
     reasons = [_THRESHOLD.sub("", r) for r in verdict.reasons[:MAX_REASONS]]
     when = dt.datetime.fromtimestamp(since).strftime("%H:%M")
     first = (f"machine CRITICAL since {when} — " + "; ".join(reasons)
@@ -377,7 +383,7 @@ def tick(conf: dict | None = None, env: Env | None = None, dry: bool = False) ->
     Raises only what the runners raise; `cmd_tick` swallows everything."""
     conf = conf if conf is not None else load.guard_conf()
     env = env or Env()
-    res: dict = {"verdict": None, "lines": [], "snapshot": None, "trend": None}
+    res: dict = {"verdict": None, "lines": [], "snapshot": None, "trend": None, "bypassed": []}
     if not load.enabled(conf):
         return res
     now = env.now()
@@ -393,6 +399,10 @@ def tick(conf: dict | None = None, env: Env | None = None, dry: bool = False) ->
     else:
         load.record(snap, verdict)
         res["lines"] += update_alert(snap, verdict, conf, env)
+    found, new = load.report_bypassed(snap, verdict.level, log=not dry)
+    res["bypassed"] = found
+    if new:
+        res["lines"].append(load.bypass_line(new))
     if idle_limit_min(conf) > 0:
         res["lines"] += reap(idle_daemons(snap, conf, now, record=not dry), env, dry=dry)
     res["lines"] += disk_sweep(snap, conf, now, dry=dry)

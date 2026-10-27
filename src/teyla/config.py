@@ -99,6 +99,9 @@
     load_warn_per_core = 4.0       one-minute load average per core: BUSY at or above
     load_crit_per_core = 10.0      ... CRITICAL at or above
     wait_timeout_s = 900           `teyla load --wait` gives up (exit 3) after this long
+    settle_s = 180                 after a simulator or build is let in, the next one waits this long (0 = off):
+                                   a job just admitted does not show in the counts yet. Lanes, and the
+                                   worktree that took the lease, are not held
     agent = false                  true: `teyla routine install` writes the launchd agent com.zaitsew.teyla.load
                                    (every 60 s, `teyla guard tick --quiet`): records a row in ~/.teyla/load.tsv,
                                    keeps the alert file, stops idle Gradle/Kotlin daemons
@@ -198,6 +201,8 @@ DEFAULTS = {
               "swap_crit_pct": 40, "swapout_mb_s": 20, "swap_grow_gb_30m": 4,
               "trend_window_min": 15, "hold_min": 10, "compressor_warn_pct": 30, "compressor_crit_pct": 45,
               "load_warn_per_core": 4.0, "load_crit_per_core": 10.0, "wait_timeout_s": 900,
+              # a sim or build let in blocks the next one for this long, until its processes show in the counts
+              "settle_s": 180,
               # `teyla guard tick`: the launchd recorder agent (opt-in), the idle-daemon reaper, the alert file.
               "agent": False, "gradle_idle_min": 30, "alert": True,
               # Free disk on the home volume. APFS swap shares the container: a full disk leaves swap no
