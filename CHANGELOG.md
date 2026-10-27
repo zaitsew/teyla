@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.33.1 — 2026-10-27 — The settle lease knows which worktree a command runs in
 
 - **The settle lease knows which worktree a command runs in.** 0.33.0 compared the hook's own directory, so two
   sessions that start in one directory and run `cd /worktree-a && xcodebuild` and `cd /worktree-b && xcodebuild`
