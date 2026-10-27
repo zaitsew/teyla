@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — The guard measures footprint, admits one heavy job at a time and sees simulators it did not admit
+## 0.33.0 — 2026-10-27 — The guard measures footprint, admits one heavy job at a time and sees simulators it did not admit
 
 - **The guard counts physical footprint, not RSS.** RSS counts a shared page in every process that maps it, and misses
   what a process keeps compressed or in a VM. On 2026-10-27 two iOS simulators (454 processes) showed 18.4 GB of RSS, one
