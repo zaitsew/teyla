@@ -1308,9 +1308,8 @@ def test_the_lease_records_kind_epoch_and_cwd_and_a_bad_file_reads_as_none(tmp_p
     assert load.read_lease(tmp_path / "missing.json") is None
 
 
-def test_the_lock_serialises_two_processes_and_fails_open_when_it_is_held_too_long(tmp_path):
+def test_the_lock_serialises_two_deciders_and_fails_open_when_it_is_held_too_long(tmp_path):
     import fcntl
-    import multiprocessing as mp
     kf = tmp_path / "lock"
     held = os.open(kf, os.O_RDWR | os.O_CREAT)
     fcntl.flock(held, fcntl.LOCK_EX)
@@ -1320,23 +1319,22 @@ def test_the_lock_serialises_two_processes_and_fails_open_when_it_is_held_too_lo
     assert 0.15 <= waited < 2
     fcntl.flock(held, fcntl.LOCK_UN)
     os.close(held)
-    # two real processes decide at the same moment: exactly one is admitted
+    # two deciders (each opens its own lock descriptor, as two processes would) at the same moment: exactly one is admitted
+    import threading
     lf = tmp_path / "lease.json"
-    ctx = mp.get_context("fork")
-    q = ctx.Queue()
-    gate = ctx.Event()
+    gate, got = threading.Event(), []
 
     def worker(kind):
         gate.wait(5)
-        q.put(load.decide_leased(kind, _at(0), {}, lease_file=lf, lock_file=kf).allowed)
+        got.append(load.decide_leased(kind, _at(0), {}, lease_file=lf, lock_file=kf).allowed)
 
-    ps = [ctx.Process(target=worker, args=(k,)) for k in ("sim", "build")]
-    for p in ps:
-        p.start()
+    ts = [threading.Thread(target=worker, args=(k,)) for k in ("sim", "build")]
+    for t in ts:
+        t.start()
     gate.set()
-    for p in ps:
-        p.join(10)
-    assert sorted([q.get(timeout=5), q.get(timeout=5)]) == [False, True]
+    for t in ts:
+        t.join(10)
+    assert sorted(got) == [False, True]
 
 
 def test_an_unwritable_lease_directory_lets_the_work_through(tmp_path):
