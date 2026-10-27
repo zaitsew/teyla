@@ -9,6 +9,7 @@ import argparse
 import datetime as dt
 import json
 import math
+import ctypes
 import os
 import sys
 import time
@@ -1240,6 +1241,12 @@ def test_native_footprints_without_the_call_answers_nothing(monkeypatch):
     assert load.native_footprints([os.getpid(), 1]) == {}
 
 
+def test_the_rusage_struct_matches_the_sdk_header():
+    # <sys/resource.h>: uint8_t ri_uuid[16], then 18 uint64_t; ri_phys_footprint is the eighth counter
+    assert ctypes.sizeof(load.RusageInfoV2) == 160
+    assert load.RusageInfoV2.ri_phys_footprint.offset == 72
+
+
 @pytest.mark.skipif(sys.platform != "darwin", reason="proc_pid_rusage is a macOS call")
 def test_native_footprints_reads_this_process_without_root():
     fp = load.native_footprints([os.getpid(), 2 ** 30])           # the second pid does not exist
@@ -1267,20 +1274,34 @@ def test_a_lease_younger_than_settle_s_refuses_a_new_sim_or_build():
 
 
 def test_a_lease_from_the_future_or_of_an_unknown_kind_is_ignored():
-    assert load.decide("sim", _at(0), {}, lease=load.Lease("sim", load.snap_ts(_at(60)))).allowed
+    assert load.decide("sim", _at(0), {}, lease=load.Lease("sim", load.snap_ts(_at(600)))).allowed   # a broken clock
     assert load.decide("sim", _at(10), {}, lease=load.Lease("lane", load.snap_ts(_at(0)))).allowed
+
+
+def test_a_slower_decider_with_an_older_reading_is_held_by_a_newer_lease(tmp_path):
+    lf, kf = tmp_path / "lease.json", tmp_path / "lock"
+    assert load.decide_leased("sim", _at(20), {}, lease_file=lf, lock_file=kf, cwd="/work/tree-a").allowed
+    late = load.decide_leased("build", _at(5), {}, lease_file=lf, lock_file=kf, cwd="/work/tree-b")   # read before, locked after
+    assert not late.allowed and "a simulator was let in 0 s ago" in late.reason
 
 
 def test_two_admissions_in_a_row_second_refused_then_admitted_after_settle_s(tmp_path):
     lf, kf = tmp_path / "lease.json", tmp_path / "lock"
-    first = load.decide_leased("sim", _at(0), {}, lease_file=lf, lock_file=kf)
-    second = load.decide_leased("build", _at(7), {}, lease_file=lf, lock_file=kf)       # the herd: seven seconds later
+    first = load.decide_leased("sim", _at(0), {}, lease_file=lf, lock_file=kf, cwd="/work/tree-a")
+    second = load.decide_leased("build", _at(7), {}, lease_file=lf, lock_file=kf, cwd="/work/tree-b")  # the herd: 7 s later
     assert first.allowed and not second.allowed
     assert "a simulator was let in 7 s ago" in second.reason
     assert kf.exists()                                                                   # the lock path was used
     assert load.read_lease(lf).kind == "sim"                                             # a refusal takes no lease
-    third = load.decide_leased("build", _at(181), {}, lease_file=lf, lock_file=kf)
+    third = load.decide_leased("build", _at(181), {}, lease_file=lf, lock_file=kf, cwd="/work/tree-b")
     assert third.allowed and load.read_lease(lf).kind == "build"
+
+
+def test_the_same_worktree_is_not_held_by_its_own_lease():
+    lease = load.Lease("build", load.snap_ts(_at(0)), "/work/tree-a")
+    assert load.decide("sim", _at(30), {}, lease=lease, cwd="/work/tree-a").allowed          # its build, then its tests
+    assert not load.decide("sim", _at(30), {}, lease=lease, cwd="/work/tree-b").allowed      # another worktree waits
+    assert not load.decide("sim", _at(30), {}, lease=load.Lease("build", load.snap_ts(_at(0)), ""), cwd="").allowed
 
 
 def test_lanes_and_settle_s_zero_take_no_lease(tmp_path):
@@ -1326,7 +1347,7 @@ def test_the_lock_serialises_two_deciders_and_fails_open_when_it_is_held_too_lon
 
     def worker(kind):
         gate.wait(5)
-        got.append(load.decide_leased(kind, _at(0), {}, lease_file=lf, lock_file=kf).allowed)
+        got.append(load.decide_leased(kind, _at(0), {}, lease_file=lf, lock_file=kf, cwd=f"/work/{kind}").allowed)
 
     ts = [threading.Thread(target=worker, args=(k,)) for k in ("sim", "build")]
     for t in ts:
@@ -1344,21 +1365,27 @@ def test_an_unwritable_lease_directory_lets_the_work_through(tmp_path):
     assert d.allowed
 
 
-def test_wait_takes_the_lease_when_it_lets_a_sim_in_and_the_next_wait_has_to_wait():
+def test_wait_takes_the_lease_when_it_lets_a_sim_in_and_the_next_wait_has_to_wait(tmp_path, monkeypatch):
     clock, out, err = Clock(), Sink(), Sink()
     quiet = _at(0)
+    (tmp_path / "a").mkdir(), (tmp_path / "b").mkdir()
+    monkeypatch.chdir(tmp_path / "a")
     assert load.wait("sim", {}, 900, poll_s=15, clock=clock.now, sleeper=clock.sleep, snap_fn=lambda: quiet, out=out, err=err) == 0
     assert load.read_lease().kind == "sim"
+    monkeypatch.chdir(tmp_path / "b")                              # another worktree
     later = iter(_at(s) for s in range(7, 1000, 15))
     code = load.wait("build", {}, 900, poll_s=15, clock=clock.now, sleeper=clock.sleep, snap_fn=lambda: next(later), out=out, err=err)
     assert code == 0 and sum(clock.slept) >= 165                  # it waited out the 180 s, not just the first poll
     assert "let in 7 s ago" in err.text and load.read_lease().kind == "build"
 
 
-def test_admit_through_the_command_takes_a_lease_and_refuses_the_next_heavy_start(capsys):
+def test_admit_through_the_command_takes_a_lease_and_refuses_the_next_heavy_start(capsys, tmp_path, monkeypatch):
     quiet = Machine(sysctl_text())
     quiet.add(1, "/bin/ls")
+    (tmp_path / "a").mkdir(), (tmp_path / "b").mkdir()
+    monkeypatch.chdir(tmp_path / "a")
     assert load.cmd_load(args(admit="sim"), run=quiet.run) == 0
+    monkeypatch.chdir(tmp_path / "b")                              # another worktree
     assert load.cmd_load(args(admit="build"), run=quiet.run) == 2
     out = capsys.readouterr().out
     assert "a simulator was let in" in out and "waiting for it to settle" in out
@@ -1406,6 +1433,19 @@ def test_a_simulator_with_no_admitted_decision_in_the_five_minutes_before_is_byp
     # refused, bypassed and build decisions never cover a boot
     assert [b["udid"] for b in load.find_bypassed(s, [_row(30), _row(5, decision="refused"), _row(5, kind="build"),
                                                       _row(5, decision="bypassed")])] == [UDID_A]
+
+
+def test_one_admission_covers_one_boot():
+    s = _boots((UDID_A, 4 * 60), (UDID_B, 3 * 60))                 # booted at 19:46 and 19:47
+    assert [b["udid"] for b in load.find_bypassed(s, [_row(30), _row(5)])] == [UDID_B]   # one sim was let in, at 19:45
+    assert load.find_bypassed(s, [_row(30), _row(5), _row(4.5)]) == []
+
+
+def test_a_bypassed_row_does_not_hide_the_simulator_it_names():
+    s = _boots((UDID_A, 4 * 60))
+    rows = [_row(30), _row(3, decision="bypassed", reason=f"UDID {UDID_A} booted")]
+    assert [b["udid"] for b in load.find_bypassed(s, rows)] == [UDID_A]
+    assert [b["udid"] for b in load.find_bypassed(s, rows[1:])] == [UDID_A]   # an empty log but for the tick's own row
 
 
 def test_a_simulator_older_than_the_log_cannot_be_judged_and_an_empty_log_judges_all():

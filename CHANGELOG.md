@@ -15,7 +15,8 @@
   now write a lease (`~/.teyla/guard-lease.json`) when they let a simulator or a build in, and a new simulator or build
   is refused for `guard.settle_s` (default 180; 0 = off) seconds after it: "a simulator was let in 40 s ago; waiting for
   it to settle". Deciding and taking the lease happen under one `flock`, so two waiters polling in the same second
-  cannot both pass. Lanes are unaffected. A broken lock or lease file lets the work through.
+  cannot both pass. The same worktree is not held by its own lease: a build and then its tests are one job.
+  Lanes are unaffected. A broken lock or lease file lets the work through.
 - **Simulators the guard did not admit are reported.** A pool script boots simulators with `xcrun simctl`
   inside itself, so the hook never saw it: a simulator booted at 19:45 during a CRITICAL hold and nothing
   recorded it. Each `guard tick` now compares the booted simulators (boot time from `ps` etime) with the admitted `sim`

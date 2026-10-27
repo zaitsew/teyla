@@ -100,7 +100,8 @@
     load_crit_per_core = 10.0      ... CRITICAL at or above
     wait_timeout_s = 900           `teyla load --wait` gives up (exit 3) after this long
     settle_s = 180                 after a simulator or build is let in, the next one waits this long (0 = off):
-                                   a job just admitted does not show in the counts yet. Lanes are not held
+                                   a job just admitted does not show in the counts yet. Lanes, and the
+                                   worktree that took the lease, are not held
     agent = false                  true: `teyla routine install` writes the launchd agent com.zaitsew.teyla.load
                                    (every 60 s, `teyla guard tick --quiet`): records a row in ~/.teyla/load.tsv,
                                    keeps the alert file, stops idle Gradle/Kotlin daemons

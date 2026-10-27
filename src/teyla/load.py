@@ -599,8 +599,18 @@ Runner = Callable[..., "tuple[int, str]"]
 Footprints = Callable[[list], "dict[int, int]"]     # pids -> physical footprint bytes, for the pids it could read
 
 RUSAGE_INFO_V2 = 2
-_RUSAGE_V2_BYTES = 152            # struct rusage_info_v2: 16-byte uuid, then 17 uint64
-_FOOTPRINT_OFFSET = 72            # ri_phys_footprint: after uuid(16) + 7 counters of 8 bytes
+
+
+class RusageInfoV2(ctypes.Structure):
+    """`struct rusage_info_v2` from <sys/resource.h>, field for field: a 16-byte uuid, then 18 uint64 (160 bytes).
+    The kernel writes the whole struct, so the buffer must be exactly this, never a hand-counted size."""
+    _fields_ = [("ri_uuid", ctypes.c_uint8 * 16)] + [(name, ctypes.c_uint64) for name in (
+        "ri_user_time", "ri_system_time", "ri_pkg_idle_wkups", "ri_interrupt_wkups", "ri_pageins",
+        "ri_wired_size", "ri_resident_size", "ri_phys_footprint", "ri_proc_start_abstime",
+        "ri_proc_exit_abstime", "ri_child_user_time", "ri_child_system_time", "ri_child_pkg_idle_wkups",
+        "ri_child_interrupt_wkups", "ri_child_pageins", "ri_child_elapsed_abstime", "ri_diskio_bytesread",
+        "ri_diskio_byteswritten")]
+
 _proc_pid_rusage = None           # the libSystem function, resolved once; False when this system has none
 
 
@@ -628,11 +638,11 @@ def native_footprints(pids: list) -> dict:
     if not fn:
         return {}
     out: dict[int, int] = {}
-    buf = ctypes.create_string_buffer(_RUSAGE_V2_BYTES)
+    info = RusageInfoV2()
     for pid in pids:
         try:
-            if fn(pid, RUSAGE_INFO_V2, buf) == 0:
-                size = int.from_bytes(buf.raw[_FOOTPRINT_OFFSET:_FOOTPRINT_OFFSET + 8], sys.byteorder)
+            if fn(pid, RUSAGE_INFO_V2, ctypes.byref(info)) == 0:
+                size = int(info.ri_phys_footprint)
                 if size > 0:
                     out[pid] = size
         except Exception:  # noqa: BLE001 — a failing call is "unknown", never a reason to stop the snapshot
@@ -1026,14 +1036,15 @@ class Decision:
 
 
 def decide(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | None = None,
-           lease: Lease | None = None) -> Decision:
+           lease: Lease | None = None, cwd: str = "") -> Decision:
     """The admission decision for `kind`, with the verdict it was made under and a one-line reason.
 
     CRITICAL refuses every kind. A new simulator or build is also refused, whatever the count, while the
     machine is WORSENING and for `guard.hold_min` minutes after the last CRITICAL or WORSENING sample (the
     hold: the alert flapped four times in 30 minutes on 2026-10-18 and a simulator and a second build were
     admitted in the gaps). A new simulator or build is also refused while `lease`, the last one let in, is younger
-    than `guard.settle_s`. Running work is never touched. Lanes are agent sessions, not memory hogs: only
+    than `guard.settle_s`, unless it was let in from the same `cwd`: a build and then its tests in one worktree are
+    one job, and the herd is different worktrees starting together. Running work is never touched. Lanes are agent sessions, not memory hogs: only
     CRITICAL stops them."""
     verdict = assess(snap, conf, trend)
     p = snap.procs
@@ -1049,9 +1060,12 @@ def decide(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | N
         why.append(f"held after {trend.held_level} {int(trend.held_ago_s // 60)} min ago: new simulators and builds wait"
                    f" until {_num(conf, 'hold_min'):g} min pass without it ({math.ceil(left / 60)} min left)")
         waiting = True
-    if kind in HEAVY and lease is not None and lease.kind in HEAVY and settle_s(conf) > 0:
-        age = snap_ts(snap) - lease.ts
-        if 0 <= age < settle_s(conf):
+    same_job = bool(cwd) and lease is not None and lease.cwd == cwd
+    if kind in HEAVY and lease is not None and lease.kind in HEAVY and settle_s(conf) > 0 and not same_job:
+        # A lease up to settle_s newer than this snapshot was taken by a decider that got the lock first with a
+        # fresher reading: it holds too. One further ahead than that is a broken clock, and is ignored.
+        age = max(0.0, snap_ts(snap) - lease.ts) if lease.ts - snap_ts(snap) < settle_s(conf) else None
+        if age is not None and age < settle_s(conf):
             what = "a simulator" if lease.kind == "sim" else "a build"
             why.append(f"{what} was let in {int(age)} s ago; waiting for it to settle"
                        f" ({math.ceil(settle_s(conf) - age)} s left of {settle_s(conf):g})")
@@ -1086,19 +1100,21 @@ def decide(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | N
 
 
 def decide_leased(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | None = None,
-                  lease_file: pathlib.Path | None = None, lock_file: pathlib.Path | None = None) -> Decision:
+                  lease_file: pathlib.Path | None = None, lock_file: pathlib.Path | None = None,
+                  cwd: str | None = None) -> Decision:
     """`decide`, then (a `sim` or a `build` that was let in, `guard.settle_s` > 0) the lease write, all under the
     guard lock: two processes that decide at the same moment are serialised, the first takes the lease and the
     second reads it. This is what `--admit` and `--wait` call."""
     if kind not in HEAVY or settle_s(conf) <= 0:
         return decide(kind, snap, conf, trend)
+    if cwd is None:
+        try:
+            cwd = os.getcwd()
+        except OSError:
+            cwd = ""
     with guard_lock(lock_file):
-        d = decide(kind, snap, conf, trend, read_lease(lease_file))
+        d = decide(kind, snap, conf, trend, read_lease(lease_file), cwd)
         if d.allowed:
-            try:
-                cwd = os.getcwd()
-            except OSError:
-                cwd = ""
             write_lease(Lease(kind, snap_ts(snap), cwd), lease_file)
         return d
 
@@ -1403,20 +1419,24 @@ BOOT_SLACK_S = 10            # ... or this long after (the boot time comes from 
 def find_bypassed(snap: Snapshot, decisions: list[dict]) -> list[dict]:
     """Pure. The booted simulators that no admitted `sim` decision in `decisions` covers: one dict each with
     `udid`, `boot_ts` (epoch) and `boot` (ISO). A simulator is covered by an admitted `sim` decision in the
-    5 minutes before its boot. A simulator that booted before the log's oldest row cannot be judged (the log
+    5 minutes before its boot, and each admission covers one boot. A simulator that booted before the log's oldest row cannot be judged (the log
     keeps only its newest half) and is left out; so is one whose uptime `ps` did not give."""
     boots = snap.procs.sim_boots
     if not boots:
         return []
     now = snap_ts(snap)
-    admitted = [d["ts"] for d in decisions if d.get("kind") == "sim" and d.get("decision") == "admitted"]
-    first = min((d["ts"] for d in decisions), default=None)
+    admitted = sorted(d["ts"] for d in decisions if d.get("kind") == "sim" and d.get("decision") == "admitted")
+    # The log's oldest row bounds what can be judged; `bypassed` rows are the tick's own findings, not history.
+    first = min((d["ts"] for d in decisions if d.get("decision") != "bypassed"), default=None)
     out = []
-    for udid, age in sorted(boots, key=lambda b: -b[1]):
+    for udid, age in sorted(boots, key=lambda b: -b[1]):     # oldest boot first
         boot_ts = now - age
         if first is not None and boot_ts - BYPASS_WINDOW_S < first:
             continue
-        if any(boot_ts - BYPASS_WINDOW_S <= t <= boot_ts + BOOT_SLACK_S for t in admitted):
+        # One admission covers one boot: the earliest unused one in the window is used up.
+        cover = next((t for t in admitted if boot_ts - BYPASS_WINDOW_S <= t <= boot_ts + BOOT_SLACK_S), None)
+        if cover is not None:
+            admitted.remove(cover)
             continue
         out.append({"udid": udid, "boot_ts": boot_ts,
                     "boot": dt.datetime.fromtimestamp(boot_ts).astimezone().isoformat(timespec="seconds")})
