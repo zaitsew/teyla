@@ -14,7 +14,7 @@
 
 2. Alert (`guard.alert`, default true). While the verdict is CRITICAL, `~/.teyla/load.alert` holds one
    line for the next session to read ("machine CRITICAL since 20:21 — swap 11.7 GB = 45% of RAM; ...
-   Do not start builds or boot simulators; run teyla load.") and the three apps holding the most RSS.
+   Do not start builds or boot simulators; run teyla load.") and the three apps holding the most memory (physical footprint, not RSS).
    The "since" time survives consecutive CRITICAL ticks (`~/.teyla/state/guard-alert.json`). The file goes
    away after three consecutive ticks that are not CRITICAL, so a verdict that flaps does not flap the
    file. Entering CRITICAL posts one macOS notification, at most one per 30 minutes; not in safe mode, not
@@ -91,7 +91,7 @@ _THRESHOLD = re.compile(r"\s*\((?:critical|warn) ≥ [^)]*\)$")
 
 
 def alert_text(snap: load.Snapshot, verdict: load.Verdict, since: float) -> str:
-    """The alert file: the one line a session reads, then the top apps by RSS."""
+    """The alert file: the one line a session reads, then the top apps by footprint."""
     reasons = [_THRESHOLD.sub("", r) for r in verdict.reasons[:MAX_REASONS]]
     when = dt.datetime.fromtimestamp(since).strftime("%H:%M")
     first = (f"machine CRITICAL since {when} — " + "; ".join(reasons)

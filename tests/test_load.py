@@ -10,6 +10,7 @@ import datetime as dt
 import json
 import math
 import os
+import sys
 import time
 
 import pytest
@@ -1170,3 +1171,77 @@ def test_admit_through_the_command_refuses_during_the_hold_and_logs_the_verdict_
     assert load.cmd_load(args(admit="lane"), run=quiet.run) == 0
     row = [r for r in decisions() if r["kind"] == "sim"][0]
     assert row["decision"] == "refused" and row["reason"].startswith("held after WORSENING")
+
+
+# --- footprint instead of RSS ---------------------------------------------------------------------
+
+def _two_sims_and_a_vm() -> Machine:
+    m = Machine()
+    for i in range(3):
+        m.add(100 + i, f"{SIM_RT}/usr/libexec/backboardd", rss_kb=2 * 1024 * 1024 // 3)      # 3 x ~0.67 GB RSS, shared pages
+    m.add(200, "/System/Library/Frameworks/Virtualization.framework/Versions/A/XPCServices/"
+               "com.apple.Virtualization.VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine",
+          rss_kb=800 * 1024)
+    return m
+
+
+def test_snapshot_uses_the_footprint_where_the_provider_knows_it_and_rss_elsewhere():
+    m = _two_sims_and_a_vm()
+    seen = []
+
+    def provider(pids):
+        seen.append(list(pids))
+        return {200: int(5.05 * GIB), 100: 100 * 1024 ** 2}          # 101 and 102: unreadable, so RSS
+
+    s = load.snapshot(m.run, footprints=provider)
+    assert seen == [[100, 101, 102, 200]]
+    assert s.procs.vms[0].rss_bytes == int(5.05 * GIB)               # the VM is no longer 0.8 GB
+    assert load.gb(s.procs.vm_rss_bytes) == "5.0 GB"
+    sims = dict((n, b) for n, b in s.procs.top)["iOS 27.0 simulator"]
+    assert sims == 100 * 1024 ** 2 + 2 * (2 * 1024 * 1024 // 3) * 1024
+
+
+def test_the_top_list_and_the_alert_blame_the_footprint_not_the_rss():
+    m = Machine()
+    m.add(1, "/Applications/Big.app/Contents/MacOS/Big", rss_kb=9 * 1024 * 1024)        # 9 GB RSS, mostly shared
+    m.add(2, "/Applications/Real.app/Contents/MacOS/Real", rss_kb=1 * 1024 * 1024)
+    s = load.snapshot(m.run, footprints=lambda pids: {1: GIB, 2: 6 * GIB})
+    assert [n for n, _ in s.procs.top] == ["Real", "Big"]
+    assert s.procs.top[0][1] == 6 * GIB
+
+
+@pytest.mark.parametrize("answer", [{}, None, "nope", {1: 0}, {1: -5}, {1: "big"}])
+def test_an_empty_or_nonsense_provider_answer_keeps_every_rss(answer):
+    m = Machine()
+    m.add(1, "/Applications/Big.app/Contents/MacOS/Big", rss_kb=2048)
+    s = load.snapshot(m.run, footprints=lambda pids: answer)
+    assert s.procs.top == [["Big", 2048 * 1024]]
+
+
+def test_a_provider_that_raises_keeps_every_rss():
+    m = Machine()
+    m.add(1, "/Applications/Big.app/Contents/MacOS/Big", rss_kb=2048)
+
+    def boom(pids):
+        raise OSError("no libproc")
+
+    assert load.snapshot(m.run, footprints=boom).procs.top == [["Big", 2048 * 1024]]
+
+
+def test_the_default_provider_is_the_injectable_one(monkeypatch):
+    monkeypatch.setattr(load, "default_footprints", lambda pids: {7: 3 * GIB})
+    m = Machine()
+    m.add(7, "/Applications/Big.app/Contents/MacOS/Big", rss_kb=2048)
+    assert load.snapshot(m.run).procs.top == [["Big", 3 * GIB]]
+
+
+def test_native_footprints_without_the_call_answers_nothing(monkeypatch):
+    monkeypatch.setattr(load, "_proc_pid_rusage", False)
+    assert load.native_footprints([os.getpid(), 1]) == {}
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="proc_pid_rusage is a macOS call")
+def test_native_footprints_reads_this_process_without_root():
+    fp = load.native_footprints([os.getpid(), 2 ** 30])           # the second pid does not exist
+    assert 2 ** 30 not in fp
+    assert 1 * 1024 ** 2 < fp[os.getpid()] < 64 * GIB             # a Python process: tens of MB, never zero or garbage

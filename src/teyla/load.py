@@ -11,8 +11,8 @@ the compressor held ~12 GB, swap was 11 of 12 GB, the load average passed 500. N
 machine knew; each agent saw only its own task. This module is the foundation of a machine guard:
 other parts (an admission hook, a recorder agent, crash forensics) import it.
 
-The snapshot is cheap on purpose: ONE `sysctl` and ONE `ps` call, no `simctl`, no `lsof`
-(`snapshot()` runs in well under 150 ms). Every field that cannot be read is None, and a None
+The snapshot is cheap on purpose: ONE `sysctl` and ONE `ps` call, no `simctl`, no `lsof`, plus one
+`proc_pid_rusage` per process (`snapshot()` runs in well under 150 ms). Every field that cannot be read is None, and a None
 never triggers a verdict. `snapshot()` returns None when `ps` fails: "unknown", and the callers
 that gate work (`--admit`, `--wait`) then let the work through: the guard fails open, it must never
 block work because of its own bug.
@@ -31,7 +31,17 @@ the native `codex` it starts, `gradlew` and the JVM it starts) are one.
                 (`codex exec`, `grok -p`, `claude -p`)
     browsers    Chrome renderers, and all of Chrome
     vms         `com.apple.Virtualization.*` and `qemu-system-*`
-    top         the eight apps holding the most RSS (an app's helpers fold into the app)
+    top         the eight apps holding the most memory (an app's helpers fold into the app)
+
+Memory sizes are physical footprint, not RSS (from the release after 0.32.1). RSS counts a shared page once in every process
+that maps it: two iOS simulators (454 processes) showed 18.4 GB of RSS, one sample 40.6 GB on a 24 GB Mac,
+while the footprint `top` shows in its MEM column was 6.3 GB. RSS also misses what a process keeps compressed
+or in a VM: Docker's `com.apple.Virtualization.VirtualMachine` showed 0.8 GB of RSS and 5.05 GB of footprint
+(2026-10-27). `snapshot()` reads `ri_phys_footprint` with one `proc_pid_rusage(pid, RUSAGE_INFO_V2)` call per
+process (`native_footprints`, ctypes on libSystem; the provider is injectable). A process the call cannot read
+(another user's, a pid that exited, any non-macOS system) keeps its RSS. The fields keep their `rss_bytes`
+names and the `load.tsv` columns keep theirs (`compiler_rss_bytes`, `daemon_rss_bytes`, `chrome_rss_bytes`, ...)
+so `--replay` reads old files; their values are footprint from that release on, and rows written before it hold RSS.
 
 Verdict (`assess`). CRITICAL when memory pressure is 4, swap used >= `guard.swap_crit_pct` of RAM while pressure is >= 2, the
 one-minute load >= `guard.load_crit_per_core` x cores, or the compressor >= `guard.compressor_crit_pct`
@@ -77,6 +87,9 @@ estimate for tuning thresholds, not a reconstruction.
 from __future__ import annotations
 
 import dataclasses
+import contextlib
+import ctypes
+import ctypes.util
 import datetime as dt
 import fcntl
 import json
@@ -559,6 +572,66 @@ def classify(rows: list[Row]) -> Procs:
 # --- the snapshot --------------------------------------------------------------------------------
 
 Runner = Callable[..., "tuple[int, str]"]
+Footprints = Callable[[list], "dict[int, int]"]     # pids -> physical footprint bytes, for the pids it could read
+
+RUSAGE_INFO_V2 = 2
+_RUSAGE_V2_BYTES = 152            # struct rusage_info_v2: 16-byte uuid, then 17 uint64
+_FOOTPRINT_OFFSET = 72            # ri_phys_footprint: after uuid(16) + 7 counters of 8 bytes
+_proc_pid_rusage = None           # the libSystem function, resolved once; False when this system has none
+
+
+def _rusage_fn():
+    global _proc_pid_rusage
+    if _proc_pid_rusage is None:
+        _proc_pid_rusage = False
+        if sys.platform == "darwin":
+            try:
+                lib = ctypes.CDLL(ctypes.util.find_library("System") or "/usr/lib/libSystem.B.dylib", use_errno=True)
+                fn = lib.proc_pid_rusage
+                fn.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_void_p]
+                fn.restype = ctypes.c_int
+                _proc_pid_rusage = fn
+            except (OSError, AttributeError):
+                pass
+    return _proc_pid_rusage
+
+
+def native_footprints(pids: list) -> dict:
+    """`ri_phys_footprint` of each pid, one `proc_pid_rusage(pid, RUSAGE_INFO_V2)` call each. A pid the kernel
+    refuses (another user's process, one that exited since `ps`) is left out, and so is everything on a system
+    without the call: the caller keeps the RSS for those. Never raises."""
+    fn = _rusage_fn()
+    if not fn:
+        return {}
+    out: dict[int, int] = {}
+    buf = ctypes.create_string_buffer(_RUSAGE_V2_BYTES)
+    for pid in pids:
+        try:
+            if fn(pid, RUSAGE_INFO_V2, buf) == 0:
+                size = int.from_bytes(buf.raw[_FOOTPRINT_OFFSET:_FOOTPRINT_OFFSET + 8], sys.byteorder)
+                if size > 0:
+                    out[pid] = size
+        except Exception:  # noqa: BLE001 — a failing call is "unknown", never a reason to stop the snapshot
+            continue
+    return out
+
+
+def default_footprints(pids: list) -> dict:
+    """What `snapshot` uses when no provider is passed; the test suite replaces this one, never `native_footprints`."""
+    return native_footprints(pids)
+
+
+def with_footprints(rows: list, provider: Footprints | None = None) -> list:
+    """Pure but for the provider: `rows` with `rss_bytes` set to the footprint the provider knows, RSS otherwise.
+    A provider that fails or answers nonsense leaves every row as it was."""
+    try:
+        known = (provider or default_footprints)([r.pid for r in rows])
+    except Exception:  # noqa: BLE001
+        return rows
+    if not isinstance(known, dict) or not known:
+        return rows
+    return [dataclasses.replace(r, rss_bytes=known[r.pid]) if isinstance(known.get(r.pid), int) and known[r.pid] > 0 else r
+            for r in rows]
 
 
 def disk_free() -> int | None:
@@ -569,14 +642,17 @@ def disk_free() -> int | None:
         return None
 
 
-def snapshot(run: Runner = run_command, now: dt.datetime | None = None, vm: bool = True) -> Snapshot | None:
-    """One `sysctl`, one `ps` and (`vm`) one `vm_stat`. None when `ps` could not answer (the processes
+def snapshot(run: Runner = run_command, now: dt.datetime | None = None, vm: bool = True,
+             footprints: Footprints | None = None) -> Snapshot | None:
+    """One `sysctl`, one `ps`, (`vm`) one `vm_stat`, and the physical footprint of every process (`footprints`,
+    default `native_footprints`; RSS where it cannot be read). None when `ps` could not answer (the processes
     are then unknown, not zero); an unreadable sysctl or vm_stat only leaves those fields None."""
     when = now or dt.datetime.now().astimezone()
     rc, out = run(["ps", "-Ao", PS_FORMAT], 15)
     rows = parse_ps(out) if rc == 0 else []
     if not rows:
         return None
+    rows = with_footprints(rows, footprints)
     _, sysout = run(["sysctl", "-n", *SYSCTL_KEYS], 5)
     s = parse_sysctl(sysout or "")
     swapouts = pageouts = None
@@ -592,10 +668,10 @@ def snapshot(run: Runner = run_command, now: dt.datetime | None = None, vm: bool
                     swapout_bytes=swapouts, pageout_bytes=pageouts, procs=classify(rows))
 
 
-def safe_snapshot(run: Runner = run_command) -> Snapshot | None:
+def safe_snapshot(run: Runner = run_command, footprints: Footprints | None = None) -> Snapshot | None:
     """`snapshot`, with any failure of the guard's own code read as "unknown"."""
     try:
-        return snapshot(run)
+        return snapshot(run, footprints=footprints)
     except Exception:  # noqa: BLE001 — the guard must never block work because of its own bug
         return None
 

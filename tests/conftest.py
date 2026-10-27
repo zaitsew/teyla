@@ -16,7 +16,7 @@ import subprocess
 
 import pytest
 
-from teyla import config, net, providers, routine_install, update
+from teyla import config, load, net, providers, routine_install, update
 from teyla.control import triggers
 from teyla.adapters import claude_code, codex, cursor, grok, hermes
 
@@ -32,6 +32,13 @@ def _teyla_home_in_tmp(tmp_path_factory, monkeypatch):
     for var in ("CLAUDE_CODE_ENTRYPOINT", "HERMES_YOLO_MODE", "HERMES_ACCEPT_HOOKS", "HERMES_INTERACTIVE",
                 "HERMES_SINGLE_QUERY_SESSION"):
         monkeypatch.delenv(var, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_footprints(monkeypatch):
+    """`load.snapshot` reads each pid's footprint from the kernel; the suite's fake `ps` rows carry pids that
+    belong to real processes here. Tests that exercise the provider pass their own or call native_footprints."""
+    monkeypatch.setattr(load, "default_footprints", lambda pids: {})
 
 
 @pytest.fixture(autouse=True)

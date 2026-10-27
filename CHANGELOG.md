@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — The guard measures footprint, admits one heavy job at a time and sees simulators it did not admit
+
+- **The guard counts physical footprint, not RSS.** RSS counts a shared page in every process that maps it, and misses
+  what a process keeps compressed or in a VM. On 2026-10-27 two iOS simulators (454 processes) showed 18.4 GB of RSS, one
+  sample 40.6 GB on a 24 GB Mac, while their footprint was 6.3 GB; Docker's `com.apple.Virtualization.VirtualMachine`
+  showed 0.8 GB of RSS and 5.05 GB of footprint. So the alert and the `top` line blamed the wrong process.
+  `teyla load` now reads `ri_phys_footprint` with one `proc_pid_rusage` call per process (about 5 ms for 1,200
+  processes) and keeps the RSS for a process it cannot read (root-owned ones, other systems). The `load.tsv` column
+  names are unchanged so `--replay` still reads old files; their values are footprint from this release on.
 ## 0.32.1 — 2026-10-27 — A low disk gets the full sweep
 
 - **The guard runs the full sweep when the disk is low.** Under `sweep_urgent_free_gb` (20 GB) free, the guard ran only
