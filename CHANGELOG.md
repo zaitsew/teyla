@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **The settle lease knows which worktree a command runs in.** 0.33.0 compared the hook's own directory, so two
+  sessions that start in one directory and run `cd /worktree-a && xcodebuild` and `cd /worktree-b && xcodebuild`
+  counted as one job and passed each other's lease. The hook now passes the command's `cd`/`pushd` target as
+  `teyla load --admit KIND --cwd DIR`, and the lease keeps that directory's git worktree root, so a subdirectory of the
+  same worktree still counts as the same job. A target the hook cannot know (`cd $VAR`, `cd -`) gets no exemption.
+  `--wait` takes `--cwd` too.
+
 ## 0.33.0 — 2026-10-27 — The guard measures footprint, admits one heavy job at a time and sees simulators it did not admit
 
 - **The guard counts physical footprint, not RSS.** RSS counts a shared page in every process that maps it, and misses

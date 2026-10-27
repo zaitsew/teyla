@@ -34,6 +34,11 @@
 # Not gated: simctl list|io|launch|install|spawn|shutdown|terminate|erase|delete (they free
 # resources or use an already-booted device).
 #
+# Where. Each kind goes to `teyla load --admit KIND --cwd DIR`, DIR being the last `cd`/`pushd`
+# target before it, joined to the payload's "cwd" (else the hook's own directory); empty when the
+# hook cannot know it (`cd $VAR`, `cd -`). The settle lease does not hold the worktree that took it,
+# so this is how `cd /wt-a && xcodebuild` and `cd /wt-b && xcodebuild` from one session dir differ.
+#
 # Skipped (exit 0): TEYLA_GUARD=0; `[guard] enabled = false` in ~/.teyla/config.toml; and a kind
 # the command has already waited for: `teyla load --wait [--kind K]` (K defaults to build, as in
 # the CLI) covers K only, for the heavy words after it, so `teyla load --wait --kind build &&
@@ -121,9 +126,18 @@ kinds=$(printf '%s' "$payload" | awk '
     }
     return o
   }
+  # Where the heavy command runs: the last `cd`/`pushd` before it, joined to the session cwd. A
+  # target the hook cannot know ($VAR, a backtick, `cd -`) is UNK, printed as an empty dir.
+  function chdir(t) {
+    if (curdir == UNK) return
+    if (t == "") { curdir = "~"; return }
+    if (t ~ /[$`]/ || t == "-") { curdir = UNK; return }
+    if (t ~ /^[\/~]/) { curdir = t; return }
+    curdir = (curdir == "" ? pcwd : curdir) "/" t
+  }
   function emit(k) {
     if (k in waited) return
-    if (!(k in seen)) { seen[k] = 1; print k }
+    if (!(k in seen)) { seen[k] = 1; print k "\t" (curdir == "" ? pcwd : (curdir == UNK ? "" : curdir)) }
   }
   # Is "build" or "test" the subcommand? Looked for among the args up to a `--`, not as the
   # first non-dash token, so `bazel --output_base /tmp/x build` and `cargo --config k=v test` count.
@@ -139,7 +153,7 @@ kinds=$(printf '%s' "$payload" | awk '
     for (i = 1; i <= n; i++) classify(segs[i], depth)
   }
   # Classify one segment and emit its kind (nothing when it is not heavy).
-  function classify(seg, depth,    nt, raw, tok, m, k, p, t, b, c, a, na, i, a1, tasks, rest, hasw, kw) {
+  function classify(seg, depth,    nt, raw, tok, m, k, p, t, b, c, a, na, i, a1, tasks, rest, hasw, kw, cw) {
     nt = split(seg, raw, /[ \t]+/); m = 0
     for (k = 1; k <= nt; k++) if (raw[k] != "") tok[++m] = raw[k]
     p = 1
@@ -171,6 +185,14 @@ kinds=$(printf '%s' "$payload" | awk '
       if (a[i] == "--set" || a[i] == "--sdk" || a[i] == "-sdk") { i++; continue }
       if (a[i] ~ /^-/ || a[i] ~ /^\+/) continue
       a1 = a[i]; break
+    }
+    if (c == "cd" || c == "pushd") {
+      rest = ""
+      for (i = p + 1; i <= m; i++) rest = rest (rest == "" ? "" : " ") tok[i]
+      sub(/^-[LPe@]+[ \t]+/, "", rest)
+      if (rest ~ /^["\047]/) chdir(script_of(rest))
+      else { split(rest, cw, /[ \t]+/); chdir(cw[1]) }
+      return
     }
     # `teyla load --wait [--kind K]` (K defaults to build, as in the CLI) covers K, for what follows.
     if (c == "teyla") {
@@ -210,8 +232,24 @@ kinds=$(printf '%s' "$payload" | awk '
   }
   { all = all $0 "\n" }
   END {
+    UNK = "\001"; curdir = ""
     i = index(all, "\"command\"")
     if (!i) exit
+    # The session cwd: the "cwd" key before the command (Claude Code, Codex); else where the hook runs.
+    pcwd = ""
+    j = index(all, "\"cwd\"")
+    if (j && j < i) {
+      v = substr(all, j + 5); sub(/^[ \t\n]*:[ \t\n]*"/, "", v)
+      o = ""; nv = length(v)
+      for (q = 1; q <= nv; q++) {
+        ch = substr(v, q, 1)
+        if (ch == "\\") { o = o ch substr(v, q + 1, 1); q++ }
+        else if (ch == "\"") break
+        else o = o ch
+      }
+      pcwd = unesc(o)
+    }
+    if (pcwd == "") pcwd = ENVIRON["PWD"]
     rest = substr(all, i + 9)
     sub(/^[ \t\n]*:[ \t\n]*/, "", rest)
     if (substr(rest, 1, 1) != "\"") exit
@@ -253,8 +291,12 @@ teyla=$(command -v teyla 2>/dev/null)
 # environment that gives it away.
 [ "$mode" = "--grok" ] && export TEYLA_HARNESS=grok
 
-for kind in $kinds; do
-    out=$("$teyla" load --admit "$kind" 2>/dev/null)
+# One line per kind: "<kind><TAB><the dir the command runs in>" (empty when the hook cannot tell),
+# so a lease knows which worktree took it.
+tab=$(printf '\t')
+while IFS="$tab" read -r kind dir; do
+    [ -n "$kind" ] || continue
+    out=$("$teyla" load --admit "$kind" --cwd "$dir" 2>/dev/null)
     status=$?
     # Exit 2 is also what argparse says to an older teyla that has no --admit; only the
     # guard's own refusal, which starts with this prefix, blocks.
@@ -269,5 +311,7 @@ for kind in $kinds; do
         printf '{"decision": "deny", "reason": "%s"}\n' "$reason"
     fi
     exit 2
-done
+done <<KINDS
+$kinds
+KINDS
 exit 0

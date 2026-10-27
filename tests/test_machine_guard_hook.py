@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -73,7 +74,12 @@ class Box:
         return subprocess.run(["sh", str(script), *args], input=payload, capture_output=True, text=True, timeout=20, env=e)
 
     def called(self) -> list[str]:
-        return [l for l in self.calls.read_text().splitlines() if l]
+        """The `teyla` calls without their `--cwd DIR` (the dir has tests of its own)."""
+        return [re.sub(r" --cwd.*$", "", l) for l in self.calls.read_text().splitlines() if l]
+
+    def cwds(self) -> list[str]:
+        """The `--cwd` each call passed ("" when the hook could not tell)."""
+        return [l.split(" --cwd", 1)[1].strip() for l in self.calls.read_text().splitlines() if " --cwd" in l]
 
 
 @pytest.fixture
@@ -435,3 +441,26 @@ def test_the_screen_ignores_the_transcript_path_and_cwd_that_precede_the_command
     assert not awk.exists()
     # ... while a command that names a tool (a .swift file counts) goes on to the exact classifier
     assert box.run("cat Sources/App.swift").returncode == 0 and awk.exists()
+
+
+# --- where the work runs: the command's cd target, for the settle lease ---------------------------------
+
+@pytest.mark.parametrize("command,want", [
+    ("xcodebuild test", "{tmp}"),                                        # no cd: the session cwd
+    ("cd /w/tree-b && xcodebuild test", "/w/tree-b"),
+    ("cd ../tree-b && xcodebuild test", "{tmp}/../tree-b"),              # relative to the session cwd
+    ("cd /w/a && cd sub && swift build", "/w/a/sub"),
+    ("cd ~/w/a; xcrun simctl boot X", "~/w/a"),                          # teyla expands ~
+    ("cd $WT && xcodebuild test", ""),                                   # unknown: no lease exemption
+    ("cd - && xcodebuild test", ""),
+    ('cd "/w/my tree" && xcodebuild test', "/w/my tree"),
+])
+def test_the_hook_passes_the_dir_the_command_runs_in(box, command, want):
+    box.run(command, mode="allow")
+    assert box.cwds() == [want.format(tmp=box.tmp)], command
+
+
+def test_without_a_cwd_key_the_hook_uses_its_own_directory(box):
+    payload = json.dumps({"tool_input": {"command": "xcodebuild test"}})
+    box.run("", mode="allow", payload=payload)
+    assert box.cwds() == [os.getcwd()]
