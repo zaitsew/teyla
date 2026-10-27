@@ -179,3 +179,9 @@ binary. Apple has not confirmed it.
 **Fix.** No code change answers this. The plan is a reply to App Review that explains what is unique in Teyla and
 asks which app it resembles, without a new binary. A resubmission waits until App Review answers or the owner
 decides otherwise.
+
+**Sent 2026-10-27, 01:03 UTC**, the same reply on both submissions, on the owner's go-ahead. It says Teyla is the
+companion of the owner's own open-source tool in this repository (public since 2026-09-10, 870+ commits), describes
+the signed iCloud Drive sync, states that the apps use no template and share no code or assets with other apps on
+the account, asks which app Teyla is said to resemble, and points the reviewer to "See a sample". Waiting for App
+Review's answer; check it on the App Review page, since the e-mail carries no text.
