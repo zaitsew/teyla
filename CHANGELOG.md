@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.32.1 — 2026-10-27 — A low disk gets the full sweep
+
+- **The guard runs the full sweep when the disk is low.** Under `sweep_urgent_free_gb` (20 GB) free, the guard ran only
+  the temp sweep. On 2026-10-27 that sweep removed 0 B for a day while the disk fell to 3.6 GB free, and a hand cleanup
+  then freed 12 GB. Now the minute tick runs the full sweep at most every 6 hours and the temp sweep every 15 minutes
+  in between. A full sweep that finds another sweep running is tried again 15 minutes later.
+- **The sweep clears old app caches.** A new `app caches` category removes Playwright browser revisions older than the
+  newest of the same browser, and app-update downloads (`*.ShipIt/update.*`, `*-updater`). Each one must be idle for
+  `sweep_app_cache_days` (7) and used by no process. A revision that an installed Playwright still lists in
+  `ms-playwright/.links` stays.
+- **Under 10 GB free, whole caches go.** Below `sweep_critical_free_gb` (10), the sweep runs `npm cache clean --force`
+  instead of `npm cache verify`, adds `deno clean`, and removes every Docker image no container uses, not only dangling
+  ones. Docker volumes are never touched.
+
 ## 0.32.0 — 2026-10-26 — Where every product stands: the portfolio, an honest status, Teyla for iPhone and the App Store builds
 
 - **`teyla portfolio`: each product's health, with the reason.** Each product gets one word (off track, at risk, on track or
