@@ -156,5 +156,26 @@ the review notes above are pasted, China is off, and the privacy policy URL answ
 
 ## Rejections
 
-None yet. A rejection goes here with the guideline, the reason text from the App Review page, the cause and the
-fix.
+A rejection goes here with the guideline, the reason text from the App Review page, the cause and the fix.
+
+### 0.32.0 (1), iOS and macOS — Guideline 4.3(a), Design — Spam (2026-10-26)
+
+Submissions `00ff5f67` (iOS) and `2d865297` (macOS), sent 2026-10-26 09:22 UTC, rejected the same day at 16:30
+and 16:31 UTC. Both messages carry the same text. The reason, verbatim from the App Review page:
+
+> We noticed the app shares a similar binary, metadata, and/or concept as apps submitted to the App Store by you
+> or other developers, with only minor differences.
+
+Each message adds an "Extended Review" warning: repeated submissions of apps with these issues get longer review
+times, and accounts that repeat them face removal from the Apple Developer Program.
+
+**Cause, as far as we can see.** It is not shared code: no Swift file in `apps/` overlaps more than 30% with any
+other repository on this machine (shingle comparison, 2026-10-27). Another app on the same team, unrelated in
+concept, got the identical 4.3(a) text in the same minute. The team had 15 app records then, most of them created in
+the six weeks before, including a second record for an app already on sale and a journal app built on the same
+idea as another one on the team. The likeliest reading is an account-level spam signal, not something in Teyla's
+binary. Apple has not confirmed it.
+
+**Fix.** No code change answers this. The plan is a reply to App Review that explains what is unique in Teyla and
+asks which app it resembles, without a new binary. A resubmission waits until App Review answers or the owner
+decides otherwise.
