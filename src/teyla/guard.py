@@ -31,7 +31,13 @@
    current user's Gradle/Kotlin daemons are ever touched. A daemon an IDE keeps for itself is reaped too
    once idle; the IDE starts a new one on its next build. `--dry` reports and changes nothing at all.
 
-4. Disk (`guard.disk_sweep`, default true). Under `[storage] sweep_urgent_free_gb` (20) free, the tick runs
+4. Bypass. Booted simulators (a `launchd_sim` process each) that no admitted `sim` decision in
+   `guard-decisions.tsv` covers in the 5 minutes before their boot were started without the admission
+   hook (a script that runs `simctl boot` inside itself). The tick logs one `bypassed` decision row per UDID
+   per boot and prints "N simulators booted without the guard (UDID...)"; `teyla load` shows the same line.
+   The row is a record, not a refusal: the simulator keeps running.
+
+5. Disk (`guard.disk_sweep`, default true). Under `[storage] sweep_urgent_free_gb` (20) free, the tick runs
    `storage sweep --temp` itself, at most once per `DISK_SWEEP_EVERY_S` (15 min): the hourly sweep agent
    alone let a disk go from 16 GB to 1 GB free in one morning (2026-10-11). Under that threshold the sweep
    already uses its urgent ages (temp build output idle 2 h). At most once per `DISK_FULL_SWEEP_EVERY_S`
@@ -377,7 +383,7 @@ def tick(conf: dict | None = None, env: Env | None = None, dry: bool = False) ->
     Raises only what the runners raise; `cmd_tick` swallows everything."""
     conf = conf if conf is not None else load.guard_conf()
     env = env or Env()
-    res: dict = {"verdict": None, "lines": [], "snapshot": None, "trend": None}
+    res: dict = {"verdict": None, "lines": [], "snapshot": None, "trend": None, "bypassed": []}
     if not load.enabled(conf):
         return res
     now = env.now()
@@ -393,6 +399,10 @@ def tick(conf: dict | None = None, env: Env | None = None, dry: bool = False) ->
     else:
         load.record(snap, verdict)
         res["lines"] += update_alert(snap, verdict, conf, env)
+    found, new = load.report_bypassed(snap, verdict.level, log=not dry)
+    res["bypassed"] = found
+    if new:
+        res["lines"].append(load.bypass_line(new))
     if idle_limit_min(conf) > 0:
         res["lines"] += reap(idle_daemons(snap, conf, now, record=not dry), env, dry=dry)
     res["lines"] += disk_sweep(snap, conf, now, dry=dry)

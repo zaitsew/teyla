@@ -179,6 +179,7 @@ class Vm:
 class Procs:
     sims: int = 0
     sim_udids: list = dataclasses.field(default_factory=list)
+    sim_boots: list = dataclasses.field(default_factory=list)     # [[UDID (or "pid N"), seconds since it booted]]
     drivers: list = dataclasses.field(default_factory=list)       # [Driver]; builds = len(drivers)
     compilers: int = 0
     compiler_rss_bytes: int = 0
@@ -573,10 +574,15 @@ def classify(rows: list[Row]) -> Procs:
         if r.exe.startswith("com.apple.Virtualization") or p.startswith("qemu-system"):
             out.vms.append(Vm(r.pid, r.exe if r.exe.startswith("com.apple.") else p, r.rss_bytes))
     out.sims = len(sims)
+    boots: dict[str, int] = {}
     for r in sims:
         m = _UDID.search(r.command)
         if m and m.group(1).upper() not in out.sim_udids:
             out.sim_udids.append(m.group(1).upper())
+        if r.etime_s is not None:
+            label = m.group(1).upper() if m else f"pid {r.pid}"
+            boots[label] = max(boots.get(label, 0), r.etime_s)
+    out.sim_boots = [[u, age] for u, age in boots.items()]
     pids = {r.pid for r, _ in drivers}
     out.drivers = [Driver(r.pid, k, r.rss_bytes, r.etime_s) for r, k in drivers if r.ppid not in pids or r.ppid == r.pid]
     for name, rs in harness.items():
@@ -881,7 +887,7 @@ def compute_trend(history: list[dict], snap: Snapshot, conf: dict | None = None,
     t.hold_s = _num(conf, "hold_min") * 60
     if t.hold_s > 0:
         bad = [(h["ts"], h["level"]) for h in history if h.get("level") in BAD]
-        bad += [(d["ts"], d["verdict"]) for d in decisions if d.get("verdict") in BAD]
+        bad += [(d["ts"], d["verdict"]) for d in decisions if d.get("verdict") in BAD and d.get("decision") != "bypassed"]
         bad = [b for b in bad if now - t.hold_s <= b[0] <= now]
         if bad:
             ts, level = max(bad)
@@ -1327,8 +1333,9 @@ def harness_name(env: dict | None = None) -> str:
 
 
 def log_decision(kind: str, level: str, allowed: bool, reason: str, via: str = "admit",
-                 path: pathlib.Path | None = None, now: dt.datetime | None = None) -> None:
-    """Append one decision to `~/.teyla/guard-decisions.tsv`. Never raises: the log must not block work."""
+                 path: pathlib.Path | None = None, now: dt.datetime | None = None, decision: str | None = None) -> None:
+    """Append one decision to `~/.teyla/guard-decisions.tsv`. `decision` overrides admitted / refused (the
+    tick writes `bypassed`). Never raises: the log must not block work."""
     try:
         when = now or dt.datetime.now().astimezone()
         reason = f"wait: {reason}" if via == "wait" and reason else "wait" if via == "wait" else reason
@@ -1336,7 +1343,7 @@ def log_decision(kind: str, level: str, allowed: bool, reason: str, via: str = "
             cwd = os.getcwd()
         except OSError:
             cwd = ""
-        fields = [when.isoformat(timespec="seconds"), kind, level, "admitted" if allowed else "refused", reason, cwd,
+        fields = [when.isoformat(timespec="seconds"), kind, level, decision or ("admitted" if allowed else "refused"), reason, cwd,
                   harness_name()]
         _append(pathlib.Path(path) if path else decisions_path(), DECISION_COLUMNS,
                 [_FIELD_UNSAFE.sub(" ", f) for f in fields], DECISIONS_MAX_BYTES)
@@ -1369,18 +1376,77 @@ def read_decisions(since=None, path: pathlib.Path | None = None, tail: bool = Fa
 
 def decision_summary(now: float | None = None, window_s: int = DECISION_WINDOW_S,
                      path: pathlib.Path | None = None) -> str:
-    """"guard, last hour: 5 admitted, 2 refused (sim 1, build 1)"; "" when nothing was decided."""
+    """"guard, last hour: 5 admitted, 2 refused (sim 1, build 1)"; "" when nothing was decided. Simulators the
+    tick found booted without the guard (`bypassed` rows) are counted apart: "..., 1 bypassed"."""
     now = time.time() if now is None else now
     rows = read_decisions(since=now - window_s, path=path)
     if not rows:
         return ""
     refused = [r for r in rows if r["decision"] == "refused"]
+    admitted = [r for r in rows if r["decision"] == "admitted"]
+    bypassed = [r for r in rows if r["decision"] == "bypassed"]
     by_kind: dict[str, int] = {}
     for r in refused:
         by_kind[r["kind"]] = by_kind.get(r["kind"], 0) + 1
     detail = " (" + ", ".join(f"{k} {n}" for k, n in sorted(by_kind.items())) + ")" if by_kind else ""
     span = "last hour" if window_s == 3600 else f"last {window_s // 60} min"
-    return f"guard, {span}: {len(rows) - len(refused)} admitted, {len(refused)} refused{detail}"
+    skipped = f", {len(bypassed)} bypassed" if bypassed else ""
+    return f"guard, {span}: {len(admitted)} admitted, {len(refused)} refused{detail}{skipped}"
+
+
+# --- simulators booted without the guard ---------------------------------------------------------------------
+
+BYPASS_WINDOW_S = 300        # an admitted `sim` decision this long before the boot covers it
+BOOT_SLACK_S = 10            # ... or this long after (the boot time comes from a whole-second etime)
+
+
+def find_bypassed(snap: Snapshot, decisions: list[dict]) -> list[dict]:
+    """Pure. The booted simulators that no admitted `sim` decision in `decisions` covers: one dict each with
+    `udid`, `boot_ts` (epoch) and `boot` (ISO). A simulator is covered by an admitted `sim` decision in the
+    5 minutes before its boot. A simulator that booted before the log's oldest row cannot be judged (the log
+    keeps only its newest half) and is left out; so is one whose uptime `ps` did not give."""
+    boots = snap.procs.sim_boots
+    if not boots:
+        return []
+    now = snap_ts(snap)
+    admitted = [d["ts"] for d in decisions if d.get("kind") == "sim" and d.get("decision") == "admitted"]
+    first = min((d["ts"] for d in decisions), default=None)
+    out = []
+    for udid, age in sorted(boots, key=lambda b: -b[1]):
+        boot_ts = now - age
+        if first is not None and boot_ts - BYPASS_WINDOW_S < first:
+            continue
+        if any(boot_ts - BYPASS_WINDOW_S <= t <= boot_ts + BOOT_SLACK_S for t in admitted):
+            continue
+        out.append({"udid": udid, "boot_ts": boot_ts,
+                    "boot": dt.datetime.fromtimestamp(boot_ts).astimezone().isoformat(timespec="seconds")})
+    return out
+
+
+def report_bypassed(snap: Snapshot, level: str = "unknown", log: bool = True, path: pathlib.Path | None = None) -> tuple[list[dict], list[dict]]:
+    """(all bypassed simulators, the ones not logged yet). With `log`, one `bypassed` decision row goes to the
+    decision log for each new one, once per UDID per boot (a row from this boot, found by UDID, counts as logged).
+    Never raises; ([], []) when anything fails."""
+    try:
+        if not snap.procs.sim_boots:
+            return [], []
+        rows = read_decisions(path=path)
+        found = find_bypassed(snap, rows)
+        logged = [d for d in rows if d.get("kind") == "sim" and d.get("decision") == "bypassed"]
+        new = [b for b in found if not any(b["udid"] in d["reason"] and d["ts"] >= b["boot_ts"] - 5 for d in logged)]
+        if log:
+            when = dt.datetime.fromtimestamp(snap_ts(snap)).astimezone()       # the time of the snapshot that saw it
+            for b in new:
+                log_decision("sim", level, False, f"UDID {b['udid']} booted {b['boot']} without an admitted sim decision"
+                             f" in the {BYPASS_WINDOW_S // 60} min before it", via="tick", path=path, now=when, decision="bypassed")
+        return found, new
+    except Exception:  # noqa: BLE001 — a report must never break the tick or the command
+        return [], []
+
+
+def bypass_line(found: list[dict]) -> str:
+    n = len(found)
+    return f"{n} simulator{'s' if n != 1 else ''} booted without the guard ({', '.join(b['udid'] for b in found)})"
 
 
 # --- replay ------------------------------------------------------------------------------------------------
@@ -1538,7 +1604,8 @@ def trend_lines(trend: Trend | None, conf: dict | None = None) -> list[str]:
     return out
 
 
-def render(snap: Snapshot, verdict: Verdict, trend: Trend | None = None, conf: dict | None = None) -> str:
+def render(snap: Snapshot, verdict: Verdict, trend: Trend | None = None, conf: dict | None = None,
+           bypassed: list | None = None) -> str:
     p = snap.procs
     lines = [verdict.line()]
     mem = [f"{gb(snap.ram_bytes)} RAM"]
@@ -1557,6 +1624,8 @@ def render(snap: Snapshot, verdict: Verdict, trend: Trend | None = None, conf: d
     if snap.load1 is not None:
         lines.append(f"cpu: load {snap.load1:.1f} / {snap.load5:.1f} / {snap.load15:.1f} on {snap.ncpu or '?'} cores")
     lines.append(f"sims: {p.sims} booted" + (f" ({', '.join(u[:8] for u in p.sim_udids)})" if p.sim_udids else ""))
+    if bypassed:
+        lines.append("sims: " + bypass_line(bypassed))
     drivers = ", ".join(f"{d.kind}{_mins(d.etime_s)}" for d in p.drivers)
     lines.append(f"builds: {p.builds} running" + (f" ({drivers})" if drivers else "")
                  + f"; compilers {p.compilers} ({gb(p.compiler_rss_bytes)})")
@@ -1617,13 +1686,14 @@ def cmd_load(args, run: Runner = run_command) -> int:
             record(snap, verdict)
         except OSError as e:
             print(f"teyla load: could not record: {e}", file=sys.stderr)
+    bypassed, _ = report_bypassed(snap, verdict.level, log=False)
     if args.json:
         print(json.dumps({"snapshot": snap.to_json(), "verdict": verdict.to_json(),
-                          "trend": trend.to_json() if trend else None}, indent=1))
+                          "trend": trend.to_json() if trend else None, "bypassed": bypassed}, indent=1))
         return 0
     if args.quiet:
         return 0
-    print(render(snap, verdict, trend, conf))
+    print(render(snap, verdict, trend, conf, bypassed))
     recent = decision_summary()
     if recent:
         print(recent)

@@ -1368,3 +1368,117 @@ def test_admit_through_the_command_takes_a_lease_and_refuses_the_next_heavy_star
     rows = load.read_decisions()
     assert [(r["kind"], r["decision"]) for r in rows] == [("sim", "admitted"), ("build", "refused"), ("lane", "admitted")]
     assert "settle" in rows[1]["reason"]
+
+
+# --- simulators booted without the guard ------------------------------------------------------------
+
+NOW = dt.datetime(2026, 10, 27, 19, 50, 0, tzinfo=dt.timezone.utc)
+
+
+def _boots(*pairs, at=NOW) -> load.Snapshot:
+    """A snapshot at `at` (default NOW) with simulators booted `age` seconds ago."""
+    return snap(time=at.isoformat(timespec="seconds"),
+                procs=load.Procs(sims=len(pairs), sim_udids=[u for u, _ in pairs], sim_boots=[[u, a] for u, a in pairs]))
+
+
+def _row(minutes_before_now: float, kind="sim", decision="admitted", reason="", verdict="OK") -> dict:
+    ts = NOW.timestamp() - minutes_before_now * 60
+    return {"time": dt.datetime.fromtimestamp(ts, dt.timezone.utc).isoformat(timespec="seconds"), "ts": ts, "kind": kind,
+            "verdict": verdict, "decision": decision, "reason": reason, "cwd": "", "harness": ""}
+
+
+def test_classify_reads_the_boot_time_of_each_simulator_from_its_etime():
+    m = Machine()
+    m.add(10, f"launchd_sim /x/Devices/{UDID_A}/data", etime="01:05")
+    m.add(11, f"launchd_sim /somewhere/else", etime="00:30")
+    assert snap_of(m).procs.sim_boots == [[UDID_A, 65], ["pid 11", 30]]
+
+
+def test_a_simulator_with_an_admitted_sim_decision_before_its_boot_is_not_bypassed():
+    s = _boots((UDID_A, 4 * 60))                                  # booted at 19:46
+    assert load.find_bypassed(s, [_row(7)]) == []                  # admitted at 19:43: inside the 5 minutes before
+    assert load.find_bypassed(s, [_row(4.1 + 0.05)]) == []         # a few seconds after the boot (etime rounding)
+
+
+def test_a_simulator_with_no_admitted_decision_in_the_five_minutes_before_is_bypassed():
+    s = _boots((UDID_A, 4 * 60))
+    out = load.find_bypassed(s, [_row(30), _row(12)])            # admitted at 19:20 and 19:38: too early for a 19:46 boot
+    assert [b["udid"] for b in out] == [UDID_A]
+    assert out[0]["boot_ts"] == NOW.timestamp() - 240
+    # refused, bypassed and build decisions never cover a boot
+    assert [b["udid"] for b in load.find_bypassed(s, [_row(30), _row(5, decision="refused"), _row(5, kind="build"),
+                                                      _row(5, decision="bypassed")])] == [UDID_A]
+
+
+def test_a_simulator_older_than_the_log_cannot_be_judged_and_an_empty_log_judges_all():
+    old = _boots((UDID_A, 3 * 3600))                                # booted before the log's oldest row
+    assert load.find_bypassed(old, [_row(60)]) == []
+    assert [b["udid"] for b in load.find_bypassed(old, [])] == [UDID_A]
+    assert load.find_bypassed(_boots(), []) == []
+
+
+def test_report_bypassed_logs_one_row_per_udid_per_boot(tmp_path):
+    path = tmp_path / "decisions.tsv"
+    load.log_decision("sim", "OK", True, "", path=path, now=NOW - dt.timedelta(minutes=40))     # the log reaches back
+    s = _boots((UDID_A, 4 * 60), (UDID_B, 2 * 60))
+    found, new = load.report_bypassed(s, "BUSY", path=path)
+    assert [b["udid"] for b in found] == [UDID_A, UDID_B] and len(new) == 2
+    rows = load.read_decisions(path=path)
+    byp = [r for r in rows if r["decision"] == "bypassed"]
+    assert len(byp) == 2 and all(r["kind"] == "sim" and r["verdict"] == "BUSY" for r in byp)
+    assert UDID_A in byp[0]["reason"] and "booted 2026-" in byp[0]["reason"] and "without an admitted sim decision" in byp[0]["reason"]
+    found, new = load.report_bypassed(s, "BUSY", path=path)                                    # the next tick
+    assert len(found) == 2 and new == [] and len(load.read_decisions(path=path)) == 3
+    # the same UDID booted again later is a new boot, and is logged again
+    again = _boots((UDID_A, 30), at=NOW + dt.timedelta(minutes=10))
+    _, new = load.report_bypassed(again, "OK", path=path)
+    assert [b["udid"] for b in new] == [UDID_A]
+
+
+def test_report_bypassed_without_log_writes_nothing_and_never_raises(tmp_path):
+    path = tmp_path / "decisions.tsv"
+    found, new = load.report_bypassed(_boots((UDID_A, 60)), log=False, path=path)
+    assert len(found) == 1 and len(new) == 1 and not path.exists()
+    bad = _boots((UDID_A, 60))
+    bad.procs.sim_boots = [["x"]]                                  # a malformed entry
+    assert load.report_bypassed(bad, path=path) == ([], [])
+
+
+def test_decision_summary_counts_bypassed_rows_apart(tmp_path):
+    path = tmp_path / "d.tsv"
+    now = NOW.timestamp()
+    for kind, allowed, dec in (("sim", True, None), ("build", False, None), ("sim", False, "bypassed")):
+        load.log_decision(kind, "OK", allowed, "r", path=path, now=NOW - dt.timedelta(minutes=5), decision=dec)
+    assert load.decision_summary(now=now, path=path) == "guard, last hour: 1 admitted, 1 refused (build 1), 1 bypassed"
+
+
+def test_a_bypassed_row_made_under_critical_does_not_start_a_hold():
+    s = snap(time=NOW.isoformat(timespec="seconds"))
+    t = load.compute_trend([], s, {}, [_row(2, decision="bypassed", verdict="CRITICAL")])
+    assert t.hold_left_s() is None
+    t = load.compute_trend([], s, {}, [_row(2, decision="refused", verdict="CRITICAL")])
+    assert t.hold_left_s() is not None
+
+
+def test_replay_and_the_summary_survive_bypassed_rows_and_ignore_the_live_lease():
+    load.log_decision("sim", "OK", False, "UDID X booted", decision="bypassed")
+    load.write_lease(load.Lease("sim", dt.datetime.fromisoformat("2026-10-17T10:00:00+02:00").timestamp()))
+    assert "1 bypassed" in load.decision_summary()
+    rows = [rec_row("2026-10-17T10:00:00+02:00"), rec_row("2026-10-17T10:00:10+02:00")]
+    (day,) = load.replay(rows, {}, ncpu=10)
+    assert day["sim"]["OK"] == 2 and day["build"]["OK"] == 2           # a replay never reads a lease
+    assert load.render_replay([day])
+
+
+def test_the_text_report_and_json_name_the_bypassed_simulators(capsys):
+    m = Machine(sysctl_text())
+    m.add(10, f"launchd_sim /x/Devices/{UDID_A}/data", etime="03:00")
+    load.log_decision("sim", "OK", True, "", now=dt.datetime.now().astimezone() - dt.timedelta(hours=1))    # the log reaches back
+    assert load.cmd_load(args(), run=m.run) == 0
+    out = capsys.readouterr().out
+    assert f"sims: 1 simulator booted without the guard ({UDID_A})" in out
+    assert load.cmd_load(args(json=True), run=m.run) == 0
+    assert json.loads(capsys.readouterr().out)["bypassed"][0]["udid"] == UDID_A
+    load.log_decision("sim", "OK", True, "", now=dt.datetime.now().astimezone() - dt.timedelta(minutes=3, seconds=30))   # 30 s before the boot
+    assert load.cmd_load(args(), run=m.run) == 0
+    assert "without the guard" not in capsys.readouterr().out

@@ -16,6 +16,12 @@
   is refused for `guard.settle_s` (default 180; 0 = off) seconds after it: "a simulator was let in 40 s ago; waiting for
   it to settle". Deciding and taking the lease happen under one `flock`, so two waiters polling in the same second
   cannot both pass. Lanes are unaffected. A broken lock or lease file lets the work through.
+- **Simulators the guard did not admit are reported.** A pool script boots simulators with `xcrun simctl`
+  inside itself, so the hook never saw it: a simulator booted at 19:45 during a CRITICAL hold and nothing
+  recorded it. Each `guard tick` now compares the booted simulators (boot time from `ps` etime) with the admitted `sim`
+  decisions in `guard-decisions.tsv`. One with no admission in the 5 minutes before its boot gets one `bypassed`
+  decision row (once per UDID per boot), and `teyla load` prints "N simulators booted without the guard (UDID...)".
+  The hour summary counts `bypassed` rows apart from admitted and refused ones, and they never start a hold.
 ## 0.32.1 — 2026-10-27 — A low disk gets the full sweep
 
 - **The guard runs the full sweep when the disk is low.** Under `sweep_urgent_free_gb` (20 GB) free, the guard ran only
