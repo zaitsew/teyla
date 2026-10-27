@@ -34,7 +34,10 @@
 4. Disk (`guard.disk_sweep`, default true). Under `[storage] sweep_urgent_free_gb` (20) free, the tick runs
    `storage sweep --temp` itself, at most once per `DISK_SWEEP_EVERY_S` (15 min): the hourly sweep agent
    alone let a disk go from 16 GB to 1 GB free in one morning (2026-10-11). Under that threshold the sweep
-   already uses its urgent ages (temp build output idle 2 h). What it removed goes to the sweep log.
+   already uses its urgent ages (temp build output idle 2 h). At most once per `DISK_FULL_SWEEP_EVERY_S`
+   (6 h) the tick runs the full sweep instead: caches, Docker and DerivedData, whole caches under
+   `sweep_critical_free_gb`. The temp sweep alone removed 0 B for a day while the disk sat between 3.6 and
+   20 GB free; the full one then gave back 12 GB (2026-10-27). What it removed goes to the sweep log.
 """
 from __future__ import annotations
 
@@ -322,39 +325,49 @@ def reap(idle: list[dict], env: Env, dry: bool = False) -> list[str]:
 # --- disk ---------------------------------------------------------------------------------------------------
 
 DISK_SWEEP_EVERY_S = 15 * 60
+DISK_FULL_SWEEP_EVERY_S = 6 * 3600
 
 
-def _disk_sweep_stamp() -> pathlib.Path:
+def _disk_sweep_stamp(full: bool = False) -> pathlib.Path:
     from .corrections import teyla_home
-    return teyla_home() / "state" / "guard-disk-sweep.last"
+    return teyla_home() / "state" / ("guard-disk-full-sweep.last" if full else "guard-disk-sweep.last")
+
+
+def _due(stamp: pathlib.Path, now: float, every: float) -> bool:
+    try:
+        # The time is the tick's clock, kept in the file: an mtime would be the wall clock.
+        return not 0 <= now - float(stamp.read_text().strip()) < every
+    except (OSError, ValueError):
+        return True
 
 
 def disk_sweep(snap: load.Snapshot, conf: dict, now: float, dry: bool = False) -> list[str]:
-    """Run the temp sweep now when the disk is under the urgent threshold and the last such run is
-    older than DISK_SWEEP_EVERY_S. Returns what was done, for the agent's log."""
+    """Run a sweep now when the disk is under the urgent threshold: the full one if the last was
+    DISK_FULL_SWEEP_EVERY_S ago, else the temp one if the last was DISK_SWEEP_EVERY_S ago. Returns what
+    was done, for the agent's log."""
     from . import storage_sweep
     if conf.get("disk_sweep") is False or snap.disk_free_bytes is None:
         return []
     urgent = storage_sweep.settings()["urgent_free_gb"]
     if snap.disk_free_bytes >= urgent * load.GIB:
         return []
-    stamp = _disk_sweep_stamp()
-    try:
-        # The time is the tick's clock, kept in the file: an mtime would be the wall clock.
-        if 0 <= now - float(stamp.read_text().strip()) < DISK_SWEEP_EVERY_S:
-            return []
-    except (OSError, ValueError):
-        pass
+    stamp, full_stamp = _disk_sweep_stamp(), _disk_sweep_stamp(full=True)
+    full = _due(full_stamp, now, DISK_FULL_SWEEP_EVERY_S)
+    if not full and not _due(stamp, now, DISK_SWEEP_EVERY_S):
+        return []
+    kind = "full" if full else "temp"
     head = f"disk {load.gb(snap.disk_free_bytes)} free (under {urgent:g} GB): "
     if dry:
-        return [head + "would run the temp sweep"]
+        return [head + f"would run the {kind} sweep"]
     config.private_dir(stamp.parent)
-    stamp.write_text(f"{now}\n")
-    res = storage_sweep.run(temp_only=True)
+    # The full sweep holds the temp categories too: both clocks restart.
+    for st in (stamp, full_stamp) if full else (stamp,):
+        st.write_text(f"{now}\n")
+    res = storage_sweep.run(temp_only=not full)
     storage_sweep.write_log(res["lines"])
     if res.get("busy"):
         return [head + "a sweep is already running"]
-    return [head + f"temp sweep removed {load.gb(res['total'])}, {load.gb(res['free_after'])} free now"]
+    return [head + f"{kind} sweep removed {load.gb(res['total'])}, {load.gb(res['free_after'])} free now"]
 
 
 # --- one tick ---------------------------------------------------------------------------------------------

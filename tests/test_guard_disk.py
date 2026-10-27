@@ -37,7 +37,7 @@ def test_thresholds_come_from_config():
 def test_a_critical_disk_refuses_heavy_work_and_says_how_to_free_it():
     ok, msg = load.admit("build", snap(1.0), conf())
     assert not ok
-    assert "free on disk" in msg and "teyla storage sweep --temp" in msg
+    assert "free on disk" in msg and "teyla storage sweep`" in msg
     assert load.admit("build", snap(50), conf())[0]
 
 
@@ -79,17 +79,20 @@ def tick_at(monkeypatch, clock, free_gb, dry=False, **kw):
     return guard.tick(conf(**kw), Machine(clock).env("darwin"), dry=dry)
 
 
-def test_under_the_urgent_threshold_the_tick_sweeps_at_most_every_15_minutes(sweeps, monkeypatch):
+def test_under_the_urgent_threshold_the_tick_sweeps_in_full_every_6_hours_and_temp_every_15_minutes(sweeps, monkeypatch):
     clock = Clock()
     res = tick_at(monkeypatch, clock, 8)
-    assert sweeps == [True] and any("temp sweep removed 3.0 GB" in l for l in res["lines"])
+    assert sweeps == [False] and any("full sweep removed 3.0 GB" in l for l in res["lines"])
     assert res["verdict"].level == load.CRITICAL
     clock.advance(5)
     tick_at(monkeypatch, clock, 8)
-    assert sweeps == [True], "a second sweep within 15 minutes"
+    assert sweeps == [False], "a second sweep within 15 minutes"
     clock.advance(11)
+    res = tick_at(monkeypatch, clock, 8)
+    assert sweeps == [False, True] and any("temp sweep removed" in l for l in res["lines"])
+    clock.advance(6 * 60)
     tick_at(monkeypatch, clock, 8)
-    assert sweeps == [True, True]
+    assert sweeps == [False, True, False], "the full sweep is due again after 6 hours"
 
 
 def test_no_sweep_with_room_left_when_off_or_dry(sweeps, monkeypatch):
@@ -97,4 +100,4 @@ def test_no_sweep_with_room_left_when_off_or_dry(sweeps, monkeypatch):
     tick_at(monkeypatch, clock, 40)
     tick_at(monkeypatch, clock, 8, disk_sweep=False)
     res = tick_at(monkeypatch, clock, 8, dry=True)
-    assert sweeps == [] and any("would run the temp sweep" in l for l in res["lines"])
+    assert sweeps == [] and any("would run the full sweep" in l for l in res["lines"])

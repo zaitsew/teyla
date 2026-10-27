@@ -21,16 +21,24 @@ covers idle simulators. This sweeps the rest, each category with its own age and
 - DerivedData      ~/Library/Developer/Xcode/DerivedData/<project> idle >= sweep_derived_days (14);
                    a folder without info.plist is a cache every project shares and stays
 - codex runtimes   ~/.cache/codex-runtimes/codex-runtime-install-* an update left, >= sweep_codex_days (2)
-- package caches   `uv cache prune`, `pnpm store prune`, `npm cache verify`, each its own tool
+- app caches       in ~/Library/Caches: Playwright browser revisions older than the newest of the same
+                   browser, and app-updater downloads (`*.ShipIt/update.*`, `*-updater`), each idle
+                   >= sweep_app_cache_days (7) and named by no process
+- package caches   `uv cache prune`, `pnpm store prune`, `npm cache verify`, each its own tool; under
+                   sweep_critical_free_gb (10) free, `npm cache clean --force` and `deno clean` instead
 - docker           dangling images and build cache older than sweep_docker_days (7), and — for
                    repositories listed in storage.docker_superseded_repos only — tags a newer image
-                   of the same repository replaced and no container uses; only if the daemon runs
+                   of the same repository replaced and no container uses; only if the daemon runs.
+                   Under sweep_critical_free_gb free, every image no container uses goes (`prune -a`)
 - grok sessions    ~/.grok/sessions/<project>/<session> idle >= sweep_grok_days (14): tarred into
                    ~/.grok/sessions-archive/, the originals removed only after the archive is read
                    back and lists every file; skipped while grok is running
 - claude cli logs  ~/Library/Caches/claude-cli-nodejs files older than sweep_log_days (14)
 - routine logs     ~/Library/Logs/<sweep_log_glob> files over sweep_log_max_mb (50) cut to their last
                    20000 lines
+
+Under sweep_critical_free_gb the caches go whole: the next install or `docker pull` downloads again,
+which beats a full disk (2026-10-27: 3.6 GB free, and the hourly sweeps had freed nothing for a day).
 
 Never touched: agent transcripts, the Trash, iOS runtimes, model caches, Docker volumes, worktrees.
 `--dry` removes and runs nothing. When `ps` cannot list processes, nothing that needs "no process
@@ -78,6 +86,8 @@ def settings(cfg: dict | None = None) -> dict:
     ci = storage.conf_int
     return {"temp_hours": ci(cfg, "sweep_temp_hours", 24), "release_days": ci(cfg, "sweep_release_days", 3),
             "urgent_free_gb": ci(cfg, "sweep_urgent_free_gb", 20), "sim_days": ci(cfg, "sweep_sim_days", 7),
+            "critical_free_gb": ci(cfg, "sweep_critical_free_gb", 10),
+            "app_cache_days": ci(cfg, "sweep_app_cache_days", 7),
             "derived_days": ci(cfg, "sweep_derived_days", 14), "codex_days": ci(cfg, "sweep_codex_days", 2),
             "grok_days": ci(cfg, "sweep_grok_days", 14), "log_days": ci(cfg, "sweep_log_days", 14),
             "docker_days": ci(cfg, "sweep_docker_days", 7), "log_max_mb": ci(cfg, "sweep_log_max_mb", 50),
@@ -191,6 +201,11 @@ def _fmt(n: int) -> str:
 
 def _verb(ctx: Ctx, did: str, would: str) -> str:
     return would if ctx.dry else did
+
+
+def critical(ctx: Ctx) -> bool:
+    """So little free that whole caches go, not only their stale parts."""
+    return ctx.free < ctx.cfg["critical_free_gb"] * GIB
 
 
 # --- small file helpers -------------------------------------------------------------------------
@@ -573,16 +588,65 @@ def codex_runtimes(ctx: Ctx) -> Result:
     return r
 
 
+# --- app caches -----------------------------------------------------------------------------
+
+PLAYWRIGHT_REV = re.compile(r"(.+)-(\d+)")   # chromium-1243, chromium_headless_shell-1243, ffmpeg-1011
+UPDATER_GLOBS = ("*.ShipIt/update.*", "*-updater")   # Squirrel.Mac and electron-updater downloads
+
+
+def _app_cache_dirs(ctx: Ctx) -> list[tuple[str, pathlib.Path]]:
+    caches = ctx.home / "Library" / "Caches"
+    if not caches.is_dir():
+        return []
+    found = []
+    pw = caches / "ms-playwright"
+    if pw.is_dir():
+        revs = []
+        for d in pw.iterdir():
+            m = PLAYWRIGHT_REV.fullmatch(d.name)
+            if m and d.is_dir() and not d.is_symlink():
+                revs.append((m.group(1), int(m.group(2)), d))
+        newest = {}
+        for name, rev, _ in revs:
+            newest[name] = max(newest.get(name, rev), rev)
+        found += [(f"Playwright {d.name}", d) for name, rev, d in sorted(revs) if rev < newest[name]]
+    for pattern in UPDATER_GLOBS:
+        found += [(f"update download {d.relative_to(caches)}", d) for d in sorted(caches.glob(pattern))
+                  if d.is_dir() and not d.is_symlink()]
+    return found
+
+
+def app_caches(ctx: Ctx) -> Result:
+    r = Result("app caches")
+    minutes = ctx.cfg["app_cache_days"] * 1440
+    for label, d in _app_cache_dirs(ctx):
+        if not idle(ctx, d, minutes):
+            continue
+        size = ctx.size(d)
+        if ctx.dry or _rm(d):
+            r.bytes += size
+            r.items += 1
+            r.lines.append(f"{_verb(ctx, 'removed', 'would remove')} {label} ({_fmt(size)})")
+        else:
+            r.lines.append(f"could not remove {label}")
+    return r
+
+
 # --- package caches -------------------------------------------------------------------------
 
 PACKAGE_TOOLS = (("uv", ["uv", "cache", "prune"], ".cache/uv"),
                  ("pnpm", ["pnpm", "store", "prune"], "Library/pnpm"),
                  ("npm", ["npm", "cache", "verify"], ".npm"))
+# Under sweep_critical_free_gb: the whole cache, not only what nothing references.
+CRITICAL_TOOLS = (("uv", ["uv", "cache", "prune"], ".cache/uv"),
+                  ("pnpm", ["pnpm", "store", "prune"], "Library/pnpm"),
+                  ("npm", ["npm", "cache", "clean", "--force"], ".npm"),
+                  ("deno", ["deno", "clean"], "Library/Caches/deno"))
 
 
 def package_caches(ctx: Ctx) -> Result:
     r = Result("package caches")
-    for tool, cmd, rel in PACKAGE_TOOLS:
+    for tool, cmd, rel in CRITICAL_TOOLS if critical(ctx) else PACKAGE_TOOLS:
         if not ctx.have(tool):
             continue
         if ctx.dry:
@@ -687,10 +751,13 @@ def docker(ctx: Ctx) -> Result:
         r.skipped = "the docker daemon is not running (never started by a sweep)"
         return r
     until = f"{ctx.cfg['docker_days'] * 24}h"
+    every = critical(ctx)   # every image no container uses, not only the dangling ones
     if ctx.dry:
-        r.lines.append(f"would run: docker image prune (dangling) and docker builder prune, both --filter until={until}")
+        r.lines.append(f"would run: docker image prune ({'unused' if every else 'dangling'}) and docker builder prune, "
+                       f"both --filter until={until}")
     else:
-        for label, cmd in (("images", ["docker", "image", "prune", "-f", "--filter", f"until={until}"]),
+        image_cmd = ["docker", "image", "prune", "-f", *(["-a"] if every else []), "--filter", f"until={until}"]
+        for label, cmd in (("images", image_cmd),
                            ("build cache", ["docker", "builder", "prune", "-f", "--filter", f"until={until}"])):
             rc, out = ctx.run(cmd, 600)
             n = _reclaimed(out)
@@ -897,7 +964,8 @@ def routine_logs(ctx: Ctx) -> Result:
 CATEGORIES = (("temp dirs", temp_dirs, True), ("temp builds", temp_builds, True),
               ("release leftovers", release_leftovers, True),
               ("simulators", simulators, False), ("DerivedData", derived_data, False),
-              ("codex runtimes", codex_runtimes, False), ("package caches", package_caches, False),
+              ("codex runtimes", codex_runtimes, False), ("app caches", app_caches, False),
+              ("package caches", package_caches, False),
               ("docker", docker, False), ("grok sessions", grok_sessions, False),
               ("claude cli logs", claude_logs, False), ("routine logs", routine_logs, False))
 
