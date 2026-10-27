@@ -454,6 +454,8 @@ def test_the_screen_ignores_the_transcript_path_and_cwd_that_precede_the_command
     ("cd $WT && xcodebuild test", ""),                                   # unknown: no lease exemption
     ("cd - && xcodebuild test", ""),
     ('cd "/w/my tree" && xcodebuild test', "/w/my tree"),
+    ("cd -- /w/tree-b && xcodebuild test", "/w/tree-b"),
+    ("sh -c 'cd /w/tree-a' && xcodebuild test", "{tmp}"),             # a child shell's cd stays there
 ])
 def test_the_hook_passes_the_dir_the_command_runs_in(box, command, want):
     box.run(command, mode="allow")
@@ -464,3 +466,9 @@ def test_without_a_cwd_key_the_hook_uses_its_own_directory(box):
     payload = json.dumps({"tool_input": {"command": "xcodebuild test"}})
     box.run("", mode="allow", payload=payload)
     assert box.cwds() == [os.getcwd()]
+
+
+def test_the_same_kind_in_two_worktrees_is_asked_for_each(box):
+    box.run("cd /w/tree-a && xcodebuild test; cd /w/tree-b && xcodebuild test", mode="allow")
+    assert box.called() == ["load --admit build", "load --admit build"]
+    assert box.cwds() == ["/w/tree-a", "/w/tree-b"]

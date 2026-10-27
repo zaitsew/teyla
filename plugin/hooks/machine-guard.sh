@@ -135,9 +135,10 @@ kinds=$(printf '%s' "$payload" | awk '
     if (t ~ /^[\/~]/) { curdir = t; return }
     curdir = (curdir == "" ? pcwd : curdir) "/" t
   }
-  function emit(k) {
+  function emit(k,    d) {
     if (k in waited) return
-    if (!(k in seen)) { seen[k] = 1; print k "\t" (curdir == "" ? pcwd : (curdir == UNK ? "" : curdir)) }
+    d = (curdir == "" ? pcwd : (curdir == UNK ? "" : curdir))
+    if (!((k, d) in seen)) { seen[k, d] = 1; print k "\t" d }
   }
   # Is "build" or "test" the subcommand? Looked for among the args up to a `--`, not as the
   # first non-dash token, so `bazel --output_base /tmp/x build` and `cargo --config k=v test` count.
@@ -153,7 +154,7 @@ kinds=$(printf '%s' "$payload" | awk '
     for (i = 1; i <= n; i++) classify(segs[i], depth)
   }
   # Classify one segment and emit its kind (nothing when it is not heavy).
-  function classify(seg, depth,    nt, raw, tok, m, k, p, t, b, c, a, na, i, a1, tasks, rest, hasw, kw, cw) {
+  function classify(seg, depth,    nt, raw, tok, m, k, p, t, b, c, a, na, i, a1, tasks, rest, hasw, kw, cw, saved) {
     nt = split(seg, raw, /[ \t]+/); m = 0
     for (k = 1; k <= nt; k++) if (raw[k] != "") tok[++m] = raw[k]
     p = 1
@@ -171,7 +172,9 @@ kinds=$(printf '%s' "$payload" | awk '
       if (isshell(b) && p < m && strip(tok[p + 1]) ~ /^-[A-Za-z]*c$/) {
         rest = ""
         for (i = p + 2; i <= m; i++) rest = rest (rest == "" ? "" : " ") tok[i]
+        saved = curdir                    # a cd inside the child shell does not move this one
         if (depth < 4) run(script_of(rest), depth + 1)
+        curdir = saved
         return
       }
       if (isshell(b) && p < m && strip(tok[p + 1]) !~ /^-/) { p++; t = strip(tok[p]); b = base(t) }
@@ -189,7 +192,7 @@ kinds=$(printf '%s' "$payload" | awk '
     if (c == "cd" || c == "pushd") {
       rest = ""
       for (i = p + 1; i <= m; i++) rest = rest (rest == "" ? "" : " ") tok[i]
-      sub(/^-[LPe@]+[ \t]+/, "", rest)
+      sub(/^-[LPe@]+[ \t]+/, "", rest); sub(/^--[ \t]+/, "", rest)
       if (rest ~ /^["\047]/) chdir(script_of(rest))
       else { split(rest, cw, /[ \t]+/); chdir(cw[1]) }
       return
