@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.34.0 — 2026-10-28 — Teyla as an MCP server
 
 - **`teyla mcp`: Teyla as an MCP server.** Any MCP client (Claude Code, Codex, Cursor) can now ask Teyla over stdio.
   Six tools, each one a call of the Teyla CLI in a child process: `teyla_asks` (what your sessions wait on),
