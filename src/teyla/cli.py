@@ -217,7 +217,7 @@ def cmd_monitor(args):
     # silence the never-acknowledged A10 on the next run (caught in review, P2).
     if not delivered:
         return 1
-    if args.no_mark_seen:
+    if getattr(args, "no_mark_seen", False):   # tests build a bare Namespace
         return
     from .advise import mark_seen
     mark_seen(F)
