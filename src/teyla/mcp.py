@@ -92,7 +92,7 @@ TOOLS = [
           "an id, the product, the session and the question text. Read-only.",
           {"days": _days("Look back this many days (default 21)."),
            "product": {"type": "string", "description": "Only this product (its registry id)."},
-           "all": {"type": "boolean", "description": "Also list done and snoozed questions, and parked products."}},
+           "all": {"type": "boolean", "description": "Also list closed and hidden questions, and those of parked products."}},
           [], _argv_asks, 60, read_only=True),
     _tool("teyla_answer", "Answer a waiting question",
           "Deliver the owner's answer to the local Claude Code or Codex session that asked (by resuming it). "
