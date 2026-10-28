@@ -79,6 +79,7 @@
   teyla digest [--write] [--no-notify]                            the weekly digest: the top three actions, each with its command
   teyla routine install|status|catch-up [--if-stale] [--dry]     Teyla's own daily (update+doctor) and weekly launchd routines; catch-up runs what launchd skipped
   teyla grok-cost [--last|--session ID] [--cwd PATH] [--days N] [--by project|session] [--json]   Grok CLI cost at list price
+  teyla mcp [--list-tools]                                       Teyla as an MCP server on stdio: asks, answer, intent, load, routines, monitor
   teyla connectors [--days N] [--json]                             per-connector round-trips, read/write, empty-or-error rate; advice C1–C4
   teyla plugins [name|path] [--json]                              skill/rule/fact quality pass over a Claude Code plugin
   teyla plugin install <source>                                   install a plugin by hand-editing its registry (no `claude` CLI)
@@ -541,6 +542,8 @@ def build_parser() -> argparse.ArgumentParser:
     reel_cli.register(sp)
     from . import asks as asks_mod
     asks_mod.register(sp)
+    from . import mcp as mcp_mod
+    mcp_mod.register(sp)
     from . import today as today_mod
     today_mod.register(sp)
     q = sp.add_parser("help", help="the commands in six groups; --all lists every one; help COMMAND shows its options")
