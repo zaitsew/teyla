@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **`teyla mcp`: Teyla as an MCP server.** Any MCP client (Claude Code, Codex, Cursor) can now ask Teyla over stdio.
+  Six tools, each one a call of the Teyla CLI in a child process: `teyla_asks` (what your sessions wait on),
+  `teyla_answer` (send your answer to the session that asked; the description tells the model to send only text you
+  wrote or approved), `teyla_intent` (your own words for a product), `teyla_load`, `teyla_routines` and
+  `teyla_monitor`. Five only read. Nothing that changes state without your word is exposed: no `asks done`,
+  `--record`, `--issues`, `--share` or `--model`. The protocol is implemented by hand (2024-11-05, 2025-03-26 and
+  2025-06-18), so Teyla keeps zero dependencies; it opens no port. `teyla mcp --list-tools` prints the tools.
+  The Claude plugin registers it in `plugin/.mcp.json`; for Codex run `codex mcp add teyla -- teyla mcp`. The OpenAI
+  skills-only archive leaves `.mcp.json` out.
+
 ## 0.33.1 — 2026-10-27 — The settle lease knows which worktree a command runs in
 
 - **The settle lease knows which worktree a command runs in.** 0.33.0 compared the hook's own directory, so two

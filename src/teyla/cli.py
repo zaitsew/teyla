@@ -79,6 +79,7 @@
   teyla digest [--write] [--no-notify]                            the weekly digest: the top three actions, each with its command
   teyla routine install|status|catch-up [--if-stale] [--dry]     Teyla's own daily (update+doctor) and weekly launchd routines; catch-up runs what launchd skipped
   teyla grok-cost [--last|--session ID] [--cwd PATH] [--days N] [--by project|session] [--json]   Grok CLI cost at list price
+  teyla mcp [--list-tools]                                       Teyla as an MCP server on stdio: asks, answer, intent, load, routines, monitor
   teyla connectors [--days N] [--json]                             per-connector round-trips, read/write, empty-or-error rate; advice C1–C4
   teyla plugins [name|path] [--json]                              skill/rule/fact quality pass over a Claude Code plugin
   teyla plugin install <source>                                   install a plugin by hand-editing its registry (no `claude` CLI)
@@ -216,6 +217,8 @@ def cmd_monitor(args):
     # silence the never-acknowledged A10 on the next run (caught in review, P2).
     if not delivered:
         return 1
+    if getattr(args, "no_mark_seen", False):   # tests build a bare Namespace
+        return
     from .advise import mark_seen
     mark_seen(F)
 
@@ -479,6 +482,8 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "monitor":
             q.add_argument("--json", action="store_true"); q.add_argument("--samples", action="store_true"); q.add_argument("--out")
             q.add_argument("--share", action="store_true", help="redact: pseudonymous projects, connectors and skills; no session ids, paths or correction text")
+            # teyla mcp: an agent's call is not the owner reading the report, so it must not use up A10.
+            q.add_argument("--no-mark-seen", action="store_true", help=argparse.SUPPRESS)
         if name == "corrections":
             q.add_argument("--cluster", action="store_true")
             q.add_argument("--recorded", action="store_true", help="the stored corrections (teyla correct, capture hook), not transcript turns")
@@ -541,6 +546,8 @@ def build_parser() -> argparse.ArgumentParser:
     reel_cli.register(sp)
     from . import asks as asks_mod
     asks_mod.register(sp)
+    from . import mcp as mcp_mod
+    mcp_mod.register(sp)
     from . import today as today_mod
     today_mod.register(sp)
     q = sp.add_parser("help", help="the commands in six groups; --all lists every one; help COMMAND shows its options")

@@ -75,6 +75,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
         ("update", "Check GitHub for a newer release and install it"),
         ("uninstall", "Undo every write Teyla made on this machine"),
         ("relay", "The iPhone relay: on, off, pair, sync"),
+        ("mcp", "Teyla as an MCP server for any MCP client (stdio)"),
         ("rule", "Append a one-sentence rule to a repo's rules"),
         ("rules", "Propose rules from your corrections; list stale ones"),
         ("tidy", "Find duplicates and dead references in rules and memory"),

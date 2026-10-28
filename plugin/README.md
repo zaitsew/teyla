@@ -71,6 +71,24 @@ Hooks run in Claude Code and Cowork. Claude chat on the web ignores them. All ar
 The two opt-in hooks stay off because a machine that already runs its own copies would see
 every note twice.
 
+### MCP server
+
+`.mcp.json` registers `teyla mcp`, a local server that gives Claude six tools. It needs the
+`teyla` CLI on PATH (see Install). It speaks MCP over stdio only: no network listener, no
+port. Each tool runs one Teyla command as a child process.
+
+| Tool | What it does |
+|---|---|
+| `teyla_asks` | Lists the questions your agent sessions are waiting on. Read-only. |
+| `teyla_answer` | Sends your answer to the session that asked. It resumes that local Claude Code or Codex session, as `teyla answer` does. Claude sends only text you wrote or approved. |
+| `teyla_intent` | Returns your own prompts for a product, word for word. Read-only. |
+| `teyla_load` | Says whether this Mac can take heavy work now (OK, BUSY or CRITICAL). Read-only. |
+| `teyla_routines` | Shows whether each product's scheduled routines and checks ran. Read-only. |
+| `teyla_monitor` | Summarises your AI session usage from local logs. Read-only. |
+
+`teyla mcp --list-tools` prints the same list. Without the CLI the server does not start and
+the plugin's skills and hooks work as before.
+
 ## Privacy
 
 **Short answer:** this plugin uploads nothing. Its hook scripts and skills contain no
@@ -120,6 +138,10 @@ kept. `teyla uninstall --dry` lists everything Teyla put on a machine, and
   `curl`, `wget`, `socket`, `urllib` and `ssh` finds no call (two comments in
   `land-check.sh` mention ssh remote URLs), and the only URLs are text: the install lines
   and links to documentation.
+- **The MCP server (`teyla mcp`).** It opens no port and makes no request itself. Its tools run the
+  Teyla commands named above. `teyla_routines` may ask GitHub for workflow status through your
+  own `gh` login, unless `TEYLA_SAFE=1`. `teyla_answer` starts your local `claude` or `codex`,
+  which sends the answer to your provider under your account.
 - **`review`, optional second reviewer.** If a `codex-review` or `claude-review` script is on
   your PATH, the skill runs it, and that script sends the diff to the provider it wraps. The
   skill labels the result "cross-provider review". Without such a script, a sub-agent of

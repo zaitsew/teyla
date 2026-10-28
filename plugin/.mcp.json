@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "teyla": {
+      "command": "sh",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/mcp/teyla-mcp.sh"
+      ]
+    }
+  }
+}

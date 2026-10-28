@@ -7,8 +7,8 @@ The guide (https://developers.openai.com/plugins/guides/submit-claude-plugin.md)
 Claude Code plugin as a skills-only upload when the archive root, or its single top-level
 directory, holds `.claude-plugin/plugin.json` with a non-empty `description` and at least one
 `skills/<name>/SKILL.md`. The portal then generates `.codex-plugin/plugin.json` itself.
-Hooks do not carry over (ChatGPT runs none; Codex runs command hooks only), and commands
-become skills. So this script copies `plugin/` minus `hooks/`, turns each command into a
+Hooks do not carry over (ChatGPT runs none; Codex runs command hooks only), `plugin/.mcp.json`
+is left out (a skills-only upload carries no MCP config), and commands become skills. So this script copies `plugin/` minus `hooks/`, turns each command into a
 skill, and swaps Claude's argument placeholders for plain words.
 
 Profiles:
@@ -150,6 +150,8 @@ def check(files: dict[str, bytes]) -> None:
             raise SystemExit(f"{path}: front matter needs name and description")
     if any(p.startswith(("hooks/", "commands/")) for p in files):
         raise SystemExit("hooks and commands must not be in a skills-only archive")
+    if any(p.rsplit("/", 1)[-1] == ".mcp.json" for p in files):
+        raise SystemExit(".mcp.json must not be in a skills-only archive")
 
 
 def write_zip(files: dict[str, bytes], out: pathlib.Path) -> None:

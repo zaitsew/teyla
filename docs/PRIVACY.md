@@ -63,6 +63,14 @@ These use your own `claude`, `codex` or `grok` login. The text goes to that prov
 |---|---|---|---|---|
 | 22 | `teyla web` | `127.0.0.1` only, a random port, until you stop it or 2 hours pass with no request | Nothing leaves the Mac. Your browser on this Mac reads the dashboard; every request needs a per-run token. See [WEB.md](WEB.md). | No |
 
+## The MCP server
+
+`teyla mcp` talks to an MCP client over stdio. It opens no socket and makes no network call itself. Its tools
+run commands listed above: `teyla_routines` is row 7, and `teyla_answer` is row 18, so it starts a local `claude` or
+`codex` process exactly as `teyla answer` does. `teyla_asks`, `teyla_intent`, `teyla_load` and `teyla_monitor` read
+local files only. No tool reaches `--issues`, `--model`, `--share`, `--allow-network` or any other call that
+needs a flag. The text it returns goes to the MCP client you connected, under that client's own policy.
+
 ## Not a call
 
 `teyla cloud prep` writes a setup script for a cloud sandbox that contains a `curl` line for the `uv`
