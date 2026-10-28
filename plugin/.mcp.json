@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "teyla": {
+      "command": "teyla",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}

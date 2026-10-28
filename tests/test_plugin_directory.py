@@ -92,9 +92,14 @@ def test_plugin_folder_passes_the_file_checks():
         assert p.stat().st_size < 256 * 1024, rel
         assert p == ICON or b"\0" not in p.read_bytes(), f"{rel} is binary: the directory holds binary files for a reviewer"
         assert not re.search(r'[:<>"|?*]|[. ]$', p.name), f"{rel}: name invalid on Windows"
-    assert not (PLUGIN / ".mcp.json").exists() and not (PLUGIN / "bin").exists()
+    assert not (PLUGIN / "bin").exists()
     lower = [str(p.relative_to(PLUGIN)).lower() for p in SHIPPED]
     assert len(lower) == len(set(lower)), "two names differ only by case"
+
+
+def test_mcp_config_registers_only_the_local_stdio_server():
+    cfg = json.loads((PLUGIN / ".mcp.json").read_text())
+    assert cfg == {"mcpServers": {"teyla": {"command": "teyla", "args": ["mcp"]}}}
 
 
 def test_icon_is_a_square_png_under_2_mb():
@@ -360,6 +365,7 @@ def test_openai_archive_is_a_skills_only_plugin(profile, tmp_path):
         bodies = "\n".join(z.read(n).decode() for n in names if n.endswith(".md"))
     assert tops == {"teyla"} and manifest["description"].strip()
     assert not [n for n in names if "/hooks/" in n or "/commands/" in n]
+    assert not [n for n in names if "mcp" in n.lower()], "a skills-only upload carries no MCP config"
     assert skills == (set(oa.PROFILES[profile]["skills"]) | set(oa.PROFILES[profile]["commands"]))
     assert "$ARGUMENTS" not in bodies and '"$1"' not in bodies
     assert {"review", "rule"} <= skills
