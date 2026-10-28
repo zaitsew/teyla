@@ -127,8 +127,8 @@ CASES = [
     ("teyla_load", {}, ["load", "--json"]),
     ("teyla_routines", {}, ["routines", "--json"]),
     ("teyla_routines", {"paths": ["a", "b c"]}, ["routines", "--json", "a", "b c"]),
-    ("teyla_monitor", {}, ["monitor", "--json"]),
-    ("teyla_monitor", {"days": 30, "project": "alpha"}, ["monitor", "--json", "--days", "30", "--project=alpha"]),
+    ("teyla_monitor", {}, ["monitor", "--json", "--no-mark-seen"]),
+    ("teyla_monitor", {"days": 30, "project": "alpha"}, ["monitor", "--json", "--no-mark-seen", "--days", "30", "--project=alpha"]),
 ]
 
 
@@ -320,3 +320,20 @@ def test_end_to_end_over_a_real_process(tmp_path):
     assert replies[0]["result"]["serverInfo"]["name"] == "teyla"
     assert [t["name"] for t in replies[1]["result"]["tools"]] == NAMES
     assert "ready on stdio" in p.stderr
+
+
+def test_monitor_no_mark_seen_keeps_a10(monkeypatch):
+    """An agent's monitor call through MCP must not mark A10 seen: the owner has not read it."""
+    from teyla import cli
+    calls = []
+    monkeypatch.setattr("teyla.advise.mark_seen", lambda F: calls.append(F))
+    monkeypatch.setattr(cli, "_sessions", lambda args: [])
+    monkeypatch.setattr(cli, "_extras", lambda m, ss, days: None)
+    monkeypatch.setattr(cli, "_cloud_sessions", lambda days: 0)
+    monkeypatch.setattr(cli, "_deliver", lambda out: True)
+    base = ["monitor", "--json"]
+    for argv, want in ((base + ["--no-mark-seen"], 0), (base, 1)):
+        calls.clear()
+        args = cli.build_parser().parse_args(argv)
+        args.fn(args)
+        assert len(calls) == want, argv

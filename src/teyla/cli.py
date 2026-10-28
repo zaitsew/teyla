@@ -217,6 +217,8 @@ def cmd_monitor(args):
     # silence the never-acknowledged A10 on the next run (caught in review, P2).
     if not delivered:
         return 1
+    if args.no_mark_seen:
+        return
     from .advise import mark_seen
     mark_seen(F)
 
@@ -480,6 +482,8 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "monitor":
             q.add_argument("--json", action="store_true"); q.add_argument("--samples", action="store_true"); q.add_argument("--out")
             q.add_argument("--share", action="store_true", help="redact: pseudonymous projects, connectors and skills; no session ids, paths or correction text")
+            # teyla mcp: an agent's call is not the owner reading the report, so it must not use up A10.
+            q.add_argument("--no-mark-seen", action="store_true", help=argparse.SUPPRESS)
         if name == "corrections":
             q.add_argument("--cluster", action="store_true")
             q.add_argument("--recorded", action="store_true", help="the stored corrections (teyla correct, capture hook), not transcript turns")

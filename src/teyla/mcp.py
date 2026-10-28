@@ -78,7 +78,7 @@ def _argv_routines(a):
 
 
 def _argv_monitor(a):
-    out = ["monitor", "--json"]
+    out = ["monitor", "--json", "--no-mark-seen"]   # an agent's call must not hide A10 from the owner
     if "days" in a:
         out += ["--days", str(a["days"])]
     if a.get("project"):
@@ -121,7 +121,7 @@ TOOLS = [
           [], _argv_routines, 120, read_only=True, open_world=True),
     _tool("teyla_monitor", "AI session usage summary",
           "How the owner's AI coding sessions were used: tokens, models, cost at list price, corrections and the "
-          "advice that follows. Local logs only. Read-only.",
+          "advice that follows. Local logs only. Read-only: it does not mark any advice as seen.",
           {"days": _days("Report window in days (default: all local history)."),
            "project": {"type": "string", "description": "Only sessions whose project or directory contains this text."}},
           [], _argv_monitor, 180, read_only=True),
