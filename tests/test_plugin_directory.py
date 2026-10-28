@@ -99,7 +99,9 @@ def test_plugin_folder_passes_the_file_checks():
 
 def test_mcp_config_registers_only_the_local_stdio_server():
     cfg = json.loads((PLUGIN / ".mcp.json").read_text())
-    assert cfg == {"mcpServers": {"teyla": {"command": "teyla", "args": ["mcp"]}}}
+    assert cfg == {"mcpServers": {"teyla": {"command": "sh", "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/teyla-mcp.sh"]}}}
+    launcher = (PLUGIN / "mcp" / "teyla-mcp.sh").read_text()
+    assert 'exec "$t" mcp' in launcher and "$HOME/.local/bin/teyla" in launcher
 
 
 def test_icon_is_a_square_png_under_2_mb():
