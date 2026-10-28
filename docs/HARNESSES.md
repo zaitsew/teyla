@@ -39,6 +39,19 @@ each copy says which source it was generated from. Edit the source; the next syn
 the copy. The hook scripts are one copy each in `~/.teyla/hooks/`, the plugin's own two
 scripts, which read every harness's stdin shape.
 
+## The MCP server
+
+`teyla mcp` is a local MCP server over stdio, for any harness that speaks MCP. Claude Code gets it from the
+plugin's `.mcp.json`. Codex needs one line, once:
+
+```sh
+codex mcp add teyla -- teyla mcp
+```
+
+Cursor and Grok take the same command in their MCP settings (`command: teyla`, `args: ["mcp"]`). It has six tools:
+`teyla_asks`, `teyla_answer`, `teyla_intent`, `teyla_load`, `teyla_routines` and `teyla_monitor`; `teyla mcp
+--list-tools` prints them. It opens no port. See [PRIVACY.md](PRIVACY.md).
+
 ## What is not the same, and why
 
 - **Session-start orientation** reaches the model in three of five. Claude Code injects the
