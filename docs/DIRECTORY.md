@@ -107,6 +107,23 @@ columns; the Cowork column follows its statement that hooks run there and has no
 
 ## 6. OpenAI plugin directory, skills-only
 
+**Status 2026-10-29: parked.** OpenAI Support (cases 18555649 and 18555804, answered by its AI
+assistant) gave three answers:
+
+- There is no way to request an allowlist for local (stdio) MCP plugins in the public directory.
+- `requires_local_executor=true` does not lift the pause on skills-only submissions.
+- The only route it offered is a remote MCP server on public HTTPS.
+
+Its other suggestion, Secure MCP Tunnel, does not cover public plugins: the
+[tunnel guide](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) says it "does not
+support public plugin submission or distribution". A remote server cannot read the transcripts, asks
+and load numbers that live on the user's machine without sending them off it, which breaks
+[PRIVACY.md](PRIVACY.md). So Teyla has no OpenAI listing for now.
+
+OpenAI users install it by hand instead: `codex mcp add teyla -- teyla mcp` (see
+[HARNESSES.md](HARNESSES.md)). Look again when OpenAI reopens skills-only submissions or accepts
+local MCP plugins in the public directory. The draft 0.29.0 stays in the maintainer's organization.
+
 **Status 2026-10-23: closed to skills-only plugins.** The portable zip uploaded, and the portal's
 metadata check answered "We are not accepting more skills-only submissions at this time." The draft
 stays in the maintainer's OpenAI organization; try again when OpenAI reopens skills-only submissions. The
@@ -159,7 +176,7 @@ In review, Approved, Published. Fix a **Needs changes** result from the plugin's
 To submit again from scratch: <https://claude.ai/directory/manage> > **Submit new** > **Plugin
 bundle**, repository `zaitsew/teyla`, path `plugin`, then sections 1 to 3 above.
 
-OpenAI directory: closed to skills-only plugins (section 6).
+OpenAI directory: parked on 2026-10-29. Skills-only submissions are closed, and local MCP plugins are not accepted (section 6).
 
 ## 8. Versioning
 
