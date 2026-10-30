@@ -102,6 +102,9 @@
   teyla reel story|check <session-id|story.json> [--ask TEXT] [--seconds N] [-o FILE]   the redacted Story as JSON; every string a reel would show
   teyla docs check [repo...] [--all] [--json] [--strict]         README opening, quick start, length, dead commands, decision history in docs
   teyla ux check [repo...] [--all] [--json] [--strict]           literals instead of tokens, crowded screens, copy rules, DESIGN.md
+  teyla ux shots <repo> [--check-manifest] [--dry] [--runs N] [--budget-min N] [--keep-temp] [--strict]   capture matrix: light/dark/large text x languages, 3 runs, a11y + layout checks
+  teyla ux diff <repo>                                            design/shots against design/shots/baseline: changed, new, missing, unstable; exit 1 on any
+  teyla ux accept <repo> --yes [--allow-unstable]                 make the run the baseline, record who and when
   teyla ux judge A.png B.png [--repo R] [--both-orders] [--dry]  which of two screens is better on the five rubric items; --calibrate REPO against your decided pairs
   teyla scout design [--week W] [--dry] [--no-model]            the weekly design scout: what changed, at most two rule proposals
 """

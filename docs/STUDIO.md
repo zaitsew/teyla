@@ -250,8 +250,9 @@ real app, TestFlight build    teyla review pull                         one PR p
 ```
 
 **Capture.** `TeylaReview`, a Swift package in `packages/review-ios/` (SwiftUI, iOS 17+):
-a debug overlay that any product adds behind a build flag `TEYLA_REVIEW` (on in TestFlight
-Internal, off in App Store builds). An explicit "Review" button in the product's debug menu
+a debug overlay that any product adds behind a runtime switch, the Info.plist key
+`TeylaReviewEnabled` (set from a build setting that is on in TestFlight Internal and undefined
+in App Store builds). An explicit "Review" button in the product's debug menu
 starts review mode; shake is a shortcut to the same thing, never the only way in. Review mode
 freezes the screen and shows the picture; the owner taps the element and talks. The product
 marks its screens and elements with `.reviewAnchor("trip.timeline.addButton")`, which
