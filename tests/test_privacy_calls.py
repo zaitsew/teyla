@@ -54,6 +54,7 @@ ALLOWED = {
     "review_asc.py": {24},
     "relay.py": {21},
     "web/server.py": {22},
+    "copy_lane.py": {25, 26, 27},
 }
 
 
