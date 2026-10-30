@@ -9,6 +9,8 @@ colours or fonts.
 | The standard: at most 20 dated, scoped rules (screens, tokens, UI copy, review), per-control length budgets, the five-item review rubric, a 10-point checklist | `templates/design/STANDARD.md` |
 | The per-product template, under 100 lines: tokens, components, glossary, screens, rules from review, what is absent | `templates/design/DESIGN.md` |
 | The audit | `teyla ux check` |
+| The pairwise judge, its calibration, and the reference screens to compare against | `teyla ux judge`, [JUDGE.md](JUDGE.md), `templates/design/REFERENCE.md` |
+| What changed in design this week, and at most two proposals for the standard | `teyla scout design`, [SCOUT.md](SCOUT.md), `templates/design/SOURCES.md` |
 | The review loop, the drift matrix, the judge, the copy lane and the brand kit: concept, decisions and roadmap | [STUDIO.md](STUDIO.md) |
 
 ## Start a product
