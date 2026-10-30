@@ -474,6 +474,7 @@ uv tool uninstall teyla    # then remove the command; with pipx: pipx uninstall 
 - [WORK](WORK.md): safe mode for a work laptop
 - [PRIVACY](PRIVACY.md): every call that leaves your machine
 - [BRAND](BRAND.md), [UX](UX.md), [STUDIO](STUDIO.md): the mark, the colours, the voice, the UX standard, and the concept for review by voice, drift, copy and visuals
+- [REVIEW](REVIEW.md): the iPhone review overlay, the capture format and how a capture reaches the Mac
 - [MANUAL](MANUAL.md): the whole method and the numbers behind each threshold
 - [ROADMAP](ROADMAP.md): what is next
 
