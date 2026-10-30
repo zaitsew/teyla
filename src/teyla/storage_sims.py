@@ -17,6 +17,12 @@ down once it has been idle `storage.sim_idle_min` minutes (default 30). When mor
 `storage.sim_max_booted` (default 3) are booted, idle ones go at once, longest idle first.
 Shutting down loses nothing on disk, and `xcodebuild test` boots its destination again by itself.
 
+A simulator whose SpringBoard crashed `CRASH_LOOP` times since its boot is shut down at once, in use
+or not. Such a boot came up without its main display: SpringBoard dies at launch, launchd_sim
+restarts it, and every death puts a "SpringBoard quit unexpectedly" dialog on the Mac (12 in six
+minutes on 30 Oct 2026). `simctl bootstatus` hangs on it, and the `xcodebuild` waiting for it keeps
+it "in use", so the idle rules alone never touch it. A good boot writes no SpringBoard report.
+
 Devices whose name matches `storage.sim_prune_pattern` (a regex matched at the start of the name;
 default empty = nothing is ever deleted) and that stayed shut down, untouched and named by no
 process for `storage.sim_prune_days` (default 3) are deleted: agents create one per task and
@@ -25,6 +31,7 @@ touched. Every `xcrun simctl` call goes through `simctl()`.
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import pathlib
@@ -41,6 +48,7 @@ UDID = re.compile(r"[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}")
 # .../Devices/<udid>/ and the simruntime, and `log stream` only watches.
 NOT_USING = ("simruntime", "launchd_sim", "log stream")
 _FETCH = object()   # "ask the machine"; None means "asked, and it could not answer"
+CRASH_LOOP = 2      # SpringBoard reports since the boot that make a booted simulator broken
 
 
 def settings(cfg: dict | None = None) -> dict:
@@ -97,6 +105,64 @@ def devices_root() -> pathlib.Path:
     return pathlib.Path.home() / "Library" / "Developer" / "CoreSimulator" / "Devices"
 
 
+# --- a boot that never came up ------------------------------------------------------------
+
+def boot_time(udid: str, root: pathlib.Path | None = None) -> float | None:
+    """When the device last booted: launchd_sim writes its bootstrap plist at every boot."""
+    f = (root or devices_root()) / udid / "data" / "var" / "run" / "launchd_bootstrap.plist"
+    try:
+        return f.stat().st_mtime
+    except OSError:
+        return None
+
+
+PROC_LAUNCH = re.compile(rb'"procLaunch"\s*:\s*"(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)(?:\.\d+)? ([+-]\d{4})"')
+
+
+def launched_at(text: bytes) -> float | None:
+    """When the crashed process started, from the report's `procLaunch`. None when it is missing."""
+    m = PROC_LAUNCH.search(text)
+    if not m:
+        return None
+    try:
+        return dt.datetime.strptime(f"{m.group(1).decode()} {m.group(2).decode()}", "%Y-%m-%d %H:%M:%S %z").timestamp()
+    except ValueError:
+        return None
+
+
+def springboard_crashes(udid: str, since: float, roots: list[pathlib.Path] | None = None) -> int:
+    """SpringBoard crash reports by this device whose process started at `since` or later. A simulator's
+    report names its device in the coalition (`com.apple.CoreSimulator.SimDevice.<UDID>`); the Mac's own
+    SpringBoard does not exist, so nothing else matches. The process's launch time, not the file's, says
+    which boot it belongs to: a report of the previous boot can be written after the next one starts."""
+    from . import crash
+    tag = f"simdevice.{udid}".lower().encode()
+    n = 0
+    for root in crash.default_roots() if roots is None else roots:
+        try:
+            files = list(root.glob("SpringBoard*.ips"))
+        except OSError:
+            continue
+        for f in files:
+            try:
+                if f.stat().st_mtime < since:
+                    continue
+                text = f.read_bytes()
+            except OSError:
+                continue
+            launched = launched_at(text)
+            if tag in text.lower() and (launched is None or launched >= since - 1):
+                n += 1
+    return n
+
+
+def crash_looping(udid: str, root: pathlib.Path | None = None, roots: list[pathlib.Path] | None = None) -> int:
+    """How many times SpringBoard crashed since this device's boot, when that is `CRASH_LOOP` or more; else 0."""
+    since = boot_time(udid, root)
+    n = springboard_crashes(udid, since, roots) if since is not None else 0
+    return n if n >= CRASH_LOOP else 0
+
+
 # --- in use or idle -----------------------------------------------------------------------
 
 def named_by_process(udid: str, procs: list[str]) -> bool:
@@ -149,7 +215,8 @@ def status(now: float | None = None, devs=_FETCH, procs=_FETCH, record: bool = T
     booted = [d for d in devs if d["state"] == "Booted"]
     rows = []
     for d in booted:
-        row = {"udid": d["udid"], "name": d["name"], "runtime": d["runtime"], "in_use": None, "idle_min": 0, "since": now}
+        row = {"udid": d["udid"], "name": d["name"], "runtime": d["runtime"], "in_use": None, "idle_min": 0, "since": now,
+               "crashes": crash_looping(d["udid"])}
         if procs is not None:
             row["in_use"] = in_use(d["udid"], procs)
             if row["in_use"]:
@@ -178,7 +245,8 @@ def render_status(st: dict) -> list[str]:
     out = []
     for r in st["booted"]:
         what = "in use  " if r["in_use"] else ("unknown " if r["in_use"] is None else f"idle {r['idle_min']}m")
-        out.append(f"{what:8} {r['udid']}  {r['name']}")
+        broken = f"  SpringBoard crashed {r['crashes']}x since boot" if r.get("crashes") else ""
+        out.append(f"{what:8} {r['udid']}  {r['name']}{broken}")
     if st.get("error"):
         out.append(st["error"])
     return out
@@ -231,8 +299,13 @@ def reap(cfg: dict | None = None, dry: bool = False, now: float | None = None, d
     if devs is None:
         return {"status": st, "lines": [st["error"]], "shutdown": [], "pruned": []}
     count = len(st["booted"])
+    # A crash-looping boot goes first, in use or not: whatever waits on it never gets a SpringBoard.
+    for r in st["booted"]:
+        if r.get("crashes") and _stop_broken(r["udid"], r["name"], r["crashes"], dry, lines):
+            shut.append(r["udid"])
+            count -= 1
     # Longest idle first; past the cap anything idle goes, otherwise only past the idle limit.
-    idle = sorted((r for r in st["booted"] if r["in_use"] is False), key=lambda r: (-r["idle_min"], r["since"], r["udid"]))
+    idle = sorted((r for r in st["booted"] if r["in_use"] is False and r["udid"] not in shut), key=lambda r: (-r["idle_min"], r["since"], r["udid"]))
     for r in idle:
         if not (r["idle_min"] >= s["idle_min"] or count > s["max_booted"]):
             continue
@@ -261,6 +334,31 @@ def reap(cfg: dict | None = None, dry: bool = False, now: float | None = None, d
         else:
             lines.append(f"could not delete {p['udid']} ({p['name']})")
     return {"status": st, "lines": lines, "shutdown": shut, "pruned": [p for p in pruned if "error" not in p]}
+
+
+def _stop_broken(udid: str, name: str, crashes: int, dry: bool, lines: list[str]) -> bool:
+    label = f"{udid} ({name}), SpringBoard crashed {crashes}x since boot"
+    if dry:
+        lines.append(f"would shut down {label}")
+        return True
+    if simctl("shutdown", udid, timeout=120)[0] != 0:
+        lines.append(f"could not shut down {udid} ({name})")
+        return False
+    lines.append(f"shut down {label}")
+    storage._log(f"sims shut down {udid} {name} springboard-crash-loop")
+    _forget(udid)
+    return True
+
+
+def stop_crash_loops(udids: list[str], dry: bool = False) -> list[str]:
+    """`guard tick`'s pass over the booted simulators it already sees (`launchd_sim` UDIDs): shut down
+    each one whose SpringBoard is crash-looping. It reads only report files and device folders;
+    `simctl` runs only for a broken device, so a healthy minute costs no `simctl` call."""
+    lines: list[str] = []
+    for u in udids:
+        if UDID.fullmatch(u) and (n := crash_looping(u)):
+            _stop_broken(u, "crash loop", n, dry, lines)
+    return lines
 
 
 # --- CLI ------------------------------------------------------------------------------------
