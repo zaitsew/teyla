@@ -127,7 +127,8 @@ The findings that shaped the design:
 - **iOS 27 (September 2026) reversed parts of iOS 26:** search returned to the tab bar and
   toolbars changed; a custom tab bar or toolbar gets none of it and must be retested
   ([MacStories](https://www.macstories.net/stories/ios-and-ipados-27-review/2/)). Rules copied
-  from one WWDC age within a year, which is why the standard keeps few rules and dates them.
+  from one WWDC age within a year, which is why the standard keeps few rules, dates them, and
+  retests every rule copied from a WWDC session after each iOS release.
 - **The reference set** the second report returns: Things (the Plus button dragged to where the
   task goes; colour reserved for meaning), Flighty (one departure-board line per flight, about
   fifteen time-and-place states, a status colour always paired with a text badge, "Leave for
@@ -196,7 +197,13 @@ The findings that shaped the design:
   glossary, the screen inventory, what is absent. History goes to `docs/decisions/`, taste to
   the ledger. `teyla ux check` fails a `DESIGN.md` over 100 lines and a standard with more
   than 20 active rules; a lane is given the rules that match the screen it touches, not the
-  whole file.
+  whole file. Shipped in sprint 1: the template has the sections Tokens, Components, Glossary
+  (one word per concept, columns en/es/ru), Voice, Screens and Rules from review (the last two
+  between `<!-- teyla:screens -->` and `<!-- teyla:rules -->` markers that `teyla taste render`
+  fills) and What is absent. In the standard an active rule is a `### R<n>.` heading with a
+  `Since <date> · Scope: ... · Check: ...` line; rules cut to make room go under "Retired or
+  advisory". "More than four tap targets" is a WARN and "more than three type sizes" a review
+  warning, never a FIX.
 - **S6. Drift is caught by a fixed matrix, not by a model's glance.** Screen captures in
   light, dark and the largest Dynamic Type, in every shipped language, diffed against an
   accepted baseline, plus the accessibility audit for clipping and contrast. A UI PR carries
@@ -205,7 +212,9 @@ The findings that shaped the design:
   reference screen, with the rubric from the standard. Ties and "feels native" go to the
   owner. The score reported per product is the share of screens that beat their reference,
   not a 1–10 feeling. The judge is calibrated against the owner before it is trusted: it must
-  agree with him on 16 of 20 pairs he has already decided.
+  agree with him on 16 of 20 pairs he has already decided. The rubric is Part 5 of the
+  standard: five items scored 0, 1 or 2 with a written meaning for each score, and "not
+  assessed" where the picture cannot show the item.
 - **S8. Copy is written by a writer lane from a brief, not by the code lane.** The brief is
   the screen's job, its primary action, the glossary and the product's voice chart. English,
   Spanish and Russian are each written from the brief, never translated. The unit of review
