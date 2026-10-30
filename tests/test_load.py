@@ -396,6 +396,28 @@ def test_sim_is_refused_at_the_cap_and_the_message_names_the_booted_ones():
     assert load.admit("build", snap(procs=procs(sims=5)), {})[0]      # sims do not block builds
 
 
+def test_the_sim_refusal_does_not_suggest_a_crash_looping_device(monkeypatch):
+    from teyla import storage_sims
+    monkeypatch.setattr(storage_sims, "crash_looping", lambda udid, *a, **k: 3 if udid == UDID_A else 0)
+    ok, msg = load.admit("sim", snap(procs=procs(sims=2, udids=[UDID_A, UDID_B])), {})
+    reuse = msg.splitlines()[1]
+    assert not ok and UDID_B in reuse and UDID_A not in reuse
+    assert f"Not {UDID_A}" in msg and "teyla storage sims --reap" in msg
+    monkeypatch.setattr(storage_sims, "crash_looping", lambda udid, *a, **k: 2)
+    ok, msg = load.admit("sim", snap(procs=procs(sims=2, udids=[UDID_A, UDID_B])), {})
+    assert "(`xcrun simctl list devices booted`)" in msg.splitlines()[1]
+
+
+def test_a_device_that_cannot_be_judged_is_still_suggested(monkeypatch):
+    from teyla import storage_sims
+
+    def boom(udid, *a, **k):
+        raise OSError("no access")
+    monkeypatch.setattr(storage_sims, "crash_looping", boom)
+    ok, msg = load.admit("sim", snap(procs=procs(sims=2, udids=[UDID_A, UDID_B])), {})
+    assert UDID_A in msg.splitlines()[1] and "Not " not in msg
+
+
 def test_lane_cap_is_off_by_default_and_counts_headless_lanes():
     assert load.admit("lane", snap(procs=procs(lanes=50)), {})[0]
     ok, msg = load.admit("lane", snap(procs=procs(lanes=3)), {"max_lanes": 3})
