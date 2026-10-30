@@ -100,6 +100,13 @@
   teyla cloud prep <repo> [--dry] [--allow-public] [--fix-gitignore]   AGENTS.md shipping section, hooks, rules, setup doc for cloud sessions
   teyla reel list [--since 24h] [--repo NAME] [--all]             sessions (Claude Code and Codex) with repo, span, commits, PRs
   teyla reel story|check <session-id|story.json> [--ask TEXT] [--seconds N] [-o FILE]   the redacted Story as JSON; every string a reel would show
+  teyla reel product [repo] [--input MOVIE] [--copy FILE] [--lang L,..] [--formats vertical,square] [--voice [--yes]] [--dry]   a product demo from a screen recording, with captions from the copy table
+  teyla kit init|check [repo] [--force|--json]                   the brand kit: scaffold brand/kit.toml; fail a kit with a missing piece, an asset without provenance, or two characters
+  teyla kit shots [repo] [--lang L,..] [--look light|dark|large] [--sizes S,..] [--dry]   store screenshots from the matrix captures and docs/store/captions.json (needs teyla[reel])
+  teyla kit image <repo> "<scene>" [--model M] [--yes] [--dry]    one image of the mascot from the reference images; prints the price, refuses without --yes
+  teyla kit compare <repo> "<scene>" [--models a,b] [--poses 10] [--yes]   ten poses, two models, a contact sheet; plan and price only without --yes
+  teyla post draft [repo] --channel x|instagram|tiktok|threads|youtube [--event TEXT] [--text TEXT]   a post checked against the voice chart, into brand/posts/queue/
+  teyla post pack [repo] [--event TEXT] [--week YYYY-Www]        the weekly flagship pack (one reel, one screenshot set, three posts) as a checklist
   teyla docs check [repo...] [--all] [--json] [--strict]         README opening, quick start, length, dead commands, decision history in docs
   teyla ux check [repo...] [--all] [--json] [--strict]           literals instead of tokens, crowded screens, copy rules, DESIGN.md
   teyla ux shots <repo> [--check-manifest] [--dry] [--runs N] [--budget-min N] [--keep-temp] [--strict]   capture matrix: light/dark/large text x languages, 3 runs, a11y + layout checks
@@ -583,6 +590,9 @@ def build_parser() -> argparse.ArgumentParser:
     ux_check_mod.register(sp)
     from . import scout_design as scout_design_mod
     scout_design_mod.register(sp)
+    from . import kit as kit_mod, post as post_mod
+    kit_mod.register(sp)
+    post_mod.register(sp)
     from . import start as start_mod
     start_mod.register(sp)
     from . import web as web_mod

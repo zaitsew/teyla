@@ -186,3 +186,6 @@ def register(sp) -> None:
     d.add_argument("-o", "--output", metavar="DIR", help="output directory (default ~/Movies/teyla-reel/<date>-<repo>-<id>/)")
     d.add_argument("--font", metavar="PATH", help="a monospace font file instead of Menlo / DejaVu Sans Mono")
     d.add_argument("--no-video", action="store_true", help="skip reel.mp4 (contact.png and the text files only)")
+
+    from . import product
+    product.add_arguments(rs)

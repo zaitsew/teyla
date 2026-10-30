@@ -168,6 +168,19 @@ the secret patterns and the private-terms list of `scripts/leak_check.py` (`~/.c
 and `reel.srt` (exit 1). `--no-video` skips the mp4, `--font PATH` replaces Menlo / DejaVu Sans Mono. Check
 `reel.txt` before posting: it is the audit trail, and a string that is not in it is not in the video.
 
+### Brand kit, product reel and posts
+
+`teyla kit`, `teyla reel product` and `teyla post` make a product's store screenshots, mascot images, demo reel and
+posts from files it already has. Nothing publishes. Details, prices and the `kit.toml` schema: [`docs/KIT.md`](KIT.md).
+
+| command | what you get |
+|---|---|
+| `teyla kit init [repo]` / `teyla kit check [repo]` | `brand/kit.toml` and the folders; `check` fails a placeholder, a missing piece, an asset without provenance, or two characters |
+| `teyla kit shots [repo] [--lang en,es]` | framed store screenshots in `brand/out/store/<lang>/<size>/` from the matrix captures and `docs/store/captions.json` (needs Pillow) |
+| `teyla kit image <repo> "<scene>"` / `teyla kit compare <repo> "<scene>"` | one mascot image / ten poses on two models; the price first, `--yes` to spend it (`compare` without it is a plan) |
+| `teyla reel product <repo> --input movie.mov` | `product-vertical.mp4` and `product-square.mp4` per language with captions from the copy table; `--voice --yes` adds a priced voice-over |
+| `teyla post draft <repo> --channel x --event "..."` / `teyla post pack <repo>` | a voice-checked draft in `brand/posts/queue/`; the weekly pack checklist |
+
 ### The advice rules
 
 | id | fires when | action |
