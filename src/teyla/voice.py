@@ -21,6 +21,18 @@ check leaves the machine. The charts themselves are the owner's and live outside
 (`~/.teyla/voice/<channel>/`); `templates/voice/VOICE.md` is the schema.
 
 Exit 0 clean, 1 a hard rule failed, 2 a usage or chart error.
+
+A chart is complete when it carries ten accepted and five rejected example lines (under `## Accepted lines`
+and `## Rejected lines`, one bullet each; a line that still holds a `{{placeholder}}` does not count). `check`
+adds a warning when the chart it used is short of them: a chart without examples is a style guide nobody can
+calibrate against.
+
+    teyla voice chart <repo> [--lang en|es|ru] [--out DIR] [--force] [--json]
+
+scaffolds the product's chart, one file per language, from the `## Voice` and `## Glossary` sections of its
+`DESIGN.md` and from `brand/kit.toml` when it exists; the example lines come from `design/decisions/*.json`
+files that carry `copy: {lang, accepted, rejected}`. It writes `brand/voice/{en,es,ru}.md` (or the kit's
+chart directory), never overwrites a chart that exists (`--force`), and prints each language's example count.
 """
 from __future__ import annotations
 
@@ -455,6 +467,157 @@ def model_available() -> str | None:
     return None
 
 
+# --- completeness: the example lines --------------------------------------------------------------
+
+ACCEPTED_MIN = 10
+REJECTED_MIN = 5
+_HEADING = re.compile(r"^#{2,4}\s*(.*?)\s*$")
+_BULLET = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+(.+?)\s*$")
+
+
+def example_lines(body: str) -> tuple[list[str], list[str]]:
+    """(accepted, rejected) example lines of a chart body: the bullets under a heading that starts with
+    "Accepted" or "Rejected". A line with a `{{placeholder}}` is a blank to fill and is not counted."""
+    acc: list[str] = []
+    rej: list[str] = []
+    cur = None
+    for line in body.splitlines():
+        h = _HEADING.match(line)
+        if h:
+            title = h.group(1).lower()
+            cur = acc if title.startswith("accepted") else rej if title.startswith("rejected") else None
+            continue
+        b = _BULLET.match(line)
+        if b and cur is not None and "{{" not in b.group(1):
+            cur.append(b.group(1).strip().strip("\"“”"))
+    return acc, rej
+
+
+def chart_status(chart: Chart) -> dict:
+    acc, rej = example_lines(chart.body)
+    return dict(lang=chart.lang, accepted=len(acc), rejected=len(rej), accepted_needed=ACCEPTED_MIN,
+                rejected_needed=REJECTED_MIN, complete=len(acc) >= ACCEPTED_MIN and len(rej) >= REJECTED_MIN)
+
+
+def completeness_finding(chart: Chart) -> dict | None:
+    st = chart_status(chart)
+    if st["complete"]:
+        return None
+    return dict(level="warn", rule="chart",
+                message=f"the {chart.lang} chart is incomplete: {st['accepted']} of {ACCEPTED_MIN} accepted and "
+                        f"{st['rejected']} of {REJECTED_MIN} rejected example lines (teyla voice chart <repo>)",
+                accepted=st["accepted"], rejected=st["rejected"])
+
+
+# --- the scaffold: teyla voice chart ----------------------------------------------------------------
+
+LANG_NAMES = {"en": "English", "es": "Spanish", "ru": "Russian"}
+
+
+def _decision_examples(repo: Path) -> dict[str, tuple[list[str], list[str]]]:
+    """{lang: (accepted, rejected)} from `design/decisions/*.json` files with `copy: {lang, accepted, rejected}`."""
+    from . import taste
+    out: dict[str, tuple[list[str], list[str]]] = {l: ([], []) for l in LANGS}
+    for d in reversed(taste.load_decisions(repo)):                 # oldest first
+        c = d.get("copy")
+        if not isinstance(c, dict):
+            continue
+        lang = c.get("lang") if c.get("lang") in LANGS else "en"
+        for field, bucket in (("accepted", out[lang][0]), ("rejected", out[lang][1])):
+            v = c.get(field)
+            if isinstance(v, str) and v.strip() and v.strip() not in bucket:
+                bucket.append(v.strip())
+    return out
+
+
+def _bullets(lines: list[str], need: int, what: str) -> list[str]:
+    out = [f"- {l}" for l in lines[:need]]
+    out += [f"- {{{{{what} line {i}}}}}" for i in range(len(out) + 1, need + 1)]
+    return out
+
+
+def scaffold_chart(repo: Path, lang: str, product: str, design: str, kit: dict,
+                   examples: tuple[list[str], list[str]]) -> str:
+    from . import copy_lexicon as lex, design_md
+    banned = list(dict.fromkeys(lex.BANNED_DEFAULT[lang] + kit.get("banned", [])))
+    preferred = kit.get("preferred", [])
+    front = ["---", f"lang: {lang}", "max_sentence_words: 20", "emoji_max: 0", "hashtags_max: 0", "exclamations_max: 0",
+             "banned:"] + [f"  - {json.dumps(b, ensure_ascii=False)}" for b in banned]
+    front += ["preferred:"] + [f"  - {json.dumps(p, ensure_ascii=False)}" for p in preferred] if preferred else ["preferred: []"]
+    front.append("---")
+    voice = design_md.voice_text(design)
+    gloss = design_md.glossary(design)
+    traits = kit.get("traits") or []
+    body = [f"# Voice chart: {product} ({LANG_NAMES[lang]})", "",
+            "Written in this language, from the same brief as the other charts. Never translate one chart into another.",
+            "UI strings follow `DESIGN.md`; this chart sets the voice they share with posts and store text.", "",
+            "## Brief"]
+    body += ([f"> {l}" if l.strip() else ">" for l in voice.splitlines()] if voice
+             else ["- What the product is, in one sentence: {{one sentence}}",
+                   "- Who it is for: {{reader}}", "- Address: {{you or we; formal or informal}}"])
+    body += ["", "## Traits", "Each is \"We are X, not Y\", with one do and one don't from real copy.", ""]
+    if traits:
+        body += [f"- {t}" for t in traits]
+    else:
+        body += ["| We are | Not | Do | Don't |", "|---|---|---|---|"] + \
+                [f"| {{{{trait {i}}}}} | {{{{opposite {i}}}}} | \"{{{{example}}}}\" | \"{{{{example}}}}\" |" for i in (1, 2, 3)]
+    body += ["", "## Glossary", f"One word per concept in {LANG_NAMES[lang]}, never rotated.", ""]
+    if gloss:
+        body += ["| Concept | Term |", "|---|---|"] + [f"| {g['concept']} | {g.get(lang) or '{{term}}'} |" for g in gloss]
+    else:
+        body += ["| Concept | Term |", "|---|---|", "| {{concept}} | {{term}} |"]
+    body += ["", f"## {LANG_NAMES[lang]}"] + [f"- {n}" for n in lex.LANGUAGE_NOTES[lang]]
+    body += ["", "## Accepted lines", f"Ten lines the owner kept, in {LANG_NAMES[lang]}. They calibrate every judge and every writer.", ""]
+    body += _bullets(examples[0], ACCEPTED_MIN, "accepted")
+    body += ["", "## Rejected lines", f"Five lines the owner turned down, in {LANG_NAMES[lang]}, each with what was wrong.", ""]
+    body += _bullets(examples[1], REJECTED_MIN, "rejected")
+    return "\n".join(front + body) + "\n"
+
+
+def scaffold(repo: Path, langs: list[str], out: Path | None = None, force: bool = False) -> dict:
+    """Write the missing charts. {dir, charts: [{lang, file, written, accepted, rejected, complete}], sources}."""
+    from . import design_md
+    design = design_md.read(repo)
+    kit = design_md.load_kit(repo)
+    product = kit.get("product") or repo.name
+    d = out or design_md.default_chart_dir(repo)
+    examples = _decision_examples(repo)
+    rows = []
+    for lang in langs:
+        f = d / f"{lang}.md"
+        written = force or not f.exists()
+        if written:
+            d.mkdir(parents=True, exist_ok=True)
+            tmp = f.with_name(f".{f.name}.tmp")
+            tmp.write_text(scaffold_chart(repo, lang, product, design, kit, examples[lang]), encoding="utf-8")
+            tmp.replace(f)
+        try:
+            st = chart_status(load_chart(f))
+        except ChartError as e:
+            st = dict(accepted=0, rejected=0, complete=False, error=str(e))
+        rows.append(dict(lang=lang, file=str(f), written=written, accepted=st["accepted"], rejected=st["rejected"],
+                         complete=st["complete"], **({"error": st["error"]} if "error" in st else {})))
+    return dict(dir=str(d), charts=rows,
+                sources=dict(design_md=bool(design), voice_section=bool(design_md.voice_text(design)),
+                             glossary_rows=len(design_md.glossary(design)), kit=bool(kit),
+                             decision_examples=sum(len(a) + len(r) for a, r in examples.values())))
+
+
+def render_scaffold(rep: dict) -> str:
+    L = [f"teyla voice chart: {rep['dir']}"]
+    s = rep["sources"]
+    L.append(f"from: DESIGN.md {'found' if s['design_md'] else 'missing'}"
+             f"{' (voice section)' if s['voice_section'] else ''}, {s['glossary_rows']} glossary rows, "
+             f"brand/kit.toml {'read' if s['kit'] else 'absent'}, {s['decision_examples']} example lines from design/decisions")
+    for c in rep["charts"]:
+        state = "written" if c["written"] else "kept (exists; --force overwrites)"
+        L.append(f"  {c['lang']}  {state}: {c['accepted']}/{ACCEPTED_MIN} accepted, {c['rejected']}/{REJECTED_MIN} rejected"
+                 + ("" if c["complete"] else "  INCOMPLETE") + (f"  ({c['error']})" if c.get("error") else ""))
+    if not all(c["complete"] for c in rep["charts"]):
+        L.append("fill the {{placeholders}}; add accepted and rejected lines until each chart is complete")
+    return "\n".join(L)
+
+
 # --- the command ------------------------------------------------------------------------------
 
 def render(rep: dict) -> str:
@@ -486,7 +649,11 @@ def render(rep: dict) -> str:
 
 
 def cmd_voice(args) -> int:
+    if args.action == "chart":
+        return cmd_chart(args)
     try:
+        if not args.chart:
+            raise ChartError("check needs --chart <dir|file>")
         if args.file == "-":
             text = sys.stdin.read()
         else:
@@ -504,6 +671,10 @@ def cmd_voice(args) -> int:
         print(f"teyla voice: {e}", file=sys.stderr)
         return 2
     rep = check(text, chart, args.format, warn)
+    gap = completeness_finding(chart)
+    rep["chart_status"] = chart_status(chart)
+    if gap:
+        rep["findings"].append(gap)
     if args.model:
         rep["model"] = model_review(text, chart, args.format)
     if args.json:
@@ -513,14 +684,34 @@ def cmd_voice(args) -> int:
     return 0 if rep["ok"] else 1
 
 
+def cmd_chart(args) -> int:
+    from . import taste
+    try:
+        repo = taste.resolve_repo(args.file)
+    except FileNotFoundError as e:
+        print(f"teyla voice chart: {e}", file=sys.stderr)
+        return 2
+    langs = [args.lang] if args.lang else list(LANGS)
+    out = Path(args.out).expanduser() if args.out else None
+    try:
+        rep = scaffold(repo, langs, out, args.force)
+    except OSError as e:
+        print(f"teyla voice chart: cannot write the charts: {e}", file=sys.stderr)
+        return 2
+    print(json.dumps(rep, indent=1, ensure_ascii=False) if args.json else render_scaffold(rep))
+    return 0
+
+
 def register(sp):
-    q = sp.add_parser("voice", help="check a draft against a voice chart: sentence and post length, banned phrases, emoji, hashtags, exclamation marks",
+    q = sp.add_parser("voice", help="check a draft against a voice chart (sentence and post length, banned phrases, emoji, hashtags, exclamation marks), or scaffold a product's chart",
                       description=__doc__.split("\n\n")[0])
     q.set_defaults(fn=cmd_voice)
-    q.add_argument("action", choices=["check"])
-    q.add_argument("file", help="the draft; - reads stdin")
-    q.add_argument("--chart", required=True, metavar="DIR|FILE", help="a chart directory (en.md, es.md, ru.md) or one chart file")
-    q.add_argument("--lang", choices=LANGS, help="the chart language (default: the draft's own, guessed)")
+    q.add_argument("action", choices=["check", "chart"])
+    q.add_argument("file", help="check: the draft, - reads stdin. chart: the product repo (a name under code_root or a path)")
+    q.add_argument("--chart", metavar="DIR|FILE", help="check: a chart directory (en.md, es.md, ru.md) or one chart file (required)")
+    q.add_argument("--lang", choices=LANGS, help="check: the chart language (default: the draft's own, guessed). chart: only this language")
+    q.add_argument("--out", metavar="DIR", help="chart: write the charts here (default: brand/voice, or the kit's chart directory)")
+    q.add_argument("--force", action="store_true", help="chart: overwrite charts that exist")
     q.add_argument("--format", choices=FORMATS, help="check the length for this format")
     q.add_argument("--model", action="store_true", help="add one Claude Haiku pass: a rating against the chart's traits and at most 3 edits (sends the draft to the API)")
     q.add_argument("--json", action="store_true")

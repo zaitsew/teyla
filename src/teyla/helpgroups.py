@@ -52,6 +52,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
         ("scout", "The weekly design scout: what changed, and rule proposals"),
         ("review", "Comments made on the real app: pull, triage, lane brief"),
         ("taste", "Design decisions and rules per product; renders DESIGN.md"),
+        ("copy", "UI copy from a brief: write per language, judge, apply to the catalogs"),
         ("intent", "Your long prompts, verbatim, per product"),
         ("scaffold", "Start a new repo with the standard files"),
         ("probe-sql", "One read-only Supabase query for a usage probe"),

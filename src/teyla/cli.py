@@ -39,6 +39,8 @@
   teyla lanes [--days N] [--project SUBSTR] [--json]             subagent lanes by type and model: cost, turns, peak context, review P1s
   teyla prose [--days N] [--project SUBSTR] [--json]             final reply length, long sentences, ban-list hits and preambles
   teyla voice check <file|-> --chart <dir|file> [--lang L] [--format F] [--model] [--json]   a draft against a voice chart
+  teyla voice chart <repo> [--lang L] [--out DIR] [--force] [--json]   scaffold a product's voice chart (en, es, ru); a chart is complete at 10 accepted and 5 rejected lines
+  teyla copy brief|write|judge|apply ...                         UI copy from a brief: one call per language, a judge, then the catalogs (xcstrings, strings.xml, i18n)
   teyla models [--days N] [--json] [--refresh]                   model ladder + price drift report
   teyla models watch [--refresh] [--json] [--ack [ID...]] [--seed FILE]  new models, what they replace, repos naming superseded ids
   teyla tidy [paths...] [--json] [--apply] [--quiet]              duplicates, dead references and whitespace junk in the rule and memory files; --apply: mechanical fixes only, backup first
@@ -593,6 +595,8 @@ def build_parser() -> argparse.ArgumentParser:
     from . import kit as kit_mod, post as post_mod
     kit_mod.register(sp)
     post_mod.register(sp)
+    from . import copy_lane as copy_lane_mod
+    copy_lane_mod.register(sp)
     from . import start as start_mod
     start_mod.register(sp)
     from . import web as web_mod
