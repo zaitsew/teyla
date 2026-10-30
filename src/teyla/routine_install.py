@@ -231,6 +231,7 @@ mkdir -p "$OUT_DIR"
 "$TEYLA" tidy --quiet > "$OUT_DIR/tidy.md" 2>&1
 "$TEYLA" lang --quiet > "$OUT_DIR/lang.md" 2>&1
 "$TEYLA" reviews --quiet > "$OUT_DIR/reviews.md" 2>&1
+"$TEYLA" scout design --quiet > "$OUT_DIR/scout-design.md" 2>&1
 # The reports above tend to have no reader: the digest is the five lines
 # that are read — the session-start hook shows its headline once, and a notification says it exists.
 "$TEYLA" digest --write
@@ -341,6 +342,9 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         return True
     if path == WRAPPER_PATH and "reviews --quiet" not in text:
         # Written before `teyla reviews`: the weekly would never count merged PRs nobody reviewed.
+        return True
+    if path == WRAPPER_PATH and "scout design" not in text:
+        # Written before `teyla scout design`: the weekly would never read the design feeds.
         return True
     if path == WRAPPER_PATH and ("models watch --refresh" in text) != (_watch_line() == WATCH_LINE):
         # Safe mode was switched on (or off) after the wrapper was written.

@@ -1,0 +1,8 @@
+screen_type: list
+references:
+  - name: Things, the to-do list
+    what_to_copy: The add control is dragged to the place the new item will go. Colour is reserved for meaning.
+    link: https://culturedcode.com/things/
+  - name: Flighty, the flight list
+    what_to_copy: One departure-board line per item, with a status colour that always carries a text badge.
+    link: https://flighty.com/

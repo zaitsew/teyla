@@ -1,0 +1,8 @@
+screen_type: chat
+references:
+  - name: ChatGPT voice, the transcript drawer
+    what_to_copy: A transcript drawer for the spoken exchange, so the conversation can be read after it was heard.
+    link: https://openai.com/chatgpt/
+  - name: Finch, the companion
+    what_to_copy: A companion people keep opening, kept one tap away and not on every screen.
+    link: https://finchcare.com/

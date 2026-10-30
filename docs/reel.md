@@ -165,7 +165,7 @@ teyla reel product <repo> --input demo.mov --copy copy.json [--lang en,es,ru] [-
 Per language it writes `product-vertical.mp4` (1080x1920), `product-square.mp4` (1080x1080) and `captions.srt` under
 `brand/out/reel/<lang>/`. Captions go through the same redaction as `render`: a caption with a secret, a private
 term, an address or a path stops the run. `--voice` calls the OpenAI speech API, prints its price first and refuses
-without `--yes` (`docs/PRIVACY.md`, row 26). Captions, the plain-captions format, timing and the other options are in
+without `--yes` (`docs/PRIVACY.md`, row 28). Captions, the plain-captions format, timing and the other options are in
 [`docs/KIT.md`](KIT.md).
 
 ## Implementation notes (v0, as built)

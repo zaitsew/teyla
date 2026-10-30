@@ -91,7 +91,7 @@ teyla kit compare <repo> "<scene>" [--models a,b] [--poses 10] [--yes] [--allow-
   items `gemini-api-key` and `openai-api-key`. A key is never printed or written.
 - The Gemini API model id is `gemini-3.1-flash-image`. It was not checked against a live call; set
   `TEYLA_KIT_GEMINI_MODEL` (or `api_model` in `[mascot.settings]`) if the API names it otherwise.
-- Safe mode refuses both commands; `--allow-network` allows one call by hand. `docs/PRIVACY.md` rows 25 and 26 list
+- Safe mode refuses both commands; `--allow-network` allows one call by hand. `docs/PRIVACY.md` rows 27 and 28 list
   what is sent: the prompt and the reference images.
 
 ## Product reel: `teyla reel product`

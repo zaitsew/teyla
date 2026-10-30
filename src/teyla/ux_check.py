@@ -733,6 +733,12 @@ def render(reports: list[dict]) -> str:
 
 
 def cmd_ux(args) -> int:
+    if args.action == "judge":
+        from . import ux_judge
+        return ux_judge.cmd_judge(args)
+    if args.action in ("shots", "diff", "accept"):
+        from . import ux_shots
+        return ux_shots.cmd(args)
     if args.action != "check":
         print(f"teyla ux: unknown action {args.action!r}", file=sys.stderr)
         return 2
@@ -752,9 +758,16 @@ def cmd_ux(args) -> int:
 def register(sp):
     q = sp.add_parser("ux", help="does a product's UI code follow the shared UX standard: literals instead of tokens, crowded screens, copy rules, DESIGN.md")
     q.set_defaults(fn=cmd_ux)
-    q.add_argument("action", choices=["check"])
-    q.add_argument("repos", nargs="*", help="repo names under code_root or paths (default: the git root of the current directory)")
+    q.add_argument("action", choices=["check", "judge", "shots", "diff", "accept"])
+    q.add_argument("repos", nargs="*", help="check: repo names under code_root or paths (default: the git root of the current directory); judge: the two pictures, A and B")
     q.add_argument("--all", action="store_true", help="every git repo under code_root")
     q.add_argument("--json", action="store_true")
     q.add_argument("--strict", action="store_true", help="exit 1 when any repo has a FIX")
+    from . import ux_shots
+    ux_shots.add_arguments(q)
+    q.add_argument("--repo", help="judge: the product repo whose DESIGN.md goes with the pictures (name under code_root or a path)")
+    q.add_argument("--calibrate", metavar="REPO", help="judge: compare the judge with the owner's decided pairs in REPO's design/references/calibration/")
+    q.add_argument("--model", help="judge: the model (default claude-sonnet-5-5)")
+    q.add_argument("--both-orders", action="store_true", help="judge: ask twice with the pictures swapped; a disagreement is a tie")
+    q.add_argument("--allow-network", action="store_true", help="judge: safe mode: allow the model call for this one run")
     return q

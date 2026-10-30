@@ -122,7 +122,8 @@ The findings that shaped the design:
   machine-readable at `developer.apple.com/tutorials/data/design/human-interface-guidelines/<slug>.json`).
 - **Feeds that answer (checked 2026-10-30):** Apple Developer News, Apple Releases, Apple
   Newsroom (Design Awards), MacStories, Daring Fireball, Nielsen Norman Group, Smashing,
-  uxdesign.cc, iOS Dev Weekly, SwiftLee, Swift with Majid, Sarunw, Lenny's Newsletter. Dribbble
+  uxdesign.cc, iOS Dev Weekly, SwiftLee, Swift with Majid, Sarunw, Lenny's Newsletter, and the
+  HIG pages as JSON, all with their URLs in `templates/design/SOURCES.md`. Dribbble
   sits behind a bot wall; Growth.Design has no feed; Mobbin's MCP needs a Pro plan.
 - **iOS 27 (September 2026) reversed parts of iOS 26:** search returned to the tab bar and
   toolbars changed; a custom tab bar or toolbar gets none of it and must be retested
@@ -158,7 +159,8 @@ The findings that shaped the design:
   Annotate (2026-10-27, 337,702 views), a web browser inside Cursor
   ([@cursor_ai](https://x.com/cursor_ai/status/2115159585548021814)); no post shows a vision
   judge whose score rose in a later build, and a weekly X scrape "will learn listicles and
-  prompt art", so the scout's caps stand. Accounts worth a weekly read: @viticci (what the
+  prompt art", so the scout's caps stand. Accounts worth a weekly read (listed in
+  `templates/design/SOURCES.md` under "Needs a priced yes", off until the §11 yes): @viticci (what the
   system UI just did, with screenshots), @Dimillian (UI a strong indie shipped), @drbarnard
   (when a design skill or a library fails, by name), and the Apple Design Awards page (2026:
   Moonlitt for interaction, grug for delight, Structured a finalist whose model pre-fills a
@@ -219,7 +221,7 @@ The findings that shaped the design:
   the screen's job, its primary action, the glossary and the product's voice chart. English,
   Spanish and Russian are each written from the brief, never translated. The unit of review
   is a screen's strings as one table on the phone.
-- **S9. Taste is mined weekly, proposed as PRs, never applied silently.** Free sources first
+- **S9. Taste is mined weekly, proposed as files that become PRs, never applied silently.** Free sources first
   (Apple Design Awards, App Store editorial, iOS release notes, RSS of named designers,
   Reddit threads); X and paid libraries (Mobbin, Refero) only after a §11 price and a yes.
 - **S10. Visuals are cut from a brand kit that is a folder, not a mood.** Per product:
@@ -248,8 +250,9 @@ real app, TestFlight build    teyla review pull                         one PR p
 ```
 
 **Capture.** `TeylaReview`, a Swift package in `packages/review-ios/` (SwiftUI, iOS 17+):
-a debug overlay that any product adds behind a build flag `TEYLA_REVIEW` (on in TestFlight
-Internal, off in App Store builds). An explicit "Review" button in the product's debug menu
+a debug overlay that any product adds behind a runtime switch, the Info.plist key
+`TeylaReviewEnabled` (set from a build setting that is on in TestFlight Internal and undefined
+in App Store builds). An explicit "Review" button in the product's debug menu
 starts review mode; shake is a shortcut to the same thing, never the only way in. Review mode
 freezes the screen and shows the picture; the owner taps the element and talks. The product
 marks its screens and elements with `.reviewAnchor("trip.timeline.addButton")`, which
@@ -331,9 +334,14 @@ brand fit (the voice chart, the glossary). An item the picture cannot show is ma
 assessed", never guessed. It returns the winner with one line per item. It runs on every
 before/after pair of a UI PR and on "ours vs reference" pairs from the reference library
 (5.5). Before it is used on a product, it is calibrated on 20 pairs the owner has decided and
-must agree on 16; the calibration set lives in `design/references/calibration/`. A product's
+must agree on 16; the calibration set lives in `design/references/calibration/` and
+`teyla ux judge --calibrate <repo>` reports the agreement. A product's
 score is the share of its screens that beat their reference; the owner's tie-breaks are
 ledger entries. The judge never gates a merge on its own; the diff and the owner do.
+Shipped in sprint 1 ([JUDGE.md](JUDGE.md)): the code adds the scores up, over the items both
+pictures were assessed on; `--both-orders` swaps the pictures and calls a disagreement a tie,
+because a model prefers the first picture more often than chance; the pictures travel as image
+blocks to a `claude -p` with no tools.
 
 ### 5.4 Copy (lane "say")
 
@@ -364,14 +372,19 @@ Newsroom, the HIG pages as JSON, MacStories, Daring Fireball, Nielsen Norman Gro
 uxdesign.cc, iOS Dev Weekly, SwiftLee, Swift with Majid, Sarunw, Lenny's Newsletter, and the
 owner's intent file. It writes `~/.teyla/scout/design/<week>.md` with at most 20 items (what
 changed, with URLs). A finding becomes a proposal only when it meets an observed product
-problem: a ledger entry, a capture, or a failed check in the last 30 days. It opens at most
-two proposals a week, as PRs against `templates/design/` or a product's `design/rules/` with
-the quote, the source and the proposed wording; a proposal nobody confirms in 30 days is
-closed. Trends never change a rule on their own. X and the paid libraries (Mobbin, Refero)
-sit behind `scout.sources` in `config.toml` and a §11 yes. The reference library,
+problem: a ledger entry, a capture, or a failed check in the last 30 days. It writes at most
+two proposals a week, each a file with the quote, the source, the proposed wording and the
+problem it meets; a person or a lane opens the PR against `templates/design/` or a product's
+`design/rules/`, and a proposal older than 30 days is deleted. The scout edits no rule.
+Trends never change a rule on their own. X and the paid libraries (Mobbin, Refero) sit in
+the last section of SOURCES.md, which the scout skips and has no fetcher for, until a §11 yes.
+Shipped in sprint 1 ([SCOUT.md](SCOUT.md)). The reference library,
 `templates/design/REFERENCE.md`, holds per screen type (onboarding, list, detail, settings,
-chat, voice) three named reference screens with what to copy and a link; the first entries
-are the §3 set (Things, Flighty, Structured, Tiimo, ChatGPT voice, Finch).
+chat, voice, timeline) up to three named reference screens with what to copy and a link; the
+first entries are the §3 set (Things, Flighty, Structured, Tiimo, Sunsama's ritual, ChatGPT
+voice, Finch, and the 2026 Apple Design Awards apps Moonlitt and grug). A product copies the
+examples in `templates/design/references/` to `design/references/` (format in
+[TASTE.md](TASTE.md)).
 
 ### 5.6 Brand kit and visuals (lane "show")
 
@@ -417,7 +430,7 @@ can install.
 | A. Capture | `packages/review-ios/` (TeylaReview: review button, shake shortcut, `.reviewAnchor`, keyboard dictation, save-then-upload, status chain), capture schema `docs/REVIEW.md`, relay outbox `review/` | A SwiftUI sample app in the package captures review → tap → dictation into a signed outbox folder; `swift build` and tests pass |
 | B. Inbox | `teyla review` (SQLite queue, pull from relay and TestFlight, triage, open), `teyla taste` (decision, rule, screen and reference files; confirm; `DESIGN.md` rendered from them) | A fixture capture becomes a `fix` decision and a lane brief; a `rule` file appears in a fixture repo only after confirm |
 | C. Matrix | `teyla ux shots`, `diff`, `accept`, the manifest format `design/tour.yaml`, the a11y walk with the 44 pt check, the 3× stability run, the XCUITest tour template in `templates/design/ScreenshotTour.swift` | On the one product that already has a tour: a run, a baseline, a diff that shows a changed screen; the simulator it booted is shut down |
-| D. Judge + library | `teyla ux judge` (five items, 0–2, "not assessed", calibration set), `templates/design/REFERENCE.md` seeded, `SOURCES.md` seeded, `teyla scout design` as a routine with its caps | A pair of fixture screens gets a winner with five lines; a scout run writes the weekly file and opens at most two PRs |
+| D. Judge + library | `teyla ux judge` (five items, 0–2, "not assessed", calibration set), `templates/design/REFERENCE.md` seeded, `SOURCES.md` seeded, `teyla scout design` as a routine with its caps | A pair of fixture screens gets a winner with five lines; a scout run writes the weekly file and at most two proposals; it opens no PR and edits no rule |
 | E. Copy | `teyla copy brief / write / judge / apply` (states in the brief, es-ES, Apple's writing rules in the judge), `teyla voice chart` with the example quota, per-control budgets in the standard | The planner's onboarding strings go through the table and back into `xcstrings` without losing keys |
 | F. Kit | `teyla kit init / check / shots / image` with provenance, `brand/kit.toml` template, `teyla reel product`, `teyla post draft` with the weekly pack | The planner's kit passes `check`; one mascot image from the reference sheet; store screenshots for three languages from fixture captures |
 | G. Standard | `DESIGN.md` template cut to the executable shape (≤100 lines, rendered from `design/`), `ux check` fails a long one and a standard over 20 active rules, "4 tap targets" and "3 type sizes" become warnings, `docs/STUDIO.md` (this), `COMMANDS.md`, `ROADMAP.md` row 4 | `teyla ux check --all` reports the new findings; docs pass `teyla docs check` |

@@ -15,7 +15,7 @@ Captions come from the copy table (`copy.json`: rows with key, control, state, b
 Every caption passes `teyla reel` redaction (secrets, private terms, e-mail addresses, paths) and is drawn into a
 transparent PNG by Pillow; ffmpeg overlays the PNGs, so no ffmpeg text filter is needed.
 
-`--voice` reads the script aloud with the OpenAI speech API (`docs/PRIVACY.md`, row 26). The script is the
+`--voice` reads the script aloud with the OpenAI speech API (`docs/PRIVACY.md`, row 28). The script is the
 `--script` file ({"en": "text", ...}) or, without it, the captions in order. The price is printed first; the
 command refuses without `--yes`, and nothing is rendered until you have confirmed. A voice-over longer than the
 recording holds the last frame; a shorter one leaves the rest silent.
