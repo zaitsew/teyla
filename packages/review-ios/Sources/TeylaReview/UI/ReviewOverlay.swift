@@ -11,8 +11,11 @@ struct ReviewOverlay: View {
     let probe: (CGPoint) -> (identifier: String?, label: String?)
     let speechEnabled: Bool
     let microphone: MicrophoneGuard
+    let speech: SpeechCapture
     let onCancel: () -> Void
-    let onSend: (ReviewDraft) -> Void
+    /// Saves the draft. Calls `failed` with a message when it could not be saved; on success the
+    /// presenter closes the overlay and never calls it.
+    let onSend: (ReviewDraft, @escaping (String) -> Void) -> Void
 
     @State private var tap: CGPoint?
     @State private var hit: Anchor?
@@ -21,7 +24,9 @@ struct ReviewOverlay: View {
     @State private var text = ""
     @State private var input: CommentInfo.Input = .text
     @State private var listening = false
-    @State private var speech = SpeechCapture()
+    @State private var speechTask: Task<Void, Never>?
+    @State private var sending = false
+    @State private var failure: String?
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -78,6 +83,12 @@ struct ReviewOverlay: View {
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
                 .accessibilityIdentifier("teyla.review.comment")
+            if let failure {
+                Text(failure)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier("teyla.review.error")
+            }
             if speechEnabled, speech.isAvailable {
                 Button(listening ? "Stop" : "Dictate on device") { toggleListening() }
                     .font(.footnote)
@@ -85,9 +96,9 @@ struct ReviewOverlay: View {
             HStack {
                 Button("Cancel", role: .cancel, action: onCancel)
                 Spacer()
-                Button("Send") { send() }
+                Button(failure == nil ? "Send" : "Retry") { send() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(sending || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityIdentifier("teyla.review.send")
             }
         }
@@ -110,12 +121,19 @@ struct ReviewOverlay: View {
             text = heard
             input = .speech
         }
-        Task {
-            listening = await speech.start(microphone: microphone)
+        speechTask?.cancel()
+        speechTask = Task {
+            let started = await speech.start(microphone: microphone)
+            if Task.isCancelled { speech.stop(); return }
+            listening = started
         }
     }
 
+    /// Also cancels a start that is still waiting for a permission answer, so recording cannot
+    /// begin after the owner left the overlay.
     private func stopListening() {
+        speechTask?.cancel()
+        speechTask = nil
         guard listening else { return }
         speech.stop()
         listening = false
@@ -124,8 +142,13 @@ struct ReviewOverlay: View {
     private func send() {
         stopListening()
         let comment = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !comment.isEmpty else { return }
-        onSend(ReviewDraft(tap: tap, hit: hit, accessibilityIdentifier: identifier, accessibilityLabel: label, text: comment, input: input))
+        guard !comment.isEmpty, !sending else { return }
+        sending = true
+        failure = nil
+        onSend(ReviewDraft(tap: tap, hit: hit, accessibilityIdentifier: identifier, accessibilityLabel: label, text: comment, input: input)) { message in
+            sending = false
+            failure = message
+        }
     }
 }
 #endif

@@ -16,6 +16,12 @@ public struct ReviewSettingsView: View {
     public init() {}
 
     public var body: some View {
+        Group {
+            if TeylaReview.isActive { content }
+        }
+    }
+
+    private var content: some View {
         List {
             Section("Pairing") {
                 if paired {

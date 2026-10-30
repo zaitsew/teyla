@@ -122,6 +122,85 @@ final class CaptureStoreTests: XCTestCase {
         XCTAssertEqual(store.status(id: a.id, relayRoot: relay, key: key), .savedOnPhone)
     }
 
+    // MARK: captures saved before pairing
+
+    private func verifiesOnDisk(_ saved: SavedCapture, record: CaptureRecord) throws -> Bool {
+        let json = try Data(contentsOf: saved.folder.appendingPathComponent("capture.json"))
+        let onDiskPNG = try Data(contentsOf: saved.folder.appendingPathComponent("capture.png"))
+        let sig = try String(contentsOf: saved.folder.appendingPathComponent("capture.sig"), encoding: .utf8)
+        let message = ReviewSigner.captureMessage(id: record.id, created: record.created,
+                                                  jsonSHA256: ReviewSigner.sha256Hex(json), pngSHA256: ReviewSigner.sha256Hex(onDiskPNG))
+        return ReviewSigner.verify(message, signature: sig, key: key)
+    }
+
+    func testACaptureSavedBeforePairingIsSignedLater() throws {
+        let record = Fixtures.record()
+        let saved = try store.save(record: record, png: png, key: nil)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: saved.folder.appendingPathComponent("capture.sig").path))
+        XCTAssertTrue(try store.sign(id: record.id, key: key))
+        XCTAssertTrue(try verifiesOnDisk(saved, record: record))
+        XCTAssertFalse(try store.sign(id: record.id, key: key))                       // already signed: left alone
+    }
+
+    func testCopyToRelaySignsAPendingCaptureWhenItHasTheKey() throws {
+        let record = Fixtures.record()
+        let saved = try store.save(record: record, png: png, key: nil)
+        XCTAssertThrowsError(try store.copyToRelay(id: record.id, relayRoot: relay)) { XCTAssertEqual($0 as? ReviewError, .unsigned) }
+        XCTAssertEqual(try store.copyToRelay(id: record.id, relayRoot: relay, key: key), .copied)
+        XCTAssertTrue(try verifiesOnDisk(saved, record: record))
+        let dest = relay.appendingPathComponent("outbox/review/\(record.id)")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("capture.sig").path))
+    }
+
+    func testSignPendingSignsOnlyTheUnsignedOnes() throws {
+        let a = Fixtures.record(), b = Fixtures.record(), c = Fixtures.record()
+        try store.save(record: a, png: png, key: nil)
+        try store.save(record: b, png: png, key: key)
+        try store.save(record: c, png: png, key: nil)
+        XCTAssertEqual(store.signPending(key: key), 2)
+        XCTAssertEqual(store.signPending(key: key), 0)
+    }
+
+    func testSigningAnUnknownCaptureFails() {
+        XCTAssertThrowsError(try store.sign(id: "nope", key: key)) { XCTAssertEqual($0 as? ReviewError, .notSaved) }
+    }
+
+    // MARK: the chain never moves backwards
+
+    func testAnAcceptedStatusIsKeptWhenTheMacsFileGoesAway() throws {
+        let record = Fixtures.record()
+        try store.save(record: record, png: png, key: key)
+        try writeRemote(id: record.id, status: .prReady, signedWith: key)
+        XCTAssertEqual(store.status(id: record.id, relayRoot: relay, key: key), .prReady)
+        XCTAssertEqual(store.readLocalStatus(id: record.id)?.status, .prReady)        // persisted on the phone
+        try FileManager.default.removeItem(at: relay.appendingPathComponent("review-status/\(record.id).json"))
+        XCTAssertEqual(store.status(id: record.id, relayRoot: relay, key: key), .prReady)
+        XCTAssertEqual(store.status(id: record.id, relayRoot: nil, key: nil), .prReady)
+    }
+
+    func testAnOlderSignedStatusDoesNotMoveItBack() throws {
+        let record = Fixtures.record()
+        try store.save(record: record, png: png, key: key)
+        try writeRemote(id: record.id, status: .verifiedOnDevice, signedWith: key)
+        XCTAssertEqual(store.status(id: record.id, relayRoot: relay, key: key), .verifiedOnDevice)
+        try writeRemote(id: record.id, status: .received, signedWith: key)           // a replayed, older, validly signed file
+        XCTAssertEqual(store.status(id: record.id, relayRoot: relay, key: key), .verifiedOnDevice)
+        XCTAssertEqual(store.readLocalStatus(id: record.id)?.status, .verifiedOnDevice)
+    }
+
+    func testAcceptingAStatusKeepsTheCopyMarkAndTheListOrder() throws {
+        let record = Fixtures.record()
+        try store.save(record: record, png: png, key: key)
+        try store.copyToRelay(id: record.id, relayRoot: relay)
+        let before = try XCTUnwrap(store.readLocalStatus(id: record.id))
+        try writeRemote(id: record.id, status: .received, signedWith: key)
+        _ = store.status(id: record.id, relayRoot: relay, key: key)
+        let after = try XCTUnwrap(store.readLocalStatus(id: record.id))
+        XCTAssertEqual(after.relayCopied, before.relayCopied)
+        XCTAssertEqual(after.updated, before.updated)
+        XCTAssertEqual(after.status, .received)
+    }
+
     func testTheFixtureStatusFileVerifies() throws {
         let key = try XCTUnwrap(RelayKey(hex: Fixtures.vector["key_hex"]!))
         let fixtureRecord = try CaptureCoding.decoder().decode(

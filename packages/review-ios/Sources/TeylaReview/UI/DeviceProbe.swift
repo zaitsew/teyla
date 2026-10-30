@@ -29,9 +29,10 @@ enum DeviceProbe {
     }
 
     /// The identifier and label under a point, from the UIKit views. SwiftUI keeps most elements out
-    /// of UIKit, so this is the fallback when no anchor is under the tap.
-    static func accessibility(at point: CGPoint, in window: UIWindow) -> (identifier: String?, label: String?) {
-        var view = window.hitTest(point, with: nil)
+    /// of UIKit, so this is the fallback when no anchor is under the tap. The overlay is presented
+    /// in the same window, so `overlay` (its view) is skipped: the hit test sees the app underneath.
+    static func accessibility(at point: CGPoint, in window: UIWindow, excluding overlay: UIView? = nil) -> (identifier: String?, label: String?) {
+        var view = underlyingView(at: point, in: window, excluding: overlay)
         var identifier: String?
         var label: String?
         while let current = view {
@@ -41,6 +42,17 @@ enum DeviceProbe {
             view = current.superview
         }
         return (identifier, label)
+    }
+
+    /// The topmost view at a window point that is not part of the overlay. A presented controller's
+    /// view lives in its own container directly under the window, so skipping the container that
+    /// holds the overlay leaves the app's views.
+    static func underlyingView(at point: CGPoint, in window: UIWindow, excluding overlay: UIView?) -> UIView? {
+        for child in window.subviews.reversed() {
+            if let overlay, overlay.isDescendant(of: child) { continue }
+            if let hit = child.hitTest(window.convert(point, to: child), with: nil) { return hit }
+        }
+        return nil
     }
 
     static func environment(window: UIWindow) -> EnvironmentInfo {

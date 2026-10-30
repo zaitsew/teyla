@@ -13,6 +13,7 @@ final class SpeechCapture {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var running = false
+    private var closed = false        // review mode closed: nothing may start any more
 
     init(locale: Locale = .current) {
         recognizer = SFSpeechRecognizer(locale: locale)
@@ -23,13 +24,15 @@ final class SpeechCapture {
 
     /// Takes the microphone. Returns false if permission is refused or the engine does not start.
     /// The guard is told, so it restores the session when review mode closes.
+    /// Main actor, so nothing can suspend between the last cancellation check and the engine start.
+    @MainActor
     func start(microphone: MicrophoneGuard) async -> Bool {
-        guard let recognizer, isAvailable, !running else { return false }
+        guard let recognizer, isAvailable, !running, !closed else { return false }
         let speechOK = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
             SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0 == .authorized) }
         }
-        guard speechOK else { return false }
-        guard await AVAudioApplication.requestRecordPermission() else { return false }
+        guard speechOK, !closed, !Task.isCancelled else { return false }
+        guard await AVAudioApplication.requestRecordPermission(), !closed, !Task.isCancelled else { return false }
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.requiresOnDeviceRecognition = true
@@ -60,6 +63,12 @@ final class SpeechCapture {
         }
         running = true
         return true
+    }
+
+    /// Review mode is closing: stop, and refuse any start that is still waiting for a permission answer.
+    func shutdown() {
+        closed = true
+        stop()
     }
 
     func stop() {

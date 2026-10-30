@@ -12,6 +12,14 @@ struct ReviewDraft {
     var input: CommentInfo.Input
 }
 
+/// Holds the hosting controller weakly, so the overlay's callbacks can dismiss it without keeping
+/// it (and the screenshot it shows) alive after it closes.
+@MainActor
+private final class OverlayHandle {
+    weak var controller: UIViewController?
+    var finished = false
+}
+
 @MainActor
 enum ReviewPresenter {
     private static var isPresenting = false
@@ -37,10 +45,18 @@ enum ReviewPresenter {
         let app = AppProbe.current()
         let currentScreen = AnchorRegistry.shared.currentScreen
         let windowSize = window.bounds.size
+        let captureID = UUID()                    // one id for every send attempt, so a retry overwrites the failed one
+        let speech = SpeechCapture()
+        let handle = OverlayHandle()
 
-        var host: UIHostingController<ReviewOverlay>!
+        // Runs once. Stops the recognizer before the guard restores the audio session, so a
+        // dictation that was still starting cannot take the microphone after it is given back.
         let finish: () -> Void = {
-            host.dismiss(animated: false)
+            guard !handle.finished else { return }
+            handle.finished = true
+            speech.shutdown()
+            handle.controller?.dismiss(animated: false)
+            handle.controller = nil
             mic?.end()
             mic = nil
             isPresenting = false
@@ -48,53 +64,41 @@ enum ReviewPresenter {
         }
         let overlay = ReviewOverlay(
             image: UIImage(data: shot.png) ?? UIImage(), size: windowSize, anchors: anchors,
-            probe: { DeviceProbe.accessibility(at: $0, in: window) },
-            speechEnabled: config.speech, microphone: guardian,
+            probe: { [weak window, weak handle] point in
+                // The overlay sits in the same window: skip it, or an unanchored control resolves to the overlay.
+                guard let window else { return (nil, nil) }
+                return DeviceProbe.accessibility(at: point, in: window, excluding: handle?.controller?.view)
+            },
+            speechEnabled: config.speech, microphone: guardian, speech: speech,
             onCancel: finish,
-            onSend: { draft in
+            onSend: { draft, failed in
                 let screen = HitTester.screen(current: currentScreen, hit: draft.hit, anchors: anchors)
                 let tap = draft.tap.map {
                     TapInfo(x: Double($0.x).rounded2, y: Double($0.y).rounded2,
                             accessibilityIdentifier: draft.accessibilityIdentifier, accessibilityLabel: draft.accessibilityLabel)
                 }
                 let record = CaptureBuilder.make(
-                    now: Date(), device: DeviceProbe.deviceClass(), app: app, environment: environment, screen: screen, tap: tap,
+                    id: captureID, now: Date(), device: DeviceProbe.deviceClass(), app: app, environment: environment, screen: screen, tap: tap,
                     element: draft.hit, accessibilityElementID: draft.accessibilityIdentifier, anchors: anchors,
                     text: draft.text, input: draft.input, language: environment.language,
                     pngSHA256: ReviewSigner.sha256Hex(shot.png), pixelWidth: shot.pixelWidth, pixelHeight: shot.pixelHeight,
                     scale: shot.scale, microphone: micState.asInfo)
-                finish()
-                Task.detached(priority: .utility) { ReviewDelivery.save(record: record, png: shot.png) }
+                let png = shot.png
+                // The overlay closes only after the capture is on the phone. A failed save keeps it open.
+                Task { @MainActor in
+                    let failure = await Task.detached(priority: .userInitiated) { ReviewDelivery.save(record: record, png: png) }.value
+                    if let failure { failed(failure) } else { finish() }
+                }
             })
-        host = UIHostingController(rootView: overlay)
+        let host = UIHostingController(rootView: overlay)
         host.modalPresentationStyle = .overFullScreen
         host.view.backgroundColor = .black
+        handle.controller = host
         top.present(host, animated: false)
     }
 }
 
 extension MicrophoneState {
     var asInfo: MicrophoneInfo { MicrophoneInfo(hostAudioInUse: hostAudioInUse, category: category) }
-}
-
-/// Save on the phone first; then, if there is a key and a folder, copy to the relay outbox.
-enum ReviewDelivery {
-    static func save(record: CaptureRecord, png: Data) {
-        let store = CaptureStore(root: CaptureStore.defaultRoot())
-        let key = TeylaReview.keyStore.load()
-        guard (try? store.save(record: record, png: png, key: key)) != nil else { return }
-        guard key != nil else { return }                       // unsigned: it stays on the phone
-        _ = TeylaReview.relayFolder.withAccess { try? store.copyToRelay(id: record.id, relayRoot: $0) }
-    }
-
-    /// Copies every saved, signed capture that has not reached the relay. Call it when the app
-    /// becomes active, or after the owner picks the folder.
-    static func retryPending() {
-        let store = CaptureStore(root: CaptureStore.defaultRoot())
-        guard TeylaReview.keyStore.load() != nil else { return }
-        for id in store.list() where store.readLocalStatus(id: id)?.relayCopied == nil {
-            _ = TeylaReview.relayFolder.withAccess { try? store.copyToRelay(id: id, relayRoot: $0) }
-        }
-    }
 }
 #endif

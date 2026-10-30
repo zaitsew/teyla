@@ -6,11 +6,23 @@ This page is the contract between the phone and the Mac-side inbox: the folder l
 
 ## Adopt it in three steps
 
-1. **Add the package.** In Xcode, File > Add Package Dependencies > Add Local, pick `packages/review-ios` (or the repo URL with that subdirectory). Link `TeylaReview` to the app target. Give the app target the flag `TEYLA_REVIEW` in `SWIFT_ACTIVE_COMPILATION_CONDITIONS` for the configurations that go to TestFlight Internal, and leave it out of the App Store configuration. Optional: add a build phase that writes `git rev-parse --short HEAD` to an Info.plist key `TeylaCommit`.
+1. **Add the package.** In Xcode, File > Add Package Dependencies > Add Local, pick `packages/review-ios` (or the repo URL with that subdirectory). Link `TeylaReview` to the app target. Then switch review mode on for the configurations that go to testers, and only those (next paragraph). Optional: add a build phase that writes `git rev-parse --short HEAD` to an Info.plist key `TeylaCommit`.
 2. **Mark screens and elements.** Each screen gets `.reviewScreen("trip.timeline")` on its root. Each element worth pointing at gets `.reviewAnchor("trip.timeline.addButton", role: .button, strings: ["timeline.add"])`. The id is `screen.element`. The source file and line are filled in by the compiler.
 3. **Add the entry point.** Put `ReviewMenuButton()` (or `Button("Review") { TeylaReview.present() }`) in the debug menu. Optional: `TeylaReview.configure { $0.shake = true }` adds the shake shortcut. Then open `ReviewSettingsView()` once on the phone: paste the pairing string that `teyla relay pair` prints, and pick the `Teyla` folder in iCloud Drive.
 
-Everything is wrapped in `#if TEYLA_REVIEW`, so the calls compile in every configuration and do nothing when the flag is off. The overlay also refuses to open when the build came from the App Store (`BuildChannel`), whatever the flag says. The package is linked in every configuration; it is inert, not absent.
+**The switch is a runtime key, not a compile flag.** A Swift package is compiled with its own flags and never sees the app's `SWIFT_ACTIVE_COMPILATION_CONDITIONS`, so a flag set in the app cannot turn the package on or off. Review mode is on only when the app's Info.plist has the key `TeylaReviewEnabled` set to `YES`. Fill it from a build setting that exists in the Debug and TestFlight configurations and nowhere else:
+
+```
+// Info.plist
+TeylaReviewEnabled = $(TEYLA_REVIEW_ENABLED)
+
+// Debug.xcconfig and TestFlight.xcconfig (or the Debug and Release-TestFlight build settings)
+TEYLA_REVIEW_ENABLED = YES
+
+// App Store configuration: define nothing. The key expands to an empty string and review mode is off.
+```
+
+With the key absent, empty or anything but `YES`, `true` or `1`, `TeylaReview.isEnabled` is false and every entry point does nothing: `present()` returns, `ReviewMenuButton` and `ReviewSettingsView` draw nothing, `.reviewAnchor` and `.reviewScreen` record nothing, the shake shortcut stays off, and `pair(_:)` signs and copies nothing. The overlay also refuses to open when the build came from the App Store (`BuildChannel`), whatever the key says. The code is still linked in every configuration, but it has no active path in an App Store build. To strip it from the binary as well, resolve the package with the environment variable `TEYLA_REVIEW=0`, which removes the overlay code at compile time (the public API stays, as no-ops). A SwiftPM package trait would do the same from the app side, but traits need a newer tools version than the Xcode on the owner's Mac guarantees, so the runtime key is the supported switch.
 
 If the product has a voice mode, tell the package: `TeylaReview.configure { $0.hostAudioInUse = { voice.isRunning }; $0.willBegin = { voice.pause() }; $0.didEnd = { voice.resume() } }`. The package records the audio session before review mode opens and puts it back when it closes. Speech recognition inside the overlay is off by default (`$0.speech = true` turns it on and needs the two microphone and speech Info.plist strings). The first dictation path is the microphone key on the iOS keyboard.
 
@@ -106,7 +118,7 @@ The files `tests/fixtures/review-capture/` hold a full capture (JSON, PNG, signa
 
 1. The owner taps the frozen picture at a point in window coordinates.
 2. The package hit-tests the anchors by bounds. The smallest anchor that contains the point wins; on a tie the later registration wins. The left and top edges are inside, the right and bottom edges are outside.
-3. With no anchor under the tap, the package walks the UIKit views at that point and takes the first accessibility identifier it finds (`matched_by: accessibility_identifier`).
+3. With no anchor under the tap, the package walks the UIKit views at that point, in the app's own views and not in the overlay that sits on top of them, and takes the first accessibility identifier it finds (`matched_by: accessibility_identifier`).
 4. With neither, the capture has no `element`, and the comment is about the screen.
 
 An anchor reads its bounds from a hidden view behind the content when the capture is taken, not when the view appears, so a scrolled list reports where its rows are now. Two views that share an id are both kept. The package does not read the full accessibility tree: a TestFlight process cannot, and the anchors are enough.
@@ -127,7 +139,11 @@ teyla-review-v1
 
 The hashes make the JSON form irrelevant: the Mac hashes the bytes it received. The Mac refuses a capture with a missing or wrong signature, an `id` that is not a UUID, a folder name different from `id`, or a `created` more than 10 minutes in the future.
 
-Without a key the phone still saves the capture in Documents and shows "Saved on phone", but it writes no `capture.sig` and does not copy to the relay: the Mac would refuse it. The copy happens when the owner pairs and the app next becomes active. A signer that cannot hold the key (a web overlay, another client) must add exactly the file `capture.sig` above, computed on a device that has the key, or send through the Mac's local endpoint instead.
+Without a key the phone still saves the capture in Documents and shows "Saved on phone", but it writes no `capture.sig` and does not copy to the relay: the Mac would refuse it. When the owner pairs, the package signs every capture saved before, from the bytes on disk, and copies them. It signs and copies again each time the app becomes active, after the owner picks the folder, and on each copy attempt, so a capture never stays unsigned once a key exists. A signer that cannot hold the key (a web overlay, another client) must add exactly the file `capture.sig` above, computed on a device that has the key, or send through the Mac's local endpoint instead.
+
+## When saving fails
+
+The owner's words are never dropped silently. Send saves on the phone before the overlay closes. If the write fails (a full disk, for example), the overlay stays open, shows the reason in red above the buttons ("Could not save the capture on this device. Your comment and the screenshot are still here. Free some space, then tap Retry."), keeps the comment, and turns Send into Retry. A retry reuses the same capture id, so it overwrites the failed attempt. Cancel is the only way out without a saved capture. A failed copy to the relay is not an error: the capture is safe in Documents and is copied on the next attempt.
 
 ## Status chain
 
@@ -136,13 +152,13 @@ Saved on phone  ->  Received  ->  PR ready  ->  Verified on device
 saved_on_phone      received      pr_ready      verified_on_device
 ```
 
-The package writes the first state, in `status.json` inside the capture's folder in Documents. The Mac writes the rest to `review-status/<id>.json` in the relay folder:
+The package writes the first state, in `status.json` inside the capture's folder in Documents. When it accepts a state from the Mac, it writes that state to the same `status.json`, so the highest accepted state is kept on the phone and an older signed file, a missing file or an offline folder never moves the shown state backwards. The Mac writes the rest to `review-status/<id>.json` in the relay folder:
 
 ```json
 {"v": 1, "id": "<id>", "status": "pr_ready", "updated": "2026-10-30T22:03:00Z", "pr": "https://github.com/example/sampleapp/pull/12", "sig": "<hex>"}
 ```
 
-`status` is one of `received`, `pr_ready`, `verified_on_device`. `pr` is optional. `sig` is the lowercase hex HMAC-SHA256, with the same key, of these lines joined with `\n`: `teyla-review-status-v1`, `id`, `status`, `updated`, and `pr` (an empty line when there is none). The phone ignores a status file whose signature does not verify, whose `id` is not the file's name, or that is behind the state it already shows. The chain only moves forward. `ReviewSettingsView` lists the captures with their status; `TeylaReview.status(of:)` returns it.
+`status` is one of `received`, `pr_ready`, `verified_on_device`. `pr` is optional. `sig` is the lowercase hex HMAC-SHA256, with the same key, of these lines joined with `\n`: `teyla-review-status-v1`, `id`, `status`, `updated`, and `pr` (an empty line when there is none). The phone ignores a status file whose signature does not verify, whose `id` is not the file's name, or that is behind the state it already shows. The chain only moves forward, and the state it reached survives the file. `ReviewSettingsView` lists the captures with their status; `TeylaReview.status(of:)` returns it.
 
 ## Fallbacks
 

@@ -1,8 +1,9 @@
 import Foundation
 import SwiftUI
 
-/// The package's entry points. With TEYLA_REVIEW off every call does nothing, so a product can
-/// call them unconditionally; with it on, the overlay still refuses to open in an App Store build.
+/// The package's entry points. Every call does nothing unless the product turned review mode on
+/// for this build (`isEnabled`), so a product can call them unconditionally. The overlay also
+/// refuses to open in an App Store build, whatever the setting says.
 public enum TeylaReview {
     /// Settings a product may change once, at launch: `TeylaReview.configure { $0.shake = true }`.
     public struct Configuration {
@@ -25,13 +26,32 @@ public enum TeylaReview {
     static var keyStore: RelayKeyStoring = KeychainKeyStore()
     static var relayFolder = RelayFolder()
 
-    /// True when the overlay is compiled in and this is not an App Store build.
+    /// Info.plist key that switches review mode on. A product sets it to `$(TEYLA_REVIEW_ENABLED)`
+    /// and defines `TEYLA_REVIEW_ENABLED = YES` only in the Debug and TestFlight configurations.
+    /// Absent, empty or anything but YES / true / 1 means off, so the App Store configuration
+    /// needs no change beyond leaving the build setting undefined.
+    static let enabledInfoKey = "TeylaReviewEnabled"
+
+    /// Tests set this; a product has no reason to. `nil` reads the Info.plist.
+    static var enabledOverride: Bool?
+
+    static func parseEnabled(_ value: Any?) -> Bool {
+        switch value {
+        case let flag as Bool: return flag
+        case let text as String: return ["yes", "true", "1"].contains(text.trimmingCharacters(in: .whitespaces).lowercased())
+        case let number as NSNumber: return number.intValue == 1
+        default: return false
+        }
+    }
+
+    /// True when the product's build settings turned review mode on for this build.
+    public static var isEnabled: Bool {
+        enabledOverride ?? parseEnabled(Bundle.main.object(forInfoDictionaryKey: enabledInfoKey))
+    }
+
+    /// True when review mode is on for this build and this is not an App Store build.
     public static var isActive: Bool {
-        #if TEYLA_REVIEW
-        return BuildChannel.current != .appStore
-        #else
-        return false
-        #endif
+        isEnabled && BuildChannel.current != .appStore
     }
 
     public static func configure(_ change: (inout Configuration) -> Void) {
@@ -46,6 +66,7 @@ public enum TeylaReview {
     /// `.reviewScreen` above them are filed under it.
     public static func screen(_ id: String) {
         #if TEYLA_REVIEW
+        guard isEnabled else { return }
         AnchorRegistry.shared.setScreen(id)
         #endif
     }
@@ -53,8 +74,10 @@ public enum TeylaReview {
     /// Stores the pairing string `teyla relay pair` prints. Returns false for a string that is not one.
     @discardableResult
     public static func pair(_ pairingString: String) -> Bool {
-        guard let key = RelayKey(pairing: pairingString) else { return false }
-        return keyStore.save(key)
+        guard let key = RelayKey(pairing: pairingString), keyStore.save(key) else { return false }
+        // Captures saved before pairing have no signature yet: sign them and copy what can be copied.
+        if isActive { DispatchQueue.global(qos: .utility).async { ReviewDelivery.retryPending() } }
+        return true
     }
 
     /// True once a key is stored.
@@ -129,12 +152,14 @@ public struct ReviewMenuButton: View {
 
     public var body: some View {
         #if TEYLA_REVIEW
-        Button {
-            TeylaReview.present()
-        } label: {
-            Label("Review this screen", systemImage: "text.bubble")
+        if TeylaReview.isActive {
+            Button {
+                TeylaReview.present()
+            } label: {
+                Label("Review this screen", systemImage: "text.bubble")
+            }
+            .accessibilityIdentifier("teyla.review.open")
         }
-        .accessibilityIdentifier("teyla.review.open")
         #else
         EmptyView()
         #endif

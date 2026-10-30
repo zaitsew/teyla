@@ -70,6 +70,7 @@ private struct AnchorProbe: UIViewRepresentable {
     }
 
     private func register(_ view: ProbeView) {
+        guard TeylaReview.isActive else { return }       // review mode is off in this build: nothing is recorded
         let resolved = AnchorRegistry.resolveScreen(id: id, environment: screen, current: AnchorRegistry.shared.currentScreen)
         AnchorRegistry.shared.register(
             token: token, id: id, screen: resolved, parent: parent, role: role, strings: strings, file: file, line: line,

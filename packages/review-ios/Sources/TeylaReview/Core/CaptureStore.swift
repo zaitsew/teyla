@@ -69,10 +69,7 @@ struct CaptureStore {
             try png.write(to: dir.appendingPathComponent(ReviewFormat.pngName), options: .atomic)
             try json.write(to: dir.appendingPathComponent(ReviewFormat.jsonName), options: .atomic)
             if let key {
-                let message = ReviewSigner.captureMessage(
-                    id: record.id, created: record.created, jsonSHA256: ReviewSigner.sha256Hex(json), pngSHA256: ReviewSigner.sha256Hex(png))
-                let sig = ReviewSigner.sign(message, key: key) + "\n"
-                try Data(sig.utf8).write(to: dir.appendingPathComponent(ReviewFormat.sigName), options: .atomic)
+                try writeSignature(id: record.id, created: record.created, json: json, png: png, key: key, in: dir)
             }
             try writeStatus(LocalStatus(v: 1, id: record.id, status: .savedOnPhone, updated: CaptureCoding.iso(now()), relayCopied: nil), in: dir)
         } catch {
@@ -81,15 +78,54 @@ struct CaptureStore {
         return SavedCapture(id: record.id, folder: dir, signed: key != nil)
     }
 
+    private func writeSignature(id: String, created: String, json: Data, png: Data, key: RelayKey, in dir: URL) throws {
+        let message = ReviewSigner.captureMessage(
+            id: id, created: created, jsonSHA256: ReviewSigner.sha256Hex(json), pngSHA256: ReviewSigner.sha256Hex(png))
+        let sig = ReviewSigner.sign(message, key: key) + "\n"
+        try Data(sig.utf8).write(to: dir.appendingPathComponent(ReviewFormat.sigName), options: .atomic)
+    }
+
+    /// Signs a capture that was saved before the phone was paired, from the bytes on disk.
+    /// Returns false when it already has a signature. Throws `notSaved` for an unknown or incomplete folder.
+    @discardableResult
+    func sign(id: String, key: RelayKey) throws -> Bool {
+        let fm = FileManager.default
+        let dir = folder(for: id)
+        let jsonURL = dir.appendingPathComponent(ReviewFormat.jsonName)
+        let pngURL = dir.appendingPathComponent(ReviewFormat.pngName)
+        guard fm.fileExists(atPath: jsonURL.path), fm.fileExists(atPath: pngURL.path) else { throw ReviewError.notSaved }
+        if fm.fileExists(atPath: dir.appendingPathComponent(ReviewFormat.sigName).path) { return false }
+        do {
+            let json = try Data(contentsOf: jsonURL)
+            let png = try Data(contentsOf: pngURL)
+            let record = try CaptureCoding.decoder().decode(CaptureRecord.self, from: json)
+            guard record.id == id else { throw ReviewError.notSaved }
+            try writeSignature(id: id, created: record.created, json: json, png: png, key: key, in: dir)
+        } catch let error as ReviewError {
+            throw error
+        } catch {
+            throw ReviewError.io(String(describing: error))
+        }
+        return true
+    }
+
+    /// Signs every saved capture that has no signature. Returns how many it signed.
+    @discardableResult
+    func signPending(key: RelayKey) -> Int {
+        list().reduce(0) { count, id in ((try? sign(id: id, key: key)) == true) ? count + 1 : count }
+    }
+
     /// Copies `<id>/` to `<relay>/outbox/review/<id>/`. It copies into a hidden temp folder in the
     /// same directory and renames it, so the Mac never lists a folder that is half written.
     /// iCloud still delivers files one by one: the Mac reads a capture only when all three files
     /// are there and the signature verifies (docs/REVIEW.md).
+    /// With a `key`, a capture saved before pairing is signed first; without one it throws `unsigned`.
     @discardableResult
-    func copyToRelay(id: String, relayRoot: URL) throws -> CopyResult {
+    func copyToRelay(id: String, relayRoot: URL, key: RelayKey? = nil) throws -> CopyResult {
         let fm = FileManager.default
         let src = folder(for: id)
         guard fm.fileExists(atPath: src.appendingPathComponent(ReviewFormat.jsonName).path) else { throw ReviewError.notSaved }
+        if let key { try sign(id: id, key: key) }
         guard fm.fileExists(atPath: src.appendingPathComponent(ReviewFormat.sigName).path) else { throw ReviewError.unsigned }
         let outbox = relayRoot.appendingPathComponent("outbox", isDirectory: true).appendingPathComponent("review", isDirectory: true)
         let dest = outbox.appendingPathComponent(id, isDirectory: true)
@@ -135,7 +171,10 @@ struct CaptureStore {
     }
 
     /// The status the owner sees: the Mac's, when `review-status/<id>.json` has a valid signature
-    /// and is further along the chain, else the phone's own.
+    /// and is further along the chain, else the phone's own. A status accepted from the Mac is
+    /// written to the phone's `status.json`, so an older signed file, a missing file or a folder
+    /// that is offline later never moves the shown state backwards. `updated` is left alone: it
+    /// orders `list()`.
     func status(id: String, relayRoot: URL?, key: RelayKey?) -> ReviewStatus {
         let local = readLocalStatus(id: id)?.status ?? .savedOnPhone
         guard let relayRoot, let key else { return local }
@@ -144,7 +183,12 @@ struct CaptureStore {
               let remote = try? CaptureCoding.decoder().decode(RemoteStatus.self, from: data), remote.id == id else { return local }
         let message = ReviewSigner.statusMessage(id: remote.id, status: remote.status.rawValue, updated: remote.updated, pr: remote.pr)
         guard ReviewSigner.verify(message, signature: remote.sig, key: key) else { return local }
-        return max(local, remote.status)
+        guard remote.status > local else { return local }
+        if var stored = readLocalStatus(id: id) {
+            stored.status = remote.status
+            try? writeStatus(stored, in: folder(for: id))
+        }
+        return remote.status
     }
 
     /// Saved captures, newest first.
