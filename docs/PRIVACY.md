@@ -50,6 +50,8 @@ These use your own `claude`, `codex` or `grok` login. The text goes to that prov
 | 18 | `teyla run` (a routine step), `teyla dispatch`, `teyla answer` | Your provider, through `claude`, `codex` or `grok` | The prompt in your `teyla.toml` routine, or the answer or task you typed. | No (you start it) | `run` and `dispatch`: refused. `answer`: not gated |
 | 19 | `teyla spend`, provider cost reports | `api.openai.com`, `api.anthropic.com` | Your admin API key from the Keychain, in an `Authorization` header, and a date range. | No: with no key in the Keychain there is no call | closed |
 | 20 | `teyla probe-sql <ref> "<query>"` and `teyla products` | `api.supabase.com` | The read-only SQL you wrote, and your Supabase access token. | No: needs `supabase login` or `SUPABASE_ACCESS_TOKEN` and a product with a probe | closed |
+| 23 | `teyla review triage <id>` (not `--dry`) | Anthropic, through `claude -p` (Sonnet) | One review capture (the comment, the screen, the tapped element), the product's `DESIGN.md` (first 12,000 characters), the confirmed rules that match the screen, and the last 20 design decisions. No tools, no settings, no saved session. | No (you run it on a capture) | closed |
+| 24 | `teyla review pull --testflight <app-id>` | `api.appstoreconnect.apple.com`, and the screenshot URL Apple returns in the answer | A read-only GET of the app's beta screenshot feedback, signed with a 15-minute token made from the key the release tool already uses (`~/.appstoreconnect/`); the key file is read only by `openssl` and never sent. Then one GET of each new screenshot, without the token. The tester's e-mail is dropped. | No (needs `--testflight`) | closed |
 
 ## Sync you switch on
 
