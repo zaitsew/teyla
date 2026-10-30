@@ -474,6 +474,7 @@ uv tool uninstall teyla    # then remove the command; with pipx: pipx uninstall 
 - [WORK](WORK.md): safe mode for a work laptop
 - [PRIVACY](PRIVACY.md): every call that leaves your machine
 - [BRAND](BRAND.md), [UX](UX.md), [STUDIO](STUDIO.md), [TASTE](TASTE.md): the mark, the colours, the voice, the UX standard, the concept for review by voice, drift, copy and visuals, and the review inbox with the taste ledger
+- [MATRIX](MATRIX.md): the capture matrix for UI drift: `teyla ux shots`, `diff` and `accept`, the `design/tour.yaml` manifest and what the app must honor
 - [MANUAL](MANUAL.md): the whole method and the numbers behind each threshold
 - [ROADMAP](ROADMAP.md): what is next
 

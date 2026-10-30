@@ -102,6 +102,9 @@
   teyla reel story|check <session-id|story.json> [--ask TEXT] [--seconds N] [-o FILE]   the redacted Story as JSON; every string a reel would show
   teyla docs check [repo...] [--all] [--json] [--strict]         README opening, quick start, length, dead commands, decision history in docs
   teyla ux check [repo...] [--all] [--json] [--strict]           literals instead of tokens, crowded screens, copy rules, DESIGN.md
+  teyla ux shots <repo> [--check-manifest] [--dry] [--runs N] [--budget-min N] [--keep-temp] [--strict]   capture matrix: light/dark/large text x languages, 3 runs, a11y + layout checks
+  teyla ux diff <repo>                                            design/shots against design/shots/baseline: changed, new, missing, unstable; exit 1 on any
+  teyla ux accept <repo> --yes [--allow-unstable]                 make the run the baseline, record who and when
 """
 from __future__ import annotations
 
