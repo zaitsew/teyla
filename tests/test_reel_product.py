@@ -141,6 +141,20 @@ def test_vet_rejects_a_private_term_a_path_and_an_address(tmp_path):
     assert product.vet({"en": [product.Caption("Plan your day")]}, repo) == []
 
 
+def test_vet_texts_checks_a_voice_script_like_a_caption(tmp_path):
+    repo = make_repo(tmp_path)
+    assert product.vet_texts({"en": "Plan your day"}, repo) == []
+    bad = product.vet_texts({"en": "Made at ZebraCorp", "es": "Bien"}, repo)
+    assert bad == ["the en voice-over script holds a secret, a private term, an address or a path"]
+
+
+def test_an_empty_caption_is_refused_at_load(tmp_path):
+    path = tmp_path / "c.json"
+    path.write_text(json.dumps({"en": ["Fine", ""]}))
+    with pytest.raises(product.ProductError, match="must not be empty"):
+        product.load_captions(path)
+
+
 # --- timing -----------------------------------------------------------------------------------------------
 
 def test_untimed_captions_share_the_length_equally():
@@ -331,6 +345,22 @@ def test_the_voice_script_file_replaces_the_captions(tmp_path, capsys, media, sp
     script.write_text(json.dumps({"es": "x"}))
     rc, _, err = run(capsys, "reel", "product", str(repo), "--input", str(mov), "--copy", str(copy), "--lang", "en", "--voice", "--yes", "--script", str(script))
     assert rc == 2 and "no text for en" in err
+
+
+def test_a_private_term_in_the_voice_script_stops_before_the_speech_call(tmp_path, capsys, media, speech):
+    repo, mov, copy = setup(tmp_path)
+    script = tmp_path / "script.json"
+    script.write_text(json.dumps({"en": "Built by ZebraCorp"}))
+    rc, _, err = run(capsys, "reel", "product", str(repo), "--input", str(mov), "--copy", str(copy), "--lang", "en", "--voice", "--yes", "--script", str(script))
+    assert rc == 2 and "voice-over script" in err and "zebracorp" not in err.lower()
+    assert speech == [] and media.ffmpeg == []
+
+
+def test_mixed_caption_timing_is_refused_before_the_speech_call(tmp_path, capsys, media, speech):
+    repo, mov, copy = setup(tmp_path)
+    copy.write_text(json.dumps({"en": [{"text": "One", "start": 0}, "Two"]}))
+    rc, _, err = run(capsys, "reel", "product", str(repo), "--input", str(mov), "--copy", str(copy), "--lang", "en", "--voice", "--yes")
+    assert rc == 1 and "every caption a start time" in err and speech == []
 
 
 def test_voice_without_a_key_fails_that_language_only(tmp_path, capsys, media, monkeypatch):

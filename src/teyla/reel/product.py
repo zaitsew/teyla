@@ -56,6 +56,8 @@ class Caption:
 
 def _caption(item) -> Caption:
     if isinstance(item, str):
+        if not item.strip():
+            raise ProductError("a caption must not be empty")
         return Caption(item.strip())
     if isinstance(item, dict) and str(item.get("text") or "").strip():
         def num(k):
@@ -109,16 +111,27 @@ def load_captions(path: Path, control: str = "caption", langs: list[str] | None 
     return out
 
 
+def _unsafe(red: Redactor, text: str) -> bool:
+    o = red.clean(text)
+    return bool(o.fatal or o.skip or " ".join(o.text.split()) != " ".join(text.split()))
+
+
 def vet(captions: dict[str, list[Caption]], repo: Path) -> list[str]:
     """Problems with captions that would go into a public video: a string redaction drops or changes."""
     red = Redactor([str(repo)])
     bad = []
     for lang, caps in captions.items():
         for i, c in enumerate(caps, 1):
-            o = red.clean(c.text)
-            if o.fatal or o.skip or " ".join(o.text.split()) != " ".join(c.text.split()):
+            if _unsafe(red, c.text):
                 bad.append(f"{lang} caption {i} holds a secret, a private term, an address or a path")
     return bad
+
+
+def vet_texts(texts: dict[str, str], repo: Path) -> list[str]:
+    """The same check for a voice-over script: it is spoken into a public video and sent to the speech API."""
+    red = Redactor([str(repo)])
+    return [f"the {lang} voice-over script holds a secret, a private term, an address or a path"
+            for lang, text in texts.items() if _unsafe(red, text)]
 
 
 def schedule(caps: list[Caption], duration: float) -> list[tuple[float, float, str]]:
@@ -272,6 +285,9 @@ def cmd_product(args) -> int:
         if problems:
             raise ProductError("; ".join(problems) + " (edit the copy file)")
         texts = voice_texts(captions, Path(args.script).expanduser() if args.script else None) if args.voice else {}
+        problems = vet_texts(texts, repo) if args.script else []
+        if problems:
+            raise ProductError("; ".join(problems) + " (edit the script)")
         for l, t in texts.items():
             if len(t) > TTS_MAX_CHARS:
                 raise ProductError(f"the {l} voice-over is {len(t)} characters; the speech API takes {TTS_MAX_CHARS}")
@@ -301,6 +317,8 @@ def cmd_product(args) -> int:
         if not ffmpeg:
             raise kitdraw.Missing("ffmpeg is not on PATH (brew install ffmpeg)")
         duration = probe_duration(src, run, which)
+        for caps in captions.values():
+            schedule(caps, duration)            # a timing error must not come after a paid speech call
     except (kitdraw.Missing, ProductError) as e:
         print(f"teyla reel product: {e}", file=sys.stderr)
         return 1
