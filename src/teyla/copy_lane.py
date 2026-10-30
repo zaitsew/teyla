@@ -201,8 +201,8 @@ def build_rows(screen: dict, catalogs: list[copy_catalogs.Catalog]) -> list[dict
     rows = []
     for k in keys:
         cat = copy_catalogs.lookup(catalogs, k)
-        cur = {l: ((cat.get(k, l) or "") if cat else "") for l in LANGS}
-        control = infer_control(k, cur["en"], str(screen.get("primary_action") or ""), controls.get(k))
+        cur = {l: (cat.get(k, l) if cat else None) for l in LANGS}      # None: the catalog has no string; "" is a string
+        control = infer_control(k, cur["en"] or "", str(screen.get("primary_action") or ""), controls.get(k))
         rows.append(dict(key=k, control=control, state=infer_state(k, control, states, key_states.get(k)),
                          budget=budget_label(control), current=cur, in_catalog=cat.label if cat else ""))
     return rows
@@ -312,7 +312,7 @@ def render_brief(spec: dict) -> str:
     L += ["", "## Strings on the screen today", "", "| Key | Control | State | Budget | en | es | ru |", "|---|---|---|---|---|---|---|"]
     for r in spec["rows"]:
         c = r["current"]
-        L.append(f"| `{r['key']}` | {r['control']} | {_cell(r['state'])} | {r['budget']} | {_cell(c['en'])} | {_cell(c['es'])} | {_cell(c['ru'])} |")
+        L.append(f"| `{r['key']}` | {r['control']} | {_cell(r['state'])} | {r['budget']} | {_cell(c['en'] or '')} | {_cell(c['es'] or '')} | {_cell(c['ru'] or '')} |")
     if spec["notes"]:
         L += ["", "## Notes"] + [f"- {n}" for n in spec["notes"]]
     L += ["", "## Output", "A table of key, control, state, budget, en, es, ru, from `teyla copy write`; then `teyla copy judge`.", "",
@@ -347,7 +347,7 @@ def language_payload(spec: dict, lang: str) -> dict:
         voice_chart=(dict(text=chart["body"], banned=chart["banned"], preferred=chart["preferred"]) if chart
                      else dict(text=spec["design_voice"] or "(none: write plainly, in short sentences)", banned=[], preferred=[])),
         rules=RULES,
-        rows=[dict(key=r["key"], control=r["control"], state=r["state"], budget=r["budget"], current=r["current"].get(lang, ""))
+        rows=[dict(key=r["key"], control=r["control"], state=r["state"], budget=r["budget"], current=r["current"].get(lang) or "")
               for r in spec["rows"]])
 
 
@@ -405,7 +405,7 @@ def write_table(spec: dict, langs: list[str], model: str = MODEL) -> tuple[dict,
     for r in spec["rows"]:
         row = dict(key=r["key"], control=r["control"], state=r["state"], budget=r["budget"], was=r["current"])
         for lang in LANGS:
-            row[lang] = texts[lang][r["key"]] if lang in texts else r["current"].get(lang, "")
+            row[lang] = texts[lang][r["key"]] if lang in texts else (r["current"].get(lang) or "")
         rows.append(row)
     copy = dict(version=1, repo=spec["repo"], repo_path=spec.get("repo_path", ""), screen=spec["screen"],
                 date=_dt.date.today().isoformat(), model=model, written=list(langs), glossary=spec["glossary"],
@@ -484,7 +484,7 @@ def sentence_list(text: str) -> list[tuple[int, str]]:
 
 
 def check_text(text: str, lang: str, control: str, en: str = "", chart: voice.Chart | None = None,
-               original: str = "") -> list[dict]:
+               original: str | None = None) -> list[dict]:
     """The findings for one string: [{rule, message}], empty when it passes. `original` is the string now in the
     catalog: the placeholders of the new text must be the same as its."""
     out: list[dict] = []
@@ -524,7 +524,7 @@ def check_text(text: str, lang: str, control: str, en: str = "", chart: voice.Ch
             add("verb", f"a button starts with a verb; \"{first[0]}\" is not on the {lang} verb list")
     if en and lang != "en" and placeholders(text) != placeholders(en):
         add("placeholders", f"placeholders {placeholders(text) or 'none'} differ from English {placeholders(en) or 'none'}")
-    if original and placeholders(text) != placeholders(original):
+    if original is not None and placeholders(text) != placeholders(original):     # an empty original has none
         add("placeholders", f"placeholders {placeholders(text) or 'none'} differ from the current catalog string "
                             f"{placeholders(original) or 'none'}")
     if chart:
@@ -535,11 +535,15 @@ def check_text(text: str, lang: str, control: str, en: str = "", chart: voice.Ch
     return out
 
 
-def original_text(was, lang: str) -> str:
+def original_text(was, lang: str) -> str | None:
     """The catalog string a proposal for `lang` replaces: that language's, else English for a language the
-    catalog did not hold yet (the placeholders of the two must agree)."""
+    catalog did not hold yet (the placeholders of the two must agree). None when the brief recorded neither;
+    an empty string is a reference like any other."""
     was = was if isinstance(was, dict) else {}
-    return str(was.get(lang) or (was.get("en") if lang != "en" else "") or "")
+    text = was.get(lang)
+    if text is None and lang != "en":
+        text = was.get("en")
+    return None if text is None else str(text)
 
 
 def judge_row(row: dict, charts: dict[str, voice.Chart]) -> list[dict]:
@@ -733,8 +737,11 @@ def apply_rows(copy: dict, repo: pathlib.Path, keys: list[str] | None = None, la
                 rep["skipped"].append(dict(key=r["key"], lang=lang, why="hidden character in the text"))
                 continue
             for cat in holders:
-                live = cat.get(r["key"], lang) or (cat.get(r["key"], "en") if lang != "en" else None) or ""
-                if live and placeholders(text) != placeholders(live):
+                live = cat.get(r["key"], lang)
+                if live is None and lang != "en":
+                    live = cat.get(r["key"], "en")
+                # an empty catalog string is still a reference: it has no placeholders, so none may be added
+                if live is not None and placeholders(text) != placeholders(live):
                     rep["skipped"].append(dict(key=r["key"], lang=lang, why=f"placeholders differ from the current "
                                                                              f"string in {cat.label}"))
                     continue

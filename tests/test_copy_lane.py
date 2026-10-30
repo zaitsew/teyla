@@ -124,7 +124,7 @@ def test_brief_holds_the_screen_states_glossary_controls_budgets_and_spanish_loc
     assert (rows["recipe.list.empty"]["control"], rows["recipe.list.empty"]["state"]) == ("empty", "empty")
     assert (rows["recipe.list.error"]["control"], rows["recipe.list.error"]["state"]) == ("error", "error")
     assert rows["recipe.list.error"]["budget"] == "2 sentences" and rows["recipe.list.saved"]["control"] == "text"
-    assert rows["recipe.list.title"]["current"] == {"en": "Your Recipes", "es": "Tus recetas", "ru": ""}
+    assert rows["recipe.list.title"]["current"] == {"en": "Your Recipes", "es": "Tus recetas", "ru": None}   # None: no ru string yet
     assert any("recipe.list.missing is in no catalog" in n for n in cl.parse_spec(out)["notes"])
 
 
@@ -722,6 +722,29 @@ def test_apply_refuses_a_placeholder_that_differs_from_the_catalogs_string(repo,
     assert code == 0 and out.count("placeholders differ from the current string in App/Localizable.xcstrings") == 3
     saved = cat(repo)["strings"]["recipe.list.saved"]["localizations"]
     assert saved["en"]["stringUnit"]["value"] == "Saved %lld recipes" and "es" not in saved and "ru" not in saved
+
+
+def test_the_judge_refuses_a_placeholder_added_to_an_empty_original():
+    assert cl.original_text({"en": ""}, "es") == "" and cl.original_text({}, "es") is None
+    bad = cl.check_text("Saved %@ recipes", "en", "text", original="")
+    assert any(f["rule"] == "placeholders" for f in bad), bad
+    assert not any(f["rule"] == "placeholders" for f in cl.check_text("Saved recipes", "en", "text", original=None))
+
+
+def test_apply_refuses_a_placeholder_added_to_an_empty_catalog_string(repo, written, capsys):
+    path = repo / "App" / "Localizable.xcstrings"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["strings"]["recipe.list.saved"]["localizations"]["en"]["stringUnit"]["value"] = ""
+    path.write_text(json.dumps(data), encoding="utf-8")
+    copy = json.loads(written.read_text(encoding="utf-8"))
+    for r in copy["rows"]:
+        r["verdict"] = "pass"
+        if r["key"] == "recipe.list.saved":
+            r["en"], r["es"], r["ru"] = "Saved %@ recipes", "%@ recetas guardadas", RU_HINT + " %@"
+    written.write_text(json.dumps(copy), encoding="utf-8")
+    code, out, _ = run(["apply", str(written), str(repo)], capsys)
+    assert code == 0 and out.count("placeholders differ from the current string in App/Localizable.xcstrings") == 3
+    assert cat(repo)["strings"]["recipe.list.saved"]["localizations"]["en"]["stringUnit"]["value"] == ""
 
 
 def test_apply_writes_only_the_languages_the_table_marks_as_written(repo, capsys, model):
