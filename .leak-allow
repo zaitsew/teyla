@@ -22,6 +22,8 @@ cyrillic:
 # files hold the Russian-language lexicons (phrases the detectors must recognise) and the
 # tests that feed those lexicons Russian text.
 src/teyla/lexicon.py
+# the copy judge's per-language word lists (interjections, first person, imperatives)
+src/teyla/copy_lexicon.py
 tests/test_detect.py
 tests/test_numbers.py
 tests/test_corrections.py
