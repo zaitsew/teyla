@@ -94,13 +94,17 @@ The reply is one of:
 Scope is clamped: `fix` and `reject` always get the narrowest scope (`component:` for a known element, else
 `screen:`); only a `rule` may be `product`. A decision that is already confirmed is not triaged again.
 
-**Rejections are never proposed again.** Every later prompt carries the product's rejections, and a proposal whose
-rule or comment is at least 90% the same text as an earlier rejection is turned into a `reject` by the code, whatever
-the model answered.
+**Rejections are never proposed again, inside their scope.** Every later prompt carries the rejections that cover the
+capture, and a proposal whose rule or comment is at least 90% the same text as such a rejection is turned into a
+`reject` by the code, whatever the model answered. A rejection covers its own scope only: a `component:` scope the
+same element and its children, a `screen:` scope that screen, and only a `product` scope every screen.
 
 **The brief.** `teyla review open <ids...>` takes the leases and prints one brief per product and screen: the
 captures with the element, tap, context and picture path; each decision; the screen's job, states and string keys; the
-rules that apply; the checks to run. `--out FILE` writes it to a file instead.
+rules that apply; the checks to run. `--out FILE` writes it to a file instead. The decisions and rules come from the
+files in the product repo (`design/decisions`, `design/rules`), so a rule the owner reworded at `taste confirm` is
+brief'd as reworded; the queue's copy is only the index. `--done <PR-URL>` marks the capture done and frees its
+lease in one transaction.
 
 ## The ledger: `teyla taste`
 

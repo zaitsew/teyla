@@ -472,7 +472,10 @@ def take_lease(conn: sqlite3.Connection, cid: str, owner: str, ttl_s: float, now
         raise
 
 
-def release_lease(conn: sqlite3.Connection, cid: str, owner: str, *, force: bool = False, now: float | None = None) -> tuple[bool, str]:
+def release_lease(conn: sqlite3.Connection, cid: str, owner: str, *, force: bool = False, now: float | None = None,
+                  done_pr: str | None = None) -> tuple[bool, str]:
+    """Give the capture back. With `done_pr`, the same transaction marks it done and records the PR, so
+    no other session can take the lease between the release and the mark."""
     now = _now() if now is None else now
     conn.execute("BEGIN IMMEDIATE")
     try:
@@ -483,9 +486,13 @@ def release_lease(conn: sqlite3.Connection, cid: str, owner: str, *, force: bool
         if r["lease_owner"] and r["lease_owner"] != owner and (r["lease_expires"] or 0) > now and not force:
             conn.execute("ROLLBACK")
             return False, f"held by {r['lease_owner']} until {_iso(r['lease_expires'])} (--force overrides)"
-        back = "triaged" if r["decision"] else "new"
-        conn.execute("UPDATE captures SET lease_owner = NULL, lease_expires = NULL, status = CASE WHEN status = 'open' THEN ? ELSE status END "
-                     "WHERE id = ?", (back, cid))
+        if done_pr is not None:
+            conn.execute("UPDATE captures SET lease_owner = NULL, lease_expires = NULL, status = 'done', pr = ? WHERE id = ?",
+                         (done_pr, cid))
+        else:
+            back = "triaged" if r["decision"] else "new"
+            conn.execute("UPDATE captures SET lease_owner = NULL, lease_expires = NULL, status = CASE WHEN status = 'open' THEN ? ELSE status END "
+                         "WHERE id = ?", (back, cid))
         conn.execute("COMMIT")
         return True, ""
     except BaseException:
@@ -563,7 +570,8 @@ def build_payload(row: dict, repo: pathlib.Path | None) -> dict:
         for d in decisions[:RECENT_DECISIONS]]
     payload["rejected_before"] = [
         {"date": d.get("date"), "scope": d.get("scope"), "comment": _cut(d.get("comment"), 300), "rule": _cut(d.get("rule"), 200),
-         "reason": _cut(d.get("reason"), 200)} for d in taste.rejections(repo)[:MAX_REJECTED] if d["id"] != cap["id"]]
+         "reason": _cut(d.get("reason"), 200)} for d in taste.rejections(repo) if d["id"] != cap["id"]
+         and _rejection_applies(d, str(cap.get("screen", "")), str(el.get("id", "")))][:MAX_REJECTED]
     return payload
 
 
@@ -613,11 +621,21 @@ def parse_decision(reply, row: dict, repo: pathlib.Path | None) -> dict:
     return rec
 
 
+def _rejection_applies(old: dict, screen: str, element: str) -> bool:
+    """A past rejection holds only inside its own scope: the same element (and its children) for a `component:`
+    scope, the same screen for a `screen:` scope, everywhere only for `product`. A record with no valid scope
+    is read as the narrowest scope of the screen and element it was made on."""
+    scope = str(old.get("scope") or "")
+    if not taste.SCOPE_RE.match(scope):
+        scope = taste.default_scope(str(old.get("screen", "")), str(old.get("element", "")))
+    return taste.scope_matches(scope, screen, element)
+
+
 def repeated_rejection(repo: pathlib.Path, rec: dict) -> dict | None:
     """The earlier rejection this proposal repeats (same words, or 90% alike after normalising), or None."""
     mine = [taste.norm(x) for x in (rec.get("rule"), rec.get("comment")) if x]
     for old in taste.rejections(repo):
-        if old.get("id") == rec["id"]:
+        if old.get("id") == rec["id"] or not _rejection_applies(old, str(rec.get("screen", "")), str(rec.get("element", ""))):
             continue
         for theirs in (taste.norm(old.get("rule") or ""), taste.norm(old.get("comment") or "")):
             if not theirs:
@@ -675,6 +693,33 @@ def _quote(text: str) -> list[str]:
     return ["> " + ln for ln in (text or "(no comment)").splitlines() or ["(no comment)"]]
 
 
+def current_decision(row: dict, repo: pathlib.Path | None) -> dict | None:
+    """The decision as the product repo has it now. The files in design/decisions and design/rules are the
+    source of truth (the owner may have confirmed a rule with other wording since triage); the SQLite row is
+    only the index, used when the repo or the file is not there."""
+    dec = row["decision"]
+    if repo is None:
+        return dec
+    path = taste.decision_path(repo, row["id"])
+    if path.is_file():
+        try:
+            fresh = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            fresh = None
+        if isinstance(fresh, dict) and fresh.get("decision") in taste.DECISIONS:
+            dec = fresh
+    if dec and dec.get("decision") == "rule":
+        rule_file = taste.rule_file_for(repo, row["id"])
+        if rule_file is not None:
+            try:
+                rule = taste.load_file(rule_file)
+            except ValueError:
+                rule = {}
+            dec = dict(dec, **{k: rule[k] for k in ("scope",) if rule.get(k)}, **({"rule": rule["wording"]} if rule.get("wording") else {}),
+                       confirmed=True)
+    return dec
+
+
 def build_brief(rows: list[dict], repo: pathlib.Path | None, owner: str, until: str) -> str:
     L: list[str] = []
     groups: dict[tuple[str, str], list[dict]] = {}
@@ -690,7 +735,7 @@ def build_brief(rows: list[dict], repo: pathlib.Path | None, owner: str, until: 
               "Change only what the decisions say.", ""]
         L.append("## Captures")
         for n, r in enumerate(items, 1):
-            cap, dec = r["data"], r["decision"]
+            cap, dec = r["data"], current_decision(r, repo)
             el = cap.get("element") or {}
             L += ["", f"### {n}. {r['id'][:8]} · {el.get('id') or '(no element: ' + cap.get('source', 'app') + ')'}", ""]
             L += _quote(cap.get("comment", ""))
@@ -716,9 +761,13 @@ def build_brief(rows: list[dict], repo: pathlib.Path | None, owner: str, until: 
                     L.append(f"  - File: `{f['file']}`")
                 L.append(f"  - Why: {dec.get('reason', '')}")
             elif dec["decision"] == "rule":
-                L.append(f"- Decision: **rule**, scope `{dec.get('scope')}`: {dec.get('rule', '')}")
-                L.append("  - Do not write the rule file. The owner confirms it: `teyla taste confirm " + r['id'][:8] + "`. "
-                         "Make the fix the rule implies on this screen only.")
+                if dec.get("confirmed") is True:
+                    L.append(f"- Decision: **rule**, confirmed, scope `{dec.get('scope')}`: {dec.get('rule', '')}")
+                    L.append("  - The rule file exists. Do not edit it. Make the fix the rule implies on this screen only.")
+                else:
+                    L.append(f"- Decision: **rule**, scope `{dec.get('scope')}`: {dec.get('rule', '')}")
+                    L.append("  - Do not write the rule file. The owner confirms it: `teyla taste confirm " + r['id'][:8] + "`. "
+                             "Make the fix the rule implies on this screen only.")
             else:
                 L.append(f"- Decision: **reject**: {dec.get('reason', '')}. Do not work on this capture.")
         keys = sorted({k for i in items for k in ((i["data"].get("element") or {}).get("string_keys") or [])})
@@ -905,13 +954,12 @@ def cmd_review(args) -> int:
         if args.release or args.done:
             for cid in ids:
                 row = get(conn, cid)
-                ok, why = release_lease(conn, cid, owner, force=args.force)
+                ok, why = release_lease(conn, cid, owner, force=args.force, done_pr=args.done or None)
                 if not ok:
                     print(f"{cid[:8]}: {why}", file=sys.stderr)
                     bad += 1
                     continue
                 if args.done:
-                    conn.execute("UPDATE captures SET status = 'done', pr = ? WHERE id = ?", (args.done, cid))
                     repo = _repo_for(row["product"], args.repo)
                     p = taste.decision_path(repo, cid) if repo else None
                     if p is not None and p.is_file():
