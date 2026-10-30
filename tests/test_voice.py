@@ -265,7 +265,8 @@ def test_cli_json_and_stdin(charts, monkeypatch, capsys):
     code, out, _ = run(["-", "--chart", str(charts), "--json"], capsys)
     rep = json.loads(out)
     assert code == 1 and rep["lang"] == "ru" and rep["ok"] is False
-    assert [f["rule"] for f in rep["findings"]] == ["banned"] and rep["findings"][0]["phrase"].endswith("*")
+    assert [f["rule"] for f in rep["findings"] if f["level"] == "fail"] == ["banned"] and rep["findings"][0]["phrase"].endswith("*")
+    assert rep["findings"][-1]["rule"] == "chart" and rep["findings"][-1]["level"] == "warn"      # no example lines: incomplete
 
 
 def test_wrong_language_only_warns(charts, tmp_path, capsys):
