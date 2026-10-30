@@ -9,6 +9,7 @@ colours or fonts.
 | The standard: screen rules, tokens rule, UI copy rules, review process, definition of done, a 10-point checklist | `templates/design/STANDARD.md` |
 | The per-product template: tokens, voice, screen inventory, what is absent | `templates/design/DESIGN.md` |
 | The audit | `teyla ux check` |
+| The review loop, the drift matrix, the judge, the copy lane and the brand kit: concept, decisions and roadmap | [STUDIO.md](STUDIO.md) |
 
 ## Start a product
 

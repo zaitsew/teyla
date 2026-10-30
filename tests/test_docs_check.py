@@ -149,6 +149,14 @@ def test_dead_command_ignores_prose_and_paths(tmp_path):
     assert not any(f["check"] == "dead-command" for f in docs_check.check_repo(own)["findings"])
 
 
+def test_a_doc_whose_status_line_says_roadmap_may_name_future_commands(tmp_path):
+    own = repo(tmp_path, name="own", pyproject='[project.scripts]\nteyla = "x:main"\n',
+               docs={"docs/STUDIO.md": "# Studio\n\nStatus: concept and roadmap.\n\nSoon: `teyla futurecmd`.\n",
+                     "docs/OTHER.md": "# Other\n\nRoadmap word in prose only.\n\nRun `teyla nosuchcmd`.\n"})
+    dead = [f["file"] for f in docs_check.check_repo(own)["findings"] if f["check"] == "dead-command"]
+    assert dead == ["docs/OTHER.md"]
+
+
 def test_roadmap_may_name_commands_that_do_not_exist_yet(tmp_path):
     own = repo(tmp_path, name="own", pyproject='[project.scripts]\nteyla = "x:main"\n',
                docs={"docs/ROADMAP.md": "# Roadmap\n\nNext: `teyla futurecmd`.\n"})

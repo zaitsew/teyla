@@ -27,7 +27,8 @@ Checks:
                   `teyla <sub>` in a code span or fenced block of README.md and docs/ must be a
                   subcommand of the parser (and a second word, where the parser nests). The parser
                   is built in-process from `teyla.cli.build_parser`. Other repos: skipped.
-                  docs/ROADMAP.md is not read: a roadmap names commands that do not exist yet.
+                  docs/ROADMAP.md is not read, nor a doc whose `Status:` line (within its first
+                  five lines) says roadmap: a roadmap names commands that do not exist yet.
     history       A docs/*.md file whose lines read as decision history: dated phrases ("on
                   2026-", "(2026-09-30)", "as of", "rev. 2"), "used to", "we decided", "was
                   changed", "previously". 4 or more such lines AND 5% or more of its prose lines is
@@ -352,6 +353,17 @@ def code_mentions(lines: list[str], state: list[str | None]):
             yield i + 1, ln
 
 
+def is_roadmap(doc: pathlib.Path) -> bool:
+    """docs/ROADMAP.md, or a doc whose `Status:` line in its first five lines says roadmap."""
+    if doc.name.lower() == "roadmap.md":
+        return True
+    try:
+        head = doc.read_text(encoding="utf-8", errors="replace").splitlines()[:5]
+    except OSError:
+        return False
+    return any(line.startswith("Status:") and "roadmap" in line.lower() for line in head)
+
+
 def check_dead_commands(root: pathlib.Path, files: list[pathlib.Path], commands: dict[str, set[str] | None] | None = None) -> list[dict]:
     cmds = commands if commands is not None else parser_commands()
     out, seen = [], set()
@@ -394,7 +406,7 @@ def check_repo(root: pathlib.Path, commands: dict | None = None) -> dict:
             findings.append(f)
     findings += check_status_drift(root, readme, docs)
     if is_teyla_repo(root):
-        scan = ([readme] if readme else []) + [d for d in docs if d.name.lower() != "roadmap.md"]
+        scan = ([readme] if readme else []) + [d for d in docs if not is_roadmap(d)]
         findings += check_dead_commands(root, scan, commands)
     return {"repo": root.name, "path": str(root), "findings": findings}
 
