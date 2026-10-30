@@ -13,8 +13,9 @@ struct ReviewOverlay: View {
     let microphone: MicrophoneGuard
     let speech: SpeechCapture
     let onCancel: () -> Void
-    /// Saves the draft. Calls `failed` with a message when it could not be saved; on success the
-    /// presenter closes the overlay and never calls it.
+    /// Saves the draft. While it runs the overlay is in the saving state and accepts no edits.
+    /// Calls `failed` with a message when it could not be saved: the overlay becomes editable
+    /// again with the text kept. On success the presenter closes the overlay and never calls it.
     let onSend: (ReviewDraft, @escaping (String) -> Void) -> Void
 
     @State private var tap: CGPoint?
@@ -45,7 +46,7 @@ struct ReviewOverlay: View {
             Image(uiImage: image)
                 .resizable()
                 .frame(width: size.width, height: size.height)
-                .gesture(DragGesture(minimumDistance: 0).onEnded { select($0.location) })
+                .gesture(DragGesture(minimumDistance: 0).onEnded { if !sending { select($0.location) } })
                 .accessibilityHidden(true)
             if let r = hit?.bounds {
                 Rectangle()
@@ -82,6 +83,7 @@ struct ReviewOverlay: View {
                 .lineLimit(1...4)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
+                .disabled(sending)
                 .accessibilityIdentifier("teyla.review.comment")
             if let failure {
                 Text(failure)
@@ -92,11 +94,17 @@ struct ReviewOverlay: View {
             if speechEnabled, speech.isAvailable {
                 Button(listening ? "Stop" : "Dictate on device") { toggleListening() }
                     .font(.footnote)
+                    .disabled(sending)
             }
             HStack {
                 Button("Cancel", role: .cancel, action: onCancel)
+                    .disabled(sending)
                 Spacer()
-                Button(failure == nil ? "Send" : "Retry") { send() }
+                if sending {
+                    ProgressView()
+                        .accessibilityIdentifier("teyla.review.saving")
+                }
+                Button(sending ? "Saving" : (failure == nil ? "Send" : "Retry")) { send() }
                     .buttonStyle(.borderedProminent)
                     .disabled(sending || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityIdentifier("teyla.review.send")
@@ -118,6 +126,7 @@ struct ReviewOverlay: View {
     private func toggleListening() {
         if listening { stopListening(); return }
         speech.onText = { heard in
+            guard !sending else { return }      // a late result must not change the text being saved
             text = heard
             input = .speech
         }
@@ -144,6 +153,7 @@ struct ReviewOverlay: View {
         let comment = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !comment.isEmpty, !sending else { return }
         sending = true
+        focused = false
         failure = nil
         onSend(ReviewDraft(tap: tap, hit: hit, accessibilityIdentifier: identifier, accessibilityLabel: label, text: comment, input: input)) { message in
             sending = false

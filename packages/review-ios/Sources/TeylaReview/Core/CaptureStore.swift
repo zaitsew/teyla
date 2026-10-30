@@ -43,6 +43,10 @@ struct CaptureStore {
     let root: URL                       // .../Documents/TeylaReview/captures
     var now: () -> Date = Date.init
 
+    /// Serialises every read-modify-write of a `status.json`. `CaptureStore` is a value type that
+    /// callers copy freely, so the lock is process-wide.
+    private static let statusLock = NSLock()
+
     init(root: URL, now: @escaping () -> Date = Date.init) {
         self.root = root
         self.now = now
@@ -152,6 +156,8 @@ struct CaptureStore {
         if let coordinationError { throw ReviewError.io(coordinationError.localizedDescription) }
         if let failure { throw ReviewError.io(String(describing: failure)) }
 
+        Self.statusLock.lock()
+        defer { Self.statusLock.unlock() }
         var status = readLocalStatus(id: id) ?? LocalStatus(v: 1, id: id, status: .savedOnPhone, updated: CaptureCoding.iso(now()), relayCopied: nil)
         status.relayCopied = CaptureCoding.iso(now())
         try? writeStatus(status, in: src)
@@ -184,11 +190,17 @@ struct CaptureStore {
         let message = ReviewSigner.statusMessage(id: remote.id, status: remote.status.rawValue, updated: remote.updated, pr: remote.pr)
         guard ReviewSigner.verify(message, signature: remote.sig, key: key) else { return local }
         guard remote.status > local else { return local }
-        if var stored = readLocalStatus(id: id) {
+        // Compare-and-set under the lock: two concurrent reads can hold different remote states,
+        // and the one that arrives later must not write an earlier state over a later one.
+        Self.statusLock.lock()
+        defer { Self.statusLock.unlock() }
+        guard var stored = readLocalStatus(id: id) else { return remote.status }
+        if remote.status > stored.status {
             stored.status = remote.status
             try? writeStatus(stored, in: folder(for: id))
+            return remote.status
         }
-        return remote.status
+        return stored.status
     }
 
     /// Saved captures, newest first.
