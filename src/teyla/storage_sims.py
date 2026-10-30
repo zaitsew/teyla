@@ -31,6 +31,7 @@ touched. Every `xcrun simctl` call goes through `simctl()`.
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import pathlib
@@ -115,10 +116,25 @@ def boot_time(udid: str, root: pathlib.Path | None = None) -> float | None:
         return None
 
 
+PROC_LAUNCH = re.compile(rb'"procLaunch"\s*:\s*"(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)(?:\.\d+)? ([+-]\d{4})"')
+
+
+def launched_at(text: bytes) -> float | None:
+    """When the crashed process started, from the report's `procLaunch`. None when it is missing."""
+    m = PROC_LAUNCH.search(text)
+    if not m:
+        return None
+    try:
+        return dt.datetime.strptime(f"{m.group(1).decode()} {m.group(2).decode()}", "%Y-%m-%d %H:%M:%S %z").timestamp()
+    except ValueError:
+        return None
+
+
 def springboard_crashes(udid: str, since: float, roots: list[pathlib.Path] | None = None) -> int:
-    """SpringBoard crash reports written since `since` by this device. A simulator's report names
-    its device in the coalition (`com.apple.CoreSimulator.SimDevice.<UDID>`); the Mac's own
-    SpringBoard does not exist, so nothing else matches."""
+    """SpringBoard crash reports by this device whose process started at `since` or later. A simulator's
+    report names its device in the coalition (`com.apple.CoreSimulator.SimDevice.<UDID>`); the Mac's own
+    SpringBoard does not exist, so nothing else matches. The process's launch time, not the file's, says
+    which boot it belongs to: a report of the previous boot can be written after the next one starts."""
     from . import crash
     tag = f"simdevice.{udid}".lower().encode()
     n = 0
@@ -129,10 +145,14 @@ def springboard_crashes(udid: str, since: float, roots: list[pathlib.Path] | Non
             continue
         for f in files:
             try:
-                if f.stat().st_mtime >= since and tag in f.read_bytes().lower():
-                    n += 1
+                if f.stat().st_mtime < since:
+                    continue
+                text = f.read_bytes()
             except OSError:
                 continue
+            launched = launched_at(text)
+            if tag in text.lower() and (launched is None or launched >= since - 1):
+                n += 1
     return n
 
 

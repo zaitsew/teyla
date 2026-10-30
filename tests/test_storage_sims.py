@@ -419,3 +419,22 @@ def test_the_guard_pass_stops_only_crash_loops_and_dry_stops_nothing(tmp_path, m
     assert storage_sims.stop_crash_loops([udid(1), udid(2), "not-a-udid"]) == [
         f"shut down {udid(2)} (crash loop), SpringBoard crashed 2x since boot"]
     assert sim.verbs("shutdown") == [udid(2)]
+
+
+def test_a_report_of_the_previous_boot_written_after_the_reboot_does_not_count(tmp_path, reports):
+    import datetime as dt
+    booted_at(tmp_path, 1, NOW - 10 * MIN)
+    before = dt.datetime.fromtimestamp(NOW - 12 * MIN).astimezone().strftime("%Y-%m-%d %H:%M:%S.1234 %z")
+    after = dt.datetime.fromtimestamp(NOW - 9 * MIN).astimezone().strftime("%Y-%m-%d %H:%M:%S.1234 %z")
+    for name, launched in (("late-1", before), ("late-2", before)):
+        f = reports / f"SpringBoard-{name}.ips"
+        reports.mkdir(parents=True, exist_ok=True)
+        f.write_text('{"bug_type":"309"}\n{"procLaunch":"%s","coalitionName":"com.apple.CoreSimulator.SimDevice.%s"}\n'
+                     % (launched, udid(1)))
+        os.utime(f, (NOW - 9 * MIN, NOW - 9 * MIN))
+    assert storage_sims.crash_looping(udid(1)) == 0, "both processes started before this boot"
+    for name in ("new-1", "new-2"):
+        f = reports / f"SpringBoard-{name}.ips"
+        f.write_text('{"procLaunch":"%s","coalitionName":"com.apple.CoreSimulator.SimDevice.%s"}\n' % (after, udid(1)))
+        os.utime(f, (NOW - 8 * MIN, NOW - 8 * MIN))
+    assert storage_sims.crash_looping(udid(1)) == 2
