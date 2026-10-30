@@ -206,6 +206,64 @@ def test_a_heavy_word_inside_a_quoted_string_or_an_argument_is_not_a_command(box
     assert box.called() == []
 
 
+# Text that is data, not commands. The 2026-10-30 refusals were a `git commit -F -` heredoc whose message
+# said `simctl boot` (refused as sim), then one that said `xcodebuild` (refused as build).
+TEXT_ONLY = [
+    "git commit -q -F - <<'EOF'\nsims: shut down a crash-looping device\n\nIt ran `xcrun simctl boot` twice; don't boot again.\nxcrun simctl boot ABC\nsimctl create X Y\nEOF",
+    "git commit -q -F - <<'EOF'\nbuild: the hook said:\nxcodebuild -scheme A test\ncd /x && xcodebuild test\nEOF",
+    "git commit -F - <<EOF\nxcodebuild test\nEOF\n",
+    "git commit -F- <<-'EOF'\n\txcodebuild test\n\tEOF",
+    'git commit -m "$(cat <<\'EOF\'\nfix: the \\"guard\\" ran\nxcodebuild test\nxcrun simctl boot ABC\nEOF\n)"',
+    'gh pr create --title t --body "- xcodebuild test\nxcrun simctl boot ABC\n"',
+    "gh pr create --title t --body-file - <<'EOF'\n## What\nxcrun simctl boot ABC\nEOF",
+    'gh pr create --body "$(cat <<\'EOF\'\n## Summary\nxcrun simctl boot ABC; xcodebuild test\nEOF\n)"',
+    "cat > notes.md <<'EOF'\nclaude -p 'x'\ncodex exec y\nEOF\ncat notes.md",
+    "cat <<'A' <<'B'\nxcodebuild test\nA\nswift build\nB",
+    "git commit -F - <<'EOF'\nxcodebuild test\nEOF\ngit log --oneline",
+]
+
+
+@pytest.mark.parametrize("command", TEXT_ONLY)
+def test_text_in_a_heredoc_or_a_quoted_message_is_not_a_command(box, command):
+    r = box.run(command)
+    assert (r.returncode, r.stdout, r.stderr) == (0, "", ""), command
+    assert box.called() == [], command
+
+
+def test_the_two_commit_messages_refused_on_2026_10_30_pass_even_when_refusals_are_on(box):
+    for word in ("xcrun simctl boot ABC", "xcodebuild -scheme A test"):
+        r = box.run(f"git commit -q -F - <<'EOF'\nsims: a note\n\n{word}\nEOF", mode="refuse")
+        assert (r.returncode, r.stderr) == (0, ""), word
+    assert box.called() == []
+
+
+COMMAND_AFTER_TEXT = [
+    ("cat <<EOF > f\nxcodebuild test\nEOF\nxcodebuild test", ["load --admit build"]),
+    ("git commit -F - <<'EOF'\nmsg\nEOF\nxcrun simctl boot ABC", ["load --admit sim"]),
+    ("xcrun simctl boot ABC && git commit -F - <<'EOF'\nxcodebuild test\nEOF", ["load --admit sim"]),
+    ("cat <<EOF | claude -p\nxcodebuild test\nEOF", ["load --admit lane"]),
+    ("cat <<< foo\nxcodebuild test", ["load --admit build"]),
+    ("cat <<<true\nxcodebuild test\ntrue", ["load --admit build"]),
+    # a body that a shell reads, or an unquoted body that substitutes, is script
+    ("bash <<'EOF'\nxcodebuild test\nEOF", ["load --admit build"]),
+    ("sh -s <<EOF\nxcrun simctl boot ABC\nEOF", ["load --admit sim"]),
+    ("cat <<'EOF' | bash\nxcodebuild test\nEOF", ["load --admit build"]),
+    ("cat <<EOF\n$(xcodebuild test)\nEOF", ["load --admit build"]),
+    ("cat <<EOF\n`xcodebuild test`\nEOF", ["load --admit build"]),
+    ('echo "a << b"\nxcodebuild test', ["load --admit build"]),
+    ("cat <<EOF\nxcodebuild test", ["load --admit build"]),          # never terminated: nothing is dropped
+    ("cat <<EOF\nxcodebuild test\nEOF2\nswift build", ["load --admit build"]),
+    ('git commit -m "it\'s fine"\nxcodebuild test', ["load --admit build"]),
+]
+
+
+@pytest.mark.parametrize("command,calls", COMMAND_AFTER_TEXT)
+def test_a_command_next_to_a_heredoc_still_counts(box, command, calls):
+    r = box.run(command, mode="allow")
+    assert (r.returncode, r.stdout, r.stderr) == (0, "", ""), command
+    assert box.called() == calls, command
+
+
 def test_every_kind_in_a_compound_command_is_checked(box):
     r = box.run("xcodebuild test && xcrun simctl boot ABC", mode="refuse-sim")
     assert r.returncode == 2 and "teyla guard: sim refused" in r.stderr

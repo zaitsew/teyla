@@ -25,7 +25,11 @@
 # `cd x && xcodebuild -scheme A test` is a build, `git commit -m "xcodebuild"` and
 # `grep xcodebuild log` are not. Separators inside single or double quotes do not split
 # (`git commit -m 'fix; xcodebuild test'` is one harmless segment); the quoted script of
-# `sh -c` / `bash -c` is classified the same way, recursively.
+# `sh -c` / `bash -c` is classified the same way, recursively. The body of a here-document is
+# text, not commands: it is dropped before the split (2026-10-30: a `git commit -F - <<'EOF'`
+# whose message said "simctl boot", then "xcodebuild", was refused as a sim and as a build).
+# Except a body a shell reads (`bash <<EOF`, `... <<EOF | sh`) and an unquoted body that
+# substitutes ($( ) or a backtick): those run, so they are classified.
 #   build  xcodebuild (not -list -showsdks -version -showBuildSettings -showdestinations -help),
 #          swift|cargo|bazel with `build` or `test` among the args before any `--`,
 #          gradle/gradlew with a task
@@ -78,7 +82,7 @@ kinds=$(printf '%s' "$payload" | awk '
   function strip(s) { gsub(/^["\047(]+/, "", s); gsub(/["\047)]+$/, "", s); return s }
   function base(s) { sub(/^.*\//, "", s); return s }
   function unesc(s) {
-    gsub(/\\\\/, "\001", s); gsub(/\\n/, ";", s); gsub(/\\[tr]/, " ", s)
+    gsub(/\\\\/, "\001", s); gsub(/\\n/, "\n", s); gsub(/\\[tr]/, " ", s)
     gsub(/\\"/, "\"", s); gsub(/\\\//, "/", s); gsub(/\\u0026/, "\\&", s)
     gsub(/\\u003[cC]/, "<", s); gsub(/\\u003[eE]/, ">", s)
     gsub(/\001/, "\\", s)
@@ -103,7 +107,7 @@ kinds=$(printf '%s' "$payload" | awk '
       if (ch == "\\") { cur = cur ch substr(s, i + 1, 1); i++; continue }
       if (ch == "\"" || ch == "\047") { q = ch; cur = cur ch; continue }
       if (ch == "$" && substr(s, i + 1, 1) == "(") { out[++n] = cur; cur = ""; i++; continue }
-      if (ch ~ /[;&|(`{]/) { out[++n] = cur; cur = ""; continue }
+      if (ch ~ /[;&|(`{\n]/) { out[++n] = cur; cur = ""; continue }
       cur = cur ch
     }
     out[++n] = cur
@@ -149,8 +153,77 @@ kinds=$(printf '%s' "$payload" | awk '
     }
     return 0
   }
+  # The text of a here-document is data (a commit message, a PR body), not commands: a `git commit -F -` whose
+  # heredoc message says "simctl boot" runs no simulator. Drop each body and its terminator line; the line that
+  # opens it stays. Quote state is tracked so `echo "a << b"` and `<<<` open nothing, and a `<<` inside a
+  # double-quoted $( ) does (the usual `-m "$(cat <<EOF ... EOF)"`). A delimiter that is never found strips nothing.
+  function strip_heredocs(s,    out, len, i, ch, nx, st, ns, pend, np, j, w, dq, tabs, lim, e, line, found, k, sub1, cur, rem) {
+    out = ""; len = length(s); ns = 1; st[1] = "c"; np = 0
+    for (i = 1; i <= len; i++) {
+      ch = substr(s, i, 1); nx = substr(s, i + 1, 1)
+      if (st[ns] == "s") { out = out ch; if (ch == "\047") ns--; continue }
+      if (ch == "\\") { out = out ch nx; i++; continue }
+      if (st[ns] == "d") {
+        if (ch == "\"") { out = out ch; ns--; continue }
+        if (ch == "$" && nx == "(") { out = out "$("; i++; st[++ns] = "c1"; continue }
+        out = out ch; continue
+      }
+      # code context: "c" is the top level, "cN" is inside a $( ) at paren depth N
+      if (ch == "\047") { out = out ch; st[++ns] = "s"; continue }
+      if (ch == "\"") { out = out ch; st[++ns] = "d"; continue }
+      if (ns > 1) {
+        if (ch == "(") { st[ns] = "c" (substr(st[ns], 2) + 1) }
+        else if (ch == ")") {
+          if (substr(st[ns], 2) + 0 <= 1) { out = out ch; ns--; continue }
+          st[ns] = "c" (substr(st[ns], 2) - 1)
+        }
+      }
+      if (ch == "<" && nx == "<" && substr(s, i + 2, 1) != "<" && substr(s, i - 1, 1) != "<") {
+        j = i + 2; tabs = 0
+        if (substr(s, j, 1) == "-") { tabs = 1; j++ }
+        while (substr(s, j, 1) == " " || substr(s, j, 1) == "\t") j++
+        w = ""; dq = substr(s, j, 1)
+        if (dq == "\047" || dq == "\"") {
+          j++
+          while (j <= len && substr(s, j, 1) != dq) { w = w substr(s, j, 1); j++ }
+          j++
+        } else {
+          if (dq == "\\") j++
+          while (j <= len && substr(s, j, 1) !~ /[ \t\n;&|()<>\047"]/) { w = w substr(s, j, 1); j++ }
+        }
+        if (w != "") {
+          # A body that a shell reads is script, not text: `bash <<EOF`, `cat <<EOF | sh`. So is an unquoted
+          # body that substitutes ($( ) or a backtick). Those stay in the text and are classified.
+          cur = out; sub(/^.*\n/, "", cur)
+          rem = substr(s, j, index(substr(s, j) "\n", "\n") - 1)
+          pend[++np] = w; pt[np] = tabs
+          pk[np] = (cur ~ /(^|[ \t;&|(\/])(sh|bash|zsh|dash)([ \t]+-[^ \t]*)*[ \t]*$/ || rem ~ /\|[ \t]*([A-Za-z]+[ \t]+)?([^ \t]*\/)?(sh|bash|zsh|dash)([ \t]|$)/)
+          pu[np] = (dq != "\047" && dq != "\"" && dq != "\\")
+          out = out substr(s, i, j - i); i = j - 1; continue
+        }
+      }
+      if (ch == "\n" && np > 0) {
+        out = out ch; i++
+        for (k = 1; k <= np; k++) {
+          lim = pend[k]; found = 0; e = i
+          while (e <= len) {
+            sub1 = index(substr(s, e), "\n")
+            line = (sub1 ? substr(s, e, sub1 - 1) : substr(s, e))
+            if (pt[k]) sub(/^[ \t]+/, "", line)       # <<- strips tabs (unesc has already turned a JSON \t into a space)
+            e = e + (sub1 ? sub1 : length(line) + 1)
+            if (line == lim) { found = 1; break }
+          }
+          if (found && !pk[k] && !(pu[k] && substr(s, i, e - i) ~ /\$\(|`/)) i = e
+        }
+        np = 0; i--
+        continue
+      }
+      out = out ch
+    }
+    return out
+  }
   function run(script, depth,    segs, n, i) {
-    n = qsplit(script, segs)
+    n = qsplit(strip_heredocs(script), segs)
     for (i = 1; i <= n; i++) classify(segs[i], depth)
   }
   # Classify one segment and emit its kind (nothing when it is not heavy).

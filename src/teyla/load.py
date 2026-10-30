@@ -1035,6 +1035,20 @@ class Decision:
     reason: str = ""                                              # one line, for the log
 
 
+def _split_crash_looping(udids: list) -> tuple[list, list]:
+    """(usable, crash-looping): a device whose SpringBoard crash-loops is no simulator to reuse. A UDID that cannot be
+    judged (no report access, an import problem) stays usable: the message is advice, not a gate."""
+    good, looping = [], []
+    for u in udids:
+        try:
+            from . import storage_sims
+            bad = storage_sims.crash_looping(u)
+        except Exception:
+            bad = 0
+        (looping if bad else good).append(u)
+    return good, looping
+
+
 def decide(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | None = None,
            lease: Lease | None = None, cwd: str = "") -> Decision:
     """The admission decision for `kind`, with the verdict it was made under and a one-line reason.
@@ -1081,9 +1095,12 @@ def decide(kind: str, snap: Snapshot, conf: dict | None = None, trend: Trend | N
         return Decision(True, "", verdict.level, "")
     lines = [f"teyla guard: {kind} refused — " + "; ".join(why)]
     if kind == "sim":
-        udids = ", ".join(p.sim_udids)
+        good, looping = _split_crash_looping(p.sim_udids)
+        udids = ", ".join(good)
         lines.append("Reuse an already-booted simulator instead of booting another"
                      + (f" ({udids})." if udids else " (`xcrun simctl list devices booted`)."))
+        if looping:
+            lines.append(f"Not {', '.join(looping)}: its SpringBoard keeps crashing. `teyla storage sims --reap` shuts it down.")
     elif kind == "build":
         lines.append("Let the builds already running finish instead of starting another in parallel.")
     else:
