@@ -63,7 +63,7 @@ Every `teyla` command with its flags; `teyla help --all` prints the same list in
 | `teyla review open <ids...> [--out FILE] [--owner NAME] [--ttl-min N] [--repo R]` | takes a lease on each capture (4 hours; a second session is refused until it ends) and writes one lane brief per product and screen: the captures, their decisions, the screen's string keys, the rules that apply, the checks to run. `--release` gives captures back; `--done <PR-URL>` closes them and records the PR in the decision |
 | `teyla taste [list [repo]] [--all] [--json]` | the product's open rule proposals and confirmed rules from `design/decisions/` (`--all`: every decision). Formats in [`TASTE.md`](TASTE.md) |
 | `teyla taste confirm <id> [--repo R] [--rule TEXT] [--scope S]` | the owner's yes: sets `confirmed` on a decision and, for a rule, writes or updates `design/rules/<slug>.yaml`. The only way a proposal becomes a rule |
-| `teyla taste render [repo] [--dry]` | regenerates "Rules from review" and "Screens" in `DESIGN.md` from the confirmed rules and `design/screens/*.yaml`, between `<!-- teyla:rules:start/end -->` and `<!-- teyla:screens:start/end -->`; nothing else in the file changes. Refuses, and writes nothing, when the result is over 100 lines, and prints what to trim |
+| `teyla taste render [repo] [--dry]` | regenerates "Rules from review" and "Screens" in `DESIGN.md` from the confirmed rules and `design/screens/*.yaml`, between `<!-- teyla:rules -->` … `<!-- /teyla:rules -->` and `<!-- teyla:screens -->` … `<!-- /teyla:screens -->`; nothing else in the file changes. Refuses, and writes nothing, when the result is over 100 lines, and prints what to trim |
 
 ### Routines, schedules and reviews
 

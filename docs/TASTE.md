@@ -182,17 +182,19 @@ references:
 - `render [repo] [--dry]`: regenerates two sections of `DESIGN.md` (at the repo root, else in `docs/`):
 
   ```
-  <!-- teyla:rules:start -->
   ## Rules from review
+  <!-- teyla:rules -->
   - `screen:recipe.list` Every tap target is at least 44 by 44 points. (2026-10-30)
-  <!-- teyla:rules:end -->
-  <!-- teyla:screens:start -->
+  <!-- /teyla:rules -->
+
   ## Screens
+  <!-- teyla:screens -->
   - **recipe.list** — Browse saved recipes and start a new one. Primary: Add recipe. States: empty, loaded, error. 3 string keys.
-  <!-- teyla:screens:end -->
+  <!-- /teyla:screens -->
   ```
 
-  Only the text between a marker pair changes. A missing pair is appended at the end of the file with its heading.
+  These are the markers in `templates/design/DESIGN.md`. The headings and any text around them are yours.
+  Only the text between a marker pair changes. A missing pair is appended at the end of the file, after its heading. The template's placeholder rows sit inside the markers, so the first render replaces them.
   Only confirmed rules are rendered. If the file would pass 100 lines, nothing is written and the output says how many
   lines each part takes and which rules are the oldest, so you can retire one (delete its file) or trim by hand.
 

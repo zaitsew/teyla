@@ -192,8 +192,8 @@ HAND = "# Design: recipes\n\nHand-written text that stays.\n\n## Tokens\nNames o
 
 def test_render_fills_the_marker_blocks_and_keeps_the_rest(repo):
     (repo / "DESIGN.md").write_text(
-        HAND + "\n<!-- teyla:rules:start -->\nold\n<!-- teyla:rules:end -->\n\n## Voice\nCalm.\n\n"
-        "<!-- teyla:screens:start -->\nold\n<!-- teyla:screens:end -->\n\nTail.\n")
+        HAND + "\n## Rules from review\n<!-- teyla:rules -->\nold\n<!-- /teyla:rules -->\n\n## Voice\nCalm.\n\n"
+        "## Screens\n<!-- teyla:screens -->\nold\n<!-- /teyla:screens -->\n\nTail.\n")
     put(repo, decision())
     taste.confirm(repo, CID[:6], on="2026-10-31")
     write_screen(repo)
@@ -205,6 +205,7 @@ def test_render_fills_the_marker_blocks_and_keeps_the_rest(repo):
     assert "## Rules from review" in text and "`screen:recipe.list` Every tap target is at least 44 by 44 points. (2026-10-30)" in text
     assert "**recipe.list** — Browse saved recipes. Primary: Add recipe. States: empty, loaded. 3 string keys." in text
     assert "old" not in text
+    assert text.count("## Rules from review") == 1 and text.count("## Screens") == 1, "headings are not duplicated"
     assert taste.render(repo)[1][-1] == "already up to date"
 
 
@@ -221,7 +222,8 @@ def test_render_appends_missing_markers_after_the_hand_written_text(repo):
     code, msgs = taste.render(repo)
     text = (repo / "DESIGN.md").read_text()
     assert code == 0 and text.startswith(HAND)
-    assert text.index("teyla:rules:start") < text.index("teyla:screens:start")
+    assert text.index("<!-- teyla:rules -->") < text.index("<!-- teyla:screens -->")
+    assert "## Rules from review\n\n<!-- teyla:rules -->" in text and "<!-- /teyla:screens -->" in text
     assert any("appended" in m for m in msgs)
 
 
@@ -229,7 +231,7 @@ def test_render_finds_docs_design_md(repo):
     (repo / "docs").mkdir()
     (repo / "docs" / "DESIGN.md").write_text(HAND)
     taste.render(repo)
-    assert "teyla:rules:start" in (repo / "docs" / "DESIGN.md").read_text()
+    assert "<!-- teyla:rules -->" in (repo / "docs" / "DESIGN.md").read_text()
     assert not (repo / "DESIGN.md").exists()
 
 
@@ -278,3 +280,19 @@ def test_cli_list_confirm_render(repo, capsys, monkeypatch):
     assert cli.main(["taste", "list", str(repo / "missing")]) == 2
     monkeypatch.chdir(repo)
     assert cli.main(["taste"]) == 0, "the default action is list, in the current repo"
+
+
+def test_render_on_the_shipped_template_stays_short_and_does_not_duplicate(repo):
+    template = pathlib.Path(taste.__file__).resolve().parents[2] / "templates" / "design" / "DESIGN.md"
+    (repo / "DESIGN.md").write_text(template.read_text())
+    put(repo, decision())
+    taste.confirm(repo, CID[:6], on="2026-10-31")
+    write_screen(repo)
+    code, msgs = taste.render(repo)
+    assert code == 0, msgs
+    text = (repo / "DESIGN.md").read_text()
+    assert len(text.splitlines()) < 100
+    assert text.count("## Screens") == 1 and text.count("## Rules from review") == 1
+    assert "{{home}}" not in text and "{{rule:" not in text, "the placeholder rows were replaced"
+    assert "**recipe.list**" in text and "Every tap target" in text
+    assert not any("appended" in m for m in msgs)

@@ -33,8 +33,8 @@ from . import docs_check
 MAX_DESIGN_LINES = 100
 SCOPE_RE = re.compile(r"^(product|screen:[^\s]+|component:[^\s]+)$")
 DECISIONS = ("fix", "rule", "reject")
-RULES_MARK = ("<!-- teyla:rules:start -->", "<!-- teyla:rules:end -->")
-SCREENS_MARK = ("<!-- teyla:screens:start -->", "<!-- teyla:screens:end -->")
+RULES_MARK = ("<!-- teyla:rules -->", "<!-- /teyla:rules -->")
+SCREENS_MARK = ("<!-- teyla:screens -->", "<!-- /teyla:screens -->")
 RULES_HEADING = "## Rules from review"
 SCREENS_HEADING = "## Screens"
 MIN_PREFIX = 4
@@ -448,7 +448,7 @@ def _one_line(text, n: int = 160) -> str:
 def render_rules(repo: pathlib.Path) -> list[str]:
     rules = [r for r in load_rules(repo) if r.get("confirmed") is True]
     rules.sort(key=lambda r: (0 if r.get("scope") == "product" else 1, str(r.get("scope", "")), str(r.get("date", ""))))
-    lines = [RULES_HEADING, ""]
+    lines = []
     if not rules:
         lines.append("None confirmed yet.")
     for r in rules:
@@ -457,7 +457,7 @@ def render_rules(repo: pathlib.Path) -> list[str]:
 
 
 def render_screens(repo: pathlib.Path) -> list[str]:
-    lines = [SCREENS_HEADING, ""]
+    lines = []
     screens = load_screens(repo)
     if not screens:
         lines.append("None recorded yet.")
@@ -506,7 +506,9 @@ def render_design(repo: pathlib.Path) -> dict:
     for name, marks in (("rules", RULES_MARK), ("screens", SCREENS_MARK)):
         text, found = _replace_block(text, marks, parts[name])
         if not found:
-            text = text.rstrip("\n") + ("\n\n" if text.strip() else "") + marks[0] + "\n" + "\n".join(parts[name]) + "\n" + marks[1] + "\n"
+            heading = RULES_HEADING if name == "rules" else SCREENS_HEADING
+            text = (text.rstrip("\n") + ("\n\n" if text.strip() else "") + heading + "\n\n"
+                    + marks[0] + "\n" + "\n".join(parts[name]) + "\n" + marks[1] + "\n")
             appended.append(name)
     if not text.endswith("\n"):
         text += "\n"
@@ -534,7 +536,7 @@ def render(repo: pathlib.Path, *, dry: bool = False) -> tuple[int, list[str]]:
     if r["lines"] > MAX_DESIGN_LINES:
         return 1, trim_advice(repo, r) + ["Nothing was written."]
     msgs = [f"{r['path'].relative_to(repo)}: {r['lines']} lines "
-            f"({len(r['parts']['rules']) - 2} rule line(s), {len(r['parts']['screens']) - 2} screen line(s))"]
+            f"({len(r['parts']['rules'])} rule line(s), {len(r['parts']['screens'])} screen line(s))"]
     if r["appended"]:
         msgs.append("no marker pair for " + " and ".join(r["appended"]) + ": appended at the end of the file")
     if dry:
