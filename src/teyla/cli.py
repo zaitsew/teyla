@@ -73,6 +73,8 @@
   teyla schedules [--json] [--quiet] [--all] [--allow-network]    every scheduled task (Claude desktop, launchd, cloud routines, GitHub, teyla.toml): did it run, what vanished
   teyla schedules forget KEY [KEY...]                              acknowledge VANISHED tasks removed on purpose (clears the banner)
   teyla reviews [--days N] [--json] [--quiet] [repo...]            review debt: merged PRs never reviewed, merged with an open P1, skipped
+  teyla review [list|pull|triage ID|open IDS...]                   the inbox of review captures: pull from the relay and TestFlight, triage to fix|rule|reject, lane brief
+  teyla taste [list|confirm ID|render [repo]]                      the taste ledger: rule proposals, the owner's confirm, DESIGN.md rendered from the files
   teyla products [path...]                                       real-usage counters from every repo's ./check.sh usage
   teyla routines [path...] [--json]                               routines + manual checks from every repo's teyla.toml
   teyla check <product> <check> ok|broken [--note TEXT]            confirm a manual check: status + today's date in its teyla.toml
@@ -100,6 +102,9 @@
   teyla reel story|check <session-id|story.json> [--ask TEXT] [--seconds N] [-o FILE]   the redacted Story as JSON; every string a reel would show
   teyla docs check [repo...] [--all] [--json] [--strict]         README opening, quick start, length, dead commands, decision history in docs
   teyla ux check [repo...] [--all] [--json] [--strict]           literals instead of tokens, crowded screens, copy rules, DESIGN.md
+  teyla ux shots <repo> [--check-manifest] [--dry] [--runs N] [--budget-min N] [--keep-temp] [--strict]   capture matrix: light/dark/large text x languages, 3 runs, a11y + layout checks
+  teyla ux diff <repo>                                            design/shots against design/shots/baseline: changed, new, missing, unstable; exit 1 on any
+  teyla ux accept <repo> --yes [--allow-unstable]                 make the run the baseline, record who and when
 """
 from __future__ import annotations
 
@@ -564,6 +569,10 @@ def build_parser() -> argparse.ArgumentParser:
     answer_mod.register(sp)
     from . import relay as relay_mod
     relay_mod.register(sp)
+    from . import review as review_mod
+    review_mod.register(sp)
+    from . import taste as taste_mod
+    taste_mod.register(sp)
     from . import dispatch as dispatch_mod
     dispatch_mod.register(sp)
     from . import docs_check as docs_check_mod
