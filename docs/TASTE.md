@@ -47,6 +47,16 @@ user name and the parent process id; `--owner` or `TEYLA_REVIEW_OWNER` sets it. 
   imported items have `source: "testflight"` and no element. `--product NAME` sets their product (default: the last part
   of the bundle id). This is the only call that leaves the Mac (`docs/PRIVACY.md`, row 24).
 
+**The phone's format and the receipt.** A capture from the review package is version 1 of the format in the capture
+lane's `docs/REVIEW.md`: `capture.json`, `capture.png` and `capture.sig`. `pull` checks `capture.sig` (HMAC-SHA256 with
+the relay key, `~/.teyla/relay.key`) before it stores anything. A capture without the signature or the picture yet is
+"still syncing" and is tried again; a wrong signature, a missing relay key, a `created` more than 10 minutes ahead or a
+`v` other than 1 is skipped with the reason. The product name is the last part of `app.bundle_id`. When a signed
+capture is in the queue, `pull` writes `<relay folder>/review-status/<id>.json` with `status: "received"`, signed with
+the same key, so the phone shows Received. A capture whose receipt was lost gets it on the next pull. The file is never
+rewritten once it holds `received` or a later state (`pr_ready`, `verified_on_device`). The older flat shape below needs no
+signature and gets no receipt. The signing vectors are `tests/fixtures/review-vector.json`.
+
 **A capture** is validated before it is stored: `id` is a UUID equal to the folder name, `product` is a plain name,
 `comment` is text of at most 8,000 characters, `created_at` is an ISO date. Anything else is skipped with the reason.
 Files are plain (no links), at most 20 MB for the picture and 50 MB for audio. The shape:

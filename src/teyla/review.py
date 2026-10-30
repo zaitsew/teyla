@@ -38,7 +38,7 @@ import stat
 import sys
 import time
 
-from . import config, docs_check, net, relay, review_asc, state, taste
+from . import config, docs_check, net, relay, review_asc, review_wire, state, taste
 from .control import state as control
 
 MODEL = "claude-sonnet-5-5"                  # the ladder's default worker (POLICY §1)
@@ -248,6 +248,41 @@ def _copy_into(src: pathlib.Path, dst: pathlib.Path, limit: int) -> None:
     os.chmod(dst, 0o600)
 
 
+def _verify_contract(folder: pathlib.Path, j: pathlib.Path, raw: dict, now: float) -> tuple[str, str]:
+    """("ok", "") when the phone's signature holds, ("waiting", why) when a file has not arrived yet,
+    ("skipped", why) when the capture is refused. The files of a capture reach the Mac in any order."""
+    sig, png = folder / "capture.sig", folder / review_wire.PICTURE
+    if _plain_file(sig, 1024) is None or _plain_file(png, MAX_PICTURE) is None:
+        return "waiting", "capture.sig or capture.png is still syncing"
+    key = relay.read_key()
+    if key is None:
+        return "skipped", "no relay key to check the signature with (teyla relay pair)"
+    try:
+        why = review_wire.verify_capture(key, raw, j.read_bytes(), png.read_bytes(), sig.read_text(encoding="ascii"), now)
+    except (OSError, ValueError) as e:
+        return "waiting", f"cannot read the capture files yet ({e})"
+    return ("ok", "") if not why else ("skipped", why)
+
+
+def _receipt(root: pathlib.Path, folder: pathlib.Path, now: float) -> str:
+    """Write review-status/<id>.json with "received" for a signed capture that is in the queue. "" when
+    nothing was needed or done, else a sentence for the report. Never raises."""
+    name = folder.name.lower()
+    try:
+        if review_wire.current_status(root, name) is not None:
+            return ""
+        j = folder / "capture.json"
+        raw = json.loads(j.read_text(encoding="utf-8"))
+        if not review_wire.is_contract(raw) or raw.get("id") != name:
+            return ""
+        if _verify_contract(folder, j, raw, now)[0] != "ok":
+            return ""
+        key = relay.read_key()
+        return f"{name}: Received" if key and review_wire.write_status(root, key, name, "received", now) else ""
+    except (OSError, ValueError) as e:
+        return f"{name}: no receipt written ({e})"
+
+
 def import_folder(conn: sqlite3.Connection, folder: pathlib.Path, now: float | None = None) -> tuple[str, str]:
     """("added" | "known" | "waiting" | "skipped", detail). Never raises for a bad folder."""
     now = _now() if now is None else now
@@ -271,11 +306,22 @@ def import_folder(conn: sqlite3.Connection, folder: pathlib.Path, now: float | N
         raw = json.loads(j.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return "skipped", f"{name}: capture.json is not valid JSON"
-    cap, why = validate(raw, name)
+    contract = review_wire.is_contract(raw)
+    if contract:
+        flat, why = review_wire.normalize(raw)
+        if flat is None:
+            return "skipped", f"{name}: {why}"
+        verdict = _verify_contract(folder, j, raw, now)
+        if verdict[0] != "ok":
+            return verdict[0], f"{name}: {verdict[1]}"
+        cap, why = validate(flat, name)
+        pic, aud = review_wire.PICTURE, None
+    else:
+        cap, why = validate(raw, name)
+        pic = _declared(raw, "screenshot", "image", "png")
+        aud = _declared(raw, "audio")
     if cap is None:
         return "skipped", f"{name}: {why}"
-    pic = _declared(raw, "screenshot", "image", "png")
-    aud = _declared(raw, "audio")
     for label, fname in (("picture", pic), ("audio", aud)):
         if fname and not _FILENAME.match(fname):
             return "skipped", f"{name}: the {label} file name has odd characters"
@@ -298,6 +344,8 @@ def import_folder(conn: sqlite3.Connection, folder: pathlib.Path, now: float | N
         if aud:
             _copy_into(folder / aud, tmp / aud, MAX_AUDIO)
             cap["audio"] = aud
+        if contract:
+            _copy_into(folder / "capture.sig", tmp / "capture.sig", 1024)
         if dest.exists():
             shutil.rmtree(dest, ignore_errors=True)
         os.replace(tmp, dest)
@@ -342,6 +390,12 @@ def pull_relay(conn: sqlite3.Connection, root: pathlib.Path, now: float | None =
             rep[kind] += 1
             if kind == "waiting":
                 rep.setdefault("waiting_detail", []).append(detail)
+            else:
+                note = _receipt(root, folder, _now() if now is None else now)
+                if note.endswith("Received"):
+                    rep["receipts"] = rep.get("receipts", 0) + 1
+                elif note:
+                    rep.setdefault("receipt_errors", []).append(note)
     return rep
 
 
@@ -760,6 +814,8 @@ def _print_pull(rep: dict) -> None:
     line = f"{rep['source']}: {rep['added']} new, {rep['known']} already known"
     if rep.get("waiting"):
         line += f", {rep['waiting']} still syncing"
+    if rep.get("receipts"):
+        line += f", {rep['receipts']} receipt(s) sent to the phone"
     if rep["skipped"]:
         line += f", {len(rep['skipped'])} skipped"
     print(line + (f" ({rep['note']})" if rep.get("note") else ""))
@@ -767,6 +823,8 @@ def _print_pull(rep: dict) -> None:
         print(f"  skipped {s}")
     for s in rep.get("waiting_detail", [])[:10]:
         print(f"  waiting {s}")
+    for s in rep.get("receipt_errors", [])[:10]:
+        print(f"  {s}")
 
 
 def cmd_review(args) -> int:
