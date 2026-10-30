@@ -1,0 +1,11 @@
+screen_type: onboarding
+references:
+  - name: Structured, first run
+    what_to_copy: A model pre-fills a simple timeline, so the first screen is not empty.
+    link: https://apps.apple.com/us/app/structured-daily-planner-todo/id1499198946
+  - name: Moonlitt, first run (to confirm)
+    what_to_copy: Apple's award text calls its onboarding easy; find the step that does most with the fewest taps and replace this line.
+    link: https://apps.apple.com/us/app/moonlitt-moon-phase-tracker/id6444718902
+  - name: Finch, first run (to confirm)
+    what_to_copy: A companion character people keep opening; study how the first run introduces it and replace this line.
+    link: https://finchcare.com/
