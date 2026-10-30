@@ -1683,6 +1683,18 @@ def render(snap: Snapshot, verdict: Verdict, trend: Trend | None = None, conf: d
 
 # --- the command ----------------------------------------------------------------------------------------
 
+def _guard_cwd(arg: str | None) -> str | None:
+    """The `--cwd` the lease records and the same-job exemption compares: the directory itself when
+    none was given (a `teyla load --wait` in a worktree and the `ux shots --admit` that follows it are
+    one job), an empty string stays unknown (the hook passes it when it cannot tell), a path is made
+    real so "." and a symlink match the absolute path another call recorded."""
+    if arg is None:
+        return os.path.realpath(os.getcwd())
+    if arg == "":
+        return ""          # not None: `decide_leased` would read None as "this directory"
+    return os.path.realpath(os.path.expanduser(arg))
+
+
 def cmd_load(args, run: Runner = run_command) -> int:
     conf = guard_conf()
     if args.replay:
@@ -1707,7 +1719,7 @@ def cmd_load(args, run: Runner = run_command) -> int:
         if snap is None:
             log_decision(args.admit, "unknown", True, "snapshot failed: let through")
             return 0
-        d = decide_leased(args.admit, snap, conf, current_trend(snap, conf), cwd=args.cwd)
+        d = decide_leased(args.admit, snap, conf, current_trend(snap, conf), cwd=_guard_cwd(args.cwd))
         log_decision(args.admit, d.level, d.allowed, d.reason)
         if not d.allowed:
             print(d.message)
@@ -1716,7 +1728,7 @@ def cmd_load(args, run: Runner = run_command) -> int:
     if args.wait:
         if not enabled(conf):
             return 0
-        return wait(args.kind, conf, args.timeout, cwd=args.cwd)
+        return wait(args.kind, conf, args.timeout, cwd=_guard_cwd(args.cwd))
     snap = safe_snapshot(run)
     if snap is None:
         print("teyla load: could not read the process table (ps failed); load unknown", file=sys.stderr)

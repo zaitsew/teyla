@@ -1559,3 +1559,15 @@ def test_the_text_report_and_json_name_the_bypassed_simulators(capsys):
     load.log_decision("sim", "OK", True, "", now=dt.datetime.now().astimezone() - dt.timedelta(minutes=3, seconds=30))   # 30 s before the boot
     assert load.cmd_load(args(), run=m.run) == 0
     assert "without the guard" not in capsys.readouterr().out
+
+
+def test_guard_cwd_defaults_to_here_and_resolves(tmp_path, monkeypatch):
+    # `teyla load --wait --kind build` in a worktree, then `teyla ux shots` (which passes the repo path) in the
+    # same worktree are one job: both sides must record the same real path, or the settle refuses the second.
+    monkeypatch.chdir(tmp_path)
+    here = os.path.realpath(str(tmp_path))
+    assert load._guard_cwd(None) == here
+    assert load._guard_cwd(".") == here
+    assert load._guard_cwd(str(tmp_path)) == here
+    assert load._guard_cwd("") == ""          # the hook's unknown stays unknown, never "here"
+    assert load._guard_cwd("~") == os.path.realpath(os.path.expanduser("~"))
