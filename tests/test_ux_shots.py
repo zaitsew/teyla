@@ -311,7 +311,8 @@ def test_pick_device_prefers_booted_then_newest_runtime():
 
 
 class FakeRunner(ux.Runner):
-    def __init__(self, tmp_path, devices=DEVICES, guard_rc=0, build_rc=0, test_rcs=None, colors=None, timeouts=()):
+    def __init__(self, tmp_path, devices=DEVICES, guard_rc=0, build_rc=0, test_rcs=None, colors=None, timeouts=(),
+                 omit=None):
         self.calls: list[list[str]] = []
         self.envs: list[dict | None] = []
         self.devices, self.guard_rc, self.build_rc = devices, guard_rc, build_rc
@@ -320,6 +321,7 @@ class FakeRunner(ux.Runner):
         self.timeouts = set(timeouts)               # names of steps that run past the budget
         self.runs = 0
         self.tmp_path = tmp_path
+        self.omit = omit or (lambda n, key: False)  # (run number, (variant, screen)) -> the tour did not capture it
 
     def run(self, argv, *, timeout=None, env=None, cwd=None):
         self.calls.append(list(argv))
@@ -347,7 +349,8 @@ class FakeRunner(ux.Runner):
         if "xcresulttool" in joined:
             out_dir = pathlib.Path(argv[argv.index("--output-path") + 1])
             m = manifest_of()
-            items = {(v, s.id): self.colors(self.runs, (v, s.id)) for v in m.variants() for s in m.screens}
+            items = {(v, s.id): self.colors(self.runs, (v, s.id)) for v in m.variants() for s in m.screens
+                     if not self.omit(self.runs, (v, s.id))}
             write_export(out_dir, items, elements={"screen": {"width": 100, "height": 200}, "elements": []},
                          audit={"ran": True, "issues": []})
             return ux.Result(0)
@@ -571,6 +574,177 @@ def test_shutdown_after_a_failure_with_subprocess_mocked(tmp_path, monkeypatch):
     assert started.index(["xcrun", "simctl", "shutdown", "NEW-UDID"]) > started.index(["xcrun", "simctl", "boot", "NEW-UDID"])
 
 
+# --- a run that went wrong is not complete -------------------------------------------------------
+
+def test_xctest_failures_with_partial_screenshots_make_the_run_incomplete_and_unacceptable(tmp_path, capsys):
+    pytest.importorskip("PIL")
+    r = FakeRunner(tmp_path, test_rcs={2: 65})            # run 2 fails but still exports its screenshots
+    repo, doc = go(tmp_path, r)
+    assert doc["status"] == "incomplete" and doc["runs_completed"] == 3 and any("exited 65" in e for e in doc["errors"])
+    assert "INCOMPLETE" in ux.render_run(doc)
+    assert json.loads((repo / "design" / "shots" / "run.json").read_text())["status"] == "incomplete"
+    for extra in ([], ["--allow-unstable"]):               # no flag overrides a failed run
+        assert cli.main(["ux", "accept", str(repo), "--yes", *extra]) == 2
+        assert "not complete" in capsys.readouterr().err
+    assert not (repo / "design" / "shots" / "baseline").exists()
+
+
+def test_shots_exits_1_for_an_incomplete_run(tmp_path, monkeypatch):
+    pytest.importorskip("PIL")
+    repo = make_repo(tmp_path)
+    args = cli.build_parser().parse_args(["ux", "shots", str(repo)])
+    assert ux.cmd(args, runner=FakeRunner(tmp_path, test_rcs={1: 65})) == 1
+
+
+def test_accept_refuses_errors_uncaptured_and_short_runs_even_when_the_status_says_complete(tmp_path, capsys):
+    pytest.importorskip("PIL")
+    repo = make_repo(tmp_path)
+    for extra, needle in (({"errors": ["run 2: xcodebuild test exited 65"]}, "error"),
+                          ({"uncaptured": ["en-light/today.loaded"]}, "not captured"),
+                          ({"runs_requested": 3, "runs_completed": 2}, "2 of 3 run")):
+        finished_run(repo, full=True, **extra)
+        assert cli.main(["ux", "accept", str(repo), "--yes", "--allow-unstable"]) == 2
+        assert needle in capsys.readouterr().err
+    assert not (repo / "design" / "shots" / "baseline").exists()
+
+
+def test_a_screen_the_tour_never_captured_makes_the_run_incomplete(tmp_path):
+    pytest.importorskip("PIL")
+    gone = ("es-dark", "places.listening")
+    repo, doc = go(tmp_path, FakeRunner(tmp_path, omit=lambda n, key: key == gone))
+    assert doc["status"] == "incomplete" and doc["uncaptured"] == ["es-dark/places.listening"]
+    assert "NOT CAPTURED (1)" in ux.render_run(doc)
+
+
+def test_a_screen_missing_from_one_run_is_uncaptured(tmp_path, capsys):
+    pytest.importorskip("PIL")
+    only_run_two = ("en-light", "today.loaded")
+    repo, doc = go(tmp_path, FakeRunner(tmp_path, omit=lambda n, key: key == only_run_two and n != 2))
+    entry = doc["screens"]["en-light/today.loaded"]
+    assert entry["captured"] == 1 and entry["missing_runs"] == 2 and entry["stable"] is None
+    assert doc["status"] == "incomplete" and "en-light/today.loaded" in doc["uncaptured"]
+    # its first-run PNG does not exist, and the command does not exit 0
+    assert not (repo / "design" / "shots" / "en-light" / "today.loaded.png").exists()
+    args = cli.build_parser().parse_args(["ux", "shots", str(repo)])
+    assert ux.cmd(args, runner=FakeRunner(tmp_path, omit=lambda n, key: key == only_run_two and n != 2)) == 1
+
+
+def test_a_screen_lacking_one_of_three_runs_is_uncaptured_even_when_the_others_agree(tmp_path):
+    pytest.importorskip("PIL")
+    repo, doc = go(tmp_path, FakeRunner(tmp_path, omit=lambda n, key: key == ("en-dark", "today.empty") and n == 3))
+    e = doc["screens"]["en-dark/today.empty"]
+    assert e["captured"] == 2 and e["stable"] is True
+    assert doc["uncaptured"] == ["en-dark/today.empty"] and doc["status"] == "incomplete"
+
+
+def test_aggregate_marks_a_screen_seen_only_in_run_two(tmp_path):
+    pytest.importorskip("PIL")
+    m = manifest_of()
+    key = ("en-light", "today.loaded")
+    runs = []
+    for n, items in enumerate([{}, {key: (1, 1, 1)}, {}], start=1):
+        write_export(tmp_path / f"r{n}", items)
+        runs.append(ux.parse_export(tmp_path / f"r{n}"))
+    screens = ux.aggregate(m, runs, 3)
+    assert screens["en-light/today.loaded"]["stable"] is None
+    assert "en-light/today.loaded" in ux.uncaptured_keys(screens, 3)
+
+
+# --- the budget covers the export ----------------------------------------------------------------
+
+def test_the_export_gets_what_is_left_of_the_budget_and_a_late_export_cuts_the_run(tmp_path):
+    pytest.importorskip("PIL")
+    now = {"t": 0.0}
+    seen = {}
+
+    class Slow(FakeRunner):
+        def run(self, argv, *, timeout=None, **kw):
+            if argv[0] == "xcodebuild" and "test-without-building" in argv:
+                now["t"] += 99                      # run 1 leaves one second of a 100 s budget
+            if "xcresulttool" in " ".join(argv):
+                seen.setdefault("export_timeouts", []).append(timeout)
+                now["t"] += 5                       # the export itself overruns
+            return super().run(argv, timeout=timeout, **kw)
+    r = Slow(tmp_path)
+    repo, doc = go(tmp_path, r, budget_s=100, clock=lambda: now["t"])
+    assert seen["export_timeouts"] == [1]           # one second left, so one second, not 30
+    assert doc["status"] == "budget" and doc["runs_completed"] == 1
+    assert any("during the export of run 1" in e for e in doc["errors"])
+    assert "CUT" in ux.render_run(doc)
+    assert len(r.issued("xcodebuild", "test-without-building")) == 1       # no second run after the cut
+    assert len(r.issued("simctl", "shutdown")) == 1
+    assert cli.main(["ux", "accept", str(repo), "--yes"]) == 2
+
+
+def test_an_export_inside_the_budget_is_not_cut(tmp_path):
+    pytest.importorskip("PIL")
+    now = {"t": 0.0}
+
+    class Quick(FakeRunner):
+        def run(self, argv, **kw):
+            if argv[0] == "xcodebuild" and "test-without-building" in argv:
+                now["t"] += 10
+            return super().run(argv, **kw)
+    _, doc = go(tmp_path, Quick(tmp_path), budget_s=100, clock=lambda: now["t"])
+    assert doc["status"] == "complete" and doc["runs_completed"] == 3
+
+
+# --- temporary capture directories ---------------------------------------------------------------
+
+def test_the_temporary_directory_is_removed_after_a_run_and_after_a_failure(tmp_path, monkeypatch):
+    import tempfile
+    pytest.importorskip("PIL")
+    made = []
+
+    def fake_mkdtemp(prefix=""):
+        d = tmp_path / f"{prefix}{len(made)}"
+        d.mkdir()
+        made.append(d)
+        return str(d)
+    monkeypatch.setattr(tempfile, "mkdtemp", fake_mkdtemp)
+    repo = make_repo(tmp_path)
+    cfg = ux.load_tour_config(repo)
+    r = FakeRunner(tmp_path)
+    doc = ux.run_shots(repo, manifest_of(), cfg, r, derived=tmp_path / "dd")
+    assert doc["status"] == "complete" and len(made) == 1 and not made[0].exists()
+    assert (repo / "design" / "shots" / "en-light" / "today.loaded.png").is_file()     # the shots were copied out first
+    with pytest.raises(ux.TourFailed):                                                  # a failed build cleans up too
+        ux.run_shots(repo, manifest_of(), cfg, FakeRunner(tmp_path, build_rc=65), derived=tmp_path / "dd")
+    assert len(made) == 2 and not made[1].exists()
+    class Boom(FakeRunner):
+        def run(self, argv, **kw):
+            if argv[0] == "xcodebuild" and "test-without-building" in argv:
+                raise RuntimeError("boom")
+            return super().run(argv, **kw)
+    with pytest.raises(RuntimeError):
+        ux.run_shots(repo, manifest_of(), cfg, Boom(tmp_path), derived=tmp_path / "dd")
+    assert len(made) == 3 and not made[2].exists()
+
+
+def test_a_given_work_dir_loses_its_bundles_and_attachments_but_not_other_files(tmp_path):
+    pytest.importorskip("PIL")
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "mine.txt").write_text("keep")
+    repo = make_repo(tmp_path)
+    ux.run_shots(repo, manifest_of(), ux.load_tour_config(repo), FakeRunner(tmp_path), work_dir=work, derived=tmp_path / "dd")
+    assert [p.name for p in work.iterdir()] == ["mine.txt"]
+
+
+def test_keep_temp_keeps_the_directory_and_says_where(tmp_path, monkeypatch, capsys):
+    import tempfile
+    pytest.importorskip("PIL")
+    kept = tmp_path / "kept"
+    kept.mkdir()
+    monkeypatch.setattr(tempfile, "mkdtemp", lambda prefix="": str(kept))
+    repo = make_repo(tmp_path)
+    args = cli.build_parser().parse_args(["ux", "shots", str(repo), "--keep-temp"])
+    assert ux.cmd(args, runner=FakeRunner(tmp_path)) == 0
+    out = capsys.readouterr().out
+    assert f"kept (--keep-temp): {kept}" in out
+    assert (kept / "run-1.xcresult").exists() and (kept / "attachments-3").is_dir()
+
+
 # --- teyla ux diff -------------------------------------------------------------------------------
 
 def shots_dirs(repo):
@@ -597,16 +771,63 @@ def test_diff_clean_changed_new_missing(tmp_path, capsys):
     assert "drift" not in out
 
 
+def write_all(root, color=(255, 255, 255)):
+    """Every capture the example manifest lists: 5 screens x 6 variants."""
+    m = manifest_of()
+    for v in m.variants():
+        for sc in m.screens:
+            png(root / v / f"{sc.id}.png", color=color)
+
+
 def test_diff_clean_run_says_no_diff_on_the_manifests_screens(tmp_path, capsys):
     pytest.importorskip("PIL")
     repo = make_repo(tmp_path)
     run, base = shots_dirs(repo)
-    png(base / "en-light" / "today.loaded.png")
-    png(run / "en-light" / "today.loaded.png")
+    write_all(base)
+    write_all(run)
     assert cli.main(["ux", "diff", str(repo)]) == 0
     out = capsys.readouterr().out
+    assert "30 compared, 30 unchanged" in out
     assert "no diff on the manifest's screens (5 screens x 6 variants)" in out
     assert "drift" not in out.replace("no drift", "")
+
+
+def test_diff_with_zero_screenshots_is_not_clean(tmp_path, capsys):
+    pytest.importorskip("PIL")
+    repo = make_repo(tmp_path)
+    assert cli.main(["ux", "diff", str(repo)]) == 1
+    out = capsys.readouterr().out
+    assert "missing, not in the run (30)" in out
+    assert "no diff on the manifest's screens" not in out
+
+
+def test_diff_a_manifest_screen_absent_from_run_and_baseline_is_missing(tmp_path, capsys):
+    pytest.importorskip("PIL")
+    repo = make_repo(tmp_path)
+    run, base = shots_dirs(repo)
+    write_all(base)
+    write_all(run)
+    (run / "es-dark" / "places.listening.png").unlink()
+    (base / "es-dark" / "places.listening.png").unlink()
+    report = ux.diff_repo(repo, manifest_of())
+    assert report.missing == [("es-dark", "places.listening")] and not report.covers_manifest
+    assert report.manifest_compared == 29 and report.manifest_total == 30
+    assert cli.main(["ux", "diff", str(repo)]) == 1
+    out = capsys.readouterr().out
+    assert "es-dark/places.listening" in out and "no diff on the manifest's screens" not in out
+
+
+def test_diff_clean_message_needs_every_manifest_screen_compared(tmp_path):
+    pytest.importorskip("PIL")
+    repo = make_repo(tmp_path)
+    run, base = shots_dirs(repo)
+    write_all(base)
+    write_all(run)
+    m = manifest_of()
+    report = ux.diff_repo(repo, m)
+    assert report.covers_manifest and "no diff on the manifest's screens" in ux.render_diff(report, m)
+    report.manifest_compared -= 1                     # a verdict over fewer screens than the manifest lists
+    assert "no diff on the manifest's screens" not in ux.render_diff(report, m)
 
 
 def test_diff_threshold_is_per_screen(tmp_path):
@@ -625,6 +846,8 @@ def test_diff_channel_tolerance_ignores_antialiasing_noise(tmp_path):
     pytest.importorskip("PIL")
     repo = make_repo(tmp_path)
     run, base = shots_dirs(repo)
+    write_all(base)
+    write_all(run)
     png(base / "en-light" / "today.loaded.png", color=(100, 100, 100))
     png(run / "en-light" / "today.loaded.png", color=(104, 100, 100))     # within tolerance 8
     assert not ux.diff_repo(repo, manifest_of()).dirty
@@ -636,6 +859,8 @@ def test_diff_masks_hide_a_changing_clock(tmp_path):
     pytest.importorskip("PIL")
     repo = make_repo(tmp_path)
     run, base = shots_dirs(repo)
+    write_all(base)
+    write_all(run)
     png(base / "en-light" / "today.loaded.png")
     png(run / "en-light" / "today.loaded.png", patch=((20, 2, 80, 18), (0, 0, 0)))    # inside mask `clock` (0,0,100,20)
     assert not ux.diff_repo(repo, manifest_of()).dirty
@@ -649,6 +874,8 @@ def test_diff_masks_scale_with_the_screenshot_width(tmp_path):
     pytest.importorskip("PIL")
     repo = make_repo(tmp_path)
     run, base = shots_dirs(repo)
+    write_all(base)
+    write_all(run)
     png(base / "en-light" / "today.loaded.png", size=(300, 600))
     png(run / "en-light" / "today.loaded.png", size=(300, 600), patch=((90, 6, 210, 54), (0, 0, 0)))   # the clock at 3x
     assert not ux.diff_repo(repo, manifest_of()).dirty
@@ -705,12 +932,15 @@ def test_diff_names_the_install_hint_without_pillow(tmp_path, capsys, monkeypatc
 
 # --- teyla ux accept -----------------------------------------------------------------------------
 
-def finished_run(repo, unstable=(), status="complete"):
+def finished_run(repo, unstable=(), status="complete", full=False, **extra):
     run, _ = shots_dirs(repo)
-    png(run / "en-light" / "today.loaded.png", color=(1, 2, 3))
-    png(run / "en-dark" / "today.loaded.png", color=(4, 5, 6))
+    if full:
+        write_all(run, color=(1, 2, 3))
+    else:
+        png(run / "en-light" / "today.loaded.png", color=(1, 2, 3))
+        png(run / "en-dark" / "today.loaded.png", color=(4, 5, 6))
     (run / "run.json").write_text(json.dumps({"status": status, "unstable": list(unstable), "started": "2026-01-15T09:00:00Z",
-                                              "commit": "abc123", "manifest_sha256": "f00"}))
+                                              "commit": "abc123", "manifest_sha256": "f00", **extra}))
 
 
 def test_accept_refuses_without_yes(tmp_path, capsys):
@@ -726,7 +956,7 @@ def test_accept_copies_the_run_and_records_who_and_when(tmp_path, capsys, monkey
     pytest.importorskip("PIL")
     monkeypatch.setattr(ux, "_who", lambda: "Test Owner")
     repo = make_repo(tmp_path)
-    finished_run(repo)
+    finished_run(repo, full=True)
     base = repo / "design" / "shots" / "baseline"
     (base / "en-light").mkdir(parents=True)
     (base / "en-light" / "stale.loaded.png").write_bytes(b"old")
@@ -735,7 +965,7 @@ def test_accept_copies_the_run_and_records_who_and_when(tmp_path, capsys, monkey
     assert not (base / "en-light" / "stale.loaded.png").exists()
     rec = json.loads((base / "ACCEPTED.json").read_text())
     assert rec["accepted_by"] == "Test Owner" and re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", rec["accepted_at"])
-    assert rec["screens"] == 2 and rec["variants"] == ["en-dark", "en-light"] and rec["run_commit"] == "abc123"
+    assert rec["screens"] == 30 and len(rec["variants"]) == 6 and rec["run_commit"] == "abc123"
     assert not (repo / "design" / "shots" / "baseline.new").exists() and not (repo / "design" / "shots" / "baseline.old").exists()
     assert "Test Owner" in capsys.readouterr().out
     # the diff against the new baseline is clean
@@ -777,7 +1007,7 @@ def test_the_tour_template_matches_the_contract():
 
 def test_matrix_doc_documents_every_flag_and_exit_code():
     doc = (ROOT / "docs" / "MATRIX.md").read_text()
-    for needle in ("--check-manifest", "--dry", "--runs", "--budget-min", "--allow-unstable", "--yes", "design/shots/run.json",
+    for needle in ("--check-manifest", "--dry", "--runs", "--budget-min", "--keep-temp", "--allow-unstable", "--yes", "design/shots/run.json",
                    "ACCEPTED.json", "xcodebuild build-for-testing", "teyla load --admit build", "no diff on the manifest's screens"):
         assert needle in doc, needle
 

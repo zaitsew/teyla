@@ -1,6 +1,6 @@
 """`teyla ux shots | diff | accept` — the capture matrix: does a screen still look the way the owner accepted?
 
-    teyla ux shots  <repo> [--check-manifest] [--dry] [--runs N] [--budget-min N] [--strict]
+    teyla ux shots  <repo> [--check-manifest] [--dry] [--runs N] [--budget-min N] [--keep-temp] [--strict]
     teyla ux diff   <repo>
     teyla ux accept <repo> --yes [--allow-unstable]
 
@@ -17,7 +17,7 @@ cut at nine minutes and reported as cut. Every process starts in `Runner.run`, s
 is tested with a fake runner and nothing here needs Xcode to import.
 
 Exit status of `shots`: 0 the run completed (layout findings print and fail only with `--strict`);
-1 a screen was unstable, the budget cut the run, or the tour failed; 2 the manifest, the config or
+1 a screen was unstable or missing from a run, the budget cut the run (export included), or the tour reported an error; 2 the manifest, the config or
 the machine guard refused; 3 the build or the simulator could not start. `diff` exits 1 when a screen changed, is new, is missing or is unstable.
 """
 from __future__ import annotations
@@ -910,6 +910,7 @@ def aggregate(manifest: Manifest, runs: list[dict[tuple[str, str], Capture]], ru
                            "hashes": [png_hash(c.png) for c in caps if c.png], "captured": len(caps)}
             entry["stable"] = stability(entry["hashes"])
             if len(caps) < len(runs):
+                # A screen that any run lacks is uncaptured: three agreeing hashes from two runs prove nothing.
                 entry["missing_runs"] = len(runs) - len(caps)
             audits = [summarize_audit(_read_json(c.audit)) for c in caps]
             seen, issues = set(), []
@@ -936,11 +937,16 @@ def aggregate(manifest: Manifest, runs: list[dict[tuple[str, str], Capture]], ru
     return out
 
 
+def uncaptured_keys(screens: dict[str, dict], runs_completed: int) -> list[str]:
+    """Screens that some completed run lacks (all of them when no run completed)."""
+    return sorted(k for k, v in screens.items() if v["captured"] < max(runs_completed, 1))
+
+
 def run_json(manifest: Manifest, screens: dict[str, dict], *, status: str, started: str, finished: str,
              duration_s: float, budget_s: float, runs_requested: int, runs_completed: int,
              device: str, commit: str, errors: list[str]) -> dict:
     unstable = sorted(k for k, v in screens.items() if v["stable"] is False)
-    uncaptured = sorted(k for k, v in screens.items() if v["captured"] == 0)
+    uncaptured = uncaptured_keys(screens, runs_completed)
     return {
         "version": 1, "status": status, "started": started, "finished": finished,
         "duration_s": round(duration_s, 1), "budget_s": budget_s,
@@ -994,10 +1000,12 @@ def _tail(s: str) -> str:
 
 def run_shots(repo: pathlib.Path, manifest: Manifest, cfg: TourConfig, runner: Runner, *, runs: int | None = None,
               budget_s: float = BUDGET_MIN * 60, clock: Callable[[], float] = time.monotonic,
-              work_dir: pathlib.Path | None = None, derived: pathlib.Path | None = None) -> dict:
+              work_dir: pathlib.Path | None = None, derived: pathlib.Path | None = None,
+              keep_temp: bool = False) -> dict:
     """Admit, build once, boot one simulator, run the tour `runs` times, export, aggregate, write.
     Returns the run.json document. Raises GuardRefused, SimulatorError or TourFailed before anything is
-    written. The simulator this call booted is shut down on every path out."""
+    written. The simulator this call booted is shut down on every path out, and so are the xcresult
+    bundles and exported attachments (unless `keep_temp`)."""
     import tempfile
 
     repo = pathlib.Path(repo)
@@ -1013,13 +1021,43 @@ def run_shots(repo: pathlib.Path, manifest: Manifest, cfg: TourConfig, runner: R
         raise GuardRefused(_tail(r.stdout + r.stderr) or "teyla load --wait --kind sim gave no slot")
 
     t0 = clock()
+    created = work_dir is None
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix="teyla-shots-")) if created else pathlib.Path(work_dir)
+    tmp.mkdir(parents=True, exist_ok=True)
+    try:
+        doc = _tour(repo, manifest, cfg, runner, runs, budget_s, clock, t0, tmp, derived, started_iso)
+        if keep_temp:
+            doc["kept_temp"] = str(tmp)
+        return doc
+    finally:
+        if not keep_temp:
+            _remove_temp(tmp, created)
+
+
+def _remove_temp(tmp: pathlib.Path, created: bool) -> None:
+    """Remove the bundles and attachments a run wrote. The directory goes too when the run made it."""
+    try:
+        if created:
+            shutil.rmtree(tmp, ignore_errors=True)
+            return
+        for p in list(tmp.glob("run-*.xcresult")) + list(tmp.glob("attachments-*")):
+            shutil.rmtree(p, ignore_errors=True)
+        try:
+            tmp.rmdir()
+        except OSError:
+            pass
+    except Exception:
+        pass
+
+
+def _tour(repo: pathlib.Path, manifest: Manifest, cfg: TourConfig, runner: Runner, runs: int, budget_s: float,
+          clock: Callable[[], float], t0: float, tmp: pathlib.Path, derived: pathlib.Path | None,
+          started_iso: str) -> dict:
     deadline = t0 + budget_s
 
     def remaining() -> float:
         return deadline - clock()
 
-    tmp = pathlib.Path(work_dir) if work_dir else pathlib.Path(tempfile.mkdtemp(prefix="teyla-shots-"))
-    tmp.mkdir(parents=True, exist_ok=True)
     derived_path = str(derived or derived_data(repo))
     sim = Simulator(runner, cfg.device)
     errors: list[str] = []
@@ -1053,7 +1091,8 @@ def run_shots(repo: pathlib.Path, manifest: Manifest, cfg: TourConfig, runner: R
             out_dir = tmp / f"attachments-{n}"
             shutil.rmtree(out_dir, ignore_errors=True)
             out_dir.mkdir(parents=True)
-            x = runner.run(export_argv(bundle, str(out_dir)), timeout=max(min(remaining(), 300), 30))
+            # The export is inside the budget: it gets what is left, never more.
+            x = runner.run(export_argv(bundle, str(out_dir)), timeout=min(max(remaining(), 1), 300))
             caps = parse_export(out_dir) if x.returncode == 0 else {}
             if x.returncode != 0:
                 errors.append(f"run {n}: attachments could not be exported: {_tail(x.stderr)[-300:]}")
@@ -1067,12 +1106,19 @@ def run_shots(repo: pathlib.Path, manifest: Manifest, cfg: TourConfig, runner: R
                 errors.append(f"run {n}: the tour exported no screenshots")
                 break
             completed.append(caps)
+            if remaining() < 0:
+                status = "budget"
+                errors.append(f"the budget ran out during the export of run {n}")
+                break
     finally:
         sim.release()
 
     duration = clock() - t0
     if completed or status == "complete":
         screens = aggregate(manifest, completed, runs)
+        # A run is complete only when nothing went wrong: no error, no cut, every screen in every run.
+        if status == "complete" and (errors or uncaptured_keys(screens, len(completed))):
+            status = "incomplete"
         doc = run_json(manifest, screens, status=status, started=started_iso, finished=_now_iso(), duration_s=duration,
                        budget_s=budget_s, runs_requested=runs, runs_completed=len(completed), device=cfg.device,
                        commit=_commit(repo), errors=errors)
@@ -1080,10 +1126,9 @@ def run_shots(repo: pathlib.Path, manifest: Manifest, cfg: TourConfig, runner: R
             write_shots(repo, completed[0], manifest, doc)
         return doc
     # Nothing usable: say why, leave the earlier shots alone.
-    doc = run_json(manifest, {}, status=status, started=started_iso, finished=_now_iso(), duration_s=duration,
-                   budget_s=budget_s, runs_requested=runs, runs_completed=0, device=cfg.device, commit=_commit(repo),
-                   errors=errors)
-    return doc
+    return run_json(manifest, {}, status=status, started=started_iso, finished=_now_iso(), duration_s=duration,
+                    budget_s=budget_s, runs_requested=runs, runs_completed=0, device=cfg.device, commit=_commit(repo),
+                    errors=errors)
 
 
 def render_run(doc: dict) -> str:
@@ -1095,12 +1140,14 @@ def render_run(doc: dict) -> str:
         L.append(f"  error: {e}")
     if doc["status"] == "budget":
         L.append("  CUT: the nine-minute budget ended the tour. Trim the manifest (fewer languages, looks or runs) before trusting this run.")
+    if doc["status"] == "incomplete":
+        L.append("  INCOMPLETE: an error or an uncaptured screen. `teyla ux accept` refuses this run; fix the cause and rerun.")
     if doc["unstable"]:
         L.append(f"  UNSTABLE ({len(doc['unstable'])}): the runs of one build disagree")
         for k in doc["unstable"][:30]:
             L.append(f"    {k}")
     if doc["uncaptured"]:
-        L.append(f"  NOT CAPTURED ({len(doc['uncaptured'])}): in the manifest, absent from the tour")
+        L.append(f"  NOT CAPTURED ({len(doc['uncaptured'])}): in the manifest, absent from at least one run of the tour")
         for k in doc["uncaptured"][:30]:
             L.append(f"    {k}")
     shown = 0
@@ -1117,6 +1164,8 @@ def render_run(doc: dict) -> str:
         L.append(f"    ... and {shown - 40} more in design/shots/{RUN_JSON}")
     if not (doc["unstable"] or doc["uncaptured"] or c["findings"] or c["audit_issues"] or doc["errors"]):
         L.append("  no unstable screens, no layout findings, no audit issues")
+    if doc.get("kept_temp"):
+        L.append(f"  kept (--keep-temp): {doc['kept_temp']}  (delete it when done)")
     L.append(f"  next: teyla ux diff    (run: {SHOTS_REL}/{RUN_JSON})")
     return "\n".join(L)
 
@@ -1155,10 +1204,17 @@ class DiffReport:
     unstable: list[str] = dataclasses.field(default_factory=list)
     unchanged: int = 0
     compared: int = 0
+    manifest_total: int = 0          # screens x variants the manifest lists
+    manifest_compared: int = 0       # of those, the ones present in both the run and the baseline
 
     @property
     def dirty(self) -> bool:
         return bool(self.changed or self.new or self.missing or self.unstable)
+
+    @property
+    def covers_manifest(self) -> bool:
+        """True only when every screen the manifest lists was compared."""
+        return self.manifest_compared == self.manifest_total
 
 
 def _variants(root: pathlib.Path) -> dict[str, dict[str, pathlib.Path]]:
@@ -1235,15 +1291,20 @@ def diff_repo(repo: pathlib.Path, manifest: Manifest) -> DiffReport:
     report = DiffReport()
     run = _read_json(shots / RUN_JSON) or {}
     report.unstable = list(run.get("unstable") or [])
-    for variant in sorted(set(cur_all) | set(base_all)):
+    # The manifest decides what must exist: a screen absent from both folders is missing, not skipped.
+    wanted = {(v, s.id) for v in manifest.variants() for s in manifest.screens}
+    report.manifest_total = len(wanted)
+    for variant in sorted(set(cur_all) | set(base_all) | {v for v, _ in wanted}):
         cur, base = cur_all.get(variant, {}), base_all.get(variant, {})
-        for sid in sorted(set(cur) | set(base)):
-            if sid not in base:
-                report.new.append((variant, sid))
-                continue
+        for sid in sorted(set(cur) | set(base) | {s for v, s in wanted if v == variant}):
             if sid not in cur:
                 report.missing.append((variant, sid))
                 continue
+            if sid not in base:
+                report.new.append((variant, sid))
+                continue
+            if (variant, sid) in wanted:
+                report.manifest_compared += 1
             scr = manifest.screen(sid)
             threshold = scr.threshold if scr else manifest.threshold
             pct, b, c, mask = compare_images(base[sid], cur[sid], lambda w, sid=sid: _mask_rects(manifest, sid, w),
@@ -1268,10 +1329,14 @@ def render_diff(report: DiffReport, manifest: Manifest) -> str:
             L.append(f"  {d.variant}/{d.screen}  {d.percent:.3f}% of pixels (limit {d.threshold:g}%){extra}  -> {d.image}")
     if report.new:
         L.append(f"new, no baseline ({len(report.new)}):")
-        L.extend(f"  {v}/{s}" for v, s in report.new)
+        L.extend(f"  {v}/{s}" for v, s in report.new[:30])
+        if len(report.new) > 30:
+            L.append(f"  ... and {len(report.new) - 30} more")
     if report.missing:
-        L.append(f"missing, in the baseline but not in the run ({len(report.missing)}):")
-        L.extend(f"  {v}/{s}" for v, s in report.missing)
+        L.append(f"missing, not in the run ({len(report.missing)}):")
+        L.extend(f"  {v}/{s}" for v, s in report.missing[:30])
+        if len(report.missing) > 30:
+            L.append(f"  ... and {len(report.missing) - 30} more")
     if report.unstable:
         L.append(f"unstable, the runs of one build disagree ({len(report.unstable)}):")
         L.extend(f"  {k}" for k in report.unstable)
@@ -1283,9 +1348,11 @@ def render_diff(report: DiffReport, manifest: Manifest) -> str:
         L.append(f"PR text: \"diff on {len(report.changed) + len(report.new) + len(report.missing)} captures of the "
                  f"manifest's screens ({n_screens} screens x {n_var} variants); side-by-sides in {SHOTS_REL}/diff/\"")
         L.append("next: fix the code, or accept the new look with `teyla ux accept --yes` (the owner runs that)")
-    else:
+    elif report.covers_manifest:
         L.append(f"PR text: \"no diff on the manifest's screens ({n_screens} screens x {n_var} variants)\" "
                  "(a screen the manifest does not list was not checked)")
+    else:
+        L.append(f"only {report.manifest_compared} of {report.manifest_total} manifest captures were compared: no clean verdict")
     return "\n".join(L)
 
 
@@ -1317,6 +1384,15 @@ def accept(repo: pathlib.Path, *, allow_unstable: bool = False, who: str | None 
         raise AcceptRefused(f"no {SHOTS_REL}/{RUN_JSON}: run `teyla ux shots` first")
     if run.get("status") != "complete":
         raise AcceptRefused(f"the last run is {run.get('status')!r}, not complete: rerun `teyla ux shots`")
+    # No flag overrides these: a run that went wrong never becomes the baseline.
+    if run.get("errors"):
+        raise AcceptRefused(f"the last run reported {len(run['errors'])} error(s), e.g. {str(run['errors'][0])[:200]}: "
+                            "fix the cause and rerun `teyla ux shots`")
+    if run.get("uncaptured"):
+        raise AcceptRefused(f"{len(run['uncaptured'])} screen(s) were not captured in every run, e.g. "
+                            f"{run['uncaptured'][0]}: fix the tour and rerun `teyla ux shots`")
+    if run.get("runs_completed") is not None and run.get("runs_completed") < run.get("runs_requested", 0):
+        raise AcceptRefused(f"only {run['runs_completed']} of {run['runs_requested']} run(s) completed: rerun `teyla ux shots`")
     if run.get("unstable") and not allow_unstable:
         raise AcceptRefused(f"{len(run['unstable'])} screen(s) are unstable (the runs of one build disagree), e.g. "
                             f"{run['unstable'][0]}: fix the flake, or pass --allow-unstable")
@@ -1351,6 +1427,8 @@ def add_arguments(q) -> None:
     q.add_argument("--dry", action="store_true", help="shots: print the commands a run would start, run nothing")
     q.add_argument("--runs", type=int, default=0, help="shots: runs of the tour (default: the manifest's, 3)")
     q.add_argument("--budget-min", type=float, default=BUDGET_MIN, help="shots: minutes before the run is cut (default 9)")
+    q.add_argument("--keep-temp", action="store_true",
+                   help="shots: keep the xcresult bundles and exported attachments (default: removed when the run ends)")
     q.add_argument("--yes", action="store_true", help="accept: make the run the baseline (without it nothing changes)")
     q.add_argument("--allow-unstable", action="store_true", help="accept: take a run that has unstable screens")
 
@@ -1438,13 +1516,16 @@ def cmd(args, runner: Runner | None = None) -> int:
         print("  " + " ".join(teyla_cmd() + ["load", "--wait", "--kind", "sim", "--cwd", str(repo)]))
         print("  xcrun simctl boot <udid>      (only when no simulator named %r is booted; shut down at the end)" % cfg.device)
         print("  " + " ".join(xcodebuild_build_argv(cfg, "<udid>", d)))
+        print("  (the bundles and attachments below live in a temporary directory, removed at the end"
+              + ("; --keep-temp keeps it)" if args.keep_temp else ")"))
         for n in range(1, runs + 1):
             print("  " + " ".join(f"{a}" if " " not in a else f"'{a}'" for a in xcodebuild_test_argv(cfg, "<udid>", d, f"<tmp>/run-{n}.xcresult")))
             print("  " + " ".join(export_argv(f"<tmp>/run-{n}.xcresult", f"<tmp>/attachments-{n}")))
         return 0
     runner = runner or Runner()
     try:
-        doc = run_shots(repo, manifest, cfg, runner, runs=runs, budget_s=args.budget_min * 60)
+        doc = run_shots(repo, manifest, cfg, runner, runs=runs, budget_s=args.budget_min * 60,
+                        keep_temp=args.keep_temp)
     except GuardRefused as e:
         print(f"teyla ux shots: the machine guard did not let the run start.\n{e}\n"
               f"Wait for a slot with: teyla load --wait --kind build && teyla ux shots {repo.name}", file=sys.stderr)
