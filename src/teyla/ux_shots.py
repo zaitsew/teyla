@@ -1011,7 +1011,9 @@ def run_shots(repo: pathlib.Path, manifest: Manifest, cfg: TourConfig, runner: R
     repo = pathlib.Path(repo)
     runs = runs or manifest.runs
     started_iso = _now_iso()
-    guard_cwd = str(repo)
+    # Absolute: the guard's same-job exemption compares this with the lease a `teyla load --wait` left,
+    # and a relative "." never matched it (2026-10-30: three refusals in a row in one worktree).
+    guard_cwd = os.path.realpath(repo)
     r = runner.run(teyla_cmd() + ["load", "--admit", "build", "--cwd", guard_cwd], timeout=120)
     if r.returncode != 0:
         raise GuardRefused(_tail(r.stdout + r.stderr) or "teyla load --admit build refused")
