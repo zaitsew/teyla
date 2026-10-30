@@ -49,6 +49,8 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
         ("check", "Confirm a manual check in a product's teyla.toml"),
         ("docs", "Does a repo's README describe the product as it is now"),
         ("ux", "Does a product's UI follow the shared UX standard"),
+        ("review", "Comments made on the real app: pull, triage, lane brief"),
+        ("taste", "Design decisions and rules per product; renders DESIGN.md"),
         ("intent", "Your long prompts, verbatim, per product"),
         ("scaffold", "Start a new repo with the standard files"),
         ("probe-sql", "One read-only Supabase query for a usage probe"),
