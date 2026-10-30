@@ -17,11 +17,15 @@
 //    "looks": [{"name": "light", "style": "light", "content_size": "UICTContentSizeCategoryL"}],
 //    "screens": [{"id": "today.loaded", "route": "today", "path": "/today", "state": "loaded"}]}
 //
+// The class is @MainActor: XCUIApplication is main-actor isolated and a Swift 6 target with strict
+// concurrency refuses the snapshot and audit calls from a nonisolated test otherwise.
+//
 // Not compiled by Teyla's own checks: it needs Xcode 16 or later and an iOS 17 deployment target
 // for the audit.
 
 import XCTest
 
+@MainActor
 final class ScreenshotTour: XCTestCase {
     struct Plan: Decodable {
         struct Look: Decodable { let name: String; let style: String; let content_size: String }
