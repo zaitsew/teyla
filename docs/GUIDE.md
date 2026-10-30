@@ -473,7 +473,7 @@ uv tool uninstall teyla    # then remove the command; with pipx: pipx uninstall 
 - [WIKI](WIKI.md): the facts store
 - [WORK](WORK.md): safe mode for a work laptop
 - [PRIVACY](PRIVACY.md): every call that leaves your machine
-- [BRAND](BRAND.md), [UX](UX.md), [STUDIO](STUDIO.md), [TASTE](TASTE.md): the mark, the colours, the voice, the UX standard, the concept for review by voice, drift, copy and visuals, and the review inbox with the taste ledger
+- [BRAND](BRAND.md), [UX](UX.md), [STUDIO](STUDIO.md), [TASTE](TASTE.md), [KIT](KIT.md): the mark, the colours, the voice, the UX standard, the concept for review by voice, drift, copy and visuals, and the review inbox with the taste ledger, and the brand kit, store shots, product reel and posts
 - [MANUAL](MANUAL.md): the whole method and the numbers behind each threshold
 - [ROADMAP](ROADMAP.md): what is next
 
