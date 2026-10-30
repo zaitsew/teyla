@@ -1,0 +1,124 @@
+{
+  "anchors": [
+    {
+      "bounds": {
+        "height": 112,
+        "width": 390,
+        "x": 0,
+        "y": 732
+      },
+      "id": "sample.list.footer",
+      "role": "container",
+      "screen": "sample.list",
+      "source": {
+        "file": "SampleApp/ListView.swift",
+        "line": 80
+      }
+    },
+    {
+      "bounds": {
+        "height": 60,
+        "width": 60,
+        "x": 300,
+        "y": 752
+      },
+      "id": "sample.list.addButton",
+      "parent": "sample.list.footer",
+      "role": "button",
+      "screen": "sample.list",
+      "source": {
+        "file": "SampleApp/ListView.swift",
+        "line": 88
+      },
+      "strings": [
+        "list.add"
+      ]
+    },
+    {
+      "bounds": {
+        "height": 34,
+        "width": 200,
+        "x": 16,
+        "y": 96
+      },
+      "id": "sample.list.title",
+      "role": "text",
+      "screen": "sample.list",
+      "source": {
+        "file": "SampleApp/ListView.swift",
+        "line": 41
+      },
+      "strings": [
+        "list.title"
+      ]
+    }
+  ],
+  "app": {
+    "build": "212",
+    "bundle_id": "com.example.sampleapp",
+    "commit": "3f9c2ab",
+    "configuration": "testflight",
+    "name": "Sample App",
+    "version": "1.4.0"
+  },
+  "comment": {
+    "input": "text",
+    "language": "en",
+    "text": "The add button is too small and too close to the home indicator. Make it bigger and move it up."
+  },
+  "created": "2026-10-30T21:14:05Z",
+  "device": "iPhone",
+  "element": {
+    "bounds": {
+      "height": 60,
+      "width": 60,
+      "x": 300,
+      "y": 752
+    },
+    "id": "sample.list.addButton",
+    "matched_by": "anchor",
+    "parent": "sample.list.footer",
+    "role": "button",
+    "screen": "sample.list",
+    "source": {
+      "file": "SampleApp/ListView.swift",
+      "line": 88
+    },
+    "strings": [
+      "list.add"
+    ]
+  },
+  "environment": {
+    "appearance": "dark",
+    "dynamic_type": "large",
+    "language": "es",
+    "locale": "es_ES",
+    "model": "iPhone16,2",
+    "os": "iOS 19.1",
+    "screen": {
+      "height": 844,
+      "scale": 1,
+      "width": 390
+    }
+  },
+  "id": "3b9f1d2e-6a41-4c7e-9d0a-5e2f8b7c1a64",
+  "microphone": {
+    "category": "AVAudioSessionCategoryPlayback",
+    "host_audio_in_use": false
+  },
+  "screen": "sample.list",
+  "screenshot": {
+    "file": "capture.png",
+    "height": 844,
+    "scale": 1,
+    "sha256": "5efe3d19bfb047412117c234e44268712fada841b8b6c84c4047ef6dc6dd9d9f",
+    "width": 390
+  },
+  "tap": {
+    "accessibility_identifier": "addButton",
+    "accessibility_label": "Add",
+    "x": 331.5,
+    "y": 782
+  },
+  "v": 1
+}

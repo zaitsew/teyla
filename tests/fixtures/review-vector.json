@@ -1,0 +1,11 @@
+{
+  "_comment": "Review capture signing vector (docs/REVIEW.md). Clients reproduce capture_message, capture_sig, status_message and status_sig from key_hex and the files in tests/fixtures/review-capture/.",
+  "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "pairing": "teyla-pair:v1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "capture_json_sha256": "7cace3195af6113cf8f9f2869aa3a0b56b13b2c1b00010f566cc35795029a2f8",
+  "capture_png_sha256": "5efe3d19bfb047412117c234e44268712fada841b8b6c84c4047ef6dc6dd9d9f",
+  "capture_message": "teyla-review-v1\n3b9f1d2e-6a41-4c7e-9d0a-5e2f8b7c1a64\n2026-10-30T21:14:05Z\n7cace3195af6113cf8f9f2869aa3a0b56b13b2c1b00010f566cc35795029a2f8\n5efe3d19bfb047412117c234e44268712fada841b8b6c84c4047ef6dc6dd9d9f",
+  "capture_sig": "7701f1efa91f1c51b471204ed7d6b19162cb74a0eda10dd253f89f49abd4b3ce",
+  "status_message": "teyla-review-status-v1\n3b9f1d2e-6a41-4c7e-9d0a-5e2f8b7c1a64\npr_ready\n2026-10-30T22:03:00Z\nhttps://github.com/example/sampleapp/pull/12",
+  "status_sig": "8ceb2f4716d4f9baeade2c35e89436bab2845066a674dc6e60fa0817ffe0bc9e"
+}
