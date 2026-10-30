@@ -577,6 +577,9 @@ def render(reports: list[dict]) -> str:
 
 
 def cmd_ux(args) -> int:
+    if args.action in ("shots", "diff", "accept"):
+        from . import ux_shots
+        return ux_shots.cmd(args)
     if args.action != "check":
         print(f"teyla ux: unknown action {args.action!r}", file=sys.stderr)
         return 2
@@ -596,9 +599,11 @@ def cmd_ux(args) -> int:
 def register(sp):
     q = sp.add_parser("ux", help="does a product's UI code follow the shared UX standard: literals instead of tokens, crowded screens, copy rules, DESIGN.md")
     q.set_defaults(fn=cmd_ux)
-    q.add_argument("action", choices=["check"])
+    q.add_argument("action", choices=["check", "shots", "diff", "accept"])
     q.add_argument("repos", nargs="*", help="repo names under code_root or paths (default: the git root of the current directory)")
     q.add_argument("--all", action="store_true", help="every git repo under code_root")
     q.add_argument("--json", action="store_true")
     q.add_argument("--strict", action="store_true", help="exit 1 when any repo has a FIX")
+    from . import ux_shots
+    ux_shots.add_arguments(q)
     return q
