@@ -1569,4 +1569,5 @@ def test_guard_cwd_defaults_to_here_and_resolves(tmp_path, monkeypatch):
     assert load._guard_cwd(None) == here
     assert load._guard_cwd(".") == here
     assert load._guard_cwd(str(tmp_path)) == here
-    assert load._guard_cwd("") is None
+    assert load._guard_cwd("") == ""          # the hook's unknown stays unknown, never "here"
+    assert load._guard_cwd("~") == os.path.realpath(os.path.expanduser("~"))

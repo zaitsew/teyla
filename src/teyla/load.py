@@ -1691,8 +1691,8 @@ def _guard_cwd(arg: str | None) -> str | None:
     if arg is None:
         return os.path.realpath(os.getcwd())
     if arg == "":
-        return None
-    return os.path.realpath(arg)
+        return ""          # not None: `decide_leased` would read None as "this directory"
+    return os.path.realpath(os.path.expanduser(arg))
 
 
 def cmd_load(args, run: Runner = run_command) -> int:
