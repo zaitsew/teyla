@@ -20,13 +20,33 @@ What is counted (a "literal" is a value written in a view; the product's tokens 
               `.padding(horizontal = 12.dp)`. Zero and expressions (`2 * Space.m`) are not counted.
     crowded   SwiftUI only: a `struct X: View` whose body holds more than 4 `Button`,
               `NavigationLink` and `.onTapGesture` together.
-    copy      UI strings: `Text("...")`, `Button("...")`, `Label`, `Toggle`, `Section` in Swift;
-              `Text("...")` in Compose; `<string>` values of Android `res/values/` and
-              `values-en*`; `Localizable.strings` and `.xcstrings` in English. Counted: strings
-              with the word "Please", strings with "!", and button labels over 3 words (Swift
-              `Button("...")`, and Android strings named btn_/button_/cta_/action_).
+    copy      UI strings: `Text("...")`, `Button("...")`, `Label`, `Toggle`, `Section`,
+              `ContentUnavailableView` and `.navigationTitle("...")` in Swift; `Text("...")` in
+              Compose; `<string>` values of Android `res/values/` and `values-en*`;
+              `Localizable.strings` and `.xcstrings` in English. Counted, against the copy
+              rules of the standard (R10 to R14 and the per-control budgets):
+                please   a string with the word "Please";
+                bang     a string with "!";
+                oops     a string with "oops", "whoops" or "uh-oh";
+                your     a label of 3 words or fewer that starts with "Your" and is not a
+                         sentence ("Your Favorites");
+                button   a button label over 3 words (Swift `Button("...")`, and Android strings
+                         named btn_/button_/cta_/action_);
+                title    a `.navigationTitle("...")` over 5 words;
+                error    a string in an error context with "we", or with more than 2 sentences;
+                empty    a string in an empty-state context with more than 2 sentences.
+              A context is told only from the code: a SwiftUI or Compose `Text` on a line whose
+              identifiers (outside the string) name an error (`error`, `failed`, `failure`) or an
+              empty state (`ContentUnavailableView`, `emptyState`, ...); an Android string, or a
+              `.strings`/`.xcstrings` key, whose name has an `error`/`failed` or `empty` part.
+              A line that names both, or neither, has no context and is skipped: a context is
+              never guessed. The onboarding budget (25 words) and "a verb on every button" cannot
+              be counted from code and are judged in review.
     design    A DESIGN.md at the root or in docs/. Missing is WARN; one that still holds
-              `{{` template placeholders is WARN.
+              `{{` template placeholders is WARN; one over 100 lines is FIX.
+    standard  The repo's copy of STANDARD.md (at the root, in docs/, docs/design/ or design/, or
+              templates/design/ for Teyla itself), if any. Its active rules are the `### R<n>.`
+              headings above the "Retired or advisory" heading.
 
 Not read: build output and dependency dirs (build, Pods, node_modules, .build, DerivedData,
 dist, vendor, hidden dirs, ...), tests, previews (`#Preview`, `PreviewProvider`, `@Preview`),
@@ -35,17 +55,21 @@ generated files (a "do not edit" or "@generated" header, `.generated.`, `.g.`), 
 under a `theme`, `tokens` or `designsystem` dir). The scan is regex-based and approximate on
 purpose: a count is a pointer to look, not a proof.
 
-Verdicts, per repo (the worst finding wins; a repo with no UI code is OK):
+Verdicts, per repo (the worst finding wins; a repo with no UI code and no standard is OK):
 
     tokens    L = font + colour + spacing literals; D = L per 1,000 non-blank lines of UI files.
               WARN: L >= 10 and D >= 5.   FIX: L >= 100 and D >= 10.
-    crowded   WARN: 1 or more screens.    FIX: 10 or more screens, or 3 or more with 10+ tap targets.
-    copy      C = "Please" + "!" + long button labels.
+    crowded   WARN: 1 or more screens. Never FIX: four tap targets is a prompt to look (R5).
+    copy      C = the sum of the copy counts above.
               WARN: C >= 1.               FIX: C >= 25.
     design    WARN: no DESIGN.md in a repo with UI code, or one with template placeholders.
+              FIX: a DESIGN.md over 100 lines.
+    standard  WARN: a rule with no `Since <date> ... Scope: ...` line under its heading.
+              FIX: more than 20 active rules.
 
+"More than three type sizes" (R2) is not counted from code at all: it is a review warning.
 The cut-offs come from a first run over the owner's apps: a FIX is a repo where ignoring the
-tokens or piling taps onto screens is the norm, not an exception. Exit status is 0, unless `--strict` is given
+tokens is the norm, not an exception. Exit status is 0, unless `--strict` is given
 and a repo has a FIX (then 1). `--json` prints {"repos": [{"repo", "path", "platforms", "ui_files",
 "ui_lines", "counts", "density", "worst_files", "crowded", "design_doc", "verdict", "findings":
 [{"check", "severity", "file", "line", "message", "fix"}]}], "totals": {"FIX", "WARN", "OK"}}.
@@ -65,11 +89,15 @@ FIX, WARN, OK = "FIX", "WARN", "OK"
 # Thresholds (see the module docstring).
 TOKENS_WARN_MIN, TOKENS_WARN_DENSITY = 10, 5.0
 TOKENS_FIX_MIN, TOKENS_FIX_DENSITY = 100, 10.0
-CROWDED_TAPS = 4          # more than this many tap targets in one View struct
-CROWDED_WARN, CROWDED_FIX = 1, 10
-SEVERE_TAPS, SEVERE_FIX = 10, 3   # a screen with 10+ tap targets is severe; 3 severe screens are FIX
+CROWDED_TAPS = 4          # more than this many tap targets in one View struct: WARN, never FIX
+CROWDED_WARN = 1
 COPY_WARN, COPY_FIX = 1, 25
-BUTTON_MAX_WORDS = 3
+BUTTON_MAX_WORDS = 3      # the per-control budgets of the standard
+TITLE_MAX_WORDS = 5
+STATE_MAX_SENTENCES = 2   # an empty state and an error
+YOUR_LABEL_MAX_WORDS = 3
+DESIGN_MAX_LINES = 100
+STANDARD_MAX_RULES = 20
 WORST_FILES = 5
 MAX_FILE_BYTES = 1_000_000
 
@@ -282,35 +310,86 @@ def _web_colors(line: str) -> int:
 
 # --- copy ---------------------------------------------------------------------------------------
 
-SW_TEXT = re.compile(r"\b(Text|Button|Label|Toggle|Section|NavigationLink|Link|Menu)\(\s*(?:verbatim:\s*)?\"((?:[^\"\\\n]|\\.)*)\"")
+SW_TEXT = re.compile(r"\b(Text|Button|Label|Toggle|Section|NavigationLink|Link|Menu|ContentUnavailableView)\(\s*(?:verbatim:\s*)?\"((?:[^\"\\\n]|\\.)*)\"")
+SW_NAV_TITLE = re.compile(r"\.navigation(?:Bar)?Title\(\s*\"((?:[^\"\\\n]|\\.)*)\"")
 KT_TEXT = re.compile(r"\bText\(\s*(?:text\s*=\s*)?\"((?:[^\"\\\n]|\\.)*)\"")
+STR_LITERAL = re.compile(r'"(?:[^"\\\n]|\\.)*"')
 PLEASE = re.compile(r"\bplease\b", re.I)
 BANG = re.compile(r"!(?!=)")
+OOPS = re.compile(r"\b(?:oops|whoops|uh[- ]?oh)\b", re.I)
+WE = re.compile(r"\bwe(?:['\u2019](?:re|ve|ll|d))?\b", re.I)
+YOUR_LABEL = re.compile(r"^Your\s+\S+")
 BUTTON_NAME = re.compile(r"(?:^|_)(?:btn|button|cta|action)(?:_|$)", re.I)
+ERROR_IDENT = re.compile(r"\w*(?:[Ee]rror|[Ff]ail(?:ed|ure))\w*")
+EMPTY_IDENT = re.compile(r"\bContentUnavailableView\b|\b\w*[Ee]mpty(?:State|Text|Message|Title|Copy|Label|Hint)\w*")
+NAME_SPLIT = re.compile(r"[._\-]|(?<=[a-z])(?=[A-Z])")
+ERROR_WORDS = {"error", "err", "failed", "failure"}
+EMPTY_WORDS = {"empty"}
+
+COPY_KEYS = ("please", "bang", "long_button", "oops", "your_label", "we_error", "long_title", "long_error", "long_empty")
+ERROR, EMPTY, TITLE = "error", "empty", "title"
+
+
+def _plain(s: str) -> str:
+    return re.sub(r"\\\([^)]*\)|%[@dsf]|%\d\$[@dsf]|\{[^}]*\}", "x", s)  # an interpolation counts as one word
 
 
 def _words(s: str) -> int:
-    s = re.sub(r"\\\([^)]*\)|%[@dsf]|%\d\$[@dsf]|\{[^}]*\}", "x", s)  # an interpolation counts as one word
-    return len(s.split())
+    return len(_plain(s).split())
 
 
-def _copy(strings: list[tuple[str, str, bool]]) -> dict:
-    """strings: (text, ..., is_button). Counts only."""
-    c = {"please": 0, "bang": 0, "long_button": 0}
-    for s, _kind, is_button in strings:
+def _sentences(s: str) -> int:
+    return len([p for p in re.split(r"(?<=[.!?\u2026])\s+", _plain(s).strip()) if p.strip()])
+
+
+def _line_ctx(line: str) -> str:
+    """The context of the strings on a code line, told from its identifiers outside the strings:
+    an error, an empty state, or "" (neither, or both: never guessed)."""
+    rest = STR_LITERAL.sub('""', line)
+    err, empty = bool(ERROR_IDENT.search(rest)), bool(EMPTY_IDENT.search(rest))
+    return ERROR if err and not empty else EMPTY if empty and not err else ""
+
+
+def _name_ctx(name: str) -> str:
+    """The context of a string told from its resource name or key; a key that is prose has none."""
+    if not re.fullmatch(r"[\w.\-]+", name):
+        return ""
+    words = {w.lower() for w in NAME_SPLIT.split(name) if w}
+    err, empty = bool(words & ERROR_WORDS), bool(words & EMPTY_WORDS)
+    return ERROR if err and not empty else EMPTY if empty and not err else ""
+
+
+def _copy(strings: list[tuple[str, bool, str]]) -> dict:
+    """strings: (text, is_button, ctx) with ctx one of "", "error", "empty", "title". Counts only."""
+    c = dict.fromkeys(COPY_KEYS, 0)
+    for s, is_button, ctx in strings:
         if PLEASE.search(s):
             c["please"] += 1
         if BANG.search(s):
             c["bang"] += 1
+        if OOPS.search(s):
+            c["oops"] += 1
+        t = s.strip()
+        if YOUR_LABEL.match(t) and _words(t) <= YOUR_LABEL_MAX_WORDS and not re.search(r"[.!?]$", t):
+            c["your_label"] += 1
         if is_button and _words(s) > BUTTON_MAX_WORDS:
             c["long_button"] += 1
+        if ctx == TITLE and _words(s) > TITLE_MAX_WORDS:
+            c["long_title"] += 1
+        if ctx == ERROR:
+            if WE.search(s):
+                c["we_error"] += 1
+            if _sentences(s) > STATE_MAX_SENTENCES:
+                c["long_error"] += 1
+        if ctx == EMPTY and _sentences(s) > STATE_MAX_SENTENCES:
+            c["long_empty"] += 1
     return c
 
 
 # --- one file -----------------------------------------------------------------------------------
 
 def _new() -> dict:
-    return {"font": 0, "colour": 0, "spacing": 0, "please": 0, "bang": 0, "long_button": 0}
+    return {"font": 0, "colour": 0, "spacing": 0, **dict.fromkeys(COPY_KEYS, 0)}
 
 
 def _add(a: dict, b: dict):
@@ -322,13 +401,20 @@ def _add(a: dict, b: dict):
 def scan_swift(text: str) -> tuple[dict, list[dict]]:
     code = blank_blocks(strip_comments(text), SWIFT_PREVIEW)
     c = _new()
-    strings: list[tuple[str, str, bool]] = []
+    strings: list[tuple[str, bool, str]] = []
     for ln in code.splitlines():
         c["font"] += len(SW_FONT.findall(ln))
         c["colour"] += len(SW_COLOR.findall(ln))
         c["spacing"] += _padding_literals(ln, kotlin=False)
+        ctx = _line_ctx(ln)
         for m in SW_TEXT.finditer(ln):
-            strings.append((m.group(2), m.group(1), m.group(1) == "Button"))
+            kind = m.group(1)
+            if kind == "ContentUnavailableView":
+                strings.append((m.group(2), False, EMPTY))
+            else:
+                strings.append((m.group(2), kind == "Button", ctx if kind == "Text" else ""))
+        for m in SW_NAV_TITLE.finditer(ln):
+            strings.append((m.group(1), False, TITLE))
     _add(c, _copy(strings))
     crowded = []
     for m in re.finditer(r"\bstruct\s+(\w+)\s*:\s*([^{\n]*)\{", code):
@@ -349,8 +435,9 @@ def scan_kotlin(text: str) -> dict:
         c["font"] += len(KT_FONT.findall(ln))
         c["colour"] += len(KT_COLOR.findall(ln))
         c["spacing"] += _padding_literals(ln, kotlin=True)
+        ctx = _line_ctx(ln)
         for m in KT_TEXT.finditer(ln):
-            strings.append((m.group(1), "Text", False))
+            strings.append((m.group(1), False, ctx))
     _add(c, _copy(strings))
     return c
 
@@ -374,14 +461,15 @@ def scan_android_strings(text: str) -> dict:
             continue
         name = re.search(r'name="([^"]+)"', attrs)
         val = re.sub(r"<[^>]+>", "", val).replace("\\'", "'").replace("\\n", " ")
-        strings.append((val, "string", bool(name and BUTTON_NAME.search(name.group(1)))))
+        nm = name.group(1) if name else ""
+        strings.append((val, bool(BUTTON_NAME.search(nm)), _name_ctx(nm)))
     return _copy(strings)
 
 
 def scan_strings_file(text: str) -> dict:
     strings = []
-    for m in re.finditer(r'^\s*"(?:[^"\\]|\\.)*"\s*=\s*"((?:[^"\\]|\\.)*)"\s*;', text, flags=re.M):
-        strings.append((m.group(1), "string", False))
+    for m in re.finditer(r'^\s*"((?:[^"\\]|\\.)*)"\s*=\s*"((?:[^"\\]|\\.)*)"\s*;', text, flags=re.M):
+        strings.append((m.group(2), False, _name_ctx(m.group(1))))
     return _copy(strings)
 
 
@@ -397,7 +485,7 @@ def scan_xcstrings(text: str) -> dict:
     for key, entry in (data.get("strings") or {}).items():
         loc = ((entry or {}).get("localizations") or {}).get(src) or {}
         val = (loc.get("stringUnit") or {}).get("value")
-        strings.append((val if isinstance(val, str) else key, "string", False))
+        strings.append((val if isinstance(val, str) else key, False, _name_ctx(key) if isinstance(val, str) else ""))
     return _copy(strings)
 
 
@@ -410,6 +498,42 @@ def _find_design_doc(root: pathlib.Path) -> pathlib.Path | None:
                 if p.is_file() and p.name.lower() == "design.md":
                     return p
     return None
+
+
+STANDARD_PLACES = ("", "docs", "docs/design", "design", "templates/design")
+RULE_HEAD = re.compile(r"^###\s+(R\d+)\.\s")
+RETIRED_HEAD = re.compile(r"^#{1,6}\s+(?:Retired|Advisory)\b", re.I)
+RULE_META = re.compile(r"^Since\s+\d{4}-\d{2}-\d{2}\b.*\bScope:")
+
+
+def _find_standard(root: pathlib.Path) -> pathlib.Path | None:
+    for rel in STANDARD_PLACES:
+        p = root / rel / "STANDARD.md" if rel else root / "STANDARD.md"
+        if p.is_file() and not p.is_symlink():
+            return p
+    return None
+
+
+def standard_rules(text: str) -> list[dict]:
+    """The active rules of a standard: `### R<n>.` headings outside code fences and above the
+    "Retired or advisory" heading. `dated` is whether the next non-blank line is a
+    `Since <date> ... Scope: ...` line."""
+    lines = text.splitlines()
+    rules: list[dict] = []
+    fence = False
+    for i, ln in enumerate(lines):
+        if ln.lstrip().startswith("```"):
+            fence = not fence
+            continue
+        if fence:
+            continue
+        if RETIRED_HEAD.match(ln):
+            break
+        m = RULE_HEAD.match(ln)
+        if m:
+            nxt = next((x for x in lines[i + 1:] if x.strip()), "")
+            rules.append({"id": m.group(1), "line": i + 1, "dated": bool(RULE_META.match(nxt.strip()))})
+    return rules
 
 
 def _finding(check, severity, file, line, message, fix):
@@ -506,22 +630,36 @@ def verdicts(root: pathlib.Path, a: dict) -> list[dict]:
             "replace font sizes, colours and spacing in views with the product's tokens, worst files first"))
     n = len(a["crowded"])
     if n >= CROWDED_WARN:
-        severe = sum(1 for x in a["crowded"] if x["taps"] >= SEVERE_TAPS)
-        sev = FIX if n >= CROWDED_FIX or severe >= SEVERE_FIX else WARN
+        sev = WARN  # four tap targets is a prompt to look, not a defect (R5)
         top = a["crowded"][0]
         names = ", ".join(f"{x['view']} ({x['taps']})" for x in a["crowded"][:3])
         findings.append(_finding(
             "crowded", sev, top["file"], top["line"],
             f"{n} screen(s) with more than {CROWDED_TAPS} tap targets in one View: {names}",
             "keep one primary action per screen; move the rest behind a menu, a detail screen or a sheet"))
-    cp = c["please"] + c["bang"] + c["long_button"]
+    cp = copy_total(c)
     if cp >= COPY_WARN:
         sev = FIX if cp >= COPY_FIX else WARN
+        parts = [f"{c['please']} with \"Please\"", f"{c['bang']} with \"!\"", f"{c['long_button']} button label(s) over {BUTTON_MAX_WORDS} words"]
+        for key, text in (
+            ("oops", "with \"oops\" or \"uh-oh\""),
+            ("your_label", "label(s) starting with \"Your\""),
+            ("long_title", f"title(s) over {TITLE_MAX_WORDS} words"),
+            ("we_error", "error string(s) with \"we\""),
+            ("long_error", f"error string(s) over {STATE_MAX_SENTENCES} sentences"),
+            ("long_empty", f"empty-state string(s) over {STATE_MAX_SENTENCES} sentences"),
+        ):
+            if c[key]:
+                parts.append(f"{c[key]} {text}")
         findings.append(_finding(
             "copy", sev, "", 0,
-            f"{cp} UI string(s) break the copy rules: {c['please']} with \"Please\", {c['bang']} with \"!\", {c['long_button']} button label(s) over {BUTTON_MAX_WORDS} words",
-            "button = verb + object in at most 3 words; no \"Please\"; no exclamation marks"))
+            f"{cp} UI string(s) break the copy rules: " + ", ".join(parts),
+            "button = verb + object in at most 3 words; no \"Please\", \"!\", \"oops\"; no \"we\" in an error; an empty state or error in 2 sentences; \"Favorites\", not \"Your Favorites\""))
     return findings
+
+
+def copy_total(c: dict) -> int:
+    return sum(c.get(k, 0) for k in COPY_KEYS)
 
 
 def check_repo(root: pathlib.Path) -> dict:
@@ -535,9 +673,27 @@ def check_repo(root: pathlib.Path) -> dict:
                                      "copy templates/design/DESIGN.md: tokens, voice, screen inventory, what is deliberately absent"))
         else:
             txt = _read(doc) or ""
+            n_lines = len(txt.splitlines())
+            if n_lines > DESIGN_MAX_LINES:
+                findings.append(_finding("design-doc", FIX, str(doc.relative_to(root)), 1,
+                                         f"DESIGN.md is {n_lines} lines; keep it under {DESIGN_MAX_LINES}, move history to docs/decisions/",
+                                         "keep tokens, components, glossary, screens and what is absent; move the history to docs/decisions/ and the owner's taste to design/"))
             if "{{" in txt:
                 findings.append(_finding("design-doc", WARN, str(doc.relative_to(root)), 1, "DESIGN.md still holds template placeholders",
-                                         "fill in the tokens, the voice section and the screen inventory"))
+                                         "fill in the tokens, the glossary and the screen inventory"))
+    std = _find_standard(root)
+    if std is not None:
+        rules = standard_rules(_read(std) or "")
+        rel = str(std.relative_to(root))
+        if len(rules) > STANDARD_MAX_RULES:
+            findings.append(_finding("standard", FIX, rel, rules[STANDARD_MAX_RULES]["line"],
+                                     f"{rel} has {len(rules)} active rules; keep it at {STANDARD_MAX_RULES} or fewer",
+                                     "move the weakest rules to \"Retired or advisory\" in the same PR that adds one"))
+        undated = [r["id"] for r in rules if not r["dated"]]
+        if undated:
+            findings.append(_finding("standard", WARN, rel, 0,
+                                     f"{len(undated)} rule(s) have no \"Since <date> ... Scope: ...\" line: {', '.join(undated[:5])}",
+                                     "put \"Since <date> · Scope: <where> · Check: <how>\" directly under each rule heading"))
     verdict = FIX if any(f["severity"] == FIX for f in findings) else WARN if findings else OK
     return {"repo": root.name, "path": str(root), "verdict": verdict, "design_doc": doc is not None, **a, "findings": findings}
 
@@ -555,7 +711,7 @@ def render(reports: list[dict]) -> str:
     for r in reports:
         c = r["counts"]
         ui = "+".join(p[:2] for p in r["platforms"]) or "-"
-        copy = c["please"] + c["bang"] + c["long_button"]
+        copy = copy_total(c)
         L.append(f"{r['repo']:<{w}}  {r['verdict']:<7}  {ui:<4} {r['ui_files']:>5}  {c['font']:>4}  {c['colour']:>6}  {c['spacing']:>5}  {r['density']:>5}  {len(r['crowded']):>7}  {copy:>4}  {'yes' if r['design_doc'] else 'no' if r['ui_files'] else '-'}")
     for r in reports:
         if not r["findings"]:

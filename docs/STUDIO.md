@@ -127,7 +127,8 @@ The findings that shaped the design:
 - **iOS 27 (September 2026) reversed parts of iOS 26:** search returned to the tab bar and
   toolbars changed; a custom tab bar or toolbar gets none of it and must be retested
   ([MacStories](https://www.macstories.net/stories/ios-and-ipados-27-review/2/)). Rules copied
-  from one WWDC age within a year, which is why the standard keeps few rules and dates them.
+  from one WWDC age within a year, which is why the standard keeps few rules, dates them, and
+  retests every rule copied from a WWDC session after each iOS release.
 - **The reference set** the second report returns: Things (the Plus button dragged to where the
   task goes; colour reserved for meaning), Flighty (one departure-board line per flight, about
   fifteen time-and-place states, a status colour always paired with a text badge, "Leave for
@@ -142,10 +143,34 @@ The findings that shaped the design:
   misunderstandings; the empty voice charts are the real copy gap; a judge can flag a
   regression and cannot certify good UX. Its estimate for the system: 11–17 agent-days over
   two nights per sprint. Its amendments are folded into §4–§6 below.
-- **Grok ran out.** Two runs ($0.66) hit the free Grok Build limit; only the X API price came
-  back. Its questions were answered by a second web pass; X posts there come from search
-  snippets, Reddit was unreachable, so the complaints cited above are to be checked on the
-  phone before anything is built on them.
+- **Grok on X (2026-10-30, after the owner's subscription; $2.74).** Builders on X say the
+  same thing the diagnosis says, with numbers: agents "walk right past the ugliest UI" and a
+  screenshot does not say whether a gesture feels good
+  ([@kunchenguid](https://x.com/kunchenguid/status/2094609213532332528), 1,106 likes); agents
+  "nail the first screen then drift on spacing and state variants"
+  ([@DnuLkjkjh](https://x.com/DnuLkjkjh/status/2045236091784237093)); a screen "looked finished
+  in the sim and moved once it was on the device", from two independent iOS makers
+  ([@iamvishal16_ios](https://x.com/iamvishal16_ios/status/2116198411691290881)), which is why
+  S3 reviews on the phone; Mobbin and Refero on an agent still fail because "just because an
+  app is successful doesn't mean the UI is great"
+  ([@drbarnard](https://x.com/drbarnard/status/2115918787241554097)), which is why references
+  are named screens, not libraries. The closest pin-and-comment tool is Cursor's Design Mode
+  Annotate (2026-10-27, 337,702 views), a web browser inside Cursor
+  ([@cursor_ai](https://x.com/cursor_ai/status/2115159585548021814)); no post shows a vision
+  judge whose score rose in a later build, and a weekly X scrape "will learn listicles and
+  prompt art", so the scout's caps stand. Accounts worth a weekly read: @viticci (what the
+  system UI just did, with screenshots), @Dimillian (UI a strong indie shipped), @drbarnard
+  (when a design skill or a library fails, by name), and the Apple Design Awards page (2026:
+  Moonlitt for interaction, grug for delight, Structured a finalist whose model pre-fills a
+  simple timeline). Planner complaints: a Tiimo user left because the companion "is all over
+  the app" and wanted a switch to remove it
+  ([@ascottishbean](https://x.com/ascottishbean/status/2112292021939392959)), while another
+  copies how Tiimo centres the character; Flighty "occasionally, randomly deletes flights"
+  ([@patk](https://x.com/patk/status/2114538198508667070)); Wanderlog's praised features are
+  distances and walk or transit time between stops, a forwarding address for bookings, and
+  inviting friends to plan (861,148 views). Nobody on X ships trip + day + family + companion
+  in one app. For the pilot this means: the companion is one tap away and never on every
+  screen, and nothing the user planned is ever lost silently.
 
 ## 4. Decisions
 
@@ -172,7 +197,13 @@ The findings that shaped the design:
   glossary, the screen inventory, what is absent. History goes to `docs/decisions/`, taste to
   the ledger. `teyla ux check` fails a `DESIGN.md` over 100 lines and a standard with more
   than 20 active rules; a lane is given the rules that match the screen it touches, not the
-  whole file.
+  whole file. Shipped in sprint 1: the template has the sections Tokens, Components, Glossary
+  (one word per concept, columns en/es/ru), Voice, Screens and Rules from review (the last two
+  between `<!-- teyla:screens -->` and `<!-- teyla:rules -->` markers that `teyla taste render`
+  fills) and What is absent. In the standard an active rule is a `### R<n>.` heading with a
+  `Since <date> · Scope: ... · Check: ...` line; rules cut to make room go under "Retired or
+  advisory". "More than four tap targets" is a WARN and "more than three type sizes" a review
+  warning, never a FIX.
 - **S6. Drift is caught by a fixed matrix, not by a model's glance.** Screen captures in
   light, dark and the largest Dynamic Type, in every shipped language, diffed against an
   accepted baseline, plus the accessibility audit for clipping and contrast. A UI PR carries
@@ -181,7 +212,9 @@ The findings that shaped the design:
   reference screen, with the rubric from the standard. Ties and "feels native" go to the
   owner. The score reported per product is the share of screens that beat their reference,
   not a 1–10 feeling. The judge is calibrated against the owner before it is trusted: it must
-  agree with him on 16 of 20 pairs he has already decided.
+  agree with him on 16 of 20 pairs he has already decided. The rubric is Part 5 of the
+  standard: five items scored 0, 1 or 2 with a written meaning for each score, and "not
+  assessed" where the picture cannot show the item.
 - **S8. Copy is written by a writer lane from a brief, not by the code lane.** The brief is
   the screen's job, its primary action, the glossary and the product's voice chart. English,
   Spanish and Russian are each written from the brief, never translated. The unit of review
@@ -409,7 +442,8 @@ public still says "Trip Planner". The pilot uses sprint 1 end to end:
    retested on iOS 27, where search and the bars changed.
 4. Two structural variants per screen for Today, Trip, First run and Voice, judged in pairs,
    the owner picks on the phone. Voice: a pulsing listen state, an icon to end, mute, as
-   asked on 2026-10-15.
+   asked on 2026-10-15. The companion: present on Today and in voice, one tap away elsewhere,
+   with a switch to hide it (a Tiimo user left over a companion that was everywhere).
 5. Onboarding: three steps or fewer, 25 words a step, the example trip reachable without an
    account.
 6. Copy: every string the five screens show through the copy table; glossary settled
