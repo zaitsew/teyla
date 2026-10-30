@@ -419,7 +419,8 @@ def judged_ok(tmp_path, capsys):
 def test_judge_command_pins_the_lane_wrapper_read_only_and_no_skills():
     cmd = cl.judge_command("/x/out.md", "gpt-6.1-sol", "codex-lane")
     assert cmd[0] == "codex-lane" and cmd[cmd.index("-m") + 1] == "gpt-6.1-sol" and cmd[cmd.index("-s") + 1] == "read-only"
-    assert "skills.include_instructions=false" in cmd and "multi_agent" in cmd and cmd[-3:] == ["-o", "/x/out.md", "-"] or cmd[-1] == "-"
+    assert "skills.include_instructions=false" in cmd and cmd[cmd.index("--disable") + 1] == "multi_agent"
+    assert cmd[-3:] == ["-o", "/x/out.md", "-"]
     assert cmd[cmd.index("-o") + 1] == "/x/out.md"
 
 
@@ -443,7 +444,7 @@ def test_judge_model_turns_a_row_to_fail_and_never_softens_a_code_fail(tmp_path,
     assert by["recipe.list.add"]["verdict"] == "fail" and by["recipe.list.add"]["reason"] == "model: es: reads as a translation"
     assert by["recipe.list.title"]["verdict"] == "pass" and by["recipe.list.title"]["model"]["verdict"] == "pass"
     assert by["recipe.list.error"]["verdict"] == "fail" and "model" not in by["recipe.list.error"]
-    assert json.loads(p.read_text(encoding="utf-8"))["model_pass"] == dict(asked=2, failed=1, answered=2)
+    assert json.loads(p.read_text(encoding="utf-8"))["model_pass"] == dict(asked=2, failed=1, answered=2, unjudged=[])
 
 
 def test_judge_model_failure_keeps_the_code_verdicts_and_exits_3(tmp_path, capsys, monkeypatch):
@@ -688,3 +689,120 @@ def test_the_command_is_registered_and_documented():
     assert "teyla copy" in (root / "docs" / "COMMANDS.md").read_text(encoding="utf-8")
     assert "COPY.md" in (root / "docs" / "GUIDE.md").read_text(encoding="utf-8")
     assert (root / "docs" / "COPY.md").is_file()
+
+
+# --- fix round: placeholders by position, the catalog's own string, languages, catalogs, unjudged, git ----
+
+def test_placeholders_are_compared_by_argument_position_and_type():
+    assert cl.placeholders("%1$@ %2$d") == ["1$%@", "2$%d"] and cl.placeholders("%@ %d") == ["1$%@", "2$%d"]
+    assert cl.placeholders("%2$d %1$@") == cl.placeholders("%@ %d")                       # reordered words, same arguments
+    bad = cl.check_text("%2$@ %1$d", "es", "text", "%1$@ %2$d")                          # a type swapped at each position
+    assert [x["rule"] for x in bad] == ["placeholders"]
+    assert cl.check_text("%2$d %1$@", "es", "text", "%1$@ %2$d") == []
+    assert [x["rule"] for x in cl.check_text("%d %@", "es", "text", "%@ %d")] == ["placeholders"]   # unpositioned: by order
+    assert cl.check_text("{b} y {a}", "es", "text", "{a} and {b}") == []                 # named ones have no position
+
+
+def test_judge_fails_a_row_whose_placeholders_changed_in_every_language(tmp_path, capsys):
+    row = dict(key="recipe.list.saved", control="text", state="all", budget="20 words a sentence", en="Saved %@ recipes",
+               es="%@ recetas guardadas", ru=RU_HINT + " %@",
+               was={"en": "Saved %lld recipes", "es": "", "ru": ""})                       # all three agree with each other
+    code, out, _ = run(["judge", str(put_copy(tmp_path, table(rows=[row])))], capsys)
+    assert code == 1 and "differ from the current catalog string" in out
+
+
+def test_apply_refuses_a_placeholder_that_differs_from_the_catalogs_string(repo, written, capsys):
+    copy = json.loads(written.read_text(encoding="utf-8"))
+    for r in copy["rows"]:
+        r["verdict"] = "pass"
+        if r["key"] == "recipe.list.saved":
+            r["en"], r["es"], r["ru"] = "Saved %@ recipes", "%@ recetas guardadas", RU_HINT + " %@"
+    written.write_text(json.dumps(copy), encoding="utf-8")
+    code, out, _ = run(["apply", str(written), str(repo)], capsys)
+    assert code == 0 and out.count("placeholders differ from the current string in App/Localizable.xcstrings") == 3
+    saved = cat(repo)["strings"]["recipe.list.saved"]["localizations"]
+    assert saved["en"]["stringUnit"]["value"] == "Saved %lld recipes" and "es" not in saved and "ru" not in saved
+
+
+def test_apply_writes_only_the_languages_the_table_marks_as_written(repo, capsys, model):
+    brief = make_brief(repo, capsys)
+    assert run(["write", str(brief), "--lang", "es"], capsys)[0] == 0
+    path = repo.parent / "copy.json"
+    copy = json.loads(path.read_text(encoding="utf-8"))
+    assert copy["written"] == ["es"]
+    for r in copy["rows"]:
+        r["en"], r["ru"] = "Stale " + r["key"], "Stale"                                    # saved text of the languages not written
+    path.write_text(json.dumps(copy), encoding="utf-8")
+    assert run(["apply", str(path), str(repo), "--keys", "recipe.list.title"], capsys)[0] == 0
+    loc = cat(repo)["strings"]["recipe.list.title"]["localizations"]
+    assert loc["es"]["stringUnit"]["value"] == "Recetas" and loc["en"]["stringUnit"]["value"] == "Your Recipes" and "ru" not in loc
+    code, _, err = run(["apply", str(path), str(repo), "--keys", "recipe.list.title", "--lang", "en"], capsys)
+    assert code == 2 and "the table did not write it" in err and "written: es" in err
+    assert run(["apply", str(path), str(repo), "--keys", "recipe.list.title", "--lang", "es"], capsys)[0] == 0
+
+
+def test_apply_writes_every_catalog_that_holds_the_key(repo, written, capsys):
+    (repo / "Extension").mkdir()
+    other = repo / "Extension" / "Localizable.xcstrings"
+    other.write_text(dump({"sourceLanguage": "en", "version": "1.0", "strings": {
+        "recipe.list.title": {"localizations": {"en": unit("Your Recipes")}}}}), encoding="utf-8")
+    code, out, err = run(["apply", str(written), str(repo), "--keys", "recipe.list.title"], capsys)
+    assert code == 0, err
+    for f in (repo / "App" / "Localizable.xcstrings", other):
+        loc = json.loads(f.read_text(encoding="utf-8"))["strings"]["recipe.list.title"]["localizations"]
+        assert loc["en"]["stringUnit"]["value"] == "Recipes" and loc["es"]["stringUnit"]["value"] == "Recetas"
+    assert "wrote App/Localizable.xcstrings" in out and "wrote Extension/Localizable.xcstrings" in out
+
+
+def test_judge_model_with_no_verdict_for_a_row_is_not_assessed(tmp_path, capsys, monkeypatch):
+    p = judged_ok(tmp_path, capsys)
+    monkeypatch.setattr(cl, "_run_lane", lambda prompt, model: (0, json.dumps({"rows": []})))
+    code, out, err = run(["judge", str(p), "--model"], capsys)
+    assert code == 3 and "2 pass" not in out and "2 not assessed" in out and "NOT ASSESSED  recipe.list.add" in out
+    assert "no verdict for 2 rows" in err and "--allow-unjudged" in err
+    copy = json.loads(p.read_text(encoding="utf-8"))
+    assert [r["verdict"] for r in copy["rows"]] == ["unjudged", "unjudged"] and copy["model_pass"]["unjudged"] == [r["key"] for r in copy["rows"]]
+    assert cl.select_rows(copy, None) == []                                                # apply picks neither row
+    monkeypatch.setattr(cl, "_run_lane", lambda prompt, model: (0, json.dumps({"rows": [
+        {"key": "recipe.list.add", "verdict": "pass", "reason": "fine"}]})))              # a partial reply: one row answered
+    code, out, err = run(["judge", str(p), "--model"], capsys)
+    copy = json.loads(p.read_text(encoding="utf-8"))
+    assert code == 3 and "no verdict for 1 rows" in err and [r["verdict"] for r in copy["rows"]] == ["pass", "unjudged"]
+    assert [r["key"] for r in cl.select_rows(copy, None)] == ["recipe.list.add"]
+
+
+def test_judge_allow_unjudged_keeps_the_code_pass(tmp_path, capsys, monkeypatch):
+    p = judged_ok(tmp_path, capsys)
+    monkeypatch.setattr(cl, "_run_lane", lambda prompt, model: (0, json.dumps({"rows": []})))
+    code, out, err = run(["judge", str(p), "--model", "--allow-unjudged"], capsys)
+    assert code == 0 and "2 pass, 0 fail" in out and "no verdict" not in err
+    assert len(cl.select_rows(json.loads(p.read_text(encoding="utf-8")), None)) == 2
+
+
+def test_apply_pr_stops_at_a_refused_commit_and_never_pushes(repo, written, capsys, monkeypatch, tmp_path):
+    fake = FakeGit(repo, tmp_path)
+    monkeypatch.setattr(cl.pathlib.Path, "home", classmethod(lambda cls: tmp_path / "home"))
+
+    def git(args, cwd):
+        if args[:1] == ["commit"]:
+            fake.calls.append(("git", list(args)))
+            return 1, "running hooks...\n" * 80 + "hook: rejected the commit"
+        return fake.git(args, cwd)
+
+    monkeypatch.setattr(cl, "_git", git)
+    monkeypatch.setattr(cl, "_gh", fake.gh)
+    run(["judge", str(written)], capsys)
+    code, _, err = run(["apply", str(written), str(repo), "--pr"], capsys)
+    assert code == 2 and "git commit failed: ..." in err and err.rstrip().split("(the worktree")[0].endswith("hook: rejected the commit ")
+    assert "worktree is kept" in err
+    assert not [c for c in fake.calls if c[1][:1] == ["push"] or c[0] == "gh"]
+
+
+def test_apply_pr_checks_the_usage_before_it_creates_a_worktree(repo, written, capsys, monkeypatch, tmp_path):
+    fake = FakeGit(repo, tmp_path)
+    monkeypatch.setattr(cl.pathlib.Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    monkeypatch.setattr(cl, "_git", fake.git)
+    monkeypatch.setattr(cl, "_gh", fake.gh)
+    code, _, err = run(["apply", str(written), str(repo), "--pr", "--keys", "nope"], capsys)
+    assert code == 2 and "no such key" in err
+    assert not [c for c in fake.calls if c[1][:2] == ["worktree", "add"]]

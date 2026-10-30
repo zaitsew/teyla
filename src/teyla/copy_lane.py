@@ -456,7 +456,23 @@ _SPEC = re.compile(r"%(?:\d+\$)?[-+ 0#]*\d*(?:\.\d+)?(?:ll|l|hh|h|z|j|t)?[@dDiuU
 
 
 def placeholders(text: str) -> list[str]:
-    return sorted(re.sub(r"\d+\$", "", m) for m in _SPEC.findall(text))
+    """The placeholders of a string as a comparable list. A printf-style one is keyed by its argument position
+    (`%2$@` is position 2; an unpositioned one takes the next position in order) and keeps its type letter, so
+    `%1$@ %2$d` and `%2$@ %1$d` differ. A named one (`{name}`, `${x}`) has no position and is sorted."""
+    positioned: list[tuple[int, str]] = []
+    named: list[str] = []
+    nxt = 0
+    for m in _SPEC.findall(text):
+        if not m.startswith("%"):
+            named.append(m)
+            continue
+        pm = re.match(r"%(\d+)\$", m)
+        if pm:
+            positioned.append((int(pm.group(1)), "%" + m[pm.end():]))
+        else:
+            nxt += 1
+            positioned.append((nxt, m))
+    return [f"{i}${spec}" for i, spec in sorted(positioned)] + sorted(named)
 
 
 def count_words(text: str) -> int:
@@ -467,8 +483,10 @@ def sentence_list(text: str) -> list[tuple[int, str]]:
     return voice.sentences(_SPEC.sub("X", text))
 
 
-def check_text(text: str, lang: str, control: str, en: str = "", chart: voice.Chart | None = None) -> list[dict]:
-    """The findings for one string: [{rule, message}], empty when it passes."""
+def check_text(text: str, lang: str, control: str, en: str = "", chart: voice.Chart | None = None,
+               original: str = "") -> list[dict]:
+    """The findings for one string: [{rule, message}], empty when it passes. `original` is the string now in the
+    catalog: the placeholders of the new text must be the same as its."""
     out: list[dict] = []
 
     def add(rule, msg):
@@ -506,6 +524,9 @@ def check_text(text: str, lang: str, control: str, en: str = "", chart: voice.Ch
             add("verb", f"a button starts with a verb; \"{first[0]}\" is not on the {lang} verb list")
     if en and lang != "en" and placeholders(text) != placeholders(en):
         add("placeholders", f"placeholders {placeholders(text) or 'none'} differ from English {placeholders(en) or 'none'}")
+    if original and placeholders(text) != placeholders(original):
+        add("placeholders", f"placeholders {placeholders(text) or 'none'} differ from the current catalog string "
+                            f"{placeholders(original) or 'none'}")
     if chart:
         seen = {f["rule"] for f in out}
         for f in voice.check(text, chart)["findings"]:
@@ -514,10 +535,18 @@ def check_text(text: str, lang: str, control: str, en: str = "", chart: voice.Ch
     return out
 
 
-def judge_row(row: dict, charts: dict[str, voice.Chart]) -> dict:
+def original_text(was, lang: str) -> str:
+    """The catalog string a proposal for `lang` replaces: that language's, else English for a language the
+    catalog did not hold yet (the placeholders of the two must agree)."""
+    was = was if isinstance(was, dict) else {}
+    return str(was.get(lang) or (was.get("en") if lang != "en" else "") or "")
+
+
+def judge_row(row: dict, charts: dict[str, voice.Chart]) -> list[dict]:
     findings = []
     for lang in LANGS:
-        for f in check_text(str(row.get(lang) or ""), lang, row.get("control", "text"), str(row.get("en") or ""), charts.get(lang)):
+        for f in check_text(str(row.get(lang) or ""), lang, row.get("control", "text"), str(row.get("en") or ""),
+                            charts.get(lang), original_text(row.get("was"), lang)):
             findings.append(dict(lang=lang, **f))
     return findings
 
@@ -589,9 +618,12 @@ def judge_payload(copy: dict, rows: list[dict], charts: dict[str, voice.Chart]) 
               for r in rows])
 
 
-def model_judge(copy: dict, charts: dict[str, voice.Chart], model: str = JUDGE_MODEL) -> dict:
-    """Ask the second family about the rows that passed the code checks. {asked, failed, error?}.
-    A model "fail" turns the row to fail with its reason; the code's verdicts are never softened."""
+def model_judge(copy: dict, charts: dict[str, voice.Chart], model: str = JUDGE_MODEL,
+                allow_unjudged: bool = False) -> dict:
+    """Ask the second family about the rows that passed the code checks. {asked, failed, unjudged, error?}.
+    A model "fail" turns the row to fail with its reason; the code's verdicts are never softened. A row the model
+    gave no usable verdict for was not assessed: it becomes "unjudged", which `apply` does not pick, unless
+    `allow_unjudged` leaves it at the code's pass."""
     todo = [r for r in copy["rows"] if r.get("verdict") == "pass"]
     if not todo:
         return dict(asked=0, failed=0)
@@ -609,9 +641,14 @@ def model_judge(copy: dict, charts: dict[str, voice.Chart], model: str = JUDGE_M
     except (ValueError, KeyError, TypeError):
         return dict(asked=len(todo), failed=0, error="the reply was not the JSON asked for")
     failed = 0
+    unjudged: list[str] = []
     for r in todo:
         v = verdicts.get(r["key"])
         if not v or v.get("verdict") not in ("pass", "fail"):
+            unjudged.append(r["key"])
+            if not allow_unjudged:
+                r["verdict"] = "unjudged"
+                r["reason"] = "model: no verdict for this row, not assessed"
             continue
         reason = " ".join(str(v.get("reason") or "").split())[:200]
         r["model"] = dict(verdict=v["verdict"], reason=reason, by=model)
@@ -619,16 +656,20 @@ def model_judge(copy: dict, charts: dict[str, voice.Chart], model: str = JUDGE_M
             failed += 1
             r["verdict"] = "fail"
             r["reason"] = f"model: {reason or 'failed the voice or glossary check'}"
-    return dict(asked=len(todo), failed=failed, answered=sum(1 for r in todo if "model" in r))
+    return dict(asked=len(todo), failed=failed, answered=sum(1 for r in todo if "model" in r), unjudged=unjudged)
 
 
 def judge_summary(copy: dict) -> str:
     rows = copy["rows"]
     fails = [r for r in rows if r.get("verdict") == "fail"]
+    unjudged = [r for r in rows if r.get("verdict") == "unjudged"]
     L = [f"teyla copy judge — {copy.get('repo', '')} / {copy.get('screen', '')}: {len(rows)} rows, "
-         f"{len(rows) - len(fails)} pass, {len(fails)} fail"]
+         f"{len(rows) - len(fails) - len(unjudged)} pass, {len(fails)} fail"
+         + (f", {len(unjudged)} not assessed" if unjudged else "")]
     for r in fails:
         L.append(f"  FAIL  {r['key']}  [{r['control']}]  {r['reason']}")
+    for r in unjudged:
+        L.append(f"  NOT ASSESSED  {r['key']}  [{r['control']}]  {r['reason']}")
     return "\n".join(L)
 
 
@@ -649,10 +690,26 @@ def select_rows(copy: dict, keys: list[str] | None) -> list[dict]:
     return [r for r in rows if r.get("verdict") == "pass"]
 
 
+def apply_languages(copy: dict, langs: list[str] | None) -> list[str]:
+    """The languages `apply` writes: the ones the table marks as written; `--lang` may only narrow that set.
+    (A language that was not written holds the catalog's own text in the table, so writing it back is at best a no-op.)"""
+    w = copy.get("written")
+    written = [l for l in w if l in LANGS] if isinstance(w, list) and w else list(LANGS)
+    if not langs:
+        return written
+    outside = [l for l in langs if l not in written]
+    if outside:
+        raise CopyError(f"--lang {','.join(outside)}: the table did not write {'it' if len(outside) == 1 else 'them'} "
+                        f"(written: {', '.join(written)}); run `teyla copy write --lang` first")
+    return list(langs)
+
+
 def apply_rows(copy: dict, repo: pathlib.Path, keys: list[str] | None = None, langs: list[str] | None = None,
                dry: bool = False) -> dict:
-    """{selected, changed, same, skipped:[{key, lang, why}], files}. Writes nothing when `dry`."""
+    """{selected, changed, same, skipped:[{key, lang, why}], files}. Writes nothing when `dry`. Each accepted string
+    goes to every catalog that holds the key, and only if its placeholders match the string now in that catalog."""
     rows = select_rows(copy, keys)
+    use_langs = apply_languages(copy, langs)
     screen = {}
     try:
         screen = load_screen(repo, copy.get("screen", ""))
@@ -661,11 +718,11 @@ def apply_rows(copy: dict, repo: pathlib.Path, keys: list[str] | None = None, la
     catalogs, notes = copy_catalogs.find_catalogs(repo, screen, [r["key"] for r in rows])
     rep: dict = dict(selected=len(rows), changed=[], same=0, skipped=[], files=[], notes=notes)
     for r in rows:
-        cat = copy_catalogs.lookup(catalogs, r["key"])
-        if cat is None:
+        holders = [c for c in catalogs if c.has(r["key"])]
+        if not holders:
             rep["skipped"].append(dict(key=r["key"], lang="*", why="the key is in no catalog; apply never adds a key"))
             continue
-        for lang in langs or LANGS:
+        for lang in use_langs:
             text = str(r.get(lang) or "")
             if not text.strip():
                 continue
@@ -675,13 +732,19 @@ def apply_rows(copy: dict, repo: pathlib.Path, keys: list[str] | None = None, la
             if invisible.find(text):
                 rep["skipped"].append(dict(key=r["key"], lang=lang, why="hidden character in the text"))
                 continue
-            status = cat.set(r["key"], lang, text)
-            if status == "changed":
-                rep["changed"].append(dict(key=r["key"], lang=lang, catalog=cat.label))
-            elif status == "same":
-                rep["same"] += 1
-            else:
-                rep["skipped"].append(dict(key=r["key"], lang=lang, why=status.removeprefix("skipped: ")))
+            for cat in holders:
+                live = cat.get(r["key"], lang) or (cat.get(r["key"], "en") if lang != "en" else None) or ""
+                if live and placeholders(text) != placeholders(live):
+                    rep["skipped"].append(dict(key=r["key"], lang=lang, why=f"placeholders differ from the current "
+                                                                             f"string in {cat.label}"))
+                    continue
+                status = cat.set(r["key"], lang, text)
+                if status == "changed":
+                    rep["changed"].append(dict(key=r["key"], lang=lang, catalog=cat.label))
+                elif status == "same":
+                    rep["same"] += 1
+                else:
+                    rep["skipped"].append(dict(key=r["key"], lang=lang, why=status.removeprefix("skipped: ")))
     if not dry:
         for c in catalogs:
             rep["files"] += [copy_catalogs._rel(p, repo) for p in c.save()]
@@ -719,6 +782,12 @@ def _gh(args: list[str], cwd: pathlib.Path) -> tuple[int, str]:
     return r.returncode, (r.stdout + r.stderr).strip()
 
 
+def _tail(text: str, n: int = 400) -> str:
+    """The end of a command's output: the reason is there, not in the first lines."""
+    t = text.strip()
+    return t if len(t) <= n else "..." + t[-n:]
+
+
 def pr_body(copy: dict, rep: dict) -> str:
     keys = sorted({c["key"] for c in rep["changed"]})
     rows = {r["key"]: r for r in copy["rows"]}
@@ -742,6 +811,8 @@ def apply_pr(copy: dict, repo: pathlib.Path, keys: list[str] | None, langs: list
     code, out = _git(["rev-parse", "--show-toplevel"], repo)
     if code != 0:
         raise RuntimeError(f"{repo} is not a git repo")
+    select_rows(copy, keys)                          # a usage error is raised before anything is created
+    apply_languages(copy, langs)
     top = pathlib.Path(out.splitlines()[0])
     code, base = _git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], top)
     base = base if code == 0 and base else "HEAD"
@@ -749,7 +820,7 @@ def apply_pr(copy: dict, repo: pathlib.Path, keys: list[str] | None, langs: list
     wt = pathlib.Path.home() / ".worktrees" / top.name / branch.replace("/", "-")
     code, out = _git(["worktree", "add", "-b", branch, str(wt), base], top)
     if code != 0:
-        raise RuntimeError(f"git worktree add failed: {out}")
+        raise RuntimeError(f"git worktree add failed: {_tail(out)}")
     rep = apply_rows(copy, wt, keys, langs)
     if not rep["changed"]:
         _git(["worktree", "remove", "--force", str(wt)], top)
@@ -759,15 +830,16 @@ def apply_pr(copy: dict, repo: pathlib.Path, keys: list[str] | None, langs: list
         return rep
     nkeys = len({c["key"] for c in rep["changed"]})
     title = f"Copy: {copy['screen']} strings ({nkeys} keys)"
-    steps = [("add", _git(["add", "--", *rep["files"]], wt)),
-             ("commit", _git(["commit", "-q", "-m", f"{title}\n\nApplied by teyla copy apply from the reviewed copy table."], wt)),
-             ("push", _git(["push", "-u", "origin", branch], wt))]
-    for name, (c, o) in steps:
+    steps = [("add", ["add", "--", *rep["files"]]),
+             ("commit", ["commit", "-q", "-m", f"{title}\n\nApplied by teyla copy apply from the reviewed copy table."]),
+             ("push", ["push", "-u", "origin", branch])]
+    for name, argv in steps:                         # one step at a time: a refused commit is never followed by a push
+        c, o = _git(argv, wt)
         if c != 0:
-            raise RuntimeError(f"git {name} failed: {o} (the worktree is kept at {wt})")
+            raise RuntimeError(f"git {name} failed: {_tail(o)} (the worktree is kept at {wt})")
     code, out = _gh(["pr", "create", "--title", title, "--body", pr_body(copy, rep)], wt)
     if code != 0:
-        raise RuntimeError(f"gh pr create failed: {out} (the branch {branch} is pushed; worktree kept at {wt})")
+        raise RuntimeError(f"gh pr create failed: {_tail(out)} (the branch {branch} is pushed; worktree kept at {wt})")
     rep["pr"] = out.strip().splitlines()[-1] if out.strip() else ""
     rep["branch"] = branch
     _git(["worktree", "remove", str(wt)], top)
@@ -852,21 +924,27 @@ def cmd_copy(args) -> int:
                     except voice.ChartError as e:
                         print(f"teyla copy judge: {e}", file=sys.stderr)
             code_judge(copy, charts)
-            model_error = ""
+            model_error = unjudged_note = ""
             if args.model:
                 if not net.gate("copy judge --model (it sends the table to the second model provider)"):
                     return 2
-                info = model_judge(copy, charts, args.judge_model or JUDGE_MODEL)
+                info = model_judge(copy, charts, args.judge_model or JUDGE_MODEL, args.allow_unjudged)
                 model_error = info.get("error", "")
                 copy["model_pass"] = info
+                if info.get("unjudged") and not args.allow_unjudged:
+                    shown = ", ".join(info["unjudged"][:3]) + ("..." if len(info["unjudged"]) > 3 else "")
+                    unjudged_note = (f"the model gave no verdict for {len(info['unjudged'])} rows ({shown}); they are not "
+                                     "assessed and apply skips them; --allow-unjudged accepts the code verdict")
             taste.write_json(p, copy)
             taste._write_atomic(p.with_name("copy.md") if p.name == "copy.json" else p.with_suffix(".md"), render_table(copy))
             print(json.dumps(copy, indent=1, ensure_ascii=False) if args.json else judge_summary(copy))
             if model_error:
                 print(f"teyla copy judge: the model pass failed ({model_error}); the code verdicts stand", file=sys.stderr)
+            if unjudged_note:
+                print(f"teyla copy judge: {unjudged_note}", file=sys.stderr)
             if any(r.get("verdict") == "fail" for r in copy["rows"]):
                 return 1
-            return 3 if model_error else 0
+            return 3 if model_error or unjudged_note else 0
         if action == "apply":
             path, repo_arg = _words(args, 2, "apply <copy.json> <repo> [--keys k1,k2] [--pr]")
             copy = load_copy(pathlib.Path(path).expanduser())
@@ -916,6 +994,8 @@ def register(sp):
     q.add_argument("--force", action="store_true", help="write: replace a copy.json that has kept rows")
     q.add_argument("--model", action="store_true", help=f"judge: add the second family ({JUDGE_MODEL} through codex-lane); sends the table to the provider")
     q.add_argument("--judge-model", metavar="ID", help=f"judge --model: the model (default {JUDGE_MODEL})")
+    q.add_argument("--allow-unjudged", action="store_true",
+                   help="judge --model: keep the code's pass for a row the model gave no verdict for (default: not assessed, exit 3)")
     q.add_argument("--keys", metavar="K1,K2", help="apply: only these keys, kept or not")
     q.add_argument("--pr", action="store_true", help="apply: do it in a new worktree, commit on a branch, push and open the PR (never merges)")
     q.add_argument("--branch", metavar="NAME", help="apply --pr: the branch name (default copy/<screen>-<date>)")
