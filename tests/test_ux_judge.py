@@ -274,6 +274,8 @@ def test_calibration_passes_at_16_of_20_and_writes_the_result(repo, monkeypatch,
     saved = json.loads(ux_judge.result_path(repo).read_text())
     assert saved["calibrated"] is True and saved["agree"] == 16
     assert ux_judge.calibration_note(repo) == ""
+    assert "not with other-model" in ux_judge.calibration_note(repo, model="other-model")
+    assert "both orders" in ux_judge.calibration_note(repo, both_orders=True)
     text = ux_judge.render_calibration(res)
     assert "16 of 20 pair(s) (16 of 20 needed)" in text and "calibrated: the judge may be used" in text
 

@@ -382,8 +382,10 @@ def calibrate(repo: pathlib.Path, *, model: str = MODEL, both_orders: bool = Fal
     return out
 
 
-def calibration_note(repo: pathlib.Path | None) -> str:
-    """One line for stderr about whether this product's judge was calibrated, or '' when it was."""
+def calibration_note(repo: pathlib.Path | None, *, model: str = MODEL, both_orders: bool = False) -> str:
+    """One line for stderr about whether this product's judge was calibrated, or '' when it was.
+
+    A calibration holds for the model and order mode it ran with; another model or mode is uncalibrated."""
     if repo is None:
         return "note: no --repo, so the judge is not calibrated on a product: treat the verdict as advice"
     try:
@@ -392,6 +394,10 @@ def calibration_note(repo: pathlib.Path | None) -> str:
         return (f"note: the judge is not calibrated on {repo.name} (no result; `teyla ux judge --calibrate {repo.name}` "
                 f"needs {CAL_MIN_PAIRS} decided pairs): treat the verdict as advice")
     if rec.get("calibrated") is True:
+        if rec.get("model") != model or bool(rec.get("both_orders")) != both_orders:
+            return (f"note: the judge was calibrated on {repo.name} with {rec.get('model')}"
+                    f"{' (both orders)' if rec.get('both_orders') else ''}, not with {model}"
+                    f"{' (both orders)' if both_orders else ''}: treat the verdict as advice")
         return ""
     return (f"note: the judge is not calibrated on {repo.name} (last run {rec.get('date', '?')}: agreed on "
             f"{rec.get('agree', '?')} of {rec.get('pairs', '?')}; {CAL_MIN_AGREE} of {CAL_MIN_PAIRS} are needed): treat the verdict as advice")
@@ -459,7 +465,7 @@ def cmd_judge(args) -> int:
     except (JudgeError, FileNotFoundError) as e:
         print(f"teyla ux judge: {e}", file=sys.stderr)
         return 1
-    note = calibration_note(repo)
+    note = calibration_note(repo, model=model, both_orders=args.both_orders)
     if args.json:
         print(json.dumps({**res, "calibration_note": note}, indent=1, ensure_ascii=False))
     else:
