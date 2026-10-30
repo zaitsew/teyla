@@ -1,0 +1,71 @@
+# brand/kit.toml: the brand kit of one product, a folder and not a mood (docs/STUDIO.md S10, docs/KIT.md).
+# `teyla kit init` copies this file and fills what DESIGN.md already says. `teyla kit check` fails
+# while a `{{` placeholder is left, a piece is missing, an asset has no provenance, or there are two characters.
+# Everything here is English except the taglines, which are written per language (never translated).
+version = 1
+
+[product]
+name = "{{product}}"
+promise = "{{one line: what the product does for whom}}"
+
+[tagline]
+en = "{{tagline in English}}"
+es = "{{tagline in Spanish, written from the brief}}"
+ru = "{{tagline in Russian, written from the brief}}"
+
+[tokens]
+path = "{{design/tokens}}"            # the DTCG token source the visuals take colours from
+
+[shots]                               # `teyla kit shots`: the frame around a store screenshot
+background = "#1F2937"
+text = "#FFFFFF"
+accent = "#7C9CFF"
+
+# One canonical character per product. Two characters fail `teyla kit check`.
+[mascot]
+name = "{{mascot name}}"
+sheet = "{{About 60 words: what the character is, its shape, colours, face, proportions, what it wears, what it never does. Write it so an image model can keep it the same across fifty scenes.}}"
+refs = []                             # brand/mascot/ref-*.png: front, side, back, three expressions
+model = "nano-banana-2.1"             # or "gpt-image-2"; lock it after `teyla kit compare`
+
+[mascot.settings]                     # locked: change them only with a new comparison
+aspect_ratio = "1:1"
+temperature = 0.6
+quality = "medium"                    # gpt-image-2 only: low, medium or high
+refs_max = 6                          # reference images sent with every call
+
+[icon]
+source = "brand/icon/icon.svg"        # the 1024 px source of every store icon
+
+[voice]
+chart = "brand/voice"                 # a directory with en.md, es.md and ru.md (templates/voice/VOICE.md)
+
+# Channels and their formats. `per_week` is the cadence of the weekly flagship pack.
+[channels.x]
+media = "image"
+ratio = "16:9"
+max_chars = 280
+per_week = 1
+
+[channels.instagram]
+media = "image"
+ratio = "4:5"
+max_chars = 2200
+per_week = 1
+
+[channels.threads]
+media = "none"
+ratio = "none"
+max_chars = 500
+per_week = 1
+
+[banned]                              # words no tagline, post or character sheet may use
+words = ["delve", "seamless*", "game-changer", "cutting-edge", "unlock*"]
+
+# One entry per file under brand/ that a person or a model made. `teyla kit image` appends its own.
+# [[provenance]]
+# asset = "brand/mascot/ref-1.png"
+# made_by = "model: nano-banana-2.1"   # or "human: <name>"
+# prompt = "the prompt, for a model"
+# references = []
+# date = "2026-01-15"

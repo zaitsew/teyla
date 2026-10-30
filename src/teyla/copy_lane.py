@@ -15,7 +15,7 @@ that `write` reads. It makes no network call. For a voice screen (`kind: voice`,
 states are ready, listening, processing, responding, interrupted and failed, and the brief asks for what the
 user hears and reads in each.
 
-`write` sends one call per language to Sonnet 5.5 (`claude -p`, no tools, docs/PRIVACY.md row 25). Each call
+`write` sends one call per language to Sonnet 5.5 (`claude -p`, no tools, docs/PRIVACY.md row 29). Each call
 holds the screen, the glossary term and the voice chart of that language and the strings it shows today in
 that language: never another language's text, so Spanish, Russian and English are each written from the brief,
 not translated. Spanish is es-ES. The result is `copy.md` and `copy.json`, one table: key, control, state,
@@ -36,14 +36,14 @@ and marks it pass or fail with one reason:
     hidden       a zero-width or bidi character
 
 `--model` adds a second model family: GPT-6.1 Sol through `codex-lane`, read-only, once for the rows that passed
-the code checks, against the voice charts, the glossary and the budgets (docs/PRIVACY.md row 26). It writes
+the code checks, against the voice charts, the glossary and the budgets (docs/PRIVACY.md row 30). It writes
 verdicts into copy.json and copy.md. Exit 1 when a row fails.
 
 `apply` writes the kept rows into the catalogs (xcstrings, strings.xml, i18n files: copy_catalogs.py), never
 adding, removing or reordering a key and never touching a language that no row names. A row is kept when its
 `keep` is true; with no `keep` anywhere, every row that passed the judge; `--keys` overrides both. A row with a
 different placeholder than English is never written. `--pr` does the work in a new worktree of the repo, commits
-on a branch, pushes it and opens the PR with `gh` (docs/PRIVACY.md row 27). It never merges.
+on a branch, pushes it and opens the PR with `gh` (docs/PRIVACY.md row 31). It never merges.
 """
 from __future__ import annotations
 

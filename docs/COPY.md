@@ -63,7 +63,7 @@ what the user hears and reads in each; a state without a note says `(write it)`.
 
 ## `teyla copy write <brief>`
 
-One call per language to Sonnet 5.5 (`claude -p`, no tools, nothing saved; [PRIVACY](PRIVACY.md) row 25). Each call holds
+One call per language to Sonnet 5.5 (`claude -p`, no tools, nothing saved; [PRIVACY](PRIVACY.md) row 29). Each call holds
 the screen, that language's glossary term, that language's voice chart and that language's current strings. It never
 holds another language's text. `--lang en,es` writes some; the others stay as they were. `--dry` prints each system
 prompt and payload and calls nothing. Safe mode refuses `write` without `--dry`.
@@ -98,7 +98,7 @@ The verb check is a heuristic: a small word list per language (`src/teyla/copy_l
 A fail is a reason to read the row, and an override is `keep: true` on the row.
 
 `--model` adds the second family: GPT-6.1 Sol through `~/ops/bin/codex-lane`, read-only, once, for the rows that passed
-the code checks, against the chart, the glossary and the budgets ([PRIVACY](PRIVACY.md) row 26). It can turn a pass into a
+the code checks, against the chart, the glossary and the budgets ([PRIVACY](PRIVACY.md) row 30). It can turn a pass into a
 fail. It never turns a fail into a pass. If the lane fails, the code verdicts stay and the exit is 3. Safe mode refuses it.
 
 ## `teyla copy apply <copy.json> <repo>`
@@ -120,7 +120,7 @@ line that says why. A key found in several catalogs is written to the first one.
 changes nothing and leaves the file byte-identical.
 
 **`--pr`** works in a new worktree under `~/.worktrees/<repo>/<branch>` cut from the default branch, so the checkout you
-use stays as it is. It commits, pushes the branch (never with force), opens the PR with `gh` ([PRIVACY](PRIVACY.md) row 27),
+use stays as it is. It commits, pushes the branch (never with force), opens the PR with `gh` ([PRIVACY](PRIVACY.md) row 31),
 and removes the worktree. It never merges. With nothing changed it opens nothing.
 
 ## `teyla voice chart <repo>`

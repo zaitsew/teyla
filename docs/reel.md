@@ -6,8 +6,9 @@ a longer episode. The reader should understand it at phone size, with the sound 
 under a minute: what was asked, what the agents did, and what shipped.
 
 Status: shipped in 0.25.0. `list`, `story`, `check` and `render` all work; `render` needs the `reel` extra and
-`ffmpeg`. Planned and not built: the items under "Not in v0" (voice-over and music, several sessions in one reel,
-landscape and square formats, an LLM-written headline).
+`ffmpeg`. `teyla reel product` (see below) adds a product demo cut from a screen recording, with a square format and
+an optional voice-over. Planned and not built: the items under "Not in v0" (music, several sessions in one reel,
+landscape format, an LLM-written headline).
 
 ## Why
 
@@ -147,9 +148,25 @@ renderer draws only `Story` fields, and a test asserts that every text it draws 
 
 ## Not in v0
 
-Voice-over and music, picture-in-picture with an iPhone screen recording (a video editor composes
-that), several sessions in one reel, landscape and square formats, and an LLM-written
-headline.
+Music, picture-in-picture with an iPhone screen recording in `render` (a video editor composes
+that), several sessions in one reel, a landscape format, and an LLM-written
+headline. A square format and a voice-over exist for `teyla reel product` only.
+
+## `teyla reel product`
+
+`render` draws a terminal story from a session. `product` takes a recording of the app itself and puts the captions
+of the product's copy table on it:
+
+```
+teyla reel product <repo> --input demo.mov --copy copy.json [--lang en,es,ru] [--formats vertical,square]
+                   [--voice [--script voiceover.json]] [--yes] [-o DIR] [--dry]
+```
+
+Per language it writes `product-vertical.mp4` (1080x1920), `product-square.mp4` (1080x1080) and `captions.srt` under
+`brand/out/reel/<lang>/`. Captions go through the same redaction as `render`: a caption with a secret, a private
+term, an address or a path stops the run. `--voice` calls the OpenAI speech API, prints its price first and refuses
+without `--yes` (`docs/PRIVACY.md`, row 28). Captions, the plain-captions format, timing and the other options are in
+[`docs/KIT.md`](KIT.md).
 
 ## Implementation notes (v0, as built)
 

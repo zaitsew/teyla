@@ -473,7 +473,7 @@ uv tool uninstall teyla    # then remove the command; with pipx: pipx uninstall 
 - [WIKI](WIKI.md): the facts store
 - [WORK](WORK.md): safe mode for a work laptop
 - [PRIVACY](PRIVACY.md): every call that leaves your machine
-- [BRAND](BRAND.md), [UX](UX.md), [STUDIO](STUDIO.md), [TASTE](TASTE.md), [COPY](COPY.md): the mark, the colours, the voice, the UX standard, the concept for review by voice, drift, copy and visuals, and the review inbox with the taste ledger, and strings written per language from a brief
+- [BRAND](BRAND.md), [UX](UX.md), [STUDIO](STUDIO.md), [TASTE](TASTE.md), [JUDGE](JUDGE.md), [SCOUT](SCOUT.md), [KIT](KIT.md), [COPY](COPY.md): the mark, the colours, the voice, the UX standard, the concept for review by voice, drift, copy and visuals, the review inbox with the taste ledger, the pairwise judge with its reference library, the weekly design scout, and the brand kit with store shots, reels and posts, and the copy lane with its voice charts
 - [REVIEW](REVIEW.md): the iPhone review overlay, the capture format and how a capture reaches the Mac
 - [MATRIX](MATRIX.md): the capture matrix for UI drift: `teyla ux shots`, `diff` and `accept`, the `design/tour.yaml` manifest and what the app must honor
 - [MANUAL](MANUAL.md): the whole method and the numbers behind each threshold
