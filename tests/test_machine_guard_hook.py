@@ -243,6 +243,13 @@ COMMAND_AFTER_TEXT = [
     ("xcrun simctl boot ABC && git commit -F - <<'EOF'\nxcodebuild test\nEOF", ["load --admit sim"]),
     ("cat <<EOF | claude -p\nxcodebuild test\nEOF", ["load --admit lane"]),
     ("cat <<< foo\nxcodebuild test", ["load --admit build"]),
+    ("cat <<<true\nxcodebuild test\ntrue", ["load --admit build"]),
+    # a body that a shell reads, or an unquoted body that substitutes, is script
+    ("bash <<'EOF'\nxcodebuild test\nEOF", ["load --admit build"]),
+    ("sh -s <<EOF\nxcrun simctl boot ABC\nEOF", ["load --admit sim"]),
+    ("cat <<'EOF' | bash\nxcodebuild test\nEOF", ["load --admit build"]),
+    ("cat <<EOF\n$(xcodebuild test)\nEOF", ["load --admit build"]),
+    ("cat <<EOF\n`xcodebuild test`\nEOF", ["load --admit build"]),
     ('echo "a << b"\nxcodebuild test', ["load --admit build"]),
     ("cat <<EOF\nxcodebuild test", ["load --admit build"]),          # never terminated: nothing is dropped
     ("cat <<EOF\nxcodebuild test\nEOF2\nswift build", ["load --admit build"]),

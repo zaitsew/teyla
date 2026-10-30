@@ -28,6 +28,8 @@
 # `sh -c` / `bash -c` is classified the same way, recursively. The body of a here-document is
 # text, not commands: it is dropped before the split (2026-10-30: a `git commit -F - <<'EOF'`
 # whose message said "simctl boot", then "xcodebuild", was refused as a sim and as a build).
+# Except a body a shell reads (`bash <<EOF`, `... <<EOF | sh`) and an unquoted body that
+# substitutes ($( ) or a backtick): those run, so they are classified.
 #   build  xcodebuild (not -list -showsdks -version -showBuildSettings -showdestinations -help),
 #          swift|cargo|bazel with `build` or `test` among the args before any `--`,
 #          gradle/gradlew with a task
@@ -155,7 +157,7 @@ kinds=$(printf '%s' "$payload" | awk '
   # heredoc message says "simctl boot" runs no simulator. Drop each body and its terminator line; the line that
   # opens it stays. Quote state is tracked so `echo "a << b"` and `<<<` open nothing, and a `<<` inside a
   # double-quoted $( ) does (the usual `-m "$(cat <<EOF ... EOF)"`). A delimiter that is never found strips nothing.
-  function strip_heredocs(s,    out, len, i, ch, nx, st, ns, pend, np, j, w, dq, tabs, lim, e, line, found, k, sub1) {
+  function strip_heredocs(s,    out, len, i, ch, nx, st, ns, pend, np, j, w, dq, tabs, lim, e, line, found, k, sub1, cur, rem) {
     out = ""; len = length(s); ns = 1; st[1] = "c"; np = 0
     for (i = 1; i <= len; i++) {
       ch = substr(s, i, 1); nx = substr(s, i + 1, 1)
@@ -176,7 +178,7 @@ kinds=$(printf '%s' "$payload" | awk '
           st[ns] = "c" (substr(st[ns], 2) - 1)
         }
       }
-      if (ch == "<" && nx == "<" && substr(s, i + 2, 1) != "<") {
+      if (ch == "<" && nx == "<" && substr(s, i + 2, 1) != "<" && substr(s, i - 1, 1) != "<") {
         j = i + 2; tabs = 0
         if (substr(s, j, 1) == "-") { tabs = 1; j++ }
         while (substr(s, j, 1) == " " || substr(s, j, 1) == "\t") j++
@@ -189,7 +191,16 @@ kinds=$(printf '%s' "$payload" | awk '
           if (dq == "\\") j++
           while (j <= len && substr(s, j, 1) !~ /[ \t\n;&|()<>\047"]/) { w = w substr(s, j, 1); j++ }
         }
-        if (w != "") { pend[++np] = w; pt[np] = tabs; out = out substr(s, i, j - i); i = j - 1; continue }
+        if (w != "") {
+          # A body that a shell reads is script, not text: `bash <<EOF`, `cat <<EOF | sh`. So is an unquoted
+          # body that substitutes ($( ) or a backtick). Those stay in the text and are classified.
+          cur = out; sub(/^.*\n/, "", cur)
+          rem = substr(s, j, index(substr(s, j) "\n", "\n") - 1)
+          pend[++np] = w; pt[np] = tabs
+          pk[np] = (cur ~ /(^|[ \t;&|(\/])(sh|bash|zsh|dash)([ \t]+-[^ \t]*)*[ \t]*$/ || rem ~ /\|[ \t]*([A-Za-z]+[ \t]+)?([^ \t]*\/)?(sh|bash|zsh|dash)([ \t]|$)/)
+          pu[np] = (dq != "\047" && dq != "\"" && dq != "\\")
+          out = out substr(s, i, j - i); i = j - 1; continue
+        }
       }
       if (ch == "\n" && np > 0) {
         out = out ch; i++
@@ -202,7 +213,7 @@ kinds=$(printf '%s' "$payload" | awk '
             e = e + (sub1 ? sub1 : length(line) + 1)
             if (line == lim) { found = 1; break }
           }
-          if (found) i = e
+          if (found && !pk[k] && !(pu[k] && substr(s, i, e - i) ~ /\$\(|`/)) i = e
         }
         np = 0; i--
         continue
