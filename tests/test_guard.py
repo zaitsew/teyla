@@ -601,3 +601,12 @@ def test_a_calm_machine_with_a_lot_of_swap_stays_ok(m, clock):
         m.sysctl = swap_sysctl(14)
         assert tick(m)["verdict"].level == "OK"
         clock.advance(1)
+
+
+def test_the_tick_hands_its_booted_simulators_to_the_crash_loop_pass(m, monkeypatch):
+    seen = []
+    monkeypatch.setattr(guard.storage_sims, "stop_crash_loops",
+                        lambda udids, dry=False: seen.append((list(udids), dry)) or [f"shut down {udids[0]}"])
+    m.add(40, f"launchd_sim /x/Devices/{UDID}/data/var/run/launchd_bootstrap.plist", started_s_ago=120)
+    res = tick(m, dry=True)
+    assert seen == [([UDID], True)] and res["lines"][-1] == f"shut down {UDID}"

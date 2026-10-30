@@ -346,3 +346,76 @@ def test_time_is_not_needed_for_status(monkeypatch):
     # `now` defaults to the wall clock: a status call with a fake listing must still work.
     st = storage_sims.status(devs=_listing(1), procs=[], record=False)
     assert abs(st["booted"][0]["since"] - time.time()) < 5
+
+
+# --- a boot that crash-loops ----------------------------------------------------------------------
+
+def booted_at(tmp_path, n: int, when: float) -> None:
+    f = storage_sims.devices_root() / udid(n) / "data" / "var" / "run" / "launchd_bootstrap.plist"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("<plist/>")
+    os.utime(f, (when, when))
+
+
+def springboard_report(root, name: str, n: int, when: float) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    f = root / f"SpringBoard-{name}.ips"
+    f.write_text('{"bug_type":"309"}\n{"coalitionName":"com.apple.CoreSimulator.SimDevice.%s"}\n' % udid(n))
+    os.utime(f, (when, when))
+
+
+@pytest.fixture
+def reports(tmp_path, monkeypatch):
+    from teyla import crash
+    root = tmp_path / "DiagnosticReports"
+    monkeypatch.setattr(crash, "DEFAULT_ROOTS", [root])
+    return root
+
+
+def test_springboard_crashes_since_the_boot_make_a_crash_loop(tmp_path, reports):
+    booted_at(tmp_path, 1, NOW - 10 * MIN)
+    springboard_report(reports, "old", 1, NOW - 60 * MIN)     # an earlier boot of the same device
+    springboard_report(reports, "a", 1, NOW - 9 * MIN)
+    assert storage_sims.crash_looping(udid(1)) == 0, "one crash is not a loop"
+    springboard_report(reports, "b", 1, NOW - 8 * MIN)
+    springboard_report(reports, "other", 2, NOW - 8 * MIN)    # another device's report
+    assert storage_sims.crash_looping(udid(1)) == 2
+    assert storage_sims.crash_looping(udid(2)) == 0, "no boot marker: unknown, never broken"
+
+
+def test_reap_shuts_down_a_crash_looping_simulator_even_in_use(tmp_path, monkeypatch, reports):
+    sim = install(monkeypatch, (udid(1), "Pool 1", "Booted"), (udid(2), "Pool 2", "Booted"))
+    for n in (1, 2):
+        booted_at(tmp_path, n, NOW - 10 * MIN)
+    for i in range(3):
+        springboard_report(reports, str(i), 1, NOW - (9 - i) * MIN)
+    busy = [f"xcodebuild test-without-building id={udid(n)}" for n in (1, 2)]
+    res = storage_sims.reap(cfg(), now=NOW, procs=busy)
+    assert sim.verbs("shutdown") == [udid(1)]
+    assert res["lines"] == [f"shut down {udid(1)} (Pool 1), SpringBoard crashed 3x since boot"]
+    assert "springboard-crash-loop" in storage.LOG_PATH.read_text()
+    assert storage_sims.render_status(res["status"])[0].endswith("Pool 1  SpringBoard crashed 3x since boot")
+
+
+def test_a_crash_looping_simulator_idle_past_the_limit_is_shut_down_once(tmp_path, monkeypatch, reports):
+    sim = install(monkeypatch, (udid(1), "Pool 1", "Booted"))
+    booted_at(tmp_path, 1, NOW - 40 * MIN)
+    seed_idle_since(1, NOW - 35 * MIN)
+    for i in range(2):
+        springboard_report(reports, str(i), 1, NOW - (30 - i) * MIN)
+    storage_sims.reap(cfg(), now=NOW, procs=[])
+    assert sim.verbs("shutdown") == [udid(1)]
+
+
+def test_the_guard_pass_stops_only_crash_loops_and_dry_stops_nothing(tmp_path, monkeypatch, reports):
+    sim = install(monkeypatch, (udid(1), "Pool 1", "Booted"), (udid(2), "Pool 2", "Booted"))
+    for n in (1, 2):
+        booted_at(tmp_path, n, NOW - 10 * MIN)
+    for i in range(2):
+        springboard_report(reports, str(i), 2, NOW - (9 - i) * MIN)
+    assert storage_sims.stop_crash_loops([udid(1), udid(2)], dry=True) == [
+        f"would shut down {udid(2)} (crash loop), SpringBoard crashed 2x since boot"]
+    assert sim.calls == []
+    assert storage_sims.stop_crash_loops([udid(1), udid(2), "not-a-udid"]) == [
+        f"shut down {udid(2)} (crash loop), SpringBoard crashed 2x since boot"]
+    assert sim.verbs("shutdown") == [udid(2)]

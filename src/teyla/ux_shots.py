@@ -38,6 +38,8 @@ import time
 import tomllib
 from collections.abc import Callable
 
+from . import storage_sims
+
 MANIFEST_REL = "design/tour.yaml"
 SHOTS_REL = "design/shots"
 RESERVED_DIRS = ("baseline", "diff")
@@ -663,20 +665,34 @@ class Simulator:
         if found is None:
             raise SimulatorError(f"no available simulator named {self.name!r} (xcrun simctl list devices)")
         self.udid, booted = found
+        if booted and storage_sims.crash_looping(self.udid):
+            # Booted without its main display: SpringBoard dies at every launch and a test never starts.
+            self.runner.run(["xcrun", "simctl", "shutdown", self.udid], timeout=60)
+            booted = False
         if not booted:
-            # Mark it ours before the boot: a boot that fails halfway still gets a shutdown.
-            self.booted_by_us = True
-            r = self.runner.run(["xcrun", "simctl", "boot", self.udid], timeout=120)
-            if r.returncode != 0 and "current state: Booted" not in (r.stderr + r.stdout):
-                raise SimulatorError(f"simctl boot failed: {(r.stderr or r.stdout).strip()[-300:]}")
-            r = self.runner.run(["xcrun", "simctl", "bootstatus", self.udid], timeout=240)
-            if r.returncode != 0:
-                raise SimulatorError("the simulator did not finish booting")
+            self._boot()
         self._status_bar = True
         self.runner.run(["xcrun", "simctl", "status_bar", self.udid, "override", "--time", clock, "--batteryState",
                          "charged", "--batteryLevel", "100", "--cellularMode", "active", "--cellularBars", "4",
                          "--wifiMode", "active", "--wifiBars", "3"], timeout=30)
         return self.udid
+
+    def _boot(self) -> None:
+        """Boot, and boot once more when the first boot crash-loops (a bad boot is not sticky)."""
+        # Mark it ours before the boot: a boot that fails halfway still gets a shutdown.
+        self.booted_by_us = True
+        for attempt in (1, 2):
+            r = self.runner.run(["xcrun", "simctl", "boot", self.udid], timeout=120)
+            if r.returncode != 0 and "current state: Booted" not in (r.stderr + r.stdout):
+                raise SimulatorError(f"simctl boot failed: {(r.stderr or r.stdout).strip()[-300:]}")
+            r = self.runner.run(["xcrun", "simctl", "bootstatus", self.udid], timeout=240)
+            crashes = storage_sims.crash_looping(self.udid)
+            if r.returncode == 0 and not crashes:
+                return
+            if not crashes:
+                raise SimulatorError("the simulator did not finish booting")
+            self.runner.run(["xcrun", "simctl", "shutdown", self.udid], timeout=60)
+        raise SimulatorError(f"{self.udid}: SpringBoard crashed {crashes}x after each of two boots")
 
     def release(self) -> None:
         """Never raises: it runs in a `finally`."""

@@ -5,7 +5,7 @@
 
 `tick` is what the optional `com.zaitsew.teyla.load` launchd agent runs every minute
 (`teyla config set guard.agent=true && teyla routine install`). It is cheap (one `sysctl`, one `ps`; no
-`simctl`, no `lsof`) and it never raises: any failure goes to stderr and the exit status is 0.
+`simctl` but to stop a crash-looping simulator, no `lsof`) and it never raises: any failure goes to stderr and the exit status is 0.
 
 1. Record. `load.snapshot()` + `load.assess()` with the trend of the last minutes (`load.current_trend()`)
    -> one line in `~/.teyla/load.tsv`, with the swap-out and page-out counters and rates. The level written is
@@ -44,6 +44,11 @@
    (6 h) the tick runs the full sweep instead: caches, Docker and DerivedData, whole caches under
    `sweep_critical_free_gb`. The temp sweep alone removed 0 B for a day while the disk sat between 3.6 and
    20 GB free; the full one then gave back 12 GB (2026-10-27). What it removed goes to the sweep log.
+
+6. Crash loops. A booted simulator whose SpringBoard crashed twice since its boot came up without its
+   main display; each crash puts a "SpringBoard quit unexpectedly" dialog on the Mac (12 in six minutes
+   on 2026-10-30). The tick shuts it down (`storage_sims.stop_crash_loops`). It reads the report files and
+   device folders only; `simctl` runs for a broken device alone.
 """
 from __future__ import annotations
 
@@ -57,7 +62,7 @@ import sys
 import time
 from typing import Callable
 
-from . import config, load, storage, storage_procs
+from . import config, load, storage, storage_procs, storage_sims
 
 ALERT_NAME = "load.alert"
 ALERT_STATE = "guard-alert.json"
@@ -406,6 +411,7 @@ def tick(conf: dict | None = None, env: Env | None = None, dry: bool = False) ->
     if idle_limit_min(conf) > 0:
         res["lines"] += reap(idle_daemons(snap, conf, now, record=not dry), env, dry=dry)
     res["lines"] += disk_sweep(snap, conf, now, dry=dry)
+    res["lines"] += storage_sims.stop_crash_loops(snap.procs.sim_udids, dry=dry)
     return res
 
 

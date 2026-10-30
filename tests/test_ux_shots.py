@@ -1025,3 +1025,24 @@ def test_write_shots_replaces_only_variant_folders(tmp_path):
     ux.write_shots(repo, caps, manifest_of(), {"variants": []})
     assert (root / "en-light" / "today.loaded.png").is_file() and not (root / "en-light" / "stale.loaded.png").exists()
     assert (root / "baseline" / "keep.txt").is_file() and (root / "notes" / "keep.txt").is_file()
+
+
+def test_a_booted_simulator_that_crash_loops_is_booted_fresh_not_reused(tmp_path, monkeypatch):
+    pytest.importorskip("PIL")
+    devices = json.loads(json.dumps(DEVICES))
+    devices["devices"]["com.apple.CoreSimulator.SimRuntime.iOS-18-2"][0]["state"] = "Booted"
+    loops = iter([5, 0])   # broken as found; healthy after our own boot
+    monkeypatch.setattr(ux.storage_sims, "crash_looping", lambda udid: next(loops))
+    r = FakeRunner(tmp_path, devices=devices)
+    go(tmp_path, r)
+    order = [c[2] for c in r.calls if c[:2] == ["xcrun", "simctl"] and c[2] in ("shutdown", "boot")]
+    assert order == ["shutdown", "boot", "shutdown"], "shut down the broken boot, boot ours, shut ours down at the end"
+
+
+def test_a_boot_that_crash_loops_is_tried_once_more_then_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(ux.storage_sims, "crash_looping", lambda udid: 3)
+    r = FakeRunner(tmp_path)
+    with pytest.raises(ux.SimulatorError, match="SpringBoard crashed 3x after each of two boots"):
+        go(tmp_path, r)
+    assert len(r.issued("simctl", "boot")) == 2
+    assert not r.issued("xcodebuild", "test-without-building")
