@@ -141,6 +141,21 @@ def test_vet_rejects_a_private_term_a_path_and_an_address(tmp_path):
     assert product.vet({"en": [product.Caption("Plan your day")]}, repo) == []
 
 
+def test_vet_allows_the_product_names_and_nothing_else(tmp_path):
+    repo = make_repo(tmp_path)
+    caps = {"en": [product.Caption("Made at ZebraCorp"), product.Caption("Mail me at a.b@example.org")]}
+    bad = product.vet(caps, repo, allow=("ZebraCorp",))
+    assert bad == ["en caption 2 holds a secret, a private term, an address or a path"]
+    assert product.vet_texts({"en": "Made at ZebraCorp"}, repo, allow=["zebracorp"]) == []
+
+
+def test_product_names_come_from_the_kit_the_toml_and_the_directory(tmp_path):
+    repo = make_repo(tmp_path, name="zebracorp")
+    (repo / "teyla.toml").write_text('[product]\nname = "zebra"\n', encoding="utf-8")
+    assert product.product_names(repo, {"name": "Zebra Corp"}) == ["Zebra Corp", "zebra", "zebracorp"]
+    assert product.product_names(repo, {}) == ["zebra", "zebracorp"]
+
+
 def test_vet_texts_checks_a_voice_script_like_a_caption(tmp_path):
     repo = make_repo(tmp_path)
     assert product.vet_texts({"en": "Plan your day"}, repo) == []
@@ -258,6 +273,15 @@ def test_product_input_errors_exit_two_and_render_nothing(tmp_path, capsys, medi
     else:
         rc, _, err = run(capsys, *base, "--input", str(mov), *argv)
     assert rc == 2 and needle in err and media.ffmpeg == []
+
+
+def test_the_products_own_name_is_not_a_private_term_in_its_reel(tmp_path, capsys, media):
+    repo = make_repo(tmp_path, name="zebracorp")
+    mov = tmp_path / "demo.mov"
+    mov.write_bytes(b"mov")
+    copy = copy_table(tmp_path / "copy.json", [{"control": "caption", "en": "Ask ZebraCorp. By voice."}])
+    rc, _, err = run(capsys, "reel", "product", str(repo), "--input", str(mov), "--copy", str(copy))
+    assert rc == 0 and err == "" and media.ffmpeg
 
 
 def test_a_private_term_in_a_caption_stops_the_render(tmp_path, capsys, media):

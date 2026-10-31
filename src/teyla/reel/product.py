@@ -26,6 +26,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -116,9 +117,32 @@ def _unsafe(red: Redactor, text: str) -> bool:
     return bool(o.fatal or o.skip or " ".join(o.text.split()) != " ".join(text.split()))
 
 
-def vet(captions: dict[str, list[Caption]], repo: Path) -> list[str]:
-    """Problems with captions that would go into a public video: a string redaction drops or changes."""
+def product_names(repo: Path, kit: dict) -> list[str]:
+    """The product's own names: the kit's `name`, `[product] name` in teyla.toml and the repo directory.
+    A product reel says the product's name; a private-term list that holds it (the repo is private) must
+    not empty the captions. Only these names are allowed, nothing else on the list."""
+    names = [str(kit.get("name") or "")]
+    toml = repo / "teyla.toml"
+    if toml.is_file():
+        try:
+            names.append(str((tomllib.loads(toml.read_text(encoding="utf-8")).get("product") or {}).get("name") or ""))
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+            pass
+    names.append(repo.name)
+    return [n.strip() for n in names if n and n.strip()]
+
+
+def _redactor(repo: Path, allow: tuple[str, ...] | list[str]) -> Redactor:
     red = Redactor([str(repo)])
+    for name in allow:
+        red.allow(name)
+    return red
+
+
+def vet(captions: dict[str, list[Caption]], repo: Path, allow: tuple[str, ...] | list[str] = ()) -> list[str]:
+    """Problems with captions that would go into a public video: a string redaction drops or changes.
+    `allow` holds the product's own names (see `product_names`)."""
+    red = _redactor(repo, allow)
     bad = []
     for lang, caps in captions.items():
         for i, c in enumerate(caps, 1):
@@ -127,9 +151,9 @@ def vet(captions: dict[str, list[Caption]], repo: Path) -> list[str]:
     return bad
 
 
-def vet_texts(texts: dict[str, str], repo: Path) -> list[str]:
+def vet_texts(texts: dict[str, str], repo: Path, allow: tuple[str, ...] | list[str] = ()) -> list[str]:
     """The same check for a voice-over script: it is spoken into a public video and sent to the speech API."""
-    red = Redactor([str(repo)])
+    red = _redactor(repo, allow)
     return [f"the {lang} voice-over script holds a secret, a private term, an address or a path"
             for lang, text in texts.items() if _unsafe(red, text)]
 
@@ -281,11 +305,13 @@ def cmd_product(args) -> int:
         bad = [f for f in fmts if f not in FORMATS]
         if bad or not fmts:
             raise ProductError(f"--formats takes {', '.join(FORMATS)}")
-        problems = vet(captions, repo)
+        kit = kitmod.load(repo) if (repo / kitmod.KIT).is_file() else {}
+        allow = product_names(repo, kit)
+        problems = vet(captions, repo, allow)
         if problems:
             raise ProductError("; ".join(problems) + " (edit the copy file)")
         texts = voice_texts(captions, Path(args.script).expanduser() if args.script else None) if args.voice else {}
-        problems = vet_texts(texts, repo) if args.script else []
+        problems = vet_texts(texts, repo, allow) if args.script else []
         if problems:
             raise ProductError("; ".join(problems) + " (edit the script)")
         for l, t in texts.items():
@@ -293,7 +319,6 @@ def cmd_product(args) -> int:
                 raise ProductError(f"the {l} voice-over is {len(t)} characters; the speech API takes {TTS_MAX_CHARS}")
         chars = sum(len(t) for t in texts.values())
         usd = genai.tts_price(chars, args.tts_model) if args.voice else 0.0
-        kit = kitmod.load(repo) if (repo / kitmod.KIT).is_file() else {}
     except (ProductError, kitmod.KitError, genai.GenError) as e:
         print(f"teyla reel product: {e}", file=sys.stderr)
         return 2
