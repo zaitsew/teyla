@@ -479,7 +479,6 @@ uv tool uninstall teyla    # then remove the command; with pipx: pipx uninstall 
 - [DEPS](DEPS.md): `teyla deps`, known vulnerabilities in the pinned versions of your lockfiles, from the free OSV API
 - [CONTRACT](CONTRACT.md): the `[security]` section of `teyla.toml`, the tier requirements, expiring evidence and `teyla shield check --release`
 - [MCP-SECURITY](MCP-SECURITY.md): `teyla mcp probe`, the injection corpus and the per-product security test templates for an MCP server
-- [LEAK](LEAK.md): `teyla leak`: what it scans (tree, index, outgoing commits, PR text), its classes, exit codes and allow-list
 - [BRAND](BRAND.md), [UX](UX.md), [STUDIO](STUDIO.md), [TASTE](TASTE.md), [JUDGE](JUDGE.md), [SCOUT](SCOUT.md), [KIT](KIT.md), [COPY](COPY.md): the mark, the colours, the voice, the UX standard, the concept for review by voice, drift, copy and visuals, the review inbox with the taste ledger, the pairwise judge with its reference library, the weekly design scout, and the brand kit with store shots, reels and posts, and the copy lane with its voice charts
 - [REVIEW](REVIEW.md): the iPhone review overlay, the capture format and how a capture reaches the Mac
 - [MATRIX](MATRIX.md): the capture matrix for UI drift: `teyla ux shots`, `diff` and `accept`, the `design/tour.yaml` manifest and what the app must honor

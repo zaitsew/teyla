@@ -603,8 +603,6 @@ def build_parser() -> argparse.ArgumentParser:
     hosts_mod.register(sp)
     from . import deps as deps_mod
     deps_mod.register(sp)
-    from . import leak as leak_mod
-    leak_mod.register(sp)
     from . import leak_install as leak_install_mod
     leak_install_mod.register(sp)
     from . import kit as kit_mod, post as post_mod
