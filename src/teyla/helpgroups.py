@@ -96,6 +96,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
         ("correct", "Record a correction and say how to promote it"),
         ("harvest", "Tool spine and corrections of sessions touching a path"),
         ("lang", "Where tracked files hold non-English text"),
+        ("leak", "Private data and keys in the tree, index, commits and PR text"),
         ("voice", "Check a draft against a voice chart"),
         ("reel", "A session as a terminal-story video, or a product demo"),
         ("kit", "A product's brand kit: store screenshots, mascot images"),

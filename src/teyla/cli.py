@@ -592,6 +592,8 @@ def build_parser() -> argparse.ArgumentParser:
     ux_check_mod.register(sp)
     from . import scout_design as scout_design_mod
     scout_design_mod.register(sp)
+    from . import leak as leak_mod
+    leak_mod.register(sp)
     from . import kit as kit_mod, post as post_mod
     kit_mod.register(sp)
     post_mod.register(sp)
