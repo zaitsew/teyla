@@ -106,13 +106,15 @@ branch, its rulesets and the default branch's protection, and prints one `creden
   rule that applies to it guards the default branch. The text ends `see SHIELD §9.4`.
 - `OK`, only when it is proven that the identity cannot merge the default branch: an active ruleset
   with Restrict updates that it cannot bypass, or branch protection with a push restriction that
-  does not list it (no team or App in the list), or no push right on the repo at all (it pushes to a
-  fork). The `[[security.evidence]]` row to paste is printed under the summary. Required approvals
+  does not list it (no team or App in the list, and the identity holds a standard role: read, triage,
+  write or maintain), or no push right on the repo at all (it pushes to a fork). The `[[security.evidence]]` row to paste is printed under the summary. Required approvals
   never make it OK, because a worker can merge a pull request that someone else approved.
 - `NOTE`: it could not tell, and the reason is on the line: `gh` missing or not signed in, no GitHub
   remote, no access to the repo, safe mode without `--allow-network`, a failed or timed-out lookup,
-  a ruleset that does not say whether the identity can bypass it, or a push restriction that names a
-  team or App the identity might belong to. A failed lookup is a NOTE, never a FIX.
+  a ruleset that does not say whether the identity can bypass it, a push restriction that names a
+  team or App the identity might belong to, or a push restriction while the identity holds a custom
+  repository role (`role_name` outside read/triage/write/maintain), which may carry "bypass branch
+  protections". A failed lookup is a NOTE, never a FIX.
 
 Rulesets are read in pages of 100 until a short page. A private repo on a plan without rules (GitHub
 answers "Upgrade to GitHub ...") counts as having none, and the FIX line says to use the fork route.

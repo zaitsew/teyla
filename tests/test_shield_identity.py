@@ -69,9 +69,13 @@ class Gh:
         (self.dir / f"{key}.json").write_text(json.dumps(body))
         (self.dir / f"{key}.code").write_text(str(code))
 
-    def repo_info(self, *, push: bool, admin: bool = False, private: bool = False, branch: str = "main"):
-        self.answer(f"repos/{SLUG}", {"default_branch": branch, "private": private,
-                                      "permissions": {"admin": admin, "maintain": False, "push": push, "pull": True}})
+    def repo_info(self, *, push: bool, admin: bool = False, private: bool = False, branch: str = "main",
+                  role: str | None = None):
+        body = {"default_branch": branch, "private": private,
+                "permissions": {"admin": admin, "maintain": False, "push": push, "pull": True}}
+        if role is not None:
+            body["role_name"] = role
+        self.answer(f"repos/{SLUG}", body)
 
     def ruleset(self, rules: list[dict], *, bypass: str | None = "never", enforcement: str = "active",
                 include: list[str] | None = None, rid: int = 7, name: str = "publisher-only", page: bool = True):
@@ -231,6 +235,19 @@ def test_a_push_restriction_with_a_team_or_app_is_a_note_never_ok(tmp_path, gh, 
     rc, rep = run_json(product(tmp_path), capsys)
     assert rc == 0 and row(rep)["status"] == "NOTE" and word in row(rep)["detail"]
     assert rep["identity"]["evidence"] is None
+
+
+@pytest.mark.parametrize("role,status", [("write", "OK"), ("maintain", "OK"), ("release-bot", "NOTE")])
+def test_a_push_restriction_proves_nothing_for_a_custom_role(tmp_path, gh, capsys, role, status):
+    """An organization can give a custom repository role "bypass branch protections"; a standard role
+    (read, triage, write, maintain) never has it."""
+    gh.repo_info(push=True, role=role)
+    gh.answer(f"repos/{SLUG}/branches/main/protection",
+              {"restrictions": {"users": [{"login": "someone-else"}], "teams": [], "apps": []}})
+    rc, rep = run_json(product(tmp_path), capsys)
+    assert rc == 0 and row(rep)["status"] == status
+    if status == "NOTE":
+        assert "custom role 'release-bot'" in row(rep)["detail"]
 
 
 def test_a_proving_ruleset_wins_over_an_unresolvable_protection(tmp_path, gh, capsys):

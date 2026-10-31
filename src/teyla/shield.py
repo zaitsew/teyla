@@ -789,16 +789,25 @@ def ruleset_effect(rs: dict, default: str) -> tuple[str, str]:
     return "unknown", f"{name} restricts updates to {default} and GitHub did not say whether the identity can bypass it"
 
 
-def protection_effect(prot: object, login: str) -> tuple[str, str]:
+STANDARD_ROLES = ("read", "triage", "write", "maintain")     # none of these may bypass branch protection
+
+
+def protection_effect(prot: object, login: str, role: str | None = None) -> tuple[str, str]:
     """(effect, text) of classic branch protection. Only a push restriction counts, and only when the
     identity is not listed: a listed user can push and merge, and a listed team or App might cover an
-    identity we cannot resolve from here, which is "unknown", never "blocks"."""
+    identity we cannot resolve from here, which is "unknown", never "blocks". So is a custom repository
+    role (`role_name` outside read/triage/write/maintain): an organization can grant it "bypass branch
+    protections", which a push restriction does not stop, and the role's permissions are not readable
+    from here. A ruleset's `current_user_can_bypass` already accounts for that, this check does not."""
     restr = prot.get("restrictions") if isinstance(prot, dict) else None
     if not isinstance(restr, dict):
         return "none", ""
     users = {u.get("login") for u in restr.get("users") or [] if isinstance(u, dict)}
     if login in users:
         return "none", ""
+    if role is not None and role not in STANDARD_ROLES:
+        return "unknown", (f"branch protection limits pushes, but the identity holds the custom role {role!r}, "
+                           "which may carry the bypass-branch-protections permission")
     named = [f"team {x.get('slug') or x.get('name')}" for x in restr.get("teams") or [] if isinstance(x, dict)]
     named += [f"App {x.get('slug') or x.get('name')}" for x in restr.get("apps") or [] if isinstance(x, dict)]
     if named:
@@ -885,6 +894,7 @@ def identity_verdict(repo: pathlib.Path, *, slug: str | None = None, today: date
     perms = repo_body.get("permissions") if isinstance(repo_body.get("permissions"), dict) else {}
     default = repo_body.get("default_branch") if isinstance(repo_body.get("default_branch"), str) else "main"
     private = bool(repo_body.get("private"))
+    role = repo_body.get("role_name") if isinstance(repo_body.get("role_name"), str) else None
     can_push = any(bool(perms.get(k)) for k in ("admin", "maintain", "push"))
     if not perms:
         out["detail"] = f"{login}: GitHub returned no permissions for {full}; cannot tell"
@@ -928,7 +938,7 @@ def identity_verdict(repo: pathlib.Path, *, slug: str | None = None, today: date
         res = _gh_get(f"repos/{full}/branches/{default}/protection")
         state = _lookup(res)
         if state == "ok":
-            effect, text = protection_effect(res[1], login)
+            effect, text = protection_effect(res[1], login, role)
             if effect == "blocks":
                 blocked = text
             elif effect == "unknown":
