@@ -192,12 +192,15 @@ scout over ten product repos. The findings that shaped the design:
   (`security find-generic-password -w`, `dump-keychain`), and `gh repo edit --visibility public`
   on an existing repo (creating a new public repo stays allowed: the owner asks for it in
   kickoffs). Bash matching cannot stop every encoded payload; the hook is one door of four, not
-  the wall. Two failure modes, chosen by what a wrong answer costs: the coarse path (is this a
-  publication or a credential read at all?) fails open with a one-line warning, like the machine
-  guard, because a guard that blocks every `ls` over its own bug gets uninstalled; but once a
-  command is classified as a publication, a credential read or a visibility change, a scanner
-  that cannot run is a refusal, not a pass. These commands are rare and explicit, and the cost of
-  a wrong refusal is one retry. A publication has no second door inside git, so the weekly
+  the wall. Two failure modes, chosen by what a wrong answer costs, and the line between them
+  is a fixed string match, not a classifier: a command whose text contains none of the
+  publication or credential tokens (`gh `, `git commit`, `git tag`, `security `, a credential
+  path) passes with a one-line warning when the hook errors, like the machine guard, because a
+  guard that blocks every `ls` over its own bug gets uninstalled; a command that contains any of
+  those tokens is refused whenever any part of the hook, scanner included, fails to run or to
+  answer. Nothing in that path is heuristic: the token list is in the script, and the tests
+  break the scanner on purpose and assert the refusal. These commands are rare and explicit,
+  and the cost of a wrong refusal is one retry. A publication has no second door inside git, so the weekly
   routine audits what was published anyway: `teyla leak --published` reads the week's PR bodies,
   issue comments, releases and gists through the GitHub API and reports a finding as
   historical (rotate first, then edit the text).
@@ -390,10 +393,13 @@ per minute:
 1. **A branch ruleset on every repo** that forbids direct pushes to the default branch and
    restricts merging and bypass to one identity, the publisher. Without it a token that can push
    a branch can push `main`, and separation is a label.
-2. **A worker token per lane**, fine-grained: contents write (it needs to push its branch) and
-   pull-request write (it needs to open the PR) on the repos it edits; no Actions, no
-   administration, no secrets, no pages, no merge rights (the ruleset above denies it the merge
-   even with contents write). A worker can therefore publish a PR body and a branch, which is
+2. **A worker identity that is not the owner.** A personal token acts as its account, so a
+   token of the owner's account inherits the owner's bypass rights and the ruleset cannot tell
+   it from the publisher. The worker is a separate identity: a GitHub App installation token
+   (short-lived, per repository) or a machine account invited as a collaborator, with contents
+   write (it needs to push its branch) and pull-request write (it needs to open the PR) on the
+   repos it edits; no Actions, no administration, no secrets, no pages, and no entry in the
+   ruleset's bypass list, so it cannot merge even with contents write. A worker can therefore publish a PR body and a branch, which is
    why the agent hook scans publication text and the pre-push hook scans outgoing commits on
    the worker's own machine, and why the weekly `--published` audit reads what landed anyway.
 3. **The publisher identity** (`gh auth` on the owner's account, or a second token with merge
