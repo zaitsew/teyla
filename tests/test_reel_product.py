@@ -152,6 +152,15 @@ def test_vet_allows_the_product_names_and_nothing_else(tmp_path):
     assert product.vet(caps, repo, allow=("ZebraCorp Planner",)) == ["en caption 2 holds a secret, a private term, an address or a path"]
 
 
+def test_a_longer_private_term_that_contains_the_product_name_is_still_refused(tmp_path, monkeypatch):
+    terms = tmp_path / "terms2.txt"
+    terms.write_text("zebracorp\nzebracorp planner internal\n")
+    monkeypatch.setenv("TEYLA_PRIVATE_TERMS", str(terms))
+    repo = make_repo(tmp_path)
+    caps = {"en": [product.Caption("ZebraCorp Planner plans"), product.Caption("ZebraCorp Planner Internal only")]}
+    assert product.vet(caps, repo, allow=("ZebraCorp Planner",)) == ["en caption 2 holds a secret, a private term, an address or a path"]
+
+
 def test_product_names_come_from_the_kit_the_toml_and_the_directory(tmp_path):
     repo = make_repo(tmp_path, name="zebracorp")
     (repo / "teyla.toml").write_text('[product]\nname = "zebra"\n', encoding="utf-8")

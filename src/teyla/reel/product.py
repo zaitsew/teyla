@@ -113,17 +113,29 @@ def load_captions(path: Path, control: str = "caption", langs: list[str] | None 
     return out
 
 
-def _mask_names(text: str, allow: tuple[str, ...] | list[str]) -> str:
+def _mask_names(red: Redactor, text: str, allow: tuple[str, ...] | list[str]) -> str:
     """Each allowed name, whole and on word boundaries, becomes a neutral word before redaction. The name
     may then appear in a caption, but a private term that is only part of it ("Acme" in "Acme Planner")
-    is still refused on its own."""
-    for name in sorted((n for n in allow if n), key=len, reverse=True):
-        text = re.sub(r"(?<![A-Za-z0-9])" + re.escape(name) + r"(?![A-Za-z0-9])", "ThisProduct", text, flags=re.I)
-    return text
+    is still refused on its own, and a longer private term that contains the name ("Acme Planner
+    Internal") is left as it is, so redaction still refuses it."""
+    names = sorted({n for n in allow if n}, key=len, reverse=True)
+    if not names:
+        return text
+    longer = [(a, b) for a, b in red.term_spans(text)]
+    pat = re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(re.escape(n) for n in names) + r")(?![A-Za-z0-9])", re.I)
+    out, pos = [], 0
+    for m in pat.finditer(text):
+        if any(a <= m.start() and m.end() <= b and (b - a) > (m.end() - m.start()) for a, b in longer):
+            continue
+        out.append(text[pos:m.start()])
+        out.append("ThisProduct")
+        pos = m.end()
+    out.append(text[pos:])
+    return "".join(out)
 
 
 def _unsafe(red: Redactor, text: str, allow: tuple[str, ...] | list[str] = ()) -> bool:
-    text = _mask_names(text, allow)
+    text = _mask_names(red, text, allow)
     o = red.clean(text)
     return bool(o.fatal or o.skip or " ".join(o.text.split()) != " ".join(text.split()))
 
