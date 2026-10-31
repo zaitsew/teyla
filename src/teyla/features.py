@@ -58,7 +58,7 @@ PACKS: tuple[Pack, ...] = (
          "Long sessions re-read their whole context every turn, and subagents run on the top model.",
          "Compacts earlier, runs subagents on Sonnet and reading on Haiku, writes a handoff at 240k tokens.",
          ("teyla spend --days 7", "teyla lanes", "teyla models"),
-         offers=("O1", "O2", "O3", "O4"), switches={"hooks.context_budget": True}),
+         offers=("O1", "O2", "O3", "O4"), switches={"hooks.context_budget": True}, plugin=True),
     Pack("load", "Machine guard", AUTO,
          "Parallel agents boot simulators and builds until the Mac swaps, hangs or panics.",
          "Admits one heavy job at a time, holds new ones while memory is critical, records load every minute.",
@@ -315,7 +315,8 @@ def plan(p: Pack, home: pathlib.Path, offers_by_id: dict, with_offers: bool = Tr
     if p.plugin and _claude_present(home) and not plugin_installed(home):
         L.append(f"run `{PLUGIN_INSTALL}`: hooks, skills and the MCP server in Claude Code")
     if p.routine and sys.platform == "darwin" and _agent_labels(p) and not _agents_written(p):
-        L.append(f"run `{ROUTINE_INSTALL}`: writes and loads the pack's launchd agents")
+        L.append(f"run `{ROUTINE_INSTALL}`: writes and loads the pack's launchd agents, and the daily and weekly "
+                 "check if they are missing (the command installs them together)")
     return L
 
 
@@ -349,6 +350,8 @@ def turn_on(p: Pack, home: pathlib.Path | None = None, with_offers: bool = True)
     picked = chosen()
     if p.id not in picked:
         record_choice(picked + [p.id])
+    if p.id in muted():                         # turned on again: its reminders come back with it
+        _set_list("muted", [x for x in muted() if x != p.id])
     return out
 
 
