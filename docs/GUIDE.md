@@ -473,6 +473,9 @@ uv tool uninstall teyla    # then remove the command; with pipx: pipx uninstall 
 - [WIKI](WIKI.md): the facts store
 - [WORK](WORK.md): safe mode for a work laptop
 - [PRIVACY](PRIVACY.md): every call that leaves your machine
+- [SHIELD](SHIELD.md): the security concept and roadmap: the leak gate, the agent boundary, the security contract, MCP tests
+- [HOSTS](HOSTS.md): `teyla hosts`, the static list of hosts a repo's code can reach, checked against its privacy table
+- [DEPS](DEPS.md): `teyla deps`, known vulnerabilities in the pinned versions of your lockfiles, from the free OSV API
 - [CONTRACT](CONTRACT.md): the `[security]` section of `teyla.toml`, the tier requirements, expiring evidence and `teyla shield check --release`
 - [BRAND](BRAND.md), [UX](UX.md), [STUDIO](STUDIO.md), [TASTE](TASTE.md), [JUDGE](JUDGE.md), [SCOUT](SCOUT.md), [KIT](KIT.md), [COPY](COPY.md): the mark, the colours, the voice, the UX standard, the concept for review by voice, drift, copy and visuals, the review inbox with the taste ledger, the pairwise judge with its reference library, the weekly design scout, and the brand kit with store shots, reels and posts, and the copy lane with its voice charts
 - [REVIEW](REVIEW.md): the iPhone review overlay, the capture format and how a capture reaches the Mac
