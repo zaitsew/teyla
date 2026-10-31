@@ -20,6 +20,7 @@ import re
 import sys
 import tomllib
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from . import __version__, config, net
@@ -27,6 +28,8 @@ from .control import state as control
 
 OSV = "https://api.osv.dev"
 BATCH = 1000
+MAX_PAGES = 10                  # follow-up pages for one query
+MAX_SPLIT_CALLS = 300           # extra batch calls spent isolating a rejected query, per run
 TIMEOUT_S = 30
 CACHE_TTL_S = 24 * 3600
 SUMMARY_MAX_AGE_DAYS = 14
@@ -105,13 +108,21 @@ def parse_pnpm_lock(text: str) -> tuple[list[Pkg], list[str]]:
     return out, ([] if out else ["no `packages:` entries found"])
 
 
+def _yarn_name(spec: str) -> str | None:
+    """The package a block header names. An alias (`alias@npm:lodash@^4.17.0`) resolves to the real package."""
+    if "@npm:" in spec:
+        before, after = spec.split("@npm:", 1)
+        j = after.rfind("@")
+        return after[:j] if j > 0 else before
+    i = spec.rfind("@")
+    return spec[:i] if i > 0 and not spec.startswith("__metadata") else None
+
+
 def parse_yarn_lock(text: str) -> tuple[list[Pkg], list[str]]:
     out, name = [], None
     for ln in text.splitlines():
         if ln and not ln[0].isspace() and not ln.startswith("#") and ln.rstrip().endswith(":"):
-            first = ln.rstrip()[:-1].split(",")[0].strip().strip("\"'")
-            i = first.rfind("@")
-            name = first[:i] if i > 0 and not first.startswith("__metadata") else None
+            name = _yarn_name(ln.rstrip()[:-1].split(",")[0].strip().strip("\"'"))
             continue
         m = re.match(r"^\s+version:?\s+\"?([^\"\s]+)\"?\s*$", ln)
         if m and name and "use.local" not in m.group(1) and m.group(1)[:1].isdigit():
@@ -124,20 +135,39 @@ def parse_deno_lock(text: str) -> tuple[list[Pkg], list[str]]:
     data, err = _j(text)
     if err or not isinstance(data, dict):
         return [], [err or "unexpected shape, skipped"]
+    pk = data.get("packages") if isinstance(data.get("packages"), dict) else {}      # v3: packages.npm / packages.jsr
+    npm = data.get("npm") if isinstance(data.get("npm"), dict) else pk.get("npm")    # v4: top-level npm / jsr
+    if isinstance(npm, dict) and isinstance(npm.get("packages"), dict) and "specifiers" in npm:
+        npm = npm["packages"]                                                         # v2: npm.packages
+    jsr = data.get("jsr") if isinstance(data.get("jsr"), dict) else pk.get("jsr")
     out, notes = [], []
-    for key in (data.get("npm") or {}):
+    for key in (npm if isinstance(npm, dict) else {}):
         hit = _npm_split(key)
         if hit:
             out.append(("npm", hit[0], hit[1]))
-    jsr = len(data.get("jsr") or {})
-    if jsr:
-        notes.append(f"{jsr} jsr package(s) skipped (no OSV ecosystem)")
+    if isinstance(jsr, dict) and jsr:
+        notes.append(f"{len(jsr)} jsr package(s) skipped (no OSV ecosystem)")
+    if not isinstance(npm, dict) and not isinstance(jsr, dict) and not (pk or data.get("specifiers")):
+        notes.append(f"unrecognised shape (version {data.get('version', '?')}): no packages read")
     return out, notes
 
 
-def _swift_name(url: str) -> str | None:
-    m = re.match(r"^https?://([^/]+/.+?)(?:\.git)?/?$", url.strip())
-    return m.group(1).lower() if m else None
+def clean_url(url: str) -> str | None:
+    """`host/path` of an http(s) URL: userinfo, query, fragment, port-less scheme and a trailing `.git` are dropped, so a
+    token in a URL can never become part of a name that is sent. None for anything that is not http(s)."""
+    try:
+        u = urllib.parse.urlsplit(url.strip())
+        host = (u.hostname or "").lower()
+        port = f":{u.port}" if u.port else ""
+    except ValueError:
+        return None
+    if u.scheme not in ("http", "https") or not host or len(u.path) < 2:
+        return None
+    path = re.sub(r"(?:\.git)?/*$", "", u.path)
+    return f"{host}{port}{path}"
+
+
+_CREDENTIAL = re.compile(r"\bhttps?://[^/\s\"'@]+@")
 
 
 def parse_package_resolved(text: str) -> tuple[list[Pkg], list[str]]:
@@ -149,9 +179,9 @@ def parse_package_resolved(text: str) -> tuple[list[Pkg], list[str]]:
     for p in pins:
         url = p.get("location") or p.get("repositoryURL") or ""
         ver = (p.get("state") or {}).get("version")
-        name = _swift_name(url)
+        name = clean_url(url)
         if name and ver:
-            out.append(("SwiftURL", name, str(ver)))
+            out.append(("SwiftURL", name.lower(), str(ver)))
         else:
             skipped += 1
     notes = [f"{skipped} pin(s) skipped (a branch, a revision or a non-HTTPS source: no OSV ecosystem)"] if skipped else []
@@ -192,7 +222,7 @@ def parse_requirements(text: str) -> tuple[list[Pkg], list[str]]:
     out, unpinned = [], 0
     for raw in text.splitlines():
         ln = raw.split(" #")[0].split(";")[0].strip().rstrip("\\").strip()
-        if not ln or ln.startswith(("#", "-", "http", "git+", ".", "/")):
+        if not ln or ln.startswith(("#", "-", ".", "/")) or "://" in ln:
             continue
         m = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]]*\])?\s*==\s*([A-Za-z0-9._+!-]+)$", ln)
         if m:
@@ -309,9 +339,12 @@ def scan_repo(repo: pathlib.Path) -> dict:
             gaps.append(f"{m}: no go.sum")
     entries = []
     for lf in locks:
-        pkgs, n = parser_for(lf.name)(_read(repo / lf))
+        text = _read(repo / lf)
+        pkgs, n = parser_for(lf.name)(text)
         entries.append({"file": str(lf), "packages": sorted(set(pkgs))})
         notes += [f"{lf}: {x}" for x in n]
+        if _CREDENTIAL.search(text):
+            notes.append(f"{lf}: credential in lockfile: a URL carries userinfo (the value is not shown or sent); remove it and rotate it")
     return {"path": str(repo), "name": repo.name, "lockfiles": entries, "gaps": gaps, "notes": notes}
 
 
@@ -434,9 +467,55 @@ def _save_cache(c: dict) -> None:
         pass
 
 
+class _Budget:
+    def __init__(self, calls: int):
+        self.calls = calls
+
+
+def _query(chunk: list[Pkg], budget: _Budget) -> tuple[dict[Pkg, list[str]], list[Pkg]]:
+    """({package: vuln ids}, packages not covered) for one batch. A rejected batch (HTTP 4xx) is split in halves
+    until the failing queries stand alone, within the budget; a package whose pages do not end is not covered and
+    not cached. An unreachable OSV (no answer, HTTP 5xx) raises."""
+    queries = [{"package": {"name": n, "ecosystem": e}, "version": v} for e, n, v in chunk]
+    try:
+        results = _fetch(f"{OSV}/v1/querybatch", {"queries": queries}).get("results") or []
+    except OsvError as e:
+        if e.status < 400 or e.status >= 500:
+            raise
+        if len(chunk) == 1 or budget.calls <= 0:
+            return {}, list(chunk)
+        budget.calls -= 1
+        mid = len(chunk) // 2
+        a, fa = _query(chunk[:mid], budget)
+        b, fb = _query(chunk[mid:], budget)
+        return {**a, **b}, fa + fb
+    ids: dict[Pkg, set[str]] = {}
+    pending: dict[Pkg, str] = {}
+    for p, r in zip(chunk, results):
+        r = r or {}
+        ids[p] = {v["id"] for v in r.get("vulns") or [] if v.get("id")}
+        if r.get("next_page_token"):
+            pending[p] = r["next_page_token"]
+    for _ in range(MAX_PAGES):
+        if not pending:
+            break
+        keys = list(pending)
+        qs = [{**{"package": {"name": p[1], "ecosystem": p[0]}, "version": p[2]}, "page_token": pending[p]} for p in keys]
+        res = _fetch(f"{OSV}/v1/querybatch", {"queries": qs}).get("results") or []
+        pending = {}
+        for p, r in zip(keys, res):
+            r = r or {}
+            ids[p] |= {v["id"] for v in r.get("vulns") or [] if v.get("id")}
+            if r.get("next_page_token"):
+                pending[p] = r["next_page_token"]
+    missing = [p for p in chunk if p not in ids or p in pending]          # no result row, or pages never ended
+    return {p: sorted(i) for p, i in ids.items() if p not in pending}, missing
+
+
 def lookup(pkgs: set[Pkg], *, use_cache: bool = True, now: float | None = None) -> tuple[dict[Pkg, list[dict]], list[str]]:
-    """{package: [vuln, ...]} for every package, plus notes on what OSV refused. Raises OsvError when OSV cannot
-    be reached. Only names, ecosystems and versions are sent."""
+    """{package: [vuln, ...]} for the packages OSV answered for, plus notes. A package OSV did not answer for is
+    absent from the result (the caller counts it as not covered). Raises OsvError when OSV cannot be reached.
+    Only names, ecosystems and versions are sent."""
     now = _dt.datetime.now().timestamp() if now is None else now
     cache = _load_cache(now) if use_cache else {"q": {}, "v": {}}
     notes, ids_of = [], {}
@@ -450,20 +529,17 @@ def lookup(pkgs: set[Pkg], *, use_cache: bool = True, now: float | None = None) 
     by_eco: dict[str, list[Pkg]] = {}
     for p in todo:
         by_eco.setdefault(p[0], []).append(p)
+    budget = _Budget(MAX_SPLIT_CALLS)
     for eco, plist in by_eco.items():
+        failed: list[Pkg] = []
         for i in range(0, len(plist), BATCH):
-            chunk = plist[i:i + BATCH]
-            body = {"queries": [{"package": {"name": n, "ecosystem": e}, "version": v} for e, n, v in chunk]}
-            try:
-                res = _fetch(f"{OSV}/v1/querybatch", body).get("results") or []
-            except OsvError as e:
-                if e.status == 400:
-                    notes.append(f"OSV rejected ecosystem {eco}: {len(chunk)} package(s) not checked")
-                    continue
-                raise
-            for p, r in zip(chunk, res):
-                ids_of[p] = sorted({v["id"] for v in (r or {}).get("vulns") or [] if v.get("id")})
-                cache["q"]["\x00".join(p)] = {"at": now, "ids": ids_of[p]}
+            got, bad = _query(plist[i:i + BATCH], budget)
+            failed += bad
+            for p, ids in got.items():
+                ids_of[p] = ids
+                cache["q"]["\x00".join(p)] = {"at": now, "ids": ids}
+        if failed:
+            notes.append(f"OSV did not answer for {len(failed)} {eco} package(s): not covered")
     for vid in sorted({i for ids in ids_of.values() for i in ids}):
         if vid not in cache["v"]:
             cache["v"][vid] = {**compact(_fetch(f"{OSV}/v1/vulns/{vid}")), "at": now}
@@ -506,11 +582,14 @@ def merge_aliases(vulns: list[dict]) -> list[dict]:
 
 def evaluate(scan: dict, found: dict[Pkg, list[dict]] | None) -> dict:
     """The report of one repo. `found` None means OSV was not reached: nothing is claimed about the packages."""
-    rows, checked = [], 0
+    rows, checked, uncovered = [], 0, 0
     for lf in scan["lockfiles"]:
         for p in lf["packages"]:
             p = tuple(p)
-            if found is None or p not in found:
+            if found is None:
+                continue
+            if p not in found:
+                uncovered += 1
                 continue
             checked += 1
             vulns = found[p]
@@ -526,11 +605,11 @@ def evaluate(scan: dict, found: dict[Pkg, list[dict]] | None) -> dict:
     rows.sort(key=lambda r: (not r["fix"], -SEV_RANK[r["severity"]], r["name"], r["version"]))
     return {"repo": scan["name"], "path": scan["path"], "lockfiles": [l["file"] for l in scan["lockfiles"]],
             "packages": sum(len(l["packages"]) for l in scan["lockfiles"]), "checked": checked, "vulnerable": rows,
-            "fix": sum(1 for r in rows if r["fix"]), "gaps": scan["gaps"], "notes": scan["notes"]}
+            "fix": sum(1 for r in rows if r["fix"]), "not_covered": uncovered, "gaps": scan["gaps"], "notes": scan["notes"]}
 
 
 def exit_code(reports: list[dict], unreachable: bool) -> int:
-    if unreachable or any(r["gaps"] for r in reports):
+    if unreachable or any(r["gaps"] or r["not_covered"] for r in reports):
         return 2
     return 1 if any(r["fix"] for r in reports) else 0
 
@@ -557,6 +636,8 @@ def render_repo(r: dict, quiet: bool, unreachable: bool, terse: bool = False) ->
             if row["fix"]:
                 body += row_lines(row)
     body += [f"  GAP  {g}" for g in r["gaps"]]
+    if r["not_covered"] and not unreachable:
+        body.append(f"  NOT COVERED  {r['not_covered']} package(s): OSV did not answer for them")
     if not quiet:
         body += [f"  note {n}" for n in r["notes"]]
     if (quiet or terse) and not body and not unreachable:
@@ -655,7 +736,8 @@ def cmd_deps(args) -> int:
         print("\n".join(lines))
     if args.all and not args.quiet:
         print("\n".join(render_table(reports)))
-        print(f"{sum(r['fix'] for r in reports)} FIX, {sum(len(r['gaps']) for r in reports)} gap(s); exit {code}")
+        print(f"{sum(r['fix'] for r in reports)} FIX, {sum(len(r['gaps']) for r in reports)} gap(s), "
+              f"{sum(r['not_covered'] for r in reports)} package(s) not covered; exit {code}")
     return code
 
 

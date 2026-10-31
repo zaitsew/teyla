@@ -52,7 +52,7 @@ at all is `unknown`.
 |---|---|
 | 0 | nothing found that needs action |
 | 1 | a HIGH or CRITICAL has a fixed version (a FIX). Lower severities and unfixed flaws are listed and never block |
-| 2 | a manifest with no lockfile (`package.json`, `pyproject.toml`, `Package.swift`, `Gemfile`, `go.mod`), or OSV could not be reached, or safe mode refused the call |
+| 2 | a manifest with no lockfile (`package.json`, `pyproject.toml`, `Package.swift`, `Gemfile`, `go.mod`), or OSV could not be reached, or safe mode refused the call, or OSV did not answer for some packages ("not covered", also with `--quiet`) |
 
 `--all` returns the highest code of any repo. A manifest with no dependencies is not a gap. In `--quiet` mode only
 FIX lines and gaps are printed, and a safe-mode refusal prints nothing and exits 0 (the weekly routine never
@@ -60,8 +60,10 @@ passes `--allow-network`).
 
 ## What is sent, and the cache
 
-Package names, ecosystems and versions go to `api.osv.dev`: a `POST /v1/querybatch` with at most 1000 queries,
+Package names, ecosystems and versions go to `api.osv.dev`: a `POST /v1/querybatch` with at most 1000 queries
+(follow-up pages are fetched, at most 10; a rejected batch is split in halves to isolate the bad query),
 then a `GET /v1/vulns/<id>` for each id not already cached. Never a path, a repo name or a lockfile name
+(a SwiftPM URL is cut to `host/path`: userinfo, query and fragment are dropped, and a lockfile that carries userinfo gets a "credential in lockfile" note without the value)
 ([PRIVACY](PRIVACY.md) row 32). Safe mode refuses the call without `--allow-network`, and `--dry` sends nothing.
 
 Answers are cached for 24 hours in `~/.teyla/deps/cache.json` (mode 0600), per package version and per

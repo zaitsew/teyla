@@ -391,7 +391,7 @@ def test_osv_unreachable_is_exit_2_and_says_what_was_not_covered(tmp_path, monke
     assert not deps.cache_path().exists()
 
 
-def test_an_ecosystem_osv_rejects_is_a_note_not_a_failure(tmp_path, monkeypatch, capsys):
+def test_an_ecosystem_osv_rejects_is_not_covered_and_the_rest_is_still_checked(tmp_path, monkeypatch, capsys):
     ok = FakeOsv()
 
     def fake(url, payload=None):
@@ -402,8 +402,10 @@ def test_an_ecosystem_osv_rejects_is_a_note_not_a_failure(tmp_path, monkeypatch,
     monkeypatch.setattr(deps, "_fetch", fake)
     resolved = {"version": 2, "pins": [{"location": "https://example.com/acme/swift-acme.git", "state": {"version": "1.2.0"}}]}
     r = repo(tmp_path, {"package-lock.json": LOCK, "Package.resolved": resolved})
-    assert cli.main(["deps", str(r)]) == 1
-    assert "OSV rejected ecosystem SwiftURL: 1 package(s) not checked" in capsys.readouterr().out
+    assert cli.main(["deps", str(r)]) == 2                           # the rest was checked; the rejected one is not covered
+    out = capsys.readouterr().out
+    assert "OSV did not answer for 1 SwiftURL package(s): not covered" in out and "NOT COVERED  1 package(s)" in out
+    assert "FIX  critical left-pad" in out
 
 
 def test_all_prints_a_table_the_worst_exit_and_writes_the_summary(tmp_path, osv, monkeypatch, capsys):
@@ -414,7 +416,7 @@ def test_all_prints_a_table_the_worst_exit_and_writes_the_summary(tmp_path, osv,
     monkeypatch.setattr(lang, "resolve_repos", lambda args, cfg=None: [a, b, c])
     assert cli.main(["deps", "--all"]) == 2                          # beta has a gap: 2 outranks alpha's 1
     out = capsys.readouterr().out
-    assert "alpha  " in out and "1 FIX, 1 gap(s); exit 2" in out and "gamma: no lockfile" not in out
+    assert "alpha  " in out and "1 FIX, 1 gap(s), 0 package(s) not covered; exit 2" in out and "gamma: no lockfile" not in out
     s = json.loads(deps.summary_path().read_text())
     assert s["fix"] == 1 and s["fix_repos"] == 1 and s["gaps"] == 1
     assert deps.digest_candidates()[0]["text"] == "dependency FIX: 1 vulnerable package(s) with a fixed version in 1 repo(s)"
@@ -463,3 +465,121 @@ def test_the_weekly_wrapper_runs_deps_before_the_digest_and_an_old_wrapper_is_st
     assert not routine_install._wrapper_stale(w, "/x/teyla")
     w.write_text(text.replace('"$TEYLA" deps --all --quiet > "$OUT_DIR/deps.md" 2>&1\n', ""))
     assert routine_install._wrapper_stale(w, "/x/teyla")
+
+
+# --- review fixes -----------------------------------------------------------------------------------
+
+def test_userinfo_in_a_swift_url_is_never_sent_and_is_noted_without_the_value(tmp_path, osv, capsys):
+    resolved = {"version": 2, "pins": [
+        {"location": "https://deploy:s3cr3t-token@example.com/acme/swift-acme.git?ref=x#frag", "state": {"version": "1.2.0"}},
+        {"location": "https://onlytoken@example.com:8443/acme/other", "state": {"version": "2.0.0"}}]}
+    r = repo(tmp_path, {"Package.resolved": resolved})
+    cli.main(["deps", str(r)])
+    cap = capsys.readouterr()
+    sent = json.dumps(osv.calls)
+    assert "s3cr3t-token" not in sent and "deploy" not in sent and "onlytoken" not in sent
+    assert "@" not in sent and "?ref" not in sent and "frag" not in sent
+    names = [q["package"]["name"] for u, p in osv.calls if p for q in p["queries"]]
+    assert names == ["example.com/acme/swift-acme", "example.com:8443/acme/other"]
+    assert "credential in lockfile" in cap.out and "s3cr3t-token" not in cap.out + cap.err and "onlytoken" not in cap.out + cap.err
+    assert deps.clean_url("ssh://git@example.com/a/b") is None and deps.clean_url("https://example.com") is None
+
+
+def test_requirements_named_like_http_are_read_and_url_lines_are_not():
+    text = ("httpx==0.27.0\nhttpcore==1.0.5\nhttplib2==0.22.0\nacme @ https://example.com/acme.zip\n"
+            "-e git+https://example.com/a/b.git#egg=b\n")
+    pk, notes = deps.parse_requirements(text)
+    assert pk == [("PyPI", "httpx", "0.27.0"), ("PyPI", "httpcore", "1.0.5"), ("PyPI", "httplib2", "0.22.0")] and notes == []
+
+
+def test_deno_lock_v3_v2_and_an_unknown_shape():
+    v3 = {"version": "3", "packages": {"specifiers": {"npm:left-pad@1": "npm:left-pad@1.3.0"}, "npm": {"left-pad@1.3.0": {}}, "jsr": {"@acme/std@1.0.0": {}}}}
+    pk, notes = deps.parse_deno_lock(json.dumps(v3))
+    assert pk == [("npm", "left-pad", "1.3.0")] and "1 jsr package(s) skipped" in notes[0]
+    v2 = {"version": "2", "npm": {"specifiers": {"left-pad@1": "left-pad@1.3.0"}, "packages": {"left-pad@1.3.0": {}}}}
+    assert deps.parse_deno_lock(json.dumps(v2))[0] == [("npm", "left-pad", "1.3.0")]
+    pk, notes = deps.parse_deno_lock(json.dumps({"version": "9", "mystery": {}}))
+    assert pk == [] and "unrecognised shape (version 9)" in notes[0]
+    assert deps.parse_deno_lock(json.dumps({"version": "4"}))[1] != []
+
+
+def test_yarn_aliases_resolve_to_the_real_package():
+    classic = '''"alias@npm:left-pad@^1.0.0":
+  version "1.3.0"
+
+"scoped-alias@npm:@acme/widgets@^4.0.0":
+  version "4.1.0"
+
+"plain@npm:^2.0.0":
+  version "2.0.1"
+'''
+    assert deps.parse_yarn_lock(classic)[0] == [("npm", "left-pad", "1.3.0"), ("npm", "@acme/widgets", "4.1.0"), ("npm", "plain", "2.0.1")]
+
+
+def test_pagination_is_followed_before_anything_is_cached(tmp_path, monkeypatch):
+    calls = []
+
+    def fake(url, payload=None):
+        calls.append((url, payload))
+        if url.endswith("querybatch"):
+            q = payload["queries"][0]
+            tok = q.get("page_token")
+            if tok is None:
+                return {"results": [{"vulns": [{"id": "GHSA-aaaa-bbbb-cccc"}], "next_page_token": "t1"}]}
+            return {"results": [{"vulns": [{"id": "PYSEC-2026-1"}]}]}
+        return VULNS[url.rsplit("/", 1)[1]]
+
+    monkeypatch.setattr(deps, "_fetch", fake)
+    found, _ = deps.lookup({("npm", "left-pad", "1.3.0")})
+    assert calls[1][1]["queries"][0]["page_token"] == "t1"
+    assert len(found[("npm", "left-pad", "1.3.0")]) == 1                # both ids are one flaw
+    assert json.loads(deps.cache_path().read_text())["q"]["npm\x00left-pad\x001.3.0"]["ids"] == ["GHSA-aaaa-bbbb-cccc", "PYSEC-2026-1"]
+
+
+def test_pages_that_never_end_are_not_covered_and_not_cached(monkeypatch):
+    def fake(url, payload=None):
+        return {"results": [{"vulns": [], "next_page_token": "again"} for _ in payload["queries"]]}
+
+    monkeypatch.setattr(deps, "_fetch", fake)
+    found, _ = deps.lookup({("npm", "left-pad", "1.3.0")})
+    assert found == {} and "left-pad" not in (deps.cache_path().read_text() if deps.cache_path().exists() else "")
+
+
+def test_a_rejected_batch_is_split_and_only_the_bad_query_is_not_covered(tmp_path, monkeypatch, capsys):
+    ok = FakeOsv()
+
+    def fake(url, payload=None):
+        if payload and any(q["package"]["name"] == "acme-bad" for q in payload["queries"]):
+            raise deps.OsvError("HTTP 400", 400)
+        return ok(url, payload)
+
+    monkeypatch.setattr(deps, "_fetch", fake)
+    lock = {"lockfileVersion": 3, "packages": {"": {}, "node_modules/left-pad": {"version": "1.3.0"},
+                                                 "node_modules/acme-bad": {"version": "1.0.0"}, "node_modules/acme-fine": {"version": "3.0.0"}}}
+    r = repo(tmp_path, {"package-lock.json": lock})
+    assert cli.main(["deps", str(r), "--json"]) == 2
+    d = json.loads(capsys.readouterr().out)["repos"][0]
+    assert d["checked"] == 2 and d["not_covered"] == 1 and d["fix"] == 1
+
+
+def test_not_covered_exits_2_even_when_quiet_and_prints_one_line(tmp_path, monkeypatch, capsys):
+    def fake(url, payload=None):
+        raise deps.OsvError("HTTP 400", 400)
+
+    monkeypatch.setattr(deps, "_fetch", fake)
+    r = repo(tmp_path, {"package-lock.json": LOCK})
+    assert cli.main(["deps", str(r), "--quiet"]) == 2
+    out = capsys.readouterr().out
+    assert "NOT COVERED  5 package(s)" in out and out.count("NOT COVERED") == 1
+
+
+def test_the_split_budget_bounds_the_calls(monkeypatch):
+    calls = []
+
+    def fake(url, payload=None):
+        calls.append(1)
+        raise deps.OsvError("HTTP 400", 400)
+
+    monkeypatch.setattr(deps, "_fetch", fake)
+    found, notes = deps.lookup({("npm", f"acme-{i:04d}", "1.0.0") for i in range(900)})
+    assert found == {} and len(calls) <= deps.MAX_SPLIT_CALLS * 2 + 2 and "900 npm package(s)" in notes[0]
