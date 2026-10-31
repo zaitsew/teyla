@@ -132,6 +132,46 @@ secret rule whose glob matches every file is an error (exit 2): a whole file is 
 rules, only named files or one fingerprint. Editing `.leak-allow`, the terms file or the scanner is itself a
 change to review as one that touches credentials.
 
+## Install
+
+```
+teyla leak install [repo] [--all] [--uninstall]
+```
+
+`teyla leak` takes a repo as its positional argument, so the two sub-commands are registered as `teyla leak-install`
+and `teyla leak-terms`; `teyla leak install` and `teyla leak terms` are rewritten to them before parsing. A repo
+directory that is literally named `install` or `terms` needs `./install`.
+
+- Writes `.githooks/pre-commit` (`teyla leak --staged --quiet`) and `.githooks/pre-push`
+  (`teyla leak --outgoing "$1" --quiet`; git passes the remote name as `$1`): POSIX `sh`, executable. Sets
+  `core.hooksPath` to `.githooks`. When the scan fails, the hook runs it again without `--quiet` so the masked
+  findings print, then exits with the scanner's code: 1 for a blocker, 2 for a surface it could not read.
+- A hook that is already there and is not ours keeps its content. Our call goes in at the top (after a shebang)
+  between `# >>> teyla leak gate` and `# <<< teyla leak gate`. If `core.hooksPath` already names another directory
+  inside the repo, the hooks go there; a path outside the repo is refused. Running it twice changes nothing.
+- No `teyla` on PATH when the hook runs: one line, `teyla leak gate: teyla not found; install it or set TEYLA_LEAK=0
+  for this command`, and exit 2. A missing scanner is a coverage gap, not a pass.
+- `TEYLA_LEAK=0 git commit ...` skips the hook for that command and appends date, repo and hook to
+  `~/.teyla/leak-skips.log` (`$TEYLA_HOME` moves it).
+- `--uninstall` removes only our files or our delimited block, and unsets `core.hooksPath` only when the install set
+  it (recorded in `.githooks/.teyla-leak-gate`). `--all` does this for every repo under `code_root`, one line each.
+  Nothing is committed: review and commit the hooks directory in each repo. `core.hooksPath` is per clone, so each
+  clone runs the install once.
+
+## Private terms
+
+`teyla leak terms --suggest [--yes] [--json]` lists candidates for the terms file from facts this machine already
+knows: `git config user.name` and `user.email` (global and this repo), the login name, the home directory's name, the
+computer name (`scutil`, or the hostname), tester e-mails in this repo's `teyla.toml` `[productize]`, bundle-id
+organisations in its `[release]`, and the server, domain, mail sender, tester and owner entries in
+`~/.teyla/platform.toml`. It never reads another repo's content. Values already in the file, generic names
+(`root`, `localhost`, ...) and anything under 4 characters are skipped.
+
+Every candidate prints as its first two characters, `…`, its length and its source; the full value never reaches
+stdout, in `--json` either. Without `--yes` nothing is written. With `--yes` the values are appended to the terms
+file (`$TEYLA_PRIVATE_TERMS` or `~/.config/teyla/private-terms.txt`), created with the directory at 0700 and the
+file at 0600, and loose permissions on the default location are tightened; the output is the count added.
+
 ## Leak guard
 
 `plugin/hooks/leak-guard.sh` is the agent's door to the scanner: a PreToolUse hook on Bash, Read, Edit and
