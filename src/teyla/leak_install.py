@@ -23,8 +23,8 @@ import getpass
 import json
 import os
 import re
+import platform as stdlib_platform
 import shutil
-import socket
 import stat
 import subprocess
 import sys
@@ -323,7 +323,7 @@ def machine_facts() -> list[tuple[str, str]]:
         out.append((_run("scutil", "--get", "ComputerName"), "computer name"))
         out.append((_run("scutil", "--get", "LocalHostName"), "local host name"))
     else:
-        out.append((socket.gethostname(), "hostname"))
+        out.append((stdlib_platform.node(), "hostname"))
     return out
 
 

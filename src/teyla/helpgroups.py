@@ -152,7 +152,7 @@ def render(everything: bool = False, st: Style | None = None) -> str:
          f"Usage: teyla {st.command('<command>')} [options]      teyla {st.command('<command>')} --help for one command", ""]
     for g, rows, left in groups(everything):
         L.append(st.bold(g))
-        L += [f"  {pad(st.command(c), 12)}{d}" for c, d in rows]
+        L += [f"  {pad(st.command(c), 13)}{d}" for c, d in rows]
         if left:
             more = f"{left} more" if g != "Advanced" else f"{left} commands for rules, the control plane and debugging"
             L.append(st.quiet(f"  {more}: ") + st.command("teyla help --all"))

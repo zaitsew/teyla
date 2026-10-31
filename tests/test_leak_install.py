@@ -337,7 +337,7 @@ def test_collect_facts_reads_only_machine_facts_and_this_repos_manifest(box, mon
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gcfg))
     monkeypatch.setenv("USER", "zquillon")
     monkeypatch.setattr(sys, "platform", "linux")
-    monkeypatch.setattr(li.socket, "gethostname", lambda: "zq-workstation")
+    monkeypatch.setattr(li.stdlib_platform, "node", lambda: "zq-workstation")
     box.git("config", "--local", "user.email", "zq" + AT + "repo.test")
     box.write("teyla.toml", f'[productize]\ntesters = ["pal{AT}friends.test"]\n[release]\napple_bundle_id = "com.orgquux.app"\n')
     box.teyla_home.mkdir()
