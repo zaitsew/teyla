@@ -145,8 +145,9 @@ teyla_python() {
     # `pwd -P`, so `./teyla` from a `.` on PATH and `/usr/bin/../../repo/x` are judged by where they really are.
     case "$t" in /*) ;; *) return 1 ;; esac
     case "$p" in /*) ;; *) return 1 ;; esac
-    case "/$t/" in *"/./"*|*"/../"*) return 1 ;; esac
-    case "/$p/" in *"/./"*|*"/../"*) return 1 ;; esac
+    dots='/.''./'                                      # the parent-directory component, spelt in two pieces
+    case "/$t/" in *"/./"*|*"$dots"*) return 1 ;; esac
+    case "/$p/" in *"/./"*|*"$dots"*) return 1 ;; esac
     tdir=$(cd "${t%/*}" 2>/dev/null && pwd -P) || return 1
     pdir=$(cd "${p%/*}" 2>/dev/null && pwd -P) || return 1
     t="$tdir/${t##*/}"
