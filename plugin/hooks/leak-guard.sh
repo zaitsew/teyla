@@ -141,6 +141,16 @@ teyla_python() {
     # pyenv; TEYLA_PYTHON_ROOTS adds more, colon-separated), never into the directory the command runs in:
     # a console script planted in a repo (`.` or node_modules/.bin on PATH) must not pick the guard's
     # interpreter. An install elsewhere names its python with TEYLA_PYTHON.
+    # Both paths are taken canonical: absolute, no `.` or `..` components, their directories resolved with
+    # `pwd -P`, so `./teyla` from a `.` on PATH and `/usr/bin/../../repo/x` are judged by where they really are.
+    case "$t" in /*) ;; *) return 1 ;; esac
+    case "$p" in /*) ;; *) return 1 ;; esac
+    case "/$t/" in *"/./"*|*"/../"*) return 1 ;; esac
+    case "/$p/" in *"/./"*|*"/../"*) return 1 ;; esac
+    tdir=$(cd "${t%/*}" 2>/dev/null && pwd -P) || return 1
+    pdir=$(cd "${p%/*}" 2>/dev/null && pwd -P) || return 1
+    t="$tdir/${t##*/}"
+    p="$pdir/${p##*/}"
     cwd=$(pwd -P) || return 1
     case "$t" in "$cwd"/*) return 1 ;; esac
     case "$p" in "$cwd"/*) return 1 ;; esac

@@ -405,6 +405,15 @@ def test_the_python_behind_teyla_is_used_when_python3_lacks_the_package(box):
     (box.work / "teyla").chmod(0o755)
     refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, TEYLA_PYTHON_ROOTS=str(venv),
                     path_dirs=f"{bare}:{box.work}:/usr/bin:/bin"), "the guard failed")
+    # A relative `./teyla` (`.` on PATH) and a shebang that climbs out of a root with `..` are judged by where
+    # the files really are: inside the repo, and outside every root.
+    (box.work / "teyla").write_text(f"#!{py}\nimport sys\n")
+    refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, TEYLA_PYTHON_ROOTS=str(venv),
+                    path_dirs=f"{bare}:.:/usr/bin:/bin"), "the guard failed")
+    climb = pathlib.Path("/usr/bin/../..") / str(allow).lstrip("/")
+    console.write_text(f"#!{climb}\n")
+    refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, TEYLA_PYTHON_ROOTS="/usr/bin",
+                    path_dirs=kw["path_dirs"]), "the guard failed")
     # The venv is outside every known root once the test stops naming it.
     console.write_text(f"#!{py}\nimport sys\n")
     refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, path_dirs=kw["path_dirs"]), "the guard failed")
