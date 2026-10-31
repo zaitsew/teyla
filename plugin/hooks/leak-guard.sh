@@ -120,9 +120,57 @@ phase=suspect
 [ "$tok" = 0 ] || phase=token
 # leak-guard:token-begin
 
+# The python must carry the teyla package. TEYLA_PYTHON first; then the interpreter named by the shebang of
+# the `teyla` on PATH (a uv tool or a venv keeps the package out of the system python3, which is what
+# `python3` resolves to on most machines); python3 itself last.
+teyla_python() {
+    t=$(command -v teyla) || t="$HOME/.local/bin/teyla"     # a uv tool install is not on a GUI app's PATH
+    [ -f "$t" ] && [ -r "$t" ] || return 1
+    IFS= read -r first < "$t" || return 1
+    case "$first" in
+        "#!"*python*) ;;
+        *) return 1 ;;
+    esac
+    p=${first#"#!"}
+    p=${p#"${p%%[! ]*}"}
+    case "$p" in
+        /usr/bin/env*) return 1 ;;          # names no file: python3 on PATH is what it would run
+    esac
+    p=${p%% *}
+    # The shebang is followed only into a known interpreter root (uv tools, pipx, Homebrew, /usr, python.org,
+    # pyenv; TEYLA_PYTHON_ROOTS adds more, colon-separated), never into the directory the command runs in:
+    # a console script planted in a repo (`.` or node_modules/.bin on PATH) must not pick the guard's
+    # interpreter. An install elsewhere names its python with TEYLA_PYTHON.
+    # Both paths are taken canonical: absolute, no `.` or `..` components, their directories resolved with
+    # `pwd -P`, so `./teyla` from a `.` on PATH and `/usr/bin/../../repo/x` are judged by where they really are.
+    case "$t" in /*) ;; *) return 1 ;; esac
+    case "$p" in /*) ;; *) return 1 ;; esac
+    dots='/.''./'                                      # the parent-directory component, spelt in two pieces
+    case "/$t/" in *"/./"*|*"$dots"*) return 1 ;; esac
+    case "/$p/" in *"/./"*|*"$dots"*) return 1 ;; esac
+    tdir=$(cd "${t%/*}" 2>/dev/null && pwd -P) || return 1
+    pdir=$(cd "${p%/*}" 2>/dev/null && pwd -P) || return 1
+    t="$tdir/${t##*/}"
+    p="$pdir/${p##*/}"
+    cwd=$(pwd -P) || return 1
+    case "$t" in "$cwd"/*) return 1 ;; esac
+    case "$p" in "$cwd"/*) return 1 ;; esac
+    roots="$HOME/.local/share/uv/tools:$HOME/.local/pipx/venvs:$HOME/Library/Application Support/pipx/venvs:$HOME/.pyenv:/opt/homebrew:/usr/local:/usr/bin:/Library/Frameworks/Python.framework${TEYLA_PYTHON_ROOTS:+:$TEYLA_PYTHON_ROOTS}"
+    ok=0
+    oldifs=$IFS; IFS=:
+    for root in $roots; do
+        [ -n "$root" ] || continue
+        case "$p" in "$root"/*) ok=1 ;; esac
+    done
+    IFS=$oldifs
+    [ "$ok" = 1 ] || return 1
+    [ -x "$p" ] || return 1
+    printf '%s\n' "$p"
+}
+
 py="${TEYLA_PYTHON:-}"
 if [ -z "$py" ] || [ ! -x "$py" ]; then
-    py=$(command -v python3) || {
+    py=$(teyla_python) || py=$(command -v python3) || {
         if [ "$phase" = token ]; then
             echo "teyla leak-guard: refused — python3 is not on PATH, so this command's text cannot be scanned." >&2
             echo "  Install python3 and teyla, or skip the publication scan once: TEYLA_LEAK_GUARD=0 <command>" >&2
