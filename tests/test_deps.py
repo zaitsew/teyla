@@ -583,3 +583,26 @@ def test_the_split_budget_bounds_the_calls(monkeypatch):
     monkeypatch.setattr(deps, "_fetch", fake)
     found, notes = deps.lookup({("npm", f"acme-{i:04d}", "1.0.0") for i in range(900)})
     assert found == {} and len(calls) <= deps.MAX_SPLIT_CALLS * 2 + 2 and "900 npm package(s)" in notes[0]
+
+
+def test_yarn_url_specifier_never_carries_credentials_into_the_name():
+    cred = "https://user:secret" + "@" + "host.example/pkg.tgz"        # joined so the leak check does not read an e-mail
+    assert deps._yarn_name("pkg@" + cred) == "pkg"
+    assert deps._yarn_name("@scope/pkg@" + cred) == "@scope/pkg"
+    text = '"pkg@' + cred + '":\n  version "1.2.3"\n'
+    pkgs, _ = deps.parse_yarn_lock(text)
+    assert pkgs == [("npm", "pkg", "1.2.3")]
+
+
+def test_a_short_follow_up_page_leaves_the_package_not_covered(monkeypatch):
+    calls = {"n": 0}
+
+    def fake(url, payload=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"results": [{"vulns": [{"id": "GHSA-1"}], "next_page_token": "more"} for _ in payload["queries"]]}
+        return {"results": []}                      # the follow-up page answers for nobody
+
+    monkeypatch.setattr(deps, "_fetch", fake)
+    found, _ = deps.lookup({("npm", "left-pad", "1.3.0")}, use_cache=False)
+    assert found == {}

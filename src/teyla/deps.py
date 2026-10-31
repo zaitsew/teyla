@@ -110,12 +110,18 @@ def parse_pnpm_lock(text: str) -> tuple[list[Pkg], list[str]]:
 
 def _yarn_name(spec: str) -> str | None:
     """The package a block header names. An alias (`alias@npm:lodash@^4.17.0`) resolves to the real package."""
+    if spec.startswith("__metadata"):
+        return None
     if "@npm:" in spec:
         before, after = spec.split("@npm:", 1)
         j = after.rfind("@")
         return after[:j] if j > 0 else before
+    if "://" in spec:                       # `pkg@https://user:token@host/pkg.tgz`: the name ends before the URL
+        head = spec.split("://", 1)[0]
+        i = head.rfind("@")
+        return head[:i] if i > 0 else None
     i = spec.rfind("@")
-    return spec[:i] if i > 0 and not spec.startswith("__metadata") else None
+    return spec[:i] if i > 0 else None
 
 
 def parse_yarn_lock(text: str) -> tuple[list[Pkg], list[str]]:
@@ -502,9 +508,13 @@ def _query(chunk: list[Pkg], budget: _Budget) -> tuple[dict[Pkg, list[str]], lis
         keys = list(pending)
         qs = [{**{"package": {"name": p[1], "ecosystem": p[0]}, "version": p[2]}, "page_token": pending[p]} for p in keys]
         res = _fetch(f"{OSV}/v1/querybatch", {"queries": qs}).get("results") or []
+        if len(res) < len(keys):              # a short or empty page answers for nobody: those stay pending
+            res = list(res) + [None] * (len(keys) - len(res))
         pending = {}
         for p, r in zip(keys, res):
-            r = r or {}
+            if r is None:
+                pending[p] = "incomplete"
+                continue
             ids[p] |= {v["id"] for v in r.get("vulns") or [] if v.get("id")}
             if r.get("next_page_token"):
                 pending[p] = r["next_page_token"]
