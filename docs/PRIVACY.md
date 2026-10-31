@@ -16,7 +16,7 @@ with `--allow-network`. The gate is `src/teyla/net.py`.
 | # | Trigger | Host | What is sent | Default on | Safe mode |
 |---|---|---|---|---|---|
 | 1 | The update check: `teyla doctor` (when the cached answer is over a day old), the session-start hook (once a day, in the background, once Teyla is set up), `teyla update --check` | `api.github.com` | A GET for the latest release and commit of `zaitsew/teyla`. It sends only the version, as the User-Agent `teyla/<version>`. The result is cached in `~/.teyla/update-check.json`. `teyla doctor` is not read-only: it also writes `~/.teyla/doctor.json`, `doctor.summary` and `banner.items`, and makes this one call when the cache is stale (`teyla doctor --refresh` always). | Yes | closed |
-| 2 | `teyla update` (the daily routine runs it, if you installed the routine) | `github.com`, and `pypi.org` for build tools | `uv tool install` or `pip` fetches the new release. No user data. | Only if the routine is installed | closed |
+| 2 | `teyla update` (the daily routine runs it, if you installed the routine) | `github.com`, and `pypi.org` for build tools (not in code: `uv` and `pip` reach it) | `uv tool install` or `pip` fetches the new release. No user data. | Only if the routine is installed | closed |
 | 3 | `teyla models --refresh` | `models.dev` | A GET of the public model catalogue. No user data. | No (needs `--refresh`) | closed |
 | 4 | `teyla plugin install owner/repo`, and offer O6 of `teyla start` when you say yes and Claude Code has no Teyla plugin (it installs `zaitsew/teyla`) | `github.com` | `git clone` or `git pull` of the repo you named, or of `zaitsew/teyla` for O6. | No (you name the repo, or say yes to O6) | closed |
 
@@ -53,7 +53,7 @@ These use your own `claude`, `codex` or `grok` login. The text goes to that prov
 | 23 | `teyla review triage <id>` (not `--dry`) | Anthropic, through `claude -p` (Sonnet) | One review capture (the comment, the screen, the tapped element), the product's `DESIGN.md` (first 12,000 characters), the confirmed rules that match the screen, and the last 20 design decisions. No tools, no settings, no saved session. | No (you run it on a capture) | closed |
 | 24 | `teyla review pull --testflight <app-id>` | `api.appstoreconnect.apple.com`, and the screenshot URL Apple returns in the answer | A read-only GET of the app's beta screenshot feedback, signed with a 15-minute token made from the key the release tool already uses (`~/.appstoreconnect/`); the key file is read only by `openssl` and never sent. Then one GET of each new screenshot, without the token. The tester's e-mail is dropped. | No (needs `--testflight`) | closed |
 | 25 | `teyla ux judge A.png B.png` and `--calibrate` (not `--dry`) | Anthropic, through `claude -p` (Sonnet) | The two screenshots you name (PNG, JPEG or GIF, at most 5 MB each, as image blocks) and the product's `DESIGN.md` (first 12,000 characters) when `--repo` is given. A calibration run sends each decided pair. No tools, no settings, no saved session. | No (you run it) | closed |
-| 26 | `teyla scout design` (not `--dry`), also in the Friday weekly routine | The hosts in `templates/design/SOURCES.md` (Apple, MacStories, Daring Fireball, Nielsen Norman Group, Smashing, and similar feeds), over HTTPS; and Anthropic, through `claude -p` (Sonnet), once per drafted proposal | A plain GET of each feed and each listed Apple HIG page: the user agent `teyla-scout/<version>` and nothing about you. The model call, only when an item meets a product problem, gets the item's title, source and one line, the problem text (from a decision, a review capture or a `ux check` FIX) and the titles of the standard's rules. `--no-model` makes no model call. | Yes, once a week, where the Friday weekly routine is installed (`--quiet`); you can also run it by hand | closed |
+| 26 | `teyla scout design` (not `--dry`), also in the Friday weekly routine | The hosts in `templates/design/SOURCES.md` (Apple, MacStories, Daring Fireball, Nielsen Norman Group, Smashing, and similar feeds), over HTTPS, and `developer.apple.com` for the HIG pages; and Anthropic, through `claude -p` (Sonnet), once per drafted proposal | A plain GET of each feed and each listed Apple HIG page: the user agent `teyla-scout/<version>` and nothing about you. The model call, only when an item meets a product problem, gets the item's title, source and one line, the problem text (from a decision, a review capture or a `ux check` FIX) and the titles of the standard's rules. `--no-model` makes no model call. | Yes, once a week, where the Friday weekly routine is installed (`--quiet`); you can also run it by hand | closed |
 | 27 | `teyla kit image` and `teyla kit compare` | `generativelanguage.googleapis.com` (Gemini API, Nano Banana 2.1) or `api.openai.com` (gpt-image-2), whichever the kit's `mascot.model` or `--model` names | The scene text, the mascot's character sheet, and up to six reference images from `brand/mascot/`, with your own API key (`GEMINI_API_KEY` or `OPENAI_API_KEY`, or the Keychain), read at call time and never stored. The price is printed first and the command refuses without `--yes`. | No (needs `--yes`) | closed |
 | 28 | `teyla reel product --voice` | `api.openai.com` (speech) | The voice-over text (the captions of the copy table, or the script you give) and your own `OPENAI_API_KEY` or Keychain `openai-api-key`. The price is printed first and the command refuses without `--yes`. | No (needs `--voice` and `--yes`) | closed |
 | 29 | `teyla copy write <brief>` (not `--dry`) | Anthropic, through `claude -p` (Sonnet) | One call per language: the screen's job, primary action and states, the glossary terms and the voice chart of that language, the rules, and the screen's current strings in that language. No other language's text. No tools, no settings, no saved session. | No (you run it on a brief) | closed |
@@ -85,6 +85,17 @@ needs a flag. The text it returns goes to the MCP client you connected, under th
 `teyla cloud prep` writes a setup script for a cloud sandbox that contains a `curl` line for the `uv`
 installer. Teyla does not run it. `teyla start`, `teyla monitor`, `teyla advise` and `teyla doctor`'s
 checks other than row 1 read local files only.
+
+## URLs in the code that are not calls
+
+`teyla hosts` reads Teyla's own source and lists every host literal. These appear in it and are never
+fetched by Teyla.
+
+| Where | Host | What it is |
+|---|---|---|
+| `teyla platform` (`src/teyla/platform.py`) | `dash.cloudflare.com`, `supabase.com`, `resend.com`, `app.mailgun.com`, `account.postmarkapp.com`, `appstoreconnect.apple.com`, `play.google.com`, `platform.openai.com` | Setup links printed in a hint. Teyla opens none of them. |
+| `teyla cloud` (`src/teyla/cloud.py`) | `claude.ai` | A string matched against local `git log` output (the session trailer). No request. |
+| `teyla cloud prep` (`src/teyla/cloud_prep.py`) | `astral.sh` | The `curl` line in the setup script it writes. Teyla does not run it. |
 
 ## Keeping this list true
 
