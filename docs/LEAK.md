@@ -70,9 +70,12 @@ An ignored `.env` is local-only and its blockers are listed as triage: the file 
 ## Output
 
 Every match prints as its first two characters, an ellipsis and its length: `sk…43`. A private term prints only as
-`term:<index>`, its position in the terms file; it is never printed, masked or not, and its fingerprint does not
-depend on its text. A finding has a fingerprint, the first 12 hex of `sha256(rule + path + match)`. Findings with
-the same rule and fingerprint are one finding with every place listed, so a key added in ten commits is one line.
+`term:<index>`, its position in the terms file, in every string: a path, a place, a note, an error and the JSON are
+scrubbed, so a file named after a term prints as `term:0-notes.txt`. Its fingerprint does not depend on its text. A
+finding has a fingerprint, the first 12 hex of `sha256(rule + path + match)`. For a gitleaks finding the match is
+the sha256 of the line it sits on (gitleaks redacts the secret), and for image metadata it is the EXIF payload, so
+swapping a fixture for a live value is a new finding. Findings with the same rule and fingerprint are one finding
+with every place listed, so a key added in ten commits is one line.
 
 `--json` prints `{"findings": [{rule, class, severity, path, line, masked, fingerprint, places}], "coverage":
 {read, unread, notes}, "errors", "exit"}`. `--quiet` prints the number of blockers. Text output ends with the coverage:
@@ -84,7 +87,17 @@ the surfaces read, the ones not read and why, and notes.
 |---|---|
 | 0 | every requested surface was read and nothing blocks |
 | 1 | at least one blocker (this wins over 2: fix it first) |
-| 2 | a surface could not be read, with no blocker: an explicit `$TEYLA_PRIVATE_TERMS` file that is missing, a shallow clone for `--outgoing`, no such remote, a binary plist or harness config that does not parse, gitleaks failing, `--require-gitleaks` unmet, a malformed `.leak-allow`, a usage error |
+| 2 | a surface could not be read, with no blocker: an explicit `$TEYLA_PRIVATE_TERMS` file that is missing, a shallow clone for `--outgoing`, no such remote, a binary plist or harness config that does not parse, PNG text that inflates past the cap, a file skipped (see below), gitleaks failing, `--require-gitleaks` unmet, a malformed `.leak-allow`, a usage error |
+
+A malformed `.leak-allow` does not stop the scan: the valid entries apply, blockers are reported, and the error
+(the line number only, never the line) adds exit 2 when nothing blocks.
+
+**One guarded reader.** No file is read whole without a cap. A file or blob over `--max-bytes` (default 4 MB), a
+file that is not regular, and a file whose real path leaves the repo (a symlinked `.claude`) are listed as not read and
+give exit 2; `--allow-partial` accepts that. A binary file over the cap with no structured reader is only counted in
+a note: it would be skipped as binary at any size. A symlink is scanned as its target, and a target in a home
+directory is rule `symlink-outside`. Git's `-diff` attribute and path quoting change nothing: paths come from `-z`
+output, and Teyla reads the blobs and decides text from binary itself.
 
 A missing scanner or an unread surface is never a pass. If no terms file exists at the default path and
 `$TEYLA_PRIVATE_TERMS` is unset, the run notes that the term rule did not run and does not fail.
@@ -96,7 +109,8 @@ When `gitleaks` is installed, `teyla leak` runs it as a local process and merges
 are not read), `protect --staged` for `--staged` when the installed version has it, and `detect --log-opts` for a
 range. It passes `--redact` and an explicit default config, so a repo cannot switch the engine off with its own
 `.gitleaks.toml` or `.gitleaksignore`. Without it, one coverage note says so and the exit code does not change.
-`--require-gitleaks` turns that note into exit 2.
+`--require-gitleaks` turns that note into exit 2, on every surface: `--text` runs `detect` over the text, and
+`--staged` needs a gitleaks with `protect --staged`.
 
 ## The allow-list
 
@@ -106,7 +120,7 @@ to gitleaks findings too. A section can be followed by an optional `[exceptions]
 ```
 [exceptions]
 term vendor/* upstream sample text, not ours until=2026-12-31
-secret tests/fixtures/*.pem a fake key the test needs fp=1a2b3c4d5e6f
+secret tests/fixtures/*.pem a fake key the test needs fp=<12 hex from the report>
 ```
 
 The fields are `rule glob reason`, then `until=YYYY-MM-DD` and `fp=<12 hex>` in any order. The rule is a glob on the
@@ -144,7 +158,7 @@ a release asset and the Grep tool are outside it. Wiring for Codex and Grok is i
 
 `teyla.leak` offers `scan_text(text, cfg=None) -> list[Finding]`, `scan_repo(root)`, `scan_staged(root)`,
 `scan_outgoing(root, remote)`, `scan_range(root, rng)` (each a `Result` of findings and coverage),
-`exit_code(result, require_gitleaks=False)`, `render(result)` and `to_json(result, code)`. The rules are
+`exit_code(result, require_gitleaks=False, allow_partial=False)`, `render(result)` and `to_json(result, code)`. The rules are
 `scripts/leak_check.py`, which `teyla.leak` imports; that script keeps its own CLI and exit codes, so the pre-push
 hook and `check.sh` need no Teyla install.
 

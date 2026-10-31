@@ -172,7 +172,7 @@ def load_allow(cfg: Config, root: Path | None) -> None:
         return
     section = None
     today = _dt.date.today()
-    for line in (root / ".leak-allow").read_text(encoding="utf-8").splitlines():
+    for no, line in enumerate((root / ".leak-allow").read_text(encoding="utf-8").splitlines(), 1):
         line = re.sub(r"\s+#.*$", "", line).strip()
         if not line or line.startswith("#"):
             continue
@@ -181,13 +181,15 @@ def load_allow(cfg: Config, root: Path | None) -> None:
         elif line.endswith(":") and line[:-1] in SECTIONS:
             section = line[:-1]
         elif section == "[exceptions]":
-            _add_exception(cfg, line, today)
+            _add_exception(cfg, line, today, no)
         elif section:
             cfg.allow[section].append(line)
 
 
-def _add_exception(cfg: Config, line: str, today: _dt.date) -> None:
-    """`rule glob reason... [until=YYYY-MM-DD] [fp=<12 hex>]`."""
+def _add_exception(cfg: Config, line: str, today: _dt.date, no: int = 0) -> None:
+    """`rule glob reason... [until=YYYY-MM-DD] [fp=<12 hex>]`. An error names the line number only: the line may
+    hold a token in `until=` or in the reason, and an error is printed, logged and sent to a model."""
+    where = f".leak-allow:{no}: [exceptions]"
     words = line.split()
     until: _dt.date | None = None
     fp: str | None = None
@@ -197,24 +199,33 @@ def _add_exception(cfg: Config, line: str, today: _dt.date) -> None:
             try:
                 until = _dt.date.fromisoformat(w[6:])
             except ValueError:
-                cfg.errors.append(f".leak-allow [exceptions]: bad date in `{w}` (want until=YYYY-MM-DD)")
+                cfg.errors.append(f"{where} bad date in until= (want until=YYYY-MM-DD)")
                 return
         elif re.fullmatch(r"fp=[0-9a-f]{12}", w):
             fp = w[3:]
         else:
             rest.append(w)
     if len(rest) < 3:
-        cfg.errors.append(".leak-allow [exceptions]: a line is `rule glob reason [until=YYYY-MM-DD]`; "
-                          f"`{line[:40]}` has no reason")
+        cfg.errors.append(f"{where} a line is `rule glob reason [until=YYYY-MM-DD]`; this one has no reason")
         return
     rule, glob, reason = rest[0], rest[1], " ".join(rest[2:])
-    secret_rule = any(fnmatch.fnmatchcase(r, rule) for r in ("secret", "secret-generic", "gitleaks:x"))
-    if secret_rule and fp is None and all(fnmatch.fnmatchcase(p, glob) for p in ("a", "a/b", "a/b/c.txt", ".env")):
-        cfg.errors.append(f".leak-allow [exceptions]: `{rule} {glob}` exempts every file from a secret rule; "
+    if _secret_family(rule) and fp is None and all(fnmatch.fnmatchcase(p, glob) for p in ("a", "a/b", "a/b/c.txt", ".env")):
+        cfg.errors.append(f"{where} this line exempts every file from a secret-family rule; "
                           "name the files, or the finding with fp=")
         return
     ex = AllowException(rule, glob, reason, until, fp)
     (cfg.expired if until is not None and until < today else cfg.exceptions).append(ex)
+
+
+SECRET_FAMILY = ("secret", "secret-generic", "harness-config", "image-metadata")
+
+
+def _secret_family(rule: str) -> bool:
+    """Whether a rule pattern can match a secret rule: `secret`, a harness or image finding, any `gitleaks:` rule.
+    A pattern such as `*` or `gitleaks:*` can, so it counts."""
+    if rule.startswith("gitleaks:") or rule.startswith("gitleaks"):
+        return True
+    return any(fnmatch.fnmatchcase(r, rule) for r in SECRET_FAMILY)
 
 
 def fp_key(hit: Hit) -> str:
