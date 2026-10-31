@@ -431,6 +431,89 @@ def test_ignored_file_that_is_work_keeps_worktree(tmp_path):
     assert row["reason"].endswith("not build output: .env")
 
 
+def _ignored_tree(tmp_path, gitignore, spec=None):
+    code_root, main, _ = _make_repo(tmp_path)
+    (main / "app").mkdir()
+    (main / "app" / ".gitignore").write_text(gitignore)
+    if spec is not None:
+        (main / "app" / "project.yml").write_text(spec)
+    _git(main, "add", "-A"); _git(main, "commit", "-m", "app"); _git(main, "push")
+    wt = tmp_path / "wt-feat"
+    _add_worktree(main, wt, "feat")
+    return code_root, wt
+
+
+def _row_after(tmp_path, code_root, wt):
+    now = time.time()
+    _age_worktree(wt, _gitdir(wt), 5, now)
+    return _safe_row(tmp_path, code_root, wt, now)[1]
+
+
+XCODEGEN_SPEC = """targets:
+  App:
+    type: application
+    info:
+      path: App/Info.plist  # written by xcodegen
+      properties:
+        CFBundleDisplayName: Demo
+  Widget:
+    info:
+      path: "Widget/Info.plist"
+"""
+
+
+def test_xcodegen_generated_plists_are_build_output(tmp_path):
+    code_root, wt = _ignored_tree(tmp_path, "App/Info.plist\nWidget/Info.plist\n", XCODEGEN_SPEC)
+    for rel in ("App", "Widget"):
+        (wt / "app" / rel).mkdir()
+        (wt / "app" / rel / "Info.plist").write_text("<plist/>")
+    assert _row_after(tmp_path, code_root, wt)["verdict"] == "SAFE"
+
+
+def test_ignored_plist_no_spec_generates_is_work(tmp_path):
+    code_root, wt = _ignored_tree(tmp_path, "App/Info.plist\nSecrets.plist\n", XCODEGEN_SPEC)
+    (wt / "app" / "App").mkdir()
+    (wt / "app" / "App" / "Info.plist").write_text("<plist/>")
+    (wt / "app" / "Secrets.plist").write_text("<plist/>")
+    row = _row_after(tmp_path, code_root, wt)
+    assert row["verdict"] == "KEEP"
+    assert row["reason"].endswith("not build output: app/Secrets.plist")
+
+
+def test_spec_info_paths_reads_only_the_path_under_info():
+    spec = "settings:\n  path: nope\ninfo:\n  properties:\n    A: b\n  path: Info.plist\nother:\n  path: no.plist\n"
+    assert storage._spec_info_paths(spec) == ["Info.plist"]
+
+
+def test_connect_iq_bin_is_build_output(tmp_path):
+    code_root, wt = _ignored_tree(tmp_path, "bin/\n")
+    out = wt / "app" / "bin"
+    (out / "gen" / "006" / "source").mkdir(parents=True)
+    for name in ("Field.prg", "Field.prg.debug.xml", "Field-settings.json", ".typecheck-settings.json"):
+        (out / name).write_text("x")
+    (out / "gen" / "006" / "source" / "Rez.mcgen").write_text("x")
+    assert _row_after(tmp_path, code_root, wt)["verdict"] == "SAFE"
+
+
+def test_connect_iq_typecheck_leftovers_are_build_output(tmp_path):
+    code_root, wt = _ignored_tree(tmp_path, "bin/\n")
+    (wt / "app" / "bin" / "mir").mkdir(parents=True)
+    (wt / "app" / "bin" / "mir" / "Field.mir").write_text("x")
+    (wt / "app" / "bin" / "Field.mbc").write_text("x")
+    assert _row_after(tmp_path, code_root, wt)["verdict"] == "SAFE"
+
+
+@pytest.mark.parametrize("files", [["deploy.sh", "Field.prg"], ["Field-settings.json"]])
+def test_bin_with_anything_but_a_built_app_is_work(tmp_path, files):
+    code_root, wt = _ignored_tree(tmp_path, "bin/\n")
+    (wt / "app" / "bin").mkdir()
+    for name in files:
+        (wt / "app" / "bin" / name).write_text("x")
+    row = _row_after(tmp_path, code_root, wt)
+    assert row["verdict"] == "KEEP"
+    assert row["reason"].endswith("not build output: app/bin/")
+
+
 def _repo_mode(monkeypatch, tmp_path):
     """`corrections.store = "repo"`: the pre-0.12 place, where rescue appends byte for byte."""
     th = tmp_path / "teyla-home-repo-mode"; th.mkdir()

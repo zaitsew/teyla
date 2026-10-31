@@ -20,7 +20,8 @@ What counts as SAFE is the rule in the owner's CLAUDE.md, applied mechanically:
   no process has its working directory inside it, it is not locked, its own reflog points
   at no commit that exists nowhere else, no other worktree lives inside it, and it holds no
   git-ignored file that is not build output (`git worktree remove` deletes ignored files
-  even without `--force`: a `.env`, local notes). A pre-0.12 `.teyla/corrections.jsonl` is
+  even without `--force`: a `.env`, local notes). Output includes the Info.plist an XcodeGen
+  spec generates (`info: path:`) and a `bin/` holding only Connect IQ compiler output. A pre-0.12 `.teyla/corrections.jsonl` is
   imported into the repo's correction store (~/.teyla/corrections/) first. Every fact is checked again right before removal; the
   tree goes with `git worktree remove` — never `rm` — and without `--force`. The branch is kept.
 - **a build directory** (`build`, `.build`, `.next`, `dist`, `target`, `DerivedData`, …) is
@@ -81,6 +82,10 @@ HARMLESS_PATHS = {".claude/settings.local.json"}
 # Caches that write their own `.gitignore` of `*`: git lists what is inside them file by
 # file (`api/.mypy_cache/.gitignore`, `api/.mypy_cache/3.12/`), never the directory itself.
 SELF_IGNORING = {".pytest_cache", ".mypy_cache", ".ruff_cache"}
+# What the Connect IQ compiler (`monkeyc`) writes into a Garmin project's ignored `bin/`.
+CIQ_OUTPUT_SUFFIXES = (".prg", ".prg.debug.xml", ".iq", ".mir", ".mbc", ".mcgen", "-settings.json")
+# XcodeGen specs: the plist an `info: path:` names is written again on every `xcodegen generate`.
+XCODEGEN_SPECS = ("project.yml", "project.yaml")
 # Ignored, but work: moved into the main checkout's copy before the tree goes.
 RESCUE = ".teyla/corrections.jsonl"
 # A DerivedData folder touched more recently than this may still be written to: a build or the
@@ -282,6 +287,68 @@ def _in_self_ignoring_cache(path: str, entry: str, seen: dict[str, bool]) -> boo
     return False
 
 
+def _connect_iq_output(path: str, entry: str) -> bool:
+    """`entry` is an ignored `bin/` directory holding only Connect IQ compiler output, with at
+    least one file only the compiler writes (a settings JSON alone could be written by hand;
+    a type-check leaves `.mir`/`.mbc` and no `.prg`). A `bin/` of scripts or anything else is work."""
+    if not entry.endswith("/") or entry.rstrip("/").rsplit("/", 1)[-1] != "bin":
+        return False
+    built = False
+    for root, dirs, files in os.walk(pathlib.Path(path, entry)):
+        if any(os.path.islink(os.path.join(root, d)) for d in dirs):
+            return False
+        for f in files:
+            if f == ".DS_Store":
+                continue
+            if os.path.islink(os.path.join(root, f)) or not f.endswith(CIQ_OUTPUT_SUFFIXES):
+                return False
+            built = built or not f.endswith("-settings.json")
+    return built
+
+
+def _spec_info_paths(text: str) -> list[str]:
+    """The `path:` under each block-style `info:` key of an XcodeGen spec."""
+    found, info_indent = [], None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip())
+        if info_indent is not None:
+            if indent <= info_indent:
+                info_indent = None
+            elif stripped.startswith("path:"):
+                value = stripped[5:].split(" #", 1)[0].strip().strip("'\"")
+                if value:
+                    found.append(value)
+                info_indent = None
+                continue
+            else:
+                continue
+        if stripped == "info:":
+            info_indent = indent
+    return found
+
+
+def _xcodegen_plists(path: str) -> set[str]:
+    """Worktree-relative paths of the plists the tracked XcodeGen specs generate."""
+    rc, out = _git(path, "ls-files", "-z", "--", *(f":(glob)**/{n}" for n in XCODEGEN_SPECS))
+    if rc != 0:
+        return set()
+    root = pathlib.Path(path).resolve()
+    plists = set()
+    for spec in filter(None, out.split("\0")):
+        try:
+            text = pathlib.Path(path, spec).read_text()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for rel in _spec_info_paths(text):
+            target = (root / pathlib.PurePosixPath(spec).parent / rel).resolve()
+            if target.suffix == ".plist" and target.is_relative_to(root):
+                plists.add(target.relative_to(root).as_posix())
+    return plists
+
+
 def ignored_work(path: str) -> tuple[list[str], list[str]]:
     """(ignored entries that are work, files to rescue). `git status` does not show ignored
     files, and `git worktree remove` deletes them without --force: a `.env` holding a key,
@@ -289,13 +356,18 @@ def ignored_work(path: str) -> tuple[list[str], list[str]]:
     rc, out = _git(path, "status", "--porcelain", "--ignored=matching", "--untracked-files=all")
     if rc != 0:
         return ["(git status failed)"], []
-    work, rescue, caches = [], [], {}
+    work, rescue, caches, generated = [], [], {}, None
     for line in out.splitlines():
         if not line.startswith("!! "):
             continue
         entry = line[3:].strip().strip('"')
-        if _harmless(entry) or _in_self_ignoring_cache(path, entry, caches):
+        if _harmless(entry) or _in_self_ignoring_cache(path, entry, caches) or _connect_iq_output(path, entry):
             continue
+        if entry.endswith(".plist"):
+            if generated is None:
+                generated = _xcodegen_plists(path)
+            if entry in generated:
+                continue
         if entry.rstrip("/") == ".teyla":
             files = [str(p.relative_to(path)) for p in pathlib.Path(path, ".teyla").rglob("*") if p.is_file()]
             if files and all(f == RESCUE for f in files):
