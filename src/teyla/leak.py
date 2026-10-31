@@ -330,8 +330,9 @@ def repo_visibility(root: Path | None) -> str | None:
     if root is None:
         return None
     try:
-        p = subprocess.run(["git", "-C", str(root), "config", "--get", VISIBILITY_KEY], capture_output=True, text=True,
-                           timeout=15)
+        # --local only: a global or system value would downgrade every repo without a local one.
+        p = subprocess.run(["git", "-C", str(root), "config", "--local", "--get", VISIBILITY_KEY], capture_output=True,
+                           text=True, timeout=15)
     except (OSError, subprocess.SubprocessError):
         return None
     value = p.stdout.strip() if p.returncode == 0 else ""

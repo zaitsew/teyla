@@ -275,3 +275,17 @@ def test_shield_unrecorded_or_public_repo_keeps_the_old_row(tmp_path, monkeypatc
     monkeypatch.setattr(shield, "_leak_command", lambda r: (["sh", "-c", "echo 4; exit 1", "x", "--quiet"], None))
     status, text = shield.check_leak(type("C", (), {"repo": d})())
     assert status == "FIX" and "found 4" in text
+
+
+def test_a_global_visibility_value_does_not_count(tmp_path, monkeypatch):
+    """Only the repo's own (local) config records its visibility: a global `teyla.visibility private` would
+    downgrade every repo that has no local value."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+    gcfg = tmp_path / "gitconfig"
+    gcfg.write_text("[teyla]\n\tvisibility = private\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gcfg))
+    assert leak.repo_visibility(repo) is None
+    subprocess.run(["git", "-C", str(repo), "config", "teyla.visibility", "private"], check=True)
+    assert leak.repo_visibility(repo) == "private"
