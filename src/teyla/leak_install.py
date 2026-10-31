@@ -70,7 +70,14 @@ _PUSH_SCAN = """  while read -r _tlg_l _tlg_lsha _tlg_r _tlg_rsha; do
     fi
     case "$_tlg_l" in refs/tags/*)
       _tlg_obj=$_tlg_lsha; _tlg_depth=0
-      while [ "$(git cat-file -t "$_tlg_obj" 2>/dev/null)" = "tag" ]; do
+      while :; do
+        _tlg_type=$(git cat-file -t "$_tlg_obj" 2>/dev/null)
+        if [ -z "$_tlg_type" ]; then
+          echo "teyla leak gate: cannot read the tag chain of $_tlg_l; refusing the push" >&2
+          [ "$_tlg_rc" -lt 2 ] && _tlg_rc=2
+          break
+        fi
+        [ "$_tlg_type" = "tag" ] || break
         _tlg_depth=$(( _tlg_depth + 1 ))
         if [ "$_tlg_depth" -gt 20 ] || ! git cat-file -p "$_tlg_obj" > "$_tlg_in.tag" 2>/dev/null; then
           echo "teyla leak gate: cannot read the tag chain of $_tlg_l; refusing the push" >&2
