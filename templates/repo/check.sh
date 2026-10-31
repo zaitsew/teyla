@@ -19,6 +19,19 @@ case "${1:-}" in
     exit 0 ;;
 esac
 
+# --- security: static inspection, before anything repository-controlled runs -----------------
+# These read files and print. They come BEFORE `.env` is sourced below on purpose: a check must
+# never execute repository-controlled configuration to find out what the repository does.
+# An older teyla without the subcommand is skipped, not failed.
+if command -v teyla >/dev/null 2>&1; then
+  if teyla leak --help >/dev/null 2>&1; then
+    teyla leak --quiet || { echo "teyla leak FAILED: a secret or private term is in the tree"; exit 1; }
+  fi
+  if teyla hosts --help >/dev/null 2>&1; then
+    teyla hosts . --quiet || { echo "teyla hosts FAILED: add a row to docs/PRIVACY.md for each host listed"; exit 1; }
+  fi
+fi
+
 missing=()
 warnings=()
 
