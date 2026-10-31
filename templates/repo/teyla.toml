@@ -19,7 +19,7 @@ name = "{{name}}"
 {{productize}}
 # --- security contract ---
 # What this product must keep, read by `teyla shield check .` (docs/CONTRACT.md in the teyla repo).
-# The tier comes from [productize] users unless you set `tier` here. Replace the data list first.
+# The tier follows the `users` key of the productize block unless you set `tier` here. Replace the data list first.
 [security]
 # tier = "owner"                        # owner | family | testers | public
 data = []                               # account location health messages payments files | ["none"]

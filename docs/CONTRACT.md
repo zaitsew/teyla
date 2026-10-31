@@ -64,9 +64,9 @@ max_age_days = 30                       # optional; default 30
 | Requirement | Source | OK when |
 |---|---|---|
 | contract | the section | tier, data classes, legs, rls and evidence rows are well formed; `data` is declared |
-| leak | repo | `teyla leak --quiet` exits 0 (else `scripts/leak_check.py --quiet`, else `teyla._leak_check`); no scanner is a FIX |
+| leak | repo | the leak scanner exits 0 (the `leak` command when this Teyla has it, else `scripts/leak_check.py --quiet`); no scanner is a FIX |
 | hooks | repo | `.githooks/pre-commit` and `pre-push` are executable and `core.hooksPath` is `.githooks` |
-| hosts | repo | the `hosts` file has a table; where `teyla hosts` exists it also exits 0 |
+| hosts | repo | the `hosts` file has a table; where Teyla has a `hosts` command it must also exit 0 |
 | lockfile | repo | each npm, Deno, SwiftPM, Python, Ruby, Go or Cargo manifest has its lockfile |
 | rls | repo | every `create table` in `supabase/migrations/*.sql` has `enable row level security`; tables in other schemas are skipped |
 | privacy-manifest | repo | an Xcode project exists and `PrivacyInfo.xcprivacy` does too (n/a without Xcode) |
@@ -76,7 +76,7 @@ max_age_days = 30                       # optional; default 30
 | trifecta | section | fewer than three legs, or an `executor-split` row |
 | release-notes | repo | `docs/APP-STORE.md` (or `docs/PLAY-STORE.md`, `docs/REVIEW-NOTES.md`) has a line starting `DATA` |
 | rls-test | evidence `rls-test` | a row inside its limit (n/a without migrations) |
-| deps | evidence `deps` | a row inside its limit; `teyla deps` will record it |
+| deps | evidence `deps` | a row inside its limit; the dependency audit will record it |
 | probe | evidence `mcp-probe` | a row inside its limit |
 | credential-separation | evidence `credential-separation` | a row inside its limit |
 
