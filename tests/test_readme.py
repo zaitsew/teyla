@@ -71,7 +71,7 @@ def _links(text: str) -> list[str]:
 
 def test_the_readme_fits_two_screens_and_opens_with_the_promise():
     lines = README.splitlines()
-    assert len(lines) <= 120
+    assert len(lines) <= 130          # two screens; the pack table takes 12 of them
     assert "brand/lockup.svg" in README and "brand/lockup-dark.svg" in README and "prefers-color-scheme: dark" in README
     assert "docs/img/web-start.png" in "\n".join(lines[:14])
     assert teyla.PROMISE in " ".join(README.split())
@@ -79,9 +79,8 @@ def test_the_readme_fits_two_screens_and_opens_with_the_promise():
 
 def test_the_readme_has_its_parts_in_order():
     heads = re.findall(r"(?m)^## (.+)$", README)
-    assert heads == ["Set it up with your agent", "Or by hand", "Cost and waste", "What's waiting on you",
-                     "Where every product stands", "Your products and notes", "One policy for every agent", "The Mac app", "Privacy",
-                     "Undo and uninstall", "Links"]
+    assert heads == ["Set it up with your agent", "Or by hand", "Pick your packs", "Cost and waste", "What's waiting on you",
+                     "One policy for every agent", "The Mac and iPhone apps", "Privacy", "Undo and uninstall"]
 
 
 def test_the_readme_gives_a_stranger_one_line_to_paste_and_one_install_command():
@@ -101,7 +100,7 @@ def test_the_readme_defines_the_words_a_stranger_would_not_know():
 
 def test_the_readme_names_every_part_of_the_first_run_and_the_undo():
     cmds = _argvs(README)
-    for need in (("start",), ("today",), ("asks",), ("product", "init"), ("note",), ("policy", "sync"),
+    for need in (("start",), ("features",), ("features", "on"), ("today",), ("asks",), ("product", "init"), ("note",), ("policy", "sync"),
                  ("harness", "sync"), ("routine", "install"), ("changes",), ("undo", "O1"), ("uninstall", "--dry"),
                  ("uninstall",), ("web",)):
         assert any(c[:len(need)] == list(need) for c in cmds), need
