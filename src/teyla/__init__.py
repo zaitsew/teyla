@@ -1,5 +1,5 @@
 """Teyla — an operating system for working with AI agents."""
-__version__ = "0.34.0"
+__version__ = "0.35.0"
 
 # The one-sentence promise. bare `teyla` prints it, AGENTS.md opens with it and pyproject.toml uses it as
 # the package description; tests/test_agents_md.py fails when they drift apart.
