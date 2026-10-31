@@ -53,7 +53,7 @@ reverses it.
 ### Hooks
 
 Hooks run in Claude Code and Cowork. Claude chat on the web ignores them. All are POSIX `sh`
-(one also runs a stdlib-only Python file), and every failure path exits 0 without output.
+(one also runs a stdlib-only Python file), and every failure path exits 0 without output, except in `leak-guard.sh` once a command has matched one of its words (it then refuses, with the reason).
 
 | Event | Script | What it does | Default |
 |---|---|---|---|
@@ -62,10 +62,11 @@ Hooks run in Claude Code and Cowork. Claude chat on the web ignores them. All ar
 | `UserPromptSubmit` | `capture-intent.sh` | Keeps a prompt of 400 characters or more, scrubbed, in `~/.teyla/intent/<repo>.md`. Writes nothing without the CLI. | on, CLI only |
 | `PreToolUse` | `pre-tool-use.sh` | The kill switch. It denies every tool call while `~/.teyla/KILL` exists, and it enforces capability grants only for a run you started with `teyla run`. Without those files it allows the call. | on |
 | `PreToolUse` (Bash) | `machine-guard.sh` | Refuses a build, a simulator boot or a headless agent while the machine is out of memory. Needs the CLI, otherwise allows. It fails open. | on, CLI only |
+| `PreToolUse` (Bash, Read, Edit, Write) | `leak-guard.sh` | The agent boundary. Scans the text a `gh pr\|issue\|release\|gist` call or a `git commit\|tag` publishes for secrets and private terms, and refuses a read of a credential file, a Keychain dump and `gh repo edit --visibility public`. A command with none of those words passes at once. One that has them is refused when the guard cannot run: it needs `python3` and the `teyla` package. | on, CLI required for publications |
 | `Stop` | `land-check.sh` | Once per session, notes work that never reached a remote. | off (`teyla config set hooks.land_check=true`) |
 | `SessionStart`, `UserPromptSubmit`, `PostToolUse` | `context-budget.sh` | Asks the model to write a handoff note before a long session compacts, and puts it back after. | off (`teyla config set hooks.context_budget=true`) |
 
-`pre-tool-use.sh` is the one script that can exit 2 on purpose: only when you created
+`pre-tool-use.sh` and `leak-guard.sh` are the two scripts that can exit 2 on purpose. `leak-guard.sh` does so only for a command that publishes text or names a credential. `pre-tool-use.sh` does so only when you created
 `~/.teyla/KILL` or started a `teyla run` with grants. A plain install has neither.
 
 The two opt-in hooks stay off because a machine that already runs its own copies would see
@@ -119,6 +120,7 @@ with the one optional exception under Network.
 | `~/.teyla/corrections/<repo>-<hash>.jsonl` (mode 0600) | `/teyla:correct`, `capture-correction.sh` | timestamp, text, directory; secrets replaced by `[redacted]` |
 | `~/.teyla/intent/<repo>.md` (mode 0600) | `capture-intent.sh` | prompts of 400+ characters, word for word, secrets scrubbed |
 | `~/.teyla/handoff/<session>.md` (mode 0600) | `context-budget` (opt-in) | the model's own handoff note |
+| `~/.teyla/leak-skips.log` | `leak-guard.sh` | a timestamp and `skip` each time `TEYLA_LEAK_GUARD=0` skips a publication scan; never the text |
 | `$TMPDIR/teyla-land-check/<session>` | `land-check` (opt-in) | an empty marker file |
 | `~/.teyla/*` (stamps, notice files) | the CLI and `session-start.sh`, on a machine where Teyla is set up | small state files |
 

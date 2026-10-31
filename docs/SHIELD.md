@@ -294,6 +294,9 @@ scanner is itself a change the review gate treats as touching credentials (`--hi
 existing hook rather than replacing it. Where `teyla` is not installed the hook prints one line
 and exits 2: a missing scanner is a coverage gap, not a pass. `TEYLA_LEAK=0` skips a hook for
 one command, logged to `~/.teyla/leak-skips.log` so the skip is on record.
+The agent hook has its own switch, `TEYLA_LEAK_GUARD=0`, which lifts only the publication scan
+for one command; the credential-path, Keychain and visibility rules stay on. One variable never
+opens both doors.
 
 **What it does not do.** It does not rewrite history and it does not rotate a key. A historical
 finding's first line is "rotate this credential today"; history rewriting is a separate,

@@ -101,6 +101,21 @@ Cursor and Grok take the same command in their MCP settings (`command: teyla`, `
   - **Hermes**: not wired; its `pre_tool_call` shell-hook contract was not verified here.
   The guard fails open everywhere (a hook that crashes or times out allows the call); `TEYLA_GUARD=0`
   and `guard.enabled=false` switch it off for every harness.
+- **The leak guard** (`leak-guard.sh`: the text an agent publishes goes through `teyla leak --text -`, a
+  credential file is not read, a Keychain secret is not printed, an existing repo is not made public) is the
+  same kind of hook as the machine guard and takes the same wiring. It runs `python3 -I -m teyla.leak_guard`,
+  so the `teyla` package must be installed for the same python3 (or name one with `TEYLA_PYTHON`).
+  - **Claude Code**: plugin `hooks.json` PreToolUse, matcher `Bash|Read|Edit|Write|MultiEdit`, timeout 30.
+  - **Codex**: not wired by `teyla harness sync` yet. By hand, add a PreToolUse group to `~/.codex/hooks.json`
+    with matcher `Bash|Read|Edit|Write` (Codex says `Bash` for shell calls and `Read`, `Edit`, `Write` for
+    file tools; verify with `codex features list`) and command `~/.teyla/hooks/leak-guard.sh`, timeout 30,
+    then trust it once in Codex. The script reads `tool_input.command` (a string, or the
+    `["bash", "-lc", "..."]` array) and `tool_input.file_path`.
+  - **Grok**: the same script with `--grok`, which also prints `{"decision":"deny","reason":...}`.
+  - **Cursor, Hermes**: not wired, for the reasons under the machine guard.
+  Unlike the machine guard it fails closed on a command that matched one of its tokens. `TEYLA_LEAK_GUARD=0`
+  skips the publication scan once and is logged to `~/.teyla/leak-skips.log`; it never lifts the
+  credential, Keychain or visibility rules.
 - **The intent hook** (`capture-intent.sh`, `teyla intent`) rides on the same prompt event as the
   correction hook in all four: Codex `UserPromptSubmit` and Grok `UserPromptSubmit` (`... codex`,
   `... grok`), Cursor `beforeSubmitPrompt` (no argument; its entries read `other`) and Hermes
