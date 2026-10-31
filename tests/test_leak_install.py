@@ -523,7 +523,7 @@ def test_suggest_yes_fixes_loose_permissions_on_the_default_location(box, monkey
 def test_json_output_never_carries_a_value(box, facts, capsys):
     rc, out, _ = run_terms(capsys, "--yes", "--json")
     data = json.loads(out)
-    assert data["added"] == 5 and all(set(c) == {"masked", "source"} for c in data["candidates"])
+    assert data["added"] == 5 and all(set(c) == {"masked", "source", "section"} for c in data["candidates"])
     assert "Quentin" not in out and "mail.test" not in out
 
 

@@ -322,6 +322,7 @@ def load_config(root: Path | None):
     eng = _engine()
     cfg = eng.Config()
     eng.load_terms(cfg)
+    cfg.teyla = eng.is_teyla_repo(root)          # root None (a text outside a repo run): the current directory
     eng.load_allow(cfg, root)
     return cfg
 

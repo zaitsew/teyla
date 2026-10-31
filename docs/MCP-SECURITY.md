@@ -51,7 +51,9 @@ budget cuts short is a SKIP that exits 2, never OK.
 ### Budgets and writes
 
 The probe has a request budget (`--budget`, default 60) and a time budget (`--seconds`, default 120);
-both must be above zero or it exits 2 before sending anything. Every request is counted. A check that
+both must be above zero or it exits 2 before sending anything. The time budget is a hard deadline: each
+request (connect, headers and body) is cut off at it, even when the server sends one byte at a time, and the
+run reports the spent budget. Every request is counted. A check that
 meets a spent budget prints SKIP with the reason. Rough use in a default run: 9 to 12 requests for the
 handshakes, pinning, schema and size checks, up to 12 for SSRF, up to 10 for the canary, and the rest
 (up to 30) for the rate limit.

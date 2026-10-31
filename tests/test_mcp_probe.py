@@ -36,6 +36,8 @@ class Fake:
         self.crash_on_big = False      # drop the connection on a 1 MB argument
         self.fetch_drop = False        # drop the connection when fetch_url is called
         self.drip = False              # answer every request as an event stream that never carries data
+        self.stall = False             # event stream headers, then silence for 5 s
+        self.byte_drip = False         # event stream headers, then one byte (no newline) every 0.2 s
         self.page_size = None          # tools/list pages of this size, linked by nextCursor
         self.endless_pages = False     # tools/list always has a nextCursor
         self.ghost_required = False    # first tool requires an argument that its properties do not list
@@ -101,10 +103,19 @@ def make_handler(fake: Fake):
             method, mid = msg.get("method"), msg.get("id")
             params = msg.get("params") or {}
             rec = {"method": method, "path": self.path, "auth": self.headers.get("Authorization"), "size": len(raw)}
-            if fake.drip:
+            if fake.stall:
                 with fake.lock:
                     fake.requests.append(rec)
-                return self.do_drip()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+                self.close_connection = True
+                time.sleep(5)
+                return
+            if fake.drip or fake.byte_drip:
+                with fake.lock:
+                    fake.requests.append(rec)
+                return self.do_drip(byte=fake.byte_drip)
             with fake.lock:
                 fake.requests.append(rec)
                 if fake.redirect:
@@ -142,14 +153,14 @@ def make_handler(fake: Fake):
                     return self.send_call(mid, params, rec, len(raw))
                 return self.send(200, {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": "no such method"}})
 
-        def do_drip(self):
+        def do_drip(self, byte=False):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
             self.close_connection = True
             try:
                 for _ in range(40):
-                    self.wfile.write(b": keep-alive\n")
+                    self.wfile.write(b":" if byte else b": keep-alive\n")
                     self.wfile.flush()
                     time.sleep(0.2)
             except OSError:
@@ -763,3 +774,88 @@ def test_round_two_fixes():
     assert not mp.TOKEN_RE.fullmatch('ab\\cd') and not mp.TOKEN_RE.fullmatch('ab"cd') and mp.TOKEN_RE.fullmatch("abc_123-xyz")
     r = mp.Resp(500, body={"jsonrpc": "2.0", "id": 1, "error": {"code": -32000, "message": "Unauthorized"}})
     assert not mp.Probe._refuses(r)
+
+
+INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+
+
+def _post_timed(url, seconds):
+    c = mcp_probe.Client(url, TOKEN, 10, seconds)
+    t0 = time.monotonic()
+    with pytest.raises(mcp_probe.BudgetSpent) as e:
+        c.post(INIT, {})
+    return time.monotonic() - t0, str(e.value)
+
+
+def test_a_one_byte_drip_stops_at_the_time_budget(server):
+    fake = server(byte_drip=True)
+    took, msg = _post_timed(fake.url, 1.0)
+    assert took < 1.5 and "budget" in msg and "timeout" not in msg
+
+
+def test_a_response_without_a_reachable_socket_is_still_bounded(server, monkeypatch):
+    monkeypatch.setattr(mcp_probe, "_sock_of", lambda r: None)
+    monkeypatch.setattr(mcp_probe, "REQUEST_TIMEOUT_S", 30.0)   # the per-call timeout alone would hold for 30 s
+    fake = server(byte_drip=True)
+    took, msg = _post_timed(fake.url, 1.0)
+    assert took < 1.5 and "budget" in msg
+
+
+def test_one_blocked_read_without_a_socket_is_bounded(server, monkeypatch):
+    monkeypatch.setattr(mcp_probe, "_sock_of", lambda r: None)
+    monkeypatch.setattr(mcp_probe, "REQUEST_TIMEOUT_S", 30.0)
+    fake = server(stall=True)
+    took, msg = _post_timed(fake.url, 1.0)
+    assert took < 1.5 and "budget" in msg
+
+
+def test_headers_that_drip_are_bounded_too(monkeypatch):
+    monkeypatch.setattr(mcp_probe, "REQUEST_TIMEOUT_S", 30.0)
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+
+    def serve():
+        conn, _ = srv.accept()
+        try:
+            conn.recv(65536)
+            for ch in b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n":
+                conn.sendall(bytes([ch]))
+                time.sleep(0.1)
+        except OSError:
+            pass
+        finally:
+            conn.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    try:
+        took, msg = _post_timed(f"http://127.0.0.1:{srv.getsockname()[1]}/mcp", 1.0)
+    finally:
+        srv.close()
+    assert took < 1.5 and "budget" in msg
+
+
+def test_a_dripping_server_is_a_budget_skip_in_a_full_run(server, repo, capsys):
+    fake = server(byte_drip=True)
+    own(repo, fake.url)
+    t0 = time.monotonic()
+    rc, out = probe(repo, fake.url, "--seconds", "1", capsys=capsys)
+    assert time.monotonic() - t0 < 2 and rc == 2 and "time budget" in out.out + out.err
+
+
+@pytest.mark.parametrize("sse", [False, True])
+def test_a_normal_answer_is_read_unchanged(server, monkeypatch, sse):
+    fake = server(sse=sse)
+    c = mcp_probe.Client(fake.url, TOKEN, 10, 5.0)
+    r = c.post(INIT, {})
+    assert r.status == 200 and r.body["result"]["serverInfo"]["name"] == "fake"
+    monkeypatch.setattr(mcp_probe, "_sock_of", lambda r: None)
+    r = c.post(INIT, {})
+    assert r.status == 200 and r.body["result"]["serverInfo"]["name"] == "fake"
+
+
+def test_an_http_error_answer_is_read_unchanged(server):
+    fake = server()
+    c = mcp_probe.Client(fake.url, None, 10, 5.0)
+    r = c.post(INIT, {}, authed=False)
+    assert r.status == 401 and r.body["error"]["code"] == -32001
