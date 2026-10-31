@@ -45,6 +45,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
         ("testflight", "Did the iOS build reach a person"),
         ("play", "Did the Android build reach a person"),
         ("reviews", "Merged PRs that were never reviewed, or merged with a P1 open"),
+        ("deps", "Known vulnerabilities in the pinned versions of a repo's lockfiles"),
         ("routines", "Whether each product's scheduled checks ran"),
         ("check", "Confirm a manual check in a product's teyla.toml"),
         ("docs", "Does a repo's README describe the product as it is now"),
