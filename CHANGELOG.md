@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.35.0 — 2026-11-01 — Packs: pick what you need, hear about the rest when it would help
+
+- **`teyla features`: Teyla as a kit of ten packs.** Six automatic packs change settings, hooks or launchd jobs:
+  `cost` (O1 to O4 and the context-budget hook), `load` (the machine guard and its recorder agent), `disk` (the
+  simulator and sweep agents), `inbox` (O6 and prompt capture), `policy` (O5) and `daily` (O7). Four toolkit packs
+  install nothing and name their commands: `security`, `design`, `ship` and `writing`. `teyla features` shows each
+  one as on, partly or off; `on` makes its changes after showing them, `off` turns its switches off and undoes its
+  O1 to O4 changes, `choose` records a checklist answer. `docs/FEATURES.md`.
+- **`teyla start` opens with a checklist.** After the summary card, tick the packs you need; only their offers
+  are asked, then the rest of each ticked pack. Packs already on, packs whose problem was seen, and on a first run
+  `cost` and `inbox` start ticked. A pack left out and still off gets its plugin hook quieted
+  (`guard.enabled = false`, `intent.enabled = false`) while the key is at its default. `--agent` adds `features`
+  to the JSON, and AGENTS.md tells an agent to show it as one checklist.
+- **Reminders when a problem shows up.** `teyla doctor` adds a `feature:<pack>` WARN when a pack is off and its
+  problem appears: a kernel panic or CRITICAL load (`load`), a disk under 25 GB free (`disk`), token waste the
+  last `teyla start` priced at $20 a month or more (`cost`), 3 or more unread questions (`inbox`). The
+  session-start banner shows it once. `teyla features off <pack> --quiet` mutes it.
+
 ## 0.34.0 — 2026-10-28 — Teyla as an MCP server
 
 - **`teyla mcp`: Teyla as an MCP server.** Any MCP client (Claude Code, Codex, Cursor) can now ask Teyla over stdio.

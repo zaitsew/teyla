@@ -485,6 +485,14 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
                 out.append(_check(c["level"], c["name"], c["detail"], c["fix"]))
             except Exception as e:  # noqa: BLE001 — a readiness line must never take doctor down
                 out.append(_check("INFO", "cloud", f"readiness not computed: {e}"))
+
+    # --- packs: a problem seen above, while the pack that solves it is off ---------------
+    try:
+        from . import features
+        for row in features.nudges(out):
+            out.append(_check(row["level"], row["name"], row["detail"], row["fix"]))
+    except Exception as e:  # noqa: BLE001 — a reminder must never take doctor down
+        out.append(_check("INFO", "features", f"pack reminders not computed: {e}"))
     return ordered(out)
 
 

@@ -35,21 +35,25 @@ empty, ask the name in that same question, then `teyla apply O5 --owner "<name>"
 ## Run the diagnosis
 
 `teyla start --agent` reads local files only and writes nothing. It prints JSON with `summary_text`,
-`diagnosis` and `offers`. A window other than the default 30 days: `--days N`.
+`diagnosis`, `offers` and `features`. A window other than the default 30 days: `--days N`.
 
 1. Show `summary_text` to the person as it is. Do not rewrite the numbers.
-2. If `diagnosis.empty` is true there are no sessions yet. Say so, then go to "What to say at the end".
-3. For each offer with `applies: true`, ask one question about that one offer. Give its `title`, the
-   saving (`saving_usd_month`, or `benefit` when there is no dollar figure), its `tradeoff` and its `undo`
-   text word for word. Never put two offers in one question.
+2. If `diagnosis.empty` is true there are no sessions yet. Say so, and still go on to step 3.
+3. Show the packs in `features` as one checklist (`title`, `need`, `signal`), the `suggested` ones ticked; multi-select
+   questions take at most four packs each. Record the answer: `teyla features choose <id> <id>` (writes only that).
+4. For each offer with `applies: true` whose pack was ticked (the pack's `offers` list names it), ask one question
+   about that one offer. Give its `title`, the saving (`saving_usd_month`, or `benefit` when there is no dollar
+   figure), its `tradeoff` and its `undo` text word for word. Never put two offers in one question.
    Offers O1 to O4 change one setting each; `teyla undo <id>` reverses them. **O5, O6 and O7 run `policy sync`,
    `harness sync` (O6 also installs the Claude Code plugin when it is missing) and `routine install`. The undo
    command does not reverse these three.** Their `undo` text names the way back, usually `teyla uninstall`,
    which removes all of Teyla's links, hooks and jobs, not just this one. Say that in the question, before you
    ask for the yes.
-4. Only after a yes: `teyla apply <id> --yes`. After a no, move on and do not ask again.
-   To show a change first, run the offer's `preview` (`teyla apply <id> --dry`).
-5. Report what changed: `teyla changes`.
+5. Only after a yes: `teyla apply <id> --yes`. After a no, move on and do not ask again.
+   To show a change first: the offer's `preview` (`teyla apply <id> --dry`).
+6. For each ticked pack with a part not done (`parts`) other than its offers, ask one question with its `does` and
+   those parts word for word. After a yes: `teyla features on <id> --yes --no-offers` (undo: `teyla features off <id>`).
+7. Report what changed: `teyla changes` and `teyla features`.
 
 ## Never without the person's yes
 
@@ -60,6 +64,7 @@ Everything `teyla start --agent` does is read-only. These need a yes for each on
 - launchd jobs (`teyla routine install`)
 - the policy: `teyla policy init` and `teyla policy sync` write `~/.agents/POLICY.md` and wire it into every harness
 - `teyla update`, and any command with `--force` or `--allow-network`
+- `teyla features on <id>`: it can write config, install the plugin and load launchd jobs
 
 A change made through an offer is covered by the yes to that offer. Do not run these as a side effect of another yes.
 
@@ -92,4 +97,4 @@ Python below 3.11, or newer than 3.13: `uv tool install --force --python 3.12 gi
 
 ## What to say at the end
 
-"Run `teyla` any time. `teyla today` is the daily screen."
+"Run `teyla` any time. `teyla today` is the daily screen. `teyla features` lists the packs; `teyla doctor` names one when its problem shows up."

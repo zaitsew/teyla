@@ -53,6 +53,8 @@ Agent work gets expensive through a few habits that usage dashboards do not name
 
 ### Find the waste: `teyla start`
 
+`teyla start` opens with a checklist of Teyla's ten packs and asks only the changes of the ticked ones. `teyla features` shows which packs are on; `teyla doctor` names a pack when its problem shows up here. [FEATURES.md](FEATURES.md).
+
 `teyla start` reads the sessions of the last 30 days (Claude Code, Codex, Grok, Hermes and Cursor), prints a card of at most 12 lines, then offers seven changes one at a time: `[y]es / [n]o / [e]xplain / [q]uit`. It never changes anything without a yes, saves a backup before it writes, and logs each change so that `teyla undo` can reverse it.
 
 | id | change | where it writes |
@@ -463,6 +465,7 @@ uv tool uninstall teyla    # then remove the command; with pipx: pipx uninstall 
 ## More documents
 
 - [START](START.md): `teyla start`: the diagnosis, the seven offers, how a saving is counted, how to undo
+- [FEATURES](FEATURES.md): `teyla features`: the ten packs, the checklist, the reminders when a pack's problem shows up
 - [COMMANDS](COMMANDS.md): every command with its flags (`teyla help --all` prints the same list)
 - [WEB](WEB.md), [TODAY](TODAY.md), [APP](APP.md), [RELAY](RELAY.md): the dashboard, the first screens, the Mac app and the iPhone relay
 - [APP-STORE](APP-STORE.md): the iPhone app's store listing, privacy answers and review notes

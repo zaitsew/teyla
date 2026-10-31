@@ -111,6 +111,9 @@
                                    is CRITICAL, shown first by the session-start hook while it is under 5 minutes
                                    old, plus one macOS notification per incident (not in safe mode, at most one per
                                    30 min); removed after three ticks below CRITICAL
+    [features]                     `teyla features`: Teyla's packs (docs/FEATURES.md)
+    chosen = ["cost", "load"]      the packs picked in the checklist of `teyla start` or turned on since
+    muted  = []                    packs that never remind, even when their problem shows up here
     [relay]
     folder = ""                    `teyla relay on`: the folder shared with the iPhone app ("" = iCloud Drive/Teyla)
     [harness]
@@ -214,6 +217,8 @@ DEFAULTS = {
     # The hooks read these keys from the file with awk/tomllib, not through this module.
     "hooks": {"context_budget": False, "context_budget_first": 240000, "context_budget_step": 30000,
               "land_check": False},
+    # `teyla features`: the packs picked in the checklist, and the ones that never remind.
+    "features": {"chosen": [], "muted": []},
 }
 
 # Claude Code compacts at autoCompactWindow minus the output reserve minus 13k: about 35k under
