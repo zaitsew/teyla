@@ -37,6 +37,14 @@ hosts = "docs/PRIVACY.md"               # the outbound-host table
 # date = 2026-01-01
 # how = "the command that was run"
 # max_age_days = 30
+
+# A risk you decided to keep, on record and time-boxed: a NOTE until `until`, a FIX again after it.
+# Only the MCP URL-as-secret is acceptable. `doc` must exist in this repo and hold an "Accepted risk" heading.
+# [[security.accepted]]
+# what = "mcp.url_key"
+# why = "one line: why it stays, and the mitigation"
+# doc = "docs/PRIVACY.md"
+# until = 2027-04-30
 # --- end security contract ---
 # ---------------------------------------------------------------------------
 # A control-plane routine: Teyla runs this one itself.

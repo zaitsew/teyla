@@ -46,6 +46,11 @@ max_age_days = 30                       # optional; default 30
   separate executor validates what the research step proposed.
 - `secrets` of `repo` or `client` is a FIX.
 - `mcp` describes the product's MCP server, if it has one. `static_tools` is recorded for the probe.
+- `[[security.accepted]]` (`what`, `why`, `doc`, `until`) records a risk kept on purpose. Only `what = "mcp.url_key"`
+  is allowed; another value is a FIX in `contract`. `doc` is a file in the repo with an "Accepted risk" heading;
+  `until` is a date. In force (through `until`), a `url_key = true` server is a NOTE `accepted risk until <date>
+  (<doc>): <why>`, and the auth and rate-limit checks still apply. Expired, or doc missing or without the heading:
+  FIX again, with that reason. A NOTE is a decision on record; a FIX is an open item.
 - `release` adds requirements to the `--release` run. A suffix such as `<30d` tightens that evidence limit
   for the run. Names are the requirement names below.
 - An evidence row needs all four of `what`, `commit`, `date` and `how`. The commit is 7 to 40 hex characters and,
@@ -74,7 +79,7 @@ max_age_days = 30                       # optional; default 30
 | privacy-manifest | repo | an Xcode project exists and `PrivacyInfo.xcprivacy` does too (n/a without Xcode) |
 | no-token-in-defaults | repo | no Swift or Kotlin line writes a token, secret, password or API-key name to UserDefaults or SharedPreferences |
 | secrets | repo | the declared place is not repo or client, `.env` is ignored, no `.env`, `*.p8`, `*.pem` or `id_rsa` is tracked |
-| mcp | section | `url_key` is not true; `auth` is not none above `owner`; a public server rate-limits |
+| mcp | section | `url_key` is not true (or an accepted risk in force: NOTE); `auth` is not none above `owner`; a public server rate-limits |
 | trifecta | section | fewer than three legs, or an `executor-split` row inside its limit |
 | release-notes | repo | `docs/APP-STORE.md`, `docs/PLAY-STORE.md` or `store/REVIEW-NOTES.md` has a `DATA` paragraph of real text: no `TODO`, not the template's example product, not a stub |
 | rls-test | evidence `rls-test` | a row inside its limit (n/a without migrations) |
