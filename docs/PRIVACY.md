@@ -60,6 +60,12 @@ These use your own `claude`, `codex` or `grok` login. The text goes to that prov
 | 30 | `teyla copy judge <copy.json> --model` | OpenAI, through `codex-lane` (`codex exec`, read-only, GPT-6.1 Sol) | One call: the table's rows that passed the code checks (key, control, state, budget, the en/es/ru strings), the voice charts, the glossary and the rules. | No (needs `--model`) | closed |
 | 31 | `teyla copy apply <copy.json> <repo> --pr` | The product repo's own remote, and `api.github.com` via `gh` | `git push` of a new branch that holds the changed string catalogs; a PR title and a body listing the changed keys. Your `gh` token. | No (needs `--pr`) | closed |
 
+## Calls to a server you name
+
+| # | Trigger | Host | What is sent | Default on | Safe mode |
+|---|---|---|---|---|---|
+| 32 | `teyla mcp probe <url>` (see [MCP-SECURITY.md](MCP-SECURITY.md)) | The one host in the URL you give, only if the current repo's `teyla.toml` or `docs/PRIVACY.md` names it, or you pass `--i-own-this` | JSON-RPC 2.0 POSTs: `initialize`, `tools/list` and `tools/call`, with the texts of `templates/security/injection_cases.json` (attacker URLs, canary strings, one 1 MB string) as arguments, and your `--token` in an `Authorization` header over https or to a loopback host. At most `--budget` requests (default 60) in `--seconds` (default 120). No redirect is followed. It calls no write-like tool unless `--write TOOL` names it. | No (you run it) | closed |
+
 ## Sync you switch on
 
 | # | Trigger | Where | What is sent | Default on |
@@ -74,11 +80,11 @@ These use your own `claude`, `codex` or `grok` login. The text goes to that prov
 
 ## The MCP server
 
-`teyla mcp` talks to an MCP client over stdio. It opens no socket and makes no network call itself. Its tools
+`teyla mcp` (with no subcommand) talks to an MCP client over stdio. It opens no socket and makes no network call itself. Its tools
 run commands listed above: `teyla_routines` is row 7, and `teyla_answer` is row 18, so it starts a local `claude` or
 `codex` process exactly as `teyla answer` does. `teyla_asks`, `teyla_intent`, `teyla_load` and `teyla_monitor` read
 local files only. No tool reaches `--issues`, `--model`, `--share`, `--allow-network` or any other call that
-needs a flag. The text it returns goes to the MCP client you connected, under that client's own policy.
+needs a flag. The text it returns goes to the MCP client you connected, under that client's own policy. `teyla mcp probe` is a different command: it is a client, and it is row 32.
 
 ## Not a call
 

@@ -84,6 +84,7 @@
   teyla routine install|status|catch-up [--if-stale] [--dry]     Teyla's own daily (update+doctor) and weekly launchd routines; catch-up runs what launchd skipped
   teyla grok-cost [--last|--session ID] [--cwd PATH] [--days N] [--by project|session] [--json]   Grok CLI cost at list price
   teyla mcp [--list-tools]                                       Teyla as an MCP server on stdio: asks, answer, intent, load, routines, monitor
+  teyla mcp probe <url> [--token T] [--budget N] [--i-own-this]   check an MCP server you own: auth, pinning, schemas, limits, SSRF, canary
   teyla connectors [--days N] [--json]                             per-connector round-trips, read/write, empty-or-error rate; advice C1–C4
   teyla plugins [name|path] [--json]                              skill/rule/fact quality pass over a Claude Code plugin
   teyla plugin install <source>                                   install a plugin by hand-editing its registry (no `claude` CLI)
