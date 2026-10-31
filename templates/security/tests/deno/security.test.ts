@@ -38,6 +38,13 @@ async function permissions(_who: Who): Promise<string> {
 }
 // ---- end of ADAPT ---------------------------------------------------------------------------------------
 
+/** Valid arguments for a tool, so a refusal means "not authorised", not "missing field". */
+const validArgs = (t: (typeof TOOLS)[number]): Record<string, unknown> => ({
+  ...t.args,
+  ...(t.text ? { [t.text]: "hello" } : {}),
+  ...(t.url ? { [t.url]: "https://example.test/" } : {}),
+});
+
 const corpus: { cases: Case[] } = JSON.parse(
   Deno.readTextFileSync(new URL("./injection_cases.json", import.meta.url)),
 );
@@ -75,7 +82,7 @@ Deno.test("the corpus has every family and a valid expectation", () => {
 
 Deno.test("a direct call without a session fails, with no model in the loop", async () => {
   for (const t of TOOLS) {
-    const r = await callTool("anon", t.name, t.args ?? {});
+    const r = await callTool("anon", t.name, validArgs(t));
     assertFalse(r.ok, `${t.name} answered an anonymous call`);
   }
 });
@@ -94,7 +101,7 @@ Deno.test("a canary sent to one tool is in no outbound request", async () => {
     for (const c of family("encoded-canary")) {
       for (const t of TOOLS.filter((t) => t.text)) await callTool("a", t.name, { ...t.args, [t.text!]: c.input });
     }
-    for (const t of TOOLS) await callTool("a", t.name, t.args ?? {});
+    for (const t of TOOLS) await callTool("a", t.name, validArgs(t));
     for (const c of family("encoded-canary")) {
       for (const s of seen) for (const v of variants(c.canary!)) {
         assertFalse(stripInvisible(s.text).includes(v), `${c.id} reached ${s.url}`);

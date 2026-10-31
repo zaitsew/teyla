@@ -36,16 +36,17 @@ It speaks MCP Streamable HTTP: JSON-RPC 2.0 over POST, `initialize`, `notificati
 | Check | Passes when | FIX means | Fix |
 |---|---|---|---|
 | `url-key` | no path segment of 20 or more `[A-Za-z0-9_-]`, no `key=`, `token=` or `secret=` in the query | the URL is the secret: it lands in access logs and referrers | key in an `Authorization` header; rotate the exposed one |
-| `auth-required` | `initialize` or `tools/list` without Authorization answers 401 or 403 | an anonymous caller sees the tools (SKIP for tier `owner` with `--i-own-this`) | bearer token or OAuth on every request; 401 with `WWW-Authenticate` |
-| `tool-pinning` | two sessions give one sha256 of names, descriptions and schemas | the tool list changed between sessions: a rug-pull | freeze tools per release; a changed description needs a new version and client re-approval |
+| `auth-required` | `initialize` or `tools/list` without Authorization answers 401 or 403 (or JSON-RPC -32001 or -32000 with an auth message) | an anonymous caller sees the tools, or the request reached the handler (a 5xx, -32603 or another error) (SKIP for tier `owner` with `--i-own-this`) | bearer token or OAuth on every request; 401 with `WWW-Authenticate` |
+| `tool-pinning` | two sessions give one sha256 of names, descriptions and schemas, over every `nextCursor` page (20 at most; a longer list is SKIP and exit 2) | the tool list changed between sessions: a rug-pull | freeze tools per release; a changed description needs a new version and client re-approval |
 | `schema-error` | a wrong-type argument gives JSON-RPC -32602, a 4xx or an `isError` result | a 500, a -32603, or a success | validate against the input schema; never a stack trace |
-| `oversize` | a 1 MB string argument gives 413, a 4xx or an error | the server accepted it or fell over | cap body and argument length |
-| `ssrf-inputs` | every attacker URL in the corpus is refused by each tool with a `url`, `uri` or `href` string | a tool returned content for a loopback, private, link-local, metadata or non-http address | resolve and refuse those ranges and schemes before fetching; pin the resolved address |
+| `oversize` | a 1 MB string argument gives 413, a 4xx or an error | the server accepted it, answered 5xx, or crashed on it (a dropped connection) | cap body and argument length |
+| `ssrf-inputs` | every attacker URL in the corpus is refused by each tool with a `url`, `uri` or `href` string | a tool returned content for a loopback, private, link-local, metadata or non-http address, or answered with a timeout or a dropped connection instead of a refusal | resolve and refuse those ranges and schemes before fetching; pin the resolved address |
 | `canary` | encoded canaries sent to the free-text tools appear in no other tool's answer and not in `tools/list` | stored input crossed a tool or a user boundary | scope stored text per user; return it only from the tool that owns it |
 | `rate-limit` | rapid `tools/list` calls meet a 429 or a `Retry-After` within the budget | `no rate limit observed within N requests` (SKIP when the budget is under 20) | per-credential and per-address limits; 429 with `Retry-After` |
 
 `auth-required` also passes a server that answers 200 to `initialize` and 401 to `tools/list`.
-`canary` and `ssrf-inputs` SKIP when no tool has the matching property.
+`canary` and `ssrf-inputs` SKIP when no tool has the matching property. A `canary` or `tool-pinning` check that the
+budget cuts short is a SKIP that exits 2, never OK.
 
 ### Budgets and writes
 
@@ -55,18 +56,23 @@ meets a spent budget prints SKIP with the reason. Rough use in a default run: 9 
 handshakes, pinning, schema and size checks, up to 12 for SSRF, up to 10 for the canary, and the rest
 (up to 30) for the rate limit.
 
-It makes no `tools/call` on a tool whose name or description reads like a write (create, delete, send,
-post, update, write, pay, save, remove, insert, publish, transfer, grant, share, upload, drop, destroy,
-execute) or whose annotations say destructive. `--write TOOL` allows exactly that one tool. It then
+It makes no `tools/call` on a write-like tool. The name is split on camelCase, underscores and hyphens, and
+its words and the description's words are matched as whole words against about 60 verbs in their common forms
+(add, create, write, send, post, delete, remove, update, publish, grant, share, pay, save, upload, modify,
+set, and more), so `notesCreate` and "Adds a note." both count. A tool with no description and no read verb
+(get, list, search, read, find, lookup, fetch, query) in its name counts too: on doubt the probe does not call
+it. Annotations that say destructive count as well. `--write TOOL` allows exactly that one tool. It then
 serves as the target of the schema and size checks; a name the server does not list exits 2.
 
 ### Never a third party
 
-The probe runs only against a host that the current repo names: `[security] mcp = { url = "..." }` or
-the `[privacy]` table in `teyla.toml`, or the Host column of `docs/PRIVACY.md`. A wildcard row such as
-`*.example.test` matches subdomains. Otherwise it exits 2 unless you pass `--i-own-this`, which says you
-own the server. A token goes in an Authorization header, only over https or to a loopback host, and is
-never printed; the report shows the scheme and host, not the path. Safe mode refuses the probe unless
+The probe runs only against a host that the current repo names, from two places only: `[security] mcp = { url = "..." }` or `[privacy] hosts = [...]` in
+`teyla.toml`, or the Host column of a markdown table row in `docs/PRIVACY.md`. Prose never counts, and a file
+name such as `privacy.md` is not a host. The match is exact; a wildcard row such as `*.example.test` matches
+subdomains. Otherwise it exits 2 unless you pass `--i-own-this`, which says you
+own the server. A token must be printable ASCII with no spaces (else exit 2, without echoing it). It goes in an Authorization
+header, only over https or to a host that parses as loopback (`localhost`, `127.0.0.0/8`, `::1`; a name such as
+`127.example.test` is not), and every printed string has it replaced by `<token>`; the report shows the scheme and host, not the path. Safe mode refuses the probe unless
 `--allow-network` is given. It is row 32 of [PRIVACY.md](PRIVACY.md).
 
 ## The corpus

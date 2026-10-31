@@ -33,6 +33,7 @@ over plain http) or the server could not be initialized.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import pathlib
 import re
@@ -53,21 +54,50 @@ MAX_RESPONSE_BYTES = 1024 * 1024
 OVERSIZE_BYTES = 1024 * 1024
 MIN_RATE_LIMIT_BUDGET = 20
 PROTOCOL_VERSION = "2025-06-18"
-LIST_PAGES = 3
+LIST_PAGES = 20
+TOKEN_RE = re.compile(r"[\x21-\x7e]+")
 USER_AGENT = f"teyla-mcp-probe/{__version__}"
 
 OK, FIX, SKIP = "OK", "FIX", "SKIP"
 
-# A tool is a write when its name or description says so. Deliberately wider than the minimum.
-WRITE_RE = re.compile(
-    r"(?i)(?<![a-z])(create|delete|send|post|update|write|pay|save|remove|insert|publish|transfer|grant|share|upload|"
-    r"drop|destroy|execute)")
+# A tool is a write-like when a word of its name (split on camelCase, underscore and hyphen) or of its description is
+# one of these verbs, in any common form. Deliberately wide; a tool with no description and no read verb in its name
+# is write-like too: when in doubt the probe does not call it.
+_WRITE_VERBS = (
+    "add create write send post delete remove update publish grant share pay save upload modify set insert put patch "
+    "drop destroy execute exec run transfer invite approve revoke submit commit reply forward store keep remember "
+    "enable disable install uninstall rename move merge push edit change import assign charge buy cancel reset clear "
+    "erase purge wipe deploy kill sign withdraw deposit mint email notify overwrite append attach").split()
+_READ_VERBS = set("get list search read find lookup fetch query show describe count check view browse inspect "
+                  "status info".split())
+
+
+def _forms(v: str) -> set[str]:
+    out = {v, v + "s", v + "es", v + "ed", v + "d", v + "ing", v + v[-1] + "ing", v + v[-1] + "ed"}
+    if v.endswith("e"):
+        out.add(v[:-1] + "ing")
+    if v.endswith("y"):
+        out |= {v[:-1] + "ies", v[:-1] + "ied"}
+    return out
+
+
+WRITE_WORDS = set().union(*(_forms(v) for v in _WRITE_VERBS))
+
+
+def words_of(text: str) -> list[str]:
+    text = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text or "")
+    text = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", text)
+    return [w for w in re.split(r"[^A-Za-z0-9]+", text.lower()) if w]
+
+
 URL_PROP_RE = re.compile(r"(?i)(url|uri|href)")
 TEXT_PROP_RE = re.compile(r"(?i)^(text|query|q|note|content|message|body|input|title|description|prompt|comment|summary)$")
 REFUSAL_RE = re.compile(r"(?i)(refus|block|denied|not allowed|forbidden|disallow|invalid|private address|unsupported|"
                         r"outside the allowed|not permitted)")
 KEY_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_-]{20,}$")
 KEY_QUERY_RE = re.compile(r"(?i)(?:^|[?&;_-])(?:api[_-]?)?(?:key|token|secret)=")
+
+AUTH_MSG_RE = re.compile(r"(?i)(unauthori|authenti|forbidden|credential|token|permission|denied|not allowed|login|sign in)")
 
 FIXES = {
     "url-key": "move the key into an Authorization header and rotate the one in the URL; the URL is the secret, "
@@ -105,6 +135,7 @@ class Check:
     status: str
     evidence: str
     fix: str = ""
+    inconclusive: bool = False      # a SKIP that leaves the answer open: the run exits 2, never 0
 
     def line(self) -> str:
         tail = f"; fix: {self.fix}" if self.status == FIX and self.fix else ""
@@ -114,6 +145,8 @@ class Check:
         d = {"name": self.name, "status": self.status, "evidence": self.evidence}
         if self.status == FIX:
             d["fix"] = self.fix
+        if self.inconclusive:
+            d["inconclusive"] = True
         return d
 
 
@@ -171,26 +204,38 @@ def strip_invisible(text: str) -> str:
 
 # --- the repo's own hosts (SHIELD §8) -------------------------------------------------------------
 
-_HOST_RE = re.compile(r"(?i)\*?\.?(?:[a-z0-9-]+\.)+[a-z]{2,}|localhost|\d{1,3}(?:\.\d{1,3}){3}")
+_HOST_TOKEN = re.compile(r"(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}|localhost|\d{1,3}(?:\.\d{1,3}){3}")
+# A file name is not a host: `privacy.md`, `teyla.toml`. Applies to the Host column only.
+_FILE_TLDS = set("md toml json py ts js swift txt yml yaml sh html css kt plist lock cfg ini png jpg svg pdf rs go rb "
+                 "mjs cjs tsx jsx csv log".split())
 
 
-def _hosts_in(text: str) -> set[str]:
+def _host_of(token: str) -> str:
+    token = token.strip()
+    if "://" in token:
+        return (urllib.parse.urlparse(token).hostname or "").lower()
+    return token.split("/")[0].split(":")[0].lower()
+
+
+def host_tokens(cell: str) -> set[str]:
+    """Hosts in one cell of the Host column: whole tokens only, so prose and file names never count."""
     out = set()
-    for m in _HOST_RE.finditer(text):
-        h = m.group(0).lower()
-        out.add(h if h.startswith("*.") else h.lstrip("*."))
+    for tok in re.split(r"[\s,;]+", cell.replace("`", " ")):
+        tok = tok.strip("()[]<>\"'.,;:")
+        if not tok or ("://" not in tok and "/" in tok):
+            continue
+        h = _host_of(tok)
+        if _HOST_TOKEN.fullmatch(h) and h.rsplit(".", 1)[-1] not in _FILE_TLDS:
+            out.add(h)
     return out
 
 
-def _walk_strings(v):
+def _strings(v):
     if isinstance(v, str):
         yield v
-    elif isinstance(v, dict):
-        for x in v.values():
-            yield from _walk_strings(x)
     elif isinstance(v, list):
         for x in v:
-            yield from _walk_strings(x)
+            yield from _strings(x)
 
 
 def find_repo(start: pathlib.Path) -> pathlib.Path:
@@ -210,16 +255,17 @@ def read_manifest(repo: pathlib.Path) -> dict:
 
 
 def owned_hosts(repo: pathlib.Path) -> set[str]:
-    """Hosts the repo names: `[security] mcp.url`, the `[privacy]` table, the Host column of docs/PRIVACY.md."""
+    """Hosts the repo names, from two places only: `[security] mcp.url` and `[privacy] hosts` in teyla.toml, and the
+    Host column of a markdown table row in docs/PRIVACY.md. Never from prose."""
     hosts: set[str] = set()
     data = read_manifest(repo)
     mcp = (data.get("security") or {}).get("mcp")
     if isinstance(mcp, dict):
         for key in ("url", "urls"):
-            for s in _walk_strings(mcp.get(key)):
-                hosts.add((urllib.parse.urlparse(s).hostname or "").lower())
-    for s in _walk_strings(data.get("privacy")):
-        hosts |= _hosts_in(s)
+            hosts |= {_host_of(x) for x in _strings(mcp.get(key))}
+    privacy = data.get("privacy")
+    if isinstance(privacy, dict):
+        hosts |= {_host_of(x) for x in _strings(privacy.get("hosts"))}
     try:
         lines = (repo / "docs" / "PRIVACY.md").read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError):
@@ -233,7 +279,7 @@ def owned_hosts(repo: pathlib.Path) -> set[str]:
         if any(c.lower() == "host" for c in cells):
             col = [c.lower() for c in cells].index("host")
         elif col is not None and col < len(cells) and not set(cells[col]) <= set("-: "):
-            hosts |= _hosts_in(cells[col])
+            hosts |= host_tokens(cells[col])
     hosts.discard("")
     return hosts
 
@@ -265,6 +311,9 @@ class Client:
         self._id += 1
         return self._id
 
+    def scrub(self, text: str) -> str:
+        return scrub(text, self.token)
+
     def post(self, payload, headers: dict, *, authed: bool = True) -> Resp:
         if self.used >= self.budget:
             raise BudgetSpent(f"the request budget of {self.budget} is spent")
@@ -281,31 +330,67 @@ class Client:
         timeout = max(0.2, min(REQUEST_TIMEOUT_S, left))
         try:
             with _OPENER.open(req, timeout=timeout) as r:          # noqa: S310 (scheme checked in run())
-                return _read(r.status, r)
+                return _read(r.status, r, self.deadline)
         except urllib.error.HTTPError as e:
-            return _read(e.code, e)
-        except (urllib.error.URLError, OSError, TimeoutError) as e:
-            return Resp(0, error=str(getattr(e, "reason", e))[:120] or type(e).__name__)
+            return _read(e.code, e, self.deadline)
+        except BudgetSpent:
+            raise
+        except Exception as e:                                      # noqa: BLE001 — never let an exception carry the token out
+            return Resp(0, error=self.scrub(str(getattr(e, "reason", e)))[:120] or type(e).__name__)
 
 
-def _read(status: int, r) -> Resp:
+def scrub(text: str, token: str | None) -> str:
+    """Every printed string passes through here: the token, whole or in a line of it, becomes `<token>`."""
+    if not token:
+        return text
+    for part in {token, *[p for p in re.split(r"[\s]+", token) if len(p) >= 4]}:
+        text = text.replace(part, "<token>")
+    return text
+
+
+def _sock_of(r):
+    for obj in (r, getattr(r, "fp", None)):
+        try:
+            return obj.fp.raw._sock
+        except AttributeError:
+            continue
+    return None
+
+
+def _read(status: int, r, deadline: float) -> Resp:
+    """Read the answer in chunks against the total deadline, so a server that drips bytes cannot stall the probe."""
     headers = {k.lower(): v for k, v in r.headers.items()}
-    ctype = headers.get("content-type", "").lower()
-    try:
-        if "text/event-stream" in ctype:
-            text = ""
-            for _ in range(2000):
-                line = r.readline(MAX_RESPONSE_BYTES)
-                if not line:
+    sse = "text/event-stream" in headers.get("content-type", "").lower()
+    sock, buf, text = _sock_of(r), b"", ""
+    while len(buf) < MAX_RESPONSE_BYTES:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise BudgetSpent("the time budget is spent")
+        if sock is not None:
+            try:
+                sock.settimeout(max(0.05, min(left, REQUEST_TIMEOUT_S)))
+            except OSError:
+                pass
+        try:
+            chunk = r.read1(65536)
+        except TimeoutError:
+            if time.monotonic() >= deadline:
+                raise BudgetSpent("the time budget is spent")
+            break
+        except Exception:                                           # noqa: BLE001 — a cut connection ends the read
+            break
+        if not chunk:
+            break
+        buf += chunk
+        if sse:
+            for ln in buf.split(b"\n")[:-1]:
+                if ln.strip().startswith(b"data:"):
+                    text = ln.strip()[5:].decode("utf-8", "replace").strip()
                     break
-                s = line.decode("utf-8", "replace").strip()
-                if s.startswith("data:"):
-                    text = s[5:].strip()
-                    break
-        else:
-            text = r.read(MAX_RESPONSE_BYTES).decode("utf-8", "replace")
-    except (OSError, TimeoutError, ValueError):
-        text = ""
+            if text:
+                break
+    if not sse:
+        text = buf.decode("utf-8", "replace")
     body = None
     if text.strip()[:1] in ("{", "["):
         try:
@@ -323,6 +408,7 @@ class Session:
         self.sid: str | None = None
         self.version = PROTOCOL_VERSION
         self.first: Resp | None = None
+        self.truncated = False
 
     def _headers(self) -> dict:
         h = {"MCP-Protocol-Version": self.version}
@@ -356,18 +442,22 @@ class Session:
         return 200 <= r.status < 300 and isinstance(r.result, dict)
 
     def list_tools(self) -> tuple[list[dict] | None, Resp]:
+        """All pages of tools/list (bounded by LIST_PAGES). `self.truncated` is True when a cursor was left over."""
         tools: list[dict] = []
         cursor = None
         r = Resp(0)
-        for _ in range(LIST_PAGES):
+        self.truncated = False
+        for page in range(LIST_PAGES):
             r = self.rpc("tools/list", {"cursor": cursor} if cursor else None)
             res = r.result
             if not (200 <= r.status < 300 and isinstance(res, dict) and isinstance(res.get("tools"), list)):
+                self.truncated = bool(tools)
                 return (tools or None), r
             tools += [t for t in res["tools"] if isinstance(t, dict) and isinstance(t.get("name"), str)]
             cursor = res.get("nextCursor")
             if not cursor:
-                break
+                return tools, r
+        self.truncated = True
         return tools, r
 
     def call(self, name: str, arguments) -> Resp:
@@ -384,7 +474,12 @@ def tools_hash(tools: list[dict]) -> str:
 
 def is_write(tool: dict) -> bool:
     ann = tool.get("annotations") if isinstance(tool.get("annotations"), dict) else {}
-    return bool(WRITE_RE.search(f"{tool.get('name', '')} {tool.get('description', '')}") or ann.get("destructiveHint"))
+    if ann.get("destructiveHint"):
+        return True
+    name_words, desc = words_of(str(tool.get("name", ""))), str(tool.get("description") or "")
+    if any(w in WRITE_WORDS for w in name_words + words_of(desc)):
+        return True
+    return not desc.strip() and not _READ_VERBS.intersection(name_words)       # no description, no read verb: doubt
 
 
 def props_of(tool: dict) -> dict:
@@ -472,10 +567,11 @@ class Probe:
         self.session: Session | None = None
         self.tools: list[dict] | None = None
         self.hash1: str | None = None
+        self.truncated = False
         self.cannot_initialize = ""
 
-    def add(self, name: str, status: str, evidence: str) -> Check:
-        c = Check(name, status, evidence, FIXES.get(name, ""))
+    def add(self, name: str, status: str, evidence: str, *, inconclusive: bool = False) -> Check:
+        c = Check(name, status, evidence, FIXES.get(name, ""), inconclusive)
         self.checks.append(c)
         return c
 
@@ -490,7 +586,8 @@ class Probe:
         try:
             fn()
         except BudgetSpent as e:
-            self.add(name, SKIP, e.what)
+            # Pinning and the canary need every answer: a budget that ends them early leaves the question open.
+            self.add(name, SKIP, e.what, inconclusive=name in ("tool-pinning", "canary"))
 
     # url-key: no request
     def url_key(self) -> None:
@@ -503,28 +600,48 @@ class Probe:
         else:
             self.add("url-key", OK, "no key-like path segment or query parameter")
 
+    @staticmethod
+    def _refuses(r: Resp) -> bool:
+        err = r.rpc_error or {}
+        return r.status in (401, 403) or (err.get("code") in (-32001, -32000) and bool(AUTH_MSG_RE.search(str(err.get("message", "")))))
+
+    @staticmethod
+    def _reached_handler(r: Resp) -> str:
+        """Why an anonymous answer shows the request got past authentication, or ''."""
+        if r.status >= 500:
+            return f"HTTP {r.status}"
+        err = r.rpc_error
+        return f"JSON-RPC error {err.get('code')}" if err else ""
+
     def auth_required(self) -> None:
         s = Session(self.c, authed=False)
         r = s.open()
-        if r.status in (401, 403):
-            self.add("auth-required", OK, f"initialize without Authorization answered {r.status}")
+        if self._refuses(r):
+            self.add("auth-required", OK, f"initialize without Authorization answered {r.status}"
+                     + ("" if r.status in (401, 403) else f" (JSON-RPC error {r.rpc_error.get('code')})"))
             return
         if r.status == 0:
             self.add("auth-required", SKIP, f"no answer to initialize ({r.error})")
+            return
+        why = self._reached_handler(r)
+        if why:
+            self.add("auth-required", FIX, f"anonymous request reached the handler: initialize gave {why}")
             return
         if not s.ok(r):
             self.add("auth-required", SKIP, f"initialize without Authorization answered {r.status} with no result")
             return
         tools, lr = s.list_tools()
-        if lr.status in (401, 403) or (lr.rpc_error and tools is None):
-            code = lr.status if lr.status in (401, 403) else f"JSON-RPC error {lr.rpc_error.get('code')}"
-            self.add("auth-required", OK, f"tools/list without Authorization answered {code}")
+        if self._refuses(lr):
+            self.add("auth-required", OK, f"tools/list without Authorization answered {lr.status}"
+                     + ("" if lr.status in (401, 403) else f" (JSON-RPC error {lr.rpc_error.get('code')})"))
         elif tools is not None:
             if self.tier == "owner" and self.own:
                 self.add("auth-required", SKIP, f"tools/list without Authorization answered {lr.status} with {len(tools)} tool(s); "
                                                  "allowed: tier owner and --i-own-this")
             else:
                 self.add("auth-required", FIX, f"tools/list without Authorization answered {lr.status} with {len(tools)} tool(s)")
+        elif self._reached_handler(lr):
+            self.add("auth-required", FIX, f"anonymous request reached the handler: tools/list gave {self._reached_handler(lr)}")
         else:
             self.add("auth-required", SKIP, f"tools/list without Authorization answered {lr.status} with no tool list")
 
@@ -543,6 +660,7 @@ class Probe:
             self.cannot_initialize = f"tools/list failed: HTTP {lr.status}"
             return False
         self.tools = tools
+        self.truncated = s.truncated
         self.hash1 = tools_hash(tools)
         return True
 
@@ -555,6 +673,10 @@ class Probe:
         tools2, _ = s2.list_tools()
         if tools2 is None:
             self.add("tool-pinning", SKIP, "tools/list failed in the second session")
+            return
+        if self.truncated or s2.truncated:
+            self.add("tool-pinning", SKIP, f"the tool list is longer than {LIST_PAGES} pages, so it cannot be hashed whole",
+                     inconclusive=True)
             return
         h2 = tools_hash(tools2)
         if h2 == self.hash1:
@@ -577,9 +699,9 @@ class Probe:
             return
         tool = cand[0]
         props = props_of(tool)
-        if props:
-            key = (required_of(tool) or list(props))[0]
-            args = {**base_args(tool), key: wrong_value(props[key])}
+        if props or required_of(tool):
+            key = next((k for k in required_of(tool) if k in props), None) or next(iter(props), None) or required_of(tool)[0]
+            args = {**base_args(tool), key: wrong_value(props.get(key))}
             how = f"{key} sent as the wrong type"
         else:
             args, how = "not-an-object", "arguments sent as a string"
@@ -610,8 +732,7 @@ class Probe:
         elif v == "error":
             self.add("oversize", OK, f"{tool['name']}.{key}: 1 MB refused ({'HTTP ' + str(r.status) if r.status >= 400 else 'error result'})")
         elif r.status == 0:
-            ok = any(w in r.error.lower() for w in ("reset", "broken", "closed", "refused", "eof"))
-            self.add("oversize", OK if ok else SKIP, f"{tool['name']}.{key}: connection ended ({r.error})")
+            self.add("oversize", FIX, f"{tool['name']}.{key}: server crashed on oversized input (no answer: {r.error or 'connection ended'})")
         elif v == "server-error":
             self.add("oversize", FIX, f"{tool['name']}.{key}: 1 MB gave {'HTTP ' + str(r.status) if r.status >= 500 else 'an internal error'}")
         else:
@@ -632,8 +753,9 @@ class Probe:
                     r = self.session.call(t["name"], {**base_args(t), key: case["input"]})
                     sent += 1
                     v = judge(r)
-                    if v == "server-error" or (v == "success" and not REFUSAL_RE.search(_text_of(r))):
-                        fetched.append(f"{t['name']} <- {case['id']}" + (" (HTTP 5xx)" if v == "server-error" else ""))
+                    if v in ("server-error", "none") or (v == "success" and not REFUSAL_RE.search(_text_of(r))):
+                        note = {"server-error": " (HTTP 5xx)", "none": f" (no explicit refusal: {r.error or 'no answer'})"}.get(v, "")
+                        fetched.append(f"{t['name']} <- {case['id']}{note}")
         except BudgetSpent as e:
             if not sent:
                 raise
@@ -647,7 +769,7 @@ class Probe:
 
     def canary(self, cap: int) -> None:
         cases = cases_of(self.corpus, "encoded-canary")
-        usable = [t for t in self.callable_tools() if text_prop(t) and t["name"] != self.write_tool]
+        usable = [t for t in self.callable_tools() if text_prop(t)]
         sources = [t for t in usable if TEXT_PROP_RE.match(text_prop(t))][:3] or usable[:1]
         if not sources or not cases:
             self.add("canary", SKIP, "no callable tool has a free-text property" if not sources else "the corpus has no canary case")
@@ -658,8 +780,8 @@ class Probe:
         try:
             for src in sources:
                 for case in cases[:per]:
-                    self.session.call(src["name"], {**base_args(src), text_prop(src): case["input"]})
                     sent.setdefault(src["name"], []).append(case.get("canary") or f"CANARY-{case['id']}")
+                    self.session.call(src["name"], {**base_args(src), text_prop(src): case["input"]})
             # Other tools first (a source tool echoing its own input is not a leak), the ones that need no argument before the rest.
             others = sorted((t for t in self.callable_tools() if t["name"] != self.write_tool),
                             key=lambda t: (t["name"] in sent, len(required_of(t))))
@@ -668,9 +790,7 @@ class Probe:
             _, lr = self.session.list_tools()
             replies.append(("tools/list", lr))
         except BudgetSpent as e:
-            if not sent:
-                raise
-            stopped = f" (stopped: {e.what})"
+            stopped = e.what
         seen = []
         for where, r in replies:
             body = (r.text or "") + " " + _text_of(r)
@@ -681,8 +801,11 @@ class Probe:
         n = sum(len(v) for v in sent.values())
         if seen:
             self.add("canary", FIX, f"canary returned by another call: {', '.join(seen[:2])}")
+        elif stopped:
+            self.add("canary", SKIP, f"budget exhausted before canary check ({stopped}; {len(replies)} answer(s) inspected)",
+                     inconclusive=True)
         else:
-            self.add("canary", OK, f"{n} canary input(s) to {', '.join(sent)}; none in {len(replies)} other answer(s){stopped}")
+            self.add("canary", OK, f"{n} canary input(s) to {', '.join(sent)}; none in {len(replies)} other answer(s)")
 
     def rate_limit(self, n: int) -> None:
         if self.c.budget < MIN_RATE_LIMIT_BUDGET:
@@ -734,6 +857,23 @@ class Probe:
 
 # --- command --------------------------------------------------------------------------------------
 
+def is_loopback_host(host: str) -> bool:
+    """`localhost`, or an address that parses as loopback. A name that merely starts with 127. is not."""
+    host = host.strip("[]").lower()
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def exit_code(checks: list[Check]) -> int:
+    if any(c.status == FIX for c in checks):
+        return 1
+    return 2 if any(c.inconclusive for c in checks) else 0
+
+
 def redact(url: str) -> str:
     u = urllib.parse.urlparse(url)
     return f"{u.scheme}://{u.netloc.rsplit('@', 1)[-1]}/..."
@@ -749,8 +889,9 @@ def run(url: str, *, token: str | None = None, write_tool: str | None = None, bu
     if u.scheme not in ("http", "https") or not u.hostname:
         raise Refused("the URL must be http:// or https:// with a host")
     host = u.hostname.lower()
-    loopback = host in ("localhost", "::1") or host.startswith("127.")
-    if token and u.scheme == "http" and not loopback:
+    if token is not None and not TOKEN_RE.fullmatch(token):
+        raise Refused("the token has invalid characters (it must be printable ASCII with no spaces)")      # never echoed
+    if token and u.scheme == "http" and not is_loopback_host(host):
         raise Refused("refusing to send a token over plain http to a non-loopback host; use https")
     repo = repo or find_repo(pathlib.Path.cwd())
     manifest = read_manifest(repo)
@@ -761,7 +902,7 @@ def run(url: str, *, token: str | None = None, write_tool: str | None = None, bu
     probe = Probe(client, corpus or load_corpus(), write_tool=write_tool,
                   tier=(manifest.get("security") or {}).get("tier"), own=own)
     probe.run()
-    code = 1 if any(c.status == FIX for c in probe.checks) else 0
+    code = exit_code(probe.checks)
     order = ["url-key", "auth-required", "tool-pinning", "schema-error", "oversize", "ssrf-inputs", "canary", "rate-limit"]
     checks = sorted(probe.checks, key=lambda c: order.index(c.name) if c.name in order else 99)
     return code, {"target": redact(url), "budget": budget, "requests": client.used,
@@ -771,16 +912,18 @@ def run(url: str, *, token: str | None = None, write_tool: str | None = None, bu
 
 
 def cmd_probe(args) -> int:
+    token = args.token
+    say = lambda text: scrub(str(text), token)          # every printed string passes through here
     try:
         if not net.gate("mcp probe (it sends JSON-RPC calls, and the injection corpus, to the URL you named)"):
             return 2
-        code, report = run(args.url, token=args.token, write_tool=args.write, budget=args.budget, seconds=args.seconds,
+        code, report = run(args.url, token=token, write_tool=args.write, budget=args.budget, seconds=args.seconds,
                            own=args.i_own_this, repo=pathlib.Path(args.repo) if args.repo else None)
     except Refused as e:
-        print(f"teyla mcp probe: refused: {e}", file=sys.stderr)
+        print(f"teyla mcp probe: refused: {say(e)}", file=sys.stderr)
         return 2
-    except (OSError, ValueError) as e:
-        print(f"teyla mcp probe: {e}", file=sys.stderr)
+    except Exception as e:                              # noqa: BLE001 — one scrubbed line, never a traceback with the token
+        print(f"teyla mcp probe: {say(e) or type(e).__name__}", file=sys.stderr)
         return 2
     init_failed = report["_initialize_error"]
     lines = report.pop("_lines")
@@ -790,13 +933,13 @@ def cmd_probe(args) -> int:
         report["exit"] = 2
         report["error"] = init_failed
     if args.json:
-        print(json.dumps(report, indent=2))
+        print(say(json.dumps(report, indent=2)))
     else:
-        print(f"teyla mcp probe {report['target']}: {report['requests']} of {report['budget']} requests, {report['seconds']} s")
+        print(say(f"teyla mcp probe {report['target']}: {report['requests']} of {report['budget']} requests, {report['seconds']} s"))
         for ln in lines:
-            print(ln)
+            print(say(ln))
         if init_failed:
-            print(f"teyla mcp probe: {init_failed}", file=sys.stderr)
+            print(say(f"teyla mcp probe: {init_failed}"), file=sys.stderr)
     return code
 
 
