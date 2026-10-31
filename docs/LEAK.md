@@ -192,7 +192,8 @@ started. One with quoting is parsed word by word, so `g''h p''r` and `cred''enti
 - **Failure.** A command with no token passes even when the hook errors (one warning line). A command with a
   token is refused when python3, the `teyla` package or the scanner is missing, crashes or times out, and when
   the text cannot be read (a `$VAR` or an unreadable `$( )` body, a pipe from an unknown program, a body
-  file that does not exist yet, a `cd` into a variable). Files resolve in the directory the command runs in
+  file that does not exist yet, a `cd` into a variable, a program name that comes from an expansion, `$( )` or
+  `${` in text fed through stdin). Files resolve in the directory the command runs in
   (`cd`, `git -C`, `env -C`); a link that ends at a credential is a credential.
 - **Skip once.** Put `TEYLA_LEAK_GUARD=0` first in the command, as an assignment word before the executable
   (or in the hook's environment). Each skipped publication is appended to `$TEYLA_HOME/leak-skips.log`

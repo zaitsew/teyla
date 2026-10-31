@@ -696,3 +696,116 @@ def test_the_lexer_tracks_subshell_scopes():
     assert [x.grp == () for x in c if x.words[0] in "ad"] == [True, True]
     assert len({x.grp for x in c if x.words[0] in "bc"}) == 1 and next(x for x in c if x.words[0] == "b").grp != ()
     assert next(x for x in c if x.words[0] == "e").grp != next(x for x in c if x.words[0] == "b").grp
+
+
+# --- review round 2: seven more ---------------------------------------------------------------------------------
+
+def test_ansi_c_quoting_spells_the_program_and_the_path(box):                         # 1
+    _creds(box)
+    for prog in ("$'gh'", "$'g\\x68'", "$'\\x67\\x68'", "g$'h'", "$'\\147h'"):
+        refused(box.run(f"{prog} pr create -t T -b '{TERM}'"), "gh pr create")
+    refused(box.run(f"$'git' commit -m '{TERM}'"), "git commit")
+    refused(box.run("cat ~/$'.aws/credentials'"), "AWS")
+    refused(box.run("cat ~/.aws/$'cred\\x65ntials'"), "AWS")
+    refused(box.run("$'cat' ~/.ssh/id_rsa"), "an SSH private key")
+    refused(box.run("cat ~/$'.ssh/id_rsa'"), "an SSH private key")
+    from teyla.leak_guard import lex
+    assert lex("$'g\\x68' pr $\"x y\"")[0].words == ["gh", "pr", "x y"]
+
+
+def test_an_executable_that_comes_from_an_expansion_is_refused(box):                  # 1
+    for cmd in ("$GH pr create -t T -b ok", "${GH} pr create -t T -b ok", "\"$(command -v gh)\" pr create -t T -b ok",
+                "`which git` commit -m ok", "$X", "FOO=1 $GIT commit -m ok", "env $GH pr create -b ok", "sudo -u me $PROG"):
+        refused(box.run(cmd), "executable comes from an expansion")
+    allowed(box.run("TEYLA_LEAK_GUARD=0 $PROG args"))
+    allowed(box.run("$HOME/bin/tool 'arg'"))
+    allowed(box.run("echo $X"))
+
+
+def test_dot_dot_is_applied_after_the_links_are_followed(box):                         # 2
+    _creds(box)
+    (box.home / ".aws" / "sub").mkdir()
+    (box.work / "lnk").symlink_to(box.home / ".aws" / "sub")
+    refused(box.run("cat lnk/../credentials 'x'"), "AWS")
+    refused(box.run("gh pr create -t T --body-file lnk/../credentials"), "AWS")
+    refused(box.run(f"cat {box.work}/lnk/../credentials \"x\""), "AWS")
+    (box.work / "plain").mkdir()
+    (box.work / "plain" / "ok.txt").write_text("fine\n")
+    allowed(box.run("cat plain/../plain/ok.txt 'x'"))
+
+
+def test_env_split_string_is_parsed_like_a_command_line(box):                          # 3
+    for cmd in (f'env -S "gh pr create -t T -b {TERM}"', f"env -S\"git commit -m '{TERM}'\"",
+                f'env --split-string="gh pr comment 4 -b {TERM}"', f'env --split-string "gh pr comment 4 -b {TERM}"',
+                f'env -iS "gh pr create -t T -b {TERM}"', f'env -u X -S "-i git commit -m {TERM}"',
+                f'env FOO=1 -S "env -i gh pr create -t T -b {TERM}"'):
+        refused(box.run(cmd), "gh pr " if "gh " in cmd else "git commit")
+    refused(box.run('env -S "gh pr create -t T -b \\"$X\\""'), "`env -S` holds a string with an expansion")
+    refused(box.run("env -S '$GH pr create'"), "`env -S` holds a string with an expansion")
+    refused(box.run("env -S 'gh pr create -b \"unterminated'"), "`env -S`")
+    allowed(box.run('env -S "echo hi there"'))
+    allowed(box.run('env -S "gh pr create -t T -b fine"'))
+
+
+def test_api_input_from_stdin_is_read_for_a_visibility_change(box):                    # 4
+    (box.work / "pub.json").write_text('{"private": false}')
+    for cmd in ("echo '{\"private\": false}' | gh api -X PATCH repos/o/r --input -",
+                "printf '%s' '{\"visibility\":\"public\"}' | gh api -X PATCH repos/o/r --input -",
+                "gh api -X PATCH repos/o/r --input - <<< '{\"private\": false}'",
+                "cat pub.json | gh api -X PATCH repos/o/r --input -",
+                "gh api -X PATCH repos/o/r --input - < pub.json",
+                "echo a | cat pub.json | gh api -X PATCH repos/o/r --input=-",
+                "gh api -X PATCH repos/o/r --input - <<EOF\n{\"private\": false}\nEOF"):
+        refused(box.run(cmd, TEYLA_LEAK_GUARD="0"), "owner"), cmd
+    refused(box.run("curl -s example.invalid | gh api -X PATCH repos/o/r --input -"), "pipe whose source the guard cannot read")
+    refused(box.run("gh api -X PATCH repos/o/r --input -"), "standard input")
+    refused(box.run(f"echo '{{\"body\": \"{TERM}\"}}' | gh api repos/o/r/issues/1/comments --input -"), "gh api")
+    allowed(box.run("echo '{\"private\": true}' | gh api -X PATCH repos/o/r --input -"))
+
+
+def test_attached_git_directory_options_change_the_directory(box):                      # 5
+    (box.work / "sub").mkdir()
+    (box.work / "body.md").write_text(f"x {TERM}\n")
+    (box.work / "sub" / "body.md").write_text("fine\n")
+    (box.work / "sub" / "bad.md").write_text(f"x {TERM}\n")
+    allowed(box.run("git -Csub commit -F body.md"))
+    allowed(box.run("git --work-tree=sub commit -F body.md"))
+    allowed(box.run("git --git-dir=sub commit -F body.md"))
+    allowed(box.run("git --work-tree sub tag -a v1 -F body.md"))
+    refused(box.run("git -Csub commit -F bad.md"), "term:0")
+    refused(box.run("git --work-tree=sub commit -F bad.md"), "term:0")
+    refused(box.run("git --git-dir sub commit -F bad.md"), "term:0")
+    refused(box.run("git -C sub -C .. commit -F body.md"), "term:0")
+    refused(box.run('git -C"$D" commit -F body.md'), "a directory the guard cannot work out")
+
+
+def test_a_cd_in_a_pipeline_or_the_background_changes_nothing_after_it(box):            # 6
+    (box.work / "sub").mkdir()
+    (box.work / "body.md").write_text(f"x {TERM}\n")
+    (box.work / "sub" / "body.md").write_text("fine\n")
+    for cmd in ("cd sub | cat; gh pr create -t T -F body.md", "echo x | cd sub && gh pr create -t T -F body.md",
+                "cd sub & gh pr create -t T -F body.md", "(cd sub; true) && gh pr create -t T -F body.md",
+                "cd sub | true; git commit -F body.md", "ls | (cd sub; cat) ; git commit -F body.md"):
+        refused(box.run(cmd), "term:0"), cmd
+    for cmd in ("cd sub && gh pr create -t T -F body.md", "cd sub; gh pr create -t T -F body.md",
+                "cd sub || true; gh pr create -t T -F body.md", "cd sub 2>&1 && gh pr create -t T -F body.md",
+                "cd sub >/dev/null && gh pr create -t T -F body.md", "true && cd sub && git commit -F body.md"):
+        allowed(box.run(cmd)), cmd
+
+
+def test_expansions_in_text_that_reaches_a_publication_through_stdin_are_refused(box):   # 7
+    for cmd in ("gh pr comment 4 -F - <<EOF\nnote $(date)\nEOF", "gh pr comment 4 -F - <<EOF\nnote `date`\nEOF",
+                "gh pr comment 4 -F - <<EOF\nnote ${NOTE}\nEOF", "gh pr comment 4 -F - <<< \"note $(whoami)\"",
+                "gh pr comment 4 -F - <<< \"note ${X}\"", "gh pr comment 4 -F - <<< note$(whoami)",
+                "echo \"$(date)\" | gh pr comment 4 -F -", "printf '%s' \"${BODY}\" | gh pr comment 4 -F -",
+                "cat <<EOF | gh pr comment 4 -F -\n`id`\nEOF", "git commit -F - <<EOF\n$(date)\nEOF",
+                "gh api repos/o/r/issues/1/comments --input - <<EOF\n{\"body\": \"$(id)\"}\nEOF",
+                "echo \"$(date)\" | gh api repos/o/r/issues/1/comments --input -",
+                "gh pr create -t T -b \"$(cat <<EOF\n$(date)\nEOF\n)\""):
+        refused(box.run(cmd), "standard input" if "$(cat <<EOF" not in cmd else "substitution"), cmd
+    assert box.scanner_calls() == []
+    allowed(box.run("gh pr comment 4 -F - <<'EOF'\nliteral $(date) `x` ${y}\nEOF"))
+    allowed(box.run("gh pr comment 4 -F - <<\\EOF\nliteral $(date)\nEOF"))
+    allowed(box.run("gh pr comment 4 -F - <<< 'literal $(date) and `x`'"))
+    allowed(box.run("echo 'literal $(date)' | gh pr comment 4 -F -"))
+    allowed(box.run("gh pr comment 4 -F - <<EOF\nplain text, costs $5\nEOF"))

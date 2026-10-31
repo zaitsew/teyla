@@ -27,6 +27,7 @@ import itertools
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -83,8 +84,64 @@ class Refuse(Exception):
 
 # --- a small shell lexer ---------------------------------------------------------------------------------
 
+EXPANSION = re.compile(r"\$\(|`|\$\{")
+
+
+class HereBody(str):
+    """A heredoc or here-string body. `expands` is true when the shell would run a $( ), backtick or ${ in it
+    (an unquoted delimiter, or a here-string word that was not single-quoted)."""
+    expands = False
+
+    def __new__(cls, text: str, expands: bool = False):
+        o = super().__new__(cls, text)
+        o.expands = expands
+        return o
+
+
+_ANSI = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v",
+         "\\": "\\", "'": "'", '"': '"', "?": "?"}
+
+
+def _ansi_c(raw: str) -> str:
+    """The text of a bash `$'...'` string: C escapes decoded."""
+    out, i, n = [], 0, len(raw)
+    while i < n:
+        c = raw[i]
+        if c != "\\" or i + 1 >= n:
+            out.append(c)
+            i += 1
+            continue
+        d = raw[i + 1]
+        i += 2
+        if d in _ANSI:
+            out.append(_ANSI[d])
+        elif d in "01234567":
+            j = i
+            while j < n and j < i + 2 and raw[j] in "01234567":
+                j += 1
+            out.append(chr(int(d + raw[i:j], 8) & 0xFF))
+            i = j
+        elif d in "xuU":
+            width = {"x": 2, "u": 4, "U": 8}[d]
+            j = i
+            while j < n and j < i + width and raw[j] in "0123456789abcdefABCDEF":
+                j += 1
+            if j > i:
+                try:
+                    out.append(chr(int(raw[i:j], 16)))
+                except (ValueError, OverflowError):
+                    pass
+            i = j
+        elif d == "c" and i < n:
+            out.append(chr(ord(raw[i]) & 0x1F))
+            i += 1
+        else:
+            out.append("\\" + d)
+    return "".join(out)
+
+
 class Cmd:
-    __slots__ = ("words", "heredocs", "stdin_files", "subs", "prev_pipe", "text_idx", "grp", "cwd", "skip")
+    __slots__ = ("words", "heredocs", "stdin_files", "subs", "prev_pipe", "text_idx", "grp", "cwd", "skip", "exp_idx", "bg")
 
     def __init__(self):
         self.words: list[str] = []
@@ -96,6 +153,8 @@ class Cmd:
         self.grp: tuple = ()                # the subshells and substitutions this command sits in
         self.cwd: str | None = ""           # the directory it runs in (None: cannot be known); set by the analysis
         self.skip = False                   # started with a leading TEYLA_LEAK_GUARD=0 assignment
+        self.exp_idx: set[int] = set()      # word positions whose text holds a live $( ), backtick or ${
+        self.bg = False                     # followed by a single &: it runs in the background, in a subshell
 
 
 class Lex:
@@ -145,27 +204,35 @@ class Lex:
         cur = self.new()
         word: list[str] | None = None
         mode = None                          # "in": next word is a stdin file; "here": a here-string
-        pending: list[tuple[str, bool, Cmd]] = []
+        pending: list[tuple[str, bool, Cmd, bool]] = []
         parens = 0
+
+        live: list[str] = []                 # the parts of the current word that the shell would expand
 
         def flush():
             nonlocal word, mode
             if word is None:
                 return
             w, word = "".join(word), None
+            expands = bool(EXPANSION.search("".join(live)))
+            live.clear()
             if mode == "in":
                 cur.stdin_files.append(w)
             elif mode == "here":
-                cur.heredocs.append(w)
+                cur.heredocs.append(HereBody(w, expands))
             else:
+                if expands:
+                    cur.exp_idx.add(len(cur.words))
                 cur.words.append(w)
             mode = None
 
-        def part(text: str):
+        def part(text: str, lit: bool = False):
             nonlocal word
             if word is None:
                 word = []
             word.append(text)
+            if not lit:
+                live.append(text)
 
         def split(pipe: bool):
             nonlocal cur
@@ -181,13 +248,23 @@ class Lex:
                 nx = s[self.i + 1:self.i + 2]
                 self.i += 2
                 if nx and nx != "\n":
-                    part(nx)
+                    part(nx, True)
                 continue
             if c == "'":
                 j = s.find("'", self.i + 1)
                 j = n if j < 0 else j
-                part(s[self.i + 1:j])
+                part(s[self.i + 1:j], True)
                 self.i = j + 1
+                continue
+            if c == "$" and s[self.i + 1:self.i + 2] == "'":        # $'gh': ANSI-C quoting, a quoted word
+                j = self.i + 2
+                while j < n and s[j] != "'":
+                    j += 2 if s[j] == "\\" else 1
+                part(_ansi_c(s[self.i + 2:j]), True)
+                self.i = j + 1
+                continue
+            if c == "$" and s[self.i + 1:self.i + 2] == '"':        # $"...": the same as "..."
+                self.i += 1
                 continue
             if c == '"':
                 self.i += 1
@@ -196,7 +273,7 @@ class Lex:
                     d = s[self.i]
                     if d == "\\" and s[self.i + 1:self.i + 2] in ('"', "\\", "$", "`", "\n"):
                         if s[self.i + 1] != "\n":
-                            part(s[self.i + 1])
+                            part(s[self.i + 1], True)
                         self.i += 2
                     elif d == "$" and s[self.i + 1:self.i + 2] == "(" and self.depth < 8:
                         start = self.i
@@ -240,8 +317,10 @@ class Lex:
                     while self.i < n and s[self.i] in " \t":
                         self.i += 1
                     delim = []
+                    quoted = False
                     while self.i < n and s[self.i] not in " \t\n;&|()<>":
                         d = s[self.i]
+                        quoted = quoted or d in "'\"\\"
                         if d in "'\"":
                             j = s.find(d, self.i + 1)
                             j = n if j < 0 else j
@@ -254,7 +333,7 @@ class Lex:
                             delim.append(d)
                             self.i += 1
                     if delim:
-                        pending.append(("".join(delim), strip, cur))
+                        pending.append(("".join(delim), strip, cur, quoted))
                     continue
                 if s.startswith("<(", self.i) and self.depth < 8:
                     start = self.i
@@ -273,8 +352,9 @@ class Lex:
             if c == "\n":
                 split(False)
                 self.i += 1
-                for delim, strip, owner in pending:
-                    owner.heredocs.append(self._heredoc_body(delim, strip))
+                for delim, strip, owner, quoted in pending:
+                    body = self._heredoc_body(delim, strip)
+                    owner.heredocs.append(HereBody(body, not quoted and bool(EXPANSION.search(body))))
                 pending = []
                 continue
             if c == "#" and word is None:
@@ -286,6 +366,9 @@ class Lex:
                 self.i += 1
                 continue
             if c == "&":
+                alone = s[self.i - 1:self.i] not in ("&", ">", "<") and s[self.i + 1:self.i + 2] not in ("&", ">")
+                if alone:
+                    cur.bg = True
                 split(False)
                 self.i += 1
                 continue
@@ -366,7 +449,7 @@ class Env:
 
     def resolve(self, p: str, cwd: str | None = None) -> str:
         p = self.expand(p)
-        return os.path.normpath(p if p.startswith("/") else os.path.join(cwd or self.cwd, p))
+        return p if p.startswith("/") else os.path.join(cwd or self.cwd, p)     # `..` stays: realpath applies it after the links
 
     def inside_repo(self, path: str) -> bool:
         """Under the repo root once symlinks are resolved (a repo path that links to ~/.aws/credentials is
@@ -441,6 +524,7 @@ class Analysis:
         self.env = env
         self.pubs: list[Pub] = []
         self.hard: list[str] = []            # lines of a refusal that no skip can lift
+        self.unknown: list[tuple[Cmd, str]] = []     # commands whose executable the guard cannot work out
         self.cmds: list[Cmd] = []
 
 
@@ -486,14 +570,18 @@ def _has_expansion(s: str) -> bool:
     return bool(re.search(r"[$`]", s.replace("${HOME}", "").replace("$HOME", "")))
 
 
-def _normalize_ex(words: list[str]) -> tuple[int, list[str], str | None]:
-    """(index of the command word, the VAR=x words before it, a directory the wrapper changes to).
+def _normalize_ex(words: list[str]) -> tuple[int, list[str], str | None, tuple | None]:
+    """(index of the command word, the VAR=x words before it, a directory the wrapper changes to, an `env -S`).
+
+    `env -S "STRING"` splits STRING into words that continue the command line: the fourth value is then
+    (first word of the option, word after its value, the cluster letters before S, STRING) and the caller
+    splices the split words in and asks again.
 
     Skips `VAR=x` and wrappers (env, sudo, time, nice, command ...) together with the wrapper's own options and
     those options' values: `env -u NAME gh ...` runs gh. An option the tables do not know makes the answer
     uncertain; then the first later `gh`, `git` or `security` word is taken as the command, because scanning
     one command too many is safe and skipping one is not."""
-    n, i, assigns, chdir, uncertain = len(words), 0, [], None, False
+    n, i, assigns, chdir, uncertain, split = len(words), 0, [], None, False, None
     while i < n:
         w = words[i]
         if ASSIGN.match(w):
@@ -525,6 +613,8 @@ def _normalize_ex(words: list[str]) -> tuple[int, list[str], str | None]:
                 if nm in vlong and not eq:
                     v = words[i] if i < n else ""
                     i += 1
+                if name == "env" and nm == "split-string":
+                    return i, assigns, chdir, (i - (1 if eq else 2), i, "", v)
                 elif nm not in vlong and nm not in blong and nm not in ("help", "version"):
                     uncertain = True
                 if nm == "chdir":
@@ -543,6 +633,8 @@ def _normalize_ex(words: list[str]) -> tuple[int, list[str], str | None]:
                         if not v:
                             v = words[i] if i < n else ""
                             i += 1
+                        if name == "env" and ch == "S":
+                            return i, assigns, chdir, (i - (1 if a[k + 1:] else 2), i, a[1:k], v)
                         if (name == "env" and ch == "C") or (name == "sudo" and ch == "D"):
                             chdir = v
                         break
@@ -559,7 +651,7 @@ def _normalize_ex(words: list[str]) -> tuple[int, list[str], str | None]:
             if os.path.basename(words[j]) in KEY_EXEC:
                 i = j
                 break
-    return i, assigns, chdir
+    return i, assigns, chdir, None
 
 
 def _normalize(words: list[str]) -> int:
@@ -572,7 +664,7 @@ def _chdir(base: str | None, target: str | None, env: Env) -> str | None:
         return None
     if target.startswith("~") and target != "~" and not target.startswith("~/"):
         return None
-    return env.resolve(target, base)
+    return os.path.normpath(env.resolve(target, base))          # the shell's `cd` collapses `..` in the name
 
 
 def _flags(args: list[str], base_idx: int, short_text: str, short_file: str, long_text, long_file,
@@ -765,6 +857,24 @@ def _gh(args: list[str], off: int, cmd: Cmd, an: Analysis) -> None:
     an.pubs.append(pub)
 
 
+def _stdin_texts(cmd: Cmd, env: Env) -> list[str]:
+    """Whatever the guard can read of a command's standard input: its heredocs and here-strings, `< file`, and
+    the output of the pipeline before it (cat, echo, printf). What it cannot read is refused when the text of the
+    publication is gathered, not here."""
+    texts = [str(h) for h in cmd.heredocs]
+    try:
+        for f in cmd.stdin_files:
+            texts.append(_read(f, env, f"`{f}`", cmd.cwd))
+        src = cmd.prev_pipe
+        while src is not None:
+            if not _source_text(src, env, texts):
+                break
+            src = src.prev_pipe
+    except (Refuse, FileNotFoundError):
+        pass
+    return texts
+
+
 def _gh_api(args: list[str], base: int, cmd: Cmd, an: Analysis) -> None:
     pub = Pub("gh api", cmd)
     inputs: list[str] = []
@@ -802,7 +912,7 @@ def _gh_api(args: list[str], base: int, cmd: Cmd, an: Analysis) -> None:
     for f in inputs:
         _add_values(pub, [("file", f, base)], cmd)
         if f == "-":
-            for body in cmd.heredocs:
+            for body in _stdin_texts(cmd, an.env):
                 if _public_json(body):
                     an.hard += VISIBILITY_LINES
         else:
@@ -820,11 +930,19 @@ def _git(args: list[str], off: int, cmd: Cmd, an: Analysis) -> None:
     i = 0
     while i < len(args):
         a = args[i]
-        if a == "-C":
+        if a in ("-C", "--git-dir", "--work-tree"):
             cmd.cwd = _chdir(cmd.cwd, args[i + 1] if i + 1 < len(args) else None, an.env)
             i += 2
             continue
-        if a in ("-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"):
+        if a.startswith(("--git-dir=", "--work-tree=")):
+            cmd.cwd = _chdir(cmd.cwd, a.partition("=")[2], an.env)
+            i += 1
+            continue
+        if a.startswith("-C") and len(a) > 2:               # -Cdir, like -C dir
+            cmd.cwd = _chdir(cmd.cwd, a[2:], an.env)
+            i += 1
+            continue
+        if a in ("-c", "--namespace", "--exec-path"):
             i += 2
             continue
         if a.startswith("-"):
@@ -863,18 +981,37 @@ def analyze_command(command: str, env: Env, an: Analysis, depth: int = 0, cwd: s
     cwd = env.cwd if cwd == "" else cwd
     cmds = lex(command)
     cds: list[tuple[tuple, str | None]] = []             # (scope, directory) after each `cd`
+    piped = {id(c.prev_pipe) for c in cmds if c.prev_pipe is not None}      # commands that feed a pipe
     for cmd in cmds:
         cur = cwd
         for g, v in cds:
             if cmd.grp[:len(g)] == g:
                 cur = v
-        off, assigns, chdir = _normalize_ex(cmd.words)
+        for _ in range(8):                               # `env -S "STRING"` splices STRING's words in
+            off, assigns, chdir, split = _normalize_ex(cmd.words)
+            if split is None:
+                break
+            a, b, pre, string = split
+            try:
+                if _has_expansion(string):
+                    raise ValueError(string)
+                words = shlex.split(string)
+            except ValueError:
+                an.unknown.append((cmd, "`env -S` holds a string with an expansion the guard cannot read"))
+                off = len(cmd.words)
+                break
+            cmd.words = cmd.words[:a] + (["-" + pre] if pre else []) + words + cmd.words[b:]
+            cmd.exp_idx = set()
+        else:
+            an.unknown.append((cmd, "`env -S` strings nest too deep for the guard to read"))
         if chdir is not None:
             cur = _chdir(cur, chdir, env)
         cmd.cwd = cur
         cmd.skip = skip or SKIP_ASSIGN in assigns
         if off >= len(cmd.words):
             continue
+        if _has_expansion(env.expand(cmd.words[off])):
+            an.unknown.append((cmd, "the executable comes from an expansion the guard cannot read"))
         base = os.path.basename(cmd.words[off])
         args = cmd.words[off + 1:]
         if base in ("cd", "pushd", "popd"):
@@ -883,7 +1020,8 @@ def analyze_command(command: str, env: Env, an: Analysis, depth: int = 0, cwd: s
             else:
                 operands = [a for a in args if a == "-" or not a.startswith("-")]
                 target = operands[0] if operands else "~"
-            cds.append((cmd.grp, _chdir(cur, target, env)))
+            if cmd.prev_pipe is None and id(cmd) not in piped and not cmd.bg:     # a pipeline or `&` is a subshell
+                cds.append((cmd.grp, _chdir(cur, target, env)))
         elif base in SHELLS and depth < 4:
             for j, a in enumerate(args):
                 if a.startswith("-") and not a.startswith("--") and "c" in a[1:] and j + 1 < len(args):
@@ -948,15 +1086,28 @@ def _read_opt(path: str, env: Env, what: str, cwd: str | None) -> str:
                       "  Write the text to the file first, then run the command."])
 
 
+def _stdin_expands() -> Refuse:
+    return Refuse(["teyla leak-guard: refused — text that reaches the publication through standard input holds a $( ), backtick or ${ the shell would run, and the guard cannot read the result.",
+                   "  Quote the heredoc delimiter ('EOF') or the here-string, or write the text to a file first."])
+
+
+def _check_heredocs(cmd: Cmd) -> None:
+    if any(getattr(h, "expands", False) for h in cmd.heredocs):
+        raise _stdin_expands()
+
+
 def _source_text(cmd: Cmd, env: Env, out: list[str]) -> bool:
     """Add the text a pipeline source writes to its stdout. False when the guard cannot know it."""
     off = _normalize(cmd.words)
     base = os.path.basename(cmd.words[off]) if off < len(cmd.words) else ""
     args = cmd.words[off + 1:]
+    _check_heredocs(cmd)
     out.extend(cmd.heredocs)
     for f in cmd.stdin_files:
         out.append(_read_opt(f, env, f"`{f}`", cmd.cwd))
     if base in PRINTERS:
+        if any(j in cmd.exp_idx for j in range(off + 1, len(cmd.words))):
+            raise _stdin_expands()
         out.extend(a for a in args if not a.startswith("-"))
         return True
     if base in READERS:
@@ -971,6 +1122,8 @@ def _unreadable_sub(cmd: Cmd) -> bool:
     """True when a $( ) or backtick in the command is anything but `cat`/`echo`/`printf` of text and files
     the guard can read: it cannot evaluate the rest."""
     for sub in cmd.subs:
+        if any(getattr(h, "expands", False) for h in sub.heredocs):
+            return True
         if not sub.words:
             continue
         off = _normalize(sub.words)
@@ -999,6 +1152,7 @@ def collect_text(pub: Pub, env: Env) -> list[str]:
             texts.extend(a for a in sub.words[soff + 1:] if not a.startswith("-"))
     for f in pub.files:
         texts.append(_read_opt(f, env, f"`{f}`", cmd.cwd))
+    _check_heredocs(cmd)
     texts.extend(cmd.heredocs)
     for f in cmd.stdin_files:
         texts.append(_read_opt(f, env, f"`{f}`", cmd.cwd))
@@ -1047,9 +1201,13 @@ def decide_bash(command: str, env: Env) -> list[str] | None:
     analyze_command(command, env, an)
     if an.hard:                               # a credential, the Keychain, visibility: no skip lifts these
         return list(dict.fromkeys(an.hard))
+    env_skip = env.environ.get("TEYLA_LEAK_GUARD") == "0"
+    for unk_cmd, why in an.unknown:               # a program the guard cannot name might be gh or git
+        if not (env_skip or unk_cmd.skip):
+            return [f"teyla leak-guard: refused — {why}.",
+                    "  Write the program's name out, without a variable, a substitution or an escape.", skip_hint(env)]
     if not an.pubs:
         return None
-    env_skip = env.environ.get("TEYLA_LEAK_GUARD") == "0"
     skipped = [p for p in an.pubs if env_skip or p.cmd.skip]
     active = [p for p in an.pubs if p not in skipped]
     if skipped:
