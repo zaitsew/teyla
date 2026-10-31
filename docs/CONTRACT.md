@@ -10,6 +10,7 @@ what they cannot. Evidence expires. A permanent checked box is theatre; a stale 
 teyla shield check ~/repos/thing             # one repo against its tier
 teyla shield check ~/repos/thing --release   # the step before an upload: STALE blocks too
 teyla shield check ~/repos/thing --json      # the same, for a script
+teyla shield check ~/repos/thing --identity  # also ask GitHub whether the active gh identity can push and merge
 teyla shield                                 # one table for every repo that has a [security] section
 ```
 
@@ -92,6 +93,35 @@ Teyla or supply the scanner. The checks are static greps and file tests. `no-tok
 - **NOTE**: reported, never blocking. Credential separation is a NOTE: it is the owner's step list
   (SHIELD §5.7), and no lane can do it. While it is missing or stale, the first line of every output reads
   `not enforced on this machine: credential separation (see SHIELD §5.7)`.
+  Without `--identity` the row is read from evidence only. With `--identity` it is the live answer
+  (next section), and a `FIX` there blocks like any other.
+
+## The identity check
+
+`teyla shield check <repo> --identity` is the only part of the contract that uses the network. It runs
+read-only `gh api` GETs (row 34 of PRIVACY.md) for the login, the repo's `permissions` and default
+branch, its rulesets and the default branch's protection, and prints one `credential-separation` row:
+
+- `FIX`: the active identity can push and merge: admin on the repo, or all lookups succeeded and no
+  rule that applies to it guards the default branch. The text ends `see SHIELD §9.4`.
+- `OK`, only when it is proven that the identity cannot merge the default branch: an active ruleset
+  with Restrict updates that it cannot bypass, or branch protection with a push restriction that
+  does not list it (no team or App in the list, and the identity holds a standard role: read, triage,
+  write or maintain), or no push right on the repo at all (it pushes to a fork). The `[[security.evidence]]` row to paste is printed under the summary. Required approvals
+  never make it OK, because a worker can merge a pull request that someone else approved.
+- `NOTE`: it could not tell, and the reason is on the line: `gh` missing or not signed in, no GitHub
+  remote, no access to the repo, safe mode without `--allow-network`, a failed or timed-out lookup,
+  a ruleset that does not say whether the identity can bypass it, a push restriction that names a
+  team or App the identity might belong to, or a push restriction while the identity holds a custom
+  repository role (`role_name` outside read/triage/write/maintain), which may carry "bypass branch
+  protections". A failed lookup is a NOTE, never a FIX.
+
+Rulesets are read in pages of 100 until a short page. A private repo on a plan without rules (GitHub
+answers "Upgrade to GitHub ...") counts as having none, and the FIX line says to use the fork route.
+
+The repo asked about is the `upstream` remote, else `origin`, or `--github-repo OWNER/NAME`. No token is
+ever printed; error text from `gh` is scrubbed of anything shaped like one. Without the flag the command
+makes no network call, as before. The checklist for the owner is SHIELD §9.4.
 
 ## Evidence
 
