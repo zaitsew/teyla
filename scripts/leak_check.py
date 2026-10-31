@@ -329,9 +329,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--commits", metavar="RANGE", help="scan messages, authors and the lines added by the commits in a git revision range")
     ap.add_argument("--text", metavar="FILE", help="scan a text file (- for stdin), e.g. a PR body")
     ap.add_argument("--quiet", action="store_true", help="print only the number of findings")
+    ap.add_argument("--repo", metavar="PATH", help="scan this repository instead of the working directory")
     args = ap.parse_args(argv)
 
-    cwd = Path.cwd()
+    cwd = Path(args.repo) if args.repo else Path.cwd()
     root = repo_root(cwd)
     cfg = Config()
     load_terms(cfg)

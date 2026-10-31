@@ -41,6 +41,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 import tomllib
 
 TIERS = ("owner", "family", "testers", "public")
@@ -145,7 +146,8 @@ class Ctx:
                 self.problems.append(f"evidence row {i} is not a table")
                 continue
             what = str(row.get("what", "")).strip()
-            missing = [k for k in ("what", "commit", "date", "how") if not str(row.get(k, "")).strip()]
+            missing = [k for k in ("what", "commit", "date", "how") if not str(row.get(k, "")).strip()
+                       or (k == "commit" and not isinstance(row.get(k), str))]
             d = _date(row.get("date"))
             if missing:
                 self.problems.append(f"evidence row {i} ({what or '?'}) lacks {', '.join(missing)}")
@@ -160,11 +162,23 @@ class Ctx:
             if age is not None and (not isinstance(age, int) or isinstance(age, bool) or age < 1):
                 self.problems.append(f"evidence row {i} ({what}) max_age_days must be a positive integer")
                 continue
-            out.setdefault(what, []).append({"what": what, "commit": str(row["commit"]), "date": d,
+            if not self._has_commit(row["commit"].strip()):
+                self.problems.append(f"evidence row {i} ({what}) names a commit this repo does not have")
+                continue
+            out.setdefault(what, []).append({"what": what, "commit": row["commit"].strip(), "date": d,
                                              "how": str(row["how"]), "max_age": age})
         for rows in out.values():
             rows.sort(key=lambda r: r["date"])
         return out
+
+    def _has_commit(self, sha: str) -> bool:
+        """A 7 to 40 character hex string, and in a git checkout a commit that checkout holds."""
+        if not re.fullmatch(r"[0-9a-fA-F]{7,40}", sha):
+            return False
+        if not (self.repo / ".git").exists():
+            return True
+        r = _git(self.repo, "cat-file", "-e", f"{sha}^{{commit}}")
+        return r is not None and r.returncode == 0
 
     def _release_list(self) -> tuple[list[str], dict[str, int]]:
         names, limits = [], {}
@@ -227,9 +241,15 @@ def _walk(repo: pathlib.Path, depth: int):
         yield pathlib.Path(root), dirs, files
 
 
+def _neutral_cwd() -> pathlib.Path:
+    """A directory that is not the repo being checked: nothing spawned from here reads repo code."""
+    return pathlib.Path(tempfile.gettempdir())
+
+
 def _git(repo: pathlib.Path, *args: str) -> subprocess.CompletedProcess | None:
     try:
-        return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, timeout=30)
+        return subprocess.run(["git", "-C", str(repo), "-c", "core.fsmonitor=false", *args],
+                              cwd=_neutral_cwd(), capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
 
@@ -264,9 +284,9 @@ def _cli_has(name: str) -> bool:
     return name in _commands()
 
 
-def _run(cmd: list[str], repo: pathlib.Path, timeout: int = 180) -> tuple[int, str]:
+def _run(cmd: list[str], cwd: pathlib.Path | None = None, timeout: int = 180) -> tuple[int, str]:
     try:
-        p = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(cmd, cwd=cwd or _neutral_cwd(), capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         return 124, "timed out"
     except OSError as e:
@@ -277,30 +297,33 @@ def _run(cmd: list[str], repo: pathlib.Path, timeout: int = 180) -> tuple[int, s
 
 # --- facts -----------------------------------------------------------------------
 
-def _leak_command(repo: pathlib.Path) -> list[str] | None:
+def _teyla_argv(*args: str) -> list[str]:
+    """Run this installed Teyla in isolated mode (-I): neither the working directory nor PYTHONPATH
+    reaches sys.path, so a repo that carries its own `teyla/` package cannot shadow this one."""
+    parent = str(pathlib.Path(__file__).resolve().parents[1])
+    boot = "import sys; sys.path.insert(0, sys.argv.pop(1)); from teyla.cli import main; raise SystemExit(main(sys.argv[1:]))"
+    return [sys.executable, "-I", "-c", boot, parent, *args]
+
+
+def _leak_command(repo: pathlib.Path) -> tuple[list[str], pathlib.Path | None] | None:
+    """(argv, cwd) of the leak scanner, always from this Teyla and never from the repo being checked."""
     if _cli_has("leak"):
-        return [sys.executable, "-m", "teyla", "leak", "--quiet"]
-    script = repo / "scripts" / "leak_check.py"
+        return _teyla_argv("leak", "--quiet"), repo
+    script = pathlib.Path(__file__).resolve().parents[2] / "scripts" / "leak_check.py"
     if script.is_file():
-        return [sys.executable, str(script), "--quiet"]
-    import importlib.util
-    try:
-        if importlib.util.find_spec("teyla._leak_check") is not None:
-            return [sys.executable, "-m", "teyla._leak_check", "--quiet"]
-    except (ImportError, ValueError):
-        pass
+        return [sys.executable, "-I", str(script), "--quiet", "--repo", str(repo)], None
     return None
 
 
 def _hosts_command(repo: pathlib.Path) -> list[str] | None:
-    return [sys.executable, "-m", "teyla", "hosts", str(repo)] if _cli_has("hosts") else None
+    return _teyla_argv("hosts", str(repo)) if _cli_has("hosts") else None
 
 
 def check_leak(c: Ctx):
-    cmd = _leak_command(c.repo)
-    if cmd is None:
-        return "FIX", "install the leak gate (teyla leak, or scripts/leak_check.py)"
-    rc, out = _run(cmd, c.repo)
+    found = _leak_command(c.repo)
+    if found is None:
+        return "FIX", "install the leak gate (the teyla leak command, or Teyla's scripts/leak_check.py)"
+    rc, out = _run(found[0], found[1])
     if rc == 0:
         return "OK", "no findings"
     if rc == 1:
@@ -346,7 +369,7 @@ def check_hosts(c: Ctx):
         return "FIX", f"{rel} has no table of hosts"
     cmd = _hosts_command(c.repo)
     if cmd is not None:
-        rc, out = _run(cmd, c.repo)
+        rc, out = _run(cmd)
         if rc != 0:
             return "FIX", f"teyla hosts: {out or 'undocumented host (exit ' + str(rc) + ')'}"
         return "OK", f"{rel} matches the code"
@@ -410,38 +433,49 @@ def _strip_sql(text: str) -> str:
     return re.sub(r"--[^\n]*", " ", text)
 
 
+_IDENT = r'(?:"[^"]+"|\w+)'
+
+
 def _name(group: str) -> str:
-    return rf'(?P<{group}>(?:"?\w+"?\.)?"?\w+"?)'
+    return rf"(?P<{group}>(?:{_IDENT}\.)?{_IDENT})"
 
 
 _SQL = re.compile(
     rf"\bcreate\s+(?:unlogged\s+)?table\s+(?:if\s+not\s+exists\s+)?{_name('create')}"
-    rf"|\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?{_name('rls')}\s+enable\s+row\s+level\s+security"
+    rf"|\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?{_name('alter')}\s+"
+    rf"(?:(?P<enable>enable)|(?P<disable>disable))\s+row\s+level\s+security"
+    rf"|\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?{_name('from')}\s+rename\s+to\s+{_name('to')}"
     rf"|\bdrop\s+table\s+(?:if\s+exists\s+)?{_name('drop')}", re.I)
 
 
 def _table_name(raw: str) -> str | None:
-    name = raw.replace('"', "").lower()
-    if "." in name:
-        schema, _, name = name.partition(".")
-        if schema != "public":
+    parts = [p.strip('"').lower() for p in re.findall(_IDENT, raw)]
+    if len(parts) == 2:
+        if parts[0] != "public":
             return None                      # a private schema is not exposed by the data API
-    return name
+        return parts[1]
+    return parts[0]
 
 
 def tables_without_rls(files: list[pathlib.Path]) -> tuple[list[str], int]:
+    """Replay the migrations in file-name order and keep the last state of each public table."""
     tables: dict[str, bool] = {}
-    for f in files:
+    for f in sorted(files, key=lambda p: (str(p.parent), p.name)):
         text = _strip_sql(f.read_text(encoding="utf-8", errors="replace"))
         for m in _SQL.finditer(text):
-            kind = next(k for k in ("create", "rls", "drop") if m.group(k))
+            kind = next(k for k in ("create", "alter", "from", "drop") if m.group(k))
             name = _table_name(m.group(kind))
             if name is None:
                 continue
             if kind == "create":
                 tables.setdefault(name, False)
-            elif kind == "rls" and name in tables:
-                tables[name] = True
+            elif kind == "alter" and name in tables:
+                tables[name] = m.group("enable") is not None
+            elif kind == "from" and name in tables:
+                new = _table_name(m.group("to"))
+                state = tables.pop(name)
+                if new is not None:
+                    tables[new] = state
             elif kind == "drop":
                 tables.pop(name, None)
     return sorted(t for t, ok in tables.items() if not ok), len(tables)
@@ -538,12 +572,15 @@ def check_secrets(c: Ctx):
 def check_trifecta(c: Ctx):
     raw = c.sec.get("trifecta", [])
     legs = [str(x) for x in raw] if isinstance(raw, list) else []
-    if all(leg in legs for leg in LEGS):
-        split = c.newest("executor-split")
-        if split:
-            return "OK", f"all three legs, with the executor split documented ({split['date']}, commit {split['commit']})"
+    if not all(leg in legs for leg in LEGS):
+        return "OK", f"{len(legs)} of 3 legs" + (f": {', '.join(legs)}" if legs else "")
+    hint = "document how a separate executor validates what the research step proposes"
+    status, detail = _evidence_state(c, "executor-split", hint)
+    if status == "OK":
+        return "OK", f"all three legs, executor split documented: {detail}"
+    if status == "FIX":
         return "FIX", "cut a leg or document the executor split (an evidence row with what = \"executor-split\")"
-    return "OK", f"{len(legs)} of 3 legs" + (f": {', '.join(legs)}" if legs else "")
+    return status, f"all three legs, executor split proof is {detail}"
 
 
 def check_mcp(c: Ctx):
@@ -559,15 +596,39 @@ def check_mcp(c: Ctx):
     return "OK", f"auth = {auth or 'none'}, url_key = false"
 
 
+TEMPLATE_PRODUCT = "Trailnote"                     # the example product in templates/store/REVIEW-NOTES.md
+_DATA_LINE = re.compile(r"^\s*(?:#+\s*DATA\b|\*\*DATA\b|DATA\s*(?::|$))")
+_NEXT_PART = re.compile(r"^\s*(?:#+\s|(?:\*\*)?(?:BUSINESS MODEL|CAPABILITIES|REVIEWER INSTRUCTIONS|DEMO ACCOUNT)\b)")
+
+
+def _data_paragraph(text: str) -> str | None:
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if _DATA_LINE.match(line):
+            body = [re.sub(r"^\s*(?:#+\s*|\*\*)?DATA\b[:*\s]*", "", line)]
+            for nxt in lines[i + 1:]:
+                if _NEXT_PART.match(nxt):
+                    break
+                body.append(nxt)
+            return "\n".join(body).strip()
+    return None
+
+
 def check_release_notes(c: Ctx):
-    candidates = ["docs/APP-STORE.md", "docs/PLAY-STORE.md", "docs/REVIEW-NOTES.md", "store/REVIEW-NOTES.md",
-                  "templates/store/REVIEW-NOTES.md"]
-    pat = re.compile(r"^\s*(?:#+\s*|\*\*)?DATA\b")
-    for rel in candidates:
+    # Only the product's own notes count: the shipped template is an example, never a pass.
+    for rel in ("docs/APP-STORE.md", "docs/PLAY-STORE.md", "store/REVIEW-NOTES.md"):
         p = c.repo / rel
-        if p.is_file() and any(pat.match(l) for l in p.read_text(encoding="utf-8", errors="replace").splitlines()):
-            return "OK", f"DATA paragraph in {rel}"
-    return "FIX", "add a DATA paragraph to the review notes (docs/APP-STORE.md; template: templates/store/REVIEW-NOTES.md)"
+        if not p.is_file():
+            continue
+        para = _data_paragraph(p.read_text(encoding="utf-8", errors="replace"))
+        if para is None:
+            continue
+        if re.search(r"todo", para, re.I) or TEMPLATE_PRODUCT.lower() in para.lower():
+            return "FIX", f"the DATA paragraph in {rel} still holds template text (TODO or the example product)"
+        if len(para) < 40:
+            return "FIX", f"the DATA paragraph in {rel} is too short: say what is collected, where it goes, who receives it, how to delete"
+        return "OK", f"DATA paragraph in {rel}"
+    return "FIX", "add a DATA paragraph to docs/APP-STORE.md (template: templates/store/REVIEW-NOTES.md in the teyla repo)"
 
 
 def check_contract(c: Ctx):
@@ -598,22 +659,28 @@ def check_contract(c: Ctx):
     return "OK", f"tier {c.tier} ({src})"
 
 
-def check_evidence(c: Ctx, req: str):
-    what, hint = EVIDENCE[req]
-    if req == "rls-test" and not (c.migrations or c.sec.get("rls") in ("migrations", "migrations+ab-test")):
-        return "OK", "n/a: no database migrations"
+def _evidence_state(c: Ctx, what: str, hint: str, req: str | None = None):
+    """(OK | STALE | FIX, detail) for the newest evidence row of `what`; the same rule for every row."""
     row = c.newest(what)
     if row is None:
-        return ("NOTE" if req == "credential-separation" else "FIX"), \
-            f"no evidence: {hint}, then add a [[security.evidence]] row with what = \"{what}\""
+        return "FIX", f"no evidence: {hint}, then add a [[security.evidence]] row with what = \"{what}\""
     limit = row["max_age"] or DEFAULT_MAX_AGE
     if c.release and req in c.release_limits:
         limit = min(limit, c.release_limits[req])
     age = (c.today - row["date"]).days
     if age > limit:
-        status = "NOTE" if req == "credential-separation" else "STALE"
-        return status, f"{age}d old, limit {limit}d: {hint}, then add a new row"
+        return "STALE", f"{age}d old, limit {limit}d: {hint}, then add a new row"
     return "OK", f"{age}d old, limit {limit}d (commit {row['commit']})"
+
+
+def check_evidence(c: Ctx, req: str):
+    what, hint = EVIDENCE[req]
+    if req == "rls-test" and not (c.migrations or c.sec.get("rls") in ("migrations", "migrations+ab-test")):
+        return "OK", "n/a: no database migrations"
+    status, detail = _evidence_state(c, what, hint, req)
+    if req == "credential-separation" and status != "OK":
+        return "NOTE", detail
+    return status, detail
 
 
 CHECKS = {

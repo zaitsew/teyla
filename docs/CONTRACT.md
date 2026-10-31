@@ -47,8 +47,9 @@ max_age_days = 30                       # optional; default 30
 - `mcp` describes the product's MCP server, if it has one. `static_tools` is recorded for the probe.
 - `release` adds requirements to the `--release` run. A suffix such as `<30d` tightens that evidence limit
   for the run. Names are the requirement names below.
-- An evidence row needs all four of `what`, `commit`, `date` and `how`. A row dated in the future, or missing
-  a field, is a FIX on `contract`.
+- An evidence row needs all four of `what`, `commit`, `date` and `how`. The commit is 7 to 40 hex characters and,
+  in a git checkout, a commit the repo has. A row dated in the future, missing a field or naming a commit the repo
+  does not have is a FIX on `contract`, and does not count as evidence.
 
 ## Requirements by tier
 
@@ -64,23 +65,24 @@ max_age_days = 30                       # optional; default 30
 | Requirement | Source | OK when |
 |---|---|---|
 | contract | the section | tier, data classes, legs, rls and evidence rows are well formed; `data` is declared |
-| leak | repo | the leak scanner exits 0 (the `leak` command when this Teyla has it, else `scripts/leak_check.py --quiet`); no scanner is a FIX |
+| leak | repo | the leak scanner exits 0 (the `leak` command when this Teyla has it, else Teyla's own `scripts/leak_check.py`); the repo's copy is never run; no scanner is a FIX |
 | hooks | repo | `.githooks/pre-commit` and `pre-push` are executable and `core.hooksPath` is `.githooks` |
 | hosts | repo | the `hosts` file has a table; where Teyla has a `hosts` command it must also exit 0 |
 | lockfile | repo | each npm, Deno, SwiftPM, Python, Ruby, Go or Cargo manifest has its lockfile |
-| rls | repo | every `create table` in `supabase/migrations/*.sql` has `enable row level security`; tables in other schemas are skipped |
+| rls | repo | migrations replayed in file-name order leave every public table with row level security on (`disable`, `drop`, `rename` and quoted names are followed); other schemas are skipped |
 | privacy-manifest | repo | an Xcode project exists and `PrivacyInfo.xcprivacy` does too (n/a without Xcode) |
 | no-token-in-defaults | repo | no Swift or Kotlin line writes a token, secret, password or API-key name to UserDefaults or SharedPreferences |
 | secrets | repo | the declared place is not repo or client, `.env` is ignored, no `.env`, `*.p8`, `*.pem` or `id_rsa` is tracked |
 | mcp | section | `url_key` is not true; `auth` is not none above `owner`; a public server rate-limits |
-| trifecta | section | fewer than three legs, or an `executor-split` row |
-| release-notes | repo | `docs/APP-STORE.md` (or `docs/PLAY-STORE.md`, `docs/REVIEW-NOTES.md`) has a line starting `DATA` |
+| trifecta | section | fewer than three legs, or an `executor-split` row inside its limit |
+| release-notes | repo | `docs/APP-STORE.md`, `docs/PLAY-STORE.md` or `store/REVIEW-NOTES.md` has a `DATA` paragraph of real text: no `TODO`, not the template's example product, not a stub |
 | rls-test | evidence `rls-test` | a row inside its limit (n/a without migrations) |
 | deps | evidence `deps` | a row inside its limit; the dependency audit will record it |
 | probe | evidence `mcp-probe` | a row inside its limit |
 | credential-separation | evidence `credential-separation` | a row inside its limit |
 
-The checks are static greps and file tests. `no-token-in-defaults` misses a key built at run time, and
+Every subprocess runs from a neutral directory, and Python ones in isolated mode, so a repo cannot shadow
+Teyla or supply the scanner. The checks are static greps and file tests. `no-token-in-defaults` misses a key built at run time, and
 `rls` does not read the live database; the `rls-test` row is what proves tenancy.
 
 ## FIX, STALE and NOTE

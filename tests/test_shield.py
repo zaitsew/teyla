@@ -5,9 +5,12 @@ tests replace the two command lookups; every other check runs for real, includin
 from __future__ import annotations
 
 import datetime
+import functools
 import json
+import os
 import pathlib
 import subprocess
+import tempfile
 import tomllib
 
 import pytest
@@ -23,15 +26,37 @@ def ago(days: int) -> str:
     return (TODAY - datetime.timedelta(days=days)).isoformat()
 
 
+GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.test", "GIT_COMMITTER_NAME": "t",
+           "GIT_COMMITTER_EMAIL": "t@example.test", "GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z",
+           "GIT_COMMITTER_DATE": "2026-01-01T00:00:00Z"}
+
+
+def commit_empty(d: pathlib.Path) -> str:
+    """The same empty commit in every fixture repo, so one sha is valid in all of them."""
+    env = {**os.environ, **GIT_ENV}
+    subprocess.run(["git", "-C", str(d), "commit", "-q", "--allow-empty", "-m", "init"], check=True, capture_output=True, env=env)
+    return subprocess.run(["git", "-C", str(d), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+
+
+@functools.lru_cache(maxsize=1)
+def SHA() -> str:
+    d = pathlib.Path(tempfile.mkdtemp())
+    git(d, "init", "-q")
+    return commit_empty(d)
+
+
 def evidence(what: str, days: int, **extra) -> str:
-    row = f'\n[[security.evidence]]\nwhat = "{what}"\ncommit = "abc1234"\ndate = {ago(days)}\nhow = "ran it"\n'
+    row = f'\n[[security.evidence]]\nwhat = "{what}"\ncommit = "{SHA()}"\ndate = {ago(days)}\nhow = "ran it"\n'
     return row + "".join(f"{k} = {v}\n" for k, v in extra.items())
+
+
+ORIGINAL_LEAK, ORIGINAL_HOSTS = shield._leak_command, shield._hosts_command
 
 
 @pytest.fixture(autouse=True)
 def _scanners(monkeypatch):
     """A scanner that finds nothing, and no `teyla hosts` (the table file is checked on its own)."""
-    monkeypatch.setattr(shield, "_leak_command", lambda repo: ["true"])
+    monkeypatch.setattr(shield, "_leak_command", lambda repo: (["true"], None))
     monkeypatch.setattr(shield, "_hosts_command", lambda repo: None)
 
 
@@ -45,6 +70,7 @@ def repo(tmp_path, name="thing", *, users="owner", security='data = ["account"]\
     d = tmp_path / name
     d.mkdir()
     git(d, "init", "-q")
+    commit_empty(d)
     if "secrets" not in security:
         security += 'secrets = "runtime-env"\n'
     body = f'[product]\nname = "{name}"\n\n[productize]\nusers = "{users}"\n\n[security]\n{security}{extra_toml}'
@@ -110,7 +136,7 @@ def test_a_missing_scanner_is_a_fix(tmp_path, monkeypatch):
 
 
 def test_a_scanner_that_finds_something_is_a_fix(tmp_path, monkeypatch):
-    monkeypatch.setattr(shield, "_leak_command", lambda r: ["sh", "-c", "echo 3; exit 1"])
+    monkeypatch.setattr(shield, "_leak_command", lambda r: (["sh", "-c", "echo 3; exit 1"], None))
     rep = shield.check(repo(tmp_path))
     assert status(rep)["leak"] == "FIX" and "3" in detail(rep, "leak")
 
@@ -264,11 +290,13 @@ def test_a_token_key_in_user_defaults_is_a_fix(tmp_path):
 # --- public tier, evidence and release -------------------------------------------------
 
 PUBLIC = 'data = ["account"]\n'
+GOOD_NOTES = ("# Review notes\n\n## DATA\n\nThe app stores the account e-mail and the notes you write. "
+              "They go to the app's own database, are read by the hosting provider only, and are deleted with the account.\n")
 
 
 def test_public_tier_with_stale_evidence_is_stale_and_blocks_only_a_release(tmp_path):
     d = repo(tmp_path, users="public", security=PUBLIC, extra_toml=evidence("deps", 45) + evidence("credential-separation", 2),
-             files={"docs/APP-STORE.md": "# Review notes\n\n## DATA\n\nWhat is collected.\n"})
+             files={"docs/APP-STORE.md": GOOD_NOTES})
     rep = shield.check(d)
     assert status(rep)["deps"] == "STALE" and "45d old, limit 30d" in detail(rep, "deps")
     assert rep["exit"] == 0 and rep["not_enforced"] == []
@@ -302,7 +330,7 @@ def test_credential_separation_is_a_note_and_the_first_line_says_so(tmp_path, ca
     assert first == "not enforced on this machine: credential separation (see SHIELD §5.7)"
     # Never blocks by itself, even stale or with --release.
     ok = repo(tmp_path, "ok", users="public", security=PUBLIC, extra_toml=evidence("deps", 1),
-              files={"docs/APP-STORE.md": "DATA: what is collected.\n"})
+              files={"docs/APP-STORE.md": GOOD_NOTES})
     assert shield.check(ok, release=True)["exit"] == 0
     fresh = repo(tmp_path, "fresh", users="public", security=PUBLIC,
                  extra_toml=evidence("deps", 1) + evidence("credential-separation", 3))
@@ -315,7 +343,7 @@ def test_release_notes_need_a_data_paragraph(tmp_path):
     assert shield.check(d)["requirements"][-1]["name"] != "release-notes"          # only with --release
     rel = shield.check(d, release=True)
     assert status(rel)["release-notes"] == "FIX" and rel["exit"] == 1
-    (d / "docs" / "APP-STORE.md").write_text("# Notes\n\n**DATA** what we collect\n")
+    (d / "docs" / "APP-STORE.md").write_text("# Notes\n\n**DATA** " + GOOD_NOTES.split("## DATA", 1)[1])
     assert status(shield.check(d, release=True))["release-notes"] == "OK"
 
 
@@ -447,3 +475,93 @@ def test_the_table_exits_1_when_a_repo_has_a_fix(tmp_path, monkeypatch, capsys):
     from teyla.cli import main
     assert main(["shield"]) == 1
     assert "FIX" in capsys.readouterr().out
+
+
+# --- review round: shadowing, RLS replay, expiry, commits, template notes ---------------------
+
+def test_a_repo_cannot_shadow_teyla_or_supply_its_own_scanner(tmp_path, monkeypatch):
+    marks = tmp_path / "marks"
+    marks.mkdir()
+    code = lambda name: f"import pathlib\npathlib.Path({str(marks / name)!r}).write_text('ran')\n"
+    d = repo(tmp_path, files={"teyla/__init__.py": code("package"), "teyla/cli.py": code("cli"),
+                              "teyla/__main__.py": code("main"), "scripts/leak_check.py": code("scanner"),
+                              "sitecustomize.py": code("site")})
+    monkeypatch.setattr(shield, "_leak_command", ORIGINAL_LEAK)
+    monkeypatch.setattr(shield, "_hosts_command", ORIGINAL_HOSTS)
+    shield.check(d)                                                  # no `leak` command here: Teyla's own script
+    monkeypatch.setattr(shield, "_cli_has", lambda name: True)       # and the `-m teyla ...` shape, run from the repo
+    monkeypatch.setattr(shield, "_commands", lambda: frozenset({"leak", "hosts"}))
+    cmd, cwd = ORIGINAL_LEAK(d)
+    assert cmd[1:3] == ["-I", "-c"] and cwd == d                     # isolated mode, nothing on sys.path
+    assert ORIGINAL_HOSTS(d)[1] == "-I"
+    shield.check(d)
+    assert list(marks.iterdir()) == []
+
+
+def test_the_fallback_scanner_is_teylas_not_the_repos(tmp_path):
+    d = repo(tmp_path, files={"scripts/leak_check.py": "raise SystemExit(0)\n"})
+    cmd, cwd = ORIGINAL_LEAK(d)
+    assert not str(cmd[2]).startswith(str(d)) and cmd[1] == "-I" and cwd is None and str(d) in cmd
+
+
+def test_rls_replays_migrations_and_keeps_the_last_state(tmp_path):
+    files = {
+        "supabase/migrations/001.sql": 'create table public."Users" (id int);\nalter table public."Users" enable row level security;\n'
+                                       'create table notes (id int);\nalter table notes enable row level security;\n'
+                                       'create table old_name (id int);\nalter table old_name enable row level security;\n',
+        "supabase/migrations/002.sql": 'alter table only public.users disable row level security;\n'
+                                       'alter table old_name rename to new_name;\n',
+        "supabase/migrations/003.sql": 'drop table if exists public.notes;\n',
+    }
+    d = repo(tmp_path, files=files)
+    assert detail(shield.check(d), "rls") == "enable row level security on: users"
+    (d / "supabase/migrations/004.sql").write_text('alter table "public"."users" enable row level security;\n')
+    rep = shield.check(d)
+    assert status(rep)["rls"] == "OK" and "2 table" in detail(rep, "rls")      # users and new_name; notes was dropped
+    (d / "supabase/migrations/005.sql").write_text("alter table new_name disable row level security;\n")
+    assert detail(shield.check(d), "rls") == "enable row level security on: new_name"
+
+
+def test_executor_split_evidence_expires_like_any_other_row(tmp_path):
+    legs = 'data = ["messages"]\ntrifecta = ["private-data", "untrusted-content", "outbound"]\n'
+    old = repo(tmp_path, "old", security=legs, extra_toml=evidence("executor-split", 45))
+    rep = shield.check(old)
+    assert status(rep)["trifecta"] == "STALE" and "45d old, limit 30d" in detail(rep, "trifecta") and rep["exit"] == 0
+    assert shield.check(old, release=True)["exit"] == 1
+    kept = repo(tmp_path, "kept", security=legs, extra_toml=evidence("executor-split", 45, max_age_days=90))
+    assert status(shield.check(kept))["trifecta"] == "OK"
+    assert status(shield.check(repo(tmp_path, "none", security=legs)))["trifecta"] == "FIX"
+
+
+@pytest.mark.parametrize("commit", ['[]', '"zzzzzzz"', '"abc12"', '"deadbeef"', '"' + "0" * 40 + '"'])
+def test_evidence_needs_a_commit_this_repo_has(tmp_path, commit):
+    row = f'\n[[security.evidence]]\nwhat = "deps"\ncommit = {commit}\ndate = {ago(1)}\nhow = "ran it"\n'
+    rep = shield.check(repo(tmp_path, users="public", security=PUBLIC, extra_toml=row))
+    assert status(rep)["contract"] == "FIX" and status(rep)["deps"] == "FIX"          # the row does not count
+    assert "commit" in detail(rep, "contract")
+    if commit in ('"deadbeef"', '"' + "0" * 40 + '"'):
+        assert "names a commit this repo does not have" in detail(rep, "contract")
+
+
+def test_evidence_with_a_real_commit_counts(tmp_path):
+    d = repo(tmp_path, users="public", security=PUBLIC, extra_toml=evidence("deps", 1))
+    rep = shield.check(d)
+    assert status(rep)["deps"] == "OK" and status(rep)["contract"] == "OK"
+    short = repo(tmp_path, "short", users="public", security=PUBLIC,
+                 extra_toml=evidence("deps", 1).replace(SHA(), SHA()[:8]))
+    assert status(shield.check(short))["deps"] == "OK"                               # an abbreviation is fine
+
+
+def test_the_shipped_review_notes_template_never_satisfies_release_notes(tmp_path):
+    template = (ROOT / "templates" / "store" / "REVIEW-NOTES.md").read_text()
+    only_template = repo(tmp_path, "a", users="family", files={"templates/store/REVIEW-NOTES.md": template})
+    assert status(shield.check(only_template, release=True))["release-notes"] == "FIX"
+    copied = repo(tmp_path, "b", users="family", files={"docs/APP-STORE.md": template})      # example text not replaced
+    rep = shield.check(copied, release=True)
+    assert status(rep)["release-notes"] == "FIX" and "template text" in detail(rep, "release-notes")
+    todo = repo(tmp_path, "c", users="family", files={"docs/APP-STORE.md": "## DATA\n\nTODO: say what we collect and who gets it.\n"})
+    assert "template text" in detail(shield.check(todo, release=True), "release-notes")
+    thin = repo(tmp_path, "d", users="family", files={"docs/APP-STORE.md": "## DATA\n\nSome data.\n"})
+    assert "too short" in detail(shield.check(thin, release=True), "release-notes")
+    good = repo(tmp_path, "e", users="family", files={"docs/APP-STORE.md": GOOD_NOTES + "\n## BUSINESS MODEL\n\nFree.\n"})
+    assert status(shield.check(good, release=True))["release-notes"] == "OK"
