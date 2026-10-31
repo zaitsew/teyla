@@ -50,6 +50,7 @@ import math
 import os
 import re
 import shlex
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -140,13 +141,30 @@ class Config:
         self.terms_status = "unset"                   # ok | missing | unreadable
 
 
+CONFIG_CAP = 256 * 1024       # the terms file and .leak-allow: both are small, and neither is read without a cap
+
+
+def read_capped(path: Path, cap: int = CONFIG_CAP, *, follow: bool = True) -> str:
+    """The text of a small config file, never more than `cap` bytes into memory. Raises OSError when it is not a
+    regular file (or, with follow=False, is a symlink) and ValueError when it is over the cap."""
+    flags = os.O_RDONLY | (0 if follow else getattr(os, "O_NOFOLLOW", 0)) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags)
+    with os.fdopen(fd, "rb") as fh:
+        if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+            raise OSError("not a regular file")
+        data = fh.read(cap + 1)
+    if len(data) > cap:
+        raise ValueError(f"over {cap} bytes")
+    return data.decode("utf-8")
+
+
 def load_terms(cfg: Config) -> None:
     env = os.environ.get("TEYLA_PRIVATE_TERMS")
     path = Path(env).expanduser() if env else Path.home() / ".config" / "teyla" / "private-terms.txt"
     cfg.terms_path, cfg.terms_explicit = str(path), bool(env)
     try:
-        raw = path.read_text(encoding="utf-8")
-    except OSError as e:
+        raw = read_capped(path)
+    except (OSError, ValueError) as e:
         cfg.terms_status = "missing" if isinstance(e, FileNotFoundError) else "unreadable"
         cfg.notes.append("no private term list; generic rules only")
         return
@@ -168,11 +186,17 @@ def load_terms(cfg: Config) -> None:
 
 
 def load_allow(cfg: Config, root: Path | None) -> None:
-    if root is None or not (root / ".leak-allow").is_file():
+    if root is None or not os.path.lexists(root / ".leak-allow"):
+        return
+    try:
+        text = read_capped(root / ".leak-allow", follow=False)
+    except (OSError, ValueError, UnicodeDecodeError) as e:
+        why = str(e) if isinstance(e, ValueError) and not isinstance(e, UnicodeDecodeError) else "not a readable regular file"
+        cfg.errors.append(f".leak-allow: allowlist unreadable ({why})")
         return
     section = None
     today = _dt.date.today()
-    for no, line in enumerate((root / ".leak-allow").read_text(encoding="utf-8").splitlines(), 1):
+    for no, line in enumerate(text.splitlines(), 1):
         line = re.sub(r"\s+#.*$", "", line).strip()
         if not line or line.startswith("#"):
             continue
@@ -209,7 +233,15 @@ def _add_exception(cfg: Config, line: str, today: _dt.date, no: int = 0) -> None
         cfg.errors.append(f"{where} a line is `rule glob reason [until=YYYY-MM-DD]`; this one has no reason")
         return
     rule, glob, reason = rest[0], rest[1], " ".join(rest[2:])
-    if _secret_family(rule) and fp is None and all(fnmatch.fnmatchcase(p, glob) for p in ("a", "a/b", "a/b/c.txt", ".env")):
+    if any(c in rule for c in "*?[]"):
+        cfg.errors.append(f"{where} the rule must be an exact rule name: a pattern exempts every file from some "
+                          "secret-family rule")
+        return
+    if rule not in KNOWN_RULES and not re.fullmatch(r"gitleaks:[A-Za-z0-9._\-]+", rule):
+        cfg.errors.append(f"{where} unknown rule; use one of {', '.join(sorted(KNOWN_RULES))} or gitleaks:<RuleID>")
+        return
+    bare = not glob.strip("/").strip("*") or not glob.strip("/")
+    if _secret_family(rule) and fp is None and (bare or all(fnmatch.fnmatchcase(p, glob) for p in ("a", "a/b", "a/b/c.txt", ".env"))):
         cfg.errors.append(f"{where} this line exempts every file from a secret-family rule; "
                           "name the files, or the finding with fp=")
         return
@@ -217,6 +249,8 @@ def _add_exception(cfg: Config, line: str, today: _dt.date, no: int = 0) -> None
     (cfg.expired if until is not None and until < today else cfg.exceptions).append(ex)
 
 
+KNOWN_RULES = {"term", "email", "home", "secret", "secret-generic", "cyrillic", "harness-config", "image-metadata",
+               "symlink-outside"}
 SECRET_FAMILY = ("secret", "secret-generic", "harness-config", "image-metadata")
 
 

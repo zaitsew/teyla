@@ -152,6 +152,14 @@ def _ident(s: str) -> str:
     return s
 
 
+_CTRL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _escape(s: str) -> str:
+    """Control characters (a newline in a file name) as \\xNN, so a path cannot forge output lines."""
+    return _CTRL.sub(lambda m: f"\\x{ord(m.group(0)):02x}", s)
+
+
 def make_scrubber(cfg) -> Callable[[str], str]:
     """A function that replaces every private term in a string with `term:<index>`. Paths, places, notes and
     error text are printed too, and a file can be named after a term. Terms of four characters or more match
@@ -1054,6 +1062,12 @@ class Scanner:
             common = ["--no-banner", "--redact", "--report-format", "json", "--report-path", str(report), "--exit-code", "0",
                       "--config", str(tmpd / "config.toml"), "--gitleaks-ignore-path", str(tmpd / "ignore")]
             mb = str(max(1, -(-self.max_bytes // (1 << 20))))
+            if mode == "text" and len(text.encode("utf-8", "replace")) > int(mb) << 20:
+                n = len(text.encode("utf-8", "replace"))
+                self.cov.gitleaks_missing = True
+                self.cov.gitleaks_why = f"the text is over the engine limit ({n} bytes)"
+                self.cov.notes.append(f"text over the engine limit ({n} bytes), gitleaks not run")
+                return
             if mode == "tree":
                 # Only the tracked files: a build directory or node_modules under the repo is not the repo.
                 self._stage_tracked(stage)
@@ -1122,11 +1136,13 @@ class Scanner:
             rules = self.eng.PathRules(rel, self.cfg)
             lh = self._gl_hash(mode, tmpd, br, raw_rel, sha, line, end)
             key = f"{it.get('RuleID')}:{lh}" if lh else f"{rel}:{it.get('RuleID')}:{line}:line-unread"
-            if rules.skip or not rules.sec or rules.excepted(rule, key):
+            # An exception never applies to a finding whose matched text was not read: nothing ties it to a value.
+            if rules.skip or not rules.sec or (lh and rules.excepted(rule, key)):
                 continue
             cls = cls_of(sha) if (cls_of and sha) else "publishable"
             place = f"commit:{sha[:8]}:{rel}:{line}" if sha else f"{rel}:{line}"
-            self.col.add(rule, "blocker", cls, rel, line, key, place, masked="redacted", note="found by gitleaks")
+            self.col.add(rule, "blocker", cls, rel, line, key, place, masked="redacted",
+                         note="found by gitleaks" if lh else "found by gitleaks; line unread, so no exception applies")
 
     def _stage_tracked(self, stage: Path) -> None:
         """Hard links (a copy of a small file when linking fails) of the tracked regular files under `stage`
@@ -1152,7 +1168,11 @@ class Scanner:
     # -- result --------------------------------------------------------------------------------
 
     def result(self) -> Result:
-        sc = self.scrub
+        term_scrub = self.scrub
+
+        def sc(x: str) -> str:
+            return _escape(term_scrub(x))
+
         finds = []
         for f in self.col.sorted():
             finds.append(dataclasses.replace(f, repo=sc(self.repo), path=sc(f.path), places=[sc(x) for x in f.places],
@@ -1163,7 +1183,7 @@ class Scanner:
             notes.append(f"{self._big_binary} binary file(s) over the size cap were not opened: binary files are not text-scanned")
         cov = Coverage([sc(x) for x in c.read], [(sc(a), sc(b)) for a, b in c.unread], [sc(x) for x in notes],
                        c.gitleaks_missing, c.gitleaks_why, [(sc(a), sc(b)) for a, b in c.skipped])
-        return Result(finds, cov, [sc(e) for e in self.cfg.errors], sc)
+        return Result(finds, cov, [sc(e) for e in self.cfg.errors], term_scrub)
 
 
 # --- the API other doors call ------------------------------------------------------------------
@@ -1243,8 +1263,20 @@ def render(result: Result, *, require_gitleaks: bool = False, allow_partial: boo
 
 
 def to_json(result: Result, code: int) -> str:
-    return result.scrub(json.dumps({"findings": [f.to_dict() for f in result.findings], "coverage": result.coverage.to_dict(),
-                                    "errors": result.errors, "exit": code}, indent=2, ensure_ascii=False))
+    doc = {"findings": [f.to_dict() for f in result.findings], "coverage": result.coverage.to_dict(),
+           "errors": result.errors, "exit": code}
+    return json.dumps(_scrub_values(doc, result.scrub), indent=2, ensure_ascii=False)
+
+
+def _scrub_values(obj, fn):
+    """`obj` with `fn` applied to every string value; keys are the schema and stay as they are."""
+    if isinstance(obj, str):
+        return fn(obj)
+    if isinstance(obj, dict):
+        return {k: _scrub_values(v, fn) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_scrub_values(v, fn) for v in obj]
+    return obj
 
 
 # --- CLI ---------------------------------------------------------------------------------------

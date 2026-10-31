@@ -110,11 +110,13 @@ are not read), `protect --staged` for `--staged` when the installed version has 
 range. It passes `--redact` and an explicit default config, so a repo cannot switch the engine off with its own
 `.gitleaks.toml` or `.gitleaksignore`. Without it, one coverage note says so and the exit code does not change.
 `--require-gitleaks` turns that note into exit 2, on every surface: `--text` runs `detect` over the text, and
-`--staged` needs a gitleaks with `protect --staged`.
+`--staged` needs a gitleaks with `protect --staged`. A text over gitleaks' size limit is a coverage note, and exit 2
+with the flag.
 
 ## The allow-list
 
-`.leak-allow` keeps its sections (`emails`, `paths`, `home`, `cyrillic`, `secrets`), one glob per line; they apply
+`.leak-allow` and the terms file are read with a 256 KB cap; a larger one, or a symlinked `.leak-allow`, is exit 2.
+It keeps its sections (`emails`, `paths`, `home`, `cyrillic`, `secrets`), one glob per line; they apply
 to gitleaks findings too. A section can be followed by an optional `[exceptions]` block, one line per exception:
 
 ```
@@ -123,8 +125,9 @@ term vendor/* upstream sample text, not ours until=2026-12-31
 secret tests/fixtures/*.pem a fake key the test needs fp=<12 hex from the report>
 ```
 
-The fields are `rule glob reason`, then `until=YYYY-MM-DD` and `fp=<12 hex>` in any order. The rule is a glob on the
-rule name. An exception past its `until` date is ignored and reported as `expired exception`. An exception for a
+The fields are `rule glob reason`, then `until=YYYY-MM-DD` and `fp=<12 hex>` in any order. The rule is an exact
+rule name or `gitleaks:<RuleID>`; a pattern or an unknown name is an error. An exception never applies to a finding
+whose matched line could not be read (it says `line unread`). An exception past its `until` date is ignored and reported as `expired exception`. An exception for a
 secret rule whose glob matches every file is an error (exit 2): a whole file is never exempt from the secret
 rules, only named files or one fingerprint. Editing `.leak-allow`, the terms file or the scanner is itself a
 change to review as one that touches credentials.
