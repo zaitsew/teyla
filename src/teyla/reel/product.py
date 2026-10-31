@@ -23,6 +23,7 @@ recording holds the last frame; a shorter one leaves the rest silent.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -112,7 +113,17 @@ def load_captions(path: Path, control: str = "caption", langs: list[str] | None 
     return out
 
 
-def _unsafe(red: Redactor, text: str) -> bool:
+def _mask_names(text: str, allow: tuple[str, ...] | list[str]) -> str:
+    """Each allowed name, whole and on word boundaries, becomes a neutral word before redaction. The name
+    may then appear in a caption, but a private term that is only part of it ("Acme" in "Acme Planner")
+    is still refused on its own."""
+    for name in sorted((n for n in allow if n), key=len, reverse=True):
+        text = re.sub(r"(?<![A-Za-z0-9])" + re.escape(name) + r"(?![A-Za-z0-9])", "ThisProduct", text, flags=re.I)
+    return text
+
+
+def _unsafe(red: Redactor, text: str, allow: tuple[str, ...] | list[str] = ()) -> bool:
+    text = _mask_names(text, allow)
     o = red.clean(text)
     return bool(o.fatal or o.skip or " ".join(o.text.split()) != " ".join(text.split()))
 
@@ -120,7 +131,7 @@ def _unsafe(red: Redactor, text: str) -> bool:
 def product_names(repo: Path, kit: dict) -> list[str]:
     """The product's own names: the kit's `name`, `[product] name` in teyla.toml and the repo directory.
     A product reel says the product's name; a private-term list that holds it (the repo is private) must
-    not empty the captions. Only these names are allowed, nothing else on the list."""
+    not empty the captions. Only these names are allowed, whole; nothing else on the list."""
     names = [str(kit.get("name") or "")]
     toml = repo / "teyla.toml"
     if toml.is_file():
@@ -132,30 +143,23 @@ def product_names(repo: Path, kit: dict) -> list[str]:
     return [n.strip() for n in names if n and n.strip()]
 
 
-def _redactor(repo: Path, allow: tuple[str, ...] | list[str]) -> Redactor:
-    red = Redactor([str(repo)])
-    for name in allow:
-        red.allow(name)
-    return red
-
-
 def vet(captions: dict[str, list[Caption]], repo: Path, allow: tuple[str, ...] | list[str] = ()) -> list[str]:
     """Problems with captions that would go into a public video: a string redaction drops or changes.
     `allow` holds the product's own names (see `product_names`)."""
-    red = _redactor(repo, allow)
+    red = Redactor([str(repo)])
     bad = []
     for lang, caps in captions.items():
         for i, c in enumerate(caps, 1):
-            if _unsafe(red, c.text):
+            if _unsafe(red, c.text, allow):
                 bad.append(f"{lang} caption {i} holds a secret, a private term, an address or a path")
     return bad
 
 
 def vet_texts(texts: dict[str, str], repo: Path, allow: tuple[str, ...] | list[str] = ()) -> list[str]:
     """The same check for a voice-over script: it is spoken into a public video and sent to the speech API."""
-    red = _redactor(repo, allow)
+    red = Redactor([str(repo)])
     return [f"the {lang} voice-over script holds a secret, a private term, an address or a path"
-            for lang, text in texts.items() if _unsafe(red, text)]
+            for lang, text in texts.items() if _unsafe(red, text, allow)]
 
 
 def schedule(caps: list[Caption], duration: float) -> list[tuple[float, float, str]]:

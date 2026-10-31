@@ -147,6 +147,9 @@ def test_vet_allows_the_product_names_and_nothing_else(tmp_path):
     bad = product.vet(caps, repo, allow=("ZebraCorp",))
     assert bad == ["en caption 2 holds a secret, a private term, an address or a path"]
     assert product.vet_texts({"en": "Made at ZebraCorp"}, repo, allow=["zebracorp"]) == []
+    # The name is allowed whole; a private term that is only part of it is still refused on its own.
+    caps = {"en": [product.Caption("ZebraCorp Planner plans"), product.Caption("Made at ZebraCorp")]}
+    assert product.vet(caps, repo, allow=("ZebraCorp Planner",)) == ["en caption 2 holds a secret, a private term, an address or a path"]
 
 
 def test_product_names_come_from_the_kit_the_toml_and_the_directory(tmp_path):
