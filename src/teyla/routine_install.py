@@ -233,6 +233,7 @@ mkdir -p "$OUT_DIR"
 "$TEYLA" reviews --quiet > "$OUT_DIR/reviews.md" 2>&1
 "$TEYLA" scout design --quiet > "$OUT_DIR/scout-design.md" 2>&1
 "$TEYLA" deps --all --quiet > "$OUT_DIR/deps.md" 2>&1
+"$TEYLA" leak --published --quiet > "$OUT_DIR/leak-published.md" 2>&1
 # The reports above tend to have no reader: the digest is the five lines
 # that are read — the session-start hook shows its headline once, and a notification says it exists.
 "$TEYLA" digest --write
@@ -349,6 +350,9 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         return True
     if path == WRAPPER_PATH and "deps --all" not in text:
         # Written before `teyla deps`: the weekly would never check the lockfiles for known vulnerabilities.
+        return True
+    if path == WRAPPER_PATH and "leak --published" not in text:
+        # Written before `teyla leak --published`: the weekly would never audit what is already public.
         return True
     if path == WRAPPER_PATH and ("models watch --refresh" in text) != (_watch_line() == WATCH_LINE):
         # Safe mode was switched on (or off) after the wrapper was written.
