@@ -175,8 +175,9 @@ class Ctx:
         """A 7 to 40 character hex string, and in a git checkout a commit that checkout holds."""
         if not re.fullmatch(r"[0-9a-fA-F]{7,40}", sha):
             return False
-        if not (self.repo / ".git").exists():
-            return True
+        inside = _git(self.repo, "rev-parse", "--git-dir")
+        if inside is None or inside.returncode != 0:
+            return True                      # not a checkout at all: nothing to verify against
         r = _git(self.repo, "cat-file", "-e", f"{sha}^{{commit}}")
         return r is not None and r.returncode == 0
 
@@ -309,9 +310,10 @@ def _leak_command(repo: pathlib.Path) -> tuple[list[str], pathlib.Path | None] |
     """(argv, cwd) of the leak scanner, always from this Teyla and never from the repo being checked."""
     if _cli_has("leak"):
         return _teyla_argv("leak", "--quiet"), repo
-    script = pathlib.Path(__file__).resolve().parents[2] / "scripts" / "leak_check.py"
-    if script.is_file():
-        return [sys.executable, "-I", str(script), "--quiet", "--repo", str(repo)], None
+    here = pathlib.Path(__file__).resolve()
+    for script in (here.parents[2] / "scripts" / "leak_check.py", here.parent / "_leak_check.py"):
+        if script.is_file():                 # a checkout, or the wheel's packaged copy
+            return [sys.executable, "-I", str(script), "--quiet", "--repo", str(repo)], None
     return None
 
 
@@ -449,7 +451,8 @@ _SQL = re.compile(
 
 
 def _table_name(raw: str) -> str | None:
-    parts = [p.strip('"').lower() for p in re.findall(_IDENT, raw)]
+    # an unquoted identifier folds to lower case; a quoted one keeps its case and is a different table
+    parts = [p[1:-1] if p.startswith('"') else p.lower() for p in re.findall(_IDENT, raw)]
     if len(parts) == 2:
         if parts[0] != "public":
             return None                      # a private schema is not exposed by the data API
@@ -575,7 +578,7 @@ def check_trifecta(c: Ctx):
     if not all(leg in legs for leg in LEGS):
         return "OK", f"{len(legs)} of 3 legs" + (f": {', '.join(legs)}" if legs else "")
     hint = "document how a separate executor validates what the research step proposes"
-    status, detail = _evidence_state(c, "executor-split", hint)
+    status, detail = _evidence_state(c, "executor-split", hint, "trifecta")
     if status == "OK":
         return "OK", f"all three legs, executor split documented: {detail}"
     if status == "FIX":
@@ -623,7 +626,7 @@ def check_release_notes(c: Ctx):
         para = _data_paragraph(p.read_text(encoding="utf-8", errors="replace"))
         if para is None:
             continue
-        if re.search(r"todo", para, re.I) or TEMPLATE_PRODUCT.lower() in para.lower():
+        if re.search(r"\bTODO\b", para) or TEMPLATE_PRODUCT.lower() in para.lower():
             return "FIX", f"the DATA paragraph in {rel} still holds template text (TODO or the example product)"
         if len(para) < 40:
             return "FIX", f"the DATA paragraph in {rel} is too short: say what is collected, where it goes, who receives it, how to delete"

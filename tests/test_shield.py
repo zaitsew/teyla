@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime
 import functools
 import json
+import re
 import os
 import pathlib
 import subprocess
@@ -201,7 +202,7 @@ def test_rls_flags_tables_without_row_level_security(tmp_path):
     rep = shield.check(d)
     assert status(rep)["rls"] == "FIX"
     assert detail(rep, "rls") == "enable row level security on: photos"
-    (d / "supabase/migrations/002_more.sql").write_text('alter table "Photos" enable row level security;\n')
+    (d / "supabase/migrations/002_more.sql").write_text('alter table "photos" enable row level security;\n')
     rep = shield.check(d)
     assert status(rep)["rls"] == "OK" and "3 table" in detail(rep, "rls")
 
@@ -506,7 +507,7 @@ def test_the_fallback_scanner_is_teylas_not_the_repos(tmp_path):
 
 def test_rls_replays_migrations_and_keeps_the_last_state(tmp_path):
     files = {
-        "supabase/migrations/001.sql": 'create table public."Users" (id int);\nalter table public."Users" enable row level security;\n'
+        "supabase/migrations/001.sql": 'create table public."users" (id int);\nalter table public."users" enable row level security;\n'
                                        'create table notes (id int);\nalter table notes enable row level security;\n'
                                        'create table old_name (id int);\nalter table old_name enable row level security;\n',
         "supabase/migrations/002.sql": 'alter table only public.users disable row level security;\n'
@@ -565,3 +566,19 @@ def test_the_shipped_review_notes_template_never_satisfies_release_notes(tmp_pat
     assert "too short" in detail(shield.check(thin, release=True), "release-notes")
     good = repo(tmp_path, "e", users="family", files={"docs/APP-STORE.md": GOOD_NOTES + "\n## BUSINESS MODEL\n\nFree.\n"})
     assert status(shield.check(good, release=True))["release-notes"] == "OK"
+
+
+def test_round_two_fixes(tmp_path):
+    from teyla import shield
+    # a quoted identifier keeps its case: "Unprotected" and unprotected are two tables
+    m = tmp_path / "supabase" / "migrations"
+    m.mkdir(parents=True)
+    (m / "001.sql").write_text('create table users (id int);\nalter table users enable row level security;\n'
+                               'create table unprotected (id int);\n')
+    (m / "002.sql").write_text('alter table users rename to "Unprotected";\n')
+    missing, total = shield.tables_without_rls(sorted(m.glob("*.sql")))
+    assert "unprotected" in missing and total == 2
+    # a trifecta release limit applies to the executor-split evidence
+    assert shield._evidence_state.__code__.co_argcount == 4
+    # TODO must be a whole word: Mastodon is not template text
+    assert not re.search(r"\bTODO\b", "Data goes to Mastodon and nowhere else.")
