@@ -26,7 +26,7 @@ names). The file has two sections, described under [Private terms](#private-term
 |---|---|---|
 | Tracked files in the working tree | `teyla leak [repo]` | publishable |
 | The index, as blobs (`git show :path`), never the working tree | `--staged` | publishable |
-| Commits the remote lacks: messages, author and committer, added lines, changed images and plists; annotated tags on them | `--outgoing [remote]` | publishable |
+| Commits the remote lacks: messages, author and committer, added lines, changed images and plists; annotated tags on them, following a tag that points at another tag | `--outgoing [remote]` | publishable |
 | An explicit range (the same range syntax as `scripts/leak_check.py --commits`) | `--commits RANGE` | publishable, or historical |
 | A PR body, issue, release note or commit message | `--text FILE\|-` | publishable |
 | `.env*` files and harness configs that are present but not tracked | default run | local-only |

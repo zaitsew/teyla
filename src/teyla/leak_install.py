@@ -69,21 +69,29 @@ _PUSH_SCAN = """  while read -r _tlg_l _tlg_lsha _tlg_r _tlg_rsha; do
       [ "$_tlg_one" -gt "$_tlg_rc" ] && _tlg_rc=$_tlg_one
     fi
     case "$_tlg_l" in refs/tags/*)
-      if [ "$(git cat-file -t "$_tlg_lsha" 2>/dev/null)" = "tag" ]; then
-        if ! git cat-file -p "$_tlg_lsha" > "$_tlg_in.tag" 2>/dev/null; then
-          echo "teyla leak gate: cannot read the tag object $_tlg_l; refusing the push" >&2
+      _tlg_obj=$_tlg_lsha; _tlg_depth=0
+      while [ "$(git cat-file -t "$_tlg_obj" 2>/dev/null)" = "tag" ]; do
+        _tlg_depth=$(( _tlg_depth + 1 ))
+        if [ "$_tlg_depth" -gt 20 ] || ! git cat-file -p "$_tlg_obj" > "$_tlg_in.tag" 2>/dev/null; then
+          echo "teyla leak gate: cannot read the tag chain of $_tlg_l; refusing the push" >&2
           [ "$_tlg_rc" -lt 2 ] && _tlg_rc=2
-        else
-          teyla leak --text "$_tlg_in.tag" --quiet </dev/null >/dev/null 2>&1
-          _tlg_one=$?
-          if [ "$_tlg_one" -ne 0 ]; then
-            teyla leak --text "$_tlg_in.tag" </dev/null >&2
-            echo "teyla leak gate: pre-push refused the annotated tag $_tlg_l (exit $_tlg_one); fix the findings, or set TEYLA_LEAK=0 for this command" >&2
-            [ "$_tlg_one" -gt "$_tlg_rc" ] && _tlg_rc=$_tlg_one
-          fi
+          break
         fi
+        teyla leak --text "$_tlg_in.tag" --quiet </dev/null >/dev/null 2>&1
+        _tlg_one=$?
+        if [ "$_tlg_one" -ne 0 ]; then
+          teyla leak --text "$_tlg_in.tag" </dev/null >&2
+          echo "teyla leak gate: pre-push refused the annotated tag $_tlg_l (exit $_tlg_one); fix the findings, or set TEYLA_LEAK=0 for this command" >&2
+          [ "$_tlg_one" -gt "$_tlg_rc" ] && _tlg_rc=$_tlg_one
+        fi
+        _tlg_obj=$(sed -n '1s/^object //p' "$_tlg_in.tag")
         rm -f "$_tlg_in.tag"
-      fi ;;
+        if [ -z "$_tlg_obj" ]; then
+          echo "teyla leak gate: cannot read the tag chain of $_tlg_l; refusing the push" >&2
+          [ "$_tlg_rc" -lt 2 ] && _tlg_rc=2
+          break
+        fi
+      done ;;
     esac
   done < "$_tlg_in"
 """
