@@ -190,7 +190,7 @@ def test_rls_flags_tables_without_row_level_security(tmp_path):
     sql1 = """
     -- create table commented_out (id int);
     create table public.notes (id uuid primary key);
-    create table if not exists "Photos" (id int);
+    create table if not exists "photos" (id int);
     create table audit_log (id int);
     alter table public.notes enable row level security;
     alter table audit_log enable row level security;
