@@ -22,6 +22,9 @@ One line per check, `OK|FIX|SKIP  <name>  <evidence>`; a FIX line ends with the 
 Safety: it runs only against a host that the current repo names (`[security]` `mcp.url` or the `[privacy]`
 table in teyla.toml, or the Host column of docs/PRIVACY.md), or with `--i-own-this`: never probe a
 third party. It has a request budget (default 60) and a time budget (default 120 s), both above zero.
+The time budget is a deadline for the whole run: every request, including connect, headers and body, is
+cut off at it, even when the server drips bytes. The request is run in a daemon thread that the probe stops
+waiting for at the deadline; an abandoned thread ends with its socket and never keeps the process alive.
 It makes no `tools/call` on a tool whose name or description reads like a write
 (create, delete, send, post, update, write, pay, and a few more) unless `--write TOOL` names that tool.
 Safe mode refuses it unless `--allow-network` is given. The token goes in an Authorization header, over
@@ -37,7 +40,9 @@ import ipaddress
 import json
 import pathlib
 import re
+import socket
 import sys
+import threading
 import time
 import tomllib
 import urllib.error
@@ -50,6 +55,7 @@ from . import __version__, net
 DEFAULT_BUDGET = 60
 DEFAULT_SECONDS = 120.0
 REQUEST_TIMEOUT_S = 15.0
+TIME_SPENT = "the time budget is spent"
 MAX_RESPONSE_BYTES = 1024 * 1024
 OVERSIZE_BYTES = 1024 * 1024
 MIN_RATE_LIMIT_BUDGET = 20
@@ -321,7 +327,7 @@ class Client:
             raise BudgetSpent(f"the request budget of {self.budget} is spent")
         left = self.deadline - time.monotonic()
         if left <= 0:
-            raise BudgetSpent("the time budget is spent")
+            raise BudgetSpent(TIME_SPENT)
         self.used += 1
         h = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream",
              "User-Agent": USER_AGENT, **headers}
@@ -329,16 +335,36 @@ class Client:
             h["Authorization"] = f"Bearer {self.token}"
         raw = payload if isinstance(payload, bytes) else json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(self.url, data=raw, headers=h, method="POST")
-        timeout = max(0.2, min(REQUEST_TIMEOUT_S, left))
-        try:
-            with _OPENER.open(req, timeout=timeout) as r:          # noqa: S310 (scheme checked in run())
-                return _read(r.status, r, self.deadline)
-        except urllib.error.HTTPError as e:
-            return _read(e.code, e, self.deadline)
-        except BudgetSpent:
-            raise
-        except Exception as e:                                      # noqa: BLE001 — never let an exception carry the token out
-            return Resp(0, error=self.scrub(str(getattr(e, "reason", e)))[:120] or type(e).__name__)
+        # The whole exchange (connect, headers, body) runs in a worker that the caller waits for at most `left`
+        # seconds. Per-call socket timeouts bound each blocking step, but not their sum: a server can drip one
+        # byte per timeout. A worker that outlives the budget is abandoned. It is a daemon thread, so it never
+        # keeps the process alive, and its socket is shut down so that it ends at once.
+        timeout = min(REQUEST_TIMEOUT_S, left)
+        box: dict = {}
+
+        def work():
+            try:
+                try:
+                    with _OPENER.open(req, timeout=timeout) as r:      # noqa: S310 (scheme checked in run())
+                        box["r"] = r
+                        box["resp"] = _read(r.status, r, self.deadline)
+                except urllib.error.HTTPError as e:
+                    box["r"] = e
+                    box["resp"] = _read(e.code, e, self.deadline)
+            except BudgetSpent as e:
+                box["spent"] = e
+            except Exception as e:                                  # noqa: BLE001 — never let an exception carry the token out
+                box["resp"] = Resp(0, error=self.scrub(str(getattr(e, "reason", e)))[:120] or type(e).__name__)
+
+        t = threading.Thread(target=work, name="teyla-mcp-probe-request", daemon=True)
+        t.start()
+        t.join(left)
+        if t.is_alive():
+            _abort(box.get("r"))
+            raise BudgetSpent(TIME_SPENT)
+        if "spent" in box:
+            raise box["spent"]
+        return box["resp"]
 
 
 def scrub(text: str, token: str | None) -> str:
@@ -359,25 +385,38 @@ def _sock_of(r):
     return None
 
 
+def _abort(r) -> None:
+    """Best effort, from another thread: shut the socket of a response so that a blocked read returns."""
+    sock = _sock_of(r) if r is not None else None
+    if sock is not None:
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+
+
 def _read(status: int, r, deadline: float) -> Resp:
-    """Read the answer in chunks against the total deadline, so a server that drips bytes cannot stall the probe."""
+    """Read the answer in chunks against the total deadline, so a server that drips bytes cannot stall the probe.
+
+    `left` is computed before every blocking call and the socket timeout never exceeds it. Where `_sock_of` finds
+    no socket, or one `read1` makes several socket reads, `Client.post` still stops waiting at the deadline."""
     headers = {k.lower(): v for k, v in r.headers.items()}
     sse = "text/event-stream" in headers.get("content-type", "").lower()
     sock, buf, text = _sock_of(r), b"", ""
     while len(buf) < MAX_RESPONSE_BYTES:
         left = deadline - time.monotonic()
         if left <= 0:
-            raise BudgetSpent("the time budget is spent")
+            raise BudgetSpent(TIME_SPENT)
         if sock is not None:
             try:
-                sock.settimeout(max(0.05, min(left, REQUEST_TIMEOUT_S)))
+                sock.settimeout(min(left, REQUEST_TIMEOUT_S))
             except OSError:
                 pass
         try:
             chunk = r.read1(65536)
         except TimeoutError:
             if time.monotonic() >= deadline:
-                raise BudgetSpent("the time budget is spent")
+                raise BudgetSpent(TIME_SPENT)
             break
         except Exception:                                           # noqa: BLE001 — a cut connection ends the read
             break
@@ -391,6 +430,8 @@ def _read(status: int, r, deadline: float) -> Resp:
                     break
             if text:
                 break
+    if time.monotonic() >= deadline:
+        raise BudgetSpent(TIME_SPENT)
     if not sse:
         text = buf.decode("utf-8", "replace")
     body = None
