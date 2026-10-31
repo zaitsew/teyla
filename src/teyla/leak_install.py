@@ -592,10 +592,16 @@ def _read_terms_file(path: Path) -> str:
     return _engine().read_capped(path)
 
 
+def mask_term(term: str) -> str:
+    """A term as two characters, `…` and its length; under 4 characters it shows none (`*…2`), because the first
+    two characters of a short term are the term."""
+    return f"*{leak.ELLIPSIS}{len(term)}" if len(term) < 4 else leak.mask(term)
+
+
 def _term_rows(raw: str) -> list[dict]:
     rows = []
     for i, (term, section) in enumerate(_engine().distinct_terms(raw)):
-        rows.append({"index": i, "section": section, "masked": leak.mask(term)})
+        rows.append({"index": i, "section": section, "masked": mask_term(term)})
     return rows
 
 
@@ -604,7 +610,7 @@ def _parse_indices(words: list[str]) -> list[int]:
     for w in words:
         w = w[5:] if w.startswith("term:") else w
         if not w.isdigit():
-            raise ValueError(f"not an index: {leak.mask(w)}")
+            raise ValueError(f"not an index: {mask_term(w)}")
         if int(w) not in out:
             out.append(int(w))
     return out
@@ -710,7 +716,7 @@ def cmd_terms(args) -> int:
             print(f"teyla leak terms: cannot write the terms file ({type(e).__name__})", file=sys.stderr)
             return 2
         added = len(cands)
-    rows = [{"masked": leak.mask(v), "source": s, "section": section_of(s)} for v, s in cands]
+    rows = [{"masked": mask_term(v), "source": s, "section": section_of(s)} for v, s in cands]
     if args.json:
         print(json.dumps({"candidates": rows, "added": added}, indent=2, ensure_ascii=False))
     elif args.yes:

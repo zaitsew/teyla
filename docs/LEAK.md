@@ -208,13 +208,14 @@ and no setting: a fork under another name is not Teyla's, and a directory outsid
   kind A only.
 - `scripts/leak_check.py`, which `check.sh` runs with no install, applies the same rule with the same file, so
   inside Teyla it checks both kinds.
-- Output scrubbing masks every term of either kind, in every repo. A path that holds a `[teyla]` term prints as
+- Output masking covers every term of either kind, in every repo, whether or not the term applies there: only the
+  rule depends on the section. The fallback script's excerpts mask a match under 4 characters to `***`. A path that holds a `[teyla]` term prints as
   `term:<index>` even where the term is allowed.
 
 ### Sorting an existing file
 
-Both commands print an index, a section and a masked form (first two characters, `…`, length). They never print a
-value, in `--json` either.
+Both commands print an index, a section and a masked form (first two characters, `…`, length; a term under 4
+characters shows none: `*…2`). They never print a value, in `--json` either.
 
 ```
 teyla leak terms list [--json]

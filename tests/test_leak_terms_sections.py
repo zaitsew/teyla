@@ -228,7 +228,7 @@ def test_text_outside_teyla_applies_kind_a_only(other_repo, terms, monkeypatch, 
     monkeypatch.setattr(sys, "stdin", io.StringIO("zebracorn and marmotly\n"))
     code, doc = scan(capsys, "--text", "-")
     assert code == 1 and sorted(term_hits(doc)) == ["term:0"]
-    assert script(other_repo, "--text", "-", stdin="zebracorn and marmotly\n").stdout == "<stdin>:1: term: ze*** and marmotly\n"
+    assert script(other_repo, "--text", "-", stdin="zebracorn and marmotly\n").stdout == "<stdin>:1: term: ze*** and ma***\n"
     monkeypatch.setattr(sys, "stdin", io.StringIO("only marmotly\n"))
     assert scan(capsys, "--text", "-")[0] == 0
 
@@ -424,3 +424,45 @@ def test_suggest_appends_under_the_section_in_force_at_the_end(tmp_path, monkeyp
     got = dict(leak._engine().distinct_terms(f.read_text()))
     assert got == {"zebracorn": "everywhere", "marmotly": "teyla", "orgquux": "teyla",
                    "quentin vexley": "everywhere", "quxhost.test": "everywhere"}
+
+
+# --- masking covers both sections, and short terms show nothing ---------------------------------
+
+def test_outside_teyla_a_line_with_both_kinds_prints_neither(other_repo, terms):
+    line = "zebracorn and marmotly and quokka lab\n"
+    p = script(other_repo, "--text", "-", stdin=line)
+    assert p.returncode == 1 and p.stdout == "<stdin>:1: term: ze*** and ma*** and qu***\n"
+    assert not any(v in p.stdout + p.stderr for v in NO_VALUES)
+    (other_repo / "b.txt").write_text(line)
+    git(other_repo, "add", "-A")
+    git(other_repo, "commit", "-q", "-m", "b")
+    out = script(other_repo).stdout
+    assert "b.txt:1: term: ze*** and ma*** and qu***" in out and "marmotly" not in out
+
+
+def test_teyla_leak_scrubs_a_teyla_term_next_to_a_finding_outside_teyla(other_repo, terms, monkeypatch, capsys):
+    (other_repo / "c.txt").write_text("fennec marmotly-plan jdoe" + "@" + "corp-mail.io\n")
+    git(other_repo, "add", "-A")
+    git(other_repo, "commit", "-q", "-m", "c")
+    monkeypatch.chdir(other_repo)
+    leak.main([])
+    out = capsys.readouterr().out
+    assert "marmotly" not in out.lower() and "fennec" not in out.lower()
+
+
+def test_a_short_term_is_masked_to_nothing_in_list_move_and_suggest(tmp_path, monkeypatch, capsys):
+    from teyla import leak_install as li
+    f = tmp_path / "t.txt"
+    f.write_text("Li\nabc\nmarmotly\n")
+    monkeypatch.setenv("TEYLA_PRIVATE_TERMS", str(f))
+    rc, out, _ = terms_cmd(capsys, "list")
+    assert [ln.split()[2] for ln in out.splitlines()] == ["*…2", "*…3", "ma…8"]
+    rc, out, _ = terms_cmd(capsys, "list", "--json")
+    assert [t["masked"] for t in json.loads(out)["terms"]] == ["*…2", "*…3", "ma…8"] and '"li' not in out.lower()
+    rc, out, err = terms_cmd(capsys, "move", "Li", "--to", "teyla")
+    assert rc == 2 and "*…2" in err and "Li" not in err
+    monkeypatch.setattr(li, "collect_facts", lambda root: [("Wu", "git user.name"), ("abcd", "login name")])
+    monkeypatch.setattr(li, "MIN_TERM", 1)                                  # let the short value through
+    for extra in ((), ("--json",)):
+        rc, out, _ = terms_cmd(capsys, "--suggest", *extra)
+        assert "*…2" in out and "Wu" not in out and "ab…4" in out

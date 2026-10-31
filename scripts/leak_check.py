@@ -375,7 +375,8 @@ def _email_ok(addr: str, cfg: Config) -> bool:
 
 
 def _mask(s: str) -> str:
-    return s[:2] + "***"
+    """Two characters and `***`; a match under 4 characters (a short term) shows none."""
+    return s[:2] + "***" if len(s) >= 4 else "***"
 
 
 def _entropy(s: str) -> float:
@@ -401,6 +402,11 @@ class PathRules:
             if fnmatch.fnmatchcase(rule, e.rule) and (e.fp is None or e.fp == fingerprint(rule, self.gpath, match)):
                 return True
         return False
+
+    def term_spans(self, line: str) -> list[tuple[int, int]]:
+        """Where every private term of either section stands in `line`, whether or not it applies to this repo or
+        is allowed on this path: output masking covers them all, only the rule depends on the section."""
+        return [m.span() for _t, r in self.cfg.terms for m in r.finditer(line)]
 
     def hits(self, line: str) -> list[Hit]:
         if self.skip:
@@ -457,7 +463,7 @@ def scan_lines(label: str, gpath: str, lines, cfg: Config) -> list[Finding]:
         hits = rules.hits(line)
         if not hits:
             continue
-        excerpt = _excerpt(line, [(h.start, h.end) for h in hits])
+        excerpt = _excerpt(line, [(h.start, h.end) for h in hits] + rules.term_spans(line))
         for rule in dict.fromkeys(h.rule for h in hits):
             out.append(Finding(label, no, rule, excerpt))
     return out
