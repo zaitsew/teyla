@@ -5,6 +5,7 @@
     teyla leak --outgoing [remote]   the commits (and annotated tags) the remote's tracking refs lack; default origin
     teyla leak --commits RANGE       an explicit revision range, as `scripts/leak_check.py --commits`
     teyla leak --text FILE|-         a PR body, an issue, a release note, a commit message
+    teyla leak --published [OWNER]   what is already public on GitHub (leak_published.py; the one surface that uses the network)
     teyla leak --json | --quiet | --require-gitleaks
 
 The rules (term, email, home, secret, cyrillic) are the ones in `scripts/leak_check.py`, which this module
@@ -13,7 +14,7 @@ publication text, `.env*` files that are not tracked, harness configs, plists, s
 metadata), the classes (publishable, historical, local-only), the severities (blocker, triage, lang), masked
 output, de-duplication, gitleaks as a second engine, and the exit code. docs/LEAK.md is the reference.
 
-No network call: it reads git objects and files, and runs `gitleaks` (a local process) when it is installed.
+No network call (except `--published`, in leak_published.py): it reads git objects and files, and runs `gitleaks` (a local process) when it is installed.
 Calling code uses `scan_text`, `scan_repo`, `scan_staged`, `scan_outgoing`, `scan_range`, `exit_code`, `render`.
 """
 from __future__ import annotations
@@ -1305,6 +1306,9 @@ def _merge(results: list[Result]) -> Result:
 
 
 def run(args) -> tuple[Result, int]:
+    if getattr(args, "published", None) is not None:
+        from . import leak_published
+        return leak_published.run(args)
     eng = _engine()
     if args.all:
         if args.repo or args.staged or args.outgoing or args.commits or args.text:
@@ -1378,6 +1382,9 @@ def cmd_leak(args) -> int:
         print(to_json(res, code))
     elif args.quiet:
         print(len(res.blockers))
+    elif getattr(args, "published", None) is not None:
+        from . import leak_published
+        print(leak_published.render(res, require_gitleaks=args.require_gitleaks, allow_partial=args.allow_partial))
     else:
         print(render(res, require_gitleaks=args.require_gitleaks, allow_partial=args.allow_partial))
     return code
@@ -1399,6 +1406,10 @@ def register(sp):
     q.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES, metavar="N",
                    help=f"skip (and report as not read) a file or blob over N bytes; default {DEFAULT_MAX_BYTES}")
     q.add_argument("--allow-partial", action="store_true", help="exit 0 although files were skipped (over the cap, outside the repo)")
+    q.add_argument("--published", nargs="?", const="", default=None, metavar="OWNER",
+                   help="audit what is already public on GitHub for OWNER (default: the owners of the remotes under code_root); needs gh and the network")
+    q.add_argument("--max-requests", type=int, default=400, metavar="N", help="with --published: at most N gh calls; default 400")
+    q.add_argument("--allow-network", action="store_true", help="safe mode: allow the gh calls of --published for this one run")
     return q
 
 

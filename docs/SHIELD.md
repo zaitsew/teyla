@@ -201,8 +201,8 @@ scout over ten product repos. The findings that shaped the design:
   answer. Nothing in that path is heuristic: the token list is in the script, and the tests
   break the scanner on purpose and assert the refusal. These commands are rare and explicit,
   and the cost of a wrong refusal is one retry. A publication has no second door inside git, so the weekly
-  routine audits what was published anyway: `teyla leak --published` reads the week's PR bodies,
-  issue comments, releases and gists through the GitHub API and reports a finding as
+  routine audits what was published anyway: `teyla leak --published` reads the public repos' descriptions, READMEs, recent
+  commit identities and messages, issue and PR text and releases through the GitHub API and reports a finding as
   historical (rotate first, then edit the text).
 - **SH7. Cut a leg of the trifecta per product, in the contract.** Every MCP server and agent
   declares which legs it has: private data, untrusted content, outbound channel. A public
@@ -263,7 +263,7 @@ teyla leak --outgoing [remote]          commits, tags and messages the remote la
 teyla leak --commits <range>            an explicit range, as leak_check.py --commits
 teyla leak --text <file|->              a PR body, an issue, a release note before it is sent
 teyla leak --json                       findings with class, rule, fingerprint, masked excerpt
-teyla leak --published [owner]          the week's PR bodies, issue comments, releases and gists, read back through the API (weekly)
+teyla leak --published [owner]          what is already public (README, commits, issues, PRs, releases), read back through the API (weekly)
 teyla leak install [repo]               .githooks/pre-commit and pre-push, core.hooksPath
 teyla leak terms --suggest [--yes]      private-term candidates from the machine, masked
 ```

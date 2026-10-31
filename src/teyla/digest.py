@@ -449,6 +449,11 @@ def write(findings: list[dict] | None = None, doctor_checks: list[dict] | None =
         rule_cands += deps.digest_candidates()
     except Exception:  # noqa: BLE001 — same: a dependency summary must never stop the digest being written
         pass
+    try:
+        from . import leak_published
+        rule_cands += leak_published.digest_candidates()
+    except Exception:  # noqa: BLE001 — same: a published-audit summary must never stop the digest being written
+        pass
     rule_cands += problem_file_candidates()
     try:
         from . import reviews

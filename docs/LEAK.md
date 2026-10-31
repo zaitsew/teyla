@@ -4,7 +4,7 @@ Status: shipped 2026-10-31.
 
 `teyla leak` is the one scanner for what must not leave your machine: private terms, personal e-mail
 addresses, home paths, secrets, and an image that carries a position. The hooks, `check.sh` and the agent
-hook call it. It makes no network call. It is the scanner of Shield, Teyla's leak-prevention work.
+hook call it. Only `--published` uses the network (through `gh`); every other surface reads git objects and files. It is the scanner of Shield, Teyla's leak-prevention work.
 
 Quick start:
 
@@ -13,6 +13,7 @@ teyla leak                       # this repo: tracked files, plus .env* files th
 teyla leak --staged              # what the next commit would publish (read from the index)
 teyla leak --outgoing            # commits and tags that origin's tracking refs lack
 teyla leak --text body.md        # a PR body, before `gh pr create`
+teyla leak --published           # what is already public for the owners of your remotes (needs gh)
 ```
 
 Private terms live outside every repo, in `~/.config/teyla/private-terms.txt` (or the file `$TEYLA_PRIVATE_TERMS`
@@ -29,6 +30,7 @@ names). The format and the rest of the first-time setup are in [CONTRIBUTING](..
 | A PR body, issue, release note or commit message | `--text FILE\|-` | publishable |
 | `.env*` files and harness configs that are present but not tracked | default run | local-only |
 | Every git repo under `code_root` | `--all` | as above, repo by repo |
+| What is already public on GitHub for an owner | `--published [owner]` | historical |
 
 Beyond text, it reads these structures. Screenshot pixels are never read.
 
@@ -132,6 +134,75 @@ secret rule whose glob matches every file is an error (exit 2): a whole file is 
 rules, only named files or one fingerprint. Editing `.leak-allow`, the terms file or the scanner is itself a
 change to review as one that touches credentials.
 
+## What is already public
+
+```
+teyla leak --published [owner] [--max-requests N] [--json] [--quiet] [--allow-network]
+```
+
+The other surfaces stop a leak on its way out. This one reads back what is already out. For each public repo of the
+owner (a user or an org; with no owner, the owners of the GitHub remotes of the repos under `code_root`, read from
+`git config`) it asks `gh` for:
+
+| Text | Call | Cap |
+|---|---|---|
+| Description and homepage | `gh repo list <owner> --visibility public --json ...` | no extra call |
+| README | `gh api repos/<o>/<r>/readme` (base64) | 1 call |
+| Author and committer name and e-mail, and the message, of the default branch's last 100 commits | `gh api repos/<o>/<r>/commits?per_page=100` | 1 call |
+| Titles and bodies of open, and of recently closed (90 days), issues and pull requests | `gh api repos/<o>/<r>/issues?state=...` | 200 items, 100 per page |
+| Release names and notes | `gh api repos/<o>/<r>/releases?per_page=50` | 50 releases, 1 call |
+
+Everything goes through the same rules and the same masking as every other surface, so a private term still prints as
+`term:<index>` and an address as two characters, `…` and a length. Findings are class `historical`. The first line
+of the text output is `already public: fix the source and, for a credential, rotate first`: editing the README or the
+issue removes the text from the page, not from copies, so a credential is rotated before anything else. A commit identity
+that repeats in 100 commits is one finding with its places listed. An `.leak-allow` exception applies to a finding by
+rule and by the path `<owner>/<repo>/<surface>` (`README`, `commits`, `issue#12`, `pr#7`, `release:<tag>`,
+`description`, `homepage`).
+
+- **Public only.** A repo that `gh` lists as private is skipped and never fetched, and a note counts it. Forks are
+  skipped too: their README, commits and issues are somebody else's text.
+- **Budget.** Each `gh` call counts, and `--max-requests` (default 400) stops the audit. Hitting it adds one note
+  (`request cap hit`, with the number of repos audited and not) and the exit code is the findings' own; when the cap is spent
+  before anything was scanned, the surface is unread and the exit is 2. Nothing is cached: every run asks again. The
+  list of repos is capped at 200.
+- **Network.** One `gh` login, one host (`api.github.com`), [PRIVACY](PRIVACY.md) row 34. It sends only the owner and
+  repo names. Safe mode refuses without `--allow-network` (exit 2).
+- **Exit codes** are the usual ones: 1 a blocker, 2 `gh` missing or not signed in, a repo list or a surface that did
+  not answer, or the refusal above.
+- **Not covered:** issue and PR comments, gists, wikis, GitHub Pages, release assets, other branches, and the names of
+  tags and branches. Repos the owner contributes to but does not own are out of scope.
+
+**Weekly.** The Friday weekly routine runs `teyla leak --published --quiet` next to `teyla deps --all --quiet` and files
+the output as `leak-published.md`. The run writes `~/.teyla/leak/published.json`; while it holds a blocker, the digest
+carries one line, `N already-public finding(s)`, for 14 days. A wrapper from before this line is stale, and
+`teyla routine install --if-stale` adds it. Teyla runs no CI on push or pull request. For someone without
+the laptop routine, a manual workflow is the alternative. It has no `schedule` trigger. Add one only if it is no more
+frequent than weekly:
+
+```yaml
+name: leak-published
+on: workflow_dispatch          # by hand; a schedule, if any, no more often than weekly
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { repository: zaitsew/teyla, path: teyla }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install ./teyla
+      - run: teyla leak --published ${{ github.repository_owner }} --allow-network
+        env:
+          GH_TOKEN: ${{ github.token }}
+```
+
+`github.token` reads public data here, which is the point. Private terms live outside every repo, so a hosted run
+applies the secret, e-mail and home-path rules only, and says in a note that the term rule did not run.
+
 ## Install
 
 ```
@@ -216,6 +287,6 @@ hook and `check.sh` need no Teyla install.
 - It does not rewrite history and does not rotate a key. A historical finding says to rotate first; removing it
   from history is a separate, deliberate step.
 - It does not read pixels. An address shown inside a screenshot needs OCR and a person.
-- It does not ask the network which commits or tags the remote has. `--outgoing` trusts the remote-tracking refs
+- Apart from `--published`, it does not ask the network which commits or tags the remote has. `--outgoing` trusts the remote-tracking refs
   (run `git fetch` first when they may be stale), and it scans tags only on commits it scans.
 - It does not scan other branches than the one checked out for `--outgoing`; use `--commits` for a range.
