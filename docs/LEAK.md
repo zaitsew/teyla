@@ -166,8 +166,16 @@ rule and by the path `<owner>/<repo>/<surface>` (`README`, `commits`, `issue#12`
 - **Budget.** Each `gh` call counts, and `--max-requests` (default 400) stops the audit. Hitting it adds one note
   (`request cap hit`, with the number of repos audited and not) and the exit code is the findings' own; when the cap is spent
   before anything was scanned, the surface is unread and the exit is 2. Nothing is cached: every run asks again. The
-  list of repos is capped at 200.
-- **Network.** One `gh` login, one host (`api.github.com`), [PRIVACY](PRIVACY.md) row 34. It sends only the owner and
+  list of repos is capped at 200. Each repo costs about 6 to 9 calls, two of them for its root files (below).
+- **Per-repo rules.** The terms under `[teyla]` apply to a repo only when it is Teyla's: `zaitsew/teyla`, or a root
+  `pyproject.toml` with `[project] name = "teyla"` (fetched, one call). They never apply to another repo, whatever the
+  current directory is; `[everywhere]` terms apply to all. The repo's own `.leak-allow` is fetched (one call) and applies
+  to that repo only; a malformed one is exit 2 and names the repo. A path glob matches `<owner>/<repo>/<surface>`, so use
+  `*` or `<owner>/<repo>/commits`, not a repo-relative path. A note says when a `.leak-allow` was applied.
+- **Second engine.** The text of each repo goes through `gitleaks` in one run per repo (a second one when the text is
+  over 512 KiB), as `--text` does, and its findings are class `historical` with the same path. When gitleaks is missing or
+  could not run, the coverage says so and `--require-gitleaks` exits 2; so it does when no text was read at all.
+- **Network.** One `gh` login, one host (`api.github.com`), [PRIVACY](PRIVACY.md) row 35. It sends only the owner and
   repo names. Safe mode refuses without `--allow-network` (exit 2).
 - **Exit codes** are the usual ones: 1 a blocker, 2 `gh` missing or not signed in, a repo list or a surface that did
   not answer, or the refusal above.

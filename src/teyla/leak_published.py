@@ -14,17 +14,20 @@ finding is class `historical`: the text is already public, so the fix is at the 
 rotated first. Safe mode refuses without `--allow-network`. The one network path is the `gh` child process
 with the owner's own login; each `gh` call counts against `--max-requests`. Nothing is cached.
 
-docs/LEAK.md is the reference; docs/PRIVACY.md row 34 is the network ledger entry.
+docs/LEAK.md is the reference; docs/PRIVACY.md row 35 is the network ledger entry.
 """
 from __future__ import annotations
 
 import base64
 import binascii
+import bisect
+import copy
 import datetime as _dt
 import json
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from urllib.parse import quote
 
@@ -39,7 +42,8 @@ SUMMARY_MAX_AGE_DAYS = 14
 GH_TIMEOUT = 60
 
 _OWNER = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
-_REPO = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$")
+_REPO = re.compile(r"^(?!\.{1,2}$)[A-Za-z0-9_.][A-Za-z0-9._-]{0,99}$")     # `.github` is a repo; `.` and `..` are not
+TEYLA_REPO = "zaitsew/teyla"
 _GH_URL = re.compile(r"github\.com[:/]+([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))/", re.I)
 
 
@@ -128,7 +132,10 @@ class Audit:
         from . import leak
         self.leak = leak
         self.sc = leak.Scanner(None, cfg)
+        self.sc.cfg.teyla = False         # the `[teyla]` terms apply to Teyla's repo only, whatever the current directory
         self.cov = self.sc.cov
+        self._gl: list[tuple[str, str]] = []      # (path, text) of the repo being audited, for gitleaks
+        self._gl_size = 0
         self.budget = budget
         self.repos_scanned = 0
         self.repos_skipped_private = 0
@@ -141,6 +148,72 @@ class Audit:
             return
         self.sc._text(place or f"{full}/{surface}", f"{full}/{surface}", self.leak._lines(text), "historical",
                       lang=False, note=HEADER)
+        self._gl.append((f"{full}/{surface}", text))
+        self._gl_size += len(text.encode("utf-8", "replace"))
+        if self._gl_size > min(self.sc.max_bytes, 1 << 20) // 2:
+            self.flush_gitleaks()
+
+    def flush_gitleaks(self) -> None:
+        """The texts read so far, as one text through gitleaks (the engine `--text` uses), findings class historical."""
+        parts, self._gl, self._gl_size = self._gl, [], 0
+        if not parts:
+            return
+        starts, chunks, n = [], [], 1
+        for path, text in parts:
+            t = text if text.endswith("\n") else text + "\n"
+            starts.append((n, path))
+            chunks.append(t)
+            n += t.count("\n")
+
+        def locate(line: int) -> tuple[str, int]:
+            first, path = starts[max(bisect.bisect_right([a for a, _ in starts], line) - 1, 0)]
+            return path, line - first + 1
+        self.sc.gitleaks_text("".join(chunks), "published", cls="historical", note=HEADER, locate=locate)
+
+    def contents(self, full: str, path: str) -> str | None:
+        """One root file of a repo as text; None when it is absent or unreadable (the latter is noted as unread)."""
+        rc, out, err = _gh(self.budget, ["api", f"repos/{full}/contents/{path}"])
+        if rc != 0:
+            if not _not_found(rc, out, err):
+                self.unread(f"{full}: {path}", _why(rc, out, err))
+            return None
+        doc = _json(out)
+        if not isinstance(doc, dict) or doc.get("encoding") != "base64":
+            self.unread(f"{full}: {path}", "unexpected answer")
+            return None
+        try:
+            return base64.b64decode(doc.get("content") or "").decode("utf-8", "replace")
+        except (binascii.Error, ValueError):
+            self.unread(f"{full}: {path}", "content is not base64")
+            return None
+
+    def begin_repo(self, full: str) -> tuple:
+        """Per-repo rule configuration: `[teyla]` terms only when this repo is Teyla's (the repo zaitsew/teyla, or a
+        root pyproject.toml with `[project] name = "teyla"`), and the repo's own `.leak-allow` (2 requests at most).
+        Returns what `end_repo` restores."""
+        cfg = self.sc.cfg
+        saved = (copy.deepcopy(cfg.allow), list(cfg.exceptions), list(cfg.expired), len(cfg.errors))
+        eng = self.leak._engine()
+        allow = self.contents(full, ".leak-allow")
+        is_teyla = full.lower() == TEYLA_REPO
+        pyproject = None if is_teyla else self.contents(full, "pyproject.toml")
+        with tempfile.TemporaryDirectory(prefix="teyla-leak-pub-") as tmp:
+            root = Path(tmp)
+            if pyproject is not None:
+                (root / "pyproject.toml").write_text(pyproject, encoding="utf-8")
+                is_teyla = eng._pyproject_name(root) == "teyla"
+            if allow is not None:
+                (root / ".leak-allow").write_text(allow, encoding="utf-8")
+                eng.load_allow(cfg, root)
+                self.cov.notes.append(f"{full}: its .leak-allow was applied (exception globs match {full}/<surface>)")
+        cfg.errors[saved[3]:] = [f"{full}: {e}" for e in cfg.errors[saved[3]:]]
+        cfg.teyla = is_teyla
+        return saved
+
+    def end_repo(self, saved: tuple) -> None:
+        cfg = self.sc.cfg
+        cfg.allow, cfg.exceptions[:], cfg.expired[:] = saved[0], saved[1], saved[2]
+        cfg.teyla = False
 
     def unread(self, what: str, why: str) -> None:
         self.cov.unread.append((what, why))
@@ -247,12 +320,17 @@ class Audit:
         if not _REPO.match(name) or full.count("/") != 1 or not _OWNER.match(full.split("/")[0]):
             self.unread(f"{owner}: a repo with an unusable name", "not fetched")
             return
-        self.scan(full, "description", str(row.get("description") or ""))
-        self.scan(full, "homepage", str(row.get("homepageUrl") or ""))
-        self.readme(full)
-        self.commits(full)
-        self.issues(full)
-        self.releases(full)
+        saved = self.begin_repo(full)
+        try:
+            self.scan(full, "description", str(row.get("description") or ""))
+            self.scan(full, "homepage", str(row.get("homepageUrl") or ""))
+            self.readme(full)
+            self.commits(full)
+            self.issues(full)
+            self.releases(full)
+        finally:
+            self.flush_gitleaks()
+            self.end_repo(saved)
         self.repos_scanned += 1
 
 
@@ -336,6 +414,9 @@ def run(args) -> tuple:
                            f"raise --max-requests")
         if a.repos_scanned == 0:
             a.unread("published", f"the {cap}-request cap was spent before anything was scanned")
+    if not any(r.startswith("gitleaks") for r in a.cov.read) and not a.cov.gitleaks_missing:
+        a.cov.gitleaks_missing = True              # --require-gitleaks must not pass when no text went through it
+        a.cov.gitleaks_why = "no published text was passed to it"
     res = a.sc.result()
     code = leak.exit_code(res, args.require_gitleaks, args.allow_partial)
     if a.repos_scanned or res.findings:

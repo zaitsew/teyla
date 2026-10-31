@@ -281,3 +281,106 @@ def test_the_text_surfaces_are_unchanged_by_the_new_flags(tmp_path, capsys):
     f.write_text("hello " + PERSONAL + "\n")
     assert cli.main(["leak", "--text", str(f)]) == 1
     assert "already public" not in capsys.readouterr().out
+
+
+# --- review round: dot repos, per-repo Teyla terms and .leak-allow, gitleaks ---------------------
+
+def test_a_repo_name_may_begin_with_a_dot_but_dot_and_dotdot_are_refused(fake, capsys):
+    for ok in (".github", ".dotfiles", "a.b", "_x"):
+        assert leak_published._REPO.match(ok), ok
+    for bad in (".", "..", "", "-x", "a/b"):
+        assert not leak_published._REPO.match(bad), bad
+    fake.repos("acme", row("acme", ".github", description="mail " + PERSONAL), row("acme", "..", description="x"))
+    fake.bare("acme", ".github")
+    code = audit("acme")
+    out = capsys.readouterr().out
+    assert code == 1 and "acme/.github/description" in out
+    assert "a repo with an unusable name" in out
+    assert not any("/../" in c or c.endswith("/..") for c in fake.api())
+
+
+def _terms(tmp_path, monkeypatch) -> None:
+    terms = tmp_path / "terms2.txt"
+    terms.write_text("[everywhere]\nzebracorn\n[teyla]\nquokkaterm\n")
+    monkeypatch.setenv("TEYLA_PRIVATE_TERMS", str(terms))
+
+
+def test_teyla_only_terms_apply_to_the_teyla_repo_and_to_no_other(fake, tmp_path, monkeypatch, capsys):
+    _terms(tmp_path, monkeypatch)
+    monkeypatch.chdir(Path(__file__).resolve().parents[1])         # the cwd IS Teyla's checkout: it must not matter
+    fake.repos("acme", row("acme", "other", description="a quokkaterm helper"),
+               row("acme", "svc", description="a quokkaterm helper"))
+    fake.bare("acme", "other")
+    fake.bare("acme", "svc")
+    fake.put("repos__acme__svc__contents__pyproject.toml", {"encoding": "base64", "content": b64('[project]\nname = "teyla"\n')})
+    code = audit("acme", "--json")
+    doc = json.loads(capsys.readouterr().out)
+    paths = {f["path"] for f in doc["findings"] if f["rule"] == "term"}
+    assert code == 1 and paths == {"acme/svc/description"}          # the repo whose pyproject names it, not the other
+
+
+def test_the_repo_zaitsew_teyla_gets_the_teyla_terms_and_other_cwd_does_not_change_it(fake, tmp_path, monkeypatch, capsys):
+    _terms(tmp_path, monkeypatch)
+    monkeypatch.chdir(tmp_path)                                    # not a Teyla checkout
+    fake.repos("zaitsew", row("zaitsew", "teyla", description="a quokkaterm helper"),
+               row("zaitsew", "teyla-notes", description="a quokkaterm helper"))
+    fake.bare("zaitsew", "teyla")
+    fake.bare("zaitsew", "teyla-notes")
+    assert audit("zaitsew", "--json") == 1
+    doc = json.loads(capsys.readouterr().out)
+    assert {f["path"] for f in doc["findings"] if f["rule"] == "term"} == {"zaitsew/teyla/description"}
+    assert not any("repos/zaitsew/teyla/contents/pyproject.toml" == c for c in fake.api())    # the name settles it: no request
+
+
+def test_everywhere_terms_apply_to_every_audited_repo(fake, tmp_path, monkeypatch, capsys):
+    _terms(tmp_path, monkeypatch)
+    fake.repos("acme", row("acme", "other", description="a zebracorn helper"))
+    fake.bare("acme", "other")
+    assert audit("acme") == 1 and "term:0" in capsys.readouterr().out
+
+
+def test_a_repos_own_leak_allow_applies_to_that_repo_only(fake, capsys):
+    fake.repos("acme", row("acme", "a", description="mail " + PERSONAL), row("acme", "b", description="mail " + PERSONAL))
+    fake.bare("acme", "a")
+    fake.bare("acme", "b")
+    fake.put("repos__acme__a__contents__.leak-allow", {"encoding": "base64", "content": b64(f"emails:\n{PERSONAL}\n")})
+    code = audit("acme", "--json")
+    doc = json.loads(capsys.readouterr().out)
+    assert code == 1
+    assert {f["path"] for f in doc["findings"] if f["rule"] == "email"} == {"acme/b/description"}
+    assert any("acme/a: its .leak-allow was applied" in n for n in doc["coverage"]["notes"])
+
+
+def test_a_malformed_leak_allow_in_a_published_repo_is_exit_2_naming_the_repo(fake, capsys):
+    fake.repos("acme", row("acme", "a"))
+    fake.bare("acme", "a")
+    fake.put("repos__acme__a__contents__.leak-allow", {"encoding": "base64", "content": b64("[exceptions]\nemail * \n")})
+    code = audit("acme", "--json")
+    doc = json.loads(capsys.readouterr().out)
+    assert code == 2 and doc["errors"] and doc["errors"][0].startswith("acme/a: .leak-allow")
+
+
+@pytest.mark.skipif(__import__("shutil").which("gitleaks") is None, reason="gitleaks is not installed")
+def test_published_text_goes_through_gitleaks_as_historical(fake, capsys):
+    key = "sk_live_" + "4eC39HqLyjWDarjtT1zdp7dc"
+    fake.repos("acme", row("acme", "a"))
+    fake.bare("acme", "a")
+    fake.put("repos__acme__a__readme", {"encoding": "base64", "content": b64(f"# A\n\nkey = \"{key}\"\n")})
+    code = audit("acme", "--json", "--require-gitleaks")
+    doc = json.loads(capsys.readouterr().out)
+    gl = [f for f in doc["findings"] if f["rule"].startswith("gitleaks:")]
+    assert code == 1 and gl and gl[0]["class"] == "historical" and gl[0]["path"] == "acme/a/README"
+    assert key not in json.dumps(doc) and "gitleaks (text)" in doc["coverage"]["read"]
+
+
+def test_require_gitleaks_is_exit_2_when_gitleaks_did_not_run(fake, monkeypatch, capsys):
+    bindir = Path(os.environ["PATH"].split(os.pathsep)[0])          # only the fake gh
+    monkeypatch.setenv("PATH", str(bindir))
+    fake.repos("acme", row("acme", "a"))
+    fake.bare("acme", "a")
+    assert audit("acme") == 0
+    capsys.readouterr()
+    assert audit("acme", "--require-gitleaks") == 2
+    assert "gitleaks" in capsys.readouterr().out
+    fake.repos("empty-owner")                                       # nothing scanned at all: still no pass
+    assert audit("empty-owner", "--require-gitleaks") == 2

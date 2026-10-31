@@ -650,6 +650,7 @@ class Scanner:
         self.cov = Coverage()
         self.repo = repo
         self._gitleaks_noted = False
+        self._text_gl: tuple = ("publishable", "", None)
         self._tracked: set[str] | None = None
         if self.cfg.terms_status != "ok":
             if self.cfg.terms_explicit or self.cfg.terms_status == "unreadable":
@@ -1039,8 +1040,10 @@ class Scanner:
             self.cov.notes.append(note)
             self._gitleaks_noted = True
 
-    def gitleaks_text(self, text: str, label: str) -> None:
-        """gitleaks over a publication text (the CLI's `--text`)."""
+    def gitleaks_text(self, text: str, label: str, *, cls: str = "publishable", note: str = "", locate=None) -> None:
+        """gitleaks over a publication text (the CLI's `--text`). `cls` and `note` mark the findings (`--published`
+        passes `historical`); `locate(line)` maps a line of `text` to (path, line) when it joins several texts."""
+        self._text_gl = (cls, note, locate)
         self._gitleaks("text", text=text, label=label)
 
     def _gitleaks(self, mode: str, rng: str | None = None, cls_of=None, *, text: str = "", label: str = "") -> None:
@@ -1123,6 +1126,7 @@ class Scanner:
         tracked = self.tracked() if mode == "tree" else set()
         for it in items:
             rel = str(it.get("File", ""))
+            t_cls, t_note, locate = self._text_gl
             for prefix in (stage_prefix, str(self.root or "") + os.sep):
                 if prefix != os.sep and rel.startswith(prefix):
                     rel = rel[len(prefix):]
@@ -1135,16 +1139,19 @@ class Scanner:
             line = int(it.get("StartLine") or 0)
             end = int(it.get("EndLine") or line)
             sha = str(it.get("Commit") or "")
-            rules = self.eng.PathRules(rel, self.cfg)
             lh = self._gl_hash(mode, tmpd, br, raw_rel, sha, line, end)
+            if mode == "text" and locate is not None:
+                rel, line = locate(line)
+            rules = self.eng.PathRules(rel, self.cfg)
             key = f"{it.get('RuleID')}:{lh}" if lh else f"{rel}:{it.get('RuleID')}:{line}:line-unread"
             # An exception never applies to a finding whose matched text was not read: nothing ties it to a value.
             if rules.skip or not rules.sec or (lh and rules.excepted(rule, key)):
                 continue
-            cls = cls_of(sha) if (cls_of and sha) else "publishable"
+            cls = cls_of(sha) if (cls_of and sha) else (t_cls if mode == "text" else "publishable")
             place = f"commit:{sha[:8]}:{rel}:{line}" if sha else f"{rel}:{line}"
+            why = "found by gitleaks" if lh else "found by gitleaks; line unread, so no exception applies"
             self.col.add(rule, "blocker", cls, rel, line, key, place, masked="redacted",
-                         note="found by gitleaks" if lh else "found by gitleaks; line unread, so no exception applies")
+                         note=f"{t_note}; {why}" if mode == "text" and t_note else why)
 
     def _stage_tracked(self, stage: Path) -> None:
         """Hard links (a copy of a small file when linking fails) of the tracked regular files under `stage`
