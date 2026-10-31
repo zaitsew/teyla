@@ -62,6 +62,23 @@ _PUSH_SCAN = """  while read -r _tlg_l _tlg_lsha _tlg_r _tlg_rsha; do
       echo "teyla leak gate: pre-push refused (exit $_tlg_one); fix the findings, or set TEYLA_LEAK=0 for this command" >&2
       [ "$_tlg_one" -gt "$_tlg_rc" ] && _tlg_rc=$_tlg_one
     fi
+    case "$_tlg_l" in refs/tags/*)
+      if [ "$(git cat-file -t "$_tlg_lsha" 2>/dev/null)" = "tag" ]; then
+        if ! git cat-file -p "$_tlg_lsha" > "$_tlg_in.tag" 2>/dev/null; then
+          echo "teyla leak gate: cannot read the tag object $_tlg_l; refusing the push" >&2
+          [ "$_tlg_rc" -lt 2 ] && _tlg_rc=2
+        else
+          teyla leak --text "$_tlg_in.tag" --quiet </dev/null >/dev/null 2>&1
+          _tlg_one=$?
+          if [ "$_tlg_one" -ne 0 ]; then
+            teyla leak --text "$_tlg_in.tag" </dev/null >&2
+            echo "teyla leak gate: pre-push refused the annotated tag $_tlg_l (exit $_tlg_one); fix the findings, or set TEYLA_LEAK=0 for this command" >&2
+            [ "$_tlg_one" -gt "$_tlg_rc" ] && _tlg_rc=$_tlg_one
+          fi
+        fi
+        rm -f "$_tlg_in.tag"
+      fi ;;
+    esac
   done < "$_tlg_in"
 """
 _COMMIT_SCAN = """  teyla leak --staged --quiet </dev/null >/dev/null 2>&1
@@ -72,7 +89,13 @@ _COMMIT_SCAN = """  teyla leak --staged --quiet </dev/null >/dev/null 2>&1
   fi
 """
 _TAKE = """_tlg_in=$(mktemp "${TMPDIR:-/tmp}/teyla-leak-gate.XXXXXX") || { echo "teyla leak gate: cannot create a temp file" >&2; exit 2; }
-cat > "$_tlg_in"
+_tlg_want=$(cat | tee "$_tlg_in" | wc -c)
+_tlg_got=$(wc -c < "$_tlg_in")
+if [ -z "$_tlg_want" ] || [ "$(( _tlg_want + 0 ))" -ne "$(( _tlg_got + 0 ))" ]; then
+  rm -f "$_tlg_in"
+  echo "teyla leak gate: could not read the pushed refs; not scanning a partial list" >&2
+  exit 2
+fi
 """
 
 
@@ -101,13 +124,13 @@ elif ! command -v teyla >/dev/null 2>&1; then
 else
 {scan}fi
 _tlg_legacy="$(git rev-parse --git-common-dir 2>/dev/null)/hooks/{hook}"
-if [ "$_tlg_rc" -eq 0 ] && [ -f "$_tlg_legacy" ] && [ -x "$_tlg_legacy" ]; then
-  "$_tlg_legacy" "$@"{legacy_in} || _tlg_rc=$?
+if [ "$_tlg_rc" -eq 0 ] && [ -z "${{TEYLA_LEAK_CHAIN:-}}" ] && [ -f "$_tlg_legacy" ] && [ -x "$_tlg_legacy" ] && ! [ "$_tlg_legacy" -ef "$0" ]; then
+  TEYLA_LEAK_CHAIN=1 "$_tlg_legacy" "$@"{legacy_in} || _tlg_rc=$?
 fi
 if [ "$_tlg_rc" -ne 0 ]; then
   {cleanup}exit "$_tlg_rc"
 fi
-{tail}unset _tlg_home _tlg_rc _tlg_remote _tlg_in _tlg_l _tlg_lsha _tlg_r _tlg_rsha _tlg_range _tlg_one _tlg_legacy
+{tail}unset _tlg_home _tlg_rc _tlg_remote _tlg_in _tlg_want _tlg_got _tlg_l _tlg_lsha _tlg_r _tlg_rsha _tlg_range _tlg_one _tlg_legacy
 {END}
 """
 
@@ -262,7 +285,8 @@ def install(root: Path) -> tuple[int, str]:
             if new != before:
                 f.write_text(new, encoding="utf-8", errors="surrogateescape")
             if not os.access(f, os.X_OK):
-                notes.append(f"{hook} is not executable, so git skips it (chmod +x)")
+                notes.append(f"{hook} made executable (git skips a hook that is not)")
+            f.chmod(0o755)
         notes.append(f"{hook} {state}")
     path_state = f"core.hooksPath unchanged ({scope} scope)"
     if configured is None:

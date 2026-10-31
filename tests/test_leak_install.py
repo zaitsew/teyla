@@ -398,6 +398,66 @@ def test_a_generated_hook_regains_its_exec_bit(box):
     assert all((box.repo / ".githooks" / h).stat().st_mode & stat.S_IXUSR for h in li.HOOKS)
 
 
+# --- round 2: annotated tags, partial stdin, a non-executable hook, recursion --------------------------------
+
+def test_pre_push_scans_an_annotated_tags_message(box):
+    _remote(box)
+    box.install()
+    terms = box.tmp / "terms.txt"
+    terms.write_text(TERM + "\n")
+    env = {"TEYLA_PRIVATE_TERMS": str(terms)}
+    box.git("tag", "-a", "v1", "-m", f"release for {TERM}")
+    p = box.git("push", "origin", "v1", env=env, check=False)
+    assert p.returncode != 0 and "annotated tag refs/tags/v1" in p.stderr and TERM not in p.stdout + p.stderr
+    assert box.git("ls-remote", "--tags", "origin").stdout == ""
+    box.git("tag", "-a", "v2", "-m", "a clean message")
+    box.git("tag", "v3")                                          # lightweight: no object of its own
+    assert box.git("push", "origin", "v2", "v3", env=env, check=False).returncode == 0
+
+
+def test_a_partial_copy_of_the_pushed_refs_is_never_scanned(box):
+    box.install()
+    tee = box.bin / "tee"                                         # a tee that loses data, as a full disk would
+    tee.write_text('#!/bin/sh\nin=$(cat)\nprintf "%s" "$in" | head -c 3 > "$1"\nprintf "%s" "$in"\n')
+    tee.chmod(0o755)
+    refs = "refs/heads/main " + "a" * 40 + " refs/heads/main " + "b" * 40 + "\n"
+    p = subprocess.run(["/bin/sh", str(box.repo / ".githooks/pre-push"), "origin", "url"], cwd=box.repo, input=refs,
+                       capture_output=True, text=True, env=box.env, timeout=60)
+    assert p.returncode == 2
+    assert p.stderr.strip() == "teyla leak gate: could not read the pushed refs; not scanning a partial list"
+
+
+def test_an_existing_non_executable_sh_hook_is_made_executable(box):
+    box.git("config", "--local", "core.hooksPath", ".githooks")
+    f = box.write(".githooks/pre-commit", EXISTING)
+    f.chmod(0o644)
+    box.install()
+    assert f.stat().st_mode & stat.S_IXUSR
+    box.write("a.txt", "clean\n")
+    box.git("add", "a.txt")
+    assert box.git("commit", "-q", "-m", "x", check=False).returncode == 0
+    assert box.mark.read_text() == "ran\n"                       # git ran it; before the fix it skipped it
+
+
+def test_chaining_never_recurses_into_the_hook_being_run(box):
+    box.git("config", "--local", "core.hooksPath", ".git/hooks")  # the hooks directory IS .git/hooks
+    box.install()
+    hook = box.repo / ".git/hooks/pre-commit"
+    assert li.BEGIN in hook.read_text()
+    p = subprocess.run(["/bin/sh", str(hook)], cwd=box.repo, capture_output=True, text=True, env=box.env,
+                       stdin=subprocess.DEVNULL, timeout=60)
+    assert p.returncode == 0, p.stderr
+    # and a chained hook never chains again
+    box.git("config", "--local", "core.hooksPath", ".githooks")
+    box.install()
+    legacy = box.repo / ".git/hooks/pre-commit"
+    legacy.write_text('#!/bin/sh\necho legacy >> "$MARK_FILE"\n')
+    legacy.chmod(0o755)
+    hook = box.repo / ".githooks/pre-commit"
+    assert box.sh(hook).returncode == 0 and box.mark.read_text() == "legacy\n"
+    assert box.sh(hook, env={"TEYLA_LEAK_CHAIN": "1"}).returncode == 0 and box.mark.read_text() == "legacy\n"
+
+
 # --- terms --suggest ----------------------------------------------------------------------------------
 
 FACTS = [("Quentin Vexley", "git user.name"), ("qvexley" + AT + "mail.test", "git user.email"),
