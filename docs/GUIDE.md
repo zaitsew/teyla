@@ -473,6 +473,7 @@ uv tool uninstall teyla    # then remove the command; with pipx: pipx uninstall 
 - [WIKI](WIKI.md): the facts store
 - [WORK](WORK.md): safe mode for a work laptop
 - [PRIVACY](PRIVACY.md): every call that leaves your machine
+- [LEAK](LEAK.md): `teyla leak`: what it scans (tree, index, outgoing commits, PR text), its classes, exit codes and allow-list
 - [SHIELD](SHIELD.md): the security concept and roadmap: the leak gate, the agent boundary, the security contract, MCP tests
 - [HOSTS](HOSTS.md): `teyla hosts`, the static list of hosts a repo's code can reach, checked against its privacy table
 - [DEPS](DEPS.md): `teyla deps`, known vulnerabilities in the pinned versions of your lockfiles, from the free OSV API

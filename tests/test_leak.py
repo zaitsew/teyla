@@ -750,3 +750,285 @@ def test_the_legacy_script_and_teyla_leak_agree_on_a_repo(repo, terms, capsys):
     legacy = sorted(line.split(": ")[1] for line in p.stdout.splitlines())
     _, doc = scan(capsys)
     assert legacy == sorted(f["rule"] for f in doc["findings"] if f["rule"] != "secret-generic")
+
+
+# --- review round 1: one test per fix --------------------------------------------------------
+
+def test_a_file_named_after_a_term_is_printed_as_term_index(repo, terms, capsys):
+    """P1: paths, places and notes are printed too, and may hold a private term."""
+    commit(repo, {"zebracorn-notes.txt": f"K = '{KEY}'\n", "quokka lab/x-zebracorns.txt": f"K = '{KEY}z'\n"})
+    code, doc = scan(capsys)
+    blob = json.dumps(doc)
+    assert code == 1 and "zebracorn" not in blob.lower() and "quokka" not in blob.lower()
+    assert "term:0-notes.txt" in blob and "term:1/x-term:0s.txt" in blob
+    leak.main([])
+    text = capsys.readouterr().out
+    assert "zebracorn" not in text.lower() and "quokka" not in text.lower() and "term:0-notes.txt" in text
+
+
+def test_allow_list_errors_name_the_line_number_and_never_the_line(repo, terms, capsys):
+    """P1: an `until=<token>` or a reason in an error message would print a secret."""
+    allow = "[exceptions]\nterm a.txt fine reason\nterm a.txt why until=sentinel-token-1\nsecret b.txt\n"
+    commit(repo, {"a.txt": "x\n", ".leak-allow": allow})
+    code, doc = scan(capsys)
+    assert code == 2 and "sentinel-token-1" not in json.dumps(doc)
+    assert doc["errors"][0].startswith(".leak-allow:3:") and "bad date" in doc["errors"][0]
+    assert doc["errors"][1].startswith(".leak-allow:4:") and "no reason" in doc["errors"][1]
+
+
+@pytest.mark.parametrize("rule", ["gitleaks:generic-api-key", "gitleaks*", "harness-config", "image-metadata", "secret*", "s*"])
+def test_every_rule_of_the_secret_family_refuses_the_match_all_glob(repo, terms, capsys, rule):
+    """P1: `gitleaks:generic-api-key *` slipped past a check that knew only the rule `secret`."""
+    commit(repo, {"a.txt": "x\n", ".leak-allow": f"[exceptions]\n{rule} * everything\n"})
+    code, doc = scan(capsys)
+    assert code == 2 and "exempts every file" in doc["errors"][0]
+
+
+def test_a_gitleaks_exception_by_fingerprint_does_not_survive_a_changed_secret(repo, terms, gitleaks, monkeypatch, capsys):
+    """P1: gitleaks' fingerprint leaves the secret out, so the line it sits on is what Teyla hashes."""
+    commit(repo, {"a.txt": "token = FIXTURE-VALUE\n"})
+    monkeypatch.setenv("STUB_REPORT", item())
+    _, doc = scan(capsys)
+    fp = doc["findings"][0]["fingerprint"]
+    (repo / ".leak-allow").write_text(f"[exceptions]\ngitleaks:generic-api-key a.txt a test fixture fp={fp}\n")
+    code, doc = scan(capsys)
+    assert code == 0 and doc["findings"] == []
+    (repo / "a.txt").write_text("token = LIVE-VALUE\n")
+    code, doc = scan(capsys)
+    assert code == 1 and doc["findings"][0]["fingerprint"] != fp
+
+
+def test_a_file_over_the_cap_is_not_read_and_exits_two(repo, terms, capsys):
+    """P1: no file is read whole. Over the cap it is listed as not read; --allow-partial accepts that."""
+    commit(repo, {"big.txt": "line of text\n" * 200, "small.txt": "ok\n"})
+    code, doc = scan(capsys, "--max-bytes", "500")
+    assert code == 2 and [u["surface"] for u in doc["coverage"]["unread"]] == ["big.txt"]
+    assert "--max-bytes" in doc["coverage"]["unread"][0]["why"]
+    code, doc = scan(capsys, "--max-bytes", "500", "--allow-partial")
+    assert code == 0
+    assert scan(capsys)[0] == 0                                  # the default cap is far above 2600 bytes
+
+
+def test_a_binary_file_over_the_cap_is_a_note_not_a_failure(repo, terms, capsys):
+    commit(repo, {"blob.bin": b"\0" * 2000, "small.txt": "ok\n"})
+    code, doc = scan(capsys, "--max-bytes", "500")
+    assert code == 0 and any("binary file(s) over the size cap" in n for n in doc["coverage"]["notes"])
+
+
+def test_an_oversize_blob_in_a_commit_range_is_not_read(repo, terms, capsys):
+    commit(repo, {"big.txt": f"K = '{KEY}'\n" + "pad\n" * 300})
+    code, doc = scan(capsys, "--commits", "HEAD", "--max-bytes", "500")
+    assert code == 2 and "big.txt" in doc["coverage"]["unread"][0]["surface"]
+
+
+@pytest.mark.parametrize("name", ['ph"oto.jpg', "café.jpg", "two words.jpg"])
+def test_paths_git_would_quote_are_found_in_commits_and_the_index(repo, terms, capsys, name):
+    """P1: `git log --raw` prints a quoted path; -z does not."""
+    commit(repo, {"keep.txt": "ok\n"})
+    (repo / name).write_bytes(jpeg(exif=tiff(0x8825)))
+    git(repo, "add", "-A")
+    code, doc = scan(capsys, "--staged")
+    assert code == 1 and [f["rule"] for f in doc["findings"]] == ["image-metadata"] and doc["findings"][0]["path"] == name
+    git(repo, "commit", "-q", "-m", "photo")
+    code, doc = scan(capsys, "--commits", "HEAD")
+    assert code == 1 and [f["path"] for f in doc["findings"]] == [name]
+
+
+def test_a_compressed_png_text_chunk_over_the_cap_is_not_read(repo, terms, capsys):
+    """P1: the inflate cap truncated silently. Now it is a surface not read."""
+    body = b"Comment\0\0" + zlib.compress(b"a" * (leak.MAX_INFLATE + 4096))
+    commit(repo, {"a.png": png(chunk(b"zTXt", body))})
+    code, doc = scan(capsys)
+    assert code == 2 and "over the read cap" in doc["coverage"]["unread"][0]["why"]
+    assert doc["coverage"]["unread"][0]["surface"] == "a.png"
+
+
+def test_a_diff_attribute_cannot_hide_text_from_commit_scanning(repo, terms, capsys):
+    """P1: the added lines come from the blobs, not from git's diff, which `-diff` turns into 'Binary files differ'."""
+    commit(repo, {".gitattributes": "*.txt -diff\n", "a.txt": "ok\n"})
+    commit(repo, {"a.txt": f"ok\nK = '{KEY}'\n"})
+    code, doc = scan(capsys, "--commits", "HEAD")
+    assert code == 1 and [(f["rule"], f["line"]) for f in doc["findings"]] == [("secret", 2)]
+
+
+def test_only_the_lines_a_commit_adds_are_reported(repo, terms, capsys):
+    commit(repo, {"a.txt": f"K = '{KEY}'\n"})
+    commit(repo, {"a.txt": f"K = '{KEY}'\nsecond line\n"})
+    code, doc = scan(capsys, "--commits", "HEAD~1..HEAD")
+    assert code == 0 and doc["findings"] == []
+
+
+def test_a_symlinked_parent_directory_is_skipped_not_followed(repo, terms, tmp_path, capsys):
+    """P2: only the last path component was checked, so `.claude -> elsewhere` was read."""
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (outside / "settings.local.json").write_text('{"env": {"OPENAI_BASE_URL": "https://proxy.example.test/v1"}}')
+    commit(repo, {"a.txt": "ok\n"})
+    (repo / ".claude").symlink_to(outside)
+    code, doc = scan(capsys)
+    assert code == 2 and doc["findings"] == []
+    assert "outside the repository" in doc["coverage"]["unread"][0]["why"]
+    assert scan(capsys, "--allow-partial")[0] == 0
+
+
+def test_an_env_file_inside_an_ignored_directory_is_found(repo, terms, capsys):
+    """P2: `git ls-files --directory` collapsed `config/` and hid `config/.env`."""
+    commit(repo, {".gitignore": "config/\n", "a.txt": "ok\n"})
+    (repo / "config").mkdir()
+    (repo / "config" / ".env").write_text(f"K={KEY}\n")
+    code, doc = scan(capsys)
+    assert code == 0
+    assert [(f["rule"], f["class"], f["path"]) for f in doc["findings"]] == [("secret", "local-only", "config/.env")]
+
+
+def test_a_staged_type_change_to_a_symlink_into_a_home_directory_is_a_finding(repo, terms, capsys):
+    """P2: `--diff-filter=ACMR` dropped type changes."""
+    commit(repo, {"a.txt": "ok\n"})
+    (repo / "a.txt").unlink()
+    (repo / "a.txt").symlink_to("/Users/" + "jdoe" + "/notes")
+    git(repo, "add", "-A")
+    assert "T\ta.txt" in git(repo, "diff", "--cached", "--name-status")
+    code, doc = scan(capsys, "--staged")
+    assert code == 1 and "symlink-outside" in [f["rule"] for f in doc["findings"]]
+
+
+def test_a_tracked_symlink_to_a_home_directory_blocks_in_the_tree_scan(repo, terms, capsys):
+    commit(repo, {"keep.txt": "ok\n"})
+    (repo / "link").symlink_to("~/notes")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "link")
+    code, doc = scan(capsys)
+    assert code == 1 and [f["rule"] for f in doc["findings"]] == ["symlink-outside"]
+
+
+def test_an_interpolated_host_is_a_finding_and_an_interpolated_port_is_not(repo, terms, capsys):
+    """P2: `${...}` switched URL validation off."""
+    commit(repo, {".mcp.json": '{"mcpServers": {"x": {"url": "https://${TOOLS_HOST}/mcp"}, "y": {"url": "http://localhost:${PORT}/mcp"}}}'})
+    code, doc = scan(capsys)
+    assert code == 1
+    assert [f["rule"] for f in doc["findings"]] == ["harness-config"] and doc["findings"][0]["masked"].endswith(str(len("https://${TOOLS_HOST}/mcp")))
+
+
+def test_a_dotdot_in_an_absolute_command_path_is_normalised(repo, terms, capsys):
+    """P2: `<repo>/../elsewhere/run.sh` starts with the repo path and is outside it."""
+    root = repo.resolve()
+    commit(repo, {".claude/settings.json": json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": f"{root}/../elsewhere/run.sh"}]}]}}),
+                  ".claude/ok.json": "{}"})
+    code, doc = scan(capsys)
+    assert code == 1 and [f["rule"] for f in doc["findings"]] == ["harness-config"]
+
+
+def test_require_gitleaks_applies_to_a_text_scan(repo, terms, tmp_path, gitleaks, monkeypatch, capsys):
+    """P2: `--text --require-gitleaks` exited 0 although gitleaks never looked at the text."""
+    note = tmp_path / "pr.md"
+    note.write_text("nothing here\n")
+    assert scan(capsys, "--text", str(note), "--require-gitleaks")[0] == 0
+    assert gitleaks.read_text().startswith("detect --no-git")           # it did run, on the text
+    monkeypatch.setattr(leak, "_which", lambda name: None)
+    code, doc = scan(capsys, "--text", str(note), "--require-gitleaks")
+    assert code == 2
+    assert scan(capsys, "--text", str(note))[0] == 0
+
+
+def test_a_gitleaks_finding_in_a_text_names_the_text(repo, terms, tmp_path, gitleaks, monkeypatch, capsys):
+    note = tmp_path / "pr.md"
+    note.write_text("nothing Teyla sees\n")
+    monkeypatch.setenv("STUB_REPORT", item(File="text.txt"))
+    code, doc = scan(capsys, "--text", str(note))
+    assert code == 1 and doc["findings"][0]["path"] == str(note)
+
+
+def test_require_gitleaks_on_the_index_needs_protect(repo, terms, gitleaks, monkeypatch, capsys):
+    """P2: without `protect --staged` the index was not scanned by the second engine: exit 2 when it is required."""
+    commit(repo, {"b.txt": "x\n"})
+    monkeypatch.setenv("STUB_PROTECT", "0")
+    code, doc = scan(capsys, "--staged", "--require-gitleaks")
+    assert code == 2
+    leak.main(["--staged", "--require-gitleaks"])
+    assert "no `protect --staged`" in capsys.readouterr().out
+
+
+def test_a_malformed_allow_list_does_not_stop_the_scan(repo, terms, capsys):
+    """P2: blockers are found first and reported; the config error adds exit 2 only when nothing blocks."""
+    commit(repo, {"a.txt": f"K = '{KEY}'\n", ".leak-allow": "[exceptions]\nterm a.txt\n"})
+    code, doc = scan(capsys)
+    assert code == 1 and [f["rule"] for f in doc["findings"]] == ["secret"] and "no reason" in doc["errors"][0]
+
+
+# --- review round 2: one test per fix --------------------------------------------------------
+
+@pytest.mark.parametrize("line", ["*:generic-api-key fixtures/* fixtures", "gitleaks:generic-* fixtures/* fixtures",
+                                  "secre? fixtures/* fixtures", "nonsense fixtures/* fixtures", "secret ** fixtures"])
+def test_an_exception_rule_must_be_an_exact_known_name(repo, terms, capsys, line):
+    """P1: a pattern in the rule field (`*:generic-api-key`) walked round the secret-family check."""
+    commit(repo, {"a.txt": "x\n", ".leak-allow": f"[exceptions]\n{line}\n"})
+    code, doc = scan(capsys)
+    assert code == 2 and doc["errors"] and doc["errors"][0].startswith(".leak-allow:2:")
+
+
+def test_an_exact_rule_with_a_named_directory_is_accepted(repo, terms, capsys):
+    commit(repo, {"fixtures/a.txt": "x\n", ".leak-allow": "[exceptions]\ngitleaks:generic-api-key fixtures/* fixture tokens\n"})
+    code, doc = scan(capsys)
+    assert code == 0 and doc["errors"] == []
+
+
+def test_an_allow_list_over_the_cap_or_a_symlink_is_unreadable(repo, terms, tmp_path, capsys):
+    """P1: .leak-allow was read whole, outside the guarded reader."""
+    commit(repo, {"a.txt": "x\n", ".leak-allow": "# pad\n" * 60000})
+    code, doc = scan(capsys)
+    assert code == 2 and "allowlist unreadable" in doc["errors"][0]
+    (repo / ".leak-allow").unlink()
+    real = tmp_path / "elsewhere-allow"
+    real.write_text("emails:\n")
+    (repo / ".leak-allow").symlink_to(real)
+    code, doc = scan(capsys)
+    assert code == 2 and "allowlist unreadable" in doc["errors"][0]
+
+
+def test_a_terms_file_over_the_cap_is_unreadable(repo, tmp_path, monkeypatch, capsys):
+    big = tmp_path / "terms-big.txt"
+    big.write_text("zebracorn\n" * 40000)
+    monkeypatch.setenv("TEYLA_PRIVATE_TERMS", str(big))
+    commit(repo, {"a.txt": "ok\n"})
+    code, doc = scan(capsys)
+    assert code == 2 and doc["coverage"]["unread"][0]["surface"] == "private terms"
+
+
+def test_an_exception_never_applies_when_the_matched_line_was_not_read(repo, terms, gitleaks, monkeypatch, capsys):
+    """P1: a path with a newline cannot be asked of `git cat-file`; the finding then has no value in its
+    fingerprint, so an exception for that fingerprint must not silence it."""
+    name = "a\nb.txt"
+    commit(repo, {"keep.txt": "x\n"})
+    (repo / name).write_text("token = ANYTHING\n")
+    git(repo, "add", "-A")
+    monkeypatch.setenv("STUB_REPORT", item(File=name))
+    code, doc = scan(capsys, "--staged")
+    (f,) = doc["findings"]
+    assert code == 1 and "line unread" in f["note"] and "\n" not in f["path"] and "\\x0a" in f["path"]
+    (repo / ".leak-allow").write_text(f"[exceptions]\ngitleaks:generic-api-key a* fixture fp={f['fingerprint']}\n")
+    code, doc = scan(capsys, "--staged")
+    assert code == 1 and len(doc["findings"]) == 1
+    leak.main(["--staged"])
+    assert "a\nb.txt" not in capsys.readouterr().out
+
+
+def test_a_text_over_the_gitleaks_limit_is_a_coverage_gap(repo, terms, gitleaks, tmp_path, capsys):
+    """P1: gitleaks skips a target over its size limit without a word."""
+    note = tmp_path / "pr.md"
+    note.write_text("fine words\n" * 110000)          # a little over 1 MiB
+    code, doc = scan(capsys, "--text", str(note), "--max-bytes", "1000")
+    assert code == 0 and any("text over the engine limit" in n and "gitleaks not run" in n for n in doc["coverage"]["notes"])
+    code, doc = scan(capsys, "--text", str(note), "--max-bytes", "1000", "--require-gitleaks")
+    assert code == 2
+    assert not gitleaks.exists()                           # the stub never ran
+
+
+def test_a_term_that_is_also_a_json_key_does_not_rewrite_the_schema(repo, tmp_path, monkeypatch, capsys):
+    """P2: scrubbing the serialised text turned the key "exit" into "term:0"."""
+    f = tmp_path / "t.txt"
+    f.write_text("exit\n")
+    monkeypatch.setenv("TEYLA_PRIVATE_TERMS", str(f))
+    commit(repo, {"exit.txt": f"K = '{KEY}'\n"})
+    code, doc = scan(capsys)
+    assert code == 1 and set(doc) == {"findings", "coverage", "errors", "exit"} and doc["exit"] == 1
+    assert doc["findings"][0]["path"] == "term:0.txt"

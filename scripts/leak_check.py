@@ -50,6 +50,7 @@ import math
 import os
 import re
 import shlex
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -140,13 +141,30 @@ class Config:
         self.terms_status = "unset"                   # ok | missing | unreadable
 
 
+CONFIG_CAP = 256 * 1024       # the terms file and .leak-allow: both are small, and neither is read without a cap
+
+
+def read_capped(path: Path, cap: int = CONFIG_CAP, *, follow: bool = True) -> str:
+    """The text of a small config file, never more than `cap` bytes into memory. Raises OSError when it is not a
+    regular file (or, with follow=False, is a symlink) and ValueError when it is over the cap."""
+    flags = os.O_RDONLY | (0 if follow else getattr(os, "O_NOFOLLOW", 0)) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags)
+    with os.fdopen(fd, "rb") as fh:
+        if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+            raise OSError("not a regular file")
+        data = fh.read(cap + 1)
+    if len(data) > cap:
+        raise ValueError(f"over {cap} bytes")
+    return data.decode("utf-8")
+
+
 def load_terms(cfg: Config) -> None:
     env = os.environ.get("TEYLA_PRIVATE_TERMS")
     path = Path(env).expanduser() if env else Path.home() / ".config" / "teyla" / "private-terms.txt"
     cfg.terms_path, cfg.terms_explicit = str(path), bool(env)
     try:
-        raw = path.read_text(encoding="utf-8")
-    except OSError as e:
+        raw = read_capped(path)
+    except (OSError, ValueError) as e:
         cfg.terms_status = "missing" if isinstance(e, FileNotFoundError) else "unreadable"
         cfg.notes.append("no private term list; generic rules only")
         return
@@ -168,11 +186,17 @@ def load_terms(cfg: Config) -> None:
 
 
 def load_allow(cfg: Config, root: Path | None) -> None:
-    if root is None or not (root / ".leak-allow").is_file():
+    if root is None or not os.path.lexists(root / ".leak-allow"):
+        return
+    try:
+        text = read_capped(root / ".leak-allow", follow=False)
+    except (OSError, ValueError, UnicodeDecodeError) as e:
+        why = str(e) if isinstance(e, ValueError) and not isinstance(e, UnicodeDecodeError) else "not a readable regular file"
+        cfg.errors.append(f".leak-allow: allowlist unreadable ({why})")
         return
     section = None
     today = _dt.date.today()
-    for line in (root / ".leak-allow").read_text(encoding="utf-8").splitlines():
+    for no, line in enumerate(text.splitlines(), 1):
         line = re.sub(r"\s+#.*$", "", line).strip()
         if not line or line.startswith("#"):
             continue
@@ -181,13 +205,15 @@ def load_allow(cfg: Config, root: Path | None) -> None:
         elif line.endswith(":") and line[:-1] in SECTIONS:
             section = line[:-1]
         elif section == "[exceptions]":
-            _add_exception(cfg, line, today)
+            _add_exception(cfg, line, today, no)
         elif section:
             cfg.allow[section].append(line)
 
 
-def _add_exception(cfg: Config, line: str, today: _dt.date) -> None:
-    """`rule glob reason... [until=YYYY-MM-DD] [fp=<12 hex>]`."""
+def _add_exception(cfg: Config, line: str, today: _dt.date, no: int = 0) -> None:
+    """`rule glob reason... [until=YYYY-MM-DD] [fp=<12 hex>]`. An error names the line number only: the line may
+    hold a token in `until=` or in the reason, and an error is printed, logged and sent to a model."""
+    where = f".leak-allow:{no}: [exceptions]"
     words = line.split()
     until: _dt.date | None = None
     fp: str | None = None
@@ -197,24 +223,43 @@ def _add_exception(cfg: Config, line: str, today: _dt.date) -> None:
             try:
                 until = _dt.date.fromisoformat(w[6:])
             except ValueError:
-                cfg.errors.append(f".leak-allow [exceptions]: bad date in `{w}` (want until=YYYY-MM-DD)")
+                cfg.errors.append(f"{where} bad date in until= (want until=YYYY-MM-DD)")
                 return
         elif re.fullmatch(r"fp=[0-9a-f]{12}", w):
             fp = w[3:]
         else:
             rest.append(w)
     if len(rest) < 3:
-        cfg.errors.append(".leak-allow [exceptions]: a line is `rule glob reason [until=YYYY-MM-DD]`; "
-                          f"`{line[:40]}` has no reason")
+        cfg.errors.append(f"{where} a line is `rule glob reason [until=YYYY-MM-DD]`; this one has no reason")
         return
     rule, glob, reason = rest[0], rest[1], " ".join(rest[2:])
-    secret_rule = any(fnmatch.fnmatchcase(r, rule) for r in ("secret", "secret-generic", "gitleaks:x"))
-    if secret_rule and fp is None and all(fnmatch.fnmatchcase(p, glob) for p in ("a", "a/b", "a/b/c.txt", ".env")):
-        cfg.errors.append(f".leak-allow [exceptions]: `{rule} {glob}` exempts every file from a secret rule; "
+    if any(c in rule for c in "*?[]"):
+        cfg.errors.append(f"{where} the rule must be an exact rule name: a pattern exempts every file from some "
+                          "secret-family rule")
+        return
+    if rule not in KNOWN_RULES and not re.fullmatch(r"gitleaks:[A-Za-z0-9._\-]+", rule):
+        cfg.errors.append(f"{where} unknown rule; use one of {', '.join(sorted(KNOWN_RULES))} or gitleaks:<RuleID>")
+        return
+    bare = not glob.strip("/").strip("*") or not glob.strip("/")
+    if _secret_family(rule) and fp is None and (bare or all(fnmatch.fnmatchcase(p, glob) for p in ("a", "a/b", "a/b/c.txt", ".env"))):
+        cfg.errors.append(f"{where} this line exempts every file from a secret-family rule; "
                           "name the files, or the finding with fp=")
         return
     ex = AllowException(rule, glob, reason, until, fp)
     (cfg.expired if until is not None and until < today else cfg.exceptions).append(ex)
+
+
+KNOWN_RULES = {"term", "email", "home", "secret", "secret-generic", "cyrillic", "harness-config", "image-metadata",
+               "symlink-outside"}
+SECRET_FAMILY = ("secret", "secret-generic", "harness-config", "image-metadata")
+
+
+def _secret_family(rule: str) -> bool:
+    """Whether a rule pattern can match a secret rule: `secret`, a harness or image finding, any `gitleaks:` rule.
+    A pattern such as `*` or `gitleaks:*` can, so it counts."""
+    if rule.startswith("gitleaks:") or rule.startswith("gitleaks"):
+        return True
+    return any(fnmatch.fnmatchcase(r, rule) for r in SECRET_FAMILY)
 
 
 def fp_key(hit: Hit) -> str:
