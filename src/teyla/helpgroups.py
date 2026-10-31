@@ -98,6 +98,8 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
         ("harvest", "Tool spine and corrections of sessions touching a path"),
         ("lang", "Where tracked files hold non-English text"),
         ("leak", "Private data and keys in the tree, index, commits and PR text"),
+        ("leak-install", "Install the leak gate as git hooks (also: teyla leak install)"),
+        ("leak-terms", "Suggest private terms from what this machine knows, masked"),
         ("voice", "Check a draft against a voice chart"),
         ("reel", "A session as a terminal-story video, or a product demo"),
         ("kit", "A product's brand kit: store screenshots, mascot images"),

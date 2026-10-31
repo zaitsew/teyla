@@ -597,6 +597,8 @@ def build_parser() -> argparse.ArgumentParser:
     hosts_mod.register(sp)
     from . import leak as leak_mod
     leak_mod.register(sp)
+    from . import leak_install as leak_install_mod
+    leak_install_mod.register(sp)
     from . import kit as kit_mod, post as post_mod
     kit_mod.register(sp)
     post_mod.register(sp)
@@ -655,6 +657,8 @@ def _friendly(e: Exception, cmd: str) -> str:
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
+    from . import leak_install as _leak_install
+    argv = _leak_install.alias(argv)      # `teyla leak install|terms` -> leak-install|leak-terms
     # ~/.teyla/config.toml [env] first: under launchd or the desktop app's session hook this is
     # the only place SSL_CERT_FILE or a proxy can come from, and it must be set before any socket.
     from . import config as _config
