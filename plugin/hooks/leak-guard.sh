@@ -120,9 +120,30 @@ phase=suspect
 [ "$tok" = 0 ] || phase=token
 # leak-guard:token-begin
 
+# The python must carry the teyla package. TEYLA_PYTHON first; then the interpreter named by the shebang of
+# the `teyla` on PATH (a uv tool or a venv keeps the package out of the system python3, which is what
+# `python3` resolves to on most machines); python3 itself last.
+teyla_python() {
+    t=$(command -v teyla) || t="$HOME/.local/bin/teyla"     # a uv tool install is not on a GUI app's PATH
+    [ -f "$t" ] && [ -r "$t" ] || return 1
+    IFS= read -r first < "$t" || return 1
+    case "$first" in
+        "#!"*python*) ;;
+        *) return 1 ;;
+    esac
+    p=${first#"#!"}
+    p=${p#"${p%%[! ]*}"}
+    case "$p" in
+        /usr/bin/env*) return 1 ;;          # names no file: python3 on PATH is what it would run
+    esac
+    p=${p%% *}
+    [ -x "$p" ] || return 1
+    printf '%s\n' "$p"
+}
+
 py="${TEYLA_PYTHON:-}"
 if [ -z "$py" ] || [ ! -x "$py" ]; then
-    py=$(command -v python3) || {
+    py=$(teyla_python) || py=$(command -v python3) || {
         if [ "$phase" = token ]; then
             echo "teyla leak-guard: refused — python3 is not on PATH, so this command's text cannot be scanned." >&2
             echo "  Install python3 and teyla, or skip the publication scan once: TEYLA_LEAK_GUARD=0 <command>" >&2
