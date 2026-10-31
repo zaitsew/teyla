@@ -5,6 +5,7 @@
     teyla leak --outgoing [remote]   the commits (and annotated tags) the remote's tracking refs lack; default origin
     teyla leak --commits RANGE       an explicit revision range, as `scripts/leak_check.py --commits`
     teyla leak --text FILE|-         a PR body, an issue, a release note, a commit message
+    teyla leak --published [OWNER]   what is already public on GitHub (leak_published.py; the one surface that uses the network)
     teyla leak --json | --quiet | --require-gitleaks
 
 The rules (term, email, home, secret, cyrillic) are the ones in `scripts/leak_check.py`, which this module
@@ -13,7 +14,7 @@ publication text, `.env*` files that are not tracked, harness configs, plists, s
 metadata), the classes (publishable, historical, local-only), the severities (blocker, triage, lang), masked
 output, de-duplication, gitleaks as a second engine, and the exit code. docs/LEAK.md is the reference.
 
-No network call: it reads git objects and files, and runs `gitleaks` (a local process) when it is installed.
+No network call (except `--published`, in leak_published.py): it reads git objects and files, and runs `gitleaks` (a local process) when it is installed.
 Calling code uses `scan_text`, `scan_repo`, `scan_staged`, `scan_outgoing`, `scan_range`, `exit_code`, `render`.
 """
 from __future__ import annotations
@@ -649,6 +650,7 @@ class Scanner:
         self.cov = Coverage()
         self.repo = repo
         self._gitleaks_noted = False
+        self._text_gl: tuple = ("publishable", "", None)
         self._tracked: set[str] | None = None
         if self.cfg.terms_status != "ok":
             if self.cfg.terms_explicit or self.cfg.terms_status == "unreadable":
@@ -1038,8 +1040,10 @@ class Scanner:
             self.cov.notes.append(note)
             self._gitleaks_noted = True
 
-    def gitleaks_text(self, text: str, label: str) -> None:
-        """gitleaks over a publication text (the CLI's `--text`)."""
+    def gitleaks_text(self, text: str, label: str, *, cls: str = "publishable", note: str = "", locate=None) -> None:
+        """gitleaks over a publication text (the CLI's `--text`). `cls` and `note` mark the findings (`--published`
+        passes `historical`); `locate(line)` maps a line of `text` to (path, line) when it joins several texts."""
+        self._text_gl = (cls, note, locate)
         self._gitleaks("text", text=text, label=label)
 
     def _gitleaks(self, mode: str, rng: str | None = None, cls_of=None, *, text: str = "", label: str = "") -> None:
@@ -1122,6 +1126,7 @@ class Scanner:
         tracked = self.tracked() if mode == "tree" else set()
         for it in items:
             rel = str(it.get("File", ""))
+            t_cls, t_note, locate = self._text_gl
             for prefix in (stage_prefix, str(self.root or "") + os.sep):
                 if prefix != os.sep and rel.startswith(prefix):
                     rel = rel[len(prefix):]
@@ -1134,16 +1139,19 @@ class Scanner:
             line = int(it.get("StartLine") or 0)
             end = int(it.get("EndLine") or line)
             sha = str(it.get("Commit") or "")
-            rules = self.eng.PathRules(rel, self.cfg)
             lh = self._gl_hash(mode, tmpd, br, raw_rel, sha, line, end)
+            if mode == "text" and locate is not None:
+                rel, line = locate(line)
+            rules = self.eng.PathRules(rel, self.cfg)
             key = f"{it.get('RuleID')}:{lh}" if lh else f"{rel}:{it.get('RuleID')}:{line}:line-unread"
             # An exception never applies to a finding whose matched text was not read: nothing ties it to a value.
             if rules.skip or not rules.sec or (lh and rules.excepted(rule, key)):
                 continue
-            cls = cls_of(sha) if (cls_of and sha) else "publishable"
+            cls = cls_of(sha) if (cls_of and sha) else (t_cls if mode == "text" else "publishable")
             place = f"commit:{sha[:8]}:{rel}:{line}" if sha else f"{rel}:{line}"
+            why = "found by gitleaks" if lh else "found by gitleaks; line unread, so no exception applies"
             self.col.add(rule, "blocker", cls, rel, line, key, place, masked="redacted",
-                         note="found by gitleaks" if lh else "found by gitleaks; line unread, so no exception applies")
+                         note=f"{t_note}; {why}" if mode == "text" and t_note else why)
 
     def _stage_tracked(self, stage: Path) -> None:
         """Hard links (a copy of a small file when linking fails) of the tracked regular files under `stage`
@@ -1306,6 +1314,9 @@ def _merge(results: list[Result]) -> Result:
 
 
 def run(args) -> tuple[Result, int]:
+    if getattr(args, "published", None) is not None:
+        from . import leak_published
+        return leak_published.run(args)
     eng = _engine()
     if args.all:
         if args.repo or args.staged or args.outgoing or args.commits or args.text:
@@ -1379,6 +1390,9 @@ def cmd_leak(args) -> int:
         print(to_json(res, code))
     elif args.quiet:
         print(len(res.blockers))
+    elif getattr(args, "published", None) is not None:
+        from . import leak_published
+        print(leak_published.render(res, require_gitleaks=args.require_gitleaks, allow_partial=args.allow_partial))
     else:
         print(render(res, require_gitleaks=args.require_gitleaks, allow_partial=args.allow_partial))
     return code
@@ -1400,6 +1414,10 @@ def register(sp):
     q.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES, metavar="N",
                    help=f"skip (and report as not read) a file or blob over N bytes; default {DEFAULT_MAX_BYTES}")
     q.add_argument("--allow-partial", action="store_true", help="exit 0 although files were skipped (over the cap, outside the repo)")
+    q.add_argument("--published", nargs="?", const="", default=None, metavar="OWNER",
+                   help="audit what is already public on GitHub for OWNER (default: the owners of the remotes under code_root); needs gh and the network")
+    q.add_argument("--max-requests", type=int, default=400, metavar="N", help="with --published: at most N gh calls; default 400")
+    q.add_argument("--allow-network", action="store_true", help="safe mode: allow the gh calls of --published for this one run")
     return q
 
 
