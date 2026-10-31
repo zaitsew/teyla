@@ -1,7 +1,7 @@
 {
   "name": "teyla",
   "displayName": "Teyla",
-  "version": "0.34.0",
+  "version": "0.35.0",
   "description": "Turn repeated work into skills and rules. Harvest skills from past sessions, record corrections, review a diff, tidy rule files. Nothing is uploaded: transcripts, prompts and rules stay on your machine.",
   "author": {
     "name": "Ivan Zaitsev",
