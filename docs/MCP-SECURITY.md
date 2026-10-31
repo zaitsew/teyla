@@ -73,7 +73,7 @@ subdomains. Otherwise it exits 2 unless you pass `--i-own-this`, which says you
 own the server. A token must be printable ASCII with no spaces (else exit 2, without echoing it). It goes in an Authorization
 header, only over https or to a host that parses as loopback (`localhost`, `127.0.0.0/8`, `::1`; a name such as
 `127.example.test` is not), and every printed string has it replaced by `<token>`; the report shows the scheme and host, not the path. Safe mode refuses the probe unless
-`--allow-network` is given. It is row 32 of [PRIVACY.md](PRIVACY.md).
+`--allow-network` is given. It is row 33 of [PRIVACY.md](PRIVACY.md).
 
 ## The corpus
 
