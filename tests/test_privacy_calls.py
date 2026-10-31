@@ -56,6 +56,7 @@ ALLOWED = {
     "scout_design.py": {26},
     "deps.py": {32},
     "leak_published.py": {35},
+    "leak_install.py": {36},
     "genai.py": {27, 28},
     "relay.py": {21},
     "web/server.py": {22},

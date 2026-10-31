@@ -4,7 +4,7 @@ Status: shipped 2026-10-31.
 
 `teyla leak` is the one scanner for what must not leave your machine: private terms, personal e-mail
 addresses, home paths, secrets, and an image that carries a position. The hooks, `check.sh` and the agent
-hook call it. Only `--published` uses the network (through `gh`); every other surface reads git objects and files. It is the scanner of Shield, Teyla's leak-prevention work.
+hook call it. Only `--published` uses the network (through `gh`); every other surface reads git objects and files; `teyla leak install` asks `gh` once for the repo's visibility. It is the scanner of Shield, Teyla's leak-prevention work.
 
 Quick start:
 
@@ -135,6 +135,24 @@ secret rule whose glob matches every file is an error (exit 2): a whole file is 
 rules, only named files or one fingerprint. Editing `.leak-allow`, the terms file or the scanner is itself a
 change to review as one that touches credentials.
 
+## Private repos
+
+A repo records its visibility in the local git config value `teyla.visibility`, `public` or `private`. In a repo
+recorded as private, the `term` and `email` rules (Teyla's own, not gitleaks) report **triage** instead of blocker: the
+owner's name and family e-mails sit in hundreds of files of a private repo, and a pre-commit hook that refused
+nearly every commit would teach people to type the skip. The coverage says so: `visibility: private (git config
+teyla.visibility): terms and e-mails are triage`. Secrets, home paths, image metadata, harness configs and gitleaks
+findings still block, in a private repo too. Unset, or any other value, means public; a public repo blocks on terms
+and e-mails, and its coverage says `visibility: public` only when the value is set. `--text` (a publication text)
+ignores the setting, and so does `--published`: both look at public text.
+
+`teyla leak install` sets the value: when the network gate allows it, it runs `gh repo view <owner/name> --json
+visibility -q .visibility` for the repo's `upstream` or `origin` and stores `private` or `public`. When gh is
+missing or not signed in, there is no GitHub remote or the gate refuses, it stores nothing, prints one line saying the
+repo is treated as public, and names the command to set it by hand: `git config teyla.visibility private`. Rerun the
+install after a repo changes visibility. `teyla shield check` reports the leak row of a private repo as OK with the
+triage count when nothing blocks.
+
 ## What is already public
 
 ```
@@ -222,6 +240,8 @@ teyla leak install [repo] [--all] [--uninstall]
 and `teyla leak-terms`; `teyla leak install` and `teyla leak terms` (with `--suggest`, `list` or `move`) are rewritten to them before parsing. A repo
 directory that is literally named `install` or `terms` needs `./install`.
 
+- Records the repo's visibility (see [Private repos](#private-repos)); this is the one network call of the install,
+  and it goes through the network gate.
 - Writes `.githooks/pre-commit` (`teyla leak --staged --quiet`) and `.githooks/pre-push`
   (`teyla leak --outgoing "$1" --quiet`; git passes the remote name as `$1`): POSIX `sh`, executable. Sets
   `core.hooksPath` to `.githooks`. When the scan fails, the hook runs it again without `--quiet` so the masked

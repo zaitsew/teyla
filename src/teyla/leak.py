@@ -318,6 +318,28 @@ def read_blobs(root: Path, specs: list[str], cap: int = DEFAULT_MAX_BYTES) -> li
 
 # --- configuration -----------------------------------------------------------------------------
 
+VISIBILITY_KEY = "teyla.visibility"
+VISIBILITY_VALUES = ("public", "private")
+PRIVATE_NOTE = "visibility: private (git config teyla.visibility): terms and e-mails are triage"
+PUBLIC_NOTE = "visibility: public (git config teyla.visibility)"
+TRIAGE_IN_PRIVATE = ("term", "email")          # Teyla's own rules; gitleaks, secrets and home paths always block
+
+
+def repo_visibility(root: Path | None) -> str | None:
+    """The repo's recorded visibility: `public` or `private` from the local git config value `teyla.visibility`,
+    None when it is unset or holds anything else (the scanner then treats the repo as public: fail closed)."""
+    if root is None:
+        return None
+    try:
+        # --local only: a global or system value would downgrade every repo without a local one.
+        p = subprocess.run(["git", "-C", str(root), "config", "--local", "--get", VISIBILITY_KEY], capture_output=True,
+                           text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    value = p.stdout.strip() if p.returncode == 0 else ""
+    return value if value in VISIBILITY_VALUES else None
+
+
 def load_config(root: Path | None):
     """The rule configuration: the private terms (env or default file) and the repo's `.leak-allow`."""
     eng = _engine()
@@ -652,6 +674,7 @@ class Scanner:
         self._gitleaks_noted = False
         self._text_gl: tuple = ("publishable", "", None)
         self._tracked: set[str] | None = None
+        self.visibility = repo_visibility(root)
         if self.cfg.terms_status != "ok":
             if self.cfg.terms_explicit or self.cfg.terms_status == "unreadable":
                 self.cov.unread.append(("private terms", f"{self.cfg.terms_status}: {self.cfg.terms_path}"))
@@ -663,7 +686,10 @@ class Scanner:
     # -- text ---------------------------------------------------------------------------------
 
     def _text(self, place_label: str, gpath: str, lines, cls: str, *, lang: bool = True, cap: str | None = None,
-              note: str = "") -> None:
+              note: str = "", publication: bool = False) -> None:
+        """`publication` marks a text that is public whatever the repo is (a PR body): the private-repo rule
+        that makes terms and e-mails triage never applies to it."""
+        private = self.visibility == "private" and not publication
         rules = self.eng.PathRules(gpath, self.cfg, triage=True, lang=lang)
         if rules.skip:
             return
@@ -677,12 +703,14 @@ class Scanner:
                 hits = [h for h in hits if h.rule != "cyrillic"] + [runs[0]._replace(match="".join(h.match for h in runs))]
             for h in hits:
                 sev = "triage" if cap == "triage" and h.severity == "blocker" else h.severity
+                if private and sev == "blocker" and h.rule in TRIAGE_IN_PRIVATE:
+                    sev = "triage"
                 self.col.add(h.rule, sev, cls, gpath, no, h.match, f"{place_label}:{no}",
                              key=self.eng.fp_key(h), masked=f"term:{h.term}" if h.rule == "term" else None, note=note)
 
     def text(self, text: str, label: str = "<text>", cls: str = "publishable") -> None:
         """A publication text: a PR body, an issue, a release note, a commit message."""
-        self._text(label, label, _lines(text), cls)
+        self._text(label, label, _lines(text), cls, publication=True)
         self.cov.read.append(f"text {label}")
 
     # -- one file's bytes: the shared path of the tree, the index and the commits ---------------
@@ -1188,6 +1216,9 @@ class Scanner:
                                              note=sc(f.note)))
         c = self.cov
         notes = list(c.notes)
+        if self.visibility and any(not r.startswith("text ") for r in c.read):     # a text alone is public
+            vis = PRIVATE_NOTE if self.visibility == "private" else PUBLIC_NOTE
+            notes.append(f"{self.repo}: {vis}" if self.repo else vis)
         if self._big_binary:
             notes.append(f"{self._big_binary} binary file(s) over the size cap were not opened: binary files are not text-scanned")
         cov = Coverage([sc(x) for x in c.read], [(sc(a), sc(b)) for a, b in c.unread], [sc(x) for x in notes],
