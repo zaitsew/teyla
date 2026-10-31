@@ -502,7 +502,8 @@ def test_a_repo_cannot_shadow_teyla_or_supply_its_own_scanner(tmp_path, monkeypa
 def test_the_fallback_scanner_is_teylas_not_the_repos(tmp_path):
     d = repo(tmp_path, files={"scripts/leak_check.py": "raise SystemExit(0)\n"})
     cmd, cwd = ORIGINAL_LEAK(d)
-    assert not str(cmd[2]).startswith(str(d)) and cmd[1] == "-I" and cwd is None and str(d) in cmd
+    assert cmd[1] == "-I" and not any(str(d) + "/" in str(a) for a in cmd)   # never the repo's own copy
+    assert cwd == d or str(d) in cmd                  # the repo is reached as cwd (teyla leak) or as --repo
 
 
 def test_rls_replays_migrations_and_keeps_the_last_state(tmp_path):
