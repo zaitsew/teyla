@@ -307,8 +307,9 @@ def _connect_iq_output(path: str, entry: str) -> bool:
 
 
 def _spec_info_paths(text: str) -> list[str]:
-    """The `path:` under each block-style `info:` key of an XcodeGen spec."""
-    found, info_indent = [], None
+    """The `path:` that is a direct child of each block-style `info:` key of an XcodeGen spec.
+    A `path:` nested deeper (under `properties:`) is plist content, not the generated file."""
+    found, info_indent, child_indent = [], None, None
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
@@ -317,16 +318,16 @@ def _spec_info_paths(text: str) -> list[str]:
         if info_indent is not None:
             if indent <= info_indent:
                 info_indent = None
-            elif stripped.startswith("path:"):
-                value = stripped[5:].split(" #", 1)[0].strip().strip("'\"")
-                if value:
-                    found.append(value)
-                info_indent = None
-                continue
             else:
+                if child_indent is None:
+                    child_indent = indent
+                if indent == child_indent and stripped.startswith("path:"):
+                    value = stripped[5:].split(" #", 1)[0].strip().strip("'\"")
+                    if value:
+                        found.append(value)
                 continue
         if stripped == "info:":
-            info_indent = indent
+            info_indent, child_indent = indent, None
     return found
 
 

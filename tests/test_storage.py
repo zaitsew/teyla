@@ -485,6 +485,11 @@ def test_spec_info_paths_reads_only_the_path_under_info():
     assert storage._spec_info_paths(spec) == ["Info.plist"]
 
 
+def test_spec_info_paths_skips_a_path_nested_under_properties():
+    spec = "info:\n  properties:\n    path: Secrets.plist\n  path: Info.plist\n"
+    assert storage._spec_info_paths(spec) == ["Info.plist"]
+
+
 def test_connect_iq_bin_is_build_output(tmp_path):
     code_root, wt = _ignored_tree(tmp_path, "bin/\n")
     out = wt / "app" / "bin"
