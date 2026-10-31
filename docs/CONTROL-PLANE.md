@@ -132,6 +132,15 @@ evidence about this one.
   not UTC. The `input-hash` key expands the context globs and hashes each file's
   relative path plus its length-prefixed content, keyed by the routine ref.
 * Which gate runs, and whether `act` runs. `max_minutes`, as a wall clock per step.
+* **The leak guard** (`plugin/hooks/leak-guard.sh`, PreToolUse on Bash, Read, Edit and Write) is the
+  boundary for what an agent *publishes* and *reads*, not for what a run may do. A command that holds none
+  of its fixed tokens (`gh pr|issue|release|gist|repo|api`, `git commit|tag|merge`, `security`, a credential
+  path, `--visibility`) passes at once with no process started. A command that holds one is parsed, and the
+  text it publishes goes through `teyla leak --text -`; a finding, a credential read, a Keychain dump or
+  `gh repo edit --visibility public` is exit 2 with the scanner's masked lines. It fails closed on those
+  commands (no python, no scanner, a crash or a timeout is exit 2) and open on every other. It is separate
+  from the kill switch and from grants, and it runs with or without a `teyla run`. See
+  [LEAK](LEAK.md#leak-guard).
 * **The five schemes, per tool call, in the hook.** `fs.write:` globs on
   Write/Edit, matched against the path **resolved through symlinks**, with `*`
   confined to one path segment and only `**` crossing `/`. `net:` hosts on

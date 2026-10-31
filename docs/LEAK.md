@@ -115,6 +115,31 @@ secret rule whose glob matches every file is an error (exit 2): a whole file is 
 rules, only named files or one fingerprint. Editing `.leak-allow`, the terms file or the scanner is itself a
 change to review as one that touches credentials.
 
+## Leak guard
+
+`plugin/hooks/leak-guard.sh` is the agent's door to the scanner: a PreToolUse hook on Bash, Read, Edit and
+Write. A command with none of its fixed tokens passes at once, with no process started.
+
+- **Publications.** The title, body, notes, message, comment or description of `gh pr|issue|release|gist|repo`
+  and `gh api` calls and of `git commit|tag|merge`, plus a `-F`/`--body-file` file, a heredoc, a `$(cat ...)`
+  and a piped `cat` or `echo`, go to `teyla leak --text -`. Exit 1 is a refusal with the masked lines; so is
+  exit 2, with its coverage note. The hook never prints the text it scanned.
+- **Credential paths.** `~/.ssh/id_*` (not `.pub`), `~/.aws/credentials`, the private-terms list (and the file
+  `$TEYLA_PRIVATE_TERMS` names), `~/.appstoreconnect/`, `~/.grok/config.toml`, `~/.codex/auth.json` and
+  `config.toml`, `~/.claude/.credentials.json`, `~/.netrc`, `~/.docker/config.json`, and `*.pem` or `*.p8`
+  outside the repo are not read, copied or edited. `ls`, `stat` and `test` on them pass. Prose that names a
+  path (an `echo`, a commit message, a heredoc) is not a read.
+- **Keychain and visibility.** `security find-generic-password|find-internet-password` with `-w` or `-g`,
+  `security dump-keychain` and `gh repo edit --visibility public` are refused. `gh repo create --public` is not.
+- **Failure.** A command with no token passes even when the hook errors (one warning line). A command with a
+  token is refused when python3, the `teyla` package or the scanner is missing, crashes or times out, and when
+  the text cannot be read (a `$VAR` body, a pipe from an unknown program, a missing body file).
+- **Skip once.** Start the command with `TEYLA_LEAK_GUARD=0 `. It is appended to `$TEYLA_HOME/leak-skips.log`
+  (time and kind, never the text) and lifts only the publication scan.
+
+It is one door of four, not the wall: an encoded payload, a body built from a variable set in an earlier call,
+a release asset and the Grep tool are outside it. Wiring for Codex and Grok is in [HARNESSES](HARNESSES.md).
+
 ## For code that calls it
 
 `teyla.leak` offers `scan_text(text, cfg=None) -> list[Finding]`, `scan_repo(root)`, `scan_staged(root)`,
