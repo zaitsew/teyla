@@ -40,3 +40,5 @@ tests/test_health.py
 tests/test_platform.py
 # a scrubber test whose ask text holds a fake `token=` pair (gitleaks' generic rule flags it)
 tests/test_asks.py
+# fixtures that look like a password assignment, to test the leak scanner itself
+tests/test_leak.py
