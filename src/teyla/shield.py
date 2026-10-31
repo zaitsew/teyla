@@ -230,12 +230,15 @@ class Ctx:
         row = rows[-1]                                   # the latest `until` wins
         if row["until"] < self.today:
             return "FIX", f"accepted risk expired on {row['until']}: fix it or review the row ({row['doc']})"
-        doc = (self.repo / row["doc"]).resolve()
         try:
+            doc = (self.repo / row["doc"]).resolve()
             doc.relative_to(self.repo.resolve())
+            present = doc.is_file()
         except ValueError:
             return "FIX", f"accepted risk: doc {row['doc']} is not a file inside the repo"
-        if not doc.is_file():
+        except OSError:                                  # a symlink loop, a path too long: resolve() raises
+            return "FIX", f"accepted risk: doc {row['doc']} cannot be resolved"
+        if not present:
             return "FIX", f"accepted risk: doc {row['doc']} is missing"
         try:
             with open(doc, encoding="utf-8", errors="replace") as fh:

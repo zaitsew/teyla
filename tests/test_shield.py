@@ -678,3 +678,15 @@ def test_an_accepted_row_changes_nothing_when_url_key_is_false(tmp_path):
 def test_the_latest_until_wins_when_rows_repeat(tmp_path):
     rows = accepted(ago(10)) + accepted((TODAY + datetime.timedelta(days=30)).isoformat())
     assert status(shield.check(accepted_repo(tmp_path, rows)))["mcp"] == "NOTE"
+
+
+def test_accepted_risk_whose_doc_cannot_be_resolved_is_a_fix(tmp_path):
+    """A symlink loop at the doc path: resolve() raises OSError on some Pythons and is_file() answers False on
+    others; either way the row is a FIX with a reason, never a crash."""
+    d = accepted_repo(tmp_path, doc_text=None)
+    loop = d / "docs" / "NOTES.md"
+    loop.parent.mkdir(parents=True, exist_ok=True)
+    loop.symlink_to(loop)
+    rep = shield.check(d)
+    assert status(rep)["mcp"] == "FIX"
+    assert "cannot be resolved" in detail(rep, "mcp") or "is missing" in detail(rep, "mcp")
