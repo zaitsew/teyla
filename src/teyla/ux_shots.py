@@ -752,13 +752,18 @@ class Capture:
 
 _ATTACH = re.compile(
     r"^(?P<variant>[a-z0-9]+(?:-[a-z0-9]+)*)__(?P<route>[a-z0-9]+(?:-[a-z0-9]+)*)\.(?P<state>[a-z]+)"
-    r"(?:\.(?P<kind>elements|audit))?(?:_\d+_[0-9A-Fa-f-]{36})?(?:\.(?:png|json))?$")
+    r"(?:\.(?P<kind>elements|audit))?(?:\.(?:png|json))?$")
+# xcresulttool's suggestedHumanReadableName carries a `_<n>_<uuid>` run: Xcode 16 appends it to the name
+# (`en-light__today.loaded_0_<uuid>.png`), Xcode 27 inserts it before the name's last dot
+# (`en-light__today_0_<uuid>.loaded`, `en-light__today.loaded_0_<uuid>.elements`). It is dropped wherever it is.
+_ATTACH_RUN = re.compile(r"_\d+_[0-9A-Fa-f-]{36}")
 
 
 def classify_attachment(name: str) -> tuple[str, str, str] | None:
-    """(variant, screen id, kind) from an attachment name such as `en-light__today.loaded` or
-    `en-light__today.loaded.elements_0_<uuid>.json`; kind is png, elements or audit. None for others."""
-    m = _ATTACH.match(name)
+    """(variant, screen id, kind) from an attachment name such as `en-light__today.loaded`,
+    `en-light__today.loaded.elements_0_<uuid>.json` or Xcode 27's `en-light__today_0_<uuid>.loaded`;
+    kind is png, elements or audit. None for others."""
+    m = _ATTACH.match(_ATTACH_RUN.sub("", name))
     if not m or m["state"] not in STATES:
         return None
     return m["variant"], f"{m['route']}.{m['state']}", m["kind"] or "png"

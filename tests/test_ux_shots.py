@@ -224,6 +224,10 @@ def test_classify_attachment_names():
     assert c(f"en-light__today.loaded_0_{UUID}.png") == ("en-light", "today.loaded", "png")
     assert c(f"es-419-dark__plan-day.error.elements_2_{UUID}.json") == ("es-419-dark", "plan-day.error", "elements")
     assert c("en-large__today.listening.audit") == ("en-large", "today.listening", "audit")
+    # Xcode 27 puts the run suffix before the last dot of the name it was given.
+    assert c(f"ru-large__first-run_0_{UUID}.loaded") == ("ru-large", "first-run.loaded", "png")
+    assert c(f"ru-large__first-run.loaded_0_{UUID}.elements") == ("ru-large", "first-run.loaded", "elements")
+    assert c(f"ru-large__first-run.loaded_0_{UUID}.audit") == ("ru-large", "first-run.loaded", "audit")
     assert c("random attachment") is None
     assert c("en-light__today.sleeping") is None
 
