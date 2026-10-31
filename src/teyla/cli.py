@@ -117,6 +117,7 @@
   teyla ux judge A.png B.png [--repo R] [--both-orders] [--dry]  which of two screens is better on the five rubric items; --calibrate REPO against your decided pairs
   teyla scout design [--week W] [--dry] [--no-model]            the weekly design scout: what changed, at most two rule proposals
   teyla hosts [repo...] [--all] [--write] [--json] [--quiet]    every host a repo's code can reach, by file and line, against docs/PRIVACY.md; exit 1 on an undocumented host
+  teyla deps [repo] [--all] [--json] [--quiet] [--no-cache] [--dry]   known vulnerabilities in the pinned versions of the lockfiles (OSV); exit 1 on a HIGH/CRITICAL with a fix, 2 on a gap
 """
 from __future__ import annotations
 
@@ -595,6 +596,8 @@ def build_parser() -> argparse.ArgumentParser:
     scout_design_mod.register(sp)
     from . import hosts as hosts_mod
     hosts_mod.register(sp)
+    from . import deps as deps_mod
+    deps_mod.register(sp)
     from . import kit as kit_mod, post as post_mod
     kit_mod.register(sp)
     post_mod.register(sp)

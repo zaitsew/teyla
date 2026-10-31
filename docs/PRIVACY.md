@@ -19,6 +19,7 @@ with `--allow-network`. The gate is `src/teyla/net.py`.
 | 2 | `teyla update` (the daily routine runs it, if you installed the routine) | `github.com`, and `pypi.org` for build tools (not in code: `uv` and `pip` reach it) | `uv tool install` or `pip` fetches the new release. No user data. | Only if the routine is installed | closed |
 | 3 | `teyla models --refresh` | `models.dev` | A GET of the public model catalogue. No user data. | No (needs `--refresh`) | closed |
 | 4 | `teyla plugin install owner/repo`, and offer O6 of `teyla start` when you say yes and Claude Code has no Teyla plugin (it installs `zaitsew/teyla`) | `github.com` | `git clone` or `git pull` of the repo you named, or of `zaitsew/teyla` for O6. | No (you name the repo, or say yes to O6) | closed |
+| 32 | `teyla deps` (also in the Friday weekly routine as `teyla deps --all --quiet`) | `api.osv.dev` | A POST of `/v1/querybatch` with package names, ecosystems and versions read from lockfiles (`{"package": {"name", "ecosystem"}, "version"}`, at most 1000 per request), then a GET of `/v1/vulns/<id>` for each vulnerability id not already cached. The user agent is `teyla-deps/<version>`. Never a path, a repo name, a lockfile name or anything about you. Cached for a day in `~/.teyla/deps/cache.json` (mode 0600). `--dry` prints the counts and sends nothing. | Yes, once a week where the Friday weekly routine is installed; you can also run it by hand | closed |
 
 ## Calls through tools you already have
 
