@@ -1,7 +1,7 @@
 # Shield: nothing leaves that was not meant to
 
 Status: concept and roadmap, 2026-10-31. Wave 1 starts the same night. Decisions are numbered
-SH1–SH14 so later docs can cite them.
+SH1–SH15 so later docs can cite them.
 
 Shield is the part of Teyla that owns what must not leave: secrets, the owner's own data, and
 the users' data. It is the leak gate every repo runs before a commit, a push and a PR; the hook
@@ -201,8 +201,8 @@ scout over ten product repos. The findings that shaped the design:
   answer. Nothing in that path is heuristic: the token list is in the script, and the tests
   break the scanner on purpose and assert the refusal. These commands are rare and explicit,
   and the cost of a wrong refusal is one retry. A publication has no second door inside git, so the weekly
-  routine audits what was published anyway: `teyla leak --published` reads the week's PR bodies,
-  issue comments, releases and gists through the GitHub API and reports a finding as
+  routine audits what was published anyway: `teyla leak --published` reads the public repos' descriptions, READMEs, recent
+  commit identities and messages, issue and PR text and releases through the GitHub API and reports a finding as
   historical (rotate first, then edit the text).
 - **SH7. Cut a leg of the trifecta per product, in the contract.** Every MCP server and agent
   declares which legs it has: private data, untrusted content, outbound channel. A public
@@ -251,6 +251,18 @@ scout over ten product repos. The findings that shaped the design:
   data, explicit targets, a fixed request and time budget, third-party hosts blocked, no real
   payment or message, cleanup, and findings written locally or to a private issue tracker the
   owner named. An unrestricted attack agent against production is one more vulnerability.
+- **SH15. Terms and e-mails are triage in a repo recorded as private; the default is public.** A
+  repo records its visibility in the local git config value `teyla.visibility` (`public` or
+  `private`), which `teyla leak install` sets from `gh repo view`. In a repo recorded as private the
+  scanner lists the owner's name, other private terms and e-mail addresses as triage, because the
+  pre-commit hook reads every staged file as a blob and those words sit in hundreds of files of a
+  private repo: a hook that refuses nearly every commit teaches people to type the skip, which §5.1
+  says must never happen. Secrets, home paths, image metadata, harness configs and gitleaks
+  findings keep blocking everywhere. The default fails closed: unset, an unreadable lookup or any
+  other value means public, and a public repo blocks on terms and e-mails as before. A later flip
+  to public is covered twice: `gh repo edit --visibility public` is refused by the agent hook, and
+  the weekly `teyla leak --published` audit and a rerun of `teyla leak install` read the real
+  visibility back. `--published` and `--text` never use the private rule: they look at public text.
 
 ## 5. How it works
 
@@ -263,7 +275,7 @@ teyla leak --outgoing [remote]          commits, tags and messages the remote la
 teyla leak --commits <range>            an explicit range, as leak_check.py --commits
 teyla leak --text <file|->              a PR body, an issue, a release note before it is sent
 teyla leak --json                       findings with class, rule, fingerprint, masked excerpt
-teyla leak --published [owner]          the week's PR bodies, issue comments, releases and gists, read back through the API (weekly)
+teyla leak --published [owner]          what is already public (README, commits, issues, PRs, releases), read back through the API (weekly)
 teyla leak install [repo]               .githooks/pre-commit and pre-push, core.hooksPath
 teyla leak terms --suggest [--yes]      private-term candidates from the machine, masked
 ```
@@ -290,13 +302,18 @@ exempt from the secret rules. Editing `.leak-allow`, the private-terms list, the
 scanner is itself a change the review gate treats as touching credentials (`--high`).
 
 **Install.** `teyla leak install` writes `.githooks/pre-commit` (`teyla leak --staged`) and
-`.githooks/pre-push` (`teyla leak --outgoing "$remote"`), sets `core.hooksPath`, and chains an
-existing hook rather than replacing it. Where `teyla` is not installed the hook prints one line
+`.githooks/pre-push` (`teyla leak --outgoing "$remote"`), sets `core.hooksPath`, records the repo's
+visibility (SH15), and chains an existing hook rather than replacing it. Where `teyla` is not installed the hook prints one line
 and exits 2: a missing scanner is a coverage gap, not a pass. `TEYLA_LEAK=0` skips a hook for
 one command, logged to `~/.teyla/leak-skips.log` so the skip is on record.
 The agent hook has its own switch, `TEYLA_LEAK_GUARD=0`, which lifts only the publication scan
 for one command; the credential-path, Keychain and visibility rules stay on. One variable never
 opens both doors.
+
+**Visibility.** In a repo whose local git config has `teyla.visibility = private` (set by `teyla leak
+install`, SH15), the `term` and `email` rules report triage instead of blocker, so the hooks do not
+refuse every commit of a private repo; the coverage says so. Unset or any other value is public.
+Secrets, home paths and gitleaks findings block in both.
 
 **What it does not do.** It does not rewrite history and it does not rotate a key. A historical
 finding's first line is "rotate this credential today"; history rewriting is a separate,

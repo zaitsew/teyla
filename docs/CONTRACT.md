@@ -71,7 +71,7 @@ max_age_days = 30                       # optional; default 30
 | Requirement | Source | OK when |
 |---|---|---|
 | contract | the section | tier, data classes, legs, rls and evidence rows are well formed; `data` is declared |
-| leak | repo | the leak scanner exits 0 (the `leak` command when this Teyla has it, else Teyla's own `scripts/leak_check.py`); the repo's copy is never run; no scanner is a FIX |
+| leak | repo | the leak scanner exits 0 (the `leak` command when this Teyla has it, else Teyla's own `scripts/leak_check.py`); the repo's copy is never run; no scanner is a FIX. In a repo recorded as private (git config `teyla.visibility = private`, set by `teyla leak install`) terms and e-mails are triage: no blocker and N triage is OK, with the count in the text (SHIELD SH15) |
 | hooks | repo | `.githooks/pre-commit` and `pre-push` are executable and `core.hooksPath` is `.githooks` |
 | hosts | repo | the `hosts` file has a table; where Teyla has a `hosts` command it must also exit 0 |
 | lockfile | repo | each npm, Deno, SwiftPM, Python, Ruby, Go or Cargo manifest has its lockfile |

@@ -364,6 +364,53 @@ def _target_repos(args) -> list[Path]:
     return [root]
 
 
+# --- the repo's visibility ---------------------------------------------------------------------
+
+def _gh_visibility(slug: str) -> tuple[str | None, str]:
+    """(`public` | `private` | None, why not): what `gh repo view` says about OWNER/NAME. Anything else gh prints
+    (`internal`, an error) is None, so nothing but those two words is ever stored."""
+    env = {**os.environ, "GH_PROMPT_DISABLED": "1", "NO_COLOR": "1", "GH_NO_UPDATE_NOTIFIER": "1"}
+    try:
+        p = subprocess.run(["gh", "repo", "view", slug, "--json", "visibility", "-q", ".visibility"],
+                           capture_output=True, text=True, timeout=30, env=env)
+    except FileNotFoundError:
+        return None, "gh is not installed"
+    except (OSError, subprocess.SubprocessError):
+        return None, "gh did not answer"
+    if p.returncode != 0:
+        return None, "gh could not read the repo (not signed in, or no access)"
+    value = p.stdout.strip().lower()
+    if value in leak.VISIBILITY_VALUES:
+        return value, ""
+    return None, f"gh reports {value or 'nothing'!r}, which is neither public nor private"
+
+
+def record_visibility(root: Path) -> str:
+    """Store `private` or `public` in the local git config `teyla.visibility` from the repo's origin (or upstream),
+    and return one line to print. Without a GitHub remote, gh, a signed-in gh or the network gate, nothing is
+    stored: the scanner treats an unset repo as public (a private repo then lists its terms and e-mails as
+    blockers, which is the safe way to be wrong)."""
+    from . import net, shield
+    current = leak.repo_visibility(root)
+    hand = f"git config {leak.VISIBILITY_KEY} private"
+    slug = shield.github_slug(root)
+    if slug is None:
+        why = "no GitHub remote"
+    elif not net.gate("the repo visibility lookup (gh repo view)", quiet=True):
+        why = "safe mode is on"
+    else:
+        value, why = _gh_visibility(slug)
+        if value:
+            r = _git(root, "config", leak.VISIBILITY_KEY, value)
+            if r.returncode == 0:
+                tail = "terms and e-mails are triage" if value == "private" else "terms and e-mails block"
+                return f"  visibility: {value} ({leak.VISIBILITY_KEY}); {tail}"
+            why = f"cannot write the git config: {r.stderr.strip()}"
+    if current:
+        return f"  visibility: {current} kept ({why})"
+    return f"  visibility: not recorded ({why}); treated as public. For a private repo: {hand}"
+
+
 def cmd_install(args) -> int:
     try:
         repos = _target_repos(args)
@@ -374,6 +421,8 @@ def cmd_install(args) -> int:
     for r in repos:
         c, line = (uninstall if args.uninstall else install)(r)
         print(line)
+        if c == 0 and not args.uninstall:
+            print(record_visibility(r))
         code = max(code, c)
     if code == 0 and not args.uninstall:
         print("Not committed: review and commit the hooks directory in each repo.")

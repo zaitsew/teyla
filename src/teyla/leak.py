@@ -5,6 +5,7 @@
     teyla leak --outgoing [remote]   the commits (and annotated tags) the remote's tracking refs lack; default origin
     teyla leak --commits RANGE       an explicit revision range, as `scripts/leak_check.py --commits`
     teyla leak --text FILE|-         a PR body, an issue, a release note, a commit message
+    teyla leak --published [OWNER]   what is already public on GitHub (leak_published.py; the one surface that uses the network)
     teyla leak --json | --quiet | --require-gitleaks
 
 The rules (term, email, home, secret, cyrillic) are the ones in `scripts/leak_check.py`, which this module
@@ -13,7 +14,7 @@ publication text, `.env*` files that are not tracked, harness configs, plists, s
 metadata), the classes (publishable, historical, local-only), the severities (blocker, triage, lang), masked
 output, de-duplication, gitleaks as a second engine, and the exit code. docs/LEAK.md is the reference.
 
-No network call: it reads git objects and files, and runs `gitleaks` (a local process) when it is installed.
+No network call (except `--published`, in leak_published.py): it reads git objects and files, and runs `gitleaks` (a local process) when it is installed.
 Calling code uses `scan_text`, `scan_repo`, `scan_staged`, `scan_outgoing`, `scan_range`, `exit_code`, `render`.
 """
 from __future__ import annotations
@@ -316,6 +317,28 @@ def read_blobs(root: Path, specs: list[str], cap: int = DEFAULT_MAX_BYTES) -> li
 
 
 # --- configuration -----------------------------------------------------------------------------
+
+VISIBILITY_KEY = "teyla.visibility"
+VISIBILITY_VALUES = ("public", "private")
+PRIVATE_NOTE = "visibility: private (git config teyla.visibility): terms and e-mails are triage"
+PUBLIC_NOTE = "visibility: public (git config teyla.visibility)"
+TRIAGE_IN_PRIVATE = ("term", "email")          # Teyla's own rules; gitleaks, secrets and home paths always block
+
+
+def repo_visibility(root: Path | None) -> str | None:
+    """The repo's recorded visibility: `public` or `private` from the local git config value `teyla.visibility`,
+    None when it is unset or holds anything else (the scanner then treats the repo as public: fail closed)."""
+    if root is None:
+        return None
+    try:
+        # --local only: a global or system value would downgrade every repo without a local one.
+        p = subprocess.run(["git", "-C", str(root), "config", "--local", "--get", VISIBILITY_KEY], capture_output=True,
+                           text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    value = p.stdout.strip() if p.returncode == 0 else ""
+    return value if value in VISIBILITY_VALUES else None
+
 
 def load_config(root: Path | None):
     """The rule configuration: the private terms (env or default file) and the repo's `.leak-allow`."""
@@ -649,7 +672,9 @@ class Scanner:
         self.cov = Coverage()
         self.repo = repo
         self._gitleaks_noted = False
+        self._text_gl: tuple = ("publishable", "", None)
         self._tracked: set[str] | None = None
+        self.visibility = repo_visibility(root)
         if self.cfg.terms_status != "ok":
             if self.cfg.terms_explicit or self.cfg.terms_status == "unreadable":
                 self.cov.unread.append(("private terms", f"{self.cfg.terms_status}: {self.cfg.terms_path}"))
@@ -661,7 +686,10 @@ class Scanner:
     # -- text ---------------------------------------------------------------------------------
 
     def _text(self, place_label: str, gpath: str, lines, cls: str, *, lang: bool = True, cap: str | None = None,
-              note: str = "") -> None:
+              note: str = "", publication: bool = False) -> None:
+        """`publication` marks a text that is public whatever the repo is (a PR body): the private-repo rule
+        that makes terms and e-mails triage never applies to it."""
+        private = self.visibility == "private" and not publication
         rules = self.eng.PathRules(gpath, self.cfg, triage=True, lang=lang)
         if rules.skip:
             return
@@ -675,12 +703,14 @@ class Scanner:
                 hits = [h for h in hits if h.rule != "cyrillic"] + [runs[0]._replace(match="".join(h.match for h in runs))]
             for h in hits:
                 sev = "triage" if cap == "triage" and h.severity == "blocker" else h.severity
+                if private and sev == "blocker" and h.rule in TRIAGE_IN_PRIVATE:
+                    sev = "triage"
                 self.col.add(h.rule, sev, cls, gpath, no, h.match, f"{place_label}:{no}",
                              key=self.eng.fp_key(h), masked=f"term:{h.term}" if h.rule == "term" else None, note=note)
 
     def text(self, text: str, label: str = "<text>", cls: str = "publishable") -> None:
         """A publication text: a PR body, an issue, a release note, a commit message."""
-        self._text(label, label, _lines(text), cls)
+        self._text(label, label, _lines(text), cls, publication=True)
         self.cov.read.append(f"text {label}")
 
     # -- one file's bytes: the shared path of the tree, the index and the commits ---------------
@@ -1038,8 +1068,10 @@ class Scanner:
             self.cov.notes.append(note)
             self._gitleaks_noted = True
 
-    def gitleaks_text(self, text: str, label: str) -> None:
-        """gitleaks over a publication text (the CLI's `--text`)."""
+    def gitleaks_text(self, text: str, label: str, *, cls: str = "publishable", note: str = "", locate=None) -> None:
+        """gitleaks over a publication text (the CLI's `--text`). `cls` and `note` mark the findings (`--published`
+        passes `historical`); `locate(line)` maps a line of `text` to (path, line) when it joins several texts."""
+        self._text_gl = (cls, note, locate)
         self._gitleaks("text", text=text, label=label)
 
     def _gitleaks(self, mode: str, rng: str | None = None, cls_of=None, *, text: str = "", label: str = "") -> None:
@@ -1122,6 +1154,7 @@ class Scanner:
         tracked = self.tracked() if mode == "tree" else set()
         for it in items:
             rel = str(it.get("File", ""))
+            t_cls, t_note, locate = self._text_gl
             for prefix in (stage_prefix, str(self.root or "") + os.sep):
                 if prefix != os.sep and rel.startswith(prefix):
                     rel = rel[len(prefix):]
@@ -1134,16 +1167,19 @@ class Scanner:
             line = int(it.get("StartLine") or 0)
             end = int(it.get("EndLine") or line)
             sha = str(it.get("Commit") or "")
-            rules = self.eng.PathRules(rel, self.cfg)
             lh = self._gl_hash(mode, tmpd, br, raw_rel, sha, line, end)
+            if mode == "text" and locate is not None:
+                rel, line = locate(line)
+            rules = self.eng.PathRules(rel, self.cfg)
             key = f"{it.get('RuleID')}:{lh}" if lh else f"{rel}:{it.get('RuleID')}:{line}:line-unread"
             # An exception never applies to a finding whose matched text was not read: nothing ties it to a value.
             if rules.skip or not rules.sec or (lh and rules.excepted(rule, key)):
                 continue
-            cls = cls_of(sha) if (cls_of and sha) else "publishable"
+            cls = cls_of(sha) if (cls_of and sha) else (t_cls if mode == "text" else "publishable")
             place = f"commit:{sha[:8]}:{rel}:{line}" if sha else f"{rel}:{line}"
+            why = "found by gitleaks" if lh else "found by gitleaks; line unread, so no exception applies"
             self.col.add(rule, "blocker", cls, rel, line, key, place, masked="redacted",
-                         note="found by gitleaks" if lh else "found by gitleaks; line unread, so no exception applies")
+                         note=f"{t_note}; {why}" if mode == "text" and t_note else why)
 
     def _stage_tracked(self, stage: Path) -> None:
         """Hard links (a copy of a small file when linking fails) of the tracked regular files under `stage`
@@ -1180,6 +1216,9 @@ class Scanner:
                                              note=sc(f.note)))
         c = self.cov
         notes = list(c.notes)
+        if self.visibility and any(not r.startswith("text ") for r in c.read):     # a text alone is public
+            vis = PRIVATE_NOTE if self.visibility == "private" else PUBLIC_NOTE
+            notes.append(f"{self.repo}: {vis}" if self.repo else vis)
         if self._big_binary:
             notes.append(f"{self._big_binary} binary file(s) over the size cap were not opened: binary files are not text-scanned")
         cov = Coverage([sc(x) for x in c.read], [(sc(a), sc(b)) for a, b in c.unread], [sc(x) for x in notes],
@@ -1306,6 +1345,9 @@ def _merge(results: list[Result]) -> Result:
 
 
 def run(args) -> tuple[Result, int]:
+    if getattr(args, "published", None) is not None:
+        from . import leak_published
+        return leak_published.run(args)
     eng = _engine()
     if args.all:
         if args.repo or args.staged or args.outgoing or args.commits or args.text:
@@ -1379,6 +1421,9 @@ def cmd_leak(args) -> int:
         print(to_json(res, code))
     elif args.quiet:
         print(len(res.blockers))
+    elif getattr(args, "published", None) is not None:
+        from . import leak_published
+        print(leak_published.render(res, require_gitleaks=args.require_gitleaks, allow_partial=args.allow_partial))
     else:
         print(render(res, require_gitleaks=args.require_gitleaks, allow_partial=args.allow_partial))
     return code
@@ -1400,6 +1445,10 @@ def register(sp):
     q.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES, metavar="N",
                    help=f"skip (and report as not read) a file or blob over N bytes; default {DEFAULT_MAX_BYTES}")
     q.add_argument("--allow-partial", action="store_true", help="exit 0 although files were skipped (over the cap, outside the repo)")
+    q.add_argument("--published", nargs="?", const="", default=None, metavar="OWNER",
+                   help="audit what is already public on GitHub for OWNER (default: the owners of the remotes under code_root); needs gh and the network")
+    q.add_argument("--max-requests", type=int, default=400, metavar="N", help="with --published: at most N gh calls; default 400")
+    q.add_argument("--allow-network", action="store_true", help="safe mode: allow the gh calls of --published for this one run")
     return q
 
 
