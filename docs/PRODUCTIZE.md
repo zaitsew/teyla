@@ -193,6 +193,8 @@ teyla productize ~/repos/thing   # or one
 teyla productize --owner-steps   # one numbered list of what only you can do
 ```
 
+When a product changes tier, its `[security]` contract changes with it: see [CONTRACT.md](CONTRACT.md), and run `teyla shield check <repo>` the same day.
+
 Declare, in the repo's `teyla.toml`, who it serves and who it should serve:
 
 ```toml

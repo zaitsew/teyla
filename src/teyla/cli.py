@@ -526,6 +526,8 @@ def build_parser() -> argparse.ArgumentParser:
     from . import platform as platform_mod, productize as productize_mod
     doctor.register(sp); update.register(sp); _config.register(sp)
     platform_mod.register(sp); productize_mod.register(sp)
+    from . import shield as shield_mod
+    shield_mod.register(sp)
     from . import testflight as testflight_mod
     testflight_mod.register(sp)
     from . import play as play_mod
