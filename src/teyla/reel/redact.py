@@ -117,6 +117,10 @@ class Redactor:
     def has_term(self, text: str) -> bool:
         return any(r.search(text) for r in self._terms)
 
+    def term_spans(self, text: str) -> list[tuple[int, int]]:
+        """Where each private term matches in `text`, as (start, end) pairs."""
+        return [(m.start(), m.end()) for r in self._terms for m in r.finditer(text)]
+
     @staticmethod
     def has_entropy_run(text: str) -> bool:
         if _HEX_RUN.search(text):
