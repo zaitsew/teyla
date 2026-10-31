@@ -349,4 +349,6 @@ def register(sp):
     q = sp.add_parser("mcp", help="run Teyla as an MCP server on stdio (asks, answer, intent, load, routines, monitor)")
     q.set_defaults(fn=cmd_mcp)
     q.add_argument("--list-tools", action="store_true", help="print the tool names with one line each, then exit")
+    from . import mcp_probe
+    mcp_probe.register(q)
     return q

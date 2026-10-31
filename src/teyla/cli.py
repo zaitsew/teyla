@@ -84,6 +84,7 @@
   teyla routine install|status|catch-up [--if-stale] [--dry]     Teyla's own daily (update+doctor) and weekly launchd routines; catch-up runs what launchd skipped
   teyla grok-cost [--last|--session ID] [--cwd PATH] [--days N] [--by project|session] [--json]   Grok CLI cost at list price
   teyla mcp [--list-tools]                                       Teyla as an MCP server on stdio: asks, answer, intent, load, routines, monitor
+  teyla mcp probe <url> [--token T] [--budget N] [--i-own-this]   check an MCP server you own: auth, pinning, schemas, limits, SSRF, canary
   teyla connectors [--days N] [--json]                             per-connector round-trips, read/write, empty-or-error rate; advice C1–C4
   teyla plugins [name|path] [--json]                              skill/rule/fact quality pass over a Claude Code plugin
   teyla plugin install <source>                                   install a plugin by hand-editing its registry (no `claude` CLI)
@@ -117,6 +118,7 @@
   teyla ux judge A.png B.png [--repo R] [--both-orders] [--dry]  which of two screens is better on the five rubric items; --calibrate REPO against your decided pairs
   teyla scout design [--week W] [--dry] [--no-model]            the weekly design scout: what changed, at most two rule proposals
   teyla hosts [repo...] [--all] [--write] [--json] [--quiet]    every host a repo's code can reach, by file and line, against docs/PRIVACY.md; exit 1 on an undocumented host
+  teyla deps [repo] [--all] [--json] [--quiet] [--no-cache] [--dry]   known vulnerabilities in the pinned versions of the lockfiles (OSV); exit 1 on a HIGH/CRITICAL with a fix, 2 on a gap
 """
 from __future__ import annotations
 
@@ -525,6 +527,8 @@ def build_parser() -> argparse.ArgumentParser:
     from . import platform as platform_mod, productize as productize_mod
     doctor.register(sp); update.register(sp); _config.register(sp)
     platform_mod.register(sp); productize_mod.register(sp)
+    from . import shield as shield_mod
+    shield_mod.register(sp)
     from . import testflight as testflight_mod
     testflight_mod.register(sp)
     from . import play as play_mod
@@ -595,6 +599,8 @@ def build_parser() -> argparse.ArgumentParser:
     scout_design_mod.register(sp)
     from . import hosts as hosts_mod
     hosts_mod.register(sp)
+    from . import deps as deps_mod
+    deps_mod.register(sp)
     from . import leak as leak_mod
     leak_mod.register(sp)
     from . import leak_install as leak_install_mod

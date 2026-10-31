@@ -19,6 +19,7 @@ with `--allow-network`. The gate is `src/teyla/net.py`.
 | 2 | `teyla update` (the daily routine runs it, if you installed the routine) | `github.com`, and `pypi.org` for build tools (not in code: `uv` and `pip` reach it) | `uv tool install` or `pip` fetches the new release. No user data. | Only if the routine is installed | closed |
 | 3 | `teyla models --refresh` | `models.dev` | A GET of the public model catalogue. No user data. | No (needs `--refresh`) | closed |
 | 4 | `teyla plugin install owner/repo`, and offer O6 of `teyla start` when you say yes and Claude Code has no Teyla plugin (it installs `zaitsew/teyla`) | `github.com` | `git clone` or `git pull` of the repo you named, or of `zaitsew/teyla` for O6. | No (you name the repo, or say yes to O6) | closed |
+| 32 | `teyla deps` (also in the Friday weekly routine as `teyla deps --all --quiet`) | `api.osv.dev` | A POST of `/v1/querybatch` with package names, ecosystems and versions read from lockfiles (`{"package": {"name", "ecosystem"}, "version"}`, at most 1000 per request), then a GET of `/v1/vulns/<id>` for each vulnerability id not already cached. The user agent is `teyla-deps/<version>`. Never a path, a repo name, a lockfile name or anything about you. Cached for a day in `~/.teyla/deps/cache.json` (mode 0600). `--dry` prints the counts and sends nothing. | Yes, once a week where the Friday weekly routine is installed; you can also run it by hand | closed |
 
 ## Calls through tools you already have
 
@@ -60,6 +61,12 @@ These use your own `claude`, `codex` or `grok` login. The text goes to that prov
 | 30 | `teyla copy judge <copy.json> --model` | OpenAI, through `codex-lane` (`codex exec`, read-only, GPT-6.1 Sol) | One call: the table's rows that passed the code checks (key, control, state, budget, the en/es/ru strings), the voice charts, the glossary and the rules. | No (needs `--model`) | closed |
 | 31 | `teyla copy apply <copy.json> <repo> --pr` | The product repo's own remote, and `api.github.com` via `gh` | `git push` of a new branch that holds the changed string catalogs; a PR title and a body listing the changed keys. Your `gh` token. | No (needs `--pr`) | closed |
 
+## Calls to a server you name
+
+| # | Trigger | Host | What is sent | Default on | Safe mode |
+|---|---|---|---|---|---|
+| 33 | `teyla mcp probe <url>` (see [MCP-SECURITY.md](MCP-SECURITY.md)) | The one host in the URL you give, only if the current repo's `teyla.toml` or `docs/PRIVACY.md` names it, or you pass `--i-own-this` | JSON-RPC 2.0 POSTs: `initialize`, `tools/list` and `tools/call`, with the texts of `templates/security/injection_cases.json` (attacker URLs, canary strings, one 1 MB string) as arguments, and your `--token` in an `Authorization` header over https or to a loopback host. At most `--budget` requests (default 60) in `--seconds` (default 120). No redirect is followed. It calls no write-like tool unless `--write TOOL` names it. | No (you run it) | closed |
+
 ## Sync you switch on
 
 | # | Trigger | Where | What is sent | Default on |
@@ -74,11 +81,11 @@ These use your own `claude`, `codex` or `grok` login. The text goes to that prov
 
 ## The MCP server
 
-`teyla mcp` talks to an MCP client over stdio. It opens no socket and makes no network call itself. Its tools
+`teyla mcp` (with no subcommand) talks to an MCP client over stdio. It opens no socket and makes no network call itself. Its tools
 run commands listed above: `teyla_routines` is row 7, and `teyla_answer` is row 18, so it starts a local `claude` or
 `codex` process exactly as `teyla answer` does. `teyla_asks`, `teyla_intent`, `teyla_load` and `teyla_monitor` read
 local files only. No tool reaches `--issues`, `--model`, `--share`, `--allow-network` or any other call that
-needs a flag. The text it returns goes to the MCP client you connected, under that client's own policy.
+needs a flag. The text it returns goes to the MCP client you connected, under that client's own policy. `teyla mcp probe` is a different command: it is a client, and it is row 32.
 
 ## Not a call
 
