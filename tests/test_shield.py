@@ -583,3 +583,110 @@ def test_round_two_fixes(tmp_path):
     assert shield._evidence_state.__code__.co_argcount == 4
     # TODO must be a whole word: Mastodon is not template text
     assert not re.search(r"\bTODO\b", "Data goes to Mastodon and nowhere else.")
+
+
+# --- accepted risks ------------------------------------------------------------------------
+
+URL_KEY_MCP = 'data = ["account"]\nmcp = { auth = "bearer", url_key = true, rate_limit = true, static_tools = true }\n'
+ACCEPTED_DOC = "# Privacy\n\n## Accepted risk: the MCP URL is the key\n\nMitigations: rotation, rate limit.\n"
+
+
+def accepted(until=None, *, what="mcp.url_key", doc="docs/NOTES.md", why="a client cannot send headers") -> str:
+    until = until or (TODAY + datetime.timedelta(days=90)).isoformat()
+    return (f'\n[[security.accepted]]\nwhat = "{what}"\nwhy = "{why}"\ndoc = "{doc}"\nuntil = {until}\n')
+
+
+def accepted_repo(tmp_path, row=None, *, doc_text=ACCEPTED_DOC, name="thing", **kw):
+    files = {} if doc_text is None else {"docs/NOTES.md": doc_text}
+    return repo(tmp_path, name, security=URL_KEY_MCP, extra_toml=row if row is not None else accepted(),
+                files=files, **kw)
+
+
+def test_accepted_url_key_is_a_note_with_the_decision_on_record(tmp_path):
+    until = (TODAY + datetime.timedelta(days=90)).isoformat()
+    rep = shield.check(accepted_repo(tmp_path))
+    assert status(rep)["mcp"] == "NOTE"
+    assert detail(rep, "mcp") == f"accepted risk until {until} (docs/NOTES.md): a client cannot send headers"
+    assert rep["counts"]["FIX"] == 0 and rep["exit"] == 0
+
+
+def test_accepted_row_is_good_on_its_last_day_and_expired_the_day_after(tmp_path):
+    d = accepted_repo(tmp_path, accepted(TODAY.isoformat()))
+    assert status(shield.check(d))["mcp"] == "NOTE"
+    rep = shield.check(d, today=TODAY + datetime.timedelta(days=1))
+    assert status(rep)["mcp"] == "FIX" and rep["exit"] == 1
+    assert f"expired on {TODAY.isoformat()}" in detail(rep, "mcp")
+
+
+def test_expired_accepted_risk_is_a_fix(tmp_path):
+    rep = shield.check(accepted_repo(tmp_path, accepted(ago(3))))
+    assert status(rep)["mcp"] == "FIX" and f"expired on {ago(3)}" in detail(rep, "mcp")
+
+
+def test_accepted_risk_with_a_missing_doc_is_a_fix(tmp_path):
+    rep = shield.check(accepted_repo(tmp_path, doc_text=None))
+    assert status(rep)["mcp"] == "FIX" and "docs/NOTES.md is missing" in detail(rep, "mcp")
+
+
+def test_accepted_risk_with_a_doc_that_lacks_the_heading_is_a_fix(tmp_path):
+    for text in ("# Privacy\n\nNo accepted risk here, just prose.\n", "# Privacy\n\nsomething else\n"):
+        rep = shield.check(accepted_repo(tmp_path, doc_text=text, name="t" + str(abs(hash(text)))))
+        assert status(rep)["mcp"] == "FIX" and "lacks an \"Accepted risk\" heading" in detail(rep, "mcp")
+
+
+def test_accepted_heading_may_be_in_any_case_and_level(tmp_path):
+    rep = shield.check(accepted_repo(tmp_path, doc_text="### the ACCEPTED RISK\n"))
+    assert status(rep)["mcp"] == "NOTE"
+
+
+def test_accepted_doc_outside_the_repo_is_a_fix(tmp_path):
+    (tmp_path / "outside.md").write_text(ACCEPTED_DOC)
+    rep = shield.check(accepted_repo(tmp_path, accepted(doc="../outside.md")))
+    assert status(rep)["mcp"] == "FIX" and "not a file inside the repo" in detail(rep, "mcp")
+
+
+def test_unknown_what_is_a_contract_fix_and_does_not_accept_anything(tmp_path):
+    rep = shield.check(accepted_repo(tmp_path, accepted(what="secrets.repo")))
+    assert status(rep)["contract"] == "FIX" and "what = 'secrets.repo'" in detail(rep, "contract")
+    assert status(rep)["mcp"] == "FIX" and "the URL is the secret" in detail(rep, "mcp")
+
+
+@pytest.mark.parametrize("row,word", [
+    ('\n[[security.accepted]]\nwhat = "mcp.url_key"\ndoc = "docs/NOTES.md"\nuntil = 2099-01-01\n', "lacks why"),
+    ('\n[[security.accepted]]\nwhat = "mcp.url_key"\nwhy = "x"\ndoc = "docs/NOTES.md"\nuntil = "soon"\n', "YYYY-MM-DD"),
+    ('\n[security.accepted]\nwhat = "mcp.url_key"\n', "must be a list"),
+])
+def test_a_malformed_accepted_row_is_a_contract_fix(tmp_path, row, word):
+    rep = shield.check(accepted_repo(tmp_path, row))
+    assert status(rep)["contract"] == "FIX" and word in detail(rep, "contract")
+    assert status(rep)["mcp"] == "FIX"
+
+
+def test_an_accepted_url_key_does_not_hide_the_other_mcp_checks(tmp_path):
+    mcp = 'data = ["account"]\nmcp = { auth = "none", url_key = true, rate_limit = true, static_tools = true }\n'
+    d = repo(tmp_path, users="family", security=mcp, extra_toml=accepted(), files={"docs/NOTES.md": ACCEPTED_DOC})
+    rep = shield.check(d)
+    assert status(rep)["mcp"] == "FIX" and "needs auth" in detail(rep, "mcp")
+
+
+def test_an_accepted_row_changes_nothing_when_url_key_is_false(tmp_path):
+    mcp = 'data = ["account"]\nmcp = { auth = "bearer", url_key = false, rate_limit = true, static_tools = true }\n'
+    d = repo(tmp_path, security=mcp, extra_toml=accepted(), files={"docs/NOTES.md": ACCEPTED_DOC})
+    assert status(shield.check(d))["mcp"] == "OK"
+
+
+def test_the_latest_until_wins_when_rows_repeat(tmp_path):
+    rows = accepted(ago(10)) + accepted((TODAY + datetime.timedelta(days=30)).isoformat())
+    assert status(shield.check(accepted_repo(tmp_path, rows)))["mcp"] == "NOTE"
+
+
+def test_accepted_risk_whose_doc_cannot_be_resolved_is_a_fix(tmp_path):
+    """A symlink loop at the doc path: resolve() raises OSError on some Pythons and is_file() answers False on
+    others; either way the row is a FIX with a reason, never a crash."""
+    d = accepted_repo(tmp_path, doc_text=None)
+    loop = d / "docs" / "NOTES.md"
+    loop.parent.mkdir(parents=True, exist_ok=True)
+    loop.symlink_to(loop)
+    rep = shield.check(d)
+    assert status(rep)["mcp"] == "FIX"
+    assert "cannot be resolved" in detail(rep, "mcp") or "is missing" in detail(rep, "mcp")

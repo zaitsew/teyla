@@ -348,6 +348,12 @@ what = "rls-test"
 commit = "abc1234"
 date = 2026-10-31
 how = "deno task test:tenancy (anon, A, B on every table and RPC)"
+
+[[security.accepted]]                   # a decided, time-boxed risk: a NOTE until `until`, a FIX after it
+what = "mcp.url_key"
+why = "the client cannot send headers; rotated monthly, rate limited"
+doc = "docs/PRIVACY.md"                 # must exist and hold an "Accepted risk" heading
+until = 2027-04-30
 ```
 
 `teyla shield check <repo> [--release]` prints, per requirement of the tier: OK, FIX with the
@@ -360,6 +366,13 @@ coverage, IP, account and global limits, spend caps, abuse reporting and an inci
 `--release` is the step `~/ops/bin/testflight` and the Play upload run first; a FIX stops the
 upload. Store review notes carry reviewer instructions and a DATA paragraph (what is collected,
 where it goes, which providers), never an infrastructure detail.
+
+**Accepted risks.** A product can keep a risk on purpose, for a limited time. A
+`[[security.accepted]]` row names the check (`mcp.url_key`, the URL-as-secret MCP route, is the only one),
+one line of why, a `doc` in the repo with an "Accepted risk" heading that holds the mitigations, and an
+`until` date. While it is in force the check is a NOTE, a decision on record; after the date, or with the
+doc missing, it is a FIX again. A FIX is an open item and a NOTE is a decided one, so the owner can tell
+them apart in `teyla shield`. The row never hides the other checks of the same section.
 
 ### 5.4 Outbound inventory
 
@@ -544,6 +557,9 @@ Decided here with a default; the default stands when nothing is said.
    already public and a rewrite buys nothing.
 7. **The red team.** Default: wave 2, staging only, synthetic data, a written target list and a
    request budget, after the pilot's suite is green.
+8. **Accepted risks.** Default: the owner reviews each `[[security.accepted]]` row when its `until`
+   date comes; the check turns into a FIX the day after, which is the reminder. Renewing a row is the
+   owner's edit, with the doc updated in the same change.
 
 ### 9.4 Credential separation: the 30-minute checklist
 

@@ -18,6 +18,12 @@ A repo declares its contract in the same `teyla.toml` that holds `[productize]`:
     date = 2026-10-31
     how = "deno task test:tenancy"
 
+    [[security.accepted]]           # a decided risk, time-boxed: a NOTE until `until`, a FIX after it
+    what = "mcp.url_key"
+    why = "one line"
+    doc = "docs/PRIVACY.md"         # must exist and hold an "Accepted risk" heading
+    until = 2027-04-30
+
 `teyla shield check <repo> [--release] [--json]` prints one line per requirement of the tier:
 OK, FIX (with the one-line fix), STALE (evidence older than its limit) or NOTE (reported, never
 blocking). Some requirements are read from the repo (hooks, lockfile, RLS in migrations, a
@@ -60,6 +66,8 @@ SECRETS_OK = ("runtime-env", "keychain", "hub", "none")
 SECRETS_BAD = ("repo", "client")
 RLS_VALUES = ("none", "migrations", "migrations+ab-test")
 DEFAULT_MAX_AGE = 30
+ACCEPTABLE = ("mcp.url_key",)                # the checks a [[security.accepted]] row may cover
+ACCEPTED_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+.*\baccepted risk\b", re.IGNORECASE | re.MULTILINE)
 SECTION_BEGIN = "# --- security contract ---"
 SECTION_END = "# --- end security contract ---"
 NOT_ENFORCED = "not enforced on this machine: credential separation (see SHIELD §5.7)"
@@ -140,6 +148,7 @@ class Ctx:
         self.mcp = self.sec["mcp"] if isinstance(self.sec.get("mcp"), dict) else None
         self.problems: list[str] = []
         self.evidence = self._evidence()
+        self.accepted = self._accepted()
         self.release_names, self.release_limits = self._release_list()
         self.migrations = self._migrations()
 
@@ -178,6 +187,67 @@ class Ctx:
         for rows in out.values():
             rows.sort(key=lambda r: r["date"])
         return out
+
+    def _accepted(self) -> dict[str, list[dict]]:
+        """The well-formed `[[security.accepted]]` rows by `what`. A malformed row is a problem for the contract
+        row and is not used. Whether a row is still in force (date, document) is the check's business."""
+        out: dict[str, list[dict]] = {}
+        raw = self.sec.get("accepted", [])
+        if not isinstance(raw, list):
+            self.problems.append("security.accepted must be a list of [[security.accepted]] tables")
+            return out
+        for i, row in enumerate(raw, 1):
+            if not isinstance(row, dict):
+                self.problems.append(f"accepted row {i} is not a table")
+                continue
+            what = str(row.get("what", "")).strip()
+            if what not in ACCEPTABLE:
+                self.problems.append(f"accepted row {i}: what = {what!r} is not one of {', '.join(ACCEPTABLE)}")
+                continue
+            missing = [k for k in ("why", "doc", "until") if not str(row.get(k, "")).strip()]
+            if missing:
+                self.problems.append(f"accepted row {i} ({what}) lacks {', '.join(missing)}")
+                continue
+            if not all(isinstance(row[k], str) for k in ("why", "doc")):
+                self.problems.append(f"accepted row {i} ({what}): why and doc must be strings")
+                continue
+            until = _date(row["until"])
+            if until is None:
+                self.problems.append(f"accepted row {i} ({what}) has an until that is not YYYY-MM-DD")
+                continue
+            out.setdefault(what, []).append({"what": what, "why": " ".join(row["why"].split()),
+                                             "doc": row["doc"].strip(), "until": until})
+        for rows in out.values():
+            rows.sort(key=lambda r: r["until"])
+        return out
+
+    def accepted_state(self, what: str) -> tuple[str, str] | None:
+        """None when no row covers `what`; ("OK", text) for a row in force; ("FIX", reason) when the newest row is
+        not: expired, or its document is missing or lacks the heading."""
+        rows = self.accepted.get(what)
+        if not rows:
+            return None
+        row = rows[-1]                                   # the latest `until` wins
+        if row["until"] < self.today:
+            return "FIX", f"accepted risk expired on {row['until']}: fix it or review the row ({row['doc']})"
+        try:
+            doc = (self.repo / row["doc"]).resolve()
+            doc.relative_to(self.repo.resolve())
+            present = doc.is_file()
+        except ValueError:
+            return "FIX", f"accepted risk: doc {row['doc']} is not a file inside the repo"
+        except OSError:                                  # a symlink loop, a path too long: resolve() raises
+            return "FIX", f"accepted risk: doc {row['doc']} cannot be resolved"
+        if not present:
+            return "FIX", f"accepted risk: doc {row['doc']} is missing"
+        try:
+            with open(doc, encoding="utf-8", errors="replace") as fh:
+                text = fh.read(2_000_000)
+        except OSError:
+            return "FIX", f"accepted risk: doc {row['doc']} cannot be read"
+        if not ACCEPTED_HEADING.search(text):
+            return "FIX", f'accepted risk: {row["doc"]} lacks an "Accepted risk" heading'
+        return "OK", f"accepted risk until {row['until']} ({row['doc']}): {row['why']}"
 
     def _has_commit(self, sha: str) -> bool:
         """A 7 to 40 character hex string, and in a git checkout a commit that checkout holds."""
@@ -631,13 +701,20 @@ def check_trifecta(c: Ctx):
 def check_mcp(c: Ctx):
     if c.mcp is None:
         return "OK", "n/a: no MCP server declared"
+    accepted = None
     if c.mcp.get("url_key") is True:
-        return "FIX", "the URL is the secret: move the key to an Authorization header"
+        accepted = c.accepted_state("mcp.url_key")
+        if accepted is None:
+            return "FIX", "the URL is the secret: move the key to an Authorization header"
+        if accepted[0] == "FIX":
+            return "FIX", f"the URL is the secret: {accepted[1]}"
     auth = str(c.mcp.get("auth", "")).lower()
     if auth in ("", "none") and c.rank >= 1:
         return "FIX", "an MCP server for other people needs auth (bearer or oauth)"
     if c.rank >= 2 and c.mcp.get("rate_limit") is not True:
         return "FIX", "a public MCP server needs a rate limit (rate_limit = true)"
+    if accepted is not None:                       # the other MCP checks above still apply to an accepted risk
+        return "NOTE", accepted[1]
     return "OK", f"auth = {auth or 'none'}, url_key = false"
 
 
