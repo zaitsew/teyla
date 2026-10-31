@@ -17,6 +17,27 @@ name = "{{name}}"
 # android_package = "com.example.app"
 
 {{productize}}
+# --- security contract ---
+# What this product must keep, read by `teyla shield check .` (docs/CONTRACT.md in the teyla repo).
+# The tier follows the `users` key of the productize block unless you set `tier` here. Replace the data list first.
+[security]
+# tier = "owner"                        # owner | family | testers | public
+data = []                               # account location health messages payments files | ["none"]
+trifecta = []                           # legs this product's agent surface has: private-data untrusted-content outbound
+secrets = "runtime-env"                 # runtime-env | keychain | hub | none (never: repo, client)
+hosts = "docs/PRIVACY.md"               # the outbound-host table
+# mcp = { auth = "bearer", url_key = false, rate_limit = true, static_tools = true }
+# rls = "migrations+ab-test"            # none | migrations | migrations+ab-test
+# release = ["leak", "hosts", "deps", "rls-test<30d", "privacy-manifest"]   # extra checks before an upload
+
+# Proof that cannot be read from files. A row expires after max_age_days (default 30).
+# [[security.evidence]]
+# what = "rls-test"                     # rls-test | deps | mcp-probe | credential-separation | executor-split
+# commit = "abc1234"
+# date = 2026-01-01
+# how = "the command that was run"
+# max_age_days = 30
+# --- end security contract ---
 # ---------------------------------------------------------------------------
 # A control-plane routine: Teyla runs this one itself.
 #

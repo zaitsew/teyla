@@ -54,10 +54,12 @@ ALLOWED = {
     "review_asc.py": {24},
     "ux_judge.py": {25},
     "scout_design.py": {26},
+    "deps.py": {32},
     "genai.py": {27, 28},
     "relay.py": {21},
     "web/server.py": {22},
     "copy_lane.py": {29, 30, 31},
+    "mcp_probe.py": {33},
 }
 
 

@@ -953,3 +953,82 @@ def test_a_malformed_allow_list_does_not_stop_the_scan(repo, terms, capsys):
     commit(repo, {"a.txt": f"K = '{KEY}'\n", ".leak-allow": "[exceptions]\nterm a.txt\n"})
     code, doc = scan(capsys)
     assert code == 1 and [f["rule"] for f in doc["findings"]] == ["secret"] and "no reason" in doc["errors"][0]
+
+
+# --- review round 2: one test per fix --------------------------------------------------------
+
+@pytest.mark.parametrize("line", ["*:generic-api-key fixtures/* fixtures", "gitleaks:generic-* fixtures/* fixtures",
+                                  "secre? fixtures/* fixtures", "nonsense fixtures/* fixtures", "secret ** fixtures"])
+def test_an_exception_rule_must_be_an_exact_known_name(repo, terms, capsys, line):
+    """P1: a pattern in the rule field (`*:generic-api-key`) walked round the secret-family check."""
+    commit(repo, {"a.txt": "x\n", ".leak-allow": f"[exceptions]\n{line}\n"})
+    code, doc = scan(capsys)
+    assert code == 2 and doc["errors"] and doc["errors"][0].startswith(".leak-allow:2:")
+
+
+def test_an_exact_rule_with_a_named_directory_is_accepted(repo, terms, capsys):
+    commit(repo, {"fixtures/a.txt": "x\n", ".leak-allow": "[exceptions]\ngitleaks:generic-api-key fixtures/* fixture tokens\n"})
+    code, doc = scan(capsys)
+    assert code == 0 and doc["errors"] == []
+
+
+def test_an_allow_list_over_the_cap_or_a_symlink_is_unreadable(repo, terms, tmp_path, capsys):
+    """P1: .leak-allow was read whole, outside the guarded reader."""
+    commit(repo, {"a.txt": "x\n", ".leak-allow": "# pad\n" * 60000})
+    code, doc = scan(capsys)
+    assert code == 2 and "allowlist unreadable" in doc["errors"][0]
+    (repo / ".leak-allow").unlink()
+    real = tmp_path / "elsewhere-allow"
+    real.write_text("emails:\n")
+    (repo / ".leak-allow").symlink_to(real)
+    code, doc = scan(capsys)
+    assert code == 2 and "allowlist unreadable" in doc["errors"][0]
+
+
+def test_a_terms_file_over_the_cap_is_unreadable(repo, tmp_path, monkeypatch, capsys):
+    big = tmp_path / "terms-big.txt"
+    big.write_text("zebracorn\n" * 40000)
+    monkeypatch.setenv("TEYLA_PRIVATE_TERMS", str(big))
+    commit(repo, {"a.txt": "ok\n"})
+    code, doc = scan(capsys)
+    assert code == 2 and doc["coverage"]["unread"][0]["surface"] == "private terms"
+
+
+def test_an_exception_never_applies_when_the_matched_line_was_not_read(repo, terms, gitleaks, monkeypatch, capsys):
+    """P1: a path with a newline cannot be asked of `git cat-file`; the finding then has no value in its
+    fingerprint, so an exception for that fingerprint must not silence it."""
+    name = "a\nb.txt"
+    commit(repo, {"keep.txt": "x\n"})
+    (repo / name).write_text("token = ANYTHING\n")
+    git(repo, "add", "-A")
+    monkeypatch.setenv("STUB_REPORT", item(File=name))
+    code, doc = scan(capsys, "--staged")
+    (f,) = doc["findings"]
+    assert code == 1 and "line unread" in f["note"] and "\n" not in f["path"] and "\\x0a" in f["path"]
+    (repo / ".leak-allow").write_text(f"[exceptions]\ngitleaks:generic-api-key a* fixture fp={f['fingerprint']}\n")
+    code, doc = scan(capsys, "--staged")
+    assert code == 1 and len(doc["findings"]) == 1
+    leak.main(["--staged"])
+    assert "a\nb.txt" not in capsys.readouterr().out
+
+
+def test_a_text_over_the_gitleaks_limit_is_a_coverage_gap(repo, terms, gitleaks, tmp_path, capsys):
+    """P1: gitleaks skips a target over its size limit without a word."""
+    note = tmp_path / "pr.md"
+    note.write_text("fine words\n" * 110000)          # a little over 1 MiB
+    code, doc = scan(capsys, "--text", str(note), "--max-bytes", "1000")
+    assert code == 0 and any("text over the engine limit" in n and "gitleaks not run" in n for n in doc["coverage"]["notes"])
+    code, doc = scan(capsys, "--text", str(note), "--max-bytes", "1000", "--require-gitleaks")
+    assert code == 2
+    assert not gitleaks.exists()                           # the stub never ran
+
+
+def test_a_term_that_is_also_a_json_key_does_not_rewrite_the_schema(repo, tmp_path, monkeypatch, capsys):
+    """P2: scrubbing the serialised text turned the key "exit" into "term:0"."""
+    f = tmp_path / "t.txt"
+    f.write_text("exit\n")
+    monkeypatch.setenv("TEYLA_PRIVATE_TERMS", str(f))
+    commit(repo, {"exit.txt": f"K = '{KEY}'\n"})
+    code, doc = scan(capsys)
+    assert code == 1 and set(doc) == {"findings", "coverage", "errors", "exit"} and doc["exit"] == 1
+    assert doc["findings"][0]["path"] == "term:0.txt"
