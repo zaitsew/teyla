@@ -238,3 +238,14 @@ def test_a_partly_on_pack_reminds_only_when_its_problem_is_acute(fake_home):
         {"id": "O1", "title": "t", "applies": True, "saving_usd_month": {"low": 40, "high": 90}}]}, False)
     names = [r["name"] for r in features.nudges([{"level": "WARN", "name": "machine:load", "detail": ""}])]
     assert names == ["feature:load"]
+
+
+def test_on_again_unmutes(fake_home, capsys):
+    _run(["features", "off", "load", "--quiet"], capsys)
+    _run(["features", "on", "load", "--yes"], capsys)
+    assert "load" not in features.muted()
+
+
+def test_the_cost_pack_brings_the_plugin_its_hook_lives_in(fake_home, capsys, _stubs):
+    _run(["features", "on", "cost", "--yes", "--no-offers"], capsys)
+    assert _stubs["plugin"] == 1

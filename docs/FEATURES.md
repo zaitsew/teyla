@@ -18,7 +18,7 @@ teyla features --json           # the same list, for an AI agent
 
 | Pack | Problem | What turns on |
 |---|---|---|
-| `cost` Token cost | Long sessions re-read their whole context every turn; subagents run on the top model. | O1 to O4 (`autoCompactWindow`, Sonnet subagents, a Haiku `scout`, Codex medium effort) and `hooks.context_budget` |
+| `cost` Token cost | Long sessions re-read their whole context every turn; subagents run on the top model. | O1 to O4 (`autoCompactWindow`, Sonnet subagents, a Haiku `scout`, Codex medium effort), `hooks.context_budget` and the plugin's context-budget hook |
 | `load` Machine guard | Parallel agents boot simulators and builds until the Mac swaps, hangs or panics. | `guard.enabled`, `guard.agent` (a launchd agent, every 60 s) and the plugin's admission hook |
 | `disk` Disk cleanup | Worktrees, DerivedData, simulators and caches fill the disk. | `storage.sims_agent` (every 10 min) and `storage.sweep_agent` (hourly) |
 | `inbox` Questions and ideas | A session ends on a question and nobody reads it again. | O6 (hooks and the plugin) and `intent.enabled` |
@@ -34,6 +34,9 @@ that you use it.
 | `design` UX and UI | Screens ship with noise, weak hierarchy and unreviewed copy. | `ux check`, `ux judge`, `ux shots`, `taste`, `kit` |
 | `ship` Ship and test | A build is uploaded but no tester can install it; PRs merge unreviewed. | `portfolio`, `testflight`, `play`, `reviews`, `review`, `productize` |
 | `writing` Writing | Replies and docs are long and padded; a README describes last month. | `prose`, `voice check`, `docs check`, `lang`, `copy` |
+
+`load` and `disk` write their agents with `teyla routine install`, which also installs the daily and weekly check
+(`daily`) when they are missing; the change list says so before you answer.
 
 A pack is **on** when every part that applies on this Mac is in place, **partly** when some are. A switch whose
 default is already the pack's value (`guard.enabled` is true out of the box) counts only once you set it, so a
