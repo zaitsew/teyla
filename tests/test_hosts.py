@@ -337,3 +337,95 @@ def test_check_sh_template_runs_security_steps_before_it_sources_env():
     env = next(i for i, ln in enumerate(lines) if "source .env" in ln)
     assert leak < env and hosts_ < env
     assert "command -v teyla" in sh
+
+
+# --- fix round: guarded reads and writes, wildcards, escapes, regex literals, IP rows --------------------
+
+def test_write_refuses_a_symlinked_privacy_file_pointing_outside_the_repo(tmp_path, capsys):
+    outside = tmp_path / "outside.md"
+    outside.write_text("# outside\n")
+    d = repo(tmp_path, {"Sources/Net.swift": SWIFT})
+    (d / "docs").mkdir()
+    (d / "docs" / "PRIVACY.md").symlink_to(outside)
+    rc = cli.main(["hosts", str(d), "--write"])
+    err = capsys.readouterr().err
+    assert rc == 2 and "refused" in err and "symlink" in err
+    assert outside.read_text() == "# outside\n"
+
+
+def test_write_refuses_a_symlinked_docs_directory_pointing_outside_the_repo(tmp_path, capsys):
+    out_dir = tmp_path / "elsewhere"
+    out_dir.mkdir()
+    d = repo(tmp_path, {"Sources/Net.swift": SWIFT})
+    (d / "docs").symlink_to(out_dir)
+    assert cli.main(["hosts", str(d), "--write"]) == 2
+    assert "symlink" in capsys.readouterr().err
+    assert list(out_dir.iterdir()) == []
+
+
+def test_a_symlinked_privacy_file_is_not_read_either(tmp_path):
+    outside = tmp_path / "outside.md"
+    outside.write_text(table("api.acme.test"))
+    d = repo(tmp_path, {"Sources/Net.swift": SWIFT})
+    (d / "docs").mkdir()
+    (d / "docs" / "PRIVACY.md").symlink_to(outside)
+    r = hosts.check_repo(d)
+    assert r["coverage"]["privacy_table"] is False
+    assert any("docs/PRIVACY.md" in u and "symlink" in u for u in r["coverage"]["unread"])
+
+
+def test_a_plist_symlinked_to_a_device_is_skipped_not_read(tmp_path):
+    d = repo(tmp_path, {"docs/PRIVACY.md": table("x.acme.test")})
+    (d / "App").mkdir()
+    (d / "App" / "Info.plist").symlink_to("/dev/zero")
+    r = hosts.check_repo(d)                                    # must return, not read until memory runs out
+    assert any("App/Info.plist" in u for u in r["coverage"]["unread"])
+
+
+def test_an_oversized_plist_and_source_file_are_skipped_with_a_coverage_note(tmp_path):
+    big = plistlib.dumps({"SUFeedURL": "https://big.acme.test/feed", "pad": "x" * (hosts.MAX_FILE_BYTES + 10)})
+    d = repo(tmp_path, {"App/Info.plist": big, "web/huge.ts": "const u = 'https://huge.acme.test';\n" + "//" + "x" * (hosts.MAX_FILE_BYTES + 10),
+                        "docs/PRIVACY.md": table("x.acme.test")})
+    r = hosts.check_repo(d)
+    assert "big.acme.test" not in host_names(r) and "huge.acme.test" not in host_names(r)
+    unread = " ".join(r["coverage"]["unread"])
+    assert "App/Info.plist" in unread and "web/huge.ts" in unread and "MB" in unread
+
+
+def test_a_concrete_row_does_not_cover_a_wildcard_the_code_reaches(tmp_path):
+    ts = "fetch(`https://${tenant}.pool.acme.test/rest`);\n"
+    d = repo(tmp_path, {"a.ts": ts, "docs/PRIVACY.md": table("one.pool.acme.test")})
+    r = hosts.check_repo(d)
+    assert ("undocumented", "FIX", "*.pool.acme.test") in checks(r)
+    assert not any(f["check"] == "stale" for f in r["findings"])                  # the instance is still reachable
+    d2 = repo(tmp_path, {"a.ts": ts, "docs/PRIVACY.md": table("*.pool.acme.test")}, name="wild")
+    assert hosts.check_repo(d2)["findings"] == []
+    assert hosts.covers("*.pool.acme.test", "pool.acme.test") and not hosts.covers("one.pool.acme.test", "*.pool.acme.test")
+
+
+def test_escaped_urls_are_decoded_before_extraction(tmp_path):
+    src = ('const a = "https:\\/\\/slash.acme.test\\/x";\n'
+           'const b = "https:\\u002f\\u002funi.acme.test/x";\n'
+           'const c = "https:\\x2f\\x2fhex.acme.test/x";\n')
+    d = repo(tmp_path, {"a.ts": src, "docs/PRIVACY.md": table("x.acme.test")})
+    assert {"slash.acme.test", "uni.acme.test", "hex.acme.test"} <= host_names(hosts.check_repo(d))
+
+
+def test_a_regex_literal_does_not_hide_the_host_after_it(tmp_path):
+    src = 'const re = /"/g; fetch("https://after-regex.acme.test/a");\nconst q = /\'/; const u = "https://after-quote.acme.test";\n'
+    d = repo(tmp_path, {"a.ts": src, "docs/PRIVACY.md": table("x.acme.test")})
+    assert {"after-regex.acme.test", "after-quote.acme.test"} <= host_names(hosts.check_repo(d))
+
+
+def test_a_documented_ip_address_is_covered_and_write_never_duplicates(tmp_path, capsys):
+    src = 'const a = "https://8.8.8.8/x";\nconst b = "https://1.1.1.1/y";\nconst c = "https://9.9.9.9/z";\n'
+    rows = ("| 1 | launch | `8.8.8.8` | a version | Yes | a setting |\n"
+            "| 2 | launch | `https://1.1.1.1/y` | a version | Yes | a setting |")
+    d = repo(tmp_path, {"a.ts": src, "docs/PRIVACY.md": TABLE.format(rows=rows)})
+    r = hosts.check_repo(d)
+    assert [f["host"] for f in r["findings"] if f["severity"] == "FIX"] == ["9.9.9.9"]
+    assert run(capsys, str(d), "--write")[0] == 0
+    once = (d / "docs" / "PRIVACY.md").read_text()
+    assert once.count("8.8.8.8") == 1 and once.count("1.1.1.1") == 1 and once.count("9.9.9.9") == 1
+    assert run(capsys, str(d), "--write")[0] == 0
+    assert (d / "docs" / "PRIVACY.md").read_text() == once

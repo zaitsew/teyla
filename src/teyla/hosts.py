@@ -59,6 +59,7 @@ import os
 import pathlib
 import plistlib
 import re
+import stat
 import sys
 import xml.etree.ElementTree as ET
 
@@ -68,7 +69,7 @@ FIX = "FIX"
 WARN = "WARN"
 TODO = "TODO (a person fills this)"
 NOT_IN_CODE = "(not in code"
-MAX_FILE_BYTES = 1_000_000
+MAX_FILE_BYTES = 2_000_000
 MAX_REFS_PER_HOST = 20
 PRIVACY_PATH = "docs/PRIVACY.md"
 
@@ -175,16 +176,23 @@ def host_from_authority(auth: str):
 
 
 def covers(pattern: str, host: str) -> bool:
-    """Does a documented pattern cover a host? Exact, or a wildcard suffix (`*.x.com` covers `x.com`)."""
+    """Does a documented pattern cover a host? Exact, or a wildcard suffix (`*.x.com` covers `x.com`).
+    A wildcard the code reaches (`*.x.com`) is covered only by a documented wildcard, never by one instance."""
     if pattern == host:
         return True
-    if pattern.startswith("*."):
-        base = pattern[1:]
-        bare = host[2:] if host.startswith("*.") else host
-        return host == pattern[2:] or host.endswith(base) or bare.endswith(base) or bare == pattern[2:]
-    if host.startswith("*."):                     # the code reaches `*.x.com`; the table names one instance
-        return pattern.endswith(host[1:])
-    return False
+    if not pattern.startswith("*."):
+        return False
+    if host.startswith("*."):
+        return host[1:].endswith(pattern[1:])
+    return host == pattern[2:] or host.endswith(pattern[1:])
+
+
+def reaches(pattern: str, host: str) -> bool:
+    """Could code that reaches `host` be what a row documents? (For the stale check: a concrete row is not
+    stale when the code reaches a wildcard that includes it.)"""
+    if covers(pattern, host):
+        return True
+    return host.startswith("*.") and not pattern.startswith("*.") and pattern.endswith(host[1:])
 
 
 class Ref:
@@ -212,6 +220,7 @@ class Scan:
         self.skipped_roots: set[str] = set()
         self.test_files = 0
         self.errors: list[str] = []
+        self.unread: list[str] = []               # files refused by the guarded reader, with the reason
         self._seen: set = set()
 
     def add(self, host: str, ref: Ref, url_tail: str = "") -> None:
@@ -246,14 +255,37 @@ class Scan:
 
 # --- reading -------------------------------------------------------------------------------------------
 
-def read_text(path: pathlib.Path):
-    try:
-        if path.is_symlink() or path.stat().st_size > MAX_FILE_BYTES:
-            return None
-        data = path.read_bytes()
-    except OSError:
+def read_bytes(path: pathlib.Path, scan: "Scan | None" = None, rel: str = ""):
+    """The one reader. It never follows a symlink, reads only regular files, and stops at MAX_FILE_BYTES.
+    A refusal is recorded in the coverage (`unread`) so a skipped file is never silent."""
+    def refuse(why: str):
+        if scan is not None and len(scan.unread) < 50:
+            scan.unread.append(f"{rel or path.name}: {why}")
         return None
-    if b"\0" in data[:4096]:
+    fd = None
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            return refuse("not a regular file")
+        if st.st_size > MAX_FILE_BYTES:
+            return refuse(f"over {MAX_FILE_BYTES // 1_000_000} MB")
+        with os.fdopen(fd, "rb") as f:
+            fd = None
+            data = f.read(MAX_FILE_BYTES + 1)
+    except OSError as e:
+        return refuse("symlink" if getattr(e, "errno", None) in (40, 62) else "unreadable")
+    finally:
+        if fd is not None:
+            os.close(fd)
+    if len(data) > MAX_FILE_BYTES:
+        return refuse(f"over {MAX_FILE_BYTES // 1_000_000} MB")
+    return data
+
+
+def read_text(path: pathlib.Path, scan: "Scan | None" = None, rel: str = ""):
+    data = read_bytes(path, scan, rel)
+    if data is None or b"\0" in data[:4096]:
         return None
     return data.decode("utf-8", errors="replace")
 
@@ -273,81 +305,19 @@ def _lines_without_comments(text: str) -> list[tuple[int, str]]:
     return out
 
 
-def string_literals(text: str, lang: str):
-    """(line, content) for each string literal. Comments are skipped; an interpolation becomes a marker."""
-    out = []
-    i, n, line = 0, len(text), 1
-    quotes = {"swift": '"', "kotlin": '"\'', "typescript": "\"'`"}[lang]
-    triple = lang in ("swift", "kotlin")
-    while i < n:
-        c = text[i]
-        if c == "\n":
-            line += 1
-            i += 1
-        elif text.startswith("//", i):
-            j = text.find("\n", i)
-            i = n if j < 0 else j
-        elif text.startswith("/*", i):
-            j = text.find("*/", i + 2)
-            j = n if j < 0 else j + 2
-            line += text.count("\n", i, j)
-            i = j
-        elif c in quotes:
-            start_line, buf = line, []
-            is_triple = triple and c == '"' and text.startswith('"""', i)
-            end = '"""' if is_triple else c
-            multiline = is_triple or c == "`"
-            i += len(end)
-            while i < n:
-                d = text[i]
-                if text.startswith(end, i):
-                    i += len(end)
-                    break
-                if d == "\n":
-                    if not multiline:
-                        break                      # an unterminated one-line string: resync here
-                    line += 1
-                if d == "\\" and i + 1 < n:
-                    if lang == "swift" and text[i + 1] == "(":
-                        i = _skip_balanced(text, i + 1, "(", ")")
-                        buf.append(_MARK)
-                        continue
-                    buf.append(text[i:i + 2])
-                    line += text.count("\n", i, i + 2)
-                    i += 2
-                    continue
-                if d == "$" and i + 1 < n and lang in ("typescript", "kotlin") and c in ('"', "`") \
-                        and text[i + 1] == "{":
-                    i = _skip_balanced(text, i + 1, "{", "}")
-                    buf.append(_MARK)
-                    continue
-                if d == "$" and lang == "kotlin" and c == '"' and i + 1 < n and (text[i + 1].isalpha() or text[i + 1] == "_"):
-                    j = i + 1
-                    while j < n and (text[j].isalnum() or text[j] == "_"):
-                        j += 1
-                    buf.append(_MARK)
-                    i = j
-                    continue
-                buf.append(d)
-                i += 1
-            out.append((start_line, "".join(buf)))
-        else:
-            i += 1
-    return out
+_INTERP = re.compile(r"\$\{[^{}\n]*\}|\\\([^()\n]*\)|\$[A-Za-z_][A-Za-z0-9_]*")
+_ESCAPE = re.compile(r"\\/|\\x([0-9a-fA-F]{2})|\\u([0-9a-fA-F]{4})|\\u\{([0-9a-fA-F]{1,6})\}")
 
 
-def _skip_balanced(text: str, i: int, open_c: str, close_c: str) -> int:
-    depth = 0
-    n = len(text)
-    while i < n:
-        if text[i] == open_c:
-            depth += 1
-        elif text[i] == close_c:
-            depth -= 1
-            if depth == 0:
-                return i + 1
-        i += 1
-    return n
+def _unescape(m: "re.Match") -> str:
+    hexa = m.group(1) or m.group(2) or m.group(3)
+    return "/" if hexa is None else chr(int(hexa, 16))
+
+
+def code_line_text(line: str) -> str:
+    """A source line with string escapes decoded (`\\/`, `\\x2f`, `\\u002f`) and interpolations replaced by a
+    marker, so a URL written as an escaped literal or with a computed first label is still seen."""
+    return _ESCAPE.sub(_unescape, _INTERP.sub(_MARK, line))
 
 
 _BARE = {
@@ -372,12 +342,13 @@ def scan_source(scan: Scan, rel: str, text: str, lang: str) -> None:
     skip: set[int] = set()
     if lang == "python":
         skip = _scan_python(scan, rel, text)
-    else:
-        for line, content in string_literals(text, lang):
-            scan.add_text(content, line, rel, "literal")
     for n, ln in _lines_without_comments(text):
         if n in skip:
             continue
+        if lang != "python":
+            # No quote tracking: a regex literal such as /"/ would hide the next real string. A line that
+            # starts with a comment token is skipped; a URL in a trailing comment is over-reported on purpose.
+            scan.add_text(code_line_text(ln), n, rel, "literal")
         for rx in _BARE[lang]:
             for m in rx.finditer(ln):
                 host = normalize(m.group(1))
@@ -419,12 +390,15 @@ def _scan_python(scan: Scan, rel: str, text: str) -> set[int]:
 # --- manifests -----------------------------------------------------------------------------------------
 
 def scan_plist(scan: Scan, rel: str, path: pathlib.Path) -> None:
+    blob = read_bytes(path, scan, rel)
+    if blob is None:
+        return
     try:
-        data = plistlib.loads(path.read_bytes())
-    except (OSError, plistlib.InvalidFileException, ValueError, ET.ParseError):
+        data = plistlib.loads(blob)
+    except (plistlib.InvalidFileException, ValueError, ET.ParseError):
         scan.errors.append(f"{rel}: not a readable plist")
         return
-    raw = read_text(path) or ""
+    raw = blob.decode("utf-8", errors="replace") if blob[:6] != b"bplist" else ""
     ats = data.get("NSAppTransportSecurity") if isinstance(data, dict) else None
     if isinstance(ats, dict):
         if ats.get("NSAllowsArbitraryLoads") is True:
@@ -537,7 +511,7 @@ def scan_manifest(scan: Scan, rel: str, path: pathlib.Path) -> bool:
     if name.startswith("Info") and name.endswith(".plist"):
         scan_plist(scan, rel, path)
         return True
-    text = read_text(path)
+    text = read_text(path, scan, rel)
     if text is None:
         return False
     if re.fullmatch(r"next\.config\.(js|mjs|cjs|ts|mts)", name):
@@ -596,7 +570,7 @@ def scan_repo_files(root: pathlib.Path) -> Scan:
             if TEST_FILE.search(f):
                 scan.test_files += 1
                 continue
-            text = read_text(path)
+            text = read_text(path, scan, rel)
             if text is None:
                 continue
             scan.files += 1
@@ -648,12 +622,26 @@ def _cells(line: str) -> list[str]:
 
 
 def hosts_in(cell: str, reached: frozenset = frozenset()) -> list[str]:
-    """Host tokens of a table cell. A token that ends like a file name (`check.sh`) counts only when the code reaches it."""
+    """Host tokens of a table cell: names, wildcards, IP addresses, and the host of a URL. A token that ends
+    like a file name (`check.sh`) counts only when the code reaches it."""
     found = []
-    for tok in re.findall(r"`([^`]+)`|([A-Za-z0-9*][A-Za-z0-9*._-]*\.[A-Za-z]{2,})", cell):
+    tokens = re.findall(r"`([^`]+)`|((?:https?|wss?)://[^\s`,;)]+)|((?:\d{1,3}\.){3}\d{1,3})(?![\w.])"
+                        r"|([A-Za-z0-9*][A-Za-z0-9*._-]*\.[A-Za-z]{2,})", cell)
+    for tok in tokens:
         for t in tok:
+            if not t:
+                continue
+            t = t.strip()
+            if _SCHEME.match(t):
+                t = host_from_authority(_URL.match(t).group(1)) or ""
+            elif ":" in t and "." not in t.split("/")[0] and _ip(t.strip("[]")) is not None:
+                t = "[" + t.strip("[]") + "]"
             t = normalize(t.strip("*") if t.startswith("**") else t)
-            if t and valid_host(t) and (t.rsplit(".", 1)[-1] not in FILE_TLDS or t in reached):
+            if not t:
+                continue
+            if _ip(t) is not None:
+                found.append(t)
+            elif valid_host(t) and (t.rsplit(".", 1)[-1] not in FILE_TLDS or t in reached):
                 found.append(t)
     return list(dict.fromkeys(found))
 
@@ -686,11 +674,14 @@ def parse_tables(text: str, reached: frozenset = frozenset()) -> list[Table]:
     return tables
 
 
-def read_toml(path: pathlib.Path) -> dict:
+def read_toml(path: pathlib.Path, scan: "Scan | None" = None, rel: str = "") -> dict:
+    text = read_text(path, scan, rel) if os.path.lexists(path) else None
+    if text is None:
+        return {}
     try:
         import tomllib
-        return tomllib.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        return tomllib.loads(text)
+    except ValueError:
         return {}
 
 
@@ -709,9 +700,9 @@ def check_repo(root: pathlib.Path) -> dict:
     root = root.resolve()
     scan = scan_repo_files(root)
     privacy_file = root / PRIVACY_PATH
-    privacy_text = read_text(privacy_file) if privacy_file.is_file() else None
+    privacy_text = read_text(privacy_file, scan, PRIVACY_PATH) if os.path.lexists(privacy_file) else None
     tables = parse_tables(privacy_text, frozenset(scan.hosts) | frozenset(scan.local)) if privacy_text is not None else []
-    toml = read_toml(root / "teyla.toml")
+    toml = read_toml(root / "teyla.toml", scan, "teyla.toml")
     conf_hosts = [normalize(h) for h in (toml.get("privacy") or {}).get("hosts", []) if isinstance(h, str)]
     has_config = bool(conf_hosts) or "hosts" in (toml.get("privacy") or {})
     gap = privacy_text is None and not has_config
@@ -740,7 +731,7 @@ def check_repo(root: pathlib.Path) -> dict:
                 add("undocumented", FIX, host, ref.file, ref.line, f"{host} is reached but not documented",
                     f"add a row to {PRIVACY_PATH}: what is sent, when, how to turn it off")
         for pattern, file, line, may_be_stale in doc:
-            if may_be_stale and not any(covers(pattern, h) for h in scan.hosts):
+            if may_be_stale and not any(reaches(pattern, h) for h in scan.hosts):
                 add("stale", WARN, pattern, file, line, f"{pattern} is documented but no code reaches it (stale row)",
                     "delete the row, or the host is reached in a way this scan cannot see: say so in the row")
         for t in tables:
@@ -778,7 +769,7 @@ def check_repo(root: pathlib.Path) -> dict:
             "manifests": sorted(scan.manifests), "skipped_roots": sorted(scan.skipped_roots),
             "test_files_skipped": scan.test_files, "computed_urls": scan.computed,
             "privacy_table": privacy_text is not None, "config_hosts": len(conf_hosts),
-            "errors": scan.errors,
+            "errors": scan.errors, "unread": scan.unread,
         },
     }
 
@@ -814,17 +805,43 @@ def _row_for(header: list[str], number: int, host: str, ref: dict) -> str:
     return "| " + " | ".join(cells) + " |"
 
 
+class WriteRefused(Exception):
+    """--write will not touch this path; the message says why."""
+
+
+def safe_write_target(root: pathlib.Path) -> pathlib.Path:
+    """docs/PRIVACY.md inside the repo, reached without a symlink. Raises WriteRefused otherwise."""
+    root = root.resolve()
+    docs, path = root / "docs", root / PRIVACY_PATH
+    for p in (docs, path):
+        if p.is_symlink():
+            raise WriteRefused(f"{p.relative_to(root)} is a symlink: refusing to write through it")
+    if os.path.lexists(path) and not path.is_file():
+        raise WriteRefused(f"{PRIVACY_PATH} is not a regular file")
+    if os.path.lexists(docs) and not docs.is_dir():
+        raise WriteRefused("docs exists and is not a directory")
+    try:
+        path.resolve().relative_to(root)
+    except ValueError:
+        raise WriteRefused(f"{PRIVACY_PATH} resolves outside the repo") from None
+    return path
+
+
 def write_rows(root: pathlib.Path, report: dict) -> tuple[list[str], bool]:
     """Append a row per undocumented host to the first table with a Host column. Never edits or deletes a
     row. Creates docs/PRIVACY.md from the template when it is missing. Returns (hosts written, created)."""
-    path = root / PRIVACY_PATH
-    created = not path.is_file()
+    path = safe_write_target(root)
+    created = not os.path.lexists(path)
     if created:
         template = __import__("teyla").templates_dir() / "repo" / "docs" / "PRIVACY.md"
         text = template.read_text(encoding="utf-8").replace("{{name}}", root.name)
     else:
-        text = path.read_text(encoding="utf-8")
-    order = sorted(h["host"] for h in report["hosts"] if not h["documented"])
+        data = read_bytes(path)
+        if data is None:
+            raise WriteRefused(f"{PRIVACY_PATH} could not be read safely (size or file type)")
+        text = data.decode("utf-8", errors="replace")
+    present = {h for t in parse_tables(text, frozenset(h["host"] for h in report["hosts"])) for r in t.rows for h in r.hosts}
+    order = sorted(h["host"] for h in report["hosts"] if not h["documented"] and h["host"] not in present)
     if not order and not created:
         return [], False
     refs = {h["host"]: h["refs"][0] for h in report["hosts"]}
@@ -883,7 +900,8 @@ def render(reports: list[dict], quiet: bool = False, written: dict | None = None
         langs = ", ".join(f"{k} {v}" for k, v in cov["by_language"].items()) or "no source files"
         L.append(f"  coverage: {cov['files']} source file(s) ({langs}), {len(cov['manifests'])} manifest(s); "
                  f"skipped roots: {', '.join(cov['skipped_roots']) or 'none'}; {cov['test_files_skipped']} test file(s); "
-                 f"{cov['computed_urls']} computed URL(s) not resolved")
+                 f"{cov['computed_urls']} computed URL(s) not resolved"
+                 + (f"; not read: {'; '.join(cov['unread'][:5])}" if cov["unread"] else ""))
     if not quiet:
         t = {k: sum(counts(r)[k] for r in reports) for k in (FIX, WARN, "GAP")}
         L.append("")
@@ -897,16 +915,21 @@ def cmd_hosts(args) -> int:
     except FileNotFoundError as e:
         print(f"teyla hosts: {e}", file=sys.stderr)
         return 2
-    reports, written = [], {}
+    reports, written, refused = [], {}, False
     for r in repos:
         rep = check_repo(r)
         if args.write:
-            rows, created = write_rows(r.resolve(), rep)
-            if rows or created:
-                written[rep["repo"]] = rows
-                rep = check_repo(r)
+            try:
+                rows, created = write_rows(r.resolve(), rep)
+            except WriteRefused as e:
+                print(f"teyla hosts: {rep['repo']}: --write refused: {e}", file=sys.stderr)
+                refused = True
+            else:
+                if rows or created:
+                    written[rep["repo"]] = rows
+                    rep = check_repo(r)
         reports.append(rep)
-    code = exit_code(reports)
+    code = 2 if refused else exit_code(reports)
     if args.json:
         t = {k: sum(counts(r)[k] for r in reports) for k in (FIX, WARN, "GAP")}
         print(json.dumps({"repos": reports, "totals": t, "written": written, "exit": code}, indent=1))
