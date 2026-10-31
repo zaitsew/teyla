@@ -764,45 +764,74 @@ def _ref_matches(patterns: object, ref: str) -> bool:
                for pat in patterns)
 
 
-def ruleset_blocks_merge(rs: dict, default: str) -> str | None:
-    """Why this ruleset keeps a non-bypass identity from merging into `default`, or None when it does not.
-    Only an active branch ruleset that covers the default branch counts. `update` (Restrict updates) stops
-    every update including a merge; a pull-request rule with approvals stops an author merging its own PR."""
+def ruleset_effect(rs: dict, default: str) -> tuple[str, str]:
+    """(effect, text) of one ruleset on the identity that asked, for merges into `default`.
+
+    "blocks": an active branch ruleset covers the default branch with a Restrict-updates rule (which also
+    stops a merge) and the identity cannot bypass it. "bypassable": the same rule, but it can bypass.
+    "unknown": the rule applies but GitHub did not say whether the identity can bypass it.
+    "none": the ruleset does not restrict this branch. Required approvals never count: an approved
+    pull request can still be merged by the worker."""
     if not isinstance(rs, dict) or rs.get("enforcement") != "active" or rs.get("target") != "branch":
-        return None
+        return "none", ""
     ref = f"refs/heads/{default}"
     cond = (rs.get("conditions") or {}).get("ref_name") or {}
     if not _ref_matches(cond.get("include"), ref) or _ref_matches(cond.get("exclude"), ref):
-        return None
-    for rule in rs.get("rules") or []:
-        kind = rule.get("type") if isinstance(rule, dict) else None
-        if kind == "update":
-            return f"ruleset {rs.get('name', '?')!r} restricts updates to {default}"
-        if kind == "pull_request":
-            n = ((rule.get("parameters") or {}).get("required_approving_review_count")) or 0
-            if isinstance(n, int) and n >= 1:
-                return f"ruleset {rs.get('name', '?')!r} needs {n} approval(s) an author cannot give itself"
-    return None
+        return "none", ""
+    if not any(isinstance(r, dict) and r.get("type") == "update" for r in rs.get("rules") or []):
+        return "none", ""
+    name = f"ruleset {rs.get('name', '?')!r}"
+    bypass = rs.get("current_user_can_bypass")
+    if bypass == "never":
+        return "blocks", f"{name} restricts updates to {default} and the identity cannot bypass it"
+    if bypass in ("always", "pull_requests_only", "exempt"):
+        return "bypassable", f"{name} restricts updates to {default} but the identity can bypass it"
+    return "unknown", f"{name} restricts updates to {default} and GitHub did not say whether the identity can bypass it"
 
 
-def _can_bypass(rs: dict) -> bool:
-    """Whether the identity that asked can bypass this ruleset; an unreadable field counts as yes."""
-    return rs.get("current_user_can_bypass") != "never"
+def protection_effect(prot: object, login: str) -> tuple[str, str]:
+    """(effect, text) of classic branch protection. Only a push restriction counts, and only when the
+    identity is not listed: a listed user can push and merge, and a listed team or App might cover an
+    identity we cannot resolve from here, which is "unknown", never "blocks"."""
+    restr = prot.get("restrictions") if isinstance(prot, dict) else None
+    if not isinstance(restr, dict):
+        return "none", ""
+    users = {u.get("login") for u in restr.get("users") or [] if isinstance(u, dict)}
+    if login in users:
+        return "none", ""
+    named = [f"team {x.get('slug') or x.get('name')}" for x in restr.get("teams") or [] if isinstance(x, dict)]
+    named += [f"App {x.get('slug') or x.get('name')}" for x in restr.get("apps") or [] if isinstance(x, dict)]
+    if named:
+        return "unknown", ("branch protection limits pushes to listed users, teams and Apps, and the identity "
+                           f"might be covered through {', '.join(named)}")
+    return "blocks", f"branch protection limits who can push to the default branch and {login} is not listed"
 
 
-def _protection_blocks_merge(prot: dict, login: str) -> str | None:
-    if not isinstance(prot, dict):
-        return None
-    restr = prot.get("restrictions")
-    if isinstance(restr, dict):
-        users = {u.get("login") for u in restr.get("users") or [] if isinstance(u, dict)}
-        if login not in users:
-            return f"branch protection limits who can push to the default branch and {login} is not listed"
-    rv = prot.get("required_pull_request_reviews")
-    n = (rv or {}).get("required_approving_review_count") if isinstance(rv, dict) else 0
-    if isinstance(n, int) and n >= 1:
-        return f"branch protection needs {n} approval(s) an author cannot give itself"
-    return None
+def _lookup(result: tuple[int, object, str, int | None]) -> str:
+    """"ok", "absent" (404, or a plan that has no such feature) or "failed" for one gh answer."""
+    rc, body, err, http = result
+    if rc == 0:
+        return "ok"
+    said = f"{err} {body.get('message', '') if isinstance(body, dict) else ''}".lower()
+    if http == 404 or (http == 403 and "upgrade to github" in said):
+        return "absent"
+    return "failed"
+
+
+def _rulesets(full: str) -> tuple[list[dict] | None, str, str]:
+    """(every ruleset, how the lookup went, error text). Pages of 100 until a short page; None on failure."""
+    out: list[dict] = []
+    for page in range(1, 21):
+        res = _gh_get(f"repos/{full}/rulesets?per_page=100&page={page}")
+        state = _lookup(res)
+        if state == "absent":
+            return (out if page > 1 else []), "absent", ""
+        if state == "failed" or not isinstance(res[1], list):
+            return None, "failed", res[2] or "no answer"
+        out += [x for x in res[1] if isinstance(x, dict)]
+        if len(res[1]) < 100:
+            return out, "ok", ""
+    return None, "failed", "more than 20 pages of rulesets"
 
 
 def evidence_row(repo: pathlib.Path, how: str, today: datetime.date) -> str:
@@ -870,36 +899,58 @@ def identity_verdict(repo: pathlib.Path, *, slug: str | None = None, today: date
     if perms.get("admin"):
         out.update(status="FIX", detail=f"{fix} (admin on {full}: it can edit any rule)")
         return out
-    # Push is allowed: is the default branch guarded against this identity?
-    why = None
-    rc, rs_list, _err, rs_http = _gh_get(f"repos/{full}/rulesets")
-    if rc == 0 and isinstance(rs_list, list):
-        for item in rs_list[:10]:
-            if not isinstance(item, dict) or item.get("enforcement") != "active" or item.get("target") != "branch":
+    # Push is allowed. OK needs proof that a rule stops this identity; FIX needs proof that none does.
+    blocked: str | None = None
+    unknown: list[str] = []
+    plan_limited = False
+    rulesets, how, err = _rulesets(full)
+    plan_limited = how == "absent" and private
+    if rulesets is None:
+        unknown.append(f"could not read the rulesets ({err})")
+    for item in rulesets or []:
+        if item.get("enforcement") != "active" or item.get("target") != "branch":
+            continue
+        rs = item
+        if item.get("id") is not None and not all(k in item for k in ("rules", "conditions", "current_user_can_bypass")):
+            res = _gh_get(f"repos/{full}/rulesets/{item['id']}")
+            if res[0] == 0 and isinstance(res[1], dict):
+                rs = res[1]
+            else:
+                unknown.append(f"could not read ruleset {item.get('name', item['id'])!r} ({res[2] or 'no answer'})")
                 continue
-            rs = item
-            if item.get("id") is not None and ("rules" not in item or "current_user_can_bypass" not in item):
-                rc2, detail_body, _e, _h = _gh_get(f"repos/{full}/rulesets/{item['id']}")
-                if rc2 == 0 and isinstance(detail_body, dict):
-                    rs = detail_body
-            reason = ruleset_blocks_merge(rs, default)
-            if reason and not _can_bypass(rs):
-                why = reason
-                break
-    if why is None:
-        rc, prot, _err, _h = _gh_get(f"repos/{full}/branches/{default}/protection")
-        if rc == 0:
-            why = _protection_blocks_merge(prot, login)
-    if why:
+        effect, text = ruleset_effect(rs, default)
+        if effect == "blocks":
+            blocked = text
+            break
+        if effect == "unknown":
+            unknown.append(text)
+    if blocked is None:
+        res = _gh_get(f"repos/{full}/branches/{default}/protection")
+        state = _lookup(res)
+        if state == "ok":
+            effect, text = protection_effect(res[1], login)
+            if effect == "blocks":
+                blocked = text
+            elif effect == "unknown":
+                unknown.append(text)
+        elif state == "failed":
+            unknown.append(f"could not read branch protection ({res[2] or 'no answer'})")
+        else:
+            plan_limited = plan_limited or (private and res[3] == 403)
+    if blocked:
         row = evidence_row(repo, f"teyla shield check --identity: worker {login} pushes without merge rights on {full}", today)
         out.update(status="OK", evidence=row,
-                   detail=f"worker identity {login}: push without merge rights ({why}); "
+                   detail=f"worker identity {login}: push without merge rights ({blocked}); "
                           "paste the evidence row below")
-        return out
-    hint = ""
-    if private and (rs_http in (403, 404) or not rs_list):
-        hint = "; this private repo may be on a free plan, where rules are not available: use the fork route"
-    out.update(status="FIX", detail=f"{fix} (nothing restricts updates to {default} for it{hint})")
+    elif unknown:
+        out.update(status="NOTE",
+                   detail=f"{login} can push to {full} and a rule might stop its merge, but it cannot be proven: "
+                          f"{'; '.join(unknown)}; treat as FIX until it is ({IDENTITY_SEE})")
+    else:
+        hint = ""
+        if plan_limited:
+            hint = "; this private repo is on a plan without rules: use the fork route"
+        out.update(status="FIX", detail=f"{fix} (nothing restricts updates to {default} for it{hint})")
     return out
 
 

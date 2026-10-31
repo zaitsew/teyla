@@ -102,13 +102,20 @@ Teyla or supply the scanner. The checks are static greps and file tests. `no-tok
 read-only `gh api` GETs (row 34 of PRIVACY.md) for the login, the repo's `permissions` and default
 branch, its rulesets and the default branch's protection, and prints one `credential-separation` row:
 
-- `FIX`: the active identity can push and merge (admin on the repo, or no ruleset or protection it
-  cannot bypass guards the default branch). The text ends `see SHIELD §9.4`.
-- `OK`: a worker that can push a branch but not merge (a ruleset it cannot bypass restricts updates or
-  needs an approval, or branch protection does), or that has no push right on the repo at all (it
-  pushes to a fork). The `[[security.evidence]]` row to paste is printed under the summary.
-- `NOTE`: it could not tell: `gh` missing or not signed in, no GitHub remote, no access to the repo,
-  or safe mode without `--allow-network`.
+- `FIX`: the active identity can push and merge: admin on the repo, or all lookups succeeded and no
+  rule that applies to it guards the default branch. The text ends `see SHIELD §9.4`.
+- `OK`, only when it is proven that the identity cannot merge the default branch: an active ruleset
+  with Restrict updates that it cannot bypass, or branch protection with a push restriction that
+  does not list it (no team or App in the list), or no push right on the repo at all (it pushes to a
+  fork). The `[[security.evidence]]` row to paste is printed under the summary. Required approvals
+  never make it OK, because a worker can merge a pull request that someone else approved.
+- `NOTE`: it could not tell, and the reason is on the line: `gh` missing or not signed in, no GitHub
+  remote, no access to the repo, safe mode without `--allow-network`, a failed or timed-out lookup,
+  a ruleset that does not say whether the identity can bypass it, or a push restriction that names a
+  team or App the identity might belong to. A failed lookup is a NOTE, never a FIX.
+
+Rulesets are read in pages of 100 until a short page. A private repo on a plan without rules (GitHub
+answers "Upgrade to GitHub ...") counts as having none, and the FIX line says to use the fork route.
 
 The repo asked about is the `upstream` remote, else `origin`, or `--github-repo OWNER/NAME`. No token is
 ever printed; error text from `gh` is scrubbed of anything shaped like one. Without the flag the command

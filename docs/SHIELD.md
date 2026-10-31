@@ -742,9 +742,14 @@ default branch because it has no write access there at all.
 
 #### Part 5. Prove it (5 minutes)
 
-31. In a lane (wrapper on the `PATH`): `git push origin HEAD:<default-branch>` must fail with a
-    protected-branch message (Route B: a permission error), and `gh pr merge <n>` on a test PR
-    must fail.
+31. In a lane (wrapper on the `PATH`), test the real repo, never a fork's default branch.
+    Route A: `git push origin HEAD:<default-branch>` must fail with a protected-branch message, and
+    `gh pr merge <n>` on a test PR must fail. Route B: `origin` is the worker's fork, so a push
+    there only proves the worker owns its fork. Read the upstream permissions instead:
+    `gh api repos/<owner>/<repo> --jq .permissions.push` must print `false`. Or push to a
+    throwaway branch on `upstream`: `git push upstream HEAD:refs/heads/shield-probe-$$` must be
+    refused with a permission error. If that push is accepted, delete the branch with
+    `git push upstream --delete shield-probe-$$` and fix the role before going on.
 32. In a lane, run `teyla shield check <repo> --identity`. The line must read
     `OK   credential-separation  worker identity <login>: ...`. Paste the `[[security.evidence]]`
     row it prints into the repo's `teyla.toml`. Rerun it monthly: the evidence expires after

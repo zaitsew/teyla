@@ -73,14 +73,21 @@ class Gh:
         self.answer(f"repos/{SLUG}", {"default_branch": branch, "private": private,
                                       "permissions": {"admin": admin, "maintain": False, "push": push, "pull": True}})
 
-    def ruleset(self, rules: list[dict], *, bypass: str = "never", enforcement: str = "active",
-                include: list[str] | None = None, rid: int = 7):
-        rs = {"id": rid, "name": "publisher-only", "target": "branch", "enforcement": enforcement,
+    def ruleset(self, rules: list[dict], *, bypass: str | None = "never", enforcement: str = "active",
+                include: list[str] | None = None, rid: int = 7, name: str = "publisher-only", page: bool = True):
+        """One full ruleset: its detail answer and, unless page=False, a one-item first page."""
+        rs = {"id": rid, "name": name, "target": "branch", "enforcement": enforcement,
               "conditions": {"ref_name": {"include": include or ["~DEFAULT_BRANCH"], "exclude": []}},
-              "rules": rules, "current_user_can_bypass": bypass}
-        self.answer(f"repos/{SLUG}/rulesets", [{"id": rid, "name": rs["name"], "target": "branch",
-                                                "enforcement": enforcement}])
+              "rules": rules}
+        if bypass is not None:
+            rs["current_user_can_bypass"] = bypass
+        if page:
+            self.pages([[{"id": rid, "name": name, "target": "branch", "enforcement": enforcement}]])
         self.answer(f"repos/{SLUG}/rulesets/{rid}", rs)
+
+    def pages(self, pages: list[list[dict]]):
+        for n, items in enumerate(pages, 1):
+            self.answer(f"repos/{SLUG}/rulesets?per_page=100&page={n}", items)
 
     def calls(self) -> list[str]:
         log = self.dir / "calls.log"
@@ -187,28 +194,122 @@ def test_a_ruleset_the_identity_can_bypass_does_not_count(tmp_path, gh, capsys):
     assert run_json(product(tmp_path), capsys)[0] == 1
 
 
-def test_a_pull_request_rule_without_approvals_does_not_stop_a_merge(tmp_path, gh, capsys):
+def test_required_approvals_never_make_it_ok(tmp_path, gh, capsys):
+    """A worker can merge a pull request someone else approved, so approvals do not remove the merge right."""
     gh.repo_info(push=True)
-    gh.ruleset([{"type": "pull_request", "parameters": {"required_approving_review_count": 0}}])
-    assert row(run_json(product(tmp_path, name="a"), capsys)[1])["status"] == "FIX"
-    gh.ruleset([{"type": "pull_request", "parameters": {"required_approving_review_count": 1}}])
-    assert row(run_json(product(tmp_path, name="b"), capsys)[1])["status"] == "OK"
-
-
-def test_classic_branch_protection_counts_and_a_404_on_rulesets_is_tolerated(tmp_path, gh, capsys):
-    gh.repo_info(push=True)
+    gh.ruleset([{"type": "pull_request", "parameters": {"required_approving_review_count": 2}}])
     gh.answer(f"repos/{SLUG}/branches/main/protection",
               {"required_pull_request_reviews": {"required_approving_review_count": 1}})
+    rc, rep = run_json(product(tmp_path), capsys)
+    assert rc == 1 and row(rep)["status"] == "FIX"
+    assert rep["identity"]["evidence"] is None
+
+
+def test_a_push_restriction_that_does_not_list_the_identity_is_ok(tmp_path, gh, capsys):
+    gh.repo_info(push=True)
+    gh.answer(f"repos/{SLUG}/branches/main/protection",
+              {"restrictions": {"users": [{"login": "someone-else"}], "teams": [], "apps": []}})
     rc, rep = run_json(product(tmp_path), capsys)
     assert rc == 0 and row(rep)["status"] == "OK" and "branch protection" in row(rep)["detail"]
 
 
-def test_a_403_on_rulesets_and_protection_is_tolerated_and_a_private_repo_gets_the_fork_hint(tmp_path, gh, capsys):
+def test_a_push_restriction_that_lists_the_identity_is_a_fix(tmp_path, gh, capsys):
+    gh.repo_info(push=True)
+    gh.answer(f"repos/{SLUG}/branches/main/protection",
+              {"restrictions": {"users": [{"login": "worker-bot"}], "teams": [], "apps": []}})
+    assert run_json(product(tmp_path), capsys)[0] == 1
+
+
+@pytest.mark.parametrize("key,item,word", [("teams", {"slug": "robots"}, "team robots"),
+                                           ("apps", {"slug": "ci-helper"}, "App ci-helper")])
+def test_a_push_restriction_with_a_team_or_app_is_a_note_never_ok(tmp_path, gh, capsys, key, item, word):
+    """The identity might be covered through the team or App; from here that cannot be resolved."""
+    gh.repo_info(push=True)
+    restr = {"users": [{"login": "someone-else"}], "teams": [], "apps": []}
+    restr[key] = [item]
+    gh.answer(f"repos/{SLUG}/branches/main/protection", {"restrictions": restr})
+    rc, rep = run_json(product(tmp_path), capsys)
+    assert rc == 0 and row(rep)["status"] == "NOTE" and word in row(rep)["detail"]
+    assert rep["identity"]["evidence"] is None
+
+
+def test_a_proving_ruleset_wins_over_an_unresolvable_protection(tmp_path, gh, capsys):
+    gh.repo_info(push=True)
+    gh.ruleset([{"type": "update"}])
+    gh.answer(f"repos/{SLUG}/branches/main/protection",
+              {"restrictions": {"users": [], "teams": [{"slug": "robots"}], "apps": []}})
+    assert row(run_json(product(tmp_path), capsys)[1])["status"] == "OK"
+
+
+def test_a_ruleset_with_no_bypass_answer_is_a_note(tmp_path, gh, capsys):
+    gh.repo_info(push=True)
+    gh.ruleset([{"type": "update"}], bypass=None)
+    rc, rep = run_json(product(tmp_path), capsys)
+    assert rc == 0 and row(rep)["status"] == "NOTE" and "did not say" in row(rep)["detail"]
+
+
+def test_a_ruleset_on_the_eleventh_place_and_on_page_two_is_found(tmp_path, gh, capsys):
+    gh.repo_info(push=True)
+    # Ten active branch rulesets that cover other branches, then the one that matters.
+    items = []
+    for n in range(1, 11):
+        gh.ruleset([{"type": "update"}], include=["refs/heads/other"], rid=n, name=f"other-{n}", page=False)
+        items.append({"id": n, "name": f"other-{n}", "target": "branch", "enforcement": "active"})
+    gh.ruleset([{"type": "update"}], rid=11, name="the-one", page=False)
+    items.append({"id": 11, "name": "the-one", "target": "branch", "enforcement": "active"})
+    gh.pages([items])
+    rep = run_json(product(tmp_path, name="a"), capsys)[1]
+    assert row(rep)["status"] == "OK" and "the-one" in row(rep)["detail"]
+    # Page one is full (100), the blocking ruleset sits on page two.
+    filler = [{"id": 1000 + n, "name": f"off-{n}", "target": "branch", "enforcement": "disabled"} for n in range(100)]
+    gh.ruleset([{"type": "update"}], rid=500, name="second-page", page=False)
+    gh.pages([filler, [{"id": 500, "name": "second-page", "target": "branch", "enforcement": "active"}]])
+    rep = run_json(product(tmp_path, name="b"), capsys)[1]
+    assert row(rep)["status"] == "OK" and "second-page" in row(rep)["detail"]
+    assert any("page=2" in c for c in gh.calls())
+
+
+def test_a_failed_lookup_is_a_note_not_a_fix(tmp_path, gh, capsys):
+    """Both requests fail (a timeout, a 500): a protected worker must not be called able to merge."""
+    gh.repo_info(push=True)
+    gh.answer(f"repos/{SLUG}/rulesets?per_page=100&page=1", {"message": "boom"}, code=500)
+    gh.answer(f"repos/{SLUG}/branches/main/protection", {"message": "boom"}, code=500)
+    rc, rep = run_json(product(tmp_path), capsys)
+    assert rc == 0 and row(rep)["status"] == "NOTE"
+    assert "could not read the rulesets" in row(rep)["detail"] and "could not read branch protection" in row(rep)["detail"]
+
+
+def test_an_unreadable_ruleset_detail_is_a_note(tmp_path, gh, capsys):
+    gh.repo_info(push=True)
+    gh.pages([[{"id": 9, "name": "hidden", "target": "branch", "enforcement": "active"}]])
+    gh.answer(f"repos/{SLUG}/rulesets/9", {"message": "boom"}, code=500)
+    assert row(run_json(product(tmp_path), capsys)[1])["status"] == "NOTE"
+
+
+def test_a_gh_that_times_out_is_a_note(tmp_path, gh, monkeypatch, capsys):
+    gh.repo_info(push=True)
+    real = shield._gh_get
+
+    def flaky(path, timeout=30):
+        return (124, None, "gh timed out", None) if "rulesets" in path or "protection" in path else real(path, timeout)
+    monkeypatch.setattr(shield, "_gh_get", flaky)
+    rc, rep = run_json(product(tmp_path), capsys)
+    assert rc == 0 and row(rep)["status"] == "NOTE"
+
+
+def test_the_free_plan_upgrade_answer_is_a_definite_no_rules_and_gets_the_fork_hint(tmp_path, gh, capsys):
     gh.repo_info(push=True, private=True)
-    gh.answer(f"repos/{SLUG}/rulesets", {"message": "Upgrade to GitHub Pro"}, code=403)
-    gh.answer(f"repos/{SLUG}/branches/main/protection", {"message": "Upgrade"}, code=403)
+    gh.answer(f"repos/{SLUG}/rulesets?per_page=100&page=1", {"message": "Upgrade to GitHub Pro or make this repository public"}, code=403)
+    gh.answer(f"repos/{SLUG}/branches/main/protection", {"message": "Upgrade to GitHub Pro or make this repository public"}, code=403)
     rc, rep = run_json(product(tmp_path), capsys)
     assert rc == 1 and row(rep)["status"] == "FIX" and "fork route" in row(rep)["detail"]
+
+
+def test_a_plain_403_on_rulesets_is_a_failed_lookup_not_a_fix(tmp_path, gh, capsys):
+    gh.repo_info(push=True, private=True)
+    gh.answer(f"repos/{SLUG}/rulesets?per_page=100&page=1", {"message": "Resource not accessible"}, code=403)
+    rc, rep = run_json(product(tmp_path), capsys)
+    assert rc == 0 and row(rep)["status"] == "NOTE"
 
 
 def test_a_read_only_identity_is_ok_because_its_pushes_go_to_a_fork(tmp_path, gh, capsys):
@@ -301,7 +402,7 @@ def test_only_read_only_api_gets_run_and_no_token_is_ever_printed(tmp_path, gh, 
     token = fake_token()
     monkeypatch.setenv("FAKE_GH_LEAK", token)             # gh echoes a token in an error line
     gh.repo_info(push=True)
-    gh.answer(f"repos/{SLUG}/rulesets", {"message": "x"}, code=403)
+    gh.answer(f"repos/{SLUG}/rulesets?per_page=100&page=1", {"message": "x"}, code=403)
     d = product(tmp_path)
     rc = main(["shield", "check", str(d), "--identity"])
     cap = capsys.readouterr()
@@ -309,7 +410,7 @@ def test_only_read_only_api_gets_run_and_no_token_is_ever_printed(tmp_path, gh, 
     assert all(c.startswith("api ") and "--method" not in c and "-X" not in c and "-f" not in c.split()
                for c in gh.calls()), gh.calls()
     assert shield._scrub(f"HTTP 401 {token}") == "HTTP 401 ***"
-    assert rc == 1
+    assert rc == 0
 
 
 def test_a_token_in_a_gh_error_line_is_scrubbed_from_the_note(tmp_path, gh, monkeypatch, capsys):
