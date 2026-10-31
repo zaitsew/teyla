@@ -305,13 +305,16 @@ def _lines_without_comments(text: str) -> list[tuple[int, str]]:
     return out
 
 
-_INTERP = re.compile(r"\$\{[^{}\n]*\}|\\\([^()\n]*\)|\$[A-Za-z_][A-Za-z0-9_]*")
+_INTERP = re.compile(r"\$\{[^{}\n]*\}|\\\((?:[^()\n]|\([^()\n]*\))*\)|\$[A-Za-z_][A-Za-z0-9_]*")
 _ESCAPE = re.compile(r"\\/|\\x([0-9a-fA-F]{2})|\\u([0-9a-fA-F]{4})|\\u\{([0-9a-fA-F]{1,6})\}")
 
 
 def _unescape(m: "re.Match") -> str:
     hexa = m.group(1) or m.group(2) or m.group(3)
-    return "/" if hexa is None else chr(int(hexa, 16))
+    if hexa is None:
+        return "/"
+    code = int(hexa, 16)
+    return chr(code) if code <= 0x10FFFF else m.group(0)   # `\u{110000}` is valid source, not a character
 
 
 def code_line_text(line: str) -> str:
@@ -700,7 +703,14 @@ def check_repo(root: pathlib.Path) -> dict:
     root = root.resolve()
     scan = scan_repo_files(root)
     privacy_file = root / PRIVACY_PATH
-    privacy_text = read_text(privacy_file, scan, PRIVACY_PATH) if os.path.lexists(privacy_file) else None
+    privacy_text = None
+    if os.path.lexists(privacy_file):
+        if (root / "docs").is_symlink():
+            # a symlinked docs/ could hand us someone else's table and silence findings
+            if len(scan.unread) < 50:
+                scan.unread.append(f"{PRIVACY_PATH}: docs is a symlink, table ignored")
+        else:
+            privacy_text = read_text(privacy_file, scan, PRIVACY_PATH)
     tables = parse_tables(privacy_text, frozenset(scan.hosts) | frozenset(scan.local)) if privacy_text is not None else []
     toml = read_toml(root / "teyla.toml", scan, "teyla.toml")
     conf_hosts = [normalize(h) for h in (toml.get("privacy") or {}).get("hosts", []) if isinstance(h, str)]

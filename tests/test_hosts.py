@@ -429,3 +429,26 @@ def test_a_documented_ip_address_is_covered_and_write_never_duplicates(tmp_path,
     assert once.count("8.8.8.8") == 1 and once.count("1.1.1.1") == 1 and once.count("9.9.9.9") == 1
     assert run(capsys, str(d), "--write")[0] == 0
     assert (d / "docs" / "PRIVACY.md").read_text() == once
+
+
+def test_round_two_fixes(tmp_path):
+    from teyla import hosts
+    # a Unicode escape above U+10FFFF is valid source and must not crash the scan
+    assert "\\u{110000}" in hosts.code_line_text('fetch("https://a.acme.test/\\u{110000}")')
+    # a nested Swift interpolation still yields a wildcard first label
+    text = hosts.code_line_text('let u = "https://\\(tenant()).pool.acme.test"')
+    assert "pool.acme.test" in text and "\\(" not in text
+    # a symlinked docs/ never supplies the privacy table
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / "src" / "a.py").write_text('import urllib.request\nurllib.request.urlopen("https://api.acme.test/x")\n')
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "PRIVACY.md").write_text("| Host | What |\n|---|---|\n| api.acme.test | all |\n")
+    (repo / "docs").symlink_to(outside)
+    import subprocess
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    report = hosts.check_repo(repo)
+    assert any("docs is a symlink" in u for u in report["coverage"]["unread"])
+    assert report["coverage"]["privacy_table"] is False
+    assert not any(h["documented"] for h in report["hosts"] if h["host"] == "api.acme.test")
