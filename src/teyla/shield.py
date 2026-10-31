@@ -329,16 +329,50 @@ def _hosts_command(repo: pathlib.Path) -> list[str] | None:
     return _teyla_argv("hosts", str(repo)) if _cli_has("hosts") else None
 
 
-def check_leak(c: Ctx):
-    found = _leak_command(c.repo)
-    if found is None:
-        return "FIX", "install the leak gate (the teyla leak command, or Teyla's scripts/leak_check.py)"
-    rc, out = _run(found[0], found[1])
+def _is_private(repo: pathlib.Path) -> bool:
+    """Is the repo recorded as private (`git config teyla.visibility private`)? Anything else counts as public."""
+    if not _is_git(repo):
+        return False
+    r = _git(repo, "config", "--get", "teyla.visibility")
+    return r is not None and r.returncode == 0 and r.stdout.strip() == "private"
+
+
+def _check_leak_private(c: Ctx, found):
+    """The leak row of a repo recorded as private: terms and e-mails are triage there, so they are counted and
+    listed, never blocking. A blocker is a FIX as everywhere else."""
+    argv = ["--json" if a == "--quiet" else a for a in found[0]]
+    try:
+        p = subprocess.run(argv, cwd=found[1] or _neutral_cwd(), capture_output=True, text=True, timeout=180)
+        doc = json.loads(p.stdout)
+        findings = doc["findings"]
+        blockers = sum(1 for f in findings if f["severity"] == "blocker")
+        triage = sum(1 for f in findings if f["severity"] == "triage")
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
+        return _leak_verdict(*_run(found[0], found[1]))
+    if p.returncode == 0:
+        if triage:
+            return "OK", f"{triage} triage (private repo: terms and e-mails listed, not blocking)"
+        return "OK", "no findings"
+    err = (p.stderr or "").strip().splitlines()
+    return _leak_verdict(p.returncode, str(blockers) if p.returncode == 1 else (err[0] if err else ""))
+
+
+def _leak_verdict(rc: int, out: str):
     if rc == 0:
         return "OK", "no findings"
     if rc == 1:
         return "FIX", f"the leak scan found {out or 'findings'}; run it without --quiet and remove them"
     return "FIX", f"the leak scanner failed (exit {rc}){': ' + out if out else ''}"
+
+
+def check_leak(c: Ctx):
+    found = _leak_command(c.repo)
+    if found is None:
+        return "FIX", "install the leak gate (the teyla leak command, or Teyla's scripts/leak_check.py)"
+    if _is_private(c.repo) and "--quiet" in found[0]:
+        return _check_leak_private(c, found)
+    rc, out = _run(found[0], found[1])
+    return _leak_verdict(rc, out)
 
 
 def check_hooks(c: Ctx):
