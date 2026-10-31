@@ -358,6 +358,70 @@ def test_no_python_is_a_refusal_for_a_matched_command_only(box):
     refused(box.run("cat ~/.ssh/id_rsa", TEYLA_PYTHON=None, path_dirs=str(only)), "python3 is not on PATH")
 
 
+def test_the_python_behind_teyla_is_used_when_python3_lacks_the_package(box):
+    """`python3` on PATH is a system interpreter without the package (Homebrew, Xcode); `teyla` is a uv tool or
+    venv console script whose shebang names the interpreter that has it. The hook follows that shebang.
+    The venv here is real: a symlinked interpreter, a pyvenv.cfg and a .pth that points at the checkout's source."""
+    venv = box.tmp / "venv"
+    (venv / "bin").mkdir(parents=True)
+    py = venv / "bin" / "python"
+    py.symlink_to(sys.executable)
+    (venv / "pyvenv.cfg").write_text(f"home = {pathlib.Path(sys._base_executable).parent}\ninclude-system-site-packages = false\n")
+    site = venv / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+    site.mkdir(parents=True)
+    (site / "teyla.pth").write_text(f"{SRC}\n")
+    console = venv / "bin" / "teyla"             # what a console script looks like: a shebang and a few lines of python
+    console.write_text(f"#!{py}\nimport os, sys\nopen(os.environ['FAKE_CALLS'], 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
+                       "from teyla.leak import main\nsys.exit(main(sys.argv[2:]))\n")
+    console.chmod(0o755)
+    bare = box.tmp / "bare"
+    bare.mkdir()
+    (bare / "python3").write_text('#!/bin/sh\necho "No module named teyla" >&2\nexit 1\n')
+    (bare / "python3").chmod(0o755)
+    for tool in ("mkdir", "date", "tr"):
+        (bare / tool).symlink_to(shutil.which(tool))
+    # git for the scanner; bare python3 wins on PATH; the venv is a known interpreter root only because the test says so
+    kw = dict(TEYLA_PYTHON=None, TEYLA_PYTHON_ROOTS=str(venv), path_dirs=f"{bare}:{venv / 'bin'}:/usr/bin:/bin")
+    allowed(box.run("gh pr create -t T -b B", **kw))
+    assert box.scanner_calls() == ["leak --text -"], box.scanner_calls()
+    refused(box.run(f"gh pr create -t T -b {SECRET}", **kw), "refused")
+    # A `#!/usr/bin/env python3` shebang names no file: python3 on PATH decides, and here it has no package.
+    console.write_text("#!/usr/bin/env python3\nimport sys\n")
+    refused(box.run("gh pr create -t T -b B", **kw), "the guard failed")
+    # A shebang that names an executable outside the known interpreter roots, or one inside the repo the command
+    # runs in, is not followed: a planted console script cannot pick the guard's interpreter.
+    allow = box.tmp / "python-allow"
+    allow.write_text("#!/bin/sh\nexit 0\n")
+    allow.chmod(0o755)
+    console.write_text(f"#!{allow}\n")
+    refused(box.run(f"cat {box.home}/.ssh/id_rsa", **kw), "the guard failed")
+    planted = box.work / "bin"
+    planted.mkdir()
+    (planted / "python3").write_text("#!/bin/sh\nexit 0\n")
+    (planted / "python3").chmod(0o755)
+    console.write_text(f"#!{planted / 'python3'}\n")
+    refused(box.run(f"cat {box.home}/.ssh/id_rsa", **kw), "the guard failed")
+    (box.work / "teyla").write_text(f"#!{py}\nimport sys\n")       # the script itself inside the repo
+    (box.work / "teyla").chmod(0o755)
+    refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, TEYLA_PYTHON_ROOTS=str(venv),
+                    path_dirs=f"{bare}:{box.work}:/usr/bin:/bin"), "the guard failed")
+    # A relative `./teyla` (`.` on PATH) and a shebang that climbs out of a root with `..` are judged by where
+    # the files really are: inside the repo, and outside every root.
+    (box.work / "teyla").write_text(f"#!{py}\nimport sys\n")
+    refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, TEYLA_PYTHON_ROOTS=str(venv),
+                    path_dirs=f"{bare}:.:/usr/bin:/bin"), "the guard failed")
+    climb = pathlib.Path("/usr/bin/../..") / str(allow).lstrip("/")
+    console.write_text(f"#!{climb}\n")
+    refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, TEYLA_PYTHON_ROOTS="/usr/bin",
+                    path_dirs=kw["path_dirs"]), "the guard failed")
+    # The venv is outside every known root once the test stops naming it.
+    console.write_text(f"#!{py}\nimport sys\n")
+    refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, path_dirs=kw["path_dirs"]), "the guard failed")
+    # No `teyla` anywhere: the same refusal, with the bare python3.
+    console.unlink()
+    refused(box.run("gh pr create -t T -b B", **kw), "the guard failed")
+
+
 def test_a_guard_that_crashes_is_a_refusal_for_a_matched_command(box):
     r = box.run('git commit -m "x"', FAKE_PY="crash")
     refused(r, "the guard failed (status 1)", "TEYLA_LEAK_GUARD=0")

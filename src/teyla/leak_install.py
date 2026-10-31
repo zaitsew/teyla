@@ -2,6 +2,8 @@
 
     teyla leak install [repo] [--all] [--uninstall]
     teyla leak terms --suggest [--yes] [--json]
+    teyla leak terms list [--json]
+    teyla leak terms move <index>... --to teyla|everywhere [--json]
 
 `install` writes `.githooks/pre-commit` (the index) and `.githooks/pre-push` (the commits the remote lacks),
 POSIX `sh`, and points `core.hooksPath` at them. A hook that is already there and is not ours keeps its
@@ -12,7 +14,11 @@ skip is logged to `~/.teyla/leak-skips.log`.
 `terms --suggest` lists private-term candidates from facts the machine already knows (git identity, the
 login and home names, the computer name, tester e-mails and bundle-id organisations in this repo's
 `teyla.toml`, hosts in `platform.toml`). It never reads another repo's content, prints every candidate
-masked, and appends the full values to the terms file only with `--yes`.
+masked, and appends the full values to the terms file only with `--yes`. Product and organisation names go
+under `[teyla]`, everything else under `[everywhere]`.
+
+`terms list` and `terms move` let the owner sort an existing terms file into its two sections without a term
+ever reaching stdout: both print an index, a section and a masked form.
 
 The argparse parser of `teyla leak` takes a positional repo, so it cannot also carry sub-commands; the two
 are registered as `leak-install` and `leak-terms`, and `alias()` lets `teyla leak install` mean the first.
@@ -386,12 +392,7 @@ def _existing_terms(path: Path) -> set[str]:
         raw = path.read_text(encoding="utf-8")
     except OSError:
         return set()
-    out = set()
-    for line in raw.splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and not re.match(r"(?i)allow\s+.+?\s+in\s+\S+$", line):
-            out.add(line.lower())
-    return out
+    return {t for t, _ in _engine().distinct_terms(raw)}
 
 
 def _run(*cmd: str) -> str:
@@ -480,6 +481,15 @@ def collect_facts(root: Path | None) -> list[tuple[str, str]]:
     return git_facts(root) + machine_facts() + manifest_facts(root) + platform_facts()
 
 
+# Facts that name a product or an organisation belong in Teyla's `[teyla]` section: they are in every product's
+# own repo and must stay out of Teyla's. Every other fact is the owner's own data and goes everywhere.
+TEYLA_SOURCES = {"bundle id organisation"}
+
+
+def section_of(source: str) -> str:
+    return "teyla" if source in TEYLA_SOURCES else "everywhere"
+
+
 def candidates(root: Path | None, existing: set[str]) -> list[tuple[str, str]]:
     seen, out = set(existing), []
     for value, source in collect_facts(root):
@@ -491,43 +501,222 @@ def candidates(root: Path | None, existing: set[str]) -> list[tuple[str, str]]:
     return out
 
 
-def _append_terms(path: Path, values: list[str]) -> None:
-    """Append under a private mode that is set before the first byte is written. Any failure raises OSError with
-    nothing written."""
+def _engine():
+    return leak._engine()
+
+
+def _prepare_dir(path: Path) -> None:
     default = Path.home() / ".config" / "teyla"
     if not path.parent.exists():
         path.parent.mkdir(parents=True, mode=0o700)
         path.parent.chmod(0o700)
     elif path.parent == default and stat.S_IMODE(path.parent.stat().st_mode) & 0o077:
         path.parent.chmod(0o700)
+
+
+def _append_terms(path: Path, values: list[tuple[str, str]]) -> None:
+    """Append `(value, section)` pairs under a private mode that is set before the first byte is written. The
+    section in force at the end of the file takes its values first, so a file with no headers stays one
+    block; the other section follows under its own header. Any failure raises OSError with nothing written."""
+    _prepare_dir(path)
     flags = os.O_RDWR | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(path, flags, 0o600)
     try:
         os.fchmod(fd, 0o600)                         # on an existing loose file too, before any write
         size = os.fstat(fd).st_size
-        lead = "\n" if size and os.pread(fd, 1, size - 1) != b"\n" else ""
+        if size > _engine().CONFIG_CAP:
+            raise OSError("the terms file is over the size cap")
+        body = os.pread(fd, size, 0).decode("utf-8", "replace") if size else ""
+        lead = "\n" if size and not body.endswith("\n") else ""
+        at_end = "everywhere"
+        for _no, _kind, section, _p in _engine().terms_lines(body):
+            at_end = section
         stamp = f"# added by teyla leak terms --suggest on {date.today().isoformat()}\n"
-        os.write(fd, (lead + stamp + "".join(v + "\n" for v in values)).encode("utf-8"))
+        out, first = lead, True
+        for section in (at_end, *(x for x in _engine().TERM_SECTIONS if x != at_end)):
+            vals = [v for v, sec in values if sec == section]
+            if not vals:
+                continue
+            if section != at_end:
+                out += ("\n" if not first or size else "") + f"[{section}]\n"
+            out += stamp + "".join(v + "\n" for v in vals)
+            first = False
+        os.write(fd, out.encode("utf-8"))
     finally:
         os.close(fd)
 
 
+def _write_private_atomic(path: Path, text: str) -> None:
+    """Replace the terms file with `text`: a 0600 temporary file in the same directory, then `os.replace`. A
+    symlink is refused, like the append does."""
+    if path.is_symlink():
+        raise OSError("the terms file is a symlink")
+    tmp = path.with_name(f".{path.name}.tmp{os.getpid()}")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        data = text.encode("utf-8")
+        while data:
+            data = data[os.write(fd, data):]
+        os.fsync(fd)
+    except BaseException:
+        os.close(fd)
+        tmp.unlink(missing_ok=True)
+        raise
+    os.close(fd)
+    try:
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _place(raw: str, section: str, values: list[str]) -> str:
+    """`raw` with `values` added as term lines at the end of `section`: after the last non-blank line the section
+    owns. A section with no lines is created at the end of the file; `everywhere` with none goes first, ahead
+    of any header, where headerless lines already mean everywhere."""
+    lines = raw.splitlines()
+    last = 0
+    for no, kind, sec, _p in _engine().terms_lines(raw):
+        if sec == section and kind != "blank":
+            last = no
+    if last or section == "everywhere":
+        lines[last:last] = values                    # last == 0 for everywhere: ahead of any header
+    else:
+        lines += ([""] if lines and lines[-1].strip() else []) + [f"[{section}]"] + (
+            ["# never in Teyla's repo: product and organisation names"] if section == "teyla" else []) + values
+    return "\n".join(lines) + "\n"
+
+
+def _read_terms_file(path: Path) -> str:
+    return _engine().read_capped(path)
+
+
+def mask_term(term: str) -> str:
+    """A term as two characters, `…` and its length; under 4 characters it shows none (`*…2`), because the first
+    two characters of a short term are the term."""
+    return f"*{leak.ELLIPSIS}{len(term)}" if len(term) < 4 else leak.mask(term)
+
+
+def _term_rows(raw: str) -> list[dict]:
+    rows = []
+    for i, (term, section) in enumerate(_engine().distinct_terms(raw)):
+        rows.append({"index": i, "section": section, "masked": mask_term(term)})
+    return rows
+
+
+def _parse_indices(words: list[str]) -> list[int]:
+    out: list[int] = []
+    for w in words:
+        w = w[5:] if w.startswith("term:") else w
+        if not w.isdigit():
+            raise ValueError(f"not an index: {mask_term(w)}")
+        if int(w) not in out:
+            out.append(int(w))
+    return out
+
+
+def move_terms(raw: str, indices: list[int], to: str) -> tuple[str, list[dict]]:
+    """Move the terms at `indices` to section `to`. Returns the new file text and one `{from, to, section}` row
+    per moved term. Comments and `allow` lines stay where they are. A term already in `to` stays put. Each moved
+    term is written once, at the end of `to`, in index order; the indices of the others keep their order but
+    shift to close the gap, so the new index of a moved term is reported."""
+    eng = _engine()
+    distinct = eng.distinct_terms(raw)
+    for i in indices:
+        if not 0 <= i < len(distinct):
+            raise ValueError(f"no term with index {i}")
+    pick = [i for i in indices if distinct[i][1] != to]
+    names = {distinct[i][0] for i in pick}
+    first_text: dict[str, str] = {}
+    keep: list[str] = []
+    for line in raw.splitlines():
+        k = next(iter(eng.terms_lines(line)), None)
+        if k and k[1] == "term" and k[3].lower() in names:
+            first_text.setdefault(k[3].lower(), k[3])
+            continue
+        keep.append(line)
+    # a header changes the section of the lines after it, so the kept text is re-read as a whole
+    text = "\n".join(keep) + ("\n" if keep else "")
+    values = [first_text[distinct[i][0]] for i in sorted(pick)]
+    if values:
+        text = _place(text, to, values)
+    new = [t for t, _ in eng.distinct_terms(text)]
+    rows = [{"from": i, "to": new.index(distinct[i][0]), "section": to} for i in sorted(pick)]
+    return text, rows
+
+
+def _cmd_list(args, path: Path) -> int:
+    try:
+        raw = _read_terms_file(path)
+    except FileNotFoundError:
+        raw = ""
+    except (OSError, ValueError) as e:
+        print(f"teyla leak terms: cannot read the terms file ({type(e).__name__})", file=sys.stderr)
+        return 2
+    rows = _term_rows(raw)
+    if args.json:
+        print(json.dumps({"terms": rows}, indent=2, ensure_ascii=False))
+    elif not rows:
+        print("no terms")
+    else:
+        for r in rows:
+            print(f"term:{r['index']}  {r['section']:<10}  {r['masked']}")
+    return 0
+
+
+def _cmd_move(args, path: Path, words: list[str]) -> int:
+    if args.to not in _engine().TERM_SECTIONS:
+        print("teyla leak terms move: --to teyla|everywhere is required", file=sys.stderr)
+        return 2
+    try:
+        indices = _parse_indices(words)
+        if not indices:
+            raise ValueError("no index given")
+        raw = _read_terms_file(path)
+        text, rows = move_terms(raw, indices, args.to)
+        if rows:
+            _write_private_atomic(path, text)
+    except FileNotFoundError:
+        print("teyla leak terms move: no terms file", file=sys.stderr)
+        return 2
+    except ValueError as e:
+        print(f"teyla leak terms move: {e}", file=sys.stderr)
+        return 2
+    except OSError as e:
+        print(f"teyla leak terms move: cannot write the terms file ({type(e).__name__})", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps({"moved": rows, "to": args.to}, indent=2))
+    else:
+        for r in rows:
+            print(f"term:{r['from']} -> term:{r['to']}  {r['section']}")
+        print(f"moved {len(rows)} term{'s' if len(rows) != 1 else ''} to [{args.to}]")
+    return 0
+
+
 def cmd_terms(args) -> int:
-    if not args.suggest:
-        print("teyla leak terms: nothing to do; use --suggest", file=sys.stderr)
+    words = list(args.words or [])
+    path = terms_path()
+    if words and words[0] in ("list", "move"):
+        if args.suggest or args.yes:
+            print("teyla leak terms: --suggest and --yes do not combine with list or move", file=sys.stderr)
+            return 2
+        return _cmd_list(args, path) if words[0] == "list" else _cmd_move(args, path, words[1:])
+    if words or not args.suggest:
+        print("teyla leak terms: nothing to do; use --suggest, list or move", file=sys.stderr)
         return 2
     root = _root(Path.cwd())
-    path = terms_path()
     cands = candidates(root, _existing_terms(path))
     added = 0
     if args.yes and cands:
         try:
-            _append_terms(path, [v for v, _ in cands])
+            _append_terms(path, [(v, section_of(s)) for v, s in cands])
         except OSError as e:
             print(f"teyla leak terms: cannot write the terms file ({type(e).__name__})", file=sys.stderr)
             return 2
         added = len(cands)
-    rows = [{"masked": leak.mask(v), "source": s} for v, s in cands]
+    rows = [{"masked": mask_term(v), "source": s, "section": section_of(s)} for v, s in cands]
     if args.json:
         print(json.dumps({"candidates": rows, "added": added}, indent=2, ensure_ascii=False))
     elif args.yes:
@@ -537,7 +726,7 @@ def cmd_terms(args) -> int:
     else:
         print(f"{len(rows)} candidate{'s' if len(rows) != 1 else ''} (masked; nothing written):")
         for r in rows:
-            print(f"  {r['masked']:<14} {r['source']}")
+            print(f"  {r['masked']:<14} {r['section']:<10} {r['source']}")
         print("Add them all: teyla leak terms --suggest --yes")
     return 0
 
@@ -559,7 +748,9 @@ def register(sp):
     q.add_argument("--uninstall", action="store_true", help="remove only our hooks or our delimited block")
     t = sp.add_parser("leak-terms", help="suggest private terms from facts this machine knows, masked; also `teyla leak terms`")
     t.set_defaults(fn=cmd_terms)
+    t.add_argument("words", nargs="*", metavar="list | move INDEX...", help="`list` prints index, section and masked form; `move INDEX... --to SECTION` re-sections terms")
+    t.add_argument("--to", choices=("teyla", "everywhere"), help="move: the section the terms go to")
     t.add_argument("--suggest", action="store_true", help="list candidates, masked")
     t.add_argument("--yes", action="store_true", help="append the full values to the terms file (0600) and print the count")
-    t.add_argument("--json", action="store_true", help="masked candidates and the count added")
+    t.add_argument("--json", action="store_true", help="masked candidates and the count added; list and move: the same rows as JSON")
     return q
