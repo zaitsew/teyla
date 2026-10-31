@@ -97,7 +97,7 @@ def test_install_writes_executable_hooks_and_sets_hookspath(box, capsys):
         assert text.startswith("#!/bin/sh\n# teyla leak gate (")
         assert f.stat().st_mode & stat.S_IXUSR
     assert "teyla leak --staged --quiet" in (box.repo / ".githooks/pre-commit").read_text()
-    assert 'teyla leak --outgoing "$_tlg_remote" --quiet' in (box.repo / ".githooks/pre-push").read_text()
+    assert "teyla leak --commits" in (box.repo / ".githooks/pre-push").read_text()
     assert box.hooks_path() == ".githooks"
     meta = json.loads((box.repo / ".githooks" / li.META).read_text())
     assert meta["hooks_path_set"] is True
@@ -255,11 +255,147 @@ def test_the_hook_does_not_consume_pre_push_stdin(box):
     box.git("config", "--local", "core.hooksPath", ".githooks")
     box.write(".githooks/pre-push", '#!/bin/sh\ncat > "$MARK_FILE"\n').chmod(0o755)
     box.install()
-    refs = "refs/heads/main abc refs/heads/main def\n"
+    head = box.git("rev-parse", "HEAD").stdout.strip()
+    refs = f"refs/heads/main {head} refs/heads/main {head}\n"
     p = subprocess.run(["/bin/sh", str(box.repo / ".githooks/pre-push"), "origin", str(remote)], cwd=box.repo,
                        input=refs, capture_output=True, text=True, env=box.env)
     assert p.returncode == 0, p.stderr
     assert box.mark.read_text() == refs
+
+
+# --- review round: refs on stdin, private modes, the skip record, worktree scope, other shells ------------
+
+def _remote(box):
+    remote = box.tmp / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    box.write("a.txt", "one\n")
+    box.git("add", "a.txt")
+    box.git("commit", "-q", "-m", "one")
+    box.git("remote", "add", "origin", str(remote))
+    box.git("push", "-q", "origin", "main")
+    return remote
+
+
+def test_pre_push_scans_the_refs_git_passes_not_head(box):
+    remote = _remote(box)
+    box.install()
+    terms = box.tmp / "terms.txt"
+    terms.write_text(TERM + "\n")
+    env = {"TEYLA_PRIVATE_TERMS": str(terms)}
+    box.git("checkout", "-q", "-b", "leaky")
+    box.write("b.txt", f"we work with {TERM} on this\n")
+    box.git("add", "b.txt")
+    box.git("commit", "-q", "--no-verify", "-m", "two")
+    box.git("checkout", "-q", "main")                            # HEAD is clean; the pushed ref is not
+    new_branch = box.git("push", "origin", "leaky", env=env, check=False)
+    assert new_branch.returncode != 0 and "pre-push refused" in new_branch.stderr
+    update = box.git("push", "origin", "leaky:main", env=env, check=False)      # a non-zero remote sha
+    assert update.returncode != 0 and "pre-push refused" in update.stderr
+    assert box.git("rev-list", "--count", "--all", cwd=remote).stdout.strip() == "1"
+    assert box.git("push", "origin", "main:tmpb", env=env, check=False).returncode == 0
+    assert box.git("push", "origin", ":tmpb", env=env, check=False).returncode == 0     # a deletion: all-zero local sha
+
+
+def test_the_terms_file_is_made_private_before_the_first_byte(box, monkeypatch, capsys):
+    monkeypatch.setattr(li, "collect_facts", lambda root: [("Quentin Vexley", "git user.name")])
+    f = box.tmp / "terms.txt"
+    f.write_text("one\n")
+    f.chmod(0o644)
+    monkeypatch.setenv("TEYLA_PRIVATE_TERMS", str(f))
+    seen = {}
+    real = os.fchmod
+
+    def spy(fd, mode):
+        seen["size"], seen["mode"] = os.fstat(fd).st_size, stat.S_IMODE(os.fstat(fd).st_mode)
+        real(fd, mode)
+    monkeypatch.setattr(os, "fchmod", spy)
+    assert run_terms(capsys, "--yes")[0] == 0
+    assert seen == {"size": 4, "mode": 0o644} and stat.S_IMODE(f.stat().st_mode) == 0o600   # nothing written yet
+    # a failing chmod writes nothing and exits 2
+    f.write_text("one\n")
+    monkeypatch.setattr(os, "fchmod", lambda fd, mode: (_ for _ in ()).throw(PermissionError("no")))
+    rc, out, err = run_terms(capsys, "--yes")
+    assert rc == 2 and "cannot write" in err and f.read_text() == "one\n" and "Quentin" not in out + err
+
+
+def test_a_skip_that_cannot_be_logged_is_refused(box):
+    box.install()
+    box.write("b.txt", "clean\n")
+    box.git("add", "b.txt")
+    blocker = box.tmp / "not-a-dir"
+    blocker.write_text("x")                                       # TEYLA_HOME is a file: the log cannot be made
+    p = box.git("commit", "-q", "-m", "skipped", env={"TEYLA_LEAK": "0", "TEYLA_HOME": str(blocker)}, check=False)
+    assert p.returncode != 0 and "cannot record the skip" in p.stderr
+    assert p.stderr.startswith("mkdir:")                                                # the reason is printed
+    assert box.git("rev-parse", "--verify", "-q", "HEAD", check=False).returncode != 0      # no commit was made
+
+
+def test_a_worktree_level_hooks_path_is_the_effective_one(box, capsys):
+    box.write("a.txt", "one\n")
+    box.git("add", "a.txt")
+    box.git("commit", "-q", "-m", "one")
+    box.git("config", "extensions.worktreeConfig", "true")
+    wt = box.tmp / "wt"
+    box.git("worktree", "add", "-q", "-b", "wtb", str(wt))
+    box.git("config", "--worktree", "core.hooksPath", "hooks-wt", cwd=wt)
+    assert cli.main(["leak", "install", str(wt)]) == 0
+    assert "(worktree scope)" in capsys.readouterr().out
+    assert (wt / "hooks-wt/pre-commit").is_file() and not (wt / ".githooks").exists()
+    # the main worktree has no value of its own: the repo's scope is set, and the line says which
+    assert box.install() == 0
+    assert "(local scope)" in capsys.readouterr().out
+    assert box.install("--uninstall") == 0
+    assert "unset (local scope)" in capsys.readouterr().out and box.hooks_path() is None
+
+
+def test_a_non_sh_hook_is_renamed_and_runs_after_the_gate(box):
+    box.git("config", "--local", "core.hooksPath", ".githooks")
+    py = '#!/usr/bin/env python3\nimport os\nopen(os.environ["MARK_FILE"], "a").write("py\\n")\n'
+    f = box.write(".githooks/pre-commit", py)
+    f.chmod(0o755)
+    box.install()
+    assert (box.repo / ".githooks/pre-commit.chain").read_text() == py
+    assert f.read_text().startswith("#!/bin/sh\n# teyla leak gate (pre-commit)") and "pre-commit.chain" in f.read_text()
+    before = f.read_bytes()
+    box.install()
+    assert f.read_bytes() == before                              # idempotent
+    box.write("a.txt", "clean\n")
+    box.git("add", "a.txt")
+    assert box.git("commit", "-q", "-m", "x", check=False).returncode == 0
+    assert box.mark.read_text() == "py\n"                        # the old hook ran after the gate
+    box.write("b.txt", KEY + "\n")
+    box.git("add", "b.txt")
+    assert box.git("commit", "-q", "-m", "y", check=False).returncode != 0
+    assert box.mark.read_text() == "py\n"                        # and not when the gate refused
+    box.install("--uninstall")
+    assert f.read_text() == py and not (box.repo / ".githooks/pre-commit.chain").exists()
+
+
+def test_a_hook_left_in_git_hooks_still_runs_with_args_and_stdin(box):
+    remote = _remote(box)
+    legacy = box.repo / ".git/hooks/pre-push"
+    legacy.write_text('#!/bin/sh\necho "$@" > "$MARK_FILE"\ncat >> "$MARK_FILE"\n')
+    legacy.chmod(0o755)
+    box.install()
+    box.write("c.txt", "clean\n")
+    box.git("add", "c.txt")
+    box.git("commit", "-q", "-m", "three")
+    assert box.git("push", "origin", "main", check=False).returncode == 0
+    lines = box.mark.read_text().splitlines()
+    assert lines[0] == f"origin {remote}" and lines[1].startswith("refs/heads/main ")
+    legacy.write_text("#!/bin/sh\nexit 3\n")                     # a failing legacy hook still blocks
+    box.write("d.txt", "clean\n")
+    box.git("add", "d.txt")
+    box.git("commit", "-q", "-m", "four")
+    assert box.git("push", "origin", "main", check=False).returncode != 0
+
+
+def test_a_generated_hook_regains_its_exec_bit(box):
+    box.install()
+    for hook in li.HOOKS:
+        (box.repo / ".githooks" / hook).chmod(0o644)
+    box.install()
+    assert all((box.repo / ".githooks" / h).stat().st_mode & stat.S_IXUSR for h in li.HOOKS)
 
 
 # --- terms --suggest ----------------------------------------------------------------------------------

@@ -48,37 +48,88 @@ EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 
 # --- the hooks ---------------------------------------------------------------------------------
 
-def block(hook: str) -> str:
-    """The delimited sh snippet: skip when TEYLA_LEAK=0 (logged), scan, exit non-zero on a finding or a gap."""
-    if hook == "pre-commit":
-        remote, scan, show = "", "teyla leak --staged --quiet", "teyla leak --staged"
-    else:
-        remote = '_tlg_remote="${1:-origin}"\n'
-        scan, show = 'teyla leak --outgoing "$_tlg_remote" --quiet', 'teyla leak --outgoing "$_tlg_remote"'
-    return f"""{BEGIN} ({hook}) -- written by `teyla leak install`; `teyla leak install --uninstall` removes it
-{remote}if [ "${{TEYLA_LEAK:-1}}" = "0" ]; then
-  _tlg_home="${{TEYLA_HOME:-$HOME/.teyla}}"
-  mkdir -p "$_tlg_home" 2>/dev/null
-  printf '%s\\t%s\\t%s\\n' "$(date +%Y-%m-%dT%H:%M:%S)" "$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")" "{hook}" >> "$_tlg_home/leak-skips.log" 2>/dev/null
-elif ! command -v teyla >/dev/null 2>&1; then
-  echo "teyla leak gate: teyla not found; install it or set TEYLA_LEAK=0 for this command" >&2
-  exit 2
-else
-  {scan} </dev/null >/dev/null 2>&1
+SH_FAMILY = {"sh", "bash", "zsh", "dash"}
+CHAIN_MARK = "# teyla leak gate: then runs"
+
+_PUSH_SCAN = """  while read -r _tlg_l _tlg_lsha _tlg_r _tlg_rsha; do
+    case "$_tlg_lsha" in *[!0]*) ;; *) continue ;; esac
+    _tlg_range="$_tlg_lsha --not --remotes=$_tlg_remote"
+    case "$_tlg_rsha" in *[!0]*) git cat-file -e "$_tlg_rsha^{commit}" 2>/dev/null && _tlg_range="$_tlg_lsha --not $_tlg_rsha" ;; esac
+    teyla leak --commits "$_tlg_range" --quiet </dev/null >/dev/null 2>&1
+    _tlg_one=$?
+    if [ "$_tlg_one" -ne 0 ]; then
+      teyla leak --commits "$_tlg_range" </dev/null >&2
+      echo "teyla leak gate: pre-push refused (exit $_tlg_one); fix the findings, or set TEYLA_LEAK=0 for this command" >&2
+      [ "$_tlg_one" -gt "$_tlg_rc" ] && _tlg_rc=$_tlg_one
+    fi
+  done < "$_tlg_in"
+"""
+_COMMIT_SCAN = """  teyla leak --staged --quiet </dev/null >/dev/null 2>&1
   _tlg_rc=$?
   if [ "$_tlg_rc" -ne 0 ]; then
-    {show} </dev/null >&2
-    echo "teyla leak gate: {hook} refused (exit $_tlg_rc); fix the findings, or set TEYLA_LEAK=0 for this command" >&2
-    exit "$_tlg_rc"
+    teyla leak --staged </dev/null >&2
+    echo "teyla leak gate: pre-commit refused (exit $_tlg_rc); fix the findings, or set TEYLA_LEAK=0 for this command" >&2
   fi
+"""
+_TAKE = """_tlg_in=$(mktemp "${TMPDIR:-/tmp}/teyla-leak-gate.XXXXXX") || { echo "teyla leak gate: cannot create a temp file" >&2; exit 2; }
+cat > "$_tlg_in"
+"""
+
+
+def block(hook: str) -> str:
+    """The delimited sh snippet. TEYLA_LEAK=0 skips the scan, but the skip must be on record: when the log cannot
+    be written the hook refuses. Otherwise it scans, then runs a hook left in `.git/hooks`, and exits non-zero on a
+    finding or a gap. A pre-push block reads git's ref lines from stdin, scans `<remote sha>..<local sha>` for
+    each (a new branch: what no remote-tracking ref has), and hands stdin back unread to the hook that follows."""
+    push = hook == "pre-push"
+    head = '_tlg_remote="${1:-origin}"\n' + _TAKE if push else ""
+    scan = _PUSH_SCAN if push else _COMMIT_SCAN
+    legacy_in = ' < "$_tlg_in"' if push else ""
+    cleanup = 'rm -f "$_tlg_in"; ' if push else ""
+    tail = 'exec < "$_tlg_in"\nrm -f "$_tlg_in"\n' if push else ""
+    return f"""{BEGIN} ({hook}) -- written by `teyla leak install`; `teyla leak install --uninstall` removes it
+{head}_tlg_rc=0
+if [ "${{TEYLA_LEAK:-1}}" = "0" ]; then
+  _tlg_home="${{TEYLA_HOME:-$HOME/.teyla}}"
+  {{ mkdir -p "$_tlg_home" && printf '%s\\t%s\\t%s\\n' "$(date +%Y-%m-%dT%H:%M:%S)" "$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")" "{hook}" >> "$_tlg_home/leak-skips.log"; }} || {{
+    echo "teyla leak gate: cannot record the skip in $_tlg_home/leak-skips.log; a skip that is not on record is not a skip" >&2
+    _tlg_rc=1
+  }}
+elif ! command -v teyla >/dev/null 2>&1; then
+  echo "teyla leak gate: teyla not found; install it or set TEYLA_LEAK=0 for this command" >&2
+  _tlg_rc=2
+else
+{scan}fi
+_tlg_legacy="$(git rev-parse --git-common-dir 2>/dev/null)/hooks/{hook}"
+if [ "$_tlg_rc" -eq 0 ] && [ -f "$_tlg_legacy" ] && [ -x "$_tlg_legacy" ]; then
+  "$_tlg_legacy" "$@"{legacy_in} || _tlg_rc=$?
 fi
-unset _tlg_home _tlg_rc _tlg_remote
+if [ "$_tlg_rc" -ne 0 ]; then
+  {cleanup}exit "$_tlg_rc"
+fi
+{tail}unset _tlg_home _tlg_rc _tlg_remote _tlg_in _tlg_l _tlg_lsha _tlg_r _tlg_rsha _tlg_range _tlg_one _tlg_legacy
 {END}
 """
 
 
-def standalone(hook: str) -> str:
-    return f"#!/bin/sh\n{MARK} ({hook}): written by `teyla leak install`; rerun it instead of editing\n{block(hook)}"
+def standalone(hook: str, chained: bool = False) -> str:
+    """Our whole hook file. `chained`: the previous hook (not sh) was renamed `<hook>.chain` and runs after the gate."""
+    text = f"#!/bin/sh\n{MARK} ({hook}): written by `teyla leak install`; rerun it instead of editing\n{block(hook)}"
+    if chained:
+        text += f'{CHAIN_MARK} {hook}.chain\nexec "$(dirname "$0")/{hook}.chain" "$@"\n'
+    return text
+
+
+def _sh_family(text: str) -> bool:
+    """True when sh can safely go at the top: no shebang, or sh, bash, zsh or dash (also via env)."""
+    if not text.startswith("#!"):
+        return True
+    toks = text.split("\n", 1)[0][2:].split()
+    prog = os.path.basename(toks[0]) if toks else ""
+    if prog == "env":
+        rest = [t for t in toks[1:] if not t.startswith("-") and "=" not in t]
+        prog = os.path.basename(rest[0]) if rest else ""
+    return prog in SH_FAMILY
 
 
 def _is_ours(text: str) -> bool:
@@ -127,9 +178,17 @@ def _root(start: Path) -> Path | None:
     return Path(p.stdout.strip()) if p is not None and p.returncode == 0 and p.stdout.strip() else None
 
 
-def _local_hooks_path(root: Path) -> str | None:
-    p = _git(root, "config", "--local", "--get", "core.hooksPath")
-    return p.stdout.strip() or None if p.returncode == 0 else None
+def _hooks_path(root: Path) -> tuple[str | None, str | None]:
+    """(value, scope) of the effective `core.hooksPath` as seen from inside this worktree: a worktree-level value
+    (`extensions.worktreeConfig`) wins over the repo's. A global or system value that does not lead into the repo
+    is not the repo's own setting: it counts as unset (the repo then sets its own)."""
+    p = _git(root, "config", "--show-scope", "--get", "core.hooksPath")
+    if p.returncode != 0 or not p.stdout.strip():
+        return None, None
+    scope, _, value = p.stdout.strip().splitlines()[-1].partition("\t")
+    if scope in ("global", "system") and _hooks_dir(root, value) is None:
+        return None, None
+    return value or None, scope
 
 
 def _hooks_dir(root: Path, configured: str | None) -> Path | None:
@@ -162,7 +221,7 @@ def _write_exec(path: Path, text: str) -> None:
 def install(root: Path) -> tuple[int, str]:
     """Install the gate in one repo; returns (exit code, one line)."""
     name = root.name
-    configured = _local_hooks_path(root)
+    configured, scope = _hooks_path(root)
     d = _hooks_dir(root, configured)
     if d is None:
         return 2, f"{name}: core.hooksPath points outside the repo ({configured}); not touched"
@@ -173,6 +232,7 @@ def install(root: Path) -> tuple[int, str]:
     done, notes = {}, []
     for hook in HOOKS:
         f = d / hook
+        chain_file = d / f"{hook}.chain"
         if f.is_symlink():
             return 2, f"{name}: {rel}/{hook} is a symlink; not touched"
         before = f.read_text(encoding="utf-8", errors="surrogateescape") if f.exists() else None
@@ -180,10 +240,21 @@ def install(root: Path) -> tuple[int, str]:
             _write_exec(f, standalone(hook))
             done[hook], state = "file", "new"
         elif _is_ours(before):
-            done[hook] = "file"
-            state = "unchanged" if before == standalone(hook) else "updated"
+            chained = CHAIN_MARK in before
+            done[hook] = "chain-file" if chained else "file"
+            want = standalone(hook, chained)
+            state = "unchanged" if before == want else "updated"
             if state == "updated":
-                _write_exec(f, standalone(hook))
+                f.write_text(want, encoding="utf-8")
+            f.chmod(0o755)                           # a generated hook always regains +x
+        elif not _sh_family(before):
+            if chain_file.exists() or chain_file.is_symlink():
+                return 2, f"{name}: {rel}/{hook} is not sh and {hook}.chain already exists; not touched"
+            mode = stat.S_IMODE(f.stat().st_mode)
+            os.replace(f, chain_file)
+            _write_exec(f, standalone(hook, True))
+            chain_file.chmod(mode)
+            done[hook], state = "chain-file", f"chained (old hook now {hook}.chain)"
         else:
             new = chain(before, hook)
             done[hook] = "block"
@@ -193,17 +264,18 @@ def install(root: Path) -> tuple[int, str]:
             if not os.access(f, os.X_OK):
                 notes.append(f"{hook} is not executable, so git skips it (chmod +x)")
         notes.append(f"{hook} {state}")
-    path_state = "core.hooksPath unchanged"
+    path_state = f"core.hooksPath unchanged ({scope} scope)"
     if configured is None:
-        r = _git(root, "config", "--local", "core.hooksPath", DEFAULT_DIR)
+        r = _git(root, "config", "core.hooksPath", DEFAULT_DIR)          # the default scope: the repo's own config
         if r.returncode != 0:
             return 2, f"{name}: cannot set core.hooksPath: {r.stderr.strip()}"
-        set_by_us, path_state = True, f"core.hooksPath set to {DEFAULT_DIR}"
+        set_by_us, scope, path_state = True, "local", f"core.hooksPath set to {DEFAULT_DIR} (local scope)"
+        if _git(root, "config", "--global", "--get", "core.hooksPath").returncode == 0:
+            notes.append("this repo's hooks now override your global core.hooksPath")
     elif configured != DEFAULT_DIR and not set_by_us:
-        path_state = f"core.hooksPath already {configured}; installed there"
-    new_meta = {"hooks": done, "hooks_path": configured or DEFAULT_DIR, "hooks_path_set": set_by_us, "version": 1}
-    if _git(root, "config", "--global", "--get", "core.hooksPath").returncode == 0 and configured is None:
-        notes.append("this repo's hooks now override your global core.hooksPath")
+        path_state = f"core.hooksPath already {configured} ({scope} scope); installed there"
+    new_meta = {"hooks": done, "hooks_path": configured or DEFAULT_DIR, "hooks_path_set": set_by_us,
+                "hooks_path_scope": scope if set_by_us else None, "version": 1}
     text = json.dumps(new_meta, indent=2, sort_keys=True) + "\n"
     mp = d / META
     if not mp.exists() or mp.read_text(encoding="utf-8") != text:
@@ -213,7 +285,7 @@ def install(root: Path) -> tuple[int, str]:
 
 def uninstall(root: Path) -> tuple[int, str]:
     name = root.name
-    configured = _local_hooks_path(root)
+    configured, _scope = _hooks_path(root)
     d = _hooks_dir(root, configured)
     if d is None:
         return 2, f"{name}: core.hooksPath points outside the repo ({configured}); not touched"
@@ -224,7 +296,11 @@ def uninstall(root: Path) -> tuple[int, str]:
         if f.is_symlink() or not f.is_file():
             continue
         text = f.read_text(encoding="utf-8", errors="surrogateescape")
-        if _is_ours(text):
+        chain_file = d / f"{hook}.chain"
+        if _is_ours(text) and CHAIN_MARK in text and chain_file.is_file():
+            os.replace(chain_file, f)
+            removed.append(f"{hook} restored from {hook}.chain")
+        elif _is_ours(text):
             f.unlink()
             removed.append(f"{hook} removed")
         elif _has_block(text):
@@ -232,8 +308,9 @@ def uninstall(root: Path) -> tuple[int, str]:
             removed.append(f"{hook} block removed")
     tail = ""
     if meta.get("hooks_path_set") and configured is not None and meta.get("hooks_path") == configured:
-        _git(root, "config", "--local", "--unset", "core.hooksPath")
-        tail = "; core.hooksPath unset"
+        sc = meta.get("hooks_path_scope") if meta.get("hooks_path_scope") in ("local", "worktree") else "local"
+        _git(root, "config", f"--{sc}", "--unset", "core.hooksPath")
+        tail = f"; core.hooksPath unset ({sc} scope)"
     if (d / META).exists():
         (d / META).unlink()
     try:
@@ -391,22 +468,24 @@ def candidates(root: Path | None, existing: set[str]) -> list[tuple[str, str]]:
 
 
 def _append_terms(path: Path, values: list[str]) -> None:
+    """Append under a private mode that is set before the first byte is written. Any failure raises OSError with
+    nothing written."""
     default = Path.home() / ".config" / "teyla"
     if not path.parent.exists():
         path.parent.mkdir(parents=True, mode=0o700)
         path.parent.chmod(0o700)
     elif path.parent == default and stat.S_IMODE(path.parent.stat().st_mode) & 0o077:
         path.parent.chmod(0o700)
-    existed = path.exists()
-    lead = ""
-    if existed and path.stat().st_size and not path.read_bytes().endswith(b"\n"):
-        lead = "\n"
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
-    with os.fdopen(fd, "a", encoding="utf-8") as fh:
-        fh.write(lead + f"# added by teyla leak terms --suggest on {date.today().isoformat()}\n")
-        fh.write("".join(v + "\n" for v in values))
-    if stat.S_IMODE(path.stat().st_mode) & 0o177:
-        path.chmod(0o600)
+    flags = os.O_RDWR | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags, 0o600)
+    try:
+        os.fchmod(fd, 0o600)                         # on an existing loose file too, before any write
+        size = os.fstat(fd).st_size
+        lead = "\n" if size and os.pread(fd, 1, size - 1) != b"\n" else ""
+        stamp = f"# added by teyla leak terms --suggest on {date.today().isoformat()}\n"
+        os.write(fd, (lead + stamp + "".join(v + "\n" for v in values)).encode("utf-8"))
+    finally:
+        os.close(fd)
 
 
 def cmd_terms(args) -> int:
