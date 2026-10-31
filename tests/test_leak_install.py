@@ -415,6 +415,23 @@ def test_pre_push_scans_an_annotated_tags_message(box):
     assert box.git("push", "origin", "v2", "v3", env=env, check=False).returncode == 0
 
 
+def test_pre_push_walks_a_chain_of_tags_to_the_inner_message(box):
+    """A tag that points at another tag: the inner tag's message is pushed with it and is scanned too."""
+    _remote(box)
+    box.install()
+    terms = box.tmp / "terms.txt"
+    terms.write_text(TERM + "\n")
+    env = {"TEYLA_PRIVATE_TERMS": str(terms)}
+    box.git("tag", "-a", "inner", "-m", f"release for {TERM}")
+    box.git("tag", "-a", "outer", "-m", "a clean message", "inner")  # outer -> inner -> commit
+    p = box.git("push", "origin", "outer", env=env, check=False)
+    assert p.returncode != 0 and "annotated tag refs/tags/outer" in p.stderr and TERM not in p.stdout + p.stderr
+    assert box.git("ls-remote", "--tags", "origin").stdout == ""
+    box.git("tag", "-a", "clean-inner", "-m", "nothing here")
+    box.git("tag", "-a", "clean-outer", "-m", "nothing here either", "clean-inner")
+    assert box.git("push", "origin", "clean-outer", env=env, check=False).returncode == 0
+
+
 def test_a_partial_copy_of_the_pushed_refs_is_never_scanned(box):
     box.install()
     tee = box.bin / "tee"                                         # a tee that loses data, as a full disk would
