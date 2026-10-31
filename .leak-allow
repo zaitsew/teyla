@@ -38,3 +38,5 @@ tests/test_corrections.py
 tests/test_cloud.py
 tests/test_health.py
 tests/test_platform.py
+# a scrubber test whose ask text holds a fake `token=` pair (gitleaks' generic rule flags it)
+tests/test_asks.py
