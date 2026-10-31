@@ -27,13 +27,19 @@ expire. `teyla shield` with no arguments prints one table for every repo that ha
 Exit 0: no FIX (and no STALE with `--release`). Exit 1: a FIX, or a STALE with `--release`.
 Exit 2: no `[security]` section, which prints the template to paste. See docs/CONTRACT.md.
 
-Nothing here touches the network. The checks run `git`, the leak scanner and, when the command
-exists, `teyla hosts` as subprocesses.
+Nothing here touches the network unless you pass `--identity`. The checks run `git`, the leak scanner
+and, when the command exists, `teyla hosts` as subprocesses.
+
+`teyla shield check <repo> --identity` is the one opt-in network part: it asks GitHub, through `gh`, who
+the active identity is and whether that identity can both push and merge on the repo (SHIELD §9.4). It
+sends only the read-only GETs listed as row 34 of docs/PRIVACY.md, never prints a token, and in safe mode
+needs `--allow-network`.
 """
 from __future__ import annotations
 
 import argparse
 import datetime
+import fnmatch
 import functools
 import json
 import os
@@ -43,6 +49,8 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+
+from . import net
 
 TIERS = ("owner", "family", "testers", "public")
 RANK = {"owner": 0, "family": 1, "testers": 1, "public": 2}
@@ -696,6 +704,266 @@ CHECKS = {
 }
 
 
+# --- identity (opt-in, the only network part) ----------------------------------------
+
+GH_TOKEN_RE = re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{16,})")
+SLUG_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+REMOTE_RE = re.compile(r"(?:https://(?:[^@/\s]+@)?github\.com/|ssh://git@github\.com/|git@github\.com:)"
+                       r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?\s*$")
+IDENTITY_SEE = "see SHIELD §9.4"
+
+
+def _scrub(text: str) -> str:
+    """Whatever a tool printed, minus anything shaped like a GitHub token."""
+    return GH_TOKEN_RE.sub("***", text)
+
+
+def _gh_get(path: str, timeout: int = 30) -> tuple[int, object, str, int | None]:
+    """`gh api <path>` (a GET): (exit code, parsed JSON or None, one scrubbed error line, HTTP status).
+    Exit 127 means no gh. The token never reaches this process: gh reads it, we read only the answer."""
+    env = {**os.environ, "GH_PROMPT_DISABLED": "1", "NO_COLOR": "1", "GH_NO_UPDATE_NOTIFIER": "1"}
+    try:
+        p = subprocess.run(["gh", "api", path], cwd=_neutral_cwd(), capture_output=True, text=True,
+                           timeout=timeout, env=env)
+    except FileNotFoundError:
+        return 127, None, "gh is not installed", None
+    except subprocess.TimeoutExpired:
+        return 124, None, "gh timed out", None
+    except OSError as e:
+        return 127, None, _scrub(str(e)), None
+    try:
+        body = json.loads(p.stdout) if p.stdout.strip() else None
+    except ValueError:
+        body = None
+    err = _scrub((p.stderr or "").strip())
+    m = re.search(r"HTTP (\d{3})", err)
+    http = int(m.group(1)) if m else (200 if p.returncode == 0 else None)
+    return p.returncode, body, err.splitlines()[0] if err else "", http
+
+
+def github_slug(repo: pathlib.Path, override: str | None = None) -> str | None:
+    """OWNER/NAME of the repo to ask GitHub about: the override, else the `upstream` remote, else `origin`.
+    `upstream` comes first so a worker whose `origin` is its own fork is judged on the real repo."""
+    if override:
+        return override if SLUG_RE.fullmatch(override) else None
+    for remote in ("upstream", "origin"):
+        r = _git(repo, "remote", "get-url", remote)
+        if r is None or r.returncode != 0:
+            continue
+        m = REMOTE_RE.match(r.stdout.strip())
+        if m:
+            return f"{m.group(1)}/{m.group(2)}"
+    return None
+
+
+def _ref_matches(patterns: object, ref: str) -> bool:
+    """Whether a ruleset's include or exclude list covers `ref`, which is always the default branch here."""
+    if not isinstance(patterns, list):
+        return False
+    return any(isinstance(pat, str) and (pat in ("~ALL", "~DEFAULT_BRANCH") or fnmatch.fnmatchcase(ref, pat))
+               for pat in patterns)
+
+
+def ruleset_effect(rs: dict, default: str) -> tuple[str, str]:
+    """(effect, text) of one ruleset on the identity that asked, for merges into `default`.
+
+    "blocks": an active branch ruleset covers the default branch with a Restrict-updates rule (which also
+    stops a merge) and the identity cannot bypass it. "bypassable": the same rule, but it can bypass.
+    "unknown": the rule applies but GitHub did not say whether the identity can bypass it.
+    "none": the ruleset does not restrict this branch. Required approvals never count: an approved
+    pull request can still be merged by the worker."""
+    if not isinstance(rs, dict) or rs.get("enforcement") != "active" or rs.get("target") != "branch":
+        return "none", ""
+    ref = f"refs/heads/{default}"
+    cond = (rs.get("conditions") or {}).get("ref_name") or {}
+    if not _ref_matches(cond.get("include"), ref) or _ref_matches(cond.get("exclude"), ref):
+        return "none", ""
+    if not any(isinstance(r, dict) and r.get("type") == "update" for r in rs.get("rules") or []):
+        return "none", ""
+    name = f"ruleset {rs.get('name', '?')!r}"
+    bypass = rs.get("current_user_can_bypass")
+    if bypass == "never":
+        return "blocks", f"{name} restricts updates to {default} and the identity cannot bypass it"
+    if bypass in ("always", "pull_requests_only", "exempt"):
+        return "bypassable", f"{name} restricts updates to {default} but the identity can bypass it"
+    return "unknown", f"{name} restricts updates to {default} and GitHub did not say whether the identity can bypass it"
+
+
+STANDARD_ROLES = ("read", "triage", "write", "maintain")     # none of these may bypass branch protection
+
+
+def protection_effect(prot: object, login: str, role: str | None = None) -> tuple[str, str]:
+    """(effect, text) of classic branch protection. Only a push restriction counts, and only when the
+    identity is not listed: a listed user can push and merge, and a listed team or App might cover an
+    identity we cannot resolve from here, which is "unknown", never "blocks". So is a custom repository
+    role (`role_name` outside read/triage/write/maintain): an organization can grant it "bypass branch
+    protections", which a push restriction does not stop, and the role's permissions are not readable
+    from here. A ruleset's `current_user_can_bypass` already accounts for that, this check does not."""
+    restr = prot.get("restrictions") if isinstance(prot, dict) else None
+    if not isinstance(restr, dict):
+        return "none", ""
+    users = {u.get("login") for u in restr.get("users") or [] if isinstance(u, dict)}
+    if login in users:
+        return "none", ""
+    if role is not None and role not in STANDARD_ROLES:
+        return "unknown", (f"branch protection limits pushes, but the identity holds the custom role {role!r}, "
+                           "which may carry the bypass-branch-protections permission")
+    named = [f"team {x.get('slug') or x.get('name')}" for x in restr.get("teams") or [] if isinstance(x, dict)]
+    named += [f"App {x.get('slug') or x.get('name')}" for x in restr.get("apps") or [] if isinstance(x, dict)]
+    if named:
+        return "unknown", ("branch protection limits pushes to listed users, teams and Apps, and the identity "
+                           f"might be covered through {', '.join(named)}")
+    return "blocks", f"branch protection limits who can push to the default branch and {login} is not listed"
+
+
+def _lookup(result: tuple[int, object, str, int | None]) -> str:
+    """"ok", "absent" (404, or a plan that has no such feature) or "failed" for one gh answer."""
+    rc, body, err, http = result
+    if rc == 0:
+        return "ok"
+    said = f"{err} {body.get('message', '') if isinstance(body, dict) else ''}".lower()
+    if http == 404 or (http == 403 and "upgrade to github" in said):
+        return "absent"
+    return "failed"
+
+
+def _rulesets(full: str) -> tuple[list[dict] | None, str, str]:
+    """(every ruleset, how the lookup went, error text). Pages of 100 until a short page; None on failure."""
+    out: list[dict] = []
+    for page in range(1, 21):
+        res = _gh_get(f"repos/{full}/rulesets?per_page=100&page={page}")
+        state = _lookup(res)
+        if state == "absent":
+            return (out if page > 1 else []), "absent", ""
+        if state == "failed" or not isinstance(res[1], list):
+            return None, "failed", res[2] or "no answer"
+        out += [x for x in res[1] if isinstance(x, dict)]
+        if len(res[1]) < 100:
+            return out, "ok", ""
+    return None, "failed", "more than 20 pages of rulesets"
+
+
+def evidence_row(repo: pathlib.Path, how: str, today: datetime.date) -> str:
+    sha = _git(repo, "rev-parse", "HEAD")
+    commit = sha.stdout.strip() if sha is not None and sha.returncode == 0 and sha.stdout.strip() else "<commit>"
+    return ('[[security.evidence]]\nwhat = "credential-separation"\n'
+            f'commit = "{commit}"\ndate = {today.isoformat()}\nhow = {json.dumps(how)}\n')
+
+
+def identity_verdict(repo: pathlib.Path, *, slug: str | None = None, today: datetime.date | None = None) -> dict:
+    """The live answer to "can the active gh identity both push and merge here?".
+
+    {"status": OK | FIX | NOTE, "detail": ..., "login": ..., "repo": OWNER/NAME | None, "evidence": toml | None}.
+    NOTE means it could not tell: no gh, not signed in, no network, no GitHub remote, no access."""
+    today = today or datetime.date.today()
+    out: dict = {"status": "NOTE", "detail": "", "login": None, "repo": None, "evidence": None}
+    if not net.gate("the GitHub identity check (gh api)", quiet=True):
+        out["detail"] = ("network refused in safe mode; run it by hand with --allow-network "
+                         f"(or teyla config set safe.enabled=false); {IDENTITY_SEE}")
+        return out
+    full = github_slug(repo, slug)
+    if full is None:
+        out["detail"] = (f"no GitHub remote named upstream or origin to ask about; "
+                         f"pass --github-repo OWNER/NAME")
+        return out
+    out["repo"] = full
+    rc, body, err, http = _gh_get("user")
+    app = False
+    if rc == 127:
+        out["detail"] = f"{err}; install the GitHub CLI to check the identity"
+        return out
+    if rc != 0:
+        said = f"{err} {body.get('message', '') if isinstance(body, dict) else ''}".lower()
+        if http == 403 and "integration" in said:
+            app = True                      # an App installation token cannot read /user
+        elif http == 401 or "gh auth login" in err or "authentication" in err.lower() or not err:
+            out["detail"] = "gh not authenticated: run gh auth login, or set GH_TOKEN for this one command"
+            return out
+        else:
+            out["detail"] = f"gh api user failed: {err or 'no answer'}"
+            return out
+    login = "app-installation" if app else (body.get("login") if isinstance(body, dict) else None)
+    if not isinstance(login, str) or not login:
+        out["detail"] = "gh api user returned no login"
+        return out
+    out["login"] = login
+    rc, repo_body, err, http = _gh_get(f"repos/{full}")
+    if rc != 0 or not isinstance(repo_body, dict):
+        out["detail"] = f"{login} cannot read {full} ({err or 'no answer'}); nothing to judge"
+        return out
+    perms = repo_body.get("permissions") if isinstance(repo_body.get("permissions"), dict) else {}
+    default = repo_body.get("default_branch") if isinstance(repo_body.get("default_branch"), str) else "main"
+    private = bool(repo_body.get("private"))
+    role = repo_body.get("role_name") if isinstance(repo_body.get("role_name"), str) else None
+    can_push = any(bool(perms.get(k)) for k in ("admin", "maintain", "push"))
+    if not perms:
+        out["detail"] = f"{login}: GitHub returned no permissions for {full}; cannot tell"
+        return out
+    if not can_push:
+        row = evidence_row(repo, f"teyla shield check --identity: worker {login} has no push right on {full}", today)
+        out.update(status="OK", evidence=row,
+                   detail=f"worker identity {login}: no push right on {full} (pushes go to a fork); "
+                          "paste the evidence row below")
+        return out
+    fix = f"the active gh identity ({login}) can push and merge: one identity does both; {IDENTITY_SEE}"
+    if perms.get("admin"):
+        out.update(status="FIX", detail=f"{fix} (admin on {full}: it can edit any rule)")
+        return out
+    # Push is allowed. OK needs proof that a rule stops this identity; FIX needs proof that none does.
+    blocked: str | None = None
+    unknown: list[str] = []
+    plan_limited = False
+    rulesets, how, err = _rulesets(full)
+    plan_limited = how == "absent" and private
+    if rulesets is None:
+        unknown.append(f"could not read the rulesets ({err})")
+    for item in rulesets or []:
+        if item.get("enforcement") != "active" or item.get("target") != "branch":
+            continue
+        rs = item
+        if item.get("id") is not None and not all(k in item for k in ("rules", "conditions", "current_user_can_bypass")):
+            res = _gh_get(f"repos/{full}/rulesets/{item['id']}")
+            if res[0] == 0 and isinstance(res[1], dict):
+                rs = res[1]
+            else:
+                unknown.append(f"could not read ruleset {item.get('name', item['id'])!r} ({res[2] or 'no answer'})")
+                continue
+        effect, text = ruleset_effect(rs, default)
+        if effect == "blocks":
+            blocked = text
+            break
+        if effect == "unknown":
+            unknown.append(text)
+    if blocked is None:
+        res = _gh_get(f"repos/{full}/branches/{default}/protection")
+        state = _lookup(res)
+        if state == "ok":
+            effect, text = protection_effect(res[1], login, role)
+            if effect == "blocks":
+                blocked = text
+            elif effect == "unknown":
+                unknown.append(text)
+        elif state == "failed":
+            unknown.append(f"could not read branch protection ({res[2] or 'no answer'})")
+        else:
+            plan_limited = plan_limited or (private and res[3] == 403)
+    if blocked:
+        row = evidence_row(repo, f"teyla shield check --identity: worker {login} pushes without merge rights on {full}", today)
+        out.update(status="OK", evidence=row,
+                   detail=f"worker identity {login}: push without merge rights ({blocked}); "
+                          "paste the evidence row below")
+    elif unknown:
+        out.update(status="NOTE",
+                   detail=f"{login} can push to {full} and a rule might stop its merge, but it cannot be proven: "
+                          f"{'; '.join(unknown)}; treat as FIX until it is ({IDENTITY_SEE})")
+    else:
+        hint = ""
+        if plan_limited:
+            hint = "; this private repo is on a plan without rules: use the fork route"
+        out.update(status="FIX", detail=f"{fix} (nothing restricts updates to {default} for it{hint})")
+    return out
+
+
 # --- report ----------------------------------------------------------------------
 
 def credential_state(c: Ctx) -> tuple[bool, int | None]:
@@ -707,7 +975,8 @@ def credential_state(c: Ctx) -> tuple[bool, int | None]:
     return age <= (row["max_age"] or DEFAULT_MAX_AGE), age
 
 
-def check(repo: pathlib.Path, *, release: bool = False, today: datetime.date | None = None) -> dict | None:
+def check(repo: pathlib.Path, *, release: bool = False, today: datetime.date | None = None,
+          identity: bool = False, github_repo: str | None = None) -> dict | None:
     """The report for one repo, or None when it has no [security] section."""
     repo = pathlib.Path(repo).expanduser().resolve()
     data, _err = load(repo)
@@ -721,14 +990,26 @@ def check(repo: pathlib.Path, *, release: bool = False, today: datetime.date | N
     if c.tier_explicit and RANK[c.tier] < RANK[c.users]:
         rows.insert(1, {"name": "tier", "status": "NOTE",
                         "detail": f"tier {c.tier} is below [productize] users = {c.users}"})
+    verdict = None
+    if identity:
+        verdict = identity_verdict(repo, slug=github_repo, today=c.today)
+        row = {"name": "credential-separation", "status": verdict["status"], "detail": verdict["detail"]}
+        at = next((i for i, r in enumerate(rows) if r["name"] == "credential-separation"), None)
+        if at is None:
+            rows.append(row)
+        else:
+            rows[at] = row
     counts = {s: sum(r["status"] == s for r in rows) for s in ("OK", "FIX", "STALE", "NOTE")}
     fresh, _age = credential_state(c)
     ages = [(c.today - r["date"]).days for rs in c.evidence.values() for r in rs]
     code = 1 if counts["FIX"] or (release and counts["STALE"]) else 0
-    return {"repo": repo.name, "path": str(repo), "tier": c.tier, "release": release, "exit": code,
-            "ok": code == 0, "counts": counts, "requirements": rows,
-            "not_enforced": [] if fresh else ["credential separation"],
-            "evidence_oldest_days": max(ages) if ages else None}
+    rep = {"repo": repo.name, "path": str(repo), "tier": c.tier, "release": release, "exit": code,
+           "ok": code == 0, "counts": counts, "requirements": rows,
+           "not_enforced": [] if fresh else ["credential separation"],
+           "evidence_oldest_days": max(ages) if ages else None}
+    if verdict is not None:
+        rep["identity"] = {k: verdict[k] for k in ("status", "login", "repo", "evidence")}
+    return rep
 
 
 def render_text(rep: dict) -> str:
@@ -739,6 +1020,12 @@ def render_text(rep: dict) -> str:
         lines.append(f"{r['status']:<5}  {r['name']:<{width}}  {r['detail']}")
     n = rep["counts"]
     lines.append(f"{n['OK']} OK, {n['FIX']} FIX, {n['STALE']} STALE, {n['NOTE']} NOTE")
+    ev = (rep.get("identity") or {}).get("evidence")
+    if ev:
+        lines.append("")
+        lines.append("add this to teyla.toml to record the proof (it expires like any evidence row):")
+        lines.append("")
+        lines.append(ev.rstrip("\n"))
     return "\n".join(lines) + "\n"
 
 
@@ -773,7 +1060,8 @@ def cmd_shield(args):
     as_json = bool(getattr(args, "json", False))
     if getattr(args, "shield_cmd", None) == "check":
         repo = pathlib.Path(args.repo).expanduser()
-        rep = check(repo, release=args.release)
+        rep = check(repo, release=args.release, identity=getattr(args, "identity", False),
+                    github_repo=getattr(args, "github_repo", None))
         if rep is None:
             _data, err = load(repo.resolve())
             if as_json:
@@ -805,5 +1093,10 @@ def register(sp):
     c = s.add_parser("check", help="one repo's [security] contract against its tier")
     c.add_argument("repo", help="path to the repo (the directory holding teyla.toml)")
     c.add_argument("--release", action="store_true", help="the step before an upload: STALE evidence blocks too")
+    c.add_argument("--identity", action="store_true",
+                   help="also ask GitHub (through gh) whether the active identity can both push and merge; SHIELD §9.4")
+    c.add_argument("--github-repo", metavar="OWNER/NAME",
+                   help="with --identity: the repo to ask about (default: the upstream remote, else origin)")
+    c.add_argument("--allow-network", action="store_true", help="safe mode: allow the --identity calls to GitHub this once")
     c.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     return q

@@ -415,7 +415,9 @@ per minute:
    in the weekly routine (the habit the October installer campaign taught).
 
 None of this is a lane; `teyla shield check` reports which of these hold on this machine, and
-the doc keeps the promise honest until they do.
+the doc keeps the promise honest until they do. The exact steps are the checklist in §9.4, and
+`teyla shield check <repo> --identity` asks GitHub whether the identity in use can both push and
+merge.
 
 ## 6. Roadmap
 
@@ -509,8 +511,10 @@ Decided here with a default; the default stands when nothing is said.
    under the code root, one PR each; the agent hook ships in the plugin now.
 3. **The pilot product.** Default: the product with an MCP server, user rows and a store build
    whose contract is furthest from green after wave 1's run; proposed in the sprint card.
-4. **Credential separation.** Default: the owner creates one fine-grained GitHub token for lanes
-   this week (§5.7). Until then the doc says the gates are bypassable through the API.
+4. **Credential separation.** Default: the owner works through the checklist in §9.4 this week.
+   It takes about 30 minutes and ends with `teyla shield check <repo> --identity` printing OK.
+   Until then the doc says the gates are bypassable through the API. The checklist buys nothing;
+   a private repo on a free plan has a free route, and the paid route's prices are stated in §9.4.
 5. **Paid tools (POLICY §11, stated, not bought).** GitHub Secret Protection for private repos:
    $19 per active committer per month, one committer today, so about $19 per month per
    organisation that enables it; push protection is already free on public repos. A hosted secrets
@@ -523,3 +527,240 @@ Decided here with a default; the default stands when nothing is said.
    already public and a rewrite buys nothing.
 7. **The red team.** Default: wave 2, staging only, synthetic data, a written target list and a
    request budget, after the pilot's suite is green.
+
+### 9.4 Credential separation: the 30-minute checklist
+
+You end with two identities. The **worker** (a GitHub App installation token, or a machine
+account) can push a branch and open a pull request and cannot merge. The **publisher** (your own
+`gh` login) merges, from outside every worktree, on a reviewed commit sha. Every step below is
+yours, in the GitHub web UI or your terminal. An agent does none of them, because creating a
+token or changing a repository setting is exactly the step the separation protects.
+
+Verification: `teyla shield check <repo> --identity` (step 32) asks GitHub, as the identity in
+use, whether it can both push and merge.
+
+#### Step 0. Pick the route (2 minutes)
+
+GitHub gates the server-side rule that makes the separation hold by plan.
+[Managing rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets)
+says rulesets are available in public repositories on GitHub Free and in public and private
+repositories on GitHub Pro, GitHub Team and GitHub Enterprise Cloud.
+[GitHub's plans](https://docs.github.com/en/get-started/learning-about-github/githubs-plans)
+lists protected branches for private repositories under Pro and Team only.
+
+| Repository | Plan | Route | Price |
+|---|---|---|---|
+| Public | any, including Free | **A**: ruleset plus a worker identity | $0 |
+| Private, personal account | Free | **A after upgrading**, or move it into an organization and use **B** | GitHub Pro: $4 per month for the one account; or $0 for B |
+| Private, organization | Free | **B**: the worker pushes to its own fork | $0 |
+| Private, organization | Team | **A**: ruleset plus a worker identity | GitHub Team: $4 per user per month |
+
+**The free-plan limitation.** Rulesets and branch protection are NOT available on private
+repositories under GitHub Free, for a personal account or for an organization. On such a repo a
+worker identity alone does not help: a token with write access can push the default branch and
+merge. Without a paid plan, Route B removes the write access instead of guarding it.
+
+Prices: Team $4 per user per month and Enterprise $21 per user per month are from
+[github.com/pricing](https://github.com/pricing) as read on 2026-10-31. Pro at $4 per month comes
+from third-party 2026 summaries; read the pricing page again before you decide. Nothing in this
+doc buys anything, and a plan change is the owner's decision, not a lane's.
+
+#### Route A: a ruleset plus a worker identity
+
+**Part 1. The ruleset (5 minutes per repo).**
+
+1. Open the repository on github.com, then **Settings**. In the sidebar, group "Code and
+   automation": **Rules**, **Rulesets**, **New ruleset**, **New branch ruleset**
+   ([creating rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository)).
+2. **Ruleset name**: `default-branch-publisher-only`. **Enforcement status**: **Active** (the
+   default is Disabled).
+3. **Bypass list**, **Add bypass**: select the **Repository admin** role (that is you, the
+   publisher). Add nothing else. Never add the worker, its App or a write role.
+4. **Target branches**, **Add target**, **Include default branch**.
+5. Under the branch rules, tick **Restrict updates** (only a bypass actor may update the branch,
+   and merging a pull request updates it), **Restrict deletions**, **Block force pushes** and
+   **Require a pull request before merging** (zero required approvals is fine).
+6. **Create**. Repeat for every repo a lane can write to.
+
+**Part 2. The worker identity.** Choose one option.
+
+*Option 1: a GitHub App installation token* (short-lived, scoped to named repositories, no seat).
+
+7. Personal account: profile picture, **Settings**, **Developer settings**, **GitHub Apps**,
+   **New GitHub App**. Organization: **Your organizations**, **Settings**, **Developer
+   settings**, **GitHub Apps**, **New GitHub App**
+   ([registering an App](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app)).
+8. Name it `<name>-worker`. Any homepage URL. **Untick Webhook "Active"**.
+9. **Repository permissions**: **Contents: Read and write**, **Pull requests: Read and write**.
+   **Metadata: Read-only** is added for you. Every other permission stays **No access**; leave
+   Account and Organization permissions empty. No Actions, no Administration, no Secrets, no
+   Workflows, no Pages.
+10. **Where can this GitHub App be installed?**: **Only on this account**. **Create GitHub App**.
+11. On the App's page, note the **Client ID**, then **Generate a private key**. Keep the
+    downloaded key file readable by you only (`chmod 600`), outside every repo and worktree.
+12. **Install App**, your account, **Only select repositories**, pick the repos from Part 1.
+    Never "All repositories". The installation page URL ends in the installation ID: note it.
+13. Add the App to no ruleset's bypass list. With contents write and no bypass it can push a
+    branch and cannot merge.
+14. A token is minted per lane. The launcher signs a JWT with the key (RS256; `iat` 60 seconds in
+    the past, `exp` at most 10 minutes ahead, `iss` the Client ID; see the
+    [JWT guide](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app))
+    and calls `POST /app/installations/<INSTALLATION_ID>/access_tokens` with the body
+    `{"repositories": ["<repo>"], "permissions": {"contents": "write", "pull_requests": "write"}}`.
+    The token expires after one hour
+    ([installation tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app)).
+    A sketch of `mint-worker-token` (not tested here; check it against the guide):
+
+    ```sh
+    #!/bin/sh
+    # reads CLIENT_ID, KEY (path to the private key file), INSTALLATION_ID and REPO from the environment
+    b64() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+    now=$(date +%s)
+    h=$(printf '{"alg":"RS256","typ":"JWT"}' | b64)
+    p=$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' $((now-60)) $((now+540)) "$CLIENT_ID" | b64)
+    s=$(printf '%s.%s' "$h" "$p" | openssl dgst -sha256 -sign "$KEY" -binary | b64)
+    curl -fsS -X POST \
+      -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $h.$p.$s" \
+      -d "{\"repositories\":[\"$REPO\"],\"permissions\":{\"contents\":\"write\",\"pull_requests\":\"write\"}}" \
+      "https://api.github.com/app/installations/$INSTALLATION_ID/access_tokens" \
+      | sed -n 's/.*"token": *"\([^"]*\)".*/\1/p'
+    ```
+
+*Option 2: a machine account* (a second GitHub account that is only the worker).
+
+15. Create the account yourself in a browser, with its own e-mail address and two-factor
+    authentication. GitHub's [terms, section B.3](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service)
+    refuse accounts registered by bots; a machine account that a person set up and that runs
+    automated tasks is the allowed case. Read that section first.
+16. Invite it as a collaborator. Personal repo: **Settings**, **Collaborators**, **Add people**.
+    A personal-account repo has one collaborator level, and it can push and merge
+    ([permission levels](https://docs.github.com/en/account-and-profile/setting-up-and-managing-your-personal-account-on-github/managing-personal-account-settings/permission-levels-for-a-personal-account-repository)),
+    so the ruleset from Part 1 is what stops the merge. Organization repo: **Settings**,
+    **Collaborators and teams**, **Add people**, role **Write**. Accept the invitation signed in
+    as the machine account.
+17. Create its token, signed in as the machine account: profile picture, **Settings**,
+    **Developer settings**, **Personal access tokens**, then one of:
+    - Repo owned by an **organization**: **Fine-grained tokens**, **Generate new token**.
+      **Resource owner**: the organization. **Expiration**: 30 days. **Repository access**: **Only
+      select repositories**. **Permissions**: **Contents: Read and write**, **Pull requests: Read
+      and write**; Metadata read-only is automatic; nothing else. If the organization requires
+      approval for fine-grained tokens, the token reads public data only until an owner approves
+      it ([managing tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)).
+    - Repo owned by a **personal account**: GitHub lists contributing as a collaborator to
+      another user's repository as a gap of fine-grained tokens, so use **Tokens (classic)**,
+      **Generate new token (classic)**, expiration 30 days, one scope: **repo**. No `workflow`,
+      no `admin:*`, no `delete_repo`. The account reaches only the repos you invited it to.
+18. A machine account that joins an organization as a member takes a seat on a paid plan (Team:
+    $4 per user per month). Check the billing page before you invite it as an outside
+    collaborator instead; this doc does not claim whether that counts as a seat.
+
+#### Route B: remove the merge right instead of guarding it (private repo on a free plan)
+
+The worker holds **read only** on the origin and pushes to **its own fork**. It cannot push the
+default branch because it has no write access there at all.
+
+19. This needs an organization: a personal-account repo gives a collaborator the write level
+    only, so a read-only worker is impossible there. Move the repo into a free organization first,
+    or take Route A with GitHub Pro.
+20. Allow forks of private repos. Profile picture, **Your organizations**, the organization,
+    **Settings**, **Member privileges**, **Repository forking**, **Allow forking of private
+    repositories**, **Save**
+    ([org policy](https://docs.github.com/en/organizations/managing-organization-settings/managing-the-forking-policy-for-your-organization)).
+    Then in each repo: **Settings**, **Features**, **Allow forking**
+    ([repo policy](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/managing-the-forking-policy-for-your-repository)).
+21. Create the machine account (step 15). Add it with role **Read** only: repo **Settings**,
+    **Collaborators and teams**, **Add people**, role **Read**. Accept the invitation.
+22. As the machine account, run `gh repo fork <owner>/<repo> --clone=false`. In the lane's clone
+    point `origin` at the fork (https) and add the upstream as `upstream`. Open pull requests with
+    `gh pr create --repo <owner>/<repo> --head <worker>:<branch>`. Its token: fine-grained, resource
+    owner the machine account itself, repository access only the fork, Contents and Pull
+    requests write (the Read role already covers the upstream).
+23. `teyla shield check --identity` reads the remote named `upstream` first, then `origin`, so on
+    this route it reports the worker's rights on the real repo, not on its fork.
+
+#### Part 3. The publisher (your own login)
+
+24. Your own `gh auth login` stays the default login on your machine. Use it only in the merge
+    step, from a directory outside every worktree, on a commit sha rather than a branch name:
+
+    ```sh
+    cd ~
+    sha=$(gh pr view <n> --repo <owner>/<repo> --json headRefOid --jq .headRefOid)
+    # compare $sha with the commit that was reviewed, then:
+    gh pr merge <n> --repo <owner>/<repo> --merge --match-head-commit "$sha"
+    ```
+
+    `--match-head-commit` makes the merge fail when the branch moved after review.
+
+#### Part 4. How a session gets the worker token
+
+25. Store the token once. A final `-w` with no value makes `security` prompt for it, so the token
+    never appears in shell history or in `ps`:
+
+    ```sh
+    security add-generic-password -a <worker-login> -s worker-gh -U -w
+    ```
+
+    (App route: skip this, and call `mint-worker-token` where the wrapper below calls `security`.)
+26. Put a wrapper named `gh` first on the `PATH` of lanes only (for example
+    `<tools>/worker-bin/gh`). The token lives in that one process's environment and in no lane shell:
+
+    ```sh
+    #!/bin/sh
+    GH_TOKEN="$(security find-generic-password -a "$WORKER_LOGIN" -s worker-gh -w)" || exit 1
+    export GH_TOKEN GH_PROMPT_DISABLED=1 GH_CONFIG_DIR="$HOME/.config/gh-worker"
+    exec "$(PATH=/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin command -v gh)" "$@"
+    ```
+
+    The empty `GH_CONFIG_DIR` hides your own stored login from lanes.
+27. Give `git` the same token through a credential helper that reads the Keychain at call time:
+
+    ```sh
+    #!/bin/sh
+    # <tools>/worker-git-credential
+    [ "$1" = get ] || exit 0
+    printf 'username=x-access-token\npassword=%s\n' "$(security find-generic-password -a "$WORKER_LOGIN" -s worker-gh -w)"
+    ```
+
+    The launcher sets it by environment, so no repo config changes: `GIT_CONFIG_COUNT=2`,
+    `GIT_CONFIG_KEY_0=credential.helper`, `GIT_CONFIG_VALUE_0=` (empty, to clear the list),
+    `GIT_CONFIG_KEY_1=credential.helper`, `GIT_CONFIG_VALUE_1='!<tools>/worker-git-credential'`.
+    Also set `GIT_SSH_COMMAND=/usr/bin/false` and use https remotes in the lane's clone. An ssh
+    remote pushes with your own key and undoes the separation.
+28. The launcher starts the session with `env -u GH_TOKEN -u GITHUB_TOKEN -u SSH_AUTH_SOCK
+    PATH="<tools>/worker-bin:$PATH" WORKER_LOGIN=<worker-login> <agent command>` plus the
+    variables from step 27.
+29. A weaker alternative: store the worker as a second `gh` account
+    (`security find-generic-password -a <worker-login> -s worker-gh -w | gh auth login --with-token`),
+    run `gh auth switch --user <worker-login>` before a lane and `gh auth switch --user <you>`
+    before you merge. It needs no wrapper, but a lane can run `gh auth switch` itself, so it is a
+    convenience and not a boundary.
+30. In a lane, `gh auth status` should list one account, the worker, as the active account, with
+    the token source `GH_TOKEN`, and your own login nowhere. For a classic token the scopes read
+    `repo` only. An App installation token cannot call `GET /user`, so there `gh auth status` may
+    report a failure; use `gh api repos/<owner>/<repo> --jq .permissions` instead.
+
+#### Part 5. Prove it (5 minutes)
+
+31. In a lane (wrapper on the `PATH`), test the real repo, never a fork's default branch.
+    Route A: `git push origin HEAD:<default-branch>` must fail with a protected-branch message, and
+    `gh pr merge <n>` on a test PR must fail. Route B: `origin` is the worker's fork, so a push
+    there only proves the worker owns its fork. Read the upstream permissions instead:
+    `gh api repos/<owner>/<repo> --jq .permissions.push` must print `false`. Or push to a
+    throwaway branch on `upstream`: `git push upstream HEAD:refs/heads/shield-probe-$$` must be
+    refused with a permission error. If that push is accepted, delete the branch with
+    `git push upstream --delete shield-probe-$$` and fix the role before going on.
+32. In a lane, run `teyla shield check <repo> --identity`. The line must read
+    `OK   credential-separation  worker identity <login>: ...`. Paste the `[[security.evidence]]`
+    row it prints into the repo's `teyla.toml`. Rerun it monthly: the evidence expires after
+    30 days.
+33. In your own shell the same command reads `FIX`. That is correct: you can push and merge.
+    Never start a lane from that shell.
+
+#### What this does not do
+
+A process running as your macOS user can still read the Keychain item, and can run `gh` with your
+own login if one is stored in the default config directory. The wrapper keeps lanes away from
+your login by habit and by default; the **server-side ruleset** is the hard boundary, because it
+holds even when a lane misbehaves. A worker can still publish a branch and a pull request body,
+so the leak scan and the weekly `--published` audit remain.

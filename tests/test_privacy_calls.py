@@ -60,6 +60,7 @@ ALLOWED = {
     "web/server.py": {22},
     "copy_lane.py": {29, 30, 31},
     "mcp_probe.py": {33},
+    "shield.py": {34},
 }
 
 
