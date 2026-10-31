@@ -44,12 +44,11 @@ sprint produced safe mode (`net.py`) and the privacy ledger. This one covers the
 | Policy | `~/.agents/POLICY.md` §2, §11, §15 | Mandatory review for money, credentials and user data; nothing paid without a double yes; store review rules |
 
 Across ten product repos on 2026-10-31 (a Haiku scout, read-only): no repo runs a secret scan;
-five have no git hooks at all, four of them public; the private-terms list is enforced in
-Teyla's repo and nowhere else. Two public repos carry the owner's e-mail or his verbatim
-request in their docs. Six MCP servers: one answers without any authorisation, two accept the
-owner key in the URL path, two edge-function servers have no rate limit, and 26 edge functions
-of the largest app run with JWT verification off and authorisation in code. No repo has a
-`SECURITY.md`, a privacy ledger or a threat model.
+half have no git hooks at all; the private-terms list is enforced in Teyla's repo and nowhere
+else. Owner data sits in public docs. No repo has a `SECURITY.md`, a privacy ledger or a threat
+model. The per-server findings (authorisation, keys in URLs, rate limits) are in the owner's
+private notes, not here: SH1 keeps findings in private configuration until they are fixed, and
+each one became a generic check in §5.5 instead of a sentence in a public document.
 
 What the pieces miss, in five lines:
 
@@ -193,9 +192,15 @@ scout over ten product repos. The findings that shaped the design:
   (`security find-generic-password -w`, `dump-keychain`), and `gh repo edit --visibility public`
   on an existing repo (creating a new public repo stays allowed: the owner asks for it in
   kickoffs). Bash matching cannot stop every encoded payload; the hook is one door of four, not
-  the wall. It fails open with a one-line warning, like the machine guard, because a guard that
-  blocks every commit over its own bug gets uninstalled; the kill switch stays the only
-  fail-closed hook.
+  the wall. Two failure modes, chosen by what a wrong answer costs: the coarse path (is this a
+  publication or a credential read at all?) fails open with a one-line warning, like the machine
+  guard, because a guard that blocks every `ls` over its own bug gets uninstalled; but once a
+  command is classified as a publication, a credential read or a visibility change, a scanner
+  that cannot run is a refusal, not a pass. These commands are rare and explicit, and the cost of
+  a wrong refusal is one retry. A publication has no second door inside git, so the weekly
+  routine audits what was published anyway: `teyla leak --published` reads the week's PR bodies,
+  issue comments, releases and gists through the GitHub API and reports a finding as
+  historical (rotate first, then edit the text).
 - **SH7. Cut a leg of the trifecta per product, in the contract.** Every MCP server and agent
   declares which legs it has: private data, untrusted content, outbound channel. A public
   research server has no private data. A personal-data server has no arbitrary URL fetch, no
@@ -255,6 +260,7 @@ teyla leak --outgoing [remote]          commits, tags and messages the remote la
 teyla leak --commits <range>            an explicit range, as leak_check.py --commits
 teyla leak --text <file|->              a PR body, an issue, a release note before it is sent
 teyla leak --json                       findings with class, rule, fingerprint, masked excerpt
+teyla leak --published [owner]          the week's PR bodies, issue comments, releases and gists, read back through the API (weekly)
 teyla leak install [repo]               .githooks/pre-commit and pre-push, core.hooksPath
 teyla leak terms --suggest [--yes]      private-term candidates from the machine, masked
 ```
@@ -379,13 +385,28 @@ two-a-week proposal cap and becomes a FIX in `teyla deps`.
 
 The gates above are local; an agent with the owner's `gh` login can merge, publish and change
 visibility through the API without meeting one. The owner's steps, in order of leak prevented
-per minute: a fine-grained GitHub token per lane with contents and pull-request scopes on the
-repos it edits, no Actions, no administration; `gh auth` for the publisher only; the review
-gate and leak gate in `~/ops/bin`, outside every worktree; provider keys in the Keychain or the
-accounts hub, read at call time by the process that needs them; a diff of `~/.claude/settings.json`
-and `~/.codex/config.toml` against a known-good copy in the weekly routine (the DFIR habit
-after the October installer campaign). None of this is a lane; `teyla shield check` reports
-which of these hold on this machine, and the doc keeps the promise honest until they do.
+per minute:
+
+1. **A branch ruleset on every repo** that forbids direct pushes to the default branch and
+   restricts merging and bypass to one identity, the publisher. Without it a token that can push
+   a branch can push `main`, and separation is a label.
+2. **A worker token per lane**, fine-grained: contents write (it needs to push its branch) and
+   pull-request write (it needs to open the PR) on the repos it edits; no Actions, no
+   administration, no secrets, no pages, no merge rights (the ruleset above denies it the merge
+   even with contents write). A worker can therefore publish a PR body and a branch, which is
+   why the agent hook scans publication text and the pre-push hook scans outgoing commits on
+   the worker's own machine, and why the weekly `--published` audit reads what landed anyway.
+3. **The publisher identity** (`gh auth` on the owner's account, or a second token with merge
+   rights) runs only in the publishing step, after the review gate and the leak gate, from a
+   directory outside every worktree (`~/ops/bin`), on immutable inputs: the reviewed commit sha,
+   not a branch name.
+4. **Provider keys** in the Keychain or the accounts hub, read at call time by the process that
+   needs them, never exported into a lane's environment.
+5. **A diff of `~/.claude/settings.json` and `~/.codex/config.toml`** against a known-good copy
+   in the weekly routine (the habit the October installer campaign taught).
+
+None of this is a lane; `teyla shield check` reports which of these hold on this machine, and
+the doc keeps the promise honest until they do.
 
 ## 6. Roadmap
 
@@ -401,7 +422,7 @@ the tests are `pytest` and an in-process fake server. Lanes that touch `cli.py`,
 |---|---|---|
 | A `teyla leak` | `src/teyla/leak.py`: surfaces (tree, `--staged`, `--outgoing`, `--commits`, `--text`, local-only `.env`, harness configs, plists, string catalogs, image metadata), classes, masked output, `--json`, gitleaks as second engine, exit 0/1/2; `docs/LEAK.md` | run on any repo under the code root and on a PR body; the existing `leak_check.py` tests pass against the new module; a planted key in an ignored `.env` is reported local-only, in the index as publishable |
 | B install + terms | `teyla leak install` (pre-commit on the index, pre-push on outgoing refs, `core.hooksPath`, chaining, `TEYLA_LEAK=0` logged); `teyla leak terms --suggest [--yes]` from machine facts, masked, 0600/0700 | hooks installed in a scratch repo refuse a staged key and an outgoing commit with a private term; a missing scanner exits 2; the suggest output contains no unmasked value |
-| C agent hook | `plugin/hooks/leak-guard.sh` + `hooks.json`: publication bodies scanned, credential-path reads refused, Keychain dumps refused, `gh repo edit --visibility public` refused; fail-open with one warning line; `sh` tests like the machine guard's | a `gh pr create --body` with a planted key is refused with the masked excerpt; a read of the private-terms file is refused; a broken classifier prints one line and lets the command through |
+| C agent hook | `plugin/hooks/leak-guard.sh` + `hooks.json`: publication bodies scanned, credential-path reads refused, Keychain dumps refused, `gh repo edit --visibility public` refused; the coarse path fails open with one warning line, a classified publication or credential read fails closed; `sh` tests like the machine guard's | a `gh pr create --body` with a planted key is refused with the masked excerpt; a read of the private-terms file is refused; a broken scanner lets `ls` through and refuses `gh pr create` with the reason |
 | D hosts | `teyla hosts <repo> [--write]` for Swift, TypeScript, Deno, Kotlin, Python and manifests, compared with `docs/PRIVACY.md`; `templates/repo/docs/PRIVACY.md`; `check.sh` template runs security steps before `.env` | an undocumented host is a FIX with file and line; Teyla's own table passes; the scaffold writes rows a person completes |
 | E contract | `[security]` in `templates/repo/teyla.toml`; `teyla shield check <repo> [--release]` with tier requirements and dated, expiring evidence; `templates/store/REVIEW-NOTES.md` DATA paragraph | a fresh scaffold prints the tier's FIX list; a stale evidence row is STALE; `--release` exit 1 on a FIX; the release script's doc names it as the step before upload |
 | F MCP probe + corpus | `teyla mcp probe <url> [--token] [--write <tool>]` with request and time budgets; `templates/security/injection_cases.json`; `templates/security/tests/` for Deno and vitest; `docs/PRIVACY.md` row; tests against an in-process fake server | the fake server fails three checks and the probe names each with the fix; the corpus loads in both test templates; the probe refuses to run without a budget |
@@ -425,7 +446,7 @@ staging (SH14) with a written target list, synthetic data and cleanup.
 ### Wave 3 — the fleet and the week
 
 `teyla shield` prints one table for every product: tier, hooks, leak, hosts, deps, evidence age,
-the last probe. The weekly routine runs leak, deps, hosts and the harness-config diff and the
+the last probe. The weekly routine runs leak, `leak --published`, deps, hosts and the harness-config diff and the
 digest names the FIX count per product; a product that goes `family`, `testers` or `public` in
 `[productize]` gets the tier's requirements the same day. Second-platform parity trains carry
 the contract. A second MCP server adopts the suite from the pilot's PR as its template.
@@ -459,7 +480,7 @@ the contract. A second MCP server adopts the suite from the pilot's PR as its te
 | Risk | Where it bites | What holds it |
 |---|---|---|
 | The private-terms list leaks through a tool that reads it (a hook's own output, a transcript, a model context) | The most sensitive file becomes the most copied | SH5: masked output everywhere, the agent hook refuses the path, `teyla leak` never prints a term, the file is 0600 outside every synced folder |
-| Fail-open hooks let a real leak through on a bug | A publication with a key while the classifier is broken | The hook is one of four doors; `--outgoing` runs again on push; the weekly run reads the remote |
+| A hook bug lets a real leak through | A publication with a key while the scanner is broken | Publications, credential reads and visibility changes fail closed once classified; only the coarse path fails open; `--outgoing` runs again on push; the weekly `--published` audit reads what landed |
 | Allowlist fatigue: a triage finding every commit trains the owner to type the override | The gate becomes noise | Blockers only for high-confidence rules; triage listed, not blocking; one exception names one finding, with an expiry |
 | An agent with the owner's login bypasses every local gate through the API | Merge, publish, visibility | SH11, §5.7: credential separation is named as the control that is still missing, and `teyla shield check` reports it |
 | gitleaks absent or stale on a machine | Coverage differs by machine | Exit 2 where the contract requires the second engine; the stdlib rules always run |
