@@ -10,6 +10,7 @@ what they cannot. Evidence expires. A permanent checked box is theatre; a stale 
 teyla shield check ~/repos/thing             # one repo against its tier
 teyla shield check ~/repos/thing --release   # the step before an upload: STALE blocks too
 teyla shield check ~/repos/thing --json      # the same, for a script
+teyla shield check ~/repos/thing --identity  # also ask GitHub whether the active gh identity can push and merge
 teyla shield                                 # one table for every repo that has a [security] section
 ```
 
@@ -92,6 +93,26 @@ Teyla or supply the scanner. The checks are static greps and file tests. `no-tok
 - **NOTE**: reported, never blocking. Credential separation is a NOTE: it is the owner's step list
   (SHIELD §5.7), and no lane can do it. While it is missing or stale, the first line of every output reads
   `not enforced on this machine: credential separation (see SHIELD §5.7)`.
+  Without `--identity` the row is read from evidence only. With `--identity` it is the live answer
+  (next section), and a `FIX` there blocks like any other.
+
+## The identity check
+
+`teyla shield check <repo> --identity` is the only part of the contract that uses the network. It runs
+read-only `gh api` GETs (row 34 of PRIVACY.md) for the login, the repo's `permissions` and default
+branch, its rulesets and the default branch's protection, and prints one `credential-separation` row:
+
+- `FIX`: the active identity can push and merge (admin on the repo, or no ruleset or protection it
+  cannot bypass guards the default branch). The text ends `see SHIELD §9.4`.
+- `OK`: a worker that can push a branch but not merge (a ruleset it cannot bypass restricts updates or
+  needs an approval, or branch protection does), or that has no push right on the repo at all (it
+  pushes to a fork). The `[[security.evidence]]` row to paste is printed under the summary.
+- `NOTE`: it could not tell: `gh` missing or not signed in, no GitHub remote, no access to the repo,
+  or safe mode without `--allow-network`.
+
+The repo asked about is the `upstream` remote, else `origin`, or `--github-repo OWNER/NAME`. No token is
+ever printed; error text from `gh` is scrubbed of anything shaped like one. Without the flag the command
+makes no network call, as before. The checklist for the owner is SHIELD §9.4.
 
 ## Evidence
 
