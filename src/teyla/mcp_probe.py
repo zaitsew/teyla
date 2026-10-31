@@ -55,7 +55,7 @@ OVERSIZE_BYTES = 1024 * 1024
 MIN_RATE_LIMIT_BUDGET = 20
 PROTOCOL_VERSION = "2025-06-18"
 LIST_PAGES = 20
-TOKEN_RE = re.compile(r"[\x21-\x7e]+")
+TOKEN_RE = re.compile(r"[\x21\x23-\x5b\x5d-\x7e]+")   # printable ASCII, no space, no quote, no backslash: JSON cannot re-encode it
 USER_AGENT = f"teyla-mcp-probe/{__version__}"
 
 OK, FIX, SKIP = "OK", "FIX", "SKIP"
@@ -225,7 +225,9 @@ def host_tokens(cell: str) -> set[str]:
         if not tok or ("://" not in tok and "/" in tok):
             continue
         h = _host_of(tok)
-        if _HOST_TOKEN.fullmatch(h) and h.rsplit(".", 1)[-1] not in _FILE_TLDS:
+        # a two-label token ending in a file suffix (`privacy.md`, `teyla.toml`) is a file name in the cell;
+        # `mcp.example.sh` has three labels and .sh is a real domain, so it counts
+        if _HOST_TOKEN.fullmatch(h) and not (h.rsplit(".", 1)[-1] in _FILE_TLDS and h.count(".") < 2):
             out.add(h)
     return out
 
@@ -603,6 +605,8 @@ class Probe:
     @staticmethod
     def _refuses(r: Resp) -> bool:
         err = r.rpc_error or {}
+        if r.status >= 500:
+            return False                     # a crash is never a refusal, whatever the error says
         return r.status in (401, 403) or (err.get("code") in (-32001, -32000) and bool(AUTH_MSG_RE.search(str(err.get("message", "")))))
 
     @staticmethod
@@ -699,8 +703,8 @@ class Probe:
             return
         tool = cand[0]
         props = props_of(tool)
-        if props or required_of(tool):
-            key = next((k for k in required_of(tool) if k in props), None) or next(iter(props), None) or required_of(tool)[0]
+        key = next((k for k in required_of(tool) if k in props), None) or next(iter(props), None)
+        if key is not None:                  # a required name without a schema has no wrong type
             args = {**base_args(tool), key: wrong_value(props.get(key))}
             how = f"{key} sent as the wrong type"
         else:
@@ -777,6 +781,7 @@ class Probe:
         per = max(1, (cap - 4) // len(sources))
         sent: dict[str, list[str]] = {}
         replies, stopped = [], ""
+        pages_text = ""
         try:
             for src in sources:
                 for case in cases[:per]:
@@ -787,13 +792,16 @@ class Probe:
                             key=lambda t: (t["name"] in sent, len(required_of(t))))
             for t in others[:3]:
                 replies.append((t["name"], self.session.call(t["name"], base_args(t))))
-            _, lr = self.session.list_tools()
+            all_tools, lr = self.session.list_tools()
             replies.append(("tools/list", lr))
+            pages_text = json.dumps(all_tools or [])     # every page, not only the last response
         except BudgetSpent as e:
             stopped = e.what
         seen = []
         for where, r in replies:
             body = (r.text or "") + " " + _text_of(r)
+            if where == "tools/list":
+                body += " " + pages_text
             body += " " + strip_invisible(body)
             for origin, toks in sent.items():
                 if origin != where:

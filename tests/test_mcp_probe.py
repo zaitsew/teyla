@@ -755,3 +755,11 @@ def test_a_required_name_missing_from_properties_does_not_crash(server, repo, ca
     rc, out = probe(repo, fake.url, capsys=capsys)
     assert "Traceback" not in out.out + out.err and line_of(out, "schema-error").startswith(("OK", "FIX"))
     assert fake.calls("ghost_lookup")
+
+
+def test_round_two_fixes():
+    from teyla import mcp_probe as mp
+    assert mp.host_tokens("mcp.example.sh and privacy.md") == {"mcp.example.sh"}
+    assert not mp.TOKEN_RE.fullmatch('ab\\cd') and not mp.TOKEN_RE.fullmatch('ab"cd') and mp.TOKEN_RE.fullmatch("abc_123-xyz")
+    r = mp.Resp(500, body={"jsonrpc": "2.0", "id": 1, "error": {"code": -32000, "message": "Unauthorized"}})
+    assert not mp.Probe._refuses(r)

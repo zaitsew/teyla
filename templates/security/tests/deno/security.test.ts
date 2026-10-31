@@ -40,9 +40,9 @@ async function permissions(_who: Who): Promise<string> {
 
 /** Valid arguments for a tool, so a refusal means "not authorised", not "missing field". */
 const validArgs = (t: (typeof TOOLS)[number]): Record<string, unknown> => ({
-  ...t.args,
   ...(t.text ? { [t.text]: "hello" } : {}),
   ...(t.url ? { [t.url]: "https://example.test/" } : {}),
+  ...t.args, // explicit arguments win over the defaults
 });
 
 const corpus: { cases: Case[] } = JSON.parse(
