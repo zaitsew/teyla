@@ -22,6 +22,12 @@ Private-terms file: one term per line, case-insensitive, `#` comments, and
 authors). A term matches only between non-alphanumerics, so `-Users-name-repos-app` matches
 `name` and `app` while `names` does not match `name`.
 
+The file has two sections. Lines before any header, and lines under `[everywhere]`, are terms that
+must never appear in any repo. Lines under `[teyla]` are names that must never appear in Teyla's own
+repo (product and organisation names) and are ignored in every other repo. A repo is Teyla's when its
+root `pyproject.toml` has `[project] name = "teyla"`. A term's index is its position among the
+distinct terms of both sections, in file order.
+
 `.leak-allow` (repo root) sections, one glob per line, `#` comments:
 
     emails:    address globs to permit            paths:   files skipped entirely
@@ -139,6 +145,12 @@ class Config:
         self.terms_path = ""
         self.terms_explicit = False                   # $TEYLA_PRIVATE_TERMS was set
         self.terms_status = "unset"                   # ok | missing | unreadable
+        self.term_sections: list[str] = []            # parallel to `terms`: "everywhere" | "teyla"
+        self.teyla = False                            # the scanned repo is Teyla's: the [teyla] terms apply too
+
+    def term_on(self, i: int) -> bool:
+        """Does term `i` apply to the repo being scanned? `[teyla]` terms apply only inside Teyla's repo."""
+        return self.teyla or self.term_sections[i] != "teyla"
 
 
 CONFIG_CAP = 256 * 1024       # the terms file and .leak-allow: both are small, and neither is read without a cap
@@ -169,20 +181,93 @@ def load_terms(cfg: Config) -> None:
         cfg.notes.append("no private term list; generic rules only")
         return
     cfg.terms_status = "ok"
-    seen: set[str] = set()
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        m = re.match(r"(?i)allow\s+(.+?)\s+in\s+(\S+)$", line)
-        if m:
-            cfg.term_allow.append((m.group(1).strip().lower(), m.group(2)))
-            continue
-        term = line.lower()
-        if term in seen:
-            continue
-        seen.add(term)
+    for no, kind, section, payload in terms_lines(raw):
+        if kind == "allow":
+            cfg.term_allow.append((payload[0].strip().lower(), payload[1]))
+        elif kind == "badheader":
+            cfg.errors.append(f"terms file line {no}: unknown section header; use [everywhere] or [teyla]")
+    for term, section in distinct_terms(raw):
         cfg.terms.append((term, re.compile(r"(?<![A-Za-z0-9])" + re.escape(term) + r"(?![A-Za-z0-9])", re.I)))
+        cfg.term_sections.append(section)
+
+
+def distinct_terms(raw: str) -> list[tuple[str, str]]:
+    """The terms of a terms file as (lower-cased text, section), in file order, each once: a term's index is its
+    position in this list. A term that stands in both sections keeps its first position and is a kind A term
+    (`everywhere`): the stronger section wins."""
+    pos: dict[str, int] = {}
+    out: list[list[str]] = []
+    for _no, kind, section, payload in terms_lines(raw):
+        if kind != "term":
+            continue
+        term = payload.lower()
+        if term in pos:
+            if section == "everywhere":
+                out[pos[term]][1] = "everywhere"
+            continue
+        pos[term] = len(out)
+        out.append([term, section])
+    return [(t, sec) for t, sec in out]
+
+
+TERM_SECTIONS = ("everywhere", "teyla")
+_HEADER = re.compile(r"^\[([^\]]*)\]$")
+_ALLOW_LINE = re.compile(r"(?i)allow\s+(.+?)\s+in\s+(\S+)$")
+
+
+def terms_lines(raw: str):
+    """The lines of a terms file as (line number, kind, section, payload). Kind is blank, comment, header,
+    badheader (a bracketed line that names no known section), allow (payload: term, glob) or term (payload:
+    the text). `section` is the one in force on that line; a header line carries the section it opens. Lines
+    before any header are in `everywhere`. The one parser: the scanner, `teyla leak terms list` and `move` use it."""
+    section = "everywhere"
+    for no, line in enumerate(raw.splitlines(), 1):
+        s = line.strip()
+        if not s:
+            yield no, "blank", section, s
+        elif s.startswith("#"):
+            yield no, "comment", section, s
+        elif (h := _HEADER.match(s)):
+            name = h.group(1).strip().lower()
+            if name in TERM_SECTIONS:
+                section = name
+                yield no, "header", section, name
+            else:
+                yield no, "badheader", section, s
+        elif (m := _ALLOW_LINE.match(s)):
+            yield no, "allow", section, (m.group(1), m.group(2))
+        else:
+            yield no, "term", section, s
+
+
+def _pyproject_name(root: Path) -> str | None:
+    try:
+        raw = read_capped(root / "pyproject.toml")
+    except (OSError, ValueError):
+        return None
+    try:
+        import tomllib
+        name = (tomllib.loads(raw).get("project") or {}).get("name")
+        return str(name).strip().lower() if isinstance(name, str) else None
+    except Exception:                                  # noqa: BLE001 — no tomllib, or a file that does not parse
+        m = re.search(r"(?ms)^\[project\]\s*$.*?^\s*name\s*=\s*[\"']([^\"']+)[\"']", raw)
+        return m.group(1).strip().lower() if m else None
+
+
+def is_teyla_repo(start: Path | None = None) -> bool:
+    """Is `start` (default: the current directory) inside Teyla's own repo? The nearest ancestor with a `.git`
+    is the repo root, and it is Teyla's when its `pyproject.toml` says `[project] name = "teyla"`. Outside
+    any git repo the answer is no."""
+    try:
+        d = (start or Path.cwd()).resolve()
+        if d.is_file():
+            d = d.parent
+        for p in (d, *d.parents):
+            if os.path.lexists(p / ".git"):
+                return _pyproject_name(p) == "teyla"
+    except OSError:
+        pass
+    return False
 
 
 def load_allow(cfg: Config, root: Path | None) -> None:
@@ -305,7 +390,7 @@ class PathRules:
         self.cfg, self.gpath, self.triage = cfg, gpath, triage
         self.skip = _glob(gpath, cfg.allow["paths"])
         self.terms = [(i, r) for i, (t, r) in enumerate(cfg.terms)
-                      if not any(t == at and fnmatch.fnmatchcase(gpath, g) for at, g in cfg.term_allow)]
+                      if cfg.term_on(i) and not any(t == at and fnmatch.fnmatchcase(gpath, g) for at, g in cfg.term_allow)]
         self.cyr = lang and not _glob(gpath, cfg.allow["cyrillic"])
         self.sec = not _glob(gpath, cfg.allow["secrets"])
         self.exc = [e for e in cfg.exceptions if fnmatch.fnmatchcase(gpath, e.glob)]
@@ -538,6 +623,7 @@ def main(argv: list[str] | None = None) -> int:
     root = repo_root(cwd)
     cfg = Config()
     load_terms(cfg)
+    cfg.teyla = is_teyla_repo(root or cwd)
     load_allow(cfg, root)
     if cfg.errors:
         for e in cfg.errors:

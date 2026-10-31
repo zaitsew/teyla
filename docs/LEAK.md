@@ -16,7 +16,8 @@ teyla leak --text body.md        # a PR body, before `gh pr create`
 ```
 
 Private terms live outside every repo, in `~/.config/teyla/private-terms.txt` (or the file `$TEYLA_PRIVATE_TERMS`
-names). The format and the rest of the first-time setup are in [CONTRIBUTING](../CONTRIBUTING.md).
+names). The file has two sections, described under [Private terms](#private-terms). The first-time setup is in
+[CONTRIBUTING](../CONTRIBUTING.md).
 
 ## What it reads
 
@@ -45,7 +46,7 @@ Beyond text, it reads these structures. Screenshot pixels are never read.
 
 | Rule | Matches | Severity |
 |---|---|---|
-| `term` | a private term (whole word; `-name-` counts) | blocker |
+| `term` | a private term (whole word; `-name-` counts); a `[teyla]` term only inside Teyla's repo | blocker |
 | `email` | an address except `example.*`, noreply and `git@host` | blocker |
 | `home` | `/Users/<x>/` or `/home/<x>/` for a real-looking `<x>` | blocker |
 | `secret` | a key with a known shape (GitHub, Anthropic, AWS, Slack, JWT, PEM, and more) | blocker |
@@ -70,7 +71,7 @@ An ignored `.env` is local-only and its blockers are listed as triage: the file 
 ## Output
 
 Every match prints as its first two characters, an ellipsis and its length: `sk…43`. A private term prints only as
-`term:<index>`, its position in the terms file, in every string: a path, a place, a note, an error and the JSON are
+`term:<index>`, its position in the terms file (see [Private terms](#private-terms)), in every string: a path, a place, a note, an error and the JSON are
 scrubbed, so a file named after a term prints as `term:0-notes.txt`. Its fingerprint does not depend on its text. A
 finding has a fingerprint, the first 12 hex of `sha256(rule + path + match)`. For a gitleaks finding the match is
 the sha256 of the line it sits on (gitleaks redacts the secret), and for image metadata it is the EXIF payload, so
@@ -139,7 +140,7 @@ teyla leak install [repo] [--all] [--uninstall]
 ```
 
 `teyla leak` takes a repo as its positional argument, so the two sub-commands are registered as `teyla leak-install`
-and `teyla leak-terms`; `teyla leak install` and `teyla leak terms` are rewritten to them before parsing. A repo
+and `teyla leak-terms`; `teyla leak install` and `teyla leak terms` (with `--suggest`, `list` or `move`) are rewritten to them before parsing. A repo
 directory that is literally named `install` or `terms` needs `./install`.
 
 - Writes `.githooks/pre-commit` (`teyla leak --staged --quiet`) and `.githooks/pre-push`
@@ -160,6 +161,79 @@ directory that is literally named `install` or `terms` needs `./install`.
 
 ## Private terms
 
+### The file: two sections
+
+The terms file holds two kinds of term.
+
+- **Kind A, `[everywhere]`**: things that must never appear in any repo. The owner's e-mail addresses, hosts,
+  personal names and tester accounts.
+- **Kind B, `[teyla]`**: names that must never appear in Teyla's own public repo, because Teyla's docs never name
+  the owner's products. Product and organisation names. They are all over each product's own repo, so
+  there they are not a finding.
+
+```
+# kind A: lines before any header, or under [everywhere]
+jdoe-handle
+allow jdoe-handle in commit:*:author
+
+[teyla]
+# never in Teyla's repo: product and organisation names
+some-product
+some-org
+
+[everywhere]
+mail-host.example
+```
+
+- Lines before any header belong to `[everywhere]`, so a file with no headers behaves exactly as it always did.
+- A header is `[everywhere]` or `[teyla]`, on a line of its own, any case. A header may repeat. Any other bracketed
+  line is an error: exit 2, naming the line number and nothing else.
+- `#` comments and `allow <term> in <glob>` lines work in both sections. An `allow` line names the term, not a
+  section, so it applies wherever the term is checked.
+- A term written in both sections is kind A: the stronger section wins.
+
+**Index.** A term's index is its position among the distinct terms of both sections, counted from 0 in file order
+(a repeated term counts once, at its first line). It is the same in every repo and every surface, and it is what
+`term:<index>` prints. Moving a term between sections rewrites the file, so indices can shift; `teyla leak terms
+move` prints the old and new index of each term it moves. A `fp=` in a `.leak-allow` exception for a `term`
+finding depends on the index, so check it after a move.
+
+**Is this repo Teyla's?** The scanner finds the repo root (the nearest directory with a `.git`, a file in a linked
+worktree) and reads its `pyproject.toml`. The repo is Teyla's when `[project] name` is `teyla`. There is no marker
+and no setting: a fork under another name is not Teyla's, and a directory outside every git repo is not either.
+
+- `teyla leak [repo]` decides from `repo` (default: the current directory). `--all` decides repo by repo.
+- `--text` and `scan_text` with no repo argument decide from the current directory. A PR body checked from inside
+  Teyla's checkout gets both kinds; the same body checked from a product's checkout, or from anywhere else, gets
+  kind A only.
+- `scripts/leak_check.py`, which `check.sh` runs with no install, applies the same rule with the same file, so
+  inside Teyla it checks both kinds.
+- Output scrubbing masks every term of either kind, in every repo. A path that holds a `[teyla]` term prints as
+  `term:<index>` even where the term is allowed.
+
+### Sorting an existing file
+
+Both commands print an index, a section and a masked form (first two characters, `…`, length). They never print a
+value, in `--json` either.
+
+```
+teyla leak terms list [--json]
+teyla leak terms move <index>... --to teyla|everywhere [--json]
+```
+
+`list` prints one row per term: `term:0  everywhere  jd…11`, that is the index, the section and the masked form.
+`move` prints one row per moved term, `term:1 -> term:2  everywhere` (old index, new index, section), and a count.
+
+`list` reads the file in the order the scanner does. `move` takes indices as printed (`3` or `term:3`) and writes
+each moved term once, at the end of the target section (the last block of that section; for `teyla`, a new
+`[teyla]` block with a comment is added at the end of the file when there is none; for `everywhere`, a file with no
+such lines gets it ahead of the first header). Every other line, comments and `allow` lines included, stays where it
+is, and a term already in the target section stays put. The file is replaced atomically through a 0600 temporary file
+in the same directory, so a loose mode is tightened; a symlinked file is refused. An index out of range, or no
+`--to`, is exit 2 and the file is untouched.
+
+### Suggestions
+
 `teyla leak terms --suggest [--yes] [--json]` lists candidates for the terms file from facts this machine already
 knows: `git config user.name` and `user.email` (global and this repo), the login name, the home directory's name, the
 computer name (`scutil`, or the hostname), tester e-mails in this repo's `teyla.toml` `[productize]`, bundle-id
@@ -167,10 +241,13 @@ organisations in its `[release]`, and the server, domain, mail sender, tester an
 `~/.teyla/platform.toml`. It never reads another repo's content. Values already in the file, generic names
 (`root`, `localhost`, ...) and anything under 4 characters are skipped.
 
-Every candidate prints as its first two characters, `…`, its length and its source; the full value never reaches
-stdout, in `--json` either. Without `--yes` nothing is written. With `--yes` the values are appended to the terms
-file (`$TEYLA_PRIVATE_TERMS` or `~/.config/teyla/private-terms.txt`), created with the directory at 0700 and the
-file at 0600, and loose permissions on the default location are tightened; the output is the count added.
+Every candidate prints as its first two characters, `…`, its length, its section and its source; the full value
+never reaches stdout, in `--json` either. Bundle-id organisations are product and organisation names and go under
+`[teyla]`; everything else goes under `[everywhere]`. Without `--yes` nothing is written. With `--yes` the values are
+appended to the terms file (`$TEYLA_PRIVATE_TERMS` or `~/.config/teyla/private-terms.txt`), created with the
+directory at 0700 and the file at 0600, and loose permissions on the default location are tightened. A value goes
+in the section in force at the end of the file when that is its own, and under a new header otherwise; the output
+is the count added.
 
 ## Leak guard
 
