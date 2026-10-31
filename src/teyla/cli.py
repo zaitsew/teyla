@@ -563,6 +563,8 @@ def build_parser() -> argparse.ArgumentParser:
     guard_mod.register(sp)
     from . import crash as crash_mod
     crash_mod.register(sp)
+    from . import features as features_mod
+    features_mod.register(sp)
     from .reel import cli as reel_cli
     reel_cli.register(sp)
     from . import asks as asks_mod

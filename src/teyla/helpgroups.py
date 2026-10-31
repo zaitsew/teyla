@@ -17,6 +17,7 @@ from .ui import Style, pad
 GROUPS: dict[str, list[tuple[str, str]]] = {
     "Start": [
         ("start", "Find where the money goes, and fix it one change at a time"),
+        ("features", "Pick the packs you need; see which are on"),
         ("apply", "Make the changes that `start` offers (each can be undone)"),
         ("undo", "Put back only the setting Teyla changed"),
         ("changes", "Every change Teyla made to your tools, and whether it is undone"),
@@ -117,7 +118,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
 
 # The commands the default help names. The rest of a group is counted.
 FEATURED = {
-    "Start": ["start", "apply", "undo", "doctor"],
+    "Start": ["start", "features", "apply", "undo", "doctor"],
     "Daily": ["today", "web", "asks", "note", "answer"],
     "Products": ["products", "product", "testflight"],
     "Spend": ["spend", "monitor", "lanes"],

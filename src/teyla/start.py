@@ -1,7 +1,9 @@
 """`teyla start`, `apply`, `undo` and `changes`: diagnose your agent spend, then fix it one change at a time.
 
-    teyla start                  the summary card, then each offer: [y]es / [n]o / [e]xplain / [q]uit
-    teyla start --agent          writes nothing; prints JSON {summary_text, diagnosis, offers} for an AI agent to relay
+    teyla start                  the summary card, the checklist of packs, then each offer of a chosen pack:
+                                 [y]es / [n]o / [e]xplain / [q]uit
+    teyla start --agent          writes nothing; prints JSON {summary_text, diagnosis, offers, features} for an AI
+                                 agent to relay
     teyla start --json           the same JSON, for scripts
     teyla apply O1 O3 [--yes]    make those changes (--dry: show them only)
     teyla undo O1 | <change-id>  put back only the key Teyla wrote (--force: even when it was changed since)
@@ -15,7 +17,7 @@ from __future__ import annotations
 import json
 import sys
 
-from . import changes, diagnose, figures, offers as offers_mod
+from . import changes, diagnose, features as features_mod, figures, offers as offers_mod
 from .offers import plural
 from .spend import _money
 
@@ -75,7 +77,7 @@ def payload(days: int, inputs=None, for_agent: bool = False) -> tuple[dict, list
     diag = diagnose.diagnose(days, inp)
     offers = offers_mod.build(days, inp, diag)
     return dict(summary_text=summary_text(diag, offers, for_agent), diagnosis=diag,
-                offers=[o.to_dict() for o in offers]), offers
+                offers=[o.to_dict() for o in offers], features=features_mod.rows(offer_list=offers)), offers
 
 
 # --- showing an offer --------------------------------------------------------------------------
@@ -139,9 +141,14 @@ def _ask(prompt: str) -> str:
         return "q"
 
 
-def _interactive(offers: list, pl: dict) -> int:
-    """Walk the offers. The first screen learns of the run (`figures.record_start`) on every way out:
-    `finished` once the person has answered an offer."""
+def pack_block(p, todo: list[str]) -> str:
+    return "\n".join([f"{p.title}  ({p.id})", f"  Problem:   {p.need}", f"  Brings:    {p.does}"]
+                     + [f"  Change:    {line}" for line in todo])
+
+
+def _interactive(offers: list, pl: dict, packs: list | None = None) -> int:
+    """Walk the offers, then the rest of each chosen pack (its switches, hooks and jobs). The first screen
+    learns of the run (`figures.record_start`) on every way out: `finished` once the person has answered."""
     done: list = []
     answered = False
     figures.record_start(pl, False)                 # the 60 s diagnosis is kept even if the run is interrupted
@@ -164,9 +171,49 @@ def _interactive(offers: list, pl: dict) -> int:
                 return 0
             else:
                 print("  y, n, e or q")
+    home = features_mod._home()
+    for p in packs or []:
+        todo = features_mod.plan(p, home, {}, with_offers=False)
+        if not todo:
+            continue
+        print("\n" + pack_block(p, todo))
+        while True:
+            a = _ask("Turn it on? [y]es / [n]o / [e]xplain / [q]uit  ")
+            if a in ("e", "explain"):
+                print(f"  Undo: `teyla features off {p.id}`. Try it with: {p.commands[0]}")
+            elif a in ("y", "yes"):
+                try:
+                    for line in features_mod.turn_on(p, home, with_offers=False)[:6]:
+                        print(f"  {line}")
+                except Exception as e:  # noqa: BLE001 — a pack that fails half-way must say so, not trace back
+                    print(f"{p.id}: failed: {type(e).__name__}: {e}", file=sys.stderr)
+                answered = True
+                break
+            elif a in ("n", "no", ""):
+                answered = True
+                break
+            elif a in ("q", "quit"):
+                _done_summary(done)
+                figures.record_start(pl, answered)
+                return 0
+            else:
+                print("  y, n, e or q")
     _done_summary(done)
     figures.record_start(pl, True)
     return 0
+
+
+def _checklist(pl: dict) -> list | None:
+    """The packs the person ticks, recorded; None when they quit. Packs left out and off get their hooks
+    quieted (`features.quiet_unchosen`)."""
+    rs = pl.get("features") or features_mod.rows()
+    picked = features_mod.pick(rs, _ask)
+    if picked is None:
+        return None
+    features_mod.record_choice(picked)
+    for line in features_mod.quiet_unchosen(picked, rs):
+        print(f"  {line}")
+    return [features_mod.BY_ID[i] for i in picked]
 
 
 def cmd_start(args) -> int:
@@ -179,23 +226,31 @@ def cmd_start(args) -> int:
         return 0
     print(pl["summary_text"])
     live = [o for o in offers if o.applies]
-    if pl["diagnosis"]["empty"] or not live:        # nothing to answer: the first screen can move on
-        figures.record_start(pl, not live and not pl["diagnosis"]["empty"])
-        return 0
+    settled = not live and not pl["diagnosis"]["empty"]      # nothing to answer: the first screen can move on
     if args.yes:
         done: list = []
         for o in live:
             print("\n" + offer_block(o))
             _apply_one(o, done)
         _done_summary(done)
-        figures.record_start(pl, True)
+        figures.record_start(pl, not pl["diagnosis"]["empty"])
         return 0 if len(done) == len(live) else 1
     if not _is_tty():
-        figures.record_start(pl, False)
-        print("\nNot a terminal, so nothing was asked. To apply: teyla apply "
-              + " ".join(o.id for o in live) + " --yes   (add --dry to see each change first)")
+        figures.record_start(pl, settled)
+        if pl["diagnosis"]["empty"]:
+            return 0
+        if live:
+            print("\nNot a terminal, so nothing was asked. To apply: teyla apply "
+                  + " ".join(o.id for o in live) + " --yes   (add --dry to see each change first)")
+        print("Pick the packs you need: teyla features, then teyla features on <pack>")
         return 0
-    return _interactive(offers, pl)
+    packs = _checklist(pl)
+    if packs is None:
+        print("\nNothing changed.")
+        figures.record_start(pl, settled)
+        return 0
+    ids = {p.id for p in packs}
+    return _interactive([o for o in offers if features_mod.OFFER_PACK.get(o.id) in ids], pl, packs)
 
 
 def cmd_apply(args) -> int:

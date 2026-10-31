@@ -5,7 +5,7 @@ the money leaked, and offers seven changes. Each change is one keystroke, saves 
 undone. It never changes anything without a yes.
 
 ```bash
-teyla start                 # the summary card, then each offer: [y]es / [n]o / [e]xplain / [q]uit
+teyla start                 # the summary card, the checklist of packs, then each offer: [y]es / [n]o / [e]xplain / [q]uit
 teyla start --days 14       # another window; savings are scaled to a month
 teyla apply O1 O3 --yes     # make those changes without the questions (--dry shows them and writes nothing)
 teyla apply O5 --owner NAME # O5 only: the name the starter POLICY.md carries (default: the login name)
@@ -24,17 +24,23 @@ teyla undo O1               # put back only the key Teyla wrote
    An interactive `teyla start` prints one progress line to stderr first ("Reading 612 sessions from the last
    30 days..."); `--agent` and `--json` keep stdout and stderr clean. The card ends with one line per applicable
    offer, `O6 <title>: <saving or benefit>`, or says "No changes to suggest: your settings already match."
-3. **Offer.** Seven offers, in order. An offer whose setting is already in place, or whose tool is not
+3. **Pick.** A checklist of Teyla's ten packs (`docs/FEATURES.md`): token cost, machine guard, disk cleanup,
+   questions and ideas, one policy, morning check, security, UX and UI, ship and test, writing. Type numbers to
+   switch boxes, Enter to go on. Only the offers of the ticked packs are asked, then the rest of each ticked pack
+   (its switches, hooks and jobs).
+4. **Offer.** Seven offers, in order. An offer whose setting is already in place, or whose tool is not
    installed, is left out and the reason is kept for `--json`. Each shows the change, the saving (or what it
    brings when no honest dollar figure exists), the trade-off and the undo.
-4. **Apply.** `y` makes the change. `e` prints the detail. `q` stops. Without a terminal nothing is asked:
+5. **Apply.** `y` makes the change. `e` prints the detail. `q` stops. Without a terminal nothing is asked:
    `teyla start` prints the card and the `teyla apply` commands instead.
 
 For an AI agent that relays the result to you, `teyla start --agent` (or `--json`) prints
-`{summary_text, diagnosis, offers}` and applies nothing. Each offer carries `preview`, the command that shows its change
+`{summary_text, diagnosis, offers, features}` and applies nothing. Each offer carries `preview`, the command that shows its change
 and writes nothing (`teyla apply <id> --dry`). Under `--agent`, `summary_text` leaves out the closing line that tells a
 person at a terminal to go on with `teyla start` or apply several offers; the interactive card and `--json` keep it. The
-agent reads `summary_text` to you, asks one question per offer, then runs `teyla apply <id> --yes` for each yes.
+agent reads `summary_text` to you, shows the packs in `features` as one checklist, records the answer with
+`teyla features choose <ids>`, asks one question per offer of a ticked pack and runs `teyla apply <id> --yes` for each
+yes, then turns on the rest of each ticked pack with `teyla features on <id> --yes --no-offers`.
 
 `--agent` writes none of your settings. The one side effect is the existing cache of Claude desktop sessions
 under `~/.teyla`, which `teyla asks` already keeps; it is refreshed only when a Claude desktop store exists.

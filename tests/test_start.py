@@ -360,7 +360,7 @@ def test_start_agent_writes_nothing_and_prints_the_json_shape(machine, capsys):
     code, out, _ = _run(["start", "--agent"], capsys)
     assert code == 0 and machine.tree() == snap
     d = json.loads(out)
-    assert set(d) == {"summary_text", "diagnosis", "offers"}
+    assert set(d) == {"summary_text", "diagnosis", "offers", "features"}
     assert len(d["summary_text"].splitlines()) <= 12
     assert [o["id"] for o in d["offers"]] == [f"O{n}" for n in range(1, 8)]
     for o in d["offers"]:
@@ -424,10 +424,10 @@ def _tty(monkeypatch, answers):
 
 def test_interactive_explain_then_yes_then_no(machine, capsys, monkeypatch):
     monkeypatch.setattr(offers.sys, "platform", "linux")
-    asked = _tty(monkeypatch, ["e", "y", "n", "n"] + ["n"] * 6)
+    asked = _tty(monkeypatch, ["", "e", "y", "n", "n"] + ["n"] * 6)      # Enter keeps the suggested packs
     code, out, _ = _run(["start"], capsys)
     assert code == 0
-    assert "[y]es / [n]o / [e]xplain / [q]uit" in asked[0]
+    assert asked[0] == "Packs: " and "[y]es / [n]o / [e]xplain / [q]uit" in asked[1]
     assert "Detail:" not in out and "Claude Code compacts a session about 35k tokens" in out      # [e] printed it once
     assert json.loads(machine.settings.read_text())["autoCompactWindow"] == 335000                  # O1 yes
     assert "CLAUDE_CODE_SUBAGENT_MODEL" not in machine.settings.read_text()                         # O2 no
@@ -455,7 +455,7 @@ def test_interactive_end_of_input_quits(machine, capsys, monkeypatch):
 # --- what the first screen learns from a run ---------------------------------------------------------
 
 def test_the_first_screen_hears_of_a_run_that_was_answered(machine, capsys, monkeypatch):
-    _tty(monkeypatch, ["n"] * 10)
+    _tty(monkeypatch, [""] + ["n"] * 10)
     assert _run(["start"], capsys)[0] == 0
     rep = figures.start_report()
     assert rep["finished"] is True and rep["offers"] and all("id" in o for o in rep["offers"])
