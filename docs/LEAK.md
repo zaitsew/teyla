@@ -135,7 +135,8 @@ change to review as one that touches credentials.
 ## Leak guard
 
 `plugin/hooks/leak-guard.sh` is the agent's door to the scanner: a PreToolUse hook on Bash, Read, Edit and
-Write. A command with none of its fixed tokens passes at once, with no process started.
+Write. A command with none of its fixed tokens and no quoting, `$` or backtick passes at once, with no process
+started. One with quoting is parsed word by word, so `g''h p''r` and `cred''entials` are what they spell.
 
 - **Publications.** The title, body, notes, message, comment or description of `gh pr|issue|release|gist|repo`
   and `gh api` calls and of `git commit|tag|merge`, plus a `-F`/`--body-file` file, a heredoc, a `$(cat ...)`
@@ -150,9 +151,13 @@ Write. A command with none of its fixed tokens passes at once, with no process s
   `security dump-keychain` and `gh repo edit --visibility public` are refused. `gh repo create --public` is not.
 - **Failure.** A command with no token passes even when the hook errors (one warning line). A command with a
   token is refused when python3, the `teyla` package or the scanner is missing, crashes or times out, and when
-  the text cannot be read (a `$VAR` body, a pipe from an unknown program, a missing body file).
-- **Skip once.** Start the command with `TEYLA_LEAK_GUARD=0 `. It is appended to `$TEYLA_HOME/leak-skips.log`
-  (time and kind, never the text) and lifts only the publication scan.
+  the text cannot be read (a `$VAR` or an unreadable `$( )` body, a pipe from an unknown program, a body
+  file that does not exist yet, a `cd` into a variable). Files resolve in the directory the command runs in
+  (`cd`, `git -C`, `env -C`); a link that ends at a credential is a credential.
+- **Skip once.** Put `TEYLA_LEAK_GUARD=0` first in the command, as an assignment word before the executable
+  (or in the hook's environment). Each skipped publication is appended to `$TEYLA_HOME/leak-skips.log`
+  (time and kind, never the text). It lifts only the publication scan, never a credential, Keychain or
+  visibility rule.
 
 It is one door of four, not the wall: an encoded payload, a body built from a variable set in an earlier call,
 a release asset and the Grep tool are outside it. Wiring for Codex and Grok is in [HARNESSES](HARNESSES.md).
