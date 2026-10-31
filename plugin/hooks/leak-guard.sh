@@ -137,6 +137,22 @@ teyla_python() {
         /usr/bin/env*) return 1 ;;          # names no file: python3 on PATH is what it would run
     esac
     p=${p%% *}
+    # The shebang is followed only into a known interpreter root (uv tools, pipx, Homebrew, /usr, python.org,
+    # pyenv; TEYLA_PYTHON_ROOTS adds more, colon-separated), never into the directory the command runs in:
+    # a console script planted in a repo (`.` or node_modules/.bin on PATH) must not pick the guard's
+    # interpreter. An install elsewhere names its python with TEYLA_PYTHON.
+    cwd=$(pwd -P) || return 1
+    case "$t" in "$cwd"/*) return 1 ;; esac
+    case "$p" in "$cwd"/*) return 1 ;; esac
+    roots="$HOME/.local/share/uv/tools:$HOME/.local/pipx/venvs:$HOME/Library/Application Support/pipx/venvs:$HOME/.pyenv:/opt/homebrew:/usr/local:/usr/bin:/Library/Frameworks/Python.framework${TEYLA_PYTHON_ROOTS:+:$TEYLA_PYTHON_ROOTS}"
+    ok=0
+    oldifs=$IFS; IFS=:
+    for root in $roots; do
+        [ -n "$root" ] || continue
+        case "$p" in "$root"/*) ok=1 ;; esac
+    done
+    IFS=$oldifs
+    [ "$ok" = 1 ] || return 1
     [ -x "$p" ] || return 1
     printf '%s\n' "$p"
 }
