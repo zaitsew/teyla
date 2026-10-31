@@ -113,31 +113,28 @@ def load_captions(path: Path, control: str = "caption", langs: list[str] | None 
     return out
 
 
-def _mask_names(red: Redactor, text: str, allow: tuple[str, ...] | list[str]) -> str:
-    """Each allowed name, whole and on word boundaries, becomes a neutral word before redaction. The name
-    may then appear in a caption, but a private term that is only part of it ("Acme" in "Acme Planner")
-    is still refused on its own, and a longer private term that contains the name ("Acme Planner
-    Internal") is left as it is, so redaction still refuses it."""
-    names = sorted({n for n in allow if n}, key=len, reverse=True)
+def _name_pattern(allow: tuple[str, ...] | list[str]) -> re.Pattern | None:
+    names = sorted({" ".join(n.split()) for n in allow if n and n.strip()}, key=len, reverse=True)
     if not names:
-        return text
-    longer = [(a, b) for a, b in red.term_spans(text)]
-    pat = re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(re.escape(n) for n in names) + r")(?![A-Za-z0-9])", re.I)
-    out, pos = [], 0
-    for m in pat.finditer(text):
-        if any(a <= m.start() and m.end() <= b and (b - a) > (m.end() - m.start()) for a, b in longer):
-            continue
-        out.append(text[pos:m.start()])
-        out.append("ThisProduct")
-        pos = m.end()
-    out.append(text[pos:])
-    return "".join(out)
+        return None
+    return re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(re.escape(n) for n in names) + r")(?![A-Za-z0-9])", re.I)
 
 
 def _unsafe(red: Redactor, text: str, allow: tuple[str, ...] | list[str] = ()) -> bool:
-    text = _mask_names(red, text, allow)
+    """True when the text may not go into a public video. The product's own names (`allow`) may appear,
+    whole and on word boundaries; every private-term hit must lie inside one of those occurrences, so
+    "Acme" alone, "Acme Planner Internal" and "Planner Internal" are all refused when the name is
+    "Acme Planner". The check runs on whitespace-normalised text, as the Redactor's own does. Secrets,
+    addresses and paths are then checked with the names masked by a neutral word."""
+    text = " ".join(text.split())
+    pat = _name_pattern(allow)
+    if pat is not None:
+        inside = [(m.start(), m.end()) for m in pat.finditer(text)]
+        if any(not any(a <= s and e <= b for a, b in inside) for s, e in red.term_spans(text)):
+            return True
+        text = pat.sub("ThisProduct", text)
     o = red.clean(text)
-    return bool(o.fatal or o.skip or " ".join(o.text.split()) != " ".join(text.split()))
+    return bool(o.fatal or o.skip or " ".join(o.text.split()) != text)
 
 
 def product_names(repo: Path, kit: dict) -> list[str]:
