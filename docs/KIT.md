@@ -111,9 +111,12 @@ writes `brand/out/reel/<lang>/product-vertical.mp4` (1080x1920), `product-square
   `{"text": "...", "start": 0.5, "end": 3.0}`. Untimed captions share the video's length equally.
 - Every caption passes `teyla reel` redaction (secrets, private terms, addresses, paths); one that does not stops
   the run before anything is rendered. Pillow draws each caption into a transparent PNG and ffmpeg overlays it.
-- `--voice` reads the script aloud with the OpenAI speech API (`tts-1`, $15 per million characters; `tts-1-hd`
-  $30). The script is `--script` (`{"en": "text"}`) or the captions in order. The price is printed first; the
-  command exits 2 without `--yes`. A voice-over longer than the recording holds the last frame.
+- `--voice` reads the script aloud with OpenAI's `gpt-realtime-2.1-mini` (a Realtime session; about $0.025 per
+  minute of audio, shown as an estimate from the text length; a take whose transcript does not match the text is
+  taken again, up to three times, and every take is billed). It writes `voice.wav`; `--tts-voice` takes
+  `alloy` (default), `ash`, `ballad`, `cedar`, `coral`, `echo`, `marin`, `sage`, `shimmer` or `verse`. The script is
+  `--script` (`{"en": "text"}`) or the captions in order. The price is printed first; the command exits 2
+  without `--yes`. A voice-over longer than the recording holds the last frame.
 - Exit 1: Pillow or ffmpeg is missing, ffmpeg failed, or one language failed. `--dry` prints the plan.
 
 ## Posts: `teyla post`

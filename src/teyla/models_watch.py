@@ -27,7 +27,7 @@ import pathlib
 import re
 import subprocess
 
-from . import config, lang, models
+from . import config, lang, model_retirements as retiring, models
 
 KNOWN_NAME = "models-known.json"
 LAST_NAME = "models-watch.json"  # under state/: the last scan's live superseded rows, for the digest
@@ -322,13 +322,16 @@ def grep_repo(repo: pathlib.Path, ids: list[str], timeout: int = 30) -> list[dic
     return rows
 
 
+RETIRING_FILE = "src/teyla/model_retirements.py"  # names every retiring id by design; not usage
+
+
 def find_superseded(root: pathlib.Path, why: dict[str, str]) -> list[dict]:
     ids = sorted(why)[:MAX_IDS]
     if not ids:
         return []
     rows = []
     for repo in _repos(root):
-        rows.extend(grep_repo(repo, ids))
+        rows.extend(r for r in grep_repo(repo, ids) if not (repo.name == "teyla" and r["file"] == RETIRING_FILE))
     rows.sort(key=lambda r: (-r["lines"], r["repo"], r["file"]))
     for r in rows:
         r["why"] = {i: why[i] for i in r["ids"]}
@@ -423,7 +426,7 @@ def watch(refresh: bool = False, root: pathlib.Path | None = None, today: _dt.da
         save_known(state["known"], today)
         new = new_models(models_dev, providers, state["known"], lm)
 
-    why = superseded_ids(models_dev, lm, new)
+    why = {**retiring.RETIRING, **superseded_ids(models_dev, lm, new)}
     root = root or config.code_root(config.load())
     found = find_superseded(root, why)
     sup = [r for r in found if r["kind"] == "live"]

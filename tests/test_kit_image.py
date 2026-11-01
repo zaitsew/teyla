@@ -10,7 +10,7 @@ import pytest
 
 from teyla import cli, config, genai, kit
 
-from kitfix import gemini_answer, make_repo, openai_answer, png_bytes
+from kitfix import RealtimeFake, gemini_answer, make_repo, openai_answer, png_bytes
 
 KEY = "k-" + "x" * 12            # a fake key, built here so no key-shaped literal sits in the repo
 
@@ -59,7 +59,7 @@ def test_prices():
     assert genai.image_price("gpt-image-2", {"quality": "high"})[0] > usd
     with pytest.raises(genai.GenError):
         genai.image_price("dream-9")
-    assert genai.tts_price(1000, "tts-1") == pytest.approx(0.015)
+    assert genai.tts_price(840, "gpt-realtime-2.1-mini") == pytest.approx(0.025)   # 14 characters a second, one minute
     assert genai.money(0.0336) == "$0.0336" and genai.money(1.5, False) == "~$1.50"
 
 
@@ -189,15 +189,52 @@ def test_keys_come_from_the_keychain_when_the_env_has_none(monkeypatch):
 
 # --- speech -----------------------------------------------------------------------------------------------
 
-def test_speak_posts_the_text_and_returns_the_audio(net, monkeypatch):
-    monkeypatch.setattr(genai, "_post", lambda url, headers, data, timeout=240: b"ID3-audio")
-    assert genai.speak("Hello", key=KEY) == b"ID3-audio"
-    seen = []
-    monkeypatch.setattr(genai, "_post", lambda url, headers, data, timeout=240: seen.append((url, headers, json.loads(data))) or b"x")
-    genai.speak("Hello", "tts-1-hd", "nova", key=KEY)
-    url, headers, body = seen[0]
-    assert url == genai.OPENAI_SPEECH_URL and headers["Authorization"] == f"Bearer {KEY}"
-    assert body == {"model": "tts-1-hd", "voice": "nova", "input": "Hello", "response_format": "mp3"}
+def test_speak_reads_the_text_in_a_realtime_session_and_returns_wav():
+    session = RealtimeFake()
+    out = genai.speak("Hello there.", voice="cedar", key=KEY, open_session=session)
+    assert out[:4] == b"RIFF" and out[8:12] == b"WAVE" and out[44:] == RealtimeFake.PCM
+    assert session.url == "wss://api.openai.com/v1/realtime?model=gpt-realtime-2.1-mini"
+    assert session.headers == {"Authorization": f"Bearer {KEY}"} and session.closed
+    update, create = session.sent
+    assert update["session"]["audio"]["output"] == {"format": {"type": "audio/pcm", "rate": 24000}, "voice": "cedar"}
+    assert create["response"]["conversation"] == "none"
+    assert create["response"]["input"][0]["content"][0] == {"type": "input_text", "text": "Hello there."}
+
+
+def test_speak_takes_a_paraphrase_again_and_gives_up_after_three_takes():
+    session = RealtimeFake(transcript=lambda take, text: text if take == 2 else "I would love to help with that")
+    assert genai.speak("Open the door.", key=KEY, open_session=session)[:4] == b"RIFF" and session.takes == 2
+    session = RealtimeFake(transcript=lambda take, text: "something else entirely")
+    with pytest.raises(genai.GenError, match="did not read the text"):
+        genai.speak("Open the door.", key=KEY, open_session=session)
+    assert session.takes == 3 and session.closed
+
+
+def test_speak_sends_a_long_text_in_pieces_and_refuses_unknown_models_and_voices():
+    session = RealtimeFake()
+    text = " ".join(f"Sentence number {i} has a few more words in it." for i in range(40))
+    out = genai.speak(text, key=KEY, open_session=session)
+    assert session.takes > 1 and len(out) - 44 == session.takes * len(RealtimeFake.PCM)
+    assert all(len(m["response"]["input"][0]["content"][0]["text"]) <= genai.TTS_PIECE_CHARS for m in session.sent[1:])
+    with pytest.raises(genai.GenError, match="unknown voice"):
+        genai.speak("Hi", voice="onyx", key=KEY, open_session=RealtimeFake())
+    with pytest.raises(genai.GenError, match="unknown voice-over model"):
+        genai.speak("Hi", model="tts-1", key=KEY, open_session=RealtimeFake())
+
+
+def test_a_provider_error_event_says_only_that_it_refused():
+    session = RealtimeFake()
+    session.queue = [{"type": "error", "error": {"message": "the text was: secret words"}}]
+    with pytest.raises(genai.GenError) as caught:
+        genai.speak("secret words", key=KEY, open_session=session)
+    assert "secret" not in str(caught.value) and session.closed
+
+
+def test_faithful_allows_spelled_numbers_but_not_a_different_digit():
+    assert genai.faithful("Ten kilometres is about 6.2 miles.", "Ten kilometres is about six point two miles")
+    assert genai.faithful("Ten kilometres is about 6.2 miles.", "Ten kilometres is about 6.2 miles")
+    assert not genai.faithful("Ten kilometres is about 6.2 miles.", "Ten kilometres is about 9 miles")
+    assert not genai.faithful("Hello", "")
 
 
 # --- kit compare ----------------------------------------------------------------------------------------------
