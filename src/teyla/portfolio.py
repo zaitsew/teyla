@@ -788,7 +788,7 @@ def _build_phrase(row: dict) -> str:
     if row["state"] == "current" and what:
         return f"{label} {what} is installable"
     if row["state"] == "behind" and what:
-        return f"{label} {what} is the newest you can install"
+        return f"{label} {what} is behind"
     return ""
 
 

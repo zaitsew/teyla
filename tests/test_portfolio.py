@@ -604,7 +604,7 @@ def test_the_line_picks_the_first_fact_that_exists(tmp_path):
     assert portfolio.line_of(2, "family: 2 of 9 requirements left", ios, 5) == "2 merged PRs have an open P1"
     assert portfolio.line_of(0, "family: 2 of 9 requirements left", ios, 5) == "family: 2 of 9 requirements left"
     assert portfolio.line_of(0, "", ios, 5) == "iOS 1.9.0 (120) is installable"
-    assert portfolio.line_of(0, "", {**ios, "state": "behind"}, 5) == "iOS 1.9.0 (120) is the newest you can install"
+    assert portfolio.line_of(0, "", {**ios, "state": "behind"}, 5) == "iOS 1.9.0 (120) is behind"
     assert portfolio.line_of(0, "", {**ios, "state": "unknown"}, 5) == "Quiet for 5 days"
     assert portfolio.line_of(0, "", None, 1) == "Quiet for 1 day"
     assert portfolio.line_of(0, "", None, 0) == "" and portfolio.line_of(0, "", None, None) == ""
