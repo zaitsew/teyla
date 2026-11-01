@@ -222,6 +222,34 @@ def test_speak_sends_a_long_text_in_pieces_and_refuses_unknown_models_and_voices
         genai.speak("Hi", model="tts-1", key=KEY, open_session=RealtimeFake())
 
 
+def test_faithful_checks_digits_in_a_script_made_of_numbers_only():
+    assert genai.faithful("2026", "2026") and not genai.faithful("2026", "2027")
+
+
+def test_the_session_goes_through_the_https_proxy_of_the_environment(monkeypatch):
+    import socket
+    import threading
+    seen = []
+    with socket.socket() as proxy:
+        proxy.bind(("127.0.0.1", 0))
+        proxy.listen(1)
+
+        def serve():
+            conn, _ = proxy.accept()
+            seen.append(conn.recv(4096).decode())
+            conn.sendall(b"HTTP/1.1 403 Forbidden\r\n\r\n")
+            conn.close()
+        t = threading.Thread(target=serve)
+        t.start()
+        monkeypatch.setenv("HTTPS_PROXY", f"http://127.0.0.1:{proxy.getsockname()[1]}")
+        monkeypatch.delenv("NO_PROXY", raising=False)
+        monkeypatch.setattr("urllib.request.proxy_bypass", lambda host: False)
+        with pytest.raises(genai.GenError, match="cannot reach"):
+            genai.WebSocketClient("wss://api.example.test/v1/realtime", {}, timeout=2)
+        t.join()
+    assert seen[0].startswith("CONNECT api.example.test:443 HTTP/1.1")
+
+
 def test_a_provider_error_event_says_only_that_it_refused():
     session = RealtimeFake()
     session.queue = [{"type": "error", "error": {"message": "the text was: secret words"}}]

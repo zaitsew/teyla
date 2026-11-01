@@ -268,7 +268,7 @@ class WebSocketClient:
         host, port = parts.hostname or "", parts.port or (443 if secure else 80)
         self.buffer = b""
         try:
-            raw = socket.create_connection((host, port), timeout=timeout)
+            raw = self._open(host, port, secure, timeout)
             self.sock = ssl_context().wrap_socket(raw, server_hostname=host) if secure else raw
             self.sock.settimeout(timeout)
             key = base64.b64encode(os.urandom(16)).decode()
@@ -295,6 +295,32 @@ class WebSocketClient:
         if " 101 " not in status or accept not in head.decode("latin-1"):
             self.close()
             raise GenError(f"{host} refused the session: {status[:80]}")
+
+    @staticmethod
+    def _open(host: str, port: int, secure: bool, timeout: float) -> socket.socket:
+        """A TCP connection, through the HTTPS proxy of the environment (a CONNECT tunnel) when there is one."""
+        proxy = urllib.request.getproxies().get("https" if secure else "http")
+        if not proxy or urllib.request.proxy_bypass(host):
+            return socket.create_connection((host, port), timeout=timeout)
+        p = urllib.parse.urlsplit(proxy if "//" in proxy else f"//{proxy}")
+        raw = socket.create_connection((p.hostname or "", p.port or 8080), timeout=timeout)
+        auth = ""
+        if p.username:
+            token = base64.b64encode(f"{urllib.parse.unquote(p.username)}:{urllib.parse.unquote(p.password or '')}".encode()).decode()
+            auth = f"Proxy-Authorization: Basic {token}\r\n"
+        raw.sendall(f"CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n{auth}\r\n".encode())
+        reply = b""
+        while b"\r\n\r\n" not in reply:
+            chunk = raw.recv(4096)
+            if not chunk:
+                raw.close()
+                raise OSError("the proxy closed the connection")
+            reply += chunk
+        status = reply.split(b"\r\n", 1)[0].decode("latin-1")
+        if " 200" not in status:
+            raw.close()
+            raise OSError(f"the proxy refused the tunnel: {status[:60]}")
+        return raw
 
     def _recv_exact(self, n: int) -> bytes:
         while len(self.buffer) < n:
@@ -358,8 +384,9 @@ def faithful(text: str, transcript: str) -> bool:
     writes must be the text's. A transcript that spells numbers out is judged on its words alone."""
     want, got = _words(text), _words(transcript)
     numbers = len(_numerals(text))
+    said = _numerals(transcript)
     if not want:
-        return bool(transcript.strip()) and len(got) <= 30
+        return bool(transcript.strip()) and len(got) <= 30 and (not said or all(n in said for n in _numerals(text)))
     if not got:
         return False
     prev = [0] * (len(got) + 1)
@@ -369,7 +396,6 @@ def faithful(text: str, transcript: str) -> bool:
             row.append(prev[j - 1] + 1 if a == b else max(prev[j], row[j - 1]))
         prev = row
     common = prev[-1]
-    said = _numerals(transcript)
     return (common / len(want) >= 0.9 and len(got) - common <= max(8, len(want) / 4) + 4 * numbers
             and (not said or all(n in said for n in _numerals(text))))
 
