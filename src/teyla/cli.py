@@ -393,7 +393,7 @@ def cmd_harvest(args):
 
 def cmd_products(args):
     from .products import table
-    print(table(args.paths or None))
+    print(table(args.paths or None, cache=True))
 
 
 def cmd_probe_sql(args):

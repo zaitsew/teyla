@@ -183,6 +183,38 @@ def test_add_set_and_list(tree, capsys):
     assert json.loads(capsys.readouterr().out)["products"][0]["id"] == "app-a"
 
 
+def test_product_core_shows_sets_and_clears_the_stars_and_prints_how_to_undo(tree, capsys):
+    for pid in ("app-a", "app-b", "tool-c"):
+        cli.main(["product", "add", pid, "--repo", str(tree / pid), "--stage", "live"])
+    cli.main(["product", "set", "app-b", "focus=true"])
+    capsys.readouterr()
+    assert cli.main(["product", "core"]) == 0
+    assert capsys.readouterr().out.startswith("core products (star): app-b")
+    assert cli.main(["product", "core", "app-a", "tool-c"]) == 0
+    out = capsys.readouterr().out
+    assert "app-b: focus true -> false" in out and "app-a: focus false -> true" in out
+    assert "focus was on: app-b" in out and "focus is on: app-a, tool-c" in out and "undo: teyla product core app-b" in out
+    focus = {pid: p["focus"] for pid, p in registry.load()["product"].items()}
+    assert focus == {"app-a": True, "app-b": False, "tool-c": True}
+    assert cli.main(["product", "core", "--clear"]) == 0
+    out = capsys.readouterr().out
+    assert "focus was on: app-a, tool-c" in out and "undo: teyla product core app-a tool-c" in out
+    assert not any(p["focus"] for p in registry.load()["product"].values())
+    assert cli.main(["product", "core", "--clear"]) == 0
+    assert "undo: teyla product core --clear" in capsys.readouterr().out
+    assert cli.main(["product", "core"]) == 0
+    assert capsys.readouterr().out.startswith("core products (rule): none")
+
+
+def test_product_core_refuses_an_unknown_id_and_changes_nothing(tree, capsys):
+    cli.main(["product", "add", "app-a", "--repo", str(tree / "app-a")])
+    cli.main(["product", "set", "app-a", "focus=true"])
+    capsys.readouterr()
+    assert cli.main(["product", "core", "app-b"]) == 1
+    assert cli.main(["product", "core", "app-a", "--clear"]) == 2
+    assert registry.load()["product"]["app-a"]["focus"] is True
+
+
 def test_park_remembers_the_stage_and_wake_restores_it(tree, capsys):
     cli.main(["product", "add", "app-a", "--stage", "beta"])
     assert cli.main(["product", "park", "app-a"]) == 0

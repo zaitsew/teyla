@@ -4,6 +4,7 @@
     teyla product init [--write]                     propose a registry from the git repos under code_root; --write adds the missing ones
     teyla product add <id> [--repo PATH] [--name N] [--stage S]   register one product
     teyla product set <id> key=value...              name, stage, primary, focus, aliases (comma list), add-repo, add-path
+    teyla product core [<id>...] [--clear]           the core products of the home screen: show them, set them (focus), or clear
     teyla product park <id> | wake <id>              stage parked (the old stage is remembered) / back to it
     teyla product assign <ask-id-prefix|session-id> <id> [--ask-only]   file a session's asks under another product
 
@@ -542,6 +543,48 @@ def cmd_set(args) -> int:
     return rc
 
 
+def cmd_core(args) -> int:
+    """No ids: print the core products and where the list comes from. With ids: set `focus` on exactly those
+    and clear it on the rest. `--clear` clears every focus. The old values are printed, with the command that
+    puts them back."""
+    from . import portfolio
+    reg = _load_for_edit()
+    if reg is None:
+        return 1
+    ids = list(dict.fromkeys(args.ids or []))
+    if args.clear and ids:
+        print("teyla: give product ids or --clear, not both", file=sys.stderr)
+        return 2
+    if not ids and not args.clear:
+        core, source, detail = portfolio.core_view(reg, portfolio.load_cache(), portfolio.load_usage_cache())
+        print(f"core products ({source}): " + (", ".join(core) if core else "none"))
+        for pid in core:
+            spend, weekly = detail[pid]
+            print(f"  {pid:<22} ${spend:.0f} in 7 days, {weekly} weekly users")
+        if source == "rule":
+            print(f"rule: not parked, and a weekly user or ${portfolio.CORE_SPEND_USD:.0f} spend in 7 days; "
+                  f"`teyla product core <id>...` pins your own list")
+        return 0
+    unknown = [i for i in ids if i not in reg["product"]]
+    if unknown:
+        print(f"no product {unknown[0]!r}; registered: {', '.join(reg['product']) or 'none'}", file=sys.stderr)
+        return 1
+    before = [pid for pid, p in reg["product"].items() if p.get("focus")]
+    for pid, p in reg["product"].items():
+        p["focus"] = pid in ids
+    save(reg)
+    after = [pid for pid in reg["product"] if pid in ids]
+    for pid in sorted(set(before) | set(after)):
+        if (pid in before) != (pid in after):
+            print(f"{pid}: focus {str(pid in before).lower()} -> {str(pid in after).lower()}")
+    print("focus was on: " + (", ".join(before) if before else "none"))
+    print("focus is on: " + (", ".join(after) if after else "none"))
+    print("undo: " + (f"teyla product core {' '.join(before)}" if before else "teyla product core --clear"))
+    if len(after) > portfolio.CORE_MAX:
+        print(f"note: the home screen shows the first {portfolio.CORE_MAX} by spend")
+    return 0
+
+
 def cmd_park_wake(args) -> int:
     reg = _load_for_edit()
     if reg is None or not _known(reg, args.id):
@@ -604,7 +647,7 @@ def cmd_show(args) -> int:
 
 def cmd_product(args) -> int:
     return {"list": cmd_list, "show": cmd_show, "init": cmd_init, "add": cmd_add, "set": cmd_set, "park": cmd_park_wake,
-            "wake": cmd_park_wake, "assign": cmd_assign}[args.cmd or "list"](args)
+            "wake": cmd_park_wake, "assign": cmd_assign, "core": cmd_core}[args.cmd or "list"](args)
 
 
 def register(sp):
@@ -624,6 +667,8 @@ def register(sp):
     s.add_argument("--stage", choices=STAGES)
     s = sub.add_parser("set", help="change fields: name stage primary focus aliases add-repo add-path")
     s.add_argument("id"); s.add_argument("assignments", nargs="*", metavar="key=value")
+    s = sub.add_parser("core", help="the core products of the home screen: show, pin (sets focus), or --clear")
+    s.add_argument("ids", nargs="*", metavar="id"); s.add_argument("--clear", action="store_true", help="clear every focus")
     for name in ("park", "wake"):
         s = sub.add_parser(name, help=f"{name} a product" + ("; the old stage is remembered" if name == "park" else ""))
         s.add_argument("id")

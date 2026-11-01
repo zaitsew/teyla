@@ -808,10 +808,15 @@ def _words(text: str) -> str:
 
 
 def brief_line(st: dict) -> dict:
-    """The rule-based sentence on top: the fallback when no model brief is cached for the open questions."""
+    """The rule-based sentence on top: the fallback when no model brief is cached for the open questions.
+    It never names the `unassigned` bucket or anything that reads like a session title."""
     items = [a for a in st["asks"] if not a.get("muted")]
     if not items:
         return {"line": "Nothing waits on you.", "source": "rules"}
+    def nameable(product: str) -> bool:
+        """A product id or a repo name: no spaces (a session title has them), and not the unassigned bucket."""
+        return product.lower() != registry.UNASSIGNED and re.fullmatch(r"[\w.\-/]+", product) is not None
+
     top = items[:5]
     rel = [a for a in top if a["unblocks"] == "a release"]
     if rel:
@@ -820,15 +825,19 @@ def brief_line(st: dict) -> dict:
             counts[a["product"]] = counts.get(a["product"], 0) + 1
         product = max(counts, key=lambda p: (counts[p], -min(a["rank"] for a in rel if a["product"] == p)))
         n = counts[product]
-        line = (f"{n} answer{'s' if n != 1 else ''} unblock{'' if n != 1 else 's'} {product}'s release today.")
-        rest = [a for a in top if a["product"] != product]
+        verb = f"unblock{'' if n != 1 else 's'}"
+        if nameable(product):
+            line = f"{n} answer{'s' if n != 1 else ''} {verb} {product}'s release today."
+        else:
+            line = f"{n} answer{'s' if n != 1 else ''} {verb} a release today."
+        rest = [a for a in top if a["product"] != product and nameable(a["product"])]
         if rest:
             line += f" {rest[0]['product'].capitalize()} is waiting on you too."
     else:
         n = len(items)
         first = items[0]
-        line = (f"{n} question{'s' if n != 1 else ''} wait{'' if n != 1 else 's'} for you, "
-                f"the first one in {first['product']}.")
+        line = f"{n} question{'s' if n != 1 else ''} wait{'' if n != 1 else 's'} for you"
+        line += f", the first one in {first['product']}." if nameable(first["product"]) else "."
     return {"line": _words(line), "source": "rules"}
 
 
