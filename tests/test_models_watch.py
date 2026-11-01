@@ -171,6 +171,20 @@ def test_superseded_id_found_in_a_repo_file_and_exact_token_match(env, capsys):
     assert "alpha/src/app.py  1 line(s)  claude-sonnet-4" in out
 
 
+def test_a_model_the_provider_is_removing_is_reported_in_live_code_only(env):
+    git_repo(env.code, "alpha", {
+        "src/voice.py": 'MODEL = "tts-1-hd"\nOTHER = "gpt-4o-mini-tts"\nOK = "tts-1x"\n',
+        "tests/test_voice.py": 'assert model == "tts-1"\n',
+    })
+    git_repo(env.code, "teyla", {"src/teyla/model_retirements.py": 'RETIRING = {"tts-1": "x"}\n'})
+    models_watch.watch()  # seed
+    rep = models_watch.watch()
+    rows = {(r["repo"], r["file"]): r for r in rep["superseded"]}
+    assert rows[("alpha", "src/voice.py")]["ids"] == ["gpt-4o-mini-tts", "tts-1-hd"]
+    assert "gpt-realtime-2.1-mini" in rows[("alpha", "src/voice.py")]["why"]["tts-1-hd"]
+    assert not any(k[0] == "teyla" or k[1].startswith("tests/") for k in rows)  # the table itself and tests are not usage
+
+
 def test_replaced_ladder_entry_is_searched_and_big_files_skipped(env):
     models_watch.watch()
     git_repo(env.code, "alpha", {"a.py": 'M = "claude-opus-5"\n'})

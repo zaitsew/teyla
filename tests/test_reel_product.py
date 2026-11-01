@@ -12,7 +12,7 @@ import pytest
 from teyla import cli, genai, kitdraw
 from teyla.reel import product
 
-from kitfix import RU_CAPTION, make_repo
+from kitfix import RU_CAPTION, RealtimeFake, make_repo
 
 pytest.importorskip("PIL")
 
@@ -44,7 +44,7 @@ class Media:
     def run(self, cmd, **kw):
         if Path(cmd[0]).name == "ffprobe":
             self.probes.append(cmd[-1])
-            d = self.audio if cmd[-1].endswith(".mp3") else self.duration
+            d = self.audio if cmd[-1].endswith(".wav") else self.duration
             return types.SimpleNamespace(returncode=0, stdout=f"{d}\n", stderr="")
         self.ffmpeg.append(cmd)
         if self.fail:
@@ -244,7 +244,7 @@ def test_product_renders_both_formats_per_language(tmp_path, capsys, media):
         assert "-->" in (d / "captions.srt").read_text(encoding="utf-8")
     assert RU_CAPTION in (repo / "brand/out/reel/ru/captions.srt").read_text(encoding="utf-8")
     assert "00:00:05,000" in (repo / "brand/out/reel/en/captions.srt").read_text()    # 10 s shared by two captions
-    assert "no voice-over" in out and not (repo / "brand/out/reel/en/voice.mp3").exists()
+    assert "no voice-over" in out and not (repo / "brand/out/reel/en/voice.wav").exists()
 
 
 def test_product_options_pick_languages_and_formats_and_output(tmp_path, capsys, media):
@@ -340,31 +340,29 @@ def test_dry_prints_the_plan_and_runs_nothing(tmp_path, capsys, media):
 
 @pytest.fixture
 def speech(monkeypatch):
-    calls = []
-
-    def post(url, headers, data, timeout=240):
-        calls.append(json.loads(data))
-        return b"ID3-audio"
-    monkeypatch.setattr(genai, "_post", post)
+    session = RealtimeFake()
+    monkeypatch.setattr(genai, "connect", session)
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
-    return calls
+    return session
 
 
 def test_voice_prints_the_price_and_refuses_without_yes(tmp_path, capsys, media, speech):
     repo, mov, copy = setup(tmp_path)
     rc, out, err = run(capsys, "reel", "product", str(repo), "--input", str(mov), "--copy", str(copy), "--lang", "en", "--voice")
     chars = len("Today at a glance Plan in one tap")
-    assert rc == 2 and f"voice-over {chars} characters" in out and genai.money(genai.tts_price(chars, "tts-1")) in out and "--yes" in err
-    assert speech == [] and media.ffmpeg == [] and not (repo / "brand" / "out").exists()
+    assert rc == 2 and f"voice-over {chars} characters" in out and genai.money(genai.tts_price(chars, "gpt-realtime-2.1-mini"), exact=False) in out and "--yes" in err
+    assert speech.sent == [] and media.ffmpeg == [] and not (repo / "brand" / "out").exists()
 
 
 def test_voice_with_yes_calls_speech_and_extends_a_short_recording(tmp_path, capsys, media, speech):
     repo, mov, copy = setup(tmp_path)
     rc, out, err = run(capsys, "reel", "product", str(repo), "--input", str(mov), "--copy", str(copy), "--lang", "en", "--formats", "vertical", "--voice", "--yes")
     assert rc == 0, err
-    assert speech == [{"model": "tts-1", "voice": "alloy", "input": "Today at a glance Plan in one tap", "response_format": "mp3"}]
+    assert speech.url.endswith("model=gpt-realtime-2.1-mini")
+    assert speech.sent[0]["session"]["audio"]["output"]["voice"] == "alloy"
+    assert speech.sent[1]["response"]["input"][0]["content"][0]["text"] == "Today at a glance Plan in one tap"
     d = repo / "brand" / "out" / "reel" / "en"
-    assert (d / "voice.mp3").read_bytes() == b"ID3-audio" and "voice.mp3" in out
+    assert (d / "voice.wav").read_bytes()[:4] == b"RIFF" and "voice.wav" in out
     (cmd,) = media.ffmpeg
     fc = cmd[cmd.index("-filter_complex") + 1]
     assert "tpad=stop_mode=clone:stop_duration=2.00" in fc and "aac" in cmd          # voice 12 s over a 10 s recording
@@ -376,9 +374,10 @@ def test_the_voice_script_file_replaces_the_captions(tmp_path, capsys, media, sp
     script = tmp_path / "script.json"
     script.write_text(json.dumps({"en": "A longer spoken line."}))
     rc, _, err = run(capsys, "reel", "product", str(repo), "--input", str(mov), "--copy", str(copy), "--lang", "en", "--voice", "--yes",
-                     "--script", str(script), "--tts-model", "tts-1-hd", "--tts-voice", "nova")
+                     "--script", str(script), "--tts-model", "gpt-realtime-2.1-mini", "--tts-voice", "cedar")
     assert rc == 0, err
-    assert speech[0]["input"] == "A longer spoken line." and speech[0]["model"] == "tts-1-hd" and speech[0]["voice"] == "nova"
+    assert speech.sent[1]["response"]["input"][0]["content"][0]["text"] == "A longer spoken line."
+    assert speech.sent[0]["session"]["audio"]["output"]["voice"] == "cedar"
     script.write_text(json.dumps({"es": "x"}))
     rc, _, err = run(capsys, "reel", "product", str(repo), "--input", str(mov), "--copy", str(copy), "--lang", "en", "--voice", "--yes", "--script", str(script))
     assert rc == 2 and "no text for en" in err
@@ -390,14 +389,14 @@ def test_a_private_term_in_the_voice_script_stops_before_the_speech_call(tmp_pat
     script.write_text(json.dumps({"en": "Built by ZebraCorp"}))
     rc, _, err = run(capsys, "reel", "product", str(repo), "--input", str(mov), "--copy", str(copy), "--lang", "en", "--voice", "--yes", "--script", str(script))
     assert rc == 2 and "voice-over script" in err and "zebracorp" not in err.lower()
-    assert speech == [] and media.ffmpeg == []
+    assert speech.sent == [] and media.ffmpeg == []
 
 
 def test_mixed_caption_timing_is_refused_before_the_speech_call(tmp_path, capsys, media, speech):
     repo, mov, copy = setup(tmp_path)
     copy.write_text(json.dumps({"en": [{"text": "One", "start": 0}, "Two"]}))
     rc, _, err = run(capsys, "reel", "product", str(repo), "--input", str(mov), "--copy", str(copy), "--lang", "en", "--voice", "--yes")
-    assert rc == 1 and "every caption a start time" in err and speech == []
+    assert rc == 1 and "every caption a start time" in err and speech.sent == []
 
 
 def test_voice_without_a_key_fails_that_language_only(tmp_path, capsys, media, monkeypatch):
@@ -412,10 +411,10 @@ def test_voice_in_safe_mode_is_refused_before_the_call(tmp_path, capsys, media, 
     repo, mov, copy = setup(tmp_path)
     monkeypatch.setenv("TEYLA_SAFE", "1")
     rc, _, err = run(capsys, "reel", "product", str(repo), "--input", str(mov), "--copy", str(copy), "--lang", "en", "--voice", "--yes")
-    assert rc == 2 and "safe mode" in err and speech == [] and media.ffmpeg == []
+    assert rc == 2 and "safe mode" in err and speech.sent == [] and media.ffmpeg == []
     rc, _, err = run(capsys, "reel", "product", str(repo), "--input", str(mov), "--copy", str(copy), "--lang", "en", "--formats", "square", "--voice", "--yes", "--allow-network")
     assert rc == 0, err
-    assert len(speech) == 1
+    assert speech.takes == 1
 
 
 def test_a_voice_over_over_the_api_limit_is_refused_up_front(tmp_path, capsys, media, speech):
@@ -423,4 +422,4 @@ def test_a_voice_over_over_the_api_limit_is_refused_up_front(tmp_path, capsys, m
     script = tmp_path / "s.json"
     script.write_text(json.dumps({"en": "x" * (product.TTS_MAX_CHARS + 1)}))
     rc, _, err = run(capsys, "reel", "product", str(repo), "--input", str(mov), "--copy", str(copy), "--lang", "en", "--voice", "--yes", "--script", str(script))
-    assert rc == 2 and str(product.TTS_MAX_CHARS) in err and speech == []
+    assert rc == 2 and str(product.TTS_MAX_CHARS) in err and speech.sent == []

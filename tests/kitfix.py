@@ -163,3 +163,39 @@ def gemini_answer(png: bytes) -> bytes:
 
 def openai_answer(png: bytes) -> bytes:
     return json.dumps({"data": [{"b64_json": base64.b64encode(png).decode()}]}).encode()
+
+
+class RealtimeFake:
+    """Stands in for genai.connect: a Realtime speech session that answers each `response.create` with
+    audio and a transcript. `transcript(take, text)` says what the model "read" (default: the text itself)."""
+
+    PCM = b"\x01\x00" * 24000   # one second of 24 kHz PCM16
+
+    def __init__(self, transcript=None, status="completed"):
+        self.transcript, self.status = transcript, status
+        self.url = self.headers = None
+        self.sent, self.takes, self.closed = [], 0, False
+        self.queue = [{"type": "session.created"}]
+
+    def __call__(self, url, headers):
+        self.url, self.headers = url, headers
+        return self
+
+    def send(self, message):
+        import base64
+        self.sent.append(message)
+        if message["type"] == "session.update":
+            self.queue.append({"type": "session.updated"})
+        elif message["type"] == "response.create":
+            self.takes += 1
+            text = message["response"]["input"][0]["content"][0]["text"]
+            said = self.transcript(self.takes, text) if self.transcript else text
+            self.queue += [{"type": "response.output_audio.delta", "delta": base64.b64encode(self.PCM).decode()},
+                           {"type": "response.output_audio_transcript.done", "transcript": said},
+                           {"type": "response.done", "response": {"status": self.status}}]
+
+    def receive(self):
+        return self.queue.pop(0)
+
+    def close(self):
+        self.closed = True
