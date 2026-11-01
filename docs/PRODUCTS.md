@@ -73,9 +73,32 @@ The old placeholders `(no repo)`, `(home)`, `(scratch)` and `unknown` no longer 
 | `teyla product add <id> [--repo PATH] [--name N] [--stage S]` | Registers one product. |
 | `teyla product set <id> key=value...` | `name`, `stage`, `primary`, `focus`, `aliases` (comma list), `add-repo`, `add-path`. |
 | `teyla product park <id>` / `wake <id>` | `park` sets the stage to `parked` and remembers the old one in `stage_before_park`; `wake` restores it. |
+| `teyla product core [<id>...] [--clear]` | The core products the home screen leads with. No arguments: the list and where it comes from. With ids: sets `focus` on exactly those and clears it on every other product. `--clear`: clears every focus. Prints each change, the old starred products, and the command that restores them (`undo: ...`). An unknown id changes nothing. See "Core products" below. |
 | `teyla product assign <ask-id-prefix\|session-id> <id> [--ask-only]` | Files the session behind an ask under a product and lists the asks that moved. `--ask-only` moves that one ask. |
 
-`teyla products` (plural) is the usage table and is unchanged.
+`teyla products` (plural) is the usage table. Since it also keeps the counters in `~/.teyla/products-cache.json`
+(0600; a repo whose probe failed keeps its last good row), the portfolio can show users without running any repo's code.
+
+### Core products
+
+`teyla state --json` carries `portfolio.core`, up to 6 product ids, and `portfolio.core_source`:
+
+- `star`: some product has `focus = true`. The core is exactly the starred products, ranked by spend over 7 days,
+  at most 6 (a parked product that you starred stays in).
+- `rule`: no product is starred. The core is every product that is not parked and has a weekly user (`wau=` in
+  its usage probe) or at least $40 of spend over 7 days, ranked by spend, at most 6.
+
+`teyla product core` prints the list and its source. `teyla product core app-a app-b` pins your own list:
+
+```
+app-a: focus false -> true
+app-c: focus true -> false
+focus was on: app-c
+focus is on: app-a, app-b
+undo: teyla product core app-c
+```
+
+Spend comes from the portfolio cache (`teyla portfolio --refresh`), so a product the cache has not seen counts as $0.
 
 ### `teyla product show`
 

@@ -14,10 +14,12 @@ anything runs: a repo not on the list — even one named on the command line —
 """
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import re
 import subprocess
+import time
 
 
 def probe(repo: pathlib.Path, timeout: int = 60) -> dict:
@@ -62,12 +64,40 @@ def repos_to_probe(paths: list[str] | None = None, cfg: dict | None = None) -> t
     return repos, runnable
 
 
-def table(paths: list[str] | None = None, cfg: dict | None = None) -> str:
+def cache_path() -> pathlib.Path:
+    from .control import state as control
+    return control.home() / "products-cache.json"
+
+
+def write_cache(results: dict[str, tuple[str, dict]]) -> None:
+    """~/.teyla/products-cache.json (0600): {repo folder: {status, counters}} from the table just printed, for
+    the portfolio's `progress.users` (docs/APP.md). A repo whose probe worked replaces its row; one that did not
+    (timeout, not allowed) keeps the last good row, so a failed probe never blanks good data. The file never
+    leaves the machine."""
+    from . import asks
+    try:
+        old = json.loads(cache_path().read_text())
+        repos = dict(old["repos"]) if isinstance(old, dict) and old.get("version") == 1 else {}
+    except (OSError, ValueError, KeyError, TypeError):
+        repos = {}
+    for name, (st, d) in results.items():
+        key = name.lower()
+        if st == "ok" or not (isinstance(repos.get(key), dict) and repos[key].get("status") == "ok"):
+            repos[key] = {"status": st, "counters": d}
+    try:
+        asks._atomic_write(cache_path(), json.dumps({"version": 1, "at": time.time(), "repos": repos}, indent=1))
+    except OSError:
+        pass                                  # the table is the product; the cache is an extra
+
+
+def table(paths: list[str] | None = None, cfg: dict | None = None, *, cache: bool = False) -> str:
     repos, runnable = repos_to_probe(paths, cfg)
     lines = [f"{'repo':18} {'status':10} counters", "-" * 70]
+    results: dict[str, dict] = {}
     for r in repos:
         d = probe(r) if r in runnable else {"_status": "not allowed"}
         st = d.pop("_status")
+        results[r.name] = (st, dict(d))
         counters = ", ".join(f"{k}={v}" for k, v in d.items()) or "-"
         lines.append(f"{r.name:18} {st:10} {counters}")
     lines.append("")
@@ -75,6 +105,8 @@ def table(paths: list[str] | None = None, cfg: dict | None = None) -> str:
         lines.append("not allowed: safe mode runs ./check.sh usage only in [products] repos — "
                      "teyla config set products.repos=<name>,<name>")
     lines.append("Zero everywhere means the next sprint is 'make one input free', not a feature.")
+    if cache:
+        write_cache(results)
     return "\n".join(lines)
 
 
