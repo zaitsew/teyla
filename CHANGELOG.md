@@ -1,7 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.37.0 — 2026-11-02 — Home is a scoreboard
 
+- **`teyla state` and `teyla portfolio` rank the products.** `portfolio.home` holds three ranked sections: people use
+  it (active or new users in 7 days), being built (5 or more commits in 7 days), quiet. Parked products are always
+  quiet. Each product gets `summary`, `icon_jpeg` and `metrics`: users, commits with 12 weeks, agent spend and money
+  for 7, 30 and 365 days. A number nobody counted is null and shows as "—", never as zero.
+- **Monetization is per product.** `[monetization] enabled = true` in a repo's `teyla.toml` turns it on; it is off by
+  default. The usage probe gives `mrr_usd`, `paying_users` and `revenue_*_usd`.
+- **The iPhone Home is a scoreboard too.** The same three sections and Week / Month / Year switch. Being built and
+  Quiet open with "Show all". An older Teyla on the Mac still gets the "Update Teyla on your Mac" card.
 - **The Mac Home is a scoreboard.** Three sections instead of the core list: "People use these" (a card per product
   with active, new and total users, commits with a 12-week chart, agent spend and a Monetization chip), "Being built"
   and "Quiet". A Week / Month / Year switch changes the numbers and never the order. The sections and their order come
