@@ -410,6 +410,11 @@ def refresh_stores(reg: dict, cache: dict, now: float, cfg: dict | None = None) 
                                           ("play", play.in_scope, play.check_product)):
                 if not in_scope(m):
                     continue
+                if tool == "play" and not str((m.get("release") or {}).get("android_package") or "").strip():
+                    # Nothing was read, so nothing failed: one product's missing setting must not void the whole pass.
+                    if not (isinstance(mine.get("android"), dict) and mine["android"].get("as_of")):
+                        mine["android"] = _unknown("android", "play", "No Play package in teyla.toml")
+                    continue
                 keys = ["android"] if tool == "play" else [ASC_PLATFORM[a] for a in testflight.declared_platforms(m)
                                                            if a in ASC_PLATFORM] or ["ios"]
                 try:
