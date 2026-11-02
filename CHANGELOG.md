@@ -1,12 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.36.1 — 2026-11-02 — iPhone Home and Decisions
 
 - **The iPhone app gets Home and Decisions.** Home shows your core products with their progress and the top
   decisions of the week. Decisions groups your questions Pay, Decide, Do, with "Use default", "Teyla suggests closing",
   "Agents can settle" and "Teyla closed". Accepting a close and undoing one work from the phone through two new relay
   kinds, `close` and `reopen`, each running exactly one `teyla asks` command. An older Teyla on the Mac gets an
   "Update Teyla on your Mac" card. The Today tab is gone and Portfolio is now Products.
+- **A product without a Play package no longer voids the store pass.** `teyla portfolio --refresh` now marks that
+  product's Android row unknown and checks the rest.
+- **`teyla shield` reports a symlink loop as FIX on Python 3.12.** It crashed with a traceback before, for the
+  accepted-risk doc, `hosts` and `core.hooksPath`.
 
 ## 0.36.0 — 2026-11-02 — Home: your core products and only the decisions that are yours
 
