@@ -18,12 +18,27 @@ enum Space {
     static let sideColumn: CGFloat = 340
     /// How far the side column may grow when the window is wide: the extra room goes here, not to the cards.
     static let sideColumnMax: CGFloat = 480
-    /// A core product card on Home is at least this wide; the grid fits 2 or 3 in a row.
-    static let coreCardMin: CGFloat = 240
+    /// A hero card on Home is at least this wide; the grid fits 1 to 3 in a row.
+    static let heroCardMin: CGFloat = 320
+    /// A "Being built" card is at least this wide.
+    static let builtCardMin: CGFloat = 300
     /// Home stops here, so three cards in a row stay readable.
     static let homeMax: CGFloat = 1100
     /// The tap area of the star on a product.
     static let starTarget: CGFloat = 24
+    /// The least height of anything a person presses (a switch segment, a row).
+    static let touchMin: CGFloat = 44
+    /// Product icons on Home: hero card, "Being built" card, "Quiet" row.
+    static let iconHero: CGFloat = 56
+    static let iconCard: CGFloat = 44
+    static let iconRow: CGFloat = 30
+    /// The commits-per-week bars: height and width on a hero card, and on a card.
+    static let sparkHeroHeight: CGFloat = 34
+    static let sparkHeroBar: CGFloat = 7
+    static let sparkCardHeight: CGFloat = 18
+    static let sparkCardBar: CGFloat = 3
+    /// The product name column of a Quiet row.
+    static let quietName: CGFloat = 160
     /// Ask cards, done cards, task rows and prose stop here (45 to 75 characters a line).
     static let readingCard: CGFloat = 720
     /// The Portfolio rows stop here, so the platform strip stays readable.
@@ -61,6 +76,12 @@ enum Space {
 enum Radius {
     static let card: CGFloat = 10
     static let panel: CGFloat = 14
+    /// A product icon, by size: hero, card, row.
+    static let iconHero: CGFloat = 13
+    static let iconCard: CGFloat = 10
+    static let iconRow: CGFloat = 7
+    /// A bar of the commits chart.
+    static let bar: CGFloat = 2
 }
 
 /// Type: the brief, a lead line, body text and fine print. Hierarchy comes from weight and colour first.
@@ -69,6 +90,16 @@ enum Typo {
     /// The one big number on the diagnosis.
     static let display = Font.system(size: 40, weight: .semibold)
     static let lead = Font.system(size: 16, weight: .medium)
+    /// A section title on Home, and a product name on a hero card.
+    static let section = Font.system(size: 18, weight: .semibold)
+    static let cardTitle = Font.system(size: 20, weight: .bold)
+    /// The big figures on a hero card, and the commit count on a smaller card.
+    static let heroNumber = Font.system(size: 34, weight: .bold).monospacedDigit()
+    static let cardNumber = Font.system(size: 20, weight: .bold).monospacedDigit()
+    /// A line of facts under a title.
+    static let note = Font.callout
+    /// The letter of a product with no icon, for a tile of this side.
+    static func monogram(side: CGFloat) -> Font { Font.system(size: side * 0.42, weight: .bold) }
     static let body = Font.body
     static let caption = Font.caption
     /// A command or a preview's output.
@@ -88,6 +119,11 @@ enum Palette {
     static let needsYou = Color(light: 0xA65400, dark: 0xF2B04B)
     static let saving = Color(light: 0x13734A, dark: 0x4CC98A)
     static let danger = Color(light: 0xB42318, dark: 0xF87166)
+
+    /// Tints of the roles above: a letter tile, the older bars of a chart, the track of a segmented switch.
+    static let primaryTint = primary.opacity(0.14)
+    static let primaryMuted = primary.opacity(0.35)
+    static let track = border.opacity(0.55)
 
     // The names views already use, mapped onto the brand roles.
     static let accent = primary

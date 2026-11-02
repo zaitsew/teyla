@@ -611,6 +611,57 @@
           "blocker": "Developer membership lapses in 9 days",
           "quiet_days": 0,
           "line": "Beta works end to end; 2 requirements left."
+        },
+        "summary": "A sample app that plans a trip with a few friends.",
+        "icon_jpeg": "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAMKADAAQAAAABAAAAMAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAMAAwAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMABAQEBAQEBgQEBgkGBgYJDAkJCQkMDwwMDAwMDxIPDw8PDw8SEhISEhISEhUVFRUVFRkZGRkZHBwcHBwcHBwcHP/bAEMBBAUFBwcHDAcHDB0UEBQdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHf/dAAQAA//aAAwDAQACEQMRAD8A8gApwFAFPAr9nSPKhAAKcBXV+G/A3ivxdvbw9pst3HHkNJ8scQI25XzJCqbvmB253YOcYq54g+HPjXwtai91zSpYLc9ZUKSovIHztEzhMlgBuIyemeay+sUVP2bmubtdX+47IQOKp4FAFOArsSOuED//0PJQK63wP4b/AOEu8V6b4eZ/Lju5f3jA4IijUySbTtb5tinbkEbsZ4rlAK7f4c+ILXwt410rXL4Zt4JSkp5+VJUaJn+VWJ2By2AMnGO+a/YsRzqjN0/is7ettDmhA/Q/StK07Q9Og0nSYFtrS2XZHGnQDqevJJOSSSSSSSSSTVueCC6gktbqNZoZlKSRuAysrDBVgeCCOCD1ognguoI7q1kWaGZQ8ciEMrKwyGUjggjkEdalr8fblzXe50n58/Fbwda+CvF8unafxY3MS3VuhYuyI5KlGJA6OrbeSduMknNecAV6z8Z/E+n+KfGsk+lOs1tYwJaLMjbllKMzsy8DgM5UEEg7dwJBFeUgV+xYD2jw1N1fisrnbTjof//R8pp4FAFOAr9uSKhA9J8HfFbxf4Ktf7P02WK5sRuKW90pdEZyCWQqVcdD8u7bkk4yc1peJ/jP418U6e+lTyQWNtMrJMtojIZVbHyszs7AcYIUrkEhsg4ryYCngVy/UMM6ntXTXN3sdcaaACnAUAU6vQSOyED/2Q==",
+        "metrics": {
+          "users": {
+            "total": 12,
+            "active": {
+              "7d": 4,
+              "30d": 6,
+              "365d": 9
+            },
+            "new": {
+              "7d": 1,
+              "30d": 3,
+              "365d": 9
+            }
+          },
+          "commits": {
+            "7d": 21,
+            "30d": 80,
+            "365d": 640,
+            "weeks": [
+              30,
+              12,
+              8,
+              9,
+              15,
+              20,
+              25,
+              18,
+              22,
+              16,
+              11,
+              21
+            ]
+          },
+          "spend_usd": {
+            "7d": 860.5,
+            "30d": 2900.0,
+            "365d": 9800.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
         }
       },
       {
@@ -700,6 +751,57 @@
           "blocker": "",
           "quiet_days": 2,
           "line": "Live on this Mac; 1.1 waits for review."
+        },
+        "summary": "A sample command-line tool that exports a trip as a calendar file.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": 3,
+            "active": {
+              "7d": 2,
+              "30d": 2,
+              "365d": 3
+            },
+            "new": {
+              "7d": 0,
+              "30d": 1,
+              "365d": 3
+            }
+          },
+          "commits": {
+            "7d": 9,
+            "30d": 30,
+            "365d": 210,
+            "weeks": [
+              2,
+              4,
+              5,
+              3,
+              6,
+              8,
+              4,
+              7,
+              10,
+              6,
+              5,
+              9
+            ]
+          },
+          "spend_usd": {
+            "7d": 18.0,
+            "30d": 70.0,
+            "365d": 410.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
         }
       },
       {
@@ -771,6 +873,57 @@
           "blocker": "",
           "quiet_days": 0,
           "line": "Launch page is 3 of 5 sections in."
+        },
+        "summary": "A launch page for the sample app, in two languages.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 14,
+            "30d": 40,
+            "365d": 40,
+            "weeks": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              3,
+              8,
+              15,
+              14
+            ]
+          },
+          "spend_usd": {
+            "7d": 240.0,
+            "30d": 700.0,
+            "365d": 700.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
         }
       },
       {
@@ -836,6 +989,57 @@
           "blocker": "",
           "quiet_days": 21,
           "line": "Prototype parked after the entitlement was refused."
+        },
+        "summary": "A watch face that shows the day's plan.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 3,
+            "30d": 12,
+            "365d": 60,
+            "weeks": [
+              0,
+              0,
+              1,
+              4,
+              3,
+              0,
+              0,
+              2,
+              1,
+              1,
+              2,
+              3
+            ]
+          },
+          "spend_usd": {
+            "7d": 0.0,
+            "30d": 8.0,
+            "365d": 60.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
         }
       },
       {
@@ -879,6 +1083,368 @@
           "blocker": "",
           "quiet_days": 1,
           "line": "Early experiments."
+        },
+        "summary": "An experiment with an offline map.",
+        "icon_jpeg": "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAMKADAAQAAAABAAAAMAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAMAAwAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMABAQEBAQEBgQEBgkGBgYJDAkJCQkMDwwMDAwMDxIPDw8PDw8SEhISEhISEhUVFRUVFRkZGRkZHBwcHBwcHBwcHP/bAEMBBAUFBwcHDAcHDB0UEBQdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHf/dAAQAA//aAAwDAQACEQMRAD8A8qRKtIlCJVlEq4QPyJsESrSJXTeHfBfifxTvOhafJcpHndJ8qRgjGV8xyqbvmB25zjnGK09a8AeLvDVuLzWdMkhgPWRSsqLyB87RlgmSwA3Yyema64JXsX7Cq4e0UHy97O33nIIlWkShEq0iV3wgcjZ//9Dz1ErsPBfh3/hKfE+n6EX8tLmT942cERopeTacN82xTtyMZxniuZRK7nwBrVv4a8XaZrN4MwQyFZDz8qSo0bPwGJ2Bt2AMnGO9dyg7aH5LQ5HVgqnw3V/S+p936Zplho1hBpelwLb2tuuyONOgHXvySTySeSSSSSaszQw3MMlvcRrLFKpR0cBlZWGCCDwQRwQaIZobmGO4t5FlilUOjoQysrDIII4II5BFS1wn6wkrWWx8SfEbwpbeE/E8tjY8Wk8a3EClizIjEqVJIHRlbHJO3GSTmuLRK9K+KevWXiLxY82nMstvZwrbLKhyshUszMOBwGcqMZBxkHBrz9Er6WhFuC5j8kx3s1iKipfDd2P/0eRRKtIlCJVpEr3YQPxps73wp8RvE/hO2+w2Esc9oNxWC4UsiMxBJUqVYdDxu25JOMnNa2vfFPxZ4ism06Z4bO3lUpKtspUyKccMzM7AcYwpGQSDkV5qiVaRK6I0IN81tTo+vYhU/ZKo+X1BEq0iUIlWkSvRhA85s//Z",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 7,
+            "30d": 25,
+            "365d": 120,
+            "weeks": [
+              1,
+              0,
+              2,
+              5,
+              9,
+              6,
+              3,
+              4,
+              5,
+              6,
+              7,
+              7
+            ]
+          },
+          "spend_usd": {
+            "7d": 12.0,
+            "30d": 40.0,
+            "365d": 190.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "sample-notes",
+        "title": "Sample Notes",
+        "stage": "live",
+        "focus": false,
+        "primary": "ios",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 0.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/sample-notes",
+        "facts": [],
+        "summary": "Short notes that sync between two phones.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": 30,
+            "active": {
+              "7d": null,
+              "30d": 11,
+              "365d": 24
+            },
+            "new": {
+              "7d": 2,
+              "30d": 8,
+              "365d": 30
+            }
+          },
+          "commits": {
+            "7d": 0,
+            "30d": 4,
+            "365d": 90,
+            "weeks": [
+              0,
+              0,
+              1,
+              2,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "spend_usd": {
+            "7d": 0.0,
+            "30d": 3.0,
+            "365d": 40.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "sample-kit",
+        "title": "Sample Kit",
+        "stage": "building",
+        "focus": false,
+        "primary": "web",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 0.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/sample-kit",
+        "facts": [],
+        "summary": "A starter kit for the next sample.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 5,
+            "30d": 5,
+            "365d": 5,
+            "weeks": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              5
+            ]
+          },
+          "spend_usd": {
+            "7d": 3.0,
+            "30d": 3.0,
+            "365d": 3.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "sample-play",
+        "title": "Sample Play",
+        "stage": "building",
+        "focus": false,
+        "primary": "android",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 0.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/sample-play",
+        "facts": [],
+        "summary": "A small game, not started yet.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": null,
+            "30d": null,
+            "365d": null,
+            "weeks": []
+          },
+          "spend_usd": {
+            "7d": null,
+            "30d": null,
+            "365d": null
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "sample-old",
+        "title": "Sample Old",
+        "stage": "parked",
+        "focus": false,
+        "primary": "ios",
+        "users": "owner",
+        "target": "owner",
+        "health": "parked",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 0.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/sample-old",
+        "facts": [],
+        "summary": "An old idea, parked.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 0,
+            "30d": 0,
+            "365d": 14,
+            "weeks": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "spend_usd": {
+            "7d": 0.0,
+            "30d": 0.0,
+            "365d": 12.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
         }
       }
     ],
@@ -888,7 +1454,35 @@
       "sample-web",
       "sample-watch"
     ],
-    "core_source": "star"
+    "core_source": "star",
+    "home": {
+      "sections": [
+        {
+          "id": "users",
+          "ids": [
+            "sample-app",
+            "sample-tool",
+            "sample-notes"
+          ]
+        },
+        {
+          "id": "building",
+          "ids": [
+            "sample-web",
+            "sample-lab",
+            "sample-kit"
+          ]
+        },
+        {
+          "id": "quiet",
+          "ids": [
+            "sample-watch",
+            "sample-old",
+            "sample-play"
+          ]
+        }
+      ]
+    }
   },
   "auto_closed": {
     "count": 3,

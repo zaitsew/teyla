@@ -525,16 +525,18 @@ struct Portfolio: Decodable, Equatable, Sendable {
     var core: [String]
     /// `star` (the owner starred products) or `rule` (picked by usage and spend); "" from an older CLI.
     var coreSource: String
+    /// The three Home sections, already ranked; nil from a CLI that does not send `home`.
+    var home: PortfolioHome?
 
     enum CodingKeys: String, CodingKey {
-        case version, checked, counts, products, core
+        case version, checked, counts, products, core, home
         case coreSource = "core_source"
     }
     enum CheckedKeys: String, CodingKey { case stores, github }
 
     init(version: Int = 1, checkedStores: String = "", checkedGitHub: String = "",
          counts: HealthCounts = HealthCounts(), products: [PortfolioProduct] = [],
-         core: [String] = [], coreSource: String = "") {
+         core: [String] = [], coreSource: String = "", home: PortfolioHome? = nil) {
         self.version = version
         self.checkedStores = checkedStores
         self.checkedGitHub = checkedGitHub
@@ -542,6 +544,7 @@ struct Portfolio: Decodable, Equatable, Sendable {
         self.products = products
         self.core = core
         self.coreSource = coreSource
+        self.home = home
     }
 
     init(from decoder: Decoder) throws {
@@ -555,9 +558,178 @@ struct Portfolio: Decodable, Equatable, Sendable {
         self.products = products.compactMap(\.value)
         core = c.lenient(.core, [])
         coreSource = c.lenient(.coreSource, "")
+        home = c.optional(.home)
     }
 
     func product(_ id: String) -> PortfolioProduct? { products.first { $0.id == id } }
+}
+
+/// `portfolio.home`: which product sits in which Home section, already ranked by the CLI. The app never re-ranks.
+struct PortfolioHome: Decodable, Equatable, Sendable {
+    var sections: [HomeSectionIDs]
+
+    enum CodingKeys: String, CodingKey { case sections }
+
+    init(sections: [HomeSectionIDs] = []) { self.sections = sections }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let rows: [LossyBox<HomeSectionIDs>] = c.lenient(.sections, [])
+        sections = rows.compactMap(\.value)
+    }
+}
+
+struct HomeSectionIDs: Decodable, Equatable, Sendable {
+    /// `users`, `building` or `quiet`; another value is ignored by the app.
+    var id: String
+    var ids: [String]
+
+    enum CodingKeys: String, CodingKey { case id, ids }
+
+    init(id: String, ids: [String] = []) {
+        self.id = id
+        self.ids = ids
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        ids = c.lenient(.ids, [])
+    }
+}
+
+// MARK: Per-product metrics
+
+/// One number for each of the three periods Home can show. A period the CLI does not count is nil, never zero.
+struct PeriodValues<Value: Decodable & Equatable & Sendable>: Decodable, Equatable, Sendable {
+    var d7: Value?
+    var d30: Value?
+    var d365: Value?
+
+    enum CodingKeys: String, CodingKey {
+        case d7 = "7d", d30 = "30d", d365 = "365d"
+    }
+
+    init(d7: Value? = nil, d30: Value? = nil, d365: Value? = nil) {
+        self.d7 = d7
+        self.d30 = d30
+        self.d365 = d365
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        d7 = c.optional(.d7)
+        d30 = c.optional(.d30)
+        d365 = c.optional(.d365)
+    }
+
+    /// `period` is chosen by the person; the value of the others is untouched.
+    subscript(period: HomePeriod) -> Value? {
+        switch period {
+        case .week: return d7
+        case .month: return d30
+        case .year: return d365
+        }
+    }
+}
+
+struct UserMetrics: Decodable, Equatable, Sendable {
+    var total: Int?
+    var active: PeriodValues<Int>
+    var new: PeriodValues<Int>
+
+    enum CodingKeys: String, CodingKey { case total, active, new }
+
+    init(total: Int? = nil, active: PeriodValues<Int> = PeriodValues(), new: PeriodValues<Int> = PeriodValues()) {
+        self.total = total
+        self.active = active
+        self.new = new
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        total = c.optional(.total)
+        active = c.lenient(.active, PeriodValues())
+        new = c.lenient(.new, PeriodValues())
+    }
+}
+
+struct CommitMetrics: Decodable, Equatable, Sendable {
+    var counts: PeriodValues<Int>
+    /// Commits per week for the last 12 weeks, oldest first; empty when git could not answer. Empty draws no chart.
+    var weeks: [Int]
+
+    enum CodingKeys: String, CodingKey { case weeks }
+
+    init(counts: PeriodValues<Int> = PeriodValues(), weeks: [Int] = []) {
+        self.counts = counts
+        self.weeks = weeks
+    }
+
+    init(from decoder: Decoder) throws {
+        counts = (try? PeriodValues<Int>(from: decoder)) ?? PeriodValues()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        weeks = c.lenient(.weeks, [])
+    }
+}
+
+struct MoneyMetrics: Decodable, Equatable, Sendable {
+    /// Monetization is switched on for this product. While false, every other value is nil.
+    var enabled: Bool
+    var mrrUSD: Double?
+    var paying: Int?
+    var revenueUSD: PeriodValues<Double>
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, paying
+        case mrrUSD = "mrr_usd"
+        case revenueUSD = "revenue_usd"
+    }
+
+    init(enabled: Bool = false, mrrUSD: Double? = nil, paying: Int? = nil,
+         revenueUSD: PeriodValues<Double> = PeriodValues()) {
+        self.enabled = enabled
+        self.mrrUSD = mrrUSD
+        self.paying = paying
+        self.revenueUSD = revenueUSD
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = c.lenient(.enabled, false)
+        mrrUSD = c.optional(.mrrUSD)
+        paying = c.optional(.paying)
+        revenueUSD = c.lenient(.revenueUSD, PeriodValues())
+    }
+}
+
+/// What Home shows per product. A CLI before this field sends none; every value is then nil ("—").
+struct ProductMetrics: Decodable, Equatable, Sendable {
+    var users: UserMetrics
+    var commits: CommitMetrics
+    var spendUSD: PeriodValues<Double>
+    var money: MoneyMetrics
+
+    enum CodingKeys: String, CodingKey {
+        case users, commits, money
+        case spendUSD = "spend_usd"
+    }
+
+    init(users: UserMetrics = UserMetrics(), commits: CommitMetrics = CommitMetrics(),
+         spendUSD: PeriodValues<Double> = PeriodValues(), money: MoneyMetrics = MoneyMetrics()) {
+        self.users = users
+        self.commits = commits
+        self.spendUSD = spendUSD
+        self.money = money
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        users = c.lenient(.users, UserMetrics())
+        commits = c.lenient(.commits, CommitMetrics())
+        spendUSD = c.lenient(.spendUSD, PeriodValues())
+        money = c.lenient(.money, MoneyMetrics())
+    }
 }
 
 struct HealthCounts: Decodable, Equatable, Sendable {
@@ -727,13 +899,19 @@ struct PortfolioProduct: Decodable, Equatable, Identifiable, Sendable {
     var facts: [String]
     /// Facts about progress; nil from a CLI before 0.35.
     var progress: ProductProgress?
+    /// One line about what the product is; "" when the CLI has none.
+    var summary: String
+    /// Base64 of a small JPEG icon; "" when there is none. Decoded once per product by the Mac UI, never here.
+    var iconJPEG: String
+    var metrics: ProductMetrics
 
     var health: Health { Health(rawValue: healthRaw) ?? .onTrack }
 
     enum CodingKeys: String, CodingKey {
         case id, title, stage, focus, primary, users, target, reasons, platforms, prs, activity
-        case waiting, tasks, milestone, next, repo, facts, progress
+        case waiting, tasks, milestone, next, repo, facts, progress, summary, metrics
         case healthRaw = "health"
+        case iconJPEG = "icon_jpeg"
         case oldestWaitDays = "oldest_wait_days"
     }
 
@@ -741,7 +919,8 @@ struct PortfolioProduct: Decodable, Equatable, Identifiable, Sendable {
          users: String = "", target: String = "", health: String = "on_track", reasons: [String] = [],
          platforms: [PlatformStatus] = [], prs: PRCounts = PRCounts(), activity: Activity = Activity(),
          waiting: Int = 0, oldestWaitDays: Double = 0, tasks: Int = 0, milestone: String = "", next: String = "",
-         repo: String = "", facts: [String] = [], progress: ProductProgress? = nil) {
+         repo: String = "", facts: [String] = [], progress: ProductProgress? = nil,
+         summary: String = "", iconJPEG: String = "", metrics: ProductMetrics = ProductMetrics()) {
         self.id = id
         self.title = title
         self.stage = stage
@@ -762,6 +941,9 @@ struct PortfolioProduct: Decodable, Equatable, Identifiable, Sendable {
         self.repo = repo
         self.facts = facts
         self.progress = progress
+        self.summary = summary
+        self.iconJPEG = iconJPEG
+        self.metrics = metrics
     }
 
     init(from decoder: Decoder) throws {
@@ -787,6 +969,9 @@ struct PortfolioProduct: Decodable, Equatable, Identifiable, Sendable {
         repo = c.lenient(.repo, "")
         facts = c.lenient(.facts, [])
         progress = c.optional(.progress)
+        summary = c.lenient(.summary, "")
+        iconJPEG = c.lenient(.iconJPEG, "")
+        metrics = c.lenient(.metrics, ProductMetrics())
     }
 }
 

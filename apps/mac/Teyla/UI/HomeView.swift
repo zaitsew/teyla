@@ -1,30 +1,91 @@
 import SwiftUI
 
-/// Home: one sentence, the core products and how far each has got, the top decisions, and what runs.
-/// Health, notes, finished work and the status column live on their own pages.
+/// Home: one sentence, a period switch, the products in three sections (people use these, being built, quiet),
+/// the top decisions, and what runs. Health, notes, finished work and the status column live on their own pages.
 struct HomeView: View {
-    @Environment(AppModel.self) private var model
-
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Space.xl) {
-                header
-                if model.snapshot == nil {
-                    SnapshotEmptyView()
-                } else {
-                    CoreProductsSection()
-                    HomeDecisionsSection()
-                    if model.autoClosed.count > 0 { AutoClosedRow() }
-                    RunningFold()
-                }
-            }
-            .padding(.horizontal, Space.xl + Space.xs)
-            .padding(.vertical, Space.xl)
-            .frame(maxWidth: Space.homeMax, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            HomeContent()
+                .padding(.horizontal, Space.xl + Space.xs)
+                .padding(.vertical, Space.xl)
+                .frame(maxWidth: Space.homeMax, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Palette.background)
         .navigationTitle("Home")
+    }
+}
+
+/// The page without its scroll view, so a screenshot can draw all of it at once.
+struct HomeContent: View {
+    @Environment(AppModel.self) private var model
+    /// A screenshot has no scroll view to make a lazy stack draw what is below the fold, so it asks for a plain one.
+    var eager = false
+    @AppStorage("teyla.home.period") private var storedPeriod = HomePeriod.week.rawValue
+
+    private var period: HomePeriod { HomePeriod.from(stored: storedPeriod) }
+
+    var body: some View {
+        if eager {
+            VStack(alignment: .leading, spacing: Space.xl) { page }
+        } else {
+            LazyVStack(alignment: .leading, spacing: Space.xl) { page }
+        }
+    }
+
+    @ViewBuilder
+    private var page: some View {
+        header
+        if let snapshot = model.snapshot {
+            products(snapshot.portfolio)
+            if model.autoClosed.count > 0 { AutoClosedRow() }
+            RunningFold()
+        } else {
+            SnapshotEmptyView()
+        }
+    }
+
+    /// The products and, between "People use these" and "Being built", the top decisions.
+    @ViewBuilder
+    private func products(_ portfolio: Portfolio?) -> some View {
+        switch portfolio.map(HomeSections.layout) {
+        case nil:
+            Text(HomeText.noPortfolio).foregroundStyle(Palette.textSecondary)
+            HomeDecisionsSection()
+        case .legacy(let cards):
+            VStack(alignment: .leading, spacing: Space.m) {
+                HomeSectionHeader(title: "Products", note: "Update the teyla command to rank them by users and activity.")
+                if cards.isEmpty {
+                    Text("No products yet.").foregroundStyle(Palette.textSecondary)
+                } else {
+                    LegacyList(cards: cards)
+                }
+            }
+            HomeDecisionsSection()
+        case .sections(let sections):
+            PeriodSwitch(period: Binding(get: { period }, set: { storedPeriod = $0.rawValue }))
+            if sections.allSatisfy({ $0.products.isEmpty }) {
+                Text("No products yet.").foregroundStyle(Palette.textSecondary)
+            }
+            section(sections, .users)
+            HomeDecisionsSection()
+            section(sections, .building)
+            section(sections, .quiet)
+        }
+    }
+
+    @ViewBuilder
+    private func section(_ sections: [HomeSection], _ kind: HomeSectionKind) -> some View {
+        if let section = sections.first(where: { $0.kind == kind }), !section.products.isEmpty {
+            VStack(alignment: .leading, spacing: Space.m + Space.xxs) {
+                HomeSectionHeader(title: kind.title, note: kind.note)
+                switch kind {
+                case .users: HeroGrid(products: section.products, period: period)
+                case .building: BuiltGrid(products: section.products, period: period)
+                case .quiet: QuietList(products: section.products)
+                }
+            }
+        }
     }
 
     private var header: some View {
@@ -41,6 +102,36 @@ struct HomeView: View {
                     .foregroundStyle(Palette.textSecondary)
             }
         }
+    }
+}
+
+/// Week / Month / Year. One switch for the whole page; it changes numbers and nothing else.
+struct PeriodSwitch: View {
+    @Binding var period: HomePeriod
+
+    var body: some View {
+        HStack(spacing: Space.xxs) {
+            ForEach(HomePeriod.allCases) { option in
+                Button {
+                    period = option
+                } label: {
+                    Text(option.label)
+                        .font(Typo.body.weight(.semibold))
+                        .foregroundStyle(period == option ? Palette.text : Palette.textSecondary)
+                        .padding(.horizontal, Space.xl - Space.xs)
+                        .frame(minHeight: Space.touchMin - 2 * Space.xs)
+                        .background(period == option ? Palette.surface : Color.clear,
+                                    in: RoundedRectangle(cornerRadius: Radius.card - Space.xxs))
+                        .contentShape(RoundedRectangle(cornerRadius: Radius.card - Space.xxs))
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(period == option ? .isSelected : [])
+            }
+        }
+        .padding(Space.xs)
+        .background(Palette.track, in: RoundedRectangle(cornerRadius: Radius.card))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Period")
     }
 }
 
@@ -66,118 +157,6 @@ struct SnapshotEmptyView: View {
             }
         }
         .padding(.top, Space.s)
-    }
-}
-
-// MARK: Core products
-
-private struct CoreProductsSection: View {
-    @Environment(AppModel.self) private var model
-    @State private var width: CGFloat = 0
-
-    var body: some View {
-        let portfolio = model.snapshot?.portfolio
-        let cards = portfolio.map(CoreCards.cards) ?? []
-        let canStar = model.capabilities.editProducts
-        VStack(alignment: .leading, spacing: Space.m) {
-            HStack(alignment: .firstTextBaseline) {
-                SectionLabel("Core products")
-                Spacer(minLength: Space.s)
-                Button("All products") { model.go(.portfolio) }
-                    .buttonStyle(.link)
-            }
-            if let note = HomeText.coreNote(source: portfolio?.coreSource ?? "", canStar: canStar) {
-                Text(note).font(Typo.body).foregroundStyle(Palette.textSecondary)
-            }
-            if case .failed(let message) = model.coreChange {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(Typo.body)
-                    .foregroundStyle(Palette.danger)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                Button("Back") { model.dismissCoreError() }
-                    .buttonStyle(.borderless)
-            }
-            if cards.isEmpty {
-                Text(HomeText.coreEmpty(hasPortfolio: portfolio != nil, canStar: canStar))
-                    .foregroundStyle(Palette.textSecondary)
-                    .padding(.vertical, Space.s)
-            } else {
-                let count = CoreCards.columns(width: width, minCard: Space.coreCardMin, spacing: Space.l)
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.l, alignment: .top), count: count),
-                          alignment: .leading, spacing: Space.l) {
-                    ForEach(cards) { card in
-                        CoreProductCard(card: card)
-                    }
-                }
-            }
-        }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-    }
-}
-
-/// One core product: where it stands in facts. A click opens its page; the star sets the core list.
-private struct CoreProductCard: View {
-    @Environment(AppModel.self) private var model
-    let card: CoreCard
-
-    var body: some View {
-        Button {
-            model.go(.product(card.id))
-        } label: {
-            VStack(alignment: .leading, spacing: Space.s) {
-                Text(card.title)
-                    .font(Typo.lead)
-                    .lineLimit(1)
-                    .padding(.trailing, Space.xl)
-                if !card.line.isEmpty {
-                    Text(card.line)
-                        .font(Typo.body)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if let blocker = card.blocker {
-                    Label(blocker, systemImage: "hand.raised")
-                        .font(Typo.body)
-                        .foregroundStyle(Palette.needsYou)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                VStack(alignment: .leading, spacing: Space.xs) {
-                    if !card.install.installable.isEmpty {
-                        Fact(label: "Install", value: card.install.installable.joined(separator: " · "))
-                    }
-                    if !card.install.pending.isEmpty {
-                        Fact(label: "Not installable", value: card.install.pending.joined(separator: " · "))
-                    }
-                    Fact(label: "Shipped", value: [card.shipped, card.latest].compactMap { $0 }.joined(separator: " · "))
-                    if let users = card.users { Fact(label: "Users", value: users) }
-                    if let milestone = card.milestone { Fact(label: "Milestone", value: milestone) }
-                    if let quiet = card.quiet { Fact(label: "", value: quiet) }
-                }
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .card()
-            .contentShape(RoundedRectangle(cornerRadius: Radius.card))
-        }
-        .buttonStyle(.plain)
-        .overlay(alignment: .topTrailing) {
-            StarButton(id: card.id, starred: card.starred)
-                .padding(Space.m)
-        }
-        .help("Open the \(card.title) page")
-        .accessibilityHint("Opens the product page")
-    }
-}
-
-/// "Install  iOS 1.4.0 (52)": a quiet label and its value, wrapping together.
-private struct Fact: View {
-    let label: String
-    let value: String
-
-    var body: some View {
-        (label.isEmpty ? Text(value) : Text(label + " ").foregroundStyle(Palette.textSecondary) + Text(value))
-            .font(Typo.body)
-            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -225,7 +204,7 @@ private struct HomeDecisionsSection: View {
         let fresh = AskFold.partition(owner) { model.age(of: $0) }.fresh
         let shown = Decisions.homeList(fresh)
         VStack(alignment: .leading, spacing: Space.m) {
-            SectionLabel("Decisions")
+            HomeSectionHeader(title: "Decisions", note: "Only you can answer these")
             if owner.isEmpty {
                 Label("Nothing waits on you.", systemImage: "checkmark.circle")
                     .foregroundStyle(Palette.textSecondary)
@@ -245,7 +224,6 @@ private struct HomeDecisionsSection: View {
                 }
             }
         }
-        .readingWidth()
         .animation(.easeOut(duration: 0.25), value: shown.map(\.id))
     }
 }
@@ -279,7 +257,6 @@ private struct AutoClosedRow: View {
             }
         }
         .padding(.vertical, Space.s)
-        .readingWidth()
         .overlay(alignment: .top) { Divider() }
     }
 }
@@ -340,7 +317,6 @@ private struct RunningFold: View {
                     }
                 }
             }
-            .readingWidth()
         }
     }
 }
