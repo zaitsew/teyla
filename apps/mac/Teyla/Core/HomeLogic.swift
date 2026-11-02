@@ -291,15 +291,11 @@ enum CoreEdit {
     /// Home shows at most this many products (the CLI's own limit).
     static let limit = 6
 
-    /// The ids to hand to `teyla product core` after the star on `id` was clicked.
-    /// - With stars: the starred products, plus `id` or without it.
-    /// - Picked by rule: nothing is starred yet, so the list on screen is pinned, with `id` added if it was not on it.
+    /// The ids to hand to `teyla product core` after the star on `id` was clicked: the starred products, plus `id` or
+    /// without it. The `core` list plays no part, so a product picked by rule is never pinned by accident.
     static func toggled(_ id: String, in portfolio: Portfolio) -> [String] {
         let starred = portfolio.products.filter(\.focus).map(\.id)
-        if !starred.isEmpty {
-            return starred.contains(id) ? starred.filter { $0 != id } : starred + [id]
-        }
-        return portfolio.core.contains(id) ? portfolio.core : portfolio.core + [id]
+        return starred.contains(id) ? starred.filter { $0 != id } : starred + [id]
     }
 
     /// Taking a star off is always allowed; adding one is not once the list is full.

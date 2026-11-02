@@ -265,14 +265,14 @@ final class CoreEditTests: XCTestCase {
                        ["sample-app", "sample-tool", "sample-web", "sample-watch", "sample-lab"])
     }
 
-    func testPickedByRulePinsTheListOnScreen() throws {
+    func testWithNoStarsOnlyTheClickedProductIsPinned() throws {
         var rule = try portfolio()
         for index in rule.products.indices { rule.products[index].focus = false }
         rule.coreSource = "rule"
-        rule.core = ["sample-app", "sample-tool"]
-        XCTAssertEqual(CoreEdit.toggled("sample-tool", in: rule), ["sample-app", "sample-tool"],
-                       "starring a product already shown keeps the list")
-        XCTAssertEqual(CoreEdit.toggled("sample-lab", in: rule), ["sample-app", "sample-tool", "sample-lab"])
+        rule.core = (1...6).map { "p\($0)" }
+        XCTAssertEqual(CoreEdit.toggled("p1", in: rule), ["p1"], "a product on the rule's list pins alone")
+        XCTAssertEqual(CoreEdit.toggled("sample-lab", in: rule), ["sample-lab"], "a full rule list never blocks a pin")
+        XCTAssertTrue(CoreEdit.canToggle("sample-lab", in: rule))
     }
 
     func testTheListHoldsSixAndAStarCanAlwaysComeOff() throws {

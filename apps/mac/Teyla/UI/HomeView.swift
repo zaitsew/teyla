@@ -204,7 +204,7 @@ private struct HomeDecisionsSection: View {
         let fresh = AskFold.partition(owner) { model.age(of: $0) }.fresh
         let shown = Decisions.homeList(fresh)
         VStack(alignment: .leading, spacing: Space.m) {
-            SectionLabel("Decisions")
+            HomeSectionHeader(title: "Decisions", note: "Only you can answer these")
             if owner.isEmpty {
                 Label("Nothing waits on you.", systemImage: "checkmark.circle")
                     .foregroundStyle(Palette.textSecondary)
@@ -224,7 +224,6 @@ private struct HomeDecisionsSection: View {
                 }
             }
         }
-        .readingWidth()
         .animation(.easeOut(duration: 0.25), value: shown.map(\.id))
     }
 }
@@ -258,7 +257,6 @@ private struct AutoClosedRow: View {
             }
         }
         .padding(.vertical, Space.s)
-        .readingWidth()
         .overlay(alignment: .top) { Divider() }
     }
 }
@@ -319,7 +317,6 @@ private struct RunningFold: View {
                     }
                 }
             }
-            .readingWidth()
         }
     }
 }
