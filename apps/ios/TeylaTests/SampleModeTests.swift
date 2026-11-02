@@ -20,12 +20,17 @@ final class SampleModeTests: XCTestCase {
                         sampleData: { Self.sampleJSON() })
     }
 
-    func testTheBundledSampleDecodesWithCoreProductsAndAnOlderQuestion() throws {
+    func testTheBundledSampleDecodesWithAllThreeHomeSectionsAndAnOlderQuestion() throws {
         let now = Date()
         let snapshot = try XCTUnwrap(SampleData.snapshot(from: XCTUnwrap(Self.sampleJSON()), now: now))
         XCTAssertEqual(snapshot.version, 3)
-        XCTAssertEqual(snapshot.portfolio?.products.count, 5)
+        XCTAssertEqual(snapshot.portfolio?.products.count, 18)
         XCTAssertEqual(snapshot.portfolio?.core.count, 4)
+        // Home: people use these, being built (more than Home shows at first) and quiet (the same).
+        let sections = try XCTUnwrap(PhoneHome.sections(snapshot.portfolio))
+        XCTAssertEqual(sections.map(\.products.count), [3, 8, 7])
+        XCTAssertGreaterThan(sections[1].products.count, try XCTUnwrap(HomeFold.limit(.building)))
+        XCTAssertGreaterThan(sections[2].products.count, try XCTUnwrap(HomeFold.limit(.quiet)))
         XCTAssertEqual(snapshot.autoClosed?.count, 3)
         // The sample never looks stale: it was "written" now.
         let generated = try XCTUnwrap(snapshot.generatedDate)
@@ -38,6 +43,18 @@ final class SampleModeTests: XCTestCase {
         // Every id the phone could send to is a valid relay target.
         XCTAssertTrue(snapshot.asks.allSatisfy { OutboxEntry.isTarget($0.id) })
         XCTAssertTrue(snapshot.products.allSatisfy { OutboxEntry.isTarget($0.name) })
+    }
+
+    func testTheSampleIsMadeOfInventedProductsOnly() throws {
+        let snapshot = try XCTUnwrap(SampleData.snapshot(from: XCTUnwrap(Self.sampleJSON())))
+        let portfolio = try XCTUnwrap(snapshot.portfolio)
+        // No real product name, e-mail or home path, and nothing outside ASCII in a name or a description.
+        let text = portfolio.products.map { [$0.id, $0.title, $0.summary, $0.repo].joined(separator: " ") }.joined(separator: "\n")
+        XCTAssertFalse(text.contains("/Users/"))
+        XCTAssertFalse(text.contains("@"))
+        XCTAssertTrue(text.unicodeScalars.allSatisfy(\.isASCII))
+        // Every product has a description except one, so the row that says "No description yet" is exercised.
+        XCTAssertEqual(portfolio.products.filter { $0.summary.isEmpty }.map(\.id), ["basalt"])
     }
 
     func testTimestampsMoveWithTheSnapshot() throws {
@@ -55,6 +72,7 @@ final class SampleModeTests: XCTestCase {
         await model.refresh()
         XCTAssertEqual(model.connection, .sample)
         XCTAssertNotNil(model.snapshot?.portfolio)
+        XCTAssertFalse(PhoneHome.needsMacUpdate(model.snapshot?.portfolio), "sample mode shows the new Home, not the update card")
     }
 
     func testWithoutAPairedMacTheAppStartsInOnboardingAndTheSampleIsOptional() async throws {
