@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Usage probes read the default branch.** `teyla products` and the Home numbers run `check.sh` as committed on
+  `origin/HEAD`, with the checkout's `.env`, so a checkout on a feature branch no longer hides a merged probe. A repo
+  named on the command line and safe mode still run the checkout's file. Nothing is fetched: the ref moves when
+  something fetches.
+
 ## 0.37.0 — 2026-11-02 — Home is a scoreboard
 
 - **`teyla state` and `teyla portfolio` rank the products.** `portfolio.home` holds three ranked sections: people use
