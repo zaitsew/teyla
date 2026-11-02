@@ -31,19 +31,27 @@ struct DecisionLists: Equatable {
 
 enum PhoneHome {
     static let updateTitle = "Update Teyla on your Mac"
-    static let updateText = "Home needs a newer Teyla on your Mac to show your core products. The rest of the app keeps working."
+    static let updateText = "Home needs a newer Teyla on your Mac to show your products by users and activity. The rest of the app keeps working."
 
-    /// True when the Mac's Teyla is too old to send `portfolio.core`: no portfolio, or one with no core list and no
-    /// word on how it was picked. A newer Teyla with no core products yet sends `core_source` and is not this.
+    /// True when the Mac's Teyla is too old to send `portfolio.home` (before 0.36): no portfolio, or one without the
+    /// three Home sections. The phone then says so and ranks nothing itself.
     static func needsMacUpdate(_ portfolio: Portfolio?) -> Bool {
-        guard let portfolio else { return true }
-        return portfolio.core.isEmpty && portfolio.coreSource.isEmpty
+        sections(portfolio) == nil
     }
 
-    /// The core list is set on the Mac (a star on a product), so the phone only says where to do it.
-    static let coreEmpty = "No core products yet. Star a product on your Mac to put it here."
+    /// The three sections in the CLI's order, or nil when the Mac sends none. The phone never ranks: an id without a
+    /// product row is skipped, and a section with no products stays in the list for the view to hide.
+    static func sections(_ portfolio: Portfolio?) -> [HomeSection]? {
+        guard let portfolio, portfolio.home != nil, case .sections(let sections) = HomeSections.layout(portfolio)
+        else { return nil }
+        return sections
+    }
 
-    static func coreNote(source: String) -> String? { HomeText.coreNote(source: source, canStar: false) }
+    /// What Home says when the Mac sends the sections and every one is empty.
+    static let noProducts = "No products yet."
+
+    /// The note under "Decisions", the same style as the three product sections.
+    static let decisionsNote = "Only you can answer these"
 
     /// The brief: the Mac's sentence, else a count.
     static func briefLine(_ snapshot: Snapshot) -> String {

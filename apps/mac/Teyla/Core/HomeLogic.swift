@@ -165,13 +165,6 @@ enum HomeText {
             : Format.spent(usd)
     }
 
-    /// The quiet line under the core list while it is picked by rule. Without a star (the store build) it only says how.
-    /// The iPhone app still shows the core list; the Mac Home no longer does.
-    static func coreNote(source: String, canStar: Bool) -> String? {
-        guard source == "rule" else { return nil }
-        return canStar ? "Picked by usage and spend. A star sets the list by hand." : "Picked by usage and spend."
-    }
-
     /// What Home says when the snapshot has no portfolio at all (a teyla command before 0.35).
     static let noPortfolio = "Update the teyla command to see your products (needs 0.35)."
 }
@@ -599,8 +592,13 @@ enum HomeFactsBuilder {
                          spoken: spoken.joined(separator: ". ") + ".")
     }
 
-    /// The Quiet row: always the 7-day number, whatever period the page shows.
+    /// The Quiet row: always the 7-day number, whatever period the page shows. "4 commits", "— commits" when not counted.
+    static func quietCount(_ product: PortfolioProduct) -> String {
+        HomeNumbers.commits(product.metrics.commits.counts.d7)
+    }
+
+    /// "4 commits this week". A phone row splits it over two lines: `quietCount` and `HomePeriod.week.phrase`.
     static func quietCommits(_ product: PortfolioProduct) -> String {
-        "\(HomeNumbers.commits(product.metrics.commits.counts.d7)) this week"
+        "\(quietCount(product)) \(HomePeriod.week.phrase)"
     }
 }

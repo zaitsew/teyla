@@ -53,7 +53,8 @@ final class PortfolioFormatTests: XCTestCase {
 
     func testTheSampleSnapshotDrivesTheTab() throws {
         let portfolio = try XCTUnwrap(sample().portfolio)
-        XCTAssertEqual(portfolio.products.map(\.id), ["sample-app", "sample-tool"])
+        // The shared fixture gained a parked third product with the Home work; the counts it sends stay as they were.
+        XCTAssertEqual(portfolio.products.map(\.id), ["sample-app", "sample-tool", "sample-old"])
         XCTAssertEqual(PortfolioFormat.headline(for: portfolio), "1 at risk \u{00B7} 1 on track")
         XCTAssertEqual(PortfolioFormat.visible(portfolio.products, filter: .attention).map(\.id), ["sample-app"])
         XCTAssertEqual(portfolio.products[0].platforms.map(PortfolioFormat.platformLine),
@@ -66,6 +67,34 @@ final class PortfolioFormatTests: XCTestCase {
         XCTAssertNil(PortfolioFormat.checkedAgo("", now: now))
         let portfolio = Portfolio(checkedStores: "2026-10-25T06:00:00Z", checkedGitHub: "")
         XCTAssertEqual(PortfolioFormat.checkedLine(portfolio, now: now), "Stores checked 3h ago \u{00B7} GitHub not checked yet")
+    }
+
+    func testTheProductsTabStillListsEveryProductWhateverHomeRanks() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Teyla/Resources/sample-state.json")
+        let portfolio = try XCTUnwrap(SampleData.snapshot(from: Data(contentsOf: url)).flatMap(\.portfolio))
+        XCTAssertEqual(portfolio.products.count, 18)
+        // The tab keeps the worst-first order the Mac sent and the health words; Home shows neither.
+        XCTAssertEqual(PortfolioFormat.headline(for: portfolio), "1 at risk \u{00B7} 16 on track \u{00B7} 1 parked")
+        XCTAssertEqual(PortfolioFormat.visible(portfolio.products, filter: .attention).map(\.id), ["sample-app"])
+    }
+
+    func testAProductFromAnOlderMacHasNoSummaryIconOrMetricsAndStillDecodes() throws {
+        let json = #"{"id": "old", "title": "Old", "stage": "beta", "health": "on_track"}"#
+        let product = try JSONDecoder().decode(PortfolioProduct.self, from: Data(json.utf8))
+        XCTAssertEqual(product.summary, "")
+        XCTAssertEqual(product.iconJPEG, "")
+        XCTAssertNil(product.metrics.users.total)
+        XCTAssertTrue(product.metrics.commits.weeks.isEmpty)
+        XCTAssertFalse(product.metrics.money.enabled)
+    }
+
+    func testMetricsOfTheWrongShapeFallBackToNothingCountedInsteadOfFailing() throws {
+        let json = #"{"id": "odd", "summary": 7, "icon_jpeg": null, "metrics": {"users": "many", "commits": {"7d": "x", "weeks": [1, "a"]}}}"#
+        let product = try JSONDecoder().decode(PortfolioProduct.self, from: Data(json.utf8))
+        XCTAssertEqual(product.summary, "")
+        XCTAssertNil(product.metrics.users.total)
+        XCTAssertNil(product.metrics.commits.counts.d7)
     }
 
     func testQuestionsOfOneProduct() {

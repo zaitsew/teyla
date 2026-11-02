@@ -41,8 +41,8 @@ Requires iOS 18 and Xcode. Camera scanning needs a real device; on a simulator, 
 - **Voice** uses Apple Speech with `requiresOnDeviceRecognition = true`, in English, Spanish or Russian.
   A language without an on-device model does not start; there is no server fallback. The text fills the
   field and nothing is sent until you tap Send.
-- **Shared code.** `Models.swift` and `Format.swift` come from `apps/mac/Teyla/Core`, so both apps decode
-  the snapshot the same way. Everything else here is iPhone-only.
+- **Shared code.** `Models.swift`, `Format.swift` and `HomeLogic.swift` come from `apps/mac/Teyla/Core`, so both
+  apps decode the snapshot and word Home the same way. Everything else here is iPhone-only.
 
 ## Development
 

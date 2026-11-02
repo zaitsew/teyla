@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Home: one sentence, the core products and how far each has got, the top decisions, and what runs.
-/// Health, tasks, finished work and the questions agents can settle live on the Decisions and Products tabs.
+/// Home: one sentence, a Week / Month / Year switch, the products people use, the top decisions, the products being
+/// built, the quiet ones, and what runs. Health, tasks, finished work and the questions agents can settle live on the
+/// Decisions and Products tabs.
 struct HomeView: View {
     @Environment(AppModel.self) private var model
     @Binding var tab: AppTab
@@ -11,7 +12,8 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
+                // Lazy: a long Home builds the rows that scroll into view, not all 40 products at once.
+                LazyVStack(alignment: .leading, spacing: 28) {
                     if let snapshot = model.snapshot {
                         HomeContent(snapshot: snapshot, tab: $tab)
                     } else {
@@ -49,6 +51,10 @@ private struct HomeContent: View {
     @Environment(AppModel.self) private var model
     let snapshot: Snapshot
     @Binding var tab: AppTab
+    /// One period for the whole page, remembered. It changes numbers only, never who sits where.
+    @AppStorage("teyla.home.period") private var storedPeriod = HomePeriod.week.rawValue
+
+    private var period: HomePeriod { HomePeriod.from(stored: storedPeriod) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -64,9 +70,35 @@ private struct HomeContent: View {
         }
 
         SentFromPhone(snapshot: snapshot)
-        CoreProducts(portfolio: snapshot.portfolio, tab: $tab)
-        HomeDecisions(snapshot: snapshot, tab: $tab)
+        if let sections = PhoneHome.sections(snapshot.portfolio) {
+            PeriodSwitch(period: Binding(get: { period }, set: { storedPeriod = $0.rawValue }))
+            if sections.allSatisfy({ $0.products.isEmpty }) {
+                Text(PhoneHome.noProducts).foregroundStyle(.secondary)
+            }
+            section(sections, .users)
+            HomeDecisions(snapshot: snapshot, tab: $tab)
+            section(sections, .building)
+            section(sections, .quiet)
+        } else {
+            UpdateMacCard()
+            HomeDecisions(snapshot: snapshot, tab: $tab)
+        }
         RunningFold(snapshot: snapshot)
+    }
+
+    /// A product section, or nothing when the Mac put no product in it.
+    @ViewBuilder
+    private func section(_ sections: [HomeSection], _ kind: HomeSectionKind) -> some View {
+        if let section = sections.first(where: { $0.kind == kind }), !section.products.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                HomeSectionHeader(title: kind.title, note: kind.note)
+                switch kind {
+                case .users: HeroList(products: section.products, period: period)
+                case .building: BuiltList(products: section.products, period: period)
+                case .quiet: QuietList(products: section.products)
+                }
+            }
+        }
     }
 }
 
@@ -102,44 +134,9 @@ struct SentFromPhone: View {
     }
 }
 
-// MARK: Core products
+// MARK: Older Mac
 
-private struct CoreProducts: View {
-    let portfolio: Portfolio?
-    @Binding var tab: AppTab
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                SectionLabel("Core products")
-                Button("All products") { tab = .products }
-                    .font(.subheadline)
-                    .frame(minHeight: 44)
-            }
-            if PhoneHome.needsMacUpdate(portfolio) {
-                UpdateMacCard()
-            } else if let portfolio {
-                let cards = CoreCards.cards(portfolio)
-                if let note = PhoneHome.coreNote(source: portfolio.coreSource) {
-                    Text(note).font(.footnote).foregroundStyle(.secondary)
-                }
-                if cards.isEmpty {
-                    Label(PhoneHome.coreEmpty, systemImage: "star")
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                ForEach(cards) { card in
-                    NavigationLink(value: ProductRoute(id: card.id)) {
-                        CoreProductCard(card: card)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-}
-
-/// Shown instead of the grid when the Mac's Teyla is too old to send the core list. Never an empty grid.
+/// Shown instead of the sections when the Mac's Teyla is too old to send `portfolio.home`. Never an empty page.
 private struct UpdateMacCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -155,69 +152,6 @@ private struct UpdateMacCard: View {
     }
 }
 
-/// One core product: where it stands, in facts. No health and no percentage. A tap opens its page.
-private struct CoreProductCard: View {
-    let card: CoreCard
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(card.title)
-                    .font(.headline)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
-            }
-            if !card.line.isEmpty {
-                Text(card.line)
-                    .font(.subheadline)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let blocker = card.blocker {
-                Label(blocker, systemImage: "hand.raised")
-                    .font(.subheadline)
-                    .foregroundStyle(Color.brandAmber)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            VStack(alignment: .leading, spacing: 3) {
-                if !card.install.installable.isEmpty {
-                    FactLine(label: "Install", value: card.install.installable.joined(separator: " \u{00B7} "))
-                }
-                if !card.install.pending.isEmpty {
-                    FactLine(label: "Not installable", value: card.install.pending.joined(separator: " \u{00B7} "))
-                }
-                FactLine(label: "Shipped", value: [card.shipped, card.latest].compactMap { $0 }.joined(separator: " \u{00B7} "))
-                if let users = card.users { FactLine(label: "Users", value: users) }
-                if let milestone = card.milestone { FactLine(label: "Milestone", value: milestone) }
-                if let quiet = card.quiet { FactLine(label: "", value: quiet) }
-            }
-        }
-        .card()
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityHint("Opens the product page")
-    }
-}
-
-/// "Install  iOS 1.4.0 (52)": a quiet label and its value, wrapping together.
-private struct FactLine: View {
-    let label: String
-    let value: String
-
-    var body: some View {
-        (label.isEmpty ? Text(value) : Text(label + " ").foregroundStyle(.secondary) + Text(value))
-            .font(.footnote)
-            .multilineTextAlignment(.leading)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
 // MARK: Decisions
 
 private struct HomeDecisions: View {
@@ -229,7 +163,7 @@ private struct HomeDecisions: View {
         let lists = DecisionLists(asks: snapshot.asks, snapshot: snapshot, now: Date())
         let shown = Decisions.homeList(lists.fresh)
         VStack(alignment: .leading, spacing: 12) {
-            SectionLabel("Decisions")
+            HomeSectionHeader(title: "Decisions", note: PhoneHome.decisionsNote)
             if lists.owner.isEmpty {
                 Label("Nothing waits on you.", systemImage: "checkmark.circle")
                     .foregroundStyle(.secondary)

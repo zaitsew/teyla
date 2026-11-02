@@ -599,15 +599,28 @@ Preview hooks: `TEYLA_PREVIEW_OPEN=tools` and `command-bar[:<query>]`, with `TEY
 The iPhone app has three tabs: Home, Decisions and Products. It reads the same snapshot as the Mac app through the
 relay and shares `HomeLogic.swift` with it, so the grouping, the ranking and the wording are the same.
 
-- **Home.** The brief, then the core products as cards with their progress (`portfolio.core`, `progress`), then the
-  top five decisions of the last 7 days with "See all N". A card opens the product. Facts only: no percent, no
-  health word. The core list is set on the Mac (a star), so the phone only says where to do it.
+- **Home.** The same page as the Mac's Home, in one column. Top to bottom: the brief and the sync line; a
+  **Week / Month / Year** switch (44 pt high, for the whole page, remembered as `teyla.home.period`); **People use
+  these** (a full-width card per product: icon or letter, name, stage, `summary`, active / new / total users for the
+  period, commits with a 12-week bar chart, agent spend, and a Monetization row that reads "Off" while
+  `metrics.money.enabled` is false, else MRR and paying users); **Decisions** (the top five of the last 7 days, "See
+  all N", with the note "Only you can answer these"); **Being built** (one list: icon or letter, name, one line of
+  `summary`, commits for the period; the first 6, then "Show all N" opens the rest in place); **Quiet** (a plain
+  list: small icon or letter, name, one line of `summary`, "N commits this week"; the first 5, then "Show all N");
+  then "Running now (N)", folded. A card or a row opens the product page. The sections and their order come from
+  `portfolio.home` and are never re-ranked; the switch changes numbers only. A `null` shows "—", never 0; empty
+  `weeks` draws no chart; there is no percentage and no health word. Icons are decoded once and cached. A card is one
+  VoiceOver element (name, active, new, total, commits); at the accessibility text sizes the three big numbers stack
+  instead of clipping. The star is set on the Mac; the phone only shows the result.
 - **Decisions.** The owner's questions grouped Pay, Decide, Do, an "Older" fold, "Teyla suggests closing N",
   "Agents can settle N", "Teyla closed N", the tasks only the owner can do, and what got done.
 - **From the phone.** Answering a question works, and "Use default" sends the proposed answer except for a
   payment. Accepting a suggested close and undoing a close work too, through two new outbox kinds, `close` and
   `reopen` (see the relay). "Agents can settle" has no bulk send: each answer resumes a session.
-- **Older Mac.** When the Mac's Teyla sends no `portfolio.core`, Home says "Update Teyla on your Mac" instead of an
-  empty grid, and a Mac that refuses `close` or `reopen` as a malformed entry gets the same advice.
+- **Older Mac.** When the Mac's Teyla sends no `portfolio.home` (before 0.36), Home says "Update Teyla on your Mac"
+  instead of the product sections and the decisions still show; a Mac that refuses `close` or `reopen` as a malformed
+  entry gets the same advice. The sample (`Teyla/Resources/sample-state.json`, written by
+  `apps/ios/Tools/add_home_sample.py`) has 18 invented products, so all three sections and both "Show all" buttons
+  appear in sample mode.
 - **Mac only.** The Tools page, the ⌘K command bar and `teyla attention` stay on the Mac: they run commands on
   the Mac, and the phone sends only the five relay kinds.

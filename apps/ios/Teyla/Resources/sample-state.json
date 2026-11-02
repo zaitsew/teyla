@@ -489,7 +489,7 @@
       "github": "2026-10-25T08:50:00Z"
     },
     "counts": {
-      "on_track": 3,
+      "on_track": 16,
       "at_risk": 1,
       "off_track": 0,
       "parked": 1
@@ -611,6 +611,57 @@
           "blocker": "Developer membership lapses in 9 days",
           "quiet_days": 0,
           "line": "Beta works end to end; 2 requirements left."
+        },
+        "summary": "Keeps the family's shared lists and plans in one place.",
+        "icon_jpeg": "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAMKADAAQAAAABAAAAMAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAMAAwAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMABAQEBAQEBgQEBgkGBgYJDAkJCQkMDwwMDAwMDxIPDw8PDw8SEhISEhISEhUVFRUVFRkZGRkZHBwcHBwcHBwcHP/bAEMBBAUFBwcHDAcHDB0UEBQdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHf/dAAQAA//aAAwDAQACEQMRAD8A8gApwFAFPAr9nSPKhAAKcBXV+G/A3ivxdvbw9pst3HHkNJ8scQI25XzJCqbvmB253YOcYq54g+HPjXwtai91zSpYLc9ZUKSovIHztEzhMlgBuIyemeay+sUVP2bmubtdX+47IQOKp4FAFOArsSOuED//0PJQK63wP4b/AOEu8V6b4eZ/Lju5f3jA4IijUySbTtb5tinbkEbsZ4rlAK7f4c+ILXwt410rXL4Zt4JSkp5+VJUaJn+VWJ2By2AMnGO+a/YsRzqjN0/is7ettDmhA/Q/StK07Q9Og0nSYFtrS2XZHGnQDqevJJOSSSSSSSSSTVueCC6gktbqNZoZlKSRuAysrDBVgeCCOCD1ognguoI7q1kWaGZQ8ciEMrKwyGUjggjkEdalr8fblzXe50n58/Fbwda+CvF8unafxY3MS3VuhYuyI5KlGJA6OrbeSduMknNecAV6z8Z/E+n+KfGsk+lOs1tYwJaLMjbllKMzsy8DgM5UEEg7dwJBFeUgV+xYD2jw1N1fisrnbTjof//R8pp4FAFOAr9uSKhA9J8HfFbxf4Ktf7P02WK5sRuKW90pdEZyCWQqVcdD8u7bkk4yc1peJ/jP418U6e+lTyQWNtMrJMtojIZVbHyszs7AcYIUrkEhsg4ryYCngVy/UMM6ntXTXN3sdcaaACnAUAU6vQSOyED/2Q==",
+        "metrics": {
+          "users": {
+            "total": 12,
+            "active": {
+              "7d": 4,
+              "30d": 6,
+              "365d": 9
+            },
+            "new": {
+              "7d": 1,
+              "30d": 3,
+              "365d": 8
+            }
+          },
+          "commits": {
+            "7d": 14,
+            "30d": 52,
+            "365d": 310,
+            "weeks": [
+              0,
+              3,
+              5,
+              9,
+              12,
+              8,
+              11,
+              7,
+              15,
+              10,
+              12,
+              14
+            ]
+          },
+          "spend_usd": {
+            "7d": 860.5,
+            "30d": 3400.0,
+            "365d": 9800.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
         }
       },
       {
@@ -700,6 +751,57 @@
           "blocker": "",
           "quiet_days": 2,
           "line": "Live on this Mac; 1.1 waits for review."
+        },
+        "summary": "A menu bar helper that tidies downloads.",
+        "icon_jpeg": "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAMKADAAQAAAABAAAAMAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAMAAwAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMABAQEBAQEBgQEBgkGBgYJDAkJCQkMDwwMDAwMDxIPDw8PDw8SEhISEhISEhUVFRUVFRkZGRkZHBwcHBwcHBwcHP/bAEMBBAUFBwcHDAcHDB0UEBQdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHf/dAAQAA//aAAwDAQACEQMRAD8A8qRKtIlCJVlEq4QPyJsESrSJXTeHfBfifxTvOhafJcpHndJ8qRgjGV8xyqbvmB25zjnGK09a8AeLvDVuLzWdMkhgPWRSsqLyB87RlgmSwA3Yyema64JXsX7Cq4e0UHy97O33nIIlWkShEq0iV3wgcjZ//9Dz1ErsPBfh3/hKfE+n6EX8tLmT942cERopeTacN82xTtyMZxniuZRK7nwBrVv4a8XaZrN4MwQyFZDz8qSo0bPwGJ2Bt2AMnGO9dyg7aH5LQ5HVgqnw3V/S+p936Zplho1hBpelwLb2tuuyONOgHXvySTySeSSSSSaszQw3MMlvcRrLFKpR0cBlZWGCCDwQRwQaIZobmGO4t5FlilUOjoQysrDIII4II5BFS1wn6wkrWWx8SfEbwpbeE/E8tjY8Wk8a3EClizIjEqVJIHRlbHJO3GSTmuLRK9K+KevWXiLxY82nMstvZwrbLKhyshUszMOBwGcqMZBxkHBrz9Er6WhFuC5j8kx3s1iKipfDd2P/0eRRKtIlCJVpEr3YQPxps73wp8RvE/hO2+w2Esc9oNxWC4UsiMxBJUqVYdDxu25JOMnNa2vfFPxZ4ism06Z4bO3lUpKtspUyKccMzM7AcYwpGQSDkV5qiVaRK6I0IN81tTo+vYhU/ZKo+X1BEq0iUIlWkSvRhA85s//Z",
+        "metrics": {
+          "users": {
+            "total": 6,
+            "active": {
+              "7d": 2,
+              "30d": 3,
+              "365d": 5
+            },
+            "new": {
+              "7d": 0,
+              "30d": 1,
+              "365d": 3
+            }
+          },
+          "commits": {
+            "7d": 6,
+            "30d": 22,
+            "365d": 140,
+            "weeks": [
+              1,
+              2,
+              0,
+              4,
+              3,
+              5,
+              2,
+              6,
+              4,
+              3,
+              2,
+              6
+            ]
+          },
+          "spend_usd": {
+            "7d": 18.0,
+            "30d": 70.0,
+            "365d": 400.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
         }
       },
       {
@@ -771,6 +873,57 @@
           "blocker": "",
           "quiet_days": 0,
           "line": "Launch page is 3 of 5 sections in."
+        },
+        "summary": "A booking page for small studios.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": 3,
+            "active": {
+              "7d": 1,
+              "30d": 1,
+              "365d": 3
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 9,
+            "30d": 31,
+            "365d": 120,
+            "weeks": [
+              0,
+              0,
+              2,
+              4,
+              6,
+              3,
+              5,
+              8,
+              4,
+              7,
+              6,
+              9
+            ]
+          },
+          "spend_usd": {
+            "7d": 240.0,
+            "30d": 900.0,
+            "365d": 2000.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
         }
       },
       {
@@ -836,6 +989,57 @@
           "blocker": "",
           "quiet_days": 21,
           "line": "Prototype parked after the entitlement was refused."
+        },
+        "summary": "A watch face for the quiet hours.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 0,
+            "30d": 0,
+            "365d": 18,
+            "weeks": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "spend_usd": {
+            "7d": 0.0,
+            "30d": 0.0,
+            "365d": 12.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
         }
       },
       {
@@ -879,6 +1083,1084 @@
           "blocker": "",
           "quiet_days": 1,
           "line": "Early experiments."
+        },
+        "summary": "A sandbox for trying small ideas before they get a name.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 14,
+            "30d": 40,
+            "365d": 95,
+            "weeks": [
+              0,
+              0,
+              0,
+              3,
+              5,
+              4,
+              8,
+              6,
+              9,
+              7,
+              11,
+              14
+            ]
+          },
+          "spend_usd": {
+            "7d": 12.0,
+            "30d": 44.0,
+            "365d": 120.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "pebble",
+        "title": "Pebble",
+        "stage": "building",
+        "focus": false,
+        "primary": "ios",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T09:00:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 31.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/pebble",
+        "summary": "Counts steps to a goal you set for a trip.",
+        "icon_jpeg": "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAMKADAAQAAAABAAAAMAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAMAAwAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMABAQEBAQEBgQEBgkGBgYJDAkJCQkMDwwMDAwMDxIPDw8PDw8SEhISEhISEhUVFRUVFRkZGRkZHBwcHBwcHBwcHP/bAEMBBAUFBwcHDAcHDB0UEBQdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHf/dAAQAA//aAAwDAQACEQMRAD8A8gApwFAFPAr9nSPKhAAKcBXV+G/A3ivxdvbw9pst3HHkNJ8scQI25XzJCqbvmB253YOcYq54g+HPjXwtai91zSpYLc9ZUKSovIHztEzhMlgBuIyemeay+sUVP2bmubtdX+47IQOKp4FAFOArsSOuED//0PJQK63wP4b/AOEu8V6b4eZ/Lju5f3jA4IijUySbTtb5tinbkEbsZ4rlAK7f4c+ILXwt410rXL4Zt4JSkp5+VJUaJn+VWJ2By2AMnGO+a/YsRzqjN0/is7ettDmhA/Q/StK07Q9Og0nSYFtrS2XZHGnQDqevJJOSSSSSSSSSTVueCC6gktbqNZoZlKSRuAysrDBVgeCCOCD1ognguoI7q1kWaGZQ8ciEMrKwyGUjggjkEdalr8fblzXe50n58/Fbwda+CvF8unafxY3MS3VuhYuyI5KlGJA6OrbeSduMknNecAV6z8Z/E+n+KfGsk+lOs1tYwJaLMjbllKMzsy8DgM5UEEg7dwJBFeUgV+xYD2jw1N1fisrnbTjof//R8pp4FAFOAr9uSKhA9J8HfFbxf4Ktf7P02WK5sRuKW90pdEZyCWQqVcdD8u7bkk4yc1peJ/jP418U6e+lTyQWNtMrJMtojIZVbHyszs7AcYIUrkEhsg4ryYCngVy/UMM6ntXTXN3sdcaaACnAUAU6vQSOyED/2Q==",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 22,
+            "30d": 61,
+            "365d": 61,
+            "weeks": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              4,
+              7,
+              9,
+              12,
+              8,
+              15,
+              22
+            ]
+          },
+          "spend_usd": {
+            "7d": 31.0,
+            "30d": 90.0,
+            "365d": 90.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "juniper",
+        "title": "Juniper",
+        "stage": "building",
+        "focus": false,
+        "primary": "web",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T09:00:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 26.5
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/juniper",
+        "summary": "A recipe box that scales a recipe to the guests.",
+        "icon_jpeg": "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAMKADAAQAAAABAAAAMAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAMAAwAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMABAQEBAQEBgQEBgkGBgYJDAkJCQkMDwwMDAwMDxIPDw8PDw8SEhISEhISEhUVFRUVFRkZGRkZHBwcHBwcHBwcHP/bAEMBBAUFBwcHDAcHDB0UEBQdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHf/dAAQAA//aAAwDAQACEQMRAD8A8qRKtIlCJVlEq4QPyJsESrSJXTeHfBfifxTvOhafJcpHndJ8qRgjGV8xyqbvmB25zjnGK09a8AeLvDVuLzWdMkhgPWRSsqLyB87RlgmSwA3Yyema64JXsX7Cq4e0UHy97O33nIIlWkShEq0iV3wgcjZ//9Dz1ErsPBfh3/hKfE+n6EX8tLmT942cERopeTacN82xTtyMZxniuZRK7nwBrVv4a8XaZrN4MwQyFZDz8qSo0bPwGJ2Bt2AMnGO9dyg7aH5LQ5HVgqnw3V/S+p936Zplho1hBpelwLb2tuuyONOgHXvySTySeSSSSSaszQw3MMlvcRrLFKpR0cBlZWGCCDwQRwQaIZobmGO4t5FlilUOjoQysrDIII4II5BFS1wn6wkrWWx8SfEbwpbeE/E8tjY8Wk8a3EClizIjEqVJIHRlbHJO3GSTmuLRK9K+KevWXiLxY82nMstvZwrbLKhyshUszMOBwGcqMZBxkHBrz9Er6WhFuC5j8kx3s1iKipfDd2P/0eRRKtIlCJVpEr3YQPxps73wp8RvE/hO2+w2Esc9oNxWC4UsiMxBJUqVYdDxu25JOMnNa2vfFPxZ4ism06Z4bO3lUpKtspUyKccMzM7AcYwpGQSDkV5qiVaRK6I0IN81tTo+vYhU/ZKo+X1BEq0iUIlWkSvRhA85s//Z",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 17,
+            "30d": 48,
+            "365d": 120,
+            "weeks": [
+              0,
+              0,
+              2,
+              5,
+              6,
+              8,
+              7,
+              9,
+              11,
+              13,
+              12,
+              17
+            ]
+          },
+          "spend_usd": {
+            "7d": 26.5,
+            "30d": 80.0,
+            "365d": 190.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "marlin",
+        "title": "Marlin",
+        "stage": "building",
+        "focus": false,
+        "primary": "ios",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T09:00:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 15.2
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/marlin",
+        "summary": "A tide table for people who fish from the shore.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 12,
+            "30d": 33,
+            "365d": 33,
+            "weeks": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              3,
+              4,
+              6,
+              5,
+              8,
+              12
+            ]
+          },
+          "spend_usd": {
+            "7d": 15.2,
+            "30d": 40.0,
+            "365d": 40.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "cobalt",
+        "title": "Cobalt",
+        "stage": "building",
+        "focus": false,
+        "primary": "macos",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T09:00:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 11.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/cobalt",
+        "summary": "Turns a folder of notes into a short weekly letter.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 9,
+            "30d": 28,
+            "365d": 80,
+            "weeks": [
+              1,
+              0,
+              2,
+              3,
+              4,
+              3,
+              6,
+              5,
+              7,
+              4,
+              6,
+              9
+            ]
+          },
+          "spend_usd": {
+            "7d": 11.0,
+            "30d": 35.0,
+            "365d": 90.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "saffron",
+        "title": "Saffron",
+        "stage": "building",
+        "focus": false,
+        "primary": "web",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T09:00:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 9.4
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/saffron",
+        "summary": "A pantry list that warns before things expire.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 8,
+            "30d": 19,
+            "365d": 19,
+            "weeks": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              2,
+              3,
+              4,
+              2,
+              8
+            ]
+          },
+          "spend_usd": {
+            "7d": 9.4,
+            "30d": 22.0,
+            "365d": 22.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "tundra",
+        "title": "Tundra",
+        "stage": "building",
+        "focus": false,
+        "primary": "ios",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T09:00:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 7.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/tundra",
+        "summary": "Offline maps for a few walking routes.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 6,
+            "30d": 24,
+            "365d": 70,
+            "weeks": [
+              2,
+              0,
+              3,
+              4,
+              2,
+              5,
+              4,
+              6,
+              3,
+              5,
+              5,
+              6
+            ]
+          },
+          "spend_usd": {
+            "7d": 7.0,
+            "30d": 28.0,
+            "365d": 70.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "willow",
+        "title": "Willow",
+        "stage": "building",
+        "focus": false,
+        "primary": "ios",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T09:00:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 5.5
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/willow",
+        "summary": "A habit tracker that never shows a streak.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 5,
+            "30d": 17,
+            "365d": 40,
+            "weeks": [
+              0,
+              0,
+              1,
+              2,
+              3,
+              2,
+              4,
+              3,
+              2,
+              4,
+              3,
+              5
+            ]
+          },
+          "spend_usd": {
+            "7d": 5.5,
+            "30d": 20.0,
+            "365d": 45.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "lantern",
+        "title": "Lantern",
+        "stage": "live",
+        "focus": false,
+        "primary": "web",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T09:00:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 4.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/lantern",
+        "summary": "A reading list that remembers where you stopped.",
+        "icon_jpeg": "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAMKADAAQAAAABAAAAMAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAMAAwAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMABAQEBAQEBgQEBgkGBgYJDAkJCQkMDwwMDAwMDxIPDw8PDw8SEhISEhISEhUVFRUVFRkZGRkZHBwcHBwcHBwcHP/bAEMBBAUFBwcHDAcHDB0UEBQdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHf/dAAQAA//aAAwDAQACEQMRAD8A8qRKtIlCJVlEq4QPyJsESrSJXTeHfBfifxTvOhafJcpHndJ8qRgjGV8xyqbvmB25zjnGK09a8AeLvDVuLzWdMkhgPWRSsqLyB87RlgmSwA3Yyema64JXsX7Cq4e0UHy97O33nIIlWkShEq0iV3wgcjZ//9Dz1ErsPBfh3/hKfE+n6EX8tLmT942cERopeTacN82xTtyMZxniuZRK7nwBrVv4a8XaZrN4MwQyFZDz8qSo0bPwGJ2Bt2AMnGO9dyg7aH5LQ5HVgqnw3V/S+p936Zplho1hBpelwLb2tuuyONOgHXvySTySeSSSSSaszQw3MMlvcRrLFKpR0cBlZWGCCDwQRwQaIZobmGO4t5FlilUOjoQysrDIII4II5BFS1wn6wkrWWx8SfEbwpbeE/E8tjY8Wk8a3EClizIjEqVJIHRlbHJO3GSTmuLRK9K+KevWXiLxY82nMstvZwrbLKhyshUszMOBwGcqMZBxkHBrz9Er6WhFuC5j8kx3s1iKipfDd2P/0eRRKtIlCJVpEr3YQPxps73wp8RvE/hO2+w2Esc9oNxWC4UsiMxBJUqVYdDxu25JOMnNa2vfFPxZ4ism06Z4bO3lUpKtspUyKccMzM7AcYwpGQSDkV5qiVaRK6I0IN81tTo+vYhU/ZKo+X1BEq0iUIlWkSvRhA85s//Z",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 4,
+            "30d": 12,
+            "365d": 55,
+            "weeks": [
+              1,
+              2,
+              3,
+              0,
+              4,
+              2,
+              5,
+              3,
+              2,
+              4,
+              3,
+              4
+            ]
+          },
+          "spend_usd": {
+            "7d": 4.0,
+            "30d": 14.0,
+            "365d": 60.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "quartz",
+        "title": "Quartz",
+        "stage": "building",
+        "focus": false,
+        "primary": "macos",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T09:00:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 3.2
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/quartz",
+        "summary": "A clipboard history that forgets on purpose.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 3,
+            "30d": 15,
+            "365d": 30,
+            "weeks": [
+              0,
+              0,
+              2,
+              1,
+              3,
+              2,
+              4,
+              2,
+              1,
+              3,
+              2,
+              3
+            ]
+          },
+          "spend_usd": {
+            "7d": 3.2,
+            "30d": 16.0,
+            "365d": 33.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "ember",
+        "title": "Ember",
+        "stage": "building",
+        "focus": false,
+        "primary": "ios",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T09:00:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 2.1
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/ember",
+        "summary": "A timer for the last hour before bed.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 2,
+            "30d": 9,
+            "365d": 22,
+            "weeks": [
+              0,
+              1,
+              1,
+              2,
+              3,
+              1,
+              2,
+              1,
+              0,
+              2,
+              3,
+              2
+            ]
+          },
+          "spend_usd": {
+            "7d": 2.1,
+            "30d": 9.0,
+            "365d": 24.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "nimbus",
+        "title": "Nimbus",
+        "stage": "building",
+        "focus": false,
+        "primary": "web",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T09:00:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 1.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/nimbus",
+        "summary": "A weather page with only the next six hours.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 1,
+            "30d": 6,
+            "365d": 16,
+            "weeks": [
+              0,
+              0,
+              1,
+              2,
+              1,
+              0,
+              3,
+              2,
+              1,
+              2,
+              1,
+              1
+            ]
+          },
+          "spend_usd": {
+            "7d": 1.0,
+            "30d": 5.0,
+            "365d": 17.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "thistle",
+        "title": "Thistle",
+        "stage": "building",
+        "focus": false,
+        "primary": "ios",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T09:00:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 0.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/thistle",
+        "summary": "A garden journal with photos by date.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 0,
+            "30d": 0,
+            "365d": 9,
+            "weeks": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "spend_usd": {
+            "7d": 0.0,
+            "30d": 0.0,
+            "365d": 8.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "basalt",
+        "title": "Basalt",
+        "stage": "idea",
+        "focus": false,
+        "primary": "ios",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T09:00:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 0.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/basalt",
+        "summary": "",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": null,
+            "30d": null,
+            "365d": null,
+            "weeks": []
+          },
+          "spend_usd": {
+            "7d": null,
+            "30d": null,
+            "365d": null
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
         }
       }
     ],
@@ -888,7 +2170,44 @@
       "sample-web",
       "sample-watch"
     ],
-    "core_source": "star"
+    "core_source": "star",
+    "home": {
+      "sections": [
+        {
+          "id": "users",
+          "ids": [
+            "sample-app",
+            "sample-tool",
+            "sample-web"
+          ]
+        },
+        {
+          "id": "building",
+          "ids": [
+            "pebble",
+            "juniper",
+            "sample-lab",
+            "marlin",
+            "cobalt",
+            "saffron",
+            "tundra",
+            "willow"
+          ]
+        },
+        {
+          "id": "quiet",
+          "ids": [
+            "sample-watch",
+            "lantern",
+            "quartz",
+            "ember",
+            "nimbus",
+            "thistle",
+            "basalt"
+          ]
+        }
+      ]
+    }
   },
   "auto_closed": {
     "count": 3,
