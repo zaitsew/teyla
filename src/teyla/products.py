@@ -122,8 +122,14 @@ def cache_path() -> pathlib.Path:
 
 
 def _has_numbers(status: str, counters: dict) -> bool:
-    """A probe can exit 0 with nothing to report: no output, `usage_probe=needs_teyla`, `probe=needs_key`."""
-    return status == "ok" and bool(counters) and not any(k.endswith("probe") for k in counters)
+    """A probe can exit 0 with nothing to report: no output, `usage_probe=needs_teyla`, `probe=needs_key`, words only."""
+    def number(v) -> bool:
+        try:
+            float(str(v))
+        except ValueError:
+            return False
+        return True
+    return status == "ok" and any(number(v) for v in counters.values()) and not any(k.endswith("probe") for k in counters)
 
 
 def write_cache(results: dict[str, tuple[str, dict]]) -> None:
