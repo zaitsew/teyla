@@ -20,6 +20,7 @@ import datetime as _dt
 import json
 import os
 import pathlib
+import re
 import shutil
 import stat
 import sys
@@ -62,6 +63,25 @@ def _crash_check() -> dict:
     except Exception as e:  # noqa: BLE001 — reading the crash reports must not break doctor
         return _check("INFO", "machine:crash", f"unknown ({e})")
     return _check(level, "machine:crash", detail, fix)
+
+
+# The words of the Play release tool when the owner's Google login has lapsed.
+_GCLOUD_LOGIN = re.compile(r"gcloud could not print|gcloud login has expired")
+
+
+def _store_checks() -> list[dict]:
+    """`stores:<tool>`: a store read that failed in the last refresh. From the cache, so doctor calls no store."""
+    from . import portfolio
+    out = []
+    for tool, err in sorted(portfolio.load_cache()["store_errors"].items()):
+        store = "Google Play" if tool == "play" else "App Store Connect"
+        if _GCLOUD_LOGIN.search(err):
+            out.append(_check("FIX", f"stores:{tool}", f"{store} could not be read in the last refresh: the gcloud login has expired",
+                              "gcloud auth login && teyla portfolio --refresh"))
+        else:
+            out.append(_check("WARN", f"stores:{tool}", f"{store} could not be read in the last refresh: {err}",
+                              "teyla portfolio --refresh"))
+    return out
 
 
 def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
@@ -485,6 +505,12 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
                 out.append(_check(c["level"], c["name"], c["detail"], c["fix"]))
             except Exception as e:  # noqa: BLE001 — a readiness line must never take doctor down
                 out.append(_check("INFO", "cloud", f"readiness not computed: {e}"))
+
+    # --- store reads ----------------------------------------------------------------------
+    try:
+        out.extend(_store_checks())
+    except Exception as e:  # noqa: BLE001 — a cached fact must never take doctor down
+        out.append(_check("INFO", "stores", f"store reads not checked: {e}"))
 
     # --- packs: a problem seen above, while the pack that solves it is off ---------------
     try:

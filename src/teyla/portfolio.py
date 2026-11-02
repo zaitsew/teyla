@@ -113,7 +113,7 @@ _MONEY_KEYS = {"mrr_usd": ("mrr_usd",), "paying": ("paying_users",), "7d": ("rev
 
 EMPTY_CACHE = {"version": CACHE_VERSION, "at": 0.0,
                "checked": {"stores": "", "github": "", "activity": "", "metrics": ""},
-               "stores": {}, "github": {}, "open_prs": {}, "activity": {}, "metrics": {}}
+               "stores": {}, "store_errors": {}, "github": {}, "open_prs": {}, "activity": {}, "metrics": {}}
 
 
 # --- the cache --------------------------------------------------------------------------------
@@ -135,7 +135,7 @@ def load_cache() -> dict:
         return out
     if not isinstance(c, dict) or c.get("version") != CACHE_VERSION:
         return out
-    for k in ("stores", "github", "open_prs", "activity", "metrics"):        # an older cache has no `metrics`
+    for k in ("stores", "store_errors", "github", "open_prs", "activity", "metrics"):  # an older cache has fewer
         if isinstance(c.get(k), dict):
             out[k] = c[k]
     if isinstance(c.get("checked"), dict):
@@ -431,11 +431,13 @@ def _unknown(plat: str, channel: str, why: str) -> dict:
 
 def refresh_stores(reg: dict, cache: dict, now: float, cfg: dict | None = None) -> bool:
     """Read TestFlight and Play for each product in scope into `cache["stores"]`. True when every read worked.
-    A failed read keeps the rows the product had (their `as_of` stays old); with none, it stores an `unknown` row."""
+    A failed read keeps the rows the product had (their `as_of` stays old); with none, it stores an `unknown` row.
+    `store_errors` keeps the first error per tool from this pass, for `teyla doctor`."""
     from . import platform as platform_mod
     from . import play
     cfg = platform_mod.load() if cfg is None else cfg
     ok = True
+    errors: dict[str, str] = {}
     for pid, p in reg["product"].items():
         manifests = parse_manifests(product_repos(p))
         mine = cache["stores"].setdefault(pid, {})
@@ -457,6 +459,7 @@ def refresh_stores(reg: dict, cache: dict, now: float, cfg: dict | None = None) 
                     row = {"verdict": "error", "error": f"{type(e).__name__}: {e}"}
                 if row.get("verdict") == "error":
                     ok = False
+                    errors.setdefault(tool, _clip(row.get("error") or "unknown error", 200))
                     why = "Could not read " + ("Google Play" if tool == "play" else "App Store Connect") \
                           + ": " + _clip(row.get("error") or "unknown error", 100)
                     for k in keys:
@@ -470,6 +473,7 @@ def refresh_stores(reg: dict, cache: dict, now: float, cfg: dict | None = None) 
                     mine.update(testflight_rows(row, now, mine, keys))
         if not mine:
             cache["stores"].pop(pid, None)
+    cache["store_errors"] = errors
     if ok:
         cache["checked"]["stores"] = _iso(now)
     return ok
