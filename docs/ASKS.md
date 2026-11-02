@@ -11,6 +11,8 @@ Code sessions ended that way and 1 got an answer. `teyla asks` finds them.
     teyla asks --html --open         the same as one page (~/.teyla/asks.html), readable on a phone
     teyla asks done <id> [--note T]  close one; a prefix of 3+ characters is enough
     teyla asks undo <id>...          reopen a done one, or an ask Teyla closed (see below)
+    teyla asks triage [--json]       which asks need you, which an agent can act on, which look closable
+    teyla asks accept-close [id...]  close the "look closable" ones together; prints the undo line
     teyla asks snooze <id> <days>    hide one until the days pass
     teyla asks done --older-than 3   close every question older than 3 days (--product P for one)
     teyla asks --all --json          include done, snoozed and muted items; machine-readable
@@ -146,6 +148,53 @@ repeat runs) and `filtered`, the count by reason:
 
 Here `duplicates` counts near-identical questions only, so the top-level `duplicates` is `duplicates + repeat_runs`.
 `teyla state --json` adds `resolved` and `duplicates` to `totals`. The version of the snapshot stays 2.
+
+## Triage: what needs you
+
+"Focus on important, clean the list up": most open questions are not decisions. `teyla asks triage` sorts them,
+and `teyla state --json` carries the result as `asks[].triage` (`docs/APP.md`, "Ask triage").
+
+| Bucket | Meaning | Counts as waiting on you |
+|---|---|---|
+| `owner` | only you can answer: `pay` (a price or charge), `decide` (a person, a choice), `do` (a key, a login, a step on your device) | yes |
+| `agent` | an agent can act on it with nothing from you | no |
+| `close` | looks answered or obsolete; stays open until you accept | no |
+
+**Rules run first and decide alone.** An ask that `needs_owner` (a price, a key or secret, a person) is `owner`:
+`pay` for a price or charge, `do` for a key or login, `decide` for a person. Then a reminder is `owner`/`do`, a gate
+`owner`/`decide`, an ask with two or more options `owner`/`decide`, and a "tap", "sign in", "on your iPhone" step
+`owner`/`do`. A short permission question about a routine step ("Want me to add the test?": one question mark, no
+choice, none of merge, deploy, release, publish, delete, send, pay, install, review) is `agent`. An ask you
+reopened with `undo` is `owner`. Everything else goes to the model, if it is on.
+
+**The model** classifies only what the rules left. It is the brief's model (`claude-haiku-5-5` through `claude -p`),
+behind the same setting (`teyla config set state.model_brief=true`), in the same detached `teyla state
+--refresh-brief`: first the triage call, then the brief from the owner questions. A run sends at most 15
+questions, the blocked ones first, then the newest. Each answer is cached per ask id and per text in
+`~/.teyla/state-triage.json`, so a question is classified once, until its words change. The question text is data:
+the prompt says so, and the parser accepts only the exact values `owner`, `agent`, `close` and `pay`, `decide`,
+`do`, `""`. Anything else, an unknown or repeated id, or a field that is not text discards the whole reply. `why`
+is cut to 12 words and `default` to 20 words. A reply that skips a question keeps the rest and leaves the skipped
+one for the next run, after the five-minute back-off.
+
+**The floor is code, not a prompt.**
+
+- A rule is applied before the cache is read, so a model answer never changes a rule's bucket: price text stays
+  `owner`/`pay` if the model says `close`, and a named person stays `owner`/`decide` if it says `agent`.
+- A model `close` closes nothing. The ask stays open, in bucket `close`. `teyla asks accept-close` is the only way
+  to close them; it takes the whole bucket or the ids you name, writes the note `accepted: triage close` (not
+  `auto:`), and prints `undo: teyla asks undo <ids>`. An ask you undo is `owner` from then on.
+- A model `agent` only moves the ask out of the owner count.
+- Age closes nothing, and similarity merges nothing here. Only the identity rules of the gate above merge.
+- With the setting off, or after a failed call, the asks the rules left have no `triage` and count as owner
+  questions. A failure never hides a question.
+
+`teyla asks triage` reads the done store and the cache, calls no model and writes nothing. `--json` gives
+`{generated, model, counts, items, auto_closed}`; `counts` is `{owner, agent, close, untriaged, raw, owner_count}`.
+
+**What Teyla closed on its own.** `teyla state --json` lists, as `auto_closed`, the questions the gate closed
+in the last 24 hours (the `auto:` notes above, judged by the time stored in the done record). What you closed
+yourself is not in it, and a hidden repeat that was never written to the done store is not either.
 
 ## Parked products stay quiet
 

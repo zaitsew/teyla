@@ -103,3 +103,14 @@ def test_every_row_says_whether_it_runs_by_default_and_what_safe_mode_does():
             cells = [c.strip() for c in line.strip().strip("|").split("|")]
             assert all(cells), line
             assert len(cells) in (5, 6), line
+
+
+def test_ask_triage_rides_on_row_14_and_the_triage_module_makes_no_call_itself():
+    """The triage prompt goes out through state.py's `claude -p` call, which row 14 describes; `triage.py` only
+    decides, parses and caches. If it ever gains a call of its own it needs its own row."""
+    row14 = next(line for line in PRIVACY.splitlines() if line.startswith("| 14 |"))
+    for needle in ("ask triage", "state-triage.json", "no rule decided", "never sent"):
+        assert needle in row14, needle
+    assert "triage_command" in (SRC / "state.py").read_text()
+    assert "triage.py" not in _found()
+    assert "triage.py" not in ALLOWED

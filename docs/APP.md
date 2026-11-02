@@ -340,7 +340,7 @@ version 2. `apps/mac/TeylaTests/Fixtures/state.sample.v3.json` is the reference.
     none until the next `teyla portfolio --refresh`). `users`: the weekly and total user
     counts from the counters `teyla products` last printed (`wau=` or `weekly_users=`; `users=` or
     `users_total=`, summed over the product's repos), or `null` when there is no cache or no such counter.
-    `blocker`: "" for now; a later version fills it with the owner's top ask. `quiet_days`: whole days since
+    `blocker`: the product's top owner question, cut to 12 words, or "" when it has none (see "Ask triage"). `quiet_days`: whole days since
     the last activity, `null` when there is none. `line`: one sentence of at most 12 words, the first that
     exists of: open P1s, the milestone, the primary platform's build, "Quiet for N days"; never a session title.
 
@@ -511,7 +511,7 @@ version 2. `apps/mac/TeylaTests/Fixtures/state.sample.v3.json` is the reference.
     none until the next `teyla portfolio --refresh`). `users`: the weekly and total user
     counts from the counters `teyla products` last printed (`wau=` or `weekly_users=`; `users=` or
     `users_total=`, summed over the product's repos), or `null` when there is no cache or no such counter.
-    `blocker`: "" for now; a later version fills it with the owner's top ask. `quiet_days`: whole days since
+    `blocker`: the product's top owner question, cut to 12 words, or "" when it has none (see "Ask triage"). `quiet_days`: whole days since
     the last activity, `null` when there is none. `line`: one sentence of at most 12 words, the first that
     exists of: open P1s, the milestone, the primary platform's build, "Quiet for N days"; never a session title.
 
@@ -570,3 +570,28 @@ Advanced Data Protection; the signature stops others from forging an action, not
 
 First launch of the full app after the id change copies the four settings it keeps (the `teyla` file, the default
 product, the voice language and the quick-note shortcut) from the old `com.zaitsew.teyla` domain, once.
+
+## Ask triage (from 2026-11-02, additive, still version 3)
+
+The app decodes these fields as optional. Nothing was renamed or removed.
+
+- `asks[].triage`: `{bucket, action, default, why, source}`, absent when no rule or cached model answer decides
+  the ask. `bucket` is `owner` (needs you), `agent` (an agent can act on it with nothing from you) or `close`
+  (looks closable). `action` is `pay`, `decide` or `do` for `owner`, else "". `default` is a proposed answer, or "".
+  `why` is at most 12 words. `source` is `rule` or `model`. An ask with no `triage` is an ordinary owner
+  question: draw it with the owner questions.
+- `asks[]` is ordered owner (or no triage), then agent, then close, then muted; `rank` follows that order.
+- `totals.questions` and `products[].waiting` (and `portfolio.products[].waiting`) count owner questions only:
+  an ask counts unless its bucket is `agent` or `close`. `totals.questions_raw` and `waiting_raw` (on both
+  product lists) keep the count of every ask that is not muted, so the difference is visible.
+- `portfolio.products[].progress.blocker` is the product's top owner question, at most 12 words, or "".
+- `auto_closed`: `{count, items: [{id, title, product, reason}]}`: the questions Teyla closed on its own
+  (`auto:` reasons in the done store) in the last 24 hours, newest first. A question you closed yourself, one
+  `teyla answer` closed, and one `accept-close` closed are not in it. `count` is the full number; `items`
+  lists at most 50. It is `{"count": 0, "items": []}` when there is none.
+- `tasks[]` leaves out a merge task when a question that names the same PR is done and none is still open.
+- The brief is written from the owner questions only.
+
+A `close` question stays open. `teyla asks accept-close` closes them together and prints
+`undo: teyla asks undo <ids>`; `teyla asks triage` prints the buckets and calls no model. Rules and the cache are
+described in [ASKS.md](ASKS.md).
