@@ -136,32 +136,22 @@ private struct CloseSuggestions: View {
     }
 }
 
-/// "Agents are handling 20": the questions a session settles with Teyla's proposed default, one line until opened.
+/// "Agents can settle 20": questions that need nothing from the owner but a go. Nothing runs by itself, so each is a
+/// full card: "Use default" sends the proposed answer to its session. There is no bulk send: each answer resumes a session.
 private struct AgentsFold: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
         let agents = model.agentAsks
         if let line = Decisions.agentLine(count: agents.count) {
-            Fold(title: line) {
-                VStack(alignment: .leading, spacing: Space.s) {
+            Fold(title: line, revealsFocus: agents.contains { $0.id == model.focusedAskID }) {
+                VStack(alignment: .leading, spacing: Space.m) {
                     ForEach(agents) { ask in
-                        VStack(alignment: .leading, spacing: Space.xxs) {
-                            Text(ask.question).font(Typo.body).fixedSize(horizontal: false, vertical: true)
-                            Text(detail(ask)).font(Typo.caption).foregroundStyle(Palette.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding(.leading, Space.l)
+                        AskCard(ask: ask)
                     }
                 }
             }
         }
-    }
-
-    private func detail(_ ask: Ask) -> String {
-        var parts = [Format.product(ask.product)]
-        if let proposed = ask.proposedAnswer { parts.append("Default: \(proposed)") }
-        return parts.joined(separator: " · ")
     }
 }
 

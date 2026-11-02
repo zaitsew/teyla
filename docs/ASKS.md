@@ -162,7 +162,7 @@ and `teyla state --json` carries the result as `asks[].triage` (`docs/APP.md`, "
 
 **Rules run first and decide alone.** An ask that `needs_owner` (a price, a key or secret, a person) is `owner`:
 `pay` for a price or charge, `do` for a key or login, `decide` for a person. Then a reminder is `owner`/`do`, a gate
-`owner`/`decide`, an ask with two or more options `owner`/`decide`, and a "tap", "sign in", "on your iPhone" step
+`owner`/`decide`, and a "tap", "sign in", "on your iPhone" step
 `owner`/`do`. A short permission question about a routine step ("Want me to add the test?": one question mark, no
 choice, none of merge, deploy, release, publish, delete, send, pay, install, review) is `agent`. An ask you
 reopened with `undo` is `owner`. Everything else goes to the model, if it is on.
@@ -184,7 +184,10 @@ one for the next run, after the five-minute back-off.
 - A model `close` closes nothing. The ask stays open, in bucket `close`. `teyla asks accept-close` is the only way
   to close them; it takes the whole bucket or the ids you name, writes the note `accepted: triage close` (not
   `auto:`), and prints `undo: teyla asks undo <ids>`. An ask you undo is `owner` from then on.
-- A model `agent` only moves the ask out of the owner count.
+- A model `agent` only moves the ask out of the owner count. Nothing dispatches it: it waits for a click on
+  "Use default". A model `agent` on a merge, a deploy, a release or a delete stays `owner`/`decide`.
+- Options alone decide nothing: sessions attach yes/no to routine questions. Such an ask goes to the model, and
+  without the model it has no triage and counts as yours.
 - Age closes nothing, and similarity merges nothing here. Only the identity rules of the gate above merge.
 - With the setting off, or after a failed call, the asks the rules left have no `triage` and count as owner
   questions. A failure never hides a question.

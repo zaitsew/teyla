@@ -109,7 +109,7 @@ final class DecisionsLogicTests: XCTestCase {
     }
 
     func testLines() {
-        XCTAssertEqual(Decisions.agentLine(count: 20), "Agents are handling 20")
+        XCTAssertEqual(Decisions.agentLine(count: 20), "Agents can settle 20")
         XCTAssertNil(Decisions.agentLine(count: 0))
         XCTAssertEqual(Decisions.summary(count: 0), "Nothing waits on you.")
         XCTAssertEqual(Decisions.summary(count: 1), "1 decision waits on you.")
