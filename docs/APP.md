@@ -43,20 +43,38 @@ The window has three states.
    shows). The sidebar lists no single product. A product page opens from a card, a row, or the product name on a
    question. ⌘K opens the command bar from any page.
 
-**Home.** Top to bottom: one sentence (`brief.line`) and a quiet line under it (decisions waiting, sessions
-running, and the spend, labelled "API-equivalent": what the work would cost at API list prices, not a bill); the
-core products; the top five decisions with "See all N"; a row "Teyla closed N questions" when Teyla closed some;
-and "Running now (N)", folded. Each core product is one card from `portfolio.core` (up to 6, two or three to a
-row): title, star, `progress.line`, what can be installed now, what was merged in 7 days (count and the newest
-title), users when the counters exist, the milestone, the blocker in the needs-you colour when there is one, and
-"Quiet for N days" from 14 days. Only `current` and `live` builds count as installable; `in_review`, `behind` and
-`blocked` builds are named with their state. A card shows no health, no percentage and no session title; health
-stays on All products. A click on a card opens its product page.
+**Home.** A page that scrolls. Top to bottom:
 
-The star sets the core list: `teyla product core <ids...>` makes exactly those products starred (`--clear` empties
-the list), then the window reads state again. While `portfolio.core_source` is `rule`, nothing is starred yet, so a
-star pins the list on screen and adds the product. Six is the limit. The store build has no CLI, so it shows the
-stars and cannot change them.
+1. One sentence (`brief.line`) and a quiet line under it (decisions waiting, sessions running, and the spend,
+   labelled "API-equivalent": what the work would cost at API list prices, not a bill).
+2. A **Week / Month / Year** switch, 44 pt high, for the whole page. It changes the numbers and nothing else: it never
+   moves a product or reorders a section. The choice is remembered (`teyla.home.period` in the app's defaults).
+3. **People use these.** One hero card per product in `portfolio.home` section `users`: icon (`icon_jpeg`, else the
+   first letter of the name on an indigo tint), name, stage, `summary`, three big numbers (active users, new users,
+   users in total) for the chosen period, commits for the period with a 12-week bar chart, agent spend for the period,
+   and a Monetization chip. The chip reads "Off" while `metrics.money.enabled` is false; when it is true it shows MRR and
+   paying users. The bars always show 12 weeks, whatever the period.
+4. **Decisions.** The top five that are fresh, with "See all N". The board does not put them here; this position is a
+   decision of the owner's.
+5. **Being built.** A medium card per product in section `building`: icon or letter, name, two lines of `summary`,
+   commits for the period, a small bar chart.
+6. **Quiet.** A plain list for section `quiet`: small icon or letter, name, one line of `summary`, and "N commits this
+   week" (always the 7-day count).
+7. A row "Teyla closed N questions" when Teyla closed some, and "Running now (N)", folded.
+
+The app takes the sections and their order from `portfolio.home` and never ranks: an id without a product row is
+skipped, an id listed twice stays in the first section, and a section with no products is hidden. A number that is
+`null` shows "—", never 0, and empty `weeks` draws no chart at all. Icons are decoded from base64 once per product and
+cached, not on every redraw. Nothing on Home shows a percentage or a health word; health stays on All products. A card
+and a row are each one button that opens the product page.
+
+An older `teyla` command sends no `portfolio.home`. Home then shows the core products (`portfolio.core`) as one plain
+list titled "Products", with the line "Update the teyla command to rank them by users and activity."
+
+The star pins a product to the front of its section: `teyla product core <ids...>` makes exactly those products
+starred (`--clear` empties the list), the CLI ranks starred products first within each section, and the window reads
+state again. The star is on the product page and on All products, not on Home. Six can be pinned. The store build has no
+CLI, so it shows the stars and cannot change them.
 
 **Decisions.** Every question that waits on you, grouped Pay, Decide, Do when the CLI triaged them (one list,
 ranked by what each unblocks, when it did not); questions older than 7 days fold into "Older · N". Below: "Teyla
@@ -64,7 +82,7 @@ suggests closing N" (opens to the list) with "Accept these N" and an Undo afterw
 N" (opens to cards; nothing runs until you click "Use default"), "Only you" (`tasks[]`), the notes, and "Done since yesterday", folded.
 
 **All products.** One row per registered product: health, reasons, platforms and PRs, spend. The star is the same
-star as on Home.
+star as on the product page.
 
 ### Triage and what Teyla closed (optional snapshot fields)
 

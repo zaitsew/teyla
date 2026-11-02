@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **The Mac Home is a scoreboard.** Three sections instead of the core list: "People use these" (a card per product
+  with active, new and total users, commits with a 12-week chart, agent spend and a Monetization chip), "Being built"
+  and "Quiet". A Week / Month / Year switch changes the numbers and never the order. The sections and their order come
+  from `portfolio.home`; an older `teyla` command still gets the core products as a plain list. The star now pins a
+  product to the front of its section, and Home no longer has a star or a "Core products" section.
 - **`teyla reviews settle` closes an open P1 on a merged PR.** A PR merged after its last review found a P1 stays
   in `teyla reviews` and `teyla attention` as "merged with an open P1", even when a later commit fixed it. `settle`
   appends one `skip` line, the kind `review-gate` writes at merge, after checking the evidence in git: the PR is
