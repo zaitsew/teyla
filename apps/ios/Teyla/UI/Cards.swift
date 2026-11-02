@@ -64,8 +64,38 @@ struct QuestionCard: View {
         .accessibilityElement(children: .contain)
     }
 
+    /// Teyla's proposed answer, and why. A payment shows it as information only.
+    @ViewBuilder private var proposal: some View {
+        if let proposed = ask.proposedAnswer {
+            VStack(alignment: .leading, spacing: 2) {
+                (Text("Proposed: ").foregroundStyle(.secondary) + Text(proposed))
+                    .font(.subheadline)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let why = ask.triage?.why, !why.isEmpty {
+                    Text(why).font(.footnote).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
     private var answering: some View {
         VStack(alignment: .leading, spacing: 10) {
+            proposal
+            if let proposed = ask.proposedAnswer, ask.canUseProposedAnswer {
+                // One tap sends the proposed answer to its session, as on the Mac. Never for a payment.
+                Button("Use default") {
+                    Task {
+                        await model.send(kind: .answer, target: ask.id, aboutText: ask.question,
+                                         label: ask.title.isEmpty ? Format.product(ask.product) : ask.title,
+                                         text: proposed)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(model.isSending(.answer, target: ask.id))
+                .accessibilityHint("Sends the proposed answer")
+            }
             if !ask.options.isEmpty {
                 FlowLayout(spacing: 8) {
                     ForEach(Array(ask.options.enumerated()), id: \.offset) { _, option in

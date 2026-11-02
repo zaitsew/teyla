@@ -25,6 +25,12 @@ A `claimed` entry found at the start of a pass was cut off between claim and res
 `ok: false, "interrupted; check the session, then send again"` and is never retried. The journal
 holds no text. Entries older than 8 days are dropped: the 7-day window makes a replay impossible.
 
+Two more kinds exist for the Decisions screen, and they run exactly one command each: `close` runs
+`teyla asks accept-close <id> --json` for a question in triage bucket `close`, and `reopen` runs
+`teyla asks undo <id>`. Neither sends text anywhere. `close` is checked against the question the owner
+saw (`about` is the SHA-256 of its text, as for an answer); `reopen` has no open question to show, so
+its `about` is the SHA-256 of the id, and `asks undo` itself refuses a question that is not closed.
+
 An answer never falls back to the clipboard (`answer.answer(clipboard=False)`): a question that only
 `copy and open` could deliver stays open and `sent/` says "needs the Mac". Safe mode makes `sync`
 a no-op. The launchd agent `com.zaitsew.teyla.relay` runs `sync` when the outbox changes and every
@@ -68,22 +74,24 @@ MAX_AGE_S = 7 * 86400
 MAX_AHEAD_S = 600
 JOURNAL_KEEP_S = 8 * 86400
 YOUNG_FILE_S = 120               # a file this fresh that does not parse may still be arriving
-KINDS = ("answer", "say", "dispatch")
+KINDS = ("answer", "say", "dispatch", "close", "reopen")
 FIELDS = frozenset({"v", "id", "kind", "target", "about", "text", "created", "device", "sig"})
 DETAIL_MAX = 300
-RUN_TIMEOUT_S = {"say": 60, "dispatch": 180}
+RUN_TIMEOUT_S = {"say": 60, "dispatch": 180, "close": 60, "reopen": 60}
 
 _UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 _UUID_RE = re.compile(_UUID, re.ASCII | re.IGNORECASE)
 _FILE_RE = re.compile(_UUID + r"\.json", re.ASCII | re.IGNORECASE)
 _PATTERNS = {
-    "kind": re.compile(r"answer|say|dispatch", re.ASCII),
+    "kind": re.compile(r"answer|say|dispatch|close|reopen", re.ASCII),
     "target": re.compile(r"[A-Za-z0-9_.:#/-]{1,200}", re.ASCII),
     "about": re.compile(r"[0-9a-f]{64}", re.ASCII),
     "created": re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})", re.ASCII),
     "device": re.compile(r"[A-Za-z0-9 ._-]{1,64}", re.ASCII),
     "sig": re.compile(r"[0-9a-f]{64}", re.ASCII),
 }
+# `close` and `reopen` put the target on a command line, so it must not start like an option.
+_ASK_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:#/-]{0,199}", re.ASCII)
 
 
 class RelayError(Exception):
@@ -633,6 +641,33 @@ def deliver_subcommand(kind: str, target: str, text: str, runner, base: list[str
     return False, "", _last_line(err) or _last_line(out) or f"exit {code}"
 
 
+def deliver_ask_action(kind: str, target: str, runner, base: list[str]) -> tuple[bool, str, str]:
+    """The two commands the phone may run besides `say` and `dispatch`: `teyla asks accept-close <id> --json`
+    and `teyla asks undo <id>`. Nothing else is built from an outbox entry's fields."""
+    if not _ASK_ID.fullmatch(target):
+        return False, "", "that id cannot be used"
+    if kind == "close":
+        code, out, err = runner([*base, "asks", "accept-close", target, "--json"], RUN_TIMEOUT_S[kind])
+    else:
+        code, out, err = runner([*base, "asks", "undo", target], RUN_TIMEOUT_S[kind])
+    if code == 124:
+        return False, "", "timed out; check the question on the Mac"
+    if kind == "close":
+        try:
+            res = json.loads(out)
+        except ValueError:
+            res = None
+        if isinstance(res, dict):
+            closed = [c.get("id") for c in res.get("closed", []) if isinstance(c, dict)]
+            if code == 0 and target in closed:
+                return True, "asks", "closed"
+            errors = [str(e) for e in res.get("errors", [])]
+            return False, "", _clip(errors[0]) if errors else "it is not in the list Teyla suggests closing"
+    elif code == 0:
+        return True, "asks", "reopened"
+    return False, "", _last_line(err) or _last_line(out) or f"exit {code}"
+
+
 def deliver_answer(item: asks.Ask, text: str, answer_fn) -> tuple[bool, str, str]:
     res = answer_fn(item, text, clipboard=False)
     return bool(res.get("ok")), str(res.get("via") or ""), str(res.get("detail") or "")
@@ -648,6 +683,7 @@ class Pass:
         self.answers = {r["id"]: r["question"] for r in snap.get("asks", []) if isinstance(r, dict) and "id" in r}
         self.running = {r["id"]: r.get("title", "") for r in snap.get("running", []) if isinstance(r, dict) and r.get("id")}
         self.products = {r["name"] for r in snap.get("products", []) if isinstance(r, dict) and "name" in r}
+        self.rows = {r["id"]: r for r in snap.get("asks", []) if isinstance(r, dict) and "id" in r}
         self.items = {a.id: a for a in items}
         self.answer_fn, self.runner, self.base = answer_fn, runner, base
 
@@ -707,6 +743,14 @@ def _decide(p: Pass, e: dict) -> tuple[bool, str, str, str]:
         seen = p.answers.get(target)
         if seen is None or target not in p.items:
             return no("that question is no longer open")
+    elif kind == "close":
+        seen = p.answers.get(target)
+        if seen is None or target not in p.items:
+            return no("that question is no longer open")
+        if ((p.rows.get(target) or {}).get("triage") or {}).get("bucket") != "close":
+            return no("Teyla no longer suggests closing that question")
+    elif kind == "reopen":
+        seen = target
     elif kind == "say":
         seen = p.running.get(target)
         if seen is None:
@@ -720,6 +764,8 @@ def _decide(p: Pass, e: dict) -> tuple[bool, str, str, str]:
     try:
         if kind == "answer":
             ok, via, detail = deliver_answer(p.items[target], e["text"], p.answer_fn)
+        elif kind in ("close", "reopen"):
+            ok, via, detail = deliver_ask_action(kind, target, p.runner, p.base)
         else:
             ok, via, detail = deliver_subcommand(kind, target, e["text"], p.runner, p.base)
     except Exception as exc:  # noqa: BLE001 — whatever went wrong, the entry has been claimed: report, never retry

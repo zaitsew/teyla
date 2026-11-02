@@ -35,7 +35,7 @@ struct PortfolioView: View {
             }
             .background(Color(.systemGroupedBackground))
             .refreshable { await model.refresh() }
-            .navigationTitle("Portfolio")
+            .navigationTitle("All products")
             .navigationBarTitleDisplayMode(.large)
             .navigationDestination(for: ProductRoute.self) { route in
                 PortfolioDetailView(productID: route.id)

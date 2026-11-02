@@ -255,11 +255,17 @@ that folder is untrusted: both directions are signed with a key the two devices 
   bytes before it decodes or shows anything; a bad signature shows "Waiting for the Mac" and
   nothing else. One file, so iCloud never delivers a snapshot without its signature.
 - `outbox/<uuid>.json`: written by the phone, one per action:
-  `{v: 1, id: <uuid>, kind: answer|say|dispatch, target: <ask id | running id | product>,
+  `{v: 1, id: <uuid>, kind: answer|say|dispatch|close|reopen, target: <ask id | running id | product | closed ask id>,
   about: <hex sha256 of the text the owner saw>, text, created: <ISO time>, device, sig}`.
   For `answer`, `about` hashes the question; for `say`, the session title; for `dispatch`, the
   product name. The Mac refuses an entry whose `about` does not match what it has now, so a
   question changed after the owner read it is never answered.
+  `close` and `reopen` (added with the iPhone Decisions screen) carry the fixed text `close` or `reopen`
+  and run one command each, with the target as its only argument: `close` runs `teyla asks accept-close <id>`
+  for a question whose triage bucket is `close` (`about` hashes its question, as for an answer), and `reopen`
+  runs `teyla asks undo <id>` (`about` hashes the id, because a closed question is no longer in the
+  snapshot; `asks undo` refuses one that is not closed). A Mac whose Teyla predates them answers `malformed entry`
+  and does nothing. No other command is built from an entry.
 - `sent/<uuid>.json`: written by the Mac: `{id, ok, via, detail, done_at}`. The outbox entry
   is removed. The phone shows the result and deletes `sent/` entries it has shown.
 
@@ -272,7 +278,7 @@ lowercase hex HMAC-SHA256 of a message:
   `device`, then `text`, joined with `\n`, UTF-8. `text` is last, so a newline inside it is safe.
   No other field is signed and no JSON canonical form is needed. Every field but `text` must
   match a strict pattern with no line break, so the split is unambiguous: `v` digits, `id` a UUID,
-  `kind` one of the three, `target` `[A-Za-z0-9_.:#/-]{1,200}`, `about` 64 hex, `created` an ISO
+  `kind` one of the five, `target` `[A-Za-z0-9_.:#/-]{1,200}`, `about` 64 hex, `created` an ISO
   time, `device` `[A-Za-z0-9 ._-]{1,64}`. Both sides reject an entry that does not, before
   checking its signature.
 
@@ -503,3 +509,21 @@ bar. ⌘N, ⌘0 and the other shortcuts are unchanged.
 
 Preview hooks: `TEYLA_PREVIEW_OPEN=tools` and `command-bar[:<query>]`, with `TEYLA_ATTENTION_FIXTURE` (default
 `attention.v1.json` beside the state sample; `attention.empty.v1.json` is the empty report).
+
+## The iPhone app: Home and Decisions (from 2026-11-02)
+
+The iPhone app has three tabs: Home, Decisions and Products. It reads the same snapshot as the Mac app through the
+relay and shares `HomeLogic.swift` with it, so the grouping, the ranking and the wording are the same.
+
+- **Home.** The brief, then the core products as cards with their progress (`portfolio.core`, `progress`), then the
+  top five decisions of the last 7 days with "See all N". A card opens the product. Facts only: no percent, no
+  health word. The core list is set on the Mac (a star), so the phone only says where to do it.
+- **Decisions.** The owner's questions grouped Pay, Decide, Do, an "Older" fold, "Teyla suggests closing N",
+  "Agents can settle N", "Teyla closed N", the tasks only the owner can do, and what got done.
+- **From the phone.** Answering a question works, and "Use default" sends the proposed answer except for a
+  payment. Accepting a suggested close and undoing a close work too, through two new outbox kinds, `close` and
+  `reopen` (see the relay). "Agents can settle" has no bulk send: each answer resumes a session.
+- **Older Mac.** When the Mac's Teyla sends no `portfolio.core`, Home says "Update Teyla on your Mac" instead of an
+  empty grid, and a Mac that refuses `close` or `reopen` as a malformed entry gets the same advice.
+- **Mac only.** The Tools page, the ⌘K command bar and `teyla attention` stay on the Mac: they run commands on
+  the Mac, and the phone sends only the five relay kinds.

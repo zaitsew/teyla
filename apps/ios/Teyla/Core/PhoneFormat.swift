@@ -36,7 +36,7 @@ enum PhoneFormat {
         return ageSeconds + base
     }
 
-    /// A question that has waited longer than this folds into "Older" on Today.
+    /// A question that has waited longer than this folds into "Older" on Decisions.
     static let olderAfter: TimeInterval = 7 * 86_400
 
     /// Splits the open questions into fresh ones and ones that waited more than 7 days. Both keep the

@@ -48,6 +48,52 @@ struct SectionLabel: View {
     }
 }
 
+/// A collapsed group under a list: a chevron, a title and what it holds when opened.
+struct Fold<Content: View>: View {
+    let title: String
+    /// Quiet words after the title.
+    var detail = ""
+    /// What VoiceOver reads; the title when empty.
+    var spokenTitle = ""
+    @ViewBuilder var content: Content
+    @State private var open: Bool
+
+    init(title: String, detail: String = "", spokenTitle: String = "", startsOpen: Bool = false,
+         @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.detail = detail
+        self.spokenTitle = spokenTitle
+        self.content = content()
+        _open = State(initialValue: startsOpen)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) { open.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(title).font(.subheadline.weight(.semibold))
+                    if !detail.isEmpty {
+                        Text(detail).font(.footnote).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: open ? "chevron.up" : "chevron.down")
+                        .font(.footnote.weight(.semibold))
+                }
+                .foregroundStyle(.secondary)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(spokenTitle.isEmpty ? title : spokenTitle)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityValue(open ? "expanded" : "collapsed")
+            if open { content }
+        }
+    }
+}
+
 extension View {
     /// A grouped card, the same in light and dark.
     func card() -> some View {

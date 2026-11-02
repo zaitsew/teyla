@@ -278,6 +278,8 @@ final class AppModel {
             case .dispatch: return true
             case .answer: return !snapshot.asks.contains { $0.id == action.target }
             case .say: return !snapshot.running.contains { $0.ref == action.target }
+            // Closing and reopening report on the Decisions tab, not in "Sent from this iPhone".
+            case .close, .reopen: return false
             }
         }
     }
@@ -379,6 +381,50 @@ final class AppModel {
     var asks: [Ask] { snapshot?.asks ?? [] }
 
     var syncDate: Date? { snapshot.flatMap(PhoneFormat.syncDate(of:)) }
+
+    /// Questions that wait on the owner: all of them without triage, the owner's bucket with it.
+    var ownerAsks: [Ask] { Decisions.split(asks).owner }
+
+    /// Questions Teyla closed on its own that were not reopened from this phone. A reopen the Mac confirmed
+    /// removes the row at once; a simulated one (sample mode) does not, because nothing happened.
+    var autoClosed: (count: Int, items: [AutoClosedItem]) {
+        let undone = Set(pending.filter { $0.kind == .reopen && $0.outcome?.ok == true && $0.outcome?.via != SampleData.via }
+            .map(\.target))
+        return snapshot?.autoClosed?.remaining(undone: undone) ?? (0, [])
+    }
+
+    var closeProgress: CloseProgress { CloseTracking.progress(pending) }
+
+    /// Asks the Mac to close these questions, one signed entry each. The question stays open until it does.
+    func acceptClose(_ asks: [Ask]) async {
+        for ask in asks where action(for: .close, target: ask.id) == nil {
+            await send(kind: .close, target: ask.id, aboutText: ask.question,
+                       label: ask.title.isEmpty ? Format.product(ask.product) : ask.title, text: "close")
+        }
+    }
+
+    /// Asks the Mac to reopen one question (`id` is its id). `label` is for lists only.
+    @discardableResult
+    func reopen(id: String, label: String) async -> Bool {
+        await send(kind: .reopen, target: id, aboutText: id, label: label, text: "reopen")
+    }
+
+    /// Undoes what this phone closed.
+    func undoAcceptedClose() async {
+        for id in closeProgress.closed { await reopen(id: id, label: id) }
+    }
+
+    /// Clears the finished closing results from the phone, whatever they say.
+    func dismissCloseResults() {
+        let closed = Set(pending.filter { $0.kind == .close }.map(\.target))
+        setPending(pending.filter { action in
+            switch action.kind {
+            case .close: return action.isWaiting
+            case .reopen: return action.isWaiting || !closed.contains(action.target)
+            default: return true
+            }
+        })
+    }
 
     /// Products a new task can go to: a name the relay accepts as a `target`.
     var dispatchTargets: [Product] {

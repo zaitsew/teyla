@@ -16,17 +16,19 @@ In the phone app, pick the Teyla folder once, then enter the pairing string. The
 
 | File | Written by | Holds |
 |---|---|---|
-| `state.teyla` | Mac | The signature, then the snapshot: open questions, products, running sessions, tasks, finished work, today's spend |
-| `outbox/<id>.json` | Phone | One signed action: an answer, a correction to a running session, or a new task for a product |
+| `state.teyla` | Mac | The signature, then the snapshot: open questions with Teyla's triage, the core products with their progress, questions Teyla closed, running sessions, tasks, finished work, today's spend |
+| `outbox/<id>.json` | Phone | One signed action: an answer, a correction to a running session, a new task for a product, closing a question Teyla suggests closing, or reopening one that was closed |
 | `sent/<id>.json` | Mac | The result of one action: `ok`, how it was delivered, a detail |
 
 The Mac runs `teyla relay sync` when `outbox/` changes and every 60 seconds. It delivers an action only when the signature is valid, the action is under 7 days old, and the question has not changed since you read it. Each action is delivered once. If the Mac stops in the middle of one, the phone shows "interrupted; check the session, then send again", and Teyla does not retry it.
+
+Closing and reopening run `teyla asks accept-close <id>` and `teyla asks undo <id>` on the Mac, one question at a time. They send no text to a session.
 
 An answer never goes to the clipboard. When only the Mac can deliver it, the phone shows "needs the Mac" and the question stays open.
 
 ## Privacy
 
-The snapshot holds the text of your questions and the titles of your sessions. iCloud Drive encrypts it in transit and at rest, but Apple holds the keys unless you turn on Advanced Data Protection. Turn it on if Apple should not be able to read the snapshot. The signature stops anyone who can write to the folder from sending actions. It does not hide the snapshot.
+The snapshot holds the text of your questions, Teyla's proposed answers, the titles of your sessions, and for each core product a progress line, the titles of its last merged pull requests, its user counts and its milestone. iCloud Drive encrypts it in transit and at rest, but Apple holds the keys unless you turn on Advanced Data Protection. Turn it on if Apple should not be able to read the snapshot. The signature stops anyone who can write to the folder from sending actions. It does not hide the snapshot.
 
 Safe mode (`teyla config set safe.enabled=true`) makes `sync` do nothing.
 

@@ -107,6 +107,10 @@ enum RelayCrypto {
 
 enum OutboxKind: String, Codable, Sendable, CaseIterable {
     case answer, say, dispatch
+    /// Close one question Teyla suggests closing (`teyla asks accept-close <id>` on the Mac).
+    case close
+    /// Reopen one closed question (`teyla asks undo <id>`). These two send no text to a session.
+    case reopen
 }
 
 struct OutboxEntry: Codable, Equatable, Sendable {
@@ -133,6 +137,10 @@ struct OutboxEntry: Codable, Equatable, Sendable {
         guard v == 1 else { throw RelayError.invalidField("v") }
         guard OutboxEntry.isUUID(id) else { throw RelayError.invalidField("id") }
         guard OutboxEntry.isTarget(target) else { throw RelayError.invalidField("target") }
+        // A target that becomes a command-line argument must not start like an option.
+        if kind == .close || kind == .reopen, target.hasPrefix("-") || target.hasPrefix(".") {
+            throw RelayError.invalidField("target")
+        }
         guard OutboxEntry.isHex64(about) else { throw RelayError.invalidField("about") }
         guard OutboxEntry.isISOTime(created) else { throw RelayError.invalidField("created") }
         guard OutboxEntry.isDevice(device) else { throw RelayError.invalidField("device") }

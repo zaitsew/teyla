@@ -167,7 +167,7 @@ enum PortfolioFormat {
 struct LaunchOptions: Equatable, Sendable {
     var tab: String?
     var openProduct: String?
-    /// Opens the "Older" fold on Today.
+    /// Opens the "Older" fold on Decisions.
     var olderOpen: Bool
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment,
