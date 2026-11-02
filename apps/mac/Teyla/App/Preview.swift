@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 
 /// Hooks for taking screenshots of the app with sample data. They work only with
 /// `TEYLA_STATE_FIXTURE` set, so a real run never reads them.
@@ -13,6 +14,8 @@ import Foundation
 ///     TEYLA_PREVIEW_DRAFT  text for the new-task sheet or the quick-note panel
 ///     TEYLA_PREVIEW_APPEARANCE  light | dark, for this app only
 ///     TEYLA_PREVIEW_SCROLL  end: scroll the main window to its bottom
+///     TEYLA_PREVIEW_SNAPSHOT  <path.png>: draw the whole Home page in one image (width TEYLA_PREVIEW_WIDTH, default
+///                         1100 pt, in the appearance above), save it and quit. For screenshots without a screen to click
 @MainActor
 enum Preview {
     private static var ran = false
@@ -45,6 +48,10 @@ enum Preview {
                         .setContentSize(NSSize(width: parts[0], height: parts[1]))
                 }
             }
+        }
+        if let path = env["TEYLA_PREVIEW_SNAPSHOT"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { snapshotHome(model: model, path: path) }
+            return
         }
         guard let step = env["TEYLA_PREVIEW_OPEN"] else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -79,6 +86,30 @@ enum Preview {
                 break
             }
         }
+    }
+
+    /// Draws `HomeContent` at full height into a PNG. A scroll view would crop it to the window, so this lays the page out
+    /// by itself in a hosting view of the width asked for.
+    private static func snapshotHome(model: AppModel, path: String) {
+        let width = Double(env["TEYLA_PREVIEW_WIDTH"] ?? "") ?? 1100
+        let page = HomeContent(eager: true)
+            .padding(.horizontal, Space.xl + Space.xs)
+            .padding(.vertical, Space.xl)
+            .frame(width: width, alignment: .topLeading)
+            .background(Palette.background)
+            .environment(model)
+        let host = NSHostingView(rootView: page)
+        host.appearance = NSApp.appearance
+        let height = host.fittingSize.height
+        host.frame = NSRect(x: 0, y: 0, width: width, height: height)
+        host.layoutSubtreeIfNeeded()
+        if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            if let png = rep.representation(using: .png, properties: [:]) {
+                try? png.write(to: URL(fileURLWithPath: path))
+            }
+        }
+        NSApp.terminate(nil)
     }
 
     private static func firstScrollView(in view: NSView) -> NSScrollView? {
