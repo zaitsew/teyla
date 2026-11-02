@@ -110,3 +110,32 @@ product decision for the owner, not a technical one.
 A probe that needs a secret reads it from the Keychain or `~/.config/<product>/`, never from
 the repo, and prints `probe=needs_key` when the secret is missing. Zero is a finding, not an
 error.
+
+## The keys Home reads
+
+`teyla portfolio` turns a probe's `key=value` lines into the Home metrics (`docs/APP.md`, "Home: sections
+and metrics"). A probe prints a key only when it can count it; the first key of a row that a repo prints wins,
+and a product's repos are summed.
+
+| What | Keys |
+|---|---|
+| total users | `users=` (also `users_total=`, `total_users=`, `user_count=`, `accounts=`) |
+| active users, 7 days | `wau=` (also `weekly_users=`, `weekly_active=`, `active_users_7d=`, `users_7d=`, `active_7d=`) |
+| active users, 30 days | `mau=` or `active_30d=` |
+| active users, 365 days | `active_365d=` |
+| new users, 7 / 30 / 365 days | `new_7d=` or `users_new_7d=` / `new_30d=` or `users_new_30d=` / `new_365d=` or `users_new_365d=` |
+| money | `mrr_usd=`, `paying_users=`, `revenue_7d_usd=`, `revenue_30d_usd=`, `revenue_365d_usd=` |
+
+A key that is missing shows as a dash, never as zero. Print `0` only when the product counted and the answer
+was zero. Do not guess a window you cannot measure.
+
+**Money is per product and off by default.** A repo turns it on in `teyla.toml`:
+
+```toml
+[monetization]
+enabled = true
+```
+
+Absent means `false`. While it is `false`, Home shows no money for the product, even if the probe prints the
+money keys. Enabling it is a product decision for the owner (tier 3 above): the revenue then comes from the
+billing source (Stripe, StoreKit) through the probe, never from an estimate.

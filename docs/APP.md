@@ -404,6 +404,72 @@ match adds a reason:
 A question that waits, and a PR merged without a review, no longer change health: they stay as the raw
 counts (`waiting`, `oldest_wait_days`, `prs.unreviewed_7d`) and as `facts[]`. An open P1 stays a reason.
 
+### Home: sections and metrics (additions to version 3)
+
+Home ranks the products by itself and shows, for each, what it is and how it did over a week, a month and a
+year. Old clients keep working: every field above stays, and these are only added. Everything is built from
+caches and local files; the snapshot still makes no network call.
+
+`portfolio.home.sections` always holds three objects, in this order, even when one is empty:
+
+```json
+{"home": {"sections": [{"id": "users", "ids": ["sample-app"]}, {"id": "building", "ids": ["sample-tool"]}, {"id": "quiet", "ids": []}]}}
+```
+
+Every product id is in exactly one section. The rule uses 7-day signals only, so the week / month / year switch
+on a client never moves a product or reorders a section:
+
+| Section | Who | Order |
+|---|---|---|
+| `users` | not parked, and `active` 7d > 0 or `new` 7d > 0 | starred (`focus`) first, then active 7d, new 7d, commits 7d (more first), then id |
+| `building` | not parked, not in `users`, and commits 7d >= 5 (`BUILDING_MIN_COMMITS`) | starred first, commits 7d, id |
+| `quiet` | parked products, and the rest | starred first, commits 7d, commits 30d, id |
+
+A count that is `null` sorts after every real number.
+
+Each `portfolio.products[]` row also has:
+
+- `summary`: one line of at most 140 characters, or "". The first that exists of: `[productize] summary` in a
+  repo's `teyla.toml`; the registry field (`teyla product set <id> summary="..."`); the first prose paragraph of
+  the repo's `README.md` (headings, badges, images, HTML, tables and lists skipped).
+- `icon_jpeg`: base64 of an 88 px JPEG (quality 70), or "". Taken from the largest PNG of an
+  `AppIcon.appiconset` in the product's repos, else the first of `public/apple-touch-icon.png`,
+  `public/icon.png`, `public/logo.png`, `app/icon.png`, `icon.png`. Converted by macOS `sips` during the refresh
+  pass and cached by source path and modification time. Over 8 KB of base64 it is dropped, and without `sips`
+  (Linux) there is none. The phone reads it through the relay, so it stays small.
+- `metrics`:
+
+```json
+{"users":   {"total": 12, "active": {"7d": 4, "30d": 6, "365d": 9}, "new": {"7d": 1, "30d": 3, "365d": 9}},
+ "commits": {"7d": 21, "30d": 80, "365d": 640, "weeks": [30, 12, 8, 9, 15, 20, 25, 18, 22, 16, 11, 21]},
+ "spend_usd": {"7d": 210.5, "30d": 790.0, "365d": 5200.0},
+ "money":   {"enabled": false, "mrr_usd": null, "paying": null, "revenue_usd": {"7d": null, "30d": null, "365d": null}}}
+```
+
+`null` means Teyla does not count it. It is never zero, and a client shows a dash. Nothing is estimated.
+
+- `users`: from the usage cache (the counters `teyla products` last printed), summed over the product's repos;
+  `null` when no repo prints the key. `total`: `users_total=`, `total_users=`, `users=`, `user_count=` or
+  `accounts=`. `active` 7d: `wau=`, `weekly_users=`, `weekly_active=`, `active_users_7d=`, `users_7d=` or
+  `active_7d=`; 30d: `mau=` or `active_30d=`; 365d: `active_365d=`. `new` 7d: `new_7d=` or `users_new_7d=`;
+  30d: `new_30d=` or `users_new_30d=`; 365d: `new_365d=` or `users_new_365d=`.
+- `commits`: from local git, no network, computed in the refresh pass. Non-merge commits on `origin/HEAD`
+  (`HEAD` when the repo has none) over the last 7, 30 and 365 days, summed over the repos. These paths are left
+  out because a fleet-wide policy sync touches them in every repo: `AGENTS.md`, `CLAUDE.md`, `teyla.toml`,
+  `.claude`, `.github`, `.githooks`, `docs`, `README.md`, `CHANGELOG.md`, `.agents`, `check.sh`. `weeks`: 12
+  buckets of 7 days ending now, oldest first, so the last one equals `7d`. All four are `null` / `[]` (empty)
+  when git cannot answer for any repo or the refresh has not run yet.
+- `spend_usd`: `7d` equals `activity.spend_7d_usd` (0.0 when there was none). `30d` and `365d` come from the
+  same local transcripts and are `null` until the next refresh after an upgrade.
+- `money`: `enabled` is `[monetization] enabled = true` in a repo's `teyla.toml`; absent means `false`. While
+  it is `false` every other field is `null`, even when a probe prints revenue. When it is `true`, the values come
+  from the usage keys `mrr_usd=`, `paying_users=`, `revenue_7d_usd=`, `revenue_30d_usd=` and
+  `revenue_365d_usd=` (summed over the repos; `null` for a key nobody prints).
+
+The refresh pass (`teyla portfolio --refresh`) gained a fourth, local part, `metrics`: commits and icons. Like
+`activity` it needs no network, so it also runs in safe mode, and a part that fails keeps its old rows. The
+cache keeps `metrics` next to `activity`; an older cache without it loads with empty metrics.
+
 ### New command
 
 | Command | Does |

@@ -3,7 +3,7 @@
     teyla product [list] [--json]                    one line per registered product
     teyla product init [--write]                     propose a registry from the git repos under code_root; --write adds the missing ones
     teyla product add <id> [--repo PATH] [--name N] [--stage S]   register one product
-    teyla product set <id> key=value...              name, stage, primary, focus, aliases (comma list), add-repo, add-path
+    teyla product set <id> key=value...              name, stage, primary, focus, summary, aliases (comma list), add-repo, add-path
     teyla product core [<id>...] [--clear]           the core products of the home screen: show them, set them (focus), or clear
     teyla product park <id> | wake <id>              stage parked (the old stage is remembered) / back to it
     teyla product assign <ask-id-prefix|session-id> <id> [--ask-only]   file a session's asks under another product
@@ -47,7 +47,7 @@ _BARE_KEY_RE = re.compile(r"[A-Za-z0-9_-]+$")
 _CLAUDE_WT_RE = re.compile(r"^(?P<root>.+?)/\.claude/worktrees(?:/|$)")
 _HOME_WT_RE = re.compile(r"/\.worktrees/(?P<name>[^/]+)(?:/|$)")
 # Written in this order; any other key a product carries (stage_before_park) follows.
-_FIELDS = ("name", "repos", "paths", "aliases", "stage", "primary", "focus", "stage_before_park")
+_FIELDS = ("name", "repos", "paths", "aliases", "stage", "primary", "focus", "summary", "stage_before_park")
 
 
 class RegistryError(Exception):
@@ -80,6 +80,8 @@ def _normalise(raw: dict) -> dict:
         row["focus"] = row.get("focus") is True
         for k in ("name", "stage", "primary"):
             row[k] = str(row.get(k) or "")
+        if "summary" in row:                       # optional: written back only when the owner set it
+            row["summary"] = str(row["summary"] or "")
         reg["product"][str(pid)] = row
     asg = raw.get("assign")
     if isinstance(asg, dict):
@@ -379,7 +381,7 @@ def set_field(reg: dict, pid: str, key: str, value: str) -> str:
     p = reg["product"][pid]
     key = key.strip().lower().replace("_", "-")
     value = value.strip()
-    if key in ("name", "primary"):
+    if key in ("name", "primary", "summary"):
         p[key] = value
     elif key == "stage":
         if value not in STAGES:
@@ -402,7 +404,7 @@ def set_field(reg: dict, pid: str, key: str, value: str) -> str:
         if v not in p[slot]:
             p[slot].append(v)
     else:
-        raise ValueError(f"unknown key {key!r}: name, stage, primary, focus, aliases, add-repo, add-path")
+        raise ValueError(f"unknown key {key!r}: name, stage, primary, focus, summary, aliases, add-repo, add-path")
     return f"{pid}: {key} = {value}"
 
 
@@ -665,7 +667,7 @@ def register(sp):
     s = sub.add_parser("add", help="register one product")
     s.add_argument("id"); s.add_argument("--repo"); s.add_argument("--name")
     s.add_argument("--stage", choices=STAGES)
-    s = sub.add_parser("set", help="change fields: name stage primary focus aliases add-repo add-path")
+    s = sub.add_parser("set", help="change fields: name stage primary focus summary aliases add-repo add-path")
     s.add_argument("id"); s.add_argument("assignments", nargs="*", metavar="key=value")
     s = sub.add_parser("core", help="the core products of the home screen: show, pin (sets focus), or --clear")
     s.add_argument("ids", nargs="*", metavar="id"); s.add_argument("--clear", action="store_true", help="clear every focus")
