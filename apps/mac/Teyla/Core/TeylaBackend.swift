@@ -50,6 +50,10 @@ protocol TeylaBackend: Sendable {
     func markDone(id: String) async throws
     func setStage(id: String, stage: ProductStage) async throws
     func setFocus(id: String, focus: Bool) async throws
+    /// `teyla product core`: exactly these products are starred (none: every star is cleared).
+    func setCore(ids: [String]) async throws
+    /// `teyla asks undo`: reopens a question Teyla closed on its own.
+    func undoAsk(id: String) async throws
     func start() async throws -> StartReport
     func apply(offerID: String) async throws -> String
     func notes() async throws -> [NoteItem]
@@ -69,6 +73,8 @@ extension TeylaBackend {
     func markDone(id: String) async throws { throw Self.none }
     func setStage(id: String, stage: ProductStage) async throws { throw Self.none }
     func setFocus(id: String, focus: Bool) async throws { throw Self.none }
+    func setCore(ids: [String]) async throws { throw Self.none }
+    func undoAsk(id: String) async throws { throw Self.none }
     func start() async throws -> StartReport { throw Self.none }
     func apply(offerID: String) async throws -> String { throw Self.none }
     func notes() async throws -> [NoteItem] { throw Self.none }
@@ -83,7 +89,7 @@ extension TeylaBackend {
 /// What the window offers. The full app does everything; the store build offers what the relay can carry
 /// (an answer, a correction, a new task) and hides the rest, so no control is ever shown that cannot work.
 struct Capabilities: Equatable, Sendable {
-    /// Snooze, and "Mark done" on a question.
+    /// Snooze, and "Mark done" on a question, and Undo on a question Teyla closed.
     var closeQuestions = true
     /// The Codex / Claude choice of a new task (the relay lets the Mac choose).
     var chooseHarness = true
@@ -91,7 +97,7 @@ struct Capabilities: Equatable, Sendable {
     var notes = true
     /// The first-run diagnosis and its offers.
     var diagnosis = true
-    /// Stage and focus of a product.
+    /// Stage and focus of a product, and the star that sets the core list on Home.
     var editProducts = true
     /// The iPhone relay switch and the pairing QR code.
     var pairPhone = true

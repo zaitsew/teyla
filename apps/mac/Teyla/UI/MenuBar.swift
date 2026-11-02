@@ -4,7 +4,7 @@ struct MenuBarLabel: View {
     let model: AppModel
 
     var body: some View {
-        let count = model.visibleAsks.count
+        let count = model.ownerAsks.count
         HStack(spacing: Space.xs) {
             Image(systemName: count > 0 ? "bubble.left.fill" : "bubble.left")
             if count > 0 { Text("\(count)") }
@@ -30,7 +30,7 @@ struct MenuBarContent: View {
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
 
-            let top = Array(model.visibleAsks.prefix(3))
+            let top = Array(model.ownerAsks.prefix(3))
             if !top.isEmpty {
                 Divider()
                 ForEach(top) { ask in

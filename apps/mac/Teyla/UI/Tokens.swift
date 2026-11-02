@@ -14,10 +14,16 @@ enum Space {
     static let l: CGFloat = 16
     static let xl: CGFloat = 24
     static let xxl: CGFloat = 32
-    /// The width of the products and running column.
+    /// The width of the side column on a product page.
     static let sideColumn: CGFloat = 340
     /// How far the side column may grow when the window is wide: the extra room goes here, not to the cards.
     static let sideColumnMax: CGFloat = 480
+    /// A core product card on Home is at least this wide; the grid fits 2 or 3 in a row.
+    static let coreCardMin: CGFloat = 240
+    /// Home stops here, so three cards in a row stay readable.
+    static let homeMax: CGFloat = 1100
+    /// The tap area of the star on a product.
+    static let starTarget: CGFloat = 24
     /// Ask cards, done cards, task rows and prose stop here (45 to 75 characters a line).
     static let readingCard: CGFloat = 720
     /// The Portfolio rows stop here, so the platform strip stays readable.
@@ -26,7 +32,7 @@ enum Space {
     static let portfolioFigures: CGFloat = 220
     /// The width of the menu-bar popover.
     static let menuWidth: CGFloat = 320
-    /// Width at which the window shows two columns.
+    /// Width at which a product page shows two columns.
     static let wideWindow: CGFloat = 880
     /// The quick-note panel: its size, and how far from the top of the screen it sits (a fraction of the height).
     static let capturePanelWidth: CGFloat = 580
@@ -36,7 +42,7 @@ enum Space {
     static let captureFieldHeight: CGFloat = 72
     /// The shortcut field in Settings.
     static let shortcutFieldWidth: CGFloat = 160
-    /// The sidebar: Today, Diagnosis and the products.
+    /// The sidebar: Home, Decisions, All products and Diagnosis.
     static let sidebarMin: CGFloat = 190
     static let sidebarIdeal: CGFloat = 220
     static let sidebarMax: CGFloat = 280

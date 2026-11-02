@@ -18,7 +18,7 @@ final class ProductPageModel {
     @ObservationIgnored private let cli: any TeylaBackend
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var quickGeneration = 0
-    /// Called after the registry changed, so the sidebar and the Today list re-read state.
+    /// Called after the registry changed, so the sidebar and the Home screen re-read state.
     @ObservationIgnored var changed: () -> Void = {}
 
     init(cli: any TeylaBackend) {

@@ -34,6 +34,9 @@ struct AskCard: View {
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if let proposed = ask.proposedAnswer {
+                proposal(proposed)
+            }
             if let note = model.notes[ask.id] {
                 Label(note, systemImage: "doc.on.clipboard")
                     .font(Typo.body)
@@ -99,11 +102,32 @@ struct AskCard: View {
         }
     }
 
+    /// Teyla's proposed answer, and why. A payment shows it as information only.
+    private func proposal(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: Space.xxs) {
+            (Text("Proposed: ").foregroundStyle(Palette.textSecondary) + Text(text))
+                .font(Typo.body)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            if let why = ask.triage?.why, !why.isEmpty {
+                Text(why)
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
     private var actions: some View {
         VStack(alignment: .leading, spacing: Space.m) {
             FlowLayout(spacing: Space.s) {
+                if let proposed = ask.proposedAnswer, ask.canUseProposedAnswer, !composing {
+                    Button("Use default") { model.answer(ask, text: proposed) }
+                        .buttonStyle(.borderedProminent)
+                        .help("Send the proposed answer")
+                }
                 ForEach(Array(ask.options.enumerated()), id: \.offset) { index, option in
-                    if index == 0 && !composing {
+                    if index == 0 && !composing && !(ask.canUseProposedAnswer) {
                         Button(option) { model.answer(ask, text: option) }
                             .buttonStyle(.borderedProminent)
                     } else {
@@ -113,7 +137,7 @@ struct AskCard: View {
                 }
                 if !composing {
                     // With no options the written answer is the only action, so it leads.
-                    if ask.options.isEmpty {
+                    if ask.options.isEmpty && !ask.canUseProposedAnswer {
                         Button("Answer…", action: beginComposing).buttonStyle(.borderedProminent)
                     } else {
                         Button("Answer…", action: beginComposing).buttonStyle(.bordered)

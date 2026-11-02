@@ -163,6 +163,22 @@ actor TeylaCLI: TeylaBackend {
         try await simpleCommand(ProductCommands.focusArguments(id: id, focus: focus))
     }
 
+    /// `teyla product core <ids...>`: exactly these products are starred; no ids clears every star.
+    func setCore(ids: [String]) async throws {
+        guard let args = HomeCommands.coreArguments(ids: ids) else {
+            throw TeylaError.failed(code: 2, message: "A product id is not valid.")
+        }
+        try await simpleCommand(args)
+    }
+
+    /// `teyla asks undo <id>`: reopens a question Teyla closed on its own.
+    func undoAsk(id: String) async throws {
+        guard let args = HomeCommands.undoArguments(id: id) else {
+            throw TeylaError.failed(code: 2, message: "\(id) is not a question id.")
+        }
+        try await simpleCommand(args)
+    }
+
     // MARK: Notes (docs/NOTES.md)
 
     /// `teyla notes --json`: the open notes, newest first. With a fixture, the sample beside it (none is an empty list).
