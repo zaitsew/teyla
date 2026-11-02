@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.36.0 — 2026-11-02 — Home: your core products and only the decisions that are yours
+
+- **The Mac app opens on Home.** Your core products with their progress, then the top decisions from the last 7 days,
+  ranked by what they unblock. A core product is one you starred, or else one with weekly users or at least $40 of spend in 7 days, up to 6.
+  `teyla product core` manages the stars. `teyla state --json` carries `portfolio.core` and each product's `progress`.
+  Update the app and the CLI together: an older CLI gives the new app an empty grid.
+- **Decisions.** Questions are grouped Pay, Decide, Do. "Agents can settle N" lists what needs only a go, and each
+  answer goes to its own session; nothing there runs by itself. "Teyla suggests closing N" stays open until you accept,
+  with an Undo.
+- **Triage (`teyla asks triage`, `teyla asks accept-close`).** Rules decide first and the configured model classifies
+  the rest. A price, a secret, a step on your device or another person always stays yours. The model never closes a
+  question, age never closes one, and similar questions are never merged. A failed call leaves them as your questions.
+- **`teyla attention`: what is wrong on this Mac, in one read-only list.** Failing schedules, open P1s on merged PRs,
+  builds that are behind, low disk, doctor rows, the machine guard, and offers you have not answered. It adds no outbound
+  call. A source that fails or times out is a row saying so, so "Nothing needs you here" means the list is empty.
+- **Tools page and a ⌘K command bar in the Mac app.** An action goes preview, confirm, run, refresh, through a tested
+  allow-list. The store build has no Tools page.
+
 ## 0.35.0 — 2026-11-01 — Packs: pick what you need, hear about the rest when it would help
 
 - **`teyla features`: Teyla as a kit of ten packs.** Six automatic packs change settings, hooks or launchd jobs:
