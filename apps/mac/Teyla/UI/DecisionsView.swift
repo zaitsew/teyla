@@ -26,7 +26,8 @@ struct DecisionsView: View {
                 .readingWidth()
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .onChange(of: model.focusedAskID) { _, id in
+            // `initial`: a notification opened from Home sets the focus before this page exists.
+            .onChange(of: model.focusedAskID, initial: true) { _, id in
                 guard let id else { return }
                 withAnimation(.easeOut(duration: 0.25)) { reader.scrollTo(id, anchor: .top) }
             }

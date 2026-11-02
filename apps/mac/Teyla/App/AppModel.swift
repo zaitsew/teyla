@@ -509,8 +509,11 @@ final class AppModel {
         closeChange = .sending("Reopening…")
         Task {
             do {
-                for id in ids { try await cli.undoAsk(id: id) }
-                acceptedClose = []
+                // One at a time: after a failure a retry starts from what is still closed.
+                for id in ids {
+                    try await cli.undoAsk(id: id)
+                    acceptedClose.removeAll { $0 == id }
+                }
                 closeChange = nil
                 refresh()
             } catch {
