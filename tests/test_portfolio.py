@@ -130,6 +130,10 @@ def test_a_product_with_no_play_package_does_not_void_the_whole_store_pass(tmp_p
     assert rows_of(cache)["android"]["state"] == "unknown"
     assert rows_of(cache)["android"]["detail"] == "No Play package in teyla.toml"
     assert rows_of(cache)["ios"]["state"] == "current"
+    good = {"platform": "android", "channel": "play", "state": "current", "detail": "", "as_of": asks._iso(NOW - 60)}
+    cache["stores"]["app-a"]["android"] = good                              # another repo of the product read it
+    assert portfolio.refresh_stores(reg, cache, NOW) is True
+    assert rows_of(cache)["android"] == good
 
 
 # --- platform rows from the store payloads ----------------------------------------------------------
