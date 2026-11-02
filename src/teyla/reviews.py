@@ -464,6 +464,8 @@ def settle(target: str, outcome: str, decision: str, reason: str, commit: str | 
         return 2, "a false finding needs a --reason"
     if not decision:
         return 2, "--decision is required: the file in the repo that records the evidence"
+    if re.search(r"[\x00-\x1f\x7f]", decision):
+        return 2, "--decision has a control character; it is written into the ledger line"
     path = pathlib.PurePosixPath(decision)
     if path.is_absolute() or ".." in path.parts or not path.parts:
         return 2, f"--decision must be a path inside the repo, not {decision!r}"
@@ -478,7 +480,10 @@ def settle(target: str, outcome: str, decision: str, reason: str, commit: str | 
     ref = _default_ref(repo)
     if ref is None:
         return 2, f"{repo.name}: no default branch found (origin/HEAD, origin/main, main)"
-    rc, text = _git(repo, "show", f"{ref}:{path.as_posix()}")
+    rc, kind = _git(repo, "cat-file", "-t", f"{ref}:{path.as_posix()}")
+    if rc == 0 and kind.strip() != "blob":
+        return 2, f"{decision} is not a file on {ref}: name the decision file, not a directory"
+    rc, text = _git(repo, "show", f"{ref}:{path.as_posix()}") if rc == 0 else (rc, "")
     if rc != 0:
         return 2, (f"{decision} is not on the default branch ({ref}); merge the decision first "
                    f"(and `git fetch` if it was merged from another checkout)")

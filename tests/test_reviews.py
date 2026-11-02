@@ -495,6 +495,8 @@ def test_settle_false_needs_a_reason_and_no_commit(st):
     ({"outcome": "maybe"}, "outcome"),
     ({"decision": "docs/decisions/missing.md"}, "not on the default branch"),
     ({"decision": "../outside.md"}, "inside the repo"),
+    ({"decision": "docs/decisions"}, "not a file"),
+    ({"decision": "docs/decisions/p1.md\n2026-11-02T00:00:00Z\thttps://github.com/acme/app/pull/1"}, "control character"),
     ({"target": "acme/app"}, "owner/repo#number"),
     ({"target": "acme/other#9"}, "no repo under code_root"),
 ])
