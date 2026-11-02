@@ -179,6 +179,14 @@ actor TeylaCLI: TeylaBackend {
         try await simpleCommand(args)
     }
 
+    /// `teyla asks accept-close <ids...>`: closes exactly these questions; the CLI refuses one that left the bucket.
+    func acceptClose(ids: [String]) async throws {
+        guard let args = HomeCommands.acceptCloseArguments(ids: ids) else {
+            throw TeylaError.failed(code: 2, message: "A question id is not valid.")
+        }
+        try await simpleCommand(args)
+    }
+
     // MARK: Notes (docs/NOTES.md)
 
     /// `teyla notes --json`: the open notes, newest first. With a fixture, the sample beside it (none is an empty list).

@@ -57,9 +57,9 @@ star pins the list on screen and adds the product. Six is the limit. The store b
 stars and cannot change them.
 
 **Decisions.** Every question that waits on you, grouped Pay, Decide, Do when the CLI triaged them (one list,
-ranked by what each unblocks, when it did not); questions older than 7 days fold into "Older · N". Below: one line
-"Agents are handling N" (opens to the list), "Only you" (`tasks[]`), the notes, and "Done since yesterday",
-folded.
+ranked by what each unblocks, when it did not); questions older than 7 days fold into "Older · N". Below: "Teyla
+suggests closing N" (opens to the list) with "Accept these N" and an Undo afterwards, one line "Agents are handling
+N" (opens to the list), "Only you" (`tasks[]`), the notes, and "Done since yesterday", folded.
 
 **All products.** One row per registered product: health, reasons, platforms and PRs, spend. The star is the same
 star as on Home.
@@ -69,7 +69,8 @@ star as on Home.
 The window reads two fields when the CLI gives them and works the same without them.
 
 - `asks[].triage`: `{bucket, action, default, why, source}`. `bucket`: `owner` (waits on you), `agent` (a
-  session settles it with `default`) or `close` (Teyla closes it). An unknown or missing bucket reads as `owner`,
+  session settles it with `default`) or `close` (Teyla suggests closing it; it stays open until you accept with
+  `teyla asks accept-close`). An unknown or missing bucket reads as `owner`,
   so a value this app cannot read never hides a question. `action`: `pay`, `decide` or `do`; it picks the group
   on the Decisions page. `default` is the proposed answer and `why` the reason, both shown on the card. "Use
   default" sends `default` as the answer. It is never offered for `pay`: a payment waits for your own answer.

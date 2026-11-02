@@ -24,6 +24,9 @@ final class AppModel {
     private(set) var undone: Set<String> = []
     /// What the star on a product is doing, or why it failed.
     private(set) var coreChange: CardStatus?
+    private(set) var closeChange: CardStatus?
+    /// What the last "Accept" closed, so one click can reopen it.
+    private(set) var acceptedClose: [String] = []
     private var askTracker = AskTracker()
     private var refreshQueued = false
 
@@ -123,6 +126,9 @@ final class AppModel {
 
     /// Questions agents handle with Teyla's proposed default.
     var agentAsks: [Ask] { Decisions.split(visibleAsks).agent }
+
+    /// Questions Teyla suggests closing. They stay open until the owner accepts them.
+    var closeAsks: [Ask] { Decisions.split(visibleAsks).close }
 
     /// The questions Teyla closed in the last 24 hours that are still closed.
     var autoClosed: (count: Int, items: [AutoClosedItem]) {
@@ -477,6 +483,50 @@ final class AppModel {
 
     func dismissUndoError(_ item: AutoClosedItem) {
         if case .failed = cards[item.id] { cards[item.id] = nil }
+    }
+
+    /// The owner accepts "Teyla suggests closing N" for exactly the questions on screen, then can undo them.
+    func acceptClose(_ asks: [Ask]) {
+        guard capabilities.closeQuestions, !isAcceptingClose, !asks.isEmpty else { return }
+        let ids = asks.map(\.id)
+        closeChange = .sending("Closing…")
+        Task {
+            do {
+                try await cli.acceptClose(ids: ids)
+                acceptedClose = ids
+                closeChange = nil
+                refresh()
+            } catch {
+                closeChange = .failed("Could not close them. \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Reopens what the last accept closed.
+    func undoAcceptClose() {
+        guard capabilities.closeQuestions, !isAcceptingClose, !acceptedClose.isEmpty else { return }
+        let ids = acceptedClose
+        closeChange = .sending("Reopening…")
+        Task {
+            do {
+                for id in ids { try await cli.undoAsk(id: id) }
+                acceptedClose = []
+                closeChange = nil
+                refresh()
+            } catch {
+                closeChange = .failed("Could not reopen them. \(error.localizedDescription)")
+                refresh()
+            }
+        }
+    }
+
+    var isAcceptingClose: Bool {
+        if case .sending = closeChange { return true }
+        return false
+    }
+
+    func dismissCloseError() {
+        if case .failed = closeChange { closeChange = nil }
     }
 
     func selectProduct(_ name: String) {

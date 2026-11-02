@@ -14,6 +14,7 @@ struct DecisionsView: View {
                         SnapshotEmptyView()
                     } else {
                         questions
+                        CloseSuggestions()
                         AgentsFold()
                         OnlyYou()
                         if model.capabilities.notes { NotesSection() }
@@ -78,6 +79,59 @@ struct DecisionsView: View {
             }
         }
         .animation(.easeOut(duration: 0.25), value: owner.map(\.id))
+    }
+}
+
+/// "Teyla suggests closing 3": still open until the owner accepts. Nothing here closes on its own.
+private struct CloseSuggestions: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let asks = model.closeAsks
+        VStack(alignment: .leading, spacing: Space.s) {
+            if let line = Decisions.closeLine(count: asks.count) {
+                Fold(title: line) {
+                    VStack(alignment: .leading, spacing: Space.s) {
+                        ForEach(asks) { ask in
+                            VStack(alignment: .leading, spacing: Space.xxs) {
+                                Text(ask.question).font(Typo.body).fixedSize(horizontal: false, vertical: true)
+                                Text(detail(ask)).font(Typo.caption).foregroundStyle(Palette.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .padding(.leading, Space.l)
+                        }
+                    }
+                }
+                if model.capabilities.closeQuestions {
+                    Button("Accept these \(asks.count)") { model.acceptClose(asks) }
+                        .disabled(model.isAcceptingClose)
+                }
+            }
+            if !model.acceptedClose.isEmpty, model.capabilities.closeQuestions {
+                HStack(spacing: Space.s) {
+                    Text("Closed \(model.acceptedClose.count)")
+                        .font(Typo.body)
+                        .foregroundStyle(Palette.textSecondary)
+                    Button("Undo") { model.undoAcceptClose() }
+                        .disabled(model.isAcceptingClose)
+                }
+            }
+            if case .failed(let message) = model.closeChange {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(Typo.body)
+                    .foregroundStyle(Palette.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                Button("Back") { model.dismissCloseError() }
+                    .buttonStyle(.borderless)
+            }
+        }
+    }
+
+    private func detail(_ ask: Ask) -> String {
+        var parts = [Format.product(ask.product)]
+        if let why = ask.triage?.why, !why.isEmpty { parts.append(why) }
+        return parts.joined(separator: " · ")
     }
 }
 

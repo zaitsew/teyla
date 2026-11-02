@@ -54,6 +54,8 @@ protocol TeylaBackend: Sendable {
     func setCore(ids: [String]) async throws
     /// `teyla asks undo`: reopens a question Teyla closed on its own.
     func undoAsk(id: String) async throws
+    /// `teyla asks accept-close`: the owner accepts Teyla's suggestion to close these questions.
+    func acceptClose(ids: [String]) async throws
     func start() async throws -> StartReport
     func apply(offerID: String) async throws -> String
     func notes() async throws -> [NoteItem]
@@ -75,6 +77,7 @@ extension TeylaBackend {
     func setFocus(id: String, focus: Bool) async throws { throw Self.none }
     func setCore(ids: [String]) async throws { throw Self.none }
     func undoAsk(id: String) async throws { throw Self.none }
+    func acceptClose(ids: [String]) async throws { throw Self.none }
     func start() async throws -> StartReport { throw Self.none }
     func apply(offerID: String) async throws -> String { throw Self.none }
     func notes() async throws -> [NoteItem] { throw Self.none }

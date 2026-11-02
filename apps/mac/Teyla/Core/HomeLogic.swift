@@ -66,15 +66,18 @@ enum Decisions {
         var owner: [Ask]
         /// Agents handle these with the proposed default.
         var agent: [Ask]
-        /// Teyla closes these itself; they are shown nowhere.
-        var closed: Int
+        /// Teyla suggests closing these. They stay open until the owner accepts them, so they are always on the page.
+        var close: [Ask]
     }
 
     static func split(_ asks: [Ask]) -> Split {
         Split(owner: asks.filter { $0.bucket == .owner },
               agent: asks.filter { $0.bucket == .agent },
-              closed: asks.filter { $0.bucket == .close }.count)
+              close: asks.filter { $0.bucket == .close })
     }
+
+    /// "Teyla suggests closing 3"; nil when none.
+    static func closeLine(count: Int) -> String? { count > 0 ? "Teyla suggests closing \(count)" : nil }
 
     /// True when the CLI triaged at least one question: the Decisions page then groups them.
     static func hasTriage(_ asks: [Ask]) -> Bool { asks.contains { $0.triage != nil } }
@@ -343,5 +346,11 @@ enum HomeCommands {
     /// `teyla asks undo <id>`: reopens a question Teyla closed.
     static func undoArguments(id: String) -> [String]? {
         isSafeID(id) ? ["asks", "undo", id] : nil
+    }
+
+    /// `teyla asks accept-close <ids...>`: exactly the questions on screen, never "whatever is in the bucket now".
+    static func acceptCloseArguments(ids: [String]) -> [String]? {
+        guard !ids.isEmpty, ids.allSatisfy(isSafeID) else { return nil }
+        return ["asks", "accept-close"] + ids
     }
 }

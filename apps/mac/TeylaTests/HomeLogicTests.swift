@@ -60,7 +60,17 @@ final class DecisionsLogicTests: XCTestCase {
         let split = Decisions.split(try homeSnapshot().asks)
         XCTAssertEqual(split.owner.count, 7)
         XCTAssertEqual(split.agent.count, 2)
-        XCTAssertEqual(split.closed, 1)
+        XCTAssertEqual(split.close.count, 1)
+    }
+
+    func testASuggestionToCloseStaysOnThePageUntilAccepted() throws {
+        let close = Decisions.split(try homeSnapshot().asks).close
+        XCTAssertEqual(Decisions.closeLine(count: close.count), "Teyla suggests closing 1")
+        XCTAssertNil(Decisions.closeLine(count: 0))
+        XCTAssertEqual(HomeCommands.acceptCloseArguments(ids: ["c0000001", "c0000002"]),
+                       ["asks", "accept-close", "c0000001", "c0000002"])
+        XCTAssertNil(HomeCommands.acceptCloseArguments(ids: []))
+        XCTAssertNil(HomeCommands.acceptCloseArguments(ids: ["--all"]))
     }
 
     func testWithoutTriageEveryQuestionIsTheOwners() {
