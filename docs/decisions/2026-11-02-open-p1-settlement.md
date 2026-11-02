@@ -50,7 +50,7 @@ Not verified: the fixes in this table were never reviewed by a second provider. 
 behaviour in each summary; they do not prove the reviewer found everything in that area. The P2s of
 the same reviews are out of scope here.
 
-## Why attention still lists them
+## Why attention listed them
 
 `teyla attention` reads `reviews.classify`. A PR is `open_p1` while its newest ledger row has a P1
 and no later row has none. A logged skip outranks that (`reviews.py`, "a logged skip outranks an open
@@ -60,34 +60,17 @@ PRs #305 and #307 say in their comments that they merged with `REVIEW_SKIP`. The
 row for any of the nine. #306 and #294, merged the same night, have one. Why these nine have none is
 not known: the merge may have run through a path the hook did not see.
 
-So nothing can settle these nine today, except a hand-written ledger row, and a hand-edited ledger
-is what this check must not rely on.
+Nothing could settle these nine after the merge, except a hand-written ledger row, and a hand-edited
+ledger is what this check must not rely on. `teyla reviews settle` (PR #336) now does it.
 
-## Proposal: `teyla reviews settle`
+## Settled with `teyla reviews settle` (2026-11-02)
 
-A merged PR needs a way to say "this P1 was handled, here is how", checked by code.
+PR #336 built the command proposed here. It appends one `skip` line, the line `review-gate` writes at
+merge, after checking in git that the PR is merged with an open P1, that this file is on the default
+branch and names the PR, and, for `fixed`, that the commit is on that branch and after the reviewed
+commit. It cannot prove that the commit fixes the finding; this file carries that claim.
 
-```
-teyla reviews settle <owner/repo>#<n> --outcome fixed|false \
-    --commit <sha> --decision docs/decisions/<file>.md --reason "<one line>"
-```
-
-- Refuses unless the PR is merged, its newest review has a P1, and `--decision` exists in the
-  repo's default branch and names the PR number. The evidence lives in git, in English, reviewed in
-  a PR, not in `~/.cache`.
-- For `fixed`, `--commit` must be an ancestor of the default branch and contain the PR's merge commit
-  or a later one. For `false`, `--reason` is required.
-- Appends one `skip:`-shaped row for the PR URL, written by the command, with the outcome and the
-  decision path in the reason. `classify` already turns that into `skipped`, and `attention` drops
-  the row.
-- It does not touch `review-gate`: the gate ignores `skip` rows when it looks for a review (`review-gate`, line 85).
-- Tests: refused on an open PR, on a PR without a P1, on a missing decision file; accepted row
-  round-trips through `classify`.
-
-Cost: about 80 lines plus tests and a `docs/COMMANDS.md` entry. No network call beyond `gh`, which
-`reviews` already uses.
-
-The alternative is to leave the nine on the list. That is honest but permanent: `attention` keeps an
-"act" row for work that is done.
-
-**Default if you say nothing:** build `settle` in its own PR; do not append ledger rows by hand.
+The nine PRs were settled with `--outcome fixed`, `--decision` pointing at this file and `--commit` set
+to the fix in the table: #300 `361ed39`, #301 `38630e5`, #302 `2f5b02b`, #303 `1a9f65d`, #304 `8b0d5c9`,
+#305 `927ef09`, #307 `32505af`, #312 `3ef4512`, #314 `001598a`. The ledger holds nine lines with the
+reader `teyla-reviews-settle`, and `teyla attention` no longer has a `p1:teyla` item.
