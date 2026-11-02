@@ -236,7 +236,7 @@ class Ctx:
             present = doc.is_file()
         except ValueError:
             return "FIX", f"accepted risk: doc {row['doc']} is not a file inside the repo"
-        except OSError:                                  # a symlink loop, a path too long: resolve() raises
+        except (OSError, RuntimeError):                  # a symlink loop, a path too long: resolve() raises (3.12: RuntimeError)
             return "FIX", f"accepted risk: doc {row['doc']} cannot be resolved"
         if not present:
             return "FIX", f"accepted risk: doc {row['doc']} is missing"
@@ -459,7 +459,11 @@ def check_hooks(c: Ctx):
         return "FIX", "run: git config core.hooksPath .githooks"
     target = pathlib.Path(path)
     target = target if target.is_absolute() else c.repo / target
-    if target.resolve() != hooks_dir.resolve():
+    try:
+        same = target.resolve() == hooks_dir.resolve()
+    except (OSError, RuntimeError):                      # a symlink loop, a path too long: resolve() raises (3.12: RuntimeError)
+        same = False
+    if not same:
         return "FIX", f"core.hooksPath is {path}; set it to .githooks"
     return "OK", "pre-commit and pre-push installed"
 
@@ -472,11 +476,13 @@ def _has_table(text: str) -> bool:
 
 def check_hosts(c: Ctx):
     rel = str(c.sec.get("hosts") or "docs/PRIVACY.md")
-    path = (c.repo / rel).resolve()
     try:
+        path = (c.repo / rel).resolve()
         path.relative_to(c.repo.resolve())
     except ValueError:
         return "FIX", f"hosts = {rel!r} points outside the repo"
+    except (OSError, RuntimeError):                      # a symlink loop, a path too long: resolve() raises (3.12: RuntimeError)
+        return "FIX", f"hosts = {rel!r} cannot be resolved"
     if not path.is_file():
         return "FIX", f"write {rel}: one row per outbound host (teyla hosts --write drafts it)"
     if not _has_table(path.read_text(encoding="utf-8", errors="replace")):
