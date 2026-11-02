@@ -26,6 +26,7 @@ from . import config
 _allow_once = False
 _update_scope = False
 _offline = False
+_offline_threads: list = []
 
 
 def allow_for_this_command(on: bool = True) -> None:
@@ -60,8 +61,15 @@ def offline():
         _offline = prev
 
 
+def stay_offline_while(threads) -> None:
+    """Nothing is allowed until these threads end. A source that outlives the `offline()` block that started it
+    stays offline: leaving the block must not hand it the network."""
+    _offline_threads.extend(threads)
+
+
 def allowed(cfg: dict | None = None) -> bool:
-    if _offline:
+    _offline_threads[:] = [t for t in _offline_threads if t.is_alive()]
+    if _offline or _offline_threads:
         return False
     return _allow_once or _update_scope or not config.safe_mode(cfg)
 

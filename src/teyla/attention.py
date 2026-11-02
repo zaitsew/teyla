@@ -153,7 +153,7 @@ def source_schedules(now: float, cfg: dict) -> tuple[list[dict], dict]:
     from . import schedules
     when = dt.datetime.fromtimestamp(now, dt.timezone.utc)
     entries, _cron = schedules.collect(when, allow_network=False, cfg=cfg)
-    reg = schedules.load_registry()
+    reg = schedules.load_registry(read_only=True)                # a broken file fails this source; it stays where it is
     schedules.forget_ignored(reg, schedules.ignore_prefixes(cfg))
     full = schedules.apply_registry(entries, reg, when)          # in memory only: this command saves nothing
     items = []
@@ -228,6 +228,11 @@ def source_portfolio(now: float, cfg: dict) -> tuple[list[dict], dict]:
                               row["detail"] or f"The newest {row['platform']} build is {row['state']}.", product=p["id"]))
         elif row["state"] in ("current", "live", "in_review"):
             builds_ok += 1
+        elif row["state"] == "unknown" and row.get("channel") != "local":   # local: no store exists to ask
+            items.append(item(f"unknown:build:{p['id']}:{row['platform']}", "unknown",
+                              f"{p['title']}: {row['platform']} build is unknown",
+                              row["detail"] or f"The {row['platform']} build could not be read, so a problem there would not show.",
+                              product=p["id"], severity="info", actions=refresh))
     return items, {"builds": builds_ok}
 
 
@@ -311,7 +316,9 @@ def source_doctor(now: float, cfg: dict) -> tuple[list[dict], dict]:
     try:
         rec = json.loads(p.read_text())
         at = dt.datetime.fromisoformat(str(rec["at"])).timestamp()
-        rows = [c for c in rec.get("checks") or [] if isinstance(c, dict)]
+        rows = rec["checks"]
+        if not rows or not isinstance(rows, list) or not all(isinstance(c, dict) for c in rows):
+            raise ValueError("no usable checks")
     except FileNotFoundError:
         return [item("unknown:doctor", "unknown", "Doctor has never run", "No doctor result is stored, so a broken setup would not show.",
                      severity="info")], {"doctor": "never run"}
@@ -376,6 +383,7 @@ def _run(sources: dict, now: float, cfg: dict, timeout: float) -> dict:
     deadline = time.monotonic() + timeout
     for t in threads.values():
         t.join(max(0.0, deadline - time.monotonic()))
+    net.stay_offline_while(t for t in threads.values() if t.is_alive())
     return out
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import threading
 import time
 
 import pytest
@@ -28,7 +29,7 @@ def entry(**kw):
 def run_schedules(monkeypatch, entries):
     monkeypatch.setattr(schedules, "collect", lambda *a, **k: (entries, []))
     monkeypatch.setattr(schedules, "apply_registry", lambda es, reg, now: es)
-    monkeypatch.setattr(schedules, "load_registry", lambda: {})
+    monkeypatch.setattr(schedules, "load_registry", lambda **k: {})
     monkeypatch.setattr(schedules, "forget_ignored", lambda *a, **k: None)
     return attention.source_schedules(NOW, {})
 
@@ -127,6 +128,15 @@ def test_a_primary_build_that_is_behind_or_blocked_is_a_row_and_a_current_one_is
     assert items == [] and quiet == {"builds": 1}
 
 
+def test_a_primary_build_nobody_could_read_is_a_row_unless_no_store_exists_to_ask(monkeypatch):
+    items, quiet = run_portfolio(monkeypatch, products=[product(state="unknown")])
+    assert [i["id"] for i in items] == ["unknown:build:app-a:ios"] and quiet == {"builds": 0}
+    assert items[0]["severity"] == "info" and "Nothing needs you" not in attention.render_text({"items": items, "quiet": quiet})
+    local = product(state="unknown")
+    local["platforms"][0]["channel"] = "local"
+    assert run_portfolio(monkeypatch, products=[local])[0] == []
+
+
 def test_a_parked_product_and_a_product_without_a_ledger_hit_stay_quiet(monkeypatch):
     items, _ = run_portfolio(monkeypatch, products=[product(state="blocked", stage="parked")], prs=[pr(3)])
     assert items == []
@@ -217,7 +227,7 @@ def test_doctor_fix_rows_need_you_and_warn_rows_do_not_and_machine_rows_are_left
 def test_a_clean_recent_doctor_is_ok_and_an_old_one_says_how_old(tmp_path, monkeypatch):
     write_doctor(tmp_path, monkeypatch, [{"level": "OK", "name": "python", "detail": "", "fix": ""}], NOW - 60)
     assert attention.source_doctor(NOW, {}) == ([], {"doctor": "ok"})
-    write_doctor(tmp_path, monkeypatch, [], NOW - 5 * DAY)
+    write_doctor(tmp_path, monkeypatch, [{"level": "OK", "name": "python", "detail": "", "fix": ""}], NOW - 5 * DAY)
     items, _ = attention.source_doctor(NOW, {})
     assert items[0]["kind"] == "unknown" and "5 d" in items[0]["title"]
 
@@ -228,6 +238,13 @@ def test_a_missing_or_corrupt_doctor_file_is_an_unknown_row(tmp_path, monkeypatc
     (tmp_path / "bad.json").write_text("{not json")
     monkeypatch.setattr(doctor, "DOCTOR_JSON", tmp_path / "bad.json")
     assert attention.source_doctor(NOW, {})[0][0]["kind"] == "unknown"
+
+
+@pytest.mark.parametrize("checks", [None, [], "fine", {"level": "OK"}, ["OK"]])
+def test_a_fresh_doctor_file_without_usable_checks_is_unknown_and_never_ok(tmp_path, monkeypatch, checks):
+    write_doctor(tmp_path, monkeypatch, checks, NOW - 60)
+    items, quiet = attention.source_doctor(NOW, {})
+    assert items[0]["id"] == "unknown:doctor" and "doctor" not in quiet
 
 
 # --- offers --------------------------------------------------------------------------------------------------
@@ -284,13 +301,36 @@ def test_a_source_that_raises_becomes_an_unknown_row_never_a_calm_report():
 
 
 def test_a_source_that_does_not_answer_in_time_becomes_an_unknown_row():
+    release, finished, late = threading.Event(), threading.Event(), []
+
     def slow(now, cfg):
-        time.sleep(2)
+        release.wait(5)
+        late.append(net.allowed({"safe_mode": False}))      # after the block ended: still no network
+        finished.set()
         return [], {}
     t = time.monotonic()
     rep = attention.collect(NOW, sources={"guard": slow, "disk": src()}, cfg={}, timeout=0.2)
     assert time.monotonic() - t < 1.5
     assert rep["items"][0]["id"] == "unknown:guard" and "did not answer" in rep["items"][0]["detail"]
+    assert not net.allowed({"safe_mode": False})
+    release.set()
+    assert finished.wait(5) and late == [False]
+    deadline = time.monotonic() + 5
+    while any(x.is_alive() for x in net._offline_threads) and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert net.allowed({"safe_mode": False})                # and the hold ends with the source
+
+
+def test_a_broken_schedule_registry_is_unknown_and_stays_where_it_is(tmp_path, monkeypatch):
+    bad = tmp_path / "schedules.json"
+    monkeypatch.setattr(schedules, "collect", lambda *a, **k: ([], []))
+    monkeypatch.setattr(schedules, "_registry_path", lambda: bad)
+    for text in ("{not json", '{"entries": []}'):
+        bad.write_text(text)
+        rep = attention.collect(NOW, sources={"schedules": attention.source_schedules}, cfg={})
+        assert [i["id"] for i in rep["items"]] == ["unknown:schedules"]
+        assert bad.read_text() == text and not (tmp_path / "schedules.json.corrupt").exists()
+    assert schedules.load_registry(bad) == {"version": 1, "entries": {}}    # a normal command still moves it aside
 
 
 def test_act_rows_come_before_info_rows_and_the_worst_kind_first():
