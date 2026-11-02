@@ -266,7 +266,7 @@ def drop_stale_tasks(tasks: list[dict], items: list[asks.Ask]) -> list[dict]:
         if not url:
             continue
         if a.status == "done":
-            if _MERGE_RE.search(f"{a.title}\n{a.question}\n{a.note}"):
+            if _MERGE_RE.search(f"{a.question}\n{a.note}"):     # not the title: it names the session, not this question
                 closed.add(url)
         elif a.status in ("open", "snoozed"):
             live.add(url)

@@ -431,7 +431,7 @@ def test_a_merge_task_whose_question_is_closed_leaves_and_an_open_question_keeps
 
 
 def test_closing_another_question_on_a_pr_keeps_its_merge_task():
-    title_choice = ask("aaaa0001", "Which title do you prefer for it?", status="done", pr=PR)
+    title_choice = ask("aaaa0001", "Which title do you prefer for it?", status="done", pr=PR, title="Fix merge conflicts")
     assert triage.drop_stale_tasks([task()], [title_choice]) == [task()]
 
 
