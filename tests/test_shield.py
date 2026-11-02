@@ -155,6 +155,14 @@ def test_hosts_needs_a_table(tmp_path):
     assert status(shield.check(repo(tmp_path, "a", privacy=False)))["hosts"] == "FIX"
 
 
+def test_a_hooks_path_that_cannot_be_resolved_is_a_fix_and_not_a_crash(tmp_path):
+    d = repo(tmp_path, "a")
+    (d / "loop").symlink_to(d / "loop")
+    git(d, "config", "core.hooksPath", "loop")
+    rep = shield.check(d)
+    assert status(rep)["hooks"] == "FIX" and "core.hooksPath is loop" in detail(rep, "hooks")
+
+
 def test_a_hosts_file_that_cannot_be_resolved_is_a_fix_and_not_a_crash(tmp_path):
     d = repo(tmp_path, "a", privacy=False)
     loop = d / "docs" / "PRIVACY.md"

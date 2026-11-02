@@ -459,7 +459,11 @@ def check_hooks(c: Ctx):
         return "FIX", "run: git config core.hooksPath .githooks"
     target = pathlib.Path(path)
     target = target if target.is_absolute() else c.repo / target
-    if target.resolve() != hooks_dir.resolve():
+    try:
+        same = target.resolve() == hooks_dir.resolve()
+    except (OSError, RuntimeError):                      # a symlink loop, a path too long: resolve() raises (3.12: RuntimeError)
+        same = False
+    if not same:
         return "FIX", f"core.hooksPath is {path}; set it to .githooks"
     return "OK", "pre-commit and pre-push installed"
 
