@@ -488,6 +488,9 @@ The refresh pass (`teyla portfolio --refresh`) gained a fourth, local part, `met
 `activity` it needs no network, so it also runs in safe mode, and a part that fails keeps its old rows. The
 cache keeps `metrics` next to `activity`; an older cache without it loads with empty metrics.
 
+The store part also keeps the first error per tool in the cache's `store_errors`, emptied by each store pass, and
+`teyla doctor` shows them as `stores:play` and `stores:testflight` rows. That field is not in the snapshot.
+
 The pass also runs the usage probes, the walk of `teyla products`, so the user numbers are as fresh as the rest. Each
 probe is that repo's own code and may call its backend, so this part runs only with the network part: not in safe mode
 unless `--allow-network` is given, and then only in `[products] repos`. The counters stay in

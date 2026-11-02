@@ -266,6 +266,44 @@ def test_a_failed_read_keeps_the_old_rows_with_their_old_time(tmp_path, monkeypa
     assert cache["checked"]["stores"] == first                       # the part did not complete
 
 
+def test_a_failed_read_is_kept_for_doctor_and_the_next_good_pass_clears_it(tmp_path, monkeypatch):
+    reg, cache, ok = stores(tmp_path, monkeypatch, None, None)
+    assert ok is False and set(cache["store_errors"]) == {"testflight", "play"}
+    portfolio.save_cache(cache)
+    assert set(portfolio.load_cache()["store_errors"]) == {"testflight", "play"}
+    fake_tools(monkeypatch, tf_payload(tf_plat()), play_payload(internal=[rel(14)]))
+    assert portfolio.refresh_stores(reg, cache, NOW + 3600) is True
+    assert cache["store_errors"] == {}
+
+
+def _store_errors(**errors):
+    cache = portfolio.load_cache()
+    cache["store_errors"] = errors
+    portfolio.save_cache(cache)
+
+
+def test_doctor_names_the_expired_gcloud_login_with_its_command():
+    from teyla import doctor
+    _store_errors(play="the release tool exited 1: gcloud could not print an access token")
+    row = doctor._store_checks()[0]
+    assert (row["level"], row["name"]) == ("FIX", "stores:play")
+    assert row["fix"] == "gcloud auth login && teyla portfolio --refresh"
+    assert "Google Play" in row["detail"] and "gcloud login has expired" in row["detail"]
+
+
+def test_doctor_shows_another_store_error_as_a_warning_with_its_text():
+    from teyla import doctor
+    _store_errors(testflight="the release tool exited 2: bad key")
+    row = doctor._store_checks()[0]
+    assert (row["level"], row["name"]) == ("WARN", "stores:testflight")
+    assert "App Store Connect" in row["detail"] and "bad key" in row["detail"]
+
+
+def test_doctor_has_no_store_row_without_an_error():
+    from teyla import doctor
+    assert doctor._store_checks() == []
+
+
 def test_a_failed_first_read_is_unknown_with_the_reason(tmp_path, monkeypatch):
     _, cache, ok = stores(tmp_path, monkeypatch, None, None)
     assert ok is False and cache["checked"]["stores"] == ""

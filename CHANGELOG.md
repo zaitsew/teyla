@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **`teyla doctor` names a failed store read.** A store read that failed in the last `teyla portfolio --refresh` is now
+  a doctor row. An expired gcloud login is a fix row with its command: `gcloud auth login && teyla portfolio --refresh`.
+  It reads the portfolio cache and calls no store.
+
 ## 0.37.2 — 2026-11-02 — Refresh updates the user numbers
 
 - **Refresh updates the user numbers.** `teyla portfolio --refresh` now runs the usage probes, so Home no longer waits
