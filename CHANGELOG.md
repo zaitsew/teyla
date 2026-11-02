@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.37.2 — 2026-11-02 — Refresh updates the user numbers
 
 - **Refresh updates the user numbers.** `teyla portfolio --refresh` now runs the usage probes, so Home no longer waits
   for the weekly `teyla products`. It runs outside safe mode only, also from the 6-hour background pass. Probes started
