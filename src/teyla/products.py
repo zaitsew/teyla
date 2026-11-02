@@ -29,15 +29,16 @@ import time
 
 def committed_check_sh(repo: pathlib.Path) -> str | None:
     """check.sh as the local refs have it on the default branch, or None. No fetch: nothing leaves the machine."""
-    for ref in ("origin/HEAD", "origin/main"):
-        try:
-            r = subprocess.run(["git", "-C", str(repo), "show", f"{ref}:check.sh"], capture_output=True, text=True,
-                               errors="replace", timeout=10)
-        except (OSError, subprocess.SubprocessError):
-            return None
-        if r.returncode == 0:
-            return r.stdout
-    return None
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, errors="replace",
+                              timeout=10)
+    try:
+        # origin/main only stands in when origin/HEAD is not set: it may be stale on a repo whose default is another.
+        ref = "origin/HEAD" if git("rev-parse", "--verify", "--quiet", "origin/HEAD").returncode == 0 else "origin/main"
+        r = git("show", f"{ref}:check.sh")
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout if r.returncode == 0 else None
 
 
 def _run_committed(repo: pathlib.Path, text: str, timeout: int) -> subprocess.CompletedProcess:

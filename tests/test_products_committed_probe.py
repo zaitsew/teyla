@@ -65,6 +65,18 @@ def test_a_repo_without_a_default_branch_ref_runs_the_checkout(tmp_path):
     assert products.probe(repo, committed=True)["where"] == "old"
 
 
+def test_a_stale_origin_main_is_ignored_when_origin_head_names_another_branch(tmp_path):
+    repo = make_repo(tmp_path)
+    git(repo, "checkout", "-q", "--orphan", "develop")
+    git(repo, "rm", "-rfq", "--cached", ".")
+    (repo / "check.sh").unlink()
+    git(repo, "commit", "-q", "--allow-empty", "-m", "develop has no check.sh")
+    git(repo, "update-ref", "refs/remotes/origin/develop", "HEAD")
+    git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop")
+    git(repo, "checkout", "-qf", "feature")
+    assert products.probe(repo, committed=True)["where"] == "old"
+
+
 def test_a_default_branch_without_a_probe_keeps_the_checkout_probe(tmp_path):
     repo = make_repo(tmp_path)
     git(repo, "checkout", "-q", "main")
