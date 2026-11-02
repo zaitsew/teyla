@@ -1242,3 +1242,36 @@ def test_the_icon_rides_in_the_portfolio_when_the_cache_has_one(tmp_path):
     cache["metrics"]["app-a"] = {"icon": {"src": "s", "mtime": 1.0, "b64": "QUJD"}}
     p = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None, cache=cache, usage={})["products"][0]
     assert p["icon_jpeg"] == "QUJD"
+
+
+def test_refresh_metrics_keeps_good_commits_when_git_fails(tmp_path, monkeypatch):
+    repo = tmp_path / "app"
+    repo.mkdir()
+    reg = {"product": {"app": {"repos": [str(repo)]}}}
+    good = {"7d": 9, "30d": 9, "365d": 9, "weeks": [0] * 11 + [9]}
+    cache = {"metrics": {"app": {"commits": good}}, "checked": {"metrics": "before"}}
+    monkeypatch.setattr(portfolio, "compute_commits", _REAL_COMPUTE_COMMITS)
+    monkeypatch.setattr(portfolio, "git_commit_times", lambda r, now: None)
+    assert portfolio.refresh_metrics(reg, cache, 1000.0) is False
+    assert cache["metrics"]["app"]["commits"] == good
+    assert cache["checked"]["metrics"] == "before"
+
+
+def test_refresh_metrics_drops_commits_of_a_repo_that_is_gone(tmp_path, monkeypatch):
+    reg = {"product": {"app": {"repos": [str(tmp_path / "gone")]}}}
+    good = {"7d": 9, "30d": 9, "365d": 9, "weeks": [0] * 11 + [9]}
+    cache = {"metrics": {"app": {"commits": good}}, "checked": {"metrics": "before"}}
+    monkeypatch.setattr(portfolio, "compute_commits", _REAL_COMPUTE_COMMITS)
+    assert portfolio.refresh_metrics(reg, cache, 1000.0) is True
+    assert cache["metrics"]["app"]["commits"] is None
+
+
+def test_icon_keeps_the_old_one_when_conversion_fails(tmp_path, monkeypatch):
+    src = tmp_path / "icon.png"
+    src.write_bytes(b"x")
+    reg = {"product": {"app": {"repos": [str(tmp_path)]}}}
+    monkeypatch.setattr(portfolio, "compute_icons", _REAL_COMPUTE_ICONS)
+    monkeypatch.setattr(portfolio, "find_icon", lambda repos: src)
+    monkeypatch.setattr(portfolio, "convert_icon", lambda s: None)
+    old = {"src": "elsewhere", "mtime": 1.0, "b64": "abc"}
+    assert portfolio.compute_icons(reg, {"app": old})["app"] == old

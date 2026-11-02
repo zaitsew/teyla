@@ -674,7 +674,7 @@ def compute_icons(reg: dict, prev: dict) -> dict:
             continue
         b64 = convert_icon(src)
         if b64 is None:
-            out[pid] = None
+            out[pid] = old or None      # a conversion that failed keeps the icon it had
             continue
         out[pid] = {"src": str(src), "mtime": mtime, "b64": b64 if len(b64) <= ICON_MAX_B64 else ""}
     return out
@@ -686,9 +686,19 @@ def refresh_metrics(reg: dict, cache: dict, now: float) -> bool:
     ok = True
     mine = {pid: m for pid, m in cache["metrics"].items() if pid in reg["product"] and isinstance(m, dict)}
     try:
+        failed = False
         for pid, c in compute_commits(reg, now).items():
-            mine.setdefault(pid, {})["commits"] = c
-        cache["checked"]["metrics"] = _iso(now)
+            row = mine.setdefault(pid, {})
+            # git failed on a repo that still exists: keep the good row, so a timeout never empties a product's
+            # numbers or moves it to Quiet. A repo that is gone does drop to "not counted".
+            if c is None and row.get("commits") and any(r.is_dir() for r in product_repos(reg["product"][pid])):
+                failed = True
+                continue
+            row["commits"] = c
+        if failed:
+            ok = False
+        else:
+            cache["checked"]["metrics"] = _iso(now)
     except Exception:  # noqa: BLE001
         ok = False
     try:
