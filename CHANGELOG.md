@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.37.1 — 2026-11-02 — Probes read the default branch
 
 - **Usage probes read the default branch.** `teyla products` and the Home numbers run `check.sh` as committed on
   `origin/HEAD`, with the checkout's `.env`, so a checkout on a feature branch no longer hides a merged probe. A repo
