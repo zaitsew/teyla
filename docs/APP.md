@@ -18,6 +18,7 @@ The app holds no data of its own. It runs two commands of the Teyla CLI:
 | `teyla answer <id> <text> [--json]` | Delivers an answer to the session behind a question, then marks it done. |
 | `teyla start --json` | The first-run diagnosis and its offers (read-only). |
 | `teyla apply <offer id> --yes` | Makes one offered change, after a backup. |
+| `teyla attention --json` | What is wrong on this Mac's backend now (the Tools page). |
 | `teyla product show <id> --json [--quick]` | One product's page. |
 | `teyla product set <id> stage=<s>` · `focus=true\|false` | Changes a product's stage or focus. |
 
@@ -36,10 +37,11 @@ The window has three states.
 2. **Welcome.** `teyla` runs, and the snapshot has no question, product, session, task or result: the window shows the
    lockup, the promise sentence and "Run diagnosis". The button runs `teyla start --json` and the window shows a
    seconds counter, since it reads 30 days of sessions. When the report arrives the sidebar appears and the
-   Diagnosis page shows it. If `teyla start` fails, the window shows the error and "Try again".
+   diagnosis page shows it. If `teyla start` fails, the window shows the error and "Try again".
 3. **The shell.** A sidebar and the page it points at: Home, Decisions (with the count of decisions waiting on
-   you) and All products, then Diagnosis below a gap. The sidebar lists no single product. A product page opens
-   from a card, a row, or the product name on a question.
+   you) and All products, then Tools below a gap (the diagnosis opens from Tools, which stays selected while it
+   shows). The sidebar lists no single product. A product page opens from a card, a row, or the product name on a
+   question. ⌘K opens the command bar from any page.
 
 **Home.** Top to bottom: one sentence (`brief.line`) and a quiet line under it (decisions waiting, sessions
 running, and the spend, labelled "API-equivalent": what the work would cost at API list prices, not a bill); the
@@ -79,7 +81,7 @@ The window reads two fields when the CLI gives them and works the same without t
   "Teyla closed N questions" only when `count` is above zero; "Review" lists them with the reason, and Undo runs
   `teyla asks undo <id>`.
 
-**Diagnosis page.** The total at API list price and the facts under it (`diagnosis` in `teyla start --json`),
+**Diagnosis page** (opened from Tools). The total at API list price and the facts under it (`diagnosis` in `teyla start --json`),
 then one card per applicable offer: title, saving or benefit, trade-off, undo, and "Apply…". Offers that do not
 apply sit under "Left out" with the reason. "Apply…" opens one sheet that names the file and the key
 (`change.file`, `change.key_path`) or the command, and says a backup is made first; an offer whose undo
@@ -431,7 +433,7 @@ simulated and says "Sample: nothing was sent"; nothing is written to disk. `Tool
 the file from `tests/fixtures/state.v2.json`.
 
 What the store build leaves out, because it needs the command line: notes and the quick-note panel, the first-run
-diagnosis, editing a product's stage or focus, snooze and "mark done", the Codex/Claude choice for a new task (the
+diagnosis, the Tools page, editing a product's stage or focus, snooze and "mark done", the Codex/Claude choice for a new task (the
 Mac chooses) and pairing an iPhone. These controls are not drawn, rather than drawn and disabled. Product pages are
 built from the snapshot: the open questions and the recent sessions, without spend.
 
@@ -466,3 +468,38 @@ The app decodes these fields as optional. Nothing was renamed or removed.
 A `close` question stays open. `teyla asks accept-close` closes them together and prints
 `undo: teyla asks undo <ids>`; `teyla asks triage` prints the buckets and calls no model. Rules and the cache are
 described in [ASKS.md](ASKS.md).
+
+## Tools and the command bar (from 2026-11-02)
+
+**Tools.** The sidebar item under All products. It shows what is wrong on this Mac's backend now, from one command,
+`teyla attention --json` (`docs/COMMANDS.md` has the schema). The command reads local state only and makes no network
+call; a source that fails, times out or has a cache older than a day comes back as an `unknown` item, so a failure never
+reads as calm. The app reads it at launch, when the page opens with a report older than 10 minutes, after an action, and
+on "Check again". It takes up to half a minute on a loaded Mac, so it never runs on the 60 s timer.
+
+- Top line: "Nothing needs you here." only for a report that was read and holds no item, with what was checked and is fine
+  under it (`quiet`: 14 scheduled tasks fine, builds current, disk free). Otherwise "N things need you and M more to look
+  at". A failed read says so in the danger colour and keeps the last list, marked with its age; the sidebar badge then
+  shows "!" instead of a count. The badge counts items with `severity == "act"` only.
+- Items are cards: kind symbol, the sentence, one line with a number, optional facts (an offer's trade-off and undo, a
+  doctor row's fix) and the actions. "Needs you" cards come first, then "Worth a look". An item with no action says that
+  nothing in the app can fix it yet.
+- An action goes in steps. With a `preview` the app runs the preview first (always a dry run) and shows its last 14 lines;
+  the exact command and the button come after. Without one, the exact command and the button come first. A `destructive`
+  action says "This cannot be undone." above the command. Only `portfolio --refresh`, which reads and writes a cache,
+  runs on one click. After a run the report is read again, the result stays in a notice, and the snapshot is refreshed.
+- Allow-list (`Core/ToolCommands.swift`): `schedules forget <id>…`, `storage sweep [--dry]`, `apply O<n> --yes|--dry`,
+  `portfolio --refresh`. A command from the report that is not on the list is refused and shown as refused, as is a
+  preview that is not a dry run. Nothing that charges money, sends a message, deploys or submits to a store is on it.
+- The "First-run diagnosis" section at the bottom opens the diagnosis page. The store build has no Tools page and no
+  command bar actions (`Capabilities.tools`).
+
+**Command bar (⌘K, View menu → Command Bar…).** A sheet with a text field over a fixed list: Go to Home, Decisions, All
+products, Tools; Open <product> for each product with a page; New task; Refresh; and the actions currently on the Tools
+page. Matching is plain text (a word that starts a word of the title, then a keyword, then any part of the title or of an
+action's command); no model is asked. The arrow keys move, Return chooses, Escape closes. An action entry shows its exact
+command and "asks before it runs"; choosing it opens that card at its preview or confirm step and never runs it from the
+bar. ⌘N, ⌘0 and the other shortcuts are unchanged.
+
+Preview hooks: `TEYLA_PREVIEW_OPEN=tools` and `command-bar[:<query>]`, with `TEYLA_ATTENTION_FIXTURE` (default
+`attention.v1.json` beside the state sample; `attention.empty.v1.json` is the empty report).

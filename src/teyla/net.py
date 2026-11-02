@@ -25,6 +25,7 @@ from . import config
 
 _allow_once = False
 _update_scope = False
+_offline = False
 
 
 def allow_for_this_command(on: bool = True) -> None:
@@ -46,7 +47,22 @@ def update_scope(cfg: dict | None = None):
         _update_scope = prev
 
 
+@contextlib.contextmanager
+def offline():
+    """Inside the block nothing is allowed, whatever safe mode or `--allow-network` say. `teyla attention` reads
+    other commands' local caches inside it, so a source it borrows cannot start a call of its own."""
+    global _offline
+    prev = _offline
+    _offline = True
+    try:
+        yield
+    finally:
+        _offline = prev
+
+
 def allowed(cfg: dict | None = None) -> bool:
+    if _offline:
+        return False
     return _allow_once or _update_scope or not config.safe_mode(cfg)
 
 

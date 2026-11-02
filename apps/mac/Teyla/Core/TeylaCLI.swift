@@ -18,6 +18,7 @@ actor TeylaCLI: TeylaBackend {
     private let notesFixtureURL: URL?
     private let startFixtureURL: URL?
     private let productFixtureURL: URL?
+    private let attentionFixtureURL: URL?
     /// The file the owner picked with "Choose…", and what a login shell finds. Injected so a test never runs the real ones.
     private let chosen: @Sendable () -> String?
     private let shellPath: @Sendable () -> String?
@@ -43,6 +44,7 @@ actor TeylaCLI: TeylaBackend {
         // The diagnosis and the product page have samples beside the state sample too.
         startFixtureURL = Self.fixtureURL(env["TEYLA_START_FIXTURE"], beside: fixtureURL, named: "start.v1.json")
         productFixtureURL = Self.fixtureURL(env["TEYLA_PRODUCT_FIXTURE"], beside: fixtureURL, named: "product.v1.json")
+        attentionFixtureURL = Self.fixtureURL(env["TEYLA_ATTENTION_FIXTURE"], beside: fixtureURL, named: "attention.v1.json")
     }
 
     private static func fixtureURL(_ path: String?, beside state: URL?, named name: String) -> URL? {
@@ -131,6 +133,42 @@ actor TeylaCLI: TeylaBackend {
             throw TeylaError.failed(code: out.status, message: Self.oneLine(why))
         }
         return StartDecoding.appliedLines(String(decoding: out.stdout, as: UTF8.self))
+    }
+
+    // MARK: Tools (docs/COMMANDS.md, `teyla attention`)
+
+    /// `teyla attention --json`. It reads a dozen local sources and can take half a minute on a loaded Mac.
+    func attention() async throws -> AttentionReport {
+        if fixtureURL != nil {
+            try? await Task.sleep(for: .milliseconds(400))
+            guard let url = attentionFixtureURL, let data = try? Data(contentsOf: url) else {
+                throw TeylaError.fixtureUnreadable(attentionFixtureURL?.path ?? "attention.v1.json")
+            }
+            return try AttentionReport.decode(data)
+        }
+        let out = try await run(Self.attentionArguments, timeout: 120)
+        guard out.status == 0 else { throw TeylaError.failed(code: out.status, message: Self.oneLine(out.stderrText)) }
+        return try AttentionReport.decode(out.stdout)
+    }
+
+    static let attentionArguments = ["attention", "--json"]
+
+    /// One command of the Tools page. Whatever the report printed, only a command on the allow-list is run;
+    /// with a fixture nothing is run at all.
+    func runTool(_ argv: [String]) async throws -> String {
+        if case .refused(let why) = ToolCommands.check(argv) { throw TeylaError.failed(code: 2, message: why) }
+        if fixtureURL != nil {
+            try? await Task.sleep(for: .milliseconds(700))
+            return ToolCommands.effect(argv) == .previews
+                ? "Simulated preview: the fixture is read-only.\nNothing would be removed from a real machine."
+                : "Simulated: the fixture is read-only."
+        }
+        let out = try await run(argv, timeout: argv.first == "storage" ? 600 : 180)
+        let text = String(decoding: out.stdout, as: UTF8.self)
+        guard out.status == 0 else {
+            throw TeylaError.failed(code: out.status, message: Self.oneLine(out.stderrText.isEmpty ? text : out.stderrText))
+        }
+        return text
     }
 
     // MARK: Product page (docs/PRODUCTS.md)

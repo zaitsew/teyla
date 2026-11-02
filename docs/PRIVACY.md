@@ -94,7 +94,10 @@ needs a flag. The text it returns goes to the MCP client you connected, under th
 
 `teyla cloud prep` writes a setup script for a cloud sandbox that contains a `curl` line for the `uv`
 installer. Teyla does not run it. `teyla start`, `teyla monitor`, `teyla advise` and `teyla doctor`'s
-checks other than row 1 read local files only.
+checks other than row 1 read local files only. `teyla attention` makes no call either: it runs inside
+`net.offline()`, which closes the gate for every reader it borrows (schedules, portfolio, doctor, offers), whatever
+safe mode or `--allow-network` say. A source that would need the network is read from its cache and the row says how old
+the cache is.
 
 ## URLs in the code that are not calls
 

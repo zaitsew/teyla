@@ -42,7 +42,12 @@ enum Space {
     static let captureFieldHeight: CGFloat = 72
     /// The shortcut field in Settings.
     static let shortcutFieldWidth: CGFloat = 160
-    /// The sidebar: Home, Decisions, All products and Diagnosis.
+    /// The ⌘K command bar.
+    static let commandBarWidth: CGFloat = 560
+    static let commandBarList: CGFloat = 320
+    /// The most height a preview's output takes on a Tools card before it scrolls.
+    static let previewMax: CGFloat = 180
+    /// The sidebar: Home, Decisions, All products and Tools.
     static let sidebarMin: CGFloat = 190
     static let sidebarIdeal: CGFloat = 220
     static let sidebarMax: CGFloat = 280
@@ -66,6 +71,8 @@ enum Typo {
     static let lead = Font.system(size: 16, weight: .medium)
     static let body = Font.body
     static let caption = Font.caption
+    /// A command or a preview's output.
+    static let code = Font.system(.caption, design: .monospaced)
 }
 
 /// Colour roles, from brand/tokens.json. Amber means "waiting on you" and green means money saved,

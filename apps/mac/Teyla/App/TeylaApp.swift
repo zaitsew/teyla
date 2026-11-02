@@ -30,6 +30,11 @@ struct TeylaApp: App {
                 Button("New Task…") { model.openNewTask() }
                     .keyboardShortcut("n")
             }
+            CommandGroup(before: .toolbar) {
+                Button("Command Bar…") { model.openCommandBar() }
+                    .keyboardShortcut("k")
+                Divider()
+            }
         }
 
         MenuBarExtra {

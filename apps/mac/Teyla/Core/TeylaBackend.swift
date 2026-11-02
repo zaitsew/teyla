@@ -57,6 +57,10 @@ protocol TeylaBackend: Sendable {
     /// `teyla asks accept-close`: the owner accepts Teyla's suggestion to close these questions.
     func acceptClose(ids: [String]) async throws
     func start() async throws -> StartReport
+    /// `teyla attention --json`: what is wrong on this Mac's backend now.
+    func attention() async throws -> AttentionReport
+    /// Runs one command of the Tools page and returns what it printed. Only commands `ToolCommands` allows are run.
+    func runTool(_ argv: [String]) async throws -> String
     func apply(offerID: String) async throws -> String
     func notes() async throws -> [NoteItem]
     func suggestNote(text: String, products: [String]) async throws -> NoteSuggestion
@@ -79,6 +83,8 @@ extension TeylaBackend {
     func undoAsk(id: String) async throws { throw Self.none }
     func acceptClose(ids: [String]) async throws { throw Self.none }
     func start() async throws -> StartReport { throw Self.none }
+    func attention() async throws -> AttentionReport { throw Self.none }
+    func runTool(_ argv: [String]) async throws -> String { throw Self.none }
     func apply(offerID: String) async throws -> String { throw Self.none }
     func notes() async throws -> [NoteItem] { throw Self.none }
     func suggestNote(text: String, products: [String]) async throws -> NoteSuggestion { throw Self.none }
@@ -106,10 +112,12 @@ struct Capabilities: Equatable, Sendable {
     var pairPhone = true
     /// The product page's sessions and spend come from the command; the store build shows recent work from the snapshot.
     var spendDetail = true
+    /// The Tools page and the actions in the command bar: they run the command, which the store build does not have.
+    var tools = true
 
     static let full = Capabilities()
     static let store = Capabilities(closeQuestions: false, chooseHarness: false, notes: false, diagnosis: false,
-                                    editProducts: false, pairPhone: false, spendDetail: false)
+                                    editProducts: false, pairPhone: false, spendDetail: false, tools: false)
 
     /// The set for this build.
     static var current: Capabilities {
