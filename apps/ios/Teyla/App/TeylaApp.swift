@@ -14,9 +14,9 @@ struct TeylaApp: App {
     }
 }
 
-/// The tabs; `TEYLA_TAB` (today, portfolio, products) opens one on launch, for screenshots.
+/// The tabs; `TEYLA_TAB` (home, decisions, products) opens one on launch, for screenshots.
 enum AppTab: String, Hashable {
-    case today, portfolio, products
+    case home, decisions, products
 }
 
 struct RootView: View {
@@ -30,7 +30,7 @@ struct RootView: View {
     init() {
         let options = LaunchOptions()
         self.options = options
-        _tab = State(initialValue: AppTab(rawValue: options.tab ?? "") ?? (options.openProduct == nil ? .today : .portfolio))
+        _tab = State(initialValue: AppTab(rawValue: options.tab ?? "") ?? (options.openProduct == nil ? .home : .products))
     }
 
     var body: some View {
@@ -61,14 +61,15 @@ struct RootView: View {
 
     private var tabs: some View {
         TabView(selection: $tab) {
-            Tab("Today", systemImage: "sun.max", value: AppTab.today) {
-                TodayView(showNewTask: $showNewTask, showSettings: $showSettings)
+            Tab("Home", systemImage: "house", value: AppTab.home) {
+                HomeView(tab: $tab, showNewTask: $showNewTask, showSettings: $showSettings)
             }
-            Tab("Portfolio", systemImage: "chart.bar.doc.horizontal", value: AppTab.portfolio) {
-                PortfolioView(showNewTask: $showNewTask, options: options)
+            Tab("Decisions", systemImage: "checkmark.bubble", value: AppTab.decisions) {
+                DecisionsView()
             }
+            .badge(model.ownerAsks.count)
             Tab("Products", systemImage: "square.stack.3d.up", value: AppTab.products) {
-                ProductsView(showNewTask: $showNewTask)
+                PortfolioView(showNewTask: $showNewTask, options: options)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **The iPhone app gets Home and Decisions.** Home shows your core products with their progress and the top
+  decisions of the week. Decisions groups your questions Pay, Decide, Do, with "Use default", "Teyla suggests closing",
+  "Agents can settle" and "Teyla closed". Accepting a close and undoing one work from the phone through two new relay
+  kinds, `close` and `reopen`, each running exactly one `teyla asks` command. An older Teyla on the Mac gets an
+  "Update Teyla on your Mac" card. The Today tab is gone and Portfolio is now Products.
+
 ## 0.36.0 — 2026-11-02 — Home: your core products and only the decisions that are yours
 
 - **The Mac app opens on Home.** Your core products with their progress, then the top decisions from the last 7 days,

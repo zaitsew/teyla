@@ -23,6 +23,9 @@ targets:
         group: Shared
       - path: ../mac/Teyla/Core/Format.swift
         group: Shared
+      # What Home and Decisions decide (who a question belongs to, what a core card says) is the Mac's code too.
+      - path: ../mac/Teyla/Core/HomeLogic.swift
+        group: Shared
     info:
       path: Teyla/Info.plist
       properties:
@@ -63,6 +66,9 @@ targets:
       - path: ../mac/Teyla/Core/Models.swift
         group: Shared
       - path: ../mac/Teyla/Core/Format.swift
+        group: Shared
+      # What Home and Decisions decide (who a question belongs to, what a core card says) is the Mac's code too.
+      - path: ../mac/Teyla/Core/HomeLogic.swift
         group: Shared
     settings:
       base:

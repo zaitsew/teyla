@@ -43,12 +43,14 @@ See what waits on you and where every product stands on every platform. Answer f
 Teyla is the inbox for a one-person software studio. It shows what waits on you, where every product
 stands, and what got done while you were away.
 
-Today
-- One sentence on what matters now, then the questions only you can answer, ranked by what they unblock.
-- Answer by text or by voice. Voice is turned into text on your iPhone; nothing is sent until you tap Send.
-- The tasks only you can do: a pull request to merge, an issue assigned to you.
-- What finished since yesterday, and what runs now.
-- Questions that have waited more than a week fold into one "Older" section, so fresh ones stay on top.
+Home
+- One sentence on what matters now, your core products with their progress, and the top decisions of the week.
+
+Decisions
+- The questions only you can answer, grouped Pay, Decide and Do, ranked by what they unblock.
+- Answer by text or by voice, or tap "Use default" where Teyla proposes an answer. Nothing is sent until you tap.
+- Questions that look closable stay open until you accept them, and you can undo.
+- The tasks only you can do, what finished since yesterday, and questions older than a week in one "Older" section.
 
 Portfolio
 - Every product with a health word: off track, at risk, on track or parked, and the reason in one line.
@@ -92,10 +94,11 @@ Paste into App Review Information. Sign-in required: No. No demo account is need
 HOW TO SEE EVERYTHING (no account, no Mac needed)
 Teyla for iPhone is the companion of Teyla for Mac. A reviewer has no paired Mac, so the app has a sample mode.
 1. Launch the app. Tap "See a sample" at the bottom of the first screen.
-2. The app opens on Today with made-up data and a banner "Sample data - pair with your Mac to see yours".
-   - Today: questions, tasks, finished work, running sessions. Older questions are under "Older".
-   - Portfolio: products with health, platforms and reasons. Tap a row for its detail. "Needs attention" filters it.
-   - Products: one card per product.
+2. The app opens on Home with made-up data and a banner "Sample data - pair with your Mac to see yours".
+   - Home: core products with progress, then the top decisions. "All products" and "See all" open the other tabs.
+   - Decisions: questions grouped Pay, Decide, Do; "Teyla suggests closing", "Agents can settle" and "Teyla closed"
+     are folds. Older questions are under "Older".
+   - Products: every product with health, platforms and reasons. Tap a row for its detail. "Needs attention" filters it.
    - Settings (gear icon, top left): version, voice language.
 3. Every send action (answering a question, "New task", "Correct") works in the sample, but nothing is sent.
    The app says "Sample: nothing was sent". The banner's Pair button leaves sample mode.
@@ -138,8 +141,8 @@ that no model provider we use holds.
 - **Icon.** `Teyla/Assets.xcassets/AppIcon.appiconset/icon-1024.png`, 1024 px, opaque, the brand mark on the
   indigo body filling the whole square. iOS rounds the corners. Regenerate with
   `swift apps/ios/Tools/make_icon.swift`.
-- **Screenshots.** The 6.9-inch iPhone set (1320 by 2868 px), five or six images in this order: Today,
-  Portfolio, a product detail, Older questions, Products, first screen. `apps/ios/Tools/screenshots.sh`
+- **Screenshots.** The 6.9-inch iPhone set (1320 by 2868 px), five or six images in this order: Home,
+  Decisions, a product detail, Older questions, Products, first screen. `apps/ios/Tools/screenshots.sh`
   makes them from sample mode on a booted simulator and writes them where you point it. The images are not
   committed. The app runs on iPhone only, so no iPad set is needed. Apple scales 6.9-inch images down for the
   smaller iPhones.

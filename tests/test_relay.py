@@ -221,6 +221,103 @@ def test_a_failed_subcommand_is_reported_with_its_detail(env):
     assert env.sent(e["id"])["ok"] is False and "no such worktree" in env.sent(e["id"])["detail"]
 
 
+def _suggest_closing(env, ask_id="7c222b3d"):
+    for row in env.snap["asks"]:
+        if row["id"] == ask_id:
+            row["triage"] = {"bucket": "close", "action": "", "default": "", "why": "A merged PR answers it", "source": "rule"}
+    env.run_result = (0, json.dumps({"closed": [{"id": ask_id, "product": "cellar", "title": "t"}], "errors": [],
+                                     "undo": f"teyla asks undo {ask_id}"}), "")
+
+
+def test_close_runs_accept_close_for_exactly_one_question(env):
+    _suggest_closing(env)
+    e = env.entry(kind="close", text="close")
+    env.drop(e)
+    env.sync()
+    assert env.commands == [["teyla", "asks", "accept-close", "7c222b3d", "--json"]]
+    assert env.answers == []
+    sent = env.sent(e["id"])
+    assert sent["ok"] is True and sent["via"] == "asks" and sent["detail"] == "closed"
+
+
+def test_close_is_refused_for_a_question_teyla_does_not_suggest_closing(env):
+    env.snap["asks"][0]["triage"] = {"bucket": "owner", "action": "decide", "default": "", "why": "", "source": "rule"}
+    refused(env, env.entry(kind="close", text="close"), "no longer suggests closing")
+    refused(env, env.entry(kind="close", text="close", target="deadbeef"), "no longer open")
+
+
+def test_close_checks_the_question_the_owner_saw(env):
+    _suggest_closing(env)
+    refused(env, env.entry(kind="close", text="close", about=sha("Keep iPhone 1.0?")), "changed since you read it")
+
+
+def test_a_failed_close_reports_the_reason_from_the_command(env):
+    _suggest_closing(env)
+    env.run_result = (1, json.dumps({"closed": [], "errors": ["7c222b3d is not in bucket close: nothing was closed"],
+                                     "undo": ""}), "")
+    e = env.entry(kind="close", text="close")
+    env.drop(e)
+    env.sync()
+    sent = env.sent(e["id"])
+    assert sent["ok"] is False and "not in bucket close" in sent["detail"]
+
+
+def test_reopen_runs_asks_undo_and_nothing_else(env):
+    env.run_result = (0, "reopened: c0000001  sample-app  Is the beta build installable?", "")
+    e = env.entry(kind="reopen", target="c0000001", about=sha("c0000001"), text="reopen")
+    env.drop(e)
+    env.sync()
+    assert env.commands == [["teyla", "asks", "undo", "c0000001"]]
+    sent = env.sent(e["id"])
+    assert sent["ok"] is True and sent["detail"] == "reopened"
+    assert "Is the beta" not in json.dumps(sent)
+
+
+def test_reopen_reports_a_question_that_is_not_closed(env):
+    env.run_result = (1, "", "not done: c0000001  sample-app  Title")
+    e = env.entry(kind="reopen", target="c0000001", about=sha("c0000001"), text="reopen")
+    env.drop(e)
+    env.sync()
+    assert env.sent(e["id"])["ok"] is False and "not done" in env.sent(e["id"])["detail"]
+
+
+def test_reopen_needs_the_id_it_names_in_about(env):
+    refused(env, env.entry(kind="reopen", target="c0000001", about=sha("something else"), text="reopen"),
+            "changed since you read it")
+
+
+def test_a_target_that_looks_like_an_option_never_reaches_a_command_line(env):
+    for kind in ("close", "reopen"):
+        res = relay.deliver_ask_action(kind, "--all", env.runner, ["teyla"])
+        assert res[0] is False
+    assert env.commands == []
+
+
+def test_the_phone_can_run_only_these_commands(env):
+    _suggest_closing(env)
+    env.drop(env.entry(kind="close", text="close"))
+    env.drop(env.entry(kind="reopen", target="c0000001", about=sha("c0000001"), text="reopen"))
+    env.sync()
+    assert sorted(c[1:3] for c in env.commands) == [["asks", "accept-close"], ["asks", "undo"]]
+
+
+def test_the_state_file_carries_core_progress_triage_and_closed_questions(env):
+    # The phone's Home and Decisions read these; the relay signs the snapshot whole, so they travel with it.
+    home = json.loads((pathlib.Path(__file__).parents[1] / "apps/mac/TeylaTests/Fixtures/state.sample.home.json").read_text())
+    env.snap = home
+    env.sync()
+    raw = (env.folder / "state.teyla").read_bytes()
+    head, body = raw.split(b"\n", 1)
+    assert relay.sign(KEY, relay.STATE_PREFIX + body) == head.decode()
+    got = json.loads(body)
+    assert got["portfolio"]["core"] == home["portfolio"]["core"] and got["portfolio"]["core_source"] == "star"
+    first = got["portfolio"]["products"][0]
+    assert first["progress"]["line"] and first["progress"]["shipped_7d"]["top"]
+    assert {a["triage"]["bucket"] for a in got["asks"] if "triage" in a} == {"owner", "agent", "close"}
+    assert got["auto_closed"]["count"] == 3 and got["auto_closed"]["items"][0]["reason"]
+    assert "questions" in got["totals"]
+
+
 def test_the_snapshot_is_rewritten_after_a_delivery(env):
     calls = []
 

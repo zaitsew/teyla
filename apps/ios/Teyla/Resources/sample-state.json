@@ -1,14 +1,14 @@
 {
   "version": 3,
-  "generated": "2026-10-25T09:15:54Z",
+  "generated": "2026-11-02T09:00:00Z",
   "brief": {
-    "line": "5 questions wait for you, the first one in Sample Web.",
+    "line": "7 decisions wait for you. Two of them are payments that block the next store upload.",
     "source": "rules"
   },
   "totals": {
-    "questions": 5,
-    "running": 1,
-    "spent_today_usd": 6.4,
+    "questions": 10,
+    "running": 3,
+    "spent_today_usd": 41.2,
     "tasks": 1,
     "done": 2,
     "resolved": 0,
@@ -16,225 +16,366 @@
   },
   "asks": [
     {
-      "id": "a1b2c3d4",
+      "id": "a0000001",
       "kind": "question",
-      "product": "sample-web",
-      "title": "Ship the pricing page copy as written, or wait for the new screenshots?",
-      "question": "Ship the pricing page copy as written, or wait for the new screenshots?",
-      "context": "The copy is final. The screenshots need two more days.",
+      "product": "sample-app",
+      "title": "Renew the developer program membership?",
+      "question": "Renew the developer program membership?",
+      "context": "It lapses in 9 days.",
       "options": [
-        "Ship now",
-        "Wait for screenshots"
+        "Renew",
+        "Later"
       ],
       "archived": false,
       "link": "claude --resume 00000000-0000-4000-8000-000000000001",
       "pr": "",
       "harness": "claude-code",
       "status": "open",
-      "ts": "2026-10-20T10:00:00Z",
-      "age_s": 34560,
-      "unblocks": "the web release",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 17280,
+      "unblocks": "the next store upload",
       "rank": 1,
       "delivery": "claude",
-      "muted": false
+      "muted": false,
+      "triage": {
+        "bucket": "owner",
+        "action": "pay",
+        "default": "Renew",
+        "why": "A lapsed membership blocks every upload.",
+        "source": "rule"
+      }
     },
     {
-      "id": "b2c3d4e5",
+      "id": "a0000002",
       "kind": "question",
-      "product": "sample-app",
-      "title": "Should the login button use the system accent colour?",
-      "question": "Should the login button use the system accent colour?",
-      "context": "Both variants pass the contrast check.",
-      "options": [
-        "System accent",
-        "Brand indigo"
-      ],
+      "product": "sample-web",
+      "title": "Upgrade the hosting plan to keep the custom domain?",
+      "question": "Upgrade the hosting plan to keep the custom domain?",
+      "context": "The free plan drops custom domains on the 15th.",
+      "options": [],
       "archived": false,
       "link": "claude --resume 00000000-0000-4000-8000-000000000002",
       "pr": "",
       "harness": "claude-code",
       "status": "open",
-      "ts": "2026-10-20T10:00:00Z",
-      "age_s": 181440,
-      "unblocks": "a sign-in only you can do",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 43200,
+      "unblocks": "the launch page",
       "rank": 2,
       "delivery": "claude",
-      "muted": false
+      "muted": false,
+      "triage": {
+        "bucket": "owner",
+        "action": "pay",
+        "default": "",
+        "why": "Hosting is a recurring charge.",
+        "source": "rule"
+      }
     },
     {
-      "id": "c3d4e5f6",
+      "id": "a0000003",
       "kind": "question",
-      "product": "sample-notes",
-      "title": "Keep the weekly digest on Mondays?",
-      "question": "Keep the weekly digest on Mondays?",
+      "product": "sample-app",
+      "title": "Should the sign-in button use the system accent colour?",
+      "question": "Should the sign-in button use the system accent colour?",
       "context": "",
-      "options": [],
+      "options": [
+        "Yes",
+        "No"
+      ],
       "archived": false,
       "link": "claude --resume 00000000-0000-4000-8000-000000000003",
       "pr": "",
       "harness": "claude-code",
       "status": "open",
-      "ts": "2026-10-20T10:00:00Z",
-      "age_s": 388800,
-      "unblocks": "",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 86400,
+      "unblocks": "a sign-in only you can do",
       "rank": 3,
       "delivery": "claude",
-      "muted": false
+      "muted": false,
+      "triage": {
+        "bucket": "owner",
+        "action": "decide",
+        "default": "Yes",
+        "why": "Matches the platform and needs no new asset.",
+        "source": "rule"
+      }
     },
     {
-      "id": "d4e5f6a7",
+      "id": "a0000004",
       "kind": "question",
-      "product": "sample-app",
-      "title": "Which Android test group should get build 15 first?",
-      "question": "Which Android test group should get build 15 first?",
-      "context": "Internal has 3 testers, closed has 12.",
+      "product": "sample-tool",
+      "title": "Ship 0.10 with the old export format, or wait for the new one?",
+      "question": "Ship 0.10 with the old export format, or wait for the new one?",
+      "context": "The new format needs two more days.",
       "options": [
-        "Internal",
-        "Closed"
+        "Ship now",
+        "Wait"
       ],
       "archived": false,
       "link": "claude --resume 00000000-0000-4000-8000-000000000004",
       "pr": "",
       "harness": "claude-code",
       "status": "open",
-      "ts": "2026-10-20T10:00:00Z",
-      "age_s": 794879,
-      "unblocks": "the Android build",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 172800,
+      "unblocks": "",
       "rank": 4,
       "delivery": "claude",
-      "muted": false
+      "muted": false,
+      "triage": {
+        "bucket": "owner",
+        "action": "decide",
+        "default": "Wait",
+        "why": "Two days is cheaper than a migration later.",
+        "source": "rule"
+      }
     },
     {
-      "id": "e5f6a7b8",
+      "id": "a0000005",
       "kind": "question",
-      "product": "sample-app",
-      "title": "Rename the export command, or keep both names for a release?",
-      "question": "Rename the export command, or keep both names for a release?",
+      "product": "sample-watch",
+      "title": "Which complication layout do you want first?",
+      "question": "Which complication layout do you want first?",
       "context": "",
-      "options": [],
+      "options": [
+        "Compact",
+        "Wide"
+      ],
       "archived": false,
       "link": "claude --resume 00000000-0000-4000-8000-000000000005",
       "pr": "",
       "harness": "claude-code",
       "status": "open",
-      "ts": "2026-10-20T10:00:00Z",
-      "age_s": 1382400,
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 259200,
       "unblocks": "",
       "rank": 5,
       "delivery": "claude",
-      "muted": false
+      "muted": false,
+      "triage": {
+        "bucket": "owner",
+        "action": "decide",
+        "default": "Compact",
+        "why": "Most watch faces have room for the compact one.",
+        "source": "rule"
+      }
+    },
+    {
+      "id": "a0000006",
+      "kind": "question",
+      "product": "sample-web",
+      "title": "Sign in to the analytics dashboard once so the probe can read it.",
+      "question": "Sign in to the analytics dashboard once so the probe can read it.",
+      "context": "Needs your password; nothing else can do it.",
+      "options": [],
+      "archived": false,
+      "link": "claude --resume 00000000-0000-4000-8000-000000000006",
+      "pr": "",
+      "harness": "claude-code",
+      "status": "open",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 345600,
+      "unblocks": "the weekly numbers",
+      "rank": 6,
+      "delivery": "claude",
+      "muted": false,
+      "triage": {
+        "bucket": "owner",
+        "action": "do",
+        "default": "",
+        "why": "Only you can sign in.",
+        "source": "rule"
+      }
+    },
+    {
+      "id": "a0000007",
+      "kind": "question",
+      "product": "sample-tool",
+      "title": "Merge the dependency update?",
+      "question": "Merge the dependency update?",
+      "context": "",
+      "options": [
+        "Merge",
+        "Skip"
+      ],
+      "archived": false,
+      "link": "claude --resume 00000000-0000-4000-8000-000000000007",
+      "pr": "",
+      "harness": "claude-code",
+      "status": "open",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 777600,
+      "unblocks": "",
+      "rank": 7,
+      "delivery": "claude",
+      "muted": false,
+      "triage": {
+        "bucket": "owner",
+        "action": "decide",
+        "default": "Merge",
+        "why": "Tests pass and the diff is small.",
+        "source": "rule"
+      }
+    },
+    {
+      "id": "a0000008",
+      "kind": "question",
+      "product": "sample-app",
+      "title": "Which icon variant should the beta use?",
+      "question": "Which icon variant should the beta use?",
+      "context": "",
+      "options": [
+        "A",
+        "B"
+      ],
+      "archived": false,
+      "link": "claude --resume 00000000-0000-4000-8000-000000000008",
+      "pr": "",
+      "harness": "claude-code",
+      "status": "open",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 129600,
+      "unblocks": "",
+      "rank": 8,
+      "delivery": "claude",
+      "muted": false,
+      "triage": {
+        "bucket": "agent",
+        "action": "decide",
+        "default": "A",
+        "why": "Both are fine; A has more contrast.",
+        "source": "rule"
+      }
+    },
+    {
+      "id": "a0000009",
+      "kind": "question",
+      "product": "sample-tool",
+      "title": "Rename the settings pane?",
+      "question": "Rename the settings pane?",
+      "context": "",
+      "options": [],
+      "archived": false,
+      "link": "claude --resume 00000000-0000-4000-8000-000000000009",
+      "pr": "",
+      "harness": "claude-code",
+      "status": "open",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 216000,
+      "unblocks": "",
+      "rank": 9,
+      "delivery": "claude",
+      "muted": false,
+      "triage": {
+        "bucket": "agent",
+        "action": "decide",
+        "default": "Keep the name",
+        "why": "A rename churns the docs for no gain.",
+        "source": "rule"
+      }
+    },
+    {
+      "id": "a0000010",
+      "kind": "question",
+      "product": "sample-watch",
+      "title": "Is the watch app still planned?",
+      "question": "Is the watch app still planned?",
+      "context": "",
+      "options": [],
+      "archived": false,
+      "link": "claude --resume 00000000-0000-4000-8000-000000000010",
+      "pr": "",
+      "harness": "claude-code",
+      "status": "open",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 1728000,
+      "unblocks": "",
+      "rank": 10,
+      "delivery": "claude",
+      "muted": false,
+      "triage": {
+        "bucket": "close",
+        "action": "decide",
+        "default": "",
+        "why": "Answered by the roadmap.",
+        "source": "rule"
+      }
     }
   ],
   "tasks": [
     {
-      "id": "pr:example/sample-app#41",
+      "id": "t1",
       "kind": "merge",
-      "product": "sample-app",
-      "title": "Merge: Android build 15",
-      "detail": "Reviewed, no open P1. The repo is not merge-approved, so it waits on you.",
-      "link": "https://github.com/example/sample-app/pull/41",
+      "product": "sample-tool",
+      "title": "Merge the export format change",
+      "detail": "Review done, waits for you.",
+      "link": "https://example.com/sample-tool/pull/12",
       "age_s": 86400
     }
   ],
   "done": [
     {
-      "id": "local_s1",
-      "product": "sample-tool",
-      "title": "Faster export",
+      "id": "d1",
+      "product": "sample-app",
+      "title": "Add the privacy screen",
       "status": "done",
       "result": [
-        "Export is 3 times faster on large projects",
-        "Merged as PR #88"
+        "Added the screen",
+        "Tests pass"
       ],
       "needs": "",
-      "links": [
-        "https://github.com/example/sample-tool/pull/88"
-      ],
-      "ended": "2026-10-25T04:10:00Z",
+      "links": [],
+      "ended": "2026-11-02T06:00:00Z",
       "harness": "claude-code",
       "link": ""
     },
     {
-      "id": "local_s2",
-      "product": "sample-app",
-      "title": "Play internal track upload",
-      "status": "needs_you",
+      "id": "d2",
+      "product": "sample-web",
+      "title": "Fix the broken footer links",
+      "status": "done",
       "result": [
-        "Build 15 is uploaded"
+        "Fixed 3 links"
       ],
-      "needs": "Add a tester e-mail in the Play Console",
+      "needs": "",
       "links": [],
-      "ended": "2026-10-24T22:30:00Z",
-      "harness": "codex",
+      "ended": "2026-11-02T05:00:00Z",
+      "harness": "claude-code",
       "link": ""
     }
   ],
   "products": [
     {
-      "name": "sample-web",
-      "waiting": 1,
-      "muted": 0,
-      "state": "waiting",
-      "line": "Ship the pricing page copy as written, or wait for the new screenshots?",
-      "last_activity": "2026-10-25T09:00:00Z",
-      "id": "sample-web",
-      "display_name": "Sample Web",
-      "stage": "beta",
-      "focus": false,
-      "primary": "web",
-      "registered": true,
-      "issues": 0,
-      "prs_waiting": 0,
-      "next": "Answer the pricing question",
-      "repo": "~/repos/sample-web"
-    },
-    {
       "name": "sample-app",
       "waiting": 3,
       "muted": 0,
       "state": "waiting",
-      "line": "Rename the export command, or keep both names for a release?",
-      "last_activity": "2026-10-25T09:00:00Z",
+      "line": "",
+      "last_activity": "2026-11-02T08:50:00Z",
       "id": "sample-app",
       "display_name": "Sample App",
       "stage": "beta",
-      "focus": false,
-      "primary": "ios",
-      "registered": true,
-      "issues": 0,
-      "prs_waiting": 1,
-      "next": "Answer the sign-in question",
-      "repo": "~/repos/sample-app"
-    },
-    {
-      "name": "sample-notes",
-      "waiting": 1,
-      "muted": 0,
-      "state": "waiting",
-      "line": "Keep the weekly digest on Mondays?",
-      "last_activity": "2026-10-25T09:00:00Z",
-      "id": "sample-notes",
-      "display_name": "Sample Notes",
-      "stage": "live",
-      "focus": false,
+      "focus": true,
       "primary": "ios",
       "registered": true,
       "issues": 0,
       "prs_waiting": 0,
       "next": "",
-      "repo": "~/repos/sample-notes"
+      "repo": "~/repos/sample-app"
     },
     {
       "name": "sample-tool",
-      "waiting": 0,
+      "waiting": 2,
       "muted": 0,
-      "state": "active",
-      "line": "active today",
-      "last_activity": "2026-10-25T09:00:00Z",
+      "state": "waiting",
+      "line": "",
+      "last_activity": "2026-11-02T08:50:00Z",
       "id": "sample-tool",
       "display_name": "Sample Tool",
       "stage": "live",
-      "focus": false,
+      "focus": true,
       "primary": "macos",
       "registered": true,
       "issues": 0,
@@ -243,34 +384,90 @@
       "repo": "~/repos/sample-tool"
     },
     {
+      "name": "sample-web",
+      "waiting": 2,
+      "muted": 0,
+      "state": "waiting",
+      "line": "",
+      "last_activity": "2026-11-02T08:50:00Z",
+      "id": "sample-web",
+      "display_name": "Sample Web",
+      "stage": "building",
+      "focus": true,
+      "primary": "web",
+      "registered": true,
+      "issues": 0,
+      "prs_waiting": 0,
+      "next": "",
+      "repo": "~/repos/sample-web"
+    },
+    {
       "name": "sample-watch",
       "waiting": 0,
       "muted": 0,
-      "state": "quiet",
-      "line": "quiet for 40 days",
-      "last_activity": "2026-10-25T09:00:00Z",
+      "state": "active",
+      "line": "",
+      "last_activity": "2026-11-02T08:50:00Z",
       "id": "sample-watch",
       "display_name": "Sample Watch",
-      "stage": "parked",
-      "focus": false,
-      "primary": "watch",
+      "stage": "building",
+      "focus": true,
+      "primary": "ios",
       "registered": true,
       "issues": 0,
       "prs_waiting": 0,
       "next": "",
       "repo": "~/repos/sample-watch"
+    },
+    {
+      "name": "sample-lab",
+      "waiting": 0,
+      "muted": 0,
+      "state": "active",
+      "line": "",
+      "last_activity": "2026-11-02T08:50:00Z",
+      "id": "sample-lab",
+      "display_name": "Sample Lab",
+      "stage": "building",
+      "focus": false,
+      "primary": "web",
+      "registered": true,
+      "issues": 0,
+      "prs_waiting": 0,
+      "next": "",
+      "repo": "~/repos/sample-lab"
     }
   ],
   "running": [
     {
-      "product": "sample-web",
-      "title": "Pricing page screenshots",
+      "product": "sample-app",
+      "title": "Wire the settings screen",
+      "harness": "claude-code",
+      "model": "claude-sonnet-5-5",
+      "since": "2026-11-02T08:40:00Z",
+      "link": "claude --resume 00000000-0000-4000-8000-000000009001",
+      "id": "r1",
+      "correct": "open"
+    },
+    {
+      "product": "sample-tool",
+      "title": "Port the export tests",
       "harness": "codex",
-      "model": "gpt-6-1-sol",
-      "since": "2026-10-25T08:40:00Z",
+      "model": "gpt-6.1-sol",
+      "since": "2026-11-02T08:50:00Z",
       "link": "",
-      "id": "00000000-0000-4000-8000-0000000000aa",
+      "id": "r2",
       "correct": "codex-queue"
+    },
+    {
+      "product": "sample-web",
+      "title": "Draft the launch page copy",
+      "harness": "claude-code",
+      "model": "claude-haiku-5-5",
+      "since": "2026-11-02T08:55:00Z",
+      "link": "claude --resume 00000000-0000-4000-8000-000000009003",
+      "id": "r3",
+      "correct": "open"
     }
   ],
   "relay": {
@@ -280,8 +477,10 @@
     "synced": ""
   },
   "notes": {
-    "inbox": 0,
-    "by_product": {}
+    "inbox": 1,
+    "by_product": {
+      "sample-app": 1
+    }
   },
   "portfolio": {
     "version": 1,
@@ -290,9 +489,9 @@
       "github": "2026-10-25T08:50:00Z"
     },
     "counts": {
-      "on_track": 2,
+      "on_track": 3,
       "at_risk": 1,
-      "off_track": 1,
+      "off_track": 0,
       "parked": 1
     },
     "products": [
@@ -304,10 +503,9 @@
         "primary": "ios",
         "users": "testers",
         "target": "family",
-        "health": "off_track",
+        "health": "at_risk",
         "reasons": [
-          "A question has waited 16 days",
-          "Android is 2 builds behind"
+          "3 questions wait"
         ],
         "platforms": [
           {
@@ -318,7 +516,7 @@
             "build": "52",
             "state": "current",
             "detail": "Installable from your tester account",
-            "as_of": "2026-10-25T06:00:00Z",
+            "as_of": "2026-11-02T06:00:00Z",
             "link": ""
           },
           {
@@ -328,8 +526,8 @@
             "version": "1.3.0",
             "build": "14",
             "state": "behind",
-            "detail": "2 builds wait for Play's internal track",
-            "as_of": "2026-10-25T06:00:00Z",
+            "detail": "",
+            "as_of": "2026-11-02T06:00:00Z",
             "link": ""
           },
           {
@@ -340,143 +538,89 @@
             "build": "",
             "state": "live",
             "detail": "sample.example.com",
-            "as_of": "",
-            "link": "https://sample.example.com"
+            "as_of": "2026-11-02T06:00:00Z",
+            "link": ""
           }
         ],
         "prs": {
-          "open": 3,
-          "waiting": 1,
+          "open": 1,
+          "waiting": 0,
           "merged_7d": 14,
-          "unreviewed_7d": 1
-        },
-        "activity": {
-          "last": "2026-10-25T09:10:00Z",
-          "sessions_7d": 12,
-          "spend_7d_usd": 210.5
-        },
-        "waiting": 3,
-        "oldest_wait_days": 16.0,
-        "tasks": 1,
-        "milestone": "family: 2 of 9 requirements left",
-        "next": "Answer the sign-in question",
-        "repo": "~/code/sample-app"
-      },
-      {
-        "id": "sample-web",
-        "title": "Sample Web",
-        "stage": "beta",
-        "focus": true,
-        "primary": "web",
-        "users": "testers",
-        "target": "family",
-        "health": "at_risk",
-        "reasons": [
-          "The live site is 3 deploys behind main",
-          "A merged PR was never reviewed"
-        ],
-        "platforms": [
-          {
-            "platform": "web",
-            "role": "primary",
-            "channel": "web",
-            "version": "",
-            "build": "",
-            "state": "behind",
-            "detail": "The live site is 3 deploys behind main",
-            "as_of": "2026-10-25T08:55:00Z",
-            "link": "https://sample.example.com"
-          },
-          {
-            "platform": "ios",
-            "role": "secondary",
-            "channel": "testflight",
-            "version": "0.4.0",
-            "build": "8",
-            "state": "current",
-            "detail": "Installable from your tester account",
-            "as_of": "2026-10-25T06:00:00Z",
-            "link": ""
-          }
-        ],
-        "prs": {
-          "open": 2,
-          "waiting": 0,
-          "merged_7d": 6,
-          "unreviewed_7d": 1
-        },
-        "activity": {
-          "last": "2026-10-25T09:05:00Z",
-          "sessions_7d": 9,
-          "spend_7d_usd": 96.2
-        },
-        "waiting": 1,
-        "oldest_wait_days": 0.4,
-        "tasks": 0,
-        "milestone": "family: 4 of 9 requirements left",
-        "next": "Deploy main to the live site",
-        "repo": "~/code/sample-web"
-      },
-      {
-        "id": "sample-notes",
-        "title": "Sample Notes",
-        "stage": "live",
-        "focus": false,
-        "primary": "ios",
-        "users": "public",
-        "target": "public",
-        "health": "on_track",
-        "reasons": [],
-        "platforms": [
-          {
-            "platform": "ios",
-            "role": "primary",
-            "channel": "app_store",
-            "version": "2.1.0",
-            "build": "30",
-            "state": "live",
-            "detail": "Version 2.1.0 is on the App Store",
-            "as_of": "2026-10-25T06:00:00Z",
-            "link": ""
-          },
-          {
-            "platform": "macos",
-            "role": "secondary",
-            "channel": "app_store",
-            "version": "2.1.0",
-            "build": "30",
-            "state": "live",
-            "detail": "Version 2.1.0 is on the Mac App Store",
-            "as_of": "2026-10-25T06:00:00Z",
-            "link": ""
-          }
-        ],
-        "prs": {
-          "open": 0,
-          "waiting": 0,
-          "merged_7d": 3,
           "unreviewed_7d": 0
         },
         "activity": {
-          "last": "2026-10-24T15:00:00Z",
-          "sessions_7d": 4,
-          "spend_7d_usd": 31.0
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 10,
+          "spend_7d_usd": 860.5
         },
-        "waiting": 1,
-        "oldest_wait_days": 4.5,
+        "waiting": 3,
+        "oldest_wait_days": 2.0,
         "tasks": 0,
-        "milestone": "",
+        "milestone": "family: 2 of 9 requirements left",
         "next": "",
-        "repo": "~/code/sample-notes"
+        "repo": "~/code/sample-app",
+        "progress": {
+          "can_install": [
+            {
+              "platform": "ios",
+              "role": "primary",
+              "channel": "testflight",
+              "version": "1.4.0",
+              "build": "52",
+              "state": "current",
+              "detail": "Installable from your tester account",
+              "as_of": "2026-11-02T06:00:00Z",
+              "link": ""
+            },
+            {
+              "platform": "android",
+              "role": "secondary",
+              "channel": "play",
+              "version": "1.3.0",
+              "build": "14",
+              "state": "behind",
+              "detail": "",
+              "as_of": "2026-11-02T06:00:00Z",
+              "link": ""
+            },
+            {
+              "platform": "web",
+              "role": "secondary",
+              "channel": "web",
+              "version": "",
+              "build": "",
+              "state": "live",
+              "detail": "sample.example.com",
+              "as_of": "2026-11-02T06:00:00Z",
+              "link": ""
+            }
+          ],
+          "shipped_7d": {
+            "prs": 14,
+            "top": [
+              "Add the privacy screen",
+              "Fix the sign-in crash"
+            ]
+          },
+          "users": {
+            "weekly": 4,
+            "total": 12,
+            "label": "4 active this week, 12 total"
+          },
+          "milestone": "family: 2 of 9 requirements left",
+          "blocker": "Developer membership lapses in 9 days",
+          "quiet_days": 0,
+          "line": "Beta works end to end; 2 requirements left."
+        }
       },
       {
         "id": "sample-tool",
         "title": "Sample Tool",
         "stage": "live",
-        "focus": false,
+        "focus": true,
         "primary": "macos",
-        "users": "owner",
-        "target": "owner",
+        "users": "testers",
+        "target": "family",
         "health": "on_track",
         "reasons": [],
         "platforms": [
@@ -487,69 +631,285 @@
             "version": "0.9.0",
             "build": "",
             "state": "current",
-            "detail": "Installed on this Mac",
-            "as_of": "",
+            "detail": "",
+            "as_of": "2026-11-02T06:00:00Z",
+            "link": ""
+          },
+          {
+            "platform": "macos",
+            "role": "primary",
+            "channel": "app-store",
+            "version": "1.1",
+            "build": "7",
+            "state": "in_review",
+            "detail": "",
+            "as_of": "2026-11-02T06:00:00Z",
             "link": ""
           }
         ],
         "prs": {
-          "open": 0,
+          "open": 1,
           "waiting": 0,
           "merged_7d": 4,
           "unreviewed_7d": 0
         },
         "activity": {
-          "last": "2026-10-24T18:00:00Z",
-          "sessions_7d": 3,
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 10,
           "spend_7d_usd": 18.0
         },
-        "waiting": 0,
-        "oldest_wait_days": 0,
+        "waiting": 2,
+        "oldest_wait_days": 2.0,
         "tasks": 0,
         "milestone": "",
         "next": "",
-        "repo": "~/code/sample-tool"
+        "repo": "~/code/sample-tool",
+        "progress": {
+          "can_install": [
+            {
+              "platform": "macos",
+              "role": "primary",
+              "channel": "local",
+              "version": "0.9.0",
+              "build": "",
+              "state": "current",
+              "detail": "",
+              "as_of": "2026-11-02T06:00:00Z",
+              "link": ""
+            },
+            {
+              "platform": "macos",
+              "role": "primary",
+              "channel": "app-store",
+              "version": "1.1",
+              "build": "7",
+              "state": "in_review",
+              "detail": "",
+              "as_of": "2026-11-02T06:00:00Z",
+              "link": ""
+            }
+          ],
+          "shipped_7d": {
+            "prs": 4,
+            "top": [
+              "Speed up the export"
+            ]
+          },
+          "users": null,
+          "milestone": "",
+          "blocker": "",
+          "quiet_days": 2,
+          "line": "Live on this Mac; 1.1 waits for review."
+        }
       },
       {
-        "id": "sample-watch",
-        "title": "Sample Watch",
-        "stage": "parked",
-        "focus": false,
-        "primary": "watch",
-        "users": "owner",
-        "target": "owner",
-        "health": "parked",
+        "id": "sample-web",
+        "title": "Sample Web",
+        "stage": "building",
+        "focus": true,
+        "primary": "web",
+        "users": "testers",
+        "target": "family",
+        "health": "on_track",
         "reasons": [],
         "platforms": [
           {
-            "platform": "watch",
-            "role": "primary",
-            "channel": "local",
-            "version": "0.2.0",
+            "platform": "web",
+            "role": "secondary",
+            "channel": "web",
+            "version": "",
             "build": "",
-            "state": "none",
-            "detail": "No build yet",
-            "as_of": "",
+            "state": "live",
+            "detail": "sample.example.com",
+            "as_of": "2026-11-02T06:00:00Z",
             "link": ""
           }
         ],
         "prs": {
-          "open": 0,
+          "open": 1,
+          "waiting": 0,
+          "merged_7d": 6,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 10,
+          "spend_7d_usd": 240.0
+        },
+        "waiting": 2,
+        "oldest_wait_days": 2.0,
+        "tasks": 0,
+        "milestone": "launch page: 3 of 5 sections written",
+        "next": "",
+        "repo": "~/code/sample-web",
+        "progress": {
+          "can_install": [
+            {
+              "platform": "web",
+              "role": "secondary",
+              "channel": "web",
+              "version": "",
+              "build": "",
+              "state": "live",
+              "detail": "sample.example.com",
+              "as_of": "2026-11-02T06:00:00Z",
+              "link": ""
+            }
+          ],
+          "shipped_7d": {
+            "prs": 6,
+            "top": [
+              "Add the pricing section"
+            ]
+          },
+          "users": {
+            "weekly": 0,
+            "total": 0,
+            "label": ""
+          },
+          "milestone": "launch page: 3 of 5 sections written",
+          "blocker": "",
+          "quiet_days": 0,
+          "line": "Launch page is 3 of 5 sections in."
+        }
+      },
+      {
+        "id": "sample-watch",
+        "title": "Sample Watch",
+        "stage": "building",
+        "focus": true,
+        "primary": "ios",
+        "users": "testers",
+        "target": "family",
+        "health": "parked",
+        "reasons": [],
+        "platforms": [
+          {
+            "platform": "ios",
+            "role": "primary",
+            "channel": "testflight",
+            "version": "0.2.0",
+            "build": "3",
+            "state": "blocked",
+            "detail": "Missing entitlement",
+            "as_of": "2026-11-02T06:00:00Z",
+            "link": ""
+          }
+        ],
+        "prs": {
+          "open": 1,
           "waiting": 0,
           "merged_7d": 0,
           "unreviewed_7d": 0
         },
         "activity": {
-          "last": "2026-09-15T12:00:00Z",
-          "sessions_7d": 0,
-          "spend_7d_usd": 0
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 10,
+          "spend_7d_usd": 0.0
         },
         "waiting": 0,
-        "oldest_wait_days": 0,
+        "oldest_wait_days": 2.0,
         "tasks": 0,
         "milestone": "",
         "next": "",
-        "repo": "~/code/sample-watch"
+        "repo": "~/code/sample-watch",
+        "progress": {
+          "can_install": [
+            {
+              "platform": "ios",
+              "role": "primary",
+              "channel": "testflight",
+              "version": "0.2.0",
+              "build": "3",
+              "state": "blocked",
+              "detail": "Missing entitlement",
+              "as_of": "2026-11-02T06:00:00Z",
+              "link": ""
+            }
+          ],
+          "shipped_7d": {
+            "prs": 0,
+            "top": []
+          },
+          "users": null,
+          "milestone": "",
+          "blocker": "",
+          "quiet_days": 21,
+          "line": "Prototype parked after the entitlement was refused."
+        }
+      },
+      {
+        "id": "sample-lab",
+        "title": "Sample Lab",
+        "stage": "building",
+        "focus": false,
+        "primary": "web",
+        "users": "testers",
+        "target": "family",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 1,
+          "waiting": 0,
+          "merged_7d": 1,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 10,
+          "spend_7d_usd": 12.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 2.0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/sample-lab",
+        "progress": {
+          "can_install": [],
+          "shipped_7d": {
+            "prs": 1,
+            "top": [
+              "Add a test page"
+            ]
+          },
+          "users": null,
+          "milestone": "",
+          "blocker": "",
+          "quiet_days": 1,
+          "line": "Early experiments."
+        }
+      }
+    ],
+    "core": [
+      "sample-app",
+      "sample-tool",
+      "sample-web",
+      "sample-watch"
+    ],
+    "core_source": "star"
+  },
+  "auto_closed": {
+    "count": 3,
+    "items": [
+      {
+        "id": "c0000001",
+        "title": "Is the beta build installable?",
+        "product": "sample-app",
+        "reason": "The build page shows it is."
+      },
+      {
+        "id": "c0000002",
+        "title": "Should the CLI print colours?",
+        "product": "sample-tool",
+        "reason": "Answered in the README."
+      },
+      {
+        "id": "c0000003",
+        "title": "Old duplicate of the hosting question",
+        "product": "sample-web",
+        "reason": "Duplicate of an open question."
       }
     ]
   }

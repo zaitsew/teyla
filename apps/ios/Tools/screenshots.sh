@@ -57,10 +57,10 @@ shot() {
   echo "$out/$name.png"
 }
 
-shot 01-today        -TEYLA_SAMPLE YES -TEYLA_TAB today
-shot 02-portfolio    -TEYLA_SAMPLE YES -TEYLA_TAB portfolio
-shot 03-product      -TEYLA_SAMPLE YES -TEYLA_TAB portfolio -TEYLA_OPEN sample-app
-shot 04-older        -TEYLA_SAMPLE YES -TEYLA_TAB today -TEYLA_OLDER open
+shot 01-home         -TEYLA_SAMPLE YES -TEYLA_TAB home
+shot 02-decisions    -TEYLA_SAMPLE YES -TEYLA_TAB decisions
+shot 03-product      -TEYLA_SAMPLE YES -TEYLA_TAB products -TEYLA_OPEN sample-app
+shot 04-older        -TEYLA_SAMPLE YES -TEYLA_TAB decisions -TEYLA_OLDER open
 shot 05-products     -TEYLA_SAMPLE YES -TEYLA_TAB products
 shot 06-welcome      -TEYLA_ONBOARDING_STEP 0
 xcrun simctl terminate "$udid" "$bundle" >/dev/null 2>&1 || true

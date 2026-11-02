@@ -20,26 +20,28 @@ final class SampleModeTests: XCTestCase {
                         sampleData: { Self.sampleJSON() })
     }
 
-    func testTheBundledSampleDecodesWithAPortfolioAndAnOlderQuestion() throws {
+    func testTheBundledSampleDecodesWithCoreProductsAndAnOlderQuestion() throws {
         let now = Date()
         let snapshot = try XCTUnwrap(SampleData.snapshot(from: XCTUnwrap(Self.sampleJSON()), now: now))
         XCTAssertEqual(snapshot.version, 3)
         XCTAssertEqual(snapshot.portfolio?.products.count, 5)
-        XCTAssertEqual(snapshot.portfolio.map(PortfolioFormat.headline),
-                       "1 off track \u{00B7} 1 at risk \u{00B7} 2 on track \u{00B7} 1 parked")
+        XCTAssertEqual(snapshot.portfolio?.core.count, 4)
+        XCTAssertEqual(snapshot.autoClosed?.count, 3)
         // The sample never looks stale: it was "written" now.
         let generated = try XCTUnwrap(snapshot.generatedDate)
         XCTAssertLessThan(abs(generated.timeIntervalSince(now)), 2)
-        let split = PhoneFormat.splitAsks(snapshot.asks, snapshot: snapshot, now: now)
-        XCTAssertEqual(split.older.count, 2)
-        XCTAssertEqual(split.fresh.count, 3)
+        let lists = DecisionLists(asks: snapshot.asks, snapshot: snapshot, now: now)
+        XCTAssertEqual(lists.fresh.count, 6)
+        XCTAssertEqual(lists.older.count, 1)
+        XCTAssertEqual(lists.agent.count, 2)
+        XCTAssertEqual(lists.close.count, 1)
         // Every id the phone could send to is a valid relay target.
         XCTAssertTrue(snapshot.asks.allSatisfy { OutboxEntry.isTarget($0.id) })
         XCTAssertTrue(snapshot.products.allSatisfy { OutboxEntry.isTarget($0.name) })
     }
 
     func testTimestampsMoveWithTheSnapshot() throws {
-        let then = ISODate.parse("2026-10-25T09:15:54Z")!
+        let then = ISODate.parse("2026-11-02T09:00:00Z")!
         let later = then.addingTimeInterval(3 * 86_400)
         let snapshot = try XCTUnwrap(SampleData.snapshot(from: XCTUnwrap(Self.sampleJSON()), now: later))
         let portfolio = try XCTUnwrap(snapshot.portfolio)
@@ -88,6 +90,13 @@ final class SampleModeTests: XCTestCase {
         let action = try XCTUnwrap(model.action(for: .answer, target: ask.id))
         let outcome = try XCTUnwrap(action.outcome, "the result is there at once, no Mac to wait for")
         XCTAssertEqual(PhoneFormat.outcomeLine(outcome), "Sample: nothing was sent")
+
+        // A close in the sample is simulated too: nothing closes, and the screen says so.
+        let close = try XCTUnwrap(DecisionLists(asks: snapshot.asks, snapshot: snapshot, now: Date()).close.first)
+        await model.acceptClose([close])
+        XCTAssertTrue(model.closeProgress.simulated)
+        XCTAssertTrue(model.closeProgress.closed.isEmpty)
+        XCTAssertEqual(model.autoClosed.count, 3)
 
         let product = try XCTUnwrap(model.dispatchTargets.first)
         let task = await model.send(kind: .dispatch, target: product.name, aboutText: "", label: product.name, text: "Add a tester")
