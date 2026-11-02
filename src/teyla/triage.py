@@ -144,7 +144,8 @@ def decide(row: dict, cache: dict | None, known: frozenset = frozenset(), undone
     if e.get("bucket") not in BUCKETS or e.get("action") not in ACTIONS:
         return None
     # The model may not hand a deploy, a release or a delete to an agent: that step needs the owner's word.
-    if e["bucket"] == "agent" and _HAZARD_RE.search(f"{row.get('title') or ''}\n{row.get('question') or ''}\n{row.get('context') or ''}"):
+    risky = [row.get("title"), row.get("question"), row.get("context"), *(row.get("options") or [])]
+    if e["bucket"] == "agent" and _HAZARD_RE.search("\n".join(str(x or "") for x in risky)):
         return make("owner", "decide", "", "A risky step waits for your word.", "rule")
     return make(e["bucket"], e["action"] if e["bucket"] == "owner" else "", _tidy(e.get("default"), DEFAULT_WORDS, DEFAULT_CHARS),
                 _tidy(e.get("why"), WHY_WORDS), "model")

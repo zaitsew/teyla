@@ -93,7 +93,8 @@ def test_options_alone_are_left_to_the_model_and_stay_owner_asks_without_it():
 
 
 def test_the_model_cannot_hand_a_risky_step_to_an_agent():
-    for kw in ({"question": "Deploy the function now?"}, {"question": "Go on?", "context": "This deletes the old table"}):
+    for kw in ({"question": "Deploy the function now?"}, {"question": "Go on?", "context": "This deletes the old table"},
+               {"question": "Which next step?", "options": ["Deploy now", "Wait"]}):
         r = row(**kw)
         c = cached([r], aaaa0001=answer("aaaa0001", "agent", default="Yes."))
         t = triage.decide(r, c, use_model=True)
