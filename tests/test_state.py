@@ -226,11 +226,13 @@ def test_build_snapshot_matches_the_contract_fields(tmp_path):
     fixture = json.loads((FIXTURES / "state.v3.json").read_text())
     assert set(st) == set(fixture)
     assert set(st["totals"]) == set(fixture["totals"])
-    assert set(st["asks"][0]) == set(fixture["asks"][0])
+    assert set(st["asks"][0]) == set(fixture["asks"][0]) - {"triage"}      # no rule decides this ask: no triage
+    assert [set(a["triage"]) for a in fixture["asks"] if "triage" in a] == [set(fixture["asks"][0]["triage"])] * 4
     assert set(st["products"][0]) == set(fixture["products"][0])
     assert set(st["relay"]) == set(fixture["relay"])
-    assert st["totals"] == {"questions": 1, "running": 0, "spent_today_usd": 4.1, "tasks": 0, "done": 0,
-                            "resolved": 0, "duplicates": 0}
+    assert set(st["auto_closed"]) == set(fixture["auto_closed"]) and st["auto_closed"] == {"count": 0, "items": []}
+    assert st["totals"] == {"questions": 1, "questions_raw": 1, "running": 0, "spent_today_usd": 4.1, "tasks": 0,
+                            "done": 0, "resolved": 0, "duplicates": 0}
     assert st["version"] == 3 and st["generated"] == asks._iso(NOW)
     assert st["relay"] == {"on": False, "paired": False, "folder": "", "synced": ""}
 
@@ -338,8 +340,17 @@ def snapshot(items):
     return state.build(NOW, items=items, repos={}, spent=None, desktop="/nonexistent", codex_root="/nonexistent")
 
 
+def write_triage_cache(rows):
+    """A cache that holds an `owner` answer for every row the rules leave: nothing is left for the model."""
+    from teyla import triage
+    answers = {r["id"]: {"bucket": "owner", "action": "", "default": "", "why": "Only you can say."}
+               for r in rows if triage.rule(r) is None}
+    triage.save_cache(triage.store(triage.load_cache(), {r["id"]: r for r in rows}, answers, NOW))
+
+
 def test_model_brief_replaces_rules_when_the_cache_matches_the_open_set(brief_env):
     write_brief_cache(brief_rows())
+    write_triage_cache(brief_rows())
     st = snapshot(brief_items())
     assert st["brief"] == {"line": "Cellar waits on a key and a review decision; Atlas can wait.", "source": "model"}
     assert [(a["id"], a["rank"], a["unblocks"]) for a in st["asks"]] == [

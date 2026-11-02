@@ -7,6 +7,7 @@
  },
  "totals": {
   "questions": 3,
+  "questions_raw": 5,
   "running": 3,
   "spent_today_usd": 4.1,
   "tasks": 2,
@@ -36,7 +37,14 @@
    "unblocks": "the iPhone release",
    "rank": 1,
    "delivery": "claude",
-   "muted": false
+   "muted": false,
+   "triage": {
+    "bucket": "owner",
+    "action": "decide",
+    "default": "",
+    "why": "Offers you a choice.",
+    "source": "rule"
+   }
   },
   {
    "id": "b6b78de8",
@@ -58,7 +66,14 @@
    "unblocks": "the Android test track",
    "rank": 2,
    "delivery": "claude",
-   "muted": false
+   "muted": false,
+   "triage": {
+    "bucket": "owner",
+    "action": "do",
+    "default": "",
+    "why": "A step only you can take on your device.",
+    "source": "rule"
+   }
   },
   {
    "id": "cf075610",
@@ -82,6 +97,60 @@
    "rank": 3,
    "delivery": "codex",
    "muted": false
+  },
+  {
+   "id": "d41f0a3c",
+   "kind": "question",
+   "product": "atlas",
+   "title": "Atlas trip export tests",
+   "question": "Want me to add the missing unit test for the trip export?",
+   "context": "The export has no test for an empty trip.",
+   "options": [],
+   "archived": false,
+   "link": "claude://claude.ai/epitaxy/local_00000000-0000-0000-0000-000000000008",
+   "pr": "",
+   "harness": "claude-desktop",
+   "status": "open",
+   "ts": "2026-10-16T19:40:00Z",
+   "age_s": 7200,
+   "unblocks": "",
+   "rank": 4,
+   "delivery": "claude",
+   "muted": false,
+   "triage": {
+    "bucket": "agent",
+    "action": "",
+    "default": "Yes, go ahead.",
+    "why": "A routine permission question; the agent can proceed.",
+    "source": "rule"
+   }
+  },
+  {
+   "id": "e5a2b9d7",
+   "kind": "question",
+   "product": "cellar",
+   "title": "Cellar Android build 1.0 (3)",
+   "question": "Build 1.0 (3) is superseded by 1.0 (4). Leave it as it is?",
+   "context": "Build 1.0 (4) is on the internal track.",
+   "options": [],
+   "archived": false,
+   "link": "claude://claude.ai/epitaxy/local_00000000-0000-0000-0000-000000000009",
+   "pr": "",
+   "harness": "claude-desktop",
+   "status": "open",
+   "ts": "2026-10-16T18:40:00Z",
+   "age_s": 10800,
+   "unblocks": "",
+   "rank": 5,
+   "delivery": "claude",
+   "muted": false,
+   "triage": {
+    "bucket": "close",
+    "action": "",
+    "default": "",
+    "why": "Superseded by a newer build; nothing to decide.",
+    "source": "model"
+   }
   }
  ],
  "tasks": [
@@ -141,6 +210,7 @@
   {
    "name": "atlas",
    "waiting": 1,
+   "waiting_raw": 2,
    "muted": 0,
    "state": "waiting",
    "line": "iPhone 1.1.5 (126) in TestFlight",
@@ -159,6 +229,7 @@
   {
    "name": "cellar",
    "waiting": 2,
+   "waiting_raw": 3,
    "muted": 0,
    "state": "waiting",
    "line": "Mac 1.1 (18) in App Review",
@@ -177,6 +248,7 @@
   {
    "name": "teyla",
    "waiting": 0,
+   "waiting_raw": 0,
    "muted": 0,
    "state": "shipped",
    "line": "0.26.0 released today",
@@ -195,6 +267,7 @@
   {
    "name": "lens",
    "waiting": 0,
+   "waiting_raw": 0,
    "muted": 0,
    "state": "quiet",
    "line": "no activity for 5 days",
@@ -342,6 +415,7 @@
      "spend_7d_usd": 210.5
     },
     "waiting": 3,
+    "waiting_raw": 5,
     "oldest_wait_days": 9.2,
     "tasks": 1,
     "milestone": "family: 2 of 9 requirements left",
@@ -385,7 +459,7 @@
       "label": "4 active this week, 12 total"
      },
      "milestone": "family: 2 of 9 requirements left",
-     "blocker": "",
+     "blocker": "Swap the iPhone review to the newest build, 1.1, or keep 1.0…",
      "quiet_days": 0,
      "line": "family: 2 of 9 requirements left"
     }
@@ -428,6 +502,7 @@
      "spend_7d_usd": 18.0
     },
     "waiting": 0,
+    "waiting_raw": 0,
     "oldest_wait_days": 0,
     "tasks": 0,
     "milestone": "",
@@ -453,6 +528,23 @@
      "quiet_days": 1,
      "line": "macOS 0.9.0 is installable"
     }
+   }
+  ]
+ },
+ "auto_closed": {
+  "count": 2,
+  "items": [
+   {
+    "id": "3b9d1e72",
+    "title": "Lens shot list export",
+    "product": "lens",
+    "reason": "PR merged https://github.com/example/lens/pull/14"
+   },
+   {
+    "id": "9c04aa51",
+    "title": "Nightly publish",
+    "product": "cellar",
+    "reason": "scheduled task off nightly-publish"
    }
   ]
  }

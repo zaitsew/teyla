@@ -2,7 +2,7 @@
 
 Teyla reads your session logs, your repos and your config on your Mac. It has no server, no account,
 no telemetry and no analytics SDK. It never uploads a transcript. Nothing about your sessions leaves your Mac unless you turn on a feature that says so; today
-that is one row (14, the model brief), off by default.
+that is one row (14, the model brief and ask triage), off by default.
 
 It does make the calls below. Each row names the command that triggers it, the host, what is sent,
 and whether it runs without you asking. "Default on" means it runs with a stock install and no flag.
@@ -47,7 +47,7 @@ These use your own `claude`, `codex` or `grok` login. The text goes to that prov
 
 | # | Trigger | Host | What is sent | Default on | Safe mode |
 |---|---|---|---|---|---|
-| 14 | The model brief, only when you turn it on: `teyla state` and the Mac app start `teyla state --refresh-brief` in the background | Anthropic, through `claude -p` (Haiku) | Up to 15 open questions from your sessions, each field cut to 400 characters. No tools, no settings, no saved session. | **No, opt-in**: `teyla config set state.model_brief=true` turns it on, `=false` turns it off | closed |
+| 14 | The model brief and ask triage, only when you turn it on: `teyla state` and the Mac app start `teyla state --refresh-brief` in the background | Anthropic, through `claude -p` (Haiku) | Up to two calls per refresh, both with no tools, no settings and no saved session. Triage: up to 15 open questions that no rule decided, each with its question and context cut to 400 characters and up to 6 offered options cut to 80. A question that names a price, a key, a person, a choice or a step on your device is decided by a rule and never sent. The answers are cached per ask id and text in `~/.teyla/state-triage.json` (mode 0600). Brief: up to 15 of the questions that need you, each field cut to 400 characters. | **No, opt-in**: `teyla config set state.model_brief=true` turns both on, `=false` turns them off | closed |
 | 15 | `teyla intent cover ... --model` | Anthropic, through `claude -p` | The plan file and the unresolved sentences from your own prompts. | No (needs `--model`) | closed |
 | 16 | `teyla voice check ... --model` | Anthropic, through `claude -p` | The draft text. | No (needs `--model`) | closed |
 | 17 | `teyla harness verify --live` | Each installed provider, through its CLI | One fixed line asking for a policy section title. | No (needs `--live`; no routine or hook runs it) | not gated |

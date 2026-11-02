@@ -22,6 +22,8 @@
   teyla harvest <path> [--project SLUG]                          tool spine + corrections for sessions touching a path
   teyla asks [--days N] [--product P] [--all] [--json] [--html [-o FILE] [--open]]   every question an AI session left waiting on you
   teyla asks done <id-prefix>... [--note TEXT] | undo <id-prefix>... | snooze <id-prefix> <days>   close one, reopen one, or hide one
+  teyla asks triage [--product P] [--json]                         the questions sorted into need you, agents can act, look closable
+  teyla asks accept-close [<id-prefix>...] [--json]                close the "look closable" ones together; prints the undo line
   teyla product [list] [--json] | show <id> [--json] [--quick] | init [--write] | add <id> [--repo P] | set <id> k=v... | park|wake <id>   the product registry (~/.teyla/products.toml)
   teyla product assign <ask-id-prefix|session-id> <id> [--ask-only]   file a session's asks under another product
   teyla note "text" [--product P] [--json] | link <id> <product> | drop|undrop <id>   keep a text idea, linked to a product (~/.teyla/notes/)

@@ -45,7 +45,7 @@ import subprocess
 import sys
 from urllib.parse import urlparse
 
-from . import asks, backlog, net, productize, registry, reviews, testflight
+from . import asks, backlog, net, productize, registry, reviews, testflight, triage
 from .control import state as control
 
 VERSION = 1
@@ -837,7 +837,8 @@ def build(now: float, *, reg: dict, prods: list[dict], ask_rows: list[dict], tas
         names = {r.name.lower() for r in repos}
         gh = _github_view(slugs, names, cache, bl, ledger, threshold, now)
         row = by_prod.get(pid) or {}
-        mine = [a for a in ask_rows if a["product"] == pid and not a.get("muted")]
+        mine_raw = [a for a in ask_rows if a["product"] == pid and not a.get("muted")]
+        mine = [a for a in mine_raw if triage.counts_for_owner(a)]     # the questions that need the owner
         oldest = round(max((a["age_s"] for a in mine), default=0) / 86400, 1)
         owner_tasks = [t for t in tasks if t["product"] == pid]
         last = row.get("last_activity") or ""
@@ -850,7 +851,7 @@ def build(now: float, *, reg: dict, prods: list[dict], ask_rows: list[dict], tas
         primary_row = next((r for r in rows if r["platform"] == primary), None)
         progress = {"can_install": _can_install(rows),
                     "shipped_7d": {"prs": gh["shipped"], "top": gh["top"]},
-                    "users": usage_of(repos, usage), "milestone": milestone, "blocker": "",
+                    "users": usage_of(repos, usage), "milestone": milestone, "blocker": triage.blocker(mine),
                     "quiet_days": quiet, "line": line_of(gh["open_p1"], milestone, primary_row, quiet)}
         items.append({
             "id": pid, "title": row.get("display_name") or rp.get("name") or pid, "stage": stage,
@@ -862,7 +863,7 @@ def build(now: float, *, reg: dict, prods: list[dict], ask_rows: list[dict], tas
                     "merged_7d": gh["merged_7d"], "unreviewed_7d": gh["unreviewed_7d"], "open_p1": gh["open_p1"]},
             "activity": {"last": last, "sessions_7d": int(act.get("sessions_7d") or 0),
                          "spend_7d_usd": float(act.get("spend_7d_usd") or 0)},
-            "waiting": len(mine), "oldest_wait_days": oldest, "tasks": len(owner_tasks), "milestone": milestone,
+            "waiting": len(mine), "waiting_raw": len(mine_raw), "oldest_wait_days": oldest, "tasks": len(owner_tasks), "milestone": milestone,
             "progress": progress,
             "next": row.get("next") or (blocked["detail"] if blocked and health != "parked" else ""),
             "repo": row.get("repo") or "",

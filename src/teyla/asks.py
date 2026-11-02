@@ -8,6 +8,8 @@ module reads what is already on disk, read-only, and lists the open ones in one 
     teyla asks done <id-prefix>... [--note TEXT]              close one (or several)
     teyla asks undo <id-prefix>...                            reopen a done one; an auto-closed ask stays open
     teyla asks snooze <id-prefix> <days>                      hide one for N days
+    teyla asks triage [--product P] [--json]                  which asks need you, which an agent can act on, which look closable
+    teyla asks accept-close [<id-prefix>...] [--json]         close the asks in bucket `close`; prints the `undo:` line
     teyla asks --html [-o FILE] [--open]                      one self-contained page (default ~/.teyla/asks.html)
     teyla asks --quiet                                        refresh ~/.teyla/asks.count only (what the hook reads)
 
@@ -1217,6 +1219,28 @@ def filtered_line(resolved: int, dupes: int, more: dict | None = None) -> str:
     return "filtered: " + ", ".join(parts) + " — teyla asks --all"
 
 
+AUTO_CLOSED_WINDOW_S = 24 * 3600       # `auto_closed` looks back this far
+AUTO_CLOSED_MAX = 50                   # items listed; `count` is always the full number
+
+
+def auto_closed(items: list["Ask"], st: dict, now: float) -> dict:
+    """What Teyla closed on its own in the last 24 hours: `{count, items: [{id, title, product, reason}]}`, newest
+    first. An ask counts when its done record carries an `auto:` note and a `ts` inside the window. Anything the
+    owner closed (no `auto:` note, `answer`, `accept-close`) is left out, and so is a record with no timestamp.
+    A repeat that is only hidden under a newer ask (status `duplicate`) is not in the done store and is not listed."""
+    rows = []
+    for a in items:
+        if a.status != "done" or not a.note.startswith("auto:"):
+            continue
+        at = _epoch((st["done"].get(a.id) or {}).get("ts"))
+        if at is None or not 0 <= now - at <= AUTO_CLOSED_WINDOW_S:
+            continue
+        rows.append((at, {"id": a.id, "title": a.title, "product": a.product,
+                          "reason": clip(a.note[len("auto:"):].strip(), 160)}))
+    rows.sort(key=lambda r: (-r[0], r[1]["id"]))
+    return {"count": len(rows), "items": [r for _, r in rows[:AUTO_CLOSED_MAX]]}
+
+
 # --- collecting everything --------------------------------------------------------------------
 
 def collect(days: int = DEFAULT_DAYS, now: float | None = None, desktop: str | None = None,
@@ -1610,6 +1634,15 @@ def cmd_asks(args) -> int:
         lines, code = undo(words[1:], now)
         print("\n".join(lines), file=sys.stderr if code else sys.stdout)
         return code
+    if words and words[0] == "triage":
+        from . import triage
+        if len(words) > 1:
+            print("usage: teyla asks triage [--product P] [--json]", file=sys.stderr)
+            return 64
+        return triage.cmd_triage(args, now)
+    if words and words[0] == "accept-close":
+        from . import triage
+        return triage.cmd_accept_close(args, words[1:], now)
     if words and words[0] == "snooze":
         try:
             if len(words) != 3:
@@ -1622,7 +1655,7 @@ def cmd_asks(args) -> int:
         print(line, file=sys.stderr if code else sys.stdout)
         return code
     if words:
-        print(f"unknown action {words[0]!r}: expected done, undo or snooze", file=sys.stderr)
+        print(f"unknown action {words[0]!r}: expected done, undo, snooze, triage or accept-close", file=sys.stderr)
         return 64
     days = args.days or DEFAULT_DAYS
     everything = collect(days, now, fetch=True)
@@ -1655,7 +1688,7 @@ def cmd_asks(args) -> int:
 def register(sp):
     q = sp.add_parser("asks", help="every question an AI session left waiting on you, in one list")
     q.set_defaults(fn=cmd_asks)
-    q.add_argument("words", nargs="*", help="done <id-prefix>... | undo <id-prefix>... | snooze <id-prefix> <days>; none lists")
+    q.add_argument("words", nargs="*", help="done <id-prefix>... | undo <id-prefix>... | snooze <id-prefix> <days> | triage | accept-close [<id-prefix>...]; none lists")
     q.add_argument("--days", type=int, help=f"look back this far (default {DEFAULT_DAYS})")
     q.add_argument("--product", help="one product (registry id); a parked product shows its muted asks")
     q.add_argument("--all", action="store_true", help="include done and snoozed items, and the asks of parked products")
