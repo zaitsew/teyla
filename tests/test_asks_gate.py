@@ -213,6 +213,51 @@ def test_no_schedule_records_read_as_none(tmp_path, monkeypatch):
     assert asks.schedule_states(tmp_path / "empty-home") is None
 
 
+def test_a_broken_schedule_store_closes_nothing(tmp_path):
+    """Unreadable records make every definition look unregistered. That must not read as "the job is off"."""
+    home = tmp_path / "home"
+    rec = home / "Library" / "Application Support" / "Claude" / "claude-code-sessions" / "acct" / "work"
+    rec.mkdir(parents=True)
+    (rec / "scheduled-tasks.json").write_text("{ not json")
+    (home / ".claude" / "scheduled-tasks" / JOB).mkdir(parents=True)
+    (home / ".claude" / "scheduled-tasks" / JOB / "SKILL.md").write_text("job\n")
+    assert asks.schedule_states(home) is None
+
+
+def test_a_definition_with_no_record_keeps_its_ask(tmp_path):
+    items = runs(1, kind="blocked")
+    settle(items, tasks={JOB: "unknown", "other": "on"})
+    assert open_ids(items) == ["run00"]
+
+
+def test_similar_questions_for_different_builds_stay_apart():
+    base = "Please check that the store review for the example application passed on build {}"
+    items = [ask("new", question=base.format(13), hours_ago=1), ask("old", question=base.format(12), hours_ago=3)]
+    settle(items)
+    assert open_ids(items) == ["new", "old"]
+
+
+def test_a_credential_repeat_with_another_context_stays_apart():
+    q = "Provide the missing credential"
+    items = [ask("aaa", task=JOB, question=q, context="for the mail service", hours_ago=1),
+             ask("bbb", task=JOB, question=q, context="for the payment service", hours_ago=3)]
+    settle(items, tasks={JOB: "on"})
+    assert open_ids(items) == ["aaa", "bbb"]
+
+
+def test_a_person_named_only_in_the_title_is_the_hard_floor():
+    a = ask("aaa", kind="blocked", task=JOB, title="Ask Dana Smith", question="Access is still unavailable")
+    assert asks.needs_owner(a)
+    items = [a]
+    settle(items, tasks={JOB: "off"})
+    assert open_ids(items) == ["aaa"]
+
+
+def test_a_product_name_in_the_title_does_not_stop_a_job_from_collapsing():
+    known = frozenset(("example", "tool"))
+    assert not asks.needs_owner(ask("aaa", title="Example Tool: nightly publish"), known)
+
+
 def test_a_desktop_session_names_its_task_and_the_scheduled_store_decides(tmp_path, monkeypatch):
     """End to end from files: 21 session records with `scheduledTaskId`, one disabled job in the app's record."""
     root = tmp_path / "sessions"

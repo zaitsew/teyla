@@ -841,18 +841,19 @@ def _imperative_first(text: str) -> bool:
 def _needs_owner(title: str, body: str, known: frozenset) -> bool:
     if _MONEY_RE.search(title) or _MONEY_RE.search(body) or _SECRET_RE.search(title) or _SECRET_RE.search(body):
         return True
-    if _HANDLE.search(body):
-        return True
     stop = _NOT_NAMES | known
-    for rx in (_PERSON_CUE, _POSSESSIVE):
-        for m in rx.finditer(body):
-            if m.group(1).lower() not in stop:
-                return True
-    for m in _CAP_PAIR.finditer(body):
-        first, second = m.group(1).lower(), m.group(2).lower()
-        if first in stop or second in stop or first in IMPERATIVES | _MORE_IMPERATIVES:
-            continue
-        return True
+    for text in (title, body):
+        if _HANDLE.search(text):
+            return True
+        for rx in (_PERSON_CUE, _POSSESSIVE):
+            for m in rx.finditer(text):
+                if m.group(1).lower() not in stop:
+                    return True
+        for m in _CAP_PAIR.finditer(text):
+            first, second = m.group(1).lower(), m.group(2).lower()
+            if first in stop or second in stop or first in IMPERATIVES | _MORE_IMPERATIVES:
+                continue
+            return True
     return False
 
 
@@ -873,19 +874,23 @@ def _known_words(reg: dict) -> frozenset:
     return frozenset(words)
 
 
-def same_request(a: "Ask", b: "Ask") -> bool:
+def _owner_text(a: "Ask") -> str:
+    return norm_question(f"{a.question}\n{a.context}")
+
+
+def same_request(a: "Ask", b: "Ask", known: frozenset | None = None) -> bool:
     """One request asked twice: the same session and the same normalised question, or a token-set Jaccard
-    of at least 0.8 over words of 3+ letters when both questions have at least 6 such words. An ask that
-    `needs_owner` matches only an identical question."""
+    of at least 0.8 over words of 3+ letters when both questions have at least 6 such words. Asks aimed at
+    different versions never match, and an ask that `needs_owner` matches only identical text and context."""
     na, nb = norm_question(a.question), norm_question(b.question)
-    if not na or not nb:
+    if not na or not nb or target_versions(a) != target_versions(b):
         return False
     if a.session and a.session == b.session and na == nb:
         return True
     wa, wb = question_words(na), question_words(nb)
     if len(wa) < SIMILAR_MIN_WORDS or len(wb) < SIMILAR_MIN_WORDS:
         return False
-    if na != nb and (needs_owner(a) or needs_owner(b)):
+    if (needs_owner(a, known) or needs_owner(b, known)) and _owner_text(a) != _owner_text(b):
         return False
     return len(wa & wb) / len(wa | wb) >= SIMILAR_JACCARD
 
@@ -971,10 +976,10 @@ def target_versions(a: "Ask") -> frozenset:
     return frozenset(out)
 
 
-def _run_groups(items: list["Ask"]) -> list[list["Ask"]]:
+def _run_groups(items: list["Ask"], known: frozenset | None = None) -> list[list["Ask"]]:
     """Asks that are one job's repeat runs: the same product, title and scheduled task (the desktop session
     names it); or, with no task named, the same product, title and harness in `RUN_MIN_SESSIONS` or more
-    sessions. Split by target version, and by exact question when the text `needs_owner`."""
+    sessions. Split by target version, and by exact text and context when the ask `needs_owner`."""
     rows = [a for a in items if a.kind in ("question", "blocked") and a.status in ("open", "snoozed", "done")
             and a.title and not a.note.startswith(COLLAPSED)]
     base: dict[tuple, list[Ask]] = {}
@@ -989,7 +994,7 @@ def _run_groups(items: list["Ask"]) -> list[list["Ask"]]:
     for group_rows in base.values():
         split: dict[tuple, list[Ask]] = {}
         for a in group_rows:
-            split.setdefault((target_versions(a), norm_question(a.question) if needs_owner(a) else None), []).append(a)
+            split.setdefault((target_versions(a), _owner_text(a) if needs_owner(a, known) else None), []).append(a)
         out += [r for r in split.values() if len(r) > 1]
     return out
 
@@ -1016,15 +1021,15 @@ def _fold(rows: list["Ask"], st: dict, now: float, note: str, same) -> bool:
     return changed
 
 
-def _collapse_runs(items: list["Ask"], st: dict, now: float) -> bool:
+def _collapse_runs(items: list["Ask"], st: dict, now: float, known: frozenset | None = None) -> bool:
     """Repeat runs of one job collapse into the newest, `blocked` asks included; no fuzzy match is used."""
     changed = False
-    for rows in _run_groups(items):
+    for rows in _run_groups(items, known):
         changed = _fold(rows, st, now, AUTO_RUN, lambda k, c: True) or changed
     return changed
 
 
-def _collapse(items: list["Ask"], st: dict, now: float) -> bool:
+def _collapse(items: list["Ask"], st: dict, now: float, known: frozenset | None = None) -> bool:
     """Collapse the repeats of an ask into the newest one, product by product. A repeat of an ask that is
     done is done too, and that is recorded; a repeat of an open ask is hidden (status `duplicate`) and
     listed in the kept ask's `dupes`."""
@@ -1034,7 +1039,7 @@ def _collapse(items: list["Ask"], st: dict, now: float) -> bool:
             by.setdefault(a.product, []).append(a)
     changed = False
     for rows in by.values():
-        changed = _fold(rows, st, now, AUTO_DUP, same_request) or changed
+        changed = _fold(rows, st, now, AUTO_DUP, lambda k, c: same_request(k, c, known)) or changed
     return changed
 
 
@@ -1045,10 +1050,11 @@ def _schedule_home() -> pathlib.Path:
 
 
 def schedule_states(home: pathlib.Path | None = None) -> dict[str, str] | None:
-    """{task id: on | off | once} for the Claude desktop scheduled tasks, read from the app's records and the
-    definition folder (`schedules.read_claude_desktop`, local files only). `off` is a recurring task that is
-    disabled or has a definition the app never scheduled; `once` a one-shot that switched itself off after it
-    ran. None when no task is recorded at all, so a missing store never reads as "all deleted"."""
+    """{task id: on | off | once | unknown} for the Claude desktop scheduled tasks, read from the app's records and
+    the definition folder (`schedules.read_claude_desktop`, local files only). `off` is a recurring task that is
+    disabled; `once` a one-shot that switched itself off after it ran; `unknown` a definition with no record, which
+    is also what every task looks like while the records cannot be read, so it closes nothing. None when no record
+    is readable at all, so a missing or broken store never reads as "all deleted"."""
     try:
         from . import schedules
         entries = schedules.read_claude_desktop(_schedule_home() if home is None else home)
@@ -1060,12 +1066,12 @@ def schedule_states(home: pathlib.Path | None = None) -> dict[str, str] | None:
         if not tid:
             continue
         if e.get("verdict") == "UNREGISTERED":
-            out[tid] = "off"
+            out[tid] = "unknown"
         elif e.get("enabled") is False:
             out[tid] = "once" if e.get("fire_at") is not None else "off"
         else:
             out[tid] = "on"
-    return out or None
+    return out if any(v != "unknown" for v in out.values()) else None
 
 
 def _close_off_tasks(items: list["Ask"], st: dict, now: float, tasks: dict | None, known: frozenset) -> bool:
@@ -1154,9 +1160,9 @@ def settle(items: list["Ask"], now: float, *, st: dict | None = None, fetch: boo
     st = load_state() if own else st
     changed = _resolve_prs(items, st, now, fetch=fetch, runner=runner)
     changed = _classify_reports(items, st, now) or changed
-    changed = _collapse_runs(items, st, now) or changed
-    changed = _collapse(items, st, now) or changed
-    known = _known_words(registry.load()) if any(a.task or is_testflight_tap(a) for a in items) else frozenset()
+    known = _known_words(registry.load())
+    changed = _collapse_runs(items, st, now, known) or changed
+    changed = _collapse(items, st, now, known) or changed
     changed = _close_off_tasks(items, st, now, tasks, known) or changed
     changed = _close_testflight(items, st, now, stores, known) or changed
     if changed and own:

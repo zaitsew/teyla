@@ -117,7 +117,7 @@ ask that was already closed by hand stays as it is.
 
 **4. A job that is off closes its cards.** The source of `teyla schedules` holds the Claude desktop app's task
 records (`scheduled-tasks.json`) and the definitions in `~/.claude/scheduled-tasks/`. If the ask's task is a recurring
-task that is disabled, or whose definition the app never scheduled, or that no longer exists, the ask closes. The
+task that is disabled, or that no longer exists, the ask closes. A definition with no record closes nothing, and neither does a store that cannot be read. The
 read is from local files only. Three cases keep the ask: a one-shot task that switched itself off after it ran;
 no task record readable at all (a missing store never reads as "everything deleted"); and an ask that
 `needs_owner`. Re-enabling a task does not reopen what was closed; use `undo`.
