@@ -12,13 +12,14 @@ Building it never calls the network. It joins what Teyla already keeps:
     the GitHub backlog    ~/.teyla/state-backlog.json (open PRs, as a fallback for the counts below)
     the review ledger     ~/.cache/review-ledger.tsv, read when the object is built
     the portfolio cache   ~/.teyla/portfolio-cache.json (0600): the parts that need a network call or a slow read
-    the usage cache       ~/.teyla/products-cache.json (0600): the counters `teyla products` printed last
+    the usage cache       ~/.teyla/products-cache.json (0600): the counters of the last usage probes
 
-`teyla portfolio --refresh` is the pass that fills the cache, in three independent parts:
+`teyla portfolio --refresh` is the pass that fills the caches, in independent parts:
 
     stores     `teyla testflight` and `teyla play` for each product in scope (the release tools, 80 s or so)
     github     merged PRs of the last 7 days per repo and the owner's open PRs (the calls of `teyla reviews`
                and the backlog), kept as compact rows so the ledger is read when the object is built
+    usage      every repo's `./check.sh usage` (the walk of `teyla products`, 5 s or so), into the usage cache
     activity   sessions and spend of the last 7, 30 and 365 days per product, read from the local transcripts (no network)
     metrics    commits of the last 7, 30 and 365 days and 12 weekly buckets per product, from local git (no network),
                and the product's icon as a small JPEG (macOS `sips`, no network)
@@ -53,7 +54,7 @@ import sys
 import tempfile
 from urllib.parse import urlparse
 
-from . import asks, backlog, net, productize, registry, reviews, testflight, triage
+from . import asks, backlog, net, products, productize, registry, reviews, testflight, triage
 from .control import state as control
 
 VERSION = 1
@@ -713,10 +714,18 @@ def refresh_metrics(reg: dict, cache: dict, now: float) -> bool:
 
 # --- the refresh pass --------------------------------------------------------------------------
 
+def refresh_usage(cfg: dict | None = None) -> bool:
+    """The usage probes, for the numbers on Home. It is one repo's own code per repo, and a probe may call its own
+    backend, so this part runs only with the network part. A repo whose probe fails keeps its last good row and
+    shows in `teyla products`; that alone does not fail the part."""
+    products.table(cfg=cfg, cache=True)
+    return True
+
+
 def refresh(now: float | None = None, *, reg: dict | None = None, cfg: dict | None = None, runner=None,
             network: bool | None = None) -> int:
-    """Run the three parts and rewrite the cache. 0 when every part worked, 1 otherwise. Without the network
-    (safe mode) only the local activity part runs. The cache is stamped with this attempt either way, so a
+    """Run the parts and rewrite the cache. 0 when every part worked, 1 otherwise. Without the network
+    (safe mode) only the local activity and metrics parts run. The cache is stamped with this attempt either way, so a
     permanent failure is retried in 6 hours and not on every snapshot."""
     now = asks._now() if now is None else now
     reg = registry.load() if reg is None else reg
@@ -726,7 +735,8 @@ def refresh(now: float | None = None, *, reg: dict | None = None, cfg: dict | No
     try:
         if allowed:
             for part in (lambda: refresh_stores(reg, cache, now, cfg),
-                         lambda: refresh_github(reg, cache, now, runner)):
+                         lambda: refresh_github(reg, cache, now, runner),
+                         lambda: refresh_usage(cfg)):
                 try:
                     ok = part() and ok
                 except Exception:  # noqa: BLE001 — a part that crashes keeps its old rows
@@ -1312,7 +1322,8 @@ def cmd_portfolio(args) -> int:
                 os.utime(lock, (now, now))
         try:
             if not background and not net.allowed():
-                print(net.refusal("the store and GitHub reads of `teyla portfolio --refresh`"), file=sys.stderr)
+                print(net.refusal("the store and GitHub reads and usage probes of `teyla portfolio --refresh`"),
+                      file=sys.stderr)
             code = refresh(now)
         finally:
             lock.unlink(missing_ok=True)
@@ -1336,7 +1347,7 @@ def register(sp):
     q = sp.add_parser("portfolio", help="where every product stands: health, platforms, PRs, spend (cache only; --refresh reads the stores and GitHub)")
     q.set_defaults(fn=cmd_portfolio)
     q.add_argument("--json", action="store_true")
-    q.add_argument("--refresh", action="store_true", help="run the network pass first: TestFlight, Play, GitHub")
+    q.add_argument("--refresh", action="store_true", help="run the network pass first: TestFlight, Play, GitHub, usage probes")
     q.add_argument("--product", metavar="ID", help="only this product")
     q.add_argument("--allow-network", action="store_true", help="safe mode: let the refresh reach the stores and GitHub this once")
     q.add_argument("--background", action="store_true", help=argparse.SUPPRESS)

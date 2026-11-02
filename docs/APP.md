@@ -403,7 +403,7 @@ version 2. `apps/mac/TeylaTests/Fixtures/state.sample.v3.json` is the reference.
     days, without the mechanical ones (release bumps, "Regenerate ... leak gate", merge commits);
     `top`: up to 3 of their titles, newest first, empty when the cache holds no titles (an older cache has
     none until the next `teyla portfolio --refresh`). `users`: the weekly and total user
-    counts from the counters `teyla products` last printed (`wau=` or `weekly_users=`; `users=` or
+    counts from the counters of the last usage probes, by `teyla products` or the refresh pass (`wau=` or `weekly_users=`; `users=` or
     `users_total=`, summed over the product's repos), or `null` when there is no cache or no such counter.
     `blocker`: the product's top owner question, cut to 12 words, or "" when it has none (see "Ask triage"). `quiet_days`: whole days since
     the last activity, `null` when there is none. `line`: one sentence of at most 12 words, the first that
@@ -488,11 +488,17 @@ The refresh pass (`teyla portfolio --refresh`) gained a fourth, local part, `met
 `activity` it needs no network, so it also runs in safe mode, and a part that fails keeps its old rows. The
 cache keeps `metrics` next to `activity`; an older cache without it loads with empty metrics.
 
+The pass also runs the usage probes, the walk of `teyla products`, so the user numbers are as fresh as the rest. Each
+probe is that repo's own code and may call its backend, so this part runs only with the network part: not in safe mode
+unless `--allow-network` is given, and then only in `[products] repos`. The counters stay in
+`~/.teyla/products-cache.json`, whose `at` says when they last ran. A probe that fails, or exits 0 with no numbers,
+keeps the repo's last good row.
+
 ### New command
 
 | Command | Does |
 |---|---|
-| `teyla portfolio [--json] [--refresh] [--product ID]` | The portfolio object; text is one line per product. `--refresh` runs the network pass first (TestFlight, Play, GitHub), within safe mode's rules. |
+| `teyla portfolio [--json] [--refresh] [--product ID]` | The portfolio object; text is one line per product. `--refresh` runs the network pass first (TestFlight, Play, GitHub, usage probes), within safe mode's rules. |
 
 ## The store build (Mac App Store and TestFlight)
 

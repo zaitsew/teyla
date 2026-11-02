@@ -105,3 +105,41 @@ def test_the_walk_uses_main_but_a_named_repo_and_safe_mode_use_the_checkout(tmp_
     assert "where=old" in products.table([str(repo)], cfg=cfg)
     monkeypatch.setattr("teyla.config.safe_mode", lambda c=None: True)
     assert "where=old" in products.table(cfg=cfg)
+
+
+
+# --- a probe with no numbers, and the PATH of a probe started by the app ----------------------------
+
+def _cached():
+    return products.json.loads(products.cache_path().read_text())["repos"]
+
+
+def test_a_probe_with_no_numbers_keeps_the_last_good_row(tmp_path, monkeypatch):
+    monkeypatch.setattr(products, "cache_path", lambda: tmp_path / "cache.json")
+    products.write_cache({"app": ("ok", {"wau": "3"})})
+    for counters in ({"usage_probe": "needs_teyla"}, {"probe": "needs_key"}, {"x_probe": "unreachable"}, {},
+                     {"logged": "9", "usage_probe": "needs_teyla"}):
+        products.write_cache({"app": ("ok", counters)})
+        assert _cached()["app"] == {"status": "ok", "counters": {"wau": "3"}}
+    products.write_cache({"app": ("ok", {"wau": "4"})})
+    assert _cached()["app"]["counters"] == {"wau": "4"}
+
+
+def test_the_first_row_is_kept_even_with_no_numbers(tmp_path, monkeypatch):
+    monkeypatch.setattr(products, "cache_path", lambda: tmp_path / "cache.json")
+    products.write_cache({"app": ("ok", {"usage_probe": "needs_teyla"})})
+    assert _cached()["app"]["counters"] == {"usage_probe": "needs_teyla"}
+
+
+def test_a_probe_started_with_a_bare_path_finds_teyla(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    tool = home / ".local" / "bin" / "teyla"
+    tool.parent.mkdir(parents=True)
+    tool.write_text("#!/bin/sh\necho found=yes\n")
+    tool.chmod(0o755)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    repo = tmp_path / "app"
+    repo.mkdir()
+    (repo / "check.sh").write_text('case "$1" in\n  usage)\n    teyla\n    exit 0 ;;\nesac\n')
+    assert products.probe(repo) == {"_status": "ok", "found": "yes"}

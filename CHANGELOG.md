@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Refresh updates the user numbers.** `teyla portfolio --refresh` now runs the usage probes, so Home no longer waits
+  for the weekly `teyla products`. It runs outside safe mode only, also from the 6-hour background pass. Probes started
+  by the app or launchd now find `teyla` and the tools in user directories.
+- **A probe with no numbers keeps the last good row.** A probe that exits 0 with no output, or with a marker such as
+  `usage_probe=needs_teyla` or `probe=needs_key`, no longer blanks the repo's counters in the usage cache.
+
 ## 0.37.1 — 2026-11-02 — Probes read the default branch
 
 - **Usage probes read the default branch.** `teyla products` and the Home numbers run `check.sh` as committed on
