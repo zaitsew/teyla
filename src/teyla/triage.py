@@ -100,7 +100,7 @@ def _is_permission(row: dict) -> bool:
     q = str(row.get("question") or "").strip()
     if not q or len(q) > PERMISSION_MAX or q.count("?") != 1 or row.get("options"):
         return False
-    text = f"{row.get('title') or ''}\n{q}"
+    text = f"{row.get('title') or ''}\n{q}\n{row.get('context') or ''}"
     return bool(_PERMISSION_RE.search(q)) and not re.search(r"\bor\b", q, re.I) and not _HAZARD_RE.search(text)
 
 
@@ -121,7 +121,7 @@ def rule(row: dict, known: frozenset = frozenset()) -> dict | None:
         return make("owner", "decide", "", "A gated run waits for your go.", "rule")
     if len(a.options) >= 2:
         return make("owner", "decide", "", "Offers you a choice.", "rule")
-    if _DEVICE_RE.search(f"{a.title}\n{a.question}"):
+    if _DEVICE_RE.search(f"{a.title}\n{a.question}\n{a.context}"):
         return make("owner", "do", "", "A step only you can take on your device.", "rule")
     if _is_permission(row):
         return make("agent", "", "Yes, go ahead.", "A routine permission question; the agent can proceed.", "rule")
@@ -251,9 +251,13 @@ def save_cache(cache: dict) -> None:
 
 # --- stale tasks -------------------------------------------------------------------------------
 
+_MERGE_RE = re.compile(r"\bmerg(?:e|es|ed|ing)\b", re.I)
+
+
 def drop_stale_tasks(tasks: list[dict], items: list[asks.Ask]) -> list[dict]:
-    """The owner's tasks without those whose question is already closed. A merge task is stale when an ask that
-    names the same PR is done and no open ask names it. Issue tasks have no question behind them."""
+    """The owner's tasks without those whose question is already closed. A merge task is stale when a done ask about
+    merging that PR exists and no open ask names it; closing another question on the PR (its title, say) leaves the
+    merge decision open. Issue tasks have no question behind them."""
     from . import backlog                   # backlog imports asks
     closed: set[str] = set()
     live: set[str] = set()
@@ -262,7 +266,8 @@ def drop_stale_tasks(tasks: list[dict], items: list[asks.Ask]) -> list[dict]:
         if not url:
             continue
         if a.status == "done":
-            closed.add(url)
+            if _MERGE_RE.search(f"{a.title}\n{a.question}\n{a.note}"):
+                closed.add(url)
         elif a.status in ("open", "snoozed"):
             live.add(url)
     stale = closed - live

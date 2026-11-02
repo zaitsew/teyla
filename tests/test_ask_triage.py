@@ -422,12 +422,23 @@ def task(kind="merge", link=PR, id_="pr:example/app-a#7"):
 
 
 def test_a_merge_task_whose_question_is_closed_leaves_and_an_open_question_keeps_it():
-    closed = ask("aaaa0001", status="done", pr=PR)
+    closed = ask("aaaa0001", "Merge it now?", status="done", pr=PR)
     t = [task(), task("task", "https://github.com/example/app-a/issues/3", "issue:example/app-a#3")]
     assert [x["id"] for x in triage.drop_stale_tasks(t, [closed])] == ["issue:example/app-a#3"]
     assert triage.drop_stale_tasks(t, [closed, ask("aaaa0002", pr=PR)]) == t              # another question on it is still open
     assert triage.drop_stale_tasks(t, [ask("aaaa0003", pr=PR)]) == t
     assert triage.drop_stale_tasks(t, []) == t
+
+
+def test_closing_another_question_on_a_pr_keeps_its_merge_task():
+    title_choice = ask("aaaa0001", "Which title do you prefer for it?", status="done", pr=PR)
+    assert triage.drop_stale_tasks([task()], [title_choice]) == [task()]
+
+
+def test_the_rules_read_the_context_of_a_short_question():
+    assert triage.rule(row(question="Should I continue?", context="This deletes the production database")) is None
+    t = triage.rule(row(question="Can we proceed?", context="Tap Allow on your iPhone"))
+    assert t["bucket"] == "owner" and t["action"] == "do"
 
 
 def test_a_stale_task_leaves_the_snapshot(model):
