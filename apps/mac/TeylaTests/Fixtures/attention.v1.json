@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "generated": "2027-01-15T08:00:00+00:00",
+  "items": [
+    {
+      "id": "disk:free",
+      "kind": "disk",
+      "title": "Disk is low: 9.2 GB free",
+      "detail": "3% of the disk is free. A sweep would give back about 14.8 GB.",
+      "product": "",
+      "severity": "act",
+      "facts": [],
+      "actions": [
+        {"label": "Free space", "command": ["storage", "sweep"], "preview": ["storage", "sweep", "--dry"], "destructive": true}
+      ]
+    },
+    {
+      "id": "schedule:launchd:com.example.sample-sync",
+      "kind": "schedule",
+      "title": "sample-app: sample-sync is failing",
+      "detail": "Expected every 1h. Last run 12m ago. 6 consecutive failures since 2027-01-14 22:00Z: the sign-in has expired.",
+      "product": "sample-app",
+      "severity": "act",
+      "facts": [],
+      "actions": []
+    },
+    {
+      "id": "schedule:claude-desktop:old-digest",
+      "kind": "schedule",
+      "title": "old-digest has vanished",
+      "detail": "Expected every 1d. Last seen 2027-01-03; it is no longer on this machine.",
+      "product": "",
+      "severity": "act",
+      "facts": [],
+      "actions": [
+        {"label": "Forget", "command": ["schedules", "forget", "claude-desktop:old-digest"], "preview": null, "destructive": true}
+      ]
+    },
+    {
+      "id": "p1:sample-tool",
+      "kind": "p1",
+      "title": "Sample Tool: 2 merged PRs with an open P1",
+      "detail": "#41, #44: 3 open P1 and no later review; the oldest merged 2 d ago (GitHub read 1 h ago).",
+      "product": "sample-tool",
+      "severity": "act",
+      "facts": [],
+      "actions": []
+    },
+    {
+      "id": "offer:O2",
+      "kind": "offer",
+      "title": "Compact long sessions earlier",
+      "detail": "Sets one key in the Claude settings file.",
+      "product": "",
+      "severity": "info",
+      "facts": [
+        {"label": "Trade-off", "text": "Older context is summarised sooner, so a long session may forget an early detail."},
+        {"label": "Undo", "text": "teyla undo O2 removes the setting again; the other keys stay."}
+      ],
+      "actions": [
+        {"label": "Apply", "command": ["apply", "O2", "--yes"], "preview": ["apply", "O2", "--dry"], "destructive": false}
+      ]
+    },
+    {
+      "id": "doctor:harness:sample",
+      "kind": "doctor",
+      "title": "Harness: sample",
+      "detail": "Hooks are wired but not approved (3 of 4); they do not run.",
+      "product": "",
+      "severity": "info",
+      "facts": [
+        {"label": "Fix", "text": "Run the harness once in a terminal and approve each hook."}
+      ],
+      "actions": []
+    },
+    {
+      "id": "unknown:portfolio-stores",
+      "kind": "unknown",
+      "title": "Store builds were never read",
+      "detail": "No successful read of store builds is cached, so problems there would not show.",
+      "product": "",
+      "severity": "info",
+      "facts": [],
+      "actions": [
+        {"label": "Check now", "command": ["portfolio", "--refresh"], "preview": null, "destructive": false}
+      ]
+    }
+  ],
+  "quiet": {"schedules": 14, "schedules_unverified": 3, "builds": 5, "disk": "9.2 GB free", "guard": "ok", "doctor": "2 to look at", "offers": 1}
+}

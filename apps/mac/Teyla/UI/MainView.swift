@@ -15,6 +15,10 @@ struct MainView: View {
             NewTaskSheet()
                 .environment(model)
         }
+        .sheet(isPresented: Bindable(model.commandBar).presented) {
+            CommandBarView()
+                .environment(model)
+        }
         .onAppear {
             model.openMainWindow = { openWindow(id: "main") }
             Preview.runOnce(model: model, openSettings: { openSettings() })
@@ -90,17 +94,19 @@ private struct DetailView: View {
         case .decisions: DecisionsView()
         case .portfolio: PortfolioView()
         case .diagnosis: DiagnosisView()
+        case .tools: ToolsView()
         case .product(let id): ProductPageView(id: id)
         }
     }
 }
 
-/// Home, Decisions and All products; Diagnosis below them. A product opens from a card or a row, not from the sidebar.
+/// Home, Decisions and All products; Tools below them (the diagnosis opens from Tools). A product opens from a card or a row, not from the sidebar.
 private struct SidebarView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        List(selection: Binding(get: { model.route }, set: { model.go($0 ?? .home) })) {
+        // The diagnosis page has no row of its own: Tools stays selected while it shows.
+        List(selection: Binding(get: { model.route == .diagnosis ? .tools : model.route }, set: { model.go($0 ?? .home) })) {
             Label("Home", systemImage: "house")
                 .tag(AppRoute.home)
             Label("Decisions", systemImage: "tray")
@@ -108,10 +114,11 @@ private struct SidebarView: View {
                 .tag(AppRoute.decisions)
             Label("All products", systemImage: "square.grid.2x2")
                 .tag(AppRoute.portfolio)
-            if model.capabilities.diagnosis {
+            if model.capabilities.tools {
                 Section {
-                    Label("Diagnosis", systemImage: "stethoscope")
-                        .tag(AppRoute.diagnosis)
+                    Label("Tools", systemImage: "wrench.and.screwdriver")
+                        .badge(model.tools.badge.map { Text($0) })
+                        .tag(AppRoute.tools)
                 }
             }
         }

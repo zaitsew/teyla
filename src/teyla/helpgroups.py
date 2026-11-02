@@ -93,6 +93,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
         ("guard", "The machine guard that runs by itself"),
         ("crash", "After a crash: what happened and what led to it"),
         ("schedules", "Every scheduled task on this machine, and whether it ran"),
+        ("attention", "What is wrong on this Mac's backend now, in one list"),
         ("feedback", "One shareable file: setup, redacted report, questionnaire"),
     ],
     "Advanced": [

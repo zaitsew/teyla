@@ -921,19 +921,25 @@ def _snapshot(e: dict) -> dict:
             "verdict": e["verdict"], "elsewhere": bool(e.get("elsewhere"))}
 
 
-def load_registry(path: pathlib.Path | None = None) -> dict:
+def load_registry(path: pathlib.Path | None = None, *, read_only: bool = False) -> dict:
+    """The registry; an empty one when there is none. A file that cannot be read is moved aside, or with
+    `read_only` left alone and raised, for a caller that must not change anything and cannot call it empty."""
     p = path or _registry_path()
     try:
         data = json.loads(p.read_text())
     except FileNotFoundError:
         return {"version": 1, "entries": {}}
     except (OSError, ValueError):
+        if read_only:
+            raise
         try:  # keep what could not be read: history is the point of this file
             os.replace(p, p.with_name(p.name + ".corrupt"))
         except OSError:
             pass
         return {"version": 1, "entries": {}}
     if not isinstance(data, dict) or not isinstance(data.get("entries"), dict):
+        if read_only:
+            raise ValueError("the schedules registry has the wrong shape")
         return {"version": 1, "entries": {}}
     return data
 

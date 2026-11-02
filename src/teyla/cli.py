@@ -76,6 +76,7 @@
   teyla play [path...] [--json] [--quiet] [--allow-network]          did the Android build reach a person: internal track status, closed-test age on Google Play
   teyla schedules [--json] [--quiet] [--all] [--allow-network]    every scheduled task (Claude desktop, launchd, cloud routines, GitHub, teyla.toml): did it run, what vanished
   teyla schedules forget KEY [KEY...]                              acknowledge VANISHED tasks removed on purpose (clears the banner)
+  teyla attention [--json]                                         what is wrong on this Mac's backend now, in one list (read-only, no network)
   teyla reviews [--days N] [--json] [--quiet] [repo...]            review debt: merged PRs never reviewed, merged with an open P1, skipped
   teyla review [list|pull|triage ID|open IDS...]                   the inbox of review captures: pull from the relay and TestFlight, triage to fix|rule|reject, lane brief
   teyla taste [list|confirm ID|render [repo]]                      the taste ledger: rule proposals, the owner's confirm, DESIGN.md rendered from the files
@@ -575,6 +576,8 @@ def build_parser() -> argparse.ArgumentParser:
     mcp_mod.register(sp)
     from . import today as today_mod
     today_mod.register(sp)
+    from . import attention as attention_mod
+    attention_mod.register(sp)
     q = sp.add_parser("help", help="the commands in six groups; --all lists every one; help COMMAND shows its options")
     q.set_defaults(fn=cmd_help); q.add_argument("words", nargs="*", metavar="[--all | COMMAND]")
     from . import registry as registry_mod

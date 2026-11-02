@@ -8,11 +8,14 @@ enum AppRoute: Hashable, Sendable {
     case decisions
     /// All products, with health (`portfolio` in the snapshot).
     case portfolio
+    /// The first-run diagnosis. Reached from the Tools page; the sidebar keeps Tools selected while it shows.
     case diagnosis
+    /// What is wrong on this Mac's backend now (`teyla attention`), its actions, and the diagnosis link.
+    case tools
     case product(String)
 }
 
-/// Whether the window shows its sidebar (Home, Decisions, All products, Diagnosis) or only the welcome.
+/// Whether the window shows its sidebar (Home, Decisions, All products, Tools) or only the welcome.
 /// A machine with no data and no finished diagnosis gets the welcome alone: one button, nothing else to read.
 enum Shell {
     static func showsWelcomeOnly(snapshot: Snapshot?, diagnosis: DiagnosisPhase, teylaMissing: Bool) -> Bool {

@@ -25,6 +25,8 @@ from . import config
 
 _allow_once = False
 _update_scope = False
+_offline = False
+_offline_threads: list = []
 
 
 def allow_for_this_command(on: bool = True) -> None:
@@ -46,7 +48,29 @@ def update_scope(cfg: dict | None = None):
         _update_scope = prev
 
 
+@contextlib.contextmanager
+def offline():
+    """Inside the block nothing is allowed, whatever safe mode or `--allow-network` say. `teyla attention` reads
+    other commands' local caches inside it, so a source it borrows cannot start a call of its own."""
+    global _offline
+    prev = _offline
+    _offline = True
+    try:
+        yield
+    finally:
+        _offline = prev
+
+
+def stay_offline_while(threads) -> None:
+    """Nothing is allowed until these threads end. A source that outlives the `offline()` block that started it
+    stays offline: leaving the block must not hand it the network."""
+    _offline_threads.extend(threads)
+
+
 def allowed(cfg: dict | None = None) -> bool:
+    _offline_threads[:] = [t for t in _offline_threads if t.is_alive()]
+    if _offline or _offline_threads:
+        return False
     return _allow_once or _update_scope or not config.safe_mode(cfg)
 
 

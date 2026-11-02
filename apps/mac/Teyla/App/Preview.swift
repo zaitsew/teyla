@@ -4,9 +4,9 @@ import Foundation
 /// Hooks for taking screenshots of the app with sample data. They work only with
 /// `TEYLA_STATE_FIXTURE` set, so a real run never reads them.
 ///
-///     TEYLA_PREVIEW_OPEN   new-task | quick-note | settings | pair | focus:<ask id> | diagnosis | home | decisions | portfolio | product:<id>
-///     TEYLA_START_FIXTURE / TEYLA_PRODUCT_FIXTURE  the diagnosis and product-page samples (default: start.v1.json and
-///                         product.v1.json beside the state sample)
+///     TEYLA_PREVIEW_OPEN   new-task | quick-note | settings | pair | focus:<ask id> | diagnosis | home | decisions | portfolio | tools | command-bar[:<query>] | product:<id>
+///     TEYLA_START_FIXTURE / TEYLA_PRODUCT_FIXTURE / TEYLA_ATTENTION_FIXTURE  the diagnosis, product-page and Tools samples
+///                         (default: start.v1.json, product.v1.json and attention.v1.json beside the state sample)
 ///     TEYLA_PREVIEW_START_DELAY  seconds the simulated diagnosis takes (default 1.5)
 ///     TEYLA_PREVIEW_NO_BINARY    pretend the teyla command is not installed (the not-found screen)
 ///     TEYLA_PREVIEW_SIZE   <width>x<height>, the content size of the main window
@@ -65,6 +65,12 @@ enum Preview {
                 model.go(.decisions)
             case "portfolio":
                 model.go(.portfolio)
+            case "tools":
+                model.go(.tools)
+            case let bar where bar == "command-bar" || bar.hasPrefix("command-bar:"):
+                model.go(.tools)
+                model.openCommandBar()
+                if bar.hasPrefix("command-bar:") { model.commandBar.query = String(bar.dropFirst("command-bar:".count)) }
             case let product where product.hasPrefix("product:"):
                 model.openProduct(String(product.dropFirst("product:".count)))
             case let focus where focus.hasPrefix("focus:"):

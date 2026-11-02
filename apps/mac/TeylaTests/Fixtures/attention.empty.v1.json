@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "generated": "2027-01-15T08:00:00+00:00",
+  "items": [],
+  "quiet": {"schedules": 14, "builds": 5, "disk": "120 GB free", "guard": "ok", "doctor": "ok", "offers": "answered"}
+}

@@ -667,28 +667,36 @@ def is_mechanical(title: str) -> bool:
     return bool(t) and any(rx.search(t) for rx in MECHANICAL_TITLES)
 
 
-def _github_view(slugs: list[str], names: set[str], cache: dict, bl: dict, ledger: dict | None,
-                 threshold: int, now: float) -> dict:
+def merged_pr_states(slugs: list[str], names: set[str], cache: dict, ledger: dict | None, threshold: int,
+                     now: float) -> list[dict]:
+    """The PRs merged in the last 7 days across `slugs`, newest first: {slug, number, title, merged_at, state, p1}.
+    `state` is the review ledger's word (`reviews.classify`), or "" when there is no ledger to ask."""
     cut = now - WEEK_DAYS * 86400
-    merged = unreviewed = p1 = shipped = 0
-    titled: list[tuple[float, str]] = []
+    out = []
     for s in slugs:
         entry = cache["github"].get(s.lower()) or {}
         for c in entry.get("prs") or []:
             at = asks._epoch(c.get("merged_at"))
             if at is None or at < cut:
                 continue
-            merged += 1
-            title = " ".join(str(c.get("title") or "").split())
-            if not is_mechanical(title):
-                shipped += 1
-                if title:
-                    titled.append((at, title))
+            verdict = {}
             if ledger is not None:
-                state = reviews.classify(_pr_for_classify(c), names | {s.lower(), s.split("/")[-1].lower()},
-                                         ledger, threshold)["state"]
-                unreviewed += state == "unreviewed"
-                p1 += state == "open_p1"
+                verdict = reviews.classify(_pr_for_classify(c), names | {s.lower(), s.split("/")[-1].lower()},
+                                           ledger, threshold)
+            out.append({"slug": s, "number": c.get("number"), "title": " ".join(str(c.get("title") or "").split()),
+                        "merged_at": at, "state": verdict.get("state", ""), "p1": int(verdict.get("p1") or 0)})
+    out.sort(key=lambda x: -x["merged_at"])
+    return out
+
+
+def _github_view(slugs: list[str], names: set[str], cache: dict, bl: dict, ledger: dict | None,
+                 threshold: int, now: float) -> dict:
+    merged_prs = merged_pr_states(slugs, names, cache, ledger, threshold, now)
+    merged = len(merged_prs)
+    unreviewed = sum(1 for x in merged_prs if x["state"] == "unreviewed")
+    p1 = sum(1 for x in merged_prs if x["state"] == "open_p1")
+    titled = [(x["merged_at"], x["title"]) for x in merged_prs if not is_mechanical(x["title"]) and x["title"]]
+    shipped = sum(1 for x in merged_prs if not is_mechanical(x["title"]))
     lower = {s.lower() for s in slugs}
     if cache["checked"]["github"]:
         opened = sum(n for slug, n in cache["open_prs"].items() if slug in lower)

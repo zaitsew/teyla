@@ -67,6 +67,8 @@ final class AppModel {
     let noteList: NotesModel
     let firstRun: FirstRunModel
     let productPage: ProductPageModel
+    let tools: ToolsModel
+    let commandBar: CommandBarModel
     @ObservationIgnored private var hotKeyTalk = PushToTalk()
     #if !STORE
     @ObservationIgnored private var watcher: SessionWatcher?
@@ -93,6 +95,8 @@ final class AppModel {
         noteList = NotesModel(cli: cli)
         firstRun = FirstRunModel(cli: cli)
         productPage = ProductPageModel(cli: cli)
+        tools = ToolsModel(cli: cli)
+        commandBar = CommandBarModel()
         let names: () -> [String] = { [weak self] in
             NewTask.products(self?.snapshot?.products ?? []).map(\.name)
         }
@@ -103,6 +107,8 @@ final class AppModel {
         quickNote.close = { [weak self] in self?.closeQuickNote() }
         firstRun.applied = { [weak self] in self?.refresh() }
         productPage.changed = { [weak self] in self?.refresh() }
+        tools.changed = { [weak self] in self?.refresh() }
+        commandBar.source = { [weak self] in self?.commandEntries() ?? [] }
         noteList.changed = { [weak self] in self?.productPage.refreshQuick() }
         #if STORE
         session.changed = { [weak self] in self?.storeSourceChanged() }
@@ -207,9 +213,12 @@ final class AppModel {
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.pollInterval)
                 self?.refresh()
+                // The Tools report is heavier than the snapshot: it is read again only when it is 10 minutes old.
+                if self?.capabilities.tools == true { self?.tools.refresh(force: false) }
             }
         }
         refresh()
+        if capabilities.tools { tools.refresh(force: false) }
     }
 
     /// The command is read every minute; the relay folder every 10 seconds, as well as when it changes.
@@ -332,6 +341,39 @@ final class AppModel {
     func go(_ next: AppRoute) {
         route = next
         if case .product(let id) = next { productPage.open(id) }
+        if next == .tools { tools.opened() }
+    }
+
+    // MARK: The command bar (⌘K)
+
+    /// The products with a page, by name, for "Open <name>".
+    private func commandEntries() -> [CommandEntry] {
+        let products = (snapshot?.products ?? []).filter(\.hasPage).map { (id: $0.name, name: $0.name) }
+        return CommandBar.entries(products: products, report: tools.report, capabilities: capabilities)
+    }
+
+    func openCommandBar() {
+        guard !teylaMissing, !showsWelcomeOnly else { return }
+        showMainWindow()
+        commandBar.open()
+    }
+
+    /// Runs a chosen row. A page opens, New task and Refresh do what they say, and a tool action opens its card at the
+    /// preview or confirm step; nothing that changes the machine runs from the bar itself.
+    func choose(_ entry: CommandEntry) {
+        commandBar.close()
+        switch entry.kind {
+        case .go(let next):
+            go(next)
+        case .newTask:
+            openNewTask()
+        case .refresh:
+            refresh()
+            if capabilities.tools { tools.refresh() }
+        case .tool(let itemID, let action):
+            go(.tools)
+            tools.point(at: itemID, action: action)
+        }
     }
 
     func openProduct(_ id: String) {
