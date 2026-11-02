@@ -8,7 +8,7 @@ which is itself the first finding.
 
 `./check.sh usage` is the repo's own code, so running it everywhere is running every repo's
 code. `[products] repos = [...]` in ~/.teyla/config.toml narrows the default walk to those
-repos (the weekly routine calls this with no paths). In safe mode it is also the only place
+repos (the weekly routine and `teyla portfolio --refresh` walk with no paths). In safe mode it is also the only place
 anything runs: a repo not on the list — even one named on the command line — is listed as
 "not allowed" and its check.sh is never started.
 
@@ -23,8 +23,18 @@ import os
 import pathlib
 import re
 import subprocess
+import sys
 import tempfile
 import time
+
+
+def _probe_env() -> dict[str, str]:
+    """The environment of a probe. The app and launchd start Teyla with a bare PATH, where a probe finds neither
+    `teyla` (for `teyla probe-sql`) nor the tools in user directories."""
+    from .storage_sweep import _tool_path
+    path = _tool_path()
+    here = str(pathlib.Path(sys.executable).parent)
+    return {**os.environ, "PATH": path if here in path.split(os.pathsep) else path + os.pathsep + here}
 
 
 def committed_check_sh(repo: pathlib.Path) -> str | None:
@@ -52,7 +62,7 @@ def _run_committed(repo: pathlib.Path, text: str, timeout: int) -> subprocess.Co
                 (shadow / entry.name).symlink_to(entry)
         (shadow / "check.sh").write_text(text)
         return subprocess.run(["bash", str(shadow / "check.sh"), "usage"], cwd=shadow, capture_output=True, text=True,
-                              timeout=timeout)
+                              timeout=timeout, env=_probe_env())
 
 
 def probe(repo: pathlib.Path, timeout: int = 60, *, committed: bool = False) -> dict:
@@ -70,7 +80,8 @@ def probe(repo: pathlib.Path, timeout: int = 60, *, committed: bool = False) -> 
         if main is not None and main != local:
             r = _run_committed(repo, main, timeout)
         else:
-            r = subprocess.run(["bash", str(sh), "usage"], cwd=repo, capture_output=True, text=True, timeout=timeout)
+            r = subprocess.run(["bash", str(sh), "usage"], cwd=repo, capture_output=True, text=True, timeout=timeout,
+                               env=_probe_env())
     except subprocess.TimeoutExpired:
         return {"_status": "timeout"}
     if r.returncode == 64:  # convention: 64 = "usage" mode not implemented
@@ -110,11 +121,22 @@ def cache_path() -> pathlib.Path:
     return control.home() / "products-cache.json"
 
 
+def _has_numbers(status: str, counters: dict) -> bool:
+    """A probe can exit 0 with nothing to report: no output, `usage_probe=needs_teyla`, `probe=needs_key`, words only."""
+    def number(v) -> bool:
+        try:
+            float(str(v))
+        except ValueError:
+            return False
+        return True
+    return status == "ok" and any(number(v) for v in counters.values()) and not any(k.endswith("probe") for k in counters)
+
+
 def write_cache(results: dict[str, tuple[str, dict]]) -> None:
     """~/.teyla/products-cache.json (0600): {repo folder: {status, counters}} from the table just printed, for
-    the portfolio's `progress.users` (docs/APP.md). A repo whose probe worked replaces its row; one that did not
-    (timeout, not allowed) keeps the last good row, so a failed probe never blanks good data. The file never
-    leaves the machine."""
+    the portfolio's `progress.users` (docs/APP.md). A repo whose probe gave numbers replaces its row; one that did
+    not (timeout, not allowed, a probe that reports it lacks a tool or a key) keeps the last good row, so a failed
+    probe never blanks good data. The file never leaves the machine."""
     from . import asks
     try:
         old = json.loads(cache_path().read_text())
@@ -123,7 +145,7 @@ def write_cache(results: dict[str, tuple[str, dict]]) -> None:
         repos = {}
     for name, (st, d) in results.items():
         key = name.lower()
-        if st == "ok" or not (isinstance(repos.get(key), dict) and repos[key].get("status") == "ok"):
+        if _has_numbers(st, d) or not (isinstance(repos.get(key), dict) and repos[key].get("status") == "ok"):
             repos[key] = {"status": st, "counters": d}
     try:
         asks._atomic_write(cache_path(), json.dumps({"version": 1, "at": time.time(), "repos": repos}, indent=1))

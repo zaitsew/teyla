@@ -20,6 +20,7 @@ _REAL_SPAWN = portfolio.spawn_refresh                               # conftest r
 _REAL_COMPUTE_ACTIVITY = portfolio.compute_activity
 _REAL_COMPUTE_COMMITS = portfolio.compute_commits
 _REAL_COMPUTE_ICONS = portfolio.compute_icons
+_REAL_REFRESH_USAGE = portfolio.refresh_usage
 SHA = "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0"
 
 
@@ -37,6 +38,7 @@ def _world(tmp_path, monkeypatch):
     monkeypatch.setattr(portfolio, "compute_activity", lambda reg: {})
     monkeypatch.setattr(portfolio, "compute_commits", lambda reg, now: {})          # real git: see the metrics tests
     monkeypatch.setattr(portfolio, "compute_icons", lambda reg, prev: {})
+    monkeypatch.setattr(portfolio, "refresh_usage", lambda cfg=None: True)          # real probes: see the usage tests
     tool = tmp_path / "release-tool"
     tool.write_text("#!/bin/sh\n")
     tool.chmod(0o755)
@@ -1275,3 +1277,53 @@ def test_icon_keeps_the_old_one_when_conversion_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(portfolio, "convert_icon", lambda s: None)
     old = {"src": "elsewhere", "mtime": 1.0, "b64": "abc"}
     assert portfolio.compute_icons(reg, {"app": old})["app"] == old
+
+
+# --- the usage part of the refresh ------------------------------------------------------------------
+
+def _repo_with_probe(root, name="app", body='echo "wau=3"'):
+    repo = root / name
+    (repo / ".git").mkdir(parents=True)
+    (repo / "check.sh").write_text(f'case "$1" in\n  usage)\n    {body}\n    exit 0 ;;\nesac\n')
+    return repo
+
+
+def test_refresh_runs_the_usage_probes(tmp_path, monkeypatch):
+    root = tmp_path / "code"
+    _repo_with_probe(root)
+    monkeypatch.setattr(portfolio, "refresh_usage", _REAL_REFRESH_USAGE)
+    monkeypatch.setattr(portfolio, "refresh_stores", lambda *a, **k: True)
+    monkeypatch.setattr(portfolio, "refresh_github", lambda *a, **k: True)
+    cfg = {**config.load(), "code_root": str(root)}
+    assert portfolio.refresh(NOW, reg={"product": {}}, cfg=cfg, network=True) == 0
+    assert portfolio.load_usage_cache() == {"app": {"wau": "3"}}
+
+
+def test_refresh_without_the_network_starts_no_probe(monkeypatch):
+    calls = []
+    monkeypatch.setattr(portfolio, "refresh_usage", lambda cfg=None: calls.append(cfg) or True)
+    portfolio.refresh(NOW, reg={"product": {}}, network=False)
+    assert calls == []
+
+
+def test_a_crashing_probe_walk_fails_only_its_part(monkeypatch):
+    def boom(cfg=None):
+        raise OSError("no")
+    monkeypatch.setattr(portfolio, "refresh_usage", boom)
+    monkeypatch.setattr(portfolio, "refresh_stores", lambda *a, **k: True)
+    monkeypatch.setattr(portfolio, "refresh_github", lambda *a, **k: True)
+    assert portfolio.refresh(NOW, reg={"product": {}}, network=True) == 1
+    assert portfolio.load_cache()["checked"]["activity"]
+
+
+def test_a_failing_probe_in_the_walk_keeps_the_good_row_and_the_part(tmp_path, monkeypatch):
+    root = tmp_path / "code"
+    repo = _repo_with_probe(root)
+    monkeypatch.setattr(portfolio, "refresh_usage", _REAL_REFRESH_USAGE)
+    monkeypatch.setattr(portfolio, "refresh_stores", lambda *a, **k: True)
+    monkeypatch.setattr(portfolio, "refresh_github", lambda *a, **k: True)
+    cfg = {**config.load(), "code_root": str(root)}
+    assert portfolio.refresh(NOW, reg={"product": {}}, cfg=cfg, network=True) == 0
+    (repo / "check.sh").write_text('case "$1" in\n  usage)\n    exit 3 ;;\nesac\n')
+    assert portfolio.refresh(NOW, reg={"product": {}}, cfg=cfg, network=True) == 0
+    assert portfolio.load_usage_cache() == {"app": {"wau": "3"}}
