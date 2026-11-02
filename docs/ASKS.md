@@ -60,20 +60,29 @@ oldest ask, and `unassigned` is last. `--flat` prints the old list. `--json` kee
 `groups`, `[{product, display_name, stage, focus, count, ids}]`, plus `muted` (a count) and
 `muted_products`. `--html` uses the same groups, with headings only.
 
-## Asks you can trust: resolved and collapsed
+## Asks you can trust: the gate
 
-Two kinds of ask never needed you, and `teyla asks` closes them itself. The default listing hides
-both and ends with one line:
+Some asks never needed you, and `teyla asks` closes or hides them itself. `settle` runs five steps in this
+order, each through the done store in `~/.teyla/asks.json`, so `teyla asks undo <id>` reverses any of them:
 
-    filtered: 3 resolved (PR merged/closed), 2 duplicates — teyla asks --all
+| Step | What it takes out | Note in the store |
+|---|---|---|
+| 1. PR state | an ask whose PR was merged or closed after the ask | `auto: PR merged <url>` |
+| 2. Reports | a status report shown as a question (kind `report`) | `auto: report` |
+| 3. Repeats | earlier runs of one job, and near-identical questions, folded into the newest | `auto: repeat run of <id>`, `auto: duplicate of <id>` |
+| 4. Scheduled task off | an ask from a scheduled task that is disabled or deleted | `auto: scheduled task off <task id>` |
+| 5. TestFlight | a request to tap "View in TestFlight" when the tester can already install | `auto: testflight current <product>` |
 
-`teyla asks --all` shows them, marked `done` or `duplicate`, with the reason under the question.
-`teyla asks undo <id>` brings one back.
+The default listing hides what they took out and ends with one line, naming each reason that happened:
 
-**Resolved by PR state.** An ask whose `pr` link points to a PR that is MERGED or CLOSED, and became
-so after the ask's last activity, is done. It is recorded in `~/.teyla/asks.json` like a manual
-`done`, with the note `auto: PR merged <url>` (or `closed`). A PR merged before the ask was written
-does not count. The state is read from, in order:
+    filtered: 3 resolved (PR merged/closed), 22 duplicates (20 repeat runs), 1 scheduled task off, 2 reports — teyla asks --all
+
+`teyla asks --all` shows them, marked `done` or `duplicate`, with the note under the question. Age alone closes
+nothing: an old ask stays until a rule above, a later prompt in its session, or you close it.
+
+**1. Resolved by PR state.** An ask whose `pr` link points to a PR that is MERGED or CLOSED, and became
+so after the ask's last activity, is done. A PR merged before the ask was written does not count. The state is
+read from, in order:
 
 1. the open PRs in the backlog cache (`state-backlog.json`, when under 30 minutes old): open;
 2. `~/.teyla/pr-state.json`, entries under 30 minutes old;
@@ -83,24 +92,60 @@ Only `teyla asks` runs the query. `teyla state`, the relay and the other readers
 never wait on the network. Without `gh`, in safe mode, with no network, on an error or an answer that
 does not parse, nothing resolves and nothing fails. After a failed query the next one waits five minutes.
 
-**Duplicates.** Within one product, a `question` ask that repeats a newer one collapses into the newer:
+**2. Reports are not questions.** An ask is a report when it has no question mark and no options, and its text
+starts with a heading (`## Status`), a bold label (`**Result:**`) or a report label (`Not verified:`, `Result:`,
+`Status:`, `Summary:`, `Done —`), or holds three or more bullet lines. It gets kind `report`, is left out of the
+waiting list and every count, and shows under `--all` as `[done, report]`. The rule is conservative. An ask that
+starts with an imperative verb ("Sign in to X", "Run the migration") or holds a request word ("please",
+"approve", "confirm", "sign in", "reply", "let me know") stays an ask, and so does any ask that offers options.
 
-- the same session and the same normalised question (lower case, whitespace collapsed, `*`, `_` and
-  backticks removed); or
-- a token-set Jaccard of at least 0.8 over the words of 3 or more letters, when both questions have at
-  least 6 such words.
+**3. Repeats.** Within one product:
 
-The kept ask shows `(+N similar)`, and `--json` gives it `dupes: [ids]`. The collapsed ones are hidden,
-not marked done. When the kept ask is done, its duplicates are done too, with the note
-`auto: duplicate of <id>`. Asks of different products never collapse; neither do `blocked` asks,
-gates and reminders. An older ask that was already closed by hand stays as it is.
+- *Repeat runs of one job.* Asks of kind `question` or `blocked` with the same product and title that come from
+  the same scheduled task collapse into the newest. The task is named by the desktop session metadata
+  (`scheduledTaskId`). Without a task, three or more asks with an identical title, product and harness in three or
+  more different sessions are treated as one job. Asks aimed at different versions or builds ("1.3 (5)" and
+  "1.4 (2)", "build 12" and "build 13", `v2.1.0` and `v2.2.0`) never collapse. No similarity is used here.
+- *Near-identical questions.* A `question` ask that repeats a newer one: the same session and the same normalised
+  question (lower case, whitespace collapsed, `*`, `_` and backticks removed), or a token-set Jaccard of at least
+  0.8 over the words of 3 or more letters when both questions have at least 6 such words. `blocked` asks, gates
+  and reminders are never matched by similarity.
+
+The kept ask shows `(+N similar)`, and `--json` gives it `dupes: [ids]`. The collapsed ones are hidden, not marked
+done. When the kept ask is done, its repeats are done too. Asks of different products never collapse. An older
+ask that was already closed by hand stays as it is.
+
+**4. A job that is off closes its cards.** The source of `teyla schedules` holds the Claude desktop app's task
+records (`scheduled-tasks.json`) and the definitions in `~/.claude/scheduled-tasks/`. If the ask's task is a recurring
+task that is disabled, or whose definition the app never scheduled, or that no longer exists, the ask closes. The
+read is from local files only. Three cases keep the ask: a one-shot task that switched itself off after it ran;
+no task record readable at all (a missing store never reads as "everything deleted"); and an ask that
+`needs_owner`. Re-enabling a task does not reopen what was closed; use `undo`.
+
+**5. TestFlight.** An ask that only asks you to tap "View in TestFlight" (it names the button, has no question mark
+or options, and is at most 450 characters) closes when `portfolio-cache.json` (the cache `teyla portfolio` keeps;
+`teyla state` never calls the network for it) holds TestFlight rows for the ask's product and every one is
+`current`: the tester can install the newest build. The rows must have been read after the ask was written and
+within 48 hours. A missing product, an old read, a row that is `blocked`, `behind` or `unknown`, or one platform
+that is not current leaves the ask open.
+
+**The hard floor.** `needs_owner(ask)` is true when the ask's text names a price or currency amount (`$9.99`,
+`10 EUR`, "price", "billing", "invoice"), a key, secret, password, token or credential, or another person (a
+capitalised name after a cue word such as "ask" or "from", a First Last pair, a possessive, an `@handle`; platform
+and registered product names are not people). Steps 4 and 5 never close such an ask, and it collapses into
+another only when the text is identical. The test errs toward keeping.
 
 **Undo.** `teyla asks undo <id>...` removes the done mark. An ask you undo is remembered (`undone` in
-`asks.json`): neither check touches it again. Undoing a kept ask also puts the duplicates that were
-closed because of it back under it; undoing a hidden duplicate shows it as its own ask.
+`asks.json`): no step touches it again, and an undone report stays a question. Undoing a kept ask puts the repeats
+that were closed because of it back under it; undoing a hidden repeat shows it as its own ask.
 
-`teyla asks --json` adds `resolved` and `duplicates` (counts); `teyla state --json` adds the same two
-numbers to `totals`. The version of the snapshot stays 2.
+`teyla asks --json` adds `resolved` and `duplicates` (counts of PR-resolved asks, and of every repeat including
+repeat runs) and `filtered`, the count by reason:
+
+    "filtered": {"resolved": 0, "duplicates": 0, "repeat_runs": 20, "scheduled_off": 1, "testflight_current": 0, "reports": 2}
+
+Here `duplicates` counts near-identical questions only, so the top-level `duplicates` is `duplicates + repeat_runs`.
+`teyla state --json` adds `resolved` and `duplicates` to `totals`. The version of the snapshot stays 2.
 
 ## Parked products stay quiet
 
@@ -133,7 +178,7 @@ session (`claude://claude.ai/epitaxy/local_...`, or `codex resume <id>` for Code
 
 | Source | An item is |
 |---|---|
-| Claude desktop session metadata | a session whose summary is `blocked` or has a `needs_action` line |
+| Claude desktop session metadata | a session whose summary is `blocked` or has a `needs_action` line; `scheduledTaskId` names the scheduled task that started it |
 | Claude Code transcripts | a last turn that calls `wrap_up` with an `ask`, or ends with a question |
 | Codex rollouts | a `request_user_input_async` call with no output, or a final message ending in a question |
 | Teyla | a pending gated run (`teyla inbox`); a reminder overdue or due within 7 days |

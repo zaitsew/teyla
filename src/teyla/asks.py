@@ -25,9 +25,12 @@ Sources (nothing is written to them; `docs/ASKS.md` has the field-by-field detai
    with a question. `codex exec` runs and spawned agents are automation and are skipped.
 4. Teyla's own needs-you queue: pending gated runs (`teyla inbox`) and reminders due within 7 days.
 
-Two things close an ask without you. A PR link in the ask that points to a merged or closed PR (after the ask
-was written) closes it, note `auto: PR merged <url>`. The same request asked twice in one product collapses into
-the newest ask, which shows `(+N similar)`. Both show again with `--all`; `undo` reverses either.
+Five automatic steps (`settle`) keep asks the owner never needed out of the list: a merged or closed PR (note
+`auto: PR merged <url>`); a status report, which is kind `report` (`auto: report`); repeats, which collapse into the
+newest ask that shows `(+N similar)` (repeat runs of one scheduled job by identity, other repeats by similarity);
+a scheduled task that is off (`auto: scheduled task off <id>`); and a "View in TestFlight" tap the cached TestFlight
+data shows done (`auto: testflight current <product>`). An ask that `needs_owner` (a price, a key or secret, another
+person) is never closed by the last two. All show again with `--all`; `undo` reverses any of them.
 
 A desktop session and its transcript are one record. An item closes by itself when a later human
 prompt appears in its session; `done` and `snooze` live in `~/.teyla/asks.json`. Question text
@@ -40,6 +43,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as _dt
+import functools
 import glob
 import hashlib
 import html
@@ -65,7 +69,7 @@ TITLE_MAX = 100
 REMINDER_WINDOW_DAYS = 7
 TAIL_BYTES = 256 * 1024          # enough for the last turn of a transcript; they run to tens of MB
 STATE_KEEP_DAYS = 180
-KINDS = ("question", "blocked", "gate", "reminder")
+KINDS = ("question", "blocked", "gate", "reminder", "report")
 OPEN_LINK = "claude://claude.ai/epitaxy/"
 
 
@@ -104,7 +108,7 @@ def stamp_path() -> pathlib.Path:
 @dataclasses.dataclass
 class Ask:
     id: str
-    kind: str                 # question | blocked | gate | reminder
+    kind: str                 # question | blocked | gate | reminder | report (a status report, see `is_report`)
     product: str
     title: str
     question: str
@@ -122,6 +126,7 @@ class Ask:
     attributed_by: str = ""   # which registry rule chose the product: assign | pr | path | text | checkout | unassigned
     evidence: str = ""        # what that rule matched, for `--why`; not in the JSON
     dupes: list = dataclasses.field(default_factory=list)    # ids collapsed into this ask; in the JSON when any
+    task: str = ""            # id of the scheduled task that started the session (desktop `scheduledTaskId`); not in the JSON
 
     def to_dict(self, now: float, attribution: bool = False) -> dict:
         """The JSON row. `attribution` adds `attributed_by` (`asks --json`); the `teyla state` snapshot
@@ -137,6 +142,7 @@ class Ask:
         d.pop("session")          # internal: `teyla answer` needs it, the `asks --json` schema stays as it was
         d.pop("note")
         d.pop("evidence")
+        d.pop("task")
         if not d["dupes"]:
             d.pop("dupes")
         return d
@@ -395,7 +401,8 @@ def find_transcript(cli_id: str, cwd: str, root: str) -> str | None:
 # all of them took 1.4 s of every run. Only these keys are ever read, so the parse is cached
 # by file stamp in ~/.teyla/desktop-sessions.cache.json (private, mode 600, like asks.json).
 SLIM_KEYS = ("sessionId", "cliSessionId", "cwd", "originCwd", "worktreePath", "createdAt", "lastActivityAt",
-             "isArchived", "title", "model", "permissionMode", "prs", "postTurnSummary")
+             "isArchived", "title", "model", "permissionMode", "prs", "postTurnSummary", "scheduledTaskId")
+SLIM_VERSION = 2          # 2: added scheduledTaskId
 
 
 def _slim_cache_path() -> pathlib.Path:
@@ -405,7 +412,7 @@ def _slim_cache_path() -> pathlib.Path:
 def _desktop_sessions(root: str) -> list[dict]:
     try:
         cache = json.loads(_slim_cache_path().read_text())
-        cache = cache.get("files") if isinstance(cache, dict) and cache.get("version") == 1 else {}
+        cache = cache.get("files") if isinstance(cache, dict) and cache.get("version") == SLIM_VERSION else {}
     except (OSError, ValueError):
         cache = {}
     cache = cache if isinstance(cache, dict) else {}
@@ -434,7 +441,7 @@ def _desktop_sessions(root: str) -> list[dict]:
     kept = {k: v for k, v in cache.items() if not k.startswith(prefix)}
     if {k: v for k, v in cache.items() if k.startswith(prefix)} != fresh:
         try:
-            _atomic_write(_slim_cache_path(), json.dumps({"version": 1, "files": {**kept, **fresh}}))
+            _atomic_write(_slim_cache_path(), json.dumps({"version": SLIM_VERSION, "files": {**kept, **fresh}}))
         except OSError:
             pass
     return out
@@ -471,10 +478,11 @@ def _claude_ask(d: dict | None, ana: dict | None, cli_id: str, since: float) -> 
         pr = str(prs[-1]["url"]) if prs else ""
         archived = bool(d.get("isArchived"))
         harness = "claude-desktop"
+        task = str(d.get("scheduledTaskId") or "")
     else:
         when = (ana or {}).get("ts") or 0.0
         link, title, pr, archived, harness = f"claude --resume {cli_id}", "", "", False, "claude-code"
-        cwd, sid = (ana or {}).get("cwd"), ""
+        cwd, sid, task = (ana or {}).get("cwd"), "", ""
     if when < since:
         return None
     turn = (ana or {}).get("uuid") or su
@@ -485,7 +493,7 @@ def _claude_ask(d: dict | None, ana: dict | None, cli_id: str, since: float) -> 
                title=clip(title or text.splitlines()[0], TITLE_MAX), question=clip(question, QUESTION_MAX),
                context=clip(context or "", CONTEXT_MAX), options=[clip(o, 80) for o in (ana or {}).get("options") or []],
                when=when, archived=archived, link=link, pr=pr, harness=harness, session=cli_id,
-               attributed_by=how, evidence=why)
+               attributed_by=how, evidence=why, task=task)
 
 
 def collect_claude(since: float, desktop: str | None = None, projects: str | None = None) -> list[Ask]:
@@ -769,10 +777,17 @@ def apply_state(items: list[Ask], st: dict, now: float) -> list[Ask]:
     return items
 
 
-# --- settling: resolve by PR state, collapse duplicates ----------------------------------------
+# --- settling: resolve by PR state, collapse duplicates, close what live state answers -----------
 
 AUTO_PR = "auto: PR "                  # note of an ask closed because its PR was merged or closed
 AUTO_DUP = "auto: duplicate of "       # note of an ask that repeats a newer one
+AUTO_RUN = "auto: repeat run of "      # note of an ask left by an earlier run of the same scheduled job
+AUTO_OFF = "auto: scheduled task off " # note of an ask closed because its scheduled task is off
+AUTO_TF = "auto: testflight current "  # note of an ask closed because the tester can install the build
+AUTO_REPORT = "auto: report"           # note of a status report that was never a question
+COLLAPSED = (AUTO_DUP, AUTO_RUN)       # notes of an ask hidden under a newer one
+RUN_MIN_SESSIONS = 3                   # no scheduled-task signal: this many sessions with one title are one job
+TF_FRESH_S = 48 * 3600                 # the cached TestFlight read must be this young
 SIMILAR_MIN_WORDS = 6                  # both questions need this many words of 3+ letters for a Jaccard match
 SIMILAR_JACCARD = 0.8
 _MD_MARKS = re.compile(r"[*_`]")
@@ -788,9 +803,80 @@ def question_words(text) -> set[str]:
     return set(_WORDS.findall(norm_question(text)))
 
 
+# --- the hard floor: what only the owner may close -----------------------------------------------
+
+_MONEY_RE = re.compile(
+    r"[$€£¥₽]\s?\d|\d\s?[$€£¥₽]|\b(?:usd|eur|gbp|chf|rub)\s?\d|\d\s?(?:usd|eur|gbp|chf|dollars?|euros?|pounds?)\b"
+    r"|\b(?:price|prices|pricing|billing|invoice|invoices|payment|payments|charge|charges|charged|refund|refunds"
+    r"|subscription|paywall)\b", re.I)
+_SECRET_RE = re.compile(
+    r"\b(?:api[ -]?keys?|keys?|keychain|secrets?|passwords?|passcodes?|credentials?|tokens?|otp|2fa|private keys?"
+    r"|signing certificates?)\b|\.p8\b", re.I)
+_PERSON_CUE = re.compile(
+    r"\b(?i:ask|tell|e-?mail|message|ping|text|call|contact|thank|cc|reply to|forward to|send(?: it)? to"
+    r"|waiting (?:on|for)|approved by|signed off by|from|with)\s+@?([A-Z][a-z]{2,})\b")
+_POSSESSIVE = re.compile(r"\b([A-Z][a-z]{2,})['’]s\b")
+_HANDLE = re.compile(r"(?<![\w.])@[A-Za-z][\w-]{2,}")
+_CAP_PAIR = re.compile(r"\b([A-Z][a-z]{2,}) ([A-Z][a-z]{2,})\b")
+_NOT_NAMES = frozenset((
+    "apple google play store app testflight xcode github claude codex openai anthropic android ios macos mac iphone ipad "
+    "watch safari chrome gmail vercel supabase cloudflare teyla gemini grok garmin connect health healthkit siri "
+    "monday tuesday wednesday thursday friday saturday sunday january february march april may june july august "
+    "september october november december the this that these those there here what when where which who why how "
+    "please sign tap view open build version release stage production internal external beta review store console "
+    "developer account team group tester testers owner mcp api cli web").split())
+
+
+_MORE_IMPERATIVES = frozenset(("sign", "log", "tap", "accept", "install", "enable", "grant", "provide", "paste", "share",
+                               "create", "set", "update", "upload", "download", "visit", "click", "press", "enter",
+                               "connect", "view", "give", "write", "read", "answer"))
+
+
+def _imperative_first(text: str) -> bool:
+    words = text.split()
+    return bool(words) and words[0].strip("…\"'*_`#:-").lower() in IMPERATIVES | _MORE_IMPERATIVES
+
+
+@functools.lru_cache(maxsize=4096)
+def _needs_owner(title: str, body: str, known: frozenset) -> bool:
+    if _MONEY_RE.search(title) or _MONEY_RE.search(body) or _SECRET_RE.search(title) or _SECRET_RE.search(body):
+        return True
+    if _HANDLE.search(body):
+        return True
+    stop = _NOT_NAMES | known
+    for rx in (_PERSON_CUE, _POSSESSIVE):
+        for m in rx.finditer(body):
+            if m.group(1).lower() not in stop:
+                return True
+    for m in _CAP_PAIR.finditer(body):
+        first, second = m.group(1).lower(), m.group(2).lower()
+        if first in stop or second in stop or first in IMPERATIVES | _MORE_IMPERATIVES:
+            continue
+        return True
+    return False
+
+
+def needs_owner(a: "Ask", known: frozenset | None = None) -> bool:
+    """True when only the owner may close this ask: its text names a price or currency amount, a key, secret,
+    password or credential, or another person. Rules 2 and 4 of `settle` never close such an ask, and it never
+    collapses into an ask with other words. A heuristic that errs toward keeping: a capitalised pair of words
+    (First Last), a cue word before a capitalised name, a possessive or an @handle counts as a person unless the
+    word is a platform or product name (`known` adds the registry's)."""
+    return _needs_owner(a.title, f"{a.question}\n{a.context}", frozenset(known or ()))
+
+
+def _known_words(reg: dict) -> frozenset:
+    words: set[str] = set()
+    for pid, p in (reg.get("product") or {}).items():
+        for text in (pid, (p or {}).get("name") or ""):
+            words |= {w.lower() for w in re.findall(r"[A-Za-z]{3,}", str(text))}
+    return frozenset(words)
+
+
 def same_request(a: "Ask", b: "Ask") -> bool:
     """One request asked twice: the same session and the same normalised question, or a token-set Jaccard
-    of at least 0.8 over words of 3+ letters when both questions have at least 6 such words."""
+    of at least 0.8 over words of 3+ letters when both questions have at least 6 such words. An ask that
+    `needs_owner` matches only an identical question."""
     na, nb = norm_question(a.question), norm_question(b.question)
     if not na or not nb:
         return False
@@ -798,6 +884,8 @@ def same_request(a: "Ask", b: "Ask") -> bool:
         return True
     wa, wb = question_words(na), question_words(nb)
     if len(wa) < SIMILAR_MIN_WORDS or len(wb) < SIMILAR_MIN_WORDS:
+        return False
+    if na != nb and (needs_owner(a) or needs_owner(b)):
         return False
     return len(wa & wb) / len(wa | wb) >= SIMILAR_JACCARD
 
@@ -826,43 +914,251 @@ def _resolve_prs(items: list["Ask"], st: dict, now: float, *, fetch: bool, runne
     return changed
 
 
+# --- reports are not questions -------------------------------------------------------------------
+
+_HEADING = re.compile(r"^\s*#{1,6}\s+\S")
+_BOLD_LABEL = re.compile(r"^\s*(?:\*\*|__)\s*([^*_\n]{1,60}?)\s*(?:\*\*|__)")
+_REPORT_LABEL = re.compile(
+    r"^\s*(?:(?:not verified|verified|results?|status|summary|findings|recap|progress|shipped|changed)\s*:"
+    r"|(?:done|failed)\s*(?::|—|–|-)\s)", re.I)
+_REQUEST = re.compile(
+    r"\b(?:please|let me know|need you|needs you|waiting (?:on|for) you|your call|your decision|tell me|reply|approve|"
+    r"confirm|sign in|log in|choose|pick|decide|tap|accept|can you|could you|do you|should i|would you|want me|shall i|"
+    r"ok to|go ahead)\b", re.I)
+
+
+def is_report(a: "Ask") -> bool:
+    """A status report shown as a question: no question mark, no options, and the text starts with a heading, a
+    bold label or a report label ("Not verified:"), or holds three bullet lines. Conservative: any request word
+    ("please", "approve", "sign in"), or an imperative verb first, keeps it an ask."""
+    q = str(a.question or "")
+    if a.kind != "question" or a.options or "?" in q or "？" in q or not q.strip():
+        return False
+    lead = re.sub(r"^\s*(?:#{1,6}\s*|\*\*|__)", "", q)
+    if _imperative_first(lead) or _REQUEST.search(q):
+        return False
+    bullets = sum(1 for line in q.splitlines() if _LIST_LINE.match(line))
+    return bool(_HEADING.match(q) or _BOLD_LABEL.match(q) or _REPORT_LABEL.match(q) or bullets >= 3)
+
+
+def _classify_reports(items: list["Ask"], st: dict, now: float) -> bool:
+    changed = False
+    for a in items:
+        if a.id in st["undone"]:
+            continue
+        if a.status == "done" and a.note == AUTO_REPORT:
+            a.kind = "report"                                # closed on an earlier run: only the label is new
+        elif a.status in ("open", "snoozed") and is_report(a):
+            a.kind = "report"
+            _auto_done(a, st, now, AUTO_REPORT)
+            changed = True
+    return changed
+
+
+# --- repeats: the same question, the same job -----------------------------------------------------
+
+_VERSION = re.compile(
+    r"(?:\bv|\bversion\s+|\brelease\s+|\b(?:ios|macos|android|watchos|tvos)\s+)(\d+(?:\.\d+)+)\b"
+    r"|\b(\d+\.\d+\.\d+(?:\.\d+)*)\b|\b(\d+\.\d+)\s*\(\d+\)", re.I)
+_BUILD = re.compile(r"\bbuilds?\s*#?\s*(\d+)\b|\b\d+(?:\.\d+)+\s*\((\d+)\)", re.I)
+
+
+def target_versions(a: "Ask") -> frozenset:
+    """The versions and build numbers a question names. Two runs aimed at different versions are different asks."""
+    text = f"{a.title}\n{a.question}"
+    out = {"v" + next(g for g in m.groups() if g) for m in _VERSION.finditer(text)}
+    out |= {"b" + next(g for g in m.groups() if g) for m in _BUILD.finditer(text)}
+    return frozenset(out)
+
+
+def _run_groups(items: list["Ask"]) -> list[list["Ask"]]:
+    """Asks that are one job's repeat runs: the same product, title and scheduled task (the desktop session
+    names it); or, with no task named, the same product, title and harness in `RUN_MIN_SESSIONS` or more
+    sessions. Split by target version, and by exact question when the text `needs_owner`."""
+    rows = [a for a in items if a.kind in ("question", "blocked") and a.status in ("open", "snoozed", "done")
+            and a.title and not a.note.startswith(COLLAPSED)]
+    base: dict[tuple, list[Ask]] = {}
+    loose: dict[tuple, list[Ask]] = {}
+    for a in rows:
+        if a.task:
+            base.setdefault(("task", a.product, a.title, a.task), []).append(a)
+        elif a.harness in ("claude-desktop", "claude-code", "codex"):
+            loose.setdefault(("title", a.product, a.title, a.harness), []).append(a)
+    base.update({k: v for k, v in loose.items() if len({a.session for a in v if a.session}) >= RUN_MIN_SESSIONS})
+    out: list[list[Ask]] = []
+    for group_rows in base.values():
+        split: dict[tuple, list[Ask]] = {}
+        for a in group_rows:
+            split.setdefault((target_versions(a), norm_question(a.question) if needs_owner(a) else None), []).append(a)
+        out += [r for r in split.values() if len(r) > 1]
+    return out
+
+
+def _fold(rows: list["Ask"], st: dict, now: float, note: str, same) -> bool:
+    """Fold the older rows into the newest. A repeat of a done ask is done too, and that is recorded; a repeat of an
+    open ask is hidden (status `duplicate`) and listed in the kept ask's `dupes`."""
+    changed = False
+    rows.sort(key=lambda a: (-a.when, a.id))
+    gone: set[str] = set()
+    for i, k in enumerate(rows):
+        if k.id in gone:
+            continue
+        for c in rows[i + 1:]:
+            if c.id in gone or c.status == "done" or c.id in st["undone"] or not same(k, c):
+                continue
+            gone.add(c.id)
+            if k.status == "done":
+                _auto_done(c, st, now, note + k.id)
+                changed = True
+            else:
+                c.status, c.note = "duplicate", note + k.id
+                k.dupes.append(c.id)
+    return changed
+
+
+def _collapse_runs(items: list["Ask"], st: dict, now: float) -> bool:
+    """Repeat runs of one job collapse into the newest, `blocked` asks included; no fuzzy match is used."""
+    changed = False
+    for rows in _run_groups(items):
+        changed = _fold(rows, st, now, AUTO_RUN, lambda k, c: True) or changed
+    return changed
+
+
 def _collapse(items: list["Ask"], st: dict, now: float) -> bool:
     """Collapse the repeats of an ask into the newest one, product by product. A repeat of an ask that is
     done is done too, and that is recorded; a repeat of an open ask is hidden (status `duplicate`) and
     listed in the kept ask's `dupes`."""
     by: dict[str, list[Ask]] = {}
     for a in items:
-        if a.kind == "question" and a.status in ("open", "snoozed", "done") and not a.note.startswith(AUTO_DUP):
+        if a.kind == "question" and a.status in ("open", "snoozed", "done") and not a.note.startswith(COLLAPSED):
             by.setdefault(a.product, []).append(a)
     changed = False
     for rows in by.values():
-        rows.sort(key=lambda a: (-a.when, a.id))
-        gone: set[str] = set()
-        for i, k in enumerate(rows):
-            if k.id in gone:
-                continue
-            for c in rows[i + 1:]:
-                if c.id in gone or c.status == "done" or c.id in st["undone"] or not same_request(k, c):
-                    continue
-                gone.add(c.id)
-                if k.status == "done":
-                    _auto_done(c, st, now, AUTO_DUP + k.id)
-                    changed = True
-                else:
-                    c.status, c.note = "duplicate", AUTO_DUP + k.id
-                    k.dupes.append(c.id)
+        changed = _fold(rows, st, now, AUTO_DUP, same_request) or changed
     return changed
 
 
-def settle(items: list["Ask"], now: float, *, st: dict | None = None, fetch: bool = False, runner=None) -> None:
-    """Close what is already settled, in place. An ask whose PR was merged or closed after the ask is done
-    (`auto: PR merged <url>`); the repeats of a newer ask collapse into it. Both go through the done store, so
-    `undo` reverses them and an undone ask is not touched again. `fetch` lets one batched `gh` query run for
-    PRs the caches do not know; without it only caches are read. With `st` given the caller owns the store."""
+# --- live state that already answers an ask --------------------------------------------------------
+
+def _schedule_home() -> pathlib.Path:
+    return pathlib.Path.home()            # at call time; a test moves it
+
+
+def schedule_states(home: pathlib.Path | None = None) -> dict[str, str] | None:
+    """{task id: on | off | once} for the Claude desktop scheduled tasks, read from the app's records and the
+    definition folder (`schedules.read_claude_desktop`, local files only). `off` is a recurring task that is
+    disabled or has a definition the app never scheduled; `once` a one-shot that switched itself off after it
+    ran. None when no task is recorded at all, so a missing store never reads as "all deleted"."""
+    try:
+        from . import schedules
+        entries = schedules.read_claude_desktop(_schedule_home() if home is None else home)
+    except Exception:  # noqa: BLE001 — a store that cannot be read says nothing
+        return None
+    out: dict[str, str] = {}
+    for e in entries:
+        tid = str(e.get("id") or "").split(":", 1)[-1]
+        if not tid:
+            continue
+        if e.get("verdict") == "UNREGISTERED":
+            out[tid] = "off"
+        elif e.get("enabled") is False:
+            out[tid] = "once" if e.get("fire_at") is not None else "off"
+        else:
+            out[tid] = "on"
+    return out or None
+
+
+def _close_off_tasks(items: list["Ask"], st: dict, now: float, tasks: dict | None, known: frozenset) -> bool:
+    """An ask from a scheduled task that is disabled, or no longer exists, is done: `auto: scheduled task off <id>`.
+    A one-shot that switched itself off after running keeps its ask, and so does an ask that `needs_owner`."""
+    cand = [a for a in items if a.task and a.status in ("open", "snoozed") and a.kind in ("question", "blocked")
+            and a.id not in st["undone"] and not needs_owner(a, known)]
+    if not cand:
+        return False
+    tasks = schedule_states() if tasks is None else tasks
+    if not tasks:
+        return False
+    changed = False
+    for a in cand:
+        if tasks.get(a.task, "gone") in ("off", "gone"):
+            _auto_done(a, st, now, AUTO_OFF + a.task)
+            changed = True
+    return changed
+
+
+_TF_PHRASE = re.compile(r"view in testflight", re.I)
+_TF_TAP = re.compile(r"\b(?:tap|taps|click|press|accept|open)\b|invit", re.I)
+_TF_OTHER = re.compile(
+    r"\b(?:submit|send|upload|approve|confirm|merge|ship|release|fix|add|create|enable|sign|log|pick|choose|decide|reply|"
+    r"tell|retry|run|start|delete|remove|paste|enter|share|provide|grant|check|wait|please)\b", re.I)
+TF_ASK_MAX = 450
+
+
+def is_testflight_tap(a: "Ask") -> bool:
+    """An ask that only asks the owner to tap "View in TestFlight" in Apple's e-mail: it names that button, asks no
+    question, offers no options and is short."""
+    q = str(a.question or "")
+    return (a.kind in ("question", "blocked") and not a.options and "?" not in q and len(q) <= TF_ASK_MAX
+            and bool(_TF_PHRASE.search(q)) and bool(_TF_TAP.search(q)) and not _TF_OTHER.search(q))
+
+
+def _testflight_current(rows, now: float, since: float) -> bool:
+    """The cached TestFlight rows of a product: at least one, every one `current`, each read after the ask was
+    written and within `TF_FRESH_S`. Anything missing or unclear is False."""
+    tf = [r for r in (rows or {}).values() if isinstance(r, dict) and r.get("channel") == "testflight"]
+    if not tf:
+        return False
+    for r in tf:
+        at = _epoch(r.get("as_of")) if r.get("as_of") else None
+        if r.get("state") != "current" or at is None or at <= since or now - at > TF_FRESH_S:
+            return False
+    return True
+
+
+def _close_testflight(items: list["Ask"], st: dict, now: float, stores: dict | None, known: frozenset) -> bool:
+    cand = [a for a in items if a.status in ("open", "snoozed") and a.id not in st["undone"]
+            and is_testflight_tap(a) and not needs_owner(a, known)]
+    if not cand:
+        return False
+    if stores is None:
+        from . import portfolio              # portfolio imports this module
+        try:
+            stores = portfolio.load_cache()["stores"]
+        except Exception:  # noqa: BLE001
+            return False
+    changed = False
+    for a in cand:
+        if _testflight_current(stores.get(a.product), now, a.when):
+            _auto_done(a, st, now, AUTO_TF + a.product)
+            changed = True
+    return changed
+
+
+def settle(items: list["Ask"], now: float, *, st: dict | None = None, fetch: bool = False, runner=None,
+           tasks: dict | None = None, stores: dict | None = None) -> None:
+    """Close what is already settled, in place, by these steps in order:
+
+    1. an ask whose PR was merged or closed after the ask is done (`auto: PR merged <url>`);
+    2. a status report is not a question: kind `report`, done (`auto: report`);
+    3. the repeats of a newer ask collapse into it: repeat runs of one scheduled job by identity, then near-identical
+       questions by similarity (never `blocked` asks);
+    4. an ask of a scheduled task that is off closes (`auto: scheduled task off <id>`);
+    5. a request to tap "View in TestFlight" closes when the cached TestFlight data says the tester can install
+       (`auto: testflight current <product>`).
+
+    Steps 4 and 5 never touch an ask that `needs_owner`. All go through the done store, so `undo` reverses them and an
+    undone ask is not touched again. `fetch` lets one batched `gh` query run for PRs the caches do not know; without
+    it only caches are read. `tasks` ({id: on|off|once}) and `stores` (the portfolio cache's `stores`) are read from
+    local files when not given. With `st` given the caller owns the store."""
     own = st is None
     st = load_state() if own else st
     changed = _resolve_prs(items, st, now, fetch=fetch, runner=runner)
+    changed = _classify_reports(items, st, now) or changed
+    changed = _collapse_runs(items, st, now) or changed
     changed = _collapse(items, st, now) or changed
+    known = _known_words(registry.load()) if any(a.task or is_testflight_tap(a) for a in items) else frozenset()
+    changed = _close_off_tasks(items, st, now, tasks, known) or changed
+    changed = _close_testflight(items, st, now, stores, known) or changed
     if changed and own:
         try:
             save_state(st, now=now)
@@ -870,17 +1166,49 @@ def settle(items: list["Ask"], now: float, *, st: dict | None = None, fetch: boo
             pass
 
 
+REASONS = ("resolved", "duplicates", "repeat_runs", "scheduled_off", "testflight_current", "reports")
+
+
+def filtered_by_reason(items: list["Ask"]) -> dict:
+    """How many asks each automatic step took out of the list: `resolved` (PR merged or closed), `duplicates` (similar
+    questions), `repeat_runs` (earlier runs of one job), `scheduled_off`, `testflight_current` and `reports`."""
+    out = dict.fromkeys(REASONS, 0)
+    for a in items:
+        n = a.note
+        if a.status == "done" and n.startswith(AUTO_PR):
+            out["resolved"] += 1
+        elif a.status == "duplicate" or a.status == "done":
+            if n.startswith(AUTO_RUN):
+                out["repeat_runs"] += 1
+            elif n.startswith(AUTO_DUP):
+                out["duplicates"] += 1
+            elif a.status == "done" and n.startswith(AUTO_OFF):
+                out["scheduled_off"] += 1
+            elif a.status == "done" and n.startswith(AUTO_TF):
+                out["testflight_current"] += 1
+            elif a.status == "done" and n == AUTO_REPORT:
+                out["reports"] += 1
+    return out
+
+
 def filtered_counts(items: list["Ask"]) -> tuple[int, int]:
-    """(closed because the PR is merged or closed, repeats of a newer ask)."""
-    resolved = sum(1 for a in items if a.status == "done" and a.note.startswith(AUTO_PR))
-    dupes = sum(1 for a in items if a.status == "duplicate" or (a.status == "done" and a.note.startswith(AUTO_DUP)))
-    return resolved, dupes
+    """(closed because the PR is merged or closed, repeats of a newer ask: similar questions and repeat runs)."""
+    r = filtered_by_reason(items)
+    return r["resolved"], r["duplicates"] + r["repeat_runs"]
 
 
-def filtered_line(resolved: int, dupes: int) -> str:
-    if not (resolved or dupes):
+def filtered_line(resolved: int, dupes: int, more: dict | None = None) -> str:
+    """`filtered: 3 resolved (PR merged/closed), 22 duplicates (20 repeat runs), 1 scheduled task off, ...`. `dupes`
+    counts every collapsed repeat; `more` is `filtered_by_reason`'s dict, from which the other reasons are named."""
+    more = more or {}
+    extra = [(more.get("scheduled_off", 0), "scheduled task off"), (more.get("testflight_current", 0), "TestFlight current"),
+             (more.get("reports", 0), "reports")]
+    if not (resolved or dupes or any(n for n, _ in extra)):
         return ""
-    return f"filtered: {resolved} resolved (PR merged/closed), {dupes} duplicates — teyla asks --all"
+    runs = more.get("repeat_runs", 0)
+    parts = [f"{resolved} resolved (PR merged/closed)", f"{dupes} duplicates" + (f" ({runs} repeat runs)" if runs else "")]
+    parts += [f"{n} {label}" for n, label in extra if n]
+    return "filtered: " + ", ".join(parts) + " — teyla asks --all"
 
 
 # --- collecting everything --------------------------------------------------------------------
@@ -968,7 +1296,7 @@ def undo(prefixes: list[str], now: float | None = None) -> tuple[list[str], int]
             continue
         st["done"].pop(a.id, None)
         st["undone"][a.id] = {"ts": _iso(now)}
-        for k in [k for k, v in st["done"].items() if v.get("note") == AUTO_DUP + a.id]:
+        for k in [k for k, v in st["done"].items() if v.get("note") in (AUTO_DUP + a.id, AUTO_RUN + a.id)]:
             del st["done"][k]
         lines.append(f"reopened: {a.id}  {a.product}  {a.title}")
         changed = True
@@ -1135,14 +1463,15 @@ def group_dicts(items: list[Ask], reg: dict) -> list[dict]:
 
 
 def render_json(items: list[Ask], now: float, *, muted: list[Ask] | None = None, reg: dict | None = None,
-                counts: tuple[int, int] = (0, 0)) -> str:
+                counts: tuple[int, int] = (0, 0), reasons: dict | None = None) -> str:
     reg = registry.load() if reg is None else reg
     muted = muted or []
+    filtered = dict.fromkeys(REASONS, 0) if reasons is None else {k: reasons.get(k, 0) for k in REASONS}
     return json.dumps({"waiting": len(items), "archived": sum(1 for a in items if a.archived),
                        "generated": _iso(now), "items": [a.to_dict(now, attribution=True) for a in items],
                        "groups": group_dicts(items, reg),
                        "muted": len(muted), "muted_products": sorted({a.product for a in muted}),
-                       "resolved": counts[0], "duplicates": counts[1]}, indent=1)
+                       "resolved": counts[0], "duplicates": counts[1], "filtered": filtered}, indent=1)
 
 
 _CSS = """
@@ -1299,8 +1628,9 @@ def cmd_asks(args) -> int:
     items = [a for a in everything if args.all or a.status == "open"]
     if args.product:
         items = [a for a in items if a.product == args.product]
-    counts = filtered_counts([a for a in everything if not args.product or a.product == args.product])
-    filtered = "" if args.all else filtered_line(*counts)
+    scope = [a for a in everything if not args.product or a.product == args.product]
+    counts, reasons = filtered_counts(scope), filtered_by_reason(scope)
+    filtered = "" if args.all else filtered_line(*counts, reasons)
     muted: list[Ask] = []
     if not args.all and stage_of(reg, args.product or "") != "parked":
         muted = [a for a in items if is_muted(a, reg)]
@@ -1311,7 +1641,7 @@ def cmd_asks(args) -> int:
         if args.open:
             _open_file(p)
         return 0
-    print(render_json(items, now, muted=muted, reg=reg, counts=counts) if args.json
+    print(render_json(items, now, muted=muted, reg=reg, counts=counts, reasons=reasons) if args.json
           else render_text(items, now, flat=args.flat, muted=muted, reg=reg, filtered=filtered))
     return 0
 

@@ -124,9 +124,11 @@ def _no_real_disk(monkeypatch):
 def _no_real_asks_sources(tmp_path_factory, monkeypatch):
     """`teyla asks` reads the Claude desktop app's session metadata and the reminders file. A test
     that forgets to hand it a root must see an empty machine, not this Mac's open questions."""
-    from teyla import remind
+    from teyla import asks, remind
     none = tmp_path_factory.mktemp("no-asks")
     monkeypatch.setenv("TEYLA_CLAUDE_SESSIONS", str(none / "claude-code-sessions"))
+    # ...and the scheduled tasks that decide whether an ask from a job is still wanted.
+    monkeypatch.setattr(asks, "_schedule_home", lambda: none / "home")
     monkeypatch.setattr(remind, "REMINDERS_PATH", none / "reminders.toml")
 
 
