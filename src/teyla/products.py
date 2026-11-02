@@ -11,6 +11,10 @@ code. `[products] repos = [...]` in ~/.teyla/config.toml narrows the default wal
 repos (the weekly routine calls this with no paths). In safe mode it is also the only place
 anything runs: a repo not on the list — even one named on the command line — is listed as
 "not allowed" and its check.sh is never started.
+
+The walk runs check.sh as committed on the default branch, so a checkout on a feature branch or behind
+main still reports the merged probe. Its `.env` and other files stay the checkout's. Safe mode and a repo
+named on the command line run the checkout's own file: safe mode never starts code that was only fetched.
 """
 from __future__ import annotations
 
@@ -19,17 +23,53 @@ import os
 import pathlib
 import re
 import subprocess
+import tempfile
 import time
 
 
-def probe(repo: pathlib.Path, timeout: int = 60) -> dict:
+def committed_check_sh(repo: pathlib.Path) -> str | None:
+    """check.sh as the local refs have it on the default branch, or None. No fetch: nothing leaves the machine."""
+    for ref in ("origin/HEAD", "origin/main"):
+        try:
+            r = subprocess.run(["git", "-C", str(repo), "show", f"{ref}:check.sh"], capture_output=True, text=True,
+                               errors="replace", timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if r.returncode == 0:
+            return r.stdout
+    return None
+
+
+def _run_committed(repo: pathlib.Path, text: str, timeout: int) -> subprocess.CompletedProcess:
+    """Run `text` as the repo's check.sh without touching the checkout. Every check.sh starts by changing to its own
+    folder and some read `.env` there, so it runs from a private folder of links to the repo's top-level entries."""
+    repo = repo.resolve()
+    with tempfile.TemporaryDirectory(prefix="teyla-probe-") as tmp:
+        shadow = pathlib.Path(tmp)
+        for entry in repo.iterdir():
+            if entry.name != "check.sh":
+                (shadow / entry.name).symlink_to(entry)
+        (shadow / "check.sh").write_text(text)
+        return subprocess.run(["bash", str(shadow / "check.sh"), "usage"], cwd=shadow, capture_output=True, text=True,
+                              timeout=timeout)
+
+
+def probe(repo: pathlib.Path, timeout: int = 60, *, committed: bool = False) -> dict:
+    """The repo's counters. `committed` prefers check.sh from the default branch when it has a probe."""
     sh = repo / "check.sh"
-    if not sh.exists():
-        return {"_status": "no check.sh"}
-    if "usage)" not in sh.read_text(errors="replace"):
-        return {"_status": "no probe"}
+    local = sh.read_text(errors="replace") if sh.exists() else None
+    main = committed_check_sh(repo) if committed else None
+    if main is None or "usage)" not in main:
+        main = None
+        if local is None:
+            return {"_status": "no check.sh"}
+        if "usage)" not in local:
+            return {"_status": "no probe"}
     try:
-        r = subprocess.run(["bash", str(sh), "usage"], cwd=repo, capture_output=True, text=True, timeout=timeout)
+        if main is not None and main != local:
+            r = _run_committed(repo, main, timeout)
+        else:
+            r = subprocess.run(["bash", str(sh), "usage"], cwd=repo, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         return {"_status": "timeout"}
     if r.returncode == 64:  # convention: 64 = "usage" mode not implemented
@@ -91,11 +131,14 @@ def write_cache(results: dict[str, tuple[str, dict]]) -> None:
 
 
 def table(paths: list[str] | None = None, cfg: dict | None = None, *, cache: bool = False) -> str:
+    from . import config
+    cfg = cfg or config.load()
     repos, runnable = repos_to_probe(paths, cfg)
+    committed = not paths and not config.safe_mode(cfg)
     lines = [f"{'repo':18} {'status':10} counters", "-" * 70]
     results: dict[str, dict] = {}
     for r in repos:
-        d = probe(r) if r in runnable else {"_status": "not allowed"}
+        d = probe(r, committed=committed) if r in runnable else {"_status": "not allowed"}
         st = d.pop("_status")
         results[r.name] = (st, dict(d))
         counters = ", ".join(f"{k}={v}" for k, v in d.items()) or "-"
