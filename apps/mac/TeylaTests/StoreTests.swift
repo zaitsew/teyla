@@ -63,7 +63,7 @@ final class StoreSnapshotTests: XCTestCase {
     func testSignedSampleDecodesAsVersion3() throws {
         let snapshot = try StoreBackend.snapshot(from: signedState(sampleJSON()), key: testKey)
         XCTAssertEqual(snapshot.version, 3)
-        XCTAssertFalse(snapshot.asks.isEmpty, "Today needs questions")
+        XCTAssertFalse(snapshot.asks.isEmpty, "Home needs questions")
         XCTAssertFalse(snapshot.running.isEmpty)
         XCTAssertFalse(snapshot.done.isEmpty)
         XCTAssertFalse(snapshot.products.isEmpty)

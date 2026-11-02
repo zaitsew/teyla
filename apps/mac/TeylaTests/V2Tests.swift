@@ -44,13 +44,6 @@ final class FormatV2Tests: XCTestCase {
         XCTAssertEqual(Format.startedLine(via: "claude-bg", worktree: ""), "Started")
         XCTAssertTrue(Format.startedLine(via: "fixture", worktree: "w").contains("preview only"))
     }
-
-    func testProductsWithAWaitingPRAreShown() {
-        let products = [Product(name: "lens", state: "quiet", prsWaiting: 1), Product(name: "idle", state: "quiet")]
-        let split = Format.splitProducts(products, running: [])
-        XCTAssertEqual(split.shown.map(\.name), ["lens"])
-        XCTAssertEqual(split.rest, 1)
-    }
 }
 
 final class CommandArgumentTests: XCTestCase {

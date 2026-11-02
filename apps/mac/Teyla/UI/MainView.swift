@@ -86,7 +86,8 @@ private struct DetailView: View {
 
     @ViewBuilder private var page: some View {
         switch model.route {
-        case .today: TodayView()
+        case .home: HomeView()
+        case .decisions: DecisionsView()
         case .portfolio: PortfolioView()
         case .diagnosis: DiagnosisView()
         case .product(let id): ProductPageView(id: id)
@@ -94,42 +95,23 @@ private struct DetailView: View {
     }
 }
 
-/// Today, Diagnosis, and a page per registered product.
+/// Home, Decisions and All products; Diagnosis below them. A product opens from a card or a row, not from the sidebar.
 private struct SidebarView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        let products = (model.snapshot?.products ?? []).filter(\.hasPage)
-        List(selection: Binding(get: { model.route }, set: { model.go($0 ?? .today) })) {
-            Label {
-                Text("Today")
-            } icon: {
-                Image(systemName: "sun.max")
-            }
-            .badge(model.visibleAsks.count)
-            .tag(AppRoute.today)
-            Label("Portfolio", systemImage: "square.grid.2x2")
-                .badge(model.snapshot?.portfolio.map { $0.counts.offTrack + $0.counts.atRisk } ?? 0)
+        List(selection: Binding(get: { model.route }, set: { model.go($0 ?? .home) })) {
+            Label("Home", systemImage: "house")
+                .tag(AppRoute.home)
+            Label("Decisions", systemImage: "tray")
+                .badge(model.ownerAsks.count)
+                .tag(AppRoute.decisions)
+            Label("All products", systemImage: "square.grid.2x2")
                 .tag(AppRoute.portfolio)
             if model.capabilities.diagnosis {
-                Label("Diagnosis", systemImage: "stethoscope")
-                    .tag(AppRoute.diagnosis)
-            }
-            if !products.isEmpty {
-                Section("Products") {
-                    ForEach(products) { product in
-                        HStack(spacing: Space.xs) {
-                            Text(product.title).lineLimit(1)
-                            if product.focus {
-                                Image(systemName: "star.fill")
-                                    .font(Typo.caption)
-                                    .foregroundStyle(Palette.warning)
-                                    .accessibilityLabel("In focus")
-                            }
-                        }
-                        .badge(product.waiting)
-                        .tag(AppRoute.product(product.name))
-                    }
+                Section {
+                    Label("Diagnosis", systemImage: "stethoscope")
+                        .tag(AppRoute.diagnosis)
                 }
             }
         }
@@ -141,64 +123,6 @@ private struct SidebarView: View {
             }
             .padding(.horizontal, Space.m)
             .padding(.vertical, Space.s)
-        }
-    }
-}
-
-/// Variant B, "morning brief": one sentence on what matters, then the questions ranked by what
-/// they unblock, the tasks only you can do, and what got done. The side column holds products and running sessions.
-private struct TodayView: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        ScrollViewReader { reader in
-            GeometryReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: Space.xl) {
-                        header
-                        if model.snapshot == nil {
-                            EmptyStateView()
-                        } else if proxy.size.width >= Space.wideWindow {
-                            HStack(alignment: .top, spacing: Space.xxl) {
-                                // The cards stop at the reading width; extra room goes to the side column.
-                                MainColumn().readingWidth()
-                                StatusColumn().frame(minWidth: Space.sideColumn, maxWidth: Space.sideColumnMax, alignment: .leading)
-                            }
-                        } else {
-                            VStack(alignment: .leading, spacing: Space.xl) {
-                                MainColumn().readingWidth()
-                                StatusColumn()
-                            }
-                        }
-                    }
-                    .padding(.horizontal, Space.xl + Space.xs)
-                    .padding(.vertical, Space.xl)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            .onChange(of: model.focusedAskID) { _, id in
-                guard let id else { return }
-                withAnimation(.easeOut(duration: 0.25)) { reader.scrollTo(id, anchor: .top) }
-            }
-        }
-        .background(Palette.background)
-        .navigationTitle("Today")
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: Space.xs + Space.xxs) {
-            Text(model.briefLine)
-                .font(Typo.brief)
-                .lineSpacing(Space.xxs)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-            if let snapshot = model.snapshot {
-                Text(Format.subline(questions: model.visibleAsks.count,
-                                    running: snapshot.running.count,
-                                    spentUSD: snapshot.totals.spentTodayUSD))
-                    .font(Typo.body)
-                    .foregroundStyle(Palette.textSecondary)
-            }
         }
     }
 }
@@ -239,103 +163,5 @@ private struct LiveIndicator: View {
         Circle()
             .fill(color)
             .frame(width: Space.s - Space.xxs, height: Space.s - Space.xxs)
-    }
-}
-
-private struct EmptyStateView: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Space.s) {
-            if let error = model.lastError {
-                Label("Could not read state", systemImage: "exclamationmark.triangle")
-                    .font(Typo.lead)
-                    .foregroundStyle(Palette.warning)
-                Text(error)
-                    .foregroundStyle(Palette.textSecondary)
-                    .textSelection(.enabled)
-                Button("Try again") { model.refresh() }
-            } else {
-                HStack(spacing: Space.s) {
-                    ProgressView().controlSize(.small)
-                    Text("Reading your sessions…").foregroundStyle(Palette.textSecondary)
-                }
-            }
-        }
-        .padding(.top, Space.s)
-    }
-}
-
-/// Questions, then owner tasks, then results.
-private struct MainColumn: View {
-    @Environment(AppModel.self) private var model
-    @State private var showAllDone = false
-
-    private static let collapsedDone = 4
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Space.xl) {
-            questions
-            if model.capabilities.notes { NotesSection() }
-            if !tasks.isEmpty { onlyYou }
-            done
-        }
-    }
-
-    private var tasks: [OwnerTask] { model.snapshot?.tasks ?? [] }
-
-    private var questions: some View {
-        let asks = AskFold.partition(model.visibleAsks) { model.age(of: $0) }
-        return VStack(alignment: .leading, spacing: Space.m) {
-            SectionLabel("Needs you — ordered by what it unblocks")
-            if model.visibleAsks.isEmpty {
-                Label("Nothing is waiting for an answer.", systemImage: "checkmark.circle")
-                    .foregroundStyle(Palette.textSecondary)
-                    .padding(.vertical, Space.s)
-            } else {
-                ForEach(asks.fresh) { ask in
-                    AskCard(ask: ask)
-                        .transition(.opacity.combined(with: .scale(scale: 0.97)))
-                }
-                if !asks.older.isEmpty {
-                    OlderGroup(count: asks.older.count, revealsFocus: asks.older.contains { $0.id == model.focusedAskID }) {
-                        ForEach(asks.older) { ask in
-                            AskCard(ask: ask, older: true)
-                                .transition(.opacity.combined(with: .scale(scale: 0.97)))
-                        }
-                    }
-                }
-            }
-        }
-        .animation(.easeOut(duration: 0.25), value: model.visibleAsks.map(\.id))
-    }
-
-    private var onlyYou: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SectionLabel("Only you")
-            ForEach(tasks) { task in
-                TaskRow(task: task)
-            }
-        }
-    }
-
-    private var done: some View {
-        let items = model.snapshot?.done ?? []
-        let shown = showAllDone ? items : Array(items.prefix(Self.collapsedDone))
-        return VStack(alignment: .leading, spacing: Space.m) {
-            SectionLabel("Done since yesterday")
-            if items.isEmpty {
-                Text("Nothing finished in the last 24 hours.")
-                    .foregroundStyle(Palette.textSecondary)
-            } else {
-                ForEach(shown) { item in
-                    DoneCard(item: item)
-                }
-                if items.count > Self.collapsedDone {
-                    Button(showAllDone ? "Show fewer" : "Show all \(items.count)") { showAllDone.toggle() }
-                        .buttonStyle(.link)
-                }
-            }
-        }
     }
 }

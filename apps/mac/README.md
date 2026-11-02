@@ -56,19 +56,20 @@ the release script passes the team. Version 0.32.0, build number `CURRENT_PROJEC
 - **No data yet:** the window shows the Teyla lockup, the promise and "Run diagnosis". It runs `teyla start --json` (read-only,
   up to about a minute) and then lists each offer with its saving or benefit, trade-off and undo. "Apply…" shows one sheet
   that names the file and key, then runs `teyla apply <id> --yes`. "Diagnosis" stays in the sidebar.
-- **Product pages:** click a product in a question, a note chip, the Products column or the sidebar. The page shows the stage
+- **Product pages:** click a product card on Home, a row in All products, a note chip, or the product name on a question. The page shows the stage
   (menu), the focus star, waiting questions, notes (Link…, Drop), the last 10 sessions and the spend over 7 and 30 days.
 
 ## What the window shows
 
 | Section | Content | Action |
 |---|---|---|
-| Needs you | Questions, ranked by what they unblock; those older than 7 days fold into "Older · N". | Answer with an option or text; snooze; mark done; "Close — no longer needed" on an older one. |
-| Only you | `tasks[]`: a PR to merge, an issue assigned to you, with its age. | Open (the link). |
-| Done since yesterday | `done[]` as cards: status chip, product, title, at most 3 result lines, the needs line, links. Four show; the rest are one click away. | Open session. |
-| Products | State, issues and PRs waiting, the next step. Click a registered product to open its page. | Open the page; the page's "Start new tasks here" sets the default for new tasks. |
-| Notes | The Inbox count and the newest five open notes: product chip, age, the text clipped to two lines. | Link… (a product menu) or Drop; New note opens the panel. |
-| Running now | Each session active in the last 10 minutes. | Codex: a one-line correction field (`teyla say`). Others: Open. |
+| Home: sentence | `brief.line`, then one quiet line: decisions waiting, sessions running, spend labelled "API-equivalent". | None. |
+| Home: core products | One card per `portfolio.core` product (up to 6): title, star, one line of progress, what can be installed, PRs merged in 7 days, users, milestone, blocker, "Quiet for N days" from 14 days. | Click opens the product page; the star adds or removes the product (`teyla product core`). |
+| Home: decisions | The top five questions that wait on you, then "See all N". With triage, Teyla's proposed answer shows on the card. | Answer with an option, "Use default" or text; snooze; mark done. |
+| Home: "Teyla closed N" | Shown only when Teyla closed questions (`auto_closed`). | Review the reasons; Undo reopens one (`teyla asks undo`). |
+| Decisions | Every question that waits on you, grouped Pay, Decide, Do when triaged, else one ranked list; those older than 7 days fold into "Older · N". Then "Agents are handling N", Only you (`tasks[]`), the Notes section and "Done since yesterday", folded. | As on Home; "Close — no longer needed" on an older one; Open (the link) on a task; Open session on a result. |
+| Notes | The Inbox count and the newest five open notes, on the Decisions page: product chip, age, the text clipped to two lines. | Link… (a product menu) or Drop; New note opens the panel. |
+| Home: running now | Folded, "Running now (N)". Each session active in the last 10 minutes. | Codex: a one-line correction field (`teyla say`). Others: Open. |
 
 Notes:
 
@@ -98,14 +99,14 @@ Notes:
 - **Window**: closing it never strands you. Window → Teyla (⌘0), the menu-bar item and the Dock icon
   reopen it. `LSApplicationCategoryType` is `public.app-category.developer-tools`.
 
-- **Portfolio** (sidebar, needs `teyla` 0.32): one row per registered product with its health (on track, at risk,
+- **All products** (sidebar, needs `teyla` 0.32): one row per registered product with its health (on track, at risk,
   off track, parked), the first reason, a strip of platforms with version, build and state, PR counts, waiting
   questions, last activity and 7-day spend. Filter: All or Needs attention; parked products are hidden until you
   tick "Show parked". A click opens the product page, which shows the same health and platform details.
 - **Status** (toolbar): "Updating…" while the state or the open product page loads, "Up to date" under 2 minutes,
   "Stale · N min" when older (a sleep, a hung command), "Offline" on an error. The tooltip shows exact times and when
   the stores and GitHub were last checked. The window also refreshes when the Mac wakes.
-- **Width**: cards and prose stop at 720 pt; extra room goes to the side column.
+- **Width**: question cards and prose stop at 720 pt; Home is 1,100 pt wide at most and fits two or three product cards to a row.
 
 ## Where it reads data
 
@@ -154,7 +155,7 @@ Views use the tokens in `Teyla/UI/Tokens.swift` (spacing, type, colour roles); n
 
 **Screenshots.** With `TEYLA_STATE_FIXTURE` set, these variables shape the preview (they are ignored
 otherwise): `TEYLA_PREVIEW_APPEARANCE=light|dark`, `TEYLA_PREVIEW_SIZE=<w>x<h>`,
-`TEYLA_PREVIEW_SCROLL=end`, `TEYLA_PREVIEW_OPEN=new-task|quick-note|settings|pair|diagnosis|product:<id>|focus:<ask id>`,
+`TEYLA_PREVIEW_SCROLL=end`, `TEYLA_PREVIEW_OPEN=new-task|quick-note|settings|pair|diagnosis|home|decisions|portfolio|product:<id>|focus:<ask id>`,
 `TEYLA_PREVIEW_DRAFT=<text>`, `TEYLA_PREVIEW_START_DELAY=<seconds>` (how long the simulated diagnosis takes)
 and `TEYLA_PREVIEW_NO_BINARY=1` (shows the not-found screen). The welcome is `state.empty.v1.json`. Capture a window with `screencapture -l <window id>`.
 

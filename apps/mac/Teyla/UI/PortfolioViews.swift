@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-// The Portfolio screen and the pieces the product page and the Today column share: the health pill,
-// the platform strip and the platform details.
+// The All products screen and the pieces the product page shares: the health pill, the platform strip and
+// the platform details.
 
 extension Health {
     var color: Color {
@@ -76,7 +76,7 @@ struct PlatformStrip: View {
     }
 }
 
-// MARK: The Portfolio screen
+// MARK: The All products screen
 
 struct PortfolioView: View {
     @Environment(AppModel.self) private var model
@@ -92,7 +92,7 @@ struct PortfolioView: View {
                     rows(portfolio)
                 } else {
                     VStack(alignment: .leading, spacing: Space.xs) {
-                        Text("Portfolio").font(Typo.brief)
+                        Text("All products").font(Typo.brief)
                         emptyState
                     }
                 }
@@ -103,12 +103,12 @@ struct PortfolioView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Palette.background)
-        .navigationTitle("Portfolio")
+        .navigationTitle("All products")
     }
 
     private func header(_ portfolio: Portfolio) -> some View {
         VStack(alignment: .leading, spacing: Space.xs + Space.xxs) {
-            Text("Portfolio").font(Typo.brief)
+            Text("All products").font(Typo.brief)
             Text(PortfolioText.summary(portfolio.counts)).font(Typo.lead)
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 Text(PortfolioText.checked(stores: portfolio.checkedStores, github: portfolio.checkedGitHub,
@@ -153,9 +153,9 @@ struct PortfolioView: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: Space.s) {
-            Label("Update the teyla command to see the portfolio (needs 0.32)", systemImage: "arrow.down.circle")
+            Label("Update the teyla command to see your products (needs 0.32)", systemImage: "arrow.down.circle")
                 .font(Typo.lead)
-            Text("This screen reads the portfolio from `teyla state`. Your current command is older.")
+            Text("This screen reads the products from `teyla state`. Your current command is older.")
                 .foregroundStyle(Palette.textSecondary)
         }
         .padding(.top, Space.s)
@@ -189,6 +189,10 @@ private struct PortfolioRow: View {
             .contentShape(RoundedRectangle(cornerRadius: Radius.card))
         }
         .buttonStyle(.plain)
+        .overlay(alignment: .topLeading) {
+            StarButton(id: product.id, starred: product.focus)
+                .padding(Space.m)
+        }
         .help("Open the \(product.title) page")
         .accessibilityHint("Opens the product page")
     }
@@ -197,16 +201,11 @@ private struct PortfolioRow: View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s) {
             HealthPill(health: product.health)
             Text(product.title).font(Typo.lead)
-            if product.focus {
-                Image(systemName: "star.fill")
-                    .font(Typo.caption)
-                    .foregroundStyle(Palette.warning)
-                    .accessibilityLabel("In focus")
-            }
             if !product.stage.isEmpty {
                 Text(product.stage.capitalized).font(Typo.caption).foregroundStyle(Palette.textSecondary)
             }
         }
+        .padding(.leading, Space.xl)
     }
 
     /// The first reason; for a healthy product, the next step or milestone.

@@ -10,14 +10,6 @@ enum Format {
             .joined(separator: " ")
     }
 
-    /// Products worth a row: something waits on the owner, a session runs there, or it shipped.
-    /// The rest is one line, so the column stays short.
-    static func splitProducts(_ products: [Product], running: [RunningSession]) -> (shown: [Product], rest: Int) {
-        let busy = Set(running.map(\.product))
-        let shown = products.filter { $0.waiting > 0 || $0.prsWaiting > 0 || $0.state == .shipped || busy.contains($0.name) }
-        return (shown, products.count - shown.count)
-    }
-
     /// "just now", "5 min", "7h", "2d".
     static func age(seconds: Double) -> String {
         let s = max(0, Int(seconds))
@@ -49,16 +41,6 @@ enum Format {
 
     static func spent(_ usd: Double) -> String {
         usd.formatted(.currency(code: "USD").locale(Locale(identifier: "en_US")))
-    }
-
-    /// "3 questions · 2 sessions running · $4.10 at API prices today"; spend is left out when unknown.
-    static func subline(questions: Int, running: Int, spentUSD: Double?) -> String {
-        var parts = [
-            "\(questions) \(questions == 1 ? "question" : "questions")",
-            "\(running) \(running == 1 ? "session" : "sessions") running",
-        ]
-        if let spentUSD { parts.append("\(spent(spentUSD)) at API prices today") }
-        return parts.joined(separator: " · ")
     }
 
     /// "45 s", "5 min", "3 h", "2 d": an elapsed time without "ago", for a label that has its own words.

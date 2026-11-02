@@ -39,14 +39,18 @@ struct Snapshot: Decodable, Equatable, Sendable {
     var relay: Relay?
     /// Version 3: where every product stands, per platform; nil from an older CLI.
     var portfolio: Portfolio?
+    /// Questions Teyla closed itself in the last 24 hours; nil from a CLI that does not close any.
+    var autoClosed: AutoClosed?
 
     enum CodingKeys: String, CodingKey {
         case version, generated, brief, totals, asks, products, running, tasks, done, relay, portfolio
+        case autoClosed = "auto_closed"
     }
 
     init(version: Int = 1, generated: String = "", brief: Brief? = nil, totals: Totals = Totals(),
          asks: [Ask] = [], products: [Product] = [], running: [RunningSession] = [],
-         tasks: [OwnerTask] = [], done: [DoneItem] = [], relay: Relay? = nil, portfolio: Portfolio? = nil) {
+         tasks: [OwnerTask] = [], done: [DoneItem] = [], relay: Relay? = nil, portfolio: Portfolio? = nil,
+         autoClosed: AutoClosed? = nil) {
         self.version = version
         self.generated = generated
         self.brief = brief
@@ -58,6 +62,7 @@ struct Snapshot: Decodable, Equatable, Sendable {
         self.done = done
         self.relay = relay
         self.portfolio = portfolio
+        self.autoClosed = autoClosed
     }
 
     init(from decoder: Decoder) throws {
@@ -79,6 +84,7 @@ struct Snapshot: Decodable, Equatable, Sendable {
         self.done = done.compactMap(\.value)
         relay = c.optional(.relay)
         portfolio = c.optional(.portfolio)
+        autoClosed = c.optional(.autoClosed)
     }
 
     var generatedDate: Date? { ISODate.parse(generated) }
@@ -151,15 +157,17 @@ struct Ask: Decodable, Equatable, Identifiable, Sendable {
     var rank: Int
     /// What `teyla answer` will try first: `codex`, `claude` or `open`.
     var delivery: String
+    /// Who should handle it and what Teyla proposes; nil from a CLI that does not triage.
+    var triage: Triage?
 
     enum CodingKeys: String, CodingKey {
         case id, kind, product, title, question, context, options, archived, link, pr
-        case harness, status, ts, unblocks, rank, delivery
+        case harness, status, ts, unblocks, rank, delivery, triage
         case ageSeconds = "age_s"
     }
 
     init(id: String, product: String = "", question: String = "", options: [String] = [],
-         unblocks: String = "", rank: Int = 0, link: String = "", ageSeconds: Double = 0) {
+         unblocks: String = "", rank: Int = 0, link: String = "", ageSeconds: Double = 0, triage: Triage? = nil) {
         self.id = id
         self.kind = "question"
         self.product = product
@@ -177,6 +185,7 @@ struct Ask: Decodable, Equatable, Identifiable, Sendable {
         self.unblocks = unblocks
         self.rank = rank
         self.delivery = ""
+        self.triage = triage
     }
 
     init(from decoder: Decoder) throws {
@@ -199,6 +208,87 @@ struct Ask: Decodable, Equatable, Identifiable, Sendable {
         unblocks = c.lenient(.unblocks, "")
         rank = c.lenient(.rank, 0)
         delivery = c.lenient(.delivery, "")
+        triage = c.optional(.triage)
+    }
+}
+
+/// Who a question belongs to, from `asks[].triage` (a later CLI): `owner` (the person), `agent` (a session can
+/// settle it with the proposed default) or `close` (Teyla closes it). An unknown bucket reads as `owner`, so a
+/// question is never hidden by a value this app does not know.
+struct Triage: Decodable, Equatable, Sendable {
+    var bucketRaw: String
+    /// `pay`, `decide` or `do`; "" when the CLI gives none.
+    var actionRaw: String
+    /// The answer Teyla proposes ("default" in the JSON).
+    var proposed: String
+    var why: String
+    /// `rule` or `model`.
+    var source: String
+
+    enum CodingKeys: String, CodingKey {
+        case why, source, action, bucket
+        case proposed = "default"
+    }
+
+    init(bucket: String = "owner", action: String = "", proposed: String = "", why: String = "", source: String = "rule") {
+        self.bucketRaw = bucket
+        self.actionRaw = action
+        self.proposed = proposed
+        self.why = why
+        self.source = source
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        bucketRaw = c.lenient(.bucket, "owner")
+        actionRaw = c.lenient(.action, "")
+        proposed = c.lenient(.proposed, "")
+        why = c.lenient(.why, "")
+        source = c.lenient(.source, "")
+    }
+}
+
+/// Questions Teyla closed on its own in the last 24 hours (`auto_closed`, a later CLI). Each can be undone.
+struct AutoClosed: Decodable, Equatable, Sendable {
+    var count: Int
+    var items: [AutoClosedItem]
+
+    enum CodingKeys: String, CodingKey { case count, items }
+
+    init(count: Int? = nil, items: [AutoClosedItem] = []) {
+        self.items = items
+        self.count = count ?? items.count
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let items: [LossyBox<AutoClosedItem>] = c.lenient(.items, [])
+        self.items = items.compactMap(\.value)
+        count = c.lenient(.count, self.items.count)
+    }
+}
+
+struct AutoClosedItem: Decodable, Equatable, Identifiable, Sendable {
+    var id: String
+    var title: String
+    var product: String
+    var reason: String
+
+    enum CodingKeys: String, CodingKey { case id, title, product, reason }
+
+    init(id: String, title: String = "", product: String = "", reason: String = "") {
+        self.id = id
+        self.title = title
+        self.product = product
+        self.reason = reason
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        title = c.lenient(.title, "")
+        product = c.lenient(.product, "")
+        reason = c.lenient(.reason, "")
     }
 }
 
@@ -431,17 +521,27 @@ struct Portfolio: Decodable, Equatable, Sendable {
     var checkedGitHub: String
     var counts: HealthCounts
     var products: [PortfolioProduct]
+    /// Up to 6 product ids the home screen leads with, best first; empty from an older CLI.
+    var core: [String]
+    /// `star` (the owner starred products) or `rule` (picked by usage and spend); "" from an older CLI.
+    var coreSource: String
 
-    enum CodingKeys: String, CodingKey { case version, checked, counts, products }
+    enum CodingKeys: String, CodingKey {
+        case version, checked, counts, products, core
+        case coreSource = "core_source"
+    }
     enum CheckedKeys: String, CodingKey { case stores, github }
 
     init(version: Int = 1, checkedStores: String = "", checkedGitHub: String = "",
-         counts: HealthCounts = HealthCounts(), products: [PortfolioProduct] = []) {
+         counts: HealthCounts = HealthCounts(), products: [PortfolioProduct] = [],
+         core: [String] = [], coreSource: String = "") {
         self.version = version
         self.checkedStores = checkedStores
         self.checkedGitHub = checkedGitHub
         self.counts = counts
         self.products = products
+        self.core = core
+        self.coreSource = coreSource
     }
 
     init(from decoder: Decoder) throws {
@@ -453,6 +553,8 @@ struct Portfolio: Decodable, Equatable, Sendable {
         counts = c.lenient(.counts, HealthCounts())
         let products: [LossyBox<PortfolioProduct>] = c.lenient(.products, [])
         self.products = products.compactMap(\.value)
+        core = c.lenient(.core, [])
+        coreSource = c.lenient(.coreSource, "")
     }
 
     func product(_ id: String) -> PortfolioProduct? { products.first { $0.id == id } }
@@ -549,18 +651,22 @@ struct PRCounts: Decodable, Equatable, Sendable {
     var waiting: Int
     var merged7d: Int
     var unreviewed7d: Int
+    /// PRs merged in 7 days that still have an open P1 finding.
+    var openP1: Int
 
     enum CodingKeys: String, CodingKey {
         case open, waiting
         case merged7d = "merged_7d"
         case unreviewed7d = "unreviewed_7d"
+        case openP1 = "open_p1"
     }
 
-    init(open: Int = 0, waiting: Int = 0, merged7d: Int = 0, unreviewed7d: Int = 0) {
+    init(open: Int = 0, waiting: Int = 0, merged7d: Int = 0, unreviewed7d: Int = 0, openP1: Int = 0) {
         self.open = open
         self.waiting = waiting
         self.merged7d = merged7d
         self.unreviewed7d = unreviewed7d
+        self.openP1 = openP1
     }
 
     init(from decoder: Decoder) throws {
@@ -569,6 +675,7 @@ struct PRCounts: Decodable, Equatable, Sendable {
         waiting = c.lenient(.waiting, 0)
         merged7d = c.lenient(.merged7d, 0)
         unreviewed7d = c.lenient(.unreviewed7d, 0)
+        openP1 = c.lenient(.openP1, 0)
     }
 }
 
@@ -616,12 +723,16 @@ struct PortfolioProduct: Decodable, Equatable, Identifiable, Sendable {
     var milestone: String
     var next: String
     var repo: String
+    /// What health does not count (questions that wait, unreviewed merges); shown nowhere on Home.
+    var facts: [String]
+    /// Facts about progress; nil from a CLI before 0.35.
+    var progress: ProductProgress?
 
     var health: Health { Health(rawValue: healthRaw) ?? .onTrack }
 
     enum CodingKeys: String, CodingKey {
         case id, title, stage, focus, primary, users, target, reasons, platforms, prs, activity
-        case waiting, tasks, milestone, next, repo
+        case waiting, tasks, milestone, next, repo, facts, progress
         case healthRaw = "health"
         case oldestWaitDays = "oldest_wait_days"
     }
@@ -630,7 +741,7 @@ struct PortfolioProduct: Decodable, Equatable, Identifiable, Sendable {
          users: String = "", target: String = "", health: String = "on_track", reasons: [String] = [],
          platforms: [PlatformStatus] = [], prs: PRCounts = PRCounts(), activity: Activity = Activity(),
          waiting: Int = 0, oldestWaitDays: Double = 0, tasks: Int = 0, milestone: String = "", next: String = "",
-         repo: String = "") {
+         repo: String = "", facts: [String] = [], progress: ProductProgress? = nil) {
         self.id = id
         self.title = title
         self.stage = stage
@@ -649,6 +760,8 @@ struct PortfolioProduct: Decodable, Equatable, Identifiable, Sendable {
         self.milestone = milestone
         self.next = next
         self.repo = repo
+        self.facts = facts
+        self.progress = progress
     }
 
     init(from decoder: Decoder) throws {
@@ -672,6 +785,82 @@ struct PortfolioProduct: Decodable, Equatable, Identifiable, Sendable {
         milestone = c.lenient(.milestone, "")
         next = c.lenient(.next, "")
         repo = c.lenient(.repo, "")
+        facts = c.lenient(.facts, [])
+        progress = c.optional(.progress)
+    }
+}
+
+/// Progress as facts, no percentages: what can be installed, what shipped, who uses it, the one thing in the way.
+struct ProductProgress: Decodable, Equatable, Sendable {
+    /// The platforms with a known build, primary first. Only `current` and `live` rows can be installed;
+    /// `in_review`, `behind` and `blocked` rows are listed so the window can say so.
+    var canInstall: [PlatformStatus]
+    var shippedPRs: Int
+    /// Up to 3 titles of the PRs merged in 7 days, newest first.
+    var shippedTop: [String]
+    /// nil when the usage counters are unknown.
+    var users: UsersFact?
+    var milestone: String
+    var blocker: String
+    /// Whole days since the last activity; nil when there is none.
+    var quietDays: Int?
+    /// At most 12 words.
+    var line: String
+
+    enum CodingKeys: String, CodingKey {
+        case users, milestone, blocker, line
+        case canInstall = "can_install"
+        case shipped = "shipped_7d"
+        case quietDays = "quiet_days"
+    }
+    enum ShippedKeys: String, CodingKey { case prs, top }
+
+    init(canInstall: [PlatformStatus] = [], shippedPRs: Int = 0, shippedTop: [String] = [], users: UsersFact? = nil,
+         milestone: String = "", blocker: String = "", quietDays: Int? = nil, line: String = "") {
+        self.canInstall = canInstall
+        self.shippedPRs = shippedPRs
+        self.shippedTop = shippedTop
+        self.users = users
+        self.milestone = milestone
+        self.blocker = blocker
+        self.quietDays = quietDays
+        self.line = line
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let rows: [LossyBox<PlatformStatus>] = c.lenient(.canInstall, [])
+        canInstall = rows.compactMap(\.value)
+        let shipped = try? c.nestedContainer(keyedBy: ShippedKeys.self, forKey: .shipped)
+        shippedPRs = shipped?.lenient(.prs, 0) ?? 0
+        shippedTop = shipped?.lenient(.top, []) ?? []
+        users = c.optional(.users)
+        milestone = c.lenient(.milestone, "")
+        blocker = c.lenient(.blocker, "")
+        quietDays = c.optional(.quietDays)
+        line = c.lenient(.line, "")
+    }
+}
+
+struct UsersFact: Decodable, Equatable, Sendable {
+    var weekly: Int
+    var total: Int
+    /// A sentence for a person: "4 active this week, 12 total".
+    var label: String
+
+    enum CodingKeys: String, CodingKey { case weekly, total, label }
+
+    init(weekly: Int = 0, total: Int = 0, label: String = "") {
+        self.weekly = weekly
+        self.total = total
+        self.label = label
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        weekly = c.lenient(.weekly, 0)
+        total = c.lenient(.total, 0)
+        label = c.lenient(.label, "")
     }
 }
 

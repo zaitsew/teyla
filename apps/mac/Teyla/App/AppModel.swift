@@ -20,6 +20,13 @@ final class AppModel {
     /// Ids the user has answered, snoozed or closed. They stay hidden until a snapshot no
     /// longer lists them, so a refresh racing the CLI cannot bring a card back.
     private var hidden: Set<String> = []
+    /// Ids of questions Teyla closed that the owner brought back in this window; the row is gone before the next read.
+    private(set) var undone: Set<String> = []
+    /// What the star on a product is doing, or why it failed.
+    private(set) var coreChange: CardStatus?
+    private(set) var closeChange: CardStatus?
+    /// What the last "Accept" closed, so one click can reopen it.
+    private(set) var acceptedClose: [String] = []
     private var askTracker = AskTracker()
     private var refreshQueued = false
 
@@ -35,7 +42,7 @@ final class AppModel {
     private(set) var selectedProduct: String? = UserDefaults.standard.string(forKey: "selectedProduct")
 
     /// What the detail pane shows; the sidebar sets it.
-    var route: AppRoute = .today
+    var route: AppRoute = .home
     /// The teyla command was not found: the window shows how to install it, or lets the owner choose the file.
     private(set) var teylaMissing = false
     /// "Check again" is looking, and whether the last look found nothing.
@@ -114,6 +121,20 @@ final class AppModel {
         (snapshot?.asks ?? []).filter { !hidden.contains($0.id) }
     }
 
+    /// Questions that wait on the owner: all of them without triage, the owner's bucket with it.
+    var ownerAsks: [Ask] { Decisions.split(visibleAsks).owner }
+
+    /// Questions agents handle with Teyla's proposed default.
+    var agentAsks: [Ask] { Decisions.split(visibleAsks).agent }
+
+    /// Questions Teyla suggests closing. They stay open until the owner accepts them.
+    var closeAsks: [Ask] { Decisions.split(visibleAsks).close }
+
+    /// The questions Teyla closed in the last 24 hours that are still closed.
+    var autoClosed: (count: Int, items: [AutoClosedItem]) {
+        snapshot?.autoClosed?.remaining(undone: undone) ?? (0, [])
+    }
+
     /// The reference "now" for ages: the snapshot's own clock plus the time since it was read.
     /// With a live CLI this is the wall clock; with a fixture it keeps the preview stable.
     func clock(at date: Date = Date()) -> Date {
@@ -133,7 +154,7 @@ final class AppModel {
 
     var briefLine: String {
         if let line = snapshot?.brief?.line, !line.isEmpty { return line }
-        let n = visibleAsks.count
+        let n = ownerAsks.count
         if snapshot == nil { return lastError == nil ? "Reading your sessions…" : "Teyla cannot read your sessions." }
         return n == 0 ? "Nothing needs you right now." : "\(n) \(n == 1 ? "question needs" : "questions need") you."
     }
@@ -231,7 +252,7 @@ final class AppModel {
                 if let failure = error as? StoreError, failure.clearsSnapshot {
                     snapshot = nil
                     if case .product = route {
-                        route = .today
+                        route = .home
                         productPage.reset()
                     }
                 }
@@ -250,10 +271,12 @@ final class AppModel {
         fetchedAt = nil
         lastError = nil
         hidden = []
+        undone = []
+        coreChange = nil
         cards = [:]
         notes = [:]
         askTracker = AskTracker()
-        route = .today
+        route = .home
         productPage.reset()
         refresh()
     }
@@ -329,7 +352,9 @@ final class AppModel {
         teylaMissing = false
         let ids = Set(next.asks.map(\.id))
         hidden.formIntersection(ids)
-        for ask in askTracker.fresh(in: next.asks, hidden: hidden) { notify(ask) }
+        // Only a question that waits on the owner is announced; one an agent handles is not.
+        for ask in askTracker.fresh(in: next.asks.filter(\.isOwnerAsk), hidden: hidden) { notify(ask) }
+        undone.formIntersection(Set((next.autoClosed?.items ?? []).map(\.id)))
         relay.reconcile(with: next.relay, usesFixture: usesFixture)
     }
 
@@ -408,6 +433,103 @@ final class AppModel {
 
     func dismissCorrectionError(_ session: RunningSession) {
         if case .failed = cards[session.ref] { cards[session.ref] = nil }
+    }
+
+    /// The star on a product: sets the core list with `teyla product core`, then reads the state again.
+    func toggleStar(_ id: String) {
+        guard capabilities.editProducts, let portfolio = snapshot?.portfolio, !isChangingCore,
+              CoreEdit.canToggle(id, in: portfolio) else { return }
+        let ids = CoreEdit.toggled(id, in: portfolio)
+        let before = snapshot
+        coreChange = .sending("Saving…")
+        // The star answers at once; the next read confirms it. A preview reads a fixed file, so it keeps the change.
+        snapshot?.portfolio = CoreEdit.applying(ids, to: portfolio)
+        Task {
+            do {
+                try await cli.setCore(ids: ids)
+                coreChange = nil
+                if !usesFixture { refresh() }
+            } catch {
+                snapshot = before
+                coreChange = .failed("Could not save the core list. \(error.localizedDescription)")
+            }
+        }
+    }
+
+    var isChangingCore: Bool {
+        if case .sending = coreChange { return true }
+        return false
+    }
+
+    func dismissCoreError() {
+        if case .failed = coreChange { coreChange = nil }
+    }
+
+    /// Brings back a question Teyla closed (`teyla asks undo`). The row goes at once; a failure shows on the row.
+    func undoClosed(_ item: AutoClosedItem) {
+        guard capabilities.closeQuestions, !isBusy(id: item.id) else { return }
+        cards[item.id] = .sending("Reopening…")
+        Task {
+            do {
+                try await cli.undoAsk(id: item.id)
+                undone.insert(item.id)
+                cards[item.id] = nil
+                refresh()
+            } catch {
+                cards[item.id] = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    func dismissUndoError(_ item: AutoClosedItem) {
+        if case .failed = cards[item.id] { cards[item.id] = nil }
+    }
+
+    /// The owner accepts "Teyla suggests closing N" for exactly the questions on screen, then can undo them.
+    func acceptClose(_ asks: [Ask]) {
+        guard capabilities.closeQuestions, !isAcceptingClose, !asks.isEmpty else { return }
+        let ids = asks.map(\.id)
+        closeChange = .sending("Closing…")
+        Task {
+            do {
+                try await cli.acceptClose(ids: ids)
+                acceptedClose = ids
+                closeChange = nil
+                refresh()
+            } catch {
+                closeChange = .failed("Could not close them. \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Reopens what the last accept closed.
+    func undoAcceptClose() {
+        guard capabilities.closeQuestions, !isAcceptingClose, !acceptedClose.isEmpty else { return }
+        let ids = acceptedClose
+        closeChange = .sending("Reopening…")
+        Task {
+            do {
+                // One at a time: after a failure a retry starts from what is still closed.
+                for id in ids {
+                    try await cli.undoAsk(id: id)
+                    acceptedClose.removeAll { $0 == id }
+                }
+                closeChange = nil
+                refresh()
+            } catch {
+                closeChange = .failed("Could not reopen them. \(error.localizedDescription)")
+                refresh()
+            }
+        }
+    }
+
+    var isAcceptingClose: Bool {
+        if case .sending = closeChange { return true }
+        return false
+    }
+
+    func dismissCloseError() {
+        if case .failed = closeChange { closeChange = nil }
     }
 
     func selectProduct(_ name: String) {
@@ -524,9 +646,10 @@ final class AppModel {
         newTask.presented = true
     }
 
-    /// Brings a question's card forward (a clicked notification).
+    /// Brings a question's card forward (a clicked notification). Decisions lists every question, so it opens there.
     func focus(askID: String) {
         showMainWindow()
+        go(.decisions)
         focusedAskID = askID
         Task {
             try? await Task.sleep(for: .seconds(3))
