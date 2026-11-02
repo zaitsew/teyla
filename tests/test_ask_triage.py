@@ -87,8 +87,24 @@ def test_needs_owner_asks_are_owner_asks_by_rule(question, action):
     assert len(t["why"].split()) <= 12
 
 
-def test_a_choice_a_device_step_a_reminder_and_a_gate_are_owner_asks():
-    assert triage.rule(row(question="Which one?", options=["Ship 1.1", "Keep 1.0"]))["action"] == "decide"
+def test_options_alone_are_left_to_the_model_and_stay_owner_asks_without_it():
+    r = row(question="Which one?", options=["Add it", "Skip it"])
+    assert triage.rule(r) is None and triage.decide(r, None) is None and triage.counts_for_owner(r)
+
+
+def test_the_model_cannot_hand_a_risky_step_to_an_agent():
+    for kw in ({"question": "Deploy the function now?"}, {"question": "Go on?", "context": "This deletes the old table"},
+               {"question": "Which next step?", "options": ["Deploy now", "Wait"]}):
+        r = row(**kw)
+        c = cached([r], aaaa0001=answer("aaaa0001", "agent", default="Yes."))
+        t = triage.decide(r, c, use_model=True)
+        assert t["bucket"] == "owner" and t["action"] == "decide" and t["source"] == "rule"
+    r = row(question=NEUTRAL)
+    c = cached([r], aaaa0001=answer("aaaa0001", "agent", default="Yes."))
+    assert triage.decide(r, c, use_model=True)["bucket"] == "agent"
+
+
+def test_a_device_step_a_reminder_and_a_gate_are_owner_asks():
     assert triage.rule(row(question=DEVICE))["action"] == "do"
     assert triage.rule(row(question="Renew the domain", kind="reminder", due="2026-11-01"))["action"] == "do"
     assert triage.rule(row(question="Run waits for your go", kind="gate"))["action"] == "decide"
@@ -143,9 +159,9 @@ def test_the_floor_holds_in_the_snapshot_whatever_the_cache_says(model):
 
 
 def test_a_model_close_closes_nothing_and_an_agent_answer_only_leaves_the_owner_count(model):
-    items = [ask("aaaa0001", NEUTRAL, hours=3), ask("aaaa0002", "Rename the helper to be shorter?", hours=4)]
+    items = [ask("aaaa0001", NEUTRAL, hours=3), ask("aaaa0002", "Shorten the helper while it is open?", hours=4)]
     triage.save_cache(cached(rows_of(*items), aaaa0001=answer("aaaa0001", "close", why="Done already."),
-                             aaaa0002=answer("aaaa0002", "agent", default="Rename it.")))
+                             aaaa0002=answer("aaaa0002", "agent", default="Shorten it.")))
     done = store()
     st = snapshot(items, asks_state=done)
     by = {a["id"]: a for a in st["asks"]}
@@ -314,7 +330,7 @@ def test_without_triage_every_ask_counts_as_an_owner_question():
 
 def test_the_brief_comes_from_owner_asks_and_never_names_the_agents_work(model, monkeypatch):
     items = [ask("aaaa0001", "Which App Store build do we ship?", product="app-a", hours=2, options=["1.1", "1.0"]),
-             ask("aaaa0002", "Want me to add the test for the TestFlight upload?", product="app-b", hours=3)]
+             ask("aaaa0002", "Want me to add the test for the upload?", product="app-b", hours=3)]
     triage.save_cache(cached(rows_of(*items), aaaa0002=answer("aaaa0002", "agent", default="Add it.")))
     st = snapshot(items)
     assert st["brief"]["source"] == "rules" and st["brief"]["line"].startswith("1 answer unblocks app-a")

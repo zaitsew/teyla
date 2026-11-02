@@ -119,8 +119,7 @@ def rule(row: dict, known: frozenset = frozenset()) -> dict | None:
         return make("owner", "do", "", "A reminder you set for yourself.", "rule")
     if a.kind == "gate":
         return make("owner", "decide", "", "A gated run waits for your go.", "rule")
-    if len(a.options) >= 2:
-        return make("owner", "decide", "", "Offers you a choice.", "rule")
+    # Options alone decide nothing: sessions attach yes/no to routine questions. Without the model they stay owner asks.
     if _DEVICE_RE.search(f"{a.title}\n{a.question}\n{a.context}"):
         return make("owner", "do", "", "A step only you can take on your device.", "rule")
     if _is_permission(row):
@@ -144,6 +143,10 @@ def decide(row: dict, cache: dict | None, known: frozenset = frozenset(), undone
         return None
     if e.get("bucket") not in BUCKETS or e.get("action") not in ACTIONS:
         return None
+    # The model may not hand a deploy, a release or a delete to an agent: that step needs the owner's word.
+    risky = [row.get("title"), row.get("question"), row.get("context"), *(row.get("options") or [])]
+    if e["bucket"] == "agent" and _HAZARD_RE.search("\n".join(str(x or "") for x in risky)):
+        return make("owner", "decide", "", "A risky step waits for your word.", "rule")
     return make(e["bucket"], e["action"] if e["bucket"] == "owner" else "", _tidy(e.get("default"), DEFAULT_WORDS, DEFAULT_CHARS),
                 _tidy(e.get("why"), WHY_WORDS), "model")
 

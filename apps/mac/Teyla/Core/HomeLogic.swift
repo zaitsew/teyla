@@ -105,8 +105,8 @@ enum Decisions {
     /// "See all 17" when more decisions wait than Home shows; nil otherwise.
     static func seeAll(total: Int, shown: Int) -> String? { total > shown ? "See all \(total)" : nil }
 
-    /// "Agents are handling 20"; nil when none.
-    static func agentLine(count: Int) -> String? { count > 0 ? "Agents are handling \(count)" : nil }
+    /// "Agents can settle 20"; nil when none. Nothing runs by itself: each one waits for a click, so it never says "handling".
+    static func agentLine(count: Int) -> String? { count > 0 ? "Agents can settle \(count)" : nil }
 
     static func countLabel(_ count: Int) -> String { "\(count) \(count == 1 ? "decision" : "decisions")" }
 
