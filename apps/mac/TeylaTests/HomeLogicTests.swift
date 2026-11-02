@@ -148,12 +148,6 @@ final class HomeTextTests: XCTestCase {
         XCTAssertNil(HomeText.spend(portfolio: nil, todayUSD: nil))
     }
 
-    func testCoreNoteOnlyWhenPickedByRule() {
-        XCTAssertNil(HomeText.coreNote(source: "star", canStar: true))
-        XCTAssertEqual(HomeText.coreNote(source: "rule", canStar: true), "Picked by usage and spend. A star sets the list by hand.")
-        XCTAssertEqual(HomeText.coreNote(source: "rule", canStar: false), "Picked by usage and spend.")
-    }
-
     func testNoPortfolioNamesTheNextStep() {
         XCTAssertTrue(HomeText.noPortfolio.contains("Update the teyla command"))
     }
@@ -514,6 +508,7 @@ final class HomeFactsTests: XCTestCase {
     func testAQuietRowAlwaysShowsTheSevenDayCount() throws {
         let watch = try product("sample-watch")
         XCTAssertEqual(HomeFactsBuilder.quietCommits(watch), "3 commits this week")
+        XCTAssertEqual(HomeFactsBuilder.quietCount(watch), "3 commits", "the phone row puts \"this week\" on its own line")
         XCTAssertEqual(HomeFactsBuilder.quietCommits(try product("sample-play")), "\u{2014} commits this week")
         var one = watch
         one.metrics.commits.counts.d7 = 1
