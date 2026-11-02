@@ -154,10 +154,8 @@ final class HomeTextTests: XCTestCase {
         XCTAssertEqual(HomeText.coreNote(source: "rule", canStar: false), "Picked by usage and spend.")
     }
 
-    func testEmptyStatesNameTheNextStep() {
-        XCTAssertTrue(HomeText.coreEmpty(hasPortfolio: true, canStar: true).contains("Star a product"))
-        XCTAssertFalse(HomeText.coreEmpty(hasPortfolio: true, canStar: false).contains("Star"))
-        XCTAssertTrue(HomeText.coreEmpty(hasPortfolio: false, canStar: true).contains("Update the teyla command"))
+    func testNoPortfolioNamesTheNextStep() {
+        XCTAssertTrue(HomeText.noPortfolio.contains("Update the teyla command"))
     }
 }
 
@@ -288,8 +286,9 @@ final class CoreEditTests: XCTestCase {
         XCTAssertFalse(CoreEdit.canToggle("p7", in: full))
         XCTAssertTrue(CoreEdit.canToggle("p6", in: full))
         XCTAssertEqual(CoreEdit.help(starred: false, source: "star", canToggle: false), CoreEdit.fullHelp)
-        XCTAssertEqual(CoreEdit.help(starred: true, source: "star", canToggle: true), "Take out of the core list")
-        XCTAssertEqual(CoreEdit.help(starred: false, source: "rule", canToggle: true), "Star to set the core list by hand")
+        XCTAssertEqual(CoreEdit.help(starred: true, source: "star", canToggle: true), "Unpin from the front of its section")
+        XCTAssertEqual(CoreEdit.help(starred: false, source: "rule", canToggle: true), "Pin to the front of its section")
+        XCTAssertEqual(CoreEdit.help(starred: false, source: "star", canToggle: true), "Pin to the front of its section")
     }
 
     func testApplyingTheEditUpdatesStarsAndCoreAtOnce() throws {
@@ -310,5 +309,234 @@ final class CoreEditTests: XCTestCase {
         XCTAssertNil(HomeCommands.coreArguments(ids: ["has space"]))
         XCTAssertEqual(HomeCommands.undoArguments(id: "c0000001"), ["asks", "undo", "c0000001"])
         XCTAssertNil(HomeCommands.undoArguments(id: "-x"))
+    }
+}
+
+// MARK: Home sections
+
+final class HomePeriodTests: XCTestCase {
+    func testThePeriodsAndTheirWords() {
+        XCTAssertEqual(HomePeriod.allCases.map(\.rawValue), ["7d", "30d", "365d"])
+        XCTAssertEqual(HomePeriod.allCases.map(\.label), ["Week", "Month", "Year"])
+        XCTAssertEqual(HomePeriod.allCases.map(\.phrase), ["this week", "this month", "this year"])
+    }
+
+    func testAStoredValueThisBuildDoesNotKnowReadsAsWeek() {
+        XCTAssertEqual(HomePeriod.from(stored: "30d"), .month)
+        XCTAssertEqual(HomePeriod.from(stored: "quarter"), .week)
+        XCTAssertEqual(HomePeriod.from(stored: ""), .week)
+    }
+
+    func testTheSectionTitlesAreTheOwnersWords() {
+        XCTAssertEqual(HomeSectionKind.allCases.map(\.title), ["People use these", "Being built", "Quiet"])
+        XCTAssertEqual(HomeSectionKind.building.note, "5 or more commits this week, no users counted yet. Most commits first")
+        XCTAssertEqual(HomeSectionKind.quiet.note, "Under 5 commits this week and no new users")
+    }
+}
+
+final class HomeNumbersTests: XCTestCase {
+    private let dash = "\u{2014}"
+
+    func testANumberThatIsNotCountedIsADashNeverZero() {
+        XCTAssertEqual(HomeNumbers.count(nil), dash)
+        XCTAssertEqual(HomeNumbers.count(0), "0")
+        XCTAssertEqual(HomeNumbers.dollars(nil), dash)
+        XCTAssertEqual(HomeNumbers.dollars(0), "$0")
+        XCTAssertEqual(HomeNumbers.commits(nil), "\(dash) commits")
+    }
+
+    func testCountsGroupThousandsAndGoCompactFromTenThousand() {
+        XCTAssertEqual(HomeNumbers.count(999), "999")
+        XCTAssertEqual(HomeNumbers.count(1_010), "1,010")
+        XCTAssertEqual(HomeNumbers.count(9_999), "9,999")
+        XCTAssertEqual(HomeNumbers.count(10_000), "10k")
+        XCTAssertEqual(HomeNumbers.count(10_400), "10.4k")
+        XCTAssertEqual(HomeNumbers.count(120_000), "120k")
+        XCTAssertEqual(HomeNumbers.count(1_000_000), "1M")
+        XCTAssertEqual(HomeNumbers.count(1_250_000), "1.3M")
+    }
+
+    func testSpendIsWholeDollars() {
+        XCTAssertEqual(HomeNumbers.dollars(957.4), "$957")
+        XCTAssertEqual(HomeNumbers.dollars(2_127.5), "$2,128")
+        XCTAssertEqual(HomeNumbers.dollars(4.3), "$4")
+        XCTAssertEqual(HomeNumbers.dollars(12_345.67), "$12,346")
+    }
+
+    func testCommitsPluralise() {
+        XCTAssertEqual(HomeNumbers.commits(1), "1 commit")
+        XCTAssertEqual(HomeNumbers.commits(0), "0 commits")
+        XCTAssertEqual(HomeNumbers.commits(222), "222 commits")
+    }
+}
+
+final class SparklineTests: XCTestCase {
+    func testNoWeeksMeansNoChart() {
+        XCTAssertTrue(Sparkline.heights(weeks: []).isEmpty)
+        XCTAssertNil(Sparkline.label(weeks: []))
+    }
+
+    func testTwelveRealZerosAreFlatAtTheBaseline() {
+        let weeks = Array(repeating: 0, count: 12)
+        XCTAssertEqual(Sparkline.heights(weeks: weeks), Array(repeating: 0.0, count: 12))
+        XCTAssertEqual(Sparkline.label(weeks: weeks), "Commits per week, last 12 weeks: 0 this week")
+    }
+
+    func testBarsScaleToTheBusiestWeek() {
+        XCTAssertEqual(Sparkline.heights(weeks: [0, 5, 10, 2]), [0, 0.5, 1, 0.2])
+        XCTAssertEqual(Sparkline.heights(weeks: [3]), [1])
+        XCTAssertEqual(Sparkline.heights(weeks: [-4, 4]), [0, 1], "a negative count reads as 0")
+    }
+
+    func testTheLabelNamesTheLatestWeek() {
+        let weeks = [0, 0, 0, 10, 13, 28, 58, 60, 44, 34, 21, 135]
+        XCTAssertEqual(Sparkline.label(weeks: weeks), "Commits per week, last 12 weeks: 135 this week")
+    }
+}
+
+final class MonogramTests: XCTestCase {
+    func testTheFirstLetterOfTheName() {
+        XCTAssertEqual(Monogram.letter(for: "harbor"), "H")
+        XCTAssertEqual(Monogram.letter(for: "  Sample Kit"), "S")
+        XCTAssertEqual(Monogram.letter(for: "\u{00E9}cole"), "\u{00C9}")
+        XCTAssertEqual(Monogram.letter(for: "42 things"), "4")
+        XCTAssertEqual(Monogram.letter(for: "...x"), "X", "punctuation is skipped")
+        XCTAssertEqual(Monogram.letter(for: ""), "?")
+    }
+}
+
+final class HomeSectionsTests: XCTestCase {
+    private func portfolio() throws -> Portfolio { try XCTUnwrap(try homeSnapshot().portfolio) }
+
+    private func ids(_ layout: HomeLayout) -> [[String]]? {
+        guard case .sections(let sections) = layout else { return nil }
+        return sections.map { $0.products.map(\.id) }
+    }
+
+    func testAllThreeSectionsComeInOrderAndKeepTheCLIsRanking() throws {
+        guard case .sections(let sections) = HomeSections.layout(try portfolio()) else { return XCTFail("expected sections") }
+        XCTAssertEqual(sections.map(\.kind), [.users, .building, .quiet])
+        XCTAssertEqual(sections.map { $0.products.map(\.id) }, [["sample-app", "sample-tool", "sample-notes"],
+                                                                 ["sample-web", "sample-lab", "sample-kit"],
+                                                                 ["sample-watch", "sample-old", "sample-play"]])
+    }
+
+    func testTheOrderIsTheHomeListNotTheProductListNorTheNumbers() throws {
+        var other = try portfolio()
+        other.products.reverse()
+        other.home = PortfolioHome(sections: [HomeSectionIDs(id: "users", ids: ["sample-play", "sample-app"]),
+                                              HomeSectionIDs(id: "quiet", ids: ["sample-kit"])])
+        XCTAssertEqual(ids(HomeSections.layout(other)), [["sample-play", "sample-app"], [], ["sample-kit"]])
+    }
+
+    func testAnIdWithoutAProductRowIsSkipped() throws {
+        var other = try portfolio()
+        other.home = PortfolioHome(sections: [HomeSectionIDs(id: "users", ids: ["ghost", "sample-app"]),
+                                              HomeSectionIDs(id: "building", ids: ["sample-lab", "gone"])])
+        XCTAssertEqual(ids(HomeSections.layout(other)), [["sample-app"], ["sample-lab"], []])
+    }
+
+    func testAnIdInTwoSectionsStaysInTheFirst() throws {
+        var other = try portfolio()
+        other.home = PortfolioHome(sections: [HomeSectionIDs(id: "users", ids: ["sample-app"]),
+                                              HomeSectionIDs(id: "quiet", ids: ["sample-app", "sample-old"])])
+        XCTAssertEqual(ids(HomeSections.layout(other)), [["sample-app"], [], ["sample-old"]])
+    }
+
+    func testAnUnknownSectionIsIgnoredAndAMissingOneIsEmpty() throws {
+        var other = try portfolio()
+        other.home = PortfolioHome(sections: [HomeSectionIDs(id: "favourites", ids: ["sample-app"])])
+        XCTAssertEqual(ids(HomeSections.layout(other)), [[], [], []])
+        XCTAssertTrue(HomeSections.layout(other).isEmpty)
+    }
+
+    func testWithoutHomeTheCoreListIsTheFallback() throws {
+        var other = try portfolio()
+        other.home = nil
+        guard case .legacy(let cards) = HomeSections.layout(other) else { return XCTFail("expected the fallback") }
+        XCTAssertEqual(cards.map(\.id), other.core)
+    }
+
+    func testCountsNameTheNonEmptySections() throws {
+        guard case .sections(let sections) = HomeSections.layout(try portfolio()) else { return XCTFail("expected sections") }
+        XCTAssertEqual(HomeSections.counts(sections), "3 users, 3 building, 3 quiet")
+        XCTAssertEqual(HomeSections.counts([HomeSection(kind: .users, products: []), sections[2]]), "3 quiet")
+    }
+}
+
+final class HomeFactsTests: XCTestCase {
+    private func product(_ id: String) throws -> PortfolioProduct {
+        try XCTUnwrap(try XCTUnwrap(try homeSnapshot().portfolio).product(id))
+    }
+
+    func testAHeroReadsTheChosenPeriodAndTheTotalStaysTheTotal() throws {
+        let app = try product("sample-app")
+        let week = HomeFactsBuilder.facts(app, period: .week)
+        XCTAssertEqual([week.active, week.new, week.total, week.commitsCount], ["4", "1", "12", "21"])
+        XCTAssertEqual(week.commits, "21 commits")
+        XCTAssertEqual(week.spend, "$861 agent spend this week")
+        let month = HomeFactsBuilder.facts(app, period: .month)
+        XCTAssertEqual([month.active, month.new, month.total, month.commitsCount], ["6", "3", "12", "80"])
+        XCTAssertEqual(month.spend, "$2,900 agent spend this month")
+        let year = HomeFactsBuilder.facts(app, period: .year)
+        XCTAssertEqual([year.active, year.new, year.total, year.commitsCount], ["9", "9", "12", "640"])
+        XCTAssertEqual(year.spend, "$9,800 agent spend this year")
+    }
+
+    func testTheSparklineAlwaysShowsTwelveWeeksWhateverThePeriod() throws {
+        let app = try product("sample-app")
+        let week = HomeFactsBuilder.facts(app, period: .week)
+        let year = HomeFactsBuilder.facts(app, period: .year)
+        XCTAssertEqual(week.sparkHeights, year.sparkHeights)
+        XCTAssertEqual(week.sparkHeights.count, 12)
+        XCTAssertEqual(week.sparkLabel, "Commits per week, last 12 weeks: 21 this week")
+    }
+
+    func testMonetizationReadsOffUntilItIsOn() {
+        XCTAssertEqual(HomeFactsBuilder.money(MoneyMetrics()), "Off")
+        XCTAssertEqual(HomeFactsBuilder.money(MoneyMetrics(enabled: false, mrrUSD: 900, paying: 4)), "Off",
+                       "a disabled product shows no money even if a number slipped in")
+        XCTAssertEqual(HomeFactsBuilder.money(MoneyMetrics(enabled: true, mrrUSD: 1_200, paying: 14)),
+                       "$1,200 MRR \u{00B7} 14 paying")
+        XCTAssertEqual(HomeFactsBuilder.money(MoneyMetrics(enabled: true)), "\u{2014} MRR \u{00B7} \u{2014} paying")
+    }
+
+    func testTheNameFallsBackToTheIdAndTheSummaryToTheProgressLine() {
+        var bare = PortfolioProduct(id: "sample-lab")
+        XCTAssertEqual(HomeFactsBuilder.name(bare), Format.product("sample-lab"))
+        XCTAssertEqual(HomeFactsBuilder.summary(bare), "")
+        bare.progress = ProductProgress(line: "Beta works.")
+        XCTAssertEqual(HomeFactsBuilder.summary(bare), "Beta works.")
+        bare.summary = "  Plans a race.  "
+        XCTAssertEqual(HomeFactsBuilder.summary(bare), "Plans a race.")
+    }
+
+    func testAQuietRowAlwaysShowsTheSevenDayCount() throws {
+        let watch = try product("sample-watch")
+        XCTAssertEqual(HomeFactsBuilder.quietCommits(watch), "3 commits this week")
+        XCTAssertEqual(HomeFactsBuilder.quietCommits(try product("sample-play")), "\u{2014} commits this week")
+        var one = watch
+        one.metrics.commits.counts.d7 = 1
+        XCTAssertEqual(HomeFactsBuilder.quietCommits(one), "1 commit this week")
+    }
+
+    func testTheSpokenCardHoldsNameNumbersAndCommits() throws {
+        let spoken = HomeFactsBuilder.facts(try product("sample-app"), period: .week).spoken
+        XCTAssertTrue(spoken.hasPrefix("Sample App, Beta."), spoken)
+        XCTAssertTrue(spoken.contains("Active users 4, new 1, 12 in total"), spoken)
+        XCTAssertTrue(spoken.contains("21 commits this week"), spoken)
+        XCTAssertTrue(spoken.contains("Monetization Off"), spoken)
+        XCTAssertTrue(spoken.contains("Commits per week, last 12 weeks: 21 this week"), spoken)
+    }
+
+    func testNothingOnHomeShowsAPercent() throws {
+        let portfolio = try XCTUnwrap(try homeSnapshot().portfolio)
+        for product in portfolio.products {
+            for period in HomePeriod.allCases {
+                let facts = HomeFactsBuilder.facts(product, period: period)
+                let text = [facts.active, facts.new, facts.total, facts.commits, facts.spend, facts.money, facts.spoken].joined()
+                XCTAssertFalse(text.contains("%"), "\(product.id) \(period)")
+            }
+        }
     }
 }

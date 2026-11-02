@@ -1,7 +1,8 @@
 import Foundation
 
 // What the Home and Decisions screens decide, kept free of UI so it can be tested: who a question belongs to,
-// how decisions are grouped, what a core product card says, and what the star does to the core list.
+// how decisions are grouped, which products sit in which Home section and what each card says, and what the star
+// does. Foundation only: the iPhone app compiles this file too.
 
 // MARK: Decisions
 
@@ -164,17 +165,15 @@ enum HomeText {
             : Format.spent(usd)
     }
 
-    /// The quiet line under "Core products" while the list is picked by rule. Without a star (the store build) it only says how.
+    /// The quiet line under the core list while it is picked by rule. Without a star (the store build) it only says how.
+    /// The iPhone app still shows the core list; the Mac Home no longer does.
     static func coreNote(source: String, canStar: Bool) -> String? {
         guard source == "rule" else { return nil }
         return canStar ? "Picked by usage and spend. A star sets the list by hand." : "Picked by usage and spend."
     }
 
-    /// The empty state of the core grid: what goes here and the one action that fills it.
-    static func coreEmpty(hasPortfolio: Bool, canStar: Bool) -> String {
-        if !hasPortfolio { return "Update the teyla command to see your products (needs 0.35)." }
-        return canStar ? "No core products yet. Star a product in All products to put it here." : "No core products yet."
-    }
+    /// What Home says when the snapshot has no portfolio at all (a teyla command before 0.35).
+    static let noPortfolio = "Update the teyla command to see your products (needs 0.35)."
 }
 
 // MARK: Core product cards
@@ -286,7 +285,8 @@ enum CoreCards {
 
 // MARK: The star
 
-/// A star sets the core list: `teyla product core <ids...>` makes exactly those products starred.
+/// A star pins a product first within its Home section: `teyla product core <ids...>` makes exactly those products
+/// starred, and the CLI ranks starred products first. The `core` list stays in the state for older clients.
 enum CoreEdit {
     /// Home shows at most this many products (the CLI's own limit).
     static let limit = 6
@@ -308,13 +308,12 @@ enum CoreEdit {
         return starred || toggled(id, in: portfolio).count <= limit
     }
 
-    static let fullHelp = "Home shows 6 products. Take one out first."
+    static let fullHelp = "Six products can be pinned. Unpin one first."
 
-    /// The tooltip and the VoiceOver label of a star.
+    /// The tooltip and the VoiceOver label of a star. A star pins a product to the front of its Home section.
     static func help(starred: Bool, source: String, canToggle: Bool) -> String {
         if !canToggle { return fullHelp }
-        if starred { return "Take out of the core list" }
-        return source == "rule" ? "Star to set the core list by hand" : "Add to the core list"
+        return starred ? "Unpin from the front of its section" : "Pin to the front of its section"
     }
 
     /// The portfolio as it will read once the command has run, so the star answers at once.
@@ -352,5 +351,260 @@ enum HomeCommands {
     static func acceptCloseArguments(ids: [String]) -> [String]? {
         guard !ids.isEmpty, ids.allSatisfy(isSafeID) else { return nil }
         return ["asks", "accept-close"] + ids
+    }
+}
+
+// MARK: Home sections (the Scoreboard)
+
+/// The period the whole Home page shows. It changes numbers only: never who is in a section or in what order.
+enum HomePeriod: String, CaseIterable, Identifiable, Sendable {
+    case week = "7d", month = "30d", year = "365d"
+
+    var id: String { rawValue }
+
+    /// The label on the switch.
+    var label: String {
+        switch self {
+        case .week: return "Week"
+        case .month: return "Month"
+        case .year: return "Year"
+        }
+    }
+
+    /// "this week", for a sentence about the period.
+    var phrase: String {
+        switch self {
+        case .week: return "this week"
+        case .month: return "this month"
+        case .year: return "this year"
+        }
+    }
+
+    /// What the stored choice becomes when it holds a value this build does not know.
+    static func from(stored: String) -> HomePeriod { HomePeriod(rawValue: stored) ?? .week }
+}
+
+/// The three sections, in the order the page shows them.
+enum HomeSectionKind: String, CaseIterable, Identifiable, Sendable {
+    case users, building, quiet
+
+    var id: String { rawValue }
+
+    /// The visible title. These three words are the contract with the owner's design.
+    var title: String {
+        switch self {
+        case .users: return "People use these"
+        case .building: return "Being built"
+        case .quiet: return "Quiet"
+        }
+    }
+
+    /// The line under the title: the rule that put a product here.
+    var note: String {
+        switch self {
+        case .users: return "Active or new users in the last 7 days, most active first"
+        case .building: return "5 or more commits this week, no users counted yet. Most commits first"
+        case .quiet: return "Under 5 commits this week and no new users"
+        }
+    }
+}
+
+struct HomeSection: Equatable, Identifiable, Sendable {
+    var kind: HomeSectionKind
+    var products: [PortfolioProduct]
+
+    var id: String { kind.rawValue }
+}
+
+/// What Home draws: the three sections when the CLI sends `portfolio.home`, else the old core list as plain rows.
+enum HomeLayout: Equatable, Sendable {
+    case sections([HomeSection])
+    case legacy([CoreCard])
+
+    var isEmpty: Bool {
+        switch self {
+        case .sections(let sections): return sections.allSatisfy { $0.products.isEmpty }
+        case .legacy(let cards): return cards.isEmpty
+        }
+    }
+}
+
+enum HomeSections {
+    /// The sections in the order the CLI ranked them. This never sorts: the CLI knows the star, the signals and the ties.
+    /// An id without a product row is skipped, and an id the CLI lists twice stays in the first section that has it.
+    /// A section the CLI did not send is empty. Empty sections stay in the list; the view hides them.
+    static func layout(_ portfolio: Portfolio) -> HomeLayout {
+        guard let home = portfolio.home else { return .legacy(CoreCards.cards(portfolio)) }
+        var seen = Set<String>()
+        let sections = HomeSectionKind.allCases.map { kind -> HomeSection in
+            let ids = home.sections.first { $0.id == kind.rawValue }?.ids ?? []
+            let products = ids.compactMap { id -> PortfolioProduct? in
+                guard !seen.contains(id), let product = portfolio.product(id) else { return nil }
+                seen.insert(id)
+                return product
+            }
+            return HomeSection(kind: kind, products: products)
+        }
+        return .sections(sections)
+    }
+
+    /// "3 with users · 15 being built · 20 quiet", for VoiceOver on the page; nothing for a legacy layout.
+    static func counts(_ sections: [HomeSection]) -> String {
+        sections.filter { !$0.products.isEmpty }
+            .map { "\($0.products.count) \($0.kind.rawValue)" }
+            .joined(separator: ", ")
+    }
+}
+
+// MARK: Numbers and words
+
+enum HomeNumbers {
+    /// What a number that is not counted looks like. Never "0".
+    static let dash = "\u{2014}"
+
+    private static let grouped: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.numberStyle = .decimal
+        formatter.usesGroupingSeparator = true
+        formatter.maximumFractionDigits = 0
+        return formatter
+    }()
+
+    /// "—" for nil, "2,944" below 10,000, then "12.3k" and "1.2M". A big number must fit a card.
+    static func count(_ value: Int?) -> String {
+        guard let value else { return dash }
+        let magnitude = abs(value)
+        if magnitude < 10_000 { return grouped.string(from: NSNumber(value: value)) ?? String(value) }
+        if magnitude < 1_000_000 { return compact(Double(value) / 1_000, suffix: "k") }
+        return compact(Double(value) / 1_000_000, suffix: "M")
+    }
+
+    /// One decimal below 100, none above; a trailing ".0" is dropped. 10,400 reads "10.4k", 120,000 reads "120k".
+    private static func compact(_ scaled: Double, suffix: String) -> String {
+        if abs(scaled) >= 100 { return "\(Int(scaled.rounded()))\(suffix)" }
+        let tenths = (scaled * 10).rounded() / 10
+        return tenths == tenths.rounded() ? "\(Int(tenths))\(suffix)" : "\(tenths)\(suffix)"
+    }
+
+    /// "$957", "$2,127", "—". Whole dollars: a card is not a bill.
+    static func dollars(_ value: Double?) -> String {
+        guard let value else { return dash }
+        let whole = grouped.string(from: NSNumber(value: abs(value).rounded())) ?? String(Int(abs(value).rounded()))
+        return (value < 0 ? "-$" : "$") + whole
+    }
+
+    /// "135 commits"; "1 commit"; "— commits" when not counted.
+    static func commits(_ value: Int?) -> String {
+        "\(count(value)) \(value == 1 ? "commit" : "commits")"
+    }
+}
+
+/// The little bar chart of commits per week.
+enum Sparkline {
+    /// Bar heights from 0 to 1, oldest first. Empty weeks give no chart at all (never a flat line). Twelve real zeros
+    /// give twelve bars at the baseline (height 0). A negative count is read as 0.
+    static func heights(weeks: [Int]) -> [Double] {
+        guard !weeks.isEmpty else { return [] }
+        let top = weeks.map { max(0, $0) }.max() ?? 0
+        guard top > 0 else { return weeks.map { _ in 0 } }
+        return weeks.map { Double(max(0, $0)) / Double(top) }
+    }
+
+    /// "Commits per week, last 12 weeks: 135 this week", or nil when there is no chart.
+    static func label(weeks: [Int]) -> String? {
+        guard let last = weeks.last else { return nil }
+        return "Commits per week, last \(weeks.count) weeks: \(HomeNumbers.count(last)) this week"
+    }
+}
+
+/// The letter on a product with no icon.
+enum Monogram {
+    /// The first letter or digit of the name, upper-cased; "?" for an empty name.
+    static func letter(for name: String) -> String {
+        guard let first = name.trimmingCharacters(in: .whitespacesAndNewlines).first(where: { $0.isLetter || $0.isNumber })
+        else { return "?" }
+        return String(first).uppercased()
+    }
+}
+
+/// What one product's card says for a period. Plain strings: the view only places them.
+struct HomeFacts: Equatable, Sendable {
+    var id: String
+    var name: String
+    /// "Live", "Beta"; "" when the registry has no stage.
+    var stage: String
+    var summary: String
+    var monogram: String
+    var active: String
+    var new: String
+    var total: String
+    var commits: String
+    var commitsCount: String
+    /// "$957 agent spend this week", or "Agent spend: not counted yet".
+    var spend: String
+    var weeks: [Int]
+    var sparkHeights: [Double]
+    var sparkLabel: String?
+    var money: String
+    var moneyEnabled: Bool
+    /// The whole card as one VoiceOver sentence.
+    var spoken: String
+}
+
+enum HomeFactsBuilder {
+    static let noSummary = "No description yet."
+
+    static func name(_ product: PortfolioProduct) -> String {
+        let title = product.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? Format.product(product.id) : title
+    }
+
+    /// The description: the summary, else the progress line, else nothing to read (the view says it has none).
+    static func summary(_ product: PortfolioProduct) -> String {
+        let text = product.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty { return text }
+        return product.progress?.line.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    /// "MRR $1,200 · 14 paying" when monetization is on, "Off" when it is not.
+    static func money(_ money: MoneyMetrics) -> String {
+        guard money.enabled else { return "Off" }
+        return "\(HomeNumbers.dollars(money.mrrUSD)) MRR \u{00B7} \(HomeNumbers.count(money.paying)) paying"
+    }
+
+    static func spend(_ metrics: ProductMetrics, period: HomePeriod) -> String {
+        guard let usd = metrics.spendUSD[period] else { return "Agent spend: not counted yet" }
+        return "\(HomeNumbers.dollars(usd)) agent spend \(period.phrase)"
+    }
+
+    static func facts(_ product: PortfolioProduct, period: HomePeriod) -> HomeFacts {
+        let metrics = product.metrics
+        let name = name(product)
+        let stage = product.stage.trimmingCharacters(in: .whitespacesAndNewlines).capitalized
+        let weeks = metrics.commits.weeks
+        let commits = metrics.commits.counts[period]
+        let active = HomeNumbers.count(metrics.users.active[period])
+        let new = HomeNumbers.count(metrics.users.new[period])
+        let total = HomeNumbers.count(metrics.users.total)
+        let spendLine = spend(metrics, period: period)
+        let moneyLine = money(metrics.money)
+        let sparkLabel = Sparkline.label(weeks: weeks)
+        var spoken = [name + (stage.isEmpty ? "" : ", " + stage),
+                      "Active users \(active), new \(new), \(total) in total",
+                      "\(HomeNumbers.commits(commits)) \(period.phrase)", spendLine,
+                      "Monetization \(moneyLine)"]
+        if let sparkLabel { spoken.append(sparkLabel) }
+        return HomeFacts(id: product.id, name: name, stage: stage, summary: summary(product),
+                         monogram: Monogram.letter(for: name), active: active, new: new, total: total,
+                         commits: HomeNumbers.commits(commits), commitsCount: HomeNumbers.count(commits),
+                         spend: spendLine, weeks: weeks, sparkHeights: Sparkline.heights(weeks: weeks),
+                         sparkLabel: sparkLabel, money: moneyLine, moneyEnabled: metrics.money.enabled,
+                         spoken: spoken.joined(separator: ". ") + ".")
+    }
+
+    /// The Quiet row: always the 7-day number, whatever period the page shows.
+    static func quietCommits(_ product: PortfolioProduct) -> String {
+        "\(HomeNumbers.commits(product.metrics.commits.counts.d7)) this week"
     }
 }

@@ -166,7 +166,58 @@
         "tasks": 1,
         "milestone": "family: 2 of 9 requirements left",
         "next": "Answer the sign-in question",
-        "repo": "~/code/sample-app"
+        "repo": "~/code/sample-app",
+        "summary": "A sample app that plans a trip with a few friends.",
+        "icon_jpeg": "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAMKADAAQAAAABAAAAMAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAMAAwAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMABAQEBAQEBgQEBgkGBgYJDAkJCQkMDwwMDAwMDxIPDw8PDw8SEhISEhISEhUVFRUVFRkZGRkZHBwcHBwcHBwcHP/bAEMBBAUFBwcHDAcHDB0UEBQdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHf/dAAQAA//aAAwDAQACEQMRAD8A8gApwFAFPAr9nSPKhAAKcBXV+G/A3ivxdvbw9pst3HHkNJ8scQI25XzJCqbvmB253YOcYq54g+HPjXwtai91zSpYLc9ZUKSovIHztEzhMlgBuIyemeay+sUVP2bmubtdX+47IQOKp4FAFOArsSOuED//0PJQK63wP4b/AOEu8V6b4eZ/Lju5f3jA4IijUySbTtb5tinbkEbsZ4rlAK7f4c+ILXwt410rXL4Zt4JSkp5+VJUaJn+VWJ2By2AMnGO+a/YsRzqjN0/is7ettDmhA/Q/StK07Q9Og0nSYFtrS2XZHGnQDqevJJOSSSSSSSSSTVueCC6gktbqNZoZlKSRuAysrDBVgeCCOCD1ognguoI7q1kWaGZQ8ciEMrKwyGUjggjkEdalr8fblzXe50n58/Fbwda+CvF8unafxY3MS3VuhYuyI5KlGJA6OrbeSduMknNecAV6z8Z/E+n+KfGsk+lOs1tYwJaLMjbllKMzsy8DgM5UEEg7dwJBFeUgV+xYD2jw1N1fisrnbTjof//R8pp4FAFOAr9uSKhA9J8HfFbxf4Ktf7P02WK5sRuKW90pdEZyCWQqVcdD8u7bkk4yc1peJ/jP418U6e+lTyQWNtMrJMtojIZVbHyszs7AcYIUrkEhsg4ryYCngVy/UMM6ntXTXN3sdcaaACnAUAU6vQSOyED/2Q==",
+        "metrics": {
+          "users": {
+            "total": 12,
+            "active": {
+              "7d": 4,
+              "30d": 6,
+              "365d": 9
+            },
+            "new": {
+              "7d": 1,
+              "30d": 3,
+              "365d": 9
+            }
+          },
+          "commits": {
+            "7d": 21,
+            "30d": 80,
+            "365d": 640,
+            "weeks": [
+              30,
+              12,
+              8,
+              9,
+              15,
+              20,
+              25,
+              18,
+              22,
+              16,
+              11,
+              21
+            ]
+          },
+          "spend_usd": {
+            "7d": 860.5,
+            "30d": 2900.0,
+            "365d": 9800.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
       },
       {
         "id": "sample-tool",
@@ -207,8 +258,162 @@
         "tasks": 0,
         "milestone": "",
         "next": "",
-        "repo": "~/code/sample-tool"
+        "repo": "~/code/sample-tool",
+        "summary": "A sample command-line tool that exports a trip as a calendar file.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 9,
+            "30d": 30,
+            "365d": 210,
+            "weeks": [
+              2,
+              4,
+              5,
+              3,
+              6,
+              8,
+              4,
+              7,
+              10,
+              6,
+              5,
+              9
+            ]
+          },
+          "spend_usd": {
+            "7d": 18.0,
+            "30d": 70.0,
+            "365d": 410.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "sample-old",
+        "title": "Sample Old",
+        "stage": "parked",
+        "focus": false,
+        "primary": "ios",
+        "users": "owner",
+        "target": "owner",
+        "health": "parked",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-10-25T09:10:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 0.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "",
+        "repo": "~/code/sample-old",
+        "facts": [],
+        "summary": "An old idea, parked.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 0,
+            "30d": 0,
+            "365d": 14,
+            "weeks": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "spend_usd": {
+            "7d": 0.0,
+            "30d": 0.0,
+            "365d": 12.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
       }
-    ]
+    ],
+    "home": {
+      "sections": [
+        {
+          "id": "users",
+          "ids": [
+            "sample-app"
+          ]
+        },
+        {
+          "id": "building",
+          "ids": [
+            "sample-tool"
+          ]
+        },
+        {
+          "id": "quiet",
+          "ids": [
+            "sample-old"
+          ]
+        }
+      ]
+    }
   }
 }
