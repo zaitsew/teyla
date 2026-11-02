@@ -292,6 +292,10 @@ version 2. `apps/mac/TeylaTests/Fixtures/state.sample.v3.json` is the reference.
   `teyla portfolio --refresh` runs that pass and writes `~/.teyla/portfolio-cache.json` (0600), and
   `teyla state` starts it detached when the cache is older than 6 hours.
 - `portfolio.counts`: `{on_track, at_risk, off_track, parked}`.
+- `portfolio.core`: up to 6 product ids, the products the home screen leads with. `portfolio.core_source`:
+  `star` when any product has `focus` (the core is exactly the starred ones, by spend over 7 days), else `rule`
+  (not parked, and a weekly user or $40 of spend in 7 days; ranked by spend). `teyla product core` shows and
+  sets it (`docs/PRODUCTS.md`).
 - `portfolio.products[]`, worst health first, then focus, then last activity:
   - `id`, `title`, `stage`, `focus`, `primary`, `repo`: as in `products[]`.
   - `users`, `target`: `[productize]` in the repo's `teyla.toml` (`owner`, `family`, `testers`,
@@ -304,13 +308,212 @@ version 2. `apps/mac/TeylaTests/Fixtures/state.sample.v3.json` is the reference.
     version, or a site URL the repo's `teyla.toml` declares; Teyla does not fetch it), `in_review`, `current` (the newest build reached the owner),
     `behind` (a newer build exists that the owner cannot install yet), `blocked` (only the owner can
     clear it; `detail` says how), `none` (no build yet) or `unknown` (not checked, or the check failed).
-    `detail` is one line for a person. `as_of` is when that row was read.
-  - `prs`: `{open, waiting, merged_7d, unreviewed_7d}` — open PRs, PRs that wait on the owner's
-    merge, PRs merged in 7 days, and merged in 7 days with no review in the ledger.
+    `detail` is one line for a person. `as_of` is when that row was read. `review_unknown`: true when the
+    store API cannot say whether review passed (a Google Play draft may sit in review), else false.
+    The newest track decides on Google Play: a production release at a code at or above the internal one is
+    `current`, not `behind`. Until a whole store pass has worked (`checked.stores` is ""), a platform reads
+    `unknown`, never `behind`.
+  - `prs`: `{open, waiting, merged_7d, unreviewed_7d, open_p1}` — open PRs, PRs that wait on the owner's
+    merge, PRs merged in 7 days, merged in 7 days with no review in the ledger, and merged in 7 days with
+    an open P1.
   - `activity`: `{last, sessions_7d, spend_7d_usd}`.
   - `waiting`, `oldest_wait_days`, `tasks`: open questions, the age of the oldest, owner tasks.
   - `milestone`: the next `[productize]` target and what is left ("family: 2 of 9 requirements
     left"), or "". `next`: one line, the next step, or "".
+  - `facts[]`: short strings for what health does not count: questions that wait and PRs merged without a
+    review. Nothing is hidden; it is only not a reason.
+  - `progress`: facts only, no percentages, no model text. Built from caches; the snapshot never calls the
+    network.
+
+    ```json
+    {"can_install": [{"platform": "ios", "version": "1.4.0", "build": "52", "channel": "testflight", "state": "current"}],
+     "shipped_7d": {"prs": 9, "top": ["Add the sign-in screen", "Fix the sync retry"]},
+     "users": {"weekly": 4, "total": 12, "label": "4 active this week, 12 total"},
+     "milestone": "family: 2 of 9 requirements left", "blocker": "", "quiet_days": 0,
+     "line": "family: 2 of 9 requirements left"}
+    ```
+
+    `can_install`: the platforms with a known build, primary first, same fields and `state` as `platforms[]`;
+    a platform with no known build is left out, never shown as behind. `shipped_7d.prs`: PRs merged in 7
+    days, without the mechanical ones (release bumps, "Regenerate ... leak gate", merge commits);
+    `top`: up to 3 of their titles, newest first, empty when the cache holds no titles (an older cache has
+    none until the next `teyla portfolio --refresh`). `users`: the weekly and total user
+    counts from the counters `teyla products` last printed (`wau=` or `weekly_users=`; `users=` or
+    `users_total=`, summed over the product's repos), or `null` when there is no cache or no such counter.
+    `blocker`: "" for now; a later version fills it with the owner's top ask. `quiet_days`: whole days since
+    the last activity, `null` when there is none. `line`: one sentence of at most 12 words, the first that
+    exists of: open P1s, the milestone, the primary platform's build, "Quiet for N days"; never a session title.
+
+Health measures the product, not the owner's queue. Applied in order; the first that matches wins and every
+match adds a reason:
+
+1. `parked` when the stage is `parked`.
+2. `off_track` when the primary platform is `blocked`, or `behind` for more than 2 days; or when a PR
+   merged in 7 days has an open P1.
+3. `at_risk` when any other platform is `blocked` or `behind`, or when a `building` or `beta` product had
+   no session for 14 days.
+4. `on_track` otherwise.
+
+A question that waits, and a PR merged without a review, no longer change health: they stay as the raw
+counts (`waiting`, `oldest_wait_days`, `prs.unreviewed_7d`) and as `facts[]`. An open P1 stays a reason.
+
+### New commands
+
+| Command | Does |
+|---|---|
+| `teyla say <running-id> [--json] -- <text>` | Sends a correction to a running session. Codex: `codex queue`, which delivers it after the current turn. Claude: copies the text and opens the session. Never resumes a live session. |
+| `teyla dispatch <product> [--harness codex\|claude] [--json] [--dry] -- <text>` | Starts a new session in a fresh worktree under `~/.worktrees/<repo>/`. Codex by default, through `codex-lane` and the machine guard. |
+| `teyla relay on\|off\|status [--json]` | Turns the iPhone relay on or off. |
+| `teyla relay pair [--json] [--rotate]` | Prints the pairing string the window shows as a QR code, creating the shared key the first time. `--rotate` replaces the key; every phone pairs again. |
+| `teyla note --suggest "<text>" --json [--cwd DIR]` | The product a note would get, how (`text`, `cwd` or `""`), and the picker's `candidates` (registered ids, focus first, parked last). Writes nothing. `-` reads the text from stdin. |
+| `teyla note - --product <id> --json` | Keeps the note read from stdin and prints it as JSON (the `teyla notes --json` keys, plus `intent`). `link <id> <product>` and `drop <id>` take `--json` too. |
+| `teyla notes --json` | The open notes, newest first, as a list of `{id, text, product, source, created, updated, linked_by, dropped}`. |
+| `teyla relay sync` | One pass: writes the snapshot, then delivers every signed outbox entry. A launchd agent runs it when the outbox changes and every 60 s. |
+
+`say` and `dispatch` print `{ok, via, detail, id}` like `teyla answer`; `dispatch` adds
+`worktree` and `link`. `via` for `say` is `codex-queue` or `opened`; for `dispatch` it is
+`codex-exec` or `claude-bg`.
+
+### The relay (Mac ↔ iPhone)
+
+The relay folder is `~/Library/Mobile Documents/com~apple~CloudDocs/Teyla/` (iCloud Drive/Teyla).
+The phone picks it once with the document picker and keeps a bookmark. Anyone who can write to
+that folder is untrusted: both directions are signed with a key the two devices share.
+
+- `state.teyla`: written by the Mac. Line 1 is the signature (64 hex characters), then `\n`,
+  then the snapshot JSON bytes exactly as signed. The phone verifies the signature over those
+  bytes before it decodes or shows anything; a bad signature shows "Waiting for the Mac" and
+  nothing else. One file, so iCloud never delivers a snapshot without its signature.
+- `outbox/<uuid>.json`: written by the phone, one per action:
+  `{v: 1, id: <uuid>, kind: answer|say|dispatch, target: <ask id | running id | product>,
+  about: <hex sha256 of the text the owner saw>, text, created: <ISO time>, device, sig}`.
+  For `answer`, `about` hashes the question; for `say`, the session title; for `dispatch`, the
+  product name. The Mac refuses an entry whose `about` does not match what it has now, so a
+  question changed after the owner read it is never answered.
+- `sent/<uuid>.json`: written by the Mac: `{id, ok, via, detail, done_at}`. The outbox entry
+  is removed. The phone shows the result and deletes `sent/` entries it has shown.
+
+Signing. The key is 32 random bytes: `~/.teyla/relay.key` (0600) on the Mac, the Keychain on the
+phone. The pairing string is `teyla-pair:v1:<base64url key, no padding>`. Each signature is the
+lowercase hex HMAC-SHA256 of a message:
+
+- snapshot: `teyla-state-v1\n` followed by the JSON bytes;
+- outbox entry: the lines `teyla-outbox-v1`, `v`, `id`, `kind`, `target`, `about`, `created`,
+  `device`, then `text`, joined with `\n`, UTF-8. `text` is last, so a newline inside it is safe.
+  No other field is signed and no JSON canonical form is needed. Every field but `text` must
+  match a strict pattern with no line break, so the split is unambiguous: `v` digits, `id` a UUID,
+  `kind` one of the three, `target` `[A-Za-z0-9_.:#/-]{1,200}`, `about` 64 hex, `created` an ISO
+  time, `device` `[A-Za-z0-9 ._-]{1,64}`. Both sides reject an entry that does not, before
+  checking its signature.
+
+`tests/fixtures/relay-vector.json` holds a key, a snapshot, an entry and both expected
+signatures; the Mac and the phone each reproduce them in a test.
+
+Checks and delivery, at most once:
+
+1. Refuse an entry with a bad or missing signature, an `id` already in the journal, `created`
+   older than 7 days or more than 10 minutes ahead, `text` over 8,000 characters, an unknown
+   `kind`, a `target` that does not exist, or an `about` that does not match.
+2. Claim it: create `~/.teyla/relay-journal/<id>.json` with `O_EXCL` (state `claimed`), then
+   deliver, then rewrite the journal entry as `done` with the result and write `sent/`.
+3. After a crash, a `claimed` entry is never retried: `sent/` gets `ok: false`, "interrupted;
+   check the session, then send again".
+4. A relay answer never falls back to the clipboard: when only "copy and open" is possible,
+   `sent/` gets `ok: false`, "needs the Mac", and the question stays open.
+5. Rejected entries go to `sent/` with `ok: false` and the reason.
+
+Dispatched work. `teyla dispatch` appends `{id, product, harness, worktree, branch, started,
+pid, log}` to `~/.teyla/dispatch.jsonl`. `running[]` and `done[]` include headless runs whose
+working directory is a worktree in that file, although they leave out every other headless run.
+
+### Voice
+
+Speech is recognised on the device (Apple Speech, on-device only) in English, Spanish and
+Russian; no audio leaves it. Push-to-talk fills the text field; nothing is sent until the owner
+taps Send. The Mac window has a global shortcut for push-to-talk.
+
+### Notes (quick note and the Notes section)
+
+The Mac keeps no notes; `teyla note` and `teyla notes` do ([NOTES.md](NOTES.md)).
+
+- **Quick note.** A global shortcut opens a small floating panel without bringing Teyla forward. The
+  shortcut is optional and recorded in Settings; it is ⌥Space until the owner records another or clears
+  it. Return saves, Shift-Return adds a line, Esc closes and keeps the draft. While the owner types, the
+  app asks `teyla note --suggest` (300 ms after the last key) and pre-selects the product; the chip row
+  changes it with a click or ⌘0 (Inbox) and ⌘1–⌘9 (the first nine candidates). Save runs
+  `teyla note - --product <id> --json` with the text on stdin. A failed save keeps the panel open with
+  the error and the text.
+- **Shortcut rules.** A recorded combination needs ⌘, ⌥ or ⌃, and cannot be push-to-talk (⌥⌘Space). If
+  registration fails (another app owns it), Settings says so and the shortcut stays off; the menu-bar item
+  still opens the panel. Labels in the menu bar and the Notes section show the shortcut that is active, or none.
+- **Notes section.** Under "Needs you": the Inbox count and the newest five open notes with their product
+  chip, age and two lines of text. Link… runs `teyla note link`, Drop runs `teyla note drop`; the list is
+  read again after each action. The data is `teyla notes --json`, not the snapshot.
+
+## Version 3: the portfolio (from 2026-10-26)
+
+Version 3 adds one object, `portfolio`: where every registered product stands, per platform, and
+whether it is on track. The window draws the Portfolio screen and the platform row on each product
+page from it; the phone gets it through the relay with no new file. Every other field is as in
+version 2. `apps/mac/TeylaTests/Fixtures/state.sample.v3.json` is the reference.
+
+- `portfolio.version`: 1.
+- `portfolio.checked`: `{stores, github}` — when the network pass last read App Store Connect and
+  Google Play (`stores`) and GitHub (`github`); "" when never. The snapshot never calls the network:
+  `teyla portfolio --refresh` runs that pass and writes `~/.teyla/portfolio-cache.json` (0600), and
+  `teyla state` starts it detached when the cache is older than 6 hours.
+- `portfolio.counts`: `{on_track, at_risk, off_track, parked}`.
+- `portfolio.core`: up to 6 product ids, the products the home screen leads with. `portfolio.core_source`:
+  `star` when any product has `focus` (the core is exactly the starred ones, by spend over 7 days), else `rule`
+  (not parked, and a weekly user or $40 of spend in 7 days; ranked by spend). `teyla product core` shows and
+  sets it (`docs/PRODUCTS.md`).
+- `portfolio.products[]`, worst health first, then focus, then last activity:
+  - `id`, `title`, `stage`, `focus`, `primary`, `repo`: as in `products[]`.
+  - `users`, `target`: `[productize]` in the repo's `teyla.toml` (`owner`, `family`, `testers`,
+    `public`, or "").
+  - `health`: `on_track`, `at_risk`, `off_track` or `parked`. `reasons[]`: at most 3 short lines
+    that explain it, worst first; empty when on track.
+  - `platforms[]`, primary first: `{platform, role, channel, version, build, state, detail, as_of, link}`.
+    `platform`: `ios`, `macos`, `android`, `web`, `watch`. `role`: `primary` or `secondary`.
+    `channel`: `testflight`, `app_store`, `play`, `web` or `local`. `state`: `live` (a public store
+    version, or a site URL the repo's `teyla.toml` declares; Teyla does not fetch it), `in_review`, `current` (the newest build reached the owner),
+    `behind` (a newer build exists that the owner cannot install yet), `blocked` (only the owner can
+    clear it; `detail` says how), `none` (no build yet) or `unknown` (not checked, or the check failed).
+    `detail` is one line for a person. `as_of` is when that row was read. `review_unknown`: true when the
+    store API cannot say whether review passed (a Google Play draft may sit in review), else false.
+    The newest track decides on Google Play: a production release at a code at or above the internal one is
+    `current`, not `behind`. Until a whole store pass has worked (`checked.stores` is ""), a platform reads
+    `unknown`, never `behind`.
+  - `prs`: `{open, waiting, merged_7d, unreviewed_7d, open_p1}` — open PRs, PRs that wait on the owner's
+    merge, PRs merged in 7 days, merged in 7 days with no review in the ledger, and merged in 7 days with
+    an open P1.
+  - `activity`: `{last, sessions_7d, spend_7d_usd}`.
+  - `waiting`, `oldest_wait_days`, `tasks`: open questions, the age of the oldest, owner tasks.
+  - `milestone`: the next `[productize]` target and what is left ("family: 2 of 9 requirements
+    left"), or "". `next`: one line, the next step, or "".
+  - `facts[]`: short strings for what health does not count: questions that wait and PRs merged without a
+    review. Nothing is hidden; it is only not a reason.
+  - `progress`: facts only, no percentages, no model text. Built from caches; the snapshot never calls the
+    network.
+
+    ```json
+    {"can_install": [{"platform": "ios", "version": "1.4.0", "build": "52", "channel": "testflight", "state": "current"}],
+     "shipped_7d": {"prs": 9, "top": ["Add the sign-in screen", "Fix the sync retry"]},
+     "users": {"weekly": 4, "total": 12, "label": "4 active this week, 12 total"},
+     "milestone": "family: 2 of 9 requirements left", "blocker": "", "quiet_days": 0,
+     "line": "family: 2 of 9 requirements left"}
+    ```
+
+    `can_install`: the platforms with a known build, primary first, same fields and `state` as `platforms[]`;
+    a platform with no known build is left out, never shown as behind. `shipped_7d.prs`: PRs merged in 7
+    days, without the mechanical ones (release bumps, "Regenerate ... leak gate", merge commits);
+    `top`: up to 3 of their titles, newest first, empty when the cache holds no titles (an older cache has
+    none until the next `teyla portfolio --refresh`). `users`: the weekly and total user
+    counts from the counters `teyla products` last printed (`wau=` or `weekly_users=`; `users=` or
+    `users_total=`, summed over the product's repos), or `null` when there is no cache or no such counter.
+    `blocker`: "" for now; a later version fills it with the owner's top ask. `quiet_days`: whole days since
+    the last activity, `null` when there is none. `line`: one sentence of at most 12 words, the first that
+    exists of: open P1s, the milestone, the primary platform's build, "Quiet for N days"; never a session title.
 
 Health rules, applied in order; the first that matches wins and every match adds a reason:
 

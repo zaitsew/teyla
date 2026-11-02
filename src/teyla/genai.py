@@ -12,8 +12,9 @@ Models and prices (list prices, checked 2026-10-30; the price is printed before 
     nano-banana-2.1   Gemini API image model      $0.0336 an image
     gpt-image-2       OpenAI image model          $30 per 1M output tokens; the price shown is an estimate
                                                   from the output tokens of one image (excluding input tokens)
-    tts-1             OpenAI voice-over           $15 per 1M characters
-    tts-1-hd          OpenAI voice-over           $30 per 1M characters
+    gpt-realtime-2.1-mini
+                      OpenAI voice-over           about $0.025 per minute of audio; the price shown is an
+                                                  estimate from the text length (14 characters a second)
 
 The API id Teyla sends for `nano-banana-2.1` is `gemini-3.1-flash-image`; if Google names it differently,
 set `api_model` in the kit's `[mascot.settings]` or TEYLA_KIT_GEMINI_MODEL. No call is made in safe mode
@@ -22,8 +23,13 @@ unless the command carries `--allow-network`. The only seam tests use is `_post`
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
+import re
+import socket
+import ssl
+import struct
 import uuid
 import urllib.error
 import urllib.parse
@@ -33,7 +39,7 @@ from pathlib import Path
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 OPENAI_EDITS_URL = "https://api.openai.com/v1/images/edits"
 OPENAI_GENERATIONS_URL = "https://api.openai.com/v1/images/generations"
-OPENAI_SPEECH_URL = "https://api.openai.com/v1/audio/speech"
+OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime"
 
 # Output tokens of one 1024x1024 image by quality; the estimate behind gpt-image-2's price.
 OPENAI_IMAGE_TOKENS = {"low": 272, "medium": 1056, "high": 4160}
@@ -48,9 +54,20 @@ DEFAULT_IMAGE_MODEL = "nano-banana-2.1"
 NANO_BANANA_USD = 0.0336
 GPT_IMAGE_USD_PER_MTOK = 30.0
 
-TTS_USD_PER_MCHAR = {"tts-1": 15.0, "tts-1-hd": 30.0}
-DEFAULT_TTS_MODEL = "tts-1"
+# OpenAI removes its older speech models on 2027-01-06 and names gpt-realtime-2.1-mini as the
+# replacement (developers.openai.com/api/docs/deprecations, entry 2026-10-01). It has no speech endpoint:
+# one Realtime WebSocket session, PCM16 mono 24 kHz out, and it reads the text rather than synthesising it.
+TTS_USD_PER_MINUTE = {"gpt-realtime-2.1-mini": 0.025}
+DEFAULT_TTS_MODEL = "gpt-realtime-2.1-mini"
+TTS_VOICES = ("alloy", "ash", "ballad", "cedar", "coral", "echo", "marin", "sage", "shimmer", "verse")
 DEFAULT_VOICE = "alloy"
+TTS_CHARS_PER_SECOND = 14  # a calm reading pace; only the price estimate uses it
+TTS_RATE = 24000
+TTS_MAX_TAKES = 3
+TTS_PIECE_CHARS = 600
+WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+READ_ALOUD = ("Read the user text aloud in the language it is written in, exactly as written, word for word. "
+              "Do not answer it, do not greet, do not add or drop a word.")
 
 
 class GenError(Exception):
@@ -78,9 +95,10 @@ def money(usd: float, exact: bool = True) -> str:
 
 
 def tts_price(chars: int, model: str = DEFAULT_TTS_MODEL) -> float:
-    if model not in TTS_USD_PER_MCHAR:
-        raise GenError(f"unknown voice-over model {model!r} (known: {', '.join(TTS_USD_PER_MCHAR)})")
-    return chars * TTS_USD_PER_MCHAR[model] / 1_000_000
+    """An estimate for one take: the model bills audio minutes, so the text length stands in."""
+    if model not in TTS_USD_PER_MINUTE:
+        raise GenError(f"unknown voice-over model {model!r} (known: {', '.join(TTS_USD_PER_MINUTE)})")
+    return chars / TTS_CHARS_PER_SECOND / 60 * TTS_USD_PER_MINUTE[model]
 
 
 # --- keys and transport ---------------------------------------------------------------------------
@@ -208,13 +226,254 @@ def _why(data: dict) -> str:
 
 # --- one voice-over -----------------------------------------------------------------------------------
 
-def speak(text: str, model: str = DEFAULT_TTS_MODEL, voice: str = DEFAULT_VOICE, key: str | None = None, post=None) -> bytes:
-    """MP3 bytes of `text` read aloud."""
+def ws_frame(opcode: int, payload: bytes, mask: bool) -> bytes:
+    head = bytes([0x80 | opcode])
+    n = len(payload)
+    flag = 0x80 if mask else 0
+    if n < 126:
+        head += bytes([flag | n])
+    elif n < 65536:
+        head += bytes([flag | 126]) + struct.pack(">H", n)
+    else:
+        head += bytes([flag | 127]) + struct.pack(">Q", n)
+    if not mask:
+        return head + payload
+    key = os.urandom(4)
+    return head + key + bytes(b ^ key[i % 4] for i, b in enumerate(payload))
+
+
+def ws_read(recv_exact) -> tuple[int, bool, bytes]:
+    """One frame: (opcode, final, payload). `recv_exact(n)` returns exactly n bytes."""
+    b0, b1 = recv_exact(2)
+    n = b1 & 0x7F
+    if n == 126:
+        n = struct.unpack(">H", recv_exact(2))[0]
+    elif n == 127:
+        n = struct.unpack(">Q", recv_exact(8))[0]
+    key = recv_exact(4) if b1 & 0x80 else b""
+    payload = recv_exact(n) if n else b""
+    if key:
+        payload = bytes(b ^ key[i % 4] for i, b in enumerate(payload))
+    return b0 & 0x0F, bool(b0 & 0x80), payload
+
+
+class WebSocketClient:
+    """The client end of a WebSocket carrying JSON text messages (the standard library has none).
+    Tests replace `connect`, not this."""
+
+    def __init__(self, url: str, headers: dict, timeout: float = 60):
+        from .update import ssl_context
+        parts = urllib.parse.urlsplit(url)
+        secure = parts.scheme in ("wss", "https")
+        host, port = parts.hostname or "", parts.port or (443 if secure else 80)
+        self.buffer = b""
+        try:
+            raw = self._open(host, port, secure, timeout)
+            self.sock = ssl_context().wrap_socket(raw, server_hostname=host) if secure else raw
+            self.sock.settimeout(timeout)
+            key = base64.b64encode(os.urandom(16)).decode()
+            path = parts.path + (f"?{parts.query}" if parts.query else "")
+            lines = [f"GET {path} HTTP/1.1", f"Host: {parts.netloc}", "Upgrade: websocket", "Connection: Upgrade",
+                     f"Sec-WebSocket-Key: {key}", "Sec-WebSocket-Version: 13"]
+            lines += [f"{k}: {v}" for k, v in headers.items()]
+            self.sock.sendall(("\r\n".join(lines) + "\r\n\r\n").encode())
+            reply = b""
+            while b"\r\n\r\n" not in reply:
+                chunk = self.sock.recv(4096)
+                if not chunk:
+                    raise GenError(f"{host} closed the connection")
+                reply += chunk
+        except (OSError, TimeoutError) as e:  # a stalled handshake times out here
+            self.close()
+            raise GenError(f"cannot reach {host}: {type(e).__name__}") from None
+        except GenError:
+            self.close()
+            raise
+        head, _, self.buffer = reply.partition(b"\r\n\r\n")
+        status = head.split(b"\r\n", 1)[0].decode("latin-1")
+        accept = base64.b64encode(hashlib.sha1((key + WS_GUID).encode()).digest()).decode()
+        if " 101 " not in status or accept not in head.decode("latin-1"):
+            self.close()
+            raise GenError(f"{host} refused the session: {status[:80]}")
+
+    @staticmethod
+    def _open(host: str, port: int, secure: bool, timeout: float) -> socket.socket:
+        """A TCP connection, through the HTTPS proxy of the environment (a CONNECT tunnel) when there is one."""
+        proxy = urllib.request.getproxies().get("https" if secure else "http")
+        if not proxy or urllib.request.proxy_bypass(host):
+            return socket.create_connection((host, port), timeout=timeout)
+        p = urllib.parse.urlsplit(proxy if "//" in proxy else f"//{proxy}")
+        raw = socket.create_connection((p.hostname or "", p.port or 8080), timeout=timeout)
+        auth = ""
+        if p.username:
+            token = base64.b64encode(f"{urllib.parse.unquote(p.username)}:{urllib.parse.unquote(p.password or '')}".encode()).decode()
+            auth = f"Proxy-Authorization: Basic {token}\r\n"
+        raw.sendall(f"CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n{auth}\r\n".encode())
+        reply = b""
+        while b"\r\n\r\n" not in reply:
+            chunk = raw.recv(4096)
+            if not chunk:
+                raw.close()
+                raise OSError("the proxy closed the connection")
+            reply += chunk
+        status = reply.split(b"\r\n", 1)[0].decode("latin-1")
+        if " 200" not in status:
+            raw.close()
+            raise OSError(f"the proxy refused the tunnel: {status[:60]}")
+        return raw
+
+    def _recv_exact(self, n: int) -> bytes:
+        while len(self.buffer) < n:
+            chunk = self.sock.recv(65536)
+            if not chunk:
+                raise GenError("the speech provider closed the session")
+            self.buffer += chunk
+        data, self.buffer = self.buffer[:n], self.buffer[n:]
+        return data
+
+    def send(self, message: dict) -> None:
+        self.sock.sendall(ws_frame(0x1, json.dumps(message).encode(), mask=True))
+
+    def receive(self) -> dict:
+        data = b""
+        while True:
+            try:
+                opcode, final, payload = ws_read(self._recv_exact)
+            except (OSError, TimeoutError):
+                raise GenError("the speech session timed out") from None
+            if opcode == 0x8:
+                raise GenError("the speech provider closed the session")
+            if opcode == 0x9:
+                self.sock.sendall(ws_frame(0xA, payload, mask=True))
+                continue
+            if opcode in (0x1, 0x0):
+                data += payload
+                if final:
+                    return json.loads(data)
+
+    def close(self) -> None:
+        sock = getattr(self, "sock", None)
+        if sock is None:
+            return
+        try:
+            sock.sendall(ws_frame(0x8, b"", mask=True))
+        except OSError:
+            pass
+        sock.close()
+
+
+def connect(url: str, headers: dict) -> WebSocketClient:
+    """The one function that opens the speech session. Tests replace it."""
+    return WebSocketClient(url, headers)
+
+
+# --- one voice-over -----------------------------------------------------------------------------------
+
+def _words(text: str) -> list[str]:
+    # Words with digits are left out: a year is spoken as words, so a transcript spells it.
+    return [w for w in re.split(r"[\W_]+", text.lower()) if w and not re.search(r"\d", w)]
+
+
+def _numerals(text: str) -> list[str]:
+    return [m.replace(",", "") for m in re.findall(r"\d[\d,]*(?:\.\d+)?", text)]
+
+
+def faithful(text: str, transcript: str) -> bool:
+    """Did the model read the text? The model reads, it does not synthesise, so it can paraphrase:
+    90% of the words in order, a few words more (four for each number), and digits the transcript
+    writes must be the text's. A transcript that spells numbers out is judged on its words alone."""
+    want, got = _words(text), _words(transcript)
+    numbers = len(_numerals(text))
+    said = _numerals(transcript)
+    if not want:
+        return bool(transcript.strip()) and len(got) <= 30 and (not said or all(n in said for n in _numerals(text)))
+    if not got:
+        return False
+    prev = [0] * (len(got) + 1)
+    for a in want:
+        row = [0]
+        for j, b in enumerate(got, 1):
+            row.append(prev[j - 1] + 1 if a == b else max(prev[j], row[j - 1]))
+        prev = row
+    common = prev[-1]
+    return (common / len(want) >= 0.9 and len(got) - common <= max(8, len(want) / 4) + 4 * numbers
+            and (not said or all(n in said for n in _numerals(text))))
+
+
+def pieces(text: str, limit: int = TTS_PIECE_CHARS) -> list[str]:
+    """`text` cut at sentence ends into pieces of at most `limit` characters (a long sentence is cut at a space)."""
+    out: list[str] = []
+    cur = ""
+    for sentence in re.findall(r"[^.!?\n]+[.!?]*\s*", text) or [text]:
+        while len(sentence) > limit:
+            cut = sentence.rfind(" ", 0, limit)
+            cut = cut if cut > 0 else limit
+            if cur:
+                out.append(cur)
+                cur = ""
+            out.append(sentence[:cut])
+            sentence = sentence[cut:]
+        if len(cur) + len(sentence) > limit and cur:
+            out.append(cur)
+            cur = ""
+        cur += sentence
+    if cur.strip():
+        out.append(cur)
+    return [p.strip() for p in out if p.strip()]
+
+
+def wav(pcm: bytes) -> bytes:
+    """A WAV file around mono PCM16."""
+    head = (b"RIFF" + struct.pack("<I", 36 + len(pcm)) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, TTS_RATE, TTS_RATE * 2, 2, 16)
+            + b"data" + struct.pack("<I", len(pcm)))
+    return head + pcm
+
+
+def speak(text: str, model: str = DEFAULT_TTS_MODEL, voice: str = DEFAULT_VOICE, key: str | None = None, open_session=None) -> bytes:
+    """WAV bytes of `text` read aloud: one Realtime session, up to TTS_MAX_TAKES takes per piece
+    (each take is billed), a piece being taken again when its transcript does not match it."""
     key = key or api_key("openai")
     if not key:
         raise GenError(f"no openai key: {key_hint('openai')}")
-    raw = (post or _post)(OPENAI_SPEECH_URL, {"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                          json.dumps({"model": model, "voice": voice, "input": text, "response_format": "mp3"}).encode())
-    if not raw:
-        raise GenError("the OpenAI speech answer was empty")
-    return raw
+    if model not in TTS_USD_PER_MINUTE:
+        raise GenError(f"unknown voice-over model {model!r} (known: {', '.join(TTS_USD_PER_MINUTE)})")
+    if voice not in TTS_VOICES:
+        raise GenError(f"unknown voice {voice!r} (the Realtime voices: {', '.join(TTS_VOICES)})")
+    ws = (open_session or connect)(f"{OPENAI_REALTIME_URL}?{urllib.parse.urlencode({'model': model})}",
+                                   {"Authorization": f"Bearer {key}"})
+
+    def until(kind: str, audio: list | None = None, transcript: list | None = None) -> dict:
+        while True:
+            event = ws.receive()
+            if event.get("type") == "error":  # its message can quote the text; say only that it refused
+                raise GenError("the OpenAI speech session refused the request")
+            if audio is not None and event.get("type") == "response.output_audio.delta":
+                audio.append(base64.b64decode(event.get("delta", "")))
+            elif transcript is not None and event.get("type") == "response.output_audio_transcript.done":
+                transcript.append(event.get("transcript", ""))
+            if event.get("type") == kind:
+                return event
+
+    try:
+        until("session.created")
+        ws.send({"type": "session.update", "session": {
+            "type": "realtime", "output_modalities": ["audio"],
+            "audio": {"output": {"format": {"type": "audio/pcm", "rate": TTS_RATE}, "voice": voice}}}})
+        until("session.updated")
+        out = b""
+        for piece in pieces(text):
+            for _ in range(TTS_MAX_TAKES):
+                audio: list = []
+                transcript: list = []
+                ws.send({"type": "response.create", "response": {
+                    "conversation": "none", "output_modalities": ["audio"], "instructions": READ_ALOUD,
+                    "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": piece}]}]}})
+                done = until("response.done", audio, transcript)
+                if done.get("response", {}).get("status") == "completed" and audio and faithful(piece, " ".join(transcript)):
+                    out += b"".join(audio)
+                    break
+            else:
+                raise GenError("the OpenAI speech did not read the text")
+        return wav(out)
+    finally:
+        ws.close()

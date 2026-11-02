@@ -269,6 +269,10 @@
    "off_track": 0,
    "parked": 0
   },
+  "core": [
+   "sample-app"
+  ],
+  "core_source": "star",
   "products": [
    {
     "id": "sample-app",
@@ -283,6 +287,10 @@
      "3 questions wait, the oldest 9 days",
      "Android is 2 builds behind"
     ],
+    "facts": [
+     "3 questions wait, the oldest 9 days",
+     "1 PR merged in 7 days was never reviewed"
+    ],
     "platforms": [
      {
       "platform": "ios",
@@ -293,7 +301,8 @@
       "state": "current",
       "detail": "Installable from your tester account",
       "as_of": "2026-10-25T06:00:00Z",
-      "link": ""
+      "link": "",
+      "review_unknown": false
      },
      {
       "platform": "android",
@@ -304,7 +313,8 @@
       "state": "behind",
       "detail": "2 builds wait for Play's internal track",
       "as_of": "2026-10-25T06:00:00Z",
-      "link": ""
+      "link": "",
+      "review_unknown": false
      },
      {
       "platform": "web",
@@ -315,14 +325,16 @@
       "state": "live",
       "detail": "sample.example.com",
       "as_of": "",
-      "link": "https://sample.example.com"
+      "link": "https://sample.example.com",
+      "review_unknown": false
      }
     ],
     "prs": {
      "open": 3,
      "waiting": 1,
      "merged_7d": 14,
-     "unreviewed_7d": 1
+     "unreviewed_7d": 1,
+     "open_p1": 0
     },
     "activity": {
      "last": "2026-10-25T09:10:00Z",
@@ -334,7 +346,49 @@
     "tasks": 1,
     "milestone": "family: 2 of 9 requirements left",
     "next": "Answer the sign-in question",
-    "repo": "~/code/sample-app"
+    "repo": "~/code/sample-app",
+    "progress": {
+     "can_install": [
+      {
+       "platform": "ios",
+       "version": "1.4.0",
+       "build": "52",
+       "channel": "testflight",
+       "state": "current"
+      },
+      {
+       "platform": "android",
+       "version": "1.3.0",
+       "build": "14",
+       "channel": "play",
+       "state": "behind"
+      },
+      {
+       "platform": "web",
+       "version": "",
+       "build": "",
+       "channel": "web",
+       "state": "live"
+      }
+     ],
+     "shipped_7d": {
+      "prs": 9,
+      "top": [
+       "Add the sign-in screen",
+       "Fix the sync retry",
+       "Show the trip map"
+      ]
+     },
+     "users": {
+      "weekly": 4,
+      "total": 12,
+      "label": "4 active this week, 12 total"
+     },
+     "milestone": "family: 2 of 9 requirements left",
+     "blocker": "",
+     "quiet_days": 0,
+     "line": "family: 2 of 9 requirements left"
+    }
    },
    {
     "id": "sample-tool",
@@ -346,6 +400,7 @@
     "target": "owner",
     "health": "on_track",
     "reasons": [],
+    "facts": [],
     "platforms": [
      {
       "platform": "macos",
@@ -356,14 +411,16 @@
       "state": "current",
       "detail": "Installed on this Mac",
       "as_of": "",
-      "link": ""
+      "link": "",
+      "review_unknown": false
      }
     ],
     "prs": {
      "open": 0,
      "waiting": 0,
      "merged_7d": 4,
-     "unreviewed_7d": 0
+     "unreviewed_7d": 0,
+     "open_p1": 0
     },
     "activity": {
      "last": "2026-10-24T18:00:00Z",
@@ -375,7 +432,27 @@
     "tasks": 0,
     "milestone": "",
     "next": "",
-    "repo": "~/code/sample-tool"
+    "repo": "~/code/sample-tool",
+    "progress": {
+     "can_install": [
+      {
+       "platform": "macos",
+       "version": "0.9.0",
+       "build": "",
+       "channel": "local",
+       "state": "current"
+      }
+     ],
+     "shipped_7d": {
+      "prs": 4,
+      "top": []
+     },
+     "users": null,
+     "milestone": "",
+     "blocker": "",
+     "quiet_days": 1,
+     "line": "macOS 0.9.0 is installable"
+    }
    }
   ]
  }

@@ -174,9 +174,15 @@ def test_play_states(tmp_path, monkeypatch):
     _, cache, _ = stores(tmp_path, monkeypatch, tf_payload(tf_plat()), draft)
     a = rows_of(cache)["android"]
     assert a["state"] == "blocked" and a["detail"].startswith("Draft on Play's internal track")
-    behind = play_payload(internal=[rel(3)], production=[rel(5)])
-    _, cache, _ = stores(tmp_path / "2", monkeypatch, tf_payload(tf_plat()), behind)
-    assert rows_of(cache)["android"]["state"] == "behind"
+    assert a["review_unknown"] is True                       # the API cannot say whether review passed
+    ahead = play_payload(internal=[rel(3)], production=[rel(5)])
+    _, cache, _ = stores(tmp_path / "2", monkeypatch, tf_payload(tf_plat()), ahead)
+    a = rows_of(cache)["android"]
+    assert (a["state"], a["build"], a["review_unknown"]) == ("current", "5", False)   # production is ahead of internal
+    assert a["detail"] == "Newest build is on Play production"
+    stuck = play_payload(internal=[rel(8, "halted")], production=[rel(5)])
+    _, cache, _ = stores(tmp_path / "4", monkeypatch, tf_payload(tf_plat()), stuck)
+    assert rows_of(cache)["android"]["state"] == "blocked"   # newer than production and not live: still the owner's
     staged = play_payload(internal=[rel(6)], production=[rel(5, "inProgress", fraction=0.2)])
     _, cache, _ = stores(tmp_path / "3", monkeypatch, tf_payload(tf_plat()), staged)
     a = rows_of(cache)["android"]
@@ -191,8 +197,8 @@ def test_the_public_platform_rows_follow_the_manifest(tmp_path, monkeypatch):
         ("ios", "primary", "testflight", "current"), ("android", "secondary", "play", "current"),
         ("web", "secondary", "web", "live")]
     assert p["platforms"][2]["link"] == "https://sample.example.com" and p["platforms"][2]["detail"] == "sample.example.com"
-    assert all(set(x) == {"platform", "role", "channel", "version", "build", "state", "detail", "as_of", "link"}
-               for x in p["platforms"])
+    assert all(set(x) == {"platform", "role", "channel", "version", "build", "state", "detail", "as_of", "link",
+                          "review_unknown"} for x in p["platforms"])
     assert (p["users"], p["target"], p["primary"]) == ("testers", "family", "ios")
 
 
@@ -281,7 +287,7 @@ def test_merged_prs_are_classified_against_the_ledger_when_the_object_is_built(t
                        ("2027-01-14T00:00:00Z", "app-a", "2" * 40, "branch", 1, 0, "codex"))
     p = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=ledger, cache=cache)["products"][0]
     # 4 merged inside 7 days; #1 reviewed, #2 open P1, #3 and #4 exempt; none unreviewed
-    assert p["prs"] == {"open": 2, "waiting": 0, "merged_7d": 4, "unreviewed_7d": 0}
+    assert p["prs"] == {"open": 2, "waiting": 0, "merged_7d": 4, "unreviewed_7d": 0, "open_p1": 1}
     assert p["health"] == "off_track" and p["reasons"][0] == "1 merged PR has an open P1"
     plain = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, cache=cache,
                             ledger=ledger_of(("2027-01-14T00:00:00Z", "app-a", "1" * 40, "branch", 0, 0, "codex"),
@@ -289,7 +295,8 @@ def test_merged_prs_are_classified_against_the_ledger_when_the_object_is_built(t
     assert plain["products"][0]["prs"]["unreviewed_7d"] == 0 and plain["products"][0]["health"] != "off_track"
     missing = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=ledger_of(), cache=cache)
     assert missing["products"][0]["prs"]["unreviewed_7d"] == 2           # #1 and #2 have no entry now
-    assert any("never reviewed" in r for r in missing["products"][0]["reasons"])
+    assert any("never reviewed" in f for f in missing["products"][0]["facts"])        # a fact, no longer a reason
+    assert not any("never reviewed" in r for r in missing["products"][0]["reasons"])
 
 
 def test_a_failed_github_read_keeps_the_old_rows(tmp_path):
@@ -342,13 +349,13 @@ def plat(platform_="ios", state_="current", detail="", behind=0, since=None):
     return {"platform": platform_, "state": state_, "detail": detail, "_behind": behind, "_since": since}
 
 
-def health(stage="live", platforms=(), primary="ios", waiting=0, oldest=0.0, unreviewed=0, p1=0, last_days=0.5):
+def health(stage="live", platforms=(), primary="ios", p1=0, last_days=0.5):
     last = None if last_days is None else NOW - last_days * DAY
-    return portfolio.health_of(stage, list(platforms), primary, waiting, oldest, unreviewed, p1, last, NOW)
+    return portfolio.health_of(stage, list(platforms), primary, p1, last, NOW)
 
 
 def test_parked_wins_over_everything():
-    assert health("parked", [plat(state_="blocked")], waiting=5, oldest=30.0, p1=2) == ("parked", [])
+    assert health("parked", [plat(state_="blocked")], p1=2) == ("parked", [])
 
 
 def test_a_blocked_primary_platform_is_off_track():
@@ -369,20 +376,33 @@ def test_any_blocked_or_behind_platform_is_at_risk():
         "at_risk", ["Android is 2 builds behind"])           # old, but not the primary platform
 
 
-@pytest.mark.parametrize("waiting,oldest,expect", [(1, 2.0, "on_track"), (1, 3.5, "at_risk"), (3, 7.5, "off_track"),
-                                                   (0, 0.0, "on_track")])
-def test_questions_that_wait(waiting, oldest, expect):
-    h, why = health(waiting=waiting, oldest=oldest)
-    assert h == expect
-    assert (not why) == (expect == "on_track")
-    if expect != "on_track":
-        assert why[0].startswith(f"{waiting} question") and "the oldest" in why[0]
-
-
-def test_merged_prs_without_a_review_or_with_an_open_p1():
-    assert health(unreviewed=1) == ("at_risk", ["1 PR merged in 7 days was never reviewed"])
-    assert health(unreviewed=3)[1] == ["3 PRs merged in 7 days were never reviewed"]
+def test_an_open_p1_is_off_track_and_stays_a_reason():
     assert health(p1=2) == ("off_track", ["2 merged PRs have an open P1"])
+    assert health(p1=1)[1] == ["1 merged PR has an open P1"]
+
+
+def test_a_waiting_question_or_an_unreviewed_pr_does_not_change_health(tmp_path):
+    reg, _ = one(tmp_path)
+    cache = portfolio.load_cache()
+    portfolio.refresh_github(reg, cache, NOW, gh([merged_node(1, sha="1" * 40)]))
+    ask = {"product": "app-a", "age_s": 30 * DAY, "muted": False}
+    p = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[ask], tasks=[], bl={}, ledger=ledger_of(), cache=cache,
+                        usage={})["products"][0]
+    assert (p["health"], p["reasons"]) != ("off_track", [])
+    assert not any("question" in r or "reviewed" in r for r in p["reasons"])
+    assert (p["waiting"], p["oldest_wait_days"], p["prs"]["unreviewed_7d"]) == (1, 30.0, 1)   # the raw counts stay
+    assert p["facts"] == ["1 question waits, the oldest 30 days", "1 PR merged in 7 days was never reviewed"]
+    d = repo(tmp_path, "calm", toml='[productize]\nusers = "owner"\nplatforms = ["ios"]\nprimary = "ios"\n', slug="")
+    reg2 = registry_of(("calm", d, "live", False, "ios"))
+    q = portfolio.build(NOW, reg=reg2, prods=[], ask_rows=[{"product": "calm", "age_s": 30 * DAY, "muted": False}],
+                        tasks=[], bl={}, ledger=None, cache=portfolio.load_cache(), usage={})["products"][0]
+    assert (q["health"], q["reasons"]) == ("on_track", []) and q["waiting"] == 1
+
+
+def test_facts_name_what_health_no_longer_counts():
+    assert portfolio.facts_of(0, 0.0, 0) == []
+    assert portfolio.facts_of(3, 9.4, 2) == ["3 questions wait, the oldest 9 days",
+                                             "2 PRs merged in 7 days were never reviewed"]
 
 
 def test_a_building_or_beta_product_with_no_session_for_14_days_is_at_risk():
@@ -393,10 +413,10 @@ def test_a_building_or_beta_product_with_no_session_for_14_days_is_at_risk():
 
 
 def test_at_most_three_reasons_and_the_worst_come_first():
-    h, why = health("beta", [plat(state_="blocked", detail="x"), plat("android", "behind", behind=1)],
-                    waiting=2, oldest=9.0, unreviewed=1, p1=1, last_days=30)
+    h, why = health("beta", [plat(state_="blocked", detail="x"), plat("android", "behind", behind=1),
+                             plat("web", "blocked", detail="y")], p1=1, last_days=30)
     assert h == "off_track" and len(why) == 3
-    assert why[0].startswith("iOS is blocked") and "open P1" in why[1] and "the oldest 9 days" in why[2]
+    assert why[0].startswith("iOS is blocked") and "open P1" in why[1] and why[2].startswith("Android is 1 build")
 
 
 # --- the object and its order ------------------------------------------------------------------------
@@ -418,13 +438,16 @@ def three(tmp_path):
 
 def test_worst_health_first_then_focus_then_last_activity(tmp_path):
     reg, prods, ask = three(tmp_path)
-    pf = portfolio.build(NOW, reg=reg, prods=prods, ask_rows=ask, tasks=[], bl={}, ledger=None, cache=portfolio.load_cache())
+    cache = portfolio.load_cache()
+    cache["stores"]["stuck"] = {"ios": portfolio._row("ios", "testflight", "blocked", "Invited", as_of=asks._iso(NOW))}
+    cache["checked"]["stores"] = asks._iso(NOW)
+    pf = portfolio.build(NOW, reg=reg, prods=prods, ask_rows=ask, tasks=[], bl={}, ledger=None, cache=cache, usage={})
     assert [p["id"] for p in pf["products"]] == ["stuck", "late", "newer", "calm", "shelf"]
     assert [p["health"] for p in pf["products"]] == ["off_track", "on_track", "on_track", "on_track", "parked"]
     assert pf["counts"] == {"on_track": 3, "at_risk": 0, "off_track": 1, "parked": 1}
     stuck = pf["products"][0]
     assert (stuck["waiting"], stuck["oldest_wait_days"]) == (1, 8.0)
-    assert pf["version"] == 1 and pf["checked"] == {"stores": "", "github": ""}
+    assert pf["version"] == 1 and pf["checked"] == {"stores": asks._iso(NOW), "github": ""}
 
 
 def test_tasks_and_the_next_step_come_from_the_snapshot_rows(tmp_path):
@@ -442,6 +465,190 @@ def test_a_muted_question_does_not_wait(tmp_path):
     pf = portfolio.build(NOW, reg=reg, prods=prods, tasks=[], bl={}, ledger=None, cache=portfolio.load_cache(),
                          ask_rows=[{"product": "stuck", "age_s": 30 * DAY, "muted": True}])
     assert next(p for p in pf["products"] if p["id"] == "stuck")["waiting"] == 0
+
+
+# --- the core products -----------------------------------------------------------------------------------
+
+def many(tmp_path, spec):
+    """spec: (id, stage, focus, spend_7d_usd, weekly users or None). Returns (registry, cache, usage)."""
+    rows, cache, usage = [], portfolio.load_cache(), {}
+    for pid, stage, focus, spend, weekly in spec:
+        d = repo(tmp_path, pid, toml='[productize]\nusers = "owner"\nplatforms = ["ios"]\nprimary = "ios"\n', slug="")
+        rows.append((pid, d, stage, focus, "ios"))
+        cache["activity"][pid] = {"sessions_7d": 1, "spend_7d_usd": spend}
+        if weekly is not None:
+            usage[pid] = {"wau": str(weekly), "users": "50"}
+    return registry_of(*rows), cache, usage
+
+
+def test_core_follows_the_stars_when_any_product_is_starred(tmp_path):
+    reg, cache, usage = many(tmp_path, [("a", "live", False, 500.0, 9), ("b", "live", True, 3.0, None),
+                                        ("c", "beta", True, 60.0, None), ("d", "parked", True, 0.0, None)])
+    ids, source, _ = portfolio.core_view(reg, cache, usage)
+    assert (ids, source) == (["c", "b", "d"], "star")          # exactly the starred ones, by spend; "a" is not
+    pf = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None, cache=cache, usage=usage)
+    assert (pf["core"], pf["core_source"]) == (["c", "b", "d"], "star")
+
+
+def test_core_by_rule_takes_users_or_spend_ranked_by_spend_and_skips_parked(tmp_path):
+    reg, cache, usage = many(tmp_path, [("busy", "live", False, 90.0, None), ("loved", "live", False, 5.0, 3),
+                                        ("idle", "live", False, 39.9, 0), ("shelf", "parked", False, 400.0, 20),
+                                        ("edge", "beta", False, 40.0, None), ("none", "live", False, 0.0, None)])
+    ids, source, detail = portfolio.core_view(reg, cache, usage)
+    assert (ids, source) == (["busy", "edge", "loved"], "rule")
+    assert detail["loved"] == (5.0, 3)
+
+
+def test_core_is_capped_at_six(tmp_path):
+    reg, cache, usage = many(tmp_path, [(f"p{i}", "live", False, 100.0 + i, None) for i in range(9)])
+    ids, source, _ = portfolio.core_view(reg, cache, usage)
+    assert source == "rule" and ids == ["p8", "p7", "p6", "p5", "p4", "p3"]
+    reg, cache, usage = many(tmp_path / "s", [(f"p{i}", "live", True, 1.0 + i, None) for i in range(8)])
+    assert len(portfolio.core_view(reg, cache, usage)[0]) == 6
+
+
+def test_no_core_when_nothing_qualifies(tmp_path):
+    reg, cache, usage = many(tmp_path, [("a", "live", False, 1.0, None)])
+    assert portfolio.core_view(reg, cache, usage)[:2] == ([], "rule")
+    assert portfolio.empty()["core"] == [] and portfolio.empty()["core_source"] == "rule"
+
+
+# --- progress ---------------------------------------------------------------------------------------------
+
+def test_can_install_lists_known_builds_primary_first_and_omits_unknown_platforms(tmp_path, monkeypatch):
+    reg, cache, _ = stores(tmp_path, monkeypatch, tf_payload(tf_plat()), play_payload(internal=[rel(14)]))
+    cache["checked"]["stores"] = asks._iso(NOW)
+    p = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None, cache=cache, usage={})["products"][0]
+    assert p["progress"]["can_install"] == [
+        {"platform": "ios", "version": "1.9.0", "build": "120", "channel": "testflight", "state": "current"},
+        {"platform": "android", "version": "1.9.0 (14)", "build": "14", "channel": "play", "state": "current"},
+        {"platform": "web", "version": "", "build": "", "channel": "web", "state": "live"}]
+    reg2, _ = one(tmp_path / "2", toml=TOML)
+    bare = portfolio.build(NOW, reg=reg2, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None,
+                           cache=portfolio.load_cache(), usage={})["products"][0]
+    assert [x["platform"] for x in bare["progress"]["can_install"]] == ["web"]      # ios, android: not checked
+
+
+def test_progress_without_any_cache_is_empty_but_complete(tmp_path):
+    d = repo(tmp_path, "calm", toml='[productize]\nusers = "owner"\nplatforms = ["ios"]\nprimary = "ios"\n', slug="")
+    reg = registry_of(("calm", d, "live", False, "ios"))
+    p = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None, cache=portfolio.load_cache(),
+                        usage={})["products"][0]
+    assert p["progress"] == {"can_install": [], "shipped_7d": {"prs": 0, "top": []}, "users": None, "milestone": "",
+                             "blocker": "", "quiet_days": None, "line": ""}
+
+
+def test_shipped_7d_counts_merged_prs_and_names_up_to_three_without_the_mechanical_ones(tmp_path):
+    reg, _ = one(tmp_path)
+    titles = ["Add the map", "release 1.9.0", "Regenerate the leak gate for the new rules", "Fix the login loop",
+              "Bump version to 1.9.1", "Show trip photos", "Speed up the feed"]
+    nodes = [{**merged_node(i + 1, sha=f"{i + 1:040x}", days_ago=0.1 * (i + 1)), "title": t} for i, t in enumerate(titles)]
+    nodes.append({**merged_node(20, sha="9" * 40, days_ago=9), "title": "Old work"})
+    cache = portfolio.load_cache()
+    portfolio.refresh_github(reg, cache, NOW, gh(nodes))
+    p = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None, cache=cache, usage={})["products"][0]
+    assert p["prs"]["merged_7d"] == 7                                    # the raw count keeps every merged PR
+    assert p["progress"]["shipped_7d"] == {"prs": 4, "top": ["Add the map", "Fix the login loop", "Show trip photos"]}
+
+
+def test_old_cache_rows_without_titles_give_an_empty_top(tmp_path):
+    reg, _ = one(tmp_path)
+    cache = portfolio.load_cache()
+    cache["github"]["example/app-a"] = {"as_of": asks._iso(NOW), "prs": [
+        {"number": 1, "merged_at": asks._iso(NOW - DAY), "head": SHA, "merge": SHA, "commits": [SHA], "changed": 5,
+         "docs": False}]}
+    p = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None, cache=cache, usage={})["products"][0]
+    assert p["progress"]["shipped_7d"] == {"prs": 1, "top": []}
+
+
+@pytest.mark.parametrize("title,mechanical", [
+    ("release 0.35.0", True), ("Release v1.2.3", True), ("Bump version to 2.0", True), ("chore: bump deps", True),
+    ("chore(release): 1.4.0", True), ("1.2.3", True), ("Regenerate the leak gate", True),
+    ("Regenerate fixtures and the leak gate", True), ("Merge branch 'main' into feature", True),
+    ("Release notes page for the web app", False), ("Add a release checklist", False), ("Regenerate the map tiles", False),
+    ("Fix the bump animation", False), ("", False)])
+def test_the_mechanical_pr_filter(title, mechanical):
+    assert portfolio.is_mechanical(title) is mechanical
+
+
+def test_users_come_from_the_usage_cache_and_are_null_without_one(tmp_path):
+    d = repo(tmp_path, "calm", toml='[productize]\nusers = "owner"\nplatforms = ["ios"]\nprimary = "ios"\n', slug="")
+    reg = registry_of(("calm", d, "live", False, "ios"))
+    kw = dict(reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None, cache=portfolio.load_cache())
+    assert portfolio.build(NOW, usage={}, **kw)["products"][0]["progress"]["users"] is None
+    assert portfolio.build(NOW, usage={"calm": {"trips": "40"}}, **kw)["products"][0]["progress"]["users"] is None
+    u = portfolio.build(NOW, usage={"calm": {"wau": "4", "users": "12"}}, **kw)["products"][0]["progress"]["users"]
+    assert u == {"weekly": 4, "total": 12, "label": "4 active this week, 12 total"}
+    only_total = portfolio.build(NOW, usage={"calm": {"users": "12"}}, **kw)["products"][0]["progress"]["users"]
+    assert only_total == {"weekly": None, "total": 12, "label": "12 total"}
+
+
+def test_teyla_products_writes_the_usage_cache_and_the_portfolio_reads_it(tmp_path):
+    from teyla import products
+    products.write_cache({"Calm": ("ok", {"wau": "3", "users": "9"}), "late": ("timeout", {})})
+    path = products.cache_path()
+    assert path == portfolio.usage_cache_path() and oct(path.stat().st_mode & 0o777) == "0o600"
+    assert portfolio.load_usage_cache() == {"calm": {"wau": "3", "users": "9"}}      # only a probe that worked
+    products.write_cache({"Calm": ("timeout", {}), "other": ("ok", {"wau": "1"})})    # a failed probe keeps the good row
+    assert portfolio.load_usage_cache() == {"calm": {"wau": "3", "users": "9"}, "other": {"wau": "1"}}
+
+
+def test_a_missing_or_broken_usage_cache_reads_as_empty():
+    assert portfolio.load_usage_cache() == {}
+    portfolio.usage_cache_path().write_text("not json")
+    assert portfolio.load_usage_cache() == {}
+
+
+def test_the_line_picks_the_first_fact_that_exists(tmp_path):
+    ios = {"platform": "ios", "version": "1.9.0", "build": "120", "state": "current"}
+    assert portfolio.line_of(2, "family: 2 of 9 requirements left", ios, 5) == "2 merged PRs have an open P1"
+    assert portfolio.line_of(0, "family: 2 of 9 requirements left", ios, 5) == "family: 2 of 9 requirements left"
+    assert portfolio.line_of(0, "", ios, 5) == "iOS 1.9.0 (120) is installable"
+    assert portfolio.line_of(0, "", {**ios, "state": "behind"}, 5) == "iOS 1.9.0 (120) is behind"
+    assert portfolio.line_of(0, "", {**ios, "state": "unknown"}, 5) == "Quiet for 5 days"
+    assert portfolio.line_of(0, "", None, 1) == "Quiet for 1 day"
+    assert portfolio.line_of(0, "", None, 0) == "" and portfolio.line_of(0, "", None, None) == ""
+    long = " ".join(f"w{i}" for i in range(20))
+    assert len(portfolio.line_of(0, long, None, 0).split()) == portfolio.LINE_WORDS
+
+
+def test_the_blocker_key_is_empty_and_quiet_days_count_from_the_last_activity(tmp_path):
+    reg, prods, _ = three(tmp_path)
+    pf = portfolio.build(NOW, reg=reg, prods=prods, ask_rows=[], tasks=[], bl={}, ledger=None,
+                         cache=portfolio.load_cache(), usage={})
+    by = {p["id"]: p["progress"] for p in pf["products"]}
+    assert by["late"]["blocker"] == "" and by["late"]["quiet_days"] == 9 and by["late"]["line"] == "Quiet for 9 days"
+    assert by["calm"]["quiet_days"] == 0
+
+
+# --- stores that were never fully read ------------------------------------------------------------------------
+
+def test_an_empty_checked_stores_reads_unknown_never_behind(tmp_path, monkeypatch):
+    plat_ = tf_plat(behind=2, up=("1.9.1", "122"), inst=("1.9.0", "120"), blockers=["122: processing"])
+    reg, cache, _ = stores(tmp_path, monkeypatch, tf_payload(plat_), play_payload(internal=[rel(14)]))
+    assert cache["stores"]["app-a"]["ios"]["state"] == "behind"
+    cache["checked"]["stores"] = ""                                     # the pass never worked as a whole
+    kw = dict(reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None, usage={})
+    p = portfolio.build(NOW, cache=cache, **kw)["products"][0]
+    ios = p["platforms"][0]
+    assert (ios["state"], ios["detail"]) == ("unknown", "Not fully checked yet")
+    assert not any("behind" in r for r in p["reasons"])
+    cache["checked"]["stores"] = asks._iso(NOW)
+    assert portfolio.build(NOW, cache=cache, **kw)["products"][0]["platforms"][0]["state"] == "behind"
+
+
+# --- state.brief ------------------------------------------------------------------------------------------------
+
+def test_the_rule_brief_names_neither_a_session_title_nor_the_unassigned_bucket():
+    def row(product, rank, unblocks="a release"):
+        return {"product": product, "rank": rank, "unblocks": unblocks, "muted": False, "title": "Fix the flaky sign-in test"}
+    line = state.brief_line({"asks": [row("unassigned", 1), row("unassigned", 2), row("known", 3)]})["line"]
+    assert "unassigned" not in line.lower() and "Fix the flaky" not in line
+    assert line == "2 answers unblock a release today. Known is waiting on you too."
+    assert state.brief_line({"asks": [row("Unassigned", 1, "")]})["line"] == "1 question waits for you."
+    assert state.brief_line({"asks": [row("Fix the flaky sign-in test", 1, "")]})["line"] == "1 question waits for you."
+    assert state.brief_line({"asks": [row("Fix the flaky sign-in test", 1)]})["line"] == "1 answer unblocks a release today."
+    assert state.brief_line({"asks": [row("known", 1, "")]})["line"] == "1 question waits for you, the first one in known."
 
 
 # --- teyla state --------------------------------------------------------------------------------------
@@ -531,7 +738,8 @@ def test_a_snapshot_survives_a_broken_registry_entry(tmp_path, monkeypatch):
     monkeypatch.setattr(portfolio, "build", lambda *a, **k: (_ for _ in ()).throw(ValueError("boom")))
     st = snapshot(tmp_path)
     assert st["portfolio"] == {"version": 1, "checked": {"stores": "", "github": ""},
-                               "counts": {"on_track": 0, "at_risk": 0, "off_track": 0, "parked": 0}, "products": []}
+                               "counts": {"on_track": 0, "at_risk": 0, "off_track": 0, "parked": 0}, "core": [],
+                               "core_source": "rule", "products": []}
 
 
 # --- the command --------------------------------------------------------------------------------------

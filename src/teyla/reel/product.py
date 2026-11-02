@@ -7,7 +7,7 @@ Where `teyla reel render` draws a session as a terminal story, this command take
 itself (a simulator recording of the screenshot tour, `xcrun simctl io booted recordVideo demo.mov`, or one
 the owner made) and adds the captions of the product's copy table. Per language it writes, under
 `brand/out/reel/<lang>/`: `product-vertical.mp4` (1080x1920), `product-square.mp4` (1080x1080), `captions.srt`,
-and with `--voice` `voice.mp3`.
+and with `--voice` `voice.wav`.
 
 Captions come from the copy table (`copy.json`: rows with key, control, state, budget, en, es, ru; the rows whose
 `control` is `caption`) or from a plain captions file: {"en": ["line", ...], "es": [...]}, where a line may be
@@ -337,7 +337,7 @@ def cmd_product(args) -> int:
         return 2
     out_base = Path(args.output).expanduser() if args.output else repo / "brand" / "out" / "reel"
     print(f"reel product: {src.name} -> {', '.join(fmts)} x {', '.join(captions)}"
-          + (f", voice-over {chars} characters, {args.tts_model}, {genai.money(usd)}" if args.voice else ", no voice-over"))
+          + (f", voice-over {chars} characters, {args.tts_model}, {genai.money(usd, exact=False)}" if args.voice else ", no voice-over"))
     if args.voice and not args.dry and not args.yes:
         print("teyla reel product: the voice-over costs money; run it again with --yes to confirm the price above", file=sys.stderr)
         return 2
@@ -369,7 +369,7 @@ def cmd_product(args) -> int:
         audio, extra = None, 0.0
         try:
             if args.voice:
-                audio = folder / "voice.mp3"
+                audio = folder / "voice.wav"
                 audio.write_bytes(genai.speak(texts[lang], args.tts_model, args.tts_voice))
                 extra = max(0.0, probe_duration(audio, run, which) - duration)
             timed = schedule(caps, duration + extra)
@@ -397,7 +397,7 @@ def cmd_product(args) -> int:
                 continue
             print(f"  wrote {out}")
         if audio is not None:
-            print(f"  wrote {audio}  (about {genai.money(genai.tts_price(len(texts[lang]), args.tts_model))})")
+            print(f"  wrote {audio}  (about {genai.money(genai.tts_price(len(texts[lang]), args.tts_model), exact=False)})")
     return rc
 
 
@@ -413,8 +413,8 @@ def add_arguments(rs) -> None:
     p.add_argument("--formats", default="vertical,square", help="vertical (1080x1920), square (1080x1080) (default both)")
     p.add_argument("--voice", action="store_true", help="add a voice-over read by the OpenAI speech API (costs money; needs --yes)")
     p.add_argument("--script", metavar="FILE", help='the voice-over text per language, {"en": "..."} (default: the captions in order)')
-    p.add_argument("--tts-model", choices=sorted(genai.TTS_USD_PER_MCHAR), default=genai.DEFAULT_TTS_MODEL)
-    p.add_argument("--tts-voice", default=genai.DEFAULT_VOICE)
+    p.add_argument("--tts-model", choices=sorted(genai.TTS_USD_PER_MINUTE), default=genai.DEFAULT_TTS_MODEL)
+    p.add_argument("--tts-voice", choices=genai.TTS_VOICES, default=genai.DEFAULT_VOICE)
     p.add_argument("--yes", action="store_true", help="accept the voice-over price and make the call")
     p.add_argument("--dry", action="store_true", help="print the plan and the price; render and call nothing")
     p.add_argument("-o", "--output", metavar="DIR", help="default: brand/out/reel/ in the repo")
