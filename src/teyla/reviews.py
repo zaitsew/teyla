@@ -24,6 +24,9 @@ A PR is, in this order:
   skipped       a skip line names one of its commits, or its number;
   unreviewed    none of the above.
 
+A merged PR whose review still lists a P1 is settled with `teyla reviews settle` (see `settle` below): it writes
+the skip line that `classify` already honours, after checking the evidence in git.
+
 PRs come from one `gh pr list --state merged` call per repo, never in safe mode (unless the command line
 carries --allow-network). Without gh, or when gh fails, the repo is skipped with a note; a missing ledger
 is one line and exit 0. The weekly routine files `teyla reviews --quiet`, and `teyla digest` names the debt
@@ -56,7 +59,15 @@ GH_LIMIT = 100
 PR_QUERY = ("query($q:String!){search(query:$q,type:ISSUE,first:%d){nodes{... on PullRequest{"
             "number title url mergedAt additions deletions headRefOid mergeCommit{oid} "
             "files(first:100){nodes{path}} commits(first:100){nodes{commit{oid}}}}}}}" % GH_LIMIT)
+# One PR by number, for `settle`: the same fields as PR_QUERY.
+PR_ONE_QUERY = ("query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){"
+                "pullRequest(number:$number){number title url state mergedAt additions deletions headRefOid "
+                "mergeCommit{oid} files(first:100){nodes{path}} commits(first:100){nodes{commit{oid}}}}}}")
+SETTLE_READER = "teyla-reviews-settle"
+SETTLE_OUTCOMES = ("fixed", "false")
+SETTLE_REASON_MAX = 120                      # review-gate cuts a skip reason at the same length
 _SHA = re.compile(r"^[0-9a-f]{7,64}$")
+_TARGET = re.compile(r"^([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)#(\d+)$")
 _PR_URL = re.compile(r"github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)")
 _PR_REF = re.compile(r"(?:\bPR\s*#?|#|/pull/)(\d+)\b", re.I)
 
@@ -184,7 +195,7 @@ def classify(pr: dict, repo_names: set[str], ledger: dict, threshold: int) -> di
         if hit or (s["sha"] and any(_same_sha(s["sha"], c) for c in shas)):
             return {"state": "skipped", "reason": s["reason"]}
     if newest:
-        return {"state": "open_p1", "p1": newest["p1"], "reviewer": newest["reviewer"]}
+        return {"state": "open_p1", "p1": newest["p1"], "reviewer": newest["reviewer"], "sha": newest["sha"]}
     if is_exempt(pr, threshold):
         return {"state": "exempt"}
     return {"state": "unreviewed"}
@@ -383,9 +394,153 @@ def digest_line(now: _dt.datetime | None = None) -> str | None:
         return None
 
 
+
+# --- settle -----------------------------------------------------------------------------------
+
+def _git(repo: pathlib.Path, *args: str) -> tuple[int, str]:
+    try:
+        r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return 1, ""
+    return r.returncode, r.stdout
+
+
+def _default_ref(repo: pathlib.Path) -> str | None:
+    for cand in ("origin/HEAD", "origin/main", "origin/master", "main", "master"):
+        if _git(repo, "rev-parse", "--verify", "--quiet", f"{cand}^{{commit}}")[0] == 0:
+            return cand
+    return None
+
+
+def _rev(repo: pathlib.Path, sha: str) -> str | None:
+    rc, out = _git(repo, "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}")
+    return out.strip() if rc == 0 and out.strip() else None
+
+
+def _fetch_pr(owner: str, name: str, number: int, runner: Runner) -> tuple[dict | None, str]:
+    argv = ["gh", "api", "graphql", "-f", f"query={PR_ONE_QUERY}", "-f", f"owner={owner}", "-f", f"name={name}",
+            "-F", f"number={number}"]
+    try:
+        rc, out, err = runner(argv)
+    except (OSError, subprocess.SubprocessError) as e:
+        return None, f"gh failed: {e.__class__.__name__}"
+    if rc != 0:
+        line = (err or out).strip().splitlines()
+        return None, "gh failed" + (f": {line[0][:100]}" if line else f" (exit {rc})")
+    try:
+        node = json.loads(out or "{}")["data"]["repository"]["pullRequest"]
+    except (ValueError, KeyError, TypeError):
+        return None, "gh returned something that is not a pull request"
+    if not isinstance(node, dict):
+        return None, f"{owner}/{name}#{number} does not exist"
+    return _flat(node), ""
+
+
+def settle(target: str, outcome: str, decision: str, reason: str, commit: str | None = None, *,
+           cfg: dict | None = None, runner: Runner | None = None, network: bool | None = None,
+           dry: bool = False) -> tuple[int, str]:
+    """Record that the open P1 of a merged PR was handled, as one `skip` line in the ledger. (exit code, message).
+
+    The ledger line is what `review-gate` writes at merge, so `classify` reads it as `skipped` and `attention`
+    drops the PR. The evidence stays in git: `decision` is a file on the repo's default branch that names the
+    PR, and for `fixed`, `commit` is on that branch and after the commit the review looked at. The ledger is
+    never edited, only appended to, and only when every check passes. Whether the commit really fixes the
+    finding is the decision file's claim, not something this command can prove."""
+    from . import cloud, net
+    cfg = cfg or config.load()
+    m = _TARGET.match(target.strip())
+    if not m:
+        return 2, f"target must look like owner/repo#number, not {target!r}"
+    owner, name, number = m.group(1), m.group(2), int(m.group(3))
+    slug = f"{owner}/{name}"
+    reason = " ".join((reason or "").split())
+    if outcome not in SETTLE_OUTCOMES:
+        return 2, f"outcome must be one of {', '.join(SETTLE_OUTCOMES)}, not {outcome!r}"
+    if outcome == "fixed" and not commit:
+        return 2, "--commit is required for outcome fixed: the commit that fixes the finding"
+    if outcome == "false" and commit:
+        return 2, "--commit belongs to outcome fixed; for a false finding say why in --reason"
+    if outcome == "false" and not reason:
+        return 2, "a false finding needs a --reason"
+    if not decision:
+        return 2, "--decision is required: the file in the repo that records the evidence"
+    path = pathlib.PurePosixPath(decision)
+    if path.is_absolute() or ".." in path.parts or not path.parts:
+        return 2, f"--decision must be a path inside the repo, not {decision!r}"
+    ledger_file = ledger_path(cfg)
+    if not ledger_file.is_file():
+        return 2, f"no ledger at {ledger_file}: nothing to settle"
+    if not (net.allowed(cfg) if network is None else network):
+        return 2, "safe mode: gh not called (by hand: teyla reviews settle ... --allow-network)"
+    repo = next((r for r in cloud.discover_repos(cfg) if (cloud.origin_slug(r) or "").lower() == slug.lower()), None)
+    if repo is None:
+        return 2, f"no repo under code_root has origin {slug}"
+    ref = _default_ref(repo)
+    if ref is None:
+        return 2, f"{repo.name}: no default branch found (origin/HEAD, origin/main, main)"
+    rc, text = _git(repo, "show", f"{ref}:{path.as_posix()}")
+    if rc != 0:
+        return 2, (f"{decision} is not on the default branch ({ref}); merge the decision first "
+                   f"(and `git fetch` if it was merged from another checkout)")
+    if not re.search(rf"(?<![\w/]){re.escape('#' + str(number))}(?!\d)", text):
+        return 2, f"{decision} does not name #{number}: the decision must say which PR it settles"
+    if runner is None:
+        if not shutil.which("gh"):
+            return 2, "gh is not installed: the pull request cannot be read"
+        runner = _gh_runner
+    pr, note = _fetch_pr(owner, name, number, runner)
+    if pr is None:
+        return 2, note
+    if not pr.get("mergedAt"):
+        return 2, f"{slug}#{number} is not merged"
+    ledger = load_ledger(ledger_file)
+    names = {repo.name.lower(), name.lower(), slug.lower()}
+    verdict = classify(pr, names, ledger or {"reviews": [], "skips": [], "unparsed": 0}, min_lines(cfg))
+    if verdict["state"] != "open_p1":
+        return 2, f"nothing to settle: {slug}#{number} is {verdict['state']}"
+    if outcome == "fixed":
+        fix = _rev(repo, commit or "")
+        if fix is None:
+            return 2, f"{commit} is not a commit in {repo.name}"
+        reviewed = _rev(repo, verdict["sha"])
+        if reviewed is None:
+            return 2, f"the reviewed commit {verdict['sha'][:10]} is not in {repo.name}; fetch it first"
+        if _git(repo, "merge-base", "--is-ancestor", fix, ref)[0] != 0:
+            return 2, f"{commit[:10]} is not on the default branch ({ref})"
+        if fix == reviewed or _git(repo, "merge-base", "--is-ancestor", reviewed, fix)[0] != 0:
+            return 2, f"{commit[:10]} must come after the reviewed commit {reviewed[:10]}"
+    head = str(pr.get("headRefOid") or "")
+    url = str(pr.get("url") or f"https://github.com/{slug}/pull/{number}")
+    why = f"settled({outcome}) {path.as_posix()}" + (f" - {reason}" if reason else "")
+    row = "\t".join([_dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), url, head or "-",
+                     f"skip:{why[:SETTLE_REASON_MAX]}", "-", "-", SETTLE_READER])
+    if dry:
+        return 0, f"dry run, nothing written. The ledger line would be:\n{row}"
+    try:
+        with open(ledger_file, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            if fh.tell():
+                fh.seek(-1, os.SEEK_END)
+                lead = "" if fh.read(1) == b"\n" else "\n"
+            else:
+                lead = ""
+        with open(ledger_file, "a") as fh:
+            fh.write(lead + row + "\n")
+    except OSError as e:
+        return 2, f"the ledger could not be written: {e.__class__.__name__}"
+    return 0, f"settled {slug}#{number} ({outcome}): one skip line appended to {ledger_file}"
+
 # --- CLI --------------------------------------------------------------------------------------
 
 def cmd_reviews(args) -> int:
+    if args.repos and args.repos[0] == "settle":
+        if len(args.repos) != 2:
+            print("usage: teyla reviews settle OWNER/REPO#N --outcome fixed|false --decision PATH --reason TEXT [--commit SHA]")
+            return 2
+        rc, msg = settle(args.repos[1], args.outcome or "", args.decision or "", args.reason or "", args.commit,
+                         dry=args.dry)
+        print(msg)
+        return rc
     rep = scan(args.repos or None, days=args.days)
     if not args.repos:
         write_summary(rep)
@@ -404,4 +559,9 @@ def register(sp):
     q.add_argument("--json", action="store_true")
     q.add_argument("--quiet", action="store_true", help="the totals line and the PRs that need a look, no per-repo table")
     q.add_argument("--allow-network", action="store_true", help="safe mode: allow gh for this one run")
+    q.add_argument("--outcome", choices=SETTLE_OUTCOMES, help="settle: fixed (a later commit fixed the P1) or false (it was wrong)")
+    q.add_argument("--commit", help="settle, outcome fixed: the commit that fixes it, on the default branch and after the review")
+    q.add_argument("--decision", help="settle: a file on the default branch (docs/decisions/...) that names the PR and shows the evidence")
+    q.add_argument("--reason", help="settle: one line, required for a false finding")
+    q.add_argument("--dry", action="store_true", help="settle: print the ledger line, write nothing")
     return q

@@ -78,6 +78,7 @@
   teyla schedules forget KEY [KEY...]                              acknowledge VANISHED tasks removed on purpose (clears the banner)
   teyla attention [--json]                                         what is wrong on this Mac's backend now, in one list (read-only, no network)
   teyla reviews [--days N] [--json] [--quiet] [repo...]            review debt: merged PRs never reviewed, merged with an open P1, skipped
+  teyla reviews settle OWNER/REPO#N --outcome fixed|false --decision PATH --reason TEXT [--commit SHA] [--dry]   close an open P1 on a merged PR, with evidence in git
   teyla review [list|pull|triage ID|open IDS...]                   the inbox of review captures: pull from the relay and TestFlight, triage to fix|rule|reject, lane brief
   teyla taste [list|confirm ID|render [repo]]                      the taste ledger: rule proposals, the owner's confirm, DESIGN.md rendered from the files
   teyla products [path...]                                       real-usage counters from every repo's ./check.sh usage

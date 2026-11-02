@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **`teyla reviews settle` closes an open P1 on a merged PR.** A PR merged after its last review found a P1 stays
+  in `teyla reviews` and `teyla attention` as "merged with an open P1", even when a later commit fixed it. `settle`
+  appends one `skip` line, the kind `review-gate` writes at merge, after checking the evidence in git: the PR is
+  merged and has an open P1, a decision file on the default branch names the PR, and for `fixed` the commit is on
+  that branch and after the reviewed commit. `--dry` prints the line. The ledger is never edited by hand.
+
 ## 0.36.1 — 2026-11-02 — iPhone Home and Decisions
 
 - **The iPhone app gets Home and Decisions.** Home shows your core products with their progress and the top
