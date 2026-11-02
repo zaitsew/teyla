@@ -153,6 +153,16 @@ def test_hooks_need_both_files_executable_and_the_hooks_path(tmp_path):
 
 def test_hosts_needs_a_table(tmp_path):
     assert status(shield.check(repo(tmp_path, "a", privacy=False)))["hosts"] == "FIX"
+
+
+def test_a_hosts_file_that_cannot_be_resolved_is_a_fix_and_not_a_crash(tmp_path):
+    d = repo(tmp_path, "a", privacy=False)
+    loop = d / "docs" / "PRIVACY.md"
+    loop.parent.mkdir(parents=True, exist_ok=True)
+    loop.symlink_to(loop)
+    rep = shield.check(d)
+    assert status(rep)["hosts"] == "FIX"
+    assert "cannot be resolved" in detail(rep, "hosts") or "write docs/PRIVACY.md" in detail(rep, "hosts")
     d = repo(tmp_path, "b", files={"docs/PRIVACY.md": "no table here\n"})
     assert status(shield.check(d))["hosts"] == "FIX"
 
