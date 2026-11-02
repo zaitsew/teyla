@@ -22,7 +22,7 @@ listing is written by `apps/store/app-store.py` from `apps/store/listing/`; this
 | Category | Developer Tools (secondary: Productivity) |
 | Price | Free, no in-app purchases |
 | Availability | Every storefront except China mainland (`CHN`) |
-| Version / build | `CFBundleShortVersionString` 0.32.0; `CFBundleVersion` is `CURRENT_PROJECT_VERSION`, which the release script raises |
+| Version / build | `CFBundleShortVersionString` 0.32.0; `CFBundleVersion` is `CURRENT_PROJECT_VERSION`, raised by hand in `project.yml` before each upload |
 | Support URL | https://github.com/zaitsew/teyla |
 | Privacy policy URL | https://github.com/zaitsew/teyla/blob/main/docs/PRIVACY.md |
 
@@ -153,7 +153,8 @@ that no model provider we use holds.
 ~/ops/bin/testflight release --project apps/ios/Teyla.xcodeproj --scheme Teyla --bundle-id com.zaitsew.teyla
 ```
 
-The release tool passes `DEVELOPMENT_TEAM` and raises `CURRENT_PROJECT_VERSION`. Before every submission
+Raise `CURRENT_PROJECT_VERSION` in `project.yml` first: the release tool does not, and App Store Connect refuses a
+used build number. Before every submission
 check: icon present, `PrivacyInfo.xcprivacy` in the bundle, the built `Info.plist` lists no iPad device family,
 the review notes above are pasted, China is off, and the privacy policy URL answers.
 
