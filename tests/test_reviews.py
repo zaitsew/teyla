@@ -400,3 +400,162 @@ def test_digest_build_and_write_carry_the_line(env, monkeypatch):
     out = digest.write(findings=[], doctor_checks=[], reports=[], today=TODAY, notify_now=False)
     assert any(x.startswith("review debt: 1 unreviewed") for x in out)
     assert any("review debt" in x for x in digest.digest_path().read_text().splitlines())
+
+
+# --- teyla reviews settle ---------------------------------------------------------------------
+
+import subprocess
+
+
+def _git(repo, *args):
+    r = subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.test", *args],
+                       capture_output=True, text=True, check=True)
+    return r.stdout.strip()
+
+
+class Settle:
+    """A real git repo under code_root: c0 (reviewed, P1) -> c1 (the fix) -> c2 (adds the decision doc), all on main."""
+
+    def __init__(self, e, decision_text="PR #9: fixed in the commit after the review.\n"):
+        self.e = e
+        self.repo = e.code / "app"
+        self.repo.mkdir()
+        _git(self.repo, "init", "-q", "-b", "main")
+        (self.repo / ".git" / "config").open("a").write('[remote "origin"]\n\turl = https://github.com/acme/app.git\n')
+        self.shas = []
+        for name in ("c0", "c1"):
+            (self.repo / f"{name}.txt").write_text(name)
+            _git(self.repo, "add", "-A")
+            _git(self.repo, "commit", "-q", "-m", name)
+            self.shas.append(_git(self.repo, "rev-parse", "HEAD"))
+        (self.repo / "docs" / "decisions").mkdir(parents=True)
+        (self.repo / "docs" / "decisions" / "p1.md").write_text(decision_text)
+        _git(self.repo, "add", "-A")
+        _git(self.repo, "commit", "-q", "-m", "doc")
+        self.reviewed, self.fix = self.shas
+        e.write(_line(self.reviewed, mode="commit", p1=2, repo="app"))
+
+    def runner(self, number=9, merged=True, commits=None):
+        shas = commits if commits is not None else [self.reviewed, self.fix]
+        pr = _pr(number, shas, head=shas[-1], merged="2026-10-06T12:00:00Z" if merged else None)
+        pr["state"] = "MERGED" if merged else "OPEN"
+        calls = []
+
+        def run(argv):
+            calls.append(argv)
+            return 0, json.dumps({"data": {"repository": {"pullRequest": _node(pr)}}}), ""
+        run.calls = calls
+        return run
+
+    def settle(self, **kw):
+        args = dict(target="acme/app#9", outcome="fixed", decision="docs/decisions/p1.md", reason="fixed after round 2",
+                    commit=self.fix, cfg=config.load(), runner=self.runner(), network=True)
+        args.update(kw)
+        return reviews.settle(**args)
+
+    def ledger_lines(self):
+        return self.e.ledger.read_text().splitlines()
+
+
+@pytest.fixture
+def st(env):
+    return Settle(env)
+
+
+def test_settle_fixed_writes_one_skip_row_that_classify_reads_as_skipped(st):
+    before = st.ledger_lines()
+    rc, msg = st.settle()
+    assert rc == 0, msg
+    after = st.ledger_lines()
+    assert len(after) == len(before) + 1
+    (skip,) = reviews.parse_ledger("\n".join(after))["skips"]
+    assert skip["pr"] == 9 and skip["repo"] == "acme/app" and skip["sha"] == st.fix
+    assert "docs/decisions/p1.md" in skip["reason"] and "fixed" in skip["reason"] and len(skip["reason"]) <= 120
+    assert after[-1].split("\t")[-1] == "teyla-reviews-settle" and "\n" not in skip["reason"]
+    led = reviews.parse_ledger("\n".join(after))
+    pr = _pr(9, [st.reviewed, st.fix])
+    assert reviews.classify(pr, {"app", "acme/app"}, led, 7)["state"] == "skipped"
+
+
+def test_settle_dry_prints_the_row_and_writes_nothing(st):
+    before = st.ledger_lines()
+    rc, msg = st.settle(dry=True)
+    assert rc == 0 and "teyla-reviews-settle" in msg and st.ledger_lines() == before
+
+
+def test_settle_false_needs_a_reason_and_no_commit(st):
+    rc, msg = st.settle(outcome="false", commit=None, reason="")
+    assert rc == 2 and "reason" in msg
+    rc, msg = st.settle(outcome="false", commit=None, reason="the reviewer misread the loop bound")
+    assert rc == 0 and "false" in st.ledger_lines()[-1]
+
+
+@pytest.mark.parametrize("kw,needle", [
+    ({"commit": None}, "--commit"),
+    ({"outcome": "maybe"}, "outcome"),
+    ({"decision": "docs/decisions/missing.md"}, "not on the default branch"),
+    ({"decision": "../outside.md"}, "inside the repo"),
+    ({"decision": "docs/decisions"}, "not a file"),
+    ({"decision": "docs/decisions/p1.md\n2026-11-02T00:00:00Z\thttps://github.com/acme/app/pull/1"}, "control character"),
+    ({"target": "acme/app"}, "owner/repo#number"),
+    ({"target": "acme/other#9"}, "no repo under code_root"),
+])
+def test_settle_refuses_bad_input_and_writes_nothing(st, kw, needle):
+    before = st.ledger_lines()
+    rc, msg = st.settle(**kw)
+    assert rc == 2 and needle in msg and st.ledger_lines() == before
+
+
+def test_settle_refuses_a_decision_that_does_not_name_the_pr(env):
+    s = Settle(env, decision_text="A different PR #10 was fixed.\n")
+    before = s.ledger_lines()
+    rc, msg = s.settle()
+    assert rc == 2 and "#9" in msg and s.ledger_lines() == before
+
+
+def test_settle_refuses_a_commit_that_is_not_a_fix_after_the_review(st):
+    for bad, needle in ((st.reviewed, "after the reviewed commit"), ("0" * 40, "not a commit")):
+        rc, msg = st.settle(commit=bad)
+        assert rc == 2 and needle in msg
+    # on a side branch, not on the default branch
+    _git(st.repo, "checkout", "-q", "-b", "side")
+    (st.repo / "s.txt").write_text("s")
+    _git(st.repo, "add", "-A")
+    _git(st.repo, "commit", "-q", "-m", "side")
+    side = _git(st.repo, "rev-parse", "HEAD")
+    _git(st.repo, "checkout", "-q", "main")
+    rc, msg = st.settle(commit=side)
+    assert rc == 2 and "default branch" in msg
+    assert len(st.ledger_lines()) == 1
+
+
+def test_settle_refuses_a_pr_that_is_not_merged_or_has_no_open_p1(st, env):
+    rc, msg = st.settle(runner=st.runner(merged=False))
+    assert rc == 2 and "not merged" in msg
+    env.write(_line(st.reviewed, mode="commit", p1=0, repo="app"))
+    rc, msg = st.settle()
+    assert rc == 2 and "nothing to settle" in msg and "reviewed" in msg
+    env.write(_line(st.reviewed, mode="commit", p1=2, repo="app"))
+    assert st.settle()[0] == 0
+    rc, msg = st.settle()                                  # already settled: it is "skipped" now
+    assert rc == 2 and "nothing to settle" in msg and "skipped" in msg
+    assert len(st.ledger_lines()) == 2
+
+
+def test_settle_refuses_in_safe_mode_and_without_a_ledger(st, env):
+    rc, msg = st.settle(network=False)
+    assert rc == 2 and "safe mode" in msg
+    env.ledger.unlink()
+    rc, msg = st.settle()
+    assert rc == 2 and "no ledger" in msg and not env.ledger.exists()
+
+
+def test_settle_cli(st, monkeypatch, capsys):
+    run = st.runner()
+    monkeypatch.setattr(reviews, "_gh_runner", run)
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/gh")
+    argv = ["reviews", "settle", "acme/app#9", "--outcome", "fixed", "--commit", st.fix,
+            "--decision", "docs/decisions/p1.md", "--reason", "fixed after round 2", "--allow-network"]
+    assert cli.main(argv) == 0
+    assert len(run.calls) == 1 and "settled" in capsys.readouterr().out
+    assert cli.main(argv) == 2                              # nothing left to settle

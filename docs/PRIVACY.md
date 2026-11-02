@@ -29,7 +29,7 @@ sends its own, from your own login.
 | # | Trigger | Host | What is sent | Default on | Safe mode |
 |---|---|---|---|---|---|
 | 5 | `teyla state` (the Mac app and the relay call it): the open-PR and assigned-issue lists, refreshed in the background every 30 minutes (`gh api graphql`, `gh search issues`) | `api.github.com` via `gh` | Your `gh` token; repo names of products on this machine; search terms `--assignee @me`. Cached in `~/.teyla/state-backlog.json`. | Yes, when `gh` is installed and signed in | closed |
-| 6 | `teyla reviews` (`gh api graphql`; the weekly routine runs it) | `api.github.com` via `gh` | Your `gh` token; the PR numbers it lists. | Yes, when `gh` is installed | closed |
+| 6 | `teyla reviews` (`gh api graphql`; the weekly routine runs it), and `teyla reviews settle` (one `gh api graphql` for one PR) | `api.github.com` via `gh` | Your `gh` token; the PR numbers it lists, or the one repo and PR number you settle. | Yes, when `gh` is installed; `settle` only when you run it | closed |
 | 7 | `teyla routines` and `teyla schedules`: workflow run status (`gh run list`, `gh repo view`) | `api.github.com` via `gh` | Your `gh` token; the repo and workflow names. | Yes, when `gh` is installed | closed |
 | 8 | `teyla routines --issues`: files an issue when a routine is stale (`gh issue create`) | `api.github.com` via `gh` | The issue title and body: a routine's name and its last-run time. | No (needs `--issues`) | closed |
 | 9 | `teyla cloud ...`: repo visibility and PR lists (`gh repo view`, `gh pr list`) | `api.github.com` via `gh` | Your `gh` token; the repo slug. | When you run a `teyla cloud` command | closed |
