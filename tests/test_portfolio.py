@@ -4,6 +4,7 @@ and gh are faked; nothing here reaches the network, the real ~/.teyla or this Ma
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import subprocess
 import time
@@ -16,6 +17,9 @@ NOW = 1_800_000_000.0
 DAY = 86400
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 _REAL_SPAWN = portfolio.spawn_refresh                               # conftest replaces it per test
+_REAL_COMPUTE_ACTIVITY = portfolio.compute_activity
+_REAL_COMPUTE_COMMITS = portfolio.compute_commits
+_REAL_COMPUTE_ICONS = portfolio.compute_icons
 SHA = "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0"
 
 
@@ -31,6 +35,8 @@ def _world(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "safe_mode", lambda cfg=None: False)
     monkeypatch.setattr(net, "_allow_once", False)
     monkeypatch.setattr(portfolio, "compute_activity", lambda reg: {})
+    monkeypatch.setattr(portfolio, "compute_commits", lambda reg, now: {})          # real git: see the metrics tests
+    monkeypatch.setattr(portfolio, "compute_icons", lambda reg, prev: {})
     tool = tmp_path / "release-tool"
     tool.write_text("#!/bin/sh\n")
     tool.chmod(0o755)
@@ -338,7 +344,7 @@ def test_the_refresh_writes_a_private_cache_and_stamps_the_attempt(tmp_path, mon
     path = portfolio.cache_path()
     assert path.stat().st_mode & 0o777 == 0o600
     c = portfolio.load_cache()
-    assert c["at"] == NOW and set(c["checked"]) == {"stores", "github", "activity"} and all(c["checked"].values())
+    assert c["at"] == NOW and set(c["checked"]) == {"stores", "github", "activity", "metrics"} and all(c["checked"].values())
     p = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None, cache=c)["products"][0]
     assert p["activity"]["sessions_7d"] == 5 and p["activity"]["spend_7d_usd"] == 12.34
 
@@ -683,8 +689,14 @@ def test_the_snapshot_is_version_3_and_matches_the_fixture(tmp_path, monkeypatch
     assert st["version"] == 3 and set(st) == set(fixture)
     pf, ref = st["portfolio"], fixture["portfolio"]
     assert set(pf) == set(ref) and set(pf["checked"]) == set(ref["checked"]) and set(pf["counts"]) == set(ref["counts"])
+    assert [(s["id"], set(s)) for s in pf["home"]["sections"]] == [(s["id"], set(s)) for s in ref["home"]["sections"]]
     p = pf["products"][0]
     assert set(p) == set(ref["products"][0]) and set(p["prs"]) == set(ref["products"][0]["prs"])
+    m, rm = p["metrics"], ref["products"][0]["metrics"]
+    assert set(m) == set(rm) and set(m["users"]) == set(rm["users"]) and set(m["commits"]) == set(rm["commits"])
+    assert set(m["spend_usd"]) == set(rm["spend_usd"]) and set(m["money"]) == set(rm["money"])
+    assert set(m["users"]["active"]) == set(rm["users"]["active"]) and set(m["users"]["new"]) == set(rm["users"]["new"])
+    assert set(m["money"]["revenue_usd"]) == set(rm["money"]["revenue_usd"])
     assert set(p["activity"]) == set(ref["products"][0]["activity"])
     assert set(p["platforms"][0]) == set(ref["products"][0]["platforms"][0])
     assert [x["id"] for x in pf["products"]] == ["app-a"]
@@ -752,7 +764,9 @@ def test_a_snapshot_survives_a_broken_registry_entry(tmp_path, monkeypatch):
     st = snapshot(tmp_path)
     assert st["portfolio"] == {"version": 1, "checked": {"stores": "", "github": ""},
                                "counts": {"on_track": 0, "at_risk": 0, "off_track": 0, "parked": 0}, "core": [],
-                               "core_source": "rule", "products": []}
+                               "core_source": "rule", "products": [],
+                               "home": {"sections": [{"id": "users", "ids": []}, {"id": "building", "ids": []},
+                                                     {"id": "quiet", "ids": []}]}}
 
 
 # --- the command --------------------------------------------------------------------------------------
@@ -802,3 +816,429 @@ def test_refresh_in_safe_mode_says_so_and_still_exits_by_the_pass(command, monke
     assert cli.main(["portfolio", "--refresh"]) == 1
     assert "safe mode is on" in capsys.readouterr().err
     assert cli.main(["portfolio", "--refresh", "--allow-network"]) in (0, 1)
+
+
+# --- Home: sections, summary, icon and metrics ------------------------------------------------------------
+
+def item(pid, *, stage="live", focus=False, active=None, new=None, c7=None, c30=None):
+    nul = {"7d": None, "30d": None, "365d": None}
+    return {"id": pid, "stage": stage, "focus": focus,
+            "metrics": {"users": {"total": None, "active": {**nul, "7d": active}, "new": {**nul, "7d": new}},
+                        "commits": {"7d": c7, "30d": c30, "365d": None, "weeks": []}}}
+
+
+def sections_of(items):
+    return {s["id"]: s["ids"] for s in portfolio.home_view(items)["sections"]}
+
+
+def test_home_has_the_three_sections_in_order_even_when_empty():
+    assert portfolio.home_view([]) == {"sections": [{"id": "users", "ids": []}, {"id": "building", "ids": []},
+                                                   {"id": "quiet", "ids": []}]}
+
+
+def test_home_puts_every_product_in_exactly_one_section():
+    items = [item("a", active=3), item("b", new=1), item("c", c7=9), item("d", c7=1), item("e"),
+             item("f", stage="parked", active=50, c7=30), item("g", active=0, new=0, c7=5), item("h", c7=4)]
+    sec = sections_of(items)
+    assert sec == {"users": ["a", "b"], "building": ["c", "g"], "quiet": ["f", "h", "d", "e"]}
+    flat = [i for ids in sec.values() for i in ids]
+    assert sorted(flat) == sorted(x["id"] for x in items) and len(flat) == len(set(flat))
+
+
+def test_a_parked_product_is_always_quiet():
+    sec = sections_of([item("p", stage="parked", focus=True, active=9, new=9, c7=99)])
+    assert sec == {"users": [], "building": [], "quiet": ["p"]}
+
+
+def test_building_starts_at_the_commit_threshold():
+    sec = sections_of([item("at", c7=portfolio.BUILDING_MIN_COMMITS),
+                       item("below", c7=portfolio.BUILDING_MIN_COMMITS - 1)])
+    assert sec["building"] == ["at"] and sec["quiet"] == ["below"]
+
+
+def test_users_are_ranked_star_then_active_then_new_then_commits_then_id():
+    sec = sections_of([item("z", active=5, new=2, c7=7), item("y", active=5, new=2, c7=7),
+                       item("x", active=5, new=3), item("w", active=9), item("star", focus=True, active=1),
+                       item("c", active=5, new=2, c7=8), item("only-new", new=40)])
+    assert sec["users"] == ["star", "w", "x", "c", "y", "z", "only-new"]
+
+
+def test_null_counts_sort_after_real_ones_and_zero_active_users_still_count_as_a_count():
+    sec = sections_of([item("null-new", active=2, new=None), item("zero-new", active=2, new=0),
+                       item("null-commits", active=2, new=0, c7=None), item("some-commits", active=2, new=0, c7=1)])
+    assert sec["users"] == ["some-commits", "null-commits", "zero-new", "null-new"]
+
+
+def test_building_and_quiet_rank_starred_first_then_commits_then_the_month_then_id():
+    sec = sections_of([item("b1", c7=6), item("b2", c7=9), item("b3", focus=True, c7=5), item("b0", c7=9),
+                       item("q-month", c7=2, c30=40), item("q-star", focus=True), item("q-null"),
+                       item("q-zero", c7=0, c30=0), item("q-two", c7=2, c30=10), item("q-3", c7=3)])
+    assert sec["building"] == ["b3", "b0", "b2", "b1"]
+    assert sec["quiet"] == ["q-star", "q-3", "q-month", "q-two", "q-zero", "q-null"]
+
+
+def stocked(tmp_path, spec, *, usage=None):
+    """spec: (id, stage, focus, commits7d or None, commits30d or None). Returns the portfolio of those products."""
+    rows, cache = [], portfolio.load_cache()
+    for pid, stage, focus, c7, c30 in spec:
+        d = repo(tmp_path, pid, toml='[productize]\nusers = "owner"\nplatforms = ["ios"]\nprimary = "ios"\n', slug="")
+        rows.append((pid, d, stage, focus, "ios"))
+        cache["metrics"][pid] = {"commits": None if c7 is None else {"7d": c7, "30d": c30, "365d": c30,
+                                                                    "weeks": [0] * 11 + [c7]}}
+    return portfolio.build(NOW, reg=registry_of(*rows), prods=[], ask_rows=[], tasks=[], bl={}, ledger=None,
+                           cache=cache, usage=usage or {})
+
+
+def test_build_adds_the_home_sections_and_keeps_the_old_fields(tmp_path):
+    pf = stocked(tmp_path, [("busy", "building", False, 12, 40), ("loved", "live", False, 1, 3),
+                            ("idle", "live", False, 0, 0), ("sleeper", "parked", True, 9, 9)],
+                 usage={"loved": {"wau": "4", "new_7d": "1"}})
+    assert {"core", "core_source", "counts", "checked", "products"} <= set(pf)
+    assert {s["id"]: s["ids"] for s in pf["home"]["sections"]} == {
+        "users": ["loved"], "building": ["busy"], "quiet": ["sleeper", "idle"]}
+    assert all({"summary", "icon_jpeg", "metrics", "progress", "activity"} <= set(p) for p in pf["products"])
+
+
+def test_only_cuts_the_home_sections_to_one_product(tmp_path):
+    pf = stocked(tmp_path, [("a", "live", False, 9, 9), ("b", "live", False, 0, 0)])
+    one_pf = portfolio.only(pf, "b")
+    assert {s["id"]: s["ids"] for s in one_pf["home"]["sections"]} == {"users": [], "building": [], "quiet": ["b"]}
+
+
+def test_the_period_never_changes_membership(tmp_path):
+    a = stocked(tmp_path / "x", [("p", "live", False, 2, 0), ("q", "live", False, 1, 900)])
+    b = stocked(tmp_path / "y", [("p", "live", False, 2, 900), ("q", "live", False, 1, 0)])
+    assert a["home"] == b["home"]
+
+
+# --- users, money, spend ----------------------------------------------------------------------------------
+
+def test_users_are_summed_over_repos_and_null_when_no_repo_reports_the_key(tmp_path):
+    reg, _ = one(tmp_path)
+    r1, r2 = tmp_path / "repos" / "app-a", tmp_path / "repos" / "app-b"
+    usage = {"app-a": {"accounts": "10", "wau": "3", "mau": "5", "new_7d": "1"},
+             "app-b": {"users": "2", "active_7d": "1", "active_30d": "2", "users_new_30d": "4", "new_365d": "x"}}
+    m = portfolio.users_metrics([r1, r2], usage)
+    assert m == {"total": 12, "active": {"7d": 4, "30d": 7, "365d": None},
+                 "new": {"7d": 1, "30d": 4, "365d": None}}
+    nothing = portfolio.users_metrics([r1], {"app-a": {"rows": "9"}})
+    assert nothing == {"total": None, "active": {"7d": None, "30d": None, "365d": None},
+                       "new": {"7d": None, "30d": None, "365d": None}}
+    assert portfolio.users_metrics([r1], {"app-a": {"users": "-1", "wau": "inf"}})["total"] is None
+
+
+def test_money_is_null_while_disabled_even_when_the_probe_prints_it(tmp_path):
+    d = repo(tmp_path, "shop", toml='[productize]\nusers = "public"\n', slug="")
+    usage = {"shop": {"mrr_usd": "120.5", "paying_users": "9", "revenue_7d_usd": "30"}}
+    reg = registry_of(("shop", d, "live", False, "ios"))
+    p = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None,
+                        cache=portfolio.load_cache(), usage=usage)["products"][0]
+    assert p["metrics"]["money"] == {"enabled": False, "mrr_usd": None, "paying": None,
+                                     "revenue_usd": {"7d": None, "30d": None, "365d": None}}
+
+
+def test_money_is_read_from_the_usage_keys_when_the_manifest_enables_it(tmp_path):
+    toml = '[productize]\nusers = "public"\n[monetization]\nenabled = true\n'
+    d = repo(tmp_path, "shop", toml=toml, slug="")
+    usage = {"shop": {"mrr_usd": "120.5", "paying_users": "9", "revenue_7d_usd": "30", "revenue_365d_usd": "1400.255"}}
+    reg = registry_of(("shop", d, "live", False, "ios"))
+    p = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None,
+                        cache=portfolio.load_cache(), usage=usage)["products"][0]
+    assert p["metrics"]["money"] == {"enabled": True, "mrr_usd": 120.5, "paying": 9,
+                                     "revenue_usd": {"7d": 30.0, "30d": None, "365d": 1400.26}}
+    assert productize_parse(d)["monetization"] == {"enabled": True}
+
+
+def productize_parse(d):
+    from teyla import productize
+    return productize.parse(d / "teyla.toml")
+
+
+def test_monetization_is_off_when_the_table_is_absent_or_not_true(tmp_path):
+    d = repo(tmp_path, "plain", toml='[productize]\nusers = "owner"\n', slug="")
+    assert productize_parse(d)["monetization"] == {}
+    d2 = repo(tmp_path, "maybe", toml='[monetization]\nenabled = "yes"\n', slug="")
+    assert portfolio.monetization_enabled(portfolio.parse_manifests([d, d2])) is False
+
+
+def test_spend_windows_are_null_for_an_older_cache_and_real_for_a_new_one(tmp_path):
+    reg, _ = one(tmp_path)
+    cache = portfolio.load_cache()
+    cache["activity"]["app-a"] = {"sessions_7d": 2, "spend_7d_usd": 12.34}
+    old = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None, cache=cache, usage={})
+    assert old["products"][0]["metrics"]["spend_usd"] == {"7d": 12.34, "30d": None, "365d": None}
+    cache["activity"]["app-a"].update(spend_30d_usd=40.0, spend_365d_usd=0.0)
+    new = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None, cache=cache, usage={})
+    p = new["products"][0]
+    assert p["metrics"]["spend_usd"] == {"7d": 12.34, "30d": 40.0, "365d": 0.0}
+    assert p["metrics"]["spend_usd"]["7d"] == p["activity"]["spend_7d_usd"]
+
+
+def test_compute_activity_reports_the_three_spend_windows_for_every_product(tmp_path, monkeypatch):
+    from teyla import product_page, spend
+    reg, _ = one(tmp_path)
+    row = {"sid": "s1", "cwd": str(tmp_path / "repos" / "app-a"), "last": "2999-01-01T00:00:00", "first": ""}
+    monkeypatch.setattr(product_page, "load_rows", lambda days: ([row], {}))
+    days = [{"total_usd": 0.0} for _ in range(358)] + [{"total_usd": 1.0}] * 7      # 365 days, oldest first
+    days[-20] = {"total_usd": 5.0}
+    monkeypatch.setattr(spend, "by_day", lambda n, rs: days if rs else [{"total_usd": 0.0}] * n)
+    out = _REAL_COMPUTE_ACTIVITY({"product": {**reg["product"], "other": {"repos": [], "paths": [], "aliases": []}}, "assign": {}})
+    assert out["app-a"] == {"sessions_7d": 1, "spend_7d_usd": 7.0, "spend_30d_usd": 12.0, "spend_365d_usd": 12.0}
+    assert out["other"] == {"sessions_7d": 0, "spend_7d_usd": 0.0, "spend_30d_usd": 0.0, "spend_365d_usd": 0.0}
+
+
+# --- commits: local git only -----------------------------------------------------------------------------
+
+def git(d, *args, when=None):
+    env = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "PATH": os.environ["PATH"],
+           "HOME": str(d)}
+    if when is not None:
+        env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = f"{int(when)} +0000"
+    cmd = ["git", "-c", "user.name=Test", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false",
+           "-c", "init.defaultBranch=main", "-C", str(d), *args]
+    subprocess.run(cmd, check=True, capture_output=True, env=env)
+
+
+def commit_file(d, rel_path, days_ago, now):
+    f = d / rel_path
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(f"{rel_path} {days_ago}\n")
+    git(d, "add", "-A")
+    git(d, "commit", "-m", f"change {rel_path}", when=now - days_ago * DAY - 60)
+
+
+def test_commit_buckets_come_from_local_git_and_skip_policy_and_docs_paths(tmp_path):
+    now = time.time()
+    d = tmp_path / "gitrepo"
+    d.mkdir()
+    git(d, "init", "-q")
+    commit_file(d, "src/old.txt", 400, now)                   # out of every window
+    commit_file(d, "src/c.txt", 40, now)                      # 365d; week 5
+    commit_file(d, "src/b.txt", 10, now)                      # 30d, 365d; week 1
+    git(d, "checkout", "-q", "-b", "feature")
+    commit_file(d, "src/f.txt", 8, now)                       # on a branch, merged below; week 1
+    git(d, "checkout", "-q", "main")
+    commit_file(d, "src/a.txt", 2, now)                       # 7d, 30d, 365d; week 0
+    for rel_path in ("docs/guide.md", "AGENTS.md", "teyla.toml", ".claude/rules/x.md", ".github/y.yml", "README.md",
+                     "CHANGELOG.md", "check.sh", ".agents/z.md", ".githooks/pre-push"):
+        commit_file(d, rel_path, 1, now)                      # a policy sync or a docs edit: not the product's work
+    git(d, "merge", "--no-ff", "-q", "-m", "merge feature", "feature", when=now - DAY // 2)
+    times = portfolio.git_commit_times(d, now)
+    assert times is not None and len(times) == 4              # a, b, c, f: no merge, no old, no policy path
+    b = portfolio.commit_buckets([times], now)
+    assert (b["7d"], b["30d"], b["365d"]) == (1, 3, 4)
+    assert len(b["weeks"]) == 12 and b["weeks"][-1] == b["7d"] and sum(b["weeks"]) == 4
+    assert b["weeks"][10] == 2 and b["weeks"][6] == 1         # 10 and 8 days ago, 40 days ago
+    assert portfolio.commit_buckets([times, times], now)["365d"] == 8        # summed across repos
+
+
+def test_commits_use_origin_head_and_not_unpushed_work(tmp_path):
+    now = time.time()
+    up = tmp_path / "up"
+    up.mkdir()
+    git(up, "init", "-q")
+    commit_file(up, "src/a.txt", 3, now)
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", str(up), str(clone)], check=True, capture_output=True,
+                   env={"PATH": os.environ["PATH"], "HOME": str(tmp_path), "GIT_CONFIG_GLOBAL": "/dev/null"})
+    commit_file(clone, "src/local.txt", 1, now)               # not on origin/HEAD
+    assert len(portfolio.git_commit_times(clone, now)) == 1
+    assert len(portfolio.git_commit_times(up, now)) == 1      # no remote: HEAD
+
+
+def test_commits_are_null_when_git_cannot_answer(tmp_path):
+    plain = tmp_path / "not-a-repo"
+    plain.mkdir()
+    assert portfolio.git_commit_times(plain, NOW) is None
+    assert portfolio.commit_buckets([None, None], NOW) is None
+    assert portfolio.commit_buckets([], NOW) is None
+    assert portfolio.commit_buckets([None, []], NOW) == {"7d": 0, "30d": 0, "365d": 0, "weeks": [0] * 12}
+    reg = {"product": {"empty": {"repos": [], "paths": []}, "gone": {"repos": [str(tmp_path / "nope")], "paths": []}},
+           "assign": {}}
+    assert _REAL_COMPUTE_COMMITS(reg, NOW) == {"empty": None, "gone": None}
+
+
+def test_the_cached_commits_reach_the_contract_and_missing_ones_are_null(tmp_path):
+    pf = stocked(tmp_path, [("a", "live", False, 3, 8), ("b", "live", False, None, None)])
+    a, b = (next(p for p in pf["products"] if p["id"] == i)["metrics"]["commits"] for i in "ab")
+    assert a == {"7d": 3, "30d": 8, "365d": 8, "weeks": [0] * 11 + [3]}
+    assert b == {"7d": None, "30d": None, "365d": None, "weeks": []}
+
+
+def test_an_older_cache_without_metrics_still_loads(tmp_path):
+    portfolio.cache_path().write_text(json.dumps({"version": 1, "at": 5.0, "checked": {"stores": "x"},
+                                                  "stores": {}, "github": {}, "open_prs": {}, "activity": {}}))
+    c = portfolio.load_cache()
+    assert c["metrics"] == {} and c["checked"]["metrics"] == "" and c["checked"]["stores"] == "x" and c["at"] == 5.0
+    reg, _ = one(tmp_path)
+    p = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None, cache=c, usage={})["products"][0]
+    assert p["metrics"]["commits"]["7d"] is None and p["icon_jpeg"] == ""
+
+
+def test_refresh_stores_the_metrics_without_the_network_and_keeps_old_rows_when_a_part_fails(tmp_path, monkeypatch):
+    reg, _ = one(tmp_path)
+    boom = lambda *a, **k: (_ for _ in ()).throw(AssertionError("network"))        # noqa: E731
+    monkeypatch.setattr(testflight, "check_product", boom)
+    monkeypatch.setattr(reviews, "merged_prs", boom)
+    monkeypatch.setattr(portfolio, "compute_commits", lambda r, n: {"app-a": {"7d": 2, "30d": 3, "365d": 4,
+                                                                             "weeks": [0] * 12}})
+    monkeypatch.setattr(portfolio, "compute_icons", lambda r, prev: {"app-a": {"src": "s", "mtime": 1.0, "b64": "QUJD"}})
+    assert portfolio.refresh(NOW, reg=reg, network=False) == 1                    # the network part is off: code 1
+    c = portfolio.load_cache()
+    assert c["metrics"]["app-a"]["commits"]["30d"] == 3 and c["metrics"]["app-a"]["icon"]["b64"] == "QUJD"
+    assert c["checked"]["metrics"] == portfolio._iso(NOW)
+
+    def fail(*a, **k):
+        raise RuntimeError("git is broken")
+    monkeypatch.setattr(portfolio, "compute_commits", fail)
+    monkeypatch.setattr(portfolio, "compute_icons", lambda r, prev: {"app-a": None})
+    assert portfolio.refresh(NOW + 60, reg=reg, network=False) == 1
+    c = portfolio.load_cache()
+    assert c["metrics"]["app-a"]["commits"]["30d"] == 3                           # the old commits stay
+    assert c["metrics"]["app-a"]["icon"] is None and c["checked"]["metrics"] == portfolio._iso(NOW)
+
+
+# --- summary --------------------------------------------------------------------------------------------
+
+README = """# Sample App
+
+[![build](https://example.com/badge.svg)](https://example.com)
+![logo](logo.png)
+<p align="center">centered html</p>
+
+Sample App plans **trips** with friends. See [the guide](docs/guide.md) for more.
+It also keeps a shared list.
+
+## Quick start
+
+Run it.
+"""
+
+
+def test_the_readme_summary_skips_headings_badges_images_and_html(tmp_path):
+    d = tmp_path / "r"
+    d.mkdir()
+    (d / "README.md").write_text(README)
+    assert portfolio.readme_summary(d) == "Sample App plans trips with friends. See the guide for more. It also keeps a shared list."
+    (d / "README.md").write_text("Title\n=====\n\n- a list\n\n```\ncode\n```\n\n" + "word " * 60 + "\n")
+    out = portfolio.readme_summary(d)
+    assert len(out) == portfolio.SUMMARY_CHARS and out.endswith("…") and out.startswith("word word")
+    (d / "README.md").write_text("# Only a heading\n")
+    assert portfolio.readme_summary(d) == ""
+    assert portfolio.readme_summary(d / "missing") == ""
+
+
+def test_summary_precedence_manifest_then_registry_then_readme(tmp_path):
+    toml = '[productize]\nsummary = "From the manifest."\n'
+    d = repo(tmp_path, "s", toml=toml, slug="")
+    (d / "README.md").write_text(README)
+    reg = registry_of(("s", d, "live", False, "ios"))
+
+    def summary():
+        p = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None,
+                            cache=portfolio.load_cache(), usage={})["products"][0]
+        return p["summary"]
+    reg["product"]["s"]["summary"] = "From the registry."
+    assert summary() == "From the manifest."
+    (d / "teyla.toml").write_text('[productize]\nusers = "owner"\n')
+    assert summary() == "From the registry."
+    reg["product"]["s"]["summary"] = ""
+    assert summary().startswith("Sample App plans trips")
+    (d / "README.md").unlink()
+    assert summary() == ""
+
+
+def test_the_registry_accepts_a_summary_and_names_it_in_the_error(tmp_path):
+    from teyla import registry
+    reg = registry_of(("a", tmp_path, "live", False, "ios"))
+    assert registry.set_field(reg, "a", "summary", "  A tool that counts.  ") == "a: summary = A tool that counts."
+    assert reg["product"]["a"]["summary"] == "A tool that counts."
+    with pytest.raises(ValueError, match="summary"):
+        registry.set_field(reg, "a", "bogus", "1")
+    again = registry._normalise(__import__("tomllib").loads(registry.dump(reg)))
+    assert again["product"]["a"]["summary"] == "A tool that counts."
+    assert "summary" not in registry._normalise({"product": {"b": {"name": "b"}}})["product"]["b"]
+
+
+# --- icon -----------------------------------------------------------------------------------------------
+
+def png(path, size):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\x89PNG" + b"0" * size)
+    return path
+
+
+def test_the_icon_is_the_largest_appiconset_png_and_skips_build_dirs(tmp_path):
+    d = tmp_path / "app"
+    small = png(d / "ios" / "Assets.xcassets" / "AppIcon.appiconset" / "icon-60.png", 60)
+    big = png(d / "ios" / "Assets.xcassets" / "AppIcon.appiconset" / "icon-1024.png", 900)
+    png(d / "node_modules" / "pkg" / "AppIcon.appiconset" / "huge.png", 5000)
+    png(d / "DerivedData" / "AppIcon.appiconset" / "huge.png", 5000)
+    png(d / "public" / "icon.png", 9000)
+    assert portfolio.find_icon([d]) == big and small.exists()
+
+
+def test_the_icon_falls_back_to_a_web_icon_in_the_listed_order(tmp_path):
+    d = tmp_path / "web"
+    png(d / "icon.png", 10)
+    png(d / "app" / "icon.png", 10)
+    assert portfolio.find_icon([d]) == d / "app" / "icon.png"
+    png(d / "public" / "logo.png", 10)
+    assert portfolio.find_icon([d]) == d / "public" / "logo.png"
+    assert portfolio.find_icon([tmp_path / "empty"]) is None
+
+
+def fake_sips(monkeypatch, payload=b"jpegbytes", calls=None):
+    monkeypatch.setattr(portfolio.shutil, "which", lambda name: "/usr/bin/sips" if name == "sips" else None)
+
+    def run(cmd, **kw):
+        if calls is not None:
+            calls.append(cmd)
+        pathlib.Path(cmd[cmd.index("--out") + 1]).write_bytes(payload)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+    monkeypatch.setattr(portfolio.subprocess, "run", run)
+
+
+def test_a_missing_sips_means_no_icon_and_no_error(tmp_path, monkeypatch):
+    d = tmp_path / "app"
+    png(d / "AppIcon.appiconset" / "i.png", 100)
+    reg = {"product": {"a": {"repos": [str(d)], "paths": []}}, "assign": {}}
+    monkeypatch.setattr(portfolio.shutil, "which", lambda name: None)
+    assert _REAL_COMPUTE_ICONS(reg, {}) == {"a": None}
+    pf = stocked(tmp_path / "x", [("a", "live", False, 1, 1)])
+    assert pf["products"][0]["icon_jpeg"] == ""
+
+
+def test_the_icon_is_converted_once_and_again_only_when_the_source_changes(tmp_path, monkeypatch):
+    d = tmp_path / "app"
+    src = png(d / "AppIcon.appiconset" / "i.png", 100)
+    reg = {"product": {"a": {"repos": [str(d)], "paths": []}}, "assign": {}}
+    calls = []
+    fake_sips(monkeypatch, b"jpegbytes", calls)
+    first = _REAL_COMPUTE_ICONS(reg, {})["a"]
+    assert first["b64"] == "anBlZ2J5dGVz" and first["src"] == str(src)
+    cmd = calls[0]
+    assert cmd[1:9] == ["-s", "format", "jpeg", "-s", "formatOptions", "70", "-Z", "88"] and len(calls) == 1
+    assert _REAL_COMPUTE_ICONS(reg, {"a": first})["a"] == first and len(calls) == 1            # unchanged: no sips
+    os.utime(src, (NOW, NOW))
+    again = _REAL_COMPUTE_ICONS(reg, {"a": first})["a"]
+    assert len(calls) == 2 and again["mtime"] == NOW
+
+
+def test_an_icon_over_8_kb_of_base64_is_dropped_and_not_converted_again(tmp_path, monkeypatch):
+    d = tmp_path / "app"
+    png(d / "AppIcon.appiconset" / "i.png", 100)
+    reg = {"product": {"a": {"repos": [str(d)], "paths": []}}, "assign": {}}
+    calls = []
+    fake_sips(monkeypatch, b"x" * 7000, calls)                                    # 9336 base64 characters
+    row = _REAL_COMPUTE_ICONS(reg, {})["a"]
+    assert row["b64"] == "" and len(calls) == 1
+    assert _REAL_COMPUTE_ICONS(reg, {"a": row})["a"] == row and len(calls) == 1
+
+
+def test_the_icon_rides_in_the_portfolio_when_the_cache_has_one(tmp_path):
+    reg, _ = one(tmp_path)
+    cache = portfolio.load_cache()
+    cache["metrics"]["app-a"] = {"icon": {"src": "s", "mtime": 1.0, "b64": "QUJD"}}
+    p = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None, cache=cache, usage={})["products"][0]
+    assert p["icon_jpeg"] == "QUJD"

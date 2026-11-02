@@ -346,6 +346,26 @@
    "sample-app"
   ],
   "core_source": "star",
+  "home": {
+   "sections": [
+    {
+     "id": "users",
+     "ids": [
+      "sample-app"
+     ]
+    },
+    {
+     "id": "building",
+     "ids": []
+    },
+    {
+     "id": "quiet",
+     "ids": [
+      "sample-tool"
+     ]
+    }
+   ]
+  },
   "products": [
    {
     "id": "sample-app",
@@ -462,6 +482,57 @@
      "blocker": "Swap the iPhone review to the newest build, 1.1, or keep 1.0…",
      "quiet_days": 0,
      "line": "family: 2 of 9 requirements left"
+    },
+    "summary": "A sample app that plans a trip with a few friends.",
+    "icon_jpeg": "",
+    "metrics": {
+     "users": {
+      "total": 12,
+      "active": {
+       "7d": 4,
+       "30d": 6,
+       "365d": 9
+      },
+      "new": {
+       "7d": 1,
+       "30d": 3,
+       "365d": 9
+      }
+     },
+     "commits": {
+      "7d": 21,
+      "30d": 80,
+      "365d": 640,
+      "weeks": [
+       30,
+       12,
+       8,
+       9,
+       15,
+       20,
+       25,
+       18,
+       22,
+       16,
+       11,
+       21
+      ]
+     },
+     "spend_usd": {
+      "7d": 210.5,
+      "30d": 790.0,
+      "365d": 5200.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
     }
    },
    {
@@ -527,6 +598,57 @@
      "blocker": "",
      "quiet_days": 1,
      "line": "macOS 0.9.0 is installable"
+    },
+    "summary": "",
+    "icon_jpeg": "",
+    "metrics": {
+     "users": {
+      "total": null,
+      "active": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      },
+      "new": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     },
+     "commits": {
+      "7d": 0,
+      "30d": 2,
+      "365d": 40,
+      "weeks": [
+       0,
+       0,
+       1,
+       0,
+       0,
+       3,
+       0,
+       0,
+       0,
+       0,
+       2,
+       0
+      ]
+     },
+     "spend_usd": {
+      "7d": 0.0,
+      "30d": 0.0,
+      "365d": 14.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
     }
    }
   ]

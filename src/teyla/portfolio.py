@@ -19,10 +19,16 @@ Building it never calls the network. It joins what Teyla already keeps:
     stores     `teyla testflight` and `teyla play` for each product in scope (the release tools, 80 s or so)
     github     merged PRs of the last 7 days per repo and the owner's open PRs (the calls of `teyla reviews`
                and the backlog), kept as compact rows so the ledger is read when the object is built
-    activity   sessions and spend of the last 7 days per product, read from the local transcripts (no network)
+    activity   sessions and spend of the last 7, 30 and 365 days per product, read from the local transcripts (no network)
+    metrics    commits of the last 7, 30 and 365 days and 12 weekly buckets per product, from local git (no network),
+               and the product's icon as a small JPEG (macOS `sips`, no network)
 
 A part that fails keeps the rows it had, with their old `as_of`; it never blanks good data. `checked.stores`
-and `checked.github` move only when the whole part worked. `teyla state` starts the pass detached when the cache
+and `checked.github` move only when the whole part worked.
+
+The Home contract (docs/APP.md, "Home: sections and metrics") is built from these caches and the usage cache, never
+from a call: `home.sections` ranks the products on 7-day signals, and each product carries `summary`, `icon_jpeg`
+and `metrics` (users, commits, spend, money). A value Teyla does not count is `null`, never zero. `teyla state` starts the pass detached when the cache
 is missing or older than 6 hours (not in safe mode, not without `gh`), and a lock stops a second one.
 
 Platform state: `current` (the newest build reached the owner), `behind`, `blocked` (only the owner can clear it),
@@ -34,6 +40,7 @@ never `live` or `in_review`.
 from __future__ import annotations
 
 import argparse
+import base64
 import copy
 import datetime as _dt
 import json
@@ -43,6 +50,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from urllib.parse import urlparse
 
 from . import asks, backlog, net, productize, registry, reviews, testflight, triage
@@ -78,8 +86,33 @@ _TF_OWNER = re.compile(r"not accepted|never invited|revoked|not submitted for be
 # A Play blocker only the owner can clear: a draft to send, a halted release, a closed test to start.
 _PLAY_OWNER = re.compile(r"draft|halted|no closed test|clock is not running", re.I)
 
-EMPTY_CACHE = {"version": CACHE_VERSION, "at": 0.0, "checked": {"stores": "", "github": "", "activity": ""},
-               "stores": {}, "github": {}, "open_prs": {}, "activity": {}}
+# Home: sections, summary, icon and metrics (docs/APP.md, "Home: sections and metrics").
+BUILDING_MIN_COMMITS = 5           # commits in 7 days that make a product "building" when it has no users yet
+SECTIONS = ("users", "building", "quiet")
+METRIC_DAYS = (7, 30, 365)
+WEEKS = 12                         # weekly commit buckets, oldest first
+SPEND_DAYS = 365                   # the longest spend window; the shorter ones are slices of it
+SUMMARY_CHARS = 140
+ICON_PX = 88
+ICON_MAX_B64 = 8 * 1024            # a larger icon is dropped: the phone reads the snapshot through the relay
+GIT_TIMEOUT_S = 60
+# Paths a fleet-wide policy sync touches in every repo: they say nothing about a product's own work.
+COMMIT_EXCLUDES = ("AGENTS.md", "CLAUDE.md", "teyla.toml", ".claude", ".github", ".githooks", "docs", "README.md",
+                   "CHANGELOG.md", ".agents", "check.sh")
+ICON_SKIP_DIRS = frozenset({"node_modules", ".git", "build", "DerivedData", ".venv", "Pods", ".build", ".claude",
+                            "dist"})
+ICON_FALLBACKS = ("public/apple-touch-icon.png", "public/icon.png", "public/logo.png", "app/icon.png", "icon.png")
+# Usage-cache keys (templates/analytics/STANDARD.md). The first key a repo prints wins; repos are summed.
+_ACTIVE_30D_KEYS = ("mau", "active_30d")
+_ACTIVE_365D_KEYS = ("active_365d",)
+_NEW_KEYS = {"7d": ("new_7d", "users_new_7d"), "30d": ("new_30d", "users_new_30d"),
+             "365d": ("new_365d", "users_new_365d")}
+_MONEY_KEYS = {"mrr_usd": ("mrr_usd",), "paying": ("paying_users",), "7d": ("revenue_7d_usd",),
+               "30d": ("revenue_30d_usd",), "365d": ("revenue_365d_usd",)}
+
+EMPTY_CACHE = {"version": CACHE_VERSION, "at": 0.0,
+               "checked": {"stores": "", "github": "", "activity": "", "metrics": ""},
+               "stores": {}, "github": {}, "open_prs": {}, "activity": {}, "metrics": {}}
 
 
 # --- the cache --------------------------------------------------------------------------------
@@ -101,7 +134,7 @@ def load_cache() -> dict:
         return out
     if not isinstance(c, dict) or c.get("version") != CACHE_VERSION:
         return out
-    for k in ("stores", "github", "open_prs", "activity"):
+    for k in ("stores", "github", "open_prs", "activity", "metrics"):        # an older cache has no `metrics`
         if isinstance(c.get(k), dict):
             out[k] = c[k]
     if isinstance(c.get("checked"), dict):
@@ -499,19 +532,173 @@ def refresh_github(reg: dict, cache: dict, now: float, runner=None) -> bool:
 # --- activity: sessions and spend per product ---------------------------------------------------
 
 def compute_activity(reg: dict) -> dict:
-    """{product id: {sessions_7d, spend_7d_usd}} from the local transcripts. Slow; the refresh runs it."""
+    """{product id: {sessions_7d, spend_7d_usd, spend_30d_usd, spend_365d_usd}} from the local transcripts, one
+    entry for every registered product (a product with no session spent 0.0: the pass counted it). Slow; the
+    refresh runs it. One read of 365 days gives all three spend windows: they are the last 7, 30 and 365 local
+    days of the same per-day split, and `sessions_7d` counts the sessions active in the last 7 days."""
     from . import product_page, spend
-    rows, titles = product_page.load_rows(WEEK_DAYS)
+    rows, titles = product_page.load_rows(SPEND_DAYS)
+    cutoff = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=WEEK_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
     mine: dict[str, list[dict]] = {}
     for r in rows:
         pid = registry.attribute(r.get("cwd"), session=r["sid"], texts=(titles.get(r["sid"], ""), ""), reg=reg)[0]
         if pid in reg["product"]:
             mine.setdefault(pid, []).append(r)
     out = {}
-    for pid, rs in mine.items():
-        days = spend.by_day(WEEK_DAYS, rs)
-        out[pid] = {"sessions_7d": len(rs), "spend_7d_usd": round(sum(d["total_usd"] for d in days), 2)}
+    for pid in reg["product"]:
+        rs = mine.get(pid, [])
+        days = spend.by_day(SPEND_DAYS, rs)                                  # oldest first, ending today
+        total = lambda n: round(sum(d["total_usd"] for d in days[-n:]), 2)  # noqa: E731
+        out[pid] = {"sessions_7d": sum(1 for r in rs if (r.get("last") or r.get("first") or "")[:19] >= cutoff),
+                    "spend_7d_usd": total(7), "spend_30d_usd": total(30), "spend_365d_usd": total(SPEND_DAYS)}
     return out
+
+
+# --- metrics: commits and the icon, from local files only -----------------------------------------
+
+def git_commit_times(repo: pathlib.Path, now: float) -> list[float] | None:
+    """Commit times (POSIX) of the last 365 days on `origin/HEAD` (else `HEAD`), merges and policy-sync paths
+    left out (COMMIT_EXCLUDES). None when git cannot answer. Local git only: no fetch, no network."""
+    since = int(now) - max(METRIC_DAYS) * 86400
+    spec = [".", *(f":!{x}" for x in COMMIT_EXCLUDES)]
+    for ref in ("origin/HEAD", "HEAD"):                       # a repo without origin/HEAD falls back to HEAD
+        try:
+            r = subprocess.run(["git", "-C", str(repo), "log", "--no-merges", "--format=%ct", f"--since={since}",
+                                ref, "--", *spec], capture_output=True, text=True, timeout=GIT_TIMEOUT_S)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if r.returncode == 0:
+            return [float(x) for x in r.stdout.split() if x.isdigit()]
+    return None
+
+
+def commit_buckets(per_repo: list[list[float] | None], now: float) -> dict | None:
+    """{"7d", "30d", "365d", "weeks"} summed over the repos that answered; None when none did. `weeks` has 12
+    buckets of 7 days ending now, oldest first, so `weeks[-1]` is the 7d count."""
+    got = [t for t in per_repo if t is not None]
+    if not got:
+        return None
+    counts = {f"{d}d": 0 for d in METRIC_DAYS}
+    weeks = [0] * WEEKS
+    for times in got:
+        for t in times:
+            age = max(now - t, 0.0)                           # a commit dated ahead of the clock counts as now
+            for d in METRIC_DAYS:
+                if age < d * 86400:
+                    counts[f"{d}d"] += 1
+            i = int(age // (WEEK_DAYS * 86400))
+            if i < WEEKS:
+                weeks[WEEKS - 1 - i] += 1
+    return {**counts, "weeks": weeks}
+
+
+def compute_commits(reg: dict, now: float) -> dict:
+    """{product id: commit buckets or None} from local git, one `git log` per repo."""
+    seen: dict[str, list[float] | None] = {}
+    out = {}
+    for pid, p in reg["product"].items():
+        per_repo = []
+        for r in product_repos(p):
+            key = str(r)
+            if key not in seen:
+                seen[key] = git_commit_times(r, now) if r.is_dir() else None
+            per_repo.append(seen[key])
+        out[pid] = commit_buckets(per_repo, now)
+    return out
+
+
+def find_icon(repos: list[pathlib.Path]) -> pathlib.Path | None:
+    """The largest PNG of an `AppIcon.appiconset` in the repos, else the first of ICON_FALLBACKS."""
+    best: pathlib.Path | None = None
+    best_size = -1
+    for r in repos:
+        if not r.is_dir():
+            continue
+        for root, dirs, files in os.walk(r):
+            dirs[:] = [d for d in dirs if d not in ICON_SKIP_DIRS]
+            if os.path.basename(root) != "AppIcon.appiconset":
+                continue
+            for f in files:
+                if f.lower().endswith(".png"):
+                    try:
+                        size = os.stat(os.path.join(root, f)).st_size
+                    except OSError:
+                        continue
+                    if size > best_size:
+                        best, best_size = pathlib.Path(root, f), size
+    if best is not None:
+        return best
+    for r in repos:
+        for rel in ICON_FALLBACKS:
+            f = r / rel
+            if f.is_file():
+                return f
+    return None
+
+
+def convert_icon(src: pathlib.Path) -> str | None:
+    """The icon as base64 of an 88 px JPEG (macOS `sips`); None when `sips` is missing or fails."""
+    sips = shutil.which("sips")
+    if not sips:
+        return None
+    with tempfile.TemporaryDirectory() as td:
+        out = pathlib.Path(td) / "icon.jpg"
+        try:
+            r = subprocess.run([sips, "-s", "format", "jpeg", "-s", "formatOptions", "70", "-Z", str(ICON_PX),
+                                str(src), "--out", str(out)], capture_output=True, text=True, timeout=30)
+            if r.returncode != 0 or not out.is_file():
+                return None
+            return base64.b64encode(out.read_bytes()).decode("ascii")
+        except (OSError, subprocess.SubprocessError):
+            return None
+
+
+def compute_icons(reg: dict, prev: dict) -> dict:
+    """{product id: {src, mtime, b64} or None}. `prev` is the cached {product id: icon}. A source whose path and
+    mtime did not change is not converted again. An icon over ICON_MAX_B64 is dropped (`b64` is ""); a missing
+    `sips` or source gives None, without an error."""
+    out = {}
+    for pid, p in reg["product"].items():
+        src = find_icon(product_repos(p))
+        if src is None:
+            out[pid] = None
+            continue
+        try:
+            mtime = src.stat().st_mtime
+        except OSError:
+            out[pid] = None
+            continue
+        old = prev.get(pid) if isinstance(prev.get(pid), dict) else {}
+        if old.get("src") == str(src) and old.get("mtime") == mtime and isinstance(old.get("b64"), str):
+            out[pid] = old
+            continue
+        b64 = convert_icon(src)
+        if b64 is None:
+            out[pid] = None
+            continue
+        out[pid] = {"src": str(src), "mtime": mtime, "b64": b64 if len(b64) <= ICON_MAX_B64 else ""}
+    return out
+
+
+def refresh_metrics(reg: dict, cache: dict, now: float) -> bool:
+    """Commits and icons into `cache["metrics"]`, two independent local parts. A part that raises keeps its old
+    rows. True when both worked. It makes no network call, so it runs in safe mode too."""
+    ok = True
+    mine = {pid: m for pid, m in cache["metrics"].items() if pid in reg["product"] and isinstance(m, dict)}
+    try:
+        for pid, c in compute_commits(reg, now).items():
+            mine.setdefault(pid, {})["commits"] = c
+        cache["checked"]["metrics"] = _iso(now)
+    except Exception:  # noqa: BLE001
+        ok = False
+    try:
+        icons = compute_icons(reg, {pid: m.get("icon") for pid, m in mine.items()})
+        for pid, icon in icons.items():
+            mine.setdefault(pid, {})["icon"] = icon
+    except Exception:  # noqa: BLE001
+        ok = False
+    cache["metrics"] = mine
+    return ok
 
 
 # --- the refresh pass --------------------------------------------------------------------------
@@ -541,6 +728,7 @@ def refresh(now: float | None = None, *, reg: dict | None = None, cfg: dict | No
             cache["checked"]["activity"] = _iso(now)
         except Exception:  # noqa: BLE001
             ok = False
+        ok = refresh_metrics(reg, cache, now) and ok
     finally:
         cache["at"] = now
         try:
@@ -721,7 +909,7 @@ _TOTAL_KEYS = ("users_total", "total_users", "users", "user_count", "accounts")
 def _int(v) -> int | None:
     try:
         return int(float(str(v).strip()))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -750,6 +938,168 @@ def usage_of(repos: list[pathlib.Path], usage: dict) -> dict | None:
     if total is not None:
         bits.append(f"{total} total")
     return {"weekly": weekly, "total": total, "label": ", ".join(bits)}
+
+
+# --- Home: summary, metrics, sections ------------------------------------------------------------------
+
+def _count(v) -> int | None:
+    n = _int(v)
+    return n if n is not None and n >= 0 else None
+
+
+def _money_number(v) -> float | None:
+    try:
+        x = float(str(v).strip())
+    except (TypeError, ValueError):
+        return None
+    return round(x, 2) if x == x and abs(x) != float("inf") else None
+
+
+def _sum_keys(repos: list[pathlib.Path], usage: dict, keys: tuple[str, ...], conv):
+    """The sum over the repos of the first of `keys` each prints; None when no repo prints any of them."""
+    total = None
+    for r in repos:
+        counters = usage.get(r.name.lower())
+        if not counters:
+            continue
+        n = next((v for v in (conv(counters.get(k)) for k in keys) if v is not None), None)
+        if n is not None:
+            total = (total or 0) + n
+    return total
+
+
+def users_metrics(repos: list[pathlib.Path], usage: dict) -> dict:
+    """Users from the usage cache. A window no repo reports is None: Teyla does not count it."""
+    def get(keys):
+        return _sum_keys(repos, usage, keys, _count)
+    return {"total": get(_TOTAL_KEYS),
+            "active": {"7d": get(_WEEKLY_KEYS), "30d": get(_ACTIVE_30D_KEYS), "365d": get(_ACTIVE_365D_KEYS)},
+            "new": {k: get(v) for k, v in _NEW_KEYS.items()}}
+
+
+def monetization_enabled(manifests: list[dict]) -> bool:
+    """`[monetization] enabled = true` in any of the product's manifests; absent means disabled."""
+    return any((m.get("monetization") or {}).get("enabled") is True for m in manifests)
+
+
+def money_metrics(enabled_: bool, repos: list[pathlib.Path], usage: dict) -> dict:
+    """Money is reported only for a product that enabled it; a disabled one is all None."""
+    out = {"enabled": enabled_, "mrr_usd": None, "paying": None,
+           "revenue_usd": {"7d": None, "30d": None, "365d": None}}
+    if not enabled_:
+        return out
+    out["mrr_usd"] = _sum_keys(repos, usage, _MONEY_KEYS["mrr_usd"], _money_number)
+    out["paying"] = _sum_keys(repos, usage, _MONEY_KEYS["paying"], _count)
+    out["revenue_usd"] = {k: _sum_keys(repos, usage, _MONEY_KEYS[k], _money_number) for k in ("7d", "30d", "365d")}
+    return out
+
+
+def commits_view(raw) -> dict:
+    """The cached commit buckets in the contract's shape. Nothing counted: windows None and `weeks` empty."""
+    out = {"7d": None, "30d": None, "365d": None, "weeks": []}
+    if not isinstance(raw, dict):
+        return out
+    for k in ("7d", "30d", "365d"):
+        n = _count(raw.get(k))
+        out[k] = n
+    weeks = raw.get("weeks")
+    if isinstance(weeks, list) and len(weeks) == WEEKS and all(_count(w) is not None for w in weeks):
+        out["weeks"] = [_count(w) for w in weeks]
+    return out
+
+
+def _optional_usd(v) -> float | None:
+    x = _money_number(v) if v is not None else None
+    return x
+
+
+def spend_view(act: dict) -> dict:
+    return {"7d": float(act.get("spend_7d_usd") or 0), "30d": _optional_usd(act.get("spend_30d_usd")),
+            "365d": _optional_usd(act.get("spend_365d_usd"))}
+
+
+_MD_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
+_MD_MARKS = re.compile(r"(\*\*|__|`)")
+
+
+def readme_summary(repo: pathlib.Path) -> str:
+    """The first prose paragraph of the repo's README.md, clipped to SUMMARY_CHARS. Headings, badges, images,
+    HTML, tables, quotes, lists and code fences are skipped. "" when there is none."""
+    try:
+        text = (repo / "README.md").read_text(encoding="utf-8", errors="replace")[:16384]
+    except OSError:
+        return ""
+    lines = text.splitlines()
+    para: list[str] = []
+    fenced = False
+    for i, raw in enumerate(lines):
+        line = raw.strip()
+        if line.startswith(("```", "~~~")):
+            fenced = not fenced
+            if para:
+                break
+            continue
+        nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
+        setext = bool(nxt) and set(nxt) <= {"="} or bool(nxt) and set(nxt) <= {"-"} and len(nxt) >= 3
+        skip = (fenced or not line or line.startswith(("#", "![", "[![", "<", "|", ">", "- ", "* ", "+ ", "---", "==="))
+                or re.match(r"\d+[.)] ", line) is not None or (setext and not para))
+        if skip:
+            if para:
+                break
+            continue
+        para.append(line)
+    out = _MD_LINK.sub(lambda m: m.group(1), " ".join(para))
+    return _clip(_MD_MARKS.sub("", out), SUMMARY_CHARS)
+
+
+def summary_of(rp: dict, manifests: list[dict], repos: list[pathlib.Path]) -> str:
+    """The first that exists of: `[productize] summary` in a manifest, the registry's `summary`, the first
+    paragraph of a README. "" when none."""
+    for m in manifests:
+        v = _clip((m.get("productize") or {}).get("summary") or "", SUMMARY_CHARS)
+        if v:
+            return v
+    v = _clip(rp.get("summary") or "", SUMMARY_CHARS)
+    if v:
+        return v
+    for r in repos:
+        v = readme_summary(r)
+        if v:
+            return v
+    return ""
+
+
+def _nulls_last(v):
+    """A sort key that puts the bigger number first and None last."""
+    return (v is None, -(v or 0))
+
+
+def home_view(items: list[dict]) -> dict:
+    """`home.sections`: every product in exactly one of users / building / quiet, on 7-day signals only.
+    A parked product is quiet. users: active or new users in 7 days. building: BUILDING_MIN_COMMITS or more
+    commits in 7 days. Starred (`focus`) products lead each section; None sorts last."""
+    sections: dict[str, list[dict]] = {k: [] for k in SECTIONS}
+    for it in items:
+        m = it["metrics"]
+        active, new = m["users"]["active"]["7d"], m["users"]["new"]["7d"]
+        commits = m["commits"]["7d"]
+        if it["stage"] == "parked":
+            sections["quiet"].append(it)
+        elif (active or 0) > 0 or (new or 0) > 0:
+            sections["users"].append(it)
+        elif commits is not None and commits >= BUILDING_MIN_COMMITS:
+            sections["building"].append(it)
+        else:
+            sections["quiet"].append(it)
+    c7 = lambda it: it["metrics"]["commits"]["7d"]      # noqa: E731
+    c30 = lambda it: it["metrics"]["commits"]["30d"]    # noqa: E731
+    keys = {
+        "users": lambda it: (not it["focus"], _nulls_last(it["metrics"]["users"]["active"]["7d"]),
+                             _nulls_last(it["metrics"]["users"]["new"]["7d"]), _nulls_last(c7(it)), it["id"]),
+        "building": lambda it: (not it["focus"], _nulls_last(c7(it)), it["id"]),
+        "quiet": lambda it: (not it["focus"], _nulls_last(c7(it)), _nulls_last(c30(it)), it["id"]),
+    }
+    return {"sections": [{"id": k, "ids": [it["id"] for it in sorted(sections[k], key=keys[k])]} for k in SECTIONS]}
 
 
 # --- the core products ----------------------------------------------------------------------------------
@@ -823,7 +1173,7 @@ def empty(cache: dict | None = None) -> dict:
     cache = cache or load_cache()
     return {"version": VERSION, "checked": {"stores": cache["checked"]["stores"], "github": cache["checked"]["github"]},
             "counts": {"on_track": 0, "at_risk": 0, "off_track": 0, "parked": 0}, "core": [], "core_source": "rule",
-            "products": []}
+            "home": {"sections": [{"id": k, "ids": []} for k in SECTIONS]}, "products": []}
 
 
 def build(now: float, *, reg: dict, prods: list[dict], ask_rows: list[dict], tasks: list[dict], bl: dict,
@@ -857,6 +1207,8 @@ def build(now: float, *, reg: dict, prods: list[dict], ask_rows: list[dict], tas
         last = row.get("last_activity") or ""
         last_epoch = asks._epoch(last) if last else None
         act = cache["activity"].get(pid) or {}
+        mine_cache = cache["metrics"].get(pid) if isinstance(cache["metrics"].get(pid), dict) else {}
+        icon = mine_cache.get("icon") if isinstance(mine_cache.get("icon"), dict) else {}
         stage = rp.get("stage") or ""
         health, reasons = health_of(stage, rows, primary, gh["open_p1"], last_epoch, now)
         blocked = next((r for r in rows if r["state"] == "blocked"), None)
@@ -878,6 +1230,11 @@ def build(now: float, *, reg: dict, prods: list[dict], ask_rows: list[dict], tas
                          "spend_7d_usd": float(act.get("spend_7d_usd") or 0)},
             "waiting": len(mine), "waiting_raw": len(mine_raw), "oldest_wait_days": oldest, "tasks": len(owner_tasks), "milestone": milestone,
             "progress": progress,
+            "summary": summary_of(rp, manifests, repos),
+            "icon_jpeg": icon.get("b64") if isinstance(icon.get("b64"), str) else "",
+            "metrics": {"users": users_metrics(repos, usage), "commits": commits_view(mine_cache.get("commits")),
+                        "spend_usd": spend_view(act),
+                        "money": money_metrics(monetization_enabled(manifests), repos, usage)},
             "next": row.get("next") or (blocked["detail"] if blocked and health != "parked" else ""),
             "repo": row.get("repo") or "",
         })
@@ -885,7 +1242,7 @@ def build(now: float, *, reg: dict, prods: list[dict], ask_rows: list[dict], tas
     counts = {k: sum(1 for x in items if x["health"] == k) for k in ("on_track", "at_risk", "off_track", "parked")}
     core, source, _ = core_view(reg, cache, usage)
     return {"version": VERSION, "checked": {"stores": cache["checked"]["stores"], "github": cache["checked"]["github"]},
-            "counts": counts, "core": core, "core_source": source, "products": items}
+            "counts": counts, "core": core, "core_source": source, "home": home_view(items), "products": items}
 
 
 def _mail_ready() -> bool:
@@ -903,7 +1260,10 @@ def only(pf: dict, pid: str) -> dict | None:
     if not rows:
         return None
     counts = {k: sum(1 for x in rows if x["health"] == k) for k in pf["counts"]}
-    return {**pf, "counts": counts, "core": [c for c in pf.get("core") or [] if c == pid], "products": rows}
+    home = {"sections": [{"id": sec["id"], "ids": [i for i in sec["ids"] if i == pid]}
+                         for sec in (pf.get("home") or {}).get("sections") or []]}
+    return {**pf, "counts": counts, "core": [c for c in pf.get("core") or [] if c == pid], "home": home,
+            "products": rows}
 
 
 # --- the command -------------------------------------------------------------------------------
