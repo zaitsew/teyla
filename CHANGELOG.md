@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.37.3 — 2026-11-02 — Doctor names a failed store read
 
 - **`teyla doctor` names a failed store read.** A store read that failed in the last `teyla portfolio --refresh` is now
   a doctor row. An expired gcloud login is a fix row with its command: `gcloud auth login && teyla portfolio --refresh`.
