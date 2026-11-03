@@ -94,7 +94,7 @@ def build(now: float | None = None, only: str | None = None) -> dict:
 def write_cache(rep: dict) -> None:
     path = cache_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
+    tmp = path.with_suffix(f".{os.getpid()}.tmp")   # one file per writer: two refreshes can overlap
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump(rep, f)
