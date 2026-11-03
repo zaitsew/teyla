@@ -465,10 +465,46 @@ final class StoreSessionTests: XCTestCase {
         XCTAssertEqual(session.receive(url: link(Self.keyB)), .needsConfirmation)
         XCTAssertEqual(session.receive(url: link(Self.keyB)), .needsConfirmation, "the same link again changes nothing")
         XCTAssertEqual(session.receive(url: link(keyC)), .conflicting)
-        XCTAssertFalse(session.hasPendingPairing)
+        XCTAssertTrue(session.hasPendingPairing, "the alert stays until the owner answers")
         XCTAssertNotNil(session.notice)
         session.confirmPendingPairing()
         XCTAssertEqual(keys.key, stored, "a Replace click after the swap stores nothing")
+        XCTAssertFalse(session.hasPendingPairing)
+        XCTAssertNotNil(session.notice, "the owner is told why nothing changed")
+    }
+
+    func testLinksInOneBatchCannotReplaceTheKeyUnderAnOpenAlert() throws {
+        let keys = MemoryKeys()
+        let (session, _) = session(keys: keys)
+        XCTAssertEqual(session.receive(url: link(Self.keyA)), .paired)
+        let stored = try XCTUnwrap(keys.key)
+        let keyC = "AQECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+        XCTAssertEqual(session.receive(url: link(Self.keyB)), .needsConfirmation)
+        XCTAssertEqual(session.receive(url: link(keyC)), .conflicting)
+        XCTAssertEqual(session.receive(url: link(keyC)), .conflicting, "the next link must not take the waiting place")
+        XCTAssertEqual(session.receive(url: link(Self.keyA)), .unchanged, "the stored key clears nothing")
+        XCTAssertEqual(session.receive(url: link(Self.keyB)), .conflicting, "the first link again does not undo the conflict")
+        session.confirmPendingPairing()
+        XCTAssertEqual(keys.key, stored)
+
+        // The owner answered, so the next link asks afresh.
+        XCTAssertEqual(session.receive(url: link(Self.keyB)), .needsConfirmation)
+        session.confirmPendingPairing()
+        XCTAssertEqual(keys.key, RelayCrypto.parsePairing("teyla-pair:v1:" + Self.keyB))
+    }
+
+    func testTheStoredKeyDoesNotClearAWaitingOne() throws {
+        let keys = MemoryKeys()
+        let (session, _) = session(keys: keys)
+        XCTAssertEqual(session.receive(url: link(Self.keyA)), .paired)
+        let keyC = "AQECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+        XCTAssertEqual(session.receive(url: link(Self.keyB)), .needsConfirmation)
+        XCTAssertEqual(session.receive(url: link(Self.keyA)), .unchanged)
+        XCTAssertTrue(session.hasPendingPairing)
+        XCTAssertEqual(session.receive(url: link(keyC)), .conflicting)
+        session.declinePendingPairing()
+        XCTAssertFalse(session.hasPendingPairing)
+        XCTAssertEqual(session.receive(url: link(keyC)), .needsConfirmation, "a no ends the conflict")
     }
 
     func testADifferentKeyNeverReplacesTheStoredOneUntilConfirmed() throws {

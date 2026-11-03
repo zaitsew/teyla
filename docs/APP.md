@@ -539,6 +539,7 @@ the window forward. Any web page can open such a link, so the rules are:
 | The same key | The key does not change. The folder panel still opens if no folder is chosen, and the sample is left. |
 | A stored key that could not be read | Nothing changes. The window says the key could not be read. |
 | A different key | The stored key stays. A pending value is set and the window asks "Replace the pairing with this Mac?" |
+| A different link while one waits | The waiting key is kept and marked as a conflict. Replace then stores nothing, and the window says two links arrived. Only the owner's answer clears it. |
 | Not a `teyla-pair:v1:` link with a 32-byte key | Rejected; nothing changes. |
 
 Once a key is stored and no folder is chosen, the folder panel opens at once. The panel opens on `iCloud Drive/Teyla` when that

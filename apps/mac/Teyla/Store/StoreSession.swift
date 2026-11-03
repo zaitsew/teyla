@@ -21,6 +21,8 @@ final class StoreSession {
     /// A different key that arrived by `teyla-pair:` link while one is stored. It replaces nothing until the owner
     /// confirms, because any web page can open such a link.
     private(set) var pendingKey: Data?
+    /// A different link arrived while `pendingKey` waited. A yes then stores nothing.
+    private var pendingConflict = false
 
     @ObservationIgnored let backend: StoreBackend
     /// Called after the source changed, so the window clears what it shows and reads again.
@@ -108,9 +110,12 @@ final class StoreSession {
         case rejected
         /// The stored key could not be read, so nothing changed; `notice` says so.
         case unreadable
-        /// A second, different link arrived while one waited for the owner's yes. Both are dropped; `notice` says so.
+        /// A different link arrived while one waited for the owner's yes. Neither will be stored; `notice` says so.
         case conflicting
     }
+
+    private static let conflictNotice =
+        "Two different pairing links arrived, so Teyla changed nothing. Run teyla relay connect on your Mac."
 
     /// The key in a `teyla-pair:v1:<key>` link, or nil for anything else.
     static func pairingKey(from url: URL) -> Data? {
@@ -147,7 +152,6 @@ final class StoreSession {
             return .paired
         }
         if stored == new {
-            pendingKey = nil
             if isSample {
                 leaveSampleMode()
                 apply()
@@ -155,20 +159,27 @@ final class StoreSession {
             askForFolderIfMissing()
             return .unchanged
         }
-        // The alert names no key, so a page must not swap the one the owner is about to accept.
-        if let pendingKey, pendingKey != new {
-            self.pendingKey = nil
-            notice = "Two different pairing links arrived, so Teyla changed nothing. Run teyla relay connect on your Mac."
+        // The alert names no key, so a page must not swap the one the owner is about to accept. Only the owner's answer
+        // clears a waiting key: a link that cleared it would let the next link take its place under the open alert.
+        if let pendingKey, pendingConflict || pendingKey != new {
+            pendingConflict = true
+            notice = Self.conflictNotice
             return .conflicting
         }
         pendingKey = new
         return .needsConfirmation
     }
 
-    /// The owner said yes to replacing the pairing.
+    /// The owner said yes to replacing the pairing. After a conflict there is no telling which link the yes was for,
+    /// so nothing is stored.
     func confirmPendingPairing() {
         guard let new = pendingKey else { return }
-        pendingKey = nil
+        let conflict = pendingConflict
+        clearPendingPairing()
+        guard !conflict else {
+            notice = Self.conflictNotice
+            return
+        }
         guard store(key: new) else { return }
         leaveSampleMode()
         apply()
@@ -177,7 +188,12 @@ final class StoreSession {
 
     /// The owner said no: the stored key stays.
     func declinePendingPairing() {
+        clearPendingPairing()
+    }
+
+    private func clearPendingPairing() {
         pendingKey = nil
+        pendingConflict = false
     }
 
     private func store(key new: Data) -> Bool {
@@ -215,7 +231,7 @@ final class StoreSession {
     /// Forgets the Mac: the key and the folder. The setup screen comes back.
     func forgetMac() {
         keyStore.delete()
-        pendingKey = nil
+        clearPendingPairing()
         bookmark.clear(defaults)
         defaults.set(false, forKey: Self.sampleKey)
         openFolder(nil)

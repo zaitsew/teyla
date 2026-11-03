@@ -33,6 +33,8 @@ final class AppModel {
     /// A key that arrived by link while another key is stored. It replaces the stored one only after the
     /// owner confirms: any web page can open a `teyla-pair:` link.
     private(set) var pendingPairing: Data?
+    /// A different link arrived while `pendingPairing` waited. A yes then stores nothing.
+    private var pendingPairingConflict = false
     /// The onboarding step the owner has finished (`done` screen shown once).
     private(set) var setupFinished: Bool
     /// Forces an onboarding step for screenshots (`TEYLA_ONBOARDING_STEP`); never set in normal use.
@@ -135,9 +137,12 @@ final class AppModel {
         case failed
         /// The stored key could not be read, so nothing was changed; `pairingError` says so.
         case unreadable
-        /// A second, different link arrived while one waited for the owner's yes. Both are dropped; `pairingError` says so.
+        /// A different link arrived while one waited for the owner's yes. Neither will be stored; `pairingError` says so.
         case conflicting
     }
+
+    private static let pairingConflictMessage =
+        "Two different pairing links arrived, so Teyla changed nothing. Scan the code on your Mac again."
 
     /// Handles a link opened from the Camera or a web page. The first pairing is automatic. A key that
     /// differs from the stored one is held back until the owner confirms.
@@ -160,23 +165,29 @@ final class AppModel {
             return install(newKey) ? .paired : .failed
         }
         if current == newKey {
-            pendingPairing = nil
             return .unchanged
         }
-        // The alert names no key, so a page must not swap the one the owner is about to accept.
-        if let pendingPairing, pendingPairing != newKey {
-            self.pendingPairing = nil
-            pairingError = "Two different pairing links arrived, so Teyla changed nothing. Scan the code on your Mac again."
+        // The alert names no key, so a page must not swap the one the owner is about to accept. Only the owner's answer
+        // clears a waiting key: a link that cleared it would let the next link take its place under the open alert.
+        if let pendingPairing, pendingPairingConflict || pendingPairing != newKey {
+            pendingPairingConflict = true
+            pairingError = Self.pairingConflictMessage
             return .conflicting
         }
         pendingPairing = newKey
         return .needsConfirmation
     }
 
-    /// The owner said yes: the held key replaces the stored one.
+    /// The owner said yes: the held key replaces the stored one. After a conflict there is no telling which link the
+    /// yes was for, so nothing is stored.
     func confirmPendingPairing() {
         guard let newKey = pendingPairing else { return }
-        pendingPairing = nil
+        let conflict = pendingPairingConflict
+        cancelPendingPairing()
+        guard !conflict else {
+            pairingError = Self.pairingConflictMessage
+            return
+        }
         if install(newKey) {
             // Whatever was read with the old key is not the new Mac's.
             snapshot = nil
@@ -186,6 +197,7 @@ final class AppModel {
 
     func cancelPendingPairing() {
         pendingPairing = nil
+        pendingPairingConflict = false
     }
 
     private func install(_ newKey: Data) -> Bool {
@@ -229,6 +241,7 @@ final class AppModel {
     /// Forgets the Mac: the key, the folder and anything waiting to be sent.
     func forgetMac() {
         keyStore.delete()
+        cancelPendingPairing()
         FolderBookmark.clear(defaults: defaults)
         defaults.set(false, forKey: Self.finishedKey)
         scopedURL?.stopAccessingSecurityScopedResource()
