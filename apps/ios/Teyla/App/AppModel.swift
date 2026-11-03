@@ -133,6 +133,8 @@ final class AppModel {
         case invalid
         /// The key was fine but could not be stored; `sendError` says why.
         case failed
+        /// The stored key could not be read, so nothing was changed; `pairingError` says so.
+        case unreadable
     }
 
     /// Handles a link opened from the Camera or a web page. The first pairing is automatic. A key that
@@ -143,7 +145,18 @@ final class AppModel {
             pairingError = RelayError.badPairing.errorDescription
             return .invalid
         }
-        guard let current = key else { return install(newKey) ? .paired : .failed }
+        // The launch may have read the Keychain while it was unavailable: read again before calling it empty.
+        if key == nil, let stored = keyStore.load() {
+            key = stored
+            hasKey = true
+        }
+        guard let current = key else {
+            guard keyStore.isKnownEmpty() else {
+                pairingError = "Teyla could not read its stored key, so it changed nothing. Unlock your iPhone and open the link again."
+                return .unreadable
+            }
+            return install(newKey) ? .paired : .failed
+        }
         if current == newKey {
             pendingPairing = nil
             return .unchanged

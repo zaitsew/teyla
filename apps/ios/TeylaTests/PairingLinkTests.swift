@@ -12,6 +12,24 @@ final class PairingLinkTests: XCTestCase {
         func delete() { lock.withLock { stored = nil } }
     }
 
+    /// A stored key behind a Keychain that does not answer until `available` is set.
+    private final class LockedKeyStore: KeyStore, @unchecked Sendable {
+        private let lock = NSLock()
+        private let stored: Data
+        private var _available = false
+        private var _saves = 0
+        init(_ key: Data) { stored = key }
+        var available: Bool {
+            get { lock.withLock { _available } }
+            set { lock.withLock { _available = newValue } }
+        }
+        var saves: Int { lock.withLock { _saves } }
+        func load() -> Data? { lock.withLock { _available ? stored : nil } }
+        func save(_ key: Data) throws { lock.withLock { _saves += 1 } }
+        func delete() {}
+        func isKnownEmpty() -> Bool { false }
+    }
+
     private let keyA = Data(0..<32)
     private let keyB = Data((0..<32).map { UInt8(255 - $0) })
 
@@ -111,6 +129,26 @@ final class PairingLinkTests: XCTestCase {
         XCTAssertEqual(model.setupStep, 1)
         XCTAssertEqual(model.handlePairingLink(link(keyA)), .paired)
         XCTAssertEqual(model.setupStep, 2)
+    }
+
+    func testALinkDoesNotReplaceAKeyThatCouldNotBeRead() {
+        let store = LockedKeyStore(keyA)
+        let model = AppModel(environment: [:], defaults: UserDefaults(suiteName: "PairingLinkTests-\(UUID().uuidString)")!,
+                             keyStore: store)
+        XCTAssertFalse(model.hasKey, "the launch could not read the key")
+        XCTAssertEqual(model.handlePairingLink(link(keyB)), .unreadable)
+        XCTAssertEqual(store.saves, 0)
+        XCTAssertNotNil(model.pairingError)
+    }
+
+    func testALinkReadsTheKeyAgainWhenTheLaunchCouldNot() {
+        let store = LockedKeyStore(keyA)
+        let model = AppModel(environment: [:], defaults: UserDefaults(suiteName: "PairingLinkTests-\(UUID().uuidString)")!,
+                             keyStore: store)
+        store.available = true
+        XCTAssertEqual(model.handlePairingLink(link(keyB)), .needsConfirmation)
+        XCTAssertEqual(store.saves, 0)
+        XCTAssertTrue(model.hasKey)
     }
 
     func testThePickerStartsInTheTeylaFolderOfICloudDrive() {

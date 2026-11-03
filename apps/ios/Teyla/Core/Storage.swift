@@ -6,6 +6,13 @@ protocol KeyStore: Sendable {
     func load() -> Data?
     func save(_ key: Data) throws
     func delete()
+    /// True only when the store answered that it holds no key. A failed read returns false, because `load()`
+    /// gives nil for both, and a pairing link must not replace a key that could not be read.
+    func isKnownEmpty() -> Bool
+}
+
+extension KeyStore {
+    func isKnownEmpty() -> Bool { load() == nil }
 }
 
 struct KeychainError: Error, LocalizedError {
@@ -32,6 +39,10 @@ struct KeychainKeyStore: KeyStore {
         var out: AnyObject?
         guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess else { return nil }
         return out as? Data
+    }
+
+    func isKnownEmpty() -> Bool {
+        SecItemCopyMatching(query as CFDictionary, nil) == errSecItemNotFound
     }
 
     func save(_ key: Data) throws {
