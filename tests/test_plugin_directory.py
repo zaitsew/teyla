@@ -333,7 +333,8 @@ def test_no_plugin_script_or_skill_makes_a_network_call():
             if NETWORK.search(line):
                 hits.append(f"{p.relative_to(PLUGIN)}:{n}: {line.strip()[:80]}")
             for url in re.findall(r"https?://[^\s)\"`>]+", line):
-                if not url.startswith("https://github.com/zaitsew") and "LICENSE" not in p.name:
+                own_site = re.fullmatch(r"https://teyla\.dev(/\S*)?", url)
+                if not url.startswith("https://github.com/zaitsew") and not own_site and "LICENSE" not in p.name:
                     hits.append(f"{p.relative_to(PLUGIN)}:{n}: unexpected URL {url}")
     assert hits == []
 
