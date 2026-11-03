@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#F7F7F9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E1015" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/tokens.css">
+<link rel="stylesheet" href="/assets/site.css">
+<title>Teyla: the control room for your AI agents</title>
+<meta name="description" content="Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's waiting on you, and fixes the waste. Open source. No server, no account.">
+<link rel="canonical" href="https://teyla.dev/">
+<meta property="og:title" content="Teyla: the control room for your AI agents">
+<meta property="og:description" content="See what your agent sessions cost and what's waiting on you. Fix the waste. Nothing leaves your Mac unless you turn it on.">
+<meta property="og:url" content="https://teyla.dev/">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://teyla.dev/img/og.png">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+<header class="wrap top">
+  <a href="/" aria-label="Teyla home"><img class="logo-light" src="/img/lockup.svg" alt="Teyla" width="120" height="32"><img class="logo-dark" src="/img/lockup-dark.svg" alt="" width="120" height="32"></a>
+  <a class="quiet" href="https://github.com/zaitsew/teyla">GitHub</a>
+</header>
+<main>
+  <div class="wrap hero">
+    <h1>The control room for your AI agents<span class="cursor" aria-hidden="true"></span></h1>
+    <p class="lead">Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's waiting on you, and fixes the waste.</p>
+    <div class="paste">
+      <span class="label">Paste this into Claude Code or Codex</span>
+      <div class="paste-box"><pre id="paste-line">Set up https://github.com/zaitsew/teyla</pre><button class="btn" type="button" data-copy="paste-line" hidden>Copy line</button></div>
+      <p class="note">Your agent installs Teyla, shows the diagnosis and asks before each change. <a href="#install">Install by hand</a></p>
+    </div>
+  </div>
+
+  <section>
+    <div class="wrap">
+      <h2>The first run shows what 30 days cost</h2>
+      <p class="sub">Teyla prices the sessions already on your disk, then lists the changes that save money, each with its saving, trade-off and undo.</p>
+      <div class="shot"><img src="/img/web-start.png" alt="The Start page of teyla web:  in the last 30 days, 85% spent on context, and the first change with its saving, trade-off and undo" width="1280" height="860" loading="lazy"></div>
+      <p class="caption">Sample data. List price is what the tokens would cost through the API; a subscription bills differently.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2>Four problems it takes off your hands</h2>
+      <div class="grid">
+        <div>
+          <h3 class="saving">Spend you cannot see</h3>
+          <p>Long sessions re-read their whole context every turn. Teyla finds them, compacts earlier and runs subagents on cheaper models.</p>
+          <code>teyla apply O1</code>
+        </div>
+        <div>
+          <h3 class="needs-you">Questions nobody reads</h3>
+          <p>A session ends on a question and the work stops. Every open question sits on one screen, oldest first, with a link back to the session.</p>
+          <code>teyla asks</code>
+        </div>
+        <div>
+          <h3>Agents that forget</h3>
+          <p>A correction made in Claude Code is unknown to Codex. One POLICY.md is linked into Claude Code, Codex, Grok, Cursor and Hermes.</p>
+          <code>teyla policy sync</code>
+        </div>
+        <div>
+          <h3>A Mac that falls over</h3>
+          <p>Parallel agents swap the Mac until it hangs or panics. Teyla admits one heavy build or simulator at a time and holds new ones under memory pressure.</p>
+          <code>teyla load</code>
+        </div>
+      </div>
+      <details>
+        <summary>See all 10 packs</summary>
+        <p class="sub">Tick the packs you need. Teyla turns on only those, and names another one when its problem shows up.</p>
+        <ul class="facts">
+        <li><span class="strong">Token cost.</span> <span class="muted">Long sessions re-read their whole context every turn. Teyla compacts earlier and runs subagents on cheaper models.</span></li>
+        <li><span class="strong">Machine guard.</span> <span class="muted">Parallel agents swap the Mac until it hangs. Teyla admits one heavy build or simulator at a time.</span></li>
+        <li><span class="strong">Disk cleanup.</span> <span class="muted">DerivedData, worktrees and simulators fill the disk. Teyla sweeps temp build output every hour.</span></li>
+        <li><span class="strong">Questions and ideas.</span> <span class="muted">A session ends on a question and nobody reads it. Teyla keeps every open question on one screen.</span></li>
+        <li><span class="strong">One policy.</span> <span class="muted">A correction made in Claude Code is unknown to Codex. One POLICY.md is linked into every agent.</span></li>
+        <li><span class="strong">Morning check.</span> <span class="muted">A broken hook goes unseen for weeks. Teyla runs a daily check and a six-line weekly digest.</span></li>
+        <li><span class="strong">Security.</span> <span class="muted">A secret ends up in a public repo. Teyla refuses a publish that carries one and audits dependencies.</span></li>
+        <li><span class="strong">UX and UI.</span> <span class="muted">Screens ship with noise. Teyla checks UI code against one standard and judges two screens.</span></li>
+        <li><span class="strong">Ship and test.</span> <span class="muted">A build is uploaded, but no tester can install it. Teyla tracks each platform and unreviewed merges.</span></li>
+        <li><span class="strong">Writing.</span> <span class="muted">Replies and READMEs are long and padded. Teyla measures filler and checks drafts against a voice chart.</span></li>
+        </ul>
+      </details>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2>Nothing about your sessions leaves your Mac unless you turn it on</h2>
+      <ul class="facts">
+        <li>No server, no account, no telemetry. <a href="/privacy/">Every network call is listed.</a></li>
+        <li>Each change asks first and names the file, the saving and the way back. <code>teyla undo O1</code> puts back the setting.</li>
+        <li>Open source under Apache-2.0. This site sets no cookies and loads nothing from another host.</li>
+      </ul>
+    </div>
+  </section>
+  <section>
+    <div class="wrap">
+      <h2>Where it runs</h2>
+      <ul class="facts">
+        <li><span class="strong">Command line and <code>teyla web</code>.</span> <span class="muted">Available now. The web page runs on 127.0.0.1, on your Mac.</span></li>
+        <li><span class="strong">Mac app.</span> <span class="muted">Build it from source today, with macOS 15 and Xcode. <a href="https://github.com/zaitsew/teyla#the-mac-and-iphone-apps">See how.</a></span></li>
+        <li><span class="strong">iPhone app and Mac App Store.</span> <span class="muted">Not on sale yet. The iPhone app reads a signed folder in your own iCloud Drive; there is no Teyla server.</span></li>
+      </ul>
+    </div>
+  </section>
+  <section id="install">
+    <div class="wrap">
+      <h2>Install by hand</h2>
+      <p class="sub">You need a Mac and <a href="https://docs.astral.sh/uv/">uv</a>. The first command installs Teyla. The second shows the diagnosis, the checklist of packs, then each change: yes, no or explain.</p>
+      <div class="paste-box cmd"><pre id="cmd-install">uv tool install --python 3.12 git+https://github.com/zaitsew/teyla</pre><button class="btn btn-plain" type="button" data-copy="cmd-install" hidden>Copy</button></div>
+      <div class="paste-box cmd"><pre id="cmd-start">teyla start</pre><button class="btn btn-plain" type="button" data-copy="cmd-start" hidden>Copy</button></div>
+      <p class="sub">To look without installing, run this. It changes no setting of your tools and keeps its counts in <code>~/.teyla</code>.</p>
+      <div class="paste-box cmd"><pre id="cmd-try">uvx --python 3.12 --from git+https://github.com/zaitsew/teyla teyla start</pre><button class="btn btn-plain" type="button" data-copy="cmd-try" hidden>Copy</button></div>
+    </div>
+  </section>
+</main>
+<footer>
+  <div class="wrap">
+    <ul>
+      <li><a class="quiet" href="https://github.com/zaitsew/teyla">GitHub</a></li>
+      <li><a class="quiet" href="https://github.com/zaitsew/teyla/blob/main/docs/GUIDE.md">Guide</a></li>
+      <li><a class="quiet" href="/privacy/">Privacy</a></li>
+      <li><a class="quiet" href="/support/">Support</a></li>
+      <li><a class="quiet" href="https://github.com/zaitsew/teyla/blob/main/LICENSE">Apache-2.0</a></li>
+    </ul>
+  </div>
+</footer>
+<script src="/assets/site.js" defer></script>
+</body>
+</html>
