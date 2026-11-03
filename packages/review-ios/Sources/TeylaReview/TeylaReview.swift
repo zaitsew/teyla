@@ -21,6 +21,10 @@ public enum TeylaReview {
         public var didEnd: (() -> Void)?
         /// The words review mode says, read each time it opens, so a language picker takes effect.
         public var strings: () -> ReviewStrings = { ReviewStrings() }
+        /// The product's own way to reach the owner, for testers who have no iCloud folder of the
+        /// owner's. The package makes no network call: all sending happens in this closure.
+        /// Set `strings.deliveryNote` with it, so the tester knows where the capture goes.
+        public var deliver: ReviewDeliver?
         public init() {}
     }
 
@@ -78,7 +82,7 @@ public enum TeylaReview {
     public static func pair(_ pairingString: String) -> Bool {
         guard let key = RelayKey(pairing: pairingString), keyStore.save(key) else { return false }
         // Captures saved before pairing have no signature yet: sign them and copy what can be copied.
-        if isActive { DispatchQueue.global(qos: .utility).async { ReviewDelivery.retryPending() } }
+        if isActive { Task.detached(priority: .utility) { await ReviewDelivery.retryPending() } }
         return true
     }
 

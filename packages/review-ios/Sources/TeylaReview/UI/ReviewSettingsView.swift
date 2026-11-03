@@ -58,7 +58,7 @@ public struct ReviewSettingsView: View {
             FolderPicker { url in
                 try? TeylaReview.setRelayFolder(url)
                 folderChosen = TeylaReview.relayFolder.isChosen
-                DispatchQueue.global(qos: .utility).async { ReviewDelivery.retryPending() }
+                Task.detached(priority: .utility) { await ReviewDelivery.retryPending() }
             }
         }
     }

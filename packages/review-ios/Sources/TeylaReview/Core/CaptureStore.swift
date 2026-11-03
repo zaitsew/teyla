@@ -14,8 +14,9 @@ struct LocalStatus: Codable, Equatable {
     var status: ReviewStatus
     var updated: String
     var relayCopied: String?     // when the folder was copied to the relay outbox
+    var delivered: String?       // when the product's own channel accepted the capture
 
-    enum CodingKeys: String, CodingKey { case v, id, status, updated, relayCopied = "relay_copied" }
+    enum CodingKeys: String, CodingKey { case v, id, status, updated, relayCopied = "relay_copied", delivered }
 }
 
 /// What the Mac writes to `review-status/<id>.json`. Signed with the relay key.
@@ -162,6 +163,24 @@ struct CaptureStore {
         status.relayCopied = CaptureCoding.iso(now())
         try? writeStatus(status, in: src)
         return result
+    }
+
+    // MARK: the product's channel
+
+    /// The saved files of a capture, or nil while either is unreadable.
+    func upload(id: String) -> ReviewUpload? {
+        let dir = folder(for: id)
+        guard let json = try? Data(contentsOf: dir.appendingPathComponent(ReviewFormat.jsonName)),
+              let png = try? Data(contentsOf: dir.appendingPathComponent(ReviewFormat.pngName)) else { return nil }
+        return ReviewUpload(id: id, json: json, png: png)
+    }
+
+    func markDelivered(id: String) {
+        Self.statusLock.lock()
+        defer { Self.statusLock.unlock() }
+        var status = readLocalStatus(id: id) ?? LocalStatus(v: 1, id: id, status: .savedOnPhone, updated: CaptureCoding.iso(now()))
+        status.delivered = CaptureCoding.iso(now())
+        try? writeStatus(status, in: folder(for: id))
     }
 
     // MARK: status

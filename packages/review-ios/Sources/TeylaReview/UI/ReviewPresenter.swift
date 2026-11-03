@@ -87,7 +87,7 @@ enum ReviewPresenter {
                 let png = shot.png
                 // The overlay stays open to say what became of the capture. A failed save keeps the text.
                 Task { @MainActor in
-                    report(await Task.detached(priority: .userInitiated) { ReviewDelivery.save(record: record, png: png) }.value)
+                    report(await Task.detached(priority: .userInitiated) { await ReviewDelivery.save(record: record, png: png) }.value)
                 }
             })
         let host = UIHostingController(rootView: overlay)

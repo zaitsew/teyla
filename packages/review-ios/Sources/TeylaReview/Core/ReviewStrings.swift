@@ -23,6 +23,9 @@ public struct ReviewStrings {
     public var savedTitle = "Saved on this phone"
     public var savedDetail = "It has not been sent: this phone is not connected to the review inbox yet."
     public var done = "Done"
+    /// Shown under the comment field when the capture leaves the device through the product's
+    /// channel: who receives the comment and the screenshot. Empty shows nothing.
+    public var deliveryNote = ""
 
     public init() {}
 }
