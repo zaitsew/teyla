@@ -329,7 +329,11 @@ _NEVER_MORE = {
                 r"\u043c\u043e\u0439 \u043d\u0430\u0447\u0430\u043b\u044c\u043d\u0438\u043a)\b",
     "revenue-or-runway": r"\b(ingresos|facturaci[o\u00f3]n|\u0432\u044b\u0440\u0443\u0447\u043a\w*)\b",
     "health-or-family": r"\b(mi (esposa|marido|hijos?|hija|madre|padre|m[e\u00e9]dico)|\u043c\u043e\u044f \u0436\u0435\u043d\u0430|"
-                        r"\u043c\u043e\u0438 \u0434\u0435\u0442\u0438|\u043c\u043e\u0439 \u043c\u0443\u0436)\b",
+                        r"\u043c\u043e\u0438 \u0434\u0435\u0442\u0438|\u043c\u043e\u0439 \u043c\u0443\u0436)\b",    "user-count": r"\b(\d[\d.,]*\s*(\u0442\u044b\u0441\.?\s+)?(\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\w*|\u043a\u043b\u0438\u0435\u043d\u0442\w*|\u043f\u043e\u0434\u043f\u0438\u0441\u0447\u0438\u043a\w*|\u0437\u0430\u0433\u0440\u0443\u0437\u043e\u043a)|\d[\d.,]*\s*(usuarios|clientes|suscriptores|descargas))\b",
+    "money-advice": r"\b(\u0444\u0438\u043d\u0430\u043d\u0441\u043e\u0432\w+ \u0441\u043e\u0432\u0435\u0442\w*|\u0438\u043d\u0432\u0435\u0441\u0442\u0438\u0446\u0438\u043e\u043d\u043d\w+ \u0441\u043e\u0432\u0435\u0442\w*|\u043a\u0443\u043f\u0438(\u0442\u0435)? (\u0430\u043a\u0446\u0438\u0438|\u043a\u0440\u0438\u043f\u0442\u0443|\u0431\u0438\u0442\u043a\u043e\u0438\u043d)|consejo (financiero|de inversi[o\xf3]n)|invierte en|compra (acciones|cripto|bitcoin))\b",
+    "result-promise": r"\b(\u0433\u0430\u0440\u0430\u043d\u0442\u0438\u0440\w+|\u0433\u0430\u0440\u0430\u043d\u0442\u0438\u044f|garantizado|garantizada|en 10x|x10)\b",
+    "engagement-bait": r"\b(\u043b\u0430\u0439\u043a\w*,? \u0435\u0441\u043b\u0438|\u0440\u0435\u043f\u043e\u0441\u0442\w*,? \u0435\u0441\u043b\u0438|\u043e\u0442\u043c\u0435\u0442\u044c\w* \u0434\u0440\u0443\u0433\u0430|da like si|comparte si|etiqueta a (un|tu) amigo)\b",
+    "politics-or-religion": r"\b(\u043f\u043e\u043b\u0438\u0442\u0438\u043a\w*|\u043f\u043e\u043b\u0438\u0442\u0438\u0447\u0435\u0441\u043a\w*|\u0432\u044b\u0431\u043e\u0440\u044b|\u0432\u044b\u0431\u043e\u0440\u0430\u0445|\u0432\u044b\u0431\u043e\u0440\u043e\u0432|\u0440\u0435\u043b\u0438\u0433\u0438\w*|pol[i\xed]tic[ao]s?|elecciones|religi[o\xf3]n|religios[ao]s?)\b",
 }
 _NEVER_RE = {k: re.compile(v + (("|" + _NEVER_MORE[k]) if k in _NEVER_MORE else ""), re.I) for k, v in _NEVER.items()}
 _NUM = re.compile(r"[$€]?\d[\d,.]*\d%?|[$€]\d|\d%")

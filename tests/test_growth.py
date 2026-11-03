@@ -603,6 +603,15 @@ def test_never_post_list_covers_spanish_and_russian(env):
     assert any(h["kind"] == "job-search" for h in g.check("Estoy buscando trabajo"))
     assert any(h["kind"] == "job-search" for h in g.check("\u044f \u0438\u0449\u0443 \u0440\u0430\u0431\u043e\u0442\u0443"))
     assert any(h["kind"] == "employer" for h in g.check("mi jefe dijo que no"))
+    for kind, text in (
+        ("politics-or-religion", "Hablemos de pol\u00edtica"),
+        ("politics-or-religion", "\u041f\u043e\u0433\u043e\u0432\u043e\u0440\u0438\u043c \u043e \u0440\u0435\u043b\u0438\u0433\u0438\u0438"),
+        ("user-count", "12000 usuarios ya"),
+        ("money-advice", "consejo financiero para ti"),
+        ("result-promise", "resultado garantizado"),
+        ("engagement-bait", "da like si te sirve"),
+    ):
+        assert any(h["kind"] == kind for h in g.check(text)), (kind, text)
 
 
 def test_nothing_publishes_without_approval(env, monkeypatch):
