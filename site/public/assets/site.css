@@ -76,24 +76,6 @@ summary { display: flex; align-items: center; min-height: var(--target); color: 
 .cmd { margin-block-start: var(--space-4); max-width: var(--measure); }
 .cmd + .cmd { margin-block-start: var(--space-3); }
 
-/* The pack picker (variant B) */
-.pick { margin-block-start: var(--space-6); display: grid; gap: var(--space-2); }
-@media (min-width: 44rem) { .pick { grid-template-columns: 1fr 1fr; } }
-.pick label { display: grid; grid-template-columns: var(--check) 1fr; gap: var(--space-3); padding: var(--space-3) var(--space-4); min-height: var(--target); background: var(--surface); border: var(--line) solid var(--border); border-radius: var(--radius); cursor: pointer; }
-.pick label:has(input:checked) { border-color: var(--primary); }
-.pick input { width: var(--check); height: var(--check); margin: var(--space-1) 0 0; accent-color: var(--primary); }
-.pick span { display: block; }
-.pick .muted { margin-block-start: var(--space-1); }
-.bar { position: sticky; inset-block-end: 0; margin-block-start: var(--space-5); padding-block: var(--space-3); background: var(--bg); }
-.bar .paste { margin: 0; max-width: none; }
-@media (max-width: 44rem) { .bar .label { display: none; } }
-
-/* Sample card */
-.card { margin-block-start: var(--space-5); padding: var(--space-5); background: var(--surface); border: var(--line) solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); max-width: var(--measure); }
-.big { font-size: var(--type-title); line-height: var(--leading-title); font-weight: var(--weight-bold); letter-spacing: -0.02em; }
-.card ul { margin-block-start: var(--space-4); }
-.card li { padding-block: var(--space-2); border-block-start: var(--line) solid var(--border); }
-
 /* Prose pages */
 .page { padding-block: var(--space-7); }
 .page h1 { font-size: var(--type-title); }
