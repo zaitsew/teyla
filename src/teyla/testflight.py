@@ -52,21 +52,47 @@ Only the `CHN` entry is read; the tool may list every territory or just that one
 (no `availability` command, an app with no availability set yet) is a problem line of its own, never a pass.
 Exit 1 when any product is available in CHN or could not be read. `--quiet` also runs this check and adds its
 lines to `testflight.problems` (keys `testflight|<product>|CHN`).
+
+A store build can be current in TestFlight and still weeks old. The Teyla Mac app lagged `main` by a week in
+November 2026 because nothing uploaded it after the UI work, and `beta reached` compares only uploads with
+installable builds. A repo declares each platform's store target in its `teyla.toml`:
+
+    [[release.store_target]]
+    platform = "macos"                        # ios | macos
+    scheme = "TeylaStore"
+    project = "apps/mac/Teyla.xcodeproj"      # passed to the release tool; its folder is the default for `paths`
+    paths = ["apps/mac/Teyla", ":(exclude)apps/mac/Teyla/Core/TeylaCLI.swift"]   # git pathspecs: the target's sources
+    grace_days = 3                            # optional; a change younger than this may still be on its way
+    frozen = "2026-10-01: nobody opened it since"   # optional, see below
+
+`teyla testflight` takes the date of the newest upload on that platform (already in the `beta reached` answer,
+so no new call leaves the machine) and the date of the newest commit that landed on the default branch
+(`origin/HEAD`, first parent: the merge) and touched `paths`. When the change is more than `grace_days` newer
+than the upload, it prints a warning line with the release command (`--platform macos` included), the platform
+counts as `stale` (exit 1, one `testflight.problems` line), and nothing is uploaded. A platform with no upload
+at all and a source change warns the same way.
+
+POLICY §14: a secondary nobody opened in 30 days is frozen and gets no parity train. `frozen = "<date>: why"`
+says nobody has opened it since that date; once that date is 30 days back, the lag is not reported.
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import pathlib
 import subprocess
 import sys
 
-from . import net, productize
+from . import cloud, net, productize
 
 TIMEOUT_S = 60
 PLATFORM_LABEL = {"IOS": "iOS", "MAC_OS": "macOS", "TV_OS": "tvOS", "VISION_OS": "visionOS"}
+TARGET_PLATFORM = {"ios": "IOS", "macos": "MAC_OS"}   # `platform` in [[release.store_target]] -> App Store Connect
 # Worst first: the product's verdict is the worst of its platforms'.
-ORDER = ("error", "none", "behind", "current")
+ORDER = ("error", "none", "behind", "stale", "current")
+GRACE_DAYS = 3    # a source change this young is not yet a lagging store build
+FROZEN_DAYS = 30  # POLICY §14: a secondary nobody opened in this long is frozen
 CHINA = "CHN"  # POLICY §15: App Store territory id of the China mainland storefront
 
 
@@ -254,6 +280,113 @@ def platform_line(product: str, p: dict, verdict: str) -> str:
     return f"{product}  {_label(p.get('platform', '?')):<6} {head}; {can} — {tail}"
 
 
+def _today() -> dt.date:
+    return dt.date.today()  # a function so tests can pin the day
+
+
+def store_targets(manifest: dict) -> tuple[list[dict], str | None]:
+    """([{platform, asc, scheme, project, paths, grace_days, frozen}], error). An entry that cannot
+    be used is an error, never skipped: a typo must not turn the check off."""
+    raw = (manifest.get("release") or {}).get("store_target")
+    if raw is None:
+        return [], None
+    if not isinstance(raw, list) or not all(isinstance(t, dict) for t in raw):
+        return [], "`[[release.store_target]]` must be a list of tables"
+    out = []
+    for t in raw:
+        plat = str(t.get("platform") or "").strip().lower()
+        scheme = str(t.get("scheme") or "").strip()
+        project = str(t.get("project") or "").strip()
+        if plat not in TARGET_PLATFORM or not scheme or not project:
+            return [], ("`[[release.store_target]]` needs `platform` (ios or macos), `scheme` and `project`, "
+                        f"got platform={plat or 'unset'}, scheme={scheme or 'unset'}, project={project or 'unset'}")
+        paths = t.get("paths")
+        if paths is None:
+            paths = [str(pathlib.PurePosixPath(project).parent)]
+        if not isinstance(paths, list) or not paths or not all(isinstance(x, str) and x for x in paths):
+            return [], "`paths` in `[[release.store_target]]` must be a list of git pathspecs"
+        grace = t.get("grace_days", GRACE_DAYS)
+        if isinstance(grace, bool) or not isinstance(grace, int) or grace < 0:
+            return [], "`grace_days` in `[[release.store_target]]` must be a whole number of days"
+        out.append({"platform": plat, "asc": TARGET_PLATFORM[plat], "scheme": scheme, "project": project,
+                    "paths": paths, "grace_days": grace, "frozen": str(t.get("frozen") or "").strip()})
+    return out, None
+
+
+def is_frozen(target: dict, today: dt.date) -> bool:
+    """POLICY §14: nobody has opened the platform since the date `frozen` starts with, and that was
+    FROZEN_DAYS ago or more. An unreadable date does not freeze anything."""
+    try:
+        since = dt.date.fromisoformat(target["frozen"][:10])
+    except ValueError:
+        return False
+    return (today - since).days >= FROZEN_DAYS
+
+
+def newest_change(repo: pathlib.Path, paths: list[str]) -> dict | None:
+    """The newest commit on the default branch (first parent, so a merge counts when it landed) that
+    touched `paths`: {when, sha, subject}. None when git cannot say. Local git only."""
+    ref = cloud.default_ref(repo)
+    try:
+        r = subprocess.run(["git", "-C", str(repo), "log", "--first-parent", "-1",
+                            "--format=%cI%x09%h%x09%s", ref, "--", *paths],
+                           capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+    when, _, rest = r.stdout.strip().partition("\t")
+    sha, _, subject = rest.partition("\t")
+    try:
+        return {"when": dt.datetime.fromisoformat(when), "sha": sha, "subject": subject[:80]}
+    except ValueError:
+        return None
+
+
+def _upload_time(p: dict) -> dt.datetime | None:
+    raw = str((p.get("newest_uploaded") or {}).get("uploaded") or "")
+    try:
+        t = dt.datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)
+
+
+def release_command(repo: pathlib.Path, tool_raw: str, target: dict, bundle_id: str) -> str:
+    """Runnable from anywhere: `project` is relative to the repo, so the command starts there."""
+    where = str(repo).replace(str(pathlib.Path.home()), "~")
+    return (f"cd {where} && {tool_raw} release --platform {target['platform']} --project {target['project']} "
+            f"--scheme {target['scheme']} --bundle-id {bundle_id}")
+
+
+def store_lag(manifest: dict, target: dict, p: dict, tool_raw: str, bundle_id: str) -> dict | None:
+    """{text, release, ...} when the platform's store build is older than the target's sources by more
+    than the grace period, else None (current, young, frozen, or git cannot say)."""
+    if is_frozen(target, _today()):
+        return None
+    change = newest_change(pathlib.Path(manifest["repo"]), target["paths"])
+    if change is None:
+        return None
+    label = _label(target["asc"])
+    cmd = release_command(pathlib.Path(manifest["repo"]), tool_raw, target, bundle_id)
+    what = f"{target['scheme']} changed {change['when'].date()} ({change['sha']} {change['subject']})"
+    uploaded = _upload_time(p)
+    if p.get("newest_uploaded") and uploaded is None:
+        return None   # an upload with no readable date: nothing to compare, and nothing to claim
+    if uploaded is None:
+        head = f"no {label} build uploaded; {what}"
+    else:
+        if change["when"] - uploaded <= dt.timedelta(days=target["grace_days"]):
+            return None
+        head = f"{label} store build uploaded {uploaded.date()} lags main; {what}"
+    return {"text": head, "release": cmd, "change": change["sha"], "changed": str(change["when"].date()),
+            "uploaded": str(uploaded.date()) if uploaded else None}
+
+
+def lag_line(product: str, lag: dict) -> str:
+    return f"{product}  WARN {lag['text']}. Release: {lag['release']}"
+
+
 def check_product(manifest: dict, cfg: dict) -> dict:
     """One report row for one in-scope product. Never raises."""
     name = manifest["product"]
@@ -261,6 +394,9 @@ def check_product(manifest: dict, cfg: dict) -> dict:
     if not bundle_id:
         return _error(manifest, f"no bundle id: add `[release] apple_bundle_id = \"com.example.app\"` "
                                 f"to {manifest['repo']}/teyla.toml")
+    targets, bad = store_targets(manifest)
+    if bad:
+        return _error(manifest, f"{manifest['repo']}/teyla.toml: {bad}", bundle_id)
     apple = cfg.get("apple") or {}
     tool_raw = str(apple.get("release_tool") or "").strip()
     tester = str(apple.get("tester") or "").strip()
@@ -289,11 +425,31 @@ def check_product(manifest: dict, cfg: dict) -> dict:
     if not plats:
         return _row(manifest, "none", bundle_id=bundle_id, payload=payload,
                     line=f"{name}  App Store Connect has no builds for {bundle_id}")
+    # A store target whose platform the tool says nothing about has no build: the lag check says so.
+    seen = {p.get("platform") for p in plats}
+    plats += [{"platform": t["asc"], "newest_uploaded": None, "newest_installable": None,
+               "behind": 0, "blockers": [], "_no_build": True} for t in targets if t["asc"] not in seen]
+    by_asc = {t["asc"]: t for t in targets}
     out, lines = [], []
     for p in plats:
         v = platform_verdict(p)
-        out.append({"platform": p.get("platform"), "verdict": v, "behind": _behind(p)})
-        lines.append(platform_line(name, p, v))
+        lag = None
+        if p.get("platform") in by_asc:
+            lag = store_lag(manifest, by_asc[p["platform"]], p, tool_raw, bundle_id)
+        if p.get("_no_build"):
+            if not lag:
+                continue   # a platform with no build and no source change to ship is not a finding
+            v = "stale"
+        elif lag and v == "current":
+            v = "stale"
+        entry = {"platform": p.get("platform"), "verdict": v, "behind": _behind(p)}
+        if lag:
+            entry["lag"] = lag
+        out.append(entry)
+        if not p.get("_no_build"):
+            lines.append(platform_line(name, p, "current" if v == "stale" else v))
+        if lag:
+            lines.append(lag_line(name, lag))
     row = _row(manifest, _worst([x["verdict"] for x in out]), line="", bundle_id=bundle_id,
                payload=payload, platforms=out)
     row["lines"] = lines
@@ -350,6 +506,11 @@ def problem_lines(rows: list[dict]) -> list[tuple[str, str]]:
                        if isinstance(p, dict)}
         listed = [p for p in r["platforms"] if p["verdict"] != "current"]
         for p in listed:
+            if p.get("lag"):
+                out.append((f"testflight|{r['product']}|{p['platform']}|stale",
+                            f"{r['product']} {_label(p['platform'])}: {p['lag']['text']}. Release: {p['lag']['release']}"))
+            if p["verdict"] == "stale":
+                continue
             raw = by_platform.get(p["platform"]) or {}
             what = f"{p['behind']} behind" if p["verdict"] == "behind" else "none installable"
             if p["verdict"] == "none" and p["behind"]:

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **`teyla testflight` warns when a store build lags main.** A repo declares `[[release.store_target]]` in `teyla.toml`;
+  when the platform's newest upload is more than three days older than the newest change on the default branch to the
+  target's sources, the row says so and prints the release command (`--platform macos` for the Mac). A target frozen for
+  30 days is skipped. It reads the `beta reached` answer and git only. The Teyla repo declares its `TeylaStore` target.
+
 ## 0.37.4 — 2026-11-03 — One command connects the store app
 
 - **`teyla relay connect`.** One command for the whole relay setup: it turns the relay on, makes the key and opens the

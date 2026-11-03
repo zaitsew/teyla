@@ -482,3 +482,232 @@ def test_china_with_quiet_writes_the_problems_file_and_prints_nothing(tmp_path, 
     rc, cap = go(capsys, "--china", "--quiet")
     assert rc == 1 and cap.out == ""
     assert problems.read_text().startswith("testflight|app-a|CHN\t")
+
+
+# --- store lag: the store build is current in TestFlight but older than the sources on main ----------
+
+REAL_RUN = subprocess.run   # fake_tool replaces subprocess.run for every module; git must stay real
+TODAY = "2026-11-03"
+OLD = "2026-10-26T09:00:00Z"   # the upload
+STORE_TARGET = '''
+[[release.store_target]]
+platform = "macos"
+scheme = "AppStore"
+project = "apps/mac/App.xcodeproj"
+paths = ["apps/mac/App", ":(exclude)apps/mac/App/Core/Cli.swift"]
+'''
+
+
+def git(repo, *args, when=None):
+    env = {**__import__("os").environ, "GIT_CONFIG_GLOBAL": "/dev/null"}
+    if when:
+        env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = when
+    r = REAL_RUN(["git", "-C", str(repo), "-c", "user.name=T", "-c", "user.email=t@example.com",
+                  "-c", "commit.gpgsign=false", *args], capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stderr
+    return r.stdout
+
+
+def commit(repo, rel, when, text="x"):
+    f = repo / rel
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(text + when)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-m", f"change {rel}", when=when)
+
+
+def store_repo(tmp_path, *, target=STORE_TARGET):
+    """A real git repo on `main` with a product manifest, first committed on 1 October."""
+    d = product(tmp_path, bundle="com.example.app", ios=None)
+    (d / ".git").rmdir()
+    git(d, "init", "-b", "main")
+    with (d / "teyla.toml").open("a") as f:
+        f.write(target)
+    commit(d, "README.md", "2026-10-01T09:00:00Z")
+    return d
+
+
+def lag_tool(monkeypatch, out, calls=None):
+    """The release tool answers `out`; every git command goes through for real."""
+    def run(cmd, **kw):
+        if cmd[0] == "git":
+            return REAL_RUN(cmd, **kw)
+        if calls is not None:
+            calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(out), stderr="")
+    monkeypatch.setattr(testflight.subprocess, "run", run)
+    monkeypatch.setattr(testflight, "_today", lambda: __import__("datetime").date.fromisoformat(TODAY))
+
+
+def mac(uploaded=OLD, **kw):
+    p = plat("MAC_OS", up=("0.32.0", "1"), inst=("0.32.0", "1"), **kw)
+    if p["newest_uploaded"]:
+        p["newest_uploaded"]["uploaded"] = uploaded
+    return p
+
+
+def test_store_lag_warns_with_the_release_command(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    d = store_repo(tmp_path)
+    commit(d, "apps/mac/App/Home.swift", "2026-11-02T10:00:00Z")
+    calls = []
+    lag_tool(monkeypatch, payload(plat(), mac()), calls)
+    rc, cap = go(capsys)
+    assert rc == 1
+    lines = cap.out.strip().splitlines()
+    assert lines[0].startswith("app-a  iOS    ") and lines[0].endswith("— current")
+    assert lines[1].endswith("— current")                                   # TestFlight itself is fine
+    assert lines[2].startswith("app-a  WARN macOS store build uploaded 2026-10-26 lags main; AppStore changed 2026-11-02")
+    assert "change apps/mac/App/Home.swift" in lines[2]
+    assert lines[2].endswith(f"Release: cd {d} && {tmp_path / 'release-tool'} release --platform macos "
+                             "--project apps/mac/App.xcodeproj --scheme AppStore --bundle-id com.example.app")
+    assert len(calls) == 1 and calls[0][1:3] == ["beta", "reached"]       # no extra call to Apple
+
+
+def test_store_lag_is_stale_in_json_and_quiet_problems(tmp_path, monkeypatch, capsys, problems):
+    platform_toml(tmp_path)
+    d = store_repo(tmp_path)
+    commit(d, "apps/mac/App/Home.swift", "2026-11-02T10:00:00Z")
+    lag_tool(monkeypatch, payload(mac()))
+    rc, cap = go(capsys, "--json")
+    row = json.loads(cap.out)[0]
+    assert rc == 1 and row["verdict"] == "stale"
+    assert row["platforms"][0]["verdict"] == "stale" and row["platforms"][0]["lag"]["uploaded"] == "2026-10-26"
+    rc, cap = go(capsys, "--quiet")
+    assert rc == 1 and cap.out == ""
+    key, text = [l for l in problems.read_text().splitlines() if "MAC_OS" in l][0].split("\t")
+    assert key == "testflight|app-a|MAC_OS|stale"
+    assert text.startswith("app-a macOS: macOS store build uploaded 2026-10-26 lags main") and "--platform macos" in text
+
+
+def test_upload_newer_than_the_change_is_current(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    d = store_repo(tmp_path)
+    commit(d, "apps/mac/App/Home.swift", "2026-11-02T10:00:00Z")
+    lag_tool(monkeypatch, payload(mac(uploaded="2026-11-03T08:00:00Z")))
+    rc, cap = go(capsys)
+    assert rc == 0 and "WARN" not in cap.out
+
+
+def test_a_change_inside_the_grace_period_does_not_warn(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    d = store_repo(tmp_path)
+    commit(d, "apps/mac/App/Home.swift", "2026-10-28T10:00:00Z")           # 2 days after the upload, grace 3
+    lag_tool(monkeypatch, payload(mac()))
+    rc, cap = go(capsys)
+    assert rc == 0 and "WARN" not in cap.out
+    commit(d, "apps/mac/App/Home.swift", "2026-10-30T10:00:00Z")           # 4 days after
+    rc, cap = go(capsys)
+    assert rc == 1 and "WARN" in cap.out
+
+
+def test_grace_days_can_be_set_per_target(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    d = store_repo(tmp_path, target=STORE_TARGET + "grace_days = 0\n")
+    commit(d, "apps/mac/App/Home.swift", "2026-10-27T10:00:00Z")           # one day after
+    lag_tool(monkeypatch, payload(mac()))
+    rc, cap = go(capsys)
+    assert rc == 1 and "WARN" in cap.out
+
+
+def test_changes_outside_the_target_sources_do_not_warn(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    d = store_repo(tmp_path)
+    commit(d, "README.md", "2026-11-02T10:00:00Z")
+    commit(d, "apps/mac/Tools/make.py", "2026-11-02T11:00:00Z")
+    commit(d, "apps/mac/App/Core/Cli.swift", "2026-11-02T12:00:00Z")      # excluded from the store target
+    lag_tool(monkeypatch, payload(mac()))
+    rc, cap = go(capsys)
+    assert rc == 0 and "WARN" not in cap.out
+
+
+def test_the_default_paths_are_the_projects_folder(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    d = store_repo(tmp_path, target=STORE_TARGET.split("paths")[0])
+    commit(d, "apps/mac/Tools/make.py", "2026-11-02T10:00:00Z")
+    lag_tool(monkeypatch, payload(mac()))
+    rc, cap = go(capsys)
+    assert rc == 1 and "WARN" in cap.out
+
+
+def test_a_merge_counts_when_it_landed_not_when_its_commits_were_written(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    d = store_repo(tmp_path)
+    git(d, "checkout", "-b", "feature")
+    commit(d, "apps/mac/App/Home.swift", "2026-10-20T10:00:00Z")           # written before the upload
+    git(d, "checkout", "main")
+    git(d, "merge", "--no-ff", "-m", "Merge feature", "feature", when="2026-11-02T10:00:00Z")
+    lag_tool(monkeypatch, payload(mac()))
+    rc, cap = go(capsys)
+    assert rc == 1 and "AppStore changed 2026-11-02" in cap.out
+
+
+def test_frozen_for_thirty_days_does_not_warn(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    d = store_repo(tmp_path, target=STORE_TARGET + 'frozen = "2026-10-04: nobody opened the Mac app"\n')
+    commit(d, "apps/mac/App/Home.swift", "2026-11-02T10:00:00Z")
+    lag_tool(monkeypatch, payload(mac()))
+    rc, cap = go(capsys)                                                   # 30 days from 2026-10-04 is 2026-11-03
+    assert rc == 0 and "WARN" not in cap.out
+
+
+def test_frozen_for_less_than_thirty_days_still_warns(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    d = store_repo(tmp_path, target=STORE_TARGET + 'frozen = "2026-10-05: nobody opened the Mac app"\n')
+    commit(d, "apps/mac/App/Home.swift", "2026-11-02T10:00:00Z")
+    lag_tool(monkeypatch, payload(mac()))
+    rc, cap = go(capsys)                                                   # 29 days
+    assert rc == 1 and "WARN" in cap.out
+
+
+def test_no_upload_on_the_platform_warns(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    d = store_repo(tmp_path)
+    commit(d, "apps/mac/App/Home.swift", "2026-11-02T10:00:00Z")
+    lag_tool(monkeypatch, payload(plat()))                                 # the tool lists iOS only
+    rc, cap = go(capsys)
+    assert rc == 1
+    assert "app-a  WARN no macOS build uploaded; AppStore changed 2026-11-02" in cap.out
+    assert "--platform macos" in cap.out
+
+
+def test_no_upload_and_no_source_change_is_not_a_finding(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    store_repo(tmp_path)
+    lag_tool(monkeypatch, payload(plat()))
+    rc, cap = go(capsys)
+    assert rc == 0 and "macOS" not in cap.out
+
+
+def test_a_platform_behind_in_testflight_keeps_its_own_verdict(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    d = store_repo(tmp_path)
+    commit(d, "apps/mac/App/Home.swift", "2026-11-02T10:00:00Z")
+    lag_tool(monkeypatch, payload(mac(behind=1, blockers=["2: processing"])))
+    rc, cap = go(capsys, "--json")
+    row = json.loads(cap.out)[0]
+    assert rc == 1 and row["verdict"] == "behind" and "lag" in row["platforms"][0]
+
+
+@pytest.mark.parametrize("target", [
+    '\n[[release.store_target]]\nplatform = "macos"\nscheme = "AppStore"\n',                 # no project
+    '\n[[release.store_target]]\nplatform = "linux"\nscheme = "A"\nproject = "p.xcodeproj"\n',
+    STORE_TARGET + 'grace_days = "3"\n',
+    STORE_TARGET.replace('paths = ["apps/mac/App", ', 'paths = [1, '),
+])
+def test_a_bad_store_target_is_an_error_row_not_a_silent_pass(tmp_path, monkeypatch, capsys, target):
+    platform_toml(tmp_path)
+    store_repo(tmp_path, target=target)
+    lag_tool(monkeypatch, payload(mac()))
+    rc, cap = go(capsys)
+    assert rc == 1 and cap.out.startswith("app-a  ") and "app-a/teyla.toml: `" in cap.out and "WARN" not in cap.out
+
+
+def test_git_that_cannot_answer_is_silent(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    d = product(tmp_path, bundle="com.example.app", ios=None)             # `.git` is an empty directory
+    with (d / "teyla.toml").open("a") as f:
+        f.write(STORE_TARGET)
+    lag_tool(monkeypatch, payload(mac()))
+    rc, cap = go(capsys)
+    assert rc == 0 and "WARN" not in cap.out
