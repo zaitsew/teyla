@@ -71,10 +71,9 @@ def test_headers_set_the_strict_policy():
 
 
 def test_commands_match_the_readme():
-    for page in (PUBLIC / "index.html", PUBLIC / "b" / "index.html"):
-        html = page.read_text()
-        for pre in re.findall(r"<pre id=\"[^\"]+\">([^<]+)</pre>", html):
-            assert pre in README, pre
+    html = (PUBLIC / "index.html").read_text()
+    for pre in re.findall(r"<pre id=\"[^\"]+\">([^<]+)</pre>", html):
+        assert pre in README, pre
 
 
 def test_no_store_link_while_the_apps_are_not_on_sale():

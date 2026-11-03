@@ -1,5 +1,4 @@
-// Two jobs: copy a command, and (variant B) build the paste line from the ticked packs.
-// No network calls and no storage.
+// Copies a command. No network calls and no storage.
 (function () {
   "use strict";
 
@@ -22,16 +21,4 @@
     button.hidden = false;
     button.addEventListener("click", function () { copy(button); });
   });
-
-  var line = document.getElementById("paste-line");
-  var boxes = document.querySelectorAll(".pick input");
-  if (!line || !boxes.length) return;
-  var base = "Set up https://github.com/zaitsew/teyla";
-  function update() {
-    var ids = Array.prototype.filter.call(boxes, function (b) { return b.checked; })
-      .map(function (b) { return b.value; });
-    line.textContent = ids.length ? base + " and tick these packs: " + ids.join(", ") : base;
-  }
-  boxes.forEach(function (b) { b.addEventListener("change", update); });
-  update();
 })();
