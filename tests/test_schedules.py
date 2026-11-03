@@ -1082,6 +1082,26 @@ def test_launchd_wrapper_stamp_counts_as_a_run(env, monkeypatch):
     assert got["launchd:com.example.nostamp"]["verdict"] == "STALE"
 
 
+def test_relay_agent_run_time_is_its_last_snapshot_not_its_empty_log(env, monkeypatch):
+    """`relay sync --quiet` writes no log, so the log's age said STALE while the snapshot was fresh."""
+    from teyla import relay
+    from teyla.control import state as ctl
+    monkeypatch.setenv("TEYLA_HOME", str(env / ".teyla"))
+    monkeypatch.setattr(ctl, "home", lambda: env / ".teyla")
+    plist(env, relay.LABEL, interval=60, log=log_file(env, "relay.log", NOW - 14 * H))
+    monkeypatch.setattr(routines, "_launchctl_list", lambda: listing(("-", 0, relay.LABEL)))
+    cfg = env / ".teyla" / "relay.json"
+
+    cfg.write_text(json.dumps({"on": True, "folder": "x", "synced": (NOW - dt.timedelta(minutes=2)).isoformat()}))
+    assert collect(env)[0][f"launchd:{relay.LABEL}"]["verdict"] == "OK"
+
+    cfg.write_text(json.dumps({"on": True, "folder": "x", "synced": (NOW - 14 * H).isoformat()}))
+    assert collect(env)[0][f"launchd:{relay.LABEL}"]["verdict"] == "STALE"
+
+    cfg.unlink()
+    assert collect(env)[0][f"launchd:{relay.LABEL}"]["verdict"] == "STALE"      # no state file: the log decides
+
+
 def _paused_repo(env):
     repo = env.parent / "repos" / "app-a"
     (repo / ".git").mkdir(parents=True)

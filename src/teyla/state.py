@@ -1255,6 +1255,16 @@ def portfolio_view(now: float, reg: dict, prods: list[dict], rows: list[dict], t
         return portfolio.empty()
 
 
+def console_view(now: float) -> dict | None:
+    """The compact console sections from the cache (`console.py`); a missing or old cache starts a detached refresh."""
+    try:
+        rep = console.read_cache()
+        console.maybe_refresh(rep, now)
+        return console.compact(rep)
+    except Exception:  # noqa: BLE001 — the console is an extra; the rest of the snapshot always works
+        return None
+
+
 def notes_view() -> dict:
     """Open notes (`teyla note`): {"inbox": n, "by_product": {id: n}}."""
     from . import notes
@@ -1344,7 +1354,7 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
           "relay": relay_view() if relay is None else relay,
           "notes": notes_view() if notes is None else notes, "portfolio": pf,
           "auto_closed": asks.auto_closed(items, ask_store, now),
-          "console": console.compact(console.read_cache())}
+          "console": console_view(now)}
     st["brief"] = {"line": _words(model["brief"]), "source": "model"} if model else brief_line(st)
     return st
 

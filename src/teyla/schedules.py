@@ -12,7 +12,9 @@ records the machine already keeps:
                      definition no record names never fires: UNREGISTERED.
     launchd          ~/Library/LaunchAgents/*.plist with a StartCalendarInterval or StartInterval.
                      `launchctl list` gives the last exit status, not times; run times are the
-                     modification times of the plist's StandardOutPath / StandardErrorPath.
+                     modification times of the plist's StandardOutPath / StandardErrorPath, a wrapper's
+                    `date > x.last` stamp, and (relay agent only, which runs `--quiet` and logs nothing)
+                    the snapshot time in relay.json.
     cloud            Claude cloud routines (the RemoteTrigger tool) have no local store. The only
                      trace is the session transcripts that created or updated them, so the entry
                      says "last known as of <date>" and its verdict is UNKNOWN.
@@ -142,6 +144,19 @@ def _wrapper_stamp(plist: dict) -> pathlib.Path | None:
         return None
     m = _STAMP_RE.search(text)
     return pathlib.Path(m.group(1)).expanduser() if m else None
+
+
+def _state_stamp(label: str) -> dt.datetime | None:
+    """The run time a job keeps in its own state file, for a job that runs with `--quiet` and writes no log.
+    The relay agent is the one: `teyla relay sync --quiet` leaves its log empty, so the log's age says nothing,
+    but every pass that reaches the end writes the snapshot time to relay.json."""
+    try:
+        from . import relay
+        if label != relay.LABEL:
+            return None
+        return _parse_ts(relay.read_cfg().get("synced"))
+    except Exception:  # noqa: BLE001 - no stamp is "unknown", never a failure of the listing
+        return None
 
 
 def _local(t: dt.datetime) -> dt.datetime:
@@ -560,7 +575,10 @@ def read_launchd(agents_dir: pathlib.Path | None = None, *, listing: str | None 
         stamp = _wrapper_stamp(plist)
         if stamp is not None and (t := _mtime(stamp)):
             logs.append(t)
-        has_log_path = stamp is not None or any(
+        own = _state_stamp(str(plist.get("Label") or ""))
+        if own is not None:
+            logs.append(own)
+        has_log_path = stamp is not None or own is not None or any(
             isinstance(plist.get(k), str) and plist.get(k) for k in ("StandardOutPath", "StandardErrorPath"))
         pid, status = loaded.get(label, (None, None))
         e = entry("launchd", label, label, cadence=cadence, expected_every=expected,
@@ -1007,6 +1025,16 @@ def apply_registry(entries: list[dict], reg: dict, now: dt.datetime) -> list[dic
                                   note=f"last seen {_date(last_seen)} (first seen {_date(_parse_ts(rec.get('first_seen')))}); "
                                        f"it is no longer on this machine" + forget_hint(eid)))
     return out
+
+
+def current(when: dt.datetime, cfg: dict | None = None) -> list[dict]:
+    """Every entry as `teyla schedules` would judge it now, from the machine's records and the registry read in
+    memory: nothing is saved and no network call is made. A broken registry file raises and stays where it is."""
+    cfg = cfg if cfg is not None else config.load()
+    entries, _cron = collect(when, allow_network=False, cfg=cfg)
+    reg = load_registry(read_only=True)
+    forget_ignored(reg, ignore_prefixes(cfg))
+    return apply_registry(entries, reg, when)
 
 
 def _from_snapshot(eid: str, rec: dict, snap: dict, *, verdict: str, note: str) -> dict:
