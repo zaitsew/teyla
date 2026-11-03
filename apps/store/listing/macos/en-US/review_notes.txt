@@ -14,11 +14,13 @@ Closing the main window never strands the user. Window > Teyla (Cmd-0) reopens i
 ("Open Teyla") and a click on the Dock icon reopen it too.
 
 WHAT THE APP DOES WITH A MAC
-The owner installs the teyla command (free, open source: https://github.com/zaitsew/teyla) and runs "teyla relay on".
-That writes a signed state file into a folder named Teyla in the owner's own iCloud Drive. In this app the user clicks
-"Choose folder..." and picks that folder in the system open panel, then pastes the pairing string that
-"teyla relay pair" prints. The app verifies the signature before it shows anything and leaves signed answers in the
-folder for the teyla command. Teyla runs no server and receives nothing.
+The owner installs the teyla command (free, open source: https://github.com/zaitsew/teyla) and
+runs "teyla relay connect". It writes a signed state file into a folder named Teyla in the owner's own iCloud Drive and
+hands the pairing key to this app through the "teyla-pair:" link. "Copy command and open Terminal" copies that command
+and opens Terminal; the owner pastes it (the app runs no command). The system open panel then opens on the Teyla
+folder and the user clicks "Use this folder". "Connect by hand" shows the same steps, with a field for the string
+"teyla relay pair" prints. The app verifies the signature before it shows anything. A link with a different key never replaces the stored key until the user confirms. Settings > iPhone >
+"Connect iPhone..." draws the key as a QR code for the user's own iPhone (no camera).
 
 DECLARED CAPABILITIES
 - App Sandbox, with these entitlements: user-selected files read/write and app-scope bookmarks (only the folder the
@@ -30,6 +32,7 @@ DECLARED CAPABILITIES
   Both permissions are asked only when the user first starts dictation.
 - Notifications: the app asks at launch for permission to show local notifications when a question needs the
   user. No push notifications.
+- Opens Terminal on a button press. URL scheme "teyla-pair:": receives the pairing key from the user's teyla command.
 - No camera, location, contacts, photos or HealthKit, and no background modes.
 
 PRIVACY AND DATA

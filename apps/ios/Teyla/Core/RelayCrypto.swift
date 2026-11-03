@@ -59,6 +59,17 @@ enum RelayCrypto {
         return key
     }
 
+    /// The 32-byte key as `teyla-pair:v1:<base64url, no padding>`: the exact inverse of `parsePairing`.
+    /// Nil for any other length, so a wrong value never becomes a string a phone would accept.
+    static func pairingString(for key: Data) -> String? {
+        guard key.count == 32 else { return nil }
+        let body = key.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return pairingPrefix + body
+    }
+
     // MARK: State file
 
     enum StateVerdict: Equatable {

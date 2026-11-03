@@ -390,6 +390,167 @@ final class StoreSessionTests: XCTestCase {
         XCTAssertNil(session.notice)
     }
 
+    // MARK: Pairing by link (`teyla relay connect` opens teyla-pair:v1:<key>)
+
+    private static let keyA = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+    private static let keyB = "_-ECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+    private func link(_ key: String) -> URL { URL(string: "teyla-pair:v1:\(key)")! }
+
+    func testLinkWithNoKeyPairsAndLeavesTheSample() throws {
+        let keys = MemoryKeys()
+        let (session, defaults) = session(keys: keys)
+        session.useSample()
+        XCTAssertEqual(session.mode, .sample)
+        XCTAssertEqual(session.receive(url: link(Self.keyA)), .paired)
+        XCTAssertEqual(keys.key, RelayCrypto.parsePairing("teyla-pair:v1:" + Self.keyA))
+        XCTAssertTrue(session.hasKey)
+        XCTAssertFalse(defaults.bool(forKey: StoreSession.sampleKey), "the sample is left")
+        XCTAssertEqual(session.mode, .setup, "a key alone is not a connection: the folder is next")
+        XCTAssertFalse(session.hasPendingPairing)
+    }
+
+    func testTheSameKeyChangesNothing() throws {
+        let keys = MemoryKeys()
+        let (session, _) = session(keys: keys)
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        session.chooseFolder(folder)
+        XCTAssertEqual(session.receive(url: link(Self.keyA)), .paired)
+        var folderAsked = 0
+        session.requestFolder = { folderAsked += 1 }
+        let before = keys.key
+        XCTAssertEqual(session.receive(url: link(Self.keyA)), .unchanged)
+        XCTAssertEqual(keys.key, before)
+        XCTAssertFalse(session.hasPendingPairing)
+        XCTAssertEqual(session.mode, .connected)
+        XCTAssertEqual(folderAsked, 0, "a folder is chosen: nothing to ask")
+    }
+
+    func testADifferentKeyNeverReplacesTheStoredOneUntilConfirmed() throws {
+        let keys = MemoryKeys()
+        let (session, _) = session(keys: keys)
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        session.chooseFolder(folder)
+        XCTAssertEqual(session.receive(url: link(Self.keyA)), .paired)
+        let stored = try XCTUnwrap(keys.key)
+
+        XCTAssertEqual(session.receive(url: link(Self.keyB)), .needsConfirmation)
+        XCTAssertTrue(session.hasPendingPairing)
+        XCTAssertEqual(keys.key, stored, "the stored key stays until the owner says yes")
+        XCTAssertEqual(session.mode, .connected)
+
+        // No: the pending key goes, the stored one stays.
+        session.declinePendingPairing()
+        XCTAssertFalse(session.hasPendingPairing)
+        XCTAssertEqual(keys.key, stored)
+
+        // Yes: it replaces the key, and the folder stays chosen.
+        XCTAssertEqual(session.receive(url: link(Self.keyB)), .needsConfirmation)
+        session.confirmPendingPairing()
+        XCTAssertEqual(keys.key, RelayCrypto.parsePairing("teyla-pair:v1:" + Self.keyB))
+        XCTAssertFalse(session.hasPendingPairing)
+        XCTAssertTrue(session.hasFolder)
+        XCTAssertEqual(session.mode, .connected)
+    }
+
+    func testABadLinkIsRejectedAndChangesNothing() throws {
+        let keys = MemoryKeys()
+        let (session, _) = session(keys: keys)
+        for text in ["https://example.com/teyla-pair:v1:" + Self.keyA,
+                     "teyla-pair:v1:short",
+                     "teyla-pair:v2:" + Self.keyA,
+                     "teyla-pair:v1:" + Self.keyA + "AAAA",
+                     "teyla-pair:v1:" + String(repeating: "!", count: 43),
+                     "teyla-pair:"] {
+            let url = try XCTUnwrap(URL(string: text), text)
+            XCTAssertEqual(session.receive(url: url), .rejected, text)
+        }
+        XCTAssertNil(keys.key)
+        XCTAssertFalse(session.hasKey)
+        XCTAssertFalse(session.hasPendingPairing)
+        XCTAssertNotNil(session.notice)
+        XCTAssertNil(StoreSession.pairingKey(from: try XCTUnwrap(URL(string: "other:v1:" + Self.keyA))), "only the teyla-pair scheme")
+    }
+
+    func testTheFolderPanelIsRequestedAfterAKeyArrivesWithNoFolder() throws {
+        let (session, _) = session()
+        var asked = 0
+        session.requestFolder = { asked += 1 }
+        XCTAssertEqual(session.receive(url: link(Self.keyA)), .paired)
+        XCTAssertEqual(asked, 1, "no folder yet: the panel opens at once")
+
+        // The same link again, with the folder still missing, asks again (a cancelled panel is not stranded).
+        XCTAssertEqual(session.receive(url: link(Self.keyA)), .unchanged)
+        XCTAssertEqual(asked, 2)
+
+        // A different key, confirmed, with no folder: asked again.
+        XCTAssertEqual(session.receive(url: link(Self.keyB)), .needsConfirmation)
+        XCTAssertEqual(asked, 2, "nothing is asked before the owner confirms")
+        session.confirmPendingPairing()
+        XCTAssertEqual(asked, 3)
+
+        // With a folder chosen, a new key asks for nothing.
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        session.chooseFolder(folder)
+        let (other, _) = self.session()
+        other.chooseFolder(folder)
+        var otherAsked = 0
+        other.requestFolder = { otherAsked += 1 }
+        XCTAssertEqual(other.receive(url: link(Self.keyA)), .paired)
+        XCTAssertEqual(otherAsked, 0)
+        XCTAssertEqual(other.mode, .connected)
+    }
+
+    func testAPastedKeyPairsBeforeOrAfterTheFolder() throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let string = "teyla-pair:v1:" + Self.keyA
+
+        let (keyFirst, _) = session()
+        XCTAssertTrue(keyFirst.pair(with: string))
+        XCTAssertEqual(keyFirst.mode, .setup)
+        keyFirst.chooseFolder(folder)
+        XCTAssertEqual(keyFirst.mode, .connected)
+
+        let (folderFirst, _) = session()
+        folderFirst.chooseFolder(folder)
+        XCTAssertEqual(folderFirst.mode, .setup)
+        XCTAssertTrue(folderFirst.pair(with: string))
+        XCTAssertEqual(folderFirst.mode, .connected)
+    }
+
+    func testAChosenFolderWithoutASnapshotIsKeptWithAPlainNotice() throws {
+        let (session, _) = session()
+        let empty = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: empty) }
+        session.chooseFolder(empty)
+        XCTAssertTrue(session.hasFolder, "the folder is not refused")
+        XCTAssertEqual(session.notice, FolderPanelPlan.emptyFolderNotice)
+        XCTAssertTrue(FolderPanelPlan.emptyFolderNotice.contains("teyla relay connect"))
+
+        let written = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: written) }
+        try Data("x".utf8).write(to: written.appendingPathComponent("state.teyla"))
+        session.chooseFolder(written)
+        XCTAssertNil(session.notice, "the Mac has written here")
+    }
+
+    func testTheStoreBackendOffersTheStoredKeyToAPhone() async throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let backend = StoreBackend()
+        do { _ = try await backend.relayPair(); XCTFail("not connected") } catch {
+            XCTAssertEqual(error as? StoreError, .notConnected)
+        }
+        let key = Data((0..<32).map { UInt8(200 - $0) })
+        backend.useRelay(folder: folder, key: key)
+        let text = try await backend.relayPair()
+        XCTAssertEqual(RelayCrypto.parsePairing(text), key)
+        XCTAssertTrue(Pairing.isValid(text), "the Mac's QR check accepts it too")
+    }
+
     func testSampleAndBackToSetup() {
         let (session, _) = session()
         session.useSample()
@@ -411,5 +572,71 @@ final class StoreSessionTests: XCTestCase {
         XCTAssertEqual(session.mode, .setup)
         XCTAssertNil(keys.key)
         XCTAssertFalse(session.hasFolder)
+    }
+}
+
+final class FolderPanelPlanTests: XCTestCase {
+    private let home = URL(fileURLWithPath: "/Users/someone", isDirectory: true)
+
+    func testOpensOnTheTeylaFolderWhenItExists() {
+        let teyla = FolderPanelPlan.teylaFolder(home: home)
+        let plan = FolderPanelPlan.make(home: home, exists: { $0 == teyla })
+        XCTAssertEqual(plan.directory, teyla)
+        XCTAssertTrue(plan.directory.path.hasSuffix("com~apple~CloudDocs/Teyla"))
+        XCTAssertEqual(plan.prompt, "Use this folder")
+        XCTAssertTrue(plan.message.contains("only click"), plan.message)
+        XCTAssertFalse(plan.canCreateDirectories)
+        XCTAssertTrue(plan.opensOnTeyla)
+    }
+
+    func testOpensOnICloudDriveAndAllowsANewFolderWhenItDoesNot() {
+        let plan = FolderPanelPlan.make(home: home, exists: { _ in false })
+        XCTAssertEqual(plan.directory, FolderPanelPlan.iCloudDrive(home: home))
+        XCTAssertTrue(plan.directory.path.hasSuffix("com~apple~CloudDocs"))
+        XCTAssertTrue(plan.canCreateDirectories)
+        XCTAssertFalse(plan.opensOnTeyla)
+        XCTAssertTrue(plan.message.contains("named Teyla"), plan.message)
+        XCTAssertTrue(plan.message.lowercased().contains("create"), plan.message)
+    }
+}
+
+final class PairingEncoderTests: XCTestCase {
+    func testRoundTripsEveryKeyShape() throws {
+        let keys: [Data] = [
+            Data((0..<32).map { UInt8($0) }),
+            Data(repeating: 0, count: 32),
+            Data(repeating: 255, count: 32),
+            Data((0..<32).map { UInt8(($0 * 37 + 11) % 256) }),   // bytes whose base64 uses "+" and "/"
+            Data((0..<32).map { UInt8(248 - $0 * 3) }),
+        ]
+        for key in keys {
+            let text = try XCTUnwrap(RelayCrypto.pairingString(for: key))
+            XCTAssertEqual(RelayCrypto.parsePairing(text), key)
+            XCTAssertTrue(text.hasPrefix(RelayCrypto.pairingPrefix))
+            XCTAssertEqual(text.count, RelayCrypto.pairingPrefix.count + 43, "no padding")
+            XCTAssertFalse(text.contains("="))
+            XCTAssertFalse(text.contains("+") || text.contains("/"), "base64url")
+            XCTAssertTrue(Pairing.isValid(text), "the QR check on the Mac accepts it")
+        }
+    }
+
+    func testMatchesTheStringTheMacCommandPrints() throws {
+        let v = try loadVector()
+        let key = keyData(v.key_hex)
+        // tests/fixtures/relay-vector.json holds the string `teyla relay pair` prints for this key.
+        let expected = try pairingFromVector()
+        XCTAssertEqual(RelayCrypto.pairingString(for: key), expected)
+        XCTAssertEqual(RelayCrypto.parsePairing(expected), key)
+    }
+
+    func testOnlyA32ByteKeyBecomesAString() {
+        XCTAssertNil(RelayCrypto.pairingString(for: Data()))
+        XCTAssertNil(RelayCrypto.pairingString(for: Data(repeating: 1, count: 31)))
+        XCTAssertNil(RelayCrypto.pairingString(for: Data(repeating: 1, count: 33)))
+    }
+
+    private func pairingFromVector() throws -> String {
+        struct Pair: Decodable { var pairing: String }
+        return try JSONDecoder().decode(Pair.self, from: repoFile("tests/fixtures/relay-vector.json")).pairing
     }
 }

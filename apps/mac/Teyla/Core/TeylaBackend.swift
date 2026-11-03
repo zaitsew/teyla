@@ -30,8 +30,9 @@ enum TeylaError: LocalizedError, Equatable {
 
 /// Where the window gets its data and sends its actions. The full app runs the `teyla` command
 /// (`TeylaCLI`); the store build, which is sandboxed, reads and writes the signed relay folder
-/// (`StoreBackend`). Only the first five are the relay's contract (docs/APP.md); every other call is the
-/// command's and, in the store build, throws `unavailable` — its control is hidden (`Capabilities`).
+/// (`StoreBackend`). Only the first five are the relay's contract (docs/APP.md), and `relayPair`, which the store build
+/// answers from the stored key; every other call is the command's and, in the store build, throws `unavailable` —
+/// its control is hidden (`Capabilities`).
 protocol TeylaBackend: Sendable {
     /// True for sample data: the clock stays at the snapshot's own time and every write is simulated.
     var usesFixture: Bool { get }

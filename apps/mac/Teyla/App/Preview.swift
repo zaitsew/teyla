@@ -16,6 +16,8 @@ import SwiftUI
 ///     TEYLA_PREVIEW_SCROLL  end: scroll the main window to its bottom
 ///     TEYLA_PREVIEW_SNAPSHOT  <path.png>: draw the whole Home page in one image (width TEYLA_PREVIEW_WIDTH, default
 ///                         1100 pt, in the appearance above), save it and quit. For screenshots without a screen to click
+///     TEYLA_PREVIEW_SNAPSHOT_VIEW  home (default) | connect-phone (the "Connect iPhone" sheet) | setup (the store build's
+///                         first screen; Home elsewhere)
 @MainActor
 enum Preview {
     private static var ran = false
@@ -50,7 +52,16 @@ enum Preview {
             }
         }
         if let path = env["TEYLA_PREVIEW_SNAPSHOT"] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { snapshotHome(model: model, path: path) }
+            let which = env["TEYLA_PREVIEW_SNAPSHOT_VIEW"] ?? "home"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                if which == "connect-phone" {
+                    // The made-up key takes a moment to come back; the sheet is drawn once the code is there.
+                    model.relay.connectPhone(turnOn: model.phoneNeedsRelayOn)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { snapshotView(which, model: model, path: path) }
+                } else {
+                    snapshotView(which, model: model, path: path)
+                }
+            }
             return
         }
         guard let step = env["TEYLA_PREVIEW_OPEN"] else { return }
@@ -62,8 +73,12 @@ enum Preview {
             case "quick-note":
                 if let draft = env["TEYLA_PREVIEW_DRAFT"] { model.quickNote.draft = draft }
                 model.openQuickNote()
-            case "settings", "pair":
+            case "settings":
                 openSettings()
+            case "pair":
+                // The "Connect iPhone" sheet with its QR code (a made-up key, so nothing is paired).
+                model.showMainWindow()
+                model.relay.present(turnOn: model.phoneNeedsRelayOn)
             case "diagnosis":
                 model.runDiagnosis()
             case "home":
@@ -88,20 +103,32 @@ enum Preview {
         }
     }
 
-    /// Draws `HomeContent` at full height into a PNG. A scroll view would crop it to the window, so this lays the page out
+    /// Draws one view at full height into a PNG. A scroll view would crop it to the window, so this lays the view out
     /// by itself in a hosting view of the width asked for.
-    private static func snapshotHome(model: AppModel, path: String) {
+    private static func snapshotView(_ which: String, model: AppModel, path: String) {
         let width = Double(env["TEYLA_PREVIEW_WIDTH"] ?? "") ?? 1100
-        let page = HomeContent(eager: true)
-            .padding(.horizontal, Space.xl + Space.xs)
-            .padding(.vertical, Space.xl)
-            .frame(width: width, alignment: .topLeading)
-            .background(Palette.background)
-            .environment(model)
+        let page: AnyView
+        switch which {
+        case "connect-phone":
+            page = AnyView(ConnectPhoneSheet().environment(model))
+        case "setup", "setup-hand", "setup-paired":
+            #if STORE
+            // A session of its own with an empty Keychain, so the screen shows the first run whatever this Mac holds.
+            let session = StoreSession(backend: StoreBackend(), defaults: UserDefaults(suiteName: "teyla-preview-\(UUID().uuidString)")!,
+                                       keyStore: PreviewKeys(key: which == "setup-paired" ? Data(repeating: 7, count: 32) : nil),
+                                       bookmark: BookmarkStore(save: { _, _ in }, resolve: { _ in nil }, clear: { _ in }))
+            page = AnyView(StoreSetupView(store: session, expanded: which == "setup-hand")
+                .frame(width: min(width, 760), height: which == "setup-hand" ? 1250 : 760).environment(model))
+            #else
+            page = homePage(model: model, width: width)
+            #endif
+        default:
+            page = homePage(model: model, width: width)
+        }
         let host = NSHostingView(rootView: page)
         host.appearance = NSApp.appearance
         let height = host.fittingSize.height
-        host.frame = NSRect(x: 0, y: 0, width: width, height: height)
+        host.frame = NSRect(x: 0, y: 0, width: host.fittingSize.width, height: height)
         host.layoutSubtreeIfNeeded()
         if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
             host.cacheDisplay(in: host.bounds, to: rep)
@@ -112,17 +139,29 @@ enum Preview {
         NSApp.terminate(nil)
     }
 
+    private static func homePage(model: AppModel, width: Double) -> AnyView {
+        AnyView(HomeContent(eager: true)
+            .padding(.horizontal, Space.xl + Space.xs)
+            .padding(.vertical, Space.xl)
+            .frame(width: width, alignment: .topLeading)
+            .background(Palette.background)
+            .environment(model))
+    }
+
     private static func firstScrollView(in view: NSView) -> NSScrollView? {
         if let scroll = view as? NSScrollView { return scroll }
         for sub in view.subviews { if let found = firstScrollView(in: sub) { return found } }
         return nil
     }
-
-    static func settingsShown(model: AppModel) {
-        guard enabled(model), env["TEYLA_PREVIEW_OPEN"] == "pair" else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            model.relay.setOn(true)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { model.relay.pair() }
-        }
-    }
 }
+
+#if STORE
+/// A key store that lives in memory, for the first-run previews.
+private final class PreviewKeys: KeyStore, @unchecked Sendable {
+    var key: Data?
+    init(key: Data?) { self.key = key }
+    func load() -> Data? { key }
+    func save(_ key: Data) throws { self.key = key }
+    func delete() { key = nil }
+}
+#endif
