@@ -149,13 +149,12 @@ def _problems_file_items(now: float) -> list[dict]:
     return out
 
 
-def source_schedules(now: float, cfg: dict) -> tuple[list[dict], dict]:
+def source_schedules(now: float, cfg: dict, full: list[dict] | None = None) -> tuple[list[dict], dict]:
+    """`full` is the current entries when the caller already read them (the console reads them once for two uses)."""
     from . import schedules
     when = dt.datetime.fromtimestamp(now, dt.timezone.utc)
-    entries, _cron = schedules.collect(when, allow_network=False, cfg=cfg)
-    reg = schedules.load_registry(read_only=True)                # a broken file fails this source; it stays where it is
-    schedules.forget_ignored(reg, schedules.ignore_prefixes(cfg))
-    full = schedules.apply_registry(entries, reg, when)          # in memory only: this command saves nothing
+    if full is None:
+        full = schedules.current(when, cfg)
     items = []
     for e in sorted((x for x in full if schedules.is_problem(x)), key=schedules._sort_key):
         v = e["verdict"]
@@ -255,17 +254,20 @@ def _sweep_total(cfg: dict) -> int | None:
     return box.get("total")
 
 
-def source_disk(now: float, cfg: dict) -> tuple[list[dict], dict]:
+def source_disk(now: float, cfg: dict, sweep: bool = True) -> tuple[list[dict], dict]:
+    """`sweep=False` skips the sweep preview, which can take several seconds: the item then names the command that
+    shows what a sweep would give back instead of the size."""
     from . import storage
     d = storage.disk()
     free = _gb(d["free"]) + " free"
     if d["free_fraction"] >= storage.LOW_FREE_FRACTION and d["free"] >= storage.LOW_FREE_BYTES:
         return [], {"disk": free}
-    total = _sweep_total(cfg)
+    total = _sweep_total(cfg) if sweep else None
     pct = f"{d['free_fraction']:.0%} of the disk is free"
     acts = []
     if total is None:
-        size = "The sweep preview did not finish in time."
+        size = ("The sweep preview did not finish in time." if sweep
+                else "`teyla storage sweep --dry` shows how much a sweep would give back.")
         acts.append(action("Free space", ["storage", "sweep"], ["storage", "sweep", "--dry"], destructive=True))
     elif total >= SWEEP_WORTH:
         size = f"A sweep would give back about {_gb(total)}."

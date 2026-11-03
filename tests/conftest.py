@@ -139,6 +139,8 @@ def _no_real_claude_for_state_brief(monkeypatch):
     from teyla import backlog, portfolio, state
     monkeypatch.setattr(backlog, "spawn_refresh", lambda *a, **k: None)
     monkeypatch.setattr(portfolio, "spawn_refresh", lambda *a, **k: None)
+    from teyla import console
+    monkeypatch.setattr(console, "spawn_refresh", lambda *a, **k: False)
     monkeypatch.setattr(backlog, "default_runner", lambda argv: (127, "", "a test reached the real gh"))
 
     def _refuse(*a, **k):
