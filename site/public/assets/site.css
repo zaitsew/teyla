@@ -25,6 +25,7 @@ ul { padding: 0; list-style: none; }
 
 /* Header */
 .top { display: flex; align-items: center; justify-content: space-between; min-height: calc(var(--target) + var(--space-5)); }
+.top > a:first-child { display: inline-flex; align-items: center; min-height: var(--target); }
 .top img { height: var(--space-6); width: auto; }
 .logo-dark { display: none; }
 @media (prefers-color-scheme: dark) {
