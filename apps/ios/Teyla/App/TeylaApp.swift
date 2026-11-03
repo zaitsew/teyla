@@ -70,7 +70,7 @@ struct RootView: View {
         // Any web page can open a pairing link, so a different key never replaces the stored one unasked.
         .alert("Pair with a different Mac?", isPresented: Binding(
             get: { model.pendingPairing != nil },
-            set: { if !$0 { model.cancelPendingPairing() } }
+            set: { _ in }   // only the two buttons decide
         )) {
             Button("Keep current Mac", role: .cancel) { model.cancelPendingPairing() }
             Button("Pair with the new Mac", role: .destructive) { model.confirmPendingPairing() }

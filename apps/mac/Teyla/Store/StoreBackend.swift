@@ -206,6 +206,22 @@ final class StoreBackend: TeylaBackend, Sendable {
         throw StoreError.noReply
     }
 
+    // MARK: The iPhone
+
+    /// The string an iPhone's camera reads: the key this Mac is paired with. There is no command to ask, and the
+    /// relay needs no switch here: the Mac already runs it. A sample shows an all-zero key, which pairs nothing.
+    func relayPair() async throws -> String {
+        switch inner.withLock({ $0.source }) {
+        case .relay(_, let key):
+            guard let text = RelayCrypto.pairingString(for: key) else { throw RelayError.badPairing }
+            return text
+        case .sample:
+            return RelayCrypto.pairingPrefix + String(repeating: "A", count: 43)
+        case .none:
+            throw StoreError.notConnected
+        }
+    }
+
     // MARK: The command line
 
     /// There is no command to find. (Not a protocol default: on a concrete `TeylaCLI` an async default would

@@ -80,6 +80,13 @@ targets:
         LSMinimumSystemVersion: "15.0"
         ITSAppUsesNonExemptEncryption: false
         NSHumanReadableCopyright: "MIT License"
+        # `teyla relay connect` (and the iPhone's camera) hands the pairing key to this build as teyla-pair:v1:<key>.
+        # Only this target registers the scheme; the full Teyla target must not, or it would take the link from this one.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.zaitsew.teyla.pairing
+            CFBundleTypeRole: Viewer
+            CFBundleURLSchemes:
+              - teyla-pair
         NSSpeechRecognitionUsageDescription: "Teyla turns your voice into text on this Mac, so you can dictate answers, corrections and new tasks. No audio leaves your Mac."
         NSMicrophoneUsageDescription: "Teyla listens while you hold the microphone button or the shortcut, and turns your voice into text on this Mac."
     settings:
@@ -88,7 +95,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.zaitsew.teyla
         # The store archive takes the team from here (not a secret). The full app has none.
         DEVELOPMENT_TEAM: VWH2FKV78Q
-        CURRENT_PROJECT_VERSION: 1
+        CURRENT_PROJECT_VERSION: 2
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: TeylaStore/Info.plist
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
@@ -109,6 +116,7 @@ targets:
       - Teyla/App/CommandBarModel.swift
       - Teyla/Store/StoreBackend.swift
       - Teyla/Store/StoreSession.swift
+      - Teyla/Store/FolderPanelPlan.swift
       - Teyla/Store/MacKeyStore.swift
       - ../ios/Teyla/Core/RelayStore.swift
       - ../ios/Teyla/Core/RelayCrypto.swift

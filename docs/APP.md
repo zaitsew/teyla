@@ -522,10 +522,33 @@ Entitlements: `app-sandbox`, `files.user-selected.read-write` (the folder the ow
 `files.bookmarks.app-scope` (the folder stays chosen across launches) and `device.audio-input`
 (dictation). No network, no temporary exceptions. Voice stays on the device.
 
-Setup. With no folder bookmark and no key, the window shows "Connect Teyla on this Mac": install the
-command, run `teyla relay connect`: it turns the relay on and opens this app with the pairing URL, and the
-owner clicks "Use this folder" to choose the `Teyla` folder in iCloud Drive. Without the command the manual
-path is `teyla relay on` and `teyla relay pair`, then pasting the pairing string. The key goes to the login Keychain and the folder to a security-scoped bookmark.
+Setup. With no folder bookmark and no key, the window shows "Connect Teyla on this Mac" with one primary step: "Copy command
+and open Terminal". It copies `uv tool install --python 3.12 git+https://github.com/zaitsew/teyla && teyla relay connect`,
+opens Terminal (`NSWorkspace`, bundle id `com.apple.Terminal`) and says "Paste it in Terminal and press Return. Teyla connects
+by itself." The sandboxed app cannot type into Terminal, so one paste is the least it needs. "Let your coding agent do it"
+copies a one-sentence prompt that asks an agent with a terminal to run the same line. `teyla relay connect` turns the relay
+on, makes the key, runs one sync and opens `teyla-pair:v1:<key>` in the store build (below).
+
+The pairing link. The store target alone registers the URL scheme `teyla-pair` (`CFBundleURLTypes` in `project.yml`); the
+full `Teyla` target must not. `AppDelegate.application(_:open:)` hands the link to `StoreSession.receive(url:)` and brings
+the window forward. Any web page can open such a link, so the rules are:
+
+| State when the link arrives | Result |
+|---|---|
+| No key | Pairs, and leaves sample mode if it was on. |
+| The same key | The key does not change. The folder panel still opens if no folder is chosen, and the sample is left. |
+| A stored key that could not be read | Nothing changes. The window says the key could not be read. |
+| A different key | The stored key stays. A pending value is set and the window asks "Replace the pairing with this Mac?" |
+| A different link while one waits | The waiting key is kept and marked as a conflict. Replace then stores nothing, and the window says two links arrived. Only the owner's answer clears it. |
+| Not a `teyla-pair:v1:` link with a 32-byte key | Rejected; nothing changes. |
+
+Once a key is stored and no folder is chosen, the folder panel opens at once. The panel opens on `iCloud Drive/Teyla` when that
+folder exists, with the prompt "Use this folder" and a message that this is the only click needed (`FolderPanelPlan`). If it
+does not exist, the panel opens on iCloud Drive with New Folder allowed and says to create or pick a folder named Teyla. A
+chosen folder with no `state.teyla` is kept, with a notice that the Mac has not written yet and to run `teyla relay connect`.
+
+"Connect by hand" (a disclosure on the same screen) keeps the manual path: the three commands, a folder button and a field for
+the pairing string, in either order. The key goes to the login Keychain and the folder to a security-scoped bookmark.
 
 Sample mode. "See a sample" (also what App Review sees) loads the bundled `Teyla/Store/sample.v3.json`, a
 made-up snapshot with questions, tasks, running and finished sessions, products and a portfolio, so every screen
@@ -534,9 +557,17 @@ simulated and says "Sample: nothing was sent"; nothing is written to disk. `Tool
 the file from `tests/fixtures/state.v2.json`.
 
 What the store build leaves out, because it needs the command line: notes and the quick-note panel, the first-run
-diagnosis, the Tools page, editing a product's stage or focus, snooze and "mark done", the Codex/Claude choice for a new task (the
-Mac chooses) and pairing an iPhone. These controls are not drawn, rather than drawn and disabled. Product pages are
+diagnosis, the Tools page, editing a product's stage or focus, snooze and "mark done", and the Codex/Claude choice for a new
+task (the Mac chooses). These controls are not drawn, rather than drawn and disabled. Product pages are
 built from the snapshot: the open questions and the recent sessions, without spend.
+
+Connect iPhone. Both builds have it (File → Connect iPhone…, and Settings → iPhone). One sheet shows a large QR code with two steps:
+install Teyla from TestFlight, then point the iPhone camera at the code. The camera opens Teyla on the iPhone because it
+registers the same `teyla-pair` scheme as the store build. The code clears after 5 minutes and when the sheet closes; the
+string sits behind a small "Copy pairing string". The full app has one button: it runs `teyla relay on` when the relay is off,
+then `teyla relay pair --json`, so it no longer waits behind the toggle. The store build runs no command: it encodes the key
+in its Keychain with `RelayCrypto.pairingString(for:)` (base64url, no padding, the inverse of `parsePairing`), and offers the
+entry once it is connected to a Mac (a key and a folder).
 
 A bad signature shows nothing from the file ("The snapshot's signature does not match your pairing"). The
 snapshot and the answers sit in iCloud Drive as readable text, which Apple can read unless the owner turns on

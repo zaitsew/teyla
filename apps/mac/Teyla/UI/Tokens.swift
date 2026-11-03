@@ -68,6 +68,10 @@ enum Space {
     static let sidebarMax: CGFloat = 280
     /// The line length of the welcome, the not-found screen and the diagnosis.
     static let readingWidth: CGFloat = 560
+    /// The pairing QR code in the "Connect iPhone" sheet, large enough for a phone held at arm's length.
+    static let qrCode: CGFloat = 280
+    /// The width of the "Connect iPhone" sheet.
+    static let sheetWidth: CGFloat = 440
     /// The lockup on the welcome and not-found screens, and the mark in the sidebar header.
     static let lockupHeight: CGFloat = 48
     static let markSize: CGFloat = 24

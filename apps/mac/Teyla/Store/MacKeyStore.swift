@@ -22,6 +22,10 @@ struct MacKeyStore: KeyStore {
         return out as? Data
     }
 
+    func isKnownEmpty() -> Bool {
+        SecItemCopyMatching(query as CFDictionary, nil) == errSecItemNotFound
+    }
+
     func save(_ key: Data) throws {
         delete()
         var q = query

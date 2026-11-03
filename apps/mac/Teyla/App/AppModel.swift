@@ -112,6 +112,13 @@ final class AppModel {
         noteList.changed = { [weak self] in self?.productPage.refreshQuick() }
         #if STORE
         session.changed = { [weak self] in self?.storeSourceChanged() }
+        // A key that arrived by link with no folder chosen yet: the folder panel opens at once, after the link is handled.
+        session.requestFolder = { [weak session] in
+            Task { @MainActor in
+                guard let session else { return }
+                StoreSetup.chooseFolder(session.chooseFolder)
+            }
+        }
         #endif
     }
 
@@ -674,6 +681,30 @@ final class AppModel {
     func copyQuestion(_ ask: Ask) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(ask.question, forType: .string)
+    }
+
+    // MARK: Connect iPhone
+
+    /// Whether "Connect iPhone" can show a code. The full app asks the command; the store build holds the key
+    /// in the Keychain, so it shows one when it is connected to a Mac (a key and a folder).
+    var canConnectPhone: Bool {
+        #if STORE
+        return store.mode == .connected
+        #else
+        return capabilities.pairPhone
+        #endif
+    }
+
+    /// The relay is off and this build can switch it on, which "Connect iPhone" does first.
+    var phoneNeedsRelayOn: Bool {
+        capabilities.pairPhone && !relay.isOn(snapshot: snapshot?.relay)
+    }
+
+    /// Opens the sheet with the QR code (the menu, Settings).
+    func openConnectPhone() {
+        guard canConnectPhone else { return }
+        showMainWindow()
+        relay.present(turnOn: phoneNeedsRelayOn)
     }
 
     func showMainWindow() {

@@ -91,6 +91,51 @@ final class PairingLinkTests: XCTestCase {
         XCTAssertTrue(model.hasKey)
     }
 
+    func testASecondLinkCannotSwapTheKeyAwaitingConfirmation() {
+        let store = MemoryKeyStore(keyA)
+        let model = model(keyStore: store)
+        let keyC = Data((0..<32).map { UInt8(($0 * 3) % 256) })
+        XCTAssertEqual(model.handlePairingLink(link(keyB)), .needsConfirmation)
+        XCTAssertEqual(model.handlePairingLink(link(keyB)), .needsConfirmation, "the same link again changes nothing")
+        XCTAssertEqual(model.handlePairingLink(link(keyC)), .conflicting)
+        XCTAssertEqual(model.pendingPairing, keyB, "the alert stays until the owner answers")
+        XCTAssertNotNil(model.pairingError)
+        model.confirmPendingPairing()
+        XCTAssertEqual(store.load(), keyA, "a confirm after the swap stores nothing")
+        XCTAssertNil(model.pendingPairing)
+    }
+
+    func testLinksInOneBatchCannotReplaceTheKeyUnderAnOpenAlert() {
+        let store = MemoryKeyStore(keyA)
+        let model = model(keyStore: store)
+        let keyC = Data((0..<32).map { UInt8(($0 * 3) % 256) })
+        XCTAssertEqual(model.handlePairingLink(link(keyB)), .needsConfirmation)
+        XCTAssertEqual(model.handlePairingLink(link(keyC)), .conflicting)
+        XCTAssertEqual(model.handlePairingLink(link(keyC)), .conflicting, "the next link must not take the waiting place")
+        XCTAssertEqual(model.handlePairingLink(link(keyA)), .unchanged, "the stored key clears nothing")
+        XCTAssertEqual(model.handlePairingLink(link(keyB)), .conflicting, "the first link again does not undo the conflict")
+        model.confirmPendingPairing()
+        XCTAssertEqual(store.load(), keyA)
+
+        // The owner answered, so the next link asks afresh.
+        XCTAssertEqual(model.handlePairingLink(link(keyB)), .needsConfirmation)
+        model.confirmPendingPairing()
+        XCTAssertEqual(store.load(), keyB)
+    }
+
+    func testTheStoredKeyDoesNotClearAWaitingOne() {
+        let store = MemoryKeyStore(keyA)
+        let model = model(keyStore: store)
+        let keyC = Data((0..<32).map { UInt8(($0 * 3) % 256) })
+        XCTAssertEqual(model.handlePairingLink(link(keyB)), .needsConfirmation)
+        XCTAssertEqual(model.handlePairingLink(link(keyA)), .unchanged)
+        XCTAssertEqual(model.pendingPairing, keyB)
+        XCTAssertEqual(model.handlePairingLink(link(keyC)), .conflicting)
+        model.cancelPendingPairing()
+        XCTAssertNil(model.pendingPairing)
+        XCTAssertEqual(model.handlePairingLink(link(keyC)), .needsConfirmation, "a no ends the conflict")
+    }
+
     func testALinkThatIsNotAPairingCodeShowsTheExistingError() {
         let store = MemoryKeyStore(keyA)
         let model = model(keyStore: store)

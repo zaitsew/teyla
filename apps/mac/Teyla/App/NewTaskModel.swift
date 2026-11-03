@@ -73,7 +73,7 @@ final class NewTaskModel {
     }
 }
 
-/// State of the iPhone relay controls in Settings. In fixture mode the toggle is simulated.
+/// State of the iPhone relay controls and of the "Connect iPhone" sheet. In fixture mode the toggle is simulated.
 @MainActor
 @Observable
 final class RelayModel {
@@ -89,6 +89,8 @@ final class RelayModel {
     private(set) var error: String?
     /// The switch as the owner set it, until the next snapshot confirms it.
     private(set) var pendingOn: Bool?
+    /// The "Connect iPhone" sheet is open.
+    var presented = false
 
     @ObservationIgnored private let cli: any TeylaBackend
     @ObservationIgnored private var clearTask: Task<Void, Never>?
@@ -117,12 +119,19 @@ final class RelayModel {
         }
     }
 
-    func pair() {
+    /// "Connect iPhone": one step. When the relay is off and this build can switch it (`turnOn`), it is turned on
+    /// first, then the key is made and shown. It no longer waits behind a toggle.
+    func connectPhone(turnOn: Bool) {
         guard pairing != .working else { return }
         pairing = .working
         error = nil
         Task {
             do {
+                if turnOn {
+                    try await cli.setRelay(on: true)
+                    pendingOn = true
+                    AppModel.shared.refresh()
+                }
                 let text = try await cli.relayPair()
                 pairing = .ready(text)
                 scheduleClear()
@@ -130,6 +139,17 @@ final class RelayModel {
                 pairing = .failed(error.localizedDescription)
             }
         }
+    }
+
+    /// Opens the sheet and starts at once.
+    func present(turnOn: Bool) {
+        presented = true
+        connectPhone(turnOn: turnOn)
+    }
+
+    func dismiss() {
+        presented = false
+        clearPairing()
     }
 
     /// The key is on screen only while the owner pairs: it is cleared after 5 minutes and when Settings closes.

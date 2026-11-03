@@ -30,12 +30,16 @@ a first launch copies the settings kept under the old id `com.zaitsew.teyla` (se
 | Target | Bundle id | For |
 |---|---|---|
 | `Teyla` | `com.zaitsew.teyla.local` | The full app `install.sh` installs: runs the `teyla` command, not sandboxed. |
-| `TeylaStore` | `com.zaitsew.teyla` | The Mac App Store and TestFlight build: App Sandboxed, reads the signed relay folder like the iPhone app, no command line. Version 0.32.0. |
+| `TeylaStore` | `com.zaitsew.teyla` | The Mac App Store and TestFlight build: App Sandboxed, reads the signed relay folder like the iPhone app, no command line. Version 0.32.0, build 2. |
 
 The store build's design is in [`docs/APP.md`](../../docs/APP.md#the-store-build-mac-app-store-and-testflight). It has no
 network access; its entitlements are `app-sandbox`, `files.user-selected.read-write`, `files.bookmarks.app-scope`
-and `device.audio-input` (`Teyla/TeylaStore.entitlements`). Without a paired Mac it shows "Connect Teyla on this Mac"
-and a "See a sample" button; the sample is bundled (`Teyla/Store/sample.v3.json`, rebuilt by
+and `device.audio-input` (`Teyla/TeylaStore.entitlements`). Without a paired Mac it shows "Connect Teyla on this Mac":
+"Copy command and open Terminal" (one paste: `uv tool install … && teyla relay connect`), "Let your coding agent do it",
+"See a sample", and "Connect by hand" for the manual steps. `teyla relay connect` hands the key to the app as a
+`teyla-pair:v1:<key>` link (only the `TeylaStore` target registers the `teyla-pair` scheme), and the folder panel then opens
+on `iCloud Drive/Teyla` ("Use this folder"). A link with a different key asks before it replaces the stored one.
+The sample is bundled (`Teyla/Store/sample.v3.json`, rebuilt by
 `python3 Tools/make_store_sample.py`) and every send in it is simulated.
 
 ```sh
@@ -47,7 +51,7 @@ open -n path/to/Teyla.app --args -storeSampleMode YES
 ```
 
 Signing and upload use the App Store Connect key, never a password: `DEVELOPMENT_TEAM` stays empty in the project and
-the release script passes the team. Version 0.32.0, build number `CURRENT_PROJECT_VERSION` starting at 1.
+the release script passes the team. Version 0.32.0, build number `CURRENT_PROJECT_VERSION` 2 (1 went to TestFlight on 26 October).
 
 ## First run
 
@@ -91,9 +95,11 @@ Notes:
   menu-bar item "Quick note" opens it too and shows the shortcut that is active, or none.
 - **Settings** (⌘,): **Quick note shortcut**: click the field, press a combination with ⌘, ⌥ or ⌃;
   Esc cancels, Clear turns the shortcut off. ⌥⌘Space is refused (push-to-talk). If another app owns
-  the combination, Settings says so and the shortcut stays off; the menu-bar item still works. Voice language; iPhone relay on or off (`teyla relay on|off`); **Pair iPhone**
-  runs `teyla relay pair --json` and shows the pairing string as a QR code (cleared after 5 minutes
-  and when Settings closes), with when the Mac last synced.
+  the combination, Settings says so and the shortcut stays off; the menu-bar item still works. Voice language; iPhone relay on or off (`teyla relay on|off`) with when the Mac last synced; **Connect iPhone…**
+  (also File → Connect iPhone…, both builds) opens a sheet with a large QR code and two steps (install Teyla from TestFlight,
+  point the iPhone camera at the code). The full app turns the relay on when it is off, then runs `teyla relay pair --json`;
+  the store build encodes the key in its Keychain. The code clears after 5 minutes and when the sheet closes; "Copy pairing string"
+  copies the text behind it.
 - **Notifications**: one local notification per new question, with the question as text. Clicking
   it scrolls to the card. Questions already open at launch are not announced.
 - **Window**: closing it never strands you. Window → Teyla (⌘0), the menu-bar item and the Dock icon
@@ -138,7 +144,8 @@ teyla load --wait --kind build && xcodebuild test -project Teyla.xcodeproj -sche
 
 The tests cover the store build's logic (the signed snapshot, a bad signature showing nothing, the outbox entry against
 `tests/fixtures/relay-vector.json`, simulated sample sends, the settings move), model decoding, formatting, CLI argument building (free text after `--`), fixture
-writes, the pairing string and its QR code (read back with `CIDetector`), voice rules and
+writes, the pairing string and its QR code (read back with `CIDetector`), the pairing string encoder (a round trip, and the string `teyla relay pair` prints),
+the `teyla-pair:` link rules (no key, the same key, a different key waiting for a yes, a bad link, the folder panel after pairing) and the folder panel's default, voice rules and
 push-to-talk, the new-task defaults, the one-notification-per-question tracker, the note commands
 (text on stdin, checked against a stand-in `teyla`), the suggestion and notes JSON, the picker keys,
 the shortcut keymap, storage and conflict rule, the diagnosis and product-page JSON (samples from the real CLI), the
@@ -155,11 +162,18 @@ Views use the tokens in `Teyla/UI/Tokens.swift` (spacing, type, colour roles); n
 
 **Screenshots.** With `TEYLA_STATE_FIXTURE` set, these variables shape the preview (they are ignored
 otherwise): `TEYLA_PREVIEW_APPEARANCE=light|dark`, `TEYLA_PREVIEW_SIZE=<w>x<h>`,
-`TEYLA_PREVIEW_SCROLL=end`, `TEYLA_PREVIEW_OPEN=new-task|quick-note|settings|pair|diagnosis|home|decisions|portfolio|product:<id>|focus:<ask id>`,
-`TEYLA_PREVIEW_DRAFT=<text>`, `TEYLA_PREVIEW_START_DELAY=<seconds>` (how long the simulated diagnosis takes)
+`TEYLA_PREVIEW_SCROLL=end`, `TEYLA_PREVIEW_OPEN=new-task|quick-note|settings|pair (the Connect iPhone sheet)|diagnosis|home|decisions|portfolio|product:<id>|focus:<ask id>`,
+`TEYLA_PREVIEW_SNAPSHOT=<path.png>` with `TEYLA_PREVIEW_SNAPSHOT_VIEW=home|connect-phone|setup|setup-hand|setup-paired` (draws that view in one image and quits;
+`setup` is the store build's first screen), `TEYLA_PREVIEW_DRAFT=<text>`, `TEYLA_PREVIEW_START_DELAY=<seconds>` (how long the simulated diagnosis takes)
 and `TEYLA_PREVIEW_NO_BINARY=1` (shows the not-found screen). The welcome is `state.empty.v1.json`. Capture a window with `screencapture -l <window id>`.
 
 ## Not verified on a real run
+
+The store build's `teyla-pair:` link arriving from `teyla relay connect`, the folder panel opening on `iCloud Drive/Teyla`
+(the sandbox may hide that folder from the existence check, which falls back to the iCloud Drive view), "Copy command and open
+Terminal" launching Terminal, and the alert for a different key were built to the APIs and covered by logic tests, but not
+exercised in a signed, sandboxed run. The preview hooks work in the store build too, in sample mode
+(`open -n Teyla.app --args -storeSampleMode YES`, with the `TEYLA_PREVIEW_*` variables).
 
 The quick-note shortcut press, typing into the panel from another app, and the recorder's key capture
 were built to the APIs but not exercised headlessly. Notification delivery and click-through, the ⌥⌘Space press and on-device recognition need a

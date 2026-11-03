@@ -18,10 +18,17 @@ final class StoreSession {
     private(set) var hasKey = false
     /// Why the last step of the setup failed.
     var notice: String?
+    /// A different key that arrived by `teyla-pair:` link while one is stored. It replaces nothing until the owner
+    /// confirms, because any web page can open such a link.
+    private(set) var pendingKey: Data?
+    /// A different link arrived while `pendingKey` waited. A yes then stores nothing.
+    private var pendingConflict = false
 
     @ObservationIgnored let backend: StoreBackend
     /// Called after the source changed, so the window clears what it shows and reads again.
     @ObservationIgnored var changed: () -> Void = {}
+    /// Opens the folder panel. Called once a key has arrived by link and no folder is chosen yet.
+    @ObservationIgnored var requestFolder: () -> Void = {}
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let keyStore: KeyStore
@@ -48,6 +55,8 @@ final class StoreSession {
 
     var hasFolder: Bool { folderURL != nil }
     var isSample: Bool { mode == .sample }
+    /// Whether a different key is waiting for the owner's yes.
+    var hasPendingPairing: Bool { pendingKey != nil }
 
     // MARK: Setup steps
 
@@ -61,7 +70,8 @@ final class StoreSession {
             notice = "Could not keep access to that folder: \(error.localizedDescription)"
             return
         }
-        notice = nil
+        // A folder the Mac has not written to yet is kept, with a plain notice: the Mac fills it in.
+        notice = FolderPanelPlan.hasSnapshot(in: url) ? nil : FolderPanelPlan.emptyFolderNotice
         openFolder(bookmark.resolve(defaults) ?? url)
         apply()
     }
@@ -86,6 +96,127 @@ final class StoreSession {
         return true
     }
 
+    // MARK: Pairing by link
+
+    /// What a `teyla-pair:` link did.
+    enum LinkOutcome: Equatable {
+        /// The key was stored (the first one, or a replacement the owner confirmed).
+        case paired
+        /// The same key as the stored one: nothing changed.
+        case unchanged
+        /// A different key while one is stored: waiting for the owner's yes.
+        case needsConfirmation
+        /// Not a pairing link.
+        case rejected
+        /// The stored key could not be read, so nothing changed; `notice` says so.
+        case unreadable
+        /// A different link arrived while one waited for the owner's yes. Neither will be stored; `notice` says so.
+        case conflicting
+    }
+
+    private static let conflictNotice =
+        "Two different pairing links arrived, so Teyla changed nothing. Run teyla relay connect on your Mac."
+
+    /// The key in a `teyla-pair:v1:<key>` link, or nil for anything else.
+    static func pairingKey(from url: URL) -> Data? {
+        guard url.scheme?.lowercased() == "teyla-pair" else { return nil }
+        var text = url.absoluteString
+        while text.hasSuffix("/") { text.removeLast() }
+        return RelayCrypto.parsePairing(text)
+    }
+
+    /// `teyla relay connect` opens `teyla-pair:v1:<key>` in this app. With no key yet it pairs (and leaves the sample).
+    /// The same key changes nothing. A different key never replaces the stored one by itself: any web page can open
+    /// this link, so it waits for the owner's yes. Once a key is stored and no folder is chosen, the folder panel opens.
+    @discardableResult
+    func receive(url: URL) -> LinkOutcome {
+        guard let new = Self.pairingKey(from: url) else {
+            notice = "That is not a Teyla pairing link."
+            return .rejected
+        }
+        // The launch may have read the Keychain while it was unavailable: read again before calling it empty.
+        if key == nil, let loaded = keyStore.load() {
+            key = loaded
+            hasKey = true
+            apply()
+        }
+        guard let stored = key else {
+            guard keyStore.isKnownEmpty() else {
+                notice = "Teyla could not read its stored key, so it changed nothing. Unlock your Keychain and open the link again."
+                return .unreadable
+            }
+            guard store(key: new) else { return .rejected }
+            leaveSampleMode()
+            apply()
+            askForFolderIfMissing()
+            return .paired
+        }
+        if stored == new {
+            if isSample {
+                leaveSampleMode()
+                apply()
+            }
+            askForFolderIfMissing()
+            return .unchanged
+        }
+        // The alert names no key, so a page must not swap the one the owner is about to accept. Only the owner's answer
+        // clears a waiting key: a link that cleared it would let the next link take its place under the open alert.
+        if let pendingKey, pendingConflict || pendingKey != new {
+            pendingConflict = true
+            notice = Self.conflictNotice
+            return .conflicting
+        }
+        pendingKey = new
+        return .needsConfirmation
+    }
+
+    /// The owner said yes to replacing the pairing. After a conflict there is no telling which link the yes was for,
+    /// so nothing is stored.
+    func confirmPendingPairing() {
+        guard let new = pendingKey else { return }
+        let conflict = pendingConflict
+        clearPendingPairing()
+        guard !conflict else {
+            notice = Self.conflictNotice
+            return
+        }
+        guard store(key: new) else { return }
+        leaveSampleMode()
+        apply()
+        askForFolderIfMissing()
+    }
+
+    /// The owner said no: the stored key stays.
+    func declinePendingPairing() {
+        clearPendingPairing()
+    }
+
+    private func clearPendingPairing() {
+        pendingKey = nil
+        pendingConflict = false
+    }
+
+    private func store(key new: Data) -> Bool {
+        do {
+            try keyStore.save(new)
+        } catch {
+            notice = error.localizedDescription
+            return false
+        }
+        notice = nil
+        key = new
+        hasKey = true
+        return true
+    }
+
+    private func leaveSampleMode() {
+        defaults.set(false, forKey: Self.sampleKey)
+    }
+
+    private func askForFolderIfMissing() {
+        if !hasFolder { requestFolder() }
+    }
+
     func useSample() {
         defaults.set(true, forKey: Self.sampleKey)
         apply()
@@ -100,6 +231,7 @@ final class StoreSession {
     /// Forgets the Mac: the key and the folder. The setup screen comes back.
     func forgetMac() {
         keyStore.delete()
+        clearPendingPairing()
         bookmark.clear(defaults)
         defaults.set(false, forKey: Self.sampleKey)
         openFolder(nil)

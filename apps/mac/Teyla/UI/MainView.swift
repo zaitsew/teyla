@@ -19,6 +19,21 @@ struct MainView: View {
             CommandBarView()
                 .environment(model)
         }
+        .sheet(isPresented: Bindable(model.relay).presented) {
+            ConnectPhoneSheet()
+                .environment(model)
+        }
+        #if STORE
+        .alert("Replace the pairing with this Mac?", isPresented: Binding(
+            get: { model.store.hasPendingPairing },
+            set: { _ in })) {   // only the two buttons decide
+            Button("Keep the current pairing", role: .cancel) { model.store.declinePendingPairing() }
+            Button("Replace", role: .destructive) { model.store.confirmPendingPairing() }
+        } message: {
+            Text("A pairing link for a different Mac arrived. Replace only if you just ran teyla relay connect yourself. "
+                 + "Otherwise keep the current pairing.")
+        }
+        #endif
         .onAppear {
             model.openMainWindow = { openWindow(id: "main") }
             Preview.runOnce(model: model, openSettings: { openSettings() })
