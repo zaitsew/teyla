@@ -1,0 +1,3 @@
+User-agent: *
+Disallow: /b/
+Sitemap: https://teyla.dev/sitemap.xml

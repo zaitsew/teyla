@@ -1,0 +1,16 @@
+// teyla.dev: static files only, no Worker script, so every request is free and unmetered.
+{
+  "name": "teyla-site",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./public",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    { "pattern": "teyla.dev", "custom_domain": true },
+    { "pattern": "www.teyla.dev", "custom_domain": true }
+  ]
+}

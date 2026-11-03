@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#F7F7F9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E1015" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/tokens.css">
+<link rel="stylesheet" href="/assets/site.css">
+<title>Teyla privacy</title>
+<meta name="description" content="What Teyla reads, what it sends, and what this site collects.">
+<link rel="canonical" href="https://teyla.dev/privacy/">
+</head>
+<body>
+<header class="wrap top">
+  <a href="/" aria-label="Teyla home"><img class="logo-light" src="/img/lockup.svg" alt="Teyla" width="120" height="32"><img class="logo-dark" src="/img/lockup-dark.svg" alt="" width="120" height="32"></a>
+  <a class="quiet" href="https://github.com/zaitsew/teyla">GitHub</a>
+</header>
+<main class="wrap page">
+  <h1>Privacy</h1>
+  <p>Teyla reads your session logs, your repos and your config on your Mac. It has no server, no account, no telemetry and no analytics SDK. It never uploads a transcript. Nothing about your sessions leaves your Mac unless you turn on a feature that says so.</p>
+
+  <h2>What leaves your Mac, and when</h2>
+  <table class="table">
+    <thead><tr><th scope="col">What</th><th scope="col">When</th><th scope="col">Sends</th></tr></thead>
+    <tbody>
+      <tr><td>Update check</td><td>Once a day, on by default</td><td>The version number, to GitHub</td></tr>
+      <tr><td><code>teyla spend</code>, <code>teyla reviews</code>, <code>teyla state</code></td><td>When you run them</td><td>Repo names, PR numbers and your login, through your own <code>gh</code></td></tr>
+      <tr><td><code>teyla answer</code>, <code>teyla run</code>, <code>--model</code> flags</td><td>Only when you ask</td><td>Text, to your model provider under your own login</td></tr>
+      <tr><td><code>teyla relay on</code></td><td>Off by default</td><td>Open questions and session titles, to your iCloud Drive</td></tr>
+    </tbody>
+  </table>
+  <p>Safe mode, <code>teyla config set safe.enabled=true</code>, closes most of these calls. <a href="https://github.com/zaitsew/teyla/blob/main/docs/PRIVACY.md">The full list</a> names every call and its host.</p>
+
+  <h2>The Mac and iPhone apps</h2>
+  <p>The apps collect nothing and have no account. The iPhone app reads a signed folder in your own iCloud Drive. Apple holds the keys to that folder unless you turn on Advanced Data Protection. <a href="https://github.com/zaitsew/teyla/blob/main/docs/RELAY.md">RELAY.md</a> lists what the folder holds.</p>
+
+  <h2>The Claude Code plugin</h2>
+  <p>The plugin uploads nothing. Its hook scripts and skills contain no network call. <a href="https://github.com/zaitsew/teyla/blob/main/plugin/README.md#privacy">The plugin README</a> lists what it reads and writes on your machine.</p>
+
+  <h2>This site</h2>
+  <p>This site sets no cookies, runs no analytics and loads nothing from another host. It is hosted on Cloudflare, which handles each request as any web host does.</p>
+
+  <h2>Questions</h2>
+  <p><a href="/support/">Support</a> says how to reach the maintainer.</p>
+</main>
+<footer>
+  <div class="wrap">
+    <ul>
+      <li><a class="quiet" href="https://github.com/zaitsew/teyla">GitHub</a></li>
+      <li><a class="quiet" href="https://github.com/zaitsew/teyla/blob/main/docs/GUIDE.md">Guide</a></li>
+      <li><a class="quiet" href="/privacy/">Privacy</a></li>
+      <li><a class="quiet" href="/support/">Support</a></li>
+      <li><a class="quiet" href="https://github.com/zaitsew/teyla/blob/main/LICENSE">Apache-2.0</a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>
