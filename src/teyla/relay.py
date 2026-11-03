@@ -480,6 +480,8 @@ def _print_connect(res: dict, as_json: bool) -> None:
     if res["handed_over"]:
         print("\n".join(progress))
         print('The Teyla window opens on your Mac: click "Use this folder" there.')
+        # `open -b` also succeeds with a build older than the URL scheme: that build opens and ignores the key.
+        print("If Teyla does not connect, update it, or run `teyla relay pair` and paste the string into it.")
         print("On your iPhone: in Teyla on the Mac, choose Connect iPhone and scan the QR code.")
         return
     print("\n".join(progress), file=sys.stderr)

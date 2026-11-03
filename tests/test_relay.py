@@ -722,6 +722,7 @@ def test_connect_hands_the_key_over_and_does_not_print_it(connect_env, capsys):
     assert connect_env.opened == [pairing]
     assert pairing not in cap.out + cap.err and pairing.split(":")[-1] not in cap.out + cap.err
     assert 'click "Use this folder"' in cap.out
+    assert "run `teyla relay pair` and paste the string" in cap.out
     assert "choose Connect iPhone and scan the QR code" in cap.out
     assert relay.read_cfg()["on"] is True and len(connect_env.syncs) == 1
     assert "not paired yet" not in cap.out + cap.err
