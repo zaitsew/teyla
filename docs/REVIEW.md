@@ -69,6 +69,7 @@ Keys are snake_case. A key that is absent means the value is unknown; `null` is 
 | `tap` | object, optional | Absent when the owner did not tap |
 | `tap.x`, `tap.y` | numbers | The tap in window points |
 | `tap.accessibility_identifier`, `tap.accessibility_label` | strings, optional | What UIKit reports under the tap. SwiftUI hides most elements, so these are often absent |
+| `region` | `{x, y, width, height}`, optional | The area the owner circled, in window points. `tap` is then its centre, and `element` is what lies there |
 | `element` | object, optional | The element the tap resolved to. Absent when nothing was under the tap |
 | `element.id` | string | The anchor id, or the accessibility identifier |
 | `element.matched_by` | `anchor` or `accessibility_identifier` | An anchor wins. The identifier is the fallback, and then only `id` is set |
@@ -168,6 +169,8 @@ The package writes the first state, in `status.json` inside the capture's folder
 Both reach the same inbox as a phone capture.
 
 ## Privacy
+
+**What the owner sees.** Opening review mode shrinks the frozen app into a framed picture with a "Review mode" label, so it never reads as a hang. Step 1: tap a spot or circle an area, or go on about the whole screen. Step 2: write, or dictate when `speech` is on. The picture shrinks again for the keyboard. Step 3: the overlay says whether the capture was sent or only saved on this phone. A product translates the words with `$0.strings`.
 
 Nothing leaves the owner's devices. The capture is written to the app's Documents and to the owner's own iCloud Drive folder; the package makes no network call and contains no analytics, no SDK and no third-party code. The picture holds whatever the screen showed, so review mode is for builds the owner tests, never for App Store builds (the package refuses to open in one). `device` is the device class, not the name the owner gave the phone. `element.strings` holds string keys, not the text of the screen. Speech recognition, when switched on, runs on the device only and the audio is not kept.
 

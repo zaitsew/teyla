@@ -21,10 +21,10 @@ final class ReviewDeliveryTests: XCTestCase {
     private func store() -> CaptureStore { CaptureStore(root: dir.appendingPathComponent("captures")) }
     private func outbox(_ id: String) -> URL { relay.appendingPathComponent("outbox/review/\(id)") }
 
-    func testASuccessfulSaveReturnsNoFailureAndCopiesWhenPaired() {
+    func testASaveOnAPairedPhoneIsSentToTheRelay() {
         let record = Fixtures.record()
-        let failure = ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(key), relayFolder: folder)
-        XCTAssertNil(failure)
+        let outcome = ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(key), relayFolder: folder)
+        XCTAssertEqual(outcome, .sent)
         XCTAssertTrue(FileManager.default.fileExists(atPath: outbox(record.id).appendingPathComponent("capture.sig").path))
     }
 
@@ -34,8 +34,8 @@ final class ReviewDeliveryTests: XCTestCase {
         try Data([1]).write(to: blocker)
         let broken = CaptureStore(root: blocker.appendingPathComponent("captures"))
         let record = Fixtures.record()
-        let failure = ReviewDelivery.save(record: record, png: png, store: broken, keyStore: MemoryKeyStore(key), relayFolder: folder)
-        XCTAssertEqual(failure, ReviewDelivery.saveFailureMessage)
+        let outcome = ReviewDelivery.save(record: record, png: png, store: broken, keyStore: MemoryKeyStore(key), relayFolder: folder)
+        XCTAssertEqual(outcome, .failed)
         XCTAssertFalse(FileManager.default.fileExists(atPath: outbox(record.id).path))
     }
 
@@ -44,15 +44,15 @@ final class ReviewDeliveryTests: XCTestCase {
         try Data([1]).write(to: blocker)
         let record = Fixtures.record()
         let root = blocker.appendingPathComponent("captures")
-        XCTAssertNotNil(ReviewDelivery.save(record: record, png: png, store: CaptureStore(root: root), keyStore: MemoryKeyStore(key), relayFolder: folder))
+        XCTAssertEqual(ReviewDelivery.save(record: record, png: png, store: CaptureStore(root: root), keyStore: MemoryKeyStore(key), relayFolder: folder), .failed)
         try FileManager.default.removeItem(at: blocker)                               // space freed
-        XCTAssertNil(ReviewDelivery.save(record: record, png: png, store: CaptureStore(root: root), keyStore: MemoryKeyStore(key), relayFolder: folder))
+        XCTAssertEqual(ReviewDelivery.save(record: record, png: png, store: CaptureStore(root: root), keyStore: MemoryKeyStore(key), relayFolder: folder), .sent)
         XCTAssertEqual(CaptureStore(root: root).list(), [record.id])
     }
 
     func testPairingLaterSignsAndCopiesWhatWasSavedBefore() {
         let record = Fixtures.record()
-        XCTAssertNil(ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(), relayFolder: folder))
+        XCTAssertEqual(ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(), relayFolder: folder), .savedOnPhone)
         XCTAssertFalse(FileManager.default.fileExists(atPath: outbox(record.id).path))   // unsigned: stays on the phone
         ReviewDelivery.retryPending(store: store(), keyStore: MemoryKeyStore(key), relayFolder: folder)
         let dest = outbox(record.id)

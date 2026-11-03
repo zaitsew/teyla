@@ -7,6 +7,8 @@ import Speech
 /// The product's Info.plist needs NSSpeechRecognitionUsageDescription and NSMicrophoneUsageDescription.
 final class SpeechCapture {
     var onText: ((String) -> Void)?
+    /// Recognition ended by itself: a final result, an error or the system's time limit.
+    var onEnd: (() -> Void)?
 
     private let recognizer: SFSpeechRecognizer?
     private let engine = AVAudioEngine()
@@ -59,7 +61,12 @@ final class SpeechCapture {
                 let heard = result.bestTranscription.formattedString
                 DispatchQueue.main.async { self?.onText?(heard) }
             }
-            if error != nil || result?.isFinal == true { DispatchQueue.main.async { self?.stop() } }
+            if error != nil || result?.isFinal == true {
+                DispatchQueue.main.async {
+                    self?.stop()
+                    self?.onEnd?()
+                }
+            }
         }
         running = true
         return true

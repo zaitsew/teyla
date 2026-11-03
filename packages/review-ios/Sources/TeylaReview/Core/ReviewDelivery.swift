@@ -1,29 +1,34 @@
 import Foundation
 
+/// What became of a capture when the owner pressed Send. The overlay says this in words, so a
+/// capture that stayed on the phone never reads as sent.
+enum ReviewSaveOutcome: Equatable, Sendable {
+    /// In the relay folder, on its way to the Mac.
+    case sent
+    /// In the app's Documents only: no key, no folder, or the copy failed. `retryPending` copies it later.
+    case savedOnPhone
+    /// Not written. The comment and the screenshot are still in memory, so the owner can retry.
+    case failed
+}
+
 /// Save on the phone first; then, if there is a key and a folder, copy to the relay outbox.
 enum ReviewDelivery {
-    /// Shown in the overlay when the phone could not write the capture. The comment and the
-    /// screenshot are still in memory, so the owner can retry.
-    static let saveFailureMessage =
-        "Could not save the capture on this device. Your comment and the screenshot are still here. Free some space, then tap Retry."
-
-    /// Returns nil when the capture is saved on the phone, else the message to show. A failed copy to
-    /// the relay is not a failure: the capture is safe in Documents and `retryPending` copies it later.
+    /// A failed copy to the relay is not a failure: the capture is safe in Documents.
     static func save(
         record: CaptureRecord, png: Data,
         store: CaptureStore = CaptureStore(root: CaptureStore.defaultRoot()),
         keyStore: RelayKeyStoring = TeylaReview.keyStore,
         relayFolder: RelayFolder = TeylaReview.relayFolder
-    ) -> String? {
+    ) -> ReviewSaveOutcome {
         let key = keyStore.load()
         do {
             try store.save(record: record, png: png, key: key)
         } catch {
-            return saveFailureMessage
+            return .failed
         }
-        guard let key else { return nil }                       // unsigned: it stays on the phone until the owner pairs
-        _ = relayFolder.withAccess { try? store.copyToRelay(id: record.id, relayRoot: $0, key: key) }
-        return nil
+        guard let key else { return .savedOnPhone }             // unsigned: it stays on the phone until the owner pairs
+        let copied = relayFolder.withAccess { (try? store.copyToRelay(id: record.id, relayRoot: $0, key: key)) != nil } ?? false
+        return copied ? .sent : .savedOnPhone
     }
 
     /// Signs every capture saved before pairing, then copies every saved capture that has not

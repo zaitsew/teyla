@@ -19,6 +19,8 @@ public enum TeylaReview {
         public var willBegin: (() -> Void)?
         /// Called after review mode closes, so the product can resume it.
         public var didEnd: (() -> Void)?
+        /// The words review mode says, read each time it opens, so a language picker takes effect.
+        public var strings: () -> ReviewStrings = { ReviewStrings() }
         public init() {}
     }
 
