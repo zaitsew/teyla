@@ -5,6 +5,7 @@ import UIKit
 /// What the owner entered in the overlay.
 struct ReviewDraft {
     var tap: CGPoint?
+    var region: CGRect?
     var hit: Anchor?
     var accessibilityIdentifier: String?
     var accessibilityLabel: String?
@@ -69,31 +70,31 @@ enum ReviewPresenter {
                 guard let window else { return (nil, nil) }
                 return DeviceProbe.accessibility(at: point, in: window, excluding: handle?.controller?.view)
             },
-            speechEnabled: config.speech, microphone: guardian, speech: speech,
-            onCancel: finish,
-            onSend: { draft, failed in
+            speechEnabled: config.speech, microphone: guardian, speech: speech, strings: config.strings(),
+            onClose: finish,
+            onSend: { draft, report in
                 let screen = HitTester.screen(current: currentScreen, hit: draft.hit, anchors: anchors)
                 let tap = draft.tap.map {
                     TapInfo(x: Double($0.x).rounded2, y: Double($0.y).rounded2,
                             accessibilityIdentifier: draft.accessibilityIdentifier, accessibilityLabel: draft.accessibilityLabel)
                 }
                 let record = CaptureBuilder.make(
-                    id: captureID, now: Date(), device: DeviceProbe.deviceClass(), app: app, environment: environment, screen: screen, tap: tap,
+                    id: captureID, now: Date(), device: DeviceProbe.deviceClass(), app: app, environment: environment, screen: screen, tap: tap, region: draft.region.map(Rect.init),
                     element: draft.hit, accessibilityElementID: draft.accessibilityIdentifier, anchors: anchors,
                     text: draft.text, input: draft.input, language: environment.language,
                     pngSHA256: ReviewSigner.sha256Hex(shot.png), pixelWidth: shot.pixelWidth, pixelHeight: shot.pixelHeight,
                     scale: shot.scale, microphone: micState.asInfo)
                 let png = shot.png
-                // The overlay closes only after the capture is on the phone. A failed save keeps it open.
+                // The overlay stays open to say what became of the capture. A failed save keeps the text.
                 Task { @MainActor in
-                    let failure = await Task.detached(priority: .userInitiated) { ReviewDelivery.save(record: record, png: png) }.value
-                    if let failure { failed(failure) } else { finish() }
+                    report(await Task.detached(priority: .userInitiated) { ReviewDelivery.save(record: record, png: png) }.value)
                 }
             })
         let host = UIHostingController(rootView: overlay)
         host.modalPresentationStyle = .overFullScreen
         host.view.backgroundColor = .black
         handle.controller = host
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         top.present(host, animated: false)
     }
 }

@@ -165,6 +165,13 @@ def test_a_capture_without_element_or_tap_is_valid(capture, schema):
     assert check(capture, schema) == []
 
 
+def test_a_circled_area_is_valid(capture, schema):
+    capture["region"] = {"x": 20, "y": 40, "width": 100, "height": 200}
+    assert check(capture, schema) == []
+    capture["region"] = {"x": 20}
+    assert check(capture, schema)
+
+
 def _hmac(key: bytes, message: str) -> str:
     return hmac.new(key, message.encode("utf-8"), hashlib.sha256).hexdigest()
 

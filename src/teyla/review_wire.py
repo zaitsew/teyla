@@ -71,6 +71,7 @@ def normalize(obj: dict) -> tuple[dict | None, str]:
         screen = el.get("screen")
     flat = {"id": obj.get("id"), "product": bundle.rsplit(".", 1)[-1], "screen": screen or "",
             "element": flat_el, "tap": {"x": tap.get("x"), "y": tap.get("y")} if tap else None,
+            "region": obj.get("region"),
             "comment": comment["text"], "created_at": obj.get("created"), "build": app.get("build", ""),
             "commit": app.get("commit", ""), "locale": env.get("locale", ""),
             "dynamic_type": env.get("dynamic_type", ""), "appearance": env.get("appearance", ""),

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Review mode no longer looks like a hang.** The frozen app shrinks into a framed picture with a "Review mode" label,
+  and the panel takes its own space above the safe area and the keyboard, so typed text and the buttons stay visible.
+  Three steps: tap a spot or circle an area (a new optional `region` in the capture), write or dictate, then a screen
+  that says whether the capture was sent or only saved on this phone. A product translates the words with `$0.strings`.
 - **`teyla testflight` warns when a store build lags main.** A repo declares `[[release.store_target]]` in `teyla.toml`;
   when the platform's newest upload is more than three days older than the newest change on the default branch to the
   target's sources, the row says so and prints the release command (`--platform macos` for the Mac). A target frozen for
