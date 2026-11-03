@@ -1,0 +1,29 @@
+# teyla.toml — what `teyla testflight` needs to know about this repo's Apple builds.
+# Only the release table is kept here; the repo declares no routines or checks.
+
+[product]
+name = "teyla"
+
+[release]
+apple_bundle_id = "com.zaitsew.teyla"   # the iPhone and Mac store builds share one record (universal purchase)
+
+# The Mac App Store build. `teyla testflight` compares the date of its newest upload with the newest
+# change on main to these sources, and warns with the release command when the build lags. The full app
+# (`com.zaitsew.teyla.local`, scheme `Teyla`) is installed by apps/mac/install.sh and is not a store build.
+[[release.store_target]]
+platform = "macos"
+scheme = "TeylaStore"
+project = "apps/mac/Teyla.xcodeproj"
+# The TeylaStore sources in apps/mac/project.yml: the app folder minus the command-running files,
+# plus the relay client shared with the iPhone app.
+paths = [
+  "apps/mac/Teyla",
+  "apps/mac/project.yml",
+  "apps/ios/Teyla/Core/RelayStore.swift",
+  "apps/ios/Teyla/Core/RelayCrypto.swift",
+  "apps/ios/Teyla/Core/Storage.swift",
+  ":(exclude)apps/mac/Teyla/Core/TeylaCLI.swift",
+  ":(exclude)apps/mac/Teyla/Core/TeylaBinary.swift",
+  ":(exclude)apps/mac/Teyla/Core/SessionWatcher.swift",
+  ":(exclude)apps/mac/Teyla/UI/NotFoundView.swift",
+]
