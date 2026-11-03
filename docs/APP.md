@@ -251,8 +251,9 @@ Notes on the CLI as built (version 2):
 |---|---|
 | `teyla say <running-id> [--json] -- <text>` | Sends a correction to a running session. Codex: `codex queue`, which delivers it after the current turn. Claude: copies the text and opens the session. Never resumes a live session. |
 | `teyla dispatch <product> [--harness codex\|claude] [--json] [--dry] -- <text>` | Starts a new session in a fresh worktree under `~/.worktrees/<repo>/`. Codex by default, through `codex-lane` and the machine guard. |
+| `teyla relay connect [--json]` | The whole setup: turns the relay on, creates the key if there is none, writes the first snapshot, then opens Teyla for Mac with the pairing URL (`teyla-pair:v1:<key>`). Prints the pairing string only when it cannot open the app. |
 | `teyla relay on\|off\|status [--json]` | Turns the iPhone relay on or off. |
-| `teyla relay pair [--json] [--rotate]` | Prints the pairing string the window shows as a QR code, creating the shared key the first time. `--rotate` replaces the key; every phone pairs again. |
+| `teyla relay pair [--json] [--rotate]` | Prints the pairing string that Teyla on the Mac shows as a QR code (Connect iPhone), creating the shared key the first time. `--rotate` replaces the key; every phone pairs again. |
 | `teyla note --suggest "<text>" --json [--cwd DIR]` | The product a note would get, how (`text`, `cwd` or `""`), and the picker's `candidates` (registered ids, focus first, parked last). Writes nothing. `-` reads the text from stdin. |
 | `teyla note - --product <id> --json` | Keeps the note read from stdin and prints it as JSON (the `teyla notes --json` keys, plus `intent`). `link <id> <product>` and `drop <id>` take `--json` too. |
 | `teyla notes --json` | The open notes, newest first, as a list of `{id, text, product, source, created, updated, linked_by, dropped}`. |
@@ -522,8 +523,9 @@ Entitlements: `app-sandbox`, `files.user-selected.read-write` (the folder the ow
 (dictation). No network, no temporary exceptions. Voice stays on the device.
 
 Setup. With no folder bookmark and no key, the window shows "Connect Teyla on this Mac": install the
-command, run `teyla relay on` and `teyla relay pair`, then choose the `Teyla` folder in iCloud Drive and
-paste the pairing string. The key goes to the login Keychain and the folder to a security-scoped bookmark.
+command, run `teyla relay connect`: it turns the relay on and opens this app with the pairing URL, and the
+owner clicks "Use this folder" to choose the `Teyla` folder in iCloud Drive. Without the command the manual
+path is `teyla relay on` and `teyla relay pair`, then pasting the pairing string. The key goes to the login Keychain and the folder to a security-scoped bookmark.
 
 Sample mode. "See a sample" (also what App Review sees) loads the bundled `Teyla/Store/sample.v3.json`, a
 made-up snapshot with questions, tasks, running and finished sessions, products and a portfolio, so every screen

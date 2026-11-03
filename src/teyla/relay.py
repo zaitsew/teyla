@@ -1,6 +1,7 @@
 """`teyla relay` — the Mac side of the iPhone relay (`docs/APP.md`, "The relay (Mac ↔ iPhone)").
 
     teyla relay on | off | status [--json]       switch the relay on or off, say where it stands
+    teyla relay connect [--json]                 on + key + one sync, then hand the key to Teyla for Mac
     teyla relay pair [--json] [--rotate]         create the shared key, print the pairing string
     teyla relay sync [--quiet]                   one pass: write the snapshot, deliver the signed outbox
 
@@ -35,7 +36,7 @@ An answer never falls back to the clipboard (`answer.answer(clipboard=False)`): 
 `copy and open` could deliver stays open and `sent/` says "needs the Mac". Safe mode makes `sync`
 a no-op. The launchd agent `com.zaitsew.teyla.relay` runs `sync` when the outbox changes and every
 60 seconds. The key is read from `~/.teyla/relay.key` and written nowhere else, and never printed
-except by `pair`.
+except by `pair`, and by `connect` when it cannot hand the key to Teyla for Mac.
 """
 from __future__ import annotations
 
@@ -396,7 +397,7 @@ def _folder_for_on() -> pathlib.Path:
     return folder
 
 
-def relay_on(*, load=None) -> list[str]:
+def relay_on(*, load=None, paired_hint: bool = True) -> list[str]:
     load = ri._load if load is None else load
     folder = _folder_for_on()
     for sub in ("", "outbox", "sent"):
@@ -418,11 +419,77 @@ def relay_on(*, load=None) -> list[str]:
         lines.append(load(plist, LABEL))
     else:
         lines.append(f"not macOS: run `teyla relay sync` every minute yourself ({wrapper})")
-    if read_key() is None:
-        lines.append("not paired yet: run `teyla relay pair`")
+    if paired_hint and read_key() is None:
+        lines.append("not paired yet: run `teyla relay connect`")
     if config.safe_mode():
         lines.append("safe mode is on: `sync` does nothing until it is off")
     return lines
+
+MAC_APP_BUNDLE_ID = "com.zaitsew.teyla"          # Teyla for Mac (store build); it registers the `teyla-pair:` URL scheme
+PAIR_TEXT = ("Paste this into Teyla on your Mac or iPhone, or scan its QR code in Teyla on the Mac (Connect iPhone). "
+             "It is the key: do not share it.")
+
+
+def open_pairing(url: str) -> bool:
+    """Hand the pairing URL to Teyla for Mac. An argv list, never a shell; macOS only. False when it did not open."""
+    if sys.platform != "darwin":
+        return False
+    try:
+        return subprocess.run(["open", "-b", MAC_APP_BUNDLE_ID, url], stdin=subprocess.DEVNULL,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def relay_connect(*, load=None, opener=None, sync_fn=None) -> dict:
+    """The whole setup in one call: relay on, a key (an existing one is reused, never rotated), one sync so
+    `state.teyla` exists at once, then the pairing URL to the Mac store build. A sync that fails or is skipped is
+    a warning. Returns {"lines", "warnings", "folder", "new", "handed_over", "synced", "pairing"}."""
+    opener = open_pairing if opener is None else opener
+    sync_fn = sync if sync_fn is None else sync_fn
+    lines = relay_on(load=load, paired_hint=False)
+    existing = read_key()
+    key = existing or create_key()
+    warnings: list[str] = []
+    synced = False
+    try:
+        res = sync_fn()
+        if "skipped" in res:
+            warnings.append(f"first sync skipped: {res['skipped']}")
+        else:
+            synced = True
+    except Exception as exc:                    # a failed first pass must not undo the setup; the agent retries in 60 s
+        warnings.append(f"first sync failed: {_clip(str(exc), 200)}")
+    pairing = pairing_string(key)
+    handed_over = bool(opener(pairing))
+    return {"lines": lines, "warnings": warnings, "folder": read_cfg()["folder"], "new": existing is None,
+            "handed_over": handed_over, "synced": synced, "pairing": pairing}
+
+
+def _print_connect(res: dict, as_json: bool) -> None:
+    if as_json:
+        out = {"on": True, "folder": res["folder"], "new": res["new"], "handed_over": res["handed_over"],
+               "synced": res["synced"]}
+        if not res["handed_over"]:
+            out["pairing"] = res["pairing"]
+        print(json.dumps(out))
+        for w in res["warnings"]:
+            print(f"warning: {w}", file=sys.stderr)
+        return
+    progress = res["lines"] + [f"warning: {w}" for w in res["warnings"]]
+    if res["handed_over"]:
+        print("\n".join(progress))
+        print('The Teyla window opens on your Mac: click "Use this folder" there.')
+        # `open -b` also succeeds with a build older than the URL scheme: that build opens and ignores the key.
+        print("If Teyla does not connect, update it, or run `teyla relay pair` and paste the string into it.")
+        print("On your iPhone: in Teyla on the Mac, choose Connect iPhone and scan the QR code.")
+        return
+    print("\n".join(progress), file=sys.stderr)
+    print(res["pairing"])
+    print(PAIR_TEXT, file=sys.stderr)
+    if pathlib.Path("~/Applications/Teyla.app").expanduser().exists():
+        print("The full Teyla app on this Mac needs no pairing: it shows the iPhone QR code under Connect iPhone.",
+              file=sys.stderr)
 
 
 def relay_off(*, unload=None) -> list[str]:
@@ -893,7 +960,10 @@ def cmd_relay(args) -> int:
                 print(json.dumps({"pairing": s, "rotated": bool(args.rotate), "new": existing is None}))
             else:
                 print(s)
-                print("Scan or paste this on the iPhone. It is the key: do not share it.", file=sys.stderr)
+                print(PAIR_TEXT, file=sys.stderr)
+            return 0
+        if act == "connect":
+            _print_connect(relay_connect(), args.json)
             return 0
         if act == "on":
             print("\n".join(relay_on()))
@@ -926,10 +996,10 @@ def cmd_relay(args) -> int:
 
 
 def register(sp):
-    q = sp.add_parser("relay", help="the iPhone relay: on, off, status, pair, sync")
+    q = sp.add_parser("relay", help="the iPhone relay: connect, on, off, status, pair, sync")
     q.set_defaults(fn=cmd_relay)
-    q.add_argument("action", choices=["on", "off", "status", "pair", "sync"])
-    q.add_argument("--json", action="store_true", help="status, pair: print JSON")
+    q.add_argument("action", choices=["connect", "on", "off", "status", "pair", "sync"])
+    q.add_argument("--json", action="store_true", help="connect, status, pair: print JSON")
     q.add_argument("--rotate", action="store_true", help="pair: replace the key (the phone must pair again)")
     q.add_argument("--quiet", action="store_true", help="sync: print only what was delivered or refused")
     return q

@@ -5,12 +5,20 @@ The relay lets the iPhone app read what is waiting on you and answer from the ph
 ## Setup
 
 ```
-teyla relay on        # creates iCloud Drive/Teyla, installs the sync agent
-teyla relay pair      # prints the pairing string (the same one again later): scan or paste it in the iPhone app
+teyla relay connect   # the whole setup: relay on, key, first sync, then opens Teyla on the Mac
 teyla relay status    # on, paired, last snapshot
 ```
 
-In the phone app, pick the Teyla folder once, then enter the pairing string. The Mac window shows the same string as a QR code. `[relay] folder` in `~/.teyla/config.toml` moves the folder.
+`connect` opens Teyla for Mac with the pairing key. Click "Use this folder" in its window. Then, on the iPhone, open Teyla on the Mac, choose Connect iPhone and scan the QR code; in the phone app pick the Teyla folder once. `connect` reuses an existing key and never rotates it. If Teyla for Mac is not installed, `connect` prints the pairing string instead: paste it into Teyla on your Mac or iPhone. The full Teyla app on the Mac needs no pairing. It shows the iPhone QR code under Connect iPhone.
+
+The manual path, step by step:
+
+```
+teyla relay on        # creates iCloud Drive/Teyla, installs the sync agent
+teyla relay pair      # prints the pairing string (the same one again later): paste it into Teyla on your Mac or iPhone
+```
+
+`[relay] folder` in `~/.teyla/config.toml` moves the folder.
 
 ## What is synced
 
