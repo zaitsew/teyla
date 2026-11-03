@@ -656,7 +656,7 @@ def test_on_writes_the_agent_and_off_removes_it(tmp_path, monkeypatch):
     assert relay.wrapper_path().stat().st_mode & 0o111
     assert 'relay sync --quiet' in relay.wrapper_path().read_text()
     assert (loaded == [relay.LABEL]) == (sys.platform == "darwin")
-    assert any("not paired" in l for l in lines)
+    assert any("not paired yet: run `teyla relay connect`" in l for l in lines)
     st = relay.status()
     assert st["on"] is True and st["paired"] is False and st["agent"] is True
     relay.relay_off(unload=lambda plist, label: unloaded.append(label) or "unloaded")
@@ -679,6 +679,115 @@ def test_status_json_matches_the_snapshot_relay_object(env, capsys):
     st = json.loads(capsys.readouterr().out)
     assert st["on"] is True and st["paired"] is True and st["folder"] == str(env.folder)
     assert set(SNAP["relay"]) <= set(st)
+
+
+# --- connect ----------------------------------------------------------------------------------
+
+@pytest.fixture
+def connect_env(tmp_path, monkeypatch):
+    """Everything `relay connect` touches is stubbed: no launchctl, no real sync, no `open`."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    folder = tmp_path / "icloud" / "Teyla"
+    monkeypatch.setattr(relay, "configured_folder", lambda: folder)
+    monkeypatch.setattr(relay.ri, "_load", lambda plist, label: f"loaded {label}")
+
+    class C:
+        pass
+
+    c = C()
+    c.home, c.folder, c.opened, c.syncs = home, folder, [], []
+    c.open_ok, c.sync_result = True, {"processed": [], "recovered": []}
+
+    def opener(url):
+        c.opened.append(url)
+        return c.open_ok
+
+    def fake_sync(**kw):
+        c.syncs.append(kw)
+        if isinstance(c.sync_result, Exception):
+            raise c.sync_result
+        return c.sync_result
+
+    monkeypatch.setattr(relay, "open_pairing", opener)
+    monkeypatch.setattr(relay, "sync", fake_sync)
+    return c
+
+
+def test_connect_hands_the_key_over_and_does_not_print_it(connect_env, capsys):
+    assert cli.main(["relay", "connect"]) == 0
+    cap = capsys.readouterr()
+    pairing = relay.pairing_string(relay.read_key())
+    assert connect_env.opened == [pairing]
+    assert pairing not in cap.out + cap.err and pairing.split(":")[-1] not in cap.out + cap.err
+    assert 'click "Use this folder"' in cap.out
+    assert "choose Connect iPhone and scan the QR code" in cap.out
+    assert relay.read_cfg()["on"] is True and len(connect_env.syncs) == 1
+    assert "not paired yet" not in cap.out + cap.err
+
+
+def test_connect_reuses_the_existing_key_and_never_rotates(connect_env, capsys):
+    key = relay.create_key()
+    assert cli.main(["relay", "connect", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["new"] is False and relay.read_key() == key
+    assert connect_env.opened == [relay.pairing_string(key)]
+    assert cli.main(["relay", "connect", "--json"]) == 0
+    assert relay.read_key() == key
+
+
+def test_connect_json_when_handed_over_has_no_pairing(connect_env, capsys):
+    assert cli.main(["relay", "connect", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out == {"on": True, "folder": str(connect_env.folder), "new": True, "handed_over": True, "synced": True}
+
+
+def test_connect_prints_the_pairing_string_when_the_hand_over_fails(connect_env, capsys):
+    connect_env.open_ok = False
+    assert cli.main(["relay", "connect"]) == 0
+    cap = capsys.readouterr()
+    pairing = relay.pairing_string(relay.read_key())
+    assert cap.out.strip() == pairing
+    assert ("Paste this into Teyla on your Mac or iPhone, or scan its QR code in Teyla on the Mac (Connect iPhone). "
+            "It is the key: do not share it.") in cap.err
+    assert "needs no pairing" not in cap.err
+    (connect_env.home / "Applications" / "Teyla.app").mkdir(parents=True)
+    assert cli.main(["relay", "connect"]) == 0
+    assert "needs no pairing" in capsys.readouterr().err
+    assert cli.main(["relay", "connect", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["handed_over"] is False and out["pairing"] == pairing
+
+
+def test_connect_survives_a_failed_or_skipped_first_sync(connect_env, capsys):
+    connect_env.sync_result = RuntimeError("disk full")
+    assert cli.main(["relay", "connect", "--json"]) == 0
+    cap = capsys.readouterr()
+    assert json.loads(cap.out)["synced"] is False and "first sync failed" in cap.err
+    connect_env.sync_result = {"skipped": "safe mode"}
+    assert cli.main(["relay", "connect", "--json"]) == 0
+    cap = capsys.readouterr()
+    assert json.loads(cap.out)["synced"] is False and "first sync skipped: safe mode" in cap.err
+
+
+def test_the_default_opener_is_an_argv_list_on_macos_only(monkeypatch):
+    calls = []
+
+    class R:
+        returncode = 0
+
+    monkeypatch.setattr(relay.subprocess, "run", lambda cmd, **kw: calls.append((cmd, kw)) or R())
+    monkeypatch.setattr(relay.sys, "platform", "linux")
+    assert relay.open_pairing("teyla-pair:v1:x") is False and calls == []
+    monkeypatch.setattr(relay.sys, "platform", "darwin")
+    assert relay.open_pairing("teyla-pair:v1:x") is True
+    assert calls[0][0] == ["open", "-b", "com.zaitsew.teyla", "teyla-pair:v1:x"] and not calls[0][1].get("shell")
+
+
+def test_pair_says_where_the_key_goes(capsys):
+    assert cli.main(["relay", "pair"]) == 0
+    assert "Paste this into Teyla on your Mac or iPhone" in capsys.readouterr().err
 
 
 # --- an unsafe folder ------------------------------------------------------------------------
