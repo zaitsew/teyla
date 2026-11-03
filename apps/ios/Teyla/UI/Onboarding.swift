@@ -3,13 +3,15 @@ import UIKit
 import UniformTypeIdentifiers
 import VisionKit
 
-/// Three steps: pick the iCloud Drive "Teyla" folder, pair with the Mac, done.
+/// Three steps: pick the iCloud Drive "Teyla" folder, pair with the Mac, done. The first two work in either
+/// order: a pairing code scanned with the Camera can arrive before the folder is chosen.
 struct OnboardingView: View {
     @Environment(AppModel.self) private var model
     @State private var showFolderPicker = false
     @State private var showScanner = false
     @State private var pasted = ""
     @State private var pasteError = false
+    @State private var pasteOpen = !DataScannerViewController.isSupported
 
     private var step: Int { min(model.setupStep, 2) }
 
@@ -49,6 +51,11 @@ struct OnboardingView: View {
             }
             .ignoresSafeArea()
         }
+        // Paired first (the Camera opened Teyla): there is only the folder left, so ask for it at once.
+        .onAppear { if step == 0 && model.hasKey { showFolderPicker = true } }
+        .onChange(of: model.hasKey) { _, paired in
+            if paired && step == 0 { showFolderPicker = true }
+        }
         .fullScreenCover(isPresented: $showScanner) {
             ScannerSheet { code in
                 showScanner = false
@@ -62,7 +69,12 @@ struct OnboardingView: View {
     private var folderStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             StepHeader(number: 1, title: "Choose the Teyla folder")
-            Text("On your Mac, run `teyla relay on`. It creates the folder Teyla in iCloud Drive. Open it here once.")
+            if model.hasKey {
+                Label("Paired with your Mac", systemImage: "checkmark.circle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(.green)
+            }
+            Text("Your Mac created the Teyla folder in iCloud Drive. Choose it.")
                 .foregroundStyle(.secondary)
             Button {
                 showFolderPicker = true
@@ -72,6 +84,9 @@ struct OnboardingView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            Text("No folder yet? On your Mac, run `teyla relay connect`.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             Text("Teyla keeps access to this folder only. It reads the Mac's update there and leaves your answers for the Mac to pick up.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -86,9 +101,7 @@ struct OnboardingView: View {
                     .font(.subheadline)
                     .foregroundStyle(.green)
             }
-            Text(LocalizedStringKey(DataScannerViewController.isSupported
-                 ? "On your Mac, run `teyla relay pair` or open the pairing code in the Teyla window. Scan the code, or paste the pairing string."
-                 : "On your Mac, run `teyla relay pair` and paste the pairing string it prints."))
+            Text("In Teyla on your Mac, choose Connect iPhone, then scan the code.")
                 .foregroundStyle(.secondary)
             if DataScannerViewController.isSupported {
                 Button {
@@ -99,35 +112,47 @@ struct OnboardingView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                Text("The iPhone Camera works too: point it at the code and tap the banner.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
-            VStack(alignment: .leading, spacing: 8) {
-                TextField("teyla-pair:v1:\u{2026}", text: $pasted)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .font(.system(.body, design: .monospaced))
-                    .padding(12)
-                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .submitLabel(.done)
-                    .onSubmit { handle(pasted) }
-                if DataScannerViewController.isSupported {
-                    Button("Pair with this string") { handle(pasted) }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
-                        .disabled(pasted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                } else {
-                    Button("Pair with this string") { handle(pasted) }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .disabled(pasted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                if pasteError {
-                    Label("That is not a Teyla pairing string.", systemImage: "exclamationmark.triangle.fill")
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                }
+            DisclosureGroup("Paste the pairing string", isExpanded: $pasteOpen) {
+                pasteField.padding(.top, 8)
             }
             Button("Choose another folder") { showFolderPicker = true }
                 .font(.footnote)
+        }
+    }
+
+    private var pasteField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("No camera, or no code on screen? Run `teyla relay pair` on the Mac and paste what it prints.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            TextField("teyla-pair:v1:\u{2026}", text: $pasted)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.system(.body, design: .monospaced))
+                .padding(12)
+                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .submitLabel(.done)
+                .onSubmit { handle(pasted) }
+            if DataScannerViewController.isSupported {
+                Button("Pair with this string") { handle(pasted) }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .disabled(pasted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } else {
+                Button("Pair with this string") { handle(pasted) }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(pasted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if pasteError {
+                Label("That is not a Teyla pairing string.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
         }
     }
 
@@ -215,6 +240,8 @@ struct FolderPicker: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder])
         picker.allowsMultipleSelection = false
+        // Best effort: open in iCloud Drive/Teyla. When iOS ignores it, the picker opens where it last was.
+        picker.directoryURL = FolderBookmark.suggestedFolder
         picker.delegate = context.coordinator
         return picker
     }

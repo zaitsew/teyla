@@ -11,8 +11,9 @@ work. The contract is in [`docs/APP.md`](../../docs/APP.md) ("The relay").
 ```sh
 brew install xcodegen                                    # once
 cd apps/ios && xcodegen generate && open Teyla.xcodeproj  # build and run on a simulator or your iPhone
-# on the Mac: teyla relay on, then teyla relay pair
-# in the app: choose the iCloud Drive "Teyla" folder, then scan the QR code (or paste the pairing string)
+# on the Mac: teyla relay connect (makes iCloud Drive/Teyla), then open Teyla and choose Connect iPhone
+# on the iPhone: point the Camera at the QR code (it opens Teyla), then choose the "Teyla" folder in iCloud Drive
+#   (or scan from inside the app, or paste the pairing string; the two steps work in either order)
 ```
 
 Preview without a Mac: launch with `TEYLA_STATE_FIXTURE=<repo>/tests/fixtures/state.v2.json` (an
@@ -25,7 +26,8 @@ No Mac yet? Onboarding offers "See a sample": the whole app with made-up data fr
 `-TEYLA_TAB home|decisions|products`, `-TEYLA_OPEN <product>` or `-TEYLA_OLDER open` to open a tab, a product
 or the "Older" fold. `Tools/screenshots.sh` uses these to make the store screenshots.
 
-Requires iOS 18 and Xcode. Camera scanning needs a real device; on a simulator, paste the string.
+Requires iOS 18 and Xcode. Scanning needs a real device; on a simulator, paste the string or open the link with
+`xcrun simctl openurl booted 'teyla-pair:v1:<key>'`.
 
 ## How it works
 
@@ -38,6 +40,11 @@ Requires iOS 18 and Xcode. Camera scanning needs a real device; on a simulator, 
   "Waiting for the Mac" until the Mac writes `sent/<uuid>.json`, then shows the result and deletes that file.
 - **The key** is the 32 bytes from the pairing string. It lives in the Keychain
   (`AfterFirstUnlockThisDeviceOnly`), never in the folder.
+- **The pairing link.** The code on the Mac is a QR code holding `teyla-pair:v1:<key>`, and the app registers the
+  `teyla-pair` URL scheme, so the system Camera opens Teyla and pairs. With no key stored it pairs at once; the
+  same key does nothing; a different key asks "Pair with a different Mac?" first, because any web page can open
+  the link. Pairing before the folder is chosen is fine: the folder step then opens the picker, which starts in
+  iCloud Drive/Teyla when iOS honours the hint.
 - **Voice** uses Apple Speech with `requiresOnDeviceRecognition = true`, in English, Spanish or Russian.
   A language without an on-device model does not start; there is no server fallback. The text fills the
   field and nothing is sent until you tap Send.
