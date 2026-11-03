@@ -261,6 +261,12 @@ struct ReviewOverlay: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+            if !strings.deliveryNote.isEmpty {
+                Text(strings.deliveryNote)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("teyla.review.delivery-note")
+            }
             if let failure {
                 Text(failure)
                     .font(.footnote)

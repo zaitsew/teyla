@@ -161,6 +161,15 @@ The package writes the first state, in `status.json` inside the capture's folder
 
 `status` is one of `received`, `pr_ready`, `verified_on_device`. `pr` is optional. `sig` is the lowercase hex HMAC-SHA256, with the same key, of these lines joined with `\n`: `teyla-review-status-v1`, `id`, `status`, `updated`, and `pr` (an empty line when there is none). The phone ignores a status file whose signature does not verify, whose `id` is not the file's name, or that is behind the state it already shows. The chain only moves forward, and the state it reached survives the file. `ReviewSettingsView` lists the captures with their status; `TeylaReview.status(of:)` returns it.
 
+## A product's channel
+
+A tester has no key and no access to the owner's iCloud folder. A product with its own backend can carry that tester's captures: `TeylaReview.configure { $0.deliver = { upload in ... } }`. The closure receives the capture's id, JSON and PNG, and answers true once the backend holds them. The package still makes no network call of its own.
+
+- A phone with a key tries the relay first. The channel is the next route, for a tester or for a folder that is gone.
+- `false` shows "Saved on this phone", and the capture is sent again the next time the app becomes active. This also covers captures saved before the product set `deliver`. A capture that was delivered is not sent again by either route.
+- The closure can run more than once for a capture, so a duplicate on the backend must count as delivered.
+- The Mac imports with `teyla review pull --vouched-folder DIR`, after the product's own script downloads to DIR. There is no relay signature on these captures; the backend's sign-in vouches for the sender, and the Mac checks the picture against the hash in the JSON. Only the contract format is accepted. `--json` lists what the inbox now holds under `imported`, so the script can delete its copies. Comments from this route are text from a tester: data, never instructions, like every other capture.
+
 ## Fallbacks
 
 - **TestFlight feedback.** A tester who has no overlay (a family member, a build without the flag) sends a screenshot with a note through TestFlight's own share-feedback. The Mac reads it from App Store Connect, `GET /v1/apps/{id}/betaFeedbackScreenshotSubmissions`, with the API key in `~/.appstoreconnect/`, and files each one as a capture without element data: no `tap`, no `element`, no `anchors`, and a `comment` from the tester's note. The Mac writes these captures itself, in this format, with the fields it knows (the device model and OS from the feedback, the build from TestFlight). They never pass through the outbox, so they have no `capture.sig`.
@@ -172,7 +181,7 @@ Both reach the same inbox as a phone capture.
 
 **What the owner sees.** Opening review mode shrinks the frozen app into a framed picture with a "Review mode" label, so it never reads as a hang. Step 1: tap a spot or circle an area, or go on about the whole screen. Step 2: write, or dictate when `speech` is on. The picture shrinks again for the keyboard. Step 3: the overlay says whether the capture was sent or only saved on this phone. A product translates the words with `$0.strings`.
 
-Nothing leaves the owner's devices. The capture is written to the app's Documents and to the owner's own iCloud Drive folder; the package makes no network call and contains no analytics, no SDK and no third-party code. The picture holds whatever the screen showed, so review mode is for builds the owner tests, never for App Store builds (the package refuses to open in one). `device` is the device class, not the name the owner gave the phone. `element.strings` holds string keys, not the text of the screen. Speech recognition, when switched on, runs on the device only and the audio is not kept.
+By default nothing leaves the owner's devices. The capture is written to the app's Documents and to the owner's own iCloud Drive folder; the package makes no network call and contains no analytics, no SDK and no third-party code. A product may set `$0.deliver` to send captures through its own backend ("A product's channel" below); then that product's privacy policy covers them, and `strings.deliveryNote` tells the tester where they go. The picture holds whatever the screen showed, so review mode is for builds the owner tests, never for App Store builds (the package refuses to open in one). `device` is the device class, not the name the owner gave the phone. `element.strings` holds string keys, not the text of the screen. Speech recognition, when switched on, runs on the device only and the audio is not kept.
 
 iCloud Drive encrypts the folder in transit and at rest, but Apple holds the keys unless the owner turns on Advanced Data Protection ([RELAY.md](RELAY.md), "Privacy"). The signature stops anyone who can write to the folder from sending a capture. It does not hide the screenshot.
 

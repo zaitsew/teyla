@@ -182,3 +182,57 @@ def test_pull_prints_the_receipts(conn, root, key, capsys, monkeypatch):
     assert cli.main(["review", "pull", "--folder", str(root)]) == 0
     out = capsys.readouterr().out
     assert "1 new" in out and "receipt(s) sent to the phone" in out
+
+
+# ---- a product's own channel: no relay signature, the sign-in vouches ---------------------------
+
+def channel(tmp_path, cid=CID) -> pathlib.Path:
+    box = tmp_path / "channel"
+    shutil.copytree(CAP, box / cid)
+    (box / cid / "status.json").unlink()
+    (box / cid / "capture.sig").unlink()
+    return box
+
+
+def test_a_vouched_capture_needs_no_signature_and_no_key(tmp_path, conn):
+    rep = review.pull_vouched(conn, channel(tmp_path), NOW)
+    assert (rep["added"], rep["skipped"], rep["imported"]) == (1, [], [CID])
+    assert conn.execute("SELECT 1 FROM captures WHERE id = ?", (CID,)).fetchone()
+    assert not (review.captures_root() / CID / "capture.sig").exists()
+
+
+def test_a_second_vouched_pull_says_known_and_still_names_it(tmp_path, conn):
+    box = channel(tmp_path)
+    review.pull_vouched(conn, box, NOW)
+    rep = review.pull_vouched(conn, box, NOW)
+    assert (rep["added"], rep["known"], rep["imported"]) == (0, 1, [CID])
+
+
+def test_a_vouched_picture_that_is_not_the_one_named_is_refused(tmp_path, conn):
+    box = channel(tmp_path)
+    (box / CID / "capture.png").write_bytes(b"not the picture")
+    rep = review.pull_vouched(conn, box, NOW)
+    assert rep["imported"] == [] and "sha256" in rep["skipped"][0]
+    assert not conn.execute("SELECT 1 FROM captures WHERE id = ?", (CID,)).fetchone()
+
+
+def test_a_vouched_folder_takes_only_the_contract_format(tmp_path, conn):
+    folder = tmp_path / "channel" / CID
+    folder.mkdir(parents=True)
+    (folder / "capture.json").write_text(json.dumps({"id": CID, "product": "x", "screen": "s", "comment": "c"}))
+    rep = review.pull_vouched(conn, tmp_path / "channel", NOW)
+    assert rep["imported"] == [] and "contract" in rep["skipped"][0]
+
+
+def test_the_relay_still_refuses_what_a_channel_would_take(root, key, conn):
+    folder = drop(root)
+    (folder / "capture.sig").unlink()
+    rep = review.pull_relay(conn, root, NOW)
+    assert rep["added"] == 0
+
+
+def test_the_cli_lists_what_it_imported_as_json(tmp_path, capsys):
+    box = channel(tmp_path)
+    assert cli.main(["review", "pull", "--vouched-folder", str(box), "--json"]) == 0
+    rep = json.loads(capsys.readouterr().out)
+    assert rep["source"] == "channel" and rep["imported"] == [CID]

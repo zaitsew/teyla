@@ -21,50 +21,127 @@ final class ReviewDeliveryTests: XCTestCase {
     private func store() -> CaptureStore { CaptureStore(root: dir.appendingPathComponent("captures")) }
     private func outbox(_ id: String) -> URL { relay.appendingPathComponent("outbox/review/\(id)") }
 
-    func testASaveOnAPairedPhoneIsSentToTheRelay() {
+    func testASaveOnAPairedPhoneIsSentToTheRelay() async {
         let record = Fixtures.record()
-        let outcome = ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(key), relayFolder: folder)
+        let outcome = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(key), relayFolder: folder, deliver: nil)
         XCTAssertEqual(outcome, .sent)
         XCTAssertTrue(FileManager.default.fileExists(atPath: outbox(record.id).appendingPathComponent("capture.sig").path))
     }
 
-    func testAFailedLocalSaveIsReportedAndNothingIsCopied() throws {
+    func testAFailedLocalSaveIsReportedAndNothingIsCopied() async throws {
         // The captures folder cannot be created: its parent is a regular file.
         let blocker = dir.appendingPathComponent("blocker")
         try Data([1]).write(to: blocker)
         let broken = CaptureStore(root: blocker.appendingPathComponent("captures"))
         let record = Fixtures.record()
-        let outcome = ReviewDelivery.save(record: record, png: png, store: broken, keyStore: MemoryKeyStore(key), relayFolder: folder)
+        let outcome = await ReviewDelivery.save(record: record, png: png, store: broken, keyStore: MemoryKeyStore(key), relayFolder: folder, deliver: nil)
         XCTAssertEqual(outcome, .failed)
         XCTAssertFalse(FileManager.default.fileExists(atPath: outbox(record.id).path))
     }
 
-    func testARetryAfterAFailedSaveSucceedsOnceTheFolderIsWritable() throws {
+    func testARetryAfterAFailedSaveSucceedsOnceTheFolderIsWritable() async throws {
         let blocker = dir.appendingPathComponent("blocker")
         try Data([1]).write(to: blocker)
         let record = Fixtures.record()
         let root = blocker.appendingPathComponent("captures")
-        XCTAssertEqual(ReviewDelivery.save(record: record, png: png, store: CaptureStore(root: root), keyStore: MemoryKeyStore(key), relayFolder: folder), .failed)
+        let failed = await ReviewDelivery.save(record: record, png: png, store: CaptureStore(root: root), keyStore: MemoryKeyStore(key), relayFolder: folder, deliver: nil)
+        XCTAssertEqual(failed, .failed)
         try FileManager.default.removeItem(at: blocker)                               // space freed
-        XCTAssertEqual(ReviewDelivery.save(record: record, png: png, store: CaptureStore(root: root), keyStore: MemoryKeyStore(key), relayFolder: folder), .sent)
+        let sent = await ReviewDelivery.save(record: record, png: png, store: CaptureStore(root: root), keyStore: MemoryKeyStore(key), relayFolder: folder, deliver: nil)
+        XCTAssertEqual(sent, .sent)
         XCTAssertEqual(CaptureStore(root: root).list(), [record.id])
     }
 
-    func testPairingLaterSignsAndCopiesWhatWasSavedBefore() {
+    func testPairingLaterSignsAndCopiesWhatWasSavedBefore() async {
         let record = Fixtures.record()
-        XCTAssertEqual(ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(), relayFolder: folder), .savedOnPhone)
+        let saved = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: nil)
+        XCTAssertEqual(saved, .savedOnPhone)
         XCTAssertFalse(FileManager.default.fileExists(atPath: outbox(record.id).path))   // unsigned: stays on the phone
-        ReviewDelivery.retryPending(store: store(), keyStore: MemoryKeyStore(key), relayFolder: folder)
+        await ReviewDelivery.retryPending(store: store(), keyStore: MemoryKeyStore(key), relayFolder: folder, deliver: nil)
         let dest = outbox(record.id)
         XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("capture.sig").path))
         XCTAssertNotNil(store().readLocalStatus(id: record.id)?.relayCopied)
     }
 
-    func testRetryWithoutAKeyDoesNothing() {
+    func testRetryWithoutAKeyOrChannelDoesNothing() async {
         let record = Fixtures.record()
-        _ = ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(), relayFolder: folder)
-        ReviewDelivery.retryPending(store: store(), keyStore: MemoryKeyStore(), relayFolder: folder)
+        _ = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: nil)
+        await ReviewDelivery.retryPending(store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: nil)
         XCTAssertFalse(FileManager.default.fileExists(atPath: outbox(record.id).path))
+    }
+
+    // MARK: the product's channel
+
+    private final class Channel: @unchecked Sendable {
+        private let lock = NSLock()
+        private var received: [ReviewUpload] = []
+        var accepts: Bool
+        init(accepts: Bool) { self.accepts = accepts }
+        var uploads: [ReviewUpload] { lock.lock(); defer { lock.unlock() }; return received }
+        var deliver: ReviewDeliver {
+            { [self] upload in
+                lock.lock(); defer { lock.unlock() }
+                received.append(upload)
+                return accepts
+            }
+        }
+    }
+
+    func testAChannelTakesACaptureFromAPhoneWithNoKey() async {
+        let record = Fixtures.record()
+        let channel = Channel(accepts: true)
+        let outcome = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: channel.deliver)
+        XCTAssertEqual(outcome, .sent)
+        XCTAssertEqual(channel.uploads.map(\.id), [record.id])
+        XCTAssertEqual(channel.uploads.first?.png, png)
+        XCTAssertNotNil(store().readLocalStatus(id: record.id)?.delivered)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outbox(record.id).path))
+    }
+
+    func testACaptureAChannelRefusedSaysSavedAndGoesOnTheNextRetry() async {
+        let record = Fixtures.record()
+        let channel = Channel(accepts: false)
+        let outcome = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: channel.deliver)
+        XCTAssertEqual(outcome, .savedOnPhone)
+        XCTAssertNil(store().readLocalStatus(id: record.id)?.delivered)
+        channel.accepts = true
+        await ReviewDelivery.retryPending(store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: channel.deliver)
+        XCTAssertEqual(channel.uploads.count, 2)
+        XCTAssertNotNil(store().readLocalStatus(id: record.id)?.delivered)
+    }
+
+    func testRetrySendsACaptureSavedBeforeTheChannelExisted() async {
+        let record = Fixtures.record()
+        _ = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: nil)
+        let channel = Channel(accepts: true)
+        await ReviewDelivery.retryPending(store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: channel.deliver)
+        XCTAssertEqual(channel.uploads.map(\.id), [record.id])
+    }
+
+    func testADeliveredCaptureIsNotSentAgainByAnyRoute() async {
+        let record = Fixtures.record()
+        let channel = Channel(accepts: true)
+        _ = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: channel.deliver)
+        await ReviewDelivery.retryPending(store: store(), keyStore: MemoryKeyStore(key), relayFolder: folder, deliver: channel.deliver)
+        XCTAssertEqual(channel.uploads.count, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outbox(record.id).path))
+    }
+
+    func testAPairedPhoneUsesTheRelayAndNotTheChannel() async {
+        let record = Fixtures.record()
+        let channel = Channel(accepts: true)
+        let outcome = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(key), relayFolder: folder, deliver: channel.deliver)
+        XCTAssertEqual(outcome, .sent)
+        XCTAssertTrue(channel.uploads.isEmpty)
+    }
+
+    func testAPairedPhoneFallsBackToTheChannelWhenTheFolderIsGone() async {
+        let record = Fixtures.record()
+        let channel = Channel(accepts: true)
+        let noFolder = RelayFolder(defaults: UserDefaults(suiteName: "teyla.review.tests." + UUID().uuidString)!)
+        let outcome = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(key), relayFolder: noFolder, deliver: channel.deliver)
+        XCTAssertEqual(outcome, .sent)
+        XCTAssertEqual(channel.uploads.count, 1)
     }
 }
 

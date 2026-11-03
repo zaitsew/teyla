@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **A product can carry a tester's review captures.** `$0.deliver` hands a saved capture to the product's own backend, and
+  retries what was saved earlier, with no relay key needed. The package itself still makes no network call.
+  `teyla review pull --vouched-folder DIR` imports what the product's script downloaded.
 - **Review mode no longer looks like a hang.** The frozen app shrinks into a framed picture with a "Review mode" label,
   and the panel takes its own space above the safe area and the keyboard, so typed text and the buttons stay visible.
   Three steps: tap a spot or circle an area (a new optional `region` in the capture), write or dictate, then a screen

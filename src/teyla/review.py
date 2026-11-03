@@ -2,6 +2,7 @@
 
     teyla review [list] [--product P] [--status S] [--all] [--json]    newest first, per product, with status
     teyla review pull [--folder DIR] [--testflight APP-ID [--product P]] [--allow-network]
+    teyla review pull --vouched-folder DIR [--json]
     teyla review triage <id> [--repo R] [--model M] [--dry] [--allow-network]     fix | rule | reject, one line why
     teyla review open <ids...> [--out FILE] [--owner NAME] [--ttl-min N] [--repo R]   take the leases, write the lane brief
     teyla review open <ids...> --release | --done <PR-URL>                      give the capture back, or close it
@@ -28,6 +29,7 @@ from __future__ import annotations
 import datetime as _dt
 import difflib
 import getpass
+import hashlib
 import json
 import os
 import pathlib
@@ -290,8 +292,28 @@ def _receipt(root: pathlib.Path, folder: pathlib.Path, now: float) -> str:
         return f"{name}: no receipt written ({e})"
 
 
-def import_folder(conn: sqlite3.Connection, folder: pathlib.Path, now: float | None = None) -> tuple[str, str]:
-    """("added" | "known" | "waiting" | "skipped", detail). Never raises for a bad folder."""
+def _verify_vouched(folder: pathlib.Path, raw: dict) -> tuple[str, str]:
+    """A capture from a product's signed-in channel has no relay signature, because a tester holds no
+    relay key. The channel vouches for who sent it. This checks only that the picture is the one the
+    JSON names."""
+    png = folder / review_wire.PICTURE
+    if _plain_file(png, MAX_PICTURE) is None:
+        return "skipped", "no readable capture.png"
+    shot = raw.get("screenshot")
+    want = shot.get("sha256") if isinstance(shot, dict) else None
+    try:
+        if not isinstance(want, str) or hashlib.sha256(png.read_bytes()).hexdigest() != want.lower():
+            return "skipped", "capture.png does not match the sha256 in capture.json"
+    except OSError as e:
+        return "skipped", f"cannot read capture.png ({e})"
+    return "ok", ""
+
+
+def import_folder(conn: sqlite3.Connection, folder: pathlib.Path, now: float | None = None, *,
+                  vouched: bool = False) -> tuple[str, str]:
+    """("added" | "known" | "waiting" | "skipped", detail). Never raises for a bad folder. `vouched` is
+    for a folder a caller filled from a product's own signed-in channel: only a contract capture passes,
+    and it needs no relay signature."""
     now = _now() if now is None else now
     name = folder.name
     if not _UUID.match(name.lower()):
@@ -318,11 +340,13 @@ def import_folder(conn: sqlite3.Connection, folder: pathlib.Path, now: float | N
         flat, why = review_wire.normalize(raw)
         if flat is None:
             return "skipped", f"{name}: {why}"
-        verdict = _verify_contract(folder, j, raw, now)
+        verdict = _verify_vouched(folder, raw) if vouched else _verify_contract(folder, j, raw, now)
         if verdict[0] != "ok":
             return verdict[0], f"{name}: {verdict[1]}"
         cap, why = validate(flat, name)
         pic, aud = review_wire.PICTURE, None
+    elif vouched:
+        return "skipped", f"{name}: not a capture in the contract format"
     else:
         cap, why = validate(raw, name)
         pic = _declared(raw, "screenshot", "image", "png")
@@ -351,7 +375,7 @@ def import_folder(conn: sqlite3.Connection, folder: pathlib.Path, now: float | N
         if aud:
             _copy_into(folder / aud, tmp / aud, MAX_AUDIO)
             cap["audio"] = aud
-        if contract:
+        if contract and not vouched:
             _copy_into(folder / "capture.sig", tmp / "capture.sig", 1024)
         if dest.exists():
             shutil.rmtree(dest, ignore_errors=True)
@@ -869,6 +893,31 @@ def _repo_for(product: str, flag: str | None, cfg: dict | None = None) -> pathli
     return root / product if (root / product).is_dir() else None
 
 
+def pull_vouched(conn: sqlite3.Connection, root: pathlib.Path, now: float | None = None) -> dict:
+    """Import every capture folder directly under `root`, a local folder the caller filled from its own
+    signed-in channel. `imported` names the ones the inbox now holds, so the caller can clear its copy."""
+    rep = {"source": "channel", "added": 0, "known": 0, "waiting": 0, "skipped": [], "imported": [], "note": ""}
+    if not root.is_dir():
+        rep["note"] = f"the folder {root} does not exist"
+        rep["error"] = True
+        return rep
+    for folder in sorted(root.iterdir(), key=lambda p: p.name):
+        if folder.name.startswith("."):
+            continue
+        try:
+            kind, detail = import_folder(conn, folder, now, vouched=True)
+        except OSError as e:
+            kind, detail = "skipped", f"{folder.name}: {e}"
+        if kind in ("added", "known"):
+            rep[kind] += 1
+            rep["imported"].append(folder.name.lower())
+        elif kind == "waiting":
+            rep["waiting"] += 1
+        else:
+            rep["skipped"].append(detail)
+    return rep
+
+
 def _print_pull(rep: dict) -> None:
     line = f"{rep['source']}: {rep['added']} new, {rep['known']} already known"
     if rep.get("waiting"):
@@ -907,6 +956,13 @@ def cmd_review(args) -> int:
             if words:
                 print("teyla review pull: no arguments", file=sys.stderr)
                 return 2
+            if args.vouched_folder:
+                rep = pull_vouched(conn, pathlib.Path(args.vouched_folder).expanduser())
+                if args.json:
+                    print(json.dumps(rep, ensure_ascii=False))
+                else:
+                    _print_pull(rep)
+                return 1 if rep.get("error") else 0
             reports = []
             root = pathlib.Path(args.folder).expanduser() if args.folder else relay.configured_folder()
             reports.append(pull_relay(conn, root))
@@ -1018,6 +1074,7 @@ def register(sp):
     q.add_argument("--all", action="store_true", help="list: include done and rejected captures")
     q.add_argument("--json", action="store_true")
     q.add_argument("--folder", help="pull: the relay folder (default: the one `teyla relay on` set)")
+    q.add_argument("--vouched-folder", metavar="DIR", help="pull: import captures a product's own signed-in channel downloaded to DIR; they carry no relay signature")
     q.add_argument("--testflight", metavar="APP-ID", help="pull: also read TestFlight screenshot feedback of this App Store Connect app")
     q.add_argument("--allow-network", action="store_true", help="safe mode: allow the model or App Store Connect call for this one run")
     q.add_argument("--repo", help="triage/open: the product repo (name under code_root or a path; default: code_root/<product>)")

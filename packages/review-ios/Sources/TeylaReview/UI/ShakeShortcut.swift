@@ -37,7 +37,7 @@ enum ReviewLifecycle {
         installed = true
         NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
             guard TeylaReview.isActive else { return }
-            DispatchQueue.global(qos: .utility).async { ReviewDelivery.retryPending() }
+            Task.detached(priority: .utility) { await ReviewDelivery.retryPending() }
         }
     }
 }
