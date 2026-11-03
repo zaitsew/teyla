@@ -106,6 +106,8 @@ final class StoreSession {
         case needsConfirmation
         /// Not a pairing link.
         case rejected
+        /// The stored key could not be read, so nothing changed; `notice` says so.
+        case unreadable
     }
 
     /// The key in a `teyla-pair:v1:<key>` link, or nil for anything else.
@@ -125,7 +127,17 @@ final class StoreSession {
             notice = "That is not a Teyla pairing link."
             return .rejected
         }
+        // The launch may have read the Keychain while it was unavailable: read again before calling it empty.
+        if key == nil, let loaded = keyStore.load() {
+            key = loaded
+            hasKey = true
+            apply()
+        }
         guard let stored = key else {
+            guard keyStore.isKnownEmpty() else {
+                notice = "Teyla could not read its stored key, so it changed nothing. Unlock your Keychain and open the link again."
+                return .unreadable
+            }
             guard store(key: new) else { return .rejected }
             leaveSampleMode()
             apply()

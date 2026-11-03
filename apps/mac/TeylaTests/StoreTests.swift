@@ -364,11 +364,23 @@ final class StoreSessionTests: XCTestCase {
         func delete() { key = nil }
     }
 
+    /// A stored key behind a Keychain that does not answer until `available` is set.
+    private final class LockedKeys: KeyStore, @unchecked Sendable {
+        let stored: Data
+        var available = false
+        var saves = 0
+        init(_ key: Data) { stored = key }
+        func load() -> Data? { available ? stored : nil }
+        func save(_ key: Data) throws { saves += 1 }
+        func delete() {}
+        func isKnownEmpty() -> Bool { false }
+    }
+
     private final class Marks: @unchecked Sendable {
         var url: URL?
     }
 
-    private func session(keys: MemoryKeys = MemoryKeys(), marks: Marks = Marks()) -> (StoreSession, UserDefaults) {
+    private func session(keys: KeyStore = MemoryKeys(), marks: Marks = Marks()) -> (StoreSession, UserDefaults) {
         let name = "teyla-session-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
         defaults.removePersistentDomain(forName: name)
@@ -424,6 +436,24 @@ final class StoreSessionTests: XCTestCase {
         XCTAssertFalse(session.hasPendingPairing)
         XCTAssertEqual(session.mode, .connected)
         XCTAssertEqual(folderAsked, 0, "a folder is chosen: nothing to ask")
+    }
+
+    func testALinkDoesNotReplaceAKeyThatCouldNotBeRead() throws {
+        let keys = LockedKeys(try XCTUnwrap(RelayCrypto.parsePairing("teyla-pair:v1:" + Self.keyA)))
+        let (session, _) = session(keys: keys)
+        XCTAssertFalse(session.hasKey, "the launch could not read the key")
+        XCTAssertEqual(session.receive(url: link(Self.keyB)), .unreadable)
+        XCTAssertEqual(keys.saves, 0)
+        XCTAssertNotNil(session.notice)
+    }
+
+    func testALinkReadsTheKeyAgainWhenTheLaunchCouldNot() throws {
+        let keys = LockedKeys(try XCTUnwrap(RelayCrypto.parsePairing("teyla-pair:v1:" + Self.keyA)))
+        let (session, _) = session(keys: keys)
+        keys.available = true
+        XCTAssertEqual(session.receive(url: link(Self.keyB)), .needsConfirmation)
+        XCTAssertEqual(keys.saves, 0)
+        XCTAssertTrue(session.hasKey)
     }
 
     func testADifferentKeyNeverReplacesTheStoredOneUntilConfirmed() throws {
