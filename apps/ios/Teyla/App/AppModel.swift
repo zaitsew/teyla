@@ -28,6 +28,11 @@ final class AppModel {
     private(set) var hasKey: Bool
     /// Set when sending fails before anything reached the folder.
     var sendError: String?
+    /// Set when a pairing link cannot be used; shown once, then cleared.
+    var pairingError: String?
+    /// A key that arrived by link while another key is stored. It replaces the stored one only after the
+    /// owner confirms: any web page can open a `teyla-pair:` link.
+    private(set) var pendingPairing: Data?
     /// The onboarding step the owner has finished (`done` screen shown once).
     private(set) var setupFinished: Bool
     /// Forces an onboarding step for screenshots (`TEYLA_ONBOARDING_STEP`); never set in normal use.
@@ -113,6 +118,69 @@ final class AppModel {
     @discardableResult
     func pair(with string: String) -> Bool {
         guard let newKey = RelayCrypto.parsePairing(string) else { return false }
+        return install(newKey)
+    }
+
+    /// What a `teyla-pair:` link did.
+    enum PairingLinkOutcome: Equatable {
+        /// No key was stored; this one is now.
+        case paired
+        /// The link carries the key already stored. Nothing changed.
+        case unchanged
+        /// A different key is stored. Nothing changed until `confirmPendingPairing()`.
+        case needsConfirmation
+        /// Not a pairing link; `pairingError` says so.
+        case invalid
+        /// The key was fine but could not be stored; `sendError` says why.
+        case failed
+        /// The stored key could not be read, so nothing was changed; `pairingError` says so.
+        case unreadable
+    }
+
+    /// Handles a link opened from the Camera or a web page. The first pairing is automatic. A key that
+    /// differs from the stored one is held back until the owner confirms.
+    @discardableResult
+    func handlePairingLink(_ url: URL) -> PairingLinkOutcome {
+        guard url.scheme?.lowercased() == "teyla-pair", let newKey = RelayCrypto.parsePairing(url.absoluteString) else {
+            pairingError = RelayError.badPairing.errorDescription
+            return .invalid
+        }
+        // The launch may have read the Keychain while it was unavailable: read again before calling it empty.
+        if key == nil, let stored = keyStore.load() {
+            key = stored
+            hasKey = true
+        }
+        guard let current = key else {
+            guard keyStore.isKnownEmpty() else {
+                pairingError = "Teyla could not read its stored key, so it changed nothing. Unlock your iPhone and open the link again."
+                return .unreadable
+            }
+            return install(newKey) ? .paired : .failed
+        }
+        if current == newKey {
+            pendingPairing = nil
+            return .unchanged
+        }
+        pendingPairing = newKey
+        return .needsConfirmation
+    }
+
+    /// The owner said yes: the held key replaces the stored one.
+    func confirmPendingPairing() {
+        guard let newKey = pendingPairing else { return }
+        pendingPairing = nil
+        if install(newKey) {
+            // Whatever was read with the old key is not the new Mac's.
+            snapshot = nil
+            connection = .reading
+        }
+    }
+
+    func cancelPendingPairing() {
+        pendingPairing = nil
+    }
+
+    private func install(_ newKey: Data) -> Bool {
         do {
             try keyStore.save(newKey)
         } catch {
