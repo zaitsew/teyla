@@ -559,7 +559,7 @@ def test_store_lag_warns_with_the_release_command(tmp_path, monkeypatch, capsys)
     assert lines[1].endswith("— current")                                   # TestFlight itself is fine
     assert lines[2].startswith("app-a  WARN macOS store build uploaded 2026-10-26 lags main; AppStore changed 2026-11-02")
     assert "change apps/mac/App/Home.swift" in lines[2]
-    assert lines[2].endswith(f"Release: {tmp_path / 'release-tool'} release --platform macos "
+    assert lines[2].endswith(f"Release: cd {d} && {tmp_path / 'release-tool'} release --platform macos "
                              "--project apps/mac/App.xcodeproj --scheme AppStore --bundle-id com.example.app")
     assert len(calls) == 1 and calls[0][1:3] == ["beta", "reached"]       # no extra call to Apple
 

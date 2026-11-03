@@ -352,8 +352,10 @@ def _upload_time(p: dict) -> dt.datetime | None:
     return t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)
 
 
-def release_command(tool_raw: str, target: dict, bundle_id: str) -> str:
-    return (f"{tool_raw} release --platform {target['platform']} --project {target['project']} "
+def release_command(repo: pathlib.Path, tool_raw: str, target: dict, bundle_id: str) -> str:
+    """Runnable from anywhere: `project` is relative to the repo, so the command starts there."""
+    where = str(repo).replace(str(pathlib.Path.home()), "~")
+    return (f"cd {where} && {tool_raw} release --platform {target['platform']} --project {target['project']} "
             f"--scheme {target['scheme']} --bundle-id {bundle_id}")
 
 
@@ -366,7 +368,7 @@ def store_lag(manifest: dict, target: dict, p: dict, tool_raw: str, bundle_id: s
     if change is None:
         return None
     label = _label(target["asc"])
-    cmd = release_command(tool_raw, target, bundle_id)
+    cmd = release_command(pathlib.Path(manifest["repo"]), tool_raw, target, bundle_id)
     what = f"{target['scheme']} changed {change['when'].date()} ({change['sha']} {change['subject']})"
     uploaded = _upload_time(p)
     if p.get("newest_uploaded") and uploaded is None:
