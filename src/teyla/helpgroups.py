@@ -33,6 +33,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
         ("answer", "Answer a question inside the session that asked it"),
         ("say", "Correct a session that is running"),
         ("state", "One snapshot for the Mac app: questions, tasks, products"),
+        ("console", "The data behind the app's admin sections"),
         ("digest", "The weekly digest: the top three things worth doing"),
         ("remind", "Dated to-dos that only a human can do"),
         ("dispatch", "Start new work in a fresh worktree"),

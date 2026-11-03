@@ -48,7 +48,7 @@ import shutil
 import subprocess
 import sys
 
-from . import asks, backlog, config, net, portfolio, registry, reviews, triage
+from . import asks, backlog, config, console, net, portfolio, registry, reviews, triage
 from .adapters import claude_code, codex, iter_jsonl, text_of
 from .control import state as control
 
@@ -1343,7 +1343,8 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
           "running": [{k: v for k, v in r.items() if k != "_last"} for r in run],
           "relay": relay_view() if relay is None else relay,
           "notes": notes_view() if notes is None else notes, "portfolio": pf,
-          "auto_closed": asks.auto_closed(items, ask_store, now)}
+          "auto_closed": asks.auto_closed(items, ask_store, now),
+          "console": console.compact(console.read_cache())}
     st["brief"] = {"line": _words(model["brief"]), "source": "model"} if model else brief_line(st)
     return st
 
