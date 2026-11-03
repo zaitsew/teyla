@@ -135,6 +135,8 @@ final class AppModel {
         case failed
         /// The stored key could not be read, so nothing was changed; `pairingError` says so.
         case unreadable
+        /// A second, different link arrived while one waited for the owner's yes. Both are dropped; `pairingError` says so.
+        case conflicting
     }
 
     /// Handles a link opened from the Camera or a web page. The first pairing is automatic. A key that
@@ -160,6 +162,12 @@ final class AppModel {
         if current == newKey {
             pendingPairing = nil
             return .unchanged
+        }
+        // The alert names no key, so a page must not swap the one the owner is about to accept.
+        if let pendingPairing, pendingPairing != newKey {
+            self.pendingPairing = nil
+            pairingError = "Two different pairing links arrived, so Teyla changed nothing. Scan the code on your Mac again."
+            return .conflicting
         }
         pendingPairing = newKey
         return .needsConfirmation

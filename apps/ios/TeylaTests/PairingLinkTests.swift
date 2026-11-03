@@ -91,6 +91,19 @@ final class PairingLinkTests: XCTestCase {
         XCTAssertTrue(model.hasKey)
     }
 
+    func testASecondLinkCannotSwapTheKeyAwaitingConfirmation() {
+        let store = MemoryKeyStore(keyA)
+        let model = model(keyStore: store)
+        let keyC = Data((0..<32).map { UInt8(($0 * 3) % 256) })
+        XCTAssertEqual(model.handlePairingLink(link(keyB)), .needsConfirmation)
+        XCTAssertEqual(model.handlePairingLink(link(keyB)), .needsConfirmation, "the same link again changes nothing")
+        XCTAssertEqual(model.handlePairingLink(link(keyC)), .conflicting)
+        XCTAssertNil(model.pendingPairing)
+        XCTAssertNotNil(model.pairingError)
+        model.confirmPendingPairing()
+        XCTAssertEqual(store.load(), keyA, "a confirm after the swap stores nothing")
+    }
+
     func testALinkThatIsNotAPairingCodeShowsTheExistingError() {
         let store = MemoryKeyStore(keyA)
         let model = model(keyStore: store)

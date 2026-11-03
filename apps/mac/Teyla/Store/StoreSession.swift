@@ -108,6 +108,8 @@ final class StoreSession {
         case rejected
         /// The stored key could not be read, so nothing changed; `notice` says so.
         case unreadable
+        /// A second, different link arrived while one waited for the owner's yes. Both are dropped; `notice` says so.
+        case conflicting
     }
 
     /// The key in a `teyla-pair:v1:<key>` link, or nil for anything else.
@@ -152,6 +154,12 @@ final class StoreSession {
             }
             askForFolderIfMissing()
             return .unchanged
+        }
+        // The alert names no key, so a page must not swap the one the owner is about to accept.
+        if let pendingKey, pendingKey != new {
+            self.pendingKey = nil
+            notice = "Two different pairing links arrived, so Teyla changed nothing. Run teyla relay connect on your Mac."
+            return .conflicting
         }
         pendingKey = new
         return .needsConfirmation

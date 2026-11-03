@@ -456,6 +456,21 @@ final class StoreSessionTests: XCTestCase {
         XCTAssertTrue(session.hasKey)
     }
 
+    func testASecondLinkCannotSwapTheKeyAwaitingConfirmation() throws {
+        let keys = MemoryKeys()
+        let (session, _) = session(keys: keys)
+        XCTAssertEqual(session.receive(url: link(Self.keyA)), .paired)
+        let stored = try XCTUnwrap(keys.key)
+        let keyC = "AQECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+        XCTAssertEqual(session.receive(url: link(Self.keyB)), .needsConfirmation)
+        XCTAssertEqual(session.receive(url: link(Self.keyB)), .needsConfirmation, "the same link again changes nothing")
+        XCTAssertEqual(session.receive(url: link(keyC)), .conflicting)
+        XCTAssertFalse(session.hasPendingPairing)
+        XCTAssertNotNil(session.notice)
+        session.confirmPendingPairing()
+        XCTAssertEqual(keys.key, stored, "a Replace click after the swap stores nothing")
+    }
+
     func testADifferentKeyNeverReplacesTheStoredOneUntilConfirmed() throws {
         let keys = MemoryKeys()
         let (session, _) = session(keys: keys)
