@@ -51,7 +51,9 @@ def test_pages_load_nothing_from_another_host(page):
     assert not re.search(r"<(script|img|link|iframe)\b[^>]*\b(src|href)=\"(https?:)?//", html)
     assert "<style" not in html and " style=" not in html
     assert not re.search(r"<script(?![^>]*\bsrc=)", html)
-    assert not re.search(r"analytics|gtag|posthog|plausible|sentry|cloudflareinsights", html, re.I)
+    # In a tag, not in the text: the privacy page says in words that the site runs no analytics.
+    tags = " ".join(re.findall(r"<[^>]+>", html))
+    assert not re.search(r"analytics|gtag|posthog|plausible|sentry|cloudflareinsights", tags, re.I)
 
 
 @pytest.mark.parametrize("page", PAGES, ids=lambda p: str(p.relative_to(PUBLIC)))
