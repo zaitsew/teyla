@@ -48,6 +48,7 @@
       }
     },
     "screen": {"type": "string", "pattern": "^[A-Za-z0-9_.:#/-]{1,200}$"},
+    "region": {"$ref": "#/$defs/rect"},
     "tap": {
       "type": "object",
       "additionalProperties": false,

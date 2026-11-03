@@ -165,6 +165,7 @@ struct CaptureRecord: Codable, Equatable {
     var environment: EnvironmentInfo
     var screen: String?
     var tap: TapInfo?
+    var region: Rect?
     var element: ElementInfo?
     var anchors: [AnchorInfo]
     var comment: CommentInfo
@@ -199,7 +200,7 @@ enum CaptureCoding {
 enum CaptureBuilder {
     static func make(
         id: UUID = UUID(), now: Date, device: String, app: AppInfo, environment: EnvironmentInfo,
-        screen: String?, tap: TapInfo?, element: Anchor?, accessibilityElementID: String?,
+        screen: String?, tap: TapInfo?, region: Rect? = nil, element: Anchor?, accessibilityElementID: String?,
         anchors: [Anchor], text: String, input: CommentInfo.Input, language: String?,
         pngSHA256: String, pixelWidth: Int, pixelHeight: Int, scale: Double, microphone: MicrophoneInfo
     ) -> CaptureRecord {
@@ -220,7 +221,7 @@ enum CaptureBuilder {
         }
         return CaptureRecord(
             v: ReviewFormat.version, id: id.uuidString.lowercased(), created: CaptureCoding.iso(now), device: device,
-            app: app, environment: environment, screen: screen, tap: tap, element: elementInfo, anchors: Array(infos),
+            app: app, environment: environment, screen: screen, tap: tap, region: region, element: elementInfo, anchors: Array(infos),
             comment: CommentInfo(text: String(text.prefix(ReviewFormat.maxCommentLength)), input: input, language: language),
             screenshot: ScreenshotInfo(file: ReviewFormat.pngName, width: pixelWidth, height: pixelHeight, scale: scale, sha256: pngSHA256),
             microphone: microphone)

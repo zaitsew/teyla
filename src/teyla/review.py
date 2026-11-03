@@ -55,7 +55,7 @@ STATUSES = ("new", "triaged", "open", "done", "rejected")
 _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _PRODUCT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _FILENAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
-KEEP = ("id", "product", "screen", "element", "tap", "comment", "build", "commit", "locale", "dynamic_type",
+KEEP = ("id", "product", "screen", "element", "tap", "region", "comment", "build", "commit", "locale", "dynamic_type",
         "appearance", "created_at", "source", "device")
 ELEMENT_KEYS = ("id", "parent", "role", "bounds", "string_keys", "source_file", "source_line")
 
@@ -181,6 +181,13 @@ def _clean_tap(tap) -> dict | None:
     return None
 
 
+def _clean_region(region) -> dict | None:
+    keys = ("x", "y", "width", "height")
+    if isinstance(region, dict) and all(isinstance(region.get(k), (int, float)) and not isinstance(region.get(k), bool) for k in keys):
+        return {k: float(region[k]) for k in keys}
+    return None
+
+
 def _created(raw) -> str | None:
     try:
         d = _dt.datetime.fromisoformat(str(raw))
@@ -215,7 +222,7 @@ def validate(obj, folder_name: str = "") -> tuple[dict | None, str]:
         return None, "created_at is not an ISO date"
     out = {
         "id": cid, "product": product, "screen": screen.strip(), "element": _clean_element(obj.get("element")),
-        "tap": _clean_tap(obj.get("tap")), "comment": comment.strip(), "created_at": created,
+        "tap": _clean_tap(obj.get("tap")), "region": _clean_region(obj.get("region")), "comment": comment.strip(), "created_at": created,
         "source": "testflight" if obj.get("source") == "testflight" else "app",
     }
     for k in ("build", "commit", "locale", "dynamic_type", "appearance", "device"):
@@ -549,7 +556,7 @@ def build_payload(row: dict, repo: pathlib.Path | None) -> dict:
     cap = row["data"]
     el = cap.get("element") or {}
     payload: dict = {
-        "capture": {k: cap.get(k) for k in ("id", "product", "screen", "source", "element", "tap", "comment", "build", "commit",
+        "capture": {k: cap.get(k) for k in ("id", "product", "screen", "source", "element", "tap", "region", "comment", "build", "commit",
                                             "locale", "dynamic_type", "appearance", "device") if cap.get(k) not in (None, "", [])},
         "design_md": "", "screen": None, "rules_in_scope": [], "recent_decisions": [], "rejected_before": [],
     }
@@ -745,6 +752,9 @@ def build_brief(rows: list[dict], repo: pathlib.Path | None, owner: str, until: 
                 L.append(f"- Element: `{el.get('id', '')}` (role {el.get('role') or '?'}, parent `{el.get('parent') or '-'}`)" + (f", source `{loc}`" if loc else ""))
             if cap.get("tap"):
                 L.append(f"- Tap: ({cap['tap']['x']:g}, {cap['tap']['y']:g})")
+            if cap.get("region"):
+                r = cap["region"]
+                L.append(f"- Area: ({r['x']:g}, {r['y']:g}), {r['width']:g} x {r['height']:g}")
             ctx = ", ".join(f"{k.replace('_', ' ')} {cap[k]}" for k in ("locale", "dynamic_type", "appearance", "device") if cap.get(k))
             if ctx:
                 L.append(f"- Context: {ctx}")
