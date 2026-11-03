@@ -10,6 +10,8 @@ struct TeylaApp: App {
             RootView()
                 .environment(model)
                 .environment(dictation)
+                // A pairing code scanned with the system Camera arrives here as `teyla-pair:v1:<key>`.
+                .onOpenURL { url in model.handlePairingLink(url) }
         }
     }
 }
@@ -56,6 +58,24 @@ struct RootView: View {
             Button("OK") { model.sendError = nil }
         } message: {
             Text(model.sendError ?? "")
+        }
+        .alert("Could not pair", isPresented: Binding(
+            get: { model.pairingError != nil },
+            set: { if !$0 { model.pairingError = nil } }
+        )) {
+            Button("OK") { model.pairingError = nil }
+        } message: {
+            Text(model.pairingError ?? "")
+        }
+        // Any web page can open a pairing link, so a different key never replaces the stored one unasked.
+        .alert("Pair with a different Mac?", isPresented: Binding(
+            get: { model.pendingPairing != nil },
+            set: { if !$0 { model.cancelPendingPairing() } }
+        )) {
+            Button("Keep current Mac", role: .cancel) { model.cancelPendingPairing() }
+            Button("Pair with the new Mac", role: .destructive) { model.confirmPendingPairing() }
+        } message: {
+            Text("A pairing code asked this iPhone to switch to another Mac. If you did not just scan a code on your Mac, keep the current one.")
         }
     }
 

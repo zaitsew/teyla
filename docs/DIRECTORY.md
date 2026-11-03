@@ -24,8 +24,9 @@ Sources read for this pack (checked 2026-10-23):
 | Category | Developer tools (if the portal offers Productivity, use it as the second choice) |
 | Keywords | routines, corrections, rules, skills, code-review, adoption |
 | Documentation URL | <https://github.com/zaitsew/teyla/blob/main/plugin/README.md> |
-| Support URL | <https://github.com/zaitsew/teyla/issues> |
-| Privacy policy URL | <https://github.com/zaitsew/teyla/blob/main/plugin/README.md#privacy> |
+| Website | <https://teyla.dev> |
+| Support URL | <https://teyla.dev/support/> |
+| Privacy policy URL | <https://teyla.dev/privacy/> |
 | Contact email | the maintainer's address (portal field; not stored in the repo) |
 
 **Short description** (matches `plugin.json`):

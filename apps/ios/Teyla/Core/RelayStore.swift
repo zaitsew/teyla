@@ -136,6 +136,11 @@ struct RelayStore: Sendable {
 enum FolderBookmark {
     static let defaultsKey = "relayFolderBookmark"
 
+    /// Where `teyla relay connect` makes the folder: iCloud Drive/Teyla. The picker opens there when iOS
+    /// honours the hint; the app works the same when it does not.
+    static let suggestedFolder = URL(fileURLWithPath: "/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/Teyla",
+                                     isDirectory: true)
+
     static func save(_ url: URL, defaults: UserDefaults = .standard) throws {
         let data = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         defaults.set(data, forKey: defaultsKey)

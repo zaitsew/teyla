@@ -33,6 +33,7 @@
   teyla portfolio [--json] [--refresh] [--product ID]              where every product stands: health, platforms, PRs, spend
   teyla answer <id-prefix> <text...> [--json] [--dry]              answer a question inside the session that asked it
   teyla relay on|off|status [--json]                               the iPhone relay: switch it on or off, say where it stands
+  teyla relay connect [--json]                                     the whole setup: on, key, first sync, hand the key to Teyla for Mac
   teyla relay pair [--json] [--rotate]                             create the shared key, print the pairing string
   teyla relay sync [--quiet]                                       one pass: write the snapshot, deliver the signed outbox
   teyla say <ref> [--json] [--dry] -- <text>                       correct a running session (Codex: queued; else copy and open)

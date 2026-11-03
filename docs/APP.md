@@ -251,8 +251,9 @@ Notes on the CLI as built (version 2):
 |---|---|
 | `teyla say <running-id> [--json] -- <text>` | Sends a correction to a running session. Codex: `codex queue`, which delivers it after the current turn. Claude: copies the text and opens the session. Never resumes a live session. |
 | `teyla dispatch <product> [--harness codex\|claude] [--json] [--dry] -- <text>` | Starts a new session in a fresh worktree under `~/.worktrees/<repo>/`. Codex by default, through `codex-lane` and the machine guard. |
+| `teyla relay connect [--json]` | The whole setup: turns the relay on, creates the key if there is none, writes the first snapshot, then opens Teyla for Mac with the pairing URL (`teyla-pair:v1:<key>`). Prints the pairing string only when it cannot open the app. |
 | `teyla relay on\|off\|status [--json]` | Turns the iPhone relay on or off. |
-| `teyla relay pair [--json] [--rotate]` | Prints the pairing string the window shows as a QR code, creating the shared key the first time. `--rotate` replaces the key; every phone pairs again. |
+| `teyla relay pair [--json] [--rotate]` | Prints the pairing string that Teyla on the Mac shows as a QR code (Connect iPhone), creating the shared key the first time. `--rotate` replaces the key; every phone pairs again. |
 | `teyla note --suggest "<text>" --json [--cwd DIR]` | The product a note would get, how (`text`, `cwd` or `""`), and the picker's `candidates` (registered ids, focus first, parked last). Writes nothing. `-` reads the text from stdin. |
 | `teyla note - --product <id> --json` | Keeps the note read from stdin and prints it as JSON (the `teyla notes --json` keys, plus `intent`). `link <id> <product>` and `drop <id>` take `--json` too. |
 | `teyla notes --json` | The open notes, newest first, as a list of `{id, text, product, source, created, updated, linked_by, dropped}`. |
@@ -536,6 +537,7 @@ the window forward. Any web page can open such a link, so the rules are:
 |---|---|
 | No key | Pairs, and leaves sample mode if it was on. |
 | The same key | The key does not change. The folder panel still opens if no folder is chosen, and the sample is left. |
+| A stored key that could not be read | Nothing changes. The window says the key could not be read. |
 | A different key | The stored key stays. A pending value is set and the window asks "Replace the pairing with this Mac?" |
 | Not a `teyla-pair:v1:` link with a 32-byte key | Rejected; nothing changes. |
 

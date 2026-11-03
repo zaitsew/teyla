@@ -73,9 +73,10 @@ def test_readme_meets_the_directory_checks():
     assert MARKETPLACE_LINE in text, "claude plugin validate asks for this line"
     assert INSTALL_LINE in text, "the CLI install line the skills print"
     assert "\n## Privacy\n" in text and "### Network" in text and "### What it writes" in text
-    # privacyPolicyUrl points at this anchor
-    assert json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())["privacyPolicyUrl"].endswith(
-        "plugin/README.md#privacy")
+    # privacyPolicyUrl is the site's page, and that page links to this anchor
+    assert json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())["privacyPolicyUrl"] == (
+        "https://teyla.dev/privacy/")
+    assert "plugin/README.md#privacy" in (ROOT / "site" / "public" / "privacy" / "index.html").read_text()
 
 
 def test_marketplace_lists_the_plugin_folder():
@@ -332,7 +333,8 @@ def test_no_plugin_script_or_skill_makes_a_network_call():
             if NETWORK.search(line):
                 hits.append(f"{p.relative_to(PLUGIN)}:{n}: {line.strip()[:80]}")
             for url in re.findall(r"https?://[^\s)\"`>]+", line):
-                if not url.startswith("https://github.com/zaitsew") and "LICENSE" not in p.name:
+                own_site = re.fullmatch(r"https://teyla\.dev(/\S*)?", url)
+                if not url.startswith("https://github.com/zaitsew") and not own_site and "LICENSE" not in p.name:
                     hits.append(f"{p.relative_to(PLUGIN)}:{n}: unexpected URL {url}")
     assert hits == []
 

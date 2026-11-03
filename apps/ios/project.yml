@@ -34,6 +34,11 @@ targets:
         CFBundleShortVersionString: "0.32.0"
         # Raise CURRENT_PROJECT_VERSION below by hand for each upload: the release tool does not.
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        # The Mac's pairing code is a QR code holding `teyla-pair:v1:<key>`; the system Camera opens it here.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.zaitsew.teyla.pair
+            CFBundleURLSchemes:
+              - teyla-pair
         LSRequiresIPhoneOS: true
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
@@ -49,7 +54,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.zaitsew.teyla
         # iPhone only. XcodeGen's iOS default is "1,2", so it is set here, on the target (POLICY 15).
         TARGETED_DEVICE_FAMILY: "1"
-        CURRENT_PROJECT_VERSION: 3
+        CURRENT_PROJECT_VERSION: 4
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         GENERATE_INFOPLIST_FILE: NO

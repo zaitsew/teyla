@@ -10,7 +10,7 @@ Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cos
 
 ![The Start page of teyla web: what 30 days of sessions cost, and the first changes that would save money](docs/img/web-start.png)
 
-<p align="center"><a href="#set-it-up-with-your-agent">Set up</a> · <a href="#pick-your-packs">Packs</a> · <a href="docs/GUIDE.md">Guide</a> · <a href="docs/COMMANDS.md">Commands</a> · <a href="docs/PRIVACY.md">Privacy</a> · <a href="CHANGELOG.md">Changelog</a> · <a href="CONTRIBUTING.md">Contributing</a> · <a href="LICENSE">Apache-2.0</a></p>
+<p align="center"><a href="https://teyla.dev">teyla.dev</a> · <a href="#set-it-up-with-your-agent">Set up</a> · <a href="#pick-your-packs">Packs</a> · <a href="docs/GUIDE.md">Guide</a> · <a href="docs/COMMANDS.md">Commands</a> · <a href="docs/PRIVACY.md">Privacy</a> · <a href="CHANGELOG.md">Changelog</a> · <a href="CONTRIBUTING.md">Contributing</a> · <a href="LICENSE">Apache-2.0</a></p>
 
 ## Set it up with your agent
 

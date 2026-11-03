@@ -7,12 +7,12 @@
     "name": "Ivan Zaitsev",
     "url": "https://github.com/zaitsew"
   },
-  "homepage": "https://github.com/zaitsew/teyla",
+  "homepage": "https://teyla.dev",
   "repository": "https://github.com/zaitsew/teyla",
   "license": "Apache-2.0",
   "documentationUrl": "https://github.com/zaitsew/teyla/blob/main/plugin/README.md",
-  "supportUrl": "https://github.com/zaitsew/teyla/issues",
-  "privacyPolicyUrl": "https://github.com/zaitsew/teyla/blob/main/plugin/README.md#privacy",
+  "supportUrl": "https://teyla.dev/support/",
+  "privacyPolicyUrl": "https://teyla.dev/privacy/",
   "keywords": [
     "routines",
     "corrections",
