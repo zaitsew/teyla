@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.37.4 — 2026-11-03 — One command connects the store app
+
+- **`teyla relay connect`.** One command for the whole relay setup: it turns the relay on, makes the key and opens the
+  store app with a `teyla-pair:` link. Its text now names the Mac app, not the iPhone, and says what to do when an older
+  build ignores the link.
+- **The store app and the iPhone pair from a link.** The folder panel opens on `iCloud Drive/Teyla`, and the Mac shows a QR
+  code for the iPhone. A link never replaces a stored key by itself: a different key waits for the owner's yes, a key
+  that could not be read is left alone, and a second different link makes that yes store nothing.
+- **teyla.dev.** The homepage, support and privacy URLs now point at the new site.
+
 ## 0.37.3 — 2026-11-02 — Doctor names a failed store read
 
 - **`teyla doctor` names a failed store read.** A store read that failed in the last `teyla portfolio --refresh` is now
