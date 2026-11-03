@@ -568,7 +568,7 @@ def test_video_platform_packet_marks_missing_media_and_labels_dubbed_audio(env, 
     video.write_bytes(b"x")
     growth.attach(store, it["id"], [str(video)], True, NOW)
     out = growth.packet(store, it["id"], NOW, cfg=cfg)
-    assert (out / "clip.mp4").exists() and "AI-dubbed audio." in (out / "caption.txt").read_text()
+    assert (out / "media-1.mp4").exists() and "AI-dubbed audio." in (out / "caption.txt").read_text()
 
 
 def test_packet_rescans_for_leaks(env, monkeypatch):
@@ -579,6 +579,30 @@ def test_packet_rescans_for_leaks(env, monkeypatch):
     store.save(got, NOW)
     with pytest.raises(growth.GrowthError, match="private-term"):
         growth.packet(store, it["id"], NOW, cfg=cfg)
+
+
+def test_attachments_cannot_replace_checked_files_and_a_bad_day_is_refused(env, monkeypatch, tmp_path):
+    store, cfg, (it,) = drafted(env, monkeypatch)
+    growth.approve(store, it["id"], NOW)
+    evil = tmp_path / "caption.txt"
+    evil.write_text(f"{TERM} secret")
+    growth.attach(store, it["id"], [str(evil)], False, NOW)
+    out = growth.packet(store, it["id"], NOW, cfg=cfg)
+    assert (out / "caption.txt").read_text().strip() == GOOD["body"] and (out / "media-1.txt").exists()
+    got = store.get(it["id"])
+    got["day"] = "../../export"
+    store.save(got, NOW)
+    with pytest.raises(growth.GrowthError, match="bad day"):
+        growth.packet(store, it["id"], NOW, cfg=cfg)
+    assert not (store.root.parent / "export").exists()
+
+
+def test_never_post_list_covers_spanish_and_russian(env):
+    store, cfg = make()
+    g = growth.Guard(cfg)
+    assert any(h["kind"] == "job-search" for h in g.check("Estoy buscando trabajo"))
+    assert any(h["kind"] == "job-search" for h in g.check("\u044f \u0438\u0449\u0443 \u0440\u0430\u0431\u043e\u0442\u0443"))
+    assert any(h["kind"] == "employer" for h in g.check("mi jefe dijo que no"))
 
 
 def test_nothing_publishes_without_approval(env, monkeypatch):

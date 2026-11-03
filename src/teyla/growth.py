@@ -319,7 +319,19 @@ _NEVER = {
     "politics-or-religion": r"\b(politics|political|election|religion|religious)\b",
     "health-or-family": r"\b(my (wife|husband|kids?|children|daughter|son|mother|father|doctor)|diagnos\w+|my health)\b",
 }
-_NEVER_RE = {k: re.compile(v, re.I) for k, v in _NEVER.items()}
+# The same kinds in Spanish and Russian (the channels' other languages). Russian is written as escapes.
+_NEVER_MORE = {
+    "job-search": r"\b(busco (un )?(trabajo|empleo)|buscando (un )?(trabajo|empleo)|reclutador(es)?|mi curr[i\u00ed]culum|"
+                  r"b[u\u00fa]squeda de empleo|\u0438\u0449\u0443 (\u043d\u043e\u0432\u0443\u044e )?\u0440\u0430\u0431\u043e\u0442\u0443|"
+                  r"\u043f\u043e\u0438\u0441\u043a \u0440\u0430\u0431\u043e\u0442\u044b|\u0440\u0435\u043a\u0440\u0443\u0442\u0435\u0440\w*|"
+                  r"\u0440\u0435\u0437\u044e\u043c\u0435|\u0441\u043e\u0431\u0435\u0441\u0435\u0434\u043e\u0432\u0430\u043d\w*)\b",
+    "employer": r"\b(mi empleador|mi jefe|mi trabajo actual|\u043c\u043e\u0439 \u0440\u0430\u0431\u043e\u0442\u043e\u0434\u0430\u0442\u0435\u043b\u044c|"
+                r"\u043c\u043e\u0439 \u043d\u0430\u0447\u0430\u043b\u044c\u043d\u0438\u043a)\b",
+    "revenue-or-runway": r"\b(ingresos|facturaci[o\u00f3]n|\u0432\u044b\u0440\u0443\u0447\u043a\w*)\b",
+    "health-or-family": r"\b(mi (esposa|marido|hijos?|hija|madre|padre|m[e\u00e9]dico)|\u043c\u043e\u044f \u0436\u0435\u043d\u0430|"
+                        r"\u043c\u043e\u0438 \u0434\u0435\u0442\u0438|\u043c\u043e\u0439 \u043c\u0443\u0436)\b",
+}
+_NEVER_RE = {k: re.compile(v + (("|" + _NEVER_MORE[k]) if k in _NEVER_MORE else ""), re.I) for k, v in _NEVER.items()}
 _NUM = re.compile(r"[$€]?\d[\d,.]*\d%?|[$€]\d|\d%")
 
 
@@ -1294,12 +1306,17 @@ def packet(store: Store, ref: str, now: float, guard: Guard | None = None, cfg: 
     hits = (guard or Guard(cfg)).check(it["body"], it.get("hook", ""), it.get("script", ""), it.get("first_comment", ""))
     if hits:
         raise GrowthError(f"{it['id']} is blocked at packet time: {kinds_text(hits)}")
-    day = it.get("day") or day_of(now)
+    if it["platform"] not in PLATFORMS or it["language"] not in LANGS:
+        raise GrowthError(f"{it['id']} names a platform or language Teyla does not know")
+    try:
+        day = _dt.date.fromisoformat(str(it.get("day") or day_of(now))).isoformat()      # never a path
+    except ValueError:
+        raise GrowthError(f"{it['id']} has a bad day {it.get('day')!r}") from None
     base = store.root / "packets" / day
     _private_dir(base)
     name = f"{it['platform']}-{it['language']}"
     out, n = base / name, 2
-    while out.exists() and (out / ".item").read_text() != it["id"] if (out / ".item").exists() else out.exists():
+    while out.exists() and not ((out / ".item").is_file() and (out / ".item").read_text() == it["id"]):
         out = base / f"{name}-{n}"
         n += 1
     _private_dir(out)
@@ -1314,8 +1331,8 @@ def packet(store: Store, ref: str, now: float, guard: Guard | None = None, cfg: 
         _write(out / "script.txt", it["script"] + "\n")
     _write(out / "upload.url", f"[InternetShortcut]\nURL={PLATFORMS[it['platform']]['url']}\n")
     media = [pathlib.Path(m) for m in it.get("media") or [] if pathlib.Path(m).is_file()]
-    for m in media:
-        dst = out / m.name
+    for k, m in enumerate(media, 1):
+        dst = out / f"media-{k}{m.suffix.lower()[:8]}"          # never a name that could replace the checked caption
         shutil.copy2(m, dst)
         os.chmod(dst, 0o600)
     if PLATFORMS[it["platform"]]["video"] and not media:
