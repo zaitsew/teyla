@@ -27,7 +27,9 @@ reel = ["pillow>=10"]
 teyla = "teyla.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/zaitsew/teyla"
+Homepage = "https://teyla.dev"
+Source = "https://github.com/zaitsew/teyla"
+Issues = "https://github.com/zaitsew/teyla/issues"
 
 [build-system]
 requires = ["hatchling"]
