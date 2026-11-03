@@ -73,9 +73,10 @@ def test_readme_meets_the_directory_checks():
     assert MARKETPLACE_LINE in text, "claude plugin validate asks for this line"
     assert INSTALL_LINE in text, "the CLI install line the skills print"
     assert "\n## Privacy\n" in text and "### Network" in text and "### What it writes" in text
-    # privacyPolicyUrl points at this anchor
-    assert json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())["privacyPolicyUrl"].endswith(
-        "plugin/README.md#privacy")
+    # privacyPolicyUrl is the site's page, and that page links to this anchor
+    assert json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())["privacyPolicyUrl"] == (
+        "https://teyla.dev/privacy/")
+    assert "plugin/README.md#privacy" in (ROOT / "site" / "public" / "privacy" / "index.html").read_text()
 
 
 def test_marketplace_lists_the_plugin_folder():

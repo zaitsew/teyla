@@ -176,5 +176,5 @@ rm -r ~/.teyla        # only if you also want the recorded corrections and notes
 
 ## Support and license
 
-Questions and bugs: <https://github.com/zaitsew/teyla/issues>. Source and the full manual:
+Site: <https://teyla.dev>. Questions and bugs: <https://teyla.dev/support/>. Source and the full manual:
 <https://github.com/zaitsew/teyla>. Apache-2.0, see `LICENSE`.

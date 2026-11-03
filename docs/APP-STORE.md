@@ -23,8 +23,9 @@ listing is written by `apps/store/app-store.py` from `apps/store/listing/`; this
 | Price | Free, no in-app purchases |
 | Availability | Every storefront except China mainland (`CHN`) |
 | Version / build | `CFBundleShortVersionString` 0.32.0; `CFBundleVersion` is `CURRENT_PROJECT_VERSION`, raised by hand in `project.yml` before each upload |
-| Support URL | https://github.com/zaitsew/teyla |
-| Privacy policy URL | https://github.com/zaitsew/teyla/blob/main/docs/PRIVACY.md |
+| Marketing URL | https://teyla.dev/ |
+| Support URL | https://teyla.dev/support/ |
+| Privacy policy URL | https://teyla.dev/privacy/ |
 
 **China mainland is excluded** from the first submission. The Mac companion runs AI coding tools, and the
 generative-AI rules in China need a permit that no model provider we use holds. An app there also needs an
