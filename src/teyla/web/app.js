@@ -32,6 +32,7 @@
 
   const money = (x) => (x >= 10 ? "$" + Math.round(x).toLocaleString("en-US") : "$" + x.toFixed(2));
   const pct = (x) => Math.round(x * 100) + "%";
+  const count = (n, word) => n + " " + word + (n === 1 ? "" : "s");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   function ageS(s) {
@@ -187,10 +188,10 @@
       const t = (num, lbl, cls) => h("div", { class: "stat" }, h("div", { class: "num " + (cls || "") }, num), h("div", { class: "lbl" }, lbl));
       const out = [
         t(pct(d.context_share), "of spend was re-reading or storing context (" + money(d.context_usd) + ")"),
-        t(String(d.long_sessions), "sessions ran past " + Math.round(d.long_context_tokens / 1000) + "k tokens (" + money(d.long_sessions_usd) + ")"),
+        t(String(d.long_sessions), (d.long_sessions === 1 ? "session" : "sessions") + " ran past " + Math.round(d.long_context_tokens / 1000) + "k tokens (" + money(d.long_sessions_usd) + ")"),
       ];
       if (d.subagent_usd) out.push(t(money(d.subagent_usd), "went to subagents; Opus ran " + pct(d.subagent_opus_share) + " of it"));
-      out.push(t(String(d.waiting_asks), "questions are waiting on you", d.waiting_asks ? "needs" : ""));
+      out.push(t(String(d.waiting_asks), d.waiting_asks === 1 ? "question is waiting on you" : "questions are waiting on you", d.waiting_asks ? "needs" : ""));
       return h("div", { class: "stats" }, out);
     }
 
@@ -206,7 +207,7 @@
       const by = Object.entries(d.by_harness).slice(0, 3).map(([k, v]) => k + " " + money(v)).join(", ");
       return [
         h("h1", null, money(d.total_usd) + " in the last " + d.days + " days"),
-        h("p", { class: "sub" }, "At API list price, over " + d.sessions + " sessions on " + d.active_days + " days" + (by ? " (" + by + ")" : "") + ". " + d.note),
+        h("p", { class: "sub" }, "At API list price, over " + count(d.sessions, "session") + " on " + count(d.active_days, "day") + (by ? " (" + by + ")" : "") + ". " + d.note),
         tiles(d),
       ];
     }
