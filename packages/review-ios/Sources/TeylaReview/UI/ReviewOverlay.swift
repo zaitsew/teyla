@@ -27,6 +27,7 @@ struct ReviewOverlay: View {
     @State private var tap: CGPoint?
     @State private var region: CGRect?
     @State private var drawing: CGRect?
+    @State private var stroke: (start: CGPoint, bounds: CGRect)?
     @State private var hit: Anchor?
     @State private var identifier: String?
     @State private var label: String?
@@ -114,17 +115,28 @@ struct ReviewOverlay: View {
         }
     }
 
+    /// The bounds of the stroke so far. A new start point begins a new stroke, so a stroke the system
+    /// cancelled, which never reaches `onEnded`, does not grow into the next one.
+    private func strokeBounds(_ value: DragGesture.Value) -> CGRect {
+        let earlier = stroke?.start == value.startLocation ? stroke?.bounds : nil
+        return ReviewGeometry.grow(earlier ?? CGRect(origin: value.startLocation, size: .zero), with: value.location)
+    }
+
     private func touch(scale: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 guard step == .point else { return }
-                drawing = ReviewGeometry.region(from: value.startLocation, to: value.location, scale: scale, window: size)
+                let bounds = strokeBounds(value)
+                stroke = (value.startLocation, bounds)
+                drawing = ReviewGeometry.region(stroke: bounds, scale: scale, window: size)
             }
             .onEnded { value in
                 switch step {
                 case .point:
+                    let bounds = strokeBounds(value)
+                    stroke = nil
                     drawing = nil
-                    if let area = ReviewGeometry.region(from: value.startLocation, to: value.location, scale: scale, window: size) {
+                    if let area = ReviewGeometry.region(stroke: bounds, scale: scale, window: size) {
                         select(area: area)
                     } else {
                         select(point: ReviewGeometry.toWindow(value.location, scale: scale, window: size), area: nil)

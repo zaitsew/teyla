@@ -19,12 +19,20 @@ enum ReviewGeometry {
         return CGPoint(x: min(max(0, point.x / scale), window.width), y: min(max(0, point.y / scale), window.height))
     }
 
-    /// The area a drag on the picture drew, in window points. Nil when the drag is short enough to be a tap.
-    static func region(from start: CGPoint, to end: CGPoint, scale: CGFloat, window: CGSize) -> CGRect? {
-        guard max(abs(end.x - start.x), abs(end.y - start.y)) >= minimumDrag else { return nil }
-        let a = toWindow(start, scale: scale, window: window)
-        let b = toWindow(end, scale: scale, window: window)
-        let rect = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
+    /// A stroke's bounds, grown to take in one more point of it on the picture.
+    static func grow(_ stroke: CGRect, with point: CGPoint) -> CGRect {
+        let left = min(stroke.minX, point.x), top = min(stroke.minY, point.y)
+        return CGRect(x: left, y: top, width: max(stroke.maxX, point.x) - left, height: max(stroke.maxY, point.y) - top)
+    }
+
+    /// The area a stroke on the picture drew, in window points: everything the finger passed through,
+    /// so a closed circle counts as well as a drag from corner to corner. Nil when the stroke is small
+    /// enough to be a tap.
+    static func region(stroke: CGRect, scale: CGFloat, window: CGSize) -> CGRect? {
+        guard max(stroke.width, stroke.height) >= minimumDrag else { return nil }
+        let a = toWindow(CGPoint(x: stroke.minX, y: stroke.minY), scale: scale, window: window)
+        let b = toWindow(CGPoint(x: stroke.maxX, y: stroke.maxY), scale: scale, window: window)
+        let rect = CGRect(x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y)
         return rect.width > 0 || rect.height > 0 ? rect : nil
     }
 }

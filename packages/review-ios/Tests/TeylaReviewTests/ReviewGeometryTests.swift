@@ -25,19 +25,30 @@ final class ReviewGeometryTests: XCTestCase {
         XCTAssertEqual(ReviewGeometry.toWindow(CGPoint(x: 5, y: 5), scale: 0, window: window), .zero)
     }
 
+    /// The area a finger drew through these points on the picture, at half scale.
+    private func area(_ points: [(CGFloat, CGFloat)]) -> CGRect? {
+        let start = CGRect(x: points[0].0, y: points[0].1, width: 0, height: 0)
+        let stroke = points.reduce(start) { ReviewGeometry.grow($0, with: CGPoint(x: $1.0, y: $1.1)) }
+        return ReviewGeometry.region(stroke: stroke, scale: 0.5, window: window)
+    }
+
     func testAShortDragIsATap() {
-        XCTAssertNil(ReviewGeometry.region(from: CGPoint(x: 10, y: 10), to: CGPoint(x: 15, y: 18), scale: 0.5, window: window))
+        XCTAssertNil(area([(10, 10), (15, 18)]))
     }
 
     func testADragInAnyDirectionIsTheSameAreaInWindowPoints() {
         let expected = CGRect(x: 20, y: 40, width: 100, height: 200)
-        XCTAssertEqual(ReviewGeometry.region(from: CGPoint(x: 10, y: 20), to: CGPoint(x: 60, y: 120), scale: 0.5, window: window), expected)
-        XCTAssertEqual(ReviewGeometry.region(from: CGPoint(x: 60, y: 120), to: CGPoint(x: 10, y: 20), scale: 0.5, window: window), expected)
+        XCTAssertEqual(area([(10, 20), (60, 120)]), expected)
+        XCTAssertEqual(area([(60, 120), (10, 20)]), expected)
+    }
+
+    func testAClosedCircleIsTheAreaItEncloses() {
+        // The finger ends where it began, so only the points between say how big the circle was.
+        XCTAssertEqual(area([(35, 20), (60, 70), (35, 120), (10, 70), (35, 21)]), CGRect(x: 20, y: 40, width: 100, height: 200))
     }
 
     func testADragPastTheEdgeStopsAtTheWindow() {
-        let area = ReviewGeometry.region(from: CGPoint(x: 150, y: 350), to: CGPoint(x: 300, y: 600), scale: 0.5, window: window)
-        XCTAssertEqual(area, CGRect(x: 300, y: 700, width: 100, height: 100))
+        XCTAssertEqual(area([(150, 350), (300, 600)]), CGRect(x: 300, y: 700, width: 100, height: 100))
     }
 
     func testARegionIsLeftOutOfTheCaptureWhenThereIsNone() throws {
