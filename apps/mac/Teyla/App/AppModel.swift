@@ -68,6 +68,7 @@ final class AppModel {
     let firstRun: FirstRunModel
     let productPage: ProductPageModel
     let tools: ToolsModel
+    let console: ConsoleModel
     let commandBar: CommandBarModel
     @ObservationIgnored private var hotKeyTalk = PushToTalk()
     #if !STORE
@@ -96,6 +97,7 @@ final class AppModel {
         firstRun = FirstRunModel(cli: cli)
         productPage = ProductPageModel(cli: cli)
         tools = ToolsModel(cli: cli)
+        console = ConsoleModel(cli: cli)
         commandBar = CommandBarModel()
         let names: () -> [String] = { [weak self] in
             NewTask.products(self?.snapshot?.products ?? []).map(\.name)
@@ -228,10 +230,12 @@ final class AppModel {
                 self?.refresh()
                 // The Tools report is heavier than the snapshot: it is read again only when it is 10 minutes old.
                 if self?.capabilities.tools == true { self?.tools.refresh(force: false) }
+                if self?.capabilities.console == true { self?.console.refresh(force: false) }
             }
         }
         refresh()
         if capabilities.tools { tools.refresh(force: false) }
+        if capabilities.console { console.refresh(force: false) }
     }
 
     /// The command is read every minute; the relay folder every 10 seconds, as well as when it changes.
@@ -354,7 +358,8 @@ final class AppModel {
     func go(_ next: AppRoute) {
         route = next
         if case .product(let id) = next { productPage.open(id) }
-        if next == .tools { tools.opened() }
+        if next == .operations { tools.opened() }
+        if next.isConsole, capabilities.console { console.opened() }
     }
 
     // MARK: The command bar (⌘K)
@@ -383,8 +388,9 @@ final class AppModel {
         case .refresh:
             refresh()
             if capabilities.tools { tools.refresh() }
+            if capabilities.console { console.refresh(rebuild: true) }
         case .tool(let itemID, let action):
-            go(.tools)
+            go(.operations)
             tools.point(at: itemID, action: action)
         }
     }

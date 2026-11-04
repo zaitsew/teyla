@@ -20,7 +20,7 @@ struct CommandBarView: View {
                 .accessibilityLabel("Command bar")
             Divider()
             if results.isEmpty {
-                Text("Nothing matches. This list is fixed: pages, products, New task, Refresh and the actions on Tools.")
+                Text("Nothing matches. This list is fixed: pages, products, New task, Refresh and the actions on Operations.")
                     .font(Typo.caption)
                     .foregroundStyle(Palette.textSecondary)
                     .padding(Space.l)

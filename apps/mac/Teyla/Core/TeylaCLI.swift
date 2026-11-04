@@ -19,6 +19,7 @@ actor TeylaCLI: TeylaBackend {
     private let startFixtureURL: URL?
     private let productFixtureURL: URL?
     private let attentionFixtureURL: URL?
+    private let consoleFixtureURL: URL?
     /// The file the owner picked with "Choose…", and what a login shell finds. Injected so a test never runs the real ones.
     private let chosen: @Sendable () -> String?
     private let shellPath: @Sendable () -> String?
@@ -45,6 +46,7 @@ actor TeylaCLI: TeylaBackend {
         startFixtureURL = Self.fixtureURL(env["TEYLA_START_FIXTURE"], beside: fixtureURL, named: "start.v1.json")
         productFixtureURL = Self.fixtureURL(env["TEYLA_PRODUCT_FIXTURE"], beside: fixtureURL, named: "product.v1.json")
         attentionFixtureURL = Self.fixtureURL(env["TEYLA_ATTENTION_FIXTURE"], beside: fixtureURL, named: "attention.v1.json")
+        consoleFixtureURL = Self.fixtureURL(env["TEYLA_CONSOLE_FIXTURE"], beside: fixtureURL, named: "console.v1.json")
     }
 
     private static func fixtureURL(_ path: String?, beside state: URL?, named name: String) -> URL? {
@@ -152,6 +154,44 @@ actor TeylaCLI: TeylaBackend {
     }
 
     static let attentionArguments = ["attention", "--json"]
+
+    // MARK: The console (docs/CONSOLE.md, `teyla console`)
+
+    /// `teyla console --json`. The CLI answers from its own cache when that is under 30 minutes old; `refresh` rebuilds it,
+    /// which reads about a dozen local sources (and, every six hours, the session logs: about 30 seconds more).
+    func console(refresh: Bool) async throws -> ConsoleReport {
+        if fixtureURL != nil {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard let url = consoleFixtureURL, let data = try? Data(contentsOf: url) else {
+                throw TeylaError.fixtureUnreadable(consoleFixtureURL?.path ?? "console.v1.json")
+            }
+            return try ConsoleReport.decode(data)
+        }
+        let out = try await run(Self.consoleArguments(refresh: refresh), timeout: refresh ? 240 : 120)
+        guard out.status == 0 else {
+            let why = Self.oneLine(out.stderrText.isEmpty ? String(decoding: out.stdout, as: UTF8.self) : out.stderrText)
+            // An older command does not know `console`: say what to do, not the usage text it printed.
+            if why.contains("Unknown command") {
+                throw TeylaError.unavailable("This version of the teyla command has no admin sections. Update the teyla command.")
+            }
+            throw TeylaError.failed(code: out.status, message: why)
+        }
+        return try ConsoleReport.decode(out.stdout)
+    }
+
+    static func consoleArguments(refresh: Bool) -> [String] {
+        refresh ? ["console", "--json", "--refresh"] : ["console", "--json"]
+    }
+
+    /// The CLI's cache file (mode 0600, written by `teyla console`), read as it is. It gives the first paint while the
+    /// command runs; a preview has none.
+    func consoleCached() async -> ConsoleReport? {
+        guard fixtureURL == nil else { return nil }
+        let base = (env["TEYLA_HOME"].map { ($0 as NSString).expandingTildeInPath }) ?? (home as NSString).appendingPathComponent(".teyla")
+        let url = URL(fileURLWithPath: (base as NSString).appendingPathComponent("console-cache.json"))
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? ConsoleReport.decode(data)
+    }
 
     /// One command of the Tools page. Whatever the report printed, only a command on the allow-list is run;
     /// with a fixture nothing is run at all.

@@ -5,9 +5,10 @@ import SwiftUI
 /// Hooks for taking screenshots of the app with sample data. They work only with
 /// `TEYLA_STATE_FIXTURE` set, so a real run never reads them.
 ///
-///     TEYLA_PREVIEW_OPEN   new-task | quick-note | settings | pair | focus:<ask id> | diagnosis | home | decisions | portfolio | tools | command-bar[:<query>] | product:<id>
-///     TEYLA_START_FIXTURE / TEYLA_PRODUCT_FIXTURE / TEYLA_ATTENTION_FIXTURE  the diagnosis, product-page and Tools samples
-///                         (default: start.v1.json, product.v1.json and attention.v1.json beside the state sample)
+///     TEYLA_PREVIEW_OPEN   new-task | quick-note | settings | pair | focus:<ask id> | diagnosis | home | decisions | portfolio | growth | money | operations | playbook | command-bar[:<query>] | product:<id>
+///     TEYLA_START_FIXTURE / TEYLA_PRODUCT_FIXTURE / TEYLA_ATTENTION_FIXTURE / TEYLA_CONSOLE_FIXTURE  the diagnosis, product-page,
+///                         Operations-actions and admin-section samples (default: start.v1.json, product.v1.json,
+///                         attention.v1.json and console.v1.json beside the state sample)
 ///     TEYLA_PREVIEW_START_DELAY  seconds the simulated diagnosis takes (default 1.5)
 ///     TEYLA_PREVIEW_NO_BINARY    pretend the teyla command is not installed (the not-found screen)
 ///     TEYLA_PREVIEW_SIZE   <width>x<height>, the content size of the main window
@@ -17,7 +18,7 @@ import SwiftUI
 ///     TEYLA_PREVIEW_HOME_HEADER  pulse | sentence: the header variant of Home
 ///     TEYLA_PREVIEW_SNAPSHOT  <path.png>: draw the whole Home page in one image (width TEYLA_PREVIEW_WIDTH, default
 ///                         1100 pt, in the appearance above), save it and quit. For screenshots without a screen to click
-///     TEYLA_PREVIEW_SNAPSHOT_VIEW  home (default) | decisions | portfolio | product:<id> | tools | settings | window (the window
+///     TEYLA_PREVIEW_SNAPSHOT_VIEW  home (default) | decisions | portfolio | product:<id> | growth | money | operations | playbook | settings | window (the window
 ///                         as it stands, with its toolbar; the size comes from TEYLA_PREVIEW_SIZE) | connect-phone (the "Connect iPhone"
 ///                         sheet) | setup (the store build's first screen; Home elsewhere)
 @MainActor
@@ -63,9 +64,10 @@ enum Preview {
                     // The made-up key takes a moment to come back; the sheet is drawn once the code is there.
                     model.relay.connectPhone(turnOn: model.phoneNeedsRelayOn)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { snapshotView(which, model: model, path: path) }
-                } else if which == "tools" || which.hasPrefix("product:") {
+                } else if let route = consoleRoute(which) ?? (which == "window" ? consoleRoute(env["TEYLA_PREVIEW_OPEN"] ?? "") : nil)
+                            ?? (which.hasPrefix("product:") ? .product(String(which.dropFirst("product:".count))) : nil) {
                     // These pages read their own sample file first.
-                    model.go(which == "tools" ? .tools : .product(String(which.dropFirst("product:".count))))
+                    model.go(route)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { snapshotView(which, model: model, path: path) }
                 } else {
                     snapshotView(which, model: model, path: path)
@@ -96,10 +98,10 @@ enum Preview {
                 model.go(.decisions)
             case "portfolio":
                 model.go(.portfolio)
-            case "tools":
-                model.go(.tools)
+            case let name where consoleRoute(name) != nil:
+                model.go(consoleRoute(name) ?? .home)
             case let bar where bar == "command-bar" || bar.hasPrefix("command-bar:"):
-                model.go(.tools)
+                model.go(.operations)
                 model.openCommandBar()
                 if bar.hasPrefix("command-bar:") { model.commandBar.query = String(bar.dropFirst("command-bar:".count)) }
             case let product where product.hasPrefix("product:"):
@@ -117,6 +119,7 @@ enum Preview {
     private static func snapshotView(_ which: String, model: AppModel, path: String) {
         if which == "window" {
             // The whole window with its toolbar: the frame view draws what the content view leaves out.
+            // The sidebar list is drawn by the window server, so this image leaves it blank.
             if let frame = NSApp.windows.first(where: { $0.canBecomeMain })?.contentView?.superview {
                 write(frame, to: path)
             }
@@ -132,8 +135,10 @@ enum Preview {
             page = flat(DecisionsView(), model: model, width: width)
         case "portfolio":
             page = flat(PortfolioView(), model: model, width: width)
-        case "tools":
+        case "tools", "operations":
             page = flat(ToolsView(), model: model, width: width)
+        case "growth", "money", "playbook":
+            page = flat(ConsoleStubView(route: consoleRoute(which) ?? .money), model: model, width: width)
         case "settings":
             page = flat(SettingsView(), model: model, width: width)
         case let product where product.hasPrefix("product:"):
@@ -163,6 +168,17 @@ enum Preview {
             host.layoutSubtreeIfNeeded()
             write(host, to: path)
             NSApp.terminate(nil)
+        }
+    }
+
+    /// The page a preview name points at: the four admin sections (`tools` is the old name of Operations).
+    private static func consoleRoute(_ name: String) -> AppRoute? {
+        switch name {
+        case "growth": return .growth
+        case "money": return .money
+        case "operations", "tools": return .operations
+        case "playbook": return .playbook
+        default: return nil
         }
     }
 

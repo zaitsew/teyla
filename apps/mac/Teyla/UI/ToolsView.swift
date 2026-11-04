@@ -32,7 +32,7 @@ struct ToolsView: View {
                 withAnimation(.easeOut(duration: 0.25)) { reader.scrollTo(id, anchor: .top) }
             }
         }
-        .navigationTitle("Tools")
+        .navigationTitle("Operations")
         .onAppear { tools.opened() }
     }
 
@@ -40,7 +40,7 @@ struct ToolsView: View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             let age = ToolsPage.ageLine(readAt: tools.readAt, now: context.date)
             let headline = ToolsPage.headline(report: tools.report, phase: tools.phase)
-            PageHeader(title: "Tools", context: age.isEmpty ? headline : "\(headline) · \(age)") {
+            PageHeader(title: "Operations", context: age.isEmpty ? headline : "\(headline) · \(age)") {
                 Button("Check again") { tools.refresh() }
                     .disabled(tools.isLoading)
             }

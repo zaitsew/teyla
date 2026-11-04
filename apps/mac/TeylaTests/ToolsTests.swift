@@ -238,12 +238,14 @@ final class CommandBarTests: XCTestCase {
 
     func testTheFixedEntriesComeFirstAndOnlyThoseExist() {
         let ids = entries().map(\.id)
-        XCTAssertEqual(ids, ["go:home", "go:decisions", "go:portfolio", "go:tools", "product:sample-app", "product:sample-tool", "new-task", "refresh"])
+        XCTAssertEqual(ids, ["go:home", "go:decisions", "go:portfolio", "go:growth", "go:money", "go:operations", "go:playbook",
+                             "product:sample-app", "product:sample-tool", "new-task", "refresh"])
     }
 
-    func testTheStoreBuildHasNoToolsAndNoActions() throws {
+    func testTheStoreBuildHasNoAdminSectionsAndNoActions() throws {
         let store = entries(tools: false, report: try report())
-        XCTAssertFalse(store.contains { $0.id == "go:tools" })
+        XCTAssertEqual(store.map(\.id).prefix(3), ["go:home", "go:decisions", "go:portfolio"])
+        XCTAssertFalse(store.contains { ["go:growth", "go:money", "go:operations", "go:playbook"].contains($0.id) })
         XCTAssertFalse(store.contains { if case .tool = $0.kind { return true } else { return false } })
     }
 
@@ -275,7 +277,8 @@ final class CommandBarTests: XCTestCase {
         let list = entries()
         XCTAssertEqual(CommandBar.filter(list, query: "").count, list.count)
         XCTAssertEqual(CommandBar.filter(list, query: "dec").first?.id, "go:decisions")
-        XCTAssertEqual(CommandBar.filter(list, query: "TOOLS").first?.id, "go:tools")
+        XCTAssertEqual(CommandBar.filter(list, query: "TOOLS").first?.id, "go:operations")
+        XCTAssertEqual(CommandBar.filter(list, query: "cash").first?.id, "go:money")
         XCTAssertEqual(CommandBar.filter(list, query: "sample-t").map(\.id), ["product:sample-tool"])
         XCTAssertEqual(CommandBar.filter(list, query: "new").first?.id, "new-task")
         XCTAssertEqual(CommandBar.filter(list, query: "all prod").first?.id, "go:portfolio")
@@ -491,6 +494,8 @@ final class ToolsModelTests: XCTestCase {
         do { _ = try await backend.runTool(["storage", "sweep"]); XCTFail("ran") } catch { XCTAssertTrue(error is TeylaError) }
         XCTAssertFalse(Capabilities.store.tools)
         XCTAssertTrue(Capabilities.full.tools)
+        XCTAssertFalse(Capabilities.store.console)
+        XCTAssertTrue(Capabilities.full.console)
     }
 }
 
