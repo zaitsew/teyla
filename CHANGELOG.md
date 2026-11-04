@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Android review capture: `packages/review-android`.** A test build of a Compose app gets the same shake-and-write feedback as iOS, macOS and web, and a Settings row that works with a D-pad on a TV. Two Gradle modules share one public API: the real one is linked in `debug` and `internal`, the no-op one in `release`, so `teyla review store-check app.aab` passes on a store build (a fixture app proves both directions with R8 on). `Modifier.reviewPrivate()` areas are painted black in the picture; a `FLAG_SECURE` window is refused rather than sent blank. Unsent captures wait in app storage and retry. Dictation is left out so the library asks for no microphone permission. Not run on an emulator yet. See docs/REVIEW.md, section "Android".
 - **Web review capture: `packages/review-web`.** A test build of a web product gets the same tap-and-write feedback as iOS. Three locks keep it out of a production build (a build flag, a host allow-list, a dynamic import), so `teyla review store-check <dist>` passes on a flag-off build. Private areas and password fields are painted black in the picture. Unsent captures wait in the browser and retry. See docs/REVIEW.md, section "Web".
 - **The review package builds for macOS and opens a feedback form there.** `ReviewCommands()` adds a Help menu item,
   "Report a problem…", with Control-Option-Command-F; `ReviewMenuButton()` is the Settings row. The window is frozen with
