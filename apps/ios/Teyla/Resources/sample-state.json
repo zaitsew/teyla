@@ -662,6 +662,102 @@
               "365d": null
             }
           }
+        },
+        "startup": {
+          "type": "venture",
+          "type_set": true,
+          "stage": "built",
+          "stage_title": "Built",
+          "parked": false,
+          "as_of": "2026-11-02T08:00:00Z",
+          "stale": false,
+          "next": {
+            "rung": "tried",
+            "text": "Nobody has tried to sell it yet.",
+            "command": "teyla growth"
+          },
+          "rungs": [
+            {
+              "id": "built",
+              "title": "Built",
+              "status": "met",
+              "detail": "Installable"
+            },
+            {
+              "id": "tried",
+              "title": "Tried",
+              "status": "missing",
+              "detail": "No post, ad or meeting yet"
+            },
+            {
+              "id": "used",
+              "title": "Used",
+              "status": "met",
+              "detail": "24 external accounts, assumed"
+            },
+            {
+              "id": "retained",
+              "title": "Retained",
+              "status": "missing",
+              "detail": "2 of 3 returned at day 7"
+            },
+            {
+              "id": "paid",
+              "title": "Paid",
+              "status": "missing",
+              "detail": "No payer yet"
+            },
+            {
+              "id": "repeating",
+              "title": "Repeating",
+              "status": "missing",
+              "detail": "No payer yet"
+            },
+            {
+              "id": "growing",
+              "title": "Growing",
+              "status": "unknown",
+              "detail": "Needs 4 weeks of snapshots"
+            }
+          ],
+          "metrics": {
+            "marketing": {
+              "posts": 0,
+              "posts_7d": 0,
+              "ads_outreach": 0
+            },
+            "sales": {
+              "icp_meetings": 0,
+              "icp_meetings_30d": 0,
+              "last": "",
+              "claimed": 1
+            },
+            "usage": {
+              "external": 24,
+              "external_assumed": true,
+              "wau": 7,
+              "retained_7d": 2,
+              "new_7d": 2
+            },
+            "money": {
+              "enabled": false,
+              "paying": null,
+              "mrr_usd": null,
+              "revenue_30d_usd": null,
+              "ai_cost_30d_usd": 12.5
+            },
+            "growth": {
+              "weekly_pct": null,
+              "weeks": 1,
+              "on": "wau"
+            }
+          },
+          "yc": {
+            "eligible": true,
+            "checked": 3,
+            "total": 15,
+            "next_box": "customer"
+          }
         }
       },
       {
@@ -802,6 +898,97 @@
               "365d": null
             }
           }
+        },
+        "startup": {
+          "type": "indie",
+          "type_set": true,
+          "stage": "paid",
+          "stage_title": "Paid",
+          "parked": false,
+          "as_of": "2026-11-02T08:00:00Z",
+          "stale": false,
+          "next": {
+            "rung": "repeating",
+            "text": "One person pays. Three payers make it repeat.",
+            "command": "teyla startup show sample-tool"
+          },
+          "rungs": [
+            {
+              "id": "built",
+              "title": "Built",
+              "status": "met",
+              "detail": "Installable"
+            },
+            {
+              "id": "tried",
+              "title": "Tried",
+              "status": "met",
+              "detail": "3 posts"
+            },
+            {
+              "id": "used",
+              "title": "Used",
+              "status": "met",
+              "detail": "41 external accounts"
+            },
+            {
+              "id": "retained",
+              "title": "Retained",
+              "status": "met",
+              "detail": "6 returned at day 7"
+            },
+            {
+              "id": "paid",
+              "title": "Paid",
+              "status": "met",
+              "detail": "1 payer"
+            },
+            {
+              "id": "repeating",
+              "title": "Repeating",
+              "status": "missing",
+              "detail": "1 of 3 payers"
+            },
+            {
+              "id": "sustaining",
+              "title": "Sustaining",
+              "status": "missing",
+              "detail": "$4.99 against $12.50 of AI cost"
+            }
+          ],
+          "metrics": {
+            "marketing": {
+              "posts": 3,
+              "posts_7d": 1,
+              "ads_outreach": 0
+            },
+            "sales": {
+              "icp_meetings": 2,
+              "icp_meetings_30d": 1,
+              "last": "2026-10-28",
+              "claimed": 0
+            },
+            "usage": {
+              "external": 41,
+              "external_assumed": false,
+              "wau": 19,
+              "retained_7d": 6,
+              "new_7d": 4
+            },
+            "money": {
+              "enabled": true,
+              "paying": 1,
+              "mrr_usd": 4.99,
+              "revenue_30d_usd": 4.99,
+              "ai_cost_30d_usd": 12.5
+            },
+            "growth": {
+              "weekly_pct": null,
+              "weeks": 2,
+              "on": "revenue"
+            }
+          },
+          "yc": null
         }
       },
       {
@@ -924,6 +1111,102 @@
               "365d": null
             }
           }
+        },
+        "startup": {
+          "type": "venture",
+          "type_set": false,
+          "stage": "built",
+          "stage_title": "Built",
+          "parked": false,
+          "as_of": "2026-10-21T08:00:00Z",
+          "stale": true,
+          "next": {
+            "rung": "used",
+            "text": "The usage figures are 12 days old.",
+            "command": "teyla portfolio --refresh"
+          },
+          "rungs": [
+            {
+              "id": "built",
+              "title": "Built",
+              "status": "met",
+              "detail": "Installable"
+            },
+            {
+              "id": "tried",
+              "title": "Tried",
+              "status": "met",
+              "detail": "1 post"
+            },
+            {
+              "id": "used",
+              "title": "Used",
+              "status": "stale",
+              "detail": "Usage is 12 days old"
+            },
+            {
+              "id": "retained",
+              "title": "Retained",
+              "status": "stale",
+              "detail": "Usage is 12 days old"
+            },
+            {
+              "id": "paid",
+              "title": "Paid",
+              "status": "unknown",
+              "detail": "No money figure"
+            },
+            {
+              "id": "repeating",
+              "title": "Repeating",
+              "status": "unknown",
+              "detail": "No money figure"
+            },
+            {
+              "id": "growing",
+              "title": "Growing",
+              "status": "unknown",
+              "detail": "Needs 4 weeks of snapshots"
+            }
+          ],
+          "metrics": {
+            "marketing": {
+              "posts": 1,
+              "posts_7d": 0,
+              "ads_outreach": 0
+            },
+            "sales": {
+              "icp_meetings": 0,
+              "icp_meetings_30d": 0,
+              "last": "",
+              "claimed": 0
+            },
+            "usage": {
+              "external": 5,
+              "external_assumed": false,
+              "wau": 2,
+              "retained_7d": 1,
+              "new_7d": 0
+            },
+            "money": {
+              "enabled": null,
+              "paying": null,
+              "mrr_usd": null,
+              "revenue_30d_usd": null,
+              "ai_cost_30d_usd": null
+            },
+            "growth": {
+              "weekly_pct": null,
+              "weeks": 3,
+              "on": "wau"
+            }
+          },
+          "yc": {
+            "eligible": true,
+            "checked": 0,
+            "total": 15,
+            "next_box": "building"
+          }
         }
       },
       {
@@ -1040,6 +1323,79 @@
               "365d": null
             }
           }
+        },
+        "startup": {
+          "type": "personal",
+          "type_set": true,
+          "stage": "used_by_me",
+          "stage_title": "Used by me",
+          "parked": true,
+          "as_of": "2026-11-02T08:00:00Z",
+          "stale": false,
+          "next": {
+            "rung": "kept",
+            "text": "You have used it for 12 days. Thirty days keeps it.",
+            "command": ""
+          },
+          "rungs": [
+            {
+              "id": "built",
+              "title": "Built",
+              "status": "met",
+              "detail": "Installable"
+            },
+            {
+              "id": "tried",
+              "title": "Tried",
+              "status": "not_applicable",
+              "detail": "Not for a personal product"
+            },
+            {
+              "id": "used_by_me",
+              "title": "Used by me",
+              "status": "met",
+              "detail": "1 weekly user"
+            },
+            {
+              "id": "kept",
+              "title": "Kept",
+              "status": "missing",
+              "detail": "12 days of 30"
+            }
+          ],
+          "metrics": {
+            "marketing": {
+              "posts": 0,
+              "posts_7d": 0,
+              "ads_outreach": 0
+            },
+            "sales": {
+              "icp_meetings": 0,
+              "icp_meetings_30d": 0,
+              "last": "",
+              "claimed": 0
+            },
+            "usage": {
+              "external": null,
+              "external_assumed": false,
+              "wau": 1,
+              "retained_7d": null,
+              "new_7d": null
+            },
+            "money": {
+              "enabled": null,
+              "paying": null,
+              "mrr_usd": null,
+              "revenue_30d_usd": null,
+              "ai_cost_30d_usd": null
+            },
+            "growth": {
+              "weekly_pct": null,
+              "weeks": 0,
+              "on": "wau"
+            }
+          },
+          "yc": null
         }
       },
       {
@@ -2160,6 +2516,102 @@
               "30d": null,
               "365d": null
             }
+          }
+        },
+        "startup": {
+          "type": "venture",
+          "type_set": false,
+          "stage": "idea",
+          "stage_title": "Idea",
+          "parked": false,
+          "as_of": "2026-11-02T08:00:00Z",
+          "stale": false,
+          "next": {
+            "rung": "built",
+            "text": "Teyla sees no store or site for it yet.",
+            "command": "teyla portfolio --refresh"
+          },
+          "rungs": [
+            {
+              "id": "built",
+              "title": "Built",
+              "status": "unknown",
+              "detail": "No store or site seen"
+            },
+            {
+              "id": "tried",
+              "title": "Tried",
+              "status": "missing",
+              "detail": "No post, ad or meeting yet"
+            },
+            {
+              "id": "used",
+              "title": "Used",
+              "status": "unknown",
+              "detail": "No usage probe"
+            },
+            {
+              "id": "retained",
+              "title": "Retained",
+              "status": "unknown",
+              "detail": "No usage probe"
+            },
+            {
+              "id": "paid",
+              "title": "Paid",
+              "status": "unknown",
+              "detail": "No usage probe"
+            },
+            {
+              "id": "repeating",
+              "title": "Repeating",
+              "status": "unknown",
+              "detail": "No usage probe"
+            },
+            {
+              "id": "growing",
+              "title": "Growing",
+              "status": "unknown",
+              "detail": "Needs 4 weeks of snapshots"
+            }
+          ],
+          "metrics": {
+            "marketing": {
+              "posts": 0,
+              "posts_7d": 0,
+              "ads_outreach": 0
+            },
+            "sales": {
+              "icp_meetings": 0,
+              "icp_meetings_30d": 0,
+              "last": "",
+              "claimed": 0
+            },
+            "usage": {
+              "external": null,
+              "external_assumed": false,
+              "wau": null,
+              "retained_7d": null,
+              "new_7d": null
+            },
+            "money": {
+              "enabled": null,
+              "paying": null,
+              "mrr_usd": null,
+              "revenue_30d_usd": null,
+              "ai_cost_30d_usd": null
+            },
+            "growth": {
+              "weekly_pct": null,
+              "weeks": 0,
+              "on": "wau"
+            }
+          },
+          "yc": {
+            "eligible": true,
+            "checked": 0,
+            "total": 15,
+            "next_box": "building"
           }
         }
       }

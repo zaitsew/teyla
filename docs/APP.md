@@ -782,12 +782,25 @@ screen sits on `Page`, with figures in a `StatStrip`, like the Mac.
 | Tab | What it shows |
 |---|---|
 | Growth | Posts today against the target, conversations this week, drafts waiting, slots with no draft; each channel with its post count; the queue; the pipeline; the products nobody tried to sell, which open Products. |
-| Products | As before, plus "Not tried to sell yet" on a product that has had no post, marketing or ICP meeting. |
+| Products | As before, plus "Not tried to sell yet" on a product that has had no post, marketing or ICP meeting, and the earned stage ("Built") beside it. A product page leads with the startup block's next fact; see "The startup page on the phone". |
 | More | Money, Operations, Playbook, Settings. Each row shows its live figure. |
 | More > Money | Cash per month, AI at list price (never called cash), next renewal. |
 | More > Operations | Failures, disk free, whether the lid can close, and the failures that need you. |
 | More > Playbook | Contradictions, models to look at, what the wiki, your words, corrections and design decisions hold. |
 | More > Settings | The Mac this phone reads, the dictation language, what travels, the version. Moved from the Home toolbar. |
+
+### The startup page on the phone
+
+A product page shows the `startup` block of `portfolio.products[]` (`docs/STARTUP.md`) and computes nothing: the next fact
+(`next.text`) with the stage title and type, the ladder with each rung's status word and detail, five metric groups
+(Marketing, Sales, Usage, Monetization, Growth), the as-of time and `stale`. A `null` is a dash with its reason, never 0;
+`external_assumed` reads "Assumed". `type_set: false` reads "Type not chosen" as text, since the phone cannot run the CLI.
+An older Mac, or a product the Mac could not compute, sends no block and the page shows none. The iPhone decodes the block
+in `Core/PhoneStartup.swift`, from the same bytes as the snapshot, so the shared `Models.swift` is unchanged.
+
+For a product with `yc.eligible` the page adds "2 of 15 boxes" and the next box's question, never a percent. The block
+carries only the box id, so the question text is a fixed table in the app. The answers stay on the Mac: the relay is
+signed, not encrypted. The phone does not rank a focus product; the block does not say which one it is.
 
 **Drafts do not reach the phone.** The relay is signed but not encrypted: Apple can read an iCloud Drive folder unless
 Advanced Data Protection is on. So no draft text and no approve or reject entry goes through it. Growth shows how many

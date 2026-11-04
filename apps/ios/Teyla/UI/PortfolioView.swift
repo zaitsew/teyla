@@ -70,8 +70,10 @@ struct PortfolioView: View {
             RowGroup {
                 ForEach(shown) { product in
                     NavigationLink(value: ProductRoute(id: product.id)) {
-                        PortfolioRow(product: product, selling: PhoneConsole.sellingLine(
-                            productID: product.id, growth: growth, parked: product.health == .parked))
+                        PortfolioRow(product: product,
+                                     selling: PhoneConsole.sellingLine(
+                                         productID: product.id, growth: growth, parked: product.health == .parked),
+                                     startup: model.startup(for: product.id))
                     }
                     .buttonStyle(.plain)
                 }
@@ -164,6 +166,8 @@ private struct PortfolioRow: View {
     let product: PortfolioProduct
     /// "Not tried to sell yet", when the Mac says nobody posted, ran marketing or met a person who fits.
     var selling: String?
+    /// The earned stage (docs/STARTUP.md), when the Mac sent it.
+    var startup: PhoneStartup?
 
     private var name: String { PortfolioFormat.title(product) }
     private var line: String {
@@ -187,10 +191,12 @@ private struct PortfolioRow: View {
                         .foregroundStyle(Palette.textSecondary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
-                    if let selling {
-                        Label(selling, systemImage: "megaphone")
+                    // "Built · Not tried to sell yet": the stage the evidence shows, then the push it needs.
+                    if let stageLine = StartupFormat.rowLine(startup, selling: selling) {
+                        Label(stageLine, systemImage: selling == nil ? "flag" : "megaphone")
                             .font(Typo.caption.weight(.medium))
-                            .foregroundStyle(Palette.primary)
+                            .foregroundStyle(selling == nil ? Palette.textSecondary : Palette.primary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer(minLength: 0)
@@ -256,7 +262,7 @@ struct PortfolioDetailView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: Space.l) {
                 if let product = model.snapshot?.portfolio?.product(productID), let snapshot = model.snapshot {
-                    Content(product: product, snapshot: snapshot)
+                    Content(product: product, snapshot: snapshot, startup: model.startup(for: productID))
                 } else {
                     Label("This product is no longer in the portfolio.", systemImage: "questionmark.circle")
                         .foregroundStyle(Palette.textSecondary)
@@ -276,6 +282,7 @@ struct PortfolioDetailView: View {
     private struct Content: View {
         let product: PortfolioProduct
         let snapshot: Snapshot
+        let startup: PhoneStartup?
 
         var body: some View {
             let now = Date()
@@ -291,7 +298,11 @@ struct PortfolioDetailView: View {
             }
             .accessibilityElement(children: .combine)
 
-            if let selling = PhoneConsole.sellingLine(productID: product.id, growth: snapshot.console?.compact.growth ?? .missing,
+            if let startup { StartupSummary(startup: startup, now: now) }
+
+            // The startup sentence already says "nobody has tried to sell it" when that is the next fact.
+            if startup?.next?.rung != "tried",
+               let selling = PhoneConsole.sellingLine(productID: product.id, growth: snapshot.console?.compact.growth ?? .missing,
                                                       parked: product.health == .parked) {
                 Label {
                     Text(product.health == .parked ? selling : selling + ". It gets the next post.").fixedSize(horizontal: false, vertical: true)
@@ -359,6 +370,12 @@ struct PortfolioDetailView: View {
                 .font(Typo.body)
                 .fixedSize(horizontal: false, vertical: true)
                 .card()
+            }
+
+            if let startup {
+                StartupLadder(startup: startup)
+                StartupMetricGroups(startup: startup)
+                if let yc = startup.yc, yc.eligible { StartupYCLine(yc: yc) }
             }
 
             let asks = PortfolioFormat.questions(for: product, in: snapshot.asks)
