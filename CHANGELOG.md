@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Console: the Money section, and `teyla subs`.** `teyla console money` answers "what leaves my accounts". The headline is
+  the cash per month: the sum of the subscriptions you list in `~/.teyla/subscriptions.toml`, with every row that has no
+  price named, never estimated. `teyla subs list|add|set|remove` edits that file. Beside it, kept apart and labelled as
+  list price: what the local AI sessions cost over 7 and 30 days, by product, model and day, what the providers billed
+  where an admin key exists, GitHub Actions minutes, credits and the cloud lines. The session scan is cached; `section()`
+  reads files only.
 - **The apps have one small type system.** Mac and iPhone use exactly five type levels plus one style for big numbers, and
   every size, gap, radius and colour comes from a token. The iPhone has real token enums now. A test fails on a literal.
   The toolbar's status dot no longer touches the edge of its capsule.

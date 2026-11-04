@@ -78,6 +78,7 @@
   teyla schedules [--json] [--quiet] [--all] [--allow-network]    every scheduled task (Claude desktop, launchd, cloud routines, GitHub, teyla.toml): did it run, what vanished
   teyla schedules forget KEY [KEY...]                              acknowledge VANISHED tasks removed on purpose (clears the banner)
   teyla console [SECTION] [--json] [--refresh]                     the data behind the app's admin sections
+  teyla subs [list|add|set|remove] [NAME] [--monthly USD] ...      the recurring bills the Money section adds up (~/.teyla/subscriptions.toml)
   teyla growth [init|harvest|trends|plan|draft|review|approve|packets|sale-attempts|doctor]   the content factory: daily slots per channel, drafts you approve, packets you post
   teyla attention [--json]                                         what is wrong on this Mac's backend now, in one list (read-only, no network)
   teyla reviews [--days N] [--json] [--quiet] [repo...]            review debt: merged PRs never reviewed, merged with an open P1, skipped
@@ -584,6 +585,8 @@ def build_parser() -> argparse.ArgumentParser:
     attention_mod.register(sp)
     from . import console as console_mod
     console_mod.register(sp)
+    from . import subs as subs_mod
+    subs_mod.register(sp)
     from . import growth as growth_mod
     growth_mod.register(sp)
     q = sp.add_parser("help", help="the commands in six groups; --all lists every one; help COMMAND shows its options")

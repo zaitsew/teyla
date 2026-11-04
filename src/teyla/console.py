@@ -85,9 +85,23 @@ def build_section(name: str, now: float) -> dict:
         return {"error": f"{type(e).__name__}: {e}"[:200]}
 
 
-def build(now: float | None = None, only: str | None = None) -> dict:
+def prepare(name: str, now: float, force: bool = False) -> None:
+    """The slow, cached part of a section, for a module that has one (`prepare(now, force)`): it runs when the
+    console is refreshed, never inside `section()`, so a section stays a read of local files. A failure here
+    only leaves the cache as it was; the section reports what it could not read."""
+    try:
+        fn = getattr(_module(name), "prepare", None)
+        if fn:
+            fn(now, force=force)
+    except Exception:
+        pass
+
+
+def build(now: float | None = None, only: str | None = None, force: bool = False) -> dict:
     now = time.time() if now is None else now
     names = [only] if only else list(SECTIONS)
+    for n in names:
+        prepare(n, now, force)
     return {"version": VERSION, "generated": now, **{n: build_section(n, now) for n in names}}
 
 
@@ -150,12 +164,14 @@ def cmd_console(args) -> int:
     cached = None if args.refresh else read_cache()
     fresh = cached and time.time() - float(cached.get("generated") or 0) < MAX_AGE_S
     if args.section:
-        rep = {"version": VERSION, "generated": time.time(), args.section: build_section(args.section, time.time())} \
-            if not fresh or args.section not in cached else cached
+        if not fresh or args.section not in cached:
+            rep = build(only=args.section, force=args.refresh)
+        else:
+            rep = cached
     elif fresh:
         rep = cached
     else:
-        rep = build()
+        rep = build(force=args.refresh)
         write_cache(rep)
     if args.section:
         rep = {k: rep[k] for k in ("version", "generated", args.section)}
