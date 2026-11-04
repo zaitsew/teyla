@@ -62,6 +62,10 @@ public enum TeylaReview {
 
     public static func configure(_ change: (inout Configuration) -> Void) {
         change(&configuration)
+        #if os(macOS)
+        // The Mac cannot tell TestFlight from the App Store by the receipt file; ask StoreKit once.
+        if isEnabled { MacStoreEnvironment.refreshOnce() }
+        #endif
         #if TEYLA_REVIEW && canImport(UIKit)
         ShakeShortcut.shared.set(enabled: configuration.shake && isActive)
         if isActive { ReviewLifecycle.installOnce() }
@@ -95,9 +99,12 @@ public enum TeylaReview {
     /// Opens review mode: freezes the screen and shows the overlay. Call it from a debug-menu button.
     @MainActor
     public static func present() {
-        #if TEYLA_REVIEW && canImport(UIKit)
+        #if TEYLA_REVIEW
         guard isActive else { return }
+        ReviewMarker.lastEntry = ReviewMarker.overlay
+        #if canImport(UIKit)
         ReviewPresenter.present()
+        #endif
         #endif
     }
 

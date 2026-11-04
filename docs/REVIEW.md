@@ -10,7 +10,7 @@ This page is the contract between the phone and the Mac-side inbox: the folder l
 2. **Mark screens and elements.** Each screen gets `.reviewScreen("trip.timeline")` on its root. Each element worth pointing at gets `.reviewAnchor("trip.timeline.addButton", role: .button, strings: ["timeline.add"])`. The id is `screen.element`. The source file and line are filled in by the compiler.
 3. **Add the entry point.** Put `ReviewMenuButton()` (or `Button("Review") { TeylaReview.present() }`) in the debug menu. Optional: `TeylaReview.configure { $0.shake = true }` adds the shake shortcut. Then open `ReviewSettingsView()` once on the phone: paste the pairing string that `teyla relay pair` prints, and pick the `Teyla` folder in iCloud Drive.
 
-**The switch is a runtime key, not a compile flag.** A Swift package is compiled with its own flags and never sees the app's `SWIFT_ACTIVE_COMPILATION_CONDITIONS`, so a flag set in the app cannot turn the package on or off. Review mode is on only when the app's Info.plist has the key `TeylaReviewEnabled` set to `YES`. Fill it from a build setting that exists in the Debug and TestFlight configurations and nowhere else:
+**The switch is a runtime key, and a store build is a separate archive.** A Swift package is compiled with its own flags and never sees the app's `SWIFT_ACTIVE_COMPILATION_CONDITIONS`, so a flag set in the app cannot turn the package on or off. Review mode is on only when the app's Info.plist has the key `TeylaReviewEnabled` set to `YES`, `true` or `1`. Fill it from a build setting:
 
 ```
 // Info.plist
@@ -19,12 +19,37 @@ TeylaReviewEnabled = $(TEYLA_REVIEW_ENABLED)
 // Debug.xcconfig and TestFlight.xcconfig (or the Debug and Release-TestFlight build settings)
 TEYLA_REVIEW_ENABLED = YES
 
-// App Store configuration: define nothing. The key expands to an empty string and review mode is off.
+// Store archive: TEYLA_REVIEW_ENABLED = NO
 ```
 
-With the key absent, empty or anything but `YES`, `true` or `1`, `TeylaReview.isEnabled` is false and every entry point does nothing: `present()` returns, `ReviewMenuButton` and `ReviewSettingsView` draw nothing, `.reviewAnchor` and `.reviewScreen` record nothing, the shake shortcut stays off, and `pair(_:)` signs and copies nothing. The overlay also refuses to open when the build came from the App Store (`BuildChannel`), whatever the key says. The code is still linked in every configuration, but it has no active path in an App Store build. To strip it from the binary as well, resolve the package with the environment variable `TEYLA_REVIEW=0`, which removes the overlay code at compile time (the public API stays, as no-ops). A SwiftPM package trait would do the same from the app side, but traits need a newer tools version than the Xcode on the owner's Mac guarantees, so the runtime key is the supported switch.
+With the key absent, empty or anything else, `TeylaReview.isEnabled` is false and every entry point does nothing: `present()` returns, `ReviewMenuButton` and `ReviewSettingsView` draw nothing, `.reviewAnchor` and `.reviewScreen` record nothing, the shake shortcut stays off, and `pair(_:)` signs and copies nothing.
+
+**Why the key alone is not enough.** The same binary goes from TestFlight to the App Store, and App Review runs it in the sandbox exactly as TestFlight does. A build that carries review mode in TestFlight therefore carries it in review and, if it is promoted, in the store. So:
+
+1. **A store archive is a separate archive of the same commit.** Build it with `TEYLA_REVIEW_ENABLED=NO` for the app and `TEYLA_REVIEW=0` in the environment that resolves the package. `TEYLA_REVIEW=0` removes the overlay code at compile time (the public API stays, as no-ops). A SwiftPM package trait would do the same from the app side, but traits need a newer tools version than the Xcode on the owner's Mac guarantees, so the environment variable is the supported switch.
+2. **Check it before upload.** `teyla review store-check PATH` reads the finished artifact and proves it holds no entry point (next section). Upload only on exit 0.
+3. **A TestFlight build is never promoted to the store.** Because the store archive is a second archive, the build the testers used and the build the store ships are two different builds of one commit. This costs one more archive per release. It is the only way to know the store binary has no review code.
+4. **The install-channel check stays as a second lock.** The overlay also refuses to open when `BuildChannel` reads the install as an App Store build, whatever the key says. This lock is weaker than the archive, because it relies on what the platform reports about the install. It catches a mistake in step 1, it does not replace it.
 
 If the product has a voice mode, tell the package: `TeylaReview.configure { $0.hostAudioInUse = { voice.isRunning }; $0.willBegin = { voice.pause() }; $0.didEnd = { voice.resume() } }`. The package records the audio session before review mode opens and puts it back when it closes. Speech recognition inside the overlay is off by default (`$0.speech = true` turns it on and needs the two microphone and speech Info.plist strings). The first dictation path is the microphone key on the iOS keyboard.
+
+## Checking an artifact before upload
+
+`teyla review store-check PATH [--json]` proves that a production artifact holds no review entry point. It prints one line per check, never prints a key's value, and makes no network call. Exit 0: clean. Exit 1: it names what it found. Exit 2: the path cannot be read, or the type is unknown.
+
+| Artifact | Checks |
+|---|---|
+| `.xcarchive` (every `Products/Applications/*.app`), `.app`, `.ipa` | Info.plist `TeylaReviewEnabled` is absent or off by the package's own rule (`parseEnabled`: `YES`, `true`, `1` are on); `TeylaReviewChannelKey` is absent or empty; the main executable and the embedded frameworks do not contain the marker `TEYLA_REVIEW_IOS_ACTIVE` |
+| `.aab`, `.apk` | no `.dex` file contains the bytes `teyla/review/ReviewOverlay` |
+| a folder (a web `dist`) | no file contains `TEYLA_REVIEW_WEB_ACTIVE` |
+
+The Swift marker is a string in `Core/ReviewMarker.swift` that exists only under `#if TEYLA_REVIEW`. `TeylaReview.present()` stores it, so a release build keeps it through dead stripping whenever the product calls the entry point (a product does, from `ReviewMenuButton`). `tests/test_review_marker.py` builds a tiny executable that links the package, in release mode, and checks both directions: the marker is in the binary with the overlay compiled in, and absent with `TEYLA_REVIEW=0`. Measured on 2026-11-04, `swift build -c release` for macOS (dead stripping on): the probe holds the marker with the overlay compiled in and does not hold it with `TEYLA_REVIEW=0`, so stripping works. The overlay's UIKit code is not compiled on macOS, so the probe proves the marker and the `#if`, not the iOS overlay itself; an iOS archive is checked by `store-check` the same way. The marker is longer than 15 bytes on purpose, because Swift keeps shorter strings inline and they leave nothing to find. A minified Android build (R8) may rename the overlay class, which would hide it from the dex check: an Android client must keep that class name (a `-keep` rule), or the check proves nothing.
+
+## The Mac install channel
+
+On iOS the receipt file tells TestFlight (`sandboxReceipt`) from the App Store (`receipt`). On macOS the receipt file is named `receipt` in TestFlight too, as far as we know, so the iOS rule would read a Mac TestFlight build as an App Store build and the form would never open. On macOS the package asks StoreKit instead: `AppTransaction.shared`, whose `environment` is `.xcode`, `.sandbox` or `.production`. `TeylaReview.configure` starts the request once when review mode is on, and the answer is cached. Until it arrives, and when it fails (no network, an unverified transaction), the channel reads as `.appStore`, so the overlay stays closed. The decision is the pure function `BuildChannel.detectMac(isDebug:environment:)`: debug builds are `debug`, `.sandbox` is `testflight`, `.xcode` is `local`, everything else is `appStore`. The iOS path is unchanged.
+
+**Not verified:** this has not run on a real Mac TestFlight build. The unit tests cover the decision; whether TestFlight really reports `.sandbox` on macOS is the thing to check on the first Mac TestFlight build.
 
 ## What a capture is
 
@@ -57,7 +82,8 @@ Keys are snake_case. A key that is absent means the value is unknown; `null` is 
 | `app.name` | string, optional | Display name |
 | `app.version`, `app.build` | strings | `CFBundleShortVersionString`, `CFBundleVersion` |
 | `app.commit` | string, optional, 7 to 40 lowercase hex | From the Info.plist key `TeylaCommit`. Absent when the product does not set it |
-| `app.configuration` | `debug`, `testflight` or `local` | How the build reached the phone. An App Store build never captures |
+| `app.product` | string, optional, `^[a-z][a-z0-9-]{0,39}$` | The product's slug. The Mac files the capture under it. Absent: the last part of `app.bundle_id`. A web build has a hostname for a bundle id, so it sends this |
+| `app.configuration` | `debug`, `testflight`, `local`, `play_internal` or `test_host` | How the build reached the tester: a development build, TestFlight, an ad hoc install, a Play internal track, or a web page on a test host. A store build never captures |
 | `environment.os` | string | `iOS 19.1` |
 | `environment.model` | string | Hardware identifier, `iPhone16,2` |
 | `environment.locale` | string | `es_ES` |
@@ -65,6 +91,7 @@ Keys are snake_case. A key that is absent means the value is unknown; `null` is 
 | `environment.appearance` | `light` or `dark` | |
 | `environment.dynamic_type` | `xSmall`, `small`, `medium`, `large`, `xLarge`, `xxLarge`, `xxxLarge`, `accessibilityMedium`, `accessibilityLarge`, `accessibilityXLarge`, `accessibilityXXLarge`, `accessibilityXXXLarge` or `unspecified` | The content size category |
 | `environment.screen` | `{width, height, scale}`, numbers | The window in points and its scale. `width` and `height` are the coordinate space of every `x`, `y` and `bounds` below |
+| `reporter` | string, optional, 1 to 64 characters | The sender's name as the client claims it. Nothing verifies it: treat it as a label, never as proof of who sent the capture |
 | `screen` | string, optional, `[A-Za-z0-9_.:#/-]{1,200}` | The route the product registered with `.reviewScreen` or `TeylaReview.screen`. Falls back to the tapped element's screen, then to the screen most anchors share |
 | `tap` | object, optional | Absent when the owner did not tap |
 | `tap.x`, `tap.y` | numbers | The tap in window points |
@@ -204,6 +231,8 @@ iCloud Drive encrypts the folder in transit and at rest, but Apple holds the key
 | `packages/review-channel/` | The shared channel service: `server.py`, Dockerfile, compose and Caddy fragments, install steps |
 | `src/teyla/review_channel.py` | The Mac side: `pull --channel`, the key commands and the hourly agent |
 | `templates/review/capture.schema.json` | JSON Schema for `capture.json` |
+| `src/teyla/review_gate.py` | `teyla review store-check` |
+| `tests/test_review_gate.py`, `tests/test_review_marker.py` | The store check on hand-made artifacts, and the Swift marker in real release builds |
 | `tests/test_review_capture.py` | Validates the fixture capture, this page's example and the signing vector against the schema |
 | `tests/test_review_channel_server.py`, `tests/test_review_channel.py` | The service against a real local port, and the Mac side with `ssh` and `rsync` replaced by local programs |
 

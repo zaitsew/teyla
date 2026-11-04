@@ -1,4 +1,7 @@
 import Foundation
+#if os(macOS)
+import StoreKit
+#endif
 
 /// How this build reached the phone. The overlay never opens in an App Store build, even when
 /// the TEYLA_REVIEW flag leaked into one.
@@ -14,17 +17,84 @@ public enum BuildChannel: String, Codable, Sendable {
         return receiptExists ? .appStore : .local
     }
 
+    /// The environment StoreKit's `AppTransaction` reports. Only the Mac path reads it.
+    enum StoreEnvironment: Equatable, Sendable {
+        case xcode, sandbox, production
+    }
+
+    /// The Mac decision. On macOS the App Store receipt file is named `receipt` in TestFlight too, as
+    /// far as we know, so the file name cannot tell the two apart; `AppTransaction.environment` can.
+    /// Until StoreKit has answered, and when it fails, `environment` is nil and the channel reads as
+    /// the App Store: the overlay stays closed (fail closed).
+    static func detectMac(isDebug: Bool, environment: StoreEnvironment?) -> BuildChannel {
+        if isDebug { return .debug }
+        switch environment {
+        case .xcode: return .local
+        case .sandbox: return .testflight
+        case .production, nil: return .appStore
+        }
+    }
+
     static var current: BuildChannel {
         #if DEBUG
         let debug = true
         #else
         let debug = false
         #endif
+        #if os(macOS)
+        return detectMac(isDebug: debug, environment: MacStoreEnvironment.cached)
+        #else
         let url = Bundle.main.appStoreReceiptURL
         let exists = url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
         return detect(isDebug: debug, receiptName: url?.lastPathComponent, receiptExists: exists)
+        #endif
     }
 }
+
+#if os(macOS)
+/// The answer of `AppTransaction.shared`, asked once at `TeylaReview.configure` and cached. NOT yet
+/// verified on a real Mac TestFlight build (docs/REVIEW.md).
+enum MacStoreEnvironment {
+    private static let lock = NSLock()
+    private static var value: BuildChannel.StoreEnvironment?
+    private static var started = false
+
+    static var cached: BuildChannel.StoreEnvironment? {
+        lock.lock(); defer { lock.unlock() }
+        return value
+    }
+
+    static func set(_ environment: BuildChannel.StoreEnvironment?) {
+        lock.lock(); defer { lock.unlock() }
+        value = environment
+    }
+
+    /// Starts the asynchronous refresh the first time it is called. A failure leaves the cache empty.
+    static func refreshOnce() {
+        lock.lock()
+        let first = !started
+        started = true
+        lock.unlock()
+        guard first else { return }
+        Task.detached(priority: .utility) {
+            set(await fetch())
+        }
+    }
+
+    static func fetch() async -> BuildChannel.StoreEnvironment? {
+        guard let result = try? await AppTransaction.shared else { return nil }
+        guard case .verified(let transaction) = result else { return nil }
+        return map(transaction.environment)
+    }
+
+    static func map(_ environment: AppStore.Environment) -> BuildChannel.StoreEnvironment? {
+        if environment == .production { return .production }
+        if environment == .sandbox { return .sandbox }
+        if environment == .xcode { return .xcode }
+        return nil
+    }
+}
+#endif
 
 enum AppProbe {
     /// The product's identity. `TeylaCommit` is an optional Info.plist key a build phase fills with

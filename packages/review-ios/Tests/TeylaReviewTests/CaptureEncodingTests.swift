@@ -126,6 +126,21 @@ final class CaptureEncodingTests: XCTestCase {
         XCTAssertEqual(BuildChannel.detect(isDebug: false, receiptName: nil, receiptExists: false), .local)
     }
 
+    func testTheMacChannelFailsClosedUntilStoreKitAnswers() {
+        // No answer yet, or the call failed: read as the App Store, so the overlay stays closed.
+        XCTAssertEqual(BuildChannel.detectMac(isDebug: false, environment: nil), .appStore)
+        XCTAssertEqual(BuildChannel.detectMac(isDebug: false, environment: .production), .appStore)
+        XCTAssertEqual(BuildChannel.detectMac(isDebug: false, environment: .sandbox), .testflight)
+        XCTAssertEqual(BuildChannel.detectMac(isDebug: false, environment: .xcode), .local)
+        XCTAssertEqual(BuildChannel.detectMac(isDebug: true, environment: nil), .debug)
+        XCTAssertEqual(BuildChannel.detectMac(isDebug: true, environment: .production), .debug)
+    }
+
+    func testTheIOSDecisionIsUnchanged() {
+        // The iOS path still reads the receipt file name and ignores any StoreKit environment.
+        XCTAssertEqual(BuildChannel.detect(isDebug: false, receiptName: "sandboxReceipt", receiptExists: true), .testflight)
+    }
+
     func testCommitMustBeLowercaseHex() {
         XCTAssertTrue(AppProbe.isCommit("3f9c2ab"))
         XCTAssertFalse(AppProbe.isCommit("3F9C2AB"))
