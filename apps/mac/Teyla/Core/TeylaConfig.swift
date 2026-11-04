@@ -91,6 +91,15 @@ enum ConfigFile {
                 rest += " " + stripComment(next).trimmingCharacters(in: .whitespaces)
             }
             let key = table.isEmpty ? name : table + "." + name
+            // A multi-line string: its lines are the value, never settings of their own. They are read as text and,
+            // under `[env]` or a secret key, dropped like any other value.
+            if let delimiter = [String(repeating: "\"", count: 3), String(repeating: "'", count: 3)].first(where: { rest.hasPrefix($0) }) {
+                var body = String(rest.dropFirst(3))
+                while !body.contains(delimiter), let next = lines.popFirst() { body += "\n" + next }
+                let text = body.components(separatedBy: delimiter).first ?? ""
+                values[key] = (table == "env" || isSecret(key)) ? .hidden : .text(text.trimmingCharacters(in: .whitespacesAndNewlines))
+                continue
+            }
             guard let value = value(rest) else {
                 unread += 1
                 continue
@@ -116,7 +125,7 @@ enum ConfigFile {
             }
             return .list(items)
         }
-        if let number = Double(text.replacingOccurrences(of: "_", with: "")) { return .number(number) }
+        if let number = Double(text.replacingOccurrences(of: "_", with: "")), number.isFinite { return .number(number) }
         return nil
     }
 
@@ -349,7 +358,8 @@ enum ConfigLogic {
     }
 
     private static func number(_ n: Double) -> String {
-        n == n.rounded() ? "\(Int(n))" : String(format: "%g", n)
+        // A whole number in Int's range prints without a decimal point; anything larger prints as it is.
+        abs(n) < 1e15 && n == n.rounded() ? "\(Int(n))" : String(format: "%g", n)
     }
 
     /// Keys the file sets that no row on the page shows (the secrets stay hidden and are counted as set).

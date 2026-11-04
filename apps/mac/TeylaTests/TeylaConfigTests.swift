@@ -120,6 +120,27 @@ final class TeylaConfigTests: XCTestCase {
         XCTAssertEqual(ConfigLogic.environmentLine(ConfigFile.parse("")), "None set.")
     }
 
+    func testAMultiLineStringIsOneValueNotSettings() {
+        let quotes = String(repeating: "'", count: 3)
+        let text = "[env]\nSECRET = \(quotes)\n[update]\nrepo = \"private-value\"\n\(quotes)\n[guard]\nenabled = true\n"
+        let config = ConfigFile.parse(text)
+        XCTAssertEqual(config.values["env.SECRET"], .hidden)
+        XCTAssertNil(config.values["update.repo"], "a line inside a string is not a key")
+        XCTAssertEqual(config.values["guard.enabled"], .flag(true))
+        let doubles = String(repeating: "\"", count: 3)
+        let other = ConfigFile.parse("[intent]\nnote = \(doubles)one\ntwo\(doubles)\nenabled = false\n")
+        XCTAssertEqual(other.values["intent.note"], .text("one\ntwo"))
+        XCTAssertEqual(other.values["intent.enabled"], .flag(false))
+    }
+
+    func testAHugeOrInfiniteNumberDoesNotCrashThePage() {
+        for text in ["1e30", "-1e30", "inf", "nan", "1e308", "9007199254740993"] {
+            let config = ConfigFile.parse("[guard]\nmax_builds = \(text)\nmax_sims = \(text)\n[spend]\ndaily_budget_usd = \(text)\n[storage]\nidle_days = \(text)\n")
+            XCTAssertFalse(ConfigLogic.groups(config).isEmpty, text)
+        }
+        XCTAssertEqual(ConfigFile.parse("a = inf").unread, 1, "a number that is not finite is not read")
+    }
+
     func testTheSettingsPageIsReachableAndKnown() {
         XCTAssertFalse(AppRoute.settings.isConsole)
         XCTAssertTrue(CommandBar.entries(products: [], report: nil, capabilities: .full).contains { $0.id == "go:settings" })
