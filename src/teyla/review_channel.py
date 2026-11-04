@@ -237,6 +237,8 @@ def pull_remote(conn, remote: Remote, now: float | None = None) -> dict:
 
 def _print(rep: dict) -> None:
     line = (f"channel: {rep['added']} new, {rep['known']} already known, {rep['deleted']} deleted from the server")
+    if rep.get("pruned"):
+        line += f", {rep['pruned']} past retention removed here"
     if rep.get("waiting"):
         line += f", {rep['waiting']} incomplete"
     if rep["skipped"]:
@@ -247,6 +249,8 @@ def _print(rep: dict) -> None:
 
 
 def cmd_pull(conn, args) -> int:
+    # Before anything that can stop the pass: no config, safe mode and a dead server all leave the Mac's copy to expire.
+    pruned = review.prune_channel(conn)
     try:
         cfg = load_config()
     except ChannelError as e:
@@ -255,6 +259,9 @@ def cmd_pull(conn, args) -> int:
     if not net.gate("the review channel pull (ssh and rsync)"):
         return 1
     rep = pull_remote(conn, Remote(cfg["ssh"], cfg["root"]))
+    rep["pruned"] = pruned["deleted"]
+    if pruned["kept"]:
+        rep["skipped"].append(f"{len(pruned['kept'])} capture(s) past retention could not be removed; the next pass retries")
     if args.json:
         print(json.dumps(rep, ensure_ascii=False))
     else:

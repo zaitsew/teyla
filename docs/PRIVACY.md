@@ -119,6 +119,7 @@ fetched by Teyla.
 | `teyla cloud` (`src/teyla/cloud.py`) | `claude.ai` | A string matched against local `git log` output (the session trailer). No request. |
 | `teyla cloud prep` (`src/teyla/cloud_prep.py`) | `astral.sh` | The `curl` line in the setup script it writes. Teyla does not run it. |
 | `teyla growth packet` (`src/teyla/growth.py`) | `x.com`, `www.linkedin.com`, `www.threads.com`, `www.youtube.com`, `www.instagram.com`, `www.tiktok.com` | The platform's own upload page, written into a packet's `upload.url` file for you to open by hand. Teyla never requests it. |
+| `teyla startup yc` (`src/teyla/startup_yc.py`) | `www.ycombinator.com` | The application link the sheet prints when all 15 boxes are checked. Teyla never requests it, and never submits an application. |
 
 ## Keeping this list true
 

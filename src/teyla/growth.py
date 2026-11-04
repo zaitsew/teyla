@@ -426,26 +426,62 @@ def refs_seen(store: Store) -> set[str]:
 
 # --- sale attempts -------------------------------------------------------------------------------------------
 
-def attempt_rows(store: Store, reg: dict | None = None) -> dict[str, dict]:
-    """Per registered product: posts, marketing (ads and outreach), ICP meetings, last day. From the ledger only."""
-    reg = registry.load() if reg is None else reg
-    rows = {pid: dict(posts=0, marketing=0, icp_meetings=0, last="", stage=p.get("stage") or "")
-            for pid, p in reg["product"].items()}
-    for r in store.ledger():
-        pid = r.get("product")
-        if pid not in rows:
+def attempt_kind(r: dict) -> str | None:
+    """What a ledger row is as a sale attempt: "post", "marketing" (an ad or outreach), "icp" (an ICP meeting), else None."""
+    kind = "post" if r.get("ev") == "published" else (r.get("kind") if r.get("ev") == "attempt" else None)
+    if kind == "post":
+        return "post"
+    if kind in ("ad", "outreach"):
+        return "marketing"
+    return "icp" if kind == "icp-meeting" else None
+
+
+def is_claimed(r: dict) -> bool:
+    """An attempt logged from an agent session. It is a claim: it counts once the owner logs it himself
+    (docs/STARTUP.md). A `published` row is a URL the owner recorded, so it always counts."""
+    return r.get("ev") == "attempt" and r.get("by") == "agent"
+
+
+def tally(rows: list[dict], pids, today: str | None = None) -> dict[str, dict]:
+    """Per product id: posts, marketing (ads and outreach), icp_meetings, last day and `claimed`, from ledger rows.
+    A claimed row counts for nothing but `claimed`. With `today` (YYYY-MM-DD) it adds `posts_7d` and `icp_meetings_30d`."""
+    out = {pid: dict(posts=0, marketing=0, icp_meetings=0, last="", claimed=0) for pid in pids}
+    if today:
+        for r in out.values():
+            r.update(posts_7d=0, icp_meetings_30d=0)
+        t = _dt.date.fromisoformat(today)
+        since7, since30 = (t - _dt.timedelta(days=6)).isoformat(), (t - _dt.timedelta(days=29)).isoformat()
+    for r in rows:
+        row = out.get(r.get("product"))
+        kind = attempt_kind(r)
+        if row is None or kind is None:
             continue
-        kind = "post" if r.get("ev") == "published" else (r.get("kind") if r.get("ev") == "attempt" else None)
+        if is_claimed(r):
+            row["claimed"] += 1
+            continue
+        day = str(r.get("day") or "")
         if kind == "post":
-            rows[pid]["posts"] += 1
-        elif kind in ("ad", "outreach"):
-            rows[pid]["marketing"] += 1
-        elif kind == "icp-meeting":
-            rows[pid]["icp_meetings"] += 1
+            row["posts"] += 1
+            if today and day >= since7:
+                row["posts_7d"] += 1
+        elif kind == "marketing":
+            row["marketing"] += 1
         else:
-            continue
-        rows[pid]["last"] = max(rows[pid]["last"], str(r.get("day") or ""))
-    for r in rows.values():
+            row["icp_meetings"] += 1
+            if today and day >= since30:
+                row["icp_meetings_30d"] += 1
+        row["last"] = max(row["last"], day)
+    return out
+
+
+def attempt_rows(store: Store, reg: dict | None = None) -> dict[str, dict]:
+    """Per registered product: posts, marketing (ads and outreach), ICP meetings, last day, and the attempts an agent
+    only `claimed`. From the ledger only. A row logged before `by` existed counts as before."""
+    reg = registry.load() if reg is None else reg
+    rows = tally(store.ledger(), list(reg["product"]))
+    for pid, r in rows.items():
+        p = reg["product"][pid]
+        r.update(stage=p.get("stage") or "", type=p.get("type") or "")
         r["tried"] = bool(r["posts"] or r["marketing"] or r["icp_meetings"])
     return rows
 
@@ -453,7 +489,9 @@ def attempt_rows(store: Store, reg: dict | None = None) -> dict[str, dict]:
 def products_not_tried(store: Store) -> list[str]:
     """The ids of the registered products with no sale attempt at all: the ones that get the next marketing slot."""
     # Strict: an unreadable registry raises, so the compact part says "unknown" (null), never "none".
-    return sorted(pid for pid, r in attempt_rows(store, registry.load(strict=True)).items() if not r["tried"])
+    # A personal product is not for sale: it is never "not tried yet".
+    return sorted(pid for pid, r in attempt_rows(store, registry.load(strict=True)).items()
+                  if not r["tried"] and r["type"] != "personal")
 
 
 def attempt_total(r: dict) -> int:
@@ -464,10 +502,11 @@ def render_attempts(rows: dict[str, dict]) -> str:
     L = ["sale attempts: posts, marketing, ICP meetings, last day (from ~/.teyla/growth/ledger.jsonl)"]
     for pid, r in sorted(rows.items(), key=lambda kv: (attempt_total(kv[1]), kv[0])):
         tag = f" ({r['stage']})" if r["stage"] == "parked" else ""
+        claim = f"  ({r['claimed']} claimed by an agent, not counted)" if r.get("claimed") else ""
         if not r["tried"]:
-            L.append(f"  {pid:<22} not tried yet{tag}")
+            L.append(f"  {pid:<22} " + ("personal, not for sale" if r.get("type") == "personal" else "not tried yet") + tag + claim)
         else:
-            L.append(f"  {pid:<22} posts {r['posts']}  marketing {r['marketing']}  ICP meetings {r['icp_meetings']}  last {r['last']}{tag}")
+            L.append(f"  {pid:<22} posts {r['posts']}  marketing {r['marketing']}  ICP meetings {r['icp_meetings']}  last {r['last']}{tag}{claim}")
     return "\n".join(L) + "\n"
 
 
@@ -1016,6 +1055,8 @@ def queue_days(store: Store, cfg: dict) -> float | None:
 def product_term(pid: str, attempts: dict[str, dict]) -> float:
     if not pid or pid not in attempts:
         return 0.3
+    if attempts[pid].get("type") == "personal":          # not for sale: no "try to sell it" bonus
+        return 0.0
     return 1.0 / (1 + attempt_total(attempts[pid]))
 
 
@@ -2049,7 +2090,7 @@ def cmd_attempts(args) -> int:
     store, _ = _store_cfg()
     rows = attempt_rows(store)
     if args.json:
-        print(json.dumps({pid: {k: v for k, v in r.items() if k != "stage"} for pid, r in rows.items()}, indent=2))
+        print(json.dumps({pid: {k: v for k, v in r.items() if k not in ("stage", "type")} for pid, r in rows.items()}, indent=2))
     else:
         sys.stdout.write(render_attempts(rows))
     return 0
@@ -2062,11 +2103,14 @@ def cmd_log(args) -> int:
         import difflib
         near = difflib.get_close_matches(args.product, list(reg["product"]), n=1)
         return _fail(GrowthError(f"{args.product!r} is not in the product registry" + (f"; did you mean {near[0]}?" if near else "")))
+    from . import startup
     now = time.time()
-    store.log("attempt", now, product=args.product, kind=args.kind, note=(args.note or "")[:400])
-    if args.day:
-        pass
-    print(f"logged {args.kind} for {args.product}")
+    extra = {"by": "agent"} if startup.in_agent_session() else {}
+    store.log("attempt", now, product=args.product, kind=args.kind, note=(args.note or "")[:400], **extra)
+    if extra:
+        print(f"logged {args.kind} for {args.product} as claimed by an agent. It counts once you log it from your own shell.")
+    else:
+        print(f"logged {args.kind} for {args.product}")
     return 0
 
 

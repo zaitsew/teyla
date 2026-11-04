@@ -9,6 +9,7 @@
   install), `.reviewPrivate()` to paint a view black in every capture, and `requiresHealthConsent` for a checkbox before Send.
   By default nothing leaves the device unless the plist keys or a `deliver` are set. `teyla review store-check` now also fails
   a store build whose Info.plist holds `TeylaReviewChannelURL`. See docs/REVIEW.md, "The shared channel" and "Privacy".
+- **Channel captures expire on the Mac.** Each `teyla review pull --channel` removes a capture 30 days after it was closed, or 90 days after import if it was never opened. The inbox gains `closed_at`.
 - **A shared review channel.** `packages/review-channel/` is a write-only service (Python standard library, one container) that
   takes feedback captures from every product and platform; `teyla review pull --channel` moves them over SSH into the inbox
   within the hour and deletes the server copy. `teyla review channel key add|revoke|path` manages one key per product and

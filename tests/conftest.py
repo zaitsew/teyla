@@ -16,7 +16,7 @@ import subprocess
 
 import pytest
 
-from teyla import config, load, net, providers, routine_install, update
+from teyla import config, load, net, providers, routine_install, startup, update
 from teyla.control import triggers
 from teyla.adapters import claude_code, codex, cursor, grok, hermes
 
@@ -27,6 +27,10 @@ def _teyla_home_in_tmp(tmp_path_factory, monkeypatch):
     # corrections.grok_headless reads Grok's session store; never this Mac's ~/.grok.
     monkeypatch.setenv("GROK_HOME", str(tmp_path_factory.mktemp("grok-home")))
     monkeypatch.delenv("GROK_SESSION_ID", raising=False)
+    # The suite runs from inside agent sessions; `startup.in_agent_session` must read as a person's shell unless a test
+    # sets one of these itself (a growth log from an agent is only "claimed").
+    for var in startup.AGENT_ENV:
+        monkeypatch.delenv(var, raising=False)
     # The capture hook skips headless runs by these (corrections.headless); a suite started
     # from `claude -p` or `hermes -z` would otherwise see every hook test record nothing.
     for var in ("CLAUDE_CODE_ENTRYPOINT", "HERMES_YOLO_MODE", "HERMES_ACCEPT_HOOKS", "HERMES_INTERACTIVE",
