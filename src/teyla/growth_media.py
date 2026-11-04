@@ -223,6 +223,22 @@ def _episode_for(store: g.Store, mtime: float) -> dict | None:
     return best
 
 
+def _retranscribe(store: g.Store, ref: str, f: pathlib.Path, cfg: dict, now: float, notes: list[str]) -> bool:
+    """A file ingested before whisper was installed has an empty transcript: fill it in now."""
+    for ep in store.items().values():
+        for entry in ep.get("footage") or []:
+            if entry.get("ref") == ref and not entry.get("transcript", "").strip() and whisper_bin() and whisper_model(cfg):
+                text, note = transcribe(str(f), episode_dir(store, ep), cfg)
+                if note and note not in notes:
+                    notes.append(note)
+                if text:
+                    entry["transcript"] = text[:200000]
+                    store.save(ep, now)
+                    store.log("ingest", now, id=ep["id"], ref=ref, retranscribed=True)
+                    return True
+    return False
+
+
 def ingest(store: g.Store, cfg: dict, now: float, folder: pathlib.Path | None) -> dict:
     """New footage joins the ride whose window holds it, else starts an episode of its own."""
     if folder is None:
@@ -236,6 +252,8 @@ def ingest(store: g.Store, cfg: dict, now: float, folder: pathlib.Path | None) -
         st = f.stat()
         ref = f"footage:{f.name}:{st.st_size}:{int(st.st_mtime)}"
         if ref in seen:
+            if _retranscribe(store, ref, f, cfg, now, notes):
+                files += 1
             continue
         seen.add(ref)
         ep = _episode_for(store, st.st_mtime)
@@ -399,9 +417,16 @@ def _ts(x: float) -> str:
 
 
 def next_cut_number(d: pathlib.Path) -> int:
-    """Each cut gets its own files: a recut never replaces a video an approved clip points to."""
+    """Each cut gets its own files: a recut never replaces a video an approved clip points to. The number is
+    reserved with an exclusive create, so two cuts at once never take the same one."""
     used = [int(m.group(1)) for f in d.iterdir() if (m := re.match(r"(?:cut|reel)-(\d+)", f.name))] if d.is_dir() else []
-    return max(used, default=0) + 1
+    n = max(used, default=0) + 1
+    while True:
+        try:
+            os.close(os.open(d / f"cut-{n}.lock", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+            return n
+        except FileExistsError:
+            n += 1
 
 
 def render_footage(src: str, segs: list[dict], d: pathlib.Path, n: int = 1) -> tuple[pathlib.Path | None, str]:
@@ -535,8 +560,8 @@ def cut(store: g.Store, cfg: dict, ref: str, now: float, *, session: str = "", n
     cost = round(float((usage or {}).get("cost_usd") or 0), 4)
     row = dict(id=ep["id"], video=str(video), items=[], segments=len(segs), cost=cost)
     # What the clip may claim: the question, what was said, and what the screen showed (all guard-checked above).
-    spoken = [t for _a, _b, t in parse_srt(transcript)] or ([transcript.strip()] if transcript.strip() else [])
-    facts = list(ep["facts"]) + [g.clip_text(t, 300) for t in spoken][:60] + [g.clip_text(t, 300) for t in outline]
+    sent = transcript_for_model(transcript) if footage else ""     # exactly what the model saw
+    facts = list(ep["facts"]) + [ln.split("] ", 1)[-1] for ln in sent.splitlines()] + [g.clip_text(t, 300) for t in outline]
     for ch in targets:
         it = slot_item(store, ep, ch, day, now, facts)
         try:

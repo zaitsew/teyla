@@ -211,6 +211,8 @@ def test_cut_with_footage_renders_and_lands_every_clip_in_review(media, monkeypa
     assert not any(i["status"] in ("approved", "ready", "published") for i in s2.items().values())
     assert pathlib.Path(row["video"]).stat().st_mode & 0o077 == 0 and (s2.root / "episodes" / ep["id"] / "cut-1.srt").is_file()
     assert row["video"].endswith("cut-1.mp4") and not list((s2.root / "episodes" / ep["id"]).glob("*.part.mp4"))
+    d = s2.root / "episodes" / ep["id"]
+    assert gm.next_cut_number(d) == 2 and gm.next_cut_number(d) == 3, "a number is reserved the moment it is handed out"
     assert not list((s2.root / "episodes" / ep["id"]).glob("cap*.png"))
 
 
@@ -516,3 +518,26 @@ def test_a_clip_may_quote_a_number_that_was_said_or_shown(media, monkeypatch):
     monkeypatch.setattr(gm, "caption_png", lambda text, path: path.write_bytes(b"p") or True)
     row = gm.cut(store, cfg, ep["id"], NOW)
     assert row["items"][0]["status"] == "review"
+
+
+def test_reingest_fills_the_transcript_after_whisper_is_installed(media, monkeypatch, tmp_path):
+    store, cfg = make(channels=("youtube-en",))
+    monkeypatch.setattr(gm, "probe_seconds", lambda p: 12.0)
+    monkeypatch.setattr(gm, "whisper_bin", lambda: None)
+    d = footage_dir(tmp_path, [("a.mov", NOW)])
+    first = gm.ingest(store, cfg, NOW, d)
+    ep_id = first["episodes"][0]
+    assert growth.Store().get(ep_id)["footage"][0]["transcript"] == ""
+    model = tmp_path / "ggml.bin"
+    model.write_bytes(b"m")
+    cfg["whisper_model"] = str(model)
+
+    def run(argv, timeout):
+        if argv[0].endswith("whisper-cli"):
+            pathlib.Path(argv[argv.index("-of") + 1] + ".srt").write_text("1\n00:00:01,000 --> 00:00:03,000\nHello from the ride.\n")
+        return 0, ""
+    monkeypatch.setattr(gm, "run_tool", run)
+    monkeypatch.setattr(gm, "whisper_bin", lambda: "/opt/bin/whisper-cli")
+    again = gm.ingest(growth.Store(), cfg, NOW + 5, d)
+    assert again["files"] == 1 and "Hello from the ride." in growth.Store().get(ep_id)["footage"][0]["transcript"]
+    assert gm.ingest(growth.Store(), cfg, NOW + 9, d)["files"] == 0
