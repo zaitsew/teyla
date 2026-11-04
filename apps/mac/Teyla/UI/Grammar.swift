@@ -193,7 +193,7 @@ struct StatStrip<Content: View>: View {
 
     var body: some View {
         Group(subviews: content) { tiles in
-            let fit = Int((width + Space.m) / (Space.statTileMin + Space.m))
+            let fit = Int((width + Space.m) / Space.statTileStep)
             let perRow = max(1, min(tiles.count, fit))
             VStack(alignment: .leading, spacing: Space.m) {
                 ForEach(Array(stride(from: 0, to: tiles.count, by: perRow)), id: \.self) { start in

@@ -45,6 +45,8 @@ enum Space {
     static let pageMax: CGFloat = 640
     /// A `StatTile` is at least this wide, so two fit a phone.
     static let statTileMin: CGFloat = 150
+    /// One tile and the gap after it: how `StatStrip` counts the columns that fit.
+    static let statTileStep: CGFloat = statTileMin + m
 }
 
 enum Radius {

@@ -36,6 +36,8 @@ enum Space {
     static let readingPage: CGFloat = 776
     /// A `StatTile` is at least this wide; the strip fits as many as the page has room for.
     static let statTileMin: CGFloat = 150
+    /// One tile and the gap after it: how `StatStrip` counts the columns that fit.
+    static let statTileStep: CGFloat = statTileMin + m
     /// The tap area of the star on a product.
     static let starTarget: CGFloat = 24
     /// The least height of anything a person presses (a switch segment, a row).
