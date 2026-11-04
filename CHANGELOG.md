@@ -9,6 +9,11 @@
   in the material, every number is in the excerpt and no leak, employer, job search, person or store dispute is named.
   The harvest line counts what the checks dropped. See docs/GROWTH.md, "Stories".
 
+- **Mac: Growth is a full page.** Slots filled today and the drafts waiting for you come first. You read a draft in
+  full, with its editor score and its voice and leak checks, then approve, reject with a reason, or edit it. Approving
+  only marks a draft; nothing is posted or sent from the app. Channels, pipeline, episodes, trend ideas and outreach
+  counts follow. Two layouts (review queue first, channel board first) sit behind a switch until you choose.
+
 - **Mac: Playbook is a full page.** Contradictions between your rules and your corrections, the guidelines (each opens
   its file), the model ladder with new models and the arena shortlist (every row "candidate, not a decision"), counts of
   what is kept, and what the sessions say about you with the chores to hand off. A part that fails shows its reason and

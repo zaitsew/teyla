@@ -142,7 +142,7 @@ enum Preview {
         case "playbook":
             page = flat(PlaybookView(), model: model, width: width)
         case "growth":
-            page = flat(ConsoleStubView(route: consoleRoute(which) ?? .money), model: model, width: width)
+            page = flat(GrowthView(), model: model, width: width)
         case "settings":
             page = flat(SettingsView(), model: model, width: width)
         case let product where product.hasPrefix("product:"):

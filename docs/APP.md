@@ -644,6 +644,26 @@ the sessions say about you: the quote of the day (others behind "Show more"), th
 and the chores to hand off, the open ones first. Backticks the source writes around commands are dropped. The page reads
 this Mac's own files only and sends nothing. One considered layout, no variants.
 
+## Growth page (from 2026-11-04)
+
+The page reads `console.growth` plus the draft files. `teyla console` carries counts only, and `teyla growth review` has
+no `--json`, so the drafts waiting for you come from `~/.teyla/growth/items/*.json` (or under `TEYLA_HOME`), read as
+they are: status `review` or `checked`, not an episode, not a master idea, not held by the editor, best editor score
+first. The app never changes an item file. Items that cannot be read are counted in a note, not hidden.
+
+Top to bottom: four figures (slots filled today, drafts waiting for you, days of approved drafts ahead, days since
+anything went public); the channels, one row each, with today's posts against the target; **Waiting for you**, the
+main block; the pipeline from ideas to posted this week; what is in the works (episodes and the next ride); trend
+ideas (each opens its page and only starts a draft); and outreach counts.
+
+A draft opens to its full text, hook, first comment, facts, sources, editor score and critique, and the voice and leak
+checks. Three actions run `teyla growth approve`, `reject --reason` and `edit --body`. Approve is off while a check
+failed or never ran, with the reason beside it. **Approving only marks a draft: nothing in the app posts, sends or
+publishes.** The allow-list in `ToolCommands` refuses every other `growth` command. Outreach is counts only.
+
+Two layouts sit behind the Layout switch while you choose: the review queue first, or the channel board first. The
+loser and the switch are removed once you pick. Sale attempts per product belong to the Product page.
+
 ## Tools and the command bar (from 2026-11-02)
 
 **Operations** (from 2026-11-04; it was the Tools page). The page reads `console.operations` and, top to bottom, shows:
