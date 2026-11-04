@@ -94,8 +94,17 @@ Two kinds of number, kept apart. Cash comes from what the owner lists; list pric
 ### products (in `teyla product show`)
 - `sale_attempts {posts, marketing, icp_meetings, last}` per product, as `teyla growth sale-attempts` prints it (text only today; the
   Mac app counts `~/.teyla/growth/ledger.jsonl` itself). Zero attempts means "not tried yet". Rows an agent logged (`by: "agent"`)
-  are `claimed` and the CLI counts them for nothing; the Mac app's reader does not skip them yet. A `personal` product is never "not tried yet".
+  are `claimed` and count for nothing, in the CLI and in the Mac app's reader alike; the app says how many it skipped. A `personal` product is never "not tried yet".
   That product gets the next marketing slot. Teyla never proposes closing a product nobody tried to sell.
+
+### startup (in `teyla portfolio`, from `docs/STARTUP.md`)
+- Each product may carry a `startup` block: type, earned stage, ladder rungs, five metric groups and the YC count. The Mac
+  app decodes it as is and computes nothing. An absent or null block reads "The startup facts are not available for this product.". It adds no sidebar destination:
+  the block sits on the product page, and the stage sits beside each product on Products, which leads with the focus product
+  (`focus` of `teyla startup --json`; the full app reads it, the store build does not).
+- The YC sheet opens from the product page of a venture or unset-type product. The full app reads
+  `teyla startup yc <id> --json` and writes `teyla startup yc -- answer <id> <box> <text>`. Answers are customer text: they stay
+  in the sheet and in `~/.teyla/startup/`, never in `state` and never on the relay. The store build shows the count only.
 
 ## Limits every section keeps
 

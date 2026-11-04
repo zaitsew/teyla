@@ -217,6 +217,102 @@
               "365d": null
             }
           }
+        },
+        "startup": {
+          "type": "venture",
+          "type_set": false,
+          "stage": "built",
+          "stage_title": "Built",
+          "parked": false,
+          "as_of": "2026-10-25T08:00:00Z",
+          "stale": false,
+          "next": {
+            "rung": "tried",
+            "text": "Nobody has tried to sell it yet.",
+            "command": "teyla growth"
+          },
+          "rungs": [
+            {
+              "id": "built",
+              "title": "Built",
+              "status": "met",
+              "detail": "Installable"
+            },
+            {
+              "id": "tried",
+              "title": "Tried",
+              "status": "missing",
+              "detail": "No sale attempt yet"
+            },
+            {
+              "id": "used",
+              "title": "Used",
+              "status": "met",
+              "detail": "24 outside accounts (assumed)"
+            },
+            {
+              "id": "retained",
+              "title": "Retained",
+              "status": "missing",
+              "detail": "2 outside people returned at day 7, needs 3"
+            },
+            {
+              "id": "paid",
+              "title": "Paid",
+              "status": "not_applicable",
+              "detail": "Monetization is off"
+            },
+            {
+              "id": "repeating",
+              "title": "Repeating",
+              "status": "not_applicable",
+              "detail": "Monetization is off"
+            },
+            {
+              "id": "growing",
+              "title": "Growing",
+              "status": "unknown",
+              "detail": "Needs 4 weeks of snapshots, has 0"
+            }
+          ],
+          "metrics": {
+            "marketing": {
+              "posts": 0,
+              "posts_7d": 0,
+              "ads_outreach": 0
+            },
+            "sales": {
+              "icp_meetings": 0,
+              "icp_meetings_30d": 0,
+              "last": "",
+              "claimed": 1
+            },
+            "usage": {
+              "external": 24,
+              "external_assumed": true,
+              "wau": 7,
+              "retained_7d": 2,
+              "new_7d": 2
+            },
+            "money": {
+              "enabled": false,
+              "paying": null,
+              "mrr_usd": null,
+              "revenue_30d_usd": null,
+              "ai_cost_30d_usd": 12.5
+            },
+            "growth": {
+              "weekly_pct": null,
+              "weeks": 0,
+              "on": "wau"
+            }
+          },
+          "yc": {
+            "eligible": true,
+            "checked": 3,
+            "total": 15,
+            "next_box": "customer"
+          }
         }
       },
       {
@@ -309,7 +405,8 @@
               "365d": null
             }
           }
-        }
+        },
+        "startup": null
       },
       {
         "id": "sample-old",

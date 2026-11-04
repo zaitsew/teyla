@@ -5,7 +5,7 @@ import SwiftUI
 /// Hooks for taking screenshots of the app with sample data. They work only with
 /// `TEYLA_STATE_FIXTURE` set, so a real run never reads them.
 ///
-///     TEYLA_PREVIEW_OPEN   new-task | quick-note | settings | pair | focus:<ask id> | diagnosis | home | decisions | portfolio | growth | money | operations | playbook | config | command-bar[:<query>] | product:<id>
+///     TEYLA_PREVIEW_OPEN   new-task | quick-note | settings | pair | focus:<ask id> | diagnosis | home | decisions | portfolio | growth | money | operations | playbook | config | command-bar[:<query>] | product:<id> | yc:<id> (the product page and its YC sheet)
 ///     TEYLA_START_FIXTURE / TEYLA_PRODUCT_FIXTURE / TEYLA_ATTENTION_FIXTURE / TEYLA_CONSOLE_FIXTURE  the diagnosis, product-page,
 ///                         Operations-actions and admin-section samples (default: start.v1.json, product.v1.json,
 ///                         attention.v1.json and console.v1.json beside the state sample)
@@ -18,7 +18,7 @@ import SwiftUI
 ///     TEYLA_PREVIEW_HOME_HEADER  pulse | sentence: the header variant of Home
 ///     TEYLA_PREVIEW_SNAPSHOT  <path.png>: draw the whole Home page in one image (width TEYLA_PREVIEW_WIDTH, default
 ///                         1100 pt, in the appearance above), save it and quit. For screenshots without a screen to click
-///     TEYLA_PREVIEW_SNAPSHOT_VIEW  home (default) | decisions | portfolio | product:<id> | growth | money | operations | playbook | config | settings | window (the window
+///     TEYLA_PREVIEW_SNAPSHOT_VIEW  home (default) | decisions | portfolio | product:<id> | yc:<id> | growth | money | operations | playbook | config | settings | window (the window
 ///                         as it stands, with its toolbar; the size comes from TEYLA_PREVIEW_SIZE) | connect-phone (the "Connect iPhone"
 ///                         sheet) | setup (the store build's first screen; Home elsewhere)
 @MainActor
@@ -64,6 +64,11 @@ enum Preview {
                     // The made-up key takes a moment to come back; the sheet is drawn once the code is there.
                     model.relay.connectPhone(turnOn: model.phoneNeedsRelayOn)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { snapshotView(which, model: model, path: path) }
+                } else if which.hasPrefix("yc:") {
+                    // The YC sheet alone, once it has read its fixture.
+                    let id = String(which.dropFirst("yc:".count))
+                    model.startup.open(id: id, title: model.snapshot?.portfolio?.product(id)?.title ?? id)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { snapshotView(which, model: model, path: path) }
                 } else if let route = consoleRoute(which) ?? (which == "window" ? consoleRoute(env["TEYLA_PREVIEW_OPEN"] ?? "") : nil)
                             ?? (which.hasPrefix("product:") ? .product(String(which.dropFirst("product:".count))) : nil) {
                     // These pages read their own sample file first.
@@ -106,6 +111,15 @@ enum Preview {
                 if bar.hasPrefix("command-bar:") { model.commandBar.query = String(bar.dropFirst("command-bar:".count)) }
             case let product where product.hasPrefix("product:"):
                 model.openProduct(String(product.dropFirst("product:".count)))
+            case let yc where yc.hasPrefix("yc:"):
+                // The product page, then its YC sheet on top (the full app only: the store build has no sheet).
+                let id = String(yc.dropFirst("yc:".count))
+                model.openProduct(id)
+                if model.capabilities.startupSheet {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        model.startup.open(id: id, title: model.snapshot?.portfolio?.product(id)?.title ?? id)
+                    }
+                }
             case let focus where focus.hasPrefix("focus:"):
                 model.focus(askID: String(focus.dropFirst("focus:".count)))
             default:
@@ -147,6 +161,8 @@ enum Preview {
             page = flat(SettingsPageView(), model: model, width: width)
         case "settings":
             page = flat(SettingsView(), model: model, width: width)
+        case let yc where yc.hasPrefix("yc:"):
+            page = AnyView(YCSheetView().environment(model))
         case let product where product.hasPrefix("product:"):
             page = flat(ProductPageView(id: String(product.dropFirst("product:".count))), model: model, width: width)
         case "setup", "setup-hand", "setup-paired":

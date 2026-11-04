@@ -34,6 +34,7 @@ struct ProductPageView: View {
     private func content(_ data: ProductPageData, page: ProductPageModel, portfolio: PortfolioProduct?, wide: Bool) -> some View {
         let sections = VStack(alignment: .leading, spacing: Space.xl) {
             ProductAsksSection(asks: data.asks)
+            ProductStartupSection(productID: id, title: portfolio?.title ?? data.product.name, portfolio: portfolio)
             if model.capabilities.console {
                 ProductSellingSection(productID: id, parked: data.product.stage == "parked", portfolio: portfolio)
             }

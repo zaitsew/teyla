@@ -1,0 +1,197 @@
+{
+ "id": "sample-app",
+ "eligible": true,
+ "checked": 3,
+ "total": 15,
+ "verdict": "keep going",
+ "apply_url": null,
+ "next_box": "customer",
+ "facts": {
+  "read": "2026-11-04",
+  "age_days": 0,
+  "stale": false,
+  "lines": [
+   "Winter 2027 runs January to March in San Francisco. The on-time deadline was November 2. Late applications are open.",
+   "YC says to apply as soon as you are ready. It says about 40% of the companies it funds in each batch are just an idea, and most have no revenue.",
+   "YC regularly accepts solo founders, and says one-person startups are tough.",
+   "The deal is $500,000: $125,000 for 7%, plus $375,000 on an uncapped MFN SAFE."
+  ]
+ },
+ "boxes": [
+  {
+   "id": "building",
+   "question": "What are you building?",
+   "checked": true,
+   "need": "",
+   "command": "",
+   "origin": "founder list",
+   "auto": false,
+   "answer": {
+    "text": "A planner that turns a trip idea into a booked itinerary.",
+    "status": "confirmed",
+    "by": "owner",
+    "at": "2026-11-04T09:00:00Z"
+   },
+   "evidence": null
+  },
+  {
+   "id": "customer",
+   "question": "Pick one customer",
+   "checked": false,
+   "need": "Confirm the draft; Used must be met",
+   "command": "teyla startup yc confirm sample-app customer",
+   "origin": "founder list",
+   "auto": false,
+   "answer": {
+    "text": "A freelance travel writer who plans four trips a year.",
+    "status": "draft",
+    "by": "agent",
+    "at": "2026-11-04T09:05:00Z"
+   },
+   "evidence": null
+  },
+  {
+   "id": "does",
+   "question": "What does it do for them?",
+   "checked": false,
+   "need": "An answer",
+   "command": "teyla startup yc answer sample-app does \"<the job it does for that customer>\"",
+   "origin": "founder list",
+   "auto": false,
+   "answer": null,
+   "evidence": null
+  },
+  {
+   "id": "using",
+   "question": "Are they using it?",
+   "checked": true,
+   "need": "",
+   "command": "",
+   "origin": "founder list",
+   "auto": true,
+   "answer": null,
+   "evidence": "24 outside people (assumed: accounts minus the owner), 7 active this week, 2 returned at day 7. As of 2026-11-04."
+  },
+  {
+   "id": "pay",
+   "question": "What do they pay?",
+   "checked": true,
+   "need": "",
+   "command": "",
+   "origin": "founder list",
+   "auto": true,
+   "answer": null,
+   "evidence": "$0. The product does not charge yet."
+  },
+  {
+   "id": "why_you",
+   "question": "Why you?",
+   "checked": false,
+   "need": "An answer",
+   "command": "teyla startup yc answer sample-app why_you \"<why you are the one to build it>\"",
+   "origin": "founder list",
+   "auto": false,
+   "answer": null,
+   "evidence": null
+  },
+  {
+   "id": "custom",
+   "question": "Is it custom software per customer?",
+   "checked": false,
+   "need": "An answer",
+   "command": "teyla startup yc answer sample-app custom \"<yes or no, and why>\"",
+   "origin": "founder list",
+   "auto": false,
+   "answer": null,
+   "evidence": null
+  },
+  {
+   "id": "goal",
+   "question": "What is the Demo Day goal?",
+   "checked": false,
+   "need": "An answer",
+   "command": "teyla startup yc answer sample-app goal \"<one number or one outcome>\"",
+   "origin": "founder list",
+   "auto": false,
+   "answer": null,
+   "evidence": null
+  },
+  {
+   "id": "who",
+   "question": "Who does what?",
+   "checked": false,
+   "need": "An answer",
+   "command": "teyla startup yc answer sample-app who \"<include what the agents do>\"",
+   "origin": "founder list",
+   "auto": false,
+   "answer": null,
+   "evidence": null
+  },
+  {
+   "id": "talked",
+   "question": "How many customers have you talked to?",
+   "checked": false,
+   "need": "One ICP conversation you logged yourself",
+   "command": "teyla growth log --product sample-app --kind icp-meeting",
+   "origin": "founder list",
+   "auto": true,
+   "answer": null,
+   "evidence": null
+  },
+  {
+   "id": "sell",
+   "question": "How do you sell it?",
+   "checked": false,
+   "need": "An answer; Tried must be met",
+   "command": "teyla startup yc answer sample-app sell \"<the channel you use, as it is today>\"",
+   "origin": "founder list",
+   "auto": false,
+   "answer": null,
+   "evidence": null
+  },
+  {
+   "id": "demo",
+   "question": "Show us the demo",
+   "checked": false,
+   "need": "An answer",
+   "command": "teyla startup yc answer sample-app demo \"<a link to the demo (https://...)>\"",
+   "origin": "founder list",
+   "auto": false,
+   "answer": null,
+   "evidence": null
+  },
+  {
+   "id": "first_live",
+   "question": "When did the first customer go live?",
+   "checked": false,
+   "need": "An answer; Used must be met",
+   "command": "teyla startup yc answer sample-app first_live \"<a date and who>\"",
+   "origin": "founder list",
+   "auto": false,
+   "answer": null,
+   "evidence": null
+  },
+  {
+   "id": "need",
+   "question": "What do they need most?",
+   "checked": false,
+   "need": "An answer",
+   "command": "teyla startup yc answer sample-app need \"<what customers asked for>\"",
+   "origin": "founder list",
+   "auto": false,
+   "answer": null,
+   "evidence": null
+  },
+  {
+   "id": "commit",
+   "question": "Can you commit to the batch?",
+   "checked": false,
+   "need": "An answer",
+   "command": "teyla startup yc answer sample-app commit \"<it is in person in San Francisco>\"",
+   "origin": "teyla",
+   "auto": false,
+   "answer": null,
+   "evidence": null
+  }
+ ]
+}

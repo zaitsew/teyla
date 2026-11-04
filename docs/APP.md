@@ -673,7 +673,7 @@ that reason, never a zero.**
 
 Sale attempts are counted from `~/.teyla/growth/ledger.jsonl` (or under `TEYLA_HOME`) the way `teyla growth
 sale-attempts` counts them: a published post or an attempt of kind `post`, marketing (kind `ad` or `outreach`) and ICP
-meetings (kind `icp-meeting`). No command prints this as JSON, so the app reads the ledger read-only. The CLI skips rows an agent logged (`by: "agent"`, "claimed"); this reader does not yet. Zero reads "Not tried
+meetings (kind `icp-meeting`). No command prints this as JSON, so the app reads the ledger read-only. Rows an agent logged (`by: "agent"`, "claimed") count for nothing, as in the CLI; the detail line says how many were skipped. Zero reads "Not tried
 yet. Next in line."; the page never proposes closing a product nobody tried to sell. A parked product reads "Not tried
 yet. Parked." Lines that are not JSON are counted in a note. The block is off in the store build (`Capabilities.console`).
 Preview hook: `TEYLA_LEDGER_FIXTURE` (default `ledger.v1.jsonl` beside the state sample). One considered layout.
