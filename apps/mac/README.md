@@ -153,7 +153,9 @@ binary search order, and the apply and product-set commands. They compile the
 `Teyla/Core` sources, the store backend and the iPhone app's relay client directly, so no app is launched. The generated `Teyla.xcodeproj` and `build/`
 are not committed.
 
-Views use the tokens in `Teyla/UI/Tokens.swift` (spacing, type, colour roles); no literals.
+Views use the tokens in `Teyla/UI/Tokens.swift` (the iPhone has the same names in `apps/ios/Teyla/UI/Tokens.swift`). `Typo` has exactly
+five levels (`pageTitle`, `section`, `cardTitle`, `body`, `caption`) plus `number` for big figures. A view picks a level and may change its
+weight; it never sets a size, a gap, a radius or a colour. `tests/test_app_design_tokens.py` fails on a literal.
 
 **Samples.** `python3 Tools/make_fixtures.py` rebuilds `TeylaTests/Fixtures/*.json` from the real CLI, run on a made-up HOME
 (`--keep` prints its path). Run it again when the CLI's JSON changes.
@@ -163,7 +165,7 @@ Views use the tokens in `Teyla/UI/Tokens.swift` (spacing, type, colour roles); n
 **Screenshots.** With `TEYLA_STATE_FIXTURE` set, these variables shape the preview (they are ignored
 otherwise): `TEYLA_PREVIEW_APPEARANCE=light|dark`, `TEYLA_PREVIEW_SIZE=<w>x<h>`,
 `TEYLA_PREVIEW_SCROLL=end`, `TEYLA_PREVIEW_OPEN=new-task|quick-note|settings|pair (the Connect iPhone sheet)|diagnosis|home|decisions|portfolio|product:<id>|focus:<ask id>`,
-`TEYLA_PREVIEW_SNAPSHOT=<path.png>` with `TEYLA_PREVIEW_SNAPSHOT_VIEW=home|connect-phone|setup|setup-hand|setup-paired` (draws that view in one image and quits;
+`TEYLA_PREVIEW_SNAPSHOT=<path.png>` with `TEYLA_PREVIEW_SNAPSHOT_VIEW=home|window|connect-phone|setup|setup-hand|setup-paired` (draws that view in one image and quits; `window` is the window with its toolbar;
 `setup` is the store build's first screen), `TEYLA_PREVIEW_DRAFT=<text>`, `TEYLA_PREVIEW_START_DELAY=<seconds>` (how long the simulated diagnosis takes)
 and `TEYLA_PREVIEW_NO_BINARY=1` (shows the not-found screen). The welcome is `state.empty.v1.json`. Capture a window with `screencapture -l <window id>`.
 

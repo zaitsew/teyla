@@ -5,7 +5,7 @@ import SwiftUI
 // or gap (templates/design/STANDARD.md, Part 2). The colours mirror brand/tokens.json, the single
 // source; tests/test_brand.py fails when the two differ. Each role carries its light and dark value.
 
-/// Spacing on a 4-based scale.
+/// Spacing on a 4-based scale. Views use a step as it is: `Space.xs + Space.xxs` is not a gap.
 enum Space {
     static let xxs: CGFloat = 2
     static let xs: CGFloat = 4
@@ -14,6 +14,16 @@ enum Space {
     static let l: CGFloat = 16
     static let xl: CGFloat = 24
     static let xxl: CGFloat = 32
+    /// The gutter of every page.
+    static let page: CGFloat = 28
+    /// The line under a card, a row or a field.
+    static let hairline: CGFloat = 1
+    /// A status dot.
+    static let dot: CGFloat = 6
+    /// The column a symbol takes beside a line of text, so the text after it aligns.
+    static let glyph: CGFloat = 20
+    /// A round icon button.
+    static let iconButton: CGFloat = 28
     /// The width of the side column on a product page.
     static let sideColumn: CGFloat = 340
     /// How far the side column may grow when the window is wide: the extra room goes here, not to the cards.
@@ -28,6 +38,8 @@ enum Space {
     static let starTarget: CGFloat = 24
     /// The least height of anything a person presses (a switch segment, a row).
     static let touchMin: CGFloat = 44
+    /// A segment inside a switch whose track carries the rest of `touchMin`.
+    static let controlMin: CGFloat = 36
     /// Product icons on Home: hero card, "Being built" card, "Quiet" row.
     static let iconHero: CGFloat = 56
     static let iconCard: CGFloat = 44
@@ -75,9 +87,21 @@ enum Space {
     /// The lockup on the welcome and not-found screens, and the mark in the sidebar header.
     static let lockupHeight: CGFloat = 48
     static let markSize: CGFloat = 24
+    /// The confirmation inside a diagnosis.
+    static let confirmSheet: CGFloat = 528
+    /// The Settings window and the new-task sheet.
+    static let settingsWidth: CGFloat = 460
+    static let taskSheetWidth: CGFloat = 520
+    /// The main window never gets smaller than this.
+    static let windowMinWidth: CGFloat = 760
+    static let windowMinHeight: CGFloat = 460
+    static let windowDefaultWidth: CGFloat = 1180
+    static let windowDefaultHeight: CGFloat = 760
 }
 
 enum Radius {
+    /// A button, a field, a switch segment: anything inside a card.
+    static let control: CGFloat = 8
     static let card: CGFloat = 10
     static let panel: CGFloat = 14
     /// A product icon, by size: hero, card, row.
@@ -88,26 +112,38 @@ enum Radius {
     static let bar: CGFloat = 2
 }
 
-/// Type: the brief, a lead line, body text and fine print. Hierarchy comes from weight and colour first.
+/// Type: exactly five levels, plus one style for big numbers. A view picks a level and may change its
+/// weight; it never sets a size. `tests/test_app_design_tokens.py` fails on anything else.
 enum Typo {
-    static let brief = Font.system(size: 28, weight: .semibold)
-    /// The one big number on the diagnosis.
-    static let display = Font.system(size: 40, weight: .semibold)
-    static let lead = Font.system(size: 16, weight: .medium)
-    /// A section title on Home, and a product name on a hero card.
-    static let section = Font.system(size: 18, weight: .semibold)
-    static let cardTitle = Font.system(size: 20, weight: .bold)
-    /// The big figures on a hero card, and the commit count on a smaller card.
-    static let heroNumber = Font.system(size: 34, weight: .bold).monospacedDigit()
-    static let cardNumber = Font.system(size: 20, weight: .bold).monospacedDigit()
-    /// A line of facts under a title.
-    static let note = Font.callout
-    /// The letter of a product with no icon, for a tile of this side.
+    /// One per page, in `PageHeader`.
+    static let pageTitle = Font.system(size: 26, weight: .semibold)
+    /// A block on a page, in `SectionHeader`.
+    static let section = Font.system(size: 17, weight: .semibold)
+    /// The name of a card, a row or a product.
+    static let cardTitle = Font.system(size: 14, weight: .semibold)
+    /// Reading text.
+    static let body = Font.system(size: 13)
+    /// A label, a fact under a title, a figure's unit.
+    static let caption = Font.system(size: 12)
+    /// A big figure: the value of a `StatTile` or a `Scorecard`. Digits share one width, so columns align.
+    static let number = Font.system(size: 26, weight: .semibold).monospacedDigit()
+
+    /// A command or a tool's output: `caption`'s size in the monospaced face. Not a sixth level.
+    static let code = Font.system(size: 12, design: .monospaced)
+    /// The letter on a product with no icon scales with the tile, like the icon it stands in for.
     static func monogram(side: CGFloat) -> Font { Font.system(size: side * 0.42, weight: .bold) }
-    static let body = Font.body
-    static let caption = Font.caption
-    /// A command or a preview's output.
-    static let code = Font.system(.caption, design: .monospaced)
+    /// The text field of a note, in AppKit: `body` plus room to write.
+    @MainActor static var noteField: NSFont { NSFont.systemFont(ofSize: 15) }
+}
+
+/// Symbols that stand alone. A symbol beside text takes the font of its text instead.
+enum Glyph {
+    /// The one large symbol of an empty or error screen.
+    static let empty = Font.system(size: 40)
+    /// The microphone in the note field.
+    static let mic = Font.system(size: 20)
+    /// The dot of a bulleted line.
+    static let bullet = Font.system(size: 5)
 }
 
 /// Colour roles, from brand/tokens.json. Amber means "waiting on you" and green means money saved,
@@ -127,13 +163,10 @@ enum Palette {
     /// Tints of the roles above: a letter tile, the older bars of a chart, the track of a segmented switch.
     static let primaryTint = primary.opacity(0.14)
     static let primaryMuted = primary.opacity(0.35)
+    static let dangerTint = danger.opacity(0.14)
     static let track = border.opacity(0.55)
-
-    // The names views already use, mapped onto the brand roles.
-    static let accent = primary
-    static let info = primary
-    static let warning = needsYou
-    static let success = saving
+    /// Fine print a reader can skip, and a control that is off.
+    static let textTertiary = textSecondary.opacity(0.7)
 }
 
 extension Color {
@@ -159,7 +192,7 @@ struct CardBackground: ViewModifier {
             .background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.card))
             .overlay(
                 RoundedRectangle(cornerRadius: Radius.card)
-                    .strokeBorder(highlighted ? Palette.accent : Palette.border, lineWidth: highlighted ? 2 : 1)
+                    .strokeBorder(highlighted ? Palette.primary : Palette.border, lineWidth: highlighted ? Space.xxs : Space.hairline)
             )
     }
 }
@@ -186,7 +219,7 @@ struct Chip: View {
         .padding(.horizontal, Space.s)
         .padding(.vertical, Space.xxs)
         // The text leans toward the primary colour so it stays readable on the pale tint, in light and dark.
-        .foregroundStyle(color.mix(with: .primary, by: 0.35))
+        .foregroundStyle(color.mix(with: Palette.text, by: 0.35))
         .background(color.opacity(0.16), in: Capsule())
         .fixedSize()
     }

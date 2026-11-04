@@ -11,6 +11,7 @@ from teyla import brand
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TOKENS = json.loads((ROOT / "brand" / "tokens.json").read_text())
 SWIFT = (ROOT / "apps" / "mac" / "Teyla" / "UI" / "Tokens.swift").read_text()
+IOS_SWIFT = (ROOT / "apps" / "ios" / "Teyla" / "UI" / "Tokens.swift").read_text()
 
 
 class TTY(io.StringIO):
@@ -33,6 +34,17 @@ def test_mac_palette_matches_tokens():
         name = re.sub(r"-(\w)", lambda m: m.group(1).upper(), role)
         assert found.get(name) == (light[role].lstrip("#"), dark[role].lstrip("#")), role
     assert len(found) == len(light)
+
+
+def test_ios_brand_colours_match_tokens():
+    # iPhone takes its neutrals from the system's grouped colours, and its brand roles from the tokens.
+    light, dark = TOKENS["color"]["light"], TOKENS["color"]["dark"]
+    found = {name: (l, d) for name, l, d in
+             re.findall(r"static let (\w+) = Color\.brand\(light: 0x([0-9A-F]{6}), dark: 0x([0-9A-F]{6})\)", IOS_SWIFT)}
+    assert {"primary", "onPrimary", "needsYou", "saving", "danger"} <= set(found)
+    for role in ("primary", "needs-you", "saving", "danger", "on-primary"):
+        name = re.sub(r"-(\w)", lambda m: m.group(1).upper(), role)
+        assert found[name] == (light[role].lstrip("#"), dark[role].lstrip("#")), role
 
 
 def test_no_color_and_pipes_get_plain_text():

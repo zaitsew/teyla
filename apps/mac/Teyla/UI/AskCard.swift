@@ -18,13 +18,13 @@ struct AskCard: View {
         VStack(alignment: .leading, spacing: Space.m) {
             header
             Text(ask.question)
-                .font(Typo.lead)
+                .font(Typo.cardTitle)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             if !ask.unblocks.isEmpty {
                 Text("Unblocks \(ask.unblocks)")
                     .font(Typo.caption.weight(.medium))
-                    .foregroundStyle(Palette.accent)
+                    .foregroundStyle(Palette.primary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !ask.context.isEmpty {
@@ -50,7 +50,7 @@ struct AskCard: View {
                 }
             case .done(let text):
                 Label(text, systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(Palette.success)
+                    .foregroundStyle(Palette.saving)
             case .failed(let message):
                 failure(message)
             case nil:
@@ -207,7 +207,7 @@ struct AskCard: View {
 
 /// Lays children out left to right and wraps to a new row when the width runs out.
 struct FlowLayout: Layout {
-    var spacing: CGFloat = 8
+    var spacing = Space.s
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         arrange(width: proposal.width ?? .infinity, subviews: subviews).size

@@ -15,7 +15,7 @@ struct PortfolioView: View {
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
+                LazyVStack(alignment: .leading, spacing: Space.m) {
                     if let snapshot = model.snapshot {
                         if let portfolio = snapshot.portfolio {
                             Header(portfolio: portfolio, filter: $filter)
@@ -27,13 +27,13 @@ struct PortfolioView: View {
                         WaitingView()
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 32)
-                .frame(maxWidth: 640)
+                .padding(.horizontal, Space.l)
+                .padding(.top, Space.s)
+                .padding(.bottom, Space.xxl)
+                .frame(maxWidth: Space.readingCard)
                 .frame(maxWidth: .infinity)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Palette.background)
             .refreshable { await model.refresh() }
             .navigationTitle("All products")
             .navigationBarTitleDisplayMode(.large)
@@ -54,10 +54,10 @@ struct PortfolioView: View {
         let shown = PortfolioFormat.visible(portfolio.products, filter: filter)
         if portfolio.products.isEmpty {
             Label("No products are registered on your Mac yet.", systemImage: "tray")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.textSecondary)
         } else if shown.isEmpty {
             Label("Nothing needs attention.", systemImage: "checkmark.circle")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.textSecondary)
         }
         ForEach(shown) { product in
             NavigationLink(value: ProductRoute(id: product.id)) {
@@ -86,45 +86,45 @@ private struct Header: View {
                     .lineLimit(1)
             }
             .buttonStyle(.bordered)
-            .tint(filter == option ? Color.brandPrimary : Color.secondary)
+            .tint(filter == option ? Palette.primary : Palette.textSecondary)
             .accessibilityAddTraits(filter == option ? .isSelected : [])
         }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Space.xs) {
             Text(PortfolioFormat.headline(for: portfolio))
-                .font(.title3.weight(.semibold))
+                .font(Typo.section)
                 .fixedSize(horizontal: false, vertical: true)
             Text(PortfolioFormat.checkedLine(portfolio, now: Date()))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             SyncLine()
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) { chips }
-                VStack(alignment: .leading, spacing: 8) { chips }
+                HStack(spacing: Space.s) { chips }
+                VStack(alignment: .leading, spacing: Space.s) { chips }
             }
-            .padding(.top, 6)
+            .padding(.top, Space.xs)
         }
-        .padding(.bottom, 4)
+        .padding(.bottom, Space.xs)
     }
 }
 
 /// Shown when the Mac's Teyla is older than version 3 and sends no portfolio.
 private struct NoPortfolioView: View {
     var body: some View {
-        VStack(spacing: 12) {
-            Spacer(minLength: 80)
+        VStack(spacing: Space.m) {
+            Spacer(minLength: Space.xxl)
             Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary)
+                .font(Glyph.empty)
+                .foregroundStyle(Palette.textSecondary)
             Text("Update Teyla on your Mac to see the portfolio.")
-                .font(.title3.weight(.semibold))
+                .font(Typo.section)
                 .multilineTextAlignment(.center)
             Text("The portfolio needs the Mac to send snapshot version 3.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(Typo.body)
+                .foregroundStyle(Palette.textSecondary)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
@@ -137,11 +137,11 @@ struct HealthPill: View {
 
     var body: some View {
         Label(PortfolioFormat.healthLabel(health), systemImage: PortfolioFormat.healthSymbol(health))
-            .font(.caption.weight(.semibold))
+            .font(Typo.caption.weight(.semibold))
             .foregroundStyle(health.color)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 3)
-            .background(health.color.opacity(0.14), in: Capsule())
+            .padding(.horizontal, Space.s)
+            .padding(.vertical, Space.xxs)
+            .background(health.color.chipTint, in: Capsule())
             .fixedSize()
     }
 }
@@ -156,7 +156,7 @@ private struct PlatformChip: View {
         } icon: {
             Image(systemName: PortfolioFormat.platformSymbol(platform.platform))
         }
-        .font(.caption)
+        .font(Typo.caption)
         .foregroundStyle(platform.state.color)
     }
 }
@@ -165,41 +165,41 @@ private struct PortfolioRow: View {
     let product: PortfolioProduct
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                FlowLayout(spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                FlowLayout(spacing: Space.s) {
                     HealthPill(health: product.health)
                     let stage = PortfolioFormat.stageLine(product)
                     if !stage.isEmpty {
-                        Text(stage).font(.caption).foregroundStyle(.secondary)
+                        Text(stage).font(Typo.caption).foregroundStyle(Palette.textSecondary)
                     }
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                    .font(Typo.caption.weight(.semibold))
+                    .foregroundStyle(Palette.textTertiary)
                     .accessibilityHidden(true)
             }
             Text(PortfolioFormat.title(product))
-                .font(.headline)
+                .font(Typo.cardTitle)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
             if let reason = product.reasons.first {
                 Text(reason)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(Typo.body)
+                    .foregroundStyle(Palette.textSecondary)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !product.platforms.isEmpty {
-                FlowLayout(spacing: 12) {
+                FlowLayout(spacing: Space.m) {
                     ForEach(product.platforms) { PlatformChip(platform: $0) }
                 }
             }
             if product.waiting > 0 {
                 Label(PortfolioFormat.waitingLine(product.waiting), systemImage: "hourglass")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.brandAmber)
+                    .font(Typo.caption.weight(.semibold))
+                    .foregroundStyle(Palette.needsYou)
             }
         }
         .card()
@@ -218,21 +218,21 @@ struct PortfolioDetailView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: Space.l) {
                 if let product = model.snapshot?.portfolio?.product(productID), let snapshot = model.snapshot {
                     Content(product: product, snapshot: snapshot)
                 } else {
                     Label("This product is no longer in the portfolio.", systemImage: "questionmark.circle")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.textSecondary)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 32)
-            .frame(maxWidth: 640)
+            .padding(.horizontal, Space.l)
+            .padding(.top, Space.s)
+            .padding(.bottom, Space.xxl)
+            .frame(maxWidth: Space.readingCard)
             .frame(maxWidth: .infinity)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Palette.background)
         .refreshable { await model.refresh() }
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -243,14 +243,14 @@ struct PortfolioDetailView: View {
 
         var body: some View {
             let now = Date()
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Space.s) {
                 HealthPill(health: product.health)
                 Text(PortfolioFormat.title(product))
-                    .font(.largeTitle.weight(.bold))
+                    .font(Typo.pageTitle)
                     .fixedSize(horizontal: false, vertical: true)
                 let stage = PortfolioFormat.stageLine(product)
                 if !stage.isEmpty {
-                    Text(stage).font(.subheadline).foregroundStyle(.secondary)
+                    Text(stage).font(Typo.body).foregroundStyle(Palette.textSecondary)
                 }
             }
             .accessibilityElement(children: .combine)
@@ -259,9 +259,9 @@ struct PortfolioDetailView: View {
                 SectionLabel("Why")
                 if product.reasons.isEmpty {
                     Text(product.health == .parked ? "This product is parked." : "Nothing is holding it back.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.textSecondary)
                 } else {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Space.s) {
                         ForEach(Array(product.reasons.enumerated()), id: \.offset) { _, reason in
                             Label {
                                 Text(reason).fixedSize(horizontal: false, vertical: true)
@@ -276,7 +276,7 @@ struct PortfolioDetailView: View {
             }
 
             if !product.milestone.isEmpty || !product.next.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: Space.s) {
                     if !product.milestone.isEmpty { Fact(title: "Milestone", text: product.milestone) }
                     if !product.next.isEmpty { Fact(title: "Next step", text: product.next) }
                 }
@@ -286,14 +286,14 @@ struct PortfolioDetailView: View {
             Group {
                 SectionLabel("Platforms")
                 if product.platforms.isEmpty {
-                    Text("No platform is registered for this product.").foregroundStyle(.secondary)
+                    Text("No platform is registered for this product.").foregroundStyle(Palette.textSecondary)
                 }
                 ForEach(product.platforms) { PlatformCard(platform: $0, now: now) }
             }
 
             Group {
                 SectionLabel("Pull requests")
-                HStack(alignment: .top, spacing: 16) {
+                HStack(alignment: .top, spacing: Space.l) {
                     Number(value: product.prs.open, label: "open")
                     Number(value: product.prs.waiting, label: "wait on you", highlight: product.prs.waiting > 0)
                     Number(value: product.prs.merged7d, label: "merged, 7 days")
@@ -305,11 +305,11 @@ struct PortfolioDetailView: View {
 
             Group {
                 SectionLabel("Activity")
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Space.s) {
                     Text(PortfolioFormat.sessionsLine(product.activity, now: now))
-                    Text(PortfolioFormat.spendLine(product.activity)).foregroundStyle(.secondary)
+                    Text(PortfolioFormat.spendLine(product.activity)).foregroundStyle(Palette.textSecondary)
                 }
-                .font(.subheadline)
+                .font(Typo.body)
                 .fixedSize(horizontal: false, vertical: true)
                 .card()
             }
@@ -324,7 +324,7 @@ struct PortfolioDetailView: View {
                 }
             } else if product.waiting > 0 {
                 Label("\(PortfolioFormat.waitingLine(product.waiting)) on your Mac.", systemImage: "hourglass")
-                    .foregroundStyle(Color.brandAmber)
+                    .foregroundStyle(Palette.needsYou)
             }
         }
     }
@@ -335,9 +335,9 @@ private struct Fact: View {
     let text: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Text(text).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: Space.xxs) {
+            Text(title).font(Typo.caption.weight(.semibold)).foregroundStyle(Palette.textSecondary)
+            Text(text).font(Typo.body).fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
@@ -350,12 +350,12 @@ private struct Number: View {
     var highlight = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Space.xxs) {
             Text("\(value)")
-                .font(.title2.weight(.semibold))
+                .font(Typo.section)
                 .monospacedDigit()
-                .foregroundStyle(highlight ? Color.brandAmber : Color.primary)
-            Text(label).font(.caption).foregroundStyle(.secondary)
+                .foregroundStyle(highlight ? Palette.needsYou : Palette.text)
+            Text(label).font(Typo.caption).foregroundStyle(Palette.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
@@ -368,26 +368,26 @@ private struct PlatformCard: View {
     let now: Date
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                 Image(systemName: PortfolioFormat.platformSymbol(platform.platform))
-                    .foregroundStyle(.secondary)
-                Text(PortfolioFormat.platformName(platform.platform)).font(.headline)
+                    .foregroundStyle(Palette.textSecondary)
+                Text(PortfolioFormat.platformName(platform.platform)).font(Typo.cardTitle)
                 if platform.isPrimary {
-                    Text("primary").font(.caption).foregroundStyle(.secondary)
+                    Text("primary").font(Typo.caption).foregroundStyle(Palette.textSecondary)
                 }
             }
             Text(PortfolioFormat.platformLine(platform))
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(platform.state == .blocked || platform.state == .behind ? platform.state.color : Color.primary)
+                .font(Typo.body.weight(.medium))
+                .foregroundStyle(platform.state == .blocked || platform.state == .behind ? platform.state.color : Palette.text)
             if !platform.detail.isEmpty {
                 Text(platform.detail)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(Typo.body)
+                    .foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let checked = PortfolioFormat.checkedAgo(platform.asOf, now: now) {
-                Text(checked).font(.caption).foregroundStyle(.secondary)
+                Text(checked).font(Typo.caption).foregroundStyle(Palette.textSecondary)
             }
             if let url = PhoneFormat.webURL(platform.link) {
                 Button { openURL(url) } label: {

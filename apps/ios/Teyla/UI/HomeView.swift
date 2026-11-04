@@ -13,22 +13,22 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 // Lazy: a long Home builds the rows that scroll into view, not all 40 products at once.
-                LazyVStack(alignment: .leading, spacing: 28) {
+                LazyVStack(alignment: .leading, spacing: Space.xl) {
                     if let snapshot = model.snapshot {
                         HomeContent(snapshot: snapshot, tab: $tab)
                     } else {
                         WaitingView()
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 32)
+                .padding(.horizontal, Space.l)
+                .padding(.top, Space.s)
+                .padding(.bottom, Space.xxl)
                 // A comfortable measure: cards stop at 640 pt however wide the screen is.
-                .frame(maxWidth: 640)
+                .frame(maxWidth: Space.readingCard)
                 .frame(maxWidth: .infinity)
             }
             .scrollDismissesKeyboard(.interactively)
-            .background(Color(.systemGroupedBackground))
+            .background(Palette.background)
             .refreshable { await model.refresh() }
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: ProductRoute.self) { route in
@@ -57,14 +57,14 @@ private struct HomeContent: View {
     private var period: HomePeriod { HomePeriod.from(stored: storedPeriod) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s) {
             Text(PhoneHome.briefLine(snapshot))
-                .font(.title2.weight(.semibold))
+                .font(Typo.section)
                 .fixedSize(horizontal: false, vertical: true)
             Text(HomeText.caption(decisions: model.ownerAsks.count, running: snapshot.running.count,
                                   spend: HomeText.spend(portfolio: snapshot.portfolio, todayUSD: snapshot.totals.spentTodayUSD)))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(Typo.body)
+                .foregroundStyle(Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             SyncLine()
         }
@@ -73,7 +73,7 @@ private struct HomeContent: View {
         if let sections = PhoneHome.sections(snapshot.portfolio) {
             PeriodSwitch(period: Binding(get: { period }, set: { storedPeriod = $0.rawValue }))
             if sections.allSatisfy({ $0.products.isEmpty }) {
-                Text(PhoneHome.noProducts).foregroundStyle(.secondary)
+                Text(PhoneHome.noProducts).foregroundStyle(Palette.textSecondary)
             }
             section(sections, .users)
             HomeDecisions(snapshot: snapshot, tab: $tab)
@@ -90,7 +90,7 @@ private struct HomeContent: View {
     @ViewBuilder
     private func section(_ sections: [HomeSection], _ kind: HomeSectionKind) -> some View {
         if let section = sections.first(where: { $0.kind == kind }), !section.products.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Space.m) {
                 HomeSectionHeader(title: kind.title, note: kind.note)
                 switch kind {
                 case .users: HeroList(products: section.products, period: period)
@@ -110,11 +110,11 @@ struct SentFromPhone: View {
     var body: some View {
         let sent = model.sentWithoutCard(in: snapshot)
         if !sent.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Space.s) {
                 SectionLabel("Sent from this iPhone")
                 ForEach(sent) { action in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(heading(of: action)).font(.subheadline.weight(.semibold))
+                    VStack(alignment: .leading, spacing: Space.xs) {
+                        Text(heading(of: action)).font(Typo.body.weight(.semibold))
                         OutcomeView(action: action) { model.dismiss(action.id) }
                     }
                     .card()
@@ -139,12 +139,12 @@ struct SentFromPhone: View {
 /// Shown instead of the sections when the Mac's Teyla is too old to send `portfolio.home`. Never an empty page.
 private struct UpdateMacCard: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s) {
             Label(PhoneHome.updateTitle, systemImage: "arrow.triangle.2.circlepath")
-                .font(.headline)
+                .font(Typo.cardTitle)
             Text(PhoneHome.updateText)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(Typo.body)
+                .foregroundStyle(Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .card()
@@ -162,21 +162,21 @@ private struct HomeDecisions: View {
     var body: some View {
         let lists = DecisionLists(asks: snapshot.asks, snapshot: snapshot, now: Date())
         let shown = Decisions.homeList(lists.fresh)
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Space.m) {
             HomeSectionHeader(title: "Decisions", note: PhoneHome.decisionsNote)
             if lists.owner.isEmpty {
                 Label("Nothing waits on you.", systemImage: "checkmark.circle")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.textSecondary)
             } else if shown.isEmpty {
-                Text("Nothing new. The rest waited more than 7 days.").foregroundStyle(.secondary)
+                Text("Nothing new. The rest waited more than 7 days.").foregroundStyle(Palette.textSecondary)
             }
             ForEach(shown) { ask in
                 QuestionCard(ask: ask, ageSeconds: PhoneFormat.age(ask.ageSeconds, snapshot: snapshot, now: Date()))
             }
             if let label = Decisions.seeAll(total: lists.owner.count, shown: shown.count) {
                 Button(label) { tab = .decisions }
-                    .font(.body.weight(.medium))
-                    .frame(minHeight: 44)
+                    .font(Typo.body.weight(.medium))
+                    .frame(minHeight: Space.touchMin)
             }
         }
     }
@@ -212,20 +212,20 @@ struct SyncLine: View {
                 EmptyView()
             } else if model.connection == .fixture {
                 Label("Preview data", systemImage: "eye")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
             } else if model.connection == .syncing {
-                HStack(spacing: 6) {
+                HStack(spacing: Space.xs) {
                     ProgressView().controlSize(.mini)
-                    Text("Syncing").font(.footnote).foregroundStyle(.secondary)
+                    Text("Syncing").font(Typo.caption).foregroundStyle(Palette.textSecondary)
                 }
             } else if let date = model.syncDate {
                 let seconds = max(0, context.date.timeIntervalSince(date))
                 let stale = PhoneFormat.isStale(secondsAgo: seconds)
                 Label(PhoneFormat.synced(secondsAgo: seconds) + (stale ? ". The Mac may be asleep." : ""),
                       systemImage: stale ? "exclamationmark.triangle.fill" : "checkmark.icloud")
-                    .font(.footnote)
-                    .foregroundStyle(stale ? Color.orange : Color.secondary)
+                    .font(Typo.caption)
+                    .foregroundStyle(stale ? Palette.needsYou : Palette.textSecondary)
             }
         }
     }
@@ -236,20 +236,20 @@ struct WaitingView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        VStack(spacing: 14) {
-            Spacer(minLength: 80)
+        VStack(spacing: Space.m) {
+            Spacer(minLength: Space.xxl)
             if model.connection == .syncing || model.connection == .reading {
                 ProgressView()
-                Text(model.connection == .syncing ? "Syncing" : "Reading").font(.title3.weight(.semibold))
+                Text(model.connection == .syncing ? "Syncing" : "Reading").font(Typo.section)
                 Text("iCloud is bringing the Mac's latest update.")
-                    .font(.subheadline).foregroundStyle(.secondary)
+                    .font(Typo.body).foregroundStyle(Palette.textSecondary)
             } else {
                 Image(systemName: "desktopcomputer")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.secondary)
-                Text("Waiting for the Mac").font(.title3.weight(.semibold))
+                    .font(Glyph.empty)
+                    .foregroundStyle(Palette.textSecondary)
+                Text("Waiting for the Mac").font(Typo.section)
                 Text("Pull down to check again. Wrong key? Pair again in Settings.")
-                    .font(.subheadline).foregroundStyle(.secondary)
+                    .font(Typo.body).foregroundStyle(Palette.textSecondary)
             }
         }
         .multilineTextAlignment(.center)

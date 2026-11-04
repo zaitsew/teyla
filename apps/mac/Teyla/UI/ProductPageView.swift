@@ -18,8 +18,8 @@ struct ProductPageView: View {
                     } else if let error = page.error {
                         VStack(alignment: .leading, spacing: Space.s) {
                             Label("Could not read \(Format.product(id))", systemImage: "exclamationmark.triangle")
-                                .font(Typo.lead)
-                                .foregroundStyle(Palette.warning)
+                                .font(Typo.cardTitle)
+                                .foregroundStyle(Palette.needsYou)
                             Text(error)
                                 .foregroundStyle(Palette.textSecondary)
                                 .textSelection(.enabled)
@@ -28,13 +28,13 @@ struct ProductPageView: View {
                     } else {
                         // The snapshot already knows the product's health and platforms, so they show while the page reads.
                         if let portfolioProduct {
-                            Text(portfolioProduct.title).font(Typo.brief)
+                            Text(portfolioProduct.title).font(Typo.pageTitle)
                             ProductStatusBlock(product: portfolioProduct)
                         }
                         ReadingLine(text: "Reading \(Format.product(id))…")
                     }
                 }
-                .padding(.horizontal, Space.xl + Space.xs)
+                .padding(.horizontal, Space.page)
                 .padding(.vertical, Space.xl)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -53,7 +53,7 @@ struct ProductPageView: View {
             if let error = page.error {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(Typo.caption)
-                    .foregroundStyle(Palette.warning)
+                    .foregroundStyle(Palette.needsYou)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
@@ -76,7 +76,7 @@ struct ReadingLine: View {
     let text: String
 
     var body: some View {
-        HStack(spacing: Space.xs + Space.xxs) {
+        HStack(spacing: Space.xs) {
             ProgressView().controlSize(.mini)
             Text(text).font(Typo.caption).foregroundStyle(Palette.textSecondary)
         }
@@ -96,7 +96,7 @@ private struct ProductHeaderView: View {
         VStack(alignment: .leading, spacing: Space.m) {
             HStack(alignment: .firstTextBaseline, spacing: Space.m) {
                 Text(header.name)
-                    .font(Typo.brief)
+                    .font(Typo.pageTitle)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 if header.registered { focusStar }
@@ -152,8 +152,8 @@ private struct ProductHeaderView: View {
         if !model.capabilities.editProducts {
             if header.focus {
                 Image(systemName: "star.fill")
-                    .font(Typo.lead)
-                    .foregroundStyle(Palette.warning)
+                    .font(Typo.cardTitle)
+                    .foregroundStyle(Palette.needsYou)
                     .help("In focus")
                     .accessibilityLabel("In focus")
             }
@@ -167,8 +167,8 @@ private struct ProductHeaderView: View {
             model.productPage.setFocus(!header.focus)
         } label: {
             Image(systemName: header.focus ? "star.fill" : "star")
-                .font(Typo.lead)
-                .foregroundStyle(header.focus ? Palette.warning : Palette.textSecondary)
+                .font(Typo.cardTitle)
+                .foregroundStyle(header.focus ? Palette.needsYou : Palette.textSecondary)
         }
         .buttonStyle(.plain)
         .disabled(model.productPage.isChanging)
@@ -290,7 +290,7 @@ private struct ProductAskRow: View {
             case .sending(let text):
                 ReadingLine(text: text)
             case .done(let text):
-                Label(text, systemImage: "checkmark.circle.fill").font(Typo.caption).foregroundStyle(Palette.success)
+                Label(text, systemImage: "checkmark.circle.fill").font(Typo.caption).foregroundStyle(Palette.saving)
             case .failed(let message):
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(Typo.caption)

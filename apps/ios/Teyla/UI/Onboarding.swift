@@ -17,14 +17,14 @@ struct OnboardingView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                Spacer(minLength: 16)
-                VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Space.xl) {
+                Spacer(minLength: Space.l)
+                VStack(alignment: .leading, spacing: Space.xs) {
                     Text("Teyla")
-                        .font(.system(.largeTitle, weight: .bold))
+                        .font(Typo.pageTitle)
                     Text("Your Mac's coordinator, on your iPhone.")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
+                        .font(Typo.section)
+                        .foregroundStyle(Palette.textSecondary)
                 }
                 StepDots(step: step)
                 Group {
@@ -37,12 +37,12 @@ struct OnboardingView: View {
                 .transition(.opacity)
                 if step < 2 { sampleOffer }
             }
-            .padding(24)
-            .frame(maxWidth: 520, alignment: .leading)
+            .padding(Space.xl)
+            .frame(maxWidth: Space.readingCard, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.interactively)
-        .background(Color(.systemGroupedBackground))
+        .background(Palette.background)
         .animation(.easeOut(duration: 0.2), value: step)
         .sheet(isPresented: $showFolderPicker) {
             FolderPicker { url in
@@ -67,15 +67,15 @@ struct OnboardingView: View {
     // MARK: Steps
 
     private var folderStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Space.l) {
             StepHeader(number: 1, title: "Choose the Teyla folder")
             if model.hasKey {
                 Label("Paired with your Mac", systemImage: "checkmark.circle.fill")
-                    .font(.subheadline)
-                    .foregroundStyle(.green)
+                    .font(Typo.body)
+                    .foregroundStyle(Palette.saving)
             }
             Text("Your Mac created the Teyla folder in iCloud Drive. Choose it.")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.textSecondary)
             Button {
                 showFolderPicker = true
             } label: {
@@ -85,24 +85,24 @@ struct OnboardingView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             Text("No folder yet? On your Mac, run `teyla relay connect`.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textSecondary)
             Text("Teyla keeps access to this folder only. It reads the Mac's update there and leaves your answers for the Mac to pick up.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textSecondary)
         }
     }
 
     private var pairStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Space.l) {
             StepHeader(number: 2, title: "Pair with your Mac")
             if let name = model.folderName {
                 Label("Folder: \(name)", systemImage: "checkmark.circle.fill")
-                    .font(.subheadline)
-                    .foregroundStyle(.green)
+                    .font(Typo.body)
+                    .foregroundStyle(Palette.saving)
             }
             Text("In Teyla on your Mac, choose Connect iPhone, then scan the code.")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.textSecondary)
             if DataScannerViewController.isSupported {
                 Button {
                     showScanner = true
@@ -113,28 +113,28 @@ struct OnboardingView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 Text("The iPhone Camera works too: point it at the code and tap the banner.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
             }
             DisclosureGroup("Paste the pairing string", isExpanded: $pasteOpen) {
-                pasteField.padding(.top, 8)
+                pasteField.padding(.top, Space.s)
             }
             Button("Choose another folder") { showFolderPicker = true }
-                .font(.footnote)
+                .font(Typo.caption)
         }
     }
 
     private var pasteField: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s) {
             Text("No camera, or no code on screen? Run `teyla relay pair` on the Mac and paste what it prints.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textSecondary)
             TextField("teyla-pair:v1:\u{2026}", text: $pasted)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .font(.system(.body, design: .monospaced))
-                .padding(12)
-                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .font(Typo.code)
+                .padding(Space.m)
+                .background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
                 .submitLabel(.done)
                 .onSubmit { handle(pasted) }
             if DataScannerViewController.isSupported {
@@ -150,17 +150,17 @@ struct OnboardingView: View {
             }
             if pasteError {
                 Label("That is not a Teyla pairing string.", systemImage: "exclamationmark.triangle.fill")
-                    .font(.footnote)
-                    .foregroundStyle(.red)
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.danger)
             }
         }
     }
 
     private var doneStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Space.l) {
             StepHeader(number: 3, title: "You are set")
             Text("Teyla now reads what your Mac writes to \(model.folderName ?? "the folder"). Every answer you send is signed with the key you just shared.")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.textSecondary)
             Button {
                 model.finishSetup()
             } label: {
@@ -173,12 +173,12 @@ struct OnboardingView: View {
 
     /// No Mac yet, or an app reviewer: the whole app with made-up data. Nothing is sent from it.
     private var sampleOffer: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.s) {
             Divider()
-            Text("No Mac yet?").font(.subheadline.weight(.semibold))
+            Text("No Mac yet?").font(Typo.body.weight(.semibold))
             Text("Try every screen with made-up data. Nothing is read from iCloud or sent.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textSecondary)
             Button {
                 model.startSample()
             } label: {
@@ -200,13 +200,13 @@ private struct StepHeader: View {
     let title: String
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Space.s) {
             Text("\(number)")
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(.white)
-                .frame(width: 28, height: 28)
-                .background(Color.accentColor, in: Circle())
-            Text(title).font(.title2.weight(.semibold))
+                .font(Typo.body.weight(.semibold))
+                .foregroundStyle(Palette.onPrimary)
+                .frame(width: Space.stepBadge, height: Space.stepBadge)
+                .background(Palette.primary, in: Circle())
+            Text(title).font(Typo.section)
         }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
@@ -217,11 +217,11 @@ private struct StepDots: View {
     let step: Int
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Space.xs) {
             ForEach(0..<3) { index in
                 Capsule()
-                    .fill(index <= step ? Color.accentColor : Color(.tertiaryLabel))
-                    .frame(width: index == step ? 28 : 14, height: 5)
+                    .fill(index <= step ? Palette.primary : Palette.textTertiary)
+                    .frame(width: index == step ? Space.stepBadge : Space.m, height: Space.dot)
             }
         }
         .accessibilityElement()
@@ -269,7 +269,7 @@ private struct ScannerSheet: View {
                 .ignoresSafeArea()
             Button("Cancel") { onResult(nil) }
                 .buttonStyle(.borderedProminent)
-                .tint(.black.opacity(0.6))
+                .tint(Palette.scrim)
                 .padding()
         }
     }

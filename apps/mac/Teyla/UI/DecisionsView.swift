@@ -21,7 +21,7 @@ struct DecisionsView: View {
                         DoneFold()
                     }
                 }
-                .padding(.horizontal, Space.xl + Space.xs)
+                .padding(.horizontal, Space.page)
                 .padding(.vertical, Space.xl)
                 .readingWidth()
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -37,8 +37,8 @@ struct DecisionsView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: Space.xs + Space.xxs) {
-            Text("Decisions").font(Typo.brief)
+        VStack(alignment: .leading, spacing: Space.xs) {
+            Text("Decisions").font(Typo.pageTitle)
             if model.snapshot != nil {
                 Text(Decisions.summary(count: model.ownerAsks.count))
                     .font(Typo.body)

@@ -6,7 +6,7 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             HomeContent()
-                .padding(.horizontal, Space.xl + Space.xs)
+                .padding(.horizontal, Space.page)
                 .padding(.vertical, Space.xl)
                 .frame(maxWidth: Space.homeMax, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -77,7 +77,7 @@ struct HomeContent: View {
     @ViewBuilder
     private func section(_ sections: [HomeSection], _ kind: HomeSectionKind) -> some View {
         if let section = sections.first(where: { $0.kind == kind }), !section.products.isEmpty {
-            VStack(alignment: .leading, spacing: Space.m + Space.xxs) {
+            VStack(alignment: .leading, spacing: Space.m) {
                 HomeSectionHeader(title: kind.title, note: kind.note)
                 switch kind {
                 case .users: HeroGrid(products: section.products, period: period)
@@ -89,9 +89,9 @@ struct HomeContent: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: Space.xs + Space.xxs) {
+        VStack(alignment: .leading, spacing: Space.xs) {
             Text(model.briefLine)
-                .font(Typo.brief)
+                .font(Typo.pageTitle)
                 .lineSpacing(Space.xxs)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
@@ -118,11 +118,11 @@ struct PeriodSwitch: View {
                     Text(option.label)
                         .font(Typo.body.weight(.semibold))
                         .foregroundStyle(period == option ? Palette.text : Palette.textSecondary)
-                        .padding(.horizontal, Space.xl - Space.xs)
-                        .frame(minHeight: Space.touchMin - 2 * Space.xs)
+                        .padding(.horizontal, Space.l)
+                        .frame(minHeight: Space.controlMin)
                         .background(period == option ? Palette.surface : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: Radius.card - Space.xxs))
-                        .contentShape(RoundedRectangle(cornerRadius: Radius.card - Space.xxs))
+                                    in: RoundedRectangle(cornerRadius: Radius.control))
+                        .contentShape(RoundedRectangle(cornerRadius: Radius.control))
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(period == option ? .isSelected : [])
@@ -143,8 +143,8 @@ struct SnapshotEmptyView: View {
         VStack(alignment: .leading, spacing: Space.s) {
             if let error = model.lastError {
                 Label("Could not read state", systemImage: "exclamationmark.triangle")
-                    .font(Typo.lead)
-                    .foregroundStyle(Palette.warning)
+                    .font(Typo.cardTitle)
+                    .foregroundStyle(Palette.needsYou)
                 Text(error)
                     .foregroundStyle(Palette.textSecondary)
                     .textSelection(.enabled)
@@ -187,8 +187,8 @@ struct StarButton: View {
 
     private var star: some View {
         Image(systemName: starred ? "star.fill" : "star")
-            .font(Typo.lead)
-            .foregroundStyle(starred ? Palette.warning : Palette.textSecondary)
+            .font(Typo.cardTitle)
+            .foregroundStyle(starred ? Palette.needsYou : Palette.textSecondary)
             .frame(width: Space.starTarget, height: Space.starTarget)
             .contentShape(Rectangle())
     }

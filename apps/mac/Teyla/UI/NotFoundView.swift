@@ -10,7 +10,7 @@ struct NotFoundView: View {
             BrandLockup()
             VStack(spacing: Space.s) {
                 Text("Install the teyla command")
-                    .font(Typo.brief)
+                    .font(Typo.pageTitle)
                 Text("Teyla for Mac shows what the teyla command reads from your sessions. It is not on this Mac yet. Paste this line in Terminal:")
                     .foregroundStyle(Palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -42,7 +42,7 @@ struct NotFoundView: View {
             VStack(spacing: Space.xs) {
                 if model.recheckFailed && !model.recheckingBinary {
                     Label("Still not found.", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(Palette.warning)
+                        .foregroundStyle(Palette.needsYou)
                 }
                 Text("Needs uv (astral.sh/uv). The app looks in the PATH of your login shell, then ~/.local/bin, /opt/homebrew/bin and /usr/local/bin.")
                     .font(Typo.caption)
@@ -67,7 +67,7 @@ struct NotFoundView: View {
     private var command: some View {
         HStack(spacing: Space.m) {
             Text(TeylaBinary.installCommand)
-                .font(.system(.body, design: .monospaced))
+                .font(Typo.code)
                 .textSelection(.enabled)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -81,7 +81,7 @@ struct NotFoundView: View {
         }
         .padding(Space.m)
         .background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.card))
-        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Palette.border, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Palette.border, lineWidth: Space.hairline))
         .frame(maxWidth: Space.readingWidth)
     }
 }

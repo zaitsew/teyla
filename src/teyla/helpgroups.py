@@ -43,6 +43,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
         ("product", "The product registry: repos, aliases, stage"),
         ("portfolio", "Where every product stands: health, platforms, PRs"),
         ("productize", "What stands between each product and its second user"),
+        ("growth", "The content factory: daily slots, drafts to approve, packets"),
         ("shield", "Does each product keep its security contract, and how old is the proof"),
         ("platform", "The shared resources every product reuses"),
         ("testflight", "Did the iOS build reach a person"),

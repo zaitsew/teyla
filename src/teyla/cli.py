@@ -79,6 +79,7 @@
   teyla schedules forget KEY [KEY...]                              acknowledge VANISHED tasks removed on purpose (clears the banner)
   teyla console [SECTION] [--json] [--refresh]                     the data behind the app's admin sections
   teyla subs [list|add|set|remove] [NAME] [--monthly USD] ...      the recurring bills the Money section adds up (~/.teyla/subscriptions.toml)
+  teyla growth [init|harvest|trends|plan|draft|review|approve|packets|sale-attempts|doctor]   the content factory: daily slots per channel, drafts you approve, packets you post
   teyla attention [--json]                                         what is wrong on this Mac's backend now, in one list (read-only, no network)
   teyla reviews [--days N] [--json] [--quiet] [repo...]            review debt: merged PRs never reviewed, merged with an open P1, skipped
   teyla reviews settle OWNER/REPO#N --outcome fixed|false --decision PATH --reason TEXT [--commit SHA] [--dry]   close an open P1 on a merged PR, with evidence in git
@@ -586,6 +587,8 @@ def build_parser() -> argparse.ArgumentParser:
     console_mod.register(sp)
     from . import subs as subs_mod
     subs_mod.register(sp)
+    from . import growth as growth_mod
+    growth_mod.register(sp)
     q = sp.add_parser("help", help="the commands in six groups; --all lists every one; help COMMAND shows its options")
     q.set_defaults(fn=cmd_help); q.add_argument("words", nargs="*", metavar="[--all | COMMAND]")
     from . import registry as registry_mod

@@ -140,7 +140,7 @@ private struct SidebarView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             HStack(spacing: Space.s) {
                 BrandMark()
-                Text("Teyla").font(Typo.lead)
+                Text("Teyla").font(Typo.cardTitle)
                 Spacer()
             }
             .padding(.horizontal, Space.m)
@@ -158,14 +158,14 @@ private struct LiveIndicator: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let indicator = model.syncIndicator(at: context.date)
-            HStack(spacing: Space.xs + Space.xxs) {
+            HStack(spacing: Space.xs) {
                 switch indicator.state {
                 case .updating:
                     ProgressView().controlSize(.mini)
                 case .upToDate:
                     dot(Palette.textSecondary)
                 case .stale:
-                    dot(Palette.warning)
+                    dot(Palette.needsYou)
                 case .offline:
                     dot(Palette.danger)
                 }
@@ -175,6 +175,8 @@ private struct LiveIndicator: View {
                     .monospacedDigit()
                     .lineLimit(1)
             }
+            // The toolbar draws its capsule tight around an item: the inset keeps the dot off its edge.
+            .padding(.horizontal, Space.s)
             .help(indicator.tooltip)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(indicator.label)
@@ -184,6 +186,6 @@ private struct LiveIndicator: View {
     private func dot(_ color: Color) -> some View {
         Circle()
             .fill(color)
-            .frame(width: Space.s - Space.xxs, height: Space.s - Space.xxs)
+            .frame(width: Space.dot, height: Space.dot)
     }
 }

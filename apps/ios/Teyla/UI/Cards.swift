@@ -18,40 +18,40 @@ struct QuestionCard: View {
 
     private var productLine: some View {
         Text("\(Format.product(ask.product)) \u{00B7} \(Format.age(seconds: ageSeconds))")
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .font(Typo.caption)
+            .foregroundStyle(Palette.textSecondary)
     }
 
     @ViewBuilder private var unblocksNote: some View {
         if !ask.unblocks.isEmpty {
             Text("unblocks \(ask.unblocks)")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(Color.accentColor)
+                .font(Typo.caption.weight(.medium))
+                .foregroundStyle(Palette.primary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.s) {
             // One line when it fits; the "unblocks" note drops under the product at large text sizes.
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline) {
                     productLine
-                    Spacer(minLength: 8)
+                    Spacer(minLength: Space.s)
                     unblocksNote.multilineTextAlignment(.trailing)
                 }
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Space.xxs) {
                     productLine
                     unblocksNote
                 }
             }
             Text(ask.question)
-                .font(.headline)
+                .font(Typo.cardTitle)
                 .fixedSize(horizontal: false, vertical: true)
             if !ask.context.isEmpty {
                 Text(ask.context)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(Typo.body)
+                    .foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let action {
@@ -67,12 +67,12 @@ struct QuestionCard: View {
     /// Teyla's proposed answer, and why. A payment shows it as information only.
     @ViewBuilder private var proposal: some View {
         if let proposed = ask.proposedAnswer {
-            VStack(alignment: .leading, spacing: 2) {
-                (Text("Proposed: ").foregroundStyle(.secondary) + Text(proposed))
-                    .font(.subheadline)
+            VStack(alignment: .leading, spacing: Space.xxs) {
+                (Text("Proposed: ").foregroundStyle(Palette.textSecondary) + Text(proposed))
+                    .font(Typo.body)
                     .fixedSize(horizontal: false, vertical: true)
                 if let why = ask.triage?.why, !why.isEmpty {
-                    Text(why).font(.footnote).foregroundStyle(.secondary)
+                    Text(why).font(Typo.caption).foregroundStyle(Palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -80,7 +80,7 @@ struct QuestionCard: View {
     }
 
     private var answering: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.s) {
             proposal
             if let proposed = ask.proposedAnswer, ask.canUseProposedAnswer {
                 // One tap sends the proposed answer to its session, as on the Mac. Never for a payment.
@@ -97,11 +97,11 @@ struct QuestionCard: View {
                 .accessibilityHint("Sends the proposed answer")
             }
             if !ask.options.isEmpty {
-                FlowLayout(spacing: 8) {
+                FlowLayout(spacing: Space.s) {
                     ForEach(Array(ask.options.enumerated()), id: \.offset) { _, option in
                         Button(option) { draft = option }
                             .buttonStyle(.bordered)
-                            .tint(draft == option ? Color.accentColor : Color.secondary)
+                            .tint(draft == option ? Palette.primary : Palette.textSecondary)
                             .controlSize(.regular)
                     }
                 }
@@ -132,24 +132,24 @@ struct TaskRow: View {
         Button {
             if let url { openURL(url) }
         } label: {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: Space.m) {
                 Image(systemName: task.kind == "merge" ? "arrow.triangle.merge" : "checklist")
-                    .font(.title3)
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 26)
-                VStack(alignment: .leading, spacing: 3) {
+                    .font(Typo.section)
+                    .foregroundStyle(Palette.primary)
+                    .frame(width: Space.glyph)
+                VStack(alignment: .leading, spacing: Space.xxs) {
                     Text("\(Format.product(task.product)) \u{00B7} \(Format.age(seconds: ageSeconds))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Typo.caption)
+                        .foregroundStyle(Palette.textSecondary)
                     Text(task.title)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.primary)
+                        .font(Typo.body.weight(.medium))
+                        .foregroundStyle(Palette.text)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                     if !task.detail.isEmpty {
                         Text(task.detail)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .font(Typo.body)
+                            .foregroundStyle(Palette.textSecondary)
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -157,9 +157,9 @@ struct TaskRow: View {
                 Spacer(minLength: 0)
                 if url != nil {
                     Image(systemName: "arrow.up.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                        .padding(.top, 4)
+                        .font(Typo.caption.weight(.semibold))
+                        .foregroundStyle(Palette.textTertiary)
+                        .padding(.top, Space.xs)
                 }
             }
             .contentShape(Rectangle())
@@ -178,31 +178,31 @@ struct DoneCard: View {
     let agoSeconds: Double?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s) {
             HStack(alignment: .firstTextBaseline) {
                 Text(headline)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 8)
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                Spacer(minLength: Space.s)
                 Pill(text: Self.statusLabel(item.status), color: Self.statusColor(item.status))
             }
             Text(item.title)
-                .font(.headline)
+                .font(Typo.cardTitle)
                 .fixedSize(horizontal: false, vertical: true)
             ForEach(Array(item.result.prefix(3).enumerated()), id: \.offset) { _, line in
                 Text(line)
-                    .font(.subheadline)
+                    .font(Typo.body)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !item.needs.isEmpty {
                 Label(item.needs, systemImage: "hand.raised.fill")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Color.orange)
+                    .font(Typo.body.weight(.medium))
+                    .foregroundStyle(Palette.needsYou)
                     .fixedSize(horizontal: false, vertical: true)
             }
             let urls = item.links.compactMap(PhoneFormat.webURL)
             if !urls.isEmpty {
-                FlowLayout(spacing: 8) {
+                FlowLayout(spacing: Space.s) {
                     ForEach(urls, id: \.absoluteString) { url in
                         Button { openURL(url) } label: {
                             Label(PhoneFormat.linkLabel(url), systemImage: "link")
@@ -237,11 +237,11 @@ struct DoneCard: View {
 
     static func statusColor(_ status: String) -> Color {
         switch status {
-        case "done": return .green
-        case "needs_you": return .orange
-        case "blocked", "failed": return .red
-        case "review_ready": return .blue
-        default: return .secondary
+        case "done": return Palette.saving
+        case "needs_you": return Palette.needsYou
+        case "blocked", "failed": return Palette.danger
+        case "review_ready": return Palette.primary
+        default: return Palette.textSecondary
         }
     }
 }
@@ -258,14 +258,14 @@ struct RunningCard: View {
     private var action: PendingAction? { canCorrect ? model.action(for: .say, target: session.ref) : nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Circle().fill(Color.green).frame(width: 8, height: 8).accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(session.title).font(.body.weight(.medium)).fixedSize(horizontal: false, vertical: true)
-                    Text(detail).font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: Space.s) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                Circle().fill(Palette.saving).frame(width: Space.dot, height: Space.dot).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: Space.xxs) {
+                    Text(session.title).font(Typo.body.weight(.medium)).fixedSize(horizontal: false, vertical: true)
+                    Text(detail).font(Typo.caption).foregroundStyle(Palette.textSecondary)
                 }
-                Spacer(minLength: 8)
+                Spacer(minLength: Space.s)
                 if canCorrect, !correcting, action == nil {
                     Button("Correct") { correcting = true }
                         .buttonStyle(.bordered)

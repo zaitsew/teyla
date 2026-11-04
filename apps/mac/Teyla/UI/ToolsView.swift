@@ -28,7 +28,7 @@ struct ToolsView: View {
                     }
                     if model.capabilities.diagnosis { diagnosis }
                 }
-                .padding(.horizontal, Space.xl + Space.xs)
+                .padding(.horizontal, Space.page)
                 .padding(.vertical, Space.xl)
                 .readingWidth()
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -44,8 +44,8 @@ struct ToolsView: View {
     }
 
     private func header(_ tools: ToolsModel) -> some View {
-        VStack(alignment: .leading, spacing: Space.xs + Space.xxs) {
-            Text("Tools").font(Typo.brief)
+        VStack(alignment: .leading, spacing: Space.xs) {
+            Text("Tools").font(Typo.pageTitle)
             Text(ToolsPage.headline(report: tools.report, phase: tools.phase))
                 .font(Typo.body)
                 .foregroundStyle(tools.failure == nil ? Palette.textSecondary : Palette.danger)
@@ -108,7 +108,7 @@ private struct ToolCard: View {
                     .foregroundStyle(item.needsYou ? Palette.needsYou : Palette.textSecondary)
                     .accessibilityHidden(true)
                 Text(item.title)
-                    .font(Typo.lead)
+                    .font(Typo.cardTitle)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 if item.needsYou { Chip(text: "Needs you", color: Palette.needsYou) }
@@ -263,7 +263,7 @@ private struct ReadFailure: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s) {
             Label("Tools could not be read", systemImage: "exclamationmark.triangle.fill")
-                .font(Typo.lead)
+                .font(Typo.cardTitle)
                 .foregroundStyle(Palette.danger)
             Text(message)
                 .font(Typo.body)

@@ -10,7 +10,7 @@ struct NewTaskSheet: View {
         let task = model.newTask
         let products = NewTask.products(model.snapshot?.products ?? [])
         VStack(alignment: .leading, spacing: Space.l) {
-            Text("New task").font(Typo.lead)
+            Text("New task").font(Typo.cardTitle)
 
             HStack(spacing: Space.l) {
                 Picker("Product", selection: Bindable(task).product) {
@@ -79,7 +79,7 @@ struct NewTaskSheet: View {
             }
         }
         .padding(Space.xl)
-        .frame(width: 520)
+        .frame(width: Space.taskSheetWidth)
         .onAppear { fieldFocused = true }
         .onChange(of: task.draft) { _, new in
             if case .done = task.status, !new.isEmpty { task.resetResult() }
@@ -96,7 +96,7 @@ struct NewTaskSheet: View {
             }
         case .done(let text):
             Label(text, systemImage: "checkmark.circle.fill")
-                .foregroundStyle(Palette.success)
+                .foregroundStyle(Palette.saving)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         case .failed(let message):
