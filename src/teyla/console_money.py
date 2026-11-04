@@ -135,6 +135,9 @@ def compute(now: float, rows=None, bills=None, actions="read") -> tuple[dict, di
         except Exception as e:  # noqa: BLE001
             notes["actions"] = f"{type(e).__name__}: {e}"[:160]
             actions = None
+        if actions == []:             # signed in, but no account's billing could be read: unknown, not zero minutes
+            notes["actions"] = "GitHub gave no Actions billing data (the token may lack billing access)"
+            actions = None
     usage = aggregate(rows, now, bills, actions)
     if "spend" in notes:
         usage["windows"] = {k: {**v, "list_usd": None, "sub_usd": None, "sessions": None}

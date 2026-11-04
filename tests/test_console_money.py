@@ -183,6 +183,14 @@ def test_compute_reads_each_source_on_its_own(monkeypatch):
     assert usage["windows"]["days7"]["list_usd"] == 10.0 and usage["windows"]["days7"]["billed_usd"] == 5.0
 
 
+def test_an_empty_actions_answer_is_unknown_not_zero_minutes(monkeypatch):
+    monkeypatch.setattr(spend, "session_rows", lambda days: [row()])
+    monkeypatch.setattr(providers, "read", lambda days: {})
+    monkeypatch.setattr(spend, "actions_usage", lambda: [])
+    usage, notes = cm.compute(NOW)
+    assert usage["actions"] is None and "billing" in notes["actions"]
+
+
 def test_a_corrupt_or_old_cache_reads_as_missing():
     assert cm.read_usage() is None
     cm.cache_path().parent.mkdir(parents=True, exist_ok=True)

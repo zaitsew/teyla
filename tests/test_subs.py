@@ -113,3 +113,16 @@ def test_the_parser_accepts_the_documented_forms():
                        "--credits", "20", "--note", "text"])
     assert ns.fn is subs.cmd_subs and ns.monthly == "20" and ns.name == "Alpha"
     assert p.parse_args(["subs"]).action == "list"
+
+
+def test_a_failed_save_leaves_the_old_list_whole(monkeypatch):
+    subs.add("Alpha", monthly_usd=20)
+    before = subs.path().read_text()
+
+    def fail(src, dst):
+        raise OSError("disk full")
+    monkeypatch.setattr(subs.os, "replace", fail)
+    with pytest.raises(OSError):
+        subs.add("Beta")
+    assert subs.path().read_text() == before
+    assert [p.name for p in subs.path().parent.iterdir() if p.name.endswith(".tmp")] == []

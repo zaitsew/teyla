@@ -24,6 +24,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import math
+import os
 import pathlib
 import sys
 import tomllib
@@ -148,7 +149,15 @@ def dumps(rows: list[dict]) -> str:
 
 
 def save(rows: list[dict], p: pathlib.Path | None = None) -> None:
-    config.write_private(p or path(), dumps(rows))
+    """Write the whole file beside the old one and rename it over: a full disk or a killed process leaves the
+    old list in place, never a truncated one."""
+    p = p or path()
+    tmp = p.with_name(f"{p.name}.{os.getpid()}.tmp")
+    try:
+        config.write_private(tmp, dumps(rows))
+        os.replace(tmp, p)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _find(rows: list[dict], name: str) -> int | None:
