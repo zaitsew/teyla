@@ -493,7 +493,7 @@ def test_dry_draft_calls_no_model_and_writes_nothing(env, monkeypatch):
 
 
 def test_clip_drafts_use_the_script_model_and_spec_product_asks_for_a_test(env, monkeypatch):
-    store, cfg = make(channels=("youtube-en",))
+    store, cfg = make(channels=("x-en",))
     (it,) = planned(store, cfg, idea="What if Big Translator was truly AI-native?", fmt="spec-product")
     fm = fake_model([dict(GOOD, hook="Imagine Alpha with an agent as its first user", body="Imagine Alpha with an agent as its first user. It reads your steps and plans the week.",
                           script="Imagine Alpha ...", acceptance_test="A prototype answers one step question.")])
@@ -595,11 +595,12 @@ def test_packet_needs_an_approved_item_and_writes_the_upload_folder(env, monkeyp
 
 def test_video_platform_packet_marks_missing_media_and_labels_dubbed_audio(env, monkeypatch, tmp_path):
     store, cfg = make(channels=("tiktok-en",))
-    (it,) = planned(store, cfg)
     body = "Alpha now syncs faster. The merged change cut the sync step."
-    monkeypatch.setattr(growth, "call_model", fake_model([dict(GOOD, body=body)]))
-    growth.run_draft(store, cfg, NOW, limit=1, day=None, dry=False)
-    store = growth.Store()
+    it = growth.make_item(store, NOW, kind="clip", format="worklog", idea="Alpha syncs faster", platform="tiktok", language="en",
+                          product="alpha", facts=["merged pull request in Alpha: faster sync"], day=DAY, channel="tiktok-en",
+                          hook=body, body=body, status="review", voice_check={"ok": True, "findings": []},
+                          leak_check={"ok": True, "kinds": []})               # a clip whose video was lost: approved by hand
+    store.save(it, NOW)
     growth.approve(store, it["id"], NOW)
     out = growth.packet(store, it["id"], NOW, cfg=cfg)
     assert (out / "NO-MEDIA.txt").exists()

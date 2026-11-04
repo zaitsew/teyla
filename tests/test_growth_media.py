@@ -264,9 +264,9 @@ def test_a_session_only_cut_fills_the_slots_without_footage(media, monkeypatch, 
     fm = fake_model([dict(CLIP, segments=[])])
     monkeypatch.setattr(growth, "call_model", fm)
     seen = {}
-    monkeypatch.setattr(gm, "session_story", lambda sid: seen.setdefault("sid", sid) and (object(), ""))
+    monkeypatch.setattr(gm, "session_story", lambda sid, seconds=45: seen.setdefault("sid", sid) and (object(), ""))
     monkeypatch.setattr(gm, "story_strings", lambda story: ["Agent fixed the sync step", "Tests passed"])
-    monkeypatch.setattr(gm, "render_session", lambda story, d, n=1: (mp4, ""))
+    monkeypatch.setattr(gm, "render_session", lambda story, d, n=1, seconds=45: (mp4, ""))
     row = gm.cut(store, cfg, ep["id"], NOW)
     assert seen["sid"] == "s1" and fm.calls[0]["payload"]["session_outline"] == ["Agent fixed the sync step", "Tests passed"]
     assert fm.calls[0]["payload"]["transcript"] == "" and {i["status"] for i in row["items"]} == {"review"}
@@ -281,7 +281,7 @@ def test_a_session_only_cut_needs_a_session_and_refuses_a_leaking_story(media, m
         gm.cut(store, cfg, ep["id"], NOW)
     fm = fake_model([CLIP])
     monkeypatch.setattr(growth, "call_model", fm)
-    monkeypatch.setattr(gm, "session_story", lambda sid: (object(), ""))
+    monkeypatch.setattr(gm, "session_story", lambda sid, seconds=45: (object(), ""))
     monkeypatch.setattr(gm, "story_strings", lambda story: [f"Edited {TERM}"])
     with pytest.raises(growth.GrowthError, match="session story would leak"):
         gm.cut(store, cfg, ep["id"], NOW, session="s9")
@@ -305,8 +305,12 @@ def test_cut_marks_a_blocked_clip_failed_and_keeps_the_rest(media, monkeypatch):
 def test_cut_takes_over_an_unfilled_slot_and_frees_the_masters_seat(media, monkeypatch):
     store, cfg = make(channels=("youtube-en",))
     m = master(store, idea="Merged in Alpha: faster sync")
-    (slot,) = [r["item"] for r in growth.plan(store, cfg, DAY, NOW) if r["item"]]
-    assert growth.Store().get(m["id"])["assigned"] == ["youtube-en"]
+    m["assigned"] = ["youtube-en"]                                   # an older store: a text idea once held this slot
+    store.save(m, NOW)
+    slot = growth.make_item(store, NOW, kind="clip", format="worklog", idea=m["idea"], platform="youtube", language="en", product="alpha",
+                            facts=m["facts"], day=DAY, channel="youtube-en", parent=m["id"])
+    store.save(slot, NOW)
+    assert growth.plan(growth.Store(), cfg, DAY, NOW)[0]["item"] is None          # without a video it is a gap, not a text post
     ep = episode(growth.Store())
     monkeypatch.setattr(growth, "call_model", fake_model([CLIP]))
     monkeypatch.setattr(gm, "run_tool", fake_tool([]))
@@ -355,8 +359,9 @@ def test_daily_runs_in_order_and_each_step_fails_on_its_own(media, monkeypatch):
     monkeypatch.setattr(growth, "plan", lambda *a, **k: order.append("plan") or real_plan(*a, **k))
     monkeypatch.setattr(growth, "call_model", fake_model([GOOD]))
     res = gm.daily(store, cfg, NOW, quiet=True)
-    assert [s[0] for s in res["steps"]] == ["harvest", "trends", "plan", "draft"]
-    assert [s[1] for s in res["steps"]] == ["failed", "ok", "ok", "ok"] and res["failed"] == 1
+    assert [s[0] for s in res["steps"]] == ["harvest", "trends", "plan", "video", "draft"]
+    assert [s[1] for s in res["steps"]] == ["failed", "ok", "ok", "ok", "ok"] and res["failed"] == 1
+    assert res["steps"][3][2] == "skipped: no enabled English video channel"
     assert "gh is down" in res["steps"][0][2] and order == ["trends", "plan", "plan"]
     s2 = growth.Store()
     assert [i["status"] for i in s2.items().values() if i["platform"] == "x"] == ["review"]
@@ -371,7 +376,7 @@ def test_daily_skips_the_model_in_safe_mode_and_prints_a_line_per_step(media, mo
     monkeypatch.setattr(growth, "call_model", fm)
     lines = []
     res = gm.daily(store, cfg, NOW, out=lines.append)
-    assert fm.calls == [] and res["failed"] == 0 and res["steps"][3][2] == "skipped: safe mode" and len(lines) == 4
+    assert fm.calls == [] and res["failed"] == 0 and res["steps"][4][2] == "skipped: safe mode" and len(lines) == 5
 
 
 def test_daily_cli_exit_codes(media, monkeypatch, capsys):
