@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **The apps have one small type system.** Mac and iPhone use exactly five type levels plus one style for big numbers, and
+  every size, gap, radius and colour comes from a token. The iPhone has real token enums now. A test fails on a literal.
+  The toolbar's status dot no longer touches the edge of its capsule.
 - **A product can carry a tester's review captures.** `$0.deliver` hands a saved capture to the product's own backend, and
   retries what was saved earlier, with no relay key needed. The package itself still makes no network call.
   `teyla review pull --vouched-folder DIR` imports what the product's script downloaded.

@@ -82,7 +82,7 @@ struct StoreSetupView: View {
                 BrandLockup()
                 VStack(spacing: Space.s) {
                     Text("Connect Teyla on this Mac")
-                        .font(Typo.brief)
+                        .font(Typo.pageTitle)
                     Text("Teyla shows what needs you across your AI coding sessions. It reads what the teyla command writes "
                          + "to a folder in iCloud Drive, and sends your answers back the same way.")
                         .foregroundStyle(Palette.textSecondary)
@@ -150,7 +150,7 @@ struct StoreSetupView: View {
                     Text(terminalOpened
                          ? "Paste it in Terminal and press Return. Teyla connects by itself."
                          : "The command is copied. Open Terminal, paste it and press Return. Teyla connects by itself.")
-                        .font(Typo.lead)
+                        .font(Typo.cardTitle)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                     commandRow(StoreSetup.oneCommand)
@@ -175,8 +175,8 @@ struct StoreSetupView: View {
     private func folderPrompt(_ store: StoreSession) -> some View {
         VStack(spacing: Space.m) {
             Label("The Mac is paired. One more step.", systemImage: "checkmark.circle.fill")
-                .font(Typo.lead)
-                .foregroundStyle(Palette.success)
+                .font(Typo.cardTitle)
+                .foregroundStyle(Palette.saving)
             Text("Choose the Teyla folder in iCloud Drive. The panel opens on it.")
                 .foregroundStyle(Palette.textSecondary)
             Button {
@@ -207,7 +207,7 @@ struct StoreSetupView: View {
                 HStack(spacing: Space.s) {
                     TextField("teyla-pair:v1:…", text: $pairing)
                         .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
+                        .font(Typo.code)
                         .onSubmit(connect)
                     Button(store.hasKey ? "Replace key" : "Pair", action: connect)
                         .buttonStyle(.borderedProminent)
@@ -215,7 +215,7 @@ struct StoreSetupView: View {
                 }
                 if store.hasKey {
                     Label("Key saved", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(Palette.success)
+                        .foregroundStyle(Palette.saving)
                 }
             }
         }
@@ -229,13 +229,13 @@ struct StoreSetupView: View {
                                      @ViewBuilder content: () -> Content) -> some View {
         HStack(alignment: .top, spacing: Space.m) {
             Text("\(number)")
-                .font(Typo.lead)
+                .font(Typo.cardTitle)
                 .foregroundStyle(Palette.onPrimary)
                 .frame(width: Space.xl, height: Space.xl)
                 .background(Palette.primary, in: Circle())
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: Space.s) {
-                Text(title).font(Typo.lead)
+                Text(title).font(Typo.cardTitle)
                 Text(detail)
                     .font(Typo.body)
                     .foregroundStyle(Palette.textSecondary)
@@ -249,7 +249,7 @@ struct StoreSetupView: View {
     private func commandRow(_ command: String) -> some View {
         HStack(spacing: Space.m) {
             Text(command)
-                .font(.system(.body, design: .monospaced))
+                .font(Typo.code)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: Space.s)
@@ -267,7 +267,7 @@ struct StoreSetupView: View {
         }
         .padding(Space.m)
         .background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.card))
-        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Palette.border, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Palette.border, lineWidth: Space.hairline))
     }
 
     private func folderRow(_ store: StoreSession) -> some View {
@@ -275,7 +275,7 @@ struct StoreSetupView: View {
             Button("Choose folder…") { StoreSetup.chooseFolder(store.chooseFolder) }
             if let name = store.folderName {
                 Label(name, systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(Palette.success)
+                    .foregroundStyle(Palette.saving)
             } else {
                 Text("No folder chosen").foregroundStyle(Palette.textSecondary)
             }
@@ -300,7 +300,7 @@ struct SampleBanner: View {
         }
         .padding(.horizontal, Space.l)
         .padding(.vertical, Space.s)
-        .background(Palette.primary.opacity(0.12))
+        .background(Palette.primaryTint)
         .overlay(alignment: .bottom) { Divider() }
         .accessibilityElement(children: .combine)
     }
@@ -338,7 +338,7 @@ struct StoreSettingsSection: View {
                     HStack(spacing: Space.s) {
                         TextField("teyla-pair:v1:…", text: $pairing)
                             .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
+                            .font(Typo.code)
                         Button("Pair") {
                             if store.pair(with: pairing) { pairing = ""; repairing = false }
                         }

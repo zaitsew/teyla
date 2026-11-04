@@ -11,17 +11,17 @@ struct DecisionsView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     // Not lazy: a few dozen cards at most, and the "Older" fold must exist to be scrolled to.
-                    VStack(alignment: .leading, spacing: 28) {
+                    VStack(alignment: .leading, spacing: Space.xl) {
                         if let snapshot = model.snapshot {
                             Content(snapshot: snapshot)
                         } else {
                             WaitingView()
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 32)
-                    .frame(maxWidth: 640)
+                    .padding(.horizontal, Space.l)
+                    .padding(.top, Space.s)
+                    .padding(.bottom, Space.xxl)
+                    .frame(maxWidth: Space.readingCard)
                     .frame(maxWidth: .infinity)
                 }
                 .task {
@@ -31,7 +31,7 @@ struct DecisionsView: View {
                     withAnimation { proxy.scrollTo("older", anchor: .top) }
                 }
                 .scrollDismissesKeyboard(.interactively)
-                .background(Color(.systemGroupedBackground))
+                .background(Palette.background)
                 .refreshable { await model.refresh() }
             }
             .navigationTitle("Decisions")
@@ -48,10 +48,10 @@ private struct Content: View {
         let now = Date()
         let lists = DecisionLists(asks: snapshot.asks, snapshot: snapshot, now: now)
         Text(Decisions.summary(count: lists.owner.count))
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
+            .font(Typo.body)
+            .foregroundStyle(Palette.textSecondary)
             .accessibilityAddTraits(.isHeader)
-            .padding(.top, -16)
+            .padding(.top, -Space.l)
 
         SentFromPhone(snapshot: snapshot)
         Questions(lists: lists, snapshot: snapshot, now: now)
@@ -73,19 +73,19 @@ private struct Questions: View {
     var body: some View {
         if lists.hasTriage {
             ForEach(Decisions.grouped(lists.fresh)) { group in
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: Space.m) {
                     SectionLabel(group.heading)
                     ForEach(group.asks) { card($0) }
                 }
             }
         } else if !lists.fresh.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Space.m) {
                 SectionLabel("Needs you \u{2014} ordered by what it unblocks")
                 ForEach(lists.fresh) { card($0) }
             }
         }
         if !lists.older.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Space.m) {
                 Color.clear.frame(height: 0).id("older")
                 Fold(title: AskFold.heading(count: lists.older.count), detail: "waiting more than 7 days",
                      spokenTitle: "Older questions, \(lists.older.count)", startsOpen: LaunchOptions().olderOpen) {
@@ -116,16 +116,16 @@ private struct CloseSuggestions: View {
     var body: some View {
         let progress = model.closeProgress
         let open = asks.filter { model.action(for: .close, target: $0.id) == nil }
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Space.m) {
             if let line = Decisions.closeLine(count: asks.count) {
                 Fold(title: line) {
                     ForEach(asks) { ask in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(ask.question).font(.subheadline).fixedSize(horizontal: false, vertical: true)
-                            Text(detail(ask)).font(.footnote).foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: Space.xxs) {
+                            Text(ask.question).font(Typo.body).fixedSize(horizontal: false, vertical: true)
+                            Text(detail(ask)).font(Typo.caption).foregroundStyle(Palette.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                        .padding(.leading, 16)
+                        .padding(.leading, Space.l)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
@@ -142,35 +142,35 @@ private struct CloseSuggestions: View {
     }
 
     @ViewBuilder private func status(_ progress: CloseProgress) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s) {
             if progress.simulated {
                 Label(SampleData.notice, systemImage: "info.circle.fill")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .font(Typo.body).foregroundStyle(Palette.textSecondary)
             }
             if let line = CloseTracking.line(progress) {
-                HStack(spacing: 8) {
+                HStack(spacing: Space.s) {
                     if progress.waiting > 0 || progress.reopening > 0 {
                         ProgressView().controlSize(.small)
-                        Text("\(line) Waiting for the Mac").foregroundStyle(.secondary)
+                        Text("\(line) Waiting for the Mac").foregroundStyle(Palette.textSecondary)
                     } else {
-                        Text(line).foregroundStyle(.secondary)
+                        Text(line).foregroundStyle(Palette.textSecondary)
                         Button("Undo") { Task { await model.undoAcceptedClose() } }
                             .buttonStyle(.bordered)
                             .controlSize(.large)
                     }
                 }
-                .font(.callout)
+                .font(Typo.body)
             }
             if let failure = progress.failure {
                 Label(failure, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(Color.brandDanger)
+                    .font(Typo.body)
+                    .foregroundStyle(Palette.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if progress.waiting == 0 && progress.reopening == 0 {
                 Button("Dismiss") { model.dismissCloseResults() }
-                    .font(.callout.weight(.medium))
-                    .frame(minHeight: 44)
+                    .font(Typo.body.weight(.medium))
+                    .frame(minHeight: Space.touchMin)
             }
         }
     }
@@ -226,25 +226,25 @@ private struct AutoClosedRow: View {
 
     var body: some View {
         let action = model.action(for: .reopen, target: item.id)
-        VStack(alignment: .leading, spacing: 8) {
-            Text(item.title).font(.subheadline).fixedSize(horizontal: false, vertical: true)
-            Text(detail).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: Space.s) {
+            Text(item.title).font(Typo.body).fixedSize(horizontal: false, vertical: true)
+            Text(detail).font(Typo.caption).foregroundStyle(Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             if let action {
                 if let outcome = action.outcome {
                     Label(outcome.ok ? PhoneFormat.outcomeLine(outcome) : CloseTracking.failureLine(outcome),
                           systemImage: outcome.ok ? "info.circle.fill" : "exclamationmark.triangle.fill")
-                        .font(.callout)
-                        .foregroundStyle(outcome.ok ? Color.secondary : Color.brandDanger)
+                        .font(Typo.body)
+                        .foregroundStyle(outcome.ok ? Palette.textSecondary : Palette.danger)
                         .fixedSize(horizontal: false, vertical: true)
                     Button(outcome.ok ? "Dismiss" : "Dismiss and try again") { model.dismiss(action.id) }
-                        .font(.callout.weight(.medium))
-                        .frame(minHeight: 44)
+                        .font(Typo.body.weight(.medium))
+                        .frame(minHeight: Space.touchMin)
                 } else {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Space.s) {
                         ProgressView().controlSize(.small)
-                        Text("Waiting for the Mac").foregroundStyle(.secondary)
+                        Text("Waiting for the Mac").foregroundStyle(Palette.textSecondary)
                     }
-                    .font(.callout)
+                    .font(Typo.body)
                 }
             } else {
                 Button("Undo") { Task { await model.reopen(id: item.id, label: item.title) } }
@@ -254,7 +254,7 @@ private struct AutoClosedRow: View {
                     .accessibilityHint("Reopens the question")
             }
         }
-        .padding(.leading, 16)
+        .padding(.leading, Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -272,7 +272,7 @@ private struct OnlyYou: View {
 
     var body: some View {
         if !snapshot.tasks.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Space.m) {
                 SectionLabel("Only you")
                 ForEach(snapshot.tasks) { task in
                     TaskRow(task: task, ageSeconds: PhoneFormat.age(task.ageSeconds, snapshot: snapshot, now: now))
@@ -299,8 +299,8 @@ private struct DoneFold: View {
                 }
                 if items.count > Self.collapsed {
                     Button(showAll ? "Show fewer" : "Show all \(items.count)") { showAll.toggle() }
-                        .font(.body.weight(.medium))
-                        .frame(minHeight: 44)
+                        .font(Typo.body.weight(.medium))
+                        .frame(minHeight: Space.touchMin)
                 }
             }
         }

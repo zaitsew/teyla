@@ -31,7 +31,7 @@ struct NoteTextView: NSViewRepresentable {
         view.isAutomaticDashSubstitutionEnabled = false
         view.isAutomaticTextReplacementEnabled = false
         view.isAutomaticSpellingCorrectionEnabled = false
-        view.font = NSFont.preferredFont(forTextStyle: .title3)
+        view.font = Typo.noteField
         view.textColor = .labelColor
         view.textContainerInset = NSSize(width: 0, height: Space.xs)
         view.isVerticallyResizable = true
@@ -113,7 +113,7 @@ final class KeyTextView: NSTextView {
         guard string.isEmpty, !placeholder.isEmpty else { return }
         let origin = NSPoint(x: textContainerOrigin.x + (textContainer?.lineFragmentPadding ?? 0), y: textContainerOrigin.y)
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: font ?? NSFont.preferredFont(forTextStyle: .title3),
+            .font: font ?? Typo.noteField,
             .foregroundColor: NSColor.placeholderTextColor,
         ]
         placeholder.draw(at: origin, withAttributes: attributes)

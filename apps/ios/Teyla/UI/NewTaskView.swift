@@ -31,8 +31,8 @@ struct NewTaskView: View {
                     HStack {
                         MicButton(text: $text, field: "new-task")
                         Text(dictation.isRecording("new-task") ? "Listening on this iPhone" : "Dictate")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .font(Typo.caption)
+                            .foregroundStyle(Palette.textSecondary)
                         Spacer()
                     }
                 } header: {
@@ -41,7 +41,7 @@ struct NewTaskView: View {
                     Text("The Mac starts it in a fresh worktree. Nothing is sent until you tap Send.")
                 }
                 if let message = dictation.message ?? model.sendError {
-                    Section { Text(message).font(.footnote).foregroundStyle(.red) }
+                    Section { Text(message).font(Typo.caption).foregroundStyle(Palette.danger) }
                 }
             }
             .scrollDismissesKeyboard(.interactively)
