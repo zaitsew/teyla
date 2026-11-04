@@ -57,7 +57,7 @@ import subprocess
 import sys
 import tempfile
 
-from . import corrections, registry
+from . import chores, corrections, registry
 from .adapters import (claude_code, codex, human_text, is_noise_turn, is_retry, iter_jsonl,
                        strip_reminders, text_of, turn_end_candidate)
 from .control import state
@@ -787,7 +787,8 @@ AUTO_RUN = "auto: repeat run of "      # note of an ask left by an earlier run o
 AUTO_OFF = "auto: scheduled task off " # note of an ask closed because its scheduled task is off
 AUTO_TF = "auto: testflight current "  # note of an ask closed because the tester can install the build
 AUTO_REPORT = "auto: report"           # note of a status report that was never a question
-COLLAPSED = (AUTO_DUP, AUTO_RUN)       # notes of an ask hidden under a newer one
+AUTO_CHORE = "auto: same chore "       # note of an ask that repeats a newer ask for the same manual chore
+COLLAPSED = (AUTO_DUP, AUTO_RUN, AUTO_CHORE)   # notes of an ask hidden under a newer one
 RUN_MIN_SESSIONS = 3                   # no scheduled-task signal: this many sessions with one title are one job
 TF_FRESH_S = 48 * 3600                 # the cached TestFlight read must be this young
 SIMILAR_MIN_WORDS = 6                  # both questions need this many words of 3+ letters for a Jaccard match
@@ -1045,6 +1046,34 @@ def _collapse(items: list["Ask"], st: dict, now: float, known: frozenset | None 
     return changed
 
 
+def chore_key(a: "Ask", known: frozenset | None = None) -> str | None:
+    """The chore a `question` or `blocked` ask is, when it may be folded into a newer ask for the same chore, else None.
+    Never an ask with options, one that offers a choice, one aimed at another version, or one that `needs_owner`
+    (a price, a secret, another person); never a chore whose `collapse` is False (a key, a TestFlight tap, a device)."""
+    if a.kind not in ("question", "blocked") or a.options:
+        return None
+    key = chores.classify(a.title, a.question, len(a.options))
+    if key is None or not chores.BY_KEY[key].collapse or needs_owner(a, known):
+        return None
+    return key
+
+
+def _collapse_chores(items: list["Ask"], st: dict, now: float, known: frozenset | None = None) -> bool:
+    """Asks for one manual chore ("Sign Chrome in") collapse into the newest, per product and chore key. The key is a
+    rule-based classifier (`chores.py`), not a similarity: it applies to those few chores only."""
+    groups: dict[tuple, list[Ask]] = {}
+    for a in items:
+        if a.status in ("open", "snoozed", "done") and not a.note.startswith(COLLAPSED):
+            key = chore_key(a, known)
+            if key:
+                groups.setdefault((a.product, key, target_versions(a)), []).append(a)
+    changed = False
+    for (_product, key, _versions), rows in groups.items():
+        if len(rows) > 1:
+            changed = _fold(rows, st, now, AUTO_CHORE, lambda k, c: True) or changed
+    return changed
+
+
 # --- live state that already answers an ask --------------------------------------------------------
 
 def _schedule_home() -> pathlib.Path:
@@ -1149,7 +1178,8 @@ def settle(items: list["Ask"], now: float, *, st: dict | None = None, fetch: boo
     1. an ask whose PR was merged or closed after the ask is done (`auto: PR merged <url>`);
     2. a status report is not a question: kind `report`, done (`auto: report`);
     3. the repeats of a newer ask collapse into it: repeat runs of one scheduled job by identity, then near-identical
-       questions by similarity (never `blocked` asks);
+       questions by similarity (never `blocked` asks), then repeats of one manual chore ("Sign Chrome in") by the rule
+       key of `chores.py` (`auto: same chore <id>`; never an ask with options, or one that `needs_owner`);
     4. an ask of a scheduled task that is off closes (`auto: scheduled task off <id>`);
     5. a request to tap "View in TestFlight" closes when the cached TestFlight data says the tester can install
        (`auto: testflight current <product>`).
@@ -1165,6 +1195,7 @@ def settle(items: list["Ask"], now: float, *, st: dict | None = None, fetch: boo
     known = _known_words(registry.load())
     changed = _collapse_runs(items, st, now, known) or changed
     changed = _collapse(items, st, now, known) or changed
+    changed = _collapse_chores(items, st, now, known) or changed
     changed = _close_off_tasks(items, st, now, tasks, known) or changed
     changed = _close_testflight(items, st, now, stores, known) or changed
     if changed and own:
@@ -1174,7 +1205,7 @@ def settle(items: list["Ask"], now: float, *, st: dict | None = None, fetch: boo
             pass
 
 
-REASONS = ("resolved", "duplicates", "repeat_runs", "scheduled_off", "testflight_current", "reports")
+REASONS = ("resolved", "duplicates", "repeat_runs", "same_chore", "scheduled_off", "testflight_current", "reports")
 
 
 def filtered_by_reason(items: list["Ask"]) -> dict:
@@ -1188,6 +1219,8 @@ def filtered_by_reason(items: list["Ask"]) -> dict:
         elif a.status == "duplicate" or a.status == "done":
             if n.startswith(AUTO_RUN):
                 out["repeat_runs"] += 1
+            elif n.startswith(AUTO_CHORE):
+                out["same_chore"] += 1
             elif n.startswith(AUTO_DUP):
                 out["duplicates"] += 1
             elif a.status == "done" and n.startswith(AUTO_OFF):
@@ -1209,7 +1242,7 @@ def filtered_line(resolved: int, dupes: int, more: dict | None = None) -> str:
     """`filtered: 3 resolved (PR merged/closed), 22 duplicates (20 repeat runs), 1 scheduled task off, ...`. `dupes`
     counts every collapsed repeat; `more` is `filtered_by_reason`'s dict, from which the other reasons are named."""
     more = more or {}
-    extra = [(more.get("scheduled_off", 0), "scheduled task off"), (more.get("testflight_current", 0), "TestFlight current"),
+    extra = [(more.get("same_chore", 0), "same-chore repeats"), (more.get("scheduled_off", 0), "scheduled task off"), (more.get("testflight_current", 0), "TestFlight current"),
              (more.get("reports", 0), "reports")]
     if not (resolved or dupes or any(n for n, _ in extra)):
         return ""
@@ -1326,7 +1359,7 @@ def undo(prefixes: list[str], now: float | None = None) -> tuple[list[str], int]
             continue
         st["done"].pop(a.id, None)
         st["undone"][a.id] = {"ts": _iso(now)}
-        for k in [k for k, v in st["done"].items() if v.get("note") in (AUTO_DUP + a.id, AUTO_RUN + a.id)]:
+        for k in [k for k, v in st["done"].items() if v.get("note") in (AUTO_DUP + a.id, AUTO_RUN + a.id, AUTO_CHORE + a.id)]:
             del st["done"][k]
         lines.append(f"reopened: {a.id}  {a.product}  {a.title}")
         changed = True
