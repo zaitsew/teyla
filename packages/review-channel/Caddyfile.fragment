@@ -1,0 +1,13 @@
+# Add this site block to your Caddyfile. Replace {{host}} with the DNS name you chose for the channel.
+{{host}} {
+	@channel path /healthz /v1/captures/*
+	handle @channel {
+		request_body {
+			max_size 11MB
+		}
+		reverse_proxy review-channel:8080
+	}
+	handle {
+		respond 404
+	}
+}

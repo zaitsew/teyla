@@ -1,0 +1,18 @@
+# Add this service to the compose file of the host that runs your other apps.
+# Replace /srv/review-channel with the directory you created in README.md step 1.
+services:
+  review-channel:
+    build: ./review-channel          # the path to this directory, relative to that compose file
+    restart: unless-stopped
+    user: "1000:1000"
+    mem_limit: 64m
+    read_only: true
+    # No published port: the reverse proxy reaches it by service name on the apps network.
+    networks: [apps]
+    volumes:
+      - /srv/review-channel:/data
+      - /srv/review-channel/keys:/keys:ro   # a directory, not a file: a rename of keys.txt must stay visible
+
+networks:
+  apps:
+    external: true
