@@ -148,6 +148,7 @@ teyla answer <id> -- "<text>"               # send an answer without opening the
 
 The app is ad-hoc signed for local use. If it cannot find `teyla`, the window shows the install command. A global shortcut (⌥Space by default) opens a quick note. Details: [apps/mac/README.md](../apps/mac/README.md), [APP.md](APP.md). To answer from an iPhone, see [RELAY.md](RELAY.md).
 - [CONSOLE.md](CONSOLE.md): the app's admin sections and their data contract.
+- [STARTUP.md](STARTUP.md): `teyla startup`, the stage each product has earned and the YC sheet.
 
 ### What gets read
 
