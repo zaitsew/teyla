@@ -983,8 +983,11 @@ def _recent(items: dict[str, dict], key: str) -> dict | None:
 
 
 def available_masters(store: Store, cfg: dict) -> list[dict]:
+    """Masters that may still take a slot. An idea that cannot make a post (a bare product summary, facts the editor
+    called thin) is not one of them: it would cost a slot and a day's attempt for nothing."""
+    from . import growth_rank as rank
     return [i for i in store.items().values() if i["platform"] == MASTER and i["status"] == "idea" and i["kind"] != "episode"
-            and len(i.get("assigned") or []) < cfg["fanout"]]
+            and len(i.get("assigned") or []) < cfg["fanout"] and not rank.thin_reason(i)]
 
 
 def queue_days(store: Store, cfg: dict) -> float | None:
@@ -1004,12 +1007,18 @@ def product_term(pid: str, attempts: dict[str, dict]) -> float:
 
 
 def pick_idea(masters: list[dict], key: str, last: dict | None, attempts: dict, formats_today: collections.Counter,
-              used_today: collections.Counter, cfg: dict) -> dict | None:
+              used_today: collections.Counter, cfg: dict, hist: dict | None = None) -> dict | None:
+    """The best idea for a slot. What the editor passes comes first (`growth_rank.quality`: a prior by class, pulled toward
+    the pass rate of the idea's source and format). A product with few sale attempts adds its bonus only to an idea
+    that can pass; a weak idea never earns a slot by being the only one of its product."""
+    from . import growth_rank as rank
+    hist = hist or {}
     best, best_s = None, None
     for m in masters:
         if key in (m.get("assigned") or []) or len(m.get("assigned") or []) >= cfg["fanout"]:
             continue
-        s = m["score"] / 30 + product_term(m["product"], attempts) + (0.3 if m.get("owner") else 0.0)
+        q = rank.quality(m, hist)
+        s = 2.0 * q + m["score"] / 30 + (product_term(m["product"], attempts) if q >= rank.ELIGIBLE else 0.0) + (0.3 if m.get("owner") else 0.0)
         if last:
             if last.get("format") == m["format"]:
                 s -= 0.5
@@ -1034,9 +1043,11 @@ def plan(store: Store, cfg: dict, day: str, now: float, *, commit: bool = True, 
     """One row per slot of every enabled channel: filled with an item, or a gap. Commit writes the new items.
     A video channel (YouTube, Instagram, TikTok) is never filled with a text post: its slot holds a clip with a video
     (`growth cut` or the daily video step makes it) or shows as a gap with the reason."""
+    from . import growth_rank as rank
     attempts = attempt_rows(store, reg)
     items = store.items()
     masters = available_masters(store, cfg)
+    hist = rank.history(store)
     formats_today: collections.Counter = collections.Counter(i["format"] for i in items.values() if i.get("day") == day and i["platform"] != MASTER)
     used_today: collections.Counter = collections.Counter()
     rows = []
@@ -1053,7 +1064,7 @@ def plan(store: Store, cfg: dict, day: str, now: float, *, commit: bool = True, 
             if video:
                 rows.append(dict(channel=key, slot=n, item=None, gap=video_gap(store, day)))
                 continue
-            m = pick_idea(masters, key, _recent(items, key), attempts, formats_today, used_today, cfg)
+            m = pick_idea(masters, key, _recent(items, key), attempts, formats_today, used_today, cfg, hist)
             if m is None:
                 rows.append(dict(channel=key, slot=n, item=None))
                 continue
@@ -1111,9 +1122,10 @@ def clip_text(s: str, n: int = 70) -> str:
     return s if len(s) <= n else s[:n - 1] + "…"
 
 
-def render_plan(rows: list[dict], day: str, qd: float | None) -> str:
+def render_plan(rows: list[dict], day: str, qd: float | None, stories: int | None = None) -> str:
     filled = sum(1 for r in rows if r["item"])
-    L = [f"growth plan {day}: {filled} of {len(rows)} slots filled" + (f", queue {qd} days" if qd is not None else "")]
+    L = [f"growth plan {day}: {filled} of {len(rows)} slots filled" + (f", queue {qd} days" if qd is not None else "")
+         + (f", {stories} unused stories" if stories is not None else "")]
     for r in rows:
         it = r["item"]
         if it:
@@ -1290,6 +1302,14 @@ def draft_one(store: Store, cfg: dict, item: dict, chart_dir, guard: Guard, reg:
         store.save(item, now)
         store.log("held", now, id=item["id"], reason="no-video")
         return dict(row, state="draft", reason=item["hold_reason"])
+    from . import growth_rank as rank
+    thin = rank.thin_reason(item, store.items().get(item.get("parent") or ""))
+    if thin:                                         # no model call: the idea has nothing a post could say
+        item["status"], item["fail_reason"] = "failed", thin
+        rank.mark_thin(store, item, thin.removeprefix("thin: "), now)
+        store.save(item, now)
+        store.log("thin", now, id=item["id"], reason=thin)
+        return dict(row, state="failed", reason=thin)
     if q.pr_ref(item) and not item.get("enriched"):
         res = q.enrich_pr(item, guard)
         if not res["ok"]:
@@ -1303,6 +1323,7 @@ def draft_one(store: Store, cfg: dict, item: dict, chart_dir, guard: Guard, reg:
         if res["thin"]:
             item.pop("enriched", None)                  # a retry must run the thin check again
             item["status"], item["fail_reason"] = "failed", f"thin: {res['why']}"
+            rank.mark_thin(store, item, res["why"], now)
             store.save(item, now)
             store.log("thin", now, id=item["id"], reason=res["why"])
             return dict(row, state="failed", reason=item["fail_reason"])
@@ -1434,6 +1455,11 @@ def retry(store: Store, ref: str, now: float) -> dict:
         raise GrowthError(f"{it['id']} is held by the frame check ({it['video_hold']}): `teyla growth cut` renders and checks a new video")
     it.pop("fail_reason", None)
     it.pop("hold_reason", None)
+    it.pop("thin_facts", None)                           # a retry is the owner's word that the facts changed
+    master = store.items().get(it.get("parent") or "")
+    if master and master.get("thin_facts"):
+        master.pop("thin_facts", None)
+        store.save(master, now)
     set_status(store, it, "idea", now)
     return it
 
@@ -1832,7 +1858,8 @@ def cmd_plan(args) -> int:
     if args.json:
         print(json.dumps([dict(channel=r["channel"], slot=r["slot"], item=(r["item"] or {}).get("id")) for r in rows]))
     else:
-        sys.stdout.write(render_plan(rows, day, queue_days(store, cfg)))
+        from . import growth_rank as rank
+        sys.stdout.write(render_plan(rows, day, queue_days(store, cfg), rank.unused_stories(store, cfg)))
     return 0
 
 
