@@ -113,6 +113,7 @@ targets:
       - Teyla/Core
       # The Tools page's model and the command bar's hold no view: they run against a stub backend in the tests.
       - Teyla/App/ToolsModel.swift
+      - Teyla/App/ConsoleModel.swift
       - Teyla/App/CommandBarModel.swift
       - Teyla/Store/StoreBackend.swift
       - Teyla/Store/StoreSession.swift

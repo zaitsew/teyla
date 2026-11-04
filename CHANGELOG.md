@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **The Mac app reads the admin report.** The sidebar is Home, Decisions, Products, then Growth, Money, Operations and
+  Playbook, with Settings at the foot; Tools is part of Operations. The app reads `teyla console --json` from its cache
+  first, reads again in the background, and shows a section's own error without hiding the others. The four pages show
+  their headline figure for now; each section gets its full screen in the next changes.
+
 - **Home starts with figures, not a paragraph.** Five tiles (Decisions, Running, Posts today, Cash per month, Disk free)
   read `console` in the snapshot; a figure with no source shows a dash and the reason, never a zero. Under them one Next
   line of at most 10 words names the top decision and opens it. A model's brief appears there only when it fits.

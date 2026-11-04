@@ -18,7 +18,7 @@ The app holds no data of its own. It runs two commands of the Teyla CLI:
 | `teyla answer <id> <text> [--json]` | Delivers an answer to the session behind a question, then marks it done. |
 | `teyla start --json` | The first-run diagnosis and its offers (read-only). |
 | `teyla apply <offer id> --yes` | Makes one offered change, after a backup. |
-| `teyla attention --json` | What is wrong on this Mac's backend now (the Tools page). |
+| `teyla attention --json` | What is wrong on this Mac's backend now (the Operations page). |
 | `teyla product show <id> --json [--quick]` | One product's page. |
 | `teyla product set <id> stage=<s>` · `focus=true\|false` | Changes a product's stage or focus. |
 
@@ -39,8 +39,8 @@ The window has three states.
    seconds counter, since it reads 30 days of sessions. When the report arrives the sidebar appears and the
    diagnosis page shows it. If `teyla start` fails, the window shows the error and "Try again".
 3. **The shell.** A sidebar and the page it points at: Home, Decisions (with the count of decisions waiting on
-   you) and All products, then Tools below a gap (the diagnosis opens from Tools, which stays selected while it
-   shows). The sidebar lists no single product. A product page opens from a card, a row, or the product name on a
+   you) and Products, then Growth, Money, Operations (with the count of failures that need you) and Playbook below a
+   gap, and Settings at the foot (the diagnosis opens from Operations, which stays selected while it shows). The sidebar lists no single product. A product page opens from a card, a row, or the product name on a
    question. ⌘K opens the command bar from any page.
 
 **Home.** A page that scrolls. Top to bottom:
@@ -606,9 +606,22 @@ A `close` question stays open. `teyla asks accept-close` closes them together an
 `undo: teyla asks undo <ids>`; `teyla asks triage` prints the buckets and calls no model. Rules and the cache are
 described in [ASKS.md](ASKS.md).
 
+## Admin sections: the console report (from 2026-11-04)
+
+Growth, Money, Operations and Playbook read one command, `teyla console --json` (the cache at
+`~/.teyla/console-cache.json`, 30 minutes old at most; `--refresh` rebuilds it, and Money's rebuild takes about half a
+minute). The report has four sections. A section that failed is `{"error": "..."}`; the others still load. The app
+(`Core/ConsoleReport.swift`, `App/ConsoleModel.swift`) paints the cache first, reads again when a page opens with a
+report older than 5 minutes, and keeps the last report when a read fails, with a note that says so. A key the report
+does not carry shows a dash with the reason, never a zero. The store build has no admin sections
+(`Capabilities.console`). Every page shows "Updated N min ago" and a "Check again" button.
+
+Preview hooks: `TEYLA_CONSOLE_FIXTURE` (default `console.v1.json` beside the state sample) and
+`TEYLA_PREVIEW_SNAPSHOT_VIEW=growth|money|operations|playbook`.
+
 ## Tools and the command bar (from 2026-11-02)
 
-**Tools.** The sidebar item under All products. It shows what is wrong on this Mac's backend now, from one command,
+**Tools** (now the actions part of Operations, from 2026-11-04). It was a sidebar item under All products. It shows what is wrong on this Mac's backend now, from one command,
 `teyla attention --json` (`docs/COMMANDS.md` has the schema). The command reads local state only and makes no network
 call; a source that fails, times out or has a cache older than a day comes back as an `unknown` item, so a failure never
 reads as calm. The app reads it at launch, when the page opens with a report older than 10 minutes, after an action, and
@@ -632,7 +645,7 @@ on "Check again". It takes up to half a minute on a loaded Mac, so it never runs
   command bar actions (`Capabilities.tools`).
 
 **Command bar (⌘K, View menu → Command Bar…).** A sheet with a text field over a fixed list: Go to Home, Decisions, All
-products, Tools; Open <product> for each product with a page; New task; Refresh; and the actions currently on the Tools
+products, Growth, Money, Operations, Playbook; Open <product> for each product with a page; New task; Refresh; and the actions currently on the Tools
 page. Matching is plain text (a word that starts a word of the title, then a keyword, then any part of the title or of an
 action's command); no model is asked. The arrow keys move, Return chooses, Escape closes. An action entry shows its exact
 command and "asks before it runs"; choosing it opens that card at its preview or confirm step and never runs it from the

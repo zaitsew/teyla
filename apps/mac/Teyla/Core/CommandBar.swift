@@ -35,12 +35,20 @@ enum CommandBar {
                          keywords: ["home", "core"]),
             CommandEntry(id: "go:decisions", title: "Go to Decisions", detail: "Questions that wait on you", symbol: "tray", kind: .go(.decisions),
                          keywords: ["decisions", "questions", "asks"]),
-            CommandEntry(id: "go:portfolio", title: "Go to All products", detail: "Every product, with its health", symbol: "square.grid.2x2",
-                         kind: .go(.portfolio), keywords: ["products", "portfolio"]),
+            CommandEntry(id: "go:portfolio", title: "Go to Products", detail: "Every product, with its health", symbol: "square.grid.2x2",
+                         kind: .go(.portfolio), keywords: ["products", "portfolio", "all products"]),
         ]
-        if capabilities.tools {
-            out.append(CommandEntry(id: "go:tools", title: "Go to Tools", detail: "What is wrong on this Mac's backend", symbol: "wrench.and.screwdriver",
-                                    kind: .go(.tools), keywords: ["tools", "attention", "backend"]))
+        if capabilities.console {
+            out.append(contentsOf: [
+                CommandEntry(id: "go:growth", title: "Go to Growth", detail: "Posts today, drafts to review", symbol: "megaphone",
+                             kind: .go(.growth), keywords: ["growth", "posts", "marketing", "content"]),
+                CommandEntry(id: "go:money", title: "Go to Money", detail: "What leaves your accounts", symbol: "creditcard",
+                             kind: .go(.money), keywords: ["money", "cost", "subscriptions", "spend", "cash"]),
+                CommandEntry(id: "go:operations", title: "Go to Operations", detail: "What failed or needs capacity", symbol: "gauge.with.dots.needle.67percent",
+                             kind: .go(.operations), keywords: ["operations", "machine", "failures", "tools", "attention", "backend", "disk"]),
+                CommandEntry(id: "go:playbook", title: "Go to Playbook", detail: "What you have learned and standardized", symbol: "book",
+                             kind: .go(.playbook), keywords: ["playbook", "guidelines", "models", "quotes", "learned"]),
+            ])
         }
         for product in products where ProductCommands.isProductID(product.id) && !product.id.hasPrefix("(") {
             out.append(CommandEntry(id: "product:\(product.id)", title: "Open \(product.name)", detail: "Product page", symbol: "shippingbox",

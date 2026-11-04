@@ -75,6 +75,7 @@ struct MainView: View {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         model.refresh()
+                        if model.route.isConsole, model.capabilities.console { model.console.refresh(rebuild: true) }
                     } label: {
                         Label("Refresh", systemImage: "arrow.clockwise")
                     }
@@ -113,31 +114,40 @@ private struct DetailView: View {
         case .decisions: DecisionsView()
         case .portfolio: PortfolioView()
         case .diagnosis: DiagnosisView()
-        case .tools: ToolsView()
+        case .growth, .money, .playbook: ConsoleStubView(route: model.route)
+        case .operations: ToolsView()
         case .product(let id): ProductPageView(id: id)
         }
     }
 }
 
-/// Home, Decisions and All products; Tools below them (the diagnosis opens from Tools). A product opens from a card or a row, not from the sidebar.
+/// Home, Decisions and Products, then the four admin sections, and Settings at the foot. A product opens from a card or a
+/// row, not from the sidebar.
 private struct SidebarView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        // The diagnosis page has no row of its own: Tools stays selected while it shows.
-        List(selection: Binding(get: { model.route == .diagnosis ? .tools : model.route }, set: { model.go($0 ?? .home) })) {
+        // The diagnosis page has no row of its own: Operations stays selected while it shows.
+        List(selection: Binding(get: { model.route == .diagnosis ? .operations : model.route }, set: { model.go($0 ?? .home) })) {
             Label("Home", systemImage: "house")
                 .tag(AppRoute.home)
             Label("Decisions", systemImage: "tray")
                 .badge(model.ownerAsks.count)
                 .tag(AppRoute.decisions)
-            Label("All products", systemImage: "square.grid.2x2")
+            Label("Products", systemImage: "square.grid.2x2")
                 .tag(AppRoute.portfolio)
-            if model.capabilities.tools {
+            if model.capabilities.console {
                 Section {
-                    Label("Tools", systemImage: "wrench.and.screwdriver")
-                        .badge(model.tools.badge.map { Text($0) })
-                        .tag(AppRoute.tools)
+                    Label(ConsoleText.growth.title, systemImage: ConsoleText.growth.symbol)
+                        .tag(AppRoute.growth)
+                    Label(ConsoleText.money.title, systemImage: ConsoleText.money.symbol)
+                        .tag(AppRoute.money)
+                    Label(ConsoleText.operations.title, systemImage: ConsoleText.operations.symbol)
+                        .badge(model.console.operationsBadge.map { Text($0) })
+                        .tag(AppRoute.operations)
+                    Label(ConsoleText.playbook.title, systemImage: ConsoleText.playbook.symbol)
+                        .tag(AppRoute.playbook)
                 }
             }
         }
@@ -149,6 +159,21 @@ private struct SidebarView: View {
             }
             .padding(.horizontal, Space.m)
             .padding(.vertical, Space.s)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Button {
+                openSettings()
+            } label: {
+                Label("Settings", systemImage: "gearshape")
+                    .font(Typo.body)
+                    .foregroundStyle(Palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, Space.m)
+            .padding(.vertical, Space.m)
+            .help("Settings (⌘,)")
         }
     }
 }

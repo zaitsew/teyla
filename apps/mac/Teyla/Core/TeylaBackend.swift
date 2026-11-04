@@ -60,6 +60,10 @@ protocol TeylaBackend: Sendable {
     func start() async throws -> StartReport
     /// `teyla attention --json`: what is wrong on this Mac's backend now.
     func attention() async throws -> AttentionReport
+    /// `teyla console --json`: the admin sections. The CLI keeps its own cache for 30 minutes; `refresh` rebuilds it now.
+    func console(refresh: Bool) async throws -> ConsoleReport
+    /// The CLI's last cached report, read from disk without running anything; nil when there is none.
+    func consoleCached() async -> ConsoleReport?
     /// Runs one command of the Tools page and returns what it printed. Only commands `ToolCommands` allows are run.
     func runTool(_ argv: [String]) async throws -> String
     func apply(offerID: String) async throws -> String
@@ -85,6 +89,8 @@ extension TeylaBackend {
     func acceptClose(ids: [String]) async throws { throw Self.none }
     func start() async throws -> StartReport { throw Self.none }
     func attention() async throws -> AttentionReport { throw Self.none }
+    func console(refresh: Bool) async throws -> ConsoleReport { throw Self.none }
+    func consoleCached() async -> ConsoleReport? { nil }
     func runTool(_ argv: [String]) async throws -> String { throw Self.none }
     func apply(offerID: String) async throws -> String { throw Self.none }
     func notes() async throws -> [NoteItem] { throw Self.none }
@@ -113,12 +119,14 @@ struct Capabilities: Equatable, Sendable {
     var pairPhone = true
     /// The product page's sessions and spend come from the command; the store build shows recent work from the snapshot.
     var spendDetail = true
-    /// The Tools page and the actions in the command bar: they run the command, which the store build does not have.
+    /// The Operations page's actions and the command bar's: they run the command, which the store build does not have.
     var tools = true
+    /// Growth, Money, Operations and Playbook read `teyla console`, which the store build cannot run.
+    var console = true
 
     static let full = Capabilities()
     static let store = Capabilities(closeQuestions: false, chooseHarness: false, notes: false, diagnosis: false,
-                                    editProducts: false, pairPhone: false, spendDetail: false, tools: false)
+                                    editProducts: false, pairPhone: false, spendDetail: false, tools: false, console: false)
 
     /// The set for this build.
     static var current: Capabilities {
