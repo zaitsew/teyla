@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Vendors the Android review package (zaitsew/teyla, packages/review-android) into a product, the twin of
+# the product's scripts/teyla-review-sync for the Swift package and teyla-review-sync-web for the web one.
+#
+#   scripts/teyla-review-sync-android [DEST]      # run from the product's repo root
+#   TEYLA_REPO=/path/to/teyla scripts/teyla-review-sync-android
+#
+# DEST defaults to vendor/teyla-review-android. The copy holds the two Gradle library modules,
+# `teyla-review` and `teyla-review-noop` (their sources and build files, no tests), and a VENDORED.md
+# with the Teyla commit. Never edit it: fix Teyla, then run this again. The product's settings.gradle.kts
+# includes the two folders (README.md, "Quick start").
+set -euo pipefail
+teyla="${TEYLA_REPO:-$HOME/repos/teyla}"
+pkg="$teyla/packages/review-android"
+[ -f "$pkg/teyla-review/build.gradle.kts" ] || { echo "no review-android package at $pkg" >&2; exit 2; }
+root="$(pwd -P)"
+rel="${1:-vendor/teyla-review-android}"
+case "/$rel/" in
+  //*|*/../*|*/./*|"///") echo "DEST must be a plain path inside $root" >&2; exit 2;;
+esac
+dst="$root/$rel"
+# The target is deleted below, so its real location must be inside this repo...
+[ ! -L "$dst" ] || { echo "$rel is a symbolic link; refusing to replace it" >&2; exit 2; }
+probe="$dst"
+while [ ! -e "$probe" ]; do probe="$(dirname "$probe")"; done
+real="$(cd "$probe" && pwd -P)"
+case "$real/" in "$root"/*) ;; *) echo "$rel resolves outside $root" >&2; exit 2;; esac
+# ...and it must be empty, or an earlier copy of this package.
+heading="# Teyla Android review, vendored"
+if [ -d "$dst" ] && [ -n "$(ls -A "$dst")" ] && [ "$(head -n 1 "$dst/VENDORED.md" 2>/dev/null)" != "$heading" ]; then
+  echo "$rel is not an earlier copy of this package; refusing to replace it" >&2; exit 2
+fi
+rm -rf "$dst"
+mkdir -p "$dst"
+for module in teyla-review teyla-review-noop; do
+  rsync -a --exclude build --exclude .gradle --exclude 'src/test' --exclude 'src/androidTest' "$pkg/$module/" "$dst/$module/"
+done
+commit="$(git -C "$pkg" rev-parse --short HEAD)"
+cat > "$dst/VENDORED.md" <<MD
+$heading
+
+Copied from zaitsew/teyla \`packages/review-android\` at commit \`$commit\` on $(date -u +%F) by
+\`teyla-review-sync-android\`. Do not edit here: change it in Teyla and run the script again.
+Usage: Teyla's \`packages/review-android/README.md\` and \`docs/REVIEW.md\`, section "Android".
+Needs the Android Gradle plugin, the Kotlin Android plugin and the Compose compiler plugin in the product's root build.
+MD
+echo "vendored review-android @ $commit into ${dst#"$root"/}"
+echo "add to settings.gradle.kts: include(\":teyla-review\"); project(\":teyla-review\").projectDir = file(\"${rel}/teyla-review\") (and the same for :teyla-review-noop)"

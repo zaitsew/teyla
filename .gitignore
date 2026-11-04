@@ -23,3 +23,6 @@ packages/*/.build/
 packages/*/node_modules/
 packages/*/.swiftpm/
 site/.wrangler/
+
+packages/review-android/.gradle/
+packages/review-android/local.properties

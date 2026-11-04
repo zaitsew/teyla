@@ -47,7 +47,7 @@ If the product has a voice mode, tell the package: `TeylaReview.configure { $0.h
 | `.aab`, `.apk` | no `.dex` file contains the bytes `teyla/review/ReviewOverlay` |
 | a folder (a web `dist`) | no file contains `TEYLA_REVIEW_WEB_ACTIVE` |
 
-The Swift marker is a string in `Core/ReviewMarker.swift` that exists only under `#if TEYLA_REVIEW`. `TeylaReview.present()` stores it, so a release build keeps it through dead stripping whenever the product calls the entry point (a product does, from `ReviewMenuButton`). `tests/test_review_marker.py` builds a tiny executable that links the package, in release mode, and checks both directions: the marker is in the binary with the overlay compiled in, and absent with `TEYLA_REVIEW=0`. Measured on 2026-11-04, `swift build -c release` for macOS (dead stripping on): the probe holds the marker with the overlay compiled in and does not hold it with `TEYLA_REVIEW=0`, so stripping works. The probe links the macOS overlay; an iOS archive is checked by `store-check` the same way. The marker is longer than 15 bytes on purpose, because Swift keeps shorter strings inline and they leave nothing to find. A minified Android build (R8) may rename the overlay class, which would hide it from the dex check: an Android client must keep that class name (a `-keep` rule), or the check proves nothing.
+The Swift marker is a string in `Core/ReviewMarker.swift` that exists only under `#if TEYLA_REVIEW`. `TeylaReview.present()` stores it, so a release build keeps it through dead stripping whenever the product calls the entry point (a product does, from `ReviewMenuButton`). `tests/test_review_marker.py` builds a tiny executable that links the package, in release mode, and checks both directions: the marker is in the binary with the overlay compiled in, and absent with `TEYLA_REVIEW=0`. Measured on 2026-11-04, `swift build -c release` for macOS (dead stripping on): the probe holds the marker with the overlay compiled in and does not hold it with `TEYLA_REVIEW=0`, so stripping works. The probe links the macOS overlay; an iOS archive is checked by `store-check` the same way. The marker is longer than 15 bytes on purpose, because Swift keeps shorter strings inline and they leave nothing to find. A minified Android build (R8) may rename the overlay class, which would hide it from the dex check, so the real Android module ships a consumer `-keep` rule for it; `tests/test_review_android_build.py` builds a fixture app with R8 on and proves the marker is in the `internal` dex and absent from `release`.
 
 ## The Mac install channel
 
@@ -244,10 +244,24 @@ One small service takes captures from every product and platform, so a product n
 - **Unsent captures** wait in IndexedDB (20 captures, 40 MiB, 14 days) and go again on load, `online` and when the tab is visible; the form keeps what the tester wrote if saving fails. Speech is off by default and no audio is ever sent.
 - **Vendoring.** A product copies `packages/review-web/src` with `packages/review-web/scripts/teyla-review-sync-web`, next to its `scripts/teyla-review-sync` for the Swift package.
 
+## Android
+
+`packages/review-android/` is the Android twin: a test build of a Compose app gets a shake gesture and a Settings row, the tester points at a spot, writes what is wrong, and the app PUTs the capture to the shared channel (or hands it to the product's `deliver`). The format is the one above with `device` "Android" and `app.configuration` `debug`, `play_internal` or `local`; `app.product` is required. Quick start and options: [packages/review-android/README.md](../packages/review-android/README.md).
+
+- **The lock is linking.** Two Gradle library modules have one public API. `teyla-review` (the overlay, the queue, the channel client) is linked in `debug` and `internal`; `teyla-review-noop` (empty bodies, no activity, no permission) is linked in `release`. There is no `applicationIdSuffix`: Play internal testing and production install the same application id, so a runtime check cannot tell them apart and the build you link is the only switch. The channel key is a `BuildConfig` field of `debug` and `internal` only.
+- **Marker.** The real module has the class `teyla.review.ReviewOverlay`, kept by a consumer ProGuard rule. `tests/test_review_android.py` reads both modules' sources and fails when a public signature differs or the no-op names the overlay. `tests/test_review_android_build.py` (opt in with `TEYLA_REVIEW_ANDROID_BUILD=1`) builds the fixture app: `teyla review store-check` exits 0 on the `release` APK and exits 1, with "overlay class found", on the `internal` APK.
+- **Picture.** `PixelCopy` of the activity window, at the screen's pixel size, painted black where `Modifier.reviewPrivate()` was, then PNG-encoded, hashed and sent. A dialog or popup is another window and is not in it. Password fields cannot be detected in Compose from outside, so a product marks them with `reviewPrivate()`. A window with `FLAG_SECURE` is refused with a message and nothing is sent, not sent as a black picture.
+- **Entry points.** Shake (`SensorManager`, three jolts above 2.7 g in a second), `ReviewSettingsRow()` and `TeylaReview.present(activity)`. On a TV there is no shake; the form works with a D-pad.
+- **Delivery.** `PUT /v1/captures/<uuid>/capture.png` then `capture.json` with the key as a bearer, or the product's `deliver` closure. Unsent captures wait as files in the app's private storage (20 captures, 40 MiB, 14 days) and go again at start and when the network returns; 400, 401, 403, 413 and 422 are final for that capture.
+- **No speech.** Dictation is not part of the package: a library manifest that asks for the microphone would put the permission into every product that links it. The keyboard's own dictation works and is recorded as `text`.
+- **Vendoring.** `packages/review-android/scripts/teyla-review-sync-android` copies the two modules into a product's `vendor/teyla-review-android`.
+- **Not run on a device.** The JVM tests and the build test pass; `PixelCopy`, the shake sensor and the form have not run on an emulator or a phone.
+
 ## Fallbacks
 
 - **TestFlight feedback.** A tester who has no overlay (a family member, a build without the flag) sends a screenshot with a note through TestFlight's own share-feedback. The Mac reads it from App Store Connect, `GET /v1/apps/{id}/betaFeedbackScreenshotSubmissions`, with the API key in `~/.appstoreconnect/`, and files each one as a capture without element data: no `tap`, no `element`, no `anchors`, and a `comment` from the tester's note. The Mac writes these captures itself, in this format, with the fields it knows (the device model and OS from the feedback, the build from TestFlight). They never pass through the outbox, so they have no `capture.sig`.
 - **Web overlay.** See "Web" above: it sends to the shared channel, and the Mac files the capture like any other.
+- **Android overlay.** See "Android" above: the same channel, the same inbox.
 
 Both reach the same inbox as a phone capture.
 
@@ -272,13 +286,15 @@ iCloud Drive encrypts the folder in transit and at rest, but Apple holds the key
 |---|---|
 | `packages/review-ios/` | The Swift package: `Sources/TeylaReview/Core` (format, registry, hit test, signing, store, audio guard, and shared by both platforms: `ReviewSession`, `ReviewBitmap` for blackout and blank detection, `MacGeometry`, `ReviewShortcut`), `Sources/TeylaReview/UI` (overlay, shake, speech, settings; iOS: `ReviewPresenter`; macOS: `MacProbe`, `MacProbeViews`, `MacReviewPresenter`, `ReviewCommands`) and `Tests/TeylaReviewTests` |
 | `packages/review-web/` | The web package: `src/` (gate, picture, masking, anchors, form, queue, channel client), `fixture/` and `tests/`, `scripts/teyla-review-sync-web` |
+| `packages/review-android/` | The Android package: `teyla-review` (real) and `teyla-review-noop` (same API, empty) Gradle modules, `fixture/` (a tiny app linking each by build type), `scripts/teyla-review-sync-android` |
 | `packages/review-channel/` | The shared channel service: `server.py`, Dockerfile, compose and Caddy fragments, install steps |
 | `src/teyla/review_channel.py` | The Mac side: `pull --channel`, the key commands and the hourly agent |
 | `templates/review/capture.schema.json` | JSON Schema for `capture.json` |
 | `src/teyla/review_gate.py` | `teyla review store-check` |
 | `tests/test_review_gate.py`, `tests/test_review_marker.py` | The store check on hand-made artifacts, and the Swift marker in real release builds |
 | `tests/test_review_web.py` | The web package built both ways with Vite, the store check on each, and a real capture sent to the service |
+| `tests/test_review_android.py`, `tests/test_review_android_sync.py`, `tests/test_review_android_build.py` | The two Android modules' public API compared from the sources, the sync script, and (opt in, needs a JDK and the SDK) the fixture app built in its variants with the store check on each |
 | `tests/test_review_capture.py` | Validates the fixture capture, this page's example and the signing vector against the schema |
 | `tests/test_review_channel_server.py`, `tests/test_review_channel.py` | The service against a real local port, and the Mac side with `ssh` and `rsync` replaced by local programs |
 
-Run the package tests on the Mac, without a simulator, with `swift test --package-path packages/review-ios`, and the web package's with `npm ci && npm run check` in `packages/review-web`.
+Run the package tests on the Mac, without a simulator, with `swift test --package-path packages/review-ios`, the web package's with `npm ci && npm run check` in `packages/review-web`, and the Android package's with `./gradlew :teyla-review:testDebugUnitTest` in `packages/review-android` (a JDK and the Android SDK; `./check.sh` runs it when both exist).
