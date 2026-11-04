@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.38.1 — 2026-11-04 — The iPhone gets the admin tabs
+
 - **The phone's Growth snapshot says how many slots have no draft, and which products nobody tried to sell.**
   `teyla state` carries `gaps` and `not_tried` (product ids only, a few bytes each) in the compact growth part. No draft text
   and no quote goes with them.
