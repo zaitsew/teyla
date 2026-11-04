@@ -20,17 +20,17 @@ struct Page<Content: View>: View {
 
     var body: some View {
         if flat {
-            column { VStack(alignment: .leading, spacing: Space.xl) { content } }
+            column
         } else {
-            ScrollView {
-                column { LazyVStack(alignment: .leading, spacing: Space.xl) { content } }
-            }
-            .background(Palette.background)
+            ScrollView { column }
+                .background(Palette.background)
         }
     }
 
-    private func column(@ViewBuilder _ stack: () -> some View) -> some View {
-        stack()
+    /// An eager stack on purpose: `scrollTo` can only reach a card that exists, and a notification opens
+    /// a question far down the page.
+    private var column: some View {
+        VStack(alignment: .leading, spacing: Space.xl) { content }
             .padding(.horizontal, Space.page)
             .padding(.vertical, Space.xl)
             .frame(maxWidth: maxWidth, alignment: .leading)
