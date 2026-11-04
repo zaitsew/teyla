@@ -875,6 +875,17 @@ def run_trends(store: Store, cfg: dict, now: float, *, x: bool = False, guard: G
         if c.get("title") and ref not in seen:
             seen.add(ref)
             fresh.append((ref, c))
+    kept, killed, specs = [], [], []
+    screened: list[tuple[str, dict]] = []
+    for ref, c in fresh:                                   # nothing leaves the machine before the guard has read it
+        hits = guard.check(c.get("title", ""), c.get("summary", ""), c.get("url") or "")
+        if hits:
+            why = f"confidential overlap ({kinds_text(hits)})"
+            killed.append((c["title"], why))
+            store.log("trend-killed", now, ref=ref, reason=why, score=0, scorer="guard")
+        else:
+            screened.append((ref, c))
+    fresh = screened
     judged: dict[int, dict] = {}
     cost = 0.0
     if fresh and model:
@@ -888,7 +899,6 @@ def run_trends(store: Store, cfg: dict, now: float, *, x: bool = False, guard: G
             except (AgentError, ValueError) as e:
                 rows.append(("scoring", 0, f"model scoring unavailable ({e}); mechanical scores used"))
     ours = {k.lower() for k in reg["product"]} | {str(p.get("name") or "").lower() for p in reg["product"].values()}
-    kept, killed, specs = [], [], []
     for k, (ref, c) in enumerate(fresh):
         j = judged.get(k)
         scores = j["scores"] if j else score_candidate(c, now)
@@ -1259,6 +1269,7 @@ def draft_one(store: Store, cfg: dict, item: dict, chart_dir, guard: Guard, reg:
         if res["dropped"]:
             store.log("blocked", now, id=item["id"], kinds=sorted(set(res["dropped"])), part="PR details")
         if res["thin"]:
+            item.pop("enriched", None)                  # a retry must run the thin check again
             item["status"], item["fail_reason"] = "failed", f"thin: {res['why']}"
             store.save(item, now)
             store.log("thin", now, id=item["id"], reason=res["why"])
@@ -1373,6 +1384,7 @@ def edit(store: Store, cfg: dict, ref: str, body: str | None, hook: str | None, 
         msg = [f"{f['rule']}: {f['message']}" for f in vrep["findings"] if f["level"] == "fail"] + \
               ([f"blocked: {', '.join(grep['kinds'])}"] if not grep["ok"] else [])
         raise GrowthError("the edit fails its checks, nothing saved: " + "; ".join(msg))
+    it.pop("hold_reason", None)                          # the owner's edit answers the editor's hold
     set_status(store, it, "review", now)               # an edit sends an approved item back to the owner
     store.log("edit", now, id=it["id"])
     return it

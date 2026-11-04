@@ -374,3 +374,39 @@ def test_trends_command_prints_the_reason_and_the_test(env, tmp_path, monkeypatc
     assert cli.main(["growth", "trends"]) == 0
     out = capsys.readouterr().out
     assert "1 kept of 3 new candidates" in out and "why: A builder can run it" in out and "try: Run it on one lane" in out
+
+
+# --- review fixes ----------------------------------------------------------------------------------------------
+
+def test_a_trend_with_a_private_term_never_reaches_the_model(env, tmp_path, monkeypatch):
+    d = write_bi(tmp_path, [bi_item(f"The {TERM} export tool"), bi_item("Agent runner")])
+    store, cfg = make(extra=f'bi_data = "{d}"')
+    fm = fake_model([dict(items=[verdict(0)])])
+    monkeypatch.setattr(growth, "call_model", fm)
+    res = growth.run_trends(store, cfg, NOW)
+    sent = json.dumps(fm.calls[0]["payload"])
+    assert TERM not in sent and len(fm.calls[0]["payload"]["candidates"]) == 1
+    assert any("confidential overlap" in why for _t, why in res["killed"]) and [i["idea"] for i in res["kept"]] == ["Reaction: Agent runner"]
+
+
+def test_an_owner_edit_clears_the_hold(env, monkeypatch):
+    store, cfg = make(channels=("x-en",))
+    (it,) = planned(store, cfg)
+    monkeypatch.setattr(growth, "call_model", fake_model([GOOD], editor=[growth.AgentError("claude exited 1")]))
+    growth.run_draft(store, cfg, NOW, limit=5, day=None, dry=False)
+    assert growth.Store().get(it["id"]).get("hold_reason")
+    got = growth.edit(growth.Store(), cfg, it["id"], "Alpha shipped faster sync.", None, NOW)
+    assert got["status"] == "review" and "hold_reason" not in got
+
+
+def test_a_retried_thin_pr_is_checked_again(env, monkeypatch):
+    store, cfg = make(channels=("x-en",))
+    (it,) = planned(store, cfg, idea="Merged in Alpha: Faster sync", sources=[dict(kind="pr", ref="pr:owner/alpha#7", url="")])
+    monkeypatch.setattr(growth, "run_gh", gh_returns(dict(PR_VIEW, body="", additions=2, deletions=0, changedFiles=1, files=[])))
+    fm = fake_model([GOOD])
+    monkeypatch.setattr(growth, "call_model", fm)
+    growth.run_draft(store, cfg, NOW, limit=5, day=None, dry=False)
+    assert "enriched" not in growth.Store().get(it["id"])
+    growth.retry(growth.Store(), it["id"], NOW)
+    growth.run_draft(growth.Store(), cfg, NOW, limit=5, day=None, dry=False)
+    assert growth.Store().get(it["id"])["status"] == "failed" and fm.calls == []
