@@ -11,7 +11,7 @@ struct CommandBarView: View {
         VStack(spacing: 0) {
             TextField("Go to a page, a product or an action", text: Bindable(bar).query)
                 .textFieldStyle(.plain)
-                .font(Typo.lead)
+                .font(Typo.cardTitle)
                 .padding(Space.l)
                 .focused($focused)
                 .onSubmit { if let entry = bar.highlighted { model.choose(entry) } }
@@ -58,7 +58,7 @@ struct CommandBarView: View {
         var body: some View {
             HStack(spacing: Space.m) {
                 Image(systemName: entry.symbol)
-                    .frame(width: Space.l + Space.xs)
+                    .frame(width: Space.glyph)
                     .foregroundStyle(Palette.textSecondary)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: Space.xxs) {
@@ -72,7 +72,7 @@ struct CommandBarView: View {
             }
             .padding(.horizontal, Space.m)
             .padding(.vertical, Space.s)
-            .background(selected ? Palette.accent.opacity(0.14) : Color.clear, in: RoundedRectangle(cornerRadius: Radius.card))
+            .background(selected ? Palette.primaryTint : Color.clear, in: RoundedRectangle(cornerRadius: Radius.card))
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(selected ? .isSelected : [])
         }

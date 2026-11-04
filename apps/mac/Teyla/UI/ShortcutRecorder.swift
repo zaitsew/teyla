@@ -15,7 +15,7 @@ struct ShortcutRecorder: View {
                 Button(action: toggle) {
                     Text(fieldText)
                         .frame(minWidth: Space.shortcutFieldWidth)
-                        .foregroundStyle(recording ? Palette.accent : (model.quickNoteSetting == nil ? Palette.textSecondary : .primary))
+                        .foregroundStyle(recording ? Palette.primary : (model.quickNoteSetting == nil ? Palette.textSecondary : .primary))
                 }
                 .accessibilityLabel("Quick note shortcut")
                 .accessibilityValue(model.quickNoteSetting?.display ?? "none")

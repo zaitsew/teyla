@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Lays children out left to right and wraps to a new row when the width runs out.
 struct FlowLayout: Layout {
-    var spacing: CGFloat = 8
+    var spacing = Space.s
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         arrange(width: proposal.width ?? .infinity, subviews: subviews).size
@@ -41,8 +41,8 @@ struct SectionLabel: View {
 
     var body: some View {
         Text(text)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.secondary)
+            .font(Typo.body.weight(.semibold))
+            .foregroundStyle(Palette.textSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
     }
@@ -68,21 +68,21 @@ struct Fold<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Space.m) {
             Button {
                 withAnimation(.easeOut(duration: 0.2)) { open.toggle() }
             } label: {
-                HStack(spacing: 8) {
-                    Text(title).font(.subheadline.weight(.semibold))
+                HStack(spacing: Space.s) {
+                    Text(title).font(Typo.body.weight(.semibold))
                     if !detail.isEmpty {
-                        Text(detail).font(.footnote).fixedSize(horizontal: false, vertical: true)
+                        Text(detail).font(Typo.caption).fixedSize(horizontal: false, vertical: true)
                     }
-                    Spacer(minLength: 8)
+                    Spacer(minLength: Space.s)
                     Image(systemName: open ? "chevron.up" : "chevron.down")
-                        .font(.footnote.weight(.semibold))
+                        .font(Typo.caption.weight(.semibold))
                 }
-                .foregroundStyle(.secondary)
-                .frame(minHeight: 44)
+                .foregroundStyle(Palette.textSecondary)
+                .frame(minHeight: Space.touchMin)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -97,9 +97,9 @@ struct Fold<Content: View>: View {
 extension View {
     /// A grouped card, the same in light and dark.
     func card() -> some View {
-        padding(16)
+        padding(Space.l)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.panel, style: .continuous))
     }
 }
 
@@ -109,11 +109,11 @@ struct Pill: View {
 
     var body: some View {
         Text(text)
-            .font(.caption.weight(.semibold))
+            .font(Typo.caption.weight(.semibold))
             .foregroundStyle(color)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.14), in: Capsule())
+            .padding(.horizontal, Space.s)
+            .padding(.vertical, Space.xxs)
+            .background(color.chipTint, in: Capsule())
             .fixedSize()
     }
 }
@@ -124,30 +124,30 @@ struct OutcomeView: View {
     var onDismiss: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s) {
             if let outcome = action.outcome {
                 let simulated = outcome.via == SampleData.via
                 Label(PhoneFormat.outcomeLine(outcome),
                       systemImage: simulated ? "info.circle.fill"
                           : outcome.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(simulated ? Color.secondary : outcome.ok ? Color.green : Color.red)
+                    .font(Typo.body)
+                    .foregroundStyle(simulated ? Palette.textSecondary : outcome.ok ? Palette.saving : Palette.danger)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(action.text)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
                     .lineLimit(3)
                 Button(outcome.ok ? "Dismiss" : "Dismiss and try again", action: onDismiss)
-                    .font(.callout.weight(.medium))
+                    .font(Typo.body.weight(.medium))
             } else {
-                HStack(spacing: 8) {
+                HStack(spacing: Space.s) {
                     ProgressView().controlSize(.small)
-                    Text("Waiting for the Mac").foregroundStyle(.secondary)
+                    Text("Waiting for the Mac").foregroundStyle(Palette.textSecondary)
                 }
-                .font(.callout)
+                .font(Typo.body)
                 Text(action.text)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
                     .lineLimit(3)
             }
         }
@@ -173,13 +173,13 @@ struct MicButton: View {
         } label: {
             ZStack(alignment: .bottomTrailing) {
                 Image(systemName: recording ? "stop.circle.fill" : "mic.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(recording ? Color.red : Color.accentColor)
-                    .frame(width: 44, height: 44)
+                    .font(Glyph.mic)
+                    .foregroundStyle(recording ? Palette.danger : Palette.primary)
+                    .frame(width: Space.touchMin, height: Space.touchMin)
                 Text(language.code)
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .offset(x: -2, y: -4)
+                    .font(Glyph.badge)
+                    .foregroundStyle(Palette.textSecondary)
+                    .offset(x: -Space.xxs, y: -Space.xs)
             }
         } primaryAction: {
             dictation.toggle(field: field, language: language, current: text) { text = $0 }
@@ -203,17 +203,17 @@ struct Composer: View {
     private var canSend: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .center, spacing: Space.s) {
             HStack(spacing: 0) {
                 TextField(placeholder, text: $text, axis: .vertical)
                     .lineLimit(1...5)
                     .focused($focused)
                     .submitLabel(.return)
-                    .padding(.leading, 12)
-                    .padding(.vertical, 10)
+                    .padding(.leading, Space.m)
+                    .padding(.vertical, Space.s)
                 MicButton(text: $text, field: field)
             }
-            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(Palette.track, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
             Button(sendLabel) {
                 focused = false
                 onSend()

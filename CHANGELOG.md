@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **The apps have one small type system.** Mac and iPhone use exactly five type levels plus one style for big numbers, and
+  every size, gap, radius and colour comes from a token. The iPhone has real token enums now. A test fails on a literal.
+  The toolbar's status dot no longer touches the edge of its capsule.
 - **Console: the Operations section.** `teyla console operations` answers "what failed or needs capacity": machine health
   (RAM, swap, compressor, disk with a 24 h series, agents, top apps), `leave {ok, blockers}` (can the lid close), the
   unresolved failures from `teyla attention`, every scheduled task, the connected harnesses with versions, whether the

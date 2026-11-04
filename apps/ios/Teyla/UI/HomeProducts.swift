@@ -5,29 +5,6 @@ import SwiftUI
 // What each card says comes from `HomeLogic.swift`, which the Mac app shares; this file only places it.
 // The visual spec is the owner's board (variant A, "Scoreboard"), 390 pt wide.
 
-/// Sizes taken from the board. Views use these names, not loose numbers.
-private enum HomeMetric {
-    static let heroIcon: CGFloat = 48
-    static let heroIconRadius: CGFloat = 11
-    static let builtIcon: CGFloat = 34
-    static let builtIconRadius: CGFloat = 8
-    static let quietIcon: CGFloat = 26
-    static let quietIconRadius: CGFloat = 6
-    static let touchMin: CGFloat = 44
-    static let listRadius: CGFloat = 14
-    static let listInset: CGFloat = 14
-    static let rowGap: CGFloat = 11
-    static let sparkHeight: CGFloat = 28
-    static let sparkBar: CGFloat = 5
-    static let sparkGap: CGFloat = 2
-    static let barRadius: CGFloat = 2
-    static let switchRadius: CGFloat = 10
-    static let switchInset: CGFloat = 3
-}
-
-/// The selected segment of the period switch: white on light, a step above the track on dark.
-private let selectedSegment = Color.brand(light: 0xFFFFFF, dark: 0x3A3A3C)
-
 // MARK: Pieces
 
 /// A section title and, under it, the rule that put a product there. The same for every section of Home,
@@ -37,13 +14,13 @@ struct HomeSectionHeader: View {
     let note: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Space.xxs) {
             Text(title)
-                .font(.title3.weight(.semibold))
+                .font(Typo.section)
                 .accessibilityAddTraits(.isHeader)
             Text(note)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -55,26 +32,26 @@ struct PeriodSwitch: View {
     @Binding var period: HomePeriod
 
     var body: some View {
-        HStack(spacing: HomeMetric.sparkGap) {
+        HStack(spacing: Space.xxs) {
             ForEach(HomePeriod.allCases) { option in
                 let selected = period == option
                 Button {
                     period = option
                 } label: {
                     Text(option.label)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(selected ? Color.primary : Color.secondary)
-                        .frame(maxWidth: .infinity, minHeight: HomeMetric.touchMin)
-                        .background(selected ? selectedSegment : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: HomeMetric.builtIconRadius, style: .continuous))
+                        .font(Typo.body.weight(.semibold))
+                        .foregroundStyle(selected ? Palette.text : Palette.textSecondary)
+                        .frame(maxWidth: .infinity, minHeight: Space.touchMin)
+                        .background(selected ? Palette.selectedSegment : Color.clear,
+                                    in: RoundedRectangle(cornerRadius: Radius.iconCard, style: .continuous))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
-        .padding(HomeMetric.switchInset)
-        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: HomeMetric.switchRadius, style: .continuous))
+        .padding(Space.xxs)
+        .background(Palette.track, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Period")
     }
@@ -88,10 +65,10 @@ private struct MonogramTile: View {
 
     var body: some View {
         Text(letter)
-            .font(.system(size: size * 0.44, weight: .bold))
-            .foregroundStyle(quiet ? Color.secondary : Color.brandPrimary)
+            .font(Typo.monogram(side: size))
+            .foregroundStyle(quiet ? Palette.textSecondary : Palette.primary)
             .frame(width: size, height: size)
-            .background(quiet ? Color(.tertiarySystemFill) : Color.brandPrimary.opacity(0.14))
+            .background(quiet ? Palette.track : Palette.primaryTint)
     }
 }
 
@@ -126,21 +103,21 @@ private struct SparklineView: View {
     let label: String
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: HomeMetric.sparkGap) {
+        HStack(alignment: .bottom, spacing: Space.xxs) {
             ForEach(heights.indices, id: \.self) { index in
-                RoundedRectangle(cornerRadius: HomeMetric.barRadius)
+                RoundedRectangle(cornerRadius: Radius.bar)
                     .fill(color(index))
-                    .frame(width: HomeMetric.sparkBar, height: max(HomeMetric.sparkGap, HomeMetric.sparkHeight * heights[index]))
+                    .frame(width: Space.sparkBar, height: max(Space.xxs, Space.sparkHeight * heights[index]))
             }
         }
-        .frame(height: HomeMetric.sparkHeight, alignment: .bottom)
+        .frame(height: Space.sparkHeight, alignment: .bottom)
         .accessibilityElement()
         .accessibilityLabel(label)
     }
 
     private func color(_ index: Int) -> Color {
-        if index == heights.count - 1 { return Color.brandPrimary }
-        return heights[index] > 0 ? Color.brandPrimary.opacity(0.35) : Color(.quaternarySystemFill)
+        if index == heights.count - 1 { return Palette.primary }
+        return heights[index] > 0 ? Palette.primaryMuted : Palette.border
     }
 }
 
@@ -172,9 +149,9 @@ private struct FoldButton: View {
     var body: some View {
         Button(action: action) {
             Text(label)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.brandPrimary)
-                .frame(maxWidth: .infinity, minHeight: HomeMetric.touchMin)
+                .font(Typo.body.weight(.semibold))
+                .foregroundStyle(Palette.primary)
+                .frame(maxWidth: .infinity, minHeight: Space.touchMin)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -188,10 +165,10 @@ private struct ListPanel<Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) { content }
-            .padding(.horizontal, HomeMetric.listInset)
+            .padding(.horizontal, Space.m)
             .frame(maxWidth: .infinity)
-            .background(Color(.secondarySystemGroupedBackground),
-                        in: RoundedRectangle(cornerRadius: HomeMetric.listRadius, style: .continuous))
+            .background(Palette.surface,
+                        in: RoundedRectangle(cornerRadius: Radius.panel, style: .continuous))
     }
 }
 
@@ -202,7 +179,7 @@ struct HeroList: View {
     let period: HomePeriod
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: Space.m) {
             ForEach(products) { product in
                 HeroCard(product: product, facts: HomeFactsBuilder.facts(product, period: period))
             }
@@ -217,15 +194,15 @@ private struct HeroCard: View {
 
     var body: some View {
         ProductLink(id: product.id, spoken: facts.spoken) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: Space.m) {
+                HStack(alignment: .top, spacing: Space.m) {
                     ProductIcon(product: product, monogram: facts.monogram,
-                                size: HomeMetric.heroIcon, radius: HomeMetric.heroIconRadius)
-                    VStack(alignment: .leading, spacing: 2) {
+                                size: Space.iconHero, radius: Radius.iconHero)
+                    VStack(alignment: .leading, spacing: Space.xxs) {
                         title
                         Text(facts.summary.isEmpty ? HomeFactsBuilder.noSummary : facts.summary)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .font(Typo.caption)
+                            .foregroundStyle(Palette.textSecondary)
                             .lineLimit(3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -241,15 +218,15 @@ private struct HeroCard: View {
 
     /// The name, then the stage on the same line while it fits.
     private var title: Text {
-        let name = Text(facts.name).font(.title3.weight(.bold))
+        let name = Text(facts.name).font(Typo.section)
         guard !facts.stage.isEmpty else { return name }
-        return Text("\(name)  \(Text(facts.stage).font(.caption).foregroundStyle(.secondary))")
+        return Text("\(name)  \(Text(facts.stage).font(Typo.caption).foregroundStyle(Palette.textSecondary))")
     }
 
     /// Three columns; at the accessibility sizes one under another, so a big number never clips.
     private var figures: some View {
-        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
-                                                  : AnyLayout(HStackLayout(alignment: .top, spacing: 8))
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: Space.s))
+                                                  : AnyLayout(HStackLayout(alignment: .top, spacing: Space.s))
         return layout {
             Figure(value: facts.active, label: "active")
             Figure(value: facts.new, label: "new")
@@ -258,15 +235,15 @@ private struct HeroCard: View {
     }
 
     private var commitsRow: some View {
-        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
-                                                  : AnyLayout(HStackLayout(alignment: .bottom, spacing: 10))
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: Space.s))
+                                                  : AnyLayout(HStackLayout(alignment: .bottom, spacing: Space.s))
         return layout {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(facts.commits).font(.subheadline.weight(.semibold)).monospacedDigit()
-                Text(facts.spend).font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: Space.xxs) {
+                Text(facts.commits).font(Typo.body.weight(.semibold)).monospacedDigit()
+                Text(facts.spend).font(Typo.caption).foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if !typeSize.isAccessibilitySize { Spacer(minLength: 8) }
+            if !typeSize.isAccessibilitySize { Spacer(minLength: Space.s) }
             if let label = facts.sparkLabel {
                 SparklineView(heights: facts.sparkHeights, label: label)
             }
@@ -280,13 +257,13 @@ private struct Figure: View {
     let label: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Space.xs) {
             Text(value)
-                .font(.title.weight(.bold))
+                .font(Typo.number)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
-            Text(label).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Text(label).font(Typo.caption).foregroundStyle(Palette.textSecondary).lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -298,18 +275,18 @@ private struct MonetizationRow: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) { label; Spacer(minLength: 8); value }
-            VStack(alignment: .leading, spacing: 2) { label; value }
+            HStack(spacing: Space.s) { label; Spacer(minLength: Space.s); value }
+            VStack(alignment: .leading, spacing: Space.xxs) { label; value }
         }
-        .font(.subheadline)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .font(Typo.body)
+        .padding(.horizontal, Space.m)
+        .padding(.vertical, Space.s)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.systemGroupedBackground), in: RoundedRectangle(cornerRadius: HomeMetric.switchRadius, style: .continuous))
+        .background(Palette.background, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
     }
 
-    private var label: some View { Text("Monetization").foregroundStyle(.secondary) }
-    private var value: some View { Text(text).fontWeight(.semibold).foregroundStyle(.secondary).monospacedDigit() }
+    private var label: some View { Text("Monetization").foregroundStyle(Palette.textSecondary) }
+    private var value: some View { Text(text).fontWeight(.semibold).foregroundStyle(Palette.textSecondary).monospacedDigit() }
 }
 
 // MARK: Being built
@@ -350,22 +327,22 @@ private struct BuiltRow: View {
     var body: some View {
         let summary = facts.summary.isEmpty ? HomeFactsBuilder.noSummary : facts.summary
         ProductLink(id: product.id, spoken: "\(facts.name). \(summary). \(facts.commits) \(period.phrase).") {
-            HStack(spacing: HomeMetric.rowGap) {
+            HStack(spacing: Space.m) {
                 ProductIcon(product: product, monogram: facts.monogram,
-                            size: HomeMetric.builtIcon, radius: HomeMetric.builtIconRadius)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(facts.name).font(.subheadline.weight(.semibold)).lineLimit(roomy ? 3 : 1)
-                    Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(roomy ? 4 : 1)
+                            size: Space.iconCard, radius: Radius.iconCard)
+                VStack(alignment: .leading, spacing: Space.xxs) {
+                    Text(facts.name).font(Typo.body.weight(.semibold)).lineLimit(roomy ? 3 : 1)
+                    Text(summary).font(Typo.caption).foregroundStyle(Palette.textSecondary).lineLimit(roomy ? 4 : 1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .trailing, spacing: 0) {
-                    Text(facts.commitsCount).font(.subheadline.weight(.semibold)).monospacedDigit()
+                    Text(facts.commitsCount).font(Typo.body.weight(.semibold)).monospacedDigit()
                     Text(facts.commitsCount == "1" ? "commit" : "commits")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(Typo.caption).foregroundStyle(Palette.textSecondary)
                 }
             }
-            .padding(.vertical, 6)
-            .frame(minHeight: HomeMetric.touchMin)
+            .padding(.vertical, Space.xs)
+            .frame(minHeight: Space.touchMin)
         }
     }
 }
@@ -406,13 +383,13 @@ private struct QuietRow: View {
         let summary = HomeFactsBuilder.summary(product)
         ProductLink(id: product.id,
                     spoken: "\(name). \(summary.isEmpty ? "No description yet" : summary). \(HomeFactsBuilder.quietCommits(product)).") {
-            HStack(spacing: HomeMetric.rowGap) {
+            HStack(spacing: Space.m) {
                 ProductIcon(product: product, monogram: Monogram.letter(for: name),
-                            size: HomeMetric.quietIcon, radius: HomeMetric.quietIconRadius, quiet: true)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(name).font(.subheadline.weight(.medium)).lineLimit(roomy ? 3 : 1)
+                            size: Space.iconRow, radius: Radius.iconRow, quiet: true)
+                VStack(alignment: .leading, spacing: Space.xxs) {
+                    Text(name).font(Typo.body.weight(.medium)).lineLimit(roomy ? 3 : 1)
                     Text(summary.isEmpty ? HomeFactsBuilder.noSummary : summary)
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(roomy ? 4 : 1)
+                        .font(Typo.caption).foregroundStyle(Palette.textSecondary).lineLimit(roomy ? 4 : 1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 // "4 commits" over "this week": the same words as the Mac's row, on two short lines.
@@ -420,12 +397,12 @@ private struct QuietRow: View {
                     Text(HomeFactsBuilder.quietCount(product)).monospacedDigit()
                     Text(HomePeriod.week.phrase)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textSecondary)
                 .multilineTextAlignment(.trailing)
             }
-            .padding(.vertical, 6)
-            .frame(minHeight: HomeMetric.touchMin)
+            .padding(.vertical, Space.xs)
+            .frame(minHeight: Space.touchMin)
         }
     }
 }

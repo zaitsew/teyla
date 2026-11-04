@@ -16,7 +16,7 @@ struct DoneCard: View {
                 Spacer(minLength: 0)
             }
             Text(item.title)
-                .font(Typo.lead)
+                .font(Typo.cardTitle)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             ForEach(Array(item.result.prefix(3).enumerated()), id: \.offset) { _, line in
@@ -29,7 +29,7 @@ struct DoneCard: View {
             if !item.needs.isEmpty {
                 Text("Needs: \(item.needs)")
                     .font(Typo.body.weight(.medium))
-                    .foregroundStyle(item.status == "done" ? Palette.textSecondary : Color.primary)
+                    .foregroundStyle(item.status == "done" ? Palette.textSecondary : Palette.text)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
@@ -63,10 +63,10 @@ struct DoneCard: View {
 
     static func color(for status: String) -> Color {
         switch status {
-        case "done": return Palette.success
-        case "needs_you": return Palette.warning
+        case "done": return Palette.saving
+        case "needs_you": return Palette.needsYou
         case "blocked", "failed": return Palette.danger
-        case "review_ready": return Palette.info
+        case "review_ready": return Palette.primary
         default: return Palette.textSecondary
         }
     }
@@ -100,7 +100,7 @@ struct TaskRow: View {
         HStack(alignment: .top, spacing: Space.m) {
             VStack(alignment: .leading, spacing: Space.xs) {
                 HStack(spacing: Space.s) {
-                    Chip(text: Format.taskKind(task.kind), color: task.kind == "merge" ? Palette.info : Palette.warning)
+                    Chip(text: Format.taskKind(task.kind), color: task.kind == "merge" ? Palette.primary : Palette.needsYou)
                     Text(meta)
                         .font(Typo.caption)
                         .foregroundStyle(Palette.textSecondary)

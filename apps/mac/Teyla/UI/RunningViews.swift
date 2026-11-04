@@ -51,7 +51,7 @@ struct RunningRow: View {
             case .done(let text):
                 Label(text, systemImage: "checkmark.circle.fill")
                     .font(Typo.body)
-                    .foregroundStyle(Palette.success)
+                    .foregroundStyle(Palette.saving)
                     .fixedSize(horizontal: false, vertical: true)
             case .failed(let message):
                 Label(message, systemImage: "exclamationmark.triangle.fill")

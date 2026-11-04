@@ -16,7 +16,7 @@ struct DiagnosisRunPanel: View {
                 progress(since: run.startedAt ?? Date())
             case .failed(let message):
                 Label("The diagnosis stopped", systemImage: "exclamationmark.triangle.fill")
-                    .font(Typo.lead)
+                    .font(Typo.cardTitle)
                     .foregroundStyle(Palette.danger)
                 Text(message)
                     .foregroundStyle(Palette.textSecondary)
@@ -48,7 +48,7 @@ struct DiagnosisRunPanel: View {
                 .controlSize(.regular)
             TimelineView(.periodic(from: start, by: 1)) { context in
                 Text("Reading your sessions… \(max(0, Int(context.date.timeIntervalSince(start)))) s")
-                    .font(Typo.lead)
+                    .font(Typo.cardTitle)
                     .monospacedDigit()
             }
             Text("This takes up to a minute on a large machine. Nothing is changed.")
@@ -67,7 +67,7 @@ struct WelcomeView: View {
         VStack(spacing: Space.xl) {
             BrandLockup()
             Text(FirstRun.promise)
-                .font(Typo.lead)
+                .font(Typo.cardTitle)
                 .lineSpacing(Space.xxs)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: Space.readingWidth)
@@ -94,7 +94,7 @@ struct DiagnosisView: View {
                 } else {
                     VStack(spacing: Space.xl) {
                         Text("Diagnosis")
-                            .font(Typo.brief)
+                            .font(Typo.pageTitle)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         Text(FirstRun.promise)
                             .foregroundStyle(Palette.textSecondary)
@@ -106,7 +106,7 @@ struct DiagnosisView: View {
                     }
                 }
             }
-            .padding(.horizontal, Space.xl + Space.xs)
+            .padding(.horizontal, Space.page)
             .padding(.vertical, Space.xl)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -130,12 +130,12 @@ private struct DiagnosisReport: View {
                 SectionLabel("Diagnosis · last \(d.days) days")
                 if d.empty {
                     Text("Teyla found no sessions in the last \(d.days) days.")
-                        .font(Typo.brief)
+                        .font(Typo.pageTitle)
                     Text("Use Claude Code or Codex for a while, then run the diagnosis again. Nothing was changed.")
                         .foregroundStyle(Palette.textSecondary)
                 } else {
                     Text(Format.spent(d.totalUSD))
-                        .font(Typo.display)
+                        .font(Typo.number)
                         .monospacedDigit()
                     Text("at API list price · \(d.scope)")
                         .foregroundStyle(Palette.textSecondary)
@@ -201,9 +201,9 @@ private struct BulletLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s) {
             configuration.icon
-                .font(.system(size: 5))
+                .font(Glyph.bullet)
                 .foregroundStyle(Palette.textSecondary)
-                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - Space.hairline }
             configuration.title
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -220,7 +220,7 @@ private struct OfferCard: View {
         let status = model.firstRun.status(of: offer)
         VStack(alignment: .leading, spacing: Space.m) {
             VStack(alignment: .leading, spacing: Space.xs) {
-                Text(offer.title).font(Typo.lead)
+                Text(offer.title).font(Typo.cardTitle)
                 if !offer.gain.isEmpty {
                     Text(offer.gain)
                         .font(Typo.body.weight(.medium))
@@ -254,7 +254,7 @@ private struct OfferCard: View {
                 .font(Typo.caption.weight(.semibold))
                 .foregroundStyle(Palette.textSecondary)
             Text(text)
-                .foregroundStyle(emphasised ? Palette.warning : Palette.text)
+                .foregroundStyle(emphasised ? Palette.needsYou : Palette.text)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         }
@@ -272,7 +272,7 @@ private struct OfferCard: View {
             VStack(alignment: .leading, spacing: Space.xs) {
                 Label("Applied", systemImage: "checkmark.circle.fill")
                     .font(Typo.body.weight(.semibold))
-                    .foregroundStyle(Palette.success)
+                    .foregroundStyle(Palette.saving)
                 if !lines.isEmpty {
                     Text(lines)
                         .font(Typo.caption)
@@ -308,7 +308,7 @@ struct ConfirmApplySheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.l) {
             Text("Apply “\(offer.title)”?")
-                .font(Typo.lead)
+                .font(Typo.cardTitle)
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: Space.s) {
                 Text(offer.willChange)
@@ -316,7 +316,7 @@ struct ConfirmApplySheet: View {
                     .textSelection(.enabled)
                 if !offer.change.summary.isEmpty {
                     Text(offer.change.summary)
-                        .font(.system(.callout, design: .monospaced))
+                        .font(Typo.code)
                         .foregroundStyle(Palette.textSecondary)
                         .textSelection(.enabled)
                 }
@@ -328,7 +328,7 @@ struct ConfirmApplySheet: View {
             } icon: {
                 Image(systemName: offer.undoIsUninstall ? "exclamationmark.triangle.fill" : "arrow.uturn.backward.circle")
             }
-            .foregroundStyle(offer.undoIsUninstall ? Palette.warning : Palette.textSecondary)
+            .foregroundStyle(offer.undoIsUninstall ? Palette.needsYou : Palette.textSecondary)
             HStack {
                 Spacer()
                 Button("Cancel") { model.firstRun.cancel() }
@@ -339,7 +339,7 @@ struct ConfirmApplySheet: View {
             }
         }
         .padding(Space.xl)
-        .frame(width: Space.readingWidth - Space.xxl)
+        .frame(width: Space.confirmSheet)
         .accessibilityElement(children: .contain)
     }
 }

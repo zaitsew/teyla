@@ -22,12 +22,12 @@ struct MenuBarContent: View {
             #if STORE
             if model.store.isSample {
                 Text(StoreSetup.bannerText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
             }
             #endif
             Text(model.briefLine)
-                .font(.headline)
+                .font(Typo.cardTitle)
                 .fixedSize(horizontal: false, vertical: true)
 
             let top = Array(model.ownerAsks.prefix(3))
@@ -39,8 +39,8 @@ struct MenuBarContent: View {
                     } label: {
                         VStack(alignment: .leading, spacing: Space.xxs) {
                             Text(Format.product(ask.product))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(Typo.caption)
+                                .foregroundStyle(Palette.textSecondary)
                             Text(ask.question)
                                 .lineLimit(2)
                                 .multilineTextAlignment(.leading)
