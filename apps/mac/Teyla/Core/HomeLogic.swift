@@ -283,18 +283,22 @@ enum HomeNext {
         return words.prefix(limit).joined(separator: " ") + "…"
     }
 
-    /// A model's line only when it obeys the limit; otherwise the rule line: product, then the question's first words.
-    static func line(brief: Brief?, top: Ask?) -> HomeNextLine {
+    /// A model's line only when it obeys the limit and speaks of the question the tap opens; otherwise the rule line:
+    /// product, then the question's first words. `rankFirst` is the highest-ranked question, which the brief leads
+    /// with. `top` differs from it when that question sits in the Older fold, and the brief would then name another.
+    static func line(brief: Brief?, top: Ask?, rankFirst: Ask?) -> HomeNextLine {
         guard let top else { return HomeNextLine(text: nothing, askID: nil) }
-        if let model = modelLine(brief, limit: maxWords) { return HomeNextLine(text: model, askID: top.id) }
+        if top.id == rankFirst?.id, let model = modelLine(brief, limit: maxWords) {
+            return HomeNextLine(text: model, askID: top.id)
+        }
         let product = Format.product(top.product)
         let room = max(1, maxWords - wordCount(product))
         return HomeNextLine(text: "\(product): \(clip(top.question, words: room))", askID: top.id)
     }
 
     /// The comparison variant: one sentence of at most 12 words.
-    static func sentence(brief: Brief?, decisions: Int, top: Ask?) -> String {
-        if let model = modelLine(brief, limit: sentenceMaxWords) { return model }
+    static func sentence(brief: Brief?, decisions: Int, top: Ask?, rankFirst: Ask?) -> String {
+        if top?.id == rankFirst?.id, let model = modelLine(brief, limit: sentenceMaxWords) { return model }
         guard let top else { return nothing }
         return "\(Decisions.summaryShort(count: decisions)) Top: \(clip(Format.product(top.product), words: 3))."
     }

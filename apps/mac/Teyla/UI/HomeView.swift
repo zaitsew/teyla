@@ -91,7 +91,7 @@ struct HomeContent: View {
     }
 
     private func nextLine(_ snapshot: Snapshot) -> HomeNextLine {
-        HomeNext.line(brief: snapshot.brief, top: model.topDecision)
+        HomeNext.line(brief: snapshot.brief, top: model.topDecision, rankFirst: model.ownerAsks.first)
     }
 }
 
@@ -165,7 +165,8 @@ private struct SentenceHeader: View {
 
     private var line: String {
         guard let snapshot = model.snapshot else { return model.briefLine }
-        return HomeNext.sentence(brief: snapshot.brief, decisions: model.ownerAsks.count, top: model.topDecision)
+        return HomeNext.sentence(brief: snapshot.brief, decisions: model.ownerAsks.count, top: model.topDecision,
+                                 rankFirst: model.ownerAsks.first)
     }
 }
 

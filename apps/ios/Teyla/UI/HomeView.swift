@@ -57,7 +57,9 @@ private struct HomeContent: View {
     @AppStorage(HomeHeaderStyle.storageKey) private var storedStyle = HomeHeaderStyle.pulse.rawValue
 
     private var period: HomePeriod { HomePeriod.from(stored: storedPeriod) }
-    private var topDecision: Ask? { model.ownerAsks.first }
+    /// The first fresh decision, in rank order; else the oldest one still open, as on the Mac.
+    private var lists: DecisionLists { DecisionLists(asks: model.asks, snapshot: snapshot, now: Date()) }
+    private var topDecision: Ask? { lists.fresh.first ?? lists.older.first }
 
     var body: some View {
         switch HomeHeaderStyle.from(stored: storedStyle) {
@@ -70,9 +72,11 @@ private struct HomeContent: View {
                              action: tile.kind == .decisions ? { tab = .decisions } : nil)
                 }
             }
-            NextLineButton(line: HomeNext.line(brief: snapshot.brief, top: topDecision), tab: $tab)
+            NextLineButton(line: HomeNext.line(brief: snapshot.brief, top: topDecision, rankFirst: model.ownerAsks.first),
+                           revealsOlder: lists.fresh.isEmpty, tab: $tab)
         case .sentence:
-            Text(HomeNext.sentence(brief: snapshot.brief, decisions: model.ownerAsks.count, top: topDecision))
+            Text(HomeNext.sentence(brief: snapshot.brief, decisions: model.ownerAsks.count, top: topDecision,
+                              rankFirst: model.ownerAsks.first))
                 .font(Typo.section)
                 .lineLimit(2)
         }
@@ -114,12 +118,16 @@ private struct HomeContent: View {
 
 /// One line that names the top decision. The Decisions tab lists it first, so the tab is where it opens.
 private struct NextLineButton: View {
+    @Environment(AppModel.self) private var model
     let line: HomeNextLine
+    /// Every open question is older than 7 days, so the one named here sits in the closed fold.
+    let revealsOlder: Bool
     @Binding var tab: AppTab
 
     var body: some View {
         if line.askID != nil {
             Button {
+                if revealsOlder { model.olderReveals += 1 }
                 tab = .decisions
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: Space.s) {

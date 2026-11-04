@@ -471,6 +471,9 @@ final class AppModel {
 
     var syncDate: Date? { snapshot.flatMap(PhoneFormat.syncDate(of:)) }
 
+    /// Counts the taps that asked Decisions to open and show its Older fold.
+    var olderReveals = 0
+
     /// Questions that wait on the owner: all of them without triage, the owner's bucket with it.
     var ownerAsks: [Ask] { Decisions.split(asks).owner }
 

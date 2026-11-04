@@ -617,28 +617,38 @@ final class HomePulseTests: XCTestCase {
     func testTheNextLineUsesAModelLineOnlyWithinTheLimit() {
         let top = ask()
         let short = Brief(line: "Renew the plan before the upload.", source: "model")
-        XCTAssertEqual(HomeNext.line(brief: short, top: top), HomeNextLine(text: short.line, askID: "a"))
+        XCTAssertEqual(HomeNext.line(brief: short, top: top, rankFirst: top), HomeNextLine(text: short.line, askID: "a"))
         let long = Brief(line: "one two three four five six seven eight nine ten eleven", source: "model")
-        XCTAssertEqual(HomeNext.line(brief: long, top: top).text, "Sample App: Renew the plan?")
+        XCTAssertEqual(HomeNext.line(brief: long, top: top, rankFirst: top).text, "Sample App: Renew the plan?")
         let rules = Brief(line: "Renew now.", source: "rules")
-        XCTAssertEqual(HomeNext.line(brief: rules, top: top).text, "Sample App: Renew the plan?")
+        XCTAssertEqual(HomeNext.line(brief: rules, top: top, rankFirst: top).text, "Sample App: Renew the plan?")
     }
 
     func testTheRuleLineHoldsAtMostTenWords() {
         let top = ask(question: "one two three four five six seven eight nine ten eleven twelve")
-        let line = HomeNext.line(brief: nil, top: top).text
+        let line = HomeNext.line(brief: nil, top: top, rankFirst: top).text
         XCTAssertLessThanOrEqual(HomeNext.wordCount(line), HomeNext.maxWords)
         XCTAssertTrue(line.hasSuffix("…"), line)
     }
 
     func testNothingWaitingHasNoTarget() {
         let brief = Brief(line: "Renew it.", source: "model")
-        XCTAssertEqual(HomeNext.line(brief: brief, top: nil), HomeNextLine(text: HomeNext.nothing, askID: nil))
+        XCTAssertEqual(HomeNext.line(brief: brief, top: nil, rankFirst: nil), HomeNextLine(text: HomeNext.nothing, askID: nil))
+    }
+
+    func testAModelLineIsDroppedWhenItCouldNameAnotherQuestion() {
+        let top = ask()
+        let older = Ask(id: "older", product: "sample-tool", question: "Ship it?")
+        let short = Brief(line: "Ship the tool today.", source: "model")
+        let line = HomeNext.line(brief: short, top: top, rankFirst: older)
+        XCTAssertEqual(line, HomeNextLine(text: "Sample App: Renew the plan?", askID: "a"))
+        XCTAssertEqual(HomeNext.sentence(brief: short, decisions: 2, top: top, rankFirst: older),
+                       "2 decisions wait. Top: Sample App.")
     }
 
     func testTheSentenceVariantStaysWithinItsLimit() {
         let long = Brief(line: "one two three four five six seven eight nine ten eleven twelve thirteen", source: "model")
-        let text = HomeNext.sentence(brief: long, decisions: 3, top: ask())
+        let text = HomeNext.sentence(brief: long, decisions: 3, top: ask(), rankFirst: ask())
         XCTAssertEqual(text, "3 decisions wait. Top: Sample App.")
         XCTAssertLessThanOrEqual(HomeNext.wordCount(text), HomeNext.sentenceMaxWords)
     }
