@@ -87,6 +87,7 @@ struct PortfolioView: View {
         Page {
             if let portfolio = model.snapshot?.portfolio {
                 header(portfolio)
+                StartupFocusBlock(portfolio: portfolio)
                 controls(portfolio)
                 rows(portfolio)
             } else {
@@ -132,6 +133,40 @@ struct PortfolioView: View {
     private var emptyState: some View {
         EmptyState(symbol: "arrow.down.circle", title: "Update the teyla command to see products (needs 0.32).",
                    detail: "This screen reads the products from `teyla state`.")
+    }
+}
+
+/// The product the startup page leads with: the one with the most outside weekly users, its stage and the one sentence about
+/// what it is missing. Absent when the CLI names none (every product is parked or personal) or in the store build, which has no command.
+private struct StartupFocusBlock: View {
+    @Environment(AppModel.self) private var model
+    let portfolio: Portfolio
+
+    var body: some View {
+        if let id = model.startup.focus, let product = portfolio.product(id), let block = product.startup {
+            let name = HomeFactsBuilder.name(product)
+            VStack(alignment: .leading, spacing: Space.s) {
+                SectionHeader(title: "Focus", note: "The product with the most outside weekly users.")
+                RowGroup {
+                    Button {
+                        model.go(.product(product.id))
+                    } label: {
+                        RowCard(title: name, detail: StartupText.sentence(block), wraps: true) {
+                            ProductIcon(product: product, monogram: Monogram.letter(for: name), size: Space.iconRow, radius: Radius.iconRow)
+                        } trailing: {
+                            HStack(spacing: Space.s) {
+                                Chip(text: block.stageTitle, color: Palette.primary)
+                                Chip(text: StartupText.typeWord(block), color: block.typeSet ? Palette.textSecondary : Palette.needsYou)
+                            }
+                        }
+                        .padding(.vertical, Space.xs)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open the \(name) page")
+                    .accessibilityHint("Opens the product page")
+                }
+            }
+        }
     }
 }
 
@@ -220,6 +255,11 @@ private struct ProductTableRow: View {
                     Text(name).font(Typo.body.weight(.semibold)).lineLimit(1)
                     if !product.stage.isEmpty {
                         Text(product.stage.capitalized).font(Typo.caption).foregroundStyle(Palette.textSecondary).lineLimit(1)
+                    }
+                    // The stage the evidence shows (docs/STARTUP.md), beside the registry stage the owner set.
+                    if let startup = product.startup {
+                        Chip(text: startup.stageTitle, color: Palette.textSecondary)
+                            .help("Earned stage. \(StartupText.sentence(startup))")
                     }
                     // "On track" on every row is noise: the pill appears when there is something to say.
                     if product.health != .onTrack { HealthPill(health: product.health).fixedSize() }

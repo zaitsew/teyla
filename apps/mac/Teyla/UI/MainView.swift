@@ -19,6 +19,10 @@ struct MainView: View {
             CommandBarView()
                 .environment(model)
         }
+        .sheet(isPresented: Bindable(model.startup).presented, onDismiss: { model.startup.close() }) {
+            YCSheetView()
+                .environment(model)
+        }
         .sheet(isPresented: Bindable(model.relay).presented) {
             ConnectPhoneSheet()
                 .environment(model)

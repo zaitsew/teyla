@@ -104,6 +104,9 @@ enum Space {
     static let markSize: CGFloat = 24
     /// The confirmation inside a diagnosis.
     static let confirmSheet: CGFloat = 528
+    /// The YC sheet.
+    static let ycSheetWidth: CGFloat = 640
+    static let ycSheetHeight: CGFloat = 760
     /// The Settings window and the new-task sheet.
     static let settingsWidth: CGFloat = 460
     static let taskSheetWidth: CGFloat = 520
