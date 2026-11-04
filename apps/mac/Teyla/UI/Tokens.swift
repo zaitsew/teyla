@@ -83,7 +83,9 @@ enum Space {
     static let commandBarList: CGFloat = 320
     /// The most height a preview's output takes on a Tools card before it scrolls.
     static let previewMax: CGFloat = 180
-    /// The sidebar: Home, Decisions, All products and Tools.
+    /// The height of a 24-hour line on Operations.
+    static let seriesHeight: CGFloat = 56
+    /// The sidebar: Home, Decisions, Products, the four admin sections and Settings.
     static let sidebarMin: CGFloat = 190
     static let sidebarIdeal: CGFloat = 220
     static let sidebarMax: CGFloat = 280

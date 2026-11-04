@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Mac: Operations is a full page.** It replaces Tools. Figures first (failures, safe to leave, disk, swap), then the
+  machine with 24-hour lines, the failures with their actions, scheduled tasks worst first, harnesses and AGENTS.md sync
+  state, and security counts. A figure the report lacks is a dash with the reason.
+
 - **The Mac app reads the admin report.** The sidebar is Home, Decisions, Products, then Growth, Money, Operations and
   Playbook, with Settings at the foot; Tools is part of Operations. The app reads `teyla console --json` from its cache
   first, reads again in the background, and shows a section's own error without hiding the others. The four pages show

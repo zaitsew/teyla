@@ -562,7 +562,7 @@ simulated and says "Sample: nothing was sent"; nothing is written to disk. `Tool
 the file from `tests/fixtures/state.v2.json`.
 
 What the store build leaves out, because it needs the command line: notes and the quick-note panel, the first-run
-diagnosis, the Tools page, editing a product's stage or focus, snooze and "mark done", and the Codex/Claude choice for a new
+diagnosis, the Operations page, editing a product's stage or focus, snooze and "mark done", and the Codex/Claude choice for a new
 task (the Mac chooses). These controls are not drawn, rather than drawn and disabled. Product pages are
 built from the snapshot: the open questions and the recent sessions, without spend.
 
@@ -621,7 +621,18 @@ Preview hooks: `TEYLA_CONSOLE_FIXTURE` (default `console.v1.json` beside the sta
 
 ## Tools and the command bar (from 2026-11-02)
 
-**Tools** (now the actions part of Operations, from 2026-11-04). It was a sidebar item under All products. It shows what is wrong on this Mac's backend now, from one command,
+**Operations** (from 2026-11-04; it was the Tools page). The page reads `console.operations` and, top to bottom, shows:
+four figures (unresolved failures, safe to leave, disk free, swap used); what is still running when the Mac cannot be
+left; the machine with 24-hour lines of disk free and swap used (from `series`), memory, load, agents, work in flight
+and the biggest apps; the failures; the scheduled tasks worst first (late, gone, not loaded, never ran, unknown), with the
+calm ones behind "Show all"; the harnesses and whether their AGENTS.md copies match the policy, with the fix command to
+copy; and the security counts with the date of each scan. A count the report lacks is a dash with the reason (the shield
+result is not kept between runs). The cards below keep the behaviour of the old Tools page.
+
+**Failure cards.** A failure that `teyla attention` also lists gets that item's card, with its actions. Any other
+failure shows its sentence and, when the report names a command, the command with a Copy button. The app does not run it.
+
+**Tools** (the actions part of Operations). It was a sidebar item under All products. It shows what is wrong on this Mac's backend now, from one command,
 `teyla attention --json` (`docs/COMMANDS.md` has the schema). The command reads local state only and makes no network
 call; a source that fails, times out or has a cache older than a day comes back as an `unknown` item, so a failure never
 reads as calm. The app reads it at launch, when the page opens with a report older than 10 minutes, after an action, and
@@ -641,7 +652,7 @@ on "Check again". It takes up to half a minute on a loaded Mac, so it never runs
 - Allow-list (`Core/ToolCommands.swift`): `schedules forget <id>…`, `storage sweep [--dry]`, `apply O<n> --yes|--dry`,
   `portfolio --refresh`. A command from the report that is not on the list is refused and shown as refused, as is a
   preview that is not a dry run. Nothing that charges money, sends a message, deploys or submits to a store is on it.
-- The "First-run diagnosis" section at the bottom opens the diagnosis page. The store build has no Tools page and no
+- The "First-run diagnosis" section at the bottom opens the diagnosis page. The store build has no Operations page and no
   command bar actions (`Capabilities.tools`).
 
 **Command bar (⌘K, View menu → Command Bar…).** A sheet with a text field over a fixed list: Go to Home, Decisions, All
@@ -651,7 +662,7 @@ action's command); no model is asked. The arrow keys move, Return chooses, Escap
 command and "asks before it runs"; choosing it opens that card at its preview or confirm step and never runs it from the
 bar. ⌘N, ⌘0 and the other shortcuts are unchanged.
 
-Preview hooks: `TEYLA_PREVIEW_OPEN=tools` and `command-bar[:<query>]`, with `TEYLA_ATTENTION_FIXTURE` (default
+Preview hooks: `TEYLA_PREVIEW_OPEN=operations` (or `tools`) and `command-bar[:<query>]`, with `TEYLA_ATTENTION_FIXTURE` (default
 `attention.v1.json` beside the state sample; `attention.empty.v1.json` is the empty report).
 
 ## The iPhone app: Home and Decisions (from 2026-11-02)
@@ -683,5 +694,5 @@ relay and shares `HomeLogic.swift` with it, so the grouping, the ranking and the
   entry gets the same advice. The sample (`Teyla/Resources/sample-state.json`, written by
   `apps/ios/Tools/add_home_sample.py`) has 18 invented products, so all three sections and both "Show all" buttons
   appear in sample mode.
-- **Mac only.** The Tools page, the ⌘K command bar and `teyla attention` stay on the Mac: they run commands on
+- **Mac only.** The Operations page, the ⌘K command bar and `teyla attention` stay on the Mac: they run commands on
   the Mac, and the phone sends only the five relay kinds.
