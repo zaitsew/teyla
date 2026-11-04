@@ -64,14 +64,14 @@ oldest ask, and `unassigned` is last. `--flat` prints the old list. `--json` kee
 
 ## Asks you can trust: the gate
 
-Some asks never needed you, and `teyla asks` closes or hides them itself. `settle` runs five steps in this
+Some asks never needed you, and `teyla asks` closes or hides them itself. `settle` runs these steps in this
 order, each through the done store in `~/.teyla/asks.json`, so `teyla asks undo <id>` reverses any of them:
 
 | Step | What it takes out | Note in the store |
 |---|---|---|
 | 1. PR state | an ask whose PR was merged or closed after the ask | `auto: PR merged <url>` |
 | 2. Reports | a status report shown as a question (kind `report`) | `auto: report` |
-| 3. Repeats | earlier runs of one job, and near-identical questions, folded into the newest | `auto: repeat run of <id>`, `auto: duplicate of <id>` |
+| 3. Repeats | earlier runs of one job, near-identical questions, and repeats of one manual chore, folded into the newest | `auto: repeat run of <id>`, `auto: duplicate of <id>`, `auto: same chore <id>` |
 | 4. Scheduled task off | an ask from a scheduled task that is disabled or deleted | `auto: scheduled task off <task id>` |
 | 5. TestFlight | a request to tap "View in TestFlight" when the tester can already install | `auto: testflight current <product>` |
 
@@ -112,6 +112,15 @@ starts with an imperative verb ("Sign in to X", "Run the migration") or holds a 
   question (lower case, whitespace collapsed, `*`, `_` and backticks removed), or a token-set Jaccard of at least
   0.8 over the words of 3 or more letters when both questions have at least 6 such words. `blocked` asks, gates
   and reminders are never matched by similarity.
+- *Same chore.* Asks for one manual chore ("Sign Chrome in" in seven wordings, "Open Play Console" in three) fold into
+  the newest, per product and per chore key. The key comes from `src/teyla/chores.py`: rules over the title and the
+  question, not a model and not a similarity, and only for these chores: `chrome_signin`, `gcloud_auth`,
+  `developer_apple`, `app_store_connect`, `play_console`, `dns`, `scheduled_task_cleanup`. An ask folds only when it is
+  a short request (an action word, 280 characters or fewer), offers no options and no choice ("which", "should I"),
+  is not aimed at another version, and does not `needs_owner`. A key, a TestFlight tap and a check on a device are
+  chores too, but they never fold: they are a secret, a step on your device, or a thing only you can do. The note is
+  `auto: same chore <id>`; `undo` of the kept ask puts the repeats back under it. A question that merely mentions
+  a portal ("Which Play Console track?") is not a chore and stays.
 
 The kept ask shows `(+N similar)`, and `--json` gives it `dupes: [ids]`. The collapsed ones are hidden, not marked
 done. When the kept ask is done, its repeats are done too. Asks of different products never collapse. An older
@@ -144,9 +153,9 @@ that were closed because of it back under it; undoing a hidden repeat shows it a
 `teyla asks --json` adds `resolved` and `duplicates` (counts of PR-resolved asks, and of every repeat including
 repeat runs) and `filtered`, the count by reason:
 
-    "filtered": {"resolved": 0, "duplicates": 0, "repeat_runs": 20, "scheduled_off": 1, "testflight_current": 0, "reports": 2}
+    "filtered": {"resolved": 0, "duplicates": 0, "repeat_runs": 20, "same_chore": 0, "scheduled_off": 1, "testflight_current": 0, "reports": 2}
 
-Here `duplicates` counts near-identical questions only, so the top-level `duplicates` is `duplicates + repeat_runs`.
+Here `same_chore` counts the chore repeats of step 3, `duplicates` counts near-identical questions only, so the top-level `duplicates` is `duplicates + repeat_runs`.
 `teyla state --json` adds `resolved` and `duplicates` to `totals`. The version of the snapshot stays 2.
 
 ## Triage: what needs you
