@@ -136,3 +136,19 @@ def test_the_cli_exits_1_with_nothing_to_show(capsys, monkeypatch):
     monkeypatch.setattr("teyla.policy.POLICY", arena.snapshot_path().parent / "no-policy.md")
     assert cli.main(["models", "arena"]) == 1
     assert "paste a snapshot" in capsys.readouterr().out
+
+
+def test_a_one_token_ladder_name_keeps_its_provider_word():
+    ladder = {"xai": {"orchestrate": ["Grok 4.7"], "volume": ["Grok 4.7 (build-fast)"], "triage": []}}
+    assert arena.in_ladder("Grok 4.7", ladder) is True
+    assert arena.in_ladder("Nova 4.7", ladder) is False
+    assert arena.in_ladder("Claude Opus 5.5", {"a": {"orchestrate": ["Opus 5.5"]}}) is True
+
+
+def test_a_safe_mode_refusal_keeps_stdout_valid_json(monkeypatch, capsys):
+    paste(ENTRIES)
+    monkeypatch.setattr("teyla.policy.POLICY", arena.snapshot_path().parent / "no-policy.md")
+    monkeypatch.setenv("TEYLA_SAFE", "1")
+    assert cli.main(["models", "arena", "--refresh", "--json"]) == 0
+    cap = capsys.readouterr()
+    assert json.loads(cap.out)["attempt"]["status"] == "safe_mode" and cap.err.strip()

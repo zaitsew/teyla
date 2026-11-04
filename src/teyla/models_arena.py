@@ -28,6 +28,7 @@ import datetime as _dt
 import json
 import pathlib
 import re
+import sys
 
 from . import config, net
 
@@ -230,20 +231,29 @@ def _tilde(p: pathlib.Path) -> str:
     return "~" + s[len(home):] if s.startswith(home) else s
 
 
-def _tokens(text: str) -> set[str]:
-    return set(re.findall(r"[a-z]+|\d+(?:\.\d+)?", text.lower())) - {"claude", "gpt", "grok", "model", "the", "and"}
+PROVIDER_WORDS = {"claude", "gpt", "grok", "model", "the", "and"}
+
+
+def _tokens(text: str, strip: bool = True) -> set[str]:
+    toks = set(re.findall(r"[a-z]+|\d+(?:\.\d+)?", text.lower()))
+    return toks - PROVIDER_WORDS if strip else toks
 
 
 def in_ladder(model: str, ladder: dict) -> bool:
     """Does the policy ladder already name this model? Every word and number of a ladder entry's name (without
     the parenthesised note) appears in the board's name."""
-    mine = _tokens(model)
     for rows in (ladder or {}).values():
         for tier in ("orchestrate", "volume", "triage"):
             for entry in rows.get(tier, []) or []:
-                toks = _tokens(re.sub(r"\([^)]*\)", "", str(entry)))
-                if len(toks) >= 2 and toks <= mine:
-                    return True
+                name = re.sub(r"\([^)]*\)", "", str(entry))
+                # without the provider word two tokens must match ("Opus 5.5"); a name that has only one left
+                # ("Grok 4.7") keeps its provider word
+                for strip in (True, False):
+                    toks = _tokens(name, strip)
+                    if len(toks) >= 2 and toks <= _tokens(model, strip):
+                        return True
+                    if len(toks) >= 2:
+                        break
     return False
 
 
@@ -276,7 +286,7 @@ def render(board: dict, rows: list[dict], attempt: dict | None = None) -> str:
 def cmd_arena(args) -> int:
     attempt = refresh() if getattr(args, "refresh", False) else None
     if attempt and attempt["status"] == "safe_mode":
-        print(net.refusal(f"fetching {URL}"))
+        print(net.refusal(f"fetching {URL}"), file=sys.stderr if args.json else sys.stdout)
     board = load()
     from . import models
     from . import policy as _policy

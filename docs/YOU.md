@@ -31,7 +31,7 @@ screened out. Quote text is never written into a repository.
 
 `[you] rank = true` lets Claude Haiku order the screened candidates once a day. The model sees only lines that
 already passed the screen, and its reply must be a list of valid numbers or it is dropped. Off by default; closed
-in safe mode.
+in safe mode. Only `teyla you` runs it: the console's Playbook section reads the cache or rebuilds by rules, and never asks a model.
 
 **Insights.** Counts with their evidence: long prompts per week, median prompt length, share of prompts typed at
 night (22:00 to 06:00), language split, products ranked by prompts, themes that recur across prompts. `teyla
