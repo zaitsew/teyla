@@ -8,6 +8,15 @@ Daily volume does not come from filming. It comes from what already happens ever
 releases, agent sessions, the week's spend, corrections, the owner's notes tagged `#content`, and the news in
 Beyond Intelligence. Filmed footage is a richer input a few times a week. A slot never waits for it.
 
+## The formats
+
+- **True Vibe Coding** is a filmed bet: agents get a named job, and the owner asks whether it will finish before he is
+  back from a ride or a trip. Only `teyla growth ride` and footage make this format. A merged PR is a worklog.
+- **Spec Product** works like a spec ad, about another company's product: "What if <product> was truly AI-native?", with
+  a working prototype, marked unofficial. It never targets one of your own products. Ideas come from `[[spec_target]]`
+  in the config (`product`, `idea`) and from notes tagged `#spec`.
+- **Worklog, Lesson, Reaction and Product spotlight** fill the other slots from the daily sources.
+
 ## The daily loop
 
 ```
