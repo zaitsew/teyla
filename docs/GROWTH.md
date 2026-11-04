@@ -21,10 +21,10 @@ Beyond Intelligence. Filmed footage is a richer input a few times a week. A slot
 
 ```
 teyla growth harvest      new ideas from the sources above (nothing confidential: every idea is scanned)
-teyla growth trends       scored trend ideas (customer relevance x2, demonstrability x2, novelty, momentum; keep 20/30)
+teyla growth trends       trend ideas scored against your audience (relevance x2, demonstrability x2, novelty, momentum; keep 20/30)
 teyla growth plan         fill today's slot of every enabled channel; an empty slot shows as a gap
-teyla growth draft        write the planned items through your `claude -p`, then check voice and leaks
-teyla growth review       what waits for you; approve, reject (with a reason) or edit
+teyla growth draft        write the planned items through your `claude -p`, check voice and leaks, then an editor scores the hook
+teyla growth review       what waits for you, best editor score first; approve, reject (with a reason) or edit
 teyla growth packets      one folder per approved item: caption, first comment, media, the platform's upload page
 teyla growth published ID URL    paste the post's URL after you posted it
 ```
@@ -36,6 +36,43 @@ did). Plan sits before draft because draft writes the planned slots. Set `[growt
 (`teyla config set growth.daily=true`) and `teyla routine install` writes a launchd agent that runs it at 06:30
 (`~/Library/Logs/teyla-growth.log`). It is off by default. Nothing is published, and in safe mode the draft step is
 skipped.
+
+## Quality: a post worth reading
+
+A full slot is not the goal. A post a builder who does not know you would stop for is. Four steps keep weak drafts out
+of your review.
+
+**Chores are not content.** `harvest` skips merged pull requests that are records, docs, bumps, renames, config,
+landing-variant decisions or edits to a profile README. They stay in the store as `rejected` with `chore: <reason>`.
+A user-visible change, a real failure or a real number passes.
+
+**A PR idea gets its facts at draft time.** Before the model writes, Teyla reads `gh pr view` for the PR (a timeout, one
+row in [PRIVACY.md](PRIVACY.md)): the description as quoted data, the diff size, the largest files, labels and the
+issue it closes. Every line is scanned and dropped on a hit. A PR with no description and a tweak-sized diff, or a
+docs-only diff, becomes `failed` with `thin: ...` and its slot goes to another idea. If `gh` fails the item is held
+with a retry hint, never drafted from a title.
+
+**An editor scores every draft.** One more call through the same model function rates four things from 0 to 5: the
+hook (would a builder who does not know you stop scrolling), a concrete artifact, a number or a surprise, and a claim
+a reader can check. The score is their mean. A draft passes at 3.5 or more with a hook of 3 or more. Below the bar it
+gets one rewrite on `[models] rewrite` (Sonnet) with the critique, and the rewrite passes the same checks, including
+the rule that every number comes from the facts. Still below the bar, the item stays `draft` with `hold_reason`: it
+is not in `growth review`, it does not fill a slot, and `review --all` shows why. The editor never adds a number.
+The voice check also refuses meta talk about the post ("the title is the artifact") and hedging ("I make no claim").
+`draft_budget` (default 30 calls) covers drafts, retries, editor and rewrites. A spent budget holds the rest.
+
+**Trends are scored by a model, with a reason.** The mechanical score cannot tell whether a builder can try the news
+in a day. In the first real run 0 of 8 X candidates survived: a rule killed any candidate whose demo needed more than
+a day, though a reaction needs only a test, and the old kills were never looked at again. Now one batch call scores
+each candidate for your audience and returns a one-line reason, the test you would run (`what_i_will_try`, up to
+8 hours) and, when a real product of another company could be prototyped in a day, a spec-product idea. The bar stays
+20/30. A candidate is dropped when it repeats a queued reaction, has nothing concrete to try or needs more than a
+working day. Kept reactions carry the reason and the test as facts; kills are logged with the scorer. Rows killed by
+the old scorer are scored once more. If the call fails or safe mode is on, the mechanical score runs and says so.
+
+`teyla growth daily` drafts in up to two rounds: if a slot is still empty after the first, it plans again and drafts
+the next idea. It ends with a slot report: how many drafts wait, how many the editor held back, which channel has a
+gap and why, the cost and the budget left. Prefer one strong post to a filled slot, but the gap stays visible.
 
 ## Episodes: ride, ingest, cut
 
@@ -91,7 +128,7 @@ end an item. Only an approved item gets a packet or a published mark.
 - Teyla publishes nothing by itself. The only publisher is the manual one: you post, then record the URL.
   It never likes, follows, sends a DM or a cold email, and it never scrapes.
 - AI-dubbed audio is labelled in the caption.
-- Model calls go through one function, with a timeout and a per-run budget (`draft_budget`).
+- Model calls go through one function, with a timeout and a per-run budget (`draft_budget`, default 30).
 
 ## Sale attempts
 
@@ -127,4 +164,4 @@ See [CONSOLE.md](CONSOLE.md).
 - One channel gets at most `posts_per_day` items a day. The default is one per channel.
 - One idea feeds at most `fanout` channels (default 3).
 - A language other than English needs its voice chart. Without one the item fails its check.
-- Privacy: three calls leave the machine, all listed in [PRIVACY.md](PRIVACY.md) (rows 37 to 39). Transcription and video work stay on your Mac.
+- Privacy: five calls leave the machine, all listed in [PRIVACY.md](PRIVACY.md) (rows 37 to 41). Transcription and video work stay on your Mac.
