@@ -609,12 +609,12 @@ def daily(store: g.Store, cfg: dict, now: float, *, quiet: bool = False, out=pri
             out(f"  {name:<8} {steps[-1][1]:<6} {steps[-1][2]}".rstrip() + f"  ({time.time() - t0:.0f}s)")
 
     def do_harvest():
-        r = g.harvest(store, cfg, now, allow_net=allow, guard=guard, reg=reg)
+        r = g.harvest(store, cfg, now, allow_net=allow, skip=("trends",), guard=guard, reg=reg)     # the trends step follows
         return f"{r['created']} new ideas" + (f"; blocked {sum(r['blocked'].values())}" if r["blocked"] else "")
 
     def do_trends():
-        r = g.run_trends(store, cfg, now, x=bool(cfg["x_scan"]) and allow, guard=guard, reg=reg)
-        return f"{len(r['kept'])} kept, {len(r['killed'])} dropped"
+        r = g.run_trends(store, cfg, now, x=bool(cfg["x_scan"]) and allow, guard=guard, reg=reg, model=allow)
+        return f"{len(r['kept'])} kept of {r['candidates']} new, {len(r['killed'])} dropped" + (f", {len(r['specs'])} spec ideas" if r["specs"] else "")
 
     def do_plan():
         filled = 0
@@ -623,11 +623,25 @@ def daily(store: g.Store, cfg: dict, now: float, *, quiet: bool = False, out=pri
         return f"{filled} slots filled over today and tomorrow"
 
     def do_draft():
+        """Draft, edit, and when a slot of today is still open (a thin PR, a post the editor held back) plan and draft once
+        more from the next best ideas. The budget is shared by both rounds."""
         if not net.gate("growth daily (it sends ideas and the voice chart to the model provider)", quiet=True):
             return "skipped: safe mode"
-        r = g.run_draft(store, cfg, now, limit=max(1, g.target_per_day(cfg)) * 2, day=None, dry=False, guard=guard, reg=reg)
-        ok = sum(1 for x in r["rows"] if x["state"] == "review")
-        return f"{ok} of {len(r['rows'])} drafts wait in review; cost ${r['cost']:.4f}"
+        left, cost, total, ok, held = cfg["draft_budget"], 0.0, 0, 0, 0
+        for rnd in (1, 2):
+            r = g.run_draft(store, cfg, now, limit=max(1, g.target_per_day(cfg)) * 2, day=None, dry=False, budget=left, guard=guard, reg=reg)
+            left, cost = r.get("budget_left", left), cost + r["cost"]
+            total += len(r["rows"])
+            ok += sum(1 for x in r["rows"] if x["state"] == "review")
+            held += sum(1 for x in r["rows"] if x["state"] == "draft")
+            if rnd == 2 or left <= 0 or g.slot_report(store, cfg, g.day_of(now))["filled"] >= g.target_per_day(cfg):
+                break
+            if not any(x["item"] and x["item"]["status"] == "idea" for x in g.plan(store, cfg, g.day_of(now), now, reg=reg)):
+                break
+        rep = g.slot_report(store, cfg, g.day_of(now))
+        gaps = "; ".join(f"{x['channel']} ({g.clip_text(x['why'], 70)})" for x in rep["rows"] if x["filled"] < x["target"])
+        return (f"{ok} of {total} drafts wait in review, {held} held back by the editor; today {rep['filled']} of {rep['total']} slots "
+                f"filled" + (f"; gaps: {gaps}" if gaps else "") + f"; cost ${cost:.4f}; budget left {left}")
 
     store.ensure()
     for name, fn in (("harvest", do_harvest), ("trends", do_trends), ("plan", do_plan), ("draft", do_draft)):
