@@ -22,6 +22,8 @@ two config values, which are checked against a regex when they are read.
 """
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import hashlib
 import json
 import os
@@ -276,29 +278,47 @@ def _write_secret(path: pathlib.Path, secret: str) -> None:
         raise
 
 
+@contextlib.contextmanager
+def _key_lock(path: pathlib.Path):
+    """One key change per product on this Mac: two rotations must not swap pending secrets, or the
+    server ends on a key nobody holds. A second run is refused, not queued: it would rotate again."""
+    config.private_dir(path.parent)
+    fd = os.open(path.with_name(path.name + ".lock"), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            raise ChannelError(f"another key change for {path.stem} is running; try again when it ends", 1) from None
+        yield
+    finally:
+        os.close(fd)
+
+
 def key_add(remote: Remote, product: str, rotate: bool = False) -> pathlib.Path:
     path = key_path(_slug(product))
-    if path.exists() and not rotate:
-        raise ChannelError(f"{product} already has a key at {path}. `key revoke {product}` first, or add --rotate", 1)
-    secret = secrets.token_urlsafe(32)
-    digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
-    # Saved first: a rotation whose local write fails must not leave the server on a key nobody holds.
-    pending = path.with_name(path.name + ".new")
-    _write_secret(pending, secret)
-    r = remote.keys_edit(product, f"{digest} {product}")
-    if r.returncode != 0:
-        pending.unlink(missing_ok=True)
-        raise ChannelError(f"the server did not take the key (ssh exited {r.returncode}); nothing was stored here", 1)
-    os.replace(pending, path)
+    with _key_lock(path):
+        if path.exists() and not rotate:
+            raise ChannelError(f"{product} already has a key at {path}. `key revoke {product}` first, or add --rotate", 1)
+        secret = secrets.token_urlsafe(32)
+        digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+        # Saved first: a rotation whose local write fails must not leave the server on a key nobody holds.
+        pending = path.with_name(path.name + ".new")
+        _write_secret(pending, secret)
+        r = remote.keys_edit(product, f"{digest} {product}")
+        if r.returncode != 0:
+            pending.unlink(missing_ok=True)
+            raise ChannelError(f"the server did not take the key (ssh exited {r.returncode}); nothing was stored here", 1)
+        os.replace(pending, path)
     return path
 
 
 def key_revoke(remote: Remote, product: str) -> None:
-    _slug(product)
-    r = remote.keys_edit(product, None)
-    if r.returncode != 0:
-        raise ChannelError(f"the server did not drop the key (ssh exited {r.returncode}); the local key was kept", 1)
-    key_path(product).unlink(missing_ok=True)
+    path = key_path(_slug(product))
+    with _key_lock(path):
+        r = remote.keys_edit(product, None)
+        if r.returncode != 0:
+            raise ChannelError(f"the server did not drop the key (ssh exited {r.returncode}); the local key was kept", 1)
+        path.unlink(missing_ok=True)
 
 
 # --- the hourly agent ---------------------------------------------------------------------------

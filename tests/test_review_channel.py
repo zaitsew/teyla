@@ -414,3 +414,18 @@ def test_a_rotation_the_server_refuses_keeps_the_working_key(world, monkeypatch)
         rc.key_add(rc.Remote("deploy@example.com", "/data"), "alpha", rotate=True)
     assert path.read_text().strip() == "old-secret"
     assert not path.with_name(path.name + ".new").exists()
+
+
+def test_a_second_key_change_for_one_product_is_refused(world, monkeypatch):
+    rc = review_channel
+    path = rc.key_path("alpha")
+    rc._write_secret(path, "old-secret")
+    called = []
+    monkeypatch.setattr(rc.Remote, "keys_edit", lambda self, slug, line: called.append(line))
+    with rc._key_lock(path):
+        with pytest.raises(rc.ChannelError, match="another key change"):
+            rc.key_add(rc.Remote("deploy@example.com", "/data"), "alpha", rotate=True)
+        with pytest.raises(rc.ChannelError, match="another key change"):
+            rc.key_revoke(rc.Remote("deploy@example.com", "/data"), "alpha")
+    assert called == []
+    assert path.read_text().strip() == "old-secret"
