@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **The video channels get a daily clip with no filming.** When there is no clip you filmed, the best lesson the editor
+  passed becomes a silent 16 to 28 second vertical video: your own words, line by line, on a dark card, the hook in
+  the first second, the artifact on the last card. It goes through the same frame check as the session reel. Drawing
+  needs the `reel` extra: `teyla update` keeps it on a Mac with a growth config, `teyla growth doctor` has a `reel
+  extra` row, and the slot report names the command when Pillow is missing. See docs/GROWTH.md, "The daily video".
+
 - **The content factory ranks by what passes and mines its own stories.** `teyla growth plan` gives the next slot to the
   idea the editor is likely to pass: a lesson with a number and an artifact first, a bare product summary never. Once a
   week the harvest step makes one model call over your policy file, the last `teyla you` report, crash and load counts,
