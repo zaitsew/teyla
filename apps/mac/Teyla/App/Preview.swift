@@ -16,8 +16,9 @@ import SwiftUI
 ///     TEYLA_PREVIEW_SCROLL  end: scroll the main window to its bottom
 ///     TEYLA_PREVIEW_SNAPSHOT  <path.png>: draw the whole Home page in one image (width TEYLA_PREVIEW_WIDTH, default
 ///                         1100 pt, in the appearance above), save it and quit. For screenshots without a screen to click
-///     TEYLA_PREVIEW_SNAPSHOT_VIEW  home (default) | window (the window as it stands, with its toolbar; the size comes from
-///                         TEYLA_PREVIEW_SIZE) | connect-phone (the "Connect iPhone" sheet) | setup (the store build's first screen; Home elsewhere)
+///     TEYLA_PREVIEW_SNAPSHOT_VIEW  home (default) | decisions | portfolio | product:<id> | tools | settings | window (the window
+///                         as it stands, with its toolbar; the size comes from TEYLA_PREVIEW_SIZE) | connect-phone (the "Connect iPhone"
+///                         sheet) | setup (the store build's first screen; Home elsewhere)
 @MainActor
 enum Preview {
     private static var ran = false
@@ -58,6 +59,10 @@ enum Preview {
                     // The made-up key takes a moment to come back; the sheet is drawn once the code is there.
                     model.relay.connectPhone(turnOn: model.phoneNeedsRelayOn)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { snapshotView(which, model: model, path: path) }
+                } else if which == "tools" || which.hasPrefix("product:") {
+                    // These pages read their own sample file first.
+                    model.go(which == "tools" ? .tools : .product(String(which.dropFirst("product:".count))))
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { snapshotView(which, model: model, path: path) }
                 } else {
                     snapshotView(which, model: model, path: path)
                 }
@@ -119,6 +124,16 @@ enum Preview {
         switch which {
         case "connect-phone":
             page = AnyView(ConnectPhoneSheet().environment(model))
+        case "decisions":
+            page = flat(DecisionsView(), model: model, width: width)
+        case "portfolio":
+            page = flat(PortfolioView(), model: model, width: width)
+        case "tools":
+            page = flat(ToolsView(), model: model, width: width)
+        case "settings":
+            page = flat(SettingsView(), model: model, width: width)
+        case let product where product.hasPrefix("product:"):
+            page = flat(ProductPageView(id: String(product.dropFirst("product:".count))), model: model, width: width)
         case "setup", "setup-hand", "setup-paired":
             #if STORE
             // A session of its own with an empty Keychain, so the screen shows the first run whatever this Mac holds.
@@ -128,18 +143,23 @@ enum Preview {
             page = AnyView(StoreSetupView(store: session, expanded: which == "setup-hand")
                 .frame(width: min(width, 760), height: which == "setup-hand" ? 1250 : 760).environment(model))
             #else
-            page = homePage(model: model, width: width)
+            page = flat(HomeView(), model: model, width: width)
             #endif
         default:
-            page = homePage(model: model, width: width)
+            page = flat(HomeView(), model: model, width: width)
         }
         let host = NSHostingView(rootView: page)
         host.appearance = NSApp.appearance
-        let height = host.fittingSize.height
-        host.frame = NSRect(x: 0, y: 0, width: host.fittingSize.width, height: height)
+        host.frame = NSRect(origin: .zero, size: host.fittingSize)
         host.layoutSubtreeIfNeeded()
-        write(host, to: path)
-        NSApp.terminate(nil)
+        // A view that measures itself (`ClampedText`, the product page's width) updates on the next pass: fit again.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(600))
+            host.frame = NSRect(origin: .zero, size: host.fittingSize)
+            host.layoutSubtreeIfNeeded()
+            write(host, to: path)
+            NSApp.terminate(nil)
+        }
     }
 
     private static func write(_ view: NSView, to path: String) {
@@ -150,10 +170,10 @@ enum Preview {
         }
     }
 
-    private static func homePage(model: AppModel, width: Double) -> AnyView {
-        AnyView(HomeContent(eager: true)
-            .padding(.horizontal, Space.page)
-            .padding(.vertical, Space.xl)
+    /// A page at the width asked for, without its scroll view, so the image holds all of it.
+    private static func flat(_ view: some View, model: AppModel, width: Double) -> AnyView {
+        AnyView(view
+            .environment(\.pageFlat, true)
             .frame(width: width, alignment: .topLeading)
             .background(Palette.background)
             .environment(model))

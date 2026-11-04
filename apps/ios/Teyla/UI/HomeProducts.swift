@@ -7,26 +7,6 @@ import SwiftUI
 
 // MARK: Pieces
 
-/// A section title and, under it, the rule that put a product there. The same for every section of Home,
-/// Decisions included.
-struct HomeSectionHeader: View {
-    let title: String
-    let note: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Space.xxs) {
-            Text(title)
-                .font(Typo.section)
-                .accessibilityAddTraits(.isHeader)
-            Text(note)
-                .font(Typo.caption)
-                .foregroundStyle(Palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
 /// Week / Month / Year. One switch for the whole page; it changes numbers and nothing else.
 struct PeriodSwitch: View {
     @Binding var period: HomePeriod
@@ -94,30 +74,6 @@ private struct ProductIcon: View {
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .accessibilityHidden(true)
-    }
-}
-
-/// Commits per week as small bars; the newest week stands out. Nothing is drawn for a product with no weeks.
-private struct SparklineView: View {
-    let heights: [Double]
-    let label: String
-
-    var body: some View {
-        HStack(alignment: .bottom, spacing: Space.xxs) {
-            ForEach(heights.indices, id: \.self) { index in
-                RoundedRectangle(cornerRadius: Radius.bar)
-                    .fill(color(index))
-                    .frame(width: Space.sparkBar, height: max(Space.xxs, Space.sparkHeight * heights[index]))
-            }
-        }
-        .frame(height: Space.sparkHeight, alignment: .bottom)
-        .accessibilityElement()
-        .accessibilityLabel(label)
-    }
-
-    private func color(_ index: Int) -> Color {
-        if index == heights.count - 1 { return Palette.primary }
-        return heights[index] > 0 ? Palette.primaryMuted : Palette.border
     }
 }
 
@@ -245,7 +201,7 @@ private struct HeroCard: View {
             }
             if !typeSize.isAccessibilitySize { Spacer(minLength: Space.s) }
             if let label = facts.sparkLabel {
-                SparklineView(heights: facts.sparkHeights, label: label)
+                SparklineView(heights: facts.sparkHeights, label: label, height: Space.sparkHeroHeight, barWidth: Space.sparkHeroBar)
             }
         }
     }

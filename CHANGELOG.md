@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **The apps share one visual grammar.** `apps/mac/Teyla/UI/Grammar.swift`, compiled into the iPhone app too, holds `Page`,
+  `PageHeader`, `SectionHeader`, `StatTile`, `Scorecard`, `RowCard`, `EmptyState`, `ErrorRow` and `ClampedText`.
+  `apps/mac/README.md` says how to use them. The PNG hook now draws every page: `TEYLA_PREVIEW_SNAPSHOT_VIEW` takes
+  `decisions`, `portfolio`, `product:<id>`, `tools` and `settings`.
 - **Console: the Money section, and `teyla subs`.** `teyla console money` answers "what leaves my accounts". The headline is
   the cash per month: the sum of the subscriptions you list in `~/.teyla/subscriptions.toml`, with every row that has no
   price named, never estimated. `teyla subs list|add|set|remove` edits that file. Beside it, kept apart and labelled as

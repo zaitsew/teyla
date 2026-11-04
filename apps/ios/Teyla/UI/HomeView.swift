@@ -91,7 +91,7 @@ private struct HomeContent: View {
     private func section(_ sections: [HomeSection], _ kind: HomeSectionKind) -> some View {
         if let section = sections.first(where: { $0.kind == kind }), !section.products.isEmpty {
             VStack(alignment: .leading, spacing: Space.m) {
-                HomeSectionHeader(title: kind.title, note: kind.note)
+                SectionHeader(title: kind.title, note: kind.note)
                 switch kind {
                 case .users: HeroList(products: section.products, period: period)
                 case .building: BuiltList(products: section.products, period: period)
@@ -163,7 +163,7 @@ private struct HomeDecisions: View {
         let lists = DecisionLists(asks: snapshot.asks, snapshot: snapshot, now: Date())
         let shown = Decisions.homeList(lists.fresh)
         VStack(alignment: .leading, spacing: Space.m) {
-            HomeSectionHeader(title: "Decisions", note: PhoneHome.decisionsNote)
+            SectionHeader(title: "Decisions", note: PhoneHome.decisionsNote)
             if lists.owner.isEmpty {
                 Label("Nothing waits on you.", systemImage: "checkmark.circle")
                     .foregroundStyle(Palette.textSecondary)

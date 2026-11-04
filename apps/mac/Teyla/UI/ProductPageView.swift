@@ -4,42 +4,28 @@ import SwiftUI
 struct ProductPageView: View {
     @Environment(AppModel.self) private var model
     let id: String
+    @State private var width: CGFloat = 0
 
     var body: some View {
         let page = model.productPage
         let portfolioProduct = model.snapshot?.portfolio?.product(id)
-        GeometryReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: Space.xl) {
-                    if let data = page.page, data.product.id == id {
-                        ProductHeaderView(header: data.product, spend: data.spend, reading: page.readingSessions,
-                                          portfolio: portfolioProduct)
-                        content(data, page: page, portfolio: portfolioProduct, wide: proxy.size.width >= Space.wideWindow)
-                    } else if let error = page.error {
-                        VStack(alignment: .leading, spacing: Space.s) {
-                            Label("Could not read \(Format.product(id))", systemImage: "exclamationmark.triangle")
-                                .font(Typo.cardTitle)
-                                .foregroundStyle(Palette.needsYou)
-                            Text(error)
-                                .foregroundStyle(Palette.textSecondary)
-                                .textSelection(.enabled)
-                            Button("Try again") { page.reload() }
-                        }
-                    } else {
-                        // The snapshot already knows the product's health and platforms, so they show while the page reads.
-                        if let portfolioProduct {
-                            Text(portfolioProduct.title).font(Typo.pageTitle)
-                            ProductStatusBlock(product: portfolioProduct)
-                        }
-                        ReadingLine(text: "Reading \(Format.product(id))…")
-                    }
+        Page(maxWidth: .infinity) {
+            if let data = page.page, data.product.id == id {
+                ProductHeaderView(header: data.product, spend: data.spend, reading: page.readingSessions,
+                                  portfolio: portfolioProduct)
+                content(data, page: page, portfolio: portfolioProduct, wide: width >= Space.wideWindow)
+            } else if let error = page.error {
+                ErrorRow(section: Format.product(id), message: error) { page.reload() }
+            } else {
+                // The snapshot already knows the product's health and platforms, so they show while the page reads.
+                if let portfolioProduct {
+                    PageHeader(title: portfolioProduct.title)
+                    ProductStatusBlock(product: portfolioProduct)
                 }
-                .padding(.horizontal, Space.page)
-                .padding(.vertical, Space.xl)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                ReadingLine(text: "Reading \(Format.product(id))…")
             }
         }
-        .background(Palette.background)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .navigationTitle(model.snapshot?.products.first { $0.name == id }?.title ?? Format.product(id))
     }
 
