@@ -35,6 +35,8 @@ LICENSES = ("apache", "mit", "none")
 # Kinds that end up in someone else's hands. They share one extra template tree rather
 # than each carrying a copy of it — two copies of an onboarding stub drift in a month.
 PRODUCTIZED_KINDS = ("app", "service")
+# Kinds with a screen a tester can point at: they get the feedback-capture guide (POLICY, R11).
+CAPTURE_KINDS = ("app", "ios")
 PRODUCTIZED_ROOT = KIND_ROOT / "_productized"
 
 LICENSE_TEMPLATES = {
@@ -206,6 +208,9 @@ def scaffold(path: str, name: str, kind: str = "cli", license: str = "apache", o
 
     if kind in PRODUCTIZED_KINDS and PRODUCTIZED_ROOT.exists():
         _copy_tree(PRODUCTIZED_ROOT, dest, ctx, report)
+
+    if kind in CAPTURE_KINDS and (KIND_ROOT / "_capture").exists():
+        _copy_tree(KIND_ROOT / "_capture", dest, ctx, report)
 
     if license != "none":
         license_src = TEMPLATE_ROOT / LICENSE_TEMPLATES[license]

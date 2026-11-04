@@ -42,7 +42,7 @@ public struct ReviewStrings {
     public var noticeCaptured = "What is sent: a picture of this screen exactly as it looks now, your comment, the name and build of this app, the kind of device and system, and the element you pointed at. The picture shows everything on the screen, including other people's names or data when they are visible."
     public var noticeRecipient = "Who gets it: the developer of this app, through a review server. Nobody else."
     public var noticeWhy = "Why: to find and fix what you pointed at."
-    public var noticeRetention = "How long: the copy on the server is gone within the hour. The developer's Mac keeps its copy for 30 days after the report is closed, or 90 days if it is never opened."
+    public var noticeRetention = "How long: the copy on the server is deleted when the developer's Mac next collects it, usually within the hour. The developer's Mac keeps its copy for 30 days after the report is closed, or 90 days if it is never opened."
     public var noticeOK = "OK, send"
     public var noticeCancel = "Cancel"
     /// Shown above Send: the picture below is the one that is sent, with private areas painted over.

@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import pathlib
 import re
 import tomllib
@@ -59,6 +60,19 @@ from . import config
 
 TARGETS = ("owner", "family", "testers", "public")
 SHAREABLE = ("family", "testers", "public")
+
+# R11 — what each platform's feedback capture leaves in a product's own files. A platform that is
+# not listed has no capture package, so there is nothing to check on it.
+CAPTURE_SIGNS = {
+    "ios": ((".swift",), "import TeylaReview"),
+    "macos": ((".swift",), "import TeylaReview"),
+    "web": ((".ts", ".tsx", ".js", ".jsx", ".mjs", ".vue", ".svelte", ".html"), "teyla-review-web"),
+    "android": ((".kts", ".gradle"), "teyla-review"),
+}
+# Build output, dependencies and the vendored packages themselves: a copy that nothing calls is not a capture.
+CAPTURE_SKIP_DIRS = {".git", ".build", "build", "dist", "node_modules", "DerivedData", "Pods", ".gradle",
+                     "review-ios", "review-web", "review-android", "teyla-review-web", "teyla-review",
+                     "teyla-review-noop"}
 
 WEAK_IDENTITY = ("none", "shared-key", "")
 # "accounts-hub" — one Supabase-Auth project shared by every product, not a per-product
@@ -250,7 +264,37 @@ def requirements(pz: dict, repo: pathlib.Path, *, target: str | None = None,
     # R10 — one primary platform, the rest by written trigger (POLICY §11). Not tied to the
     # target: a second platform built without a reason costs the same whoever it serves.
     rows.append(_platforms_row(pz, platforms))
+    rows.append(_capture_row(pz, repo, target))
     return rows
+
+
+def _has_capture(repo: pathlib.Path, suffixes: tuple[str, ...], sign: str) -> bool:
+    for folder, dirs, files in os.walk(repo):
+        dirs[:] = [d for d in dirs if d not in CAPTURE_SKIP_DIRS]
+        for name in files:
+            if not name.endswith(suffixes):
+                continue
+            try:
+                if sign in (pathlib.Path(folder) / name).read_text(errors="replace"):
+                    return True
+            except OSError:
+                continue
+    return False
+
+
+def _capture_row(pz: dict, repo: pathlib.Path, target: str) -> dict:
+    """R11: a test build on the primary can report what is wrong. It fails for a shared target and
+    only warns for an owner-only product, which has one tester who can also just say so."""
+    platforms = [str(p) for p in (pz.get("platforms") or [])]
+    primary = str(pz.get("primary") or (platforms[0] if len(platforms) == 1 else "")).strip()
+    sign = CAPTURE_SIGNS.get(primary)
+    if sign is None:
+        return _req("R11", "feedback_capture", True, f"primary={primary or 'unset'}: no capture package for it")
+    if _has_capture(repo, *sign):
+        return _req("R11", "feedback_capture", True, f"{primary}: capture wired")
+    if target in SHAREABLE:
+        return _req("R11", "feedback_capture", False, f"{primary}: no feedback capture in test builds")
+    return _req("R11", "feedback_capture", True, f"WARN: {primary}: no feedback capture in test builds")
 
 
 def _platforms_row(pz: dict, platforms: list[str]) -> dict:
@@ -305,16 +349,22 @@ def evaluate(manifest: dict, *, mail_ready: bool | None = None) -> dict:
         rows = requirements(pz, manifest["repo"], target=target, mail_ready=mail_ready)
     else:
         # An owner-only product skips R1–R9, but not R10: a second platform built without
-        # a reason costs the same whoever it serves (caught in review, P2).
-        rows = [_platforms_row(pz, [str(p) for p in (pz.get("platforms") or [])])]
+        # a reason costs the same whoever it serves (caught in review, P2). R11 only warns here.
+        rows = [_platforms_row(pz, [str(p) for p in (pz.get("platforms") or [])]),
+                _capture_row(pz, manifest["repo"], target)]
     blockers = list(manifest["blockers"])
     # R10 is agent work: the primary and the triggers are in the repo's history and the
-    # owner's requests, so it becomes an agent step without anyone writing a blocker.
+    # owner's requests, so it becomes an agent step without anyone writing a blocker. So is R11:
+    # wiring a package needs nothing from the owner.
     for row in rows:
         if row["id"] == "R10" and not row["met"]:
             blockers.append({"what": f"platforms: {row['detail']}", "who": "agent",
                              "how": "write [productize] primary and a dated [productize.triggers] entry "
                                     "per other platform, from the repo's history and the owner's requests"})
+        if row["id"] == "R11" and not row["met"]:
+            blockers.append({"what": f"feedback capture: {row['detail']}", "who": "agent",
+                             "how": "wire the platform's review package into test builds (docs/REVIEW.md, "
+                                    "\"Adopt it in three steps\"), and keep it out of the store build"})
     return {"product": manifest["product"], "repo": str(manifest["repo"]), "users": users, "target": target,
             "declared": True, "requirements": rows, "blockers": blockers}
 
@@ -394,6 +444,7 @@ def render_text(reports: list[dict]) -> str:
         rows = r["requirements"]
         if not rows or (r["target"] not in SHAREABLE and all(q["met"] for q in rows)):
             lines.append(f"{head}  nothing to meet (target is not a shared one)")
+            lines.extend(f"    {q['id']} {q['detail']}" for q in rows if q["detail"].startswith("WARN:"))
             continue
         met = sum(1 for q in rows if q["met"])
         line = f"{head}  {met}/{len(rows)} met"
@@ -401,6 +452,7 @@ def render_text(reports: list[dict]) -> str:
         if bad:
             line += "  unmet: " + ", ".join(f"{q['id']} {q['detail']}" for q in bad)
         lines.append(line)
+        lines.extend(f"    {q['id']} {q['detail']}" for q in rows if q["met"] and q["detail"].startswith("WARN:"))
         for who in ("owner", "agent"):
             bs = [b for b in r.get("blockers", []) if str(b.get("who", "owner")) == who]
             for b in bs:

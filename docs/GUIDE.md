@@ -211,7 +211,7 @@ Prompts of 400 characters or more go to `~/.teyla/intent/<product>.md`, outside 
 An app for one person becomes an app for four only with accounts, per-user data, a backend off your laptop and a build on other people's phones.
 
 ```bash
-teyla productize --owner-steps   # every product against R1 to R10, then one list of what only you can do
+teyla productize --owner-steps   # every product against R1 to R11, then one list of what only you can do
 teyla platform                   # the shared resources you buy once: server, domain, mail, Apple, Google Play
 teyla testflight                 # did the newest uploaded build reach your tester (iOS)
 teyla play                       # the same for the Android internal track

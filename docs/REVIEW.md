@@ -33,6 +33,10 @@ With the key absent, empty or anything else, `TeylaReview.isEnabled` is false an
 
 If the product has a voice mode, tell the package: `TeylaReview.configure { $0.hostAudioInUse = { voice.isRunning }; $0.willBegin = { voice.pause() }; $0.didEnd = { voice.resume() } }`. The package records the audio session before review mode opens and puts it back when it closes. Speech recognition inside the overlay is off by default (`$0.speech = true` turns it on). The two Info.plist strings `NSSpeechRecognitionUsageDescription` and `NSMicrophoneUsageDescription` are needed on iOS **even when speech stays off**, because the package links Speech: Apple refused Iron U build 37 with ITMS-90683 by email after processing. The Mac build compiles that code out and needs neither. The first dictation path is the microphone key on the iOS keyboard.
 
+## What every product owes
+
+`teyla productize` R11 fails when a product shared with others has no capture in the test builds of its primary platform, and warns for an owner-only product. A new `app` or `ios` repo from `teyla scaffold` gets `docs/FEEDBACK.md`. `teyla review privacy --product <name>` prints the product's `strings.deliveryNote` and a privacy-policy paragraph. That wording has had no legal review.
+
 ## Checking an artifact before upload
 
 `teyla review store-check PATH [--json]` proves that a production artifact holds no review entry point. It prints one line per check, never prints a key's value, and makes no network call. Exit 0: clean. Exit 1: it names what it found. Exit 2: the path cannot be read, or the type is unknown.
