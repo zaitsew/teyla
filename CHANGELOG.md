@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **The phone's Growth snapshot says how many slots have no draft, and which products nobody tried to sell.**
+  `teyla state` carries `gaps` and `not_tried` (product ids only, a few bytes each) in the compact growth part. No draft text
+  and no quote goes with them.
+
 - **iPhone: Growth and More tabs.** Growth shows posts today against the target, the channels still waiting for a post,
   drafts waiting, the queue, the pipeline and the products nobody tried to sell. More holds Money, Operations, Playbook
   and Settings (moved off the Home toolbar), each with its live figure. Products marks a product "Not tried to sell yet".

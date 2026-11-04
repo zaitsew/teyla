@@ -85,6 +85,9 @@ Two kinds of number, kept apart. Cash comes from what the owner lists; list pric
 - `target {posts_per_day_per_channel}`, `today [{platform, language, posted, target}]`, `last_public_days`, `pipeline {ideas, filming, cutting, review, ready, live}`, `episodes [{id, idea, stage, question, job, minutes, footage, clips}]`, `next_ride` (null today),
   `trends [{title, score, hook, source, url}]`, `outreach {drafts, sent_week, replies_week, calls_week, sources []}`,
   `ads []`, `channels [{platform, language, connected, last_post}]`.
+- `gaps`: the slots today that no draft fills. `not_tried [id]`: the registered products with no sale attempt (`null` when the
+  registry cannot be read). The phone's `compact()` carries both beside the headline, `target`, `today`, `last_public_days`,
+  `queue_days`, `pipeline` and `qualified_week`; it carries no draft, trend, episode or outreach source.
 - Stored in `~/.teyla/growth/`, never in a repo. The drafts waiting for review are not in the report: the Mac app reads
   `~/.teyla/growth/items/*.json` itself, because `teyla growth review` has no `--json`.
 

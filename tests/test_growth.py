@@ -690,6 +690,9 @@ def test_sale_attempts_say_not_tried_yet_and_never_propose_a_kill(env, monkeypat
     rows = growth.attempt_rows(store)
     assert rows["alpha"]["posts"] == 1 and rows["alpha"]["marketing"] == 1 and rows["alpha"]["icp_meetings"] == 1
     assert rows["beta"]["tried"] is False and rows["alpha"]["last"] == day_today()
+    # The phone's list names the products nobody tried to sell, and drops alpha once it has attempts.
+    assert growth.products_not_tried(store) == ["beta", "gamma"]
+    assert growth.compact(growth.section(NOW))["not_tried"] == ["beta", "gamma"]
 
 
 def day_today():
@@ -735,8 +738,32 @@ def test_section_matches_the_console_contract(env, monkeypatch):
     sec = growth.section(NOW)
     assert sec["headline"]["value"] == "1/2" and sec["last_public_days"] == 0 and sec["pipeline"]["live"] == 1
     small = growth.compact(sec)
-    assert set(small) <= {"headline", "target", "today", "last_public_days", "queue_days", "pipeline", "qualified_week"}
+    assert set(small) <= {"headline", "target", "today", "last_public_days", "queue_days", "gaps", "pipeline", "qualified_week", "not_tried"}
     assert "trends" not in small and "https://x.com" not in json.dumps(small)
+
+
+def test_compact_carries_the_gaps_and_the_products_nobody_tried_to_sell_and_stays_small(env, monkeypatch):
+    drafted(env, monkeypatch, channels=("x-en", "linkedin-en"))
+    sec = growth.section(NOW)
+    small = growth.compact(sec)
+    assert isinstance(small["gaps"], int)
+    assert isinstance(small["not_tried"], list) and all(isinstance(p, str) for p in small["not_tried"])
+    # Only the figures and ids go to the phone: no episode, trend, draft text or outreach source.
+    assert len(json.dumps(small)) < 2500
+    # A registry that cannot be read leaves the list unknown (a dash on the phone), never empty.
+    def broken(store):
+        raise OSError("no registry")
+    monkeypatch.setattr(growth, "products_not_tried", broken)
+    assert growth.compact(growth.section(NOW))["not_tried"] is None
+
+
+def test_not_tried_is_unknown_when_the_registry_does_not_parse(env, monkeypatch):
+    store, cfg, _ = drafted(env, monkeypatch)
+    registry.path().write_text("[product.alpha\nstage = ", encoding="utf-8")
+    registry._cache.clear()
+    with pytest.raises(registry.RegistryError):
+        growth.products_not_tried(store)
+    assert growth.compact(growth.section(NOW))["not_tried"] is None
 
 
 def test_console_growth_section_loads_through_the_cli(env, capsys):
