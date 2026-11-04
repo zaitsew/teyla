@@ -39,9 +39,12 @@ def repo(tmp_path, name="thing", *, target="family", platforms='["web"]', identi
          tenancy="user_id+rls", backend="supabase:abc", llm="none", doc="docs/GETTING-STARTED.md",
          secrets="[]", cost_cap="", distribution='web = "pwa"', env_example=None, blockers="",
          first_run="sign-in+skip", sample_data="none", make_doc=True, git=True,
-         primary="", triggers=None) -> pathlib.Path:
+         primary="", triggers=None, capture=True) -> pathlib.Path:
     d = tmp_path / name
     (d / "docs").mkdir(parents=True, exist_ok=True)
+    if capture:     # R11: a product whose test builds can report, on any primary the fixtures use
+        (d / "App.swift").write_text("import TeylaReview\n")
+        (d / "main.ts").write_text('import("teyla-review-web")\n')
     if git:
         (d / ".git").mkdir(exist_ok=True)
     if make_doc and doc:
@@ -95,7 +98,7 @@ def test_broken_toml_is_an_error_row(tmp_path):
 def test_owner_target_has_nothing_to_meet(tmp_path):
     d = repo(tmp_path, target="owner")
     r = productize.evaluate(productize.parse(d / "teyla.toml"))
-    assert [q["id"] for q in r["requirements"]] == ["R10"] and productize.unmet(r) == []
+    assert [q["id"] for q in r["requirements"]] == ["R10", "R11"] and productize.unmet(r) == []
     assert "nothing to meet" in productize.render_text([r])
 
 
@@ -422,7 +425,7 @@ def test_scaffold_app_writes_the_productize_files(tmp_path, kind):
     # and it parses, with the declared onboarding doc actually present
     report = productize.evaluate(productize.parse(dest / "teyla.toml"))
     assert report["declared"] and report["target"] == "family"
-    assert {q["id"] for q in report["requirements"]} == {"R1", "R2", "R3", "R4", "R5", "R6", "R7", "R9", "R10"}
+    assert {q["id"] for q in report["requirements"]} == {"R1", "R2", "R3", "R4", "R5", "R6", "R7", "R9", "R10", "R11"}
     assert reqs(dest)["R5"]["met"] is True
 
 
@@ -563,3 +566,55 @@ def test_r4_garmin_watch_distribution(tmp_path, watch, met):
              distribution=f'ios = "testflight-external"\nwatch = "{watch}"')
     r = productize.evaluate(productize.parse(d / "teyla.toml"))
     assert next(q for q in r["requirements"] if q["id"] == "R4")["met"] is met
+
+
+# ---- R11: feedback capture in test builds --------------------------------------------------------
+
+def test_r11_fails_for_a_shared_target_without_a_capture(tmp_path):
+    d = repo(tmp_path, capture=False)
+    r = reqs(d)["R11"]
+    assert r["met"] is False and "web" in r["detail"]
+    blockers = productize.evaluate(productize.parse(d / "teyla.toml"))["blockers"]
+    assert [b["who"] for b in blockers if "feedback capture" in b["what"]] == ["agent"]
+
+
+def test_r11_only_warns_for_an_owner_target(tmp_path):
+    d = repo(tmp_path, target="owner", capture=False)
+    r = productize.evaluate(productize.parse(d / "teyla.toml"))
+    row = next(q for q in r["requirements"] if q["id"] == "R11")
+    assert row["met"] is True and row["detail"].startswith("WARN:")
+    assert productize.unmet(r) == [] and r["blockers"] == []
+
+
+@pytest.mark.parametrize("platform, path, text", [
+    ("ios", "App/Root.swift", "import TeylaReview\n"),
+    ("macos", "App/Root.swift", "import TeylaReview\n"),
+    ("web", "src/main.tsx", 'await import("teyla-review-web")\n'),
+    ("android", "app/build.gradle.kts", 'internalImplementation(project(":teyla-review"))\n'),
+])
+def test_r11_finds_the_wiring_on_each_platform(tmp_path, platform, path, text):
+    d = repo(tmp_path, platforms=f'["{platform}"]', distribution=f'{platform} = "pwa"', capture=False)
+    assert reqs(d)["R11"]["met"] is False
+    (d / path).parent.mkdir(parents=True, exist_ok=True)
+    (d / path).write_text(text)
+    assert reqs(d)["R11"]["met"] is True
+
+
+@pytest.mark.parametrize("folder", ["node_modules/x", "build", "packages/teyla-review-web", "review-ios/Sources"])
+def test_r11_a_copy_that_nothing_calls_is_not_a_capture(tmp_path, folder):
+    d = repo(tmp_path, capture=False)
+    (d / folder).mkdir(parents=True)
+    (d / folder / "index.ts").write_text('export * from "teyla-review-web"\n')
+    assert reqs(d)["R11"]["met"] is False
+
+
+def test_r11_the_sign_of_another_platform_does_not_count(tmp_path):
+    d = repo(tmp_path, capture=False)
+    (d / "App.swift").write_text("import TeylaReview\n")
+    assert reqs(d)["R11"]["met"] is False
+
+
+def test_r11_passes_a_primary_with_no_capture_package(tmp_path):
+    d = repo(tmp_path, platforms='["cli"]', distribution='cli = "pwa"', capture=False)
+    r = reqs(d)["R11"]
+    assert r["met"] is True and "no capture package" in r["detail"]

@@ -1064,10 +1064,34 @@ def _print_pull(rep: dict) -> None:
         print(f"  {s}")
 
 
+def privacy_text(product: str) -> str:
+    """The two sentences a product owes its testers, with its name filled in. The retention figures
+    match the first-send notice and the channel's hourly pull (docs/REVIEW.md, "Privacy")."""
+    return f"""strings.deliveryNote (shown above Send):
+
+The screenshot and your comment go to {product}'s developer. They may show other people's data.
+
+Privacy policy paragraph:
+
+Test builds of {product} can send a problem report when a tester chooses to. A report holds a picture of the screen as it was, the tester's comment, the app's name and build, the device or browser and system, and the element the tester pointed at. The picture can show other people's names and data, except areas the app blacks out. Reports go to the developer of {product} through a review server, to find and fix the problem. The copy on the server is deleted within the hour. The developer's computer keeps its copy for 30 days after the report is closed, or 90 days if it is never opened. Builds in the app stores do not contain this feature.
+
+This wording has had no legal review."""
+
+
+def cmd_privacy(product: str | None) -> int:
+    if not product:
+        print("teyla review privacy: name the product with --product", file=sys.stderr)
+        return 2
+    print(privacy_text(product))
+    return 0
+
+
 def cmd_review(args) -> int:
     action, words = args.action, list(getattr(args, "words", []) or [])
     if action == "store-check":              # reads one artifact; needs no inbox
         return review_gate.cmd_store_check(words, args.json)
+    if action == "privacy":                  # prints text; needs no inbox
+        return cmd_privacy(args.product)
     conn = connect()
     try:
         if action == "list":
@@ -1204,9 +1228,9 @@ def cmd_review(args) -> int:
 def register(sp):
     q = sp.add_parser("review", help="the inbox of review captures: pull from the relay and TestFlight, triage, open a lane brief")
     q.set_defaults(fn=cmd_review)
-    q.add_argument("action", nargs="?", choices=["list", "pull", "triage", "open", "channel", "store-check"], default="list")
+    q.add_argument("action", nargs="?", choices=["list", "pull", "triage", "open", "channel", "store-check", "privacy"], default="list")
     q.add_argument("words", nargs="*", metavar="[capture-id ... | PATH]")
-    q.add_argument("--product", help="list: only this product; pull --testflight: the product name for the imported items")
+    q.add_argument("--product", help="list: only this product; pull --testflight: the product name for the imported items; privacy: the product to name")
     q.add_argument("--status", help="list: only this status (new, triaged, open, done, rejected)")
     q.add_argument("--all", action="store_true", help="list: include done and rejected captures")
     q.add_argument("--json", action="store_true")

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Every product owes its testers a way to report.** `teyla productize` R11 fails when a product shared with others has no feedback capture in test builds of its primary platform, and warns for an owner-only product. `teyla scaffold` gives `app` and `ios` repos `docs/FEEDBACK.md`, and `teyla review privacy --product <name>` prints the note above Send and a privacy-policy paragraph.
 - **Web review capture: `packages/review-web`.** A test build of a web product gets the same tap-and-write feedback as iOS. Three locks keep it out of a production build (a build flag, a host allow-list, a dynamic import), so `teyla review store-check <dist>` passes on a flag-off build. Private areas and password fields are painted black in the picture. Unsent captures wait in the browser and retry. See docs/REVIEW.md, section "Web".
 - **The review package builds for macOS and opens a feedback form there.** `ReviewCommands()` adds a Help menu item,
   "Report a problem…", with Control-Option-Command-F; `ReviewMenuButton()` is the Settings row. The window is frozen with

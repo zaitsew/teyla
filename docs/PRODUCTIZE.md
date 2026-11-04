@@ -236,6 +236,7 @@ Ten requirements are checked against the target:
 | R8 | mail | target is `public` and the platform has no mail sender |
 | R9 | first_run / sample_data | target is `family` or `public`, and `first_run` is `none` (or unset), or `sample_data` is `unlabelled` (or unset) |
 | R10 | platforms | more than one platform, and `primary` is unset or not in `platforms`, or another platform has no `[productize.triggers]` entry starting with an ISO date and a reason; one platform fails only if `primary` names a different one |
+| R11 | feedback_capture | target is `family`, `testers` or `public`, and test builds on the primary have no feedback capture. An `owner` target only gets a warning. A primary with no capture package passes |
 
 A `public` target raises the bar rather than adding rules: accounts must be real accounts,
 iOS/macOS must be external TestFlight or the App Store, Android must be Play, an extension
@@ -355,7 +356,7 @@ This section moved here from the README.
 A tool built for one person becomes an app for four only when it has accounts, per-user data, a backend off the laptop, a way onto other people's phones, and a build that actually reaches them. Teyla checks each of those from a `[productize]` block in the repo's `teyla.toml` and from one manifest of the resources you buy once.
 
 ```bash
-teyla productize --owner-steps   # every product against R1–R10, then one numbered list of what only you can do
+teyla productize --owner-steps   # every product against R1–R11, then one numbered list of what only you can do
 teyla platform                   # shared resources: secrets, server, domain, identity, mail, Apple, Google Play, model key
 teyla testflight                 # did the newest uploaded build reach the tester, per product and platform
 teyla play                       # the same for Android: internal track status and closed-test age on Google Play

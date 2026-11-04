@@ -91,3 +91,15 @@ def test_compose_fragment_without_any_owner_keeps_a_visible_placeholder(tmp_path
     scaffold.scaffold(str(dest), name="widget", kind="service", license="none", owner="Ada Lovelace")
     frag = (dest / "deploy" / "droplet" / "docker-compose.fragment.yml").read_text()
     assert "ghcr.io/your-github-owner/widget" in frag and "{{owner}}" not in frag
+
+
+@pytest.mark.parametrize("kind, wanted", [("app", True), ("ios", True), ("cli", False)])
+def test_screens_get_the_feedback_guide(tmp_path, kind, wanted):
+    dest = tmp_path / "thing"
+    scaffold.scaffold(dest, kind=kind, name="thing", owner="someone")
+    guide = dest / "docs" / "FEEDBACK.md"
+    assert guide.exists() is wanted
+    if wanted:
+        text = guide.read_text()
+        assert "{{" not in text and "teyla review privacy --product thing" in text
+        assert "NSSpeechRecognitionUsageDescription" in text
