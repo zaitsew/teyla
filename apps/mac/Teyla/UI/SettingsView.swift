@@ -68,7 +68,7 @@ struct SettingsView: View {
             #endif
         }
         .formStyle(.grouped)
-        .frame(width: 460)
+        .frame(width: Space.settingsWidth)
         .fixedSize(horizontal: false, vertical: true)
     }
 

@@ -16,8 +16,8 @@ struct MicButton: View {
         Image(systemName: listening ? "mic.fill" : "mic")
             .font(Typo.body)
             .foregroundStyle(listening ? Palette.danger : Palette.textSecondary)
-            .frame(width: Space.xl + Space.xs, height: Space.xl + Space.xs)
-            .background(listening ? Palette.danger.opacity(0.14) : Color.clear, in: Circle())
+            .frame(width: Space.iconButton, height: Space.iconButton)
+            .background(listening ? Palette.dangerTint : Color.clear, in: Circle())
             .contentShape(Circle())
             .gesture(
                 DragGesture(minimumDistance: 0)

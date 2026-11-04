@@ -105,19 +105,19 @@ struct SampleBanner: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "eye").accessibilityHidden(true).foregroundStyle(.secondary)
+        HStack(spacing: Space.s) {
+            Image(systemName: "eye").accessibilityHidden(true).foregroundStyle(Palette.textSecondary)
             Text(SampleData.bannerText)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 4)
+            Spacer(minLength: Space.xs)
             Button("Pair") { model.leaveSample() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Space.l)
+        .padding(.vertical, Space.s)
         .frame(maxWidth: .infinity)
         .background(.bar)
         .accessibilityElement(children: .contain)

@@ -9,7 +9,7 @@ struct NotesSection: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.s) {
                 SectionLabel("Notes")
-                Chip(text: "Inbox \(list.inbox)", color: list.inbox > 0 ? Palette.warning : Palette.info)
+                Chip(text: "Inbox \(list.inbox)", color: list.inbox > 0 ? Palette.needsYou : Palette.primary)
                     .padding(.bottom, Space.xs)
                     .accessibilityLabel("\(list.inbox) in the inbox")
                 Spacer(minLength: Space.s)
@@ -97,7 +97,7 @@ struct NoteRow: View {
     /// The product chip; a click opens that product's page.
     @ViewBuilder
     private var chip: some View {
-        let chip = Chip(text: Notes.productLabel(note.product), color: note.isInbox ? Palette.warning : Palette.info)
+        let chip = Chip(text: Notes.productLabel(note.product), color: note.isInbox ? Palette.needsYou : Palette.primary)
         if !note.isInbox && model.hasPage(note.product) {
             Button { model.openProduct(note.product) } label: { chip }
                 .buttonStyle(.plain)

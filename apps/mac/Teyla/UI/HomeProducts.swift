@@ -16,7 +16,7 @@ struct HomeSectionHeader: View {
                 .font(Typo.section)
                 .accessibilityAddTraits(.isHeader)
             Text(note)
-                .font(Typo.note)
+                .font(Typo.caption)
                 .foregroundStyle(Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -97,7 +97,7 @@ private struct CardSurface: ViewModifier {
             .padding(padding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Palette.surface, in: RoundedRectangle(cornerRadius: radius))
-            .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(Palette.border, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(Palette.border, lineWidth: Space.hairline))
             .contentShape(RoundedRectangle(cornerRadius: radius))
     }
 }
@@ -158,13 +158,13 @@ private struct HeroCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.l) {
-            HStack(alignment: .top, spacing: Space.m + Space.xxs) {
+            HStack(alignment: .top, spacing: Space.m) {
                 ProductIcon(product: product, monogram: facts.monogram, size: Space.iconHero, radius: Radius.iconHero)
                 VStack(alignment: .leading, spacing: Space.xxs) {
                     HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-                        Text(facts.name).font(Typo.cardTitle).lineLimit(1)
+                        Text(facts.name).font(Typo.section).lineLimit(1)
                         if !facts.stage.isEmpty {
-                            Text(facts.stage).font(Typo.note).foregroundStyle(Palette.textSecondary).lineLimit(1)
+                            Text(facts.stage).font(Typo.caption).foregroundStyle(Palette.textSecondary).lineLimit(1)
                         }
                     }
                     Text(facts.summary.isEmpty ? HomeFactsBuilder.noSummary : facts.summary)
@@ -183,8 +183,8 @@ private struct HeroCard: View {
             Divider()
             HStack(alignment: .bottom, spacing: Space.m) {
                 VStack(alignment: .leading, spacing: Space.xxs) {
-                    Text(facts.commits).font(Typo.lead.weight(.semibold)).monospacedDigit()
-                    Text(facts.spend).font(Typo.note).foregroundStyle(Palette.textSecondary)
+                    Text(facts.commits).font(Typo.cardTitle).monospacedDigit()
+                    Text(facts.spend).font(Typo.caption).foregroundStyle(Palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: Space.s)
@@ -195,7 +195,7 @@ private struct HeroCard: View {
             }
             MonetizationChip(text: facts.money)
         }
-        .cardSurface(radius: Radius.panel, padding: Space.l + Space.xs)
+        .cardSurface(radius: Radius.panel, padding: Space.l)
         .opensProduct(id: product.id, name: facts.name, spoken: facts.spoken)
     }
 }
@@ -208,10 +208,10 @@ private struct Figure: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.xs) {
             Text(value)
-                .font(Typo.heroNumber)
+                .font(Typo.number)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
-            Text(label).font(Typo.note).foregroundStyle(Palette.textSecondary).lineLimit(1)
+            Text(label).font(Typo.caption).foregroundStyle(Palette.textSecondary).lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -229,7 +229,7 @@ private struct MonetizationChip: View {
         }
         .font(Typo.body)
         .padding(.horizontal, Space.m)
-        .padding(.vertical, Space.s + Space.xxs)
+        .padding(.vertical, Space.s)
         .background(Palette.background, in: RoundedRectangle(cornerRadius: Radius.card))
     }
 }
@@ -258,16 +258,16 @@ private struct BuiltCard: View {
         HStack(alignment: .center, spacing: Space.m) {
             ProductIcon(product: product, monogram: facts.monogram, size: Space.iconCard, radius: Radius.iconCard)
             VStack(alignment: .leading, spacing: Space.xxs) {
-                Text(facts.name).font(Typo.lead.weight(.semibold)).lineLimit(1)
+                Text(facts.name).font(Typo.cardTitle).lineLimit(1)
                 Text(facts.summary.isEmpty ? HomeFactsBuilder.noSummary : facts.summary)
-                    .font(Typo.note)
+                    .font(Typo.caption)
                     .foregroundStyle(Palette.textSecondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: Space.s)
             VStack(alignment: .trailing, spacing: Space.xxs) {
-                Text(facts.commitsCount).font(Typo.cardNumber)
+                Text(facts.commitsCount).font(Typo.cardTitle)
                 Text(facts.commitsCount == "1" ? "commit" : "commits")
                     .font(Typo.caption).foregroundStyle(Palette.textSecondary)
                 if let label = facts.sparkLabel {
@@ -277,7 +277,7 @@ private struct BuiltCard: View {
                 }
             }
         }
-        .cardSurface(radius: Radius.card, padding: Space.m + Space.xxs)
+        .cardSurface(radius: Radius.card, padding: Space.m)
         .opensProduct(id: product.id, name: facts.name, spoken: facts.spoken)
     }
 }
@@ -297,7 +297,7 @@ struct QuietList: View {
         .padding(.horizontal, Space.l)
         .padding(.vertical, Space.xs)
         .background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.card))
-        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Palette.border, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Palette.border, lineWidth: Space.hairline))
     }
 }
 
@@ -364,6 +364,6 @@ struct LegacyList: View {
         .padding(.horizontal, Space.l)
         .padding(.vertical, Space.xs)
         .background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.card))
-        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Palette.border, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Palette.border, lineWidth: Space.hairline))
     }
 }

@@ -54,10 +54,10 @@ struct ConnectPhoneSheet: View {
             Text("\(number)")
                 .font(Typo.body.weight(.semibold))
                 .foregroundStyle(Palette.onPrimary)
-                .frame(width: Space.l + Space.xs, height: Space.l + Space.xs)
+                .frame(width: Space.glyph, height: Space.glyph)
                 .background(Palette.primary, in: Circle())
                 .accessibilityHidden(true)
-            Text(text).font(Typo.lead)
+            Text(text).font(Typo.cardTitle)
         }
         .accessibilityElement(children: .combine)
     }

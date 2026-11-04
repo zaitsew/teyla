@@ -92,12 +92,12 @@ struct PortfolioView: View {
                     rows(portfolio)
                 } else {
                     VStack(alignment: .leading, spacing: Space.xs) {
-                        Text("All products").font(Typo.brief)
+                        Text("All products").font(Typo.pageTitle)
                         emptyState
                     }
                 }
             }
-            .padding(.horizontal, Space.xl + Space.xs)
+            .padding(.horizontal, Space.page)
             .padding(.vertical, Space.xl)
             .frame(maxWidth: Space.portfolioMax, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -107,9 +107,9 @@ struct PortfolioView: View {
     }
 
     private func header(_ portfolio: Portfolio) -> some View {
-        VStack(alignment: .leading, spacing: Space.xs + Space.xxs) {
-            Text("All products").font(Typo.brief)
-            Text(PortfolioText.summary(portfolio.counts)).font(Typo.lead)
+        VStack(alignment: .leading, spacing: Space.xs) {
+            Text("All products").font(Typo.pageTitle)
+            Text(PortfolioText.summary(portfolio.counts)).font(Typo.cardTitle)
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 Text(PortfolioText.checked(stores: portfolio.checkedStores, github: portfolio.checkedGitHub,
                                            now: context.date))
@@ -154,7 +154,7 @@ struct PortfolioView: View {
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: Space.s) {
             Label("Update the teyla command to see your products (needs 0.32)", systemImage: "arrow.down.circle")
-                .font(Typo.lead)
+                .font(Typo.cardTitle)
             Text("This screen reads the products from `teyla state`. Your current command is older.")
                 .foregroundStyle(Palette.textSecondary)
         }
@@ -200,7 +200,7 @@ private struct PortfolioRow: View {
     private var titleRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s) {
             HealthPill(health: product.health)
-            Text(product.title).font(Typo.lead)
+            Text(product.title).font(Typo.cardTitle)
             if !product.stage.isEmpty {
                 Text(product.stage.capitalized).font(Typo.caption).foregroundStyle(Palette.textSecondary)
             }
@@ -219,7 +219,7 @@ private struct PortfolioRow: View {
         VStack(alignment: .leading, spacing: Space.xs) {
             Label(PortfolioText.prs(product.prs), systemImage: "arrow.triangle.pull")
             Label(PortfolioText.waiting(product), systemImage: "bubble.left")
-                .foregroundStyle(product.waiting > 0 ? Color.primary : Palette.textSecondary)
+                .foregroundStyle(product.waiting > 0 ? Palette.text : Palette.textSecondary)
             TimelineView(.periodic(from: .now, by: 60)) { context in
                 Label(PortfolioText.lastActivity(product.activity, now: context.date), systemImage: "clock")
             }
@@ -270,7 +270,7 @@ struct ProductStatusBlock: View {
 private struct BulletLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-            configuration.icon.font(.system(size: 4)).offset(y: -Space.xxs)
+            configuration.icon.font(Glyph.bullet).offset(y: -Space.xxs)
             configuration.title.fixedSize(horizontal: false, vertical: true)
         }
     }

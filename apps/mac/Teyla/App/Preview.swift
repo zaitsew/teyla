@@ -16,8 +16,8 @@ import SwiftUI
 ///     TEYLA_PREVIEW_SCROLL  end: scroll the main window to its bottom
 ///     TEYLA_PREVIEW_SNAPSHOT  <path.png>: draw the whole Home page in one image (width TEYLA_PREVIEW_WIDTH, default
 ///                         1100 pt, in the appearance above), save it and quit. For screenshots without a screen to click
-///     TEYLA_PREVIEW_SNAPSHOT_VIEW  home (default) | connect-phone (the "Connect iPhone" sheet) | setup (the store build's
-///                         first screen; Home elsewhere)
+///     TEYLA_PREVIEW_SNAPSHOT_VIEW  home (default) | window (the window as it stands, with its toolbar; the size comes from
+///                         TEYLA_PREVIEW_SIZE) | connect-phone (the "Connect iPhone" sheet) | setup (the store build's first screen; Home elsewhere)
 @MainActor
 enum Preview {
     private static var ran = false
@@ -106,6 +106,14 @@ enum Preview {
     /// Draws one view at full height into a PNG. A scroll view would crop it to the window, so this lays the view out
     /// by itself in a hosting view of the width asked for.
     private static func snapshotView(_ which: String, model: AppModel, path: String) {
+        if which == "window" {
+            // The whole window with its toolbar: the frame view draws what the content view leaves out.
+            if let frame = NSApp.windows.first(where: { $0.canBecomeMain })?.contentView?.superview {
+                write(frame, to: path)
+            }
+            NSApp.terminate(nil)
+            return
+        }
         let width = Double(env["TEYLA_PREVIEW_WIDTH"] ?? "") ?? 1100
         let page: AnyView
         switch which {
@@ -130,18 +138,21 @@ enum Preview {
         let height = host.fittingSize.height
         host.frame = NSRect(x: 0, y: 0, width: host.fittingSize.width, height: height)
         host.layoutSubtreeIfNeeded()
-        if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
-            host.cacheDisplay(in: host.bounds, to: rep)
-            if let png = rep.representation(using: .png, properties: [:]) {
-                try? png.write(to: URL(fileURLWithPath: path))
-            }
-        }
+        write(host, to: path)
         NSApp.terminate(nil)
+    }
+
+    private static func write(_ view: NSView, to path: String) {
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        if let png = rep.representation(using: .png, properties: [:]) {
+            try? png.write(to: URL(fileURLWithPath: path))
+        }
     }
 
     private static func homePage(model: AppModel, width: Double) -> AnyView {
         AnyView(HomeContent(eager: true)
-            .padding(.horizontal, Space.xl + Space.xs)
+            .padding(.horizontal, Space.page)
             .padding(.vertical, Space.xl)
             .frame(width: width, alignment: .topLeading)
             .background(Palette.background)

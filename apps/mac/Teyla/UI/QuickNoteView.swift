@@ -40,7 +40,7 @@ struct QuickNoteView: View {
         .padding(Space.l)
         .frame(width: Space.capturePanelWidth, height: Space.capturePanelHeight, alignment: .topLeading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Radius.panel))
-        .overlay(RoundedRectangle(cornerRadius: Radius.panel).strokeBorder(Palette.border, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: Radius.panel).strokeBorder(Palette.border, lineWidth: Space.hairline))
     }
 
     private func products(_ note: QuickNoteModel) -> some View {
@@ -80,7 +80,7 @@ struct QuickNoteView: View {
                 Text(text).foregroundStyle(Palette.textSecondary)
             }
         case .done(let text):
-            Label(text, systemImage: "checkmark.circle.fill").foregroundStyle(Palette.success)
+            Label(text, systemImage: "checkmark.circle.fill").foregroundStyle(Palette.saving)
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(Palette.danger)
@@ -106,9 +106,9 @@ private struct ProductChip: View {
                 Text("⌘\(key)").font(Typo.caption).foregroundStyle(Palette.textSecondary)
             }
             .padding(.horizontal, Space.m)
-            .padding(.vertical, Space.xs + Space.xxs)
-            .background(selected ? Palette.accent.opacity(0.18) : Palette.surface, in: Capsule())
-            .overlay(Capsule().strokeBorder(selected ? Palette.accent : Palette.border, lineWidth: 1))
+            .padding(.vertical, Space.xs)
+            .background(selected ? Palette.primaryTint : Palette.surface, in: Capsule())
+            .overlay(Capsule().strokeBorder(selected ? Palette.primary : Palette.border, lineWidth: Space.hairline))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -125,7 +125,7 @@ private struct Hint: View {
         HStack(spacing: Space.xs) {
             Text(key)
                 .font(Typo.caption.weight(.medium))
-                .padding(.horizontal, Space.xs + Space.xxs)
+                .padding(.horizontal, Space.xs)
                 .padding(.vertical, Space.xxs)
                 .background(Palette.surface, in: RoundedRectangle(cornerRadius: Space.xs))
             Text(text)
