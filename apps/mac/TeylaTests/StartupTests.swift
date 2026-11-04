@@ -276,6 +276,7 @@ private final class YCStub: TeylaBackend, @unchecked Sendable {
         var failRead: String?
         var failWrite: String?
         var written: [(String, String, String)] = []
+        var writeDelays: [Duration] = []
     }
     private let box: OSAllocatedUnfairLock<State>
 
@@ -287,6 +288,10 @@ private final class YCStub: TeylaBackend, @unchecked Sendable {
         get { box.withLock { $0.failWrite } }
         set { box.withLock { $0.failWrite = newValue } }
     }
+    var writeDelays: [Duration] {
+        get { box.withLock { $0.writeDelays } }
+        set { box.withLock { $0.writeDelays = newValue } }
+    }
 
     func ycSheet(id: String) async throws -> YCSheet {
         try await Task.sleep(for: .milliseconds(10))
@@ -297,6 +302,8 @@ private final class YCStub: TeylaBackend, @unchecked Sendable {
     }
 
     func ycAnswer(id: String, box boxID: String, text: String) async throws {
+        let delay = box.withLock { s in s.writeDelays.isEmpty ? nil : s.writeDelays.removeFirst() }
+        if let delay { try await Task.sleep(for: delay) }
         try box.withLock { s in
             if let why = s.failWrite { throw TeylaError.failed(code: 1, message: why) }
             s.written.append((id, boxID, text))
@@ -387,6 +394,25 @@ final class StartupModelTests: XCTestCase {
         XCTAssertNil(model.sheet)
         XCTAssertTrue(model.drafts.isEmpty)
         XCTAssertNil(model.productID)
+    }
+
+    func testAnOlderSaveCannotLandAfterANewerOneAcrossACloseAndReopen() async throws {
+        let stub = YCStub(sheets: [try sheet()])
+        stub.writeDelays = [.milliseconds(150)]
+        let model = StartupModel(cli: stub)
+        model.open(id: "sample-app", title: "Sample App")
+        try await until("the sheet") { model.sheet != nil }
+        model.drafts["does"] = "First answer."
+        model.save(box: "does")
+        model.close()
+
+        model.open(id: "sample-app", title: "Sample App")
+        try await until("the sheet again") { model.sheet != nil }
+        XCTAssertEqual(stub.written.count, 1, "the sheet is read only after the pending write landed")
+        model.drafts["does"] = "Second answer."
+        model.save(box: "does")
+        try await until("both writes") { stub.written.count == 2 }
+        XCTAssertEqual(stub.written.map(\.2), ["First answer.", "Second answer."])
     }
 
     func testTheFocusIsReadOnce() async throws {

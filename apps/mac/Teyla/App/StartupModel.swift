@@ -34,6 +34,11 @@ final class StartupModel {
     @ObservationIgnored private var focusReadAt: Date?
     @ObservationIgnored private var focusTask: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
+    /// Raised when the sheet closes or changes product. A save that finishes after that leaves the new sheet alone.
+    @ObservationIgnored private var session = 0
+    /// The newest write. Each write waits for the one before it and each read waits for the writes, so the last text
+    /// saved lands last, even across a close and a reopen.
+    @ObservationIgnored private var lastWrite: Task<Void, Never>?
     /// Called after an answer was saved, so the count on the product page is read again.
     @ObservationIgnored var changed: () -> Void = {}
 
@@ -75,6 +80,7 @@ final class StartupModel {
     func open(id: String, title: String) {
         guard ProductCommands.isProductID(id) else { return }
         if productID != id {
+            session += 1
             productID = id
             sheet = nil
             drafts = [:]
@@ -90,6 +96,7 @@ final class StartupModel {
     /// Closes the sheet and forgets every answer it held.
     func close() {
         generation += 1
+        session += 1
         presented = false
         productID = nil
         sheet = nil
@@ -104,7 +111,9 @@ final class StartupModel {
         generation += 1
         let mine = generation
         phase = .loading
+        let writes = lastWrite
         Task {
+            await writes?.value
             do {
                 let next = try await cli.ycSheet(id: id)
                 guard mine == generation else { return }
@@ -135,10 +144,13 @@ final class StartupModel {
         saving.insert(id)
         failures[id] = nil
         let target = productID
-        Task {
+        let mine = session
+        let previous = lastWrite
+        lastWrite = Task {
+            await previous?.value
             do {
                 try await cli.ycAnswer(id: target, box: id, text: text)
-                guard self.productID == target else { return }
+                guard session == mine else { return }
                 saving.remove(id)
                 // The saved text is now the answer; read the sheet again so the box shows whether it is checked.
                 // Text typed while the save ran is newer than what was saved, so it stays.
@@ -146,7 +158,7 @@ final class StartupModel {
                 reload()
                 changed()
             } catch {
-                guard self.productID == target else { return }
+                guard session == mine else { return }
                 saving.remove(id)
                 failures[id] = error.localizedDescription
             }
