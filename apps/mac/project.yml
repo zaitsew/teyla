@@ -95,7 +95,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.zaitsew.teyla
         # The store archive takes the team from here (not a secret). The full app has none.
         DEVELOPMENT_TEAM: VWH2FKV78Q
-        CURRENT_PROJECT_VERSION: 3
+        CURRENT_PROJECT_VERSION: 4
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: TeylaStore/Info.plist
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO

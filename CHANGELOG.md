@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.39.0 — 2026-11-04 — A startup page that names the next missing fact
+
+- **`teyla startup`: one page per product, with the next fact it is missing.** Types are venture, indie, open-source and
+  personal; unset uses the venture ladder. Rungs (Built, Tried, Used, Retained, Paid, Repeating, Sustaining) are earned from
+  stored evidence and checked on their own. Zero, unknown and stale stay different. Agent-claimed growth rows do not count.
+  Startup commands read the cache and make no new network call. `teyla portfolio --refresh` writes one row per product per
+  day to `~/.teyla/startup/snapshots.jsonl`.
+  See docs/STARTUP.md.
+- **`teyla startup yc`: a 15-box YC sheet.** A box means "I can answer this honestly, with evidence"; a true $0 still checks
+  `pay`. All 15 show the apply link. Teyla never submits. Answers stay on the Mac in a 0600 file, an agent's answer is a draft,
+  and `yc confirm` is refused in an agent session.
+- **Mac: a startup section on the product page, the YC sheet, and the stage on Products.** The Mac sale ledger now treats rows
+  an agent logged as claimed, as the CLI does.
+- **iPhone: the same section, read from the snapshot.** It shows the stage, the ladder and the metrics, and "0 of 15 boxes" with
+  the next question. The sheet and its answers stay on the Mac: the relay is signed, not encrypted.
+
 - **The iOS review package sends to the shared channel by itself, and asks the tester first.** With `TeylaReviewChannelURL` and
   `TeylaReviewChannelKey` in the Info.plist (and no `deliver` closure), `TeylaReview` PUTs the picture and then the JSON, counts a
   capture as sent only after both answer 200, retries 429, 503 and network errors, and never retries a 400, 401, 403, 413 or 422.
