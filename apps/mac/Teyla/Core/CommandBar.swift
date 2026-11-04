@@ -48,6 +48,8 @@ enum CommandBar {
                              kind: .go(.operations), keywords: ["operations", "machine", "failures", "tools", "attention", "backend", "disk"]),
                 CommandEntry(id: "go:playbook", title: "Go to Playbook", detail: "What you have learned and standardized", symbol: "book",
                              kind: .go(.playbook), keywords: ["playbook", "guidelines", "models", "quotes", "learned"]),
+                CommandEntry(id: "go:settings", title: "Go to Settings", detail: "How Teyla is set up on this Mac", symbol: "gearshape",
+                             kind: .go(.settings), keywords: ["settings", "config", "preferences", "options"]),
             ])
         }
         for product in products where ProductCommands.isProductID(product.id) && !product.id.hasPrefix("(") {

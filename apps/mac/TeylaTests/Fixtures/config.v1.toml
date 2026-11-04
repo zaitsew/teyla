@@ -1,0 +1,50 @@
+# A generic settings file for previews and tests.
+code_root = "~/repos"
+ops_root = "~/ops"
+runs_root = ""
+
+[update]
+repo = "example/teyla"
+channel = "release"
+token = "ghp_not_a_real_token"
+
+[env]
+HTTPS_PROXY = "http://proxy.example:8080"
+SSL_CERT_FILE = "~/.teyla/ca.pem"
+
+[storage]
+auto_clean = "true"      # a string, as the file writes it
+idle_days = 3
+sim_max_booted = 2
+sim_prune_pattern = "App |app-"
+docker_superseded_repos = ["registry.example/one/", "registry.example/two/"]
+
+[guard]
+enabled = true
+max_sims = 2
+max_builds = 0
+agent = true
+
+[intent]
+enabled = true
+min_chars = 400
+
+[spend]
+daily_budget_usd = 25.0
+a20_models = [
+  "model-a",
+  "model-b",  # a list over several lines
+]
+
+[products]
+repos = ["alpha", "beta", "~/work/gamma"]
+
+[harness]
+disabled = ["hermes"]
+
+[state]
+model_brief = false
+merge_approved = []
+api_key = "sk-not-a-real-key"
+
+this line is not valid

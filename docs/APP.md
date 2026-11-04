@@ -678,6 +678,21 @@ yet. Next in line."; the page never proposes closing a product nobody tried to s
 yet. Parked." Lines that are not JSON are counted in a note. The block is off in the store build (`Capabilities.console`).
 Preview hook: `TEYLA_LEDGER_FIXTURE` (default `ledger.v1.jsonl` beside the state sample). One considered layout.
 
+## Settings page (from 2026-11-04)
+
+The sidebar's Settings button opens a page in the main window (the store build keeps the Settings window, and ⌘, still opens
+it). The page reads `~/.teyla/config.toml` (or under `TEYLA_HOME`) directly and read-only; no command runs. It shows four
+figures (keys set, work mode, automatic clean-up, updates), then the file in plain groups: Folders, Updates, Machine guard,
+Disk clean-up, What Teyla keeps, Products and agents. A key the file does not set shows its default, grey. Then the names
+under `[env]`, this app's own switches (voice language, quick-note shortcut, Connect iPhone) and the file's path with a
+"Show in Finder" button. A count says how many keys the groups do not list.
+
+**No secret is shown.** The parser drops the value of every key under `[env]` and of any key whose last part contains key,
+token, secret, password or credential, so it never reaches a view (`TeylaConfigTests` checks that no such value appears in
+a row). A missing file reads as the defaults; a file that cannot be read is an error, never "all defaults". Lines the small
+TOML reader cannot parse are counted, not guessed. The page does not write the file. Preview hooks: `TEYLA_CONFIG_FIXTURE`
+(default `config.v1.toml` beside the state sample), view `config`. One considered layout.
+
 ## Tools and the command bar (from 2026-11-02)
 
 **Operations** (from 2026-11-04; it was the Tools page). The page reads `console.operations` and, top to bottom, shows:

@@ -20,6 +20,7 @@ actor TeylaCLI: TeylaBackend {
     private let productFixtureURL: URL?
     private let growthFixtureURL: URL?
     private let ledgerFixtureURL: URL?
+    private let configFixtureURL: URL?
     private let attentionFixtureURL: URL?
     private let consoleFixtureURL: URL?
     /// The file the owner picked with "Choose…", and what a login shell finds. Injected so a test never runs the real ones.
@@ -49,6 +50,7 @@ actor TeylaCLI: TeylaBackend {
         productFixtureURL = Self.fixtureURL(env["TEYLA_PRODUCT_FIXTURE"], beside: fixtureURL, named: "product.v1.json")
         growthFixtureURL = Self.fixtureURL(env["TEYLA_GROWTH_FIXTURE"], beside: fixtureURL, named: "growth.v1.json")
         ledgerFixtureURL = Self.fixtureURL(env["TEYLA_LEDGER_FIXTURE"], beside: fixtureURL, named: "ledger.v1.jsonl")
+        configFixtureURL = Self.fixtureURL(env["TEYLA_CONFIG_FIXTURE"], beside: fixtureURL, named: "config.v1.toml")
         attentionFixtureURL = Self.fixtureURL(env["TEYLA_ATTENTION_FIXTURE"], beside: fixtureURL, named: "attention.v1.json")
         consoleFixtureURL = Self.fixtureURL(env["TEYLA_CONSOLE_FIXTURE"], beside: fixtureURL, named: "console.v1.json")
     }
@@ -221,6 +223,21 @@ actor TeylaCLI: TeylaBackend {
         }
         let file = SaleLedger.file(home: home, env: env)
         return try await Task.detached { try SaleLedger.read(file: file) }.value
+    }
+
+    /// Teyla's settings file; a preview reads `config.v1.toml` beside the state sample.
+    func teylaConfig() async throws -> TeylaConfig {
+        if fixtureURL != nil {
+            guard let url = configFixtureURL, let text = try? String(contentsOf: url, encoding: .utf8) else {
+                throw TeylaError.fixtureUnreadable(configFixtureURL?.path ?? "config.v1.toml")
+            }
+            var config = ConfigFile.parse(text)
+            config.path = "~/.teyla/config.toml"
+            return config
+        }
+        let file = ConfigFile.file(home: home, env: env)
+        let homePath = home
+        return try await Task.detached { try ConfigFile.read(file: file, home: homePath) }.value
     }
 
     /// One command of the Tools page. Whatever the report printed, only a command on the allow-list is run;

@@ -5,7 +5,7 @@ import SwiftUI
 /// Hooks for taking screenshots of the app with sample data. They work only with
 /// `TEYLA_STATE_FIXTURE` set, so a real run never reads them.
 ///
-///     TEYLA_PREVIEW_OPEN   new-task | quick-note | settings | pair | focus:<ask id> | diagnosis | home | decisions | portfolio | growth | money | operations | playbook | command-bar[:<query>] | product:<id>
+///     TEYLA_PREVIEW_OPEN   new-task | quick-note | settings | pair | focus:<ask id> | diagnosis | home | decisions | portfolio | growth | money | operations | playbook | config | command-bar[:<query>] | product:<id>
 ///     TEYLA_START_FIXTURE / TEYLA_PRODUCT_FIXTURE / TEYLA_ATTENTION_FIXTURE / TEYLA_CONSOLE_FIXTURE  the diagnosis, product-page,
 ///                         Operations-actions and admin-section samples (default: start.v1.json, product.v1.json,
 ///                         attention.v1.json and console.v1.json beside the state sample)
@@ -18,7 +18,7 @@ import SwiftUI
 ///     TEYLA_PREVIEW_HOME_HEADER  pulse | sentence: the header variant of Home
 ///     TEYLA_PREVIEW_SNAPSHOT  <path.png>: draw the whole Home page in one image (width TEYLA_PREVIEW_WIDTH, default
 ///                         1100 pt, in the appearance above), save it and quit. For screenshots without a screen to click
-///     TEYLA_PREVIEW_SNAPSHOT_VIEW  home (default) | decisions | portfolio | product:<id> | growth | money | operations | playbook | settings | window (the window
+///     TEYLA_PREVIEW_SNAPSHOT_VIEW  home (default) | decisions | portfolio | product:<id> | growth | money | operations | playbook | config | settings | window (the window
 ///                         as it stands, with its toolbar; the size comes from TEYLA_PREVIEW_SIZE) | connect-phone (the "Connect iPhone"
 ///                         sheet) | setup (the store build's first screen; Home elsewhere)
 @MainActor
@@ -143,6 +143,8 @@ enum Preview {
             page = flat(PlaybookView(), model: model, width: width)
         case "growth":
             page = flat(GrowthView(), model: model, width: width)
+        case "config":
+            page = flat(SettingsPageView(), model: model, width: width)
         case "settings":
             page = flat(SettingsView(), model: model, width: width)
         case let product where product.hasPrefix("product:"):
@@ -182,6 +184,8 @@ enum Preview {
         case "money": return .money
         case "operations", "tools": return .operations
         case "playbook": return .playbook
+        // The Settings page; "settings" is the preferences window (⌘,).
+        case "config": return .settings
         default: return nil
         }
     }

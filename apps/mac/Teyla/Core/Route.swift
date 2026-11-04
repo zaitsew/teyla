@@ -18,6 +18,8 @@ enum AppRoute: Hashable, Sendable {
     case operations
     /// What has been learned and standardized (`console.playbook`).
     case playbook
+    /// Teyla's settings in plain groups, and this app's own switches. The Settings window (⌘,) stays.
+    case settings
     case product(String)
 
     /// The four admin sections that read `teyla console`.

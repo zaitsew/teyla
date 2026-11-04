@@ -71,6 +71,7 @@ final class AppModel {
     let console: ConsoleModel
     let growth: GrowthModel
     let commandBar: CommandBarModel
+    let settingsPage: SettingsModel
     @ObservationIgnored private var hotKeyTalk = PushToTalk()
     #if !STORE
     @ObservationIgnored private var watcher: SessionWatcher?
@@ -101,6 +102,7 @@ final class AppModel {
         console = ConsoleModel(cli: cli)
         growth = GrowthModel(cli: cli)
         commandBar = CommandBarModel()
+        settingsPage = SettingsModel(cli: cli)
         let names: () -> [String] = { [weak self] in
             NewTask.products(self?.snapshot?.products ?? []).map(\.name)
         }
@@ -364,6 +366,7 @@ final class AppModel {
         if next == .operations { tools.opened() }
         if next.isConsole, capabilities.console { console.opened() }
         if next == .growth, capabilities.console { growth.opened() }
+        if next == .settings, capabilities.console { settingsPage.load() }
     }
 
     // MARK: The command bar (⌘K)

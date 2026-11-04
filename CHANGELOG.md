@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Mac: Settings is a page.** The sidebar's Settings opens Teyla's own settings file in plain groups: folders, updates,
+  machine guard, disk clean-up, what Teyla keeps, which products and agents it looks at. A value the file does not set shows
+  its default in grey. Environment variables show their names only, and no secret is ever shown. The page reads the file and
+  never writes it; the file's path and a "Show in Finder" button are on the page. The voice, shortcut and iPhone switches sit
+  on it too.
+
 - **Mac: a product page shows users and selling.** Four figures: active users this week, sale attempts (posts,
   marketing, ICP meetings, counted from the growth ledger), what shipped in 7 days, and feedback and crashes (a dash:
   nothing reports them yet). A product nobody tried to sell reads "Not tried yet. Next in line."; the page never

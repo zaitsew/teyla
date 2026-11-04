@@ -116,6 +116,7 @@ private struct DetailView: View {
         case .diagnosis: DiagnosisView()
         case .growth: GrowthView()
         case .playbook: PlaybookView()
+        case .settings: SettingsPageView()
         case .money: MoneyView()
         case .operations: OperationsView()
         case .product(let id): ProductPageView(id: id)
@@ -164,7 +165,8 @@ private struct SidebarView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             Button {
-                openSettings()
+                // The full app opens the page; the store build has no settings file to show, so it keeps the window.
+                if model.capabilities.console { model.go(.settings) } else { openSettings() }
             } label: {
                 Label("Settings", systemImage: "gearshape")
                     .font(Typo.body)
