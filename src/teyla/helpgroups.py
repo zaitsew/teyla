@@ -65,6 +65,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
     ],
     "Spend": [
         ("spend", "What the AI work cost, and which part bought nothing"),
+        ("subs", "The recurring bills the console's Money section adds up"),
         ("monitor", "Adoption report: tokens, models, corrections, advice"),
         ("advise", "Just the findings of the report, each with one action"),
         ("sessions", "One line per session"),
