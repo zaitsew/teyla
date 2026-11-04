@@ -219,3 +219,44 @@ def test_json_output_has_the_shape(tmp_path, capsys):
     code, out, _ = run(make_ipa(tmp_path / "a.ipa"), "--json", capsys=capsys)
     doc = json.loads(out)
     assert code == 0 and doc["ok"] is True and doc["type"] == "ipa" and len(doc["checks"]) == 3
+
+
+def test_a_nested_bundle_with_review_on_fails(tmp_path, capsys):
+    app = make_app(tmp_path)
+    clip = app / "AppClips" / "Clip.app"
+    clip.mkdir(parents=True)
+    (clip / "Info.plist").write_bytes(info(TeylaReviewEnabled="YES"))
+    assert run(app, capsys=capsys)[0] == 1
+
+
+def test_the_marker_in_an_extension_fails(tmp_path, capsys):
+    app = make_app(tmp_path)
+    ext = app / "PlugIns" / "Share.appex"
+    ext.mkdir(parents=True)
+    (ext / "Share").write_bytes(b"x" + SWIFT + b"x")
+    assert run(app, capsys=capsys)[0] == 1
+
+
+def test_a_nested_bundle_in_an_ipa_fails(tmp_path, capsys):
+    path = make_ipa(tmp_path / "App.ipa")
+    with zipfile.ZipFile(path, "a") as z:
+        z.writestr("Payload/App.app/PlugIns/Share.appex/Info.plist", info(TeylaReviewEnabled="YES"))
+    assert run(path, capsys=capsys)[0] == 1
+
+
+def test_the_marker_in_an_ipa_extension_fails(tmp_path, capsys):
+    path = make_ipa(tmp_path / "App.ipa")
+    with zipfile.ZipFile(path, "a") as z:
+        z.writestr("Payload/App.app/PlugIns/Share.appex/Share", b"x" + SWIFT + b"x")
+    assert run(path, capsys=capsys)[0] == 1
+
+
+def test_an_unreadable_folder_in_a_dist_cannot_pass(tmp_path, capsys):
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<html>")
+    (dist / "assets").chmod(0)
+    try:
+        assert run(dist, capsys=capsys)[0] == 2
+    finally:
+        (dist / "assets").chmod(0o755)

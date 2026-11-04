@@ -116,8 +116,20 @@ def _app_layout(app: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.
     return app / "Info.plist", app, app / "Frameworks"
 
 
+def _files(top: pathlib.Path):
+    """Every regular file under `top`. A folder it cannot read stops the check: it must not pass unread."""
+    def stop(e: OSError):
+        raise GateError(f"cannot read {e.filename}: {e.strerror}") from e
+    for root, _dirs, files in os.walk(top, onerror=stop):      # os.walk does not follow symlinked folders
+        for f in sorted(files):
+            p = pathlib.Path(root) / f
+            if not p.is_symlink() and p.is_file():
+                yield p
+
+
 def check_app(app: pathlib.Path) -> list[Check]:
-    plist, exec_dir, frameworks = _app_layout(app)
+    """The whole bundle, not only its main executable: an App Clip, an extension or a helper is a way in too."""
+    plist, exec_dir, _frameworks = _app_layout(app)
     try:
         info = _read_plist(plist.read_bytes(), f"{app.name}/Info.plist")
     except OSError as e:
@@ -129,16 +141,18 @@ def check_app(app: pathlib.Path) -> list[Check]:
     exe = exec_dir / name
     if not exe.is_file():
         raise GateError(f"cannot read {exe}: not a file")
-    hits = [exe.name] if file_contains(exe, MARKER_SWIFT) else []
-    if frameworks.is_dir():
-        for root, _dirs, files in os.walk(frameworks):          # os.walk does not follow symlinked folders
-            for f in sorted(files):
-                p = pathlib.Path(root) / f
-                if p.is_symlink() or not p.is_file():
-                    continue
-                if file_contains(p, MARKER_SWIFT):
-                    hits.append(str(p.relative_to(app)))
-    checks.append(Check("no review marker in the executable and frameworks", not hits,
+    hits: list[str] = []
+    for p in _files(app):
+        where = str(p.relative_to(app))
+        if p.name == "Info.plist" and p != plist:
+            try:
+                nested = _read_plist(p.read_bytes(), f"{app.name}/{where}")
+            except OSError as e:
+                raise GateError(f"cannot read {p}: {e}") from e
+            checks += [Check(f"{where}: {c.name}", c.ok, c.detail) for c in _plist_checks(nested)]
+        if file_contains(p, MARKER_SWIFT):
+            hits.append(where)
+    checks.append(Check("no review marker anywhere in the bundle", not hits,
                         "" if not hits else "marker found in " + ", ".join(hits)))
     return checks
 
@@ -195,9 +209,17 @@ def check_ipa(path: pathlib.Path) -> list[Check]:
             exe = info.get("CFBundleExecutable")
             if not isinstance(exe, str) or not exe or prefix + exe not in names:
                 raise GateError(f"{app} has no readable main executable")
-            scan = [prefix + exe] + [n for n in names if n.startswith(prefix + "Frameworks/") and not n.endswith("/")]
+            # The whole bundle, as in check_app.
+            scan = [n for n in names if n.startswith(prefix) and not n.endswith("/")]
+            for n in scan:
+                if n.endswith("/Info.plist") and n != prefix + "Info.plist":
+                    try:
+                        nested = _read_plist(z.read(n), n)
+                    except (OSError, zipfile.BadZipFile, RuntimeError) as e:
+                        raise GateError(f"cannot read {n}: {e}") from e
+                    checks += [Check(f"{n[len(prefix):]}: {c.name}", c.ok, c.detail) for c in _plist_checks(nested)]
             hits = [n[len(prefix):] for n in scan if _zip_member_contains(z, n, MARKER_SWIFT)]
-            checks.append(Check("no review marker in the executable and frameworks", not hits,
+            checks.append(Check("no review marker anywhere in the bundle", not hits,
                                 "" if not hits else "marker found in " + ", ".join(hits)))
             out += [Check(f"{app}: {c.name}", c.ok, c.detail) for c in checks]
         return out
@@ -218,14 +240,10 @@ def check_android(path: pathlib.Path) -> list[Check]:
 def check_dir(path: pathlib.Path) -> list[Check]:
     hits: list[str] = []
     count = 0
-    for root, _dirs, files in os.walk(path):
-        for f in sorted(files):
-            p = pathlib.Path(root) / f
-            if p.is_symlink() or not p.is_file():
-                continue
-            count += 1
-            if file_contains(p, MARKER_WEB):
-                hits.append(str(p.relative_to(path)))
+    for p in _files(path):
+        count += 1
+        if file_contains(p, MARKER_WEB):
+            hits.append(str(p.relative_to(path)))
     if count == 0:
         raise GateError(f"{path} holds no files")
     return [Check("no web review marker in any file", not hits,
