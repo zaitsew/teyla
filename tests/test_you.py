@@ -409,3 +409,14 @@ def test_render_and_command(home, tmp_path, monkeypatch, capsys):
     assert you.cmd_you(types.SimpleNamespace(words=["chore", "dns"], json=False, refresh=False)) == 2
     assert you.cmd_you(types.SimpleNamespace(words=["chore", "nope", "done"], json=False, refresh=False)) == 2
     assert you.cmd_you(types.SimpleNamespace(words=["other"], json=False, refresh=False)) == 2
+
+
+def test_the_console_part_never_asks_a_model(home, monkeypatch):
+    seed(home)
+    (home / "config.toml").write_text(f'code_root = "{home.parent.parent / "code"}"\n[you]\nrank = true\n')
+    monkeypatch.setattr(you, "Screen", lambda: screen())
+    monkeypatch.setattr(you, "_collect_asks", lambda: [])
+    calls = []
+    monkeypatch.setattr(you, "rank_with_model", lambda pool: calls.append(1) or [0])
+    you.console_part(NOW)
+    assert calls == []

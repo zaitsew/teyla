@@ -460,7 +460,7 @@ def _collect_asks():
 
 
 def build(now: float | None = None, *, screen: Screen | None = None, ask_items=None, root: pathlib.Path | None = None,
-          prev: dict | None = None) -> dict:
+          prev: dict | None = None, rank: bool = True) -> dict:
     now = time.time() if now is None else now
     today = _dt.datetime.fromtimestamp(now).date()
     day = today.isoformat()
@@ -475,16 +475,16 @@ def build(now: float | None = None, *, screen: Screen | None = None, ask_items=N
     qotd = prev.get("quote_of_the_day") if (prev.get("quote_of_the_day") or {}).get("for") == day else None
     if qotd is not None and not screen.ok(str(qotd.get("text") or "")):       # a private term added since: pick again
         qotd = None
-    rank = prev.get("rank") if (prev.get("rank") or {}).get("day") == day else None
+    ranked_today = prev.get("rank") if (prev.get("rank") or {}).get("day") == day else None
     if qotd is None:
         order = None
-        if pool and rank_enabled() and rank is None:
+        if pool and rank and rank_enabled() and ranked_today is None:
             order = rank_with_model(pool)
-            rank = dict(day=day, ranked=bool(order))
+            ranked_today = dict(day=day, ranked=bool(order))
         q = pick_quote(pool, day, order)
         qotd = dict(q, **{"for": day, "ranked": bool(order)}) if q else None
     contra = contradictions(root)
-    return dict(version=VERSION, generated=now, day=day, quote_of_the_day=qotd, quotes=pool[:SHOWN_QUOTES], rank=rank,
+    return dict(version=VERSION, generated=now, day=day, quote_of_the_day=qotd, quotes=pool[:SHOWN_QUOTES], rank=ranked_today,
                 insights=insights(prompts, today, contra), postcard=postcard(prompts, today, screen, root),
                 delegation=delegation(_collect_asks() if ask_items is None else ask_items, corr, today),
                 contradictions=contra, counts=dict(prompts=len(prompts), corrections=len(corr), candidates=len(pool)), notes=notes)
@@ -502,21 +502,21 @@ def save(rep: dict) -> None:
     config.write_private(store_path(), json.dumps(rep, indent=1, ensure_ascii=False) + "\n")
 
 
-def get(now: float | None = None, refresh: bool = False, max_age_s: float = 6 * 3600) -> dict:
+def get(now: float | None = None, refresh: bool = False, max_age_s: float = 6 * 3600, rank: bool = True) -> dict:
     """The cached result when it is fresh and from today, else a new build (stored)."""
     now = time.time() if now is None else now
     cached = load()
     today = _dt.datetime.fromtimestamp(now).date().isoformat()
     if cached and not refresh and cached.get("day") == today and now - float(cached.get("generated") or 0) < max_age_s:
         return cached
-    rep = build(now, prev=cached)
+    rep = build(now, prev=cached, rank=rank)
     save(rep)
     return rep
 
 
 def console_part(now: float) -> dict:
-    """The `you` part of the Playbook section."""
-    rep = get(now)
+    """The `you` part of the Playbook section. It never asks a model: the daily ranking runs only from `teyla you`."""
+    rep = get(now, rank=False)
     return {k: rep.get(k) for k in ("quote_of_the_day", "quotes", "insights", "postcard", "delegation", "contradictions",
                                     "counts", "notes")} | {"local_only": True}
 
