@@ -63,7 +63,7 @@ There is no install-channel check as on iOS: Play internal testing and productio
 
 The picture shows the screen as the tester saw it, so it can show another person's data. `Modifier.reviewPrivate()` registers the composable's bounds; at capture time each one, plus 2 dp, is painted black in the PNG **before** the form shows it and before it is hashed, saved or sent. A tap or area that touches a masked area records no `element`, and an anchor that overlaps one loses its `strings`. A composable that cannot report its bounds (they are not a number, or reading them fails) hides the **whole window**.
 
-**A moving screen.** `PixelCopy` returns the last frame the screen showed, which lags the layout by a few frames. So the capture waits until the private areas have held their place for 3 frames, and checks again after the copy. If they do not settle within 1.5 s, it refuses and nothing is sent. A private area that never stops moving cannot be reported.
+**A moving screen.** `PixelCopy` returns the last frame the screen showed, which lags the layout by a few frames. So the capture waits until the private areas have held their place for 3 frames, and keeps checking on every frame until the copy returns. If they do not settle within 1.5 s, it refuses and nothing is sent. A private area that never stops moving cannot be reported.
 
 **Backup.** The queue lives in `noBackupFilesDir`, so Auto Backup never carries a queued report off the device.
 

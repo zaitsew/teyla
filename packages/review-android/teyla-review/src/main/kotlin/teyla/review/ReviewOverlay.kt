@@ -166,16 +166,29 @@ internal object ReviewOverlay {
 
         fun copy(snapshot: Snapshot, again: () -> Unit) {
             val bitmap = try { Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888) } catch (e: OutOfMemoryError) { fail(strings.pictureFailed); return }
+            // Layout changes only between frames, so a look on every frame catches an area that moves and comes back.
+            val expected = snapshot.privateFrames.toSet()
+            var copying = true
+            var moved = false
+            Choreographer.getInstance().postFrameCallback(object : Choreographer.FrameCallback {
+                override fun doFrame(frameTimeNanos: Long) {
+                    if (!copying) return
+                    if (read().privateFrames.toSet() != expected) moved = true
+                    Choreographer.getInstance().postFrameCallback(this)
+                }
+            })
             try {
                 PixelCopy.request(window, bitmap, { result ->
+                    copying = false
                     when {
                         result != PixelCopy.SUCCESS -> { bitmap.recycle(); fail(strings.pictureFailed) }
                         // Something moved while the copy ran, so this mask may not fit this picture.
-                        read().privateFrames.toSet() != snapshot.privateFrames.toSet() -> { bitmap.recycle(); again() }
+                        moved || read().privateFrames.toSet() != expected -> { bitmap.recycle(); again() }
                         else -> worker.execute { finishFreeze(activity, cfg, bitmap, snapshot, density) }
                     }
                 }, main)
             } catch (e: IllegalArgumentException) {
+                copying = false
                 bitmap.recycle(); fail(strings.pictureFailed)
             }
         }
