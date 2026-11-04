@@ -24,6 +24,8 @@ cyrillic:
 src/teyla/lexicon.py
 # the copy judge's per-language word lists (interjections, first person, imperatives)
 src/teyla/copy_lexicon.py
+# the quote picker's strong-verb, sensitive-topic and theme-stop words (`teyla you`)
+src/teyla/you_lexicon.py
 tests/test_detect.py
 tests/test_numbers.py
 tests/test_corrections.py

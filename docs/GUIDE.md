@@ -470,7 +470,7 @@ uv tool uninstall teyla    # then remove the command; with pipx: pipx uninstall 
 - [COMMANDS](COMMANDS.md): every command with its flags (`teyla help --all` prints the same list)
 - [WEB](WEB.md), [TODAY](TODAY.md), [APP](APP.md), [RELAY](RELAY.md): the dashboard, the first screens, the Mac app and the iPhone relay
 - [APP-STORE](APP-STORE.md): the iPhone app's store listing, privacy answers and review notes
-- [ASKS](ASKS.md), [PRODUCTS](PRODUCTS.md), [NOTES](NOTES.md), [INTENT](INTENT.md), [WRITING](WRITING.md): questions, products, notes, your words, how agents write
+- [ASKS](ASKS.md), [PRODUCTS](PRODUCTS.md), [NOTES](NOTES.md), [INTENT](INTENT.md), [YOU](YOU.md), [WRITING](WRITING.md): questions, products, notes, your words, how agents write
 - [HARNESSES](HARNESSES.md): what each harness reads and what differs
 - [PRODUCTIZE](PRODUCTIZE.md): from an app you use to an app four people use
 - [CONTROL-PLANE](CONTROL-PLANE.md): runs, gates, receipts and the kill switch

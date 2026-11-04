@@ -44,6 +44,7 @@ ALLOWED = {
     "play.py": {13},
     "state.py": {14},
     "intent_cover.py": {15},
+    "you.py": {38},
     "voice.py": {16},
     "health.py": {17},
     "control/harness.py": {18},
