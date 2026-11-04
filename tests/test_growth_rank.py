@@ -26,6 +26,18 @@ def test_story_class_needs_a_number_and_an_artifact(env):
     assert rank.story_class(master(store, idea="Rules beat memory", fmt="lesson", facts=("Rules beat memory",))) == "lesson"
     assert rank.story_class(master(store, idea="23 hours lost", fmt="lesson", facts=("23 hours lost",))) == "lesson-partial"
     assert rank.story_class(master(store, idea="x", fmt="worklog")) == "worklog"
+    assert rank.story_class(master(store, idea="Saved 3 calls", fmt="lesson", facts=("Saved 3 calls with `codex-review`",))) == "story"
+
+
+def test_the_editors_verdict_counts_even_after_an_edit_changed_the_status(env):
+    store, _ = make()
+    it = growth.make_item(store, NOW, kind="post", format="lesson", idea="x", platform="x", language="en", day=DAY, channel="x-en",
+                          sources=[dict(kind="note", ref="n:1", url="")], editor=dict(score=2.0, parts=dict(hook=2)))
+    it["status"] = "review"                    # the owner edited an editor-held draft: hold_reason is gone, the score is not
+    assert rank.outcome(it) is False
+    it["editor"] = dict(score=4.0, parts=dict(hook=4))
+    it["status"] = "rejected"                  # the owner rejected a draft the editor liked: still a pass for the editor
+    assert rank.outcome(it) is True
 
 
 def test_a_story_goes_before_a_spotlight_and_a_worklog(env):
@@ -45,6 +57,7 @@ def test_the_editors_history_moves_a_source_and_format_down_and_up(env):
         held = growth.make_item(store, NOW, kind="post", format="worklog", idea=f"w{n}", platform="x", language="en", day="2026-11-03",
                                 channel="x-en", sources=[dict(kind="pr", ref=f"pr:o/a#{n}", url="")], editor=dict(score=1.8))
         held["status"], held["hold_reason"] = "draft", "editor 1.8/5"
+        held["editor"] = dict(score=1.8, parts=dict(hook=1, artifact=2, number_or_surprise=2, checkable=2))
         store.save(held, NOW)
     hist = rank.history(store)
     assert hist[("pr", "worklog")] == (0, 6)
@@ -52,7 +65,7 @@ def test_the_editors_history_moves_a_source_and_format_down_and_up(env):
     other = master(store, idea="Merged in Alpha: y", fmt="worklog", sources=[dict(kind="release", ref="r:1", url="")])
     assert rank.quality(pr, hist) < rank.quality(other, hist) < rank.PRIOR["lesson"] + 0.01
     passed = growth.make_item(store, NOW, kind="post", format="worklog", idea="ok", platform="x", language="en", day="2026-11-03",
-                              channel="x-en", sources=[dict(kind="release", ref="r:0", url="")], editor=dict(score=4.0))
+                              channel="x-en", sources=[dict(kind="release", ref="r:0", url="")], editor=dict(score=4.0, parts=dict(hook=4)))
     passed["status"] = "review"
     store.save(passed, NOW)
     assert rank.quality(other, rank.history(store)) > rank.PRIOR["worklog"]

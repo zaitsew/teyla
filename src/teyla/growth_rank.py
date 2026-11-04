@@ -25,6 +25,7 @@ PRIOR = dict(story=0.85, lesson_partial=0.55, lesson=0.35, reaction=0.45, worklo
 ELIGIBLE = 0.25                                    # a product with no sale attempts gets its bonus only at or above this
 
 _ARTIFACT = re.compile(r"https?://\S+|`[^`\n]{2,}`|\bteyla [a-z][a-z-]+\b|\bPR #\d+|#\d{2,}\b", re.I)
+_DIGITS = re.compile(r"(?<![\w#])[$€]?\d[\d,.]*")
 _THIN = re.compile(r"\b(facts? (are|is|were) (too |very )?(thin|sparse|slight)|(too|very) thin|thin facts?|"
                    r"facts? (give|gives|hold|holds|carry|carries|contain|contains) (just|only)|the only facts? (is|are)|only fact is)\b", re.I)
 
@@ -35,7 +36,7 @@ def source_kind(item: dict) -> str:
 
 def has_number(item: dict) -> bool:
     text = " ".join([item.get("idea", ""), *(item.get("facts") or [])])
-    return bool(g._NUM.search(text))
+    return bool(_DIGITS.search(text))            # any figure counts: "3 calls" is a number, "PR #7" is a reference
 
 
 def has_artifact(item: dict) -> bool:
@@ -77,10 +78,10 @@ def outcome(item: dict) -> bool | None:
     if item.get("platform") == g.MASTER:
         return None
     ed = item.get("editor")
-    if ed and item.get("status") in g.GOOD_STATES and not item.get("hold_reason"):
-        return True
-    if ed and item.get("status") == "draft" and item.get("hold_reason"):
-        return False
+    if isinstance(ed, dict) and isinstance(ed.get("score"), (int, float)):
+        from . import growth_quality as q            # the editor's own verdict, not the item's status: an owner's edit or a
+        hook = (ed.get("parts") or {}).get("hook")    # rejection later changes the status but not what the editor thought
+        return ed["score"] >= q.EDITOR_BAR and isinstance(hook, (int, float)) and hook >= q.HOOK_FLOOR
     if item.get("status") == "failed" and str(item.get("fail_reason") or "").startswith("thin"):
         return False
     return None
