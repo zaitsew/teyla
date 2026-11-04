@@ -93,7 +93,8 @@ Two kinds of number, kept apart. Cash comes from what the owner lists; list pric
 
 ### products (in `teyla product show`)
 - `sale_attempts {posts, marketing, icp_meetings, last}` per product, as `teyla growth sale-attempts` prints it (text only today; the
-  Mac app counts `~/.teyla/growth/ledger.jsonl` itself). Zero attempts means "not tried yet".
+  Mac app counts `~/.teyla/growth/ledger.jsonl` itself). Zero attempts means "not tried yet". Rows an agent logged (`by: "agent"`)
+  are `claimed` and the CLI counts them for nothing; the Mac app's reader does not skip them yet. A `personal` product is never "not tried yet".
   That product gets the next marketing slot. Teyla never proposes closing a product nobody tried to sell.
 
 ## Limits every section keeps
