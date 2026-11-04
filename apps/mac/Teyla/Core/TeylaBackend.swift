@@ -68,6 +68,8 @@ protocol TeylaBackend: Sendable {
     func growthDrafts() async throws -> GrowthDrafts.Read
     /// What was done to sell each product, counted from the growth ledger (no command runs).
     func saleAttempts() async throws -> SaleLedger.Read
+    /// Teyla's settings file, read as it is (no command runs).
+    func teylaConfig() async throws -> TeylaConfig
     /// Runs one command of the Tools page and returns what it printed. Only commands `ToolCommands` allows are run.
     func runTool(_ argv: [String]) async throws -> String
     func apply(offerID: String) async throws -> String
@@ -97,6 +99,7 @@ extension TeylaBackend {
     func consoleCached() async -> ConsoleReport? { nil }
     func growthDrafts() async throws -> GrowthDrafts.Read { throw Self.none }
     func saleAttempts() async throws -> SaleLedger.Read { throw Self.none }
+    func teylaConfig() async throws -> TeylaConfig { throw Self.none }
     func runTool(_ argv: [String]) async throws -> String { throw Self.none }
     func apply(offerID: String) async throws -> String { throw Self.none }
     func notes() async throws -> [NoteItem] { throw Self.none }

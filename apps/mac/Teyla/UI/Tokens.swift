@@ -24,6 +24,8 @@ enum Space {
     static let glyph: CGFloat = 20
     /// A round icon button.
     static let iconButton: CGFloat = 28
+    /// The widest a value may be at the right of a settings row; longer text wraps at a word.
+    static let valueColumn: CGFloat = 320
     /// The width of the side column on a product page.
     static let sideColumn: CGFloat = 340
     /// A hero card on Home is at least this wide; the grid fits 1 to 3 in a row.

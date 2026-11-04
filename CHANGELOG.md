@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Mac: Settings is a page.** The sidebar's Settings opens Teyla's own settings file in plain groups: folders, updates,
+  machine guard, disk clean-up, what Teyla keeps, which products and agents it looks at. A value the file does not set shows
+  its default in grey. Environment variables show their names only, and no secret is ever shown. The page reads the file and
+  never writes it; the file's path and a "Show in Finder" button are on the page. The voice, shortcut and iPhone switches sit
+  on it too.
+
 - **The video channels get a daily clip with no filming.** When there is no clip you filmed, the best lesson the editor
   passed becomes a silent 16 to 28 second vertical video: your own words, line by line, on a dark card, the hook in
   the first second, the artifact on the last card. It goes through the same frame check as the session reel. Drawing

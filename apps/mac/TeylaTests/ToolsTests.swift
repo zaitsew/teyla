@@ -238,7 +238,7 @@ final class CommandBarTests: XCTestCase {
 
     func testTheFixedEntriesComeFirstAndOnlyThoseExist() {
         let ids = entries().map(\.id)
-        XCTAssertEqual(ids, ["go:home", "go:decisions", "go:portfolio", "go:growth", "go:money", "go:operations", "go:playbook",
+        XCTAssertEqual(ids, ["go:home", "go:decisions", "go:portfolio", "go:growth", "go:money", "go:operations", "go:playbook", "go:settings",
                              "product:sample-app", "product:sample-tool", "new-task", "refresh"])
     }
 
