@@ -6,7 +6,7 @@ The board is https://arena.ai/leaderboard/agent/pareto. Two sources, newest `as_
 
 1. `~/.teyla/models/arena.json`, a snapshot the owner pastes (or an agent with a browser writes). Its schema is
    below. Teyla reads it and never edits it.
-2. `--refresh`: one plain GET of the page (a public page, no user data; PRIVACY row 37), closed in safe mode through
+2. `--refresh`: one plain GET of the page (a public page, no user data; PRIVACY row 42), closed in safe mode through
    `net.py`. The page sits behind a bot check (a Cloudflare "Just a moment" page, HTTP 403 on 2026-11-04). Teyla does
    not try to pass a bot check. When the answer is a challenge, or the HTML holds no table it can read reliably, it
    reads nothing, says so, and leaves the pasted snapshot in charge. The last attempt is kept in

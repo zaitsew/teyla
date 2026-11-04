@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The content factory ranks by what passes and mines its own stories.** `teyla growth plan` gives the next slot to the
+  idea the editor is likely to pass: a lesson with a number and an artifact first, a bare product summary never. Once a
+  week the harvest step makes one model call over your policy file, the last `teyla you` report, crash and load counts,
+  AI spend at list price, the CHANGELOG and merged fix PRs of public products. A story enters only when its excerpt exists
+  in the material, every number is in the excerpt and no leak, employer, job search, person or store dispute is named.
+  The harvest line counts what the checks dropped. See docs/GROWTH.md, "Stories".
+
 - **Mac: Growth is a full page.** Slots filled today and the drafts waiting for you come first. You read a draft in
   full, with its editor score and its voice and leak checks, then approve, reject with a reason, or edit it. Approving
   only marks a draft; nothing is posted or sent from the app. Channels, pipeline, episodes, trend ideas and outreach

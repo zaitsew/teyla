@@ -77,6 +77,13 @@ def _no_real_crash_reports(monkeypatch):
     monkeypatch.setattr(crash, "DEFAULT_ROOTS", [])
 
 
+@pytest.fixture(autouse=True)
+def _no_real_policy_file(tmp_path_factory, monkeypatch):
+    """The story miner reads the owner's ~/.agents/POLICY.md by default; a test hands it a file or nothing."""
+    from teyla import growth_stories
+    monkeypatch.setattr(growth_stories, "DEFAULT_POLICY", str(tmp_path_factory.mktemp("no-policy") / "POLICY.md"))
+
+
 _LAUNCHCTL_WRITES = {"bootstrap", "bootout", "load", "unload", "enable", "disable", "kickstart", "kill", "remove", "submit"}
 
 
