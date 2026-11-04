@@ -718,6 +718,9 @@ def cmd_models(args):
     if action == "watch":
         from . import models_watch
         return models_watch.cmd_watch(args)
+    if action == "arena":
+        from . import models_arena
+        return models_arena.cmd_arena(args)
     if getattr(args, "ack", None) is not None or getattr(args, "seed", None):
         print("--ack and --seed belong to `teyla models watch`")
         return 2
@@ -759,11 +762,12 @@ def register(sp):
     """Add `teyla models` to an argparse subparsers object."""
     q = sp.add_parser("models", help="model ladder + price drift report; fixes with --write-policy/--write-prices")
     q.set_defaults(fn=cmd_models)
-    q.add_argument("action", nargs="?", choices=["watch"],
-                    help="watch: new models since the last look, what they replace, repos still naming superseded ids")
+    q.add_argument("action", nargs="?", choices=["watch", "arena"],
+                    help="watch: new models since the last look, what they replace, repos still naming superseded ids; "
+                         "arena: the cost/value shortlist from arena.ai's agent Pareto board, candidates only")
     q.add_argument("--days", type=int, default=30, help="window for 'used in Claude Code' models (default: 30)")
     q.add_argument("--json", action="store_true")
-    q.add_argument("--refresh", action="store_true", help="fetch models.dev/api.json if the local cache is missing/stale (opt-in network)")
+    q.add_argument("--refresh", action="store_true", help="fetch models.dev/api.json if the local cache is missing/stale (opt-in network); with arena: try the board page once")
     q.add_argument("--allow-network", action="store_true", help="safe mode: allow --refresh to reach models.dev this once")
     q.add_argument("--write-policy", action="store_true", help="rewrite the ladder table in ~/.agents/POLICY.md, between the markers only")
     q.add_argument("--write-prices", action="store_true", help="write ~/.teyla/prices.json from the models.dev catalogue")
