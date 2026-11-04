@@ -17,13 +17,17 @@ enum SampleData {
     /// The snapshot with every timestamp moved so that `generated` is `now`: ages stay what the file says,
     /// and the sample never looks stale.
     static func snapshot(from data: Data, now: Date = Date()) -> Snapshot? {
+        shifted(data, now: now).flatMap { try? PhoneFormat.decodeSnapshot($0) }
+    }
+
+    /// The bundled bytes with every timestamp moved the same way; the snapshot and the startup blocks are read from them.
+    static func shifted(_ data: Data, now: Date = Date()) -> Data? {
         guard let root = try? JSONSerialization.jsonObject(with: data),
               let object = root as? [String: Any],
               let generated = (object["generated"] as? String).flatMap(ISODate.parse)
         else { return nil }
         let delta = now.timeIntervalSince(generated)
-        guard let shifted = try? JSONSerialization.data(withJSONObject: shift(object, by: delta)) else { return nil }
-        return try? PhoneFormat.decodeSnapshot(shifted)
+        return try? JSONSerialization.data(withJSONObject: shift(object, by: delta))
     }
 
     private static func shift(_ value: Any, by delta: TimeInterval) -> Any {

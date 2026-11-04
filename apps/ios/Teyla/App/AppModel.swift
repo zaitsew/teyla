@@ -21,6 +21,8 @@ enum Connection: Equatable {
 @Observable
 final class AppModel {
     private(set) var snapshot: Snapshot?
+    /// The startup blocks (docs/STARTUP.md) read from the same bytes as `snapshot`; `generated` says which snapshot they belong to.
+    private var startupBlocks: (generated: String, byProduct: [String: PhoneStartup]) = ("", [:])
     private(set) var connection: Connection = .reading
     private(set) var pending: [PendingAction]
     private(set) var isRefreshing = false
@@ -314,6 +316,7 @@ final class AppModel {
             case .valid(let json):
                 if let decoded = try? PhoneFormat.decodeSnapshot(json) {
                     snapshot = decoded
+                    startupBlocks = (decoded.generated, PhoneStartupIndex.decode(json))
                     connection = .live
                 } else {
                     snapshot = nil
@@ -330,12 +333,13 @@ final class AppModel {
     }
 
     private func loadSample() {
-        guard let data = sampleData(), let decoded = SampleData.snapshot(from: data) else {
+        guard let data = sampleData(), let shifted = SampleData.shifted(data), let decoded = try? PhoneFormat.decodeSnapshot(shifted) else {
             snapshot = nil
             connection = .waiting
             return
         }
         snapshot = decoded
+        startupBlocks = (decoded.generated, PhoneStartupIndex.decode(shifted))
         connection = .sample
     }
 
@@ -346,6 +350,7 @@ final class AppModel {
             return
         }
         snapshot = decoded
+        startupBlocks = (decoded.generated, PhoneStartupIndex.decode(data))
         connection = .fixture
     }
 
@@ -468,6 +473,12 @@ final class AppModel {
 
     /// Questions with the result of an answer sent from this phone kept visible.
     var asks: [Ask] { snapshot?.asks ?? [] }
+
+    /// The startup block of a product, or nil when the Mac sent none (an older Teyla, or it could not be computed).
+    func startup(for productID: String) -> PhoneStartup? {
+        guard let snapshot, startupBlocks.generated == snapshot.generated else { return nil }
+        return startupBlocks.byProduct[productID]
+    }
 
     var syncDate: Date? { snapshot.flatMap(PhoneFormat.syncDate(of:)) }
 
