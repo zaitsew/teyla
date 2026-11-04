@@ -97,6 +97,12 @@ final class ProductPageModel {
         write("Saving…") { try await self.cli.setStage(id: id, stage: stage) } done: { $0.stage = stage.rawValue }
     }
 
+    /// Chooses the type of the product: `teyla product set <id> type=<type>`. Teyla never infers it.
+    func setType(_ type: StartupType) {
+        guard let id, !isChanging else { return }
+        write("Saving…") { try await self.cli.setType(id: id, type: type) } done: { _ in }
+    }
+
     func setFocus(_ focus: Bool) {
         guard let id, page?.product.focus != focus, !isChanging else { return }
         write("Saving…") { try await self.cli.setFocus(id: id, focus: focus) } done: { $0.focus = focus }

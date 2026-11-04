@@ -115,6 +115,7 @@ targets:
       - Teyla/App/ToolsModel.swift
       - Teyla/App/ConsoleModel.swift
       - Teyla/App/CommandBarModel.swift
+      - Teyla/App/StartupModel.swift
       - Teyla/Store/StoreBackend.swift
       - Teyla/Store/StoreSession.swift
       - Teyla/Store/FolderPanelPlan.swift

@@ -70,6 +70,7 @@ final class AppModel {
     let tools: ToolsModel
     let console: ConsoleModel
     let growth: GrowthModel
+    let startup: StartupModel
     let commandBar: CommandBarModel
     let settingsPage: SettingsModel
     @ObservationIgnored private var hotKeyTalk = PushToTalk()
@@ -101,6 +102,7 @@ final class AppModel {
         tools = ToolsModel(cli: cli)
         console = ConsoleModel(cli: cli)
         growth = GrowthModel(cli: cli)
+        startup = StartupModel(cli: cli)
         commandBar = CommandBarModel()
         settingsPage = SettingsModel(cli: cli)
         let names: () -> [String] = { [weak self] in
@@ -115,6 +117,7 @@ final class AppModel {
         productPage.changed = { [weak self] in self?.refresh() }
         tools.changed = { [weak self] in self?.refresh() }
         growth.changed = { [weak self] in self?.console.refresh(rebuild: true) }
+        startup.changed = { [weak self] in self?.refresh() }
         commandBar.source = { [weak self] in self?.commandEntries() ?? [] }
         noteList.changed = { [weak self] in self?.productPage.refreshQuick() }
         #if STORE
@@ -363,6 +366,7 @@ final class AppModel {
     func go(_ next: AppRoute) {
         route = next
         if case .product(let id) = next { productPage.open(id) }
+        if next == .portfolio, capabilities.startupSheet { startup.loadFocus() }
         if next == .operations { tools.opened() }
         if next.isConsole, capabilities.console { console.opened() }
         if next == .growth, capabilities.console { growth.opened() }

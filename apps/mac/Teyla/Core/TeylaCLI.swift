@@ -23,6 +23,7 @@ actor TeylaCLI: TeylaBackend {
     private let configFixtureURL: URL?
     private let attentionFixtureURL: URL?
     private let consoleFixtureURL: URL?
+    private let ycFixtureURL: URL?
     /// The file the owner picked with "Choose…", and what a login shell finds. Injected so a test never runs the real ones.
     private let chosen: @Sendable () -> String?
     private let shellPath: @Sendable () -> String?
@@ -53,6 +54,7 @@ actor TeylaCLI: TeylaBackend {
         configFixtureURL = Self.fixtureURL(env["TEYLA_CONFIG_FIXTURE"], beside: fixtureURL, named: "config.v1.toml")
         attentionFixtureURL = Self.fixtureURL(env["TEYLA_ATTENTION_FIXTURE"], beside: fixtureURL, named: "attention.v1.json")
         consoleFixtureURL = Self.fixtureURL(env["TEYLA_CONSOLE_FIXTURE"], beside: fixtureURL, named: "console.v1.json")
+        ycFixtureURL = Self.fixtureURL(env["TEYLA_YC_FIXTURE"], beside: fixtureURL, named: "yc.v1.json")
     }
 
     private static func fixtureURL(_ path: String?, beside state: URL?, named name: String) -> URL? {
@@ -286,6 +288,53 @@ actor TeylaCLI: TeylaBackend {
     func setFocus(id: String, focus: Bool) async throws {
         guard ProductCommands.isProductID(id) else { throw TeylaError.failed(code: 2, message: "\(id) is not a product id.") }
         try await simpleCommand(ProductCommands.focusArguments(id: id, focus: focus))
+    }
+
+    /// `teyla product set <id> type=<type>`.
+    func setType(id: String, type: StartupType) async throws {
+        guard ProductCommands.isProductID(id) else { throw TeylaError.failed(code: 2, message: "\(id) is not a product id.") }
+        try await simpleCommand(StartupCommands.typeArguments(id: id, type: type))
+    }
+
+    // MARK: The startup page (docs/STARTUP.md)
+
+    /// `teyla startup --json`, read for its `focus`. An older command has no `startup`: that is "no focus", not an error.
+    func startupFocus() async throws -> String? {
+        if fixtureURL != nil { return nil }
+        let out = try await run(StartupCommands.focusArguments, timeout: 90)
+        guard out.status == 0 else {
+            let why = Self.oneLine(out.stderrText.isEmpty ? String(decoding: out.stdout, as: UTF8.self) : out.stderrText)
+            if why.contains("Unknown command") { return nil }
+            throw TeylaError.failed(code: out.status, message: why)
+        }
+        return StartupCommands.focus(from: out.stdout)
+    }
+
+    /// `teyla startup yc <id> --json`. A preview reads `yc.v1.json` beside the state sample.
+    func ycSheet(id: String) async throws -> YCSheet {
+        guard ProductCommands.isProductID(id) else { throw TeylaError.failed(code: 2, message: "\(id) is not a product id.") }
+        if fixtureURL != nil {
+            guard let url = ycFixtureURL, let data = try? Data(contentsOf: url) else {
+                throw TeylaError.fixtureUnreadable(ycFixtureURL?.path ?? "yc.v1.json")
+            }
+            return try YCSheet.decode(data)
+        }
+        let out = try await run(StartupCommands.sheetArguments(id: id), timeout: 90)
+        guard out.status == 0 else {
+            let why = Self.oneLine(out.stderrText.isEmpty ? String(decoding: out.stdout, as: UTF8.self) : out.stderrText)
+            if why.contains("Unknown command") {
+                throw TeylaError.unavailable("This version of the teyla command has no YC sheet. Update the teyla command.")
+            }
+            throw TeylaError.failed(code: out.status, message: why)
+        }
+        return try YCSheet.decode(out.stdout)
+    }
+
+    /// `teyla startup yc -- answer <id> <box> <text>`. The answer travels as one argument, with no shell in between.
+    func ycAnswer(id: String, box: String, text: String) async throws {
+        guard ProductCommands.isProductID(id) else { throw TeylaError.failed(code: 2, message: "\(id) is not a product id.") }
+        guard StartupCommands.isBoxID(box) else { throw TeylaError.failed(code: 2, message: "\(box) is not a YC box.") }
+        try await simpleCommand(StartupCommands.answerArguments(id: id, box: box, text: text))
     }
 
     /// `teyla product core <ids...>`: exactly these products are starred; no ids clears every star.

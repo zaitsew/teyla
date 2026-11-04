@@ -908,12 +908,15 @@ struct PortfolioProduct: Decodable, Equatable, Identifiable, Sendable {
     /// Base64 of a small JPEG icon; "" when there is none. Decoded once per product by the Mac UI, never here.
     var iconJPEG: String
     var metrics: ProductMetrics
+    /// The earned stage, the ladder and the metrics (docs/STARTUP.md). nil from a CLI before the startup page, and when
+    /// the CLI could not compute it. The app shows it and computes nothing.
+    var startup: StartupBlock?
 
     var health: Health { Health(rawValue: healthRaw) ?? .onTrack }
 
     enum CodingKeys: String, CodingKey {
         case id, title, stage, focus, primary, users, target, reasons, platforms, prs, activity
-        case waiting, tasks, milestone, next, repo, facts, progress, summary, metrics
+        case waiting, tasks, milestone, next, repo, facts, progress, summary, metrics, startup
         case healthRaw = "health"
         case iconJPEG = "icon_jpeg"
         case oldestWaitDays = "oldest_wait_days"
@@ -924,7 +927,8 @@ struct PortfolioProduct: Decodable, Equatable, Identifiable, Sendable {
          platforms: [PlatformStatus] = [], prs: PRCounts = PRCounts(), activity: Activity = Activity(),
          waiting: Int = 0, oldestWaitDays: Double = 0, tasks: Int = 0, milestone: String = "", next: String = "",
          repo: String = "", facts: [String] = [], progress: ProductProgress? = nil,
-         summary: String = "", iconJPEG: String = "", metrics: ProductMetrics = ProductMetrics()) {
+         summary: String = "", iconJPEG: String = "", metrics: ProductMetrics = ProductMetrics(),
+         startup: StartupBlock? = nil) {
         self.id = id
         self.title = title
         self.stage = stage
@@ -948,6 +952,7 @@ struct PortfolioProduct: Decodable, Equatable, Identifiable, Sendable {
         self.summary = summary
         self.iconJPEG = iconJPEG
         self.metrics = metrics
+        self.startup = startup
     }
 
     init(from decoder: Decoder) throws {
@@ -976,6 +981,7 @@ struct PortfolioProduct: Decodable, Equatable, Identifiable, Sendable {
         summary = c.lenient(.summary, "")
         iconJPEG = c.lenient(.iconJPEG, "")
         metrics = c.lenient(.metrics, ProductMetrics())
+        startup = c.optional(.startup)
     }
 }
 
@@ -1050,6 +1056,310 @@ struct UsersFact: Decodable, Equatable, Sendable {
         weekly = c.lenient(.weekly, 0)
         total = c.lenient(.total, 0)
         label = c.lenient(.label, "")
+    }
+}
+
+// MARK: The startup block (docs/STARTUP.md)
+
+/// `startup` on a portfolio product: the earned stage, the ladder, the metrics and the YC count. Fixed labels and numbers
+/// only: customer text never travels in it, because the relay is signed and not encrypted. An unknown figure is `nil`.
+struct StartupBlock: Decodable, Equatable, Sendable {
+    /// `venture`, `indie`, `open-source` or `personal`. A product with no chosen type reads as `venture`.
+    var type: String
+    var typeSet: Bool
+    /// `built`, `tried`, ... or `none`; `stageTitle` is the word to show ("Built", "Not built", "Not known").
+    var stage: String
+    var stageTitle: String
+    var parked: Bool
+    /// When the usage probe was read; nil when no probe reports.
+    var asOf: String?
+    var stale: Bool
+    /// The first rung that is not met; nil when the whole ladder is met.
+    var next: StartupNext?
+    var rungs: [StartupRung]
+    var metrics: StartupMetrics
+    var yc: StartupYCSummary?
+
+    enum CodingKeys: String, CodingKey {
+        case type, stage, parked, stale, next, rungs, metrics, yc
+        case typeSet = "type_set"
+        case stageTitle = "stage_title"
+        case asOf = "as_of"
+    }
+
+    init(type: String = "venture", typeSet: Bool = true, stage: String = "none", stageTitle: String = "Not built",
+         parked: Bool = false, asOf: String? = nil, stale: Bool = false, next: StartupNext? = nil,
+         rungs: [StartupRung] = [], metrics: StartupMetrics = StartupMetrics(), yc: StartupYCSummary? = nil) {
+        self.type = type
+        self.typeSet = typeSet
+        self.stage = stage
+        self.stageTitle = stageTitle
+        self.parked = parked
+        self.asOf = asOf
+        self.stale = stale
+        self.next = next
+        self.rungs = rungs
+        self.metrics = metrics
+        self.yc = yc
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // A block with no type is not a block: the whole thing reads as absent, never as a guess.
+        type = try c.decode(String.self, forKey: .type)
+        typeSet = c.lenient(.typeSet, false)
+        stage = c.lenient(.stage, "none")
+        stageTitle = c.lenient(.stageTitle, "Not known")
+        parked = c.lenient(.parked, false)
+        asOf = c.optional(.asOf)
+        stale = c.lenient(.stale, false)
+        next = c.optional(.next)
+        let rungs: [LossyBox<StartupRung>] = c.lenient(.rungs, [])
+        self.rungs = rungs.compactMap(\.value)
+        metrics = c.lenient(.metrics, StartupMetrics())
+        yc = c.optional(.yc)
+    }
+}
+
+struct StartupNext: Decodable, Equatable, Sendable {
+    var rung: String
+    var text: String
+    var command: String
+
+    init(rung: String, text: String = "", command: String = "") {
+        self.rung = rung
+        self.text = text
+        self.command = command
+    }
+
+    enum CodingKeys: String, CodingKey { case rung, text, command }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        rung = try c.decode(String.self, forKey: .rung)
+        text = c.lenient(.text, "")
+        command = c.lenient(.command, "")
+    }
+}
+
+struct StartupRung: Decodable, Equatable, Identifiable, Sendable {
+    var id: String
+    var title: String
+    /// `met`, `missing`, `unknown`, `stale` or `not_applicable`.
+    var status: String
+    var detail: String
+
+    init(id: String, title: String = "", status: String = "unknown", detail: String = "") {
+        self.id = id
+        self.title = title.isEmpty ? id.capitalized : title
+        self.status = status
+        self.detail = detail
+    }
+
+    enum CodingKeys: String, CodingKey { case id, title, status, detail }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let id: String = try c.decode(String.self, forKey: .id)
+        self.init(id: id, title: c.lenient(.title, ""), status: c.lenient(.status, "unknown"), detail: c.lenient(.detail, ""))
+    }
+}
+
+/// The five groups of at most 15 figures. A group that is absent reads as all-unknown, never as zeros.
+struct StartupMetrics: Decodable, Equatable, Sendable {
+    var marketing = StartupMarketing()
+    var sales = StartupSales()
+    var usage = StartupUsage()
+    var money = StartupMoney()
+    var growth = StartupGrowth()
+
+    enum CodingKeys: String, CodingKey { case marketing, sales, usage, money, growth }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        marketing = c.lenient(.marketing, StartupMarketing())
+        sales = c.lenient(.sales, StartupSales())
+        usage = c.lenient(.usage, StartupUsage())
+        money = c.lenient(.money, StartupMoney())
+        growth = c.lenient(.growth, StartupGrowth())
+    }
+}
+
+struct StartupMarketing: Decodable, Equatable, Sendable {
+    var posts: Int?
+    var posts7d: Int?
+    var adsOutreach: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case posts
+        case posts7d = "posts_7d"
+        case adsOutreach = "ads_outreach"
+    }
+
+    init(posts: Int? = nil, posts7d: Int? = nil, adsOutreach: Int? = nil) {
+        self.posts = posts
+        self.posts7d = posts7d
+        self.adsOutreach = adsOutreach
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        posts = c.optional(.posts)
+        posts7d = c.optional(.posts7d)
+        adsOutreach = c.optional(.adsOutreach)
+    }
+}
+
+struct StartupSales: Decodable, Equatable, Sendable {
+    var icpMeetings: Int?
+    var icpMeetings30d: Int?
+    /// The newest day (YYYY-MM-DD) of any attempt; "" when there is none.
+    var last: String
+    /// Attempts an agent logged. They count for nothing until the owner logs them himself.
+    var claimed: Int
+
+    enum CodingKeys: String, CodingKey {
+        case last, claimed
+        case icpMeetings = "icp_meetings"
+        case icpMeetings30d = "icp_meetings_30d"
+    }
+
+    init(icpMeetings: Int? = nil, icpMeetings30d: Int? = nil, last: String = "", claimed: Int = 0) {
+        self.icpMeetings = icpMeetings
+        self.icpMeetings30d = icpMeetings30d
+        self.last = last
+        self.claimed = claimed
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        icpMeetings = c.optional(.icpMeetings)
+        icpMeetings30d = c.optional(.icpMeetings30d)
+        last = c.lenient(.last, "")
+        claimed = c.lenient(.claimed, 0)
+    }
+}
+
+struct StartupUsage: Decodable, Equatable, Sendable {
+    /// People other than the owner who have an account.
+    var external: Int?
+    /// True when `external` is the accounts minus one for the owner, because no probe prints outside counts.
+    var externalAssumed: Bool
+    var wau: Int?
+    var retained7d: Int?
+    var new7d: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case external, wau
+        case externalAssumed = "external_assumed"
+        case retained7d = "retained_7d"
+        case new7d = "new_7d"
+    }
+
+    init(external: Int? = nil, externalAssumed: Bool = false, wau: Int? = nil, retained7d: Int? = nil, new7d: Int? = nil) {
+        self.external = external
+        self.externalAssumed = externalAssumed
+        self.wau = wau
+        self.retained7d = retained7d
+        self.new7d = new7d
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        external = c.optional(.external)
+        externalAssumed = c.lenient(.externalAssumed, false)
+        wau = c.optional(.wau)
+        retained7d = c.optional(.retained7d)
+        new7d = c.optional(.new7d)
+    }
+}
+
+struct StartupMoney: Decodable, Equatable, Sendable {
+    var enabled: Bool
+    var paying: Int?
+    var mrrUSD: Double?
+    var revenue30dUSD: Double?
+    /// The list price of the AI sessions in 30 days, not cash.
+    var aiCost30dUSD: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, paying
+        case mrrUSD = "mrr_usd"
+        case revenue30dUSD = "revenue_30d_usd"
+        case aiCost30dUSD = "ai_cost_30d_usd"
+    }
+
+    init(enabled: Bool = false, paying: Int? = nil, mrrUSD: Double? = nil, revenue30dUSD: Double? = nil, aiCost30dUSD: Double? = nil) {
+        self.enabled = enabled
+        self.paying = paying
+        self.mrrUSD = mrrUSD
+        self.revenue30dUSD = revenue30dUSD
+        self.aiCost30dUSD = aiCost30dUSD
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = c.lenient(.enabled, false)
+        paying = c.optional(.paying)
+        mrrUSD = c.optional(.mrrUSD)
+        revenue30dUSD = c.optional(.revenue30dUSD)
+        aiCost30dUSD = c.optional(.aiCost30dUSD)
+    }
+}
+
+struct StartupGrowth: Decodable, Equatable, Sendable {
+    /// nil until four weeks of snapshots exist.
+    var weeklyPct: Double?
+    var weeks: Int
+    /// What the rate is measured on: `revenue` or `wau`.
+    var on: String
+
+    enum CodingKeys: String, CodingKey {
+        case weeks, on
+        case weeklyPct = "weekly_pct"
+    }
+
+    init(weeklyPct: Double? = nil, weeks: Int = 0, on: String = "wau") {
+        self.weeklyPct = weeklyPct
+        self.weeks = weeks
+        self.on = on
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        weeklyPct = c.optional(.weeklyPct)
+        weeks = c.lenient(.weeks, 0)
+        on = c.lenient(.on, "wau")
+    }
+}
+
+/// The count on the product page: counts only, never an answer. `eligible` is false for a product that is not a venture.
+struct StartupYCSummary: Decodable, Equatable, Sendable {
+    var eligible: Bool
+    var checked: Int
+    var total: Int
+    var nextBox: String?
+
+    enum CodingKeys: String, CodingKey {
+        case eligible, checked, total
+        case nextBox = "next_box"
+    }
+
+    init(eligible: Bool = false, checked: Int = 0, total: Int = 15, nextBox: String? = nil) {
+        self.eligible = eligible
+        self.checked = checked
+        self.total = total
+        self.nextBox = nextBox
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        eligible = c.lenient(.eligible, false)
+        checked = c.lenient(.checked, 0)
+        total = c.lenient(.total, 15)
+        nextBox = c.optional(.nextBox)
     }
 }
 

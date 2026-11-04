@@ -25,6 +25,14 @@ protocol TeylaBackend: Sendable {
     func setFocus(id: String, focus: Bool) async throws
     /// `teyla product core`: exactly these products are starred (none: every star is cleared).
     func setCore(ids: [String]) async throws
+    /// `teyla product set <id> type=<type>`: the owner chooses the type of a product. Teyla never infers it.
+    func setType(id: String, type: StartupType) async throws
+    /// `teyla startup --json`, read for its `focus`: the product the startup page leads with; nil when there is none.
+    func startupFocus() async throws -> String?
+    /// `teyla startup yc <id> --json`: the YC sheet with its boxes and the owner's answers.
+    func ycSheet(id: String) async throws -> YCSheet
+    /// `teyla startup yc answer <id> <box> <text>`.
+    func ycAnswer(id: String, box: String, text: String) async throws
     /// `teyla asks undo`: reopens a question Teyla closed on its own.
     func undoAsk(id: String) async throws
     /// `teyla asks accept-close`: the owner accepts Teyla's suggestion to close these questions.
@@ -63,6 +71,10 @@ extension TeylaBackend {
     func setStage(id: String, stage: ProductStage) async throws { throw Self.none }
     func setFocus(id: String, focus: Bool) async throws { throw Self.none }
     func setCore(ids: [String]) async throws { throw Self.none }
+    func setType(id: String, type: StartupType) async throws { throw Self.none }
+    func startupFocus() async throws -> String? { throw Self.none }
+    func ycSheet(id: String) async throws -> YCSheet { throw Self.none }
+    func ycAnswer(id: String, box: String, text: String) async throws { throw Self.none }
     func undoAsk(id: String) async throws { throw Self.none }
     func acceptClose(ids: [String]) async throws { throw Self.none }
     func start() async throws -> StartReport { throw Self.none }
@@ -100,6 +112,9 @@ struct Capabilities: Equatable, Sendable {
     var pairPhone = true
     /// The product page's sessions and spend come from the command; the store build shows recent work from the snapshot.
     var spendDetail = true
+    /// The YC sheet and its answers live in `~/.teyla/startup/` and are read and written by the command. The relay is signed,
+    /// not encrypted, so the store build never has them: it shows the count from the snapshot and nothing else.
+    var startupSheet = true
     /// The Operations page's actions and the command bar's: they run the command, which the store build does not have.
     var tools = true
     /// Growth, Money, Operations and Playbook read `teyla console`, which the store build cannot run.
@@ -107,7 +122,7 @@ struct Capabilities: Equatable, Sendable {
 
     static let full = Capabilities()
     static let store = Capabilities(closeQuestions: false, chooseHarness: false, notes: false, diagnosis: false,
-                                    editProducts: false, pairPhone: false, spendDetail: false, tools: false, console: false)
+                                    editProducts: false, pairPhone: false, spendDetail: false, startupSheet: false, tools: false, console: false)
 
     /// The set for this build.
     static var current: Capabilities {
