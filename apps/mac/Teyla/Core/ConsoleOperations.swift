@@ -392,6 +392,8 @@ struct OperationsReport: Decodable, Equatable, Sendable, ConsoleSectionData {
     var leave: OpsLeave?
     var machine: OpsMachine?
     var failures: [OpsFailure]
+    /// False when the report carried no failure list at all (null or missing): "nothing is failing" must not be said then.
+    var failuresRead: Bool
     var schedules: OpsSchedules?
     var harnesses: [OpsHarness]
     var policySync: OpsPolicySync?
@@ -403,12 +405,13 @@ struct OperationsReport: Decodable, Equatable, Sendable, ConsoleSectionData {
     }
 
     init(headline: ConsoleHeadline? = nil, leave: OpsLeave? = nil, machine: OpsMachine? = nil, failures: [OpsFailure] = [],
-         schedules: OpsSchedules? = nil, harnesses: [OpsHarness] = [], policySync: OpsPolicySync? = nil,
+         failuresRead: Bool = true, schedules: OpsSchedules? = nil, harnesses: [OpsHarness] = [], policySync: OpsPolicySync? = nil,
          security: OpsSecurity? = nil) {
         self.headline = headline
         self.leave = leave
         self.machine = machine
         self.failures = failures
+        self.failuresRead = failuresRead
         self.schedules = schedules
         self.harnesses = harnesses
         self.policySync = policySync
@@ -420,8 +423,9 @@ struct OperationsReport: Decodable, Equatable, Sendable, ConsoleSectionData {
         headline = c.optional(.headline)
         leave = c.optional(.leave)
         machine = c.optional(.machine)
-        let failureRows: [LossyBox<OpsFailure>] = c.lenient(.failures, [])
-        failures = failureRows.compactMap(\.value)
+        let failureRows: [LossyBox<OpsFailure>]? = c.optional(.failures)
+        failures = (failureRows ?? []).compactMap(\.value)
+        failuresRead = failureRows != nil
         schedules = c.optional(.schedules)
         let harnessRows: [LossyBox<OpsHarness>] = c.lenient(.harnesses, [])
         harnesses = harnessRows.compactMap(\.value)
