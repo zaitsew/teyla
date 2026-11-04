@@ -376,3 +376,8 @@ def test_the_startup_commands_start_no_refresh(monkeypatch):
     monkeypatch.setattr(state, "backlog_enabled", lambda: True)
     startup._view(NOW)
     assert called == []
+
+
+def test_outside_accounts_alone_prove_a_product_is_built():
+    b = block(install=False, usage={"external_users": "5"})
+    assert status(b, "built") == "met"
