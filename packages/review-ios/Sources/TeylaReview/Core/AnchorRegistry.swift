@@ -57,6 +57,19 @@ final class AnchorRegistry: @unchecked Sendable {
         return current
     }
 
+    /// The screen a set of anchors from one window belongs to: the most common one, first seen on a
+    /// tie. The Mac uses it because the registry's current screen is one value for every window.
+    static func screen(of anchors: [Anchor], otherwise fallback: String?) -> String? {
+        var counts: [String: Int] = [:]
+        var best: String?
+        for anchor in anchors {
+            guard let screen = anchor.screen else { continue }
+            counts[screen, default: 0] += 1
+            if counts[screen, default: 0] > (best.flatMap { counts[$0] } ?? 0) { best = screen }
+        }
+        return best ?? fallback
+    }
+
     func setScreen(_ id: String?) {
         lock.lock(); defer { lock.unlock() }
         current = id

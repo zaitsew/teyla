@@ -3,6 +3,39 @@ import XCTest
 @testable import TeylaReview
 
 final class MacReviewTests: XCTestCase {
+    // MARK: the frozen masks against the live window
+
+    func testMasksInTheSamePlaceAreUnchanged() {
+        let a = CGRect(x: 10, y: 20, width: 50, height: 30), b = CGRect(x: 10, y: 80, width: 50, height: 30)
+        XCTAssertTrue(ReviewRedaction.masksUnchanged(frozen: [a, b], live: [b, a.offsetBy(dx: 0.5, dy: 0.5)]))
+        XCTAssertTrue(ReviewRedaction.masksUnchanged(frozen: [], live: []))
+    }
+
+    func testAScrolledMaskIsAChange() {
+        let a = CGRect(x: 10, y: 20, width: 50, height: 30)
+        XCTAssertFalse(ReviewRedaction.masksUnchanged(frozen: [a], live: [a.offsetBy(dx: 0, dy: 40)]))
+    }
+
+    func testAMaskThatAppearedOrLeftIsAChange() {
+        let a = CGRect(x: 10, y: 20, width: 50, height: 30)
+        XCTAssertFalse(ReviewRedaction.masksUnchanged(frozen: [], live: [a]))
+        XCTAssertFalse(ReviewRedaction.masksUnchanged(frozen: [a], live: []))
+    }
+
+    // MARK: which screen a window is on
+
+    func testTheWindowsOwnAnchorsNameItsScreen() {
+        let r = CGRect(x: 0, y: 0, width: 10, height: 10)
+        let anchors = [Fixtures.anchor("a", r, screen: "first"), Fixtures.anchor("b", r, screen: "second"), Fixtures.anchor("c", r, screen: "second")]
+        XCTAssertEqual(AnchorRegistry.screen(of: anchors, otherwise: "other.window"), "second")
+    }
+
+    func testAWindowWithNoAnchorsFallsBack() {
+        XCTAssertEqual(AnchorRegistry.screen(of: [], otherwise: "registry"), "registry")
+        let unnamed = Fixtures.anchor("a", CGRect(x: 0, y: 0, width: 10, height: 10), screen: nil)
+        XCTAssertEqual(AnchorRegistry.screen(of: [unnamed], otherwise: "registry"), "registry")
+    }
+
     // MARK: AppKit counts from the bottom
 
     func testAFrameFromTheBottomLeftBecomesATopLeftFrame() {

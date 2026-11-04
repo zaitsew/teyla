@@ -38,7 +38,8 @@ enum ReviewPresenter {
         let strings = config.strings()
         let session = ReviewSession(
             device: MacProbe.deviceClass(), app: AppProbe.current(), environment: environment,
-            currentScreen: AnchorRegistry.shared.currentScreen, anchors: anchors, privateFrames: privateFrames,
+            currentScreen: AnchorRegistry.screen(of: anchors, otherwise: AnchorRegistry.shared.currentScreen),
+            anchors: anchors, privateFrames: privateFrames,
             png: shot.png, pixelWidth: shot.pixelWidth, pixelHeight: shot.pixelHeight, scale: shot.scale,
             microphone: MicrophoneInfo(hostAudioInUse: hostAudio, category: nil))
         let speech = SpeechCapture()
@@ -63,6 +64,11 @@ enum ReviewPresenter {
             image: ReviewPlatform.image(png: shot.png, size: size), size: size, anchors: anchors,
             probe: { [weak window] point in
                 guard let window else { return (nil, nil) }
+                // The picture is frozen but the app's window is not. If a private view moved, the
+                // frozen rectangles no longer cover it, so the window lends nothing to the capture.
+                guard ReviewRedaction.masksUnchanged(frozen: privateFrames, live: MacProbe.livePrivateFrames(of: window, scale: shot.scale)) else {
+                    return (nil, nil)
+                }
                 return MacProbe.accessibility(at: point, in: window, avoiding: privateFrames)
             },
             speechEnabled: false, microphone: guardian, speech: speech, strings: strings, pictureNote: note,

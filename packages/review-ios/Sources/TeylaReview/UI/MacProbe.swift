@@ -89,6 +89,16 @@ enum MacProbe {
                        privateFrames: masks, blankAreas: blank, windowBlank: windowBlank)
     }
 
+    /// The rectangles `.reviewPrivate()` views would be painted with if the picture were taken now.
+    static func livePrivateFrames(of window: NSWindow, scale: Double) -> [CGRect] {
+        guard let content = window.contentView else { return [] }
+        let previous = MacCapture.window
+        MacCapture.window = window
+        defer { MacCapture.window = previous }
+        return ReviewMasking.rects(for: PrivateRegistry.shared.snapshot(),
+                                   in: CGRect(origin: .zero, size: content.bounds.size), scale: CGFloat(scale))
+    }
+
     // MARK: what is under a click
 
     /// The identifier and label under a point (window points from the top left of the content). The

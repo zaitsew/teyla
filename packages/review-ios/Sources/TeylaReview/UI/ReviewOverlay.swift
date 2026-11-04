@@ -346,6 +346,7 @@ struct ReviewOverlay: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(sending)
+                .reviewCancelShortcut()
                 .accessibilityIdentifier("teyla.review.back")
                 Spacer()
                 if sending {

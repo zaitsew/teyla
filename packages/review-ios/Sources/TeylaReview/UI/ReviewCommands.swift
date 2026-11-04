@@ -13,6 +13,8 @@ final class ReviewAvailability: ObservableObject {
     private var observer: NSObjectProtocol?
 
     private init() {
+        // The menu item may be the first thing to ask, in an app that never calls configure.
+        if TeylaReview.isEnabled { MacStoreEnvironment.refreshOnce() }
         observer = NotificationCenter.default.addObserver(forName: .teylaReviewChannelChanged, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
         }
