@@ -57,6 +57,18 @@ struct PlaybookGuideline: Decodable, Equatable, Sendable, Identifiable {
     }
 }
 
+/// The guidelines as one value, so the part can fail on its own (`{"error": ...}`) and one bad row costs only itself.
+struct PlaybookGuidelineList: Decodable, Equatable, Sendable {
+    var rows: [PlaybookGuideline]
+
+    init(rows: [PlaybookGuideline] = []) { self.rows = rows }
+
+    init(from decoder: Decoder) throws {
+        let boxes = try [LossyBox<PlaybookGuideline>](from: decoder)
+        rows = boxes.compactMap(\.value)
+    }
+}
+
 struct PlaybookLadderRow: Decodable, Equatable, Sendable, Identifiable {
     var provider: String
     var label: String
@@ -516,26 +528,33 @@ struct PlaybookChore: Decodable, Equatable, Sendable, Identifiable {
 }
 
 struct PlaybookRuleHit: Decodable, Equatable, Sendable, Identifiable {
+    var repo: String?
     var rule: String
-    var since: Date?
-    var after: Int?
+    var written: Date?
+    var repeats: Int?
+    var last: Date?
 
-    var id: String { rule }
+    var id: String { "\(repo ?? "")|\(rule)" }
 
-    enum CodingKeys: String, CodingKey { case rule, since, after }
+    enum CodingKeys: String, CodingKey { case repo, rule, written, repeats, last }
 
-    init(rule: String, since: Date? = nil, after: Int? = nil) {
+    init(repo: String? = nil, rule: String, written: Date? = nil, repeats: Int? = nil, last: Date? = nil) {
+        self.repo = repo
         self.rule = rule
-        self.since = since
-        self.after = after
+        self.written = written
+        self.repeats = repeats
+        self.last = last
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         rule = try c.decode(String.self, forKey: .rule)
-        let day: String? = c.optional(.since)
-        since = day.flatMap(MoneyLogic.day)
-        after = c.optional(.after)
+        repo = c.optional(.repo)
+        let day: String? = c.optional(.written)
+        written = day.flatMap(MoneyLogic.day)
+        repeats = c.optional(.repeats)
+        let end: String? = c.optional(.last)
+        last = end.flatMap(MoneyLogic.day)
     }
 }
 
@@ -620,17 +639,19 @@ struct PlaybookYou: Decodable, Equatable, Sendable {
 
 struct PlaybookReport: Decodable, Equatable, Sendable, ConsoleSectionData {
     var headline: ConsoleHeadline?
-    var guidelines: [PlaybookGuideline]
+    var guidelineList: ConsoleLoad<PlaybookGuidelineList>
     var models: ConsoleLoad<PlaybookModels>
     var knowledge: ConsoleLoad<PlaybookKnowledge>
     var you: ConsoleLoad<PlaybookYou>
 
+    var guidelines: [PlaybookGuideline] { guidelineList.value?.rows ?? [] }
+
     enum CodingKeys: String, CodingKey { case headline, guidelines, models, knowledge, you }
 
-    init(headline: ConsoleHeadline? = nil, guidelines: [PlaybookGuideline] = [], models: ConsoleLoad<PlaybookModels> = .missing,
+    init(headline: ConsoleHeadline? = nil, guidelineList: ConsoleLoad<PlaybookGuidelineList> = .missing, models: ConsoleLoad<PlaybookModels> = .missing,
          knowledge: ConsoleLoad<PlaybookKnowledge> = .missing, you: ConsoleLoad<PlaybookYou> = .missing) {
         self.headline = headline
-        self.guidelines = guidelines
+        self.guidelineList = guidelineList
         self.models = models
         self.knowledge = knowledge
         self.you = you
@@ -639,8 +660,7 @@ struct PlaybookReport: Decodable, Equatable, Sendable, ConsoleSectionData {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         headline = c.optional(.headline)
-        let rows: [LossyBox<PlaybookGuideline>] = c.lenient(.guidelines, [])
-        guidelines = rows.compactMap(\.value)
+        guidelineList = c.load(.guidelines)
         models = c.load(.models)
         knowledge = c.load(.knowledge)
         you = c.load(.you)
@@ -801,8 +821,10 @@ enum PlaybookLogic {
     /// The headline of the Contradictions part: a count, or a dash when the report could not check.
     static func contradictionRow(_ hit: PlaybookRuleHit) -> String {
         var parts: [String] = []
-        if let after = hit.after { parts.append("\(after) corrections since") }
-        if let since = day(hit.since) { parts.append("rule dated \(since)") }
+        if let repeats = hit.repeats { parts.append("\(repeats) correction\(repeats == 1 ? "" : "s") since") }
+        if let written = day(hit.written) { parts.append("rule written \(written)") }
+        if let last = day(hit.last) { parts.append("last \(last)") }
+        if let repo = hit.repo, !repo.isEmpty { parts.append(repo) }
         return parts.joined(separator: " · ")
     }
 }

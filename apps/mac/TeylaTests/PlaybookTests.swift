@@ -103,6 +103,20 @@ final class PlaybookParsingTests: XCTestCase {
         XCTAssertEqual(report.you.value?.reason, "not installed in this build")
     }
 
+    func testTheGuidelinesCanFailOnTheirOwn() throws {
+        let failed = try playbook(#"{"guidelines": {"error": "no repo root"}}"#)
+        XCTAssertEqual(failed.guidelineList, .failed("no repo root"))
+        XCTAssertTrue(failed.guidelines.isEmpty)
+        XCTAssertEqual(try playbook(#"{"guidelines": []}"#).guidelineList, .data(PlaybookGuidelineList()), "an empty list is not an error")
+    }
+
+    func testTwoReposCanHoldTheSameRule() throws {
+        let rules = try XCTUnwrap(try playbook("""
+        {"you": {"contradictions": {"rules": [{"repo": "a", "rule": "r"}, {"repo": "b", "rule": "r"}]}}}
+        """).you.value?.contradictions?.rules)
+        XCTAssertEqual(Set(rules.map(\.id)).count, 2)
+    }
+
     func testASectionErrorStaysItsOwn() throws {
         let all = try ConsoleReport.decode(Data(#"{"version": 1, "playbook": {"error": "no repo root"}}"#.utf8))
         XCTAssertEqual(all.playbook, .failed("no repo root"))
@@ -187,7 +201,7 @@ final class PlaybookLogicTests: XCTestCase {
         let order = PlaybookLogic.choresInOrder(you.delegation)
         XCTAssertEqual(order[0].status, "open", "an open chore is first")
         XCTAssertEqual(PlaybookLogic.choreDetail(order[0]), "asked 16 times · last 1 Nov · sample-app, sample-web")
-        XCTAssertEqual(PlaybookLogic.contradictionRow(try XCTUnwrap(you.contradictions?.rules.first)), "3 corrections since · rule dated 1 Oct")
+        XCTAssertEqual(PlaybookLogic.contradictionRow(try XCTUnwrap(you.contradictions?.rules.first)), "3 corrections since · rule written 1 Oct · last 28 Oct · sample-app")
     }
 
     func testTheSameQuoteIsNotShownTwice() {

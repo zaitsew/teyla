@@ -23,7 +23,7 @@ private struct PlaybookBody: View {
         VStack(alignment: .leading, spacing: Space.xl) {
             figures
             ContradictionsSection(you: report.you)
-            GuidelinesSection(rows: report.guidelines)
+            GuidelinesSection(list: report.guidelineList)
             ModelsSection(models: report.models)
             KnowledgeSection(knowledge: report.knowledge)
             YouSection(you: report.you)
@@ -36,7 +36,7 @@ private struct PlaybookBody: View {
         return StatStrip {
             HeadlineTile(headline: report.headline, tone: (report.headline?.number ?? 0) > 0 ? .needsYou : .neutral)
             StatTile(label: "Guidelines", value: report.guidelines.isEmpty ? nil : "\(report.guidelines.count)",
-                     detail: report.guidelines.isEmpty ? "The report lists none." : (missing == 0 ? "All files found." : "\(missing) file\(missing == 1 ? " is" : "s are") missing."),
+                     detail: report.guidelineList.error ?? (report.guidelines.isEmpty ? "The report lists none." : (missing == 0 ? "All files found." : "\(missing) file\(missing == 1 ? " is" : "s are") missing.")),
                      tone: missing > 0 ? .needsYou : .neutral)
             StatTile(label: "Models to look at", value: PlaybookLogic.modelsToLook(report.models.value).map { "\($0)" },
                      detail: report.models.error ?? "New in the catalogue, plus where the ladder differs.")
@@ -90,12 +90,15 @@ private struct ContradictionsSection: View {
 // MARK: Guidelines
 
 private struct GuidelinesSection: View {
-    let rows: [PlaybookGuideline]
+    let list: ConsoleLoad<PlaybookGuidelineList>
+    private var rows: [PlaybookGuideline] { list.value?.rows ?? [] }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.m) {
             SectionHeader(title: "Guidelines", note: "Pick one to open its file.", count: rows.count)
-            if rows.isEmpty {
+            if let why = list.error {
+                PartError(title: "Guidelines", reason: why)
+            } else if rows.isEmpty {
                 EmptyState(symbol: "questionmark.circle", title: "The report lists no guideline.")
             } else {
                 RowGroup {

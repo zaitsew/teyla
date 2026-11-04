@@ -1653,14 +1653,18 @@
     "corrections": 86,
     "rules": [
      {
+      "repo": "sample-app",
       "rule": "Ask about product decisions, not about permission",
-      "since": "2026-10-01",
-      "after": 3
+      "written": "2026-10-01",
+      "repeats": 3,
+      "last": "2026-10-28"
      },
      {
+      "repo": "sample-tool",
       "rule": "Reports are short",
-      "since": "2026-10-20",
-      "after": 2
+      "written": "2026-10-20",
+      "repeats": 2,
+      "last": "2026-11-02"
      }
     ],
     "detail": "2 rules have two or more corrections after them"
