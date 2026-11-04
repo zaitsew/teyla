@@ -165,6 +165,12 @@ final class AppModel {
         return seconds + max(0, date.timeIntervalSince(fetchedAt))
     }
 
+    /// The first fresh decision, in rank order; else the oldest one still open.
+    var topDecision: Ask? {
+        let owner = ownerAsks
+        return AskFold.partition(owner) { age(of: $0) }.fresh.first ?? owner.first
+    }
+
     var briefLine: String {
         if let line = snapshot?.brief?.line, !line.isEmpty { return line }
         let n = ownerAsks.count

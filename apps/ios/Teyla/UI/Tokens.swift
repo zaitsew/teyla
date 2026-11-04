@@ -27,6 +27,11 @@ enum Space {
     static let readingCard: CGFloat = 640
     /// The least height of anything a person presses.
     static let touchMin: CGFloat = 44
+    /// A segment of a switch: on a phone, still a full touch target.
+    static let controlMin: CGFloat = 44
+    /// A figure column on a products row, and the commits bars beside them.
+    static let tableFigure: CGFloat = 56
+    static let tableSpark: CGFloat = 56
     /// Product icons on Home: hero card, "Being built" row, "Quiet" row.
     static let iconHero: CGFloat = 48
     static let iconCard: CGFloat = 34

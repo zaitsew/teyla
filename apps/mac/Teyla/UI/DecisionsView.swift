@@ -30,14 +30,7 @@ struct DecisionsView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: Space.xs) {
-            Text("Decisions").font(Typo.pageTitle)
-            if model.snapshot != nil {
-                Text(Decisions.summary(count: model.ownerAsks.count))
-                    .font(Typo.body)
-                    .foregroundStyle(Palette.textSecondary)
-            }
-        }
+        PageHeader(title: "Decisions", context: model.snapshot == nil ? "" : Decisions.summary(count: model.ownerAsks.count))
     }
 
     @ViewBuilder private var questions: some View {
@@ -47,7 +40,7 @@ struct DecisionsView: View {
             if Decisions.hasTriage(model.visibleAsks) {
                 ForEach(Decisions.grouped(asks.fresh)) { group in
                     VStack(alignment: .leading, spacing: Space.m) {
-                        SectionLabel(group.heading)
+                        SectionHeader(title: group.kind.title, count: group.asks.count)
                         ForEach(group.asks) { ask in
                             AskCard(ask: ask)
                                 .transition(.opacity.combined(with: .scale(scale: 0.97)))
@@ -56,7 +49,7 @@ struct DecisionsView: View {
                 }
             } else if !asks.fresh.isEmpty {
                 VStack(alignment: .leading, spacing: Space.m) {
-                    SectionLabel("Needs you — ordered by what it unblocks")
+                    SectionHeader(title: "Needs you — ordered by what it unblocks")
                     ForEach(asks.fresh) { ask in
                         AskCard(ask: ask)
                             .transition(.opacity.combined(with: .scale(scale: 0.97)))
@@ -156,7 +149,7 @@ private struct OnlyYou: View {
         let tasks = model.snapshot?.tasks ?? []
         if !tasks.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
-                SectionLabel("Only you")
+                SectionHeader(title: "Only you")
                 ForEach(tasks) { task in
                     TaskRow(task: task)
                 }

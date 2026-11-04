@@ -11,7 +11,7 @@ struct ToolsView: View {
             Page(maxWidth: Space.readingPage) {
                 header(tools)
                 if let notice = tools.notice { Notice(text: notice) { tools.dismissNotice() } }
-                if let why = tools.failure { ReadFailure(message: why) }
+                if let why = tools.failure { ErrorRow(section: "Tools", message: why) { tools.refresh() } }
                 if let report = tools.report {
                     let (act, info) = ToolsPage.sections(report)
                     if !act.isEmpty { section("Needs you", items: act) }
@@ -37,19 +37,11 @@ struct ToolsView: View {
     }
 
     private func header(_ tools: ToolsModel) -> some View {
-        VStack(alignment: .leading, spacing: Space.xs) {
-            Text("Tools").font(Typo.pageTitle)
-            Text(ToolsPage.headline(report: tools.report, phase: tools.phase))
-                .font(Typo.body)
-                .foregroundStyle(tools.failure == nil ? Palette.textSecondary : Palette.danger)
-            HStack(spacing: Space.s) {
-                TimelineView(.periodic(from: .now, by: 30)) { context in
-                    let age = ToolsPage.ageLine(readAt: tools.readAt, now: context.date)
-                    if !age.isEmpty { Text(age).font(Typo.caption).foregroundStyle(Palette.textSecondary) }
-                }
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            let age = ToolsPage.ageLine(readAt: tools.readAt, now: context.date)
+            let headline = ToolsPage.headline(report: tools.report, phase: tools.phase)
+            PageHeader(title: "Tools", context: age.isEmpty ? headline : "\(headline) · \(age)") {
                 Button("Check again") { tools.refresh() }
-                    .buttonStyle(.borderless)
-                    .font(Typo.caption)
                     .disabled(tools.isLoading)
             }
         }
@@ -57,7 +49,7 @@ struct ToolsView: View {
 
     private func section(_ title: String, items: [AttentionItem]) -> some View {
         VStack(alignment: .leading, spacing: Space.m) {
-            SectionLabel(title)
+            SectionHeader(title: title, count: items.count)
             ForEach(items) { item in
                 ToolCard(item: item)
             }
@@ -78,7 +70,7 @@ struct ToolsView: View {
 
     private var diagnosis: some View {
         VStack(alignment: .leading, spacing: Space.s) {
-            SectionLabel("First-run diagnosis")
+            SectionHeader(title: "First-run diagnosis")
             Text("Read 30 days of sessions and see which changes would save money. Nothing is changed until you say so.")
                 .font(Typo.body)
                 .foregroundStyle(Palette.textSecondary)
@@ -243,28 +235,6 @@ private struct Notice: View {
                 .textSelection(.enabled)
             Spacer(minLength: 0)
             Button("Dismiss", action: dismiss).buttonStyle(.borderless)
-        }
-        .card()
-    }
-}
-
-/// The read failed: the words, and the way to try again. The list below it, if any, is the last one that was read.
-private struct ReadFailure: View {
-    @Environment(AppModel.self) private var model
-    let message: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Space.s) {
-            Label("Tools could not be read", systemImage: "exclamationmark.triangle.fill")
-                .font(Typo.cardTitle)
-                .foregroundStyle(Palette.danger)
-            Text(message)
-                .font(Typo.body)
-                .foregroundStyle(Palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-            Button("Try again") { model.tools.refresh() }
-                .disabled(model.tools.isLoading)
         }
         .card()
     }

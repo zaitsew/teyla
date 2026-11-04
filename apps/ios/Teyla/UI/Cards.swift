@@ -16,43 +16,23 @@ struct QuestionCard: View {
 
     private var action: PendingAction? { model.action(for: .answer, target: ask.id) }
 
-    private var productLine: some View {
-        Text("\(Format.product(ask.product)) \u{00B7} \(Format.age(seconds: ageSeconds))")
-            .font(Typo.caption)
-            .foregroundStyle(Palette.textSecondary)
-    }
-
-    @ViewBuilder private var unblocksNote: some View {
-        if !ask.unblocks.isEmpty {
-            Text("unblocks \(ask.unblocks)")
-                .font(Typo.caption.weight(.medium))
-                .foregroundStyle(Palette.primary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+    private var meta: String {
+        let base = "\(Format.product(ask.product)) \u{00B7} \(Format.age(seconds: ageSeconds))"
+        return ask.unblocks.isEmpty ? base : "\(base) \u{00B7} Unblocks \(ask.unblocks)"
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.s) {
-            // One line when it fits; the "unblocks" note drops under the product at large text sizes.
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .firstTextBaseline) {
-                    productLine
-                    Spacer(minLength: Space.s)
-                    unblocksNote.multilineTextAlignment(.trailing)
-                }
-                VStack(alignment: .leading, spacing: Space.xxs) {
-                    productLine
-                    unblocksNote
-                }
-            }
+        // The order never changes: question, why, proposed default, action.
+        VStack(alignment: .leading, spacing: Space.m) {
+            Text(meta)
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textSecondary)
+                .lineLimit(2)
             Text(ask.question)
                 .font(Typo.cardTitle)
                 .fixedSize(horizontal: false, vertical: true)
             if !ask.context.isEmpty {
-                Text(ask.context)
-                    .font(Typo.body)
-                    .foregroundStyle(Palette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                ClampedText(text: ask.context, lines: 3)
             }
             if let action {
                 OutcomeView(action: action) { model.dismiss(action.id) }
@@ -67,20 +47,23 @@ struct QuestionCard: View {
     /// Teyla's proposed answer, and why. A payment shows it as information only.
     @ViewBuilder private var proposal: some View {
         if let proposed = ask.proposedAnswer {
-            VStack(alignment: .leading, spacing: Space.xxs) {
-                (Text("Proposed: ").foregroundStyle(Palette.textSecondary) + Text(proposed))
+            VStack(alignment: .leading, spacing: Space.xs) {
+                Text("Proposed default").font(Typo.caption.weight(.semibold)).foregroundStyle(Palette.primary)
+                Text(proposed)
                     .font(Typo.body)
                     .fixedSize(horizontal: false, vertical: true)
                 if let why = ask.triage?.why, !why.isEmpty {
-                    Text(why).font(Typo.caption).foregroundStyle(Palette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    ClampedText(text: why, lines: 2, font: Typo.caption)
                 }
             }
+            .padding(Space.m)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.background, in: RoundedRectangle(cornerRadius: Radius.control))
         }
     }
 
     private var answering: some View {
-        VStack(alignment: .leading, spacing: Space.s) {
+        VStack(alignment: .leading, spacing: Space.m) {
             proposal
             if let proposed = ask.proposedAnswer, ask.canUseProposedAnswer {
                 // One tap sends the proposed answer to its session, as on the Mac. Never for a payment.
@@ -101,7 +84,7 @@ struct QuestionCard: View {
                     ForEach(Array(ask.options.enumerated()), id: \.offset) { _, option in
                         Button(option) { draft = option }
                             .buttonStyle(.bordered)
-                            .tint(draft == option ? Palette.primary : Palette.textSecondary)
+                            .tint(draft == option ? Palette.primary : Palette.text)
                             .controlSize(.regular)
                     }
                 }

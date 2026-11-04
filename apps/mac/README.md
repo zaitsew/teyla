@@ -170,6 +170,7 @@ makes anything of its own.
 | `StatStrip` + `StatTile` | One figure each: a label, a number, one small line. `value: nil` shows a dash, and `detail` says why | `StatStrip { StatTile(label: "Disk free", value: "27 GB", detail: "OK", tone: .neutral) }`; `action:` makes it a button |
 | `Scorecard` | A thing with a score: identity, a row of numbers, a footer | `Scorecard(title:, badge:, summary:, numbers: [ScoreNumber(value:, label:)]) { icon } footer: { ... }` |
 | `RowGroup` + `RowCard` | A list: one surface, a line between rows, one line of title and one of detail | `RowGroup { RowCard(title:, detail:) { leading } trailing: { ... } }` |
+| `SegmentSwitch` | A few options, one chosen: Week / Month / Year, All / Needs attention | `SegmentSwitch(options: [(.week, "Week")], selection: $period)`; `fills: true` on a phone |
 | `SparklineView` | Small bars per week; the newest stands out | `SparklineView(heights:, label:)` |
 | `EmptyState` | A block with nothing in it: what is missing and the next step, at most two sentences | `EmptyState(title: "No bills listed.", detail: "Add them to subscriptions.toml.")` |
 | `ErrorRow` | A block that failed: says which and why, and the rest of the page keeps working | `ErrorRow(section: "Money", message: why) { retry }` |
@@ -178,6 +179,10 @@ makes anything of its own.
 
 Rules that keep it tidy: one number per tile; a figure with no source is `nil`, never 0; list-price figures say so in their label; every text has
 a `lineLimit` and a way to read the rest (`ClampedText`, a `.help` tooltip, or the page the row opens).
+
+**Home's header.** The default is the pulse strip and one Next line. To compare with a strict one-line sentence:
+`defaults write com.zaitsew.teyla.local teyla.home.header sentence`; `defaults delete` the key to go back. In a preview,
+`TEYLA_PREVIEW_HOME_HEADER=sentence`. `TeylaTests/Fixtures/state.sample.longtext.json` is the fixture for long text.
 
 **Samples.** `python3 Tools/make_fixtures.py` rebuilds `TeylaTests/Fixtures/*.json` from the real CLI, run on a made-up HOME
 (`--keep` prints its path). Run it again when the CLI's JSON changes.

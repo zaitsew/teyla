@@ -37,11 +37,7 @@ struct ProductPageView: View {
             if model.capabilities.notes { ProductNotesSection(productID: id, notes: data.notes) }
             ProductSessionsSection(sessions: data.sessions, reading: page.readingSessions)
             if let error = page.error {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(Typo.caption)
-                    .foregroundStyle(Palette.needsYou)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+                ErrorRow(section: "This product", message: error)
             }
         }
         .readingWidth()
@@ -49,7 +45,7 @@ struct ProductPageView: View {
             HStack(alignment: .top, spacing: Space.xxl) {
                 sections
                 ProductFiguresColumn(product: portfolio)
-                    .frame(minWidth: Space.sideColumn, maxWidth: Space.sideColumnMax, alignment: .leading)
+                    .frame(minWidth: Space.sideColumn, maxWidth: .infinity, alignment: .leading)
             }
         } else {
             sections
@@ -81,12 +77,9 @@ private struct ProductHeaderView: View {
         let page = model.productPage
         VStack(alignment: .leading, spacing: Space.m) {
             HStack(alignment: .firstTextBaseline, spacing: Space.m) {
-                Text(header.name)
-                    .font(Typo.pageTitle)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                if header.registered { focusStar }
-                Spacer(minLength: Space.s)
+                PageHeader(title: header.name) {
+                    if header.registered { focusStar }
+                }
             }
             HStack(spacing: Space.s) {
                 if header.registered {
@@ -188,11 +181,19 @@ private struct ProductHeaderView: View {
 
     @ViewBuilder
     private var spendLine: some View {
-        if let spend {
-            Text("\(Format.spent(spend.days7)) in 7 days · \(Format.spent(spend.days30)) in 30 days at API list price")
-                .foregroundStyle(Palette.textSecondary)
-                .monospacedDigit()
-        } else if reading {
+        if spend != nil || portfolio != nil {
+            StatStrip {
+                StatTile(label: "List price, 7 days", value: spend.map { Format.spent($0.days7) })
+                StatTile(label: "List price, 30 days", value: spend.map { Format.spent($0.days30) })
+                if let portfolio {
+                    StatTile(label: "Open PRs", value: "\(portfolio.prs.open)",
+                             detail: PortfolioText.prDetail(portfolio.prs))
+                    StatTile(label: "Waiting", value: "\(portfolio.waiting)", detail: PortfolioText.oldestWait(portfolio),
+                             tone: portfolio.waiting > 0 ? .needsYou : .neutral)
+                }
+            }
+        }
+        if reading && spend == nil {
             ReadingLine(text: "Reading the last 30 days of sessions…")
         }
     }
@@ -208,7 +209,7 @@ private struct ProductAsksSection: View {
         let open = asks.filter { !model.isHidden($0.id) }
         let split = AskFold.partition(open) { model.age(plus: $0.ageSeconds) }
         VStack(alignment: .leading, spacing: Space.m) {
-            SectionLabel(open.isEmpty ? "Needs you" : "Needs you · \(open.count)")
+            SectionHeader(title: "Needs you", count: open.isEmpty ? nil : open.count)
             if open.isEmpty {
                 Label("Nothing is waiting for an answer.", systemImage: "checkmark.circle")
                     .foregroundStyle(Palette.textSecondary)
@@ -303,11 +304,11 @@ private struct ProductNotesSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.s) {
-                SectionLabel(shown.isEmpty ? "Notes" : "Notes · \(shown.count)")
-                Spacer(minLength: Space.s)
-                Button("New note") { model.openQuickNote() }
-                    .controlSize(.small)
-                    .help("Keep an idea in a second")
+                SectionHeader(title: "Notes", count: shown.isEmpty ? nil : shown.count) {
+                    Button("New note") { model.openQuickNote() }
+                        .controlSize(.small)
+                        .help("Keep an idea in a second")
+                }
             }
             if shown.isEmpty {
                 Text("No open notes for this product.")
@@ -328,7 +329,7 @@ private struct ProductSessionsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SectionLabel("Recent sessions")
+            SectionHeader(title: "Recent sessions")
             if let sessions {
                 if sessions.isEmpty {
                     Text("No sessions in the last 30 days.")

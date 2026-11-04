@@ -122,10 +122,8 @@ enum PortfolioText {
     }
 
     /// "3 open · 14 merged 7d"; a zero count is kept for merged, left out for open. Unreviewed merges are added when there are some.
-    static func prs(_ prs: PRCounts) -> String {
-        var parts: [String] = []
-        if prs.open > 0 { parts.append("\(prs.open) open") }
-        parts.append("\(prs.merged7d) merged 7d")
+    static func prDetail(_ prs: PRCounts) -> String {
+        var parts = ["\(prs.merged7d) merged in 7 days"]
         if prs.unreviewed7d > 0 { parts.append("\(prs.unreviewed7d) unreviewed") }
         return parts.joined(separator: " · ")
     }
@@ -143,10 +141,8 @@ enum PortfolioText {
     }
 
     /// "2 waiting · oldest 9 d" or "Nothing waiting".
-    static func waiting(_ product: PortfolioProduct) -> String {
-        guard product.waiting > 0 else { return "Nothing waiting" }
-        let base = "\(product.waiting) waiting"
-        return product.oldestWaitDays >= 1 ? "\(base) · oldest \(Int(product.oldestWaitDays)) d" : base
+    static func oldestWait(_ product: PortfolioProduct) -> String {
+        product.waiting > 0 && product.oldestWaitDays >= 1 ? "oldest \(Int(product.oldestWaitDays)) d" : ""
     }
 
     /// "Active 2 h ago" or "No sessions yet".
@@ -156,8 +152,12 @@ enum PortfolioText {
         return ago == "just now" ? "Active just now" : "Active \(ago)"
     }
 
-    /// "$210.50 in 7 days".
-    static func spend(_ activity: Activity) -> String {
-        "\(Format.spent(activity.spend7dUSD)) in 7 days"
+    /// A column of the All products table: "2 h", "just now", or a dash when no session ran.
+    static func lastActiveShort(_ activity: Activity, now: Date) -> String {
+        guard let date = ISODate.parse(activity.last) else { return Format.dash }
+        let ago = Format.ago(seconds: now.timeIntervalSince(date))
+        return ago.hasSuffix(" ago") ? String(ago.dropLast(4)) : ago
     }
+
+    /// "$210.50 in 7 days".
 }

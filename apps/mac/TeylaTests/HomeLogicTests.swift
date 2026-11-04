@@ -535,3 +535,151 @@ final class HomeFactsTests: XCTestCase {
         }
     }
 }
+
+final class HomePulseTests: XCTestCase {
+    private func ask(_ id: String = "a", product: String = "sample-app", question: String = "Renew the plan?",
+                     action: String? = nil) -> Ask {
+        var ask = Ask(id: id, product: product, question: question)
+        if let action { ask.triage = Triage(action: action) }
+        return ask
+    }
+
+    func testAMissingConsoleIsADashWithAReasonNeverAZero() {
+        let tiles = HomePulse.tiles(decisions: [], running: 0, spend: nil, console: nil)
+        XCTAssertEqual(tiles.map(\.kind), [.decisions, .running, .posts, .cash, .machine])
+        for tile in tiles where [.posts, .cash, .machine].contains(tile.kind) {
+            XCTAssertNil(tile.value, tile.label)
+            XCTAssertEqual(tile.detail, HomePulse.notRead, tile.label)
+        }
+    }
+
+    func testAFailingSourceSaysSoAndShowsNoNumber() {
+        let tile = HomePulse.postsTile(ConsoleSection(error: "cache unreadable"))
+        XCTAssertNil(tile.value)
+        XCTAssertEqual(tile.detail, "Could not read: cache unreadable")
+    }
+
+    func testPostsShowTheHeadlineAsSent() {
+        let headline = ConsoleHeadline(label: "Posts today", text: "4/6", detail: "target 6 a day over 6 channels")
+        let tile = HomePulse.postsTile(ConsoleSection(headline: headline))
+        XCTAssertEqual(tile.value, "4/6")
+        XCTAssertEqual(tile.detail, "target 6 a day over 6 channels")
+    }
+
+    func testCashLabelsTheWeekAsListPrice() {
+        let tile = HomePulse.cashTile(ConsoleSection(monthlyUSD: 450, listUSD7d: 1130), spend: nil)
+        XCTAssertEqual(tile.value, "$450")
+        XCTAssertEqual(tile.detail, "$1,130 list price this week")
+    }
+
+    func testCashWithNothingListedStaysADash() {
+        let headline = ConsoleHeadline(label: "Cash per month", detail: "no subscriptions listed")
+        let tile = HomePulse.cashTile(ConsoleSection(headline: headline), spend: nil)
+        XCTAssertNil(tile.value)
+        XCTAssertEqual(tile.detail, "no subscriptions listed")
+    }
+
+    func testTheMachineTileNamesTheVerdictAndTheFailures() {
+        let section = ConsoleSection(headline: ConsoleHeadline(number: 2),
+                                     machine: ConsoleMachine(verdict: "CRITICAL", diskFreeGB: 12.4))
+        let tile = HomePulse.machineTile(section)
+        XCTAssertEqual(tile.value, "12 GB")
+        XCTAssertEqual(tile.detail, "Machine critical, 2 failures")
+        XCTAssertEqual(tile.tone, .danger)
+    }
+
+    func testDecisionsTileCountsPayments() {
+        let tile = HomePulse.decisionsTile([ask("a", action: "pay"), ask("b")])
+        XCTAssertEqual(tile.value, "2")
+        XCTAssertEqual(tile.detail, "1 to pay")
+        XCTAssertEqual(tile.tone, .needsYou)
+    }
+
+    func testAHeadlineValueDecodesAsStringNumberOrNull() throws {
+        func decode(_ value: String) throws -> ConsoleHeadline {
+            try JSONDecoder().decode(ConsoleHeadline.self, from: Data(#"{"label":"L","value":\#(value),"detail":"D"}"#.utf8))
+        }
+        XCTAssertEqual(try decode(#""4/6""#).text, "4/6")
+        XCTAssertEqual(try decode("3").number, 3)
+        let empty = try decode("null")
+        XCTAssertNil(empty.text)
+        XCTAssertNil(empty.number)
+    }
+
+    func testAnUnknownConsoleShapeNeverBreaksTheSnapshot() throws {
+        let json = #"{"version":3,"generated":"","console":{"operations":{"error":"x"},"money":7,"growth":{"headline":"odd"}}}"#
+        let snapshot = try JSONDecoder().decode(Snapshot.self, from: Data(json.utf8))
+        XCTAssertEqual(snapshot.console?.operations?.error, "x")
+        XCTAssertNil(snapshot.console?.money)
+        XCTAssertNil(snapshot.console?.growth?.headline)
+    }
+
+    func testTheNextLineUsesAModelLineOnlyWithinTheLimit() {
+        let top = ask()
+        let short = Brief(line: "Renew the plan before the upload.", source: "model")
+        XCTAssertEqual(HomeNext.line(brief: short, top: top), HomeNextLine(text: short.line, askID: "a"))
+        let long = Brief(line: "one two three four five six seven eight nine ten eleven", source: "model")
+        XCTAssertEqual(HomeNext.line(brief: long, top: top).text, "Sample App: Renew the plan?")
+        let rules = Brief(line: "Renew now.", source: "rules")
+        XCTAssertEqual(HomeNext.line(brief: rules, top: top).text, "Sample App: Renew the plan?")
+    }
+
+    func testTheRuleLineHoldsAtMostTenWords() {
+        let top = ask(question: "one two three four five six seven eight nine ten eleven twelve")
+        let line = HomeNext.line(brief: nil, top: top).text
+        XCTAssertLessThanOrEqual(HomeNext.wordCount(line), HomeNext.maxWords)
+        XCTAssertTrue(line.hasSuffix("…"), line)
+    }
+
+    func testNothingWaitingHasNoTarget() {
+        let brief = Brief(line: "Renew it.", source: "model")
+        XCTAssertEqual(HomeNext.line(brief: brief, top: nil), HomeNextLine(text: HomeNext.nothing, askID: nil))
+    }
+
+    func testTheSentenceVariantStaysWithinItsLimit() {
+        let long = Brief(line: "one two three four five six seven eight nine ten eleven twelve thirteen", source: "model")
+        let text = HomeNext.sentence(brief: long, decisions: 3, top: ask())
+        XCTAssertEqual(text, "3 decisions wait. Top: Sample App.")
+        XCTAssertLessThanOrEqual(HomeNext.wordCount(text), HomeNext.sentenceMaxWords)
+    }
+
+    func testAnUnknownStoredStyleIsThePulse() {
+        XCTAssertEqual(HomeHeaderStyle.from(stored: "sentence"), .sentence)
+        XCTAssertEqual(HomeHeaderStyle.from(stored: "odd"), .pulse)
+    }
+}
+
+final class ProductLineTests: XCTestCase {
+    func testAReasonComesFirst() {
+        var product = PortfolioProduct(id: "p")
+        product.reasons = ["Store build is behind"]
+        product.next = "Ship the fix"
+        XCTAssertEqual(ProductLine.text(product), "Store build is behind")
+    }
+
+    func testAShortEnglishNextStepShows() {
+        var product = PortfolioProduct(id: "p")
+        product.next = "Ship the fix"
+        XCTAssertEqual(ProductLine.text(product), "Next: Ship the fix")
+    }
+
+    func testAnotherScriptShowsTheOpenCountInstead() {
+        var product = PortfolioProduct(id: "p")
+        product.next = "\u{0441}\u{0434}\u{0435}\u{043B}\u{0430}\u{0442}\u{044C} \u{0440}\u{0435}\u{043B}\u{0438}\u{0437}"
+        product.waiting = 2
+        product.prs.waiting = 1
+        XCTAssertEqual(ProductLine.text(product), "3 open items")
+    }
+
+    func testALongNextStepShowsTheMilestoneWhenNothingIsOpen() {
+        var product = PortfolioProduct(id: "p")
+        product.next = String(repeating: "word ", count: 20)
+        product.milestone = "Public beta"
+        XCTAssertEqual(ProductLine.text(product), "Public beta")
+    }
+
+    func testAMultilineNextStepNeverShows() {
+        XCTAssertNil(ProductLine.shortEnglish("Ship\nthe fix"))
+        XCTAssertEqual(ProductLine.shortEnglish(" Caf\u{00E9} launch "), "Caf\u{00E9} launch")
+    }
+}

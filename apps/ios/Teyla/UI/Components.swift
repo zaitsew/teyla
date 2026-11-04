@@ -35,19 +35,6 @@ struct FlowLayout: Layout {
     }
 }
 
-struct SectionLabel: View {
-    let text: String
-    init(_ text: String) { self.text = text }
-
-    var body: some View {
-        Text(text)
-            .font(Typo.body.weight(.semibold))
-            .foregroundStyle(Palette.textSecondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityAddTraits(.isHeader)
-    }
-}
-
 /// A collapsed group under a list: a chevron, a title and what it holds when opened.
 struct Fold<Content: View>: View {
     let title: String

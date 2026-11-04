@@ -9,55 +9,31 @@ struct AskCard: View {
     @State private var composing = false
     @State private var draft = ""
     @FocusState private var fieldFocused: Bool
+    @State private var width: CGFloat = 0
 
     private var status: CardStatus? { model.cards[ask.id] }
 
     static let closeLabel = "Close — no longer needed"
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.m) {
-            header
-            Text(ask.question)
-                .font(Typo.cardTitle)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-            if !ask.unblocks.isEmpty {
-                Text("Unblocks \(ask.unblocks)")
-                    .font(Typo.caption.weight(.medium))
-                    .foregroundStyle(Palette.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if !ask.context.isEmpty {
-                Text(ask.context)
-                    .font(Typo.body)
-                    .foregroundStyle(Palette.textSecondary)
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let proposed = ask.proposedAnswer {
-                proposal(proposed)
-            }
-            if let note = model.notes[ask.id] {
-                Label(note, systemImage: "doc.on.clipboard")
-                    .font(Typo.body)
-                    .foregroundStyle(Palette.textSecondary)
-            }
-            switch status {
-            case .sending(let text):
-                HStack(spacing: Space.s) {
-                    ProgressView().controlSize(.small)
-                    Text(text).foregroundStyle(Palette.textSecondary)
+        // The order never changes: question, why, proposed default, action. A wide card puts the last two beside
+        // the first two, so the lines stay at a reading length.
+        Group {
+            if width >= Space.askCardWide {
+                HStack(alignment: .top, spacing: Space.xl) {
+                    question.frame(maxWidth: .infinity, alignment: .leading)
+                    response.frame(width: Space.askCardSide, alignment: .leading)
                 }
-            case .done(let text):
-                Label(text, systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(Palette.saving)
-            case .failed(let message):
-                failure(message)
-            case nil:
-                actions
+            } else {
+                VStack(alignment: .leading, spacing: Space.m) {
+                    question
+                    response
+                }
             }
         }
-        .card(highlighted: model.focusedAskID == ask.id)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
+        .surface(highlighted: model.focusedAskID == ask.id)
         .id(ask.id)
         .contextMenu {
             if model.capabilities.closeQuestions {
@@ -75,6 +51,48 @@ struct AskCard: View {
         .accessibilityElement(children: .contain)
     }
 
+    private var question: some View {
+        VStack(alignment: .leading, spacing: Space.m) {
+            header
+            Text(ask.question)
+                .font(Typo.cardTitle)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            if !ask.context.isEmpty {
+                ClampedText(text: ask.context, lines: 3)
+            }
+        }
+    }
+
+    private var response: some View {
+        VStack(alignment: .leading, spacing: Space.m) {
+            if let proposed = ask.proposedAnswer {
+                proposal(proposed)
+            }
+            if let note = model.notes[ask.id] {
+                Label(note, systemImage: "doc.on.clipboard")
+                    .font(Typo.body)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(2)
+            }
+            switch status {
+            case .sending(let text):
+                HStack(spacing: Space.s) {
+                    ProgressView().controlSize(.small)
+                    Text(text).foregroundStyle(Palette.textSecondary).lineLimit(2)
+                }
+            case .done(let text):
+                Label(text, systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(Palette.saving)
+                    .lineLimit(2)
+            case .failed(let message):
+                failure(message)
+            case nil:
+                actions
+            }
+        }
+    }
+
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 0) {
@@ -87,7 +105,13 @@ struct AskCard: View {
                     Text(Format.product(ask.product))
                 }
                 Text(" · \(Format.age(seconds: model.age(of: ask)))")
+                if !ask.unblocks.isEmpty {
+                    Text(" · Unblocks \(ask.unblocks)")
+                        .truncationMode(.tail)
+                        .help("Unblocks \(ask.unblocks)")
+                }
             }
+            .lineLimit(1)
             .font(Typo.caption)
             .foregroundStyle(Palette.textSecondary)
             Spacer(minLength: Space.m)
@@ -104,18 +128,20 @@ struct AskCard: View {
 
     /// Teyla's proposed answer, and why. A payment shows it as information only.
     private func proposal(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: Space.xxs) {
-            (Text("Proposed: ").foregroundStyle(Palette.textSecondary) + Text(text))
+        VStack(alignment: .leading, spacing: Space.xs) {
+            Text("Proposed default").font(Typo.caption.weight(.semibold)).foregroundStyle(Palette.primary)
+            Text(text)
                 .font(Typo.body)
+                .foregroundStyle(Palette.text)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             if let why = ask.triage?.why, !why.isEmpty {
-                Text(why)
-                    .font(Typo.caption)
-                    .foregroundStyle(Palette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                ClampedText(text: why, lines: 2, font: Typo.caption)
             }
         }
+        .padding(Space.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.background, in: RoundedRectangle(cornerRadius: Radius.control))
     }
 
     private var actions: some View {

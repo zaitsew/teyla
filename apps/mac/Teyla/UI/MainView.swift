@@ -66,7 +66,11 @@ struct MainView: View {
             } detail: {
                 DetailView()
             }
+            // Every page carries its own title; the toolbar does not say it a second time.
+            .toolbar(removing: .title)
             .toolbar {
+                // Without a title the items would slide to the left edge of the toolbar.
+                ToolbarItem(placement: .automatic) { Spacer() }
                 ToolbarItem(placement: .primaryAction) { LiveIndicator() }
                 ToolbarItem(placement: .primaryAction) {
                     Button {

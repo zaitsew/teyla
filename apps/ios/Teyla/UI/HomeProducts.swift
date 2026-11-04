@@ -12,28 +12,8 @@ struct PeriodSwitch: View {
     @Binding var period: HomePeriod
 
     var body: some View {
-        HStack(spacing: Space.xxs) {
-            ForEach(HomePeriod.allCases) { option in
-                let selected = period == option
-                Button {
-                    period = option
-                } label: {
-                    Text(option.label)
-                        .font(Typo.body.weight(.semibold))
-                        .foregroundStyle(selected ? Palette.text : Palette.textSecondary)
-                        .frame(maxWidth: .infinity, minHeight: Space.touchMin)
-                        .background(selected ? Palette.selectedSegment : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: Radius.iconCard, style: .continuous))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selected ? .isSelected : [])
-            }
-        }
-        .padding(Space.xxs)
-        .background(Palette.track, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Period")
+        SegmentSwitch(options: HomePeriod.allCases.map { ($0, $0.label) }, selection: $period,
+                      spokenLabel: "Period", fills: true)
     }
 }
 
@@ -53,7 +33,7 @@ private struct MonogramTile: View {
 }
 
 /// The icon from the CLI, decoded once and kept, or the first letter of the name.
-private struct ProductIcon: View {
+struct ProductIcon: View {
     let product: PortfolioProduct
     let monogram: String
     let size: CGFloat

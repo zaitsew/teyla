@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Home starts with figures, not a paragraph.** Five tiles (Decisions, Running, Posts today, Cash per month, Disk free)
+  read `console` in the snapshot; a figure with no source shows a dash and the reason, never a zero. Under them one Next
+  line of at most 10 words names the top decision and opens it. A model's brief appears there only when it fits.
+- **All products is a table on the Mac.** Icon, sparkline, platform icons and figures in aligned columns; a raw next step
+  shows only when it is a short English line, otherwise the count of open items. The iPhone row follows the same rules.
+- **Decision cards keep one order on both apps:** question, why, proposed default, action. Long text stops at three lines
+  with More.
+
 - **The apps share one visual grammar.** `apps/mac/Teyla/UI/Grammar.swift`, compiled into the iPhone app too, holds `Page`,
   `PageHeader`, `SectionHeader`, `StatTile`, `Scorecard`, `RowCard`, `EmptyState`, `ErrorRow` and `ClampedText`.
   `apps/mac/README.md` says how to use them. The PNG hook now draws every page: `TEYLA_PREVIEW_SNAPSHOT_VIEW` takes

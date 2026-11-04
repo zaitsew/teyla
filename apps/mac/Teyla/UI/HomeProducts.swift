@@ -92,35 +92,17 @@ private struct HeroCard: View {
     let facts: HomeFacts
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.l) {
-            HStack(alignment: .top, spacing: Space.m) {
-                ProductIcon(product: product, monogram: facts.monogram, size: Space.iconHero, radius: Radius.iconHero)
-                VStack(alignment: .leading, spacing: Space.xxs) {
-                    HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-                        Text(facts.name).font(Typo.section).lineLimit(1)
-                        if !facts.stage.isEmpty {
-                            Text(facts.stage).font(Typo.caption).foregroundStyle(Palette.textSecondary).lineLimit(1)
-                        }
-                    }
-                    Text(facts.summary.isEmpty ? HomeFactsBuilder.noSummary : facts.summary)
-                        .font(Typo.body)
-                        .foregroundStyle(Palette.textSecondary)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            HStack(alignment: .top, spacing: Space.m) {
-                Figure(value: facts.active, label: "active users")
-                Figure(value: facts.new, label: "new users")
-                Figure(value: facts.total, label: "users in total")
-            }
-            Spacer(minLength: 0)
-            Divider()
+        Scorecard(title: facts.name, badge: facts.stage,
+                  summary: facts.summary.isEmpty ? HomeFactsBuilder.noSummary : facts.summary,
+                  numbers: [ScoreNumber(value: facts.active, label: "active users"),
+                            ScoreNumber(value: facts.new, label: "new users"),
+                            ScoreNumber(value: facts.total, label: "users in total")]) {
+            ProductIcon(product: product, monogram: facts.monogram, size: Space.iconHero, radius: Radius.iconHero)
+        } footer: {
             HStack(alignment: .bottom, spacing: Space.m) {
                 VStack(alignment: .leading, spacing: Space.xxs) {
-                    Text(facts.commits).font(Typo.cardTitle).monospacedDigit()
-                    Text(facts.spend).font(Typo.caption).foregroundStyle(Palette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(facts.commits).font(Typo.cardTitle).monospacedDigit().lineLimit(1)
+                    Text(facts.spend).font(Typo.caption).foregroundStyle(Palette.textSecondary).lineLimit(2)
                 }
                 Spacer(minLength: Space.s)
                 if let label = facts.sparkLabel {
@@ -130,25 +112,7 @@ private struct HeroCard: View {
             }
             MonetizationChip(text: facts.money)
         }
-        .surface(radius: Radius.panel)
         .opensProduct(id: product.id, name: facts.name, spoken: facts.spoken)
-    }
-}
-
-/// A big number and what it counts.
-private struct Figure: View {
-    let value: String
-    let label: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Space.xs) {
-            Text(value)
-                .font(Typo.number)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            Text(label).font(Typo.caption).foregroundStyle(Palette.textSecondary).lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

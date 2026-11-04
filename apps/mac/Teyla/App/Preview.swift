@@ -14,6 +14,7 @@ import SwiftUI
 ///     TEYLA_PREVIEW_DRAFT  text for the new-task sheet or the quick-note panel
 ///     TEYLA_PREVIEW_APPEARANCE  light | dark, for this app only
 ///     TEYLA_PREVIEW_SCROLL  end: scroll the main window to its bottom
+///     TEYLA_PREVIEW_HOME_HEADER  pulse | sentence: the header variant of Home
 ///     TEYLA_PREVIEW_SNAPSHOT  <path.png>: draw the whole Home page in one image (width TEYLA_PREVIEW_WIDTH, default
 ///                         1100 pt, in the appearance above), save it and quit. For screenshots without a screen to click
 ///     TEYLA_PREVIEW_SNAPSHOT_VIEW  home (default) | decisions | portfolio | product:<id> | tools | settings | window (the window
@@ -33,6 +34,9 @@ enum Preview {
         case "light": NSApp.appearance = NSAppearance(named: .aqua)
         case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
         default: break
+        }
+        if let style = env["TEYLA_PREVIEW_HOME_HEADER"] {
+            UserDefaults.standard.set(style, forKey: HomeHeaderStyle.storageKey)
         }
         if env["TEYLA_PREVIEW_SCROLL"] == "end" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {

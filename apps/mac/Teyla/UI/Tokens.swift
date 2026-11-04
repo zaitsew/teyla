@@ -26,8 +26,6 @@ enum Space {
     static let iconButton: CGFloat = 28
     /// The width of the side column on a product page.
     static let sideColumn: CGFloat = 340
-    /// How far the side column may grow when the window is wide: the extra room goes here, not to the cards.
-    static let sideColumnMax: CGFloat = 480
     /// A hero card on Home is at least this wide; the grid fits 1 to 3 in a row.
     static let heroCardMin: CGFloat = 320
     /// A "Being built" card is at least this wide.
@@ -57,8 +55,15 @@ enum Space {
     static let quietName: CGFloat = 160
     /// Ask cards, done cards, task rows and prose stop here (45 to 75 characters a line).
     static let readingCard: CGFloat = 720
-    /// The figures column on a Portfolio row.
-    static let portfolioFigures: CGFloat = 220
+    /// An ask card splits in two from this width; the right side holds the proposed default and the actions.
+    static let askCardWide: CGFloat = 860
+    static let askCardSide: CGFloat = 360
+    /// The columns of an All products row: a figure, the commits bars, the platform icons.
+    static let tableFigure: CGFloat = 64
+    static let tableSpark: CGFloat = 64
+    static let tablePlatforms: CGFloat = 84
+    /// Below this width the table drops the bars and the last-active column.
+    static let tableCompact: CGFloat = 720
     /// The width of the menu-bar popover.
     static let menuWidth: CGFloat = 320
     /// Width at which a product page shows two columns.
@@ -153,6 +158,8 @@ enum Glyph {
 enum Palette {
     static let background = Color(light: 0xF7F7F9, dark: 0x0E1015)
     static let surface = Color(light: 0xFFFFFF, dark: 0x171A21)
+    /// The chosen segment of a switch.
+    static let selectedSegment = surface
     static let border = Color(light: 0xDCDEE5, dark: 0x2B2F3A)
     static let text = Color(light: 0x14161D, dark: 0xECEDF2)
     static let textSecondary = Color(light: 0x585E6D, dark: 0xA2A7B5)
@@ -231,17 +238,5 @@ extension View {
     /// Stops a card or a line of prose at the reading width, left-aligned.
     func readingWidth() -> some View {
         frame(maxWidth: Space.readingCard, alignment: .leading)
-    }
-}
-
-struct SectionLabel: View {
-    let text: String
-    init(_ text: String) { self.text = text }
-
-    var body: some View {
-        Text(text)
-            .font(Typo.body.weight(.semibold))
-            .foregroundStyle(Palette.textSecondary)
-            .padding(.bottom, Space.xs)
     }
 }

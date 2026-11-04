@@ -74,13 +74,13 @@ private struct Questions: View {
         if lists.hasTriage {
             ForEach(Decisions.grouped(lists.fresh)) { group in
                 VStack(alignment: .leading, spacing: Space.m) {
-                    SectionLabel(group.heading)
+                    SectionHeader(title: group.kind.title, count: group.asks.count)
                     ForEach(group.asks) { card($0) }
                 }
             }
         } else if !lists.fresh.isEmpty {
             VStack(alignment: .leading, spacing: Space.m) {
-                SectionLabel("Needs you \u{2014} ordered by what it unblocks")
+                SectionHeader(title: "Needs you \u{2014} ordered by what it unblocks")
                 ForEach(lists.fresh) { card($0) }
             }
         }
@@ -273,7 +273,7 @@ private struct OnlyYou: View {
     var body: some View {
         if !snapshot.tasks.isEmpty {
             VStack(alignment: .leading, spacing: Space.m) {
-                SectionLabel("Only you")
+                SectionHeader(title: "Only you")
                 ForEach(snapshot.tasks) { task in
                     TaskRow(task: task, ageSeconds: PhoneFormat.age(task.ageSeconds, snapshot: snapshot, now: now))
                 }
