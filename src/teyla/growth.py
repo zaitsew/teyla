@@ -452,7 +452,8 @@ def attempt_rows(store: Store, reg: dict | None = None) -> dict[str, dict]:
 
 def products_not_tried(store: Store) -> list[str]:
     """The ids of the registered products with no sale attempt at all: the ones that get the next marketing slot."""
-    return sorted(pid for pid, r in attempt_rows(store).items() if not r["tried"])
+    # Strict: an unreadable registry raises, so the compact part says "unknown" (null), never "none".
+    return sorted(pid for pid, r in attempt_rows(store, registry.load(strict=True)).items() if not r["tried"])
 
 
 def attempt_total(r: dict) -> int:

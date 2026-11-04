@@ -757,6 +757,15 @@ def test_compact_carries_the_gaps_and_the_products_nobody_tried_to_sell_and_stay
     assert growth.compact(growth.section(NOW))["not_tried"] is None
 
 
+def test_not_tried_is_unknown_when_the_registry_does_not_parse(env, monkeypatch):
+    store, cfg, _ = drafted(env, monkeypatch)
+    registry.path().write_text("[product.alpha\nstage = ", encoding="utf-8")
+    registry._cache.clear()
+    with pytest.raises(registry.RegistryError):
+        growth.products_not_tried(store)
+    assert growth.compact(growth.section(NOW))["not_tried"] is None
+
+
 def test_console_growth_section_loads_through_the_cli(env, capsys):
     make()
     assert cli.main(["console", "growth", "--json", "--refresh"]) == 0
