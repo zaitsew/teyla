@@ -252,7 +252,7 @@ def test_evergreen_ideas_need_a_public_product_with_a_summary(env):
 
 def test_a_spec_is_about_someone_elses_product_and_never_ours(env):
     store, cfg = make(public=("alpha",))
-    cfg["spec_targets"] = [{"product": "Big Translator", "idea": "live, on a terrace"}, {"idea": "no product named"}]
+    cfg["spec_targets"] = [{"product": "Big Translator", "idea": "live, on a terrace"}, {"idea": "no product named"}, {"product": "ALPHA"}]
     growth.harvest(store, cfg, NOW, allow_net=False, skip=("prs", "releases", "sessions", "ledger", "trends", "evergreen"))
     specs = [i for i in store.items().values() if i["format"] == "spec-product"]
     assert [i["idea"] for i in specs] == ["What if Big Translator was truly AI-native?"]

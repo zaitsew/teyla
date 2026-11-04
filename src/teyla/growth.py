@@ -693,10 +693,11 @@ def src_evergreen(c: Ctx) -> tuple[int, str]:
 def src_specs(c: Ctx) -> tuple[int, str]:
     """Spec products: someone else's product reimagined, from `spec_targets` in the config. Never one of ours."""
     targets = c.cfg.get("spec_targets") or []
+    ours = {k.lower() for k in c.reg["product"]} | {str(p.get("name") or "").lower() for p in c.reg["product"].values()}
     made = 0
     for t in targets:
         name = " ".join(str(t.get("product") or "").split()) if isinstance(t, dict) else ""
-        if not name:
+        if not name or name.lower() in ours:
             continue
         angle = " ".join(str(t.get("idea") or "").split())
         facts = [f"{name} is another company's product; the prototype is unofficial and not affiliated with it"]
