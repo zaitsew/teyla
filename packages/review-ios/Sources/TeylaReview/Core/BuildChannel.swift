@@ -11,6 +11,9 @@ public enum BuildChannel: String, Codable, Sendable {
     case local          // a development or ad hoc install: no receipt
     case appStore
 
+    /// Whether the form may open in this install. Only an App Store install refuses it.
+    var permitsReview: Bool { self != .appStore }
+
     static func detect(isDebug: Bool, receiptName: String?, receiptExists: Bool) -> BuildChannel {
         if isDebug { return .debug }
         if receiptName == "sandboxReceipt" { return .testflight }
@@ -65,8 +68,11 @@ enum MacStoreEnvironment {
     }
 
     static func set(_ environment: BuildChannel.StoreEnvironment?) {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
         value = environment
+        lock.unlock()
+        // The menu item and the Settings row show themselves once the answer is known.
+        DispatchQueue.main.async { NotificationCenter.default.post(name: .teylaReviewChannelChanged, object: nil) }
     }
 
     /// Starts the asynchronous refresh the first time it is called. A failure leaves the cache empty.
@@ -139,3 +145,10 @@ enum AppProbe {
         return cleaned.isEmpty ? "device" : cleaned
     }
 }
+
+#if os(macOS)
+extension Notification.Name {
+    /// Posted on the main queue when StoreKit's answer for this install arrives.
+    static let teylaReviewChannelChanged = Notification.Name("TeylaReviewChannelChanged")
+}
+#endif
