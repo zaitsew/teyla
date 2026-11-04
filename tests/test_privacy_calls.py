@@ -63,7 +63,7 @@ ALLOWED = {
     "copy_lane.py": {29, 30, 31},
     "mcp_probe.py": {33},
     "shield.py": {34},
-    "growth.py": {37, 38, 39},
+    "growth.py": {37, 38, 39, 40, 41},
 }
 
 
