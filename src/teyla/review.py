@@ -78,10 +78,29 @@ CREATE TABLE IF NOT EXISTS captures (
   decision      TEXT,
   pr            TEXT NOT NULL DEFAULT '',
   lease_owner   TEXT,
-  lease_expires REAL
+  lease_expires REAL,
+  closed_at     TEXT,
+  opened_at     TEXT
 );
 CREATE INDEX IF NOT EXISTS captures_by_product ON captures (product, created_at);
 """
+
+# Set here, not at each UPDATE: a capture's status changes in several places, and the retention clock must not miss one.
+CLOSED_TRIGGERS = """
+CREATE TRIGGER IF NOT EXISTS captures_closed AFTER UPDATE OF status ON captures
+WHEN NEW.status IN ('done', 'rejected') AND OLD.status NOT IN ('done', 'rejected')
+BEGIN UPDATE captures SET closed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS captures_reopened AFTER UPDATE OF status ON captures
+WHEN NEW.status NOT IN ('done', 'rejected') AND OLD.status IN ('done', 'rejected')
+BEGIN UPDATE captures SET closed_at = NULL WHERE id = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS captures_opened AFTER UPDATE OF status ON captures
+WHEN NEW.status = 'open' AND OLD.status != 'open'
+BEGIN UPDATE captures SET opened_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = NEW.id AND opened_at IS NULL; END;
+"""
+
+# What the first-send notice promises a tester about a capture from the shared channel.
+CLOSED_DAYS = 30
+UNOPENED_DAYS = 90
 
 
 # --- the queue ------------------------------------------------------------------------------------
@@ -111,7 +130,25 @@ def connect(path: pathlib.Path | None = None) -> sqlite3.Connection:
             pass
     conn.execute("PRAGMA busy_timeout = 15000")
     conn.executescript(SCHEMA)
+    if {"closed_at", "opened_at"} - _columns(conn):
+        conn.execute("BEGIN IMMEDIATE")           # with the backfill: a pass that dies between them must not leave
+        try:                                      # a column that says "never opened" about what was opened
+            have = _columns(conn)
+            if "closed_at" not in have:
+                conn.execute("ALTER TABLE captures ADD COLUMN closed_at TEXT")
+            if "opened_at" not in have:
+                conn.execute("ALTER TABLE captures ADD COLUMN opened_at TEXT")
+                conn.execute("UPDATE captures SET opened_at = imported_at")   # unknown, so it counts as opened: it stays
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+    conn.executescript(CLOSED_TRIGGERS)
     return conn
+
+
+def _columns(conn: sqlite3.Connection) -> set[str]:
+    return {r["name"] for r in conn.execute("PRAGMA table_info(captures)")}
 
 
 def _now() -> float:
@@ -120,6 +157,91 @@ def _now() -> float:
 
 def _iso(epoch: float) -> str:
     return _dt.datetime.fromtimestamp(epoch, _dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _folder_inside(root: pathlib.Path, trash: pathlib.Path, recorded: str) -> pathlib.Path | None:
+    """Where a row's `dir` points, or None when that is outside the inbox or in the retention trash."""
+    folder = pathlib.Path(recorded)
+    resolved = (folder if folder.is_absolute() else root / folder).resolve()
+    return None if root not in resolved.parents or trash in resolved.parents else resolved
+
+
+def _finish_retention(conn: sqlite3.Connection, root: pathlib.Path, trash: pathlib.Path, rep: dict) -> None:
+    """Empty the trash. A row still there means a pass died before its commit: nothing was deleted, and a lane may
+    hold that capture, so its folder goes back. A folder without a row is what a commit already deleted."""
+    if not trash.is_dir():
+        return
+    for leftover in sorted(trash.iterdir()):
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            r = conn.execute("SELECT dir FROM captures WHERE id = ?", (leftover.name,)).fetchone()
+            if r is not None:
+                home = _folder_inside(root, trash, r["dir"])
+                if home is None or home.exists():
+                    raise OSError(f"no place to restore {leftover.name}")
+                os.rename(leftover, home)
+            conn.execute("COMMIT")
+        except OSError:
+            conn.execute("ROLLBACK")
+            if leftover.name not in rep["kept"]:       # the pass empties the trash twice
+                rep["kept"].append(leftover.name)
+            continue
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        if r is None:
+            shutil.rmtree(leftover, ignore_errors=True)
+
+
+def prune_channel(conn: sqlite3.Connection, now: float | None = None) -> dict:
+    """Delete channel captures past their retention: 30 days after closing, 90 after import if never opened.
+    `imported_at` is this Mac's clock; `created_at` is the sender's. A capture someone opened is work, so it stays
+    until it is closed. {deleted, kept: [ids whose folder could not be removed]}. Other sources are the owner's own."""
+    now = _now() if now is None else now
+    due = ("source = 'channel' AND (lease_expires IS NULL OR lease_expires <= ?) AND ("
+           "(status IN ('done', 'rejected') AND closed_at < ?) OR "
+           "(status IN ('new', 'triaged') AND opened_at IS NULL AND imported_at < ?))")
+    args = (now, _iso(now - CLOSED_DAYS * 86400), _iso(now - UNOPENED_DAYS * 86400))
+    # A capture closed before this clock existed starts it today.
+    conn.execute("UPDATE captures SET closed_at = ? WHERE source = 'channel' AND status IN ('done', 'rejected') "
+                 "AND closed_at IS NULL", (_iso(now),))
+    rep: dict = {"deleted": 0, "kept": []}
+    root = captures_root().resolve()
+    trash = root / ".retention"
+    _finish_retention(conn, root, trash, rep)
+    for cid in [r["id"] for r in conn.execute(f"SELECT id FROM captures WHERE {due}", args).fetchall()]:
+        # The check, the rename and the delete hold the write lock together, so a lane that takes the capture is
+        # either refused or kept: there is no moment when it holds a capture whose folder is going away.
+        conn.execute("BEGIN IMMEDIATE")
+        moved: tuple[pathlib.Path, pathlib.Path] | None = None
+        try:
+            r = conn.execute(f"SELECT dir FROM captures WHERE id = ? AND {due}", (cid, *args)).fetchone()
+            if r is None:
+                conn.execute("ROLLBACK")
+                continue
+            resolved = _folder_inside(root, trash, r["dir"])
+            if resolved is None:
+                conn.execute("ROLLBACK")
+                rep["kept"].append(cid)
+                continue
+            if resolved.exists():
+                trash.mkdir(mode=0o700, exist_ok=True)
+                os.rename(resolved, trash / cid)
+                moved = (trash / cid, resolved)
+            conn.execute("DELETE FROM captures WHERE id = ?", (cid,))
+            conn.execute("COMMIT")
+        except OSError:
+            conn.execute("ROLLBACK")
+            rep["kept"].append(cid)
+            continue
+        except BaseException:
+            conn.execute("ROLLBACK")
+            if moved:
+                os.rename(*moved)
+            raise
+        rep["deleted"] += 1
+    _finish_retention(conn, root, trash, rep)
+    return rep
 
 
 def resolve_id(conn: sqlite3.Connection, prefix: str) -> str:
