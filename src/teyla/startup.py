@@ -254,7 +254,7 @@ def rungs(now: float, f: dict, ladder: tuple, snaps: list[dict]) -> tuple[list[d
         out["built"] = ("met", "Installable")
     elif f["registry_stage"] in ("beta", "live"):
         out["built"] = ("met", f"Stage {f['registry_stage']}")
-    elif (u["total"] or 0) >= 1:
+    elif (u["total"] or 0) >= 1 or (u["ext_users"] or 0) >= 1:
         out["built"] = ("met", "People have accounts")
     elif f["install_known"]:
         out["built"] = ("missing", "Not installable yet")
