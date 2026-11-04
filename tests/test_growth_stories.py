@@ -95,6 +95,8 @@ def test_the_payload_has_the_material_the_facts_and_the_instruction_to_distrust_
     (cand(claim="97 hand-rolled reviews took 23% of the weekly limit my colleague set."), "excluded:person"),
     (cand(claim="97 hand-rolled reviews took 23% of my weekly limit and an App Store rejection."), "excluded:store-review"),
     (cand(claim=f"97 hand-rolled reviews took 23% of my weekly limit for {TERM}."), "leak:private-term"),
+    (cand(claim="97 hand-rolled reviews sent 460M input tokens each."), "number-not-in-excerpt"),      # 460k in the source
+    (cand(numbers=97), "malformed"),
     ("not a dict", "malformed"),
     (dict(claim="", source_excerpt=LINE), "malformed"),
 ])
@@ -217,6 +219,23 @@ def test_a_policy_pointed_at_a_secret_file_is_a_note_not_material(env, tmp_path,
     store, cfg = make(public=("alpha",), extra=f'stories_policy = "{secret}"\nstories_changelog = "{tmp_path / "none.md"}"')
     mats, notes = gs.gather(ctx(store, cfg), growth.Guard(cfg, registry.load()))
     assert not mats and any("secret file" in n for n in notes)
+
+
+def test_a_symlink_into_a_credentials_folder_is_not_read(tmp_path):
+    vault = tmp_path / "credentials"
+    vault.mkdir()
+    (vault / "notes.md").write_text("a note about the keys, long enough to read as text")
+    link = tmp_path / "POLICY.md"
+    link.symlink_to(vault / "notes.md")
+    assert "secret" in gs.readable(link)
+
+
+def test_the_load_material_carries_its_date_so_a_story_from_it_can_pass(env, monkeypatch):
+    from teyla import load
+    store, cfg = make(public=("alpha",))
+    monkeypatch.setattr(load, "read_tail_records", lambda since: [dict(level="OK", swap_used_bytes="3221225472")] * 5)
+    mat = gs.mat_load(NOW, growth.Guard(cfg, registry.load()))
+    assert mat and mat.date == DAY and DAY in mat.text
 
 
 def test_lines_that_leak_or_name_off_limits_things_never_leave_the_machine(lab, monkeypatch):

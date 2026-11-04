@@ -84,7 +84,7 @@ _EXCLUDE_RE = {k: re.compile(v, re.I) for k, v in _EXCLUDE.items()}
 _SAID = re.compile(r"\b(?i:told|asked|thanks to|according to|pinged|emailed|messaged|met with|call with|meeting with)\s+([A-Z][a-z]{2,})\b")
 _NOT_PEOPLE = {"Claude", "Codex", "Sonnet", "Opus", "Haiku", "Fable", "Apple", "Anthropic", "OpenAI", "GitHub", "Grok", "Gemini", "Xcode",
                "Teyla", "Google", "Chrome", "Mac", "Python", "Swift", "Codex"}
-_NUMBER = re.compile(r"\d+(?:,\d{3})*(?:\.\d+)?")
+_NUMBER = re.compile(r"\d+(?:,\d{3})*(?:\.\d+)?(?:[kKmMbB]\b)?")      # a magnitude suffix is part of the number: 460k is not 460M
 
 
 @dataclasses.dataclass
@@ -136,7 +136,8 @@ def readable(path: pathlib.Path) -> str:
         real = path.resolve()
     except OSError:
         return "the path cannot be resolved"
-    if any(SECRET_NAME.search(n) for n in names) or SECRET_NAME.search(real.name):
+    resolved = [real.name, *(p.name for p in real.parents)][:4]            # a symlink into a credentials folder
+    if any(SECRET_NAME.search(n) for n in [*names, *resolved]):
         return "the path looks like a secret file, so it was not read"
     if not real.is_file():
         return "no such file"
@@ -212,10 +213,10 @@ def mat_load(now: float, guard: g.Guard) -> Material | None:
     for r in rows:
         levels[r.get("level")] = levels.get(r.get("level"), 0) + 1
     swap = [float(r["swap_used_bytes"]) for r in rows if str(r.get("swap_used_bytes") or "").replace(".", "", 1).isdigit()]
-    lines = [f"load recorder, last 14 days: {len(rows)} snapshots; " + ", ".join(f"{k} {v}" for k, v in sorted(levels.items()) if k)]
+    lines = [f"load recorder, last 14 days, through {g.day_of(now)}: {len(rows)} snapshots; " + ", ".join(f"{k} {v}" for k, v in sorted(levels.items()) if k)]
     if swap:
         lines.append(f"peak swap used {max(swap) / 1024 ** 3:.1f} GB")
-    return _material("load", "the machine guard's load recorder", "\n".join(lines), guard, CAPS["load"])
+    return _material("load", "the machine guard's load recorder", "\n".join(lines), guard, CAPS["load"], g.day_of(now))
 
 
 def mat_money(now: float, guard: g.Guard) -> Material | None:
@@ -391,7 +392,10 @@ def ground(cand, mats: list[Material], now: float, slugs: set[str], commands: di
     if not claim_nums:
         return None, "no-number"
     have = set(numbers_in(excerpt))
-    listed = [str(n).replace(",", "") for n in cand.get("numbers") or [] if str(n).strip()]
+    raw_numbers = cand.get("numbers") or []
+    if not isinstance(raw_numbers, (list, tuple)):
+        return None, "malformed"
+    listed = [str(n).replace(",", "") for n in raw_numbers if str(n).strip()]
     listed = [n for x in listed for n in numbers_in(x)]
     if any(n not in have for n in claim_nums) or any(n not in have for n in listed):
         return None, "number-not-in-excerpt"
