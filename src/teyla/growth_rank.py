@@ -40,6 +40,8 @@ def has_number(item: dict) -> bool:
 
 
 def has_artifact(item: dict) -> bool:
+    if item.get("artifact_missing"):                 # the story miner found none: the excerpt's own backticks do not count
+        return False
     if any(str(s.get("url") or "").startswith("http") for s in item.get("sources") or [] if isinstance(s, dict) and s.get("kind") != "evergreen"):
         return True
     return bool(_ARTIFACT.search(" ".join([item.get("idea", ""), *(item.get("facts") or [])])))

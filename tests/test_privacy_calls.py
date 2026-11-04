@@ -31,7 +31,7 @@ PATTERNS = {
 ALLOWED = {
     "update.py": {1, 2},
     "models.py": {3},
-    "models_arena.py": {37},
+    "models_arena.py": {42},
     "plugin_install.py": {4},
     "backlog.py": {5},
     "reviews.py": {6},
@@ -45,7 +45,7 @@ ALLOWED = {
     "play.py": {13},
     "state.py": {14},
     "intent_cover.py": {15},
-    "you.py": {38},
+    "you.py": {43},
     "voice.py": {16},
     "health.py": {17},
     "control/harness.py": {18},
@@ -65,7 +65,7 @@ ALLOWED = {
     "copy_lane.py": {29, 30, 31},
     "mcp_probe.py": {33},
     "shield.py": {34},
-    "growth.py": {37, 38, 39, 40, 41},
+    "growth.py": {37, 38, 39, 40, 41, 44},
 }
 
 

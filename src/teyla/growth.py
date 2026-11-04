@@ -73,13 +73,14 @@ DUB_LABEL = {
 DEFAULTS = dict(posts_per_day=1, approval="batch", fanout=3, draft_budget=30, voice_chart="", bi_data="",
                 public_products=[], outreach_repos=[], x_scan=False, model_short="claude-haiku-5-5", model_script="claude-sonnet-5-5",
                 model_editor="claude-sonnet-5-5", model_rewrite="claude-sonnet-5-5",
-                grok_model="grok-4.7", footage_folder="", whisper_model="")
+                grok_model="grok-4.7", footage_folder="", whisper_model="", stories_policy="", stories_changelog="")
 TREND_KEEP = 20                      # of 30: customer relevance x2 + demonstrability x2 + novelty + momentum
 GROK_TURNS = 6
 GROK_TIMEOUT_S = 300
 CLAUDE_TIMEOUT_S = 180
 GH_TIMEOUT_S = 60
 SESSION_DAYS = 1
+MAX_TURNS: int | None = None         # set for one call by `growth_stories.two_turns()`; None leaves the CLI's default
 
 
 class GrowthError(Exception):
@@ -269,7 +270,7 @@ def load_config(store: Store) -> dict:
     for k in ("posts_per_day", "fanout", "draft_budget"):
         if isinstance(raw.get(k), int) and not isinstance(raw.get(k), bool) and raw[k] >= 0:
             cfg[k] = raw[k]
-    for k in ("approval", "voice_chart", "bi_data", "grok_model", "footage_folder", "whisper_model"):
+    for k in ("approval", "voice_chart", "bi_data", "grok_model", "footage_folder", "whisper_model", "stories_policy", "stories_changelog"):
         if isinstance(raw.get(k), str):
             cfg[k] = raw[k]
     if isinstance(raw.get("x_scan"), bool):
@@ -937,6 +938,11 @@ def run_trends(store: Store, cfg: dict, now: float, *, x: bool = False, guard: G
 _REAL_RUN_GROK = run_grok
 
 
+def src_stories(c: Ctx) -> tuple[int, str]:
+    from . import growth_stories
+    return growth_stories.src_stories(c)
+
+
 def src_trends(c: Ctx) -> tuple[int, str]:
     res = run_trends(c.store, c.cfg, c.now, x=False, guard=c.guard, reg=c.reg, model=c.allow_net)
     note = "; ".join(n for _s, _k, n in res["rows"] if n)
@@ -946,7 +952,8 @@ def src_trends(c: Ctx) -> tuple[int, str]:
 
 
 SOURCES = (("prs", src_prs), ("releases", src_releases), ("sessions", src_sessions), ("ledger", src_ledger),
-           ("corrections", src_corrections), ("notes", src_notes), ("evergreen", src_evergreen), ("specs", src_specs), ("trends", src_trends))
+           ("corrections", src_corrections), ("notes", src_notes), ("stories", src_stories), ("evergreen", src_evergreen), ("specs", src_specs),
+           ("trends", src_trends))
 
 
 def harvest(store: Store, cfg: dict, now: float, *, days: int = 3, allow_net: bool = True, skip: tuple[str, ...] = (),
@@ -1172,6 +1179,8 @@ def call_model(model: str, system: str, payload: dict, timeout: int = CLAUDE_TIM
     cmd = state.brief_command()
     cmd[cmd.index("--model") + 1] = model
     cmd[cmd.index("--system-prompt") + 1] = system
+    if MAX_TURNS:
+        cmd += ["--max-turns", str(MAX_TURNS)]
     code, out = state._run_claude(cmd, json.dumps(payload, ensure_ascii=False), timeout=timeout)
     if code != 0:
         raise AgentError(f"claude exited {code}: is `claude` on PATH and signed in?")
