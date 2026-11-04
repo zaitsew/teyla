@@ -106,10 +106,12 @@ struct AppInfo: Codable, Equatable {
     var version: String
     var build: String
     var commit: String?
+    /// The product's slug. The shared channel requires it to equal the key's product (else 403).
+    var product: String?
     var configuration: BuildChannel
 
     enum CodingKeys: String, CodingKey {
-        case bundleId = "bundle_id", name, version, build, commit, configuration
+        case bundleId = "bundle_id", name, version, build, commit, product, configuration
     }
 }
 

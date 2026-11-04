@@ -17,12 +17,18 @@ enum DeviceProbe {
         return top
     }
 
-    /// The frozen picture: the key window as it is, at its own scale.
+    /// The frozen picture: the key window as it is, at its own scale, with every `.reviewPrivate()`
+    /// view painted black. The overlay shows this same picture and it is the one that is saved and sent.
     static func screenshot(of window: UIWindow) -> (png: Data, pixelWidth: Int, pixelHeight: Int, scale: Double)? {
         let format = UIGraphicsImageRendererFormat.preferred()
         format.opaque = true
         let renderer = UIGraphicsImageRenderer(bounds: window.bounds, format: format)
-        let image = renderer.image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: false) }
+        let masks = ReviewMasking.rects(for: PrivateRegistry.shared.snapshot(), in: window.bounds, scale: format.scale)
+        let image = renderer.image { context in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+            UIColor.black.setFill()
+            for mask in masks { context.fill(mask) }
+        }
         guard let png = image.pngData() else { return nil }
         let scale = Double(format.scale)
         return (png, Int((window.bounds.width * format.scale).rounded()), Int((window.bounds.height * format.scale).rounded()), scale)

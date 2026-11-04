@@ -15,8 +15,9 @@ struct LocalStatus: Codable, Equatable {
     var updated: String
     var relayCopied: String?     // when the folder was copied to the relay outbox
     var delivered: String?       // when the product's own channel accepted the capture
+    var refused: String?         // when the shared channel refused it for good: the channel is not tried again
 
-    enum CodingKeys: String, CodingKey { case v, id, status, updated, relayCopied = "relay_copied", delivered }
+    enum CodingKeys: String, CodingKey { case v, id, status, updated, relayCopied = "relay_copied", delivered, refused }
 }
 
 /// What the Mac writes to `review-status/<id>.json`. Signed with the relay key.
@@ -180,6 +181,16 @@ struct CaptureStore {
         defer { Self.statusLock.unlock() }
         var status = readLocalStatus(id: id) ?? LocalStatus(v: 1, id: id, status: .savedOnPhone, updated: CaptureCoding.iso(now()))
         status.delivered = CaptureCoding.iso(now())
+        try? writeStatus(status, in: folder(for: id))
+    }
+
+    /// The shared channel answered 401, 403, 413, 422 or 400 for this capture: asking again gets the
+    /// same answer. The relay route is unaffected.
+    func markRefused(id: String) {
+        Self.statusLock.lock()
+        defer { Self.statusLock.unlock() }
+        var status = readLocalStatus(id: id) ?? LocalStatus(v: 1, id: id, status: .savedOnPhone, updated: CaptureCoding.iso(now()))
+        status.refused = CaptureCoding.iso(now())
         try? writeStatus(status, in: folder(for: id))
     }
 

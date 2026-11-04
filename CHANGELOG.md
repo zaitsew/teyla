@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The iOS review package sends to the shared channel by itself, and asks the tester first.** With `TeylaReviewChannelURL` and
+  `TeylaReviewChannelKey` in the Info.plist (and no `deliver` closure), `TeylaReview` PUTs the picture and then the JSON, counts a
+  capture as sent only after both answer 200, retries 429, 503 and network errors, and never retries a 400, 401, 403, 413 or 422.
+  `app.product` comes from `$0.product` or `TeylaReviewProduct`. New: a first-send notice (what, who, why, how long; once per
+  install), `.reviewPrivate()` to paint a view black in every capture, and `requiresHealthConsent` for a checkbox before Send.
+  By default nothing leaves the device unless the plist keys or a `deliver` are set. `teyla review store-check` now also fails
+  a store build whose Info.plist holds `TeylaReviewChannelURL`. See docs/REVIEW.md, "The shared channel" and "Privacy".
 - **A shared review channel.** `packages/review-channel/` is a write-only service (Python standard library, one container) that
   takes feedback captures from every product and platform; `teyla review pull --channel` moves them over SSH into the inbox
   within the hour and deletes the server copy. `teyla review channel key add|revoke|path` manages one key per product and

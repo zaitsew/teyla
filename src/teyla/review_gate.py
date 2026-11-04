@@ -5,7 +5,7 @@ A store build is a separate archive of the same commit, built with the review sw
 It reads files and prints one line per check. It never prints a key's value and makes no network call.
 
     .xcarchive, .app, .ipa   Info.plist: TeylaReviewEnabled absent or falsy (the package's own `parseEnabled`),
-                             TeylaReviewChannelKey absent or empty; the main executable and the embedded
+                             TeylaReviewChannelKey and TeylaReviewChannelURL absent or empty; the main executable and the embedded
                              frameworks do not contain the Swift marker
     .aab, .apk               no dex file contains the bytes of the overlay class name
     a directory              no file contains the web marker
@@ -32,6 +32,7 @@ MARKER_ANDROID = b"teyla/review/ReviewOverlay"
 
 KEY_ENABLED = "TeylaReviewEnabled"
 KEY_CHANNEL = "TeylaReviewChannelKey"
+KEY_CHANNEL_URL = "TeylaReviewChannelURL"
 
 _CHUNK = 1 << 20
 
@@ -83,15 +84,19 @@ def file_contains(path: pathlib.Path, marker: bytes) -> bool:
         raise GateError(f"cannot read {path}: {e}") from e
 
 
+def _has_value(value) -> bool:
+    return value is not None and not (isinstance(value, (str, bytes)) and not value.strip())
+
+
 def _plist_checks(info: dict) -> list[Check]:
     enabled = info.get(KEY_ENABLED)
-    key = info.get(KEY_CHANNEL)
     # Names only: the value of a key is never printed.
     out = [Check(f"{KEY_ENABLED} is off", not parse_enabled(enabled),
                  "" if not parse_enabled(enabled) else f"{KEY_ENABLED} turns review mode on")]
-    has_key = key is not None and not (isinstance(key, (str, bytes)) and not key.strip())
-    out.append(Check(f"{KEY_CHANNEL} is absent or empty", not has_key,
-                     "" if not has_key else f"{KEY_CHANNEL} holds a value (not shown)"))
+    for name in (KEY_CHANNEL, KEY_CHANNEL_URL):
+        held = _has_value(info.get(name))
+        out.append(Check(f"{name} is absent or empty", not held,
+                         "" if not held else f"{name} holds a value (not shown)"))
     return out
 
 

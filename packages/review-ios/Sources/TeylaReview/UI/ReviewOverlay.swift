@@ -15,6 +15,12 @@ struct ReviewOverlay: View {
     let microphone: MicrophoneGuard
     let speech: SpeechCapture
     let strings: ReviewStrings
+    /// True while the first-send notice has not been accepted on this install and the capture can
+    /// leave the device. Asked at each Send.
+    let noticeNeeded: () -> Bool
+    let acceptNotice: () -> Void
+    /// The product asked for an explicit health-data checkbox before Send.
+    let requiresHealthConsent: Bool
     let onClose: () -> Void
     /// Saves the draft and reports the outcome. While it runs the overlay accepts no edits. A
     /// failed save leaves the overlay editable with the text kept.
@@ -38,6 +44,8 @@ struct ReviewOverlay: View {
     @State private var speechTask: Task<Void, Never>?
     @State private var sending = false
     @State private var failure: String?
+    @State private var showNotice = false
+    @State private var healthConsentGiven = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -56,6 +64,15 @@ struct ReviewOverlay: View {
         .background(Color(uiColor: .secondarySystemBackground).ignoresSafeArea())
         .onAppear { withAnimation(.spring(duration: 0.35)) { entered = true } }
         .onDisappear { stopListening() }
+        .alert(strings.noticeTitle, isPresented: $showNotice) {
+            Button(strings.noticeOK) {
+                acceptNotice()
+                performSend()
+            }
+            Button(strings.noticeCancel, role: .cancel) {}
+        } message: {
+            Text(strings.noticeMessage)
+        }
     }
 
     // MARK: the banner
@@ -267,6 +284,26 @@ struct ReviewOverlay: View {
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("teyla.review.delivery-note")
             }
+            Text(strings.previewCaption)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("teyla.review.preview-caption")
+            if requiresHealthConsent {
+                Button {
+                    healthConsentGiven.toggle()
+                } label: {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: healthConsentGiven ? "checkmark.square.fill" : "square")
+                        Text(strings.healthConsent)
+                            .font(.footnote)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(sending)
+                .accessibilityAddTraits(healthConsentGiven ? .isSelected : [])
+                .accessibilityIdentifier("teyla.review.health-consent")
+            }
             if let failure {
                 Text(failure)
                     .font(.footnote)
@@ -289,7 +326,8 @@ struct ReviewOverlay: View {
                 }
                 Button(sending ? strings.saving : (failure == nil ? strings.send : strings.retry)) { send() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(sending || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!ReviewNotice.canSend(comment: text, sending: sending, requiresHealthConsent: requiresHealthConsent,
+                                                    healthConsentGiven: healthConsentGiven))
                     .accessibilityIdentifier("teyla.review.send")
             }
         }
@@ -361,8 +399,18 @@ struct ReviewOverlay: View {
         listening = false
     }
 
+    /// Send: the first-send notice comes first when the capture can leave the device and the tester
+    /// has not accepted it yet. Cancel in the notice sends and saves nothing.
     private func send() {
         stopListening()
+        guard ReviewNotice.canSend(comment: text, sending: sending, requiresHealthConsent: requiresHealthConsent,
+                                   healthConsentGiven: healthConsentGiven) else { return }
+        focused = false
+        if noticeNeeded() { showNotice = true; return }
+        performSend()
+    }
+
+    private func performSend() {
         let comment = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !comment.isEmpty, !sending else { return }
         sending = true

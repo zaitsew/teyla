@@ -36,7 +36,7 @@ enum ReviewDelivery {
         store: CaptureStore = CaptureStore(root: CaptureStore.defaultRoot()),
         keyStore: RelayKeyStoring = TeylaReview.keyStore,
         relayFolder: RelayFolder = TeylaReview.relayFolder,
-        deliver: ReviewDeliver? = TeylaReview.configuration.deliver
+        deliver: ReviewDeliver? = TeylaReview.effectiveDeliver
     ) async -> ReviewSaveOutcome {
         let key = keyStore.load()
         do {
@@ -71,7 +71,7 @@ enum ReviewDelivery {
         store: CaptureStore = CaptureStore(root: CaptureStore.defaultRoot()),
         keyStore: RelayKeyStoring = TeylaReview.keyStore,
         relayFolder: RelayFolder = TeylaReview.relayFolder,
-        deliver: ReviewDeliver? = TeylaReview.configuration.deliver
+        deliver: ReviewDeliver? = TeylaReview.effectiveDeliver
     ) async {
         guard beginRetry() else { return }
         defer { endRetry() }
@@ -92,7 +92,9 @@ enum ReviewDelivery {
         if let key, relayFolder.withAccess({ (try? store.copyToRelay(id: id, relayRoot: $0, key: key)) != nil }) == true {
             return true
         }
-        guard let deliver, let upload = store.upload(id: id), await deliver(upload) else { return false }
+        // A capture the shared channel refused for good is not offered to it again; the relay above still is.
+        guard let deliver, store.readLocalStatus(id: id)?.refused == nil,
+              let upload = store.upload(id: id), await deliver(upload) else { return false }
         store.markDelivered(id: id)
         return true
     }

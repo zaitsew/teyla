@@ -71,6 +71,9 @@ enum ReviewPresenter {
                 return DeviceProbe.accessibility(at: point, in: window, excluding: handle?.controller?.view)
             },
             speechEnabled: config.speech, microphone: guardian, speech: speech, strings: config.strings(),
+            noticeNeeded: { ReviewNotice.isNeeded(sendsToServer: TeylaReview.sendsToServer) },
+            acceptNotice: { ReviewNotice.accept() },
+            requiresHealthConsent: config.requiresHealthConsent,
             onClose: finish,
             onSend: { draft, report in
                 let screen = HitTester.screen(current: currentScreen, hit: draft.hit, anchors: anchors)
