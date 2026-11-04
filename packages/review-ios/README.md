@@ -5,7 +5,8 @@ send the capture to the Mac through the iCloud relay. Full guide, capture format
 [docs/REVIEW.md](../../docs/REVIEW.md).
 
 Review mode is off until the app's Info.plist sets `TeylaReviewEnabled` to `YES` (from a build setting
-defined only in Debug and TestFlight); an App Store configuration defines nothing and stays inert.
+defined only in Debug and TestFlight); an App Store configuration defines nothing and stays inert. A store build is a separate archive built with
+`TEYLA_REVIEW=0`, checked with `teyla review store-check` before upload.
 
 ```
 swift test --package-path packages/review-ios     # on the Mac, no simulator

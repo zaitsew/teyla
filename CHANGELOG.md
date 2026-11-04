@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **A production build provably has no review entry point.** `teyla review store-check PATH` reads an `.xcarchive`, `.app`,
+  `.ipa`, `.aab`, `.apk` or a web `dist` and exits 1 naming what it found. docs/REVIEW.md now says a store build is a separate
+  archive of the same commit, built with `TEYLA_REVIEW_ENABLED=NO` and `TEYLA_REVIEW=0`, and a TestFlight build is never promoted.
+- **The capture format names more builds.** `app.configuration` gains `play_internal` and `test_host`; `app.product` carries a slug
+  for a web build; `reporter` is the sender's claimed name. `v` stays 1. On the Mac the package asks StoreKit which channel the
+  install came from (not yet checked on a real Mac TestFlight build).
+
 ## 0.38.1 — 2026-11-04 — The iPhone gets the admin tabs
 
 - **The phone's Growth snapshot says how many slots have no draft, and which products nobody tried to sell.**

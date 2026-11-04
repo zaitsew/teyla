@@ -99,9 +99,12 @@ public enum TeylaReview {
     /// Opens review mode: freezes the screen and shows the overlay. Call it from a debug-menu button.
     @MainActor
     public static func present() {
-        #if TEYLA_REVIEW && canImport(UIKit)
+        #if TEYLA_REVIEW
         guard isActive else { return }
+        ReviewMarker.lastEntry = ReviewMarker.overlay
+        #if canImport(UIKit)
         ReviewPresenter.present()
+        #endif
         #endif
     }
 
