@@ -26,7 +26,7 @@ struct GrowthView: View {
                 GrowthBody(report: report)
             }
             // The queue is files, not the report: it stays when the report failed.
-            if model.console.report != nil, growth?.value == nil {
+            if growth?.value == nil {
                 ReviewQueue(compact: false)
             }
         }
@@ -179,6 +179,8 @@ private struct DraftCard: View {
         }
         .surface()
         .accessibilityElement(children: .contain)
+        // A saved edit changes the draft: only then does the editor close.
+        .onChange(of: draft) { if mode == .editing { mode = .reading } }
     }
 
     private var header: some View {
@@ -334,9 +336,8 @@ private struct DraftCard: View {
                 .font(Typo.body)
             HStack(spacing: Space.s) {
                 Button("Reject draft", role: .destructive) {
+                    // The form stays until the command succeeds; the draft then leaves the queue.
                     model.growth.reject(draft, reason: reason)
-                    mode = .reading
-                    reason = ""
                 }
                 .disabled(!GrowthLogic.canReject(reason: reason) || busy)
                 Button("Cancel") { mode = .reading; reason = "" }
@@ -362,8 +363,8 @@ private struct DraftCard: View {
             }
             HStack(spacing: Space.s) {
                 Button("Save") {
+                    // The editor stays until the command succeeds, so a refused edit keeps the typed text.
                     model.growth.edit(draft, body: text, hook: draft.hook.isEmpty ? "" : hook)
-                    mode = .reading
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!GrowthLogic.canSave(body: text, original: draft.body, hook: hook, originalHook: draft.hook) || busy)
