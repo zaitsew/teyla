@@ -38,8 +38,10 @@ export interface PictureDeps {
   pageHasContent: boolean;
   /** modern-screenshot of the page at `scale`. */
   renderDom(scale: number): Promise<CanvasLike>;
-  /** One frame of this tab from getDisplayMedia, and whether it is certain to show this page. */
-  grabDisplay(): Promise<{ canvas: CanvasLike; sameViewport: boolean }>;
+  /** One frame from getDisplayMedia. The tester picks the surface, so it may not be this page. */
+  grabDisplay(): Promise<{ canvas: CanvasLike }>;
+  /** The private areas on the page now, read right after the frame. */
+  liveFrames(): Rect[];
   /** Largest PNG the channel takes (10 MiB), minus a margin. */
   maxBytes?: number;
 }
@@ -57,13 +59,11 @@ function pixelsOf(c: CanvasLike): { px: Pixels; put: (p: Pixels) => void } {
 }
 
 /** Finish a canvas: refuse a blank render, paint the private areas, encode. Used for both routes. */
-async function finish(c: CanvasLike, d: PictureDeps, via: Picture["via"], sameViewport: boolean): Promise<Picture> {
-  const { viewport: v, frames } = d;
+async function finish(c: CanvasLike, d: PictureDeps, via: Picture["via"], frames: Rect[]): Promise<Picture> {
+  const { viewport: v } = d;
   const scale = Math.max(1, c.width / v.width);
   const { px, put } = pixelsOf(c);
   if (renderFailed(px, { x: 0, y: 0, width: v.width, height: v.height }, c.width / v.width, d.pageHasContent)) throw new PictureError("blank");
-  // A frame that may show some other page or another part of the screen cannot take a mask by position.
-  if (!sameViewport && frames.length > 0) throw new PictureError("mask-unplaceable");
   blackOut(px, frames, c.width / v.width);
   put(px);
   const blob = await toBlob(c);
@@ -79,7 +79,7 @@ export async function assemble(d: PictureDeps): Promise<Picture> {
   let domError: unknown;
   for (const s of scales) {
     try {
-      return await finish(await d.renderDom(s), d, "dom", true);
+      return await finish(await d.renderDom(s), d, "dom", d.frames);
     } catch (e) {
       domError = e;
       if (e instanceof PictureError && e.code === "too-large") { lastTooLarge = true; continue; }
@@ -87,11 +87,13 @@ export async function assemble(d: PictureDeps): Promise<Picture> {
     }
   }
   if (lastTooLarge && domError instanceof PictureError) throw domError;
+  // A display frame cannot take a mask: nothing proves it shows this tab, and the page can move while
+  // the sharing prompt is open. So a page with private areas never gets this route.
+  if (d.frames.length > 0) throw new PictureError("mask-unplaceable");
   try {
     const got = await d.grabDisplay();
-    const c = got.canvas;
-    const ratioOk = Math.abs(c.width / c.height - v.width / v.height) / (v.width / v.height) < 0.03;
-    return await finish(c, d, "display", got.sameViewport && ratioOk);
+    if (d.liveFrames().length > 0) throw new PictureError("mask-unplaceable");
+    return await finish(got.canvas, d, "display", []);
   } catch (e) {
     if (e instanceof PictureError) throw e;
     throw new PictureError("failed", e instanceof Error ? e.message : "display capture failed");
@@ -118,7 +120,7 @@ export async function takePicture(win: Window, hostToHide: HTMLElement | null): 
   const doc = win.document;
   const viewport: Viewport = { width: win.innerWidth, height: win.innerHeight, scrollX: win.scrollX, scrollY: win.scrollY, dpr: win.devicePixelRatio || 1 };
   const frames = privateFrames(doc, viewport.width, viewport.height);
-    if (hostToHide) hostToHide.style.setProperty("visibility", "hidden", "important");
+  if (hostToHide) hostToHide.style.setProperty("visibility", "hidden", "important");
   try {
     return await assemble({
       viewport,
@@ -136,6 +138,7 @@ export async function takePicture(win: Window, hostToHide: HTMLElement | null): 
           timeout: 15000,
         })) as unknown as CanvasLike;
       },
+      liveFrames: () => privateFrames(doc, win.innerWidth, win.innerHeight),
       grabDisplay: async () => {
         const md = win.navigator.mediaDevices;
         if (!md?.getDisplayMedia) throw new PictureError("failed", "getDisplayMedia is not available");
@@ -147,8 +150,6 @@ export async function takePicture(win: Window, hostToHide: HTMLElement | null): 
           surfaceSwitching: "exclude",
         } as DisplayMediaStreamOptions);
         try {
-          const track = stream.getVideoTracks()[0];
-          const surface = (track?.getSettings() as { displaySurface?: string } | undefined)?.displaySurface;
           const video = doc.createElement("video");
           video.muted = true;
           video.srcObject = stream;
@@ -162,7 +163,7 @@ export async function takePicture(win: Window, hostToHide: HTMLElement | null): 
           canvas.width = Math.round(w * k);
           canvas.height = Math.round(h * k);
           canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
-          return { canvas: canvas as unknown as CanvasLike, sameViewport: surface === "browser" };
+          return { canvas: canvas as unknown as CanvasLike };
         } finally {
           stream.getTracks().forEach((t) => t.stop());
         }

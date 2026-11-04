@@ -16,8 +16,15 @@ teyla="${TEYLA_REPO:-$HOME/repos/teyla}"
 pkg="$teyla/packages/review-web"
 [ -f "$pkg/src/index.ts" ] || { echo "no review-web package at $pkg" >&2; exit 2; }
 root="$(pwd)"
-dst="$root/${1:-src/vendor/teyla-review-web}"
-case "$dst" in "$root"/*) ;; *) echo "DEST must be inside $root" >&2; exit 2;; esac
+rel="${1:-src/vendor/teyla-review-web}"
+case "/$rel/" in
+  //*|*/../*|*/./*|"///") echo "DEST must be a plain path inside $root" >&2; exit 2;;
+esac
+dst="$root/$rel"
+# This folder is deleted below, so it must be empty or an earlier copy of this package.
+if [ -d "$dst" ] && [ -n "$(ls -A "$dst")" ] && [ ! -f "$dst/VENDORED.md" ]; then
+  echo "$rel holds other files and no VENDORED.md; refusing to replace it" >&2; exit 2
+fi
 rm -rf "$dst"
 mkdir -p "$dst"
 rsync -a "$pkg/src/" "$dst/"

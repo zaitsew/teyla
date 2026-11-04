@@ -11,6 +11,7 @@ function deps(over: Partial<PictureDeps>): PictureDeps {
     viewport, frames: [], pageHasContent: true,
     renderDom: async (s) => busyCanvas(100 * s, 50 * s) as unknown as CanvasLike,
     grabDisplay: async () => { throw new Error("no display capture in this test"); },
+    liveFrames: () => [],
     ...over,
   };
 }
@@ -32,20 +33,19 @@ test("private frames are painted black on the DOM render", async () => {
   assert.notDeepEqual(pix(canvas, 100, 80), [0, 0, 0]);
 });
 
-test("a render that throws falls back to the display capture, and the frames are painted there too", async () => {
+test("a render that throws falls back to the display capture on a page with nothing private", async () => {
   const shown = busyCanvas(200, 100);
   const p = await assemble(deps({
-    frames: [rect(0, 0, 50, 25)],
     renderDom: async () => { throw new Error("foreignObject failed"); },
-    grabDisplay: async () => ({ canvas: shown as unknown as CanvasLike, sameViewport: true }),
+    grabDisplay: async () => ({ canvas: shown as unknown as CanvasLike }),
   }));
   assert.equal(p.via, "display");
-  assert.deepEqual(pix(shown, 10, 10), [0, 0, 0]);
+  assert.deepEqual(p.frames, []);
 });
 
 test("a blank render of a page with content falls back; of an empty page it is accepted", async () => {
   const blank = () => fakeCanvas(200, 100, [255, 255, 255, 255]) as unknown as CanvasLike;
-  const fell = await assemble(deps({ renderDom: async () => blank(), grabDisplay: async () => ({ canvas: busyCanvas(200, 100) as unknown as CanvasLike, sameViewport: true }) }));
+  const fell = await assemble(deps({ renderDom: async () => blank(), grabDisplay: async () => ({ canvas: busyCanvas(200, 100) as unknown as CanvasLike }) }));
   assert.equal(fell.via, "display");
   const empty = await assemble(deps({ pageHasContent: false, renderDom: async () => blank() }));
   assert.equal(empty.via, "dom");
@@ -57,24 +57,31 @@ test("when both ways fail the picture fails, and nothing is made up", async () =
     (e: unknown) => e instanceof PictureError && e.code === "failed",
   );
   await assert.rejects(
-    assemble(deps({ renderDom: async () => fakeCanvas(200, 100, [255, 255, 255, 255]) as unknown as CanvasLike, grabDisplay: async () => ({ canvas: fakeCanvas(200, 100, [255, 255, 255, 255]) as unknown as CanvasLike, sameViewport: true }) })),
+    assemble(deps({ renderDom: async () => fakeCanvas(200, 100, [255, 255, 255, 255]) as unknown as CanvasLike, grabDisplay: async () => ({ canvas: fakeCanvas(200, 100, [255, 255, 255, 255]) as unknown as CanvasLike }) })),
     (e: unknown) => e instanceof PictureError && e.code === "blank",
   );
 });
 
-test("a display frame that may show another page cannot take a mask by position, so it is refused", async () => {
-  const other = () => ({ canvas: busyCanvas(200, 100) as unknown as CanvasLike, sameViewport: false });
+test("a page with private areas never opens the sharing prompt", async () => {
+  let asked = false;
   await assert.rejects(
-    assemble(deps({ frames: [rect(0, 0, 10, 10)], renderDom: async () => { throw new Error("x"); }, grabDisplay: async () => other() })),
+    assemble(deps({
+      frames: [rect(0, 0, 10, 10)],
+      renderDom: async () => { throw new Error("x"); },
+      grabDisplay: async () => { asked = true; return { canvas: busyCanvas(200, 100) as unknown as CanvasLike }; },
+    })),
     (e: unknown) => e instanceof PictureError && e.code === "mask-unplaceable",
   );
-  const noPrivate = await assemble(deps({ renderDom: async () => { throw new Error("x"); }, grabDisplay: async () => other() }));
-  assert.equal(noPrivate.via, "display", "with nothing private on the page there is nothing to place");
+  assert.equal(asked, false);
 });
 
-test("a display frame of another shape is treated as a different surface", async () => {
+test("a private area that appears while the sharing prompt is open refuses the frame", async () => {
   await assert.rejects(
-    assemble(deps({ frames: [rect(0, 0, 10, 10)], renderDom: async () => { throw new Error("x"); }, grabDisplay: async () => ({ canvas: busyCanvas(200, 200) as unknown as CanvasLike, sameViewport: true }) })),
+    assemble(deps({
+      renderDom: async () => { throw new Error("x"); },
+      grabDisplay: async () => ({ canvas: busyCanvas(200, 100) as unknown as CanvasLike }),
+      liveFrames: () => [rect(0, 0, 10, 10)],
+    })),
     (e: unknown) => e instanceof PictureError && e.code === "mask-unplaceable",
   );
 });

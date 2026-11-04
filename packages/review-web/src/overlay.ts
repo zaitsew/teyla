@@ -61,8 +61,14 @@ export async function start(opts: StartOptions): Promise<ReviewHandle | null> {
     return null;
   }
 
+  // With no channel a capture could only wait for a later build's key, and that build would send it
+  // without the first-send notice. So there is no form at all.
   const channel: ChannelConfig | null = parseChannel(opts.channel ?? envChannel());
-  const queue = new ReviewQueue(opts.store ?? new IdbStore(), channel ? (e) => sendCapture(channel, e, opts.fetch) : null);
+  if (!channel) {
+    console.warn("[teyla-review] no channel URL and key in this build; review mode stays off.");
+    return null;
+  }
+  const queue = new ReviewQueue(opts.store ?? new IdbStore(`teyla-review-${opts.product}`), (e) => sendCapture(channel, e, opts.fetch));
   const strings = stringsFor(opts.language ?? win.navigator.language, opts.strings);
 
   const host = doc.createElement("div");
@@ -98,8 +104,8 @@ export async function start(opts: StartOptions): Promise<ReviewHandle | null> {
       openForm(root, {
         strings, pictureUrl: url, viewport: { width: vw, height: vh },
         speech: opts.speech === true, requiresHealthConsent: opts.requiresHealthConsent === true,
-        sendsToServer: channel !== null,
-        noticeNeeded: () => isNeeded(channel !== null),
+        sendsToServer: true,
+        noticeNeeded: () => isNeeded(true),
         acceptNotice: () => accept(),
         onClose: done,
         onSend: async (draft) => {

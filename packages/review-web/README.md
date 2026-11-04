@@ -31,7 +31,7 @@ Another bundler: replace `import.meta.env.VITE_TEYLA_REVIEW` and the two channel
 
 ## What a capture holds
 
-`capture.png` is the page as it was, rendered with `modern-screenshot` 4.7.0. If that fails or returns a blank image, the package asks the browser to share the current tab (`getDisplayMedia`) and uses one frame of it; the tester sees the browser's own permission prompt. A blank image is detected before anything is sent (`BLANK_LIMIT` 0.995 of pixels empty, as on iOS).
+`capture.png` is the page as it was, rendered with `modern-screenshot` 4.7.0. If that fails or returns a blank image on a page with no private areas, the package asks the browser to share a tab (`getDisplayMedia`) and uses one frame of it; the tester sees the browser's own prompt, picks the surface and sees the picture before sending. Nothing proves such a frame shows this tab, so it takes no masks, and a page with private areas refuses this route. Private areas inside a closed shadow root cannot be found: mark the host element instead. A blank image is detected before anything is sent (`BLANK_LIMIT` 0.995 of pixels empty, as on iOS).
 
 `capture.json` carries the fields of the iOS capture: `app` (bundle id is the page's hostname, name, version, build, commit, `product`, `configuration` `test_host`), `environment` (browser, OS, locale, appearance, window size), `screen`, `tap` or `region`, `element` and `anchors` (from the `data-review-*` attributes, bounds in viewport CSS pixels), `comment`, `screenshot` (size, scale, sha256) and `microphone` (`false`).
 

@@ -131,3 +131,16 @@ test("a cloned private element is a black box with nothing readable in it", () =
   assert.equal(plain.getAttribute("style"), null);
   assert.equal(plain.textContent, "visible");
 });
+
+test("a private element inside an open shadow root is found, and the package's own host is not walked", () => {
+  const { doc } = page(`<div id="card"></div><div id="own" data-review-ignore></div>`);
+  const inner = doc.createElement("input");
+  inner.setAttribute("type", "password");
+  doc.getElementById("card")!.attachShadow({ mode: "open" }).append(inner);
+  place(inner, rect(10, 10, 100, 20));
+  const mine = doc.createElement("input");
+  mine.setAttribute("type", "password");
+  doc.getElementById("own")!.attachShadow({ mode: "open" }).append(mine);
+  place(mine, rect(300, 300, 100, 20));
+  assert.deepEqual(privateFrames(doc, 1000, 800), [rect(8, 8, 104, 24)]);
+});

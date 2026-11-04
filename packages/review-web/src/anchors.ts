@@ -6,6 +6,7 @@ import { MAX_ANCHORS, ROLES, roundRect, type Anchor, type Rect, type Role, type 
 export const ATTR_ANCHOR = "data-review-anchor";
 export const ATTR_SCREEN = "data-review-screen";
 export const ATTR_PRIVATE = "data-review-private";
+const ATTR_IGNORE = "data-review-ignore";
 export const ATTR_ROLE = "data-review-role";
 export const ATTR_STRINGS = "data-review-strings";
 export const ATTR_SOURCE = "data-review-source";
@@ -52,13 +53,25 @@ export function intersectsViewport(r: Rect, vw: number, vh: number): boolean {
   return r.x < vw && r.y < vh && r.x + r.width > 0 && r.y + r.height > 0;
 }
 
+/** The elements that match, open shadow roots included. A closed root cannot be read. The package's
+ *  own host is left out. */
+function deepMatches(root: ParentNode, selector: string): Element[] {
+  const out: Element[] = [];
+  for (const el of Array.from(root.querySelectorAll("*"))) {
+    if (el.hasAttribute(ATTR_IGNORE)) continue;
+    if (el.matches(selector)) out.push(el);
+    if (el.shadowRoot) out.push(...deepMatches(el.shadowRoot, selector));
+  }
+  return out;
+}
+
 /** Every private element's rectangle in the viewport, plus the margin. An element that has no box and
  *  no children with one draws nothing and hides nothing. A box that is not a finite number stays in
  *  the list, and the picture painter hides the whole picture for it. */
 export function privateFrames(doc: Document, vw: number, vh: number): Rect[] {
   const out: Rect[] = [];
   const seen = new Set<Element>();
-  for (const el of Array.from(doc.querySelectorAll(`[${ATTR_PRIVATE}], input`))) {
+  for (const el of deepMatches(doc, `[${ATTR_PRIVATE}], input`)) {
     if (!isPrivateElement(el) || seen.has(el)) continue;
     seen.add(el);
     let r = rectOf(el);

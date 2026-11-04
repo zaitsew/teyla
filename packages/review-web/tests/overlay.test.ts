@@ -97,3 +97,13 @@ test("Send needs a comment, no save under way, and the health box when the produ
   assert.equal(canSend("x", false, true, false), false);
   assert.equal(canSend("x", false, true, true), true);
 });
+
+test("a build with no channel has no form, so nothing can queue past the first-send notice", async () => {
+  const p = page("<main>hello</main>");
+  const warn = console.warn;
+  console.warn = () => undefined;
+  try {
+    assert.equal(await start({ ...base, channel: undefined, flag: "1", window: p.w }), null);
+    assert.equal(p.doc.querySelector("[data-teyla-review]"), null);
+  } finally { console.warn = warn; }
+});
