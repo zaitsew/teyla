@@ -257,6 +257,8 @@ end an item. Only an approved item gets a packet or a published mark.
 `teyla growth sale-attempts` counts, per product, posts, marketing and ICP meetings from the ledger. A product with
 zero attempts reads "not tried yet" and gets the next slots. No view proposes closing a product that nobody tried
 to sell. Log what happens outside Teyla with `teyla growth log --product P --kind icp-meeting|ad|post|outreach`.
+Run from an agent session, the row carries `by: agent`: it is *claimed*, shown as a count beside the product, and counts
+for nothing until you log it yourself. A product with `type = personal` is not for sale, so it is never "not tried yet".
 
 ## Outreach
 

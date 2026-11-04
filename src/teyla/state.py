@@ -1156,9 +1156,9 @@ def backlog_enabled() -> bool:
         return False
 
 
-def backlog_view(now: float) -> dict:
+def backlog_view(now: float, *, refresh: bool = True) -> dict:
     try:
-        return backlog.view(now, refresh=backlog_enabled())
+        return backlog.view(now, refresh=refresh and backlog_enabled())
     except Exception:  # noqa: BLE001 — GitHub data is an extra; the rest of the snapshot always works
         return dict(backlog.EMPTY, prs=[], issues=[], counts={}, canonical={})
 
@@ -1242,12 +1242,13 @@ def relay_view() -> dict:
 
 
 def portfolio_view(now: float, reg: dict, prods: list[dict], rows: list[dict], tasks: list[dict], bl: dict,
-                   ledger: dict | None) -> dict:
+                   ledger: dict | None, *, refresh: bool = True) -> dict:
     """Version 3: the portfolio, from the registry and the caches (`portfolio.py`). It makes no network call; a
     missing or old cache starts one detached `teyla portfolio --refresh`."""
     try:
         cache = portfolio.load_cache()
-        portfolio.maybe_refresh(cache, now)
+        if refresh:
+            portfolio.maybe_refresh(cache, now)
         if ledger is None and cache["github"]:       # the review ledger matters only once merged PRs are cached
             ledger = reviews.load_ledger(reviews.ledger_path(_cfg()))
         return portfolio.build(now, reg=reg, prods=prods, ask_rows=rows, tasks=tasks, bl=bl, ledger=ledger, cache=cache)
@@ -1255,11 +1256,12 @@ def portfolio_view(now: float, reg: dict, prods: list[dict], rows: list[dict], t
         return portfolio.empty()
 
 
-def console_view(now: float) -> dict | None:
+def console_view(now: float, *, refresh: bool = True) -> dict | None:
     """The compact console sections from the cache (`console.py`); a missing or old cache starts a detached refresh."""
     try:
         rep = console.read_cache()
-        console.maybe_refresh(rep, now)
+        if refresh:
+            console.maybe_refresh(rep, now)
         return console.compact(rep)
     except Exception:  # noqa: BLE001 — the console is an extra; the rest of the snapshot always works
         return None
@@ -1294,7 +1296,9 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
           projects: str | None = None, codex_root: str | None = None, codex_archive: str | None = None,
           reminders: pathlib.Path | None = None, model_brief: bool = True, runs: list[dict] | None = None,
           backlog_data: dict | None = None, approved: set | None = None, ledger: dict | None = None,
-          relay: dict | None = None, notes: dict | None = None, asks_state: dict | None = None) -> dict:
+          relay: dict | None = None, notes: dict | None = None, asks_state: dict | None = None,
+          refresh: bool = True) -> dict:
+    """`refresh=False` reads the caches only and starts no detached refresh, so it makes no network call."""
     now = asks._now() if now is None else now
     if items is None:
         items = asks.collect(days, now, desktop=desktop, projects=projects, codex_root=codex_root,
@@ -1321,7 +1325,7 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
     done = done_feed(now, desktop, codex_root, projects, runs=runs, dk=dk, cx=cx, cc=cc,
                      skip_ids={r["id"] for r in run})
     repos = repo_index() if repos is None else repos
-    bl = backlog_view(now) if backlog_data is None else backlog_data
+    bl = backlog_view(now, refresh=refresh) if backlog_data is None else backlog_data
     alias, info = product_names(repos, bl["canonical"])
     alias, info = registry_names(reg, alias, info)
     tasks = []
@@ -1338,12 +1342,14 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
     prods = products_view(rows, run, {k: v["paths"] for k, v in info.items()}, now,
                           keep={t["product"] for t in tasks}, reg=reg)
     enrich_products(prods, info, bl["counts"], tasks, done)
+    if spent == "cache" and not refresh:
+        spent = None
     if spent == "cache":
         try:
             spent = spent_today(now)
         except Exception:  # noqa: BLE001
             spent = None
-    pf = portfolio_view(now, reg, prods, rows, tasks, bl, ledger)
+    pf = portfolio_view(now, reg, prods, rows, tasks, bl, ledger, refresh=refresh)
     st = {"version": VERSION, "generated": _iso(now), "brief": None,
           "totals": {"questions": len(owner_rows), "questions_raw": sum(1 for r in rows if not r["muted"]),
                      "running": len(run), "spent_today_usd": spent,
@@ -1354,7 +1360,7 @@ def build(now: float | None = None, *, days: int = asks.DEFAULT_DAYS, repos: dic
           "relay": relay_view() if relay is None else relay,
           "notes": notes_view() if notes is None else notes, "portfolio": pf,
           "auto_closed": asks.auto_closed(items, ask_store, now),
-          "console": console_view(now)}
+          "console": console_view(now, refresh=refresh)}
     st["brief"] = {"line": _words(model["brief"]), "source": "model"} if model else brief_line(st)
     return st
 

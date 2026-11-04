@@ -46,7 +46,7 @@ A product with 25 accounts and no sale attempt reads "Built", with Used shown as
 
 | Rung | Types | Met when | Source |
 |---|---|---|---|
-| Built | all | someone can install it (`progress.can_install`), or registry stage is `beta` or `live` | portfolio |
+| Built | all | someone can install it (`progress.can_install`), registry stage is `beta` or `live`, or accounts exist. `unknown` when Teyla sees no store or site for it | portfolio, usage probe |
 | Tried | venture, indie, open-source | at least 1 published post, ad, outreach or ICP meeting not claimed by an agent | growth ledger |
 | Used | venture, indie, open-source | at least 1 external account | usage probe |
 | Retained | venture, indie, open-source | at least 3 external people returned at day 7 | usage probe |

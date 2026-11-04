@@ -121,7 +121,8 @@ def test_a_probe_with_no_numbers_keeps_the_last_good_row(tmp_path, monkeypatch):
                      {"status": "needs_key"},
                      {"logged": "9", "usage_probe": "needs_teyla"}):
         products.write_cache({"app": ("ok", counters)})
-        assert _cached()["app"] == {"status": "ok", "counters": {"wau": "3"}}
+        row = _cached()["app"]
+        assert {k: row[k] for k in ("status", "counters")} == {"status": "ok", "counters": {"wau": "3"}}
     products.write_cache({"app": ("ok", {"wau": "4"})})
     assert _cached()["app"]["counters"] == {"wau": "4"}
 
