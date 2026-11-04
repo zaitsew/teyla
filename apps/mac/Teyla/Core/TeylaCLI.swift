@@ -18,6 +18,7 @@ actor TeylaCLI: TeylaBackend {
     private let notesFixtureURL: URL?
     private let startFixtureURL: URL?
     private let productFixtureURL: URL?
+    private let growthFixtureURL: URL?
     private let attentionFixtureURL: URL?
     private let consoleFixtureURL: URL?
     /// The file the owner picked with "Choose…", and what a login shell finds. Injected so a test never runs the real ones.
@@ -45,6 +46,7 @@ actor TeylaCLI: TeylaBackend {
         // The diagnosis and the product page have samples beside the state sample too.
         startFixtureURL = Self.fixtureURL(env["TEYLA_START_FIXTURE"], beside: fixtureURL, named: "start.v1.json")
         productFixtureURL = Self.fixtureURL(env["TEYLA_PRODUCT_FIXTURE"], beside: fixtureURL, named: "product.v1.json")
+        growthFixtureURL = Self.fixtureURL(env["TEYLA_GROWTH_FIXTURE"], beside: fixtureURL, named: "growth.v1.json")
         attentionFixtureURL = Self.fixtureURL(env["TEYLA_ATTENTION_FIXTURE"], beside: fixtureURL, named: "attention.v1.json")
         consoleFixtureURL = Self.fixtureURL(env["TEYLA_CONSOLE_FIXTURE"], beside: fixtureURL, named: "console.v1.json")
     }
@@ -191,6 +193,20 @@ actor TeylaCLI: TeylaBackend {
         let url = URL(fileURLWithPath: (base as NSString).appendingPathComponent("console-cache.json"))
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try? ConsoleReport.decode(data)
+    }
+
+    /// The drafts waiting for review. They are files the CLI wrote, so the app reads them as they are; a preview reads
+    /// `growth.v1.json` beside the state sample instead (a list of items).
+    func growthDrafts() async throws -> GrowthDrafts.Read {
+        if fixtureURL != nil {
+            guard let url = growthFixtureURL, let data = try? Data(contentsOf: url),
+                  let boxes = try? JSONDecoder().decode([LossyBox<GrowthDraft>].self, from: data) else {
+                throw TeylaError.fixtureUnreadable(growthFixtureURL?.path ?? "growth.v1.json")
+            }
+            return GrowthDrafts.Read(drafts: boxes.compactMap(\.value), skipped: boxes.filter { $0.value == nil }.count)
+        }
+        let folder = GrowthDrafts.directory(home: home, env: env)
+        return try await Task.detached { try GrowthDrafts.read(directory: folder) }.value
     }
 
     /// One command of the Tools page. Whatever the report printed, only a command on the allow-list is run;

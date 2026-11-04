@@ -82,10 +82,11 @@ Two kinds of number, kept apart. Cash comes from what the owner lists; list pric
 - `you`: local only, see `docs/YOU.md`. It stays off the relay unless `[you] relay = true`, and then
   `compact()` carries the quote of the day and the number of open chores, nothing else.
 ### growth (`growth.py`)
-- `target {posts_per_day_per_channel}`, `today [{platform, language, posted, target}]`, `last_public_days`, `pipeline {ideas, filming, cutting, review, ready, live}`, `episodes []`, `next_ride`,
+- `target {posts_per_day_per_channel}`, `today [{platform, language, posted, target}]`, `last_public_days`, `pipeline {ideas, filming, cutting, review, ready, live}`, `episodes [{id, idea, stage, question, job, minutes, footage, clips}]`, `next_ride` (null today),
   `trends [{title, score, hook, source, url}]`, `outreach {drafts, sent_week, replies_week, calls_week, sources []}`,
   `ads []`, `channels [{platform, language, connected, last_post}]`.
-- Stored in `~/.teyla/growth/`, never in a repo.
+- Stored in `~/.teyla/growth/`, never in a repo. The drafts waiting for review are not in the report: the Mac app reads
+  `~/.teyla/growth/items/*.json` itself, because `teyla growth review` has no `--json`.
 
 ### products (in `teyla product show`)
 - `sale_attempts {posts, marketing, icp_meetings, last}` per product. Zero attempts means "not tried yet".

@@ -1732,15 +1732,30 @@
    "ideas": 66,
    "filming": 1,
    "cutting": 2,
-   "review": 4,
+   "review": 3,
    "ready": 3,
    "live": 5
   },
   "episodes": [
    {
-    "id": "ep1",
-    "title": "Building a focus timer in one night",
-    "stage": "cut"
+    "id": "g1104-ep01",
+    "idea": "Building a focus timer in one night",
+    "stage": "cut",
+    "question": "Can one night be enough?",
+    "job": "Ship a focus timer",
+    "minutes": 42,
+    "footage": 6,
+    "clips": 3
+   },
+   {
+    "id": "g1103-ep02",
+    "idea": "A settings page that explains itself",
+    "stage": "filming",
+    "question": "",
+    "job": "",
+    "minutes": null,
+    "footage": 2,
+    "clips": 0
    }
   ],
   "next_ride": {

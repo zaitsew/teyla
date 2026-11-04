@@ -1,0 +1,178 @@
+[
+ {
+  "id": "g1104-a1b2",
+  "kind": "post",
+  "format": "true-vibe-coding",
+  "idea": "One night, one focus timer, zero meetings",
+  "hook": "",
+  "platform": "x",
+  "language": "en",
+  "channel": "x-en",
+  "product": "sample-app",
+  "status": "review",
+  "body": "I built a focus timer in one night with an AI agent and a spec.\n\nThe spec was 12 lines. The first build ran on the first try.\n\nWhat made it work: the agent had one job and a test to pass.",
+  "first_comment": "",
+  "facts": [
+   "The spec was 12 lines",
+   "The first build ran on the first try"
+  ],
+  "sources": [
+   {
+    "kind": "pr",
+    "url": "https://example.com/sample-app/pull/12"
+   }
+  ],
+  "editor": {
+   "score": 4.6,
+   "critique": "Concrete and short. The last line could name the test.",
+   "rounds": 1,
+   "parts": {
+    "voice": 5,
+    "facts": 4
+   }
+  },
+  "voice_check": {
+   "ok": true,
+   "findings": []
+  },
+  "leak_check": {
+   "ok": true,
+   "kinds": []
+  },
+  "created": "2026-11-04T08:00:00",
+  "updated": "2026-11-04T09:10:00"
+ },
+ {
+  "id": "g1104-c3d4",
+  "kind": "post",
+  "format": "lesson",
+  "idea": "Why a spec beats a long prompt",
+  "hook": "",
+  "platform": "linkedin",
+  "language": "en",
+  "channel": "linkedin-en",
+  "product": "sample-app",
+  "status": "checked",
+  "body": "A long prompt is a wish. A spec is a contract.\n\nThis week I replaced a 400-word prompt with a one-page spec. The agent stopped guessing and started finishing.\n\nThree things moved into the spec: the user, the test, the stop condition.",
+  "first_comment": "Spec template in the comments.",
+  "facts": [
+   "Prompt was 400 words",
+   "Spec is one page"
+  ],
+  "sources": [
+   {
+    "kind": "session",
+    "ref": "session-0412"
+   }
+  ],
+  "editor": {
+   "score": 4.1,
+   "critique": "Good opening. The middle repeats the first line.",
+   "rounds": 2,
+   "parts": {
+    "voice": 4,
+    "facts": 4
+   }
+  },
+  "voice_check": {
+   "ok": true,
+   "findings": []
+  },
+  "leak_check": {
+   "ok": true,
+   "kinds": []
+  },
+  "created": "2026-11-04T07:00:00",
+  "updated": "2026-11-04T08:30:00"
+ },
+ {
+  "id": "g1103-e5f6",
+  "kind": "clip",
+  "format": "worklog",
+  "idea": "A settings page that explains itself",
+  "hook": "Watch a settings page write its own help text.",
+  "platform": "tiktok",
+  "language": "en",
+  "channel": "tiktok-en",
+  "product": "sample-web",
+  "status": "review",
+  "body": "Day 3 of the settings page. Each toggle now says what it changes, in plain words.",
+  "first_comment": "",
+  "facts": [],
+  "sources": [],
+  "voice_check": {
+   "ok": false,
+   "findings": [
+    {
+     "level": "fail",
+     "rule": "banned-word",
+     "message": "uses \"seamless\""
+    }
+   ]
+  },
+  "leak_check": {
+   "ok": true,
+   "kinds": []
+  },
+  "created": "2026-11-03T18:00:00",
+  "updated": "2026-11-03T18:20:00"
+ },
+ {
+  "id": "g1103-0001",
+  "kind": "post",
+  "format": "reaction",
+  "idea": "A held draft that must not show",
+  "hook": "",
+  "platform": "x",
+  "language": "es",
+  "channel": "x-es",
+  "product": "",
+  "status": "review",
+  "body": "Held by the editor.",
+  "hold_reason": "The editor held it: one fact has no source.",
+  "voice_check": {
+   "ok": true,
+   "findings": []
+  },
+  "leak_check": {
+   "ok": true,
+   "kinds": []
+  },
+  "created": "2026-11-03T10:00:00",
+  "updated": "2026-11-03T10:00:00"
+ },
+ {
+  "id": "g1103-ep02",
+  "kind": "episode",
+  "format": "worklog",
+  "idea": "An episode is not a draft",
+  "hook": "",
+  "platform": "master",
+  "language": "",
+  "status": "draft",
+  "body": "",
+  "created": "2026-11-03T09:00:00",
+  "updated": "2026-11-03T09:00:00"
+ },
+ {
+  "id": "g1102-a0b0",
+  "kind": "post",
+  "format": "lesson",
+  "idea": "Already approved, not waiting",
+  "hook": "",
+  "platform": "x",
+  "language": "en",
+  "status": "approved",
+  "body": "Approved.",
+  "voice_check": {
+   "ok": true,
+   "findings": []
+  },
+  "leak_check": {
+   "ok": true,
+   "kinds": []
+  },
+  "created": "2026-11-02T10:00:00",
+  "updated": "2026-11-02T10:00:00"
+ }
+]
