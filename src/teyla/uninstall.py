@@ -195,7 +195,7 @@ def _launch_agents(home: pathlib.Path) -> list[Step]:
         if plist.exists():
             steps.append(Step("remove", plist, "its plist", lambda plist=plist: _rm(plist)))
     logs = home / "Library" / "Logs"
-    for name in ("teyla-daily.log", "teyla-weekly.log", "teyla-sims.log", "teyla-sweep.log", "teyla-load.log", "teyla-relay.log"):
+    for name in ("teyla-daily.log", "teyla-weekly.log", "teyla-sims.log", "teyla-sweep.log", "teyla-load.log", "teyla-growth.log", "teyla-relay.log"):
         if (logs / name).exists():
             steps.append(Step("remove", logs / name, "routine log", lambda p=logs / name: _rm(p)))
     if logs.is_dir():

@@ -45,7 +45,8 @@ DAILY_STAMP_PATH = pathlib.Path.home() / ".teyla" / "daily.last"
 SIMS_LABEL = "com.zaitsew.teyla.sims"
 SWEEP_LABEL = "com.zaitsew.teyla.sweep"
 LOAD_LABEL = "com.zaitsew.teyla.load"
-OPTIONAL_LABELS = (SIMS_LABEL, SWEEP_LABEL, LOAD_LABEL)
+GROWTH_LABEL = "com.zaitsew.teyla.growth"
+OPTIONAL_LABELS = (SIMS_LABEL, SWEEP_LABEL, LOAD_LABEL, GROWTH_LABEL)
 # label -> the config flag that switches it on (`[table] key`), seconds between runs, `teyla` arguments,
 # wrapper, log and stamp names, what it does; `suggest`: doctor mentions it (INFO) while it is off.
 OPTIONAL = {
@@ -59,6 +60,11 @@ OPTIONAL = {
                      wrapper="load.sh", log="teyla-load.log", stamp="load.last",
                      what="records the machine's load, keeps the overload alert, stops idle Gradle/Kotlin daemons",
                      suggest="teyla config set guard.agent=true && teyla routine install"),
+    # The content factory's morning run (docs/GROWTH.md). A calendar time, not an interval; it uses the network
+    # (gh, the model), and each network step checks safe mode itself. Off unless `[growth] daily = true`.
+    GROWTH_LABEL: dict(table="growth", key="daily", interval=86400, calendar=(6, 30), args="growth daily --quiet",
+                       wrapper="growth.sh", log="teyla-growth.log", stamp="growth.last",
+                       what="harvests ideas, plans the day's slots and drafts them for your review; publishes nothing"),
 }
 # The weekly wrapper's extra line when storage.sweep_agent is on.
 SWEEP_LINE = '"$TEYLA" storage sweep --quiet'
@@ -155,6 +161,37 @@ INTERVAL_PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
     </array>
     <key>StartInterval</key>
     <integer>{interval}</integer>
+    <key>EnvironmentVariables</key>
+    <dict>
+{env_plist}    </dict>
+    <key>StandardOutPath</key>
+    <string>{log}</string>
+    <key>StandardErrorPath</key>
+    <string>{log}</string>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
+"""
+
+CALENDAR_PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{label}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>{wrapper}</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>{hour}</integer>
+        <key>Minute</key>
+        <integer>{minute}</integer>
+    </dict>
     <key>EnvironmentVariables</key>
     <dict>
 {env_plist}    </dict>
@@ -434,6 +471,14 @@ def _plist_schedule_stale(plist: pathlib.Path, label: str) -> bool:
     return got != want
 
 
+def every(label: str) -> str:
+    """When an optional agent runs, as a phrase: "every 10 min" or "daily at 06:30"."""
+    o = OPTIONAL[label]
+    if o.get("calendar"):
+        return "daily at %02d:%02d" % o["calendar"]
+    return f"every {o['interval'] // 60} min"
+
+
 def flag_name(label: str) -> str:
     """`[storage] sims_agent`: the config flag of an optional agent, as the user would read it."""
     o = OPTIONAL[label]
@@ -551,13 +596,17 @@ def _write_optional(label: str, teyla_bin: str, env_plist: str, env_sh: str) -> 
            0o755)
     p["log"].parent.mkdir(parents=True, exist_ok=True)
     p["plist"].parent.mkdir(parents=True, exist_ok=True)
-    _write(p["plist"], INTERVAL_PLIST_TEMPLATE.format(label=label, wrapper=p["wrapper"], interval=o["interval"],
-                                                         log=p["log"], env_plist=env_plist))
+    if o.get("calendar"):
+        _write(p["plist"], CALENDAR_PLIST_TEMPLATE.format(label=label, wrapper=p["wrapper"], hour=o["calendar"][0],
+                                                             minute=o["calendar"][1], log=p["log"], env_plist=env_plist))
+    else:
+        _write(p["plist"], INTERVAL_PLIST_TEMPLATE.format(label=label, wrapper=p["wrapper"], interval=o["interval"],
+                                                             log=p["log"], env_plist=env_plist))
     lines = [f"wrote {p['wrapper']}", f"wrote {p['plist']}"]
     if sys.platform == "darwin":
         lines.append(_load(p["plist"], label))
     else:
-        lines.append(f"not macOS: add to cron yourself: every {o['interval'] // 60} min: bash {p['wrapper']}")
+        lines.append(f"not macOS: add to cron yourself: {every(label)}: bash {p['wrapper']}")
     return lines
 
 
@@ -809,7 +858,7 @@ def status() -> list[str]:
             continue
         ok, pid, code = loaded(label)
         lines.append(f"{label}: {'on' if on else 'OFF in config but still installed — run `teyla routine install`'}"
-                     f" (every {o['interval'] // 60} min, {o['what']}); loaded: {'yes' if ok else 'no'}"
+                     f" ({every(label)}, {o['what']}); loaded: {'yes' if ok else 'no'}"
                      + (f" (pid {pid})" if pid else "") + (f" (last exit {code})" if code else ""))
         lines.append(f"  plist: {p['plist']} ({'exists' if p['plist'].exists() else 'missing'})")
         stale = _wrapper_stale(p["wrapper"], teyla_bin, env)
@@ -846,6 +895,6 @@ def optional_checks() -> list[tuple[str, str, str, str | None]]:
             out.append(("FIX", name, "plist exists but launchd has not loaded it", "teyla routine install"))
         else:
             started = last_started(label)
-            out.append(("OK", name, f"loaded, every {o['interval'] // 60} min" + (f", last exit {code}" if code not in (None, "0") else "")
+            out.append(("OK", name, f"loaded, {every(label)}" + (f", last exit {code}" if code not in (None, "0") else "")
                         + (f", last started {started:%Y-%m-%d %H:%M}" if started else ", not run yet"), None))
     return out
