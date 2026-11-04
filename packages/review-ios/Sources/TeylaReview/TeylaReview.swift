@@ -83,7 +83,7 @@ public enum TeylaReview {
 
     /// True when review mode is on for this build and this is not an App Store build.
     public static var isActive: Bool {
-        isEnabled && BuildChannel.current != .appStore
+        isEnabled && BuildChannel.current.permitsReview
     }
 
     public static func configure(_ change: (inout Configuration) -> Void) {
@@ -95,6 +95,10 @@ public enum TeylaReview {
         #if TEYLA_REVIEW && canImport(UIKit)
         ShakeShortcut.shared.set(enabled: configuration.shake && isActive)
         if isActive { ReviewLifecycle.installOnce() }
+        #elseif TEYLA_REVIEW && os(macOS)
+        // There is no shake on a Mac. The observer checks `isActive` each time the app comes to the
+        // front, by which time StoreKit has answered.
+        if isEnabled { ReviewLifecycle.installOnce() }
         #endif
     }
 
@@ -128,7 +132,7 @@ public enum TeylaReview {
         #if TEYLA_REVIEW
         guard isActive else { return }
         ReviewMarker.lastEntry = ReviewMarker.overlay
-        #if canImport(UIKit)
+        #if canImport(UIKit) || os(macOS)
         ReviewPresenter.present()
         #endif
         #endif
@@ -167,7 +171,7 @@ public extension View {
         _ id: String, role: ReviewRole = .other, strings: [String] = [],
         file: String = #fileID, line: Int = #line
     ) -> some View {
-        #if TEYLA_REVIEW && canImport(UIKit)
+        #if TEYLA_REVIEW && (canImport(UIKit) || os(macOS))
         return modifier(ReviewAnchorModifier(id: id, role: role, strings: strings, file: file, line: line))
         #else
         return self
@@ -179,7 +183,7 @@ public extension View {
     /// health values or anything else a tester should not have to send. Does nothing outside a
     /// build with review mode on.
     func reviewPrivate() -> some View {
-        #if TEYLA_REVIEW && canImport(UIKit)
+        #if TEYLA_REVIEW && (canImport(UIKit) || os(macOS))
         return modifier(ReviewPrivateModifier())
         #else
         return self
@@ -197,12 +201,27 @@ public extension View {
     }
 }
 
-/// A button for a debug menu: "Review this screen".
+/// A button for a debug menu or a Settings row: "Review this screen" on a phone, "Report a problem…"
+/// on a Mac. It draws nothing until review mode is allowed for this install.
 public struct ReviewMenuButton: View {
+    #if os(macOS)
+    @ObservedObject private var availability = ReviewAvailability.shared
+    #endif
+
     public init() {}
 
     public var body: some View {
         #if TEYLA_REVIEW
+        #if os(macOS)
+        if availability.active {
+            Button {
+                TeylaReview.present()
+            } label: {
+                Label(TeylaReview.configuration.strings().reportProblem, systemImage: "text.bubble")
+            }
+            .accessibilityIdentifier("teyla.review.open")
+        }
+        #else
         if TeylaReview.isActive {
             Button {
                 TeylaReview.present()
@@ -211,6 +230,7 @@ public struct ReviewMenuButton: View {
             }
             .accessibilityIdentifier("teyla.review.open")
         }
+        #endif
         #else
         EmptyView()
         #endif

@@ -2,17 +2,6 @@
 import SwiftUI
 import UIKit
 
-/// What the owner entered in the overlay.
-struct ReviewDraft {
-    var tap: CGPoint?
-    var region: CGRect?
-    var hit: Anchor?
-    var accessibilityIdentifier: String?
-    var accessibilityLabel: String?
-    var text: String
-    var input: CommentInfo.Input
-}
-
 /// Holds the hosting controller weakly, so the overlay's callbacks can dismiss it without keeping
 /// it (and the screenshot it shows) alive after it closes.
 @MainActor
@@ -48,7 +37,10 @@ enum ReviewPresenter {
         let app = AppProbe.current()
         let currentScreen = AnchorRegistry.shared.currentScreen
         let windowSize = window.bounds.size
-        let captureID = UUID()                    // one id for every send attempt, so a retry overwrites the failed one
+        let session = ReviewSession(
+            device: DeviceProbe.deviceClass(), app: app, environment: environment, currentScreen: currentScreen,
+            anchors: anchors, privateFrames: privateFrames, png: shot.png, pixelWidth: shot.pixelWidth,
+            pixelHeight: shot.pixelHeight, scale: shot.scale, microphone: micState.asInfo)
         let speech = SpeechCapture()
         let handle = OverlayHandle()
 
@@ -78,21 +70,7 @@ enum ReviewPresenter {
             requiresHealthConsent: config.requiresHealthConsent,
             onClose: finish,
             onSend: { draft, report in
-                // A tap or circle on a private view records no element, identifier or label.
-                let pointed = ReviewRedaction.pointed(
-                    hit: draft.hit, identifier: draft.accessibilityIdentifier, label: draft.accessibilityLabel,
-                    point: draft.tap, region: draft.region, frames: privateFrames)
-                let screen = HitTester.screen(current: currentScreen, hit: pointed.hit, anchors: anchors)
-                let tap = draft.tap.map {
-                    TapInfo(x: Double($0.x).rounded2, y: Double($0.y).rounded2,
-                            accessibilityIdentifier: pointed.identifier, accessibilityLabel: pointed.label)
-                }
-                let record = CaptureBuilder.make(
-                    id: captureID, now: Date(), device: DeviceProbe.deviceClass(), app: app, environment: environment, screen: screen, tap: tap, region: draft.region.map(Rect.init),
-                    element: pointed.hit, accessibilityElementID: pointed.identifier, anchors: anchors,
-                    text: draft.text, input: draft.input, language: environment.language,
-                    pngSHA256: ReviewSigner.sha256Hex(shot.png), pixelWidth: shot.pixelWidth, pixelHeight: shot.pixelHeight,
-                    scale: shot.scale, microphone: micState.asInfo)
+                let record = session.record(for: draft)
                 let png = shot.png
                 // The overlay stays open to say what became of the capture. A failed save keeps the text.
                 Task { @MainActor in
@@ -106,9 +84,5 @@ enum ReviewPresenter {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         top.present(host, animated: false)
     }
-}
-
-extension MicrophoneState {
-    var asInfo: MicrophoneInfo { MicrophoneInfo(hostAudioInUse: hostAudioInUse, category: category) }
 }
 #endif

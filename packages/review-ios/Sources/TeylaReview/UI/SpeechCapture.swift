@@ -89,3 +89,29 @@ final class SpeechCapture {
     }
 }
 #endif
+
+#if TEYLA_REVIEW && os(macOS)
+/// The Mac form is text only: dictation needs the iOS audio session. The Mac keyboard has its own
+/// dictation key (Fn twice), which types into the comment field like any other input. This stand-in
+/// has the overlay's API and is never available, so the form shows no microphone button and
+/// `comment.input` stays "text".
+final class SpeechCapture {
+    var onText: ((String) -> Void)?
+    var onEnd: (() -> Void)?
+    var isAvailable: Bool { false }
+
+    @MainActor
+    func start(microphone: MicrophoneGuard) async -> Bool { false }
+    func stop() {}
+    func shutdown() {}
+}
+
+/// The Mac has no AVAudioSession to record or restore.
+struct NoAudioSession: AudioSessionControlling {
+    var categoryName: String { "" }
+    var modeName: String { "" }
+    var optionsRaw: UInt { 0 }
+    func restore(category: String, mode: String, options: UInt) throws {}
+    func setActive(_ active: Bool) throws {}
+}
+#endif

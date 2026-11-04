@@ -6,7 +6,10 @@ It reads files and prints one line per check. It never prints a key's value and 
 
     .xcarchive, .app, .ipa   Info.plist: TeylaReviewEnabled absent or falsy (the package's own `parseEnabled`),
                              TeylaReviewChannelKey and TeylaReviewChannelURL absent or empty; the main executable and the embedded
-                             frameworks do not contain the Swift marker
+                             frameworks do not contain the Swift marker. A Mac bundle keeps its plist at Contents/Info.plist
+                             and its executable in Contents/MacOS; both layouts are read
+    .pkg                     a Mac export: expanded with `pkgutil --expand-full` into a temporary folder (macOS only),
+                             then every .app in it gets the same checks
     .aab, .apk               no dex file contains the bytes of the overlay class name
     a directory              no file contains the web marker
 
@@ -19,7 +22,10 @@ import mmap
 import os
 import pathlib
 import plistlib
+import shutil
+import subprocess
 import sys
+import tempfile
 import zipfile
 from dataclasses import dataclass
 
@@ -177,6 +183,35 @@ def _per_app(apps, label, check) -> list[Check]:
     return out
 
 
+# ---- .pkg (a Mac export) ----------------------------------------------------------------------------
+
+def check_pkg(path: pathlib.Path) -> list[Check]:
+    """Expand the installer with `pkgutil --expand-full` (macOS only) and check each top-level .app in it."""
+    tool = shutil.which("pkgutil")
+    if tool is None:
+        raise GateError(f"cannot read {path.name}: reading a .pkg needs pkgutil, which only macOS has")
+    with tempfile.TemporaryDirectory(prefix="teyla-pkg-") as tmp:
+        out = pathlib.Path(tmp) / "expanded"
+        try:
+            done = subprocess.run([tool, "--expand-full", str(path), str(out)], capture_output=True, text=True, timeout=900)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            raise GateError(f"cannot read {path.name}: pkgutil failed: {e}") from e
+        if done.returncode != 0:
+            raise GateError(f"cannot read {path.name}: pkgutil exited {done.returncode}: {done.stderr.strip()[:200]}")
+        apps: list[pathlib.Path] = []
+        for root, dirs, _files in os.walk(out):
+            keep = []
+            for d in sorted(dirs):
+                if d.endswith(".app"):
+                    apps.append(pathlib.Path(root) / d)       # a nested .app is checked inside its parent
+                else:
+                    keep.append(d)
+            dirs[:] = keep
+        if not apps:
+            raise GateError(f"{path.name} holds no .app")
+        return _per_app(apps, lambda a: str(a.relative_to(out)), check_app)
+
+
 # ---- zip files: .ipa, .aab, .apk --------------------------------------------------------------------
 
 def _open_zip(path: pathlib.Path) -> zipfile.ZipFile:
@@ -268,16 +303,18 @@ def run(path: pathlib.Path) -> tuple[str, list[Check]]:
         return "app", check_app(path)
     if suffix == ".ipa" and path.is_file():
         return "ipa", check_ipa(path)
+    if suffix == ".pkg" and path.is_file():
+        return "pkg", check_pkg(path)
     if suffix in (".aab", ".apk") and path.is_file():
         return suffix[1:], check_android(path)
     if path.is_dir() and suffix not in (".xcarchive", ".app"):
         return "directory", check_dir(path)
-    raise GateError(f"unknown artifact type: {path.name} (expected .xcarchive, .app, .ipa, .aab, .apk or a folder)")
+    raise GateError(f"unknown artifact type: {path.name} (expected .xcarchive, .app, .ipa, .pkg, .aab, .apk or a folder)")
 
 
 def cmd_store_check(words: list[str], as_json: bool = False) -> int:
     if len(words) != 1:
-        print("teyla review store-check: give one path (.xcarchive, .app, .ipa, .aab, .apk or a folder)", file=sys.stderr)
+        print("teyla review store-check: give one path (.xcarchive, .app, .ipa, .pkg, .aab, .apk or a folder)", file=sys.stderr)
         return 2
     path = pathlib.Path(words[0]).expanduser()
     try:

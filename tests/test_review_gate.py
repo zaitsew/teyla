@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import json
 import plistlib
+import shutil
+import subprocess
+import sys
 import zipfile
 
 import pytest
@@ -283,3 +286,118 @@ def test_an_unreadable_folder_in_a_dist_cannot_pass(tmp_path, capsys):
         assert run(dist, capsys=capsys)[0] == 2
     finally:
         (dist / "assets").chmod(0o755)
+
+
+# ---- Mac bundles: Contents/Info.plist, Contents/MacOS, and a .pkg export ----------------------------------
+
+def test_a_mac_app_is_read_through_contents(tmp_path, capsys):
+    app = make_app(tmp_path, mac=True, plist=info(TeylaReviewEnabled="NO"))
+    assert (app / "Contents" / "Info.plist").is_file() and not (app / "Info.plist").exists()
+    code, out, _ = run(app, capsys=capsys)
+    assert code == 0 and "FAIL" not in out and "TeylaReviewEnabled is off" in out
+
+
+def test_the_plist_of_a_mac_app_is_the_one_in_contents(tmp_path, capsys):
+    code, out, _ = run(make_app(tmp_path, mac=True, plist=info(TeylaReviewEnabled="YES")), capsys=capsys)
+    assert code == 1 and "FAIL TeylaReviewEnabled" in out
+
+
+def test_the_marker_in_a_mac_executable_fails(tmp_path, capsys):
+    code, out, _ = run(make_app(tmp_path, mac=True, exe=b"\x00" + gate.MARKER_SWIFT + b"\x00"), capsys=capsys)
+    assert code == 1 and "Contents/MacOS/App" in out
+
+
+def test_the_marker_in_a_mac_framework_fails(tmp_path, capsys):
+    code, out, _ = run(make_app(tmp_path, mac=True, framework=b"x" + gate.MARKER_SWIFT), capsys=capsys)
+    assert code == 1 and "Contents/Frameworks/Pkg.framework/Pkg" in out
+
+
+def test_a_channel_key_in_a_mac_plist_fails_and_is_not_printed(tmp_path, capsys):
+    code, out, err = run(make_app(tmp_path, mac=True, plist=info(TeylaReviewChannelKey=SECRET)), capsys=capsys)
+    assert code == 1 and "FAIL TeylaReviewChannelKey" in out and SECRET not in out + err
+
+
+def test_a_nested_mac_helper_with_review_on_fails(tmp_path, capsys):
+    app = make_app(tmp_path, mac=True)
+    helper = app / "Contents" / "Library" / "LoginItems" / "Helper.app" / "Contents"
+    helper.mkdir(parents=True)
+    (helper / "Info.plist").write_bytes(info(TeylaReviewEnabled="1"))
+    code, out, _ = run(app, capsys=capsys)
+    assert code == 1 and "Helper.app/Contents/Info.plist" in out
+
+
+def test_a_clean_mac_archive_passes_and_a_marked_one_fails(tmp_path, capsys):
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    code, out, _ = run(make_archive(clean, mac=True), capsys=capsys)
+    assert code == 0 and "FAIL" not in out
+    marked = tmp_path / "marked"
+    marked.mkdir()
+    code, out, _ = run(make_archive(marked, mac=True, exe=gate.MARKER_SWIFT), capsys=capsys)
+    assert code == 1 and "Contents/MacOS/App" in out
+
+
+def test_a_mac_app_without_a_readable_plist_cannot_be_read(tmp_path, capsys):
+    app = tmp_path / "Broken.app"
+    (app / "Contents" / "MacOS").mkdir(parents=True)
+    code, _, err = run(app, capsys=capsys)
+    assert code == 2 and "cannot read" in err
+
+
+needs_pkgbuild = pytest.mark.skipif(sys.platform != "darwin" or not shutil.which("pkgbuild") or not shutil.which("pkgutil"),
+                                    reason="pkgbuild and pkgutil exist only on macOS")
+
+
+def make_pkg(root, name="App.app", **kw):
+    """A real flat installer of one Mac app, the way an App Store export holds it."""
+    payload = root / "payload"
+    payload.mkdir()
+    make_app(payload, name=name, mac=True, **kw)
+    pkg = root / "App.pkg"
+    subprocess.run(["pkgbuild", "--root", str(payload), "--install-location", "/Applications", "--identifier", "com.example.app", str(pkg)],
+                   check=True, capture_output=True)
+    return pkg
+
+
+@needs_pkgbuild
+def test_a_clean_pkg_passes(tmp_path, capsys):
+    code, out, _ = run(make_pkg(tmp_path), capsys=capsys)
+    assert code == 0 and "FAIL" not in out and out.startswith("ok") and "pkg App.pkg" in out
+
+
+@needs_pkgbuild
+def test_a_pkg_whose_app_holds_the_marker_fails(tmp_path, capsys):
+    code, out, _ = run(make_pkg(tmp_path, exe=gate.MARKER_SWIFT), capsys=capsys)
+    assert code == 1 and "Contents/MacOS/App" in out
+
+
+@needs_pkgbuild
+def test_a_pkg_whose_app_has_review_on_fails(tmp_path, capsys):
+    code, out, _ = run(make_pkg(tmp_path, plist=info(TeylaReviewEnabled="YES")), capsys=capsys)
+    assert code == 1 and "FAIL" in out and "TeylaReviewEnabled" in out
+
+
+@needs_pkgbuild
+def test_a_pkg_without_an_app_cannot_be_read(tmp_path, capsys):
+    payload = tmp_path / "payload"
+    payload.mkdir()
+    (payload / "readme.txt").write_text("no app here")
+    pkg = tmp_path / "Empty.pkg"
+    subprocess.run(["pkgbuild", "--root", str(payload), "--identifier", "com.example.empty", str(pkg)], check=True, capture_output=True)
+    code, _, err = run(pkg, capsys=capsys)
+    assert code == 2 and "holds no .app" in err
+
+
+def test_a_file_that_is_not_a_pkg_cannot_be_read(tmp_path, capsys):
+    bad = tmp_path / "Fake.pkg"
+    bad.write_bytes(b"not an installer")
+    code, _, err = run(bad, capsys=capsys)
+    assert code == 2 and "cannot read" in err
+
+
+def test_a_pkg_without_pkgutil_cannot_pass(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(gate.shutil, "which", lambda _name: None)
+    bad = tmp_path / "App.pkg"
+    bad.write_bytes(b"x")
+    code, _, err = run(bad, capsys=capsys)
+    assert code == 2 and "pkgutil" in err

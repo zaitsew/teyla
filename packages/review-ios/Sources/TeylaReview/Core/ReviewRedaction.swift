@@ -6,6 +6,16 @@ import CoreGraphics
 ///
 /// `frames` are the rectangles painted black (`ReviewMasking.rects`), in window points.
 enum ReviewRedaction {
+    /// True when the private views are still where the picture painted them, within a point. Any
+    /// other answer means a live look at the window could read a view the frozen masks miss.
+    static func masksUnchanged(frozen: [CGRect], live: [CGRect]) -> Bool {
+        guard frozen.count == live.count else { return false }
+        let order: (CGRect, CGRect) -> Bool = { ($0.minY, $0.minX) < ($1.minY, $1.minX) }
+        return zip(frozen.sorted(by: order), live.sorted(by: order)).allSatisfy { a, b in
+            abs(a.minX - b.minX) <= 1 && abs(a.minY - b.minY) <= 1 && abs(a.width - b.width) <= 1 && abs(a.height - b.height) <= 1
+        }
+    }
+
     /// True when the tapped point, or any part of the circled area, is inside a painted rectangle.
     static func touchesPrivate(point: CGPoint?, region: CGRect?, frames: [CGRect]) -> Bool {
         frames.contains { frame in
