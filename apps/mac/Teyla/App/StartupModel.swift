@@ -141,7 +141,8 @@ final class StartupModel {
                 guard self.productID == target else { return }
                 saving.remove(id)
                 // The saved text is now the answer; read the sheet again so the box shows whether it is checked.
-                drafts[id] = text
+                // Text typed while the save ran is newer than what was saved, so it stays.
+                if (drafts[id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines) == text { drafts[id] = text }
                 reload()
                 changed()
             } catch {

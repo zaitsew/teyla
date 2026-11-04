@@ -195,17 +195,22 @@ enum StartupText {
     }
 
     private static func money(_ m: StartupMoney) -> StartupGroup {
-        let off = "Monetization is off."
-        let none = m.enabled ? noProbe : off
+        let cost = StartupTile(label: "AI cost, 30 days", value: MoneyLogic.usd(m.aiCost30dUSD),
+                               detail: m.aiCost30dUSD == nil ? "No session spend was read." : "List price of the AI sessions.")
+        // Charging off: payers, MRR and revenue have nothing to say, so one tile says it once.
+        guard m.enabled else {
+            return StartupGroup(id: "money", title: "Monetization", tiles: [
+                StartupTile(label: "Charging", value: "Off", detail: "It does not take payment yet."),
+                cost,
+            ])
+        }
         return StartupGroup(id: "money", title: "Monetization", tiles: [
-            StartupTile(label: "Charging", value: m.enabled ? "On" : "Off",
-                        detail: m.enabled ? "The product takes payment." : off),
-            StartupTile(label: "Payers", value: count(m.paying), detail: m.paying == nil ? none : "People who pay."),
-            StartupTile(label: "MRR", value: MoneyLogic.usd(m.mrrUSD), detail: m.mrrUSD == nil ? none : "Monthly recurring revenue."),
+            StartupTile(label: "Charging", value: "On", detail: "The product takes payment."),
+            StartupTile(label: "Payers", value: count(m.paying), detail: m.paying == nil ? noProbe : "People who pay."),
+            StartupTile(label: "MRR", value: MoneyLogic.usd(m.mrrUSD), detail: m.mrrUSD == nil ? noProbe : "Monthly recurring revenue."),
             StartupTile(label: "Revenue, 30 days", value: MoneyLogic.usd(m.revenue30dUSD),
-                        detail: m.revenue30dUSD == nil ? none : "Cash received."),
-            StartupTile(label: "AI cost, 30 days", value: MoneyLogic.usd(m.aiCost30dUSD),
-                        detail: m.aiCost30dUSD == nil ? "No session spend was read." : "List price of the AI sessions."),
+                        detail: m.revenue30dUSD == nil ? noProbe : "Cash received."),
+            cost,
         ])
     }
 
@@ -222,7 +227,6 @@ enum StartupText {
         }
         return StartupGroup(id: "growth", title: "Growth", tiles: [
             StartupTile(label: "Weekly growth", value: rate, detail: detail),
-            StartupTile(label: "Weeks behind it", value: "\(g.weeks)", detail: "One snapshot a day."),
         ])
     }
 

@@ -100,15 +100,13 @@ final class StartupTextTests: XCTestCase {
     func testAnUnknownFigureIsADashWithAReasonNeverZero() throws {
         let groups = StartupText.groups(try sampleBlock())
         let money = try XCTUnwrap(groups.first { $0.id == "money" })
-        let payers = try XCTUnwrap(money.tiles.first { $0.label == "Payers" })
-        XCTAssertNil(payers.value)
-        XCTAssertEqual(payers.detail, "Monetization is off.")
+        XCTAssertEqual(money.tiles.map(\.label), ["Charging", "AI cost, 30 days"], "Charging off says it once")
         XCTAssertEqual(money.tiles.first { $0.label == "Charging" }?.value, "Off")
         XCTAssertEqual(money.tiles.first { $0.label == "AI cost, 30 days" }?.value, "$12.50")
         let growth = try XCTUnwrap(groups.first { $0.id == "growth" })
         XCTAssertNil(growth.tiles[0].value)
         XCTAssertEqual(growth.tiles[0].detail, "Needs 4 weeks of snapshots, has 0.")
-        XCTAssertEqual(growth.tiles[1].value, "0")
+        XCTAssertEqual(growth.tiles.count, 1)
     }
 
     func testAChargingProductWithNoProbeSaysNoProbe() {
