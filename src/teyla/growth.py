@@ -877,8 +877,8 @@ def run_trends(store: Store, cfg: dict, now: float, *, x: bool = False, guard: G
             fresh.append((ref, c))
     kept, killed, specs = [], [], []
     screened: list[tuple[str, dict]] = []
-    for ref, c in fresh:                                   # nothing leaves the machine before the guard has read it
-        hits = guard.check(*(str(c.get(k) or "") for k in ("title", "summary", "url", "date", "via")))
+    for ref, c in fresh:                                   # nothing leaves the machine before the guard has read it (not `via`: our own label)
+        hits = guard.check(*(str(c.get(k) or "") for k in ("title", "summary", "url", "date")))
         if hits:
             why = f"confidential overlap ({kinds_text(hits)})"
             killed.append((c["title"], why))
