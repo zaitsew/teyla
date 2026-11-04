@@ -275,6 +275,8 @@ def load_config(store: Store) -> dict:
         cfg["x_scan"] = raw["x_scan"]
     if isinstance(raw.get("outreach_repos"), list):
         cfg["outreach_repos"] = [str(x).lower() for x in raw["outreach_repos"]]
+    if isinstance(raw.get("spec_target"), list):
+        cfg["spec_targets"] = [t for t in raw["spec_target"] if isinstance(t, dict)]
     if isinstance(raw.get("public_products"), list):
         cfg["public_products"] = [str(x).lower() for x in raw["public_products"]]
     models = raw.get("models") if isinstance(raw.get("models"), dict) else {}
@@ -516,10 +518,6 @@ def _is_mechanical(title: str) -> bool:
         return False
 
 
-def _pr_format(n: int) -> str:
-    return "true-vibe-coding" if n % 2 else "worklog"
-
-
 def src_prs(c: Ctx) -> tuple[int, str]:
     cache = _pr_cache()
     mapping = slug_products(c.reg, cache)
@@ -539,7 +537,7 @@ def src_prs(c: Ctx) -> tuple[int, str]:
             name = c.reg["product"][pid].get("name") or pid
             n = pr.get("number") or 0
             if c.add(ref=f"pr:{slug.lower()}#{n}", source="pr", url=f"https://github.com/{slug}/pull/{n}",
-                     kind="post", format=_pr_format(int(n)), product=pid, idea=f"Merged in {name}: {title}",
+                     kind="post", format="worklog", product=pid, idea=f"Merged in {name}: {title}",
                      facts=[f"merged pull request in {name}: {title}", f"merged {day_of(at)}"],
                      scores=dict(relevance=3, demonstrable=4, novelty=3, momentum=5 if age_days <= 1 else 3)):
                 made += 1
@@ -609,7 +607,7 @@ def src_sessions(c: Ctx) -> tuple[int, str]:
     facts = [f"{len(rows)} agent sessions in the last day", f"{', '.join(harness)} harnesses", f"${usd:.2f} at API list price"]
     if prs:
         facts.append(f"{prs} pull requests")
-    made = c.add(ref=f"sessions:{day_of(c.now)}", source="sessions", kind="post", format="true-vibe-coding",
+    made = c.add(ref=f"sessions:{day_of(c.now)}", source="sessions", kind="post", format="worklog",
                  product=ledger_product(c), idea="What my agents did yesterday, in numbers", facts=facts,
                  scores=dict(relevance=4, demonstrable=4, novelty=2, momentum=3))
     return (1 if made else 0), ""
@@ -658,22 +656,24 @@ def src_corrections(c: Ctx) -> tuple[int, str]:
 
 
 def src_notes(c: Ctx) -> tuple[int, str]:
+    """Notes tagged #content become lessons; notes tagged #spec become spec-product ideas."""
     from . import notes
     made = 0
     for n in notes.listing():
-        if not re.search(r"(?<!\w)#content\b", n["text"], re.I):
+        spec = bool(re.search(r"(?<!\w)#spec\b", n["text"], re.I))
+        if not spec and not re.search(r"(?<!\w)#content\b", n["text"], re.I):
             continue
-        text = " ".join(re.sub(r"(?<!\w)#content\b", "", n["text"], flags=re.I).split())
+        text = " ".join(re.sub(r"(?<!\w)#(content|spec)\b", "", n["text"], flags=re.I).split())
         pid = n["product"] if n["product"] in c.public else ""
-        if text and c.add(ref=f"note:{n['id']}", source="note", kind="post", format="lesson", product=pid,
-                          idea=text[:400], facts=[text[:400]], owner=True,
+        if text and c.add(ref=f"note:{n['id']}", source="note", kind="clip" if spec else "post", format="spec-product" if spec else "lesson",
+                          product="" if spec else pid, idea=text[:400], facts=[text[:400]], owner=True,
                           scores=dict(relevance=4, demonstrable=3, novelty=4, momentum=3)):
             made += 1
     return made, ""
 
 
 def src_evergreen(c: Ctx) -> tuple[int, str]:
-    """A spotlight every 14 days and an "imagine if it was AI-native" spec every 30, per public product with a summary."""
+    """A spotlight every 14 days per public product with a summary: the rotation that gives each one a sale attempt."""
     ordinal = _dt.datetime.fromtimestamp(c.now).date().toordinal()
     made = skipped = 0
     for pid in sorted(c.public):
@@ -683,15 +683,30 @@ def src_evergreen(c: Ctx) -> tuple[int, str]:
             skipped += 1
             continue
         name = p.get("name") or pid
-        for bucket, ref, fmt, idea, sc in (
-                (14, f"spotlight:{pid}:{ordinal // 14}", "product-spotlight", f"Product spotlight: {name}",
-                 dict(relevance=4, demonstrable=4, novelty=2, momentum=2)),
-                (30, f"spec:{pid}:{ordinal // 30}", "spec-product", f"Imagine if {name} was truly AI-native",
-                 dict(relevance=4, demonstrable=3, novelty=4, momentum=2))):
-            if c.add(ref=ref, source="evergreen", kind="clip" if fmt == "spec-product" else "post", format=fmt, product=pid,
-                     idea=idea, facts=[f"{name}: {summary}"], scores=sc):
-                made += 1
+        if c.add(ref=f"spotlight:{pid}:{ordinal // 14}", source="evergreen", kind="post", format="product-spotlight", product=pid,
+                 idea=f"Product spotlight: {name}", facts=[f"{name}: {summary}"],
+                 scores=dict(relevance=4, demonstrable=4, novelty=2, momentum=2)):
+            made += 1
     return made, (f"{skipped} public products have no summary in the registry" if skipped else "")
+
+
+def src_specs(c: Ctx) -> tuple[int, str]:
+    """Spec products: someone else's product reimagined, from `spec_targets` in the config. Never one of ours."""
+    targets = c.cfg.get("spec_targets") or []
+    made = 0
+    for t in targets:
+        name = " ".join(str(t.get("product") or "").split()) if isinstance(t, dict) else ""
+        if not name:
+            continue
+        angle = " ".join(str(t.get("idea") or "").split())
+        facts = [f"{name} is another company's product; the prototype is unofficial and not affiliated with it"]
+        if angle:
+            facts.append(f"The owner's angle: {angle}")
+        if c.add(ref=f"spec:{name.lower()}", source="spec", kind="clip", format="spec-product",
+                 idea=f"What if {name} was truly AI-native?", facts=facts, owner=True,
+                 scores=dict(relevance=4, demonstrable=4, novelty=4, momentum=2)):
+            made += 1
+    return made, ("" if targets else "no spec_targets in the growth config")
 
 
 def bi_data_dir(cfg: dict) -> pathlib.Path:
@@ -875,7 +890,7 @@ def src_trends(c: Ctx) -> tuple[int, str]:
 
 
 SOURCES = (("prs", src_prs), ("releases", src_releases), ("sessions", src_sessions), ("ledger", src_ledger),
-           ("corrections", src_corrections), ("notes", src_notes), ("evergreen", src_evergreen), ("trends", src_trends))
+           ("corrections", src_corrections), ("notes", src_notes), ("evergreen", src_evergreen), ("specs", src_specs), ("trends", src_trends))
 
 
 def harvest(store: Store, cfg: dict, now: float, *, days: int = 3, allow_net: bool = True, skip: tuple[str, ...] = (),
@@ -1014,8 +1029,8 @@ DRAFT_SYSTEM = (
 )
 
 FORMAT_BRIEF = {
-    "true-vibe-coding": "A short true story of building something real by prompting AI agents end to end: the ask, what the agents did, what shipped, what went wrong. Show the log, not a theory.",
-    "spec-product": "A spec-product script titled 'Imagine if <product> was truly AI-native': what the product does when an agent is the first user, in 45 seconds of speech. End with acceptance_test, a one-day prototype test.",
+    "true-vibe-coding": "A filmed bet: before leaving, the owner set agents a named job and asked if it would finish before he is back. Open with the verdict or the stakes, then what the agents did while he was away from the keyboard, then what it cost. A failure is told as plainly as a success. Use only what the facts say happened.",
+    "spec-product": "A spec-product script, like a spec ad, about ANOTHER company's real product: 'What if <product> was truly AI-native?' Name one behaviour the product lacks today and show the owner's working prototype doing it, in 45 seconds of speech. Say it is unofficial and not affiliated. End with acceptance_test, one sentence a viewer can judge, and that a prototype must pass in one day: a one-day prototype test.",
     "worklog": "What shipped and what it cost, in numbers from the facts. One real artifact.",
     "lesson": "One thing learned the hard way, and the rule that came after it.",
     "reaction": "A builder's reaction to this news: what he would try or test, not an opinion on hype. Say what was not tried.",
