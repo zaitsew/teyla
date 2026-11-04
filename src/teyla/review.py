@@ -78,10 +78,25 @@ CREATE TABLE IF NOT EXISTS captures (
   decision      TEXT,
   pr            TEXT NOT NULL DEFAULT '',
   lease_owner   TEXT,
-  lease_expires REAL
+  lease_expires REAL,
+  closed_at     TEXT
 );
 CREATE INDEX IF NOT EXISTS captures_by_product ON captures (product, created_at);
 """
+
+# Set here, not at each UPDATE: a capture's status changes in several places, and the retention clock must not miss one.
+CLOSED_TRIGGERS = """
+CREATE TRIGGER IF NOT EXISTS captures_closed AFTER UPDATE OF status ON captures
+WHEN NEW.status IN ('done', 'rejected') AND OLD.status NOT IN ('done', 'rejected')
+BEGIN UPDATE captures SET closed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS captures_reopened AFTER UPDATE OF status ON captures
+WHEN NEW.status NOT IN ('done', 'rejected') AND OLD.status IN ('done', 'rejected')
+BEGIN UPDATE captures SET closed_at = NULL WHERE id = NEW.id; END;
+"""
+
+# What the first-send notice promises a tester about a capture from the shared channel.
+CLOSED_DAYS = 30
+UNOPENED_DAYS = 90
 
 
 # --- the queue ------------------------------------------------------------------------------------
@@ -111,6 +126,13 @@ def connect(path: pathlib.Path | None = None) -> sqlite3.Connection:
             pass
     conn.execute("PRAGMA busy_timeout = 15000")
     conn.executescript(SCHEMA)
+    if "closed_at" not in {r["name"] for r in conn.execute("PRAGMA table_info(captures)")}:
+        try:
+            conn.execute("ALTER TABLE captures ADD COLUMN closed_at TEXT")
+        except sqlite3.OperationalError as e:     # another process added it first
+            if "duplicate column" not in str(e):
+                raise
+    conn.executescript(CLOSED_TRIGGERS)
     return conn
 
 
@@ -120,6 +142,40 @@ def _now() -> float:
 
 def _iso(epoch: float) -> str:
     return _dt.datetime.fromtimestamp(epoch, _dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def prune_channel(conn: sqlite3.Connection, now: float | None = None) -> dict:
+    """Delete channel captures past their retention: 30 days after closing, 90 after import if never opened.
+    `imported_at` is this Mac's clock; `created_at` is the sender's. An open capture is someone's work and stays.
+    {deleted, kept: [ids whose folder could not be removed]}. Other sources are the owner's own and stay."""
+    now = _now() if now is None else now
+    closed_before = _iso(now - CLOSED_DAYS * 86400)
+    unopened_before = _iso(now - UNOPENED_DAYS * 86400)
+    # A capture closed before this clock existed starts it today.
+    conn.execute("UPDATE captures SET closed_at = ? WHERE source = 'channel' AND status IN ('done', 'rejected') "
+                 "AND closed_at IS NULL", (_iso(now),))
+    rows = conn.execute(
+        "SELECT id, dir FROM captures WHERE source = 'channel' AND (lease_expires IS NULL OR lease_expires <= ?) AND ("
+        "(status IN ('done', 'rejected') AND closed_at < ?) OR (status IN ('new', 'triaged') AND imported_at < ?))",
+        (now, closed_before, unopened_before)).fetchall()
+    rep: dict = {"deleted": 0, "kept": []}
+    root = captures_root().resolve()
+    for r in rows:
+        folder = pathlib.Path(r["dir"])
+        if not folder.is_absolute():
+            folder = root / folder
+        # The row is the only record of where the folder is, so it goes last and only once the folder is gone.
+        resolved = folder.resolve()
+        if root not in resolved.parents:
+            rep["kept"].append(r["id"])
+            continue
+        shutil.rmtree(resolved, ignore_errors=True)
+        if resolved.exists():
+            rep["kept"].append(r["id"])
+            continue
+        conn.execute("DELETE FROM captures WHERE id = ?", (r["id"],))
+        rep["deleted"] += 1
+    return rep
 
 
 def resolve_id(conn: sqlite3.Connection, prefix: str) -> str:

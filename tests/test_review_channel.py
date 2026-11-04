@@ -8,9 +8,11 @@ import importlib.util
 import json
 import os
 import pathlib
+import sqlite3
 import stat
 import sys
 import textwrap
+import time
 
 import pytest
 
@@ -429,3 +431,83 @@ def test_a_second_key_change_for_one_product_is_refused(world, monkeypatch):
             rc.key_revoke(rc.Remote("deploy@example.com", "/data"), "alpha")
     assert called == []
     assert path.read_text().strip() == "old-secret"
+
+
+def _aged(conn, cid, **fields):
+    for k, v in fields.items():
+        conn.execute(f"UPDATE captures SET {k} = ? WHERE id = ?", (v, cid))
+
+
+def _one_capture(world, capsys, n=1):
+    cid = f"{n:08x}-0000-4000-8000-000000000000"
+    put(world, "alpha", cid)
+    assert pull(capsys)[0] == 0
+    conn = review.connect()
+    return conn, cid, pathlib.Path(conn.execute("SELECT dir FROM captures WHERE id = ?", (cid,)).fetchone()["dir"])
+
+
+@pytest.mark.parametrize("status,field,days,gone", [
+    ("new", "imported_at", 91, True), ("new", "imported_at", 89, False),
+    ("triaged", "imported_at", 91, True),
+    ("open", "imported_at", 400, False),
+    ("rejected", "closed_at", 31, True), ("rejected", "closed_at", 29, False),
+    ("done", "closed_at", 31, True),
+])
+def test_retention_keeps_the_promise_in_the_notice(world, capsys, status, field, days, gone):
+    conn, cid, folder = _one_capture(world, capsys)
+    now = time.time()
+    _aged(conn, cid, status=status)
+    _aged(conn, cid, **{field: review._iso(now - days * 86400)})
+    rep = review.prune_channel(conn, now)
+    assert rep["deleted"] == (1 if gone else 0)
+    assert folder.exists() is not gone
+    assert (conn.execute("SELECT 1 FROM captures WHERE id = ?", (cid,)).fetchone() is None) is gone
+
+
+def test_closing_starts_the_clock_and_reopening_stops_it(world, capsys):
+    conn, cid, _ = _one_capture(world, capsys)
+    conn.execute("UPDATE captures SET status = 'done' WHERE id = ?", (cid,))
+    assert conn.execute("SELECT closed_at FROM captures WHERE id = ?", (cid,)).fetchone()[0]
+    conn.execute("UPDATE captures SET status = 'triaged' WHERE id = ?", (cid,))
+    assert conn.execute("SELECT closed_at FROM captures WHERE id = ?", (cid,)).fetchone()[0] is None
+
+
+def test_a_capture_closed_before_the_clock_existed_starts_it_now(world, capsys):
+    conn, cid, folder = _one_capture(world, capsys)
+    conn.execute("UPDATE captures SET status = 'rejected' WHERE id = ?", (cid,))
+    conn.execute("UPDATE captures SET closed_at = NULL WHERE id = ?", (cid,))
+    now = time.time()
+    assert review.prune_channel(conn, now)["deleted"] == 0
+    assert folder.exists()
+    assert review.prune_channel(conn, now + 31 * 86400)["deleted"] == 1
+
+
+def test_a_held_capture_and_another_source_are_not_pruned(world, capsys):
+    conn, cid, folder = _one_capture(world, capsys)
+    now = time.time()
+    _aged(conn, cid, imported_at=review._iso(now - 200 * 86400), lease_owner="lane", lease_expires=now + 60)
+    assert review.prune_channel(conn, now)["deleted"] == 0
+    _aged(conn, cid, lease_owner=None, lease_expires=None, source="relay")
+    assert review.prune_channel(conn, now)["deleted"] == 0
+    assert folder.exists()
+
+
+def test_a_row_pointing_outside_the_inbox_deletes_nothing(world, capsys, tmp_path):
+    conn, cid, _ = _one_capture(world, capsys)
+    outside = tmp_path / "precious"
+    outside.mkdir()
+    now = time.time()
+    _aged(conn, cid, dir=str(outside), imported_at=review._iso(now - 200 * 86400))
+    rep = review.prune_channel(conn, now)
+    assert rep == {"deleted": 0, "kept": [cid]}
+    assert outside.exists()
+
+
+def test_an_old_inbox_gains_the_column(tmp_path):
+    db = tmp_path / "queue.db"
+    old = sqlite3.connect(db)
+    old.executescript(review.SCHEMA.replace("lease_expires REAL,\n  closed_at     TEXT", "lease_expires REAL"))
+    old.close()
+    conn = review.connect(db)
+    assert "closed_at" in {r["name"] for r in conn.execute("PRAGMA table_info(captures)")}
+
