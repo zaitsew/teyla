@@ -76,6 +76,8 @@ enum Space {
     static let captureTopFraction: CGFloat = 0.16
     /// The quick-note text area.
     static let captureFieldHeight: CGFloat = 72
+    /// The text area where a draft is edited.
+    static let editorMin: CGFloat = 160
     /// The shortcut field in Settings.
     static let shortcutFieldWidth: CGFloat = 160
     /// The ⌘K command bar.

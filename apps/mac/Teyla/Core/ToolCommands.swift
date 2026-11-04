@@ -4,7 +4,7 @@ import Foundation
 /// `command` and `preview` come from the CLI, but a command the list does not name is refused and shown as refused:
 /// a newer CLI, a damaged file or a hostile one can print anything, and none of it reaches a process.
 ///
-/// What is on the list: forget a task that vanished, sweep what agents left on the disk (and its dry run), apply one
+/// What is on the list: approve, reject or edit one growth draft (`GrowthActions`), forget a task that vanished, sweep what agents left on the disk (and its dry run), apply one
 /// offer (and its dry run), and read the stores and GitHub again. Nothing that charges money, sends a message,
 /// deploys or submits to a store is, and nothing is ever added by the CLI's output.
 enum ToolCommands {
@@ -52,6 +52,8 @@ enum ToolCommands {
             let keys = Array(argv.dropFirst(2))
             guard keys.count <= 20, keys.allSatisfy(isTaskKey) else { return .refused("A task id is not valid.") }
             return .allowed
+        case _ where argv.first == "growth":
+            return GrowthActions.check(argv)
         default:
             return .refused("Teyla does not run this from the app: \(display(argv)).")
         }

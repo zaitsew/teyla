@@ -64,6 +64,8 @@ protocol TeylaBackend: Sendable {
     func console(refresh: Bool) async throws -> ConsoleReport
     /// The CLI's last cached report, read from disk without running anything; nil when there is none.
     func consoleCached() async -> ConsoleReport?
+    /// The drafts waiting for review, read from `~/.teyla/growth/items` (no command runs). Nothing is changed by reading.
+    func growthDrafts() async throws -> GrowthDrafts.Read
     /// Runs one command of the Tools page and returns what it printed. Only commands `ToolCommands` allows are run.
     func runTool(_ argv: [String]) async throws -> String
     func apply(offerID: String) async throws -> String
@@ -91,6 +93,7 @@ extension TeylaBackend {
     func attention() async throws -> AttentionReport { throw Self.none }
     func console(refresh: Bool) async throws -> ConsoleReport { throw Self.none }
     func consoleCached() async -> ConsoleReport? { nil }
+    func growthDrafts() async throws -> GrowthDrafts.Read { throw Self.none }
     func runTool(_ argv: [String]) async throws -> String { throw Self.none }
     func apply(offerID: String) async throws -> String { throw Self.none }
     func notes() async throws -> [NoteItem] { throw Self.none }

@@ -67,24 +67,3 @@ struct HeadlineTile: View {
                  detail: headline?.detail ?? "The source gave no figure.", tone: tone)
     }
 }
-
-/// Growth, Money and Playbook until their own screens land: the headline, or the error that stopped it.
-struct ConsoleStubView: View {
-    let route: AppRoute
-
-    var body: some View {
-        let page = ConsoleText.page(for: route) ?? ConsoleText.money
-        Page(maxWidth: Space.readingPage) {
-            ConsoleHeader(page: page)
-            switch route {
-            case .growth:
-                ConsoleBlock(name: page.title, pick: { $0.growth }) { data in StatStrip { HeadlineTile(headline: data.headline) } }
-            case .playbook:
-                ConsoleBlock(name: page.title, pick: { $0.playbook }) { data in StatStrip { HeadlineTile(headline: data.headline) } }
-            default:
-                ConsoleBlock(name: page.title, pick: { $0.money }) { data in StatStrip { HeadlineTile(headline: data.headline) } }
-            }
-        }
-        .navigationTitle(page.title)
-    }
-}
