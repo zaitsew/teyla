@@ -131,6 +131,11 @@ final class TeylaConfigTests: XCTestCase {
         let other = ConfigFile.parse("[intent]\nnote = \(doubles)one\ntwo\(doubles)\nenabled = false\n")
         XCTAssertEqual(other.values["intent.note"], .text("one\ntwo"))
         XCTAssertEqual(other.values["intent.enabled"], .flag(false))
+        // An escaped quote inside a basic multi-line string does not close it.
+        let escaped = "[env]\nSECRET = \(doubles)\n\\\(doubles)\n[update]\nrepo = \"private-value\"\n\(doubles)\n"
+        let hidden = ConfigFile.parse(escaped)
+        XCTAssertEqual(hidden.values["env.SECRET"], .hidden)
+        XCTAssertNil(hidden.values["update.repo"])
     }
 
     func testAHugeOrInfiniteNumberDoesNotCrashThePage() {

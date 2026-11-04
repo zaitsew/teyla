@@ -95,8 +95,10 @@ enum ConfigFile {
             // under `[env]` or a secret key, dropped like any other value.
             if let delimiter = [String(repeating: "\"", count: 3), String(repeating: "'", count: 3)].first(where: { rest.hasPrefix($0) }) {
                 var body = String(rest.dropFirst(3))
-                while !body.contains(delimiter), let next = lines.popFirst() { body += "\n" + next }
-                let text = body.components(separatedBy: delimiter).first ?? ""
+                let basic = delimiter.hasPrefix("\"")
+                while closing(body, delimiter: delimiter, basic: basic) == nil, let next = lines.popFirst() { body += "\n" + next }
+                let end = closing(body, delimiter: delimiter, basic: basic) ?? body.endIndex
+                let text = String(body[..<end])
                 values[key] = (table == "env" || isSecret(key)) ? .hidden : .text(text.trimmingCharacters(in: .whitespacesAndNewlines))
                 continue
             }
@@ -110,6 +112,22 @@ enum ConfigFile {
     }
 
     // MARK: Pieces
+
+    /// Where a multi-line string ends: the first closing delimiter, skipping an escaped character in a basic string
+    /// (`\"""` does not close it). A literal string has no escapes.
+    private static func closing(_ body: String, delimiter: String, basic: Bool) -> String.Index? {
+        var index = body.startIndex
+        while index < body.endIndex {
+            if basic && body[index] == "\\" {
+                index = body.index(after: index)
+                if index < body.endIndex { index = body.index(after: index) }
+                continue
+            }
+            if body[index...].hasPrefix(delimiter) { return index }
+            index = body.index(after: index)
+        }
+        return nil
+    }
 
     private static func value(_ text: String) -> ConfigValue? {
         if text.hasPrefix("\"") || text.hasPrefix("'") { return quoted(text).map(ConfigValue.text) }
