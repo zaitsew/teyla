@@ -1,88 +1,11 @@
+import AppKit
 import SwiftUI
 
-/// Tools: what is wrong on this Mac's backend now (`teyla attention`), with the actions that exist for it.
-/// "Nothing needs you here" appears only for a report that was read and is empty. A failed read says so.
-struct ToolsView: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        let tools = model.tools
-        ScrollViewReader { reader in
-            Page(maxWidth: Space.readingPage) {
-                header(tools)
-                if let notice = tools.notice { Notice(text: notice) { tools.dismissNotice() } }
-                if let why = tools.failure { ErrorRow(section: "Tools", message: why) { tools.refresh() } }
-                if let report = tools.report {
-                    let (act, info) = ToolsPage.sections(report)
-                    if !act.isEmpty { section("Needs you", items: act) }
-                    if !info.isEmpty { section("Worth a look", items: info) }
-                    if report.items.isEmpty, tools.failure == nil { quiet(report) }
-                } else if tools.isLoading {
-                    HStack(spacing: Space.s) {
-                        ProgressView().controlSize(.small)
-                        Text("This reads local files only and can take half a minute.")
-                            .font(Typo.caption)
-                            .foregroundStyle(Palette.textSecondary)
-                    }
-                }
-                if model.capabilities.diagnosis { diagnosis }
-            }
-            .onChange(of: tools.focusedItemID, initial: true) { _, id in
-                guard let id else { return }
-                withAnimation(.easeOut(duration: 0.25)) { reader.scrollTo(id, anchor: .top) }
-            }
-        }
-        .navigationTitle("Operations")
-        .onAppear { tools.opened() }
-    }
-
-    private func header(_ tools: ToolsModel) -> some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            let age = ToolsPage.ageLine(readAt: tools.readAt, now: context.date)
-            let headline = ToolsPage.headline(report: tools.report, phase: tools.phase)
-            PageHeader(title: "Operations", context: age.isEmpty ? headline : "\(headline) · \(age)") {
-                Button("Check again") { tools.refresh() }
-                    .disabled(tools.isLoading)
-            }
-        }
-    }
-
-    private func section(_ title: String, items: [AttentionItem]) -> some View {
-        VStack(alignment: .leading, spacing: Space.m) {
-            SectionHeader(title: title, count: items.count)
-            ForEach(items) { item in
-                ToolCard(item: item)
-            }
-        }
-    }
-
-    private func quiet(_ report: AttentionReport) -> some View {
-        let line = report.quietLine
-        return Group {
-            if !line.isEmpty {
-                Text("Checked and fine: \(line).")
-                    .font(Typo.body)
-                    .foregroundStyle(Palette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private var diagnosis: some View {
-        VStack(alignment: .leading, spacing: Space.s) {
-            SectionHeader(title: "First-run diagnosis")
-            Text("Read 30 days of sessions and see which changes would save money. Nothing is changed until you say so.")
-                .font(Typo.body)
-                .foregroundStyle(Palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Open diagnosis") { model.go(.diagnosis) }
-                .buttonStyle(.link)
-        }
-    }
-}
+// The pieces of Operations that run a command: a failure's card with the actions that exist for it, the steps of one
+// action (preview, confirm, run, result) and the notice that keeps the last result. `ToolsModel` decides what may run.
 
 /// One thing that is wrong, in a sentence, with what is known and the actions that exist.
-private struct ToolCard: View {
+struct ToolCard: View {
     @Environment(AppModel.self) private var model
     let item: AttentionItem
 
@@ -128,7 +51,7 @@ private struct ToolCard: View {
 }
 
 /// An action's button, and below it the step it is on: preview, confirm, running, result.
-private struct ActionRow: View {
+struct ActionRow: View {
     @Environment(AppModel.self) private var model
     let item: AttentionItem
     let action: ToolAction
@@ -222,7 +145,7 @@ private struct ActionRow: View {
 }
 
 /// The last action's result, kept after its card left the list.
-private struct Notice: View {
+struct Notice: View {
     let text: String
     let dismiss: () -> Void
 
