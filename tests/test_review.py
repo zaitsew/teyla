@@ -751,7 +751,7 @@ def test_privacy_names_the_product_and_matches_the_first_send_notice(capsys):
     assert review.cmd_privacy("Thing") == 0
     out = capsys.readouterr().out
     assert "go to Thing's developer" in out and "Test builds of Thing" in out
-    assert "within the hour" in out and "30 days after the report is closed" in out and "90 days" in out
+    assert "next collects it, usually within the hour" in out and "30 days after the report is closed" in out and "90 days" in out
     assert "no legal review" in out
 
 

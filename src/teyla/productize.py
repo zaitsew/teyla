@@ -444,6 +444,7 @@ def render_text(reports: list[dict]) -> str:
         rows = r["requirements"]
         if not rows or (r["target"] not in SHAREABLE and all(q["met"] for q in rows)):
             lines.append(f"{head}  nothing to meet (target is not a shared one)")
+            lines.extend(f"    {q['id']} {q['detail']}" for q in rows if q["detail"].startswith("WARN:"))
             continue
         met = sum(1 for q in rows if q["met"])
         line = f"{head}  {met}/{len(rows)} met"
@@ -451,6 +452,7 @@ def render_text(reports: list[dict]) -> str:
         if bad:
             line += "  unmet: " + ", ".join(f"{q['id']} {q['detail']}" for q in bad)
         lines.append(line)
+        lines.extend(f"    {q['id']} {q['detail']}" for q in rows if q["met"] and q["detail"].startswith("WARN:"))
         for who in ("owner", "agent"):
             bs = [b for b in r.get("blockers", []) if str(b.get("who", "owner")) == who]
             for b in bs:

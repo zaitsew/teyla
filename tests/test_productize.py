@@ -584,6 +584,7 @@ def test_r11_only_warns_for_an_owner_target(tmp_path):
     row = next(q for q in r["requirements"] if q["id"] == "R11")
     assert row["met"] is True and row["detail"].startswith("WARN:")
     assert productize.unmet(r) == [] and r["blockers"] == []
+    assert "R11 WARN: web" in productize.render_text([r])
 
 
 @pytest.mark.parametrize("platform, path, text", [

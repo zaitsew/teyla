@@ -1065,15 +1065,16 @@ def _print_pull(rep: dict) -> None:
 
 
 def privacy_text(product: str) -> str:
-    """The two sentences a product owes its testers, with its name filled in. The retention figures
-    match the first-send notice and the channel's hourly pull (docs/REVIEW.md, "Privacy")."""
+    """The two texts a product owes its testers, with its name filled in. The retention figures
+    match the first-send notice. A Mac that is off keeps captures on the server until it is on again,
+    so the hour is never promised flat (docs/REVIEW.md, "The shared channel")."""
     return f"""strings.deliveryNote (shown above Send):
 
 The screenshot and your comment go to {product}'s developer. They may show other people's data.
 
 Privacy policy paragraph:
 
-Test builds of {product} can send a problem report when a tester chooses to. A report holds a picture of the screen as it was, the tester's comment, the app's name and build, the device or browser and system, and the element the tester pointed at. The picture can show other people's names and data, except areas the app blacks out. Reports go to the developer of {product} through a review server, to find and fix the problem. The copy on the server is deleted within the hour. The developer's computer keeps its copy for 30 days after the report is closed, or 90 days if it is never opened. Builds in the app stores do not contain this feature.
+Test builds of {product} can send a problem report when a tester chooses to. A report holds a picture of the screen as it was, the tester's comment, the app's name and build, the device or browser and system, and the element the tester pointed at. The picture can show other people's names and data, except areas the app blacks out. Reports go to the developer of {product} through a review server, to find and fix the problem. The copy on the server is deleted when the developer's computer next collects it, usually within the hour. The developer's computer keeps its copy for 30 days after the report is closed, or 90 days if it is never opened. Builds in the app stores do not contain this feature.
 
 This wording has had no legal review."""
 
