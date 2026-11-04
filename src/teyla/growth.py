@@ -1416,6 +1416,10 @@ def edit(store: Store, cfg: dict, ref: str, body: str | None, hook: str | None, 
         msg = [f"{f['rule']}: {f['message']}" for f in vrep["findings"] if f["level"] == "fail"] + \
               ([f"blocked: {', '.join(grep['kinds'])}"] if not grep["ok"] else [])
         raise GrowthError("the edit fails its checks, nothing saved: " + "; ".join(msg))
+    if it.get("video_hold"):                             # a frame check held the video: a caption edit cannot answer that
+        set_status(store, it, "draft", now)
+        store.log("edit", now, id=it["id"])
+        return it
     it.pop("hold_reason", None)                          # the owner's edit answers the editor's hold
     set_status(store, it, "review", now)               # an edit sends an approved item back to the owner
     store.log("edit", now, id=it["id"])
@@ -1426,6 +1430,8 @@ def retry(store: Store, ref: str, now: float) -> dict:
     it = store.get(ref)
     if it["status"] != "failed" and not (it["status"] == "draft" and it.get("hold_reason")):
         raise GrowthError(f"{it['id']} is {it['status']}: only a failed or held item can be retried")
+    if it.get("video_hold"):
+        raise GrowthError(f"{it['id']} is held by the frame check ({it['video_hold']}): `teyla growth cut` renders and checks a new video")
     it.pop("fail_reason", None)
     it.pop("hold_reason", None)
     set_status(store, it, "idea", now)

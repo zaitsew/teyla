@@ -337,3 +337,34 @@ def test_a_caption_that_breaks_the_voice_chart_gets_one_repair_call_and_keeps_th
     res = run_step(store, cfg)
     assert len(fm.calls) == 2 and fm.calls[1]["payload"]["fix"] and "previous_draft" in fm.calls[1]["payload"]
     assert res["state"] == "ok" and all(i["status"] == "review" for i in clips(growth.Store()))
+
+
+def test_a_blank_read_is_an_unread_frame_and_holds_the_clips(media, monkeypatch, tmp_path):
+    store, cfg = make(channels=CHANNELS)
+    set_up(monkeypatch, tmp_path, machine=Machine(ocr_text=""))            # the helper exits 0 and reads nothing
+    res = run_step(store, cfg)
+    assert res["state"] == "held" and "did not read every frame" in res["reason"]
+    assert all(i["status"] == "draft" for i in clips(growth.Store()))
+
+
+def test_an_edit_or_a_retry_cannot_clear_a_frame_check_hold(media, monkeypatch, tmp_path):
+    store, cfg = make(channels=CHANNELS)
+    set_up(monkeypatch, tmp_path, ocr_helper=False)
+    run_step(store, cfg)
+    s2 = growth.Store()
+    it = clips(s2)[0]
+    assert it["status"] == "draft" and it["video_hold"]
+    got = growth.edit(s2, cfg, it["id"], "Alpha now syncs faster.", None, NOW)
+    assert got["status"] == "draft" and got["hold_reason"] and got["video_hold"]
+    with pytest.raises(growth.GrowthError, match="frame check"):
+        growth.retry(growth.Store(), it["id"], NOW)
+    with pytest.raises(growth.GrowthError):
+        growth.approve(growth.Store(), it["id"], NOW)
+
+
+def test_a_session_with_a_full_repo_list_is_not_filmed(media, monkeypatch):
+    store, cfg = make()
+    monkeypatch.setattr(growth, "_sessions", lambda days: [
+        dict(sid="five", harness="codex", last=growth.iso(NOW - 7200), repos=["alpha", "beta", "alpha", "beta", "alpha"], prs=[]),
+        dict(sid="two", harness="codex", last=growth.iso(NOW - 7300), repos=["alpha", "beta"], prs=[])])
+    assert [r["sid"] for r in gm.session_candidates(store, cfg, gm.registry.load(), NOW)] == ["two"]

@@ -29,6 +29,7 @@ VIDEO_EXT = (".mov", ".mp4", ".m4v")
 SCAN_LIMIT = 200
 MIN_DISK_BYTES = 5 * 1024 ** 3
 ACTIVE_MINUTES = 30
+REPO_LIST_CAP = 5            # spend.session_rows keeps the five most touched repos: a list that long may hide a sixth
 FFMPEG_TIMEOUT_S = 900
 PROBE_TIMEOUT_S = 30
 WHISPER_TIMEOUT_S = 1800
@@ -628,11 +629,12 @@ def cut(store: g.Store, cfg: dict, ref: str, now: float, *, session: str = "", n
             vrep, grep = g.check_item(it["body"], it, chart_dir, guard, hook=it["hook"], script=it.get("script", ""))
             it["voice_check"], it["leak_check"] = vrep, grep
             if held:
-                it["status"], it["hold_reason"] = "draft", g.clip_text(held, 300)
+                it["status"], it["hold_reason"], it["video_hold"] = "draft", g.clip_text(held, 300), g.clip_text(held, 300)
             elif grep["ok"] and vrep["ok"]:
                 it["status"] = "review"
                 it.pop("fail_reason", None)
                 it.pop("hold_reason", None)
+                it.pop("video_hold", None)
             else:
                 it["status"] = "failed"
                 it["fail_reason"] = ("blocked: " + ", ".join(grep["kinds"])) if not grep["ok"] else \
@@ -679,6 +681,8 @@ def ocr_frames(frames: list[pathlib.Path]) -> list[str] | None:
                 texts[start + int(index)] += text + "\n"
             except (ValueError, IndexError):
                 continue
+    if any(not t.strip() for t in texts):               # every frame of a reel carries a header: a blank read is an unread frame
+        return None
     return texts
 
 
@@ -704,7 +708,7 @@ def frame_gate(video: pathlib.Path, d: pathlib.Path, guard: g.Guard) -> str:
         return "frames could not be taken from the video, so it was not checked"
     texts = ocr_frames(frames)
     if texts is None:
-        return "the frames were not read back for a leak check: no OCR helper (Filmare's ./setup.sh installs one) or it failed"
+        return "the frames were not read back for a leak check: no OCR helper (Filmare's ./setup.sh installs one), or it did not read every frame"
     for second, text in enumerate(texts):
         hits = guard.check(text)
         if hits:
@@ -738,7 +742,8 @@ def session_candidates(store: g.Store, cfg: dict, reg: dict, now: float) -> list
     rows = [r for r in g._sessions(SESSION_WINDOW_DAYS) if r.get("harness") in ("claude", "claude-code", "codex") and r.get("sid")
             and f"session:{r['sid']}" not in seen
             and (g.parse_ts(r.get("last")) or 0) <= now - ACTIVE_MINUTES * 60
-            and (r.get("repos") or [r.get("project")]) and all(x in ok for x in (r.get("repos") or [r.get("project")]))]
+            and (r.get("repos") or [r.get("project")]) and len(r.get("repos") or []) < REPO_LIST_CAP
+            and all(x in ok for x in (r.get("repos") or [r.get("project")]))]
     return sorted(rows, key=lambda r: (bool(r.get("prs")), r.get("last") or ""), reverse=True)
 
 
