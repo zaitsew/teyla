@@ -22,13 +22,39 @@ public enum TeylaReview {
         /// The words review mode says, read each time it opens, so a language picker takes effect.
         public var strings: () -> ReviewStrings = { ReviewStrings() }
         /// The product's own way to reach the owner, for testers who have no iCloud folder of the
-        /// owner's. The package makes no network call: all sending happens in this closure.
+        /// owner's. When it is set, all sending happens in this closure. When it is not set and the
+        /// Info.plist holds `TeylaReviewChannelURL` and `TeylaReviewChannelKey`, the package sends to
+        /// that shared channel itself. With neither, no capture leaves the device.
         /// Set `strings.deliveryNote` with it, so the tester knows where the capture goes.
         public var deliver: ReviewDeliver?
+        /// The product's slug, for `app.product` in every capture: it must equal the product the
+        /// shared channel's key was made for. Falls back to the Info.plist key `TeylaReviewProduct`.
+        public var product: String?
+        /// Adds a checkbox the tester must tick before Send: the product shows health data, and the
+        /// tester agrees that the screen may carry it. Off by default.
+        public var requiresHealthConsent = false
         public init() {}
     }
 
     public private(set) static var configuration = Configuration()
+
+    /// The shared channel, from the Info.plist keys `TeylaReviewChannelURL` and `TeylaReviewChannelKey`.
+    /// Read once: a bundle does not change while the app runs.
+    static let bundleChannel: ChannelConfig? = ChannelConfig()
+
+    /// The product's own `deliver` closure; else the built-in client of the shared channel when both
+    /// Info.plist keys are set; else nothing, and no capture leaves the device.
+    static var effectiveDeliver: ReviewDeliver? {
+        if let deliver = configuration.deliver { return deliver }
+        guard let config = bundleChannel else { return nil }
+        return ChannelDelivery.deliver(
+            config: config,
+            isRefused: { id in CaptureStore(root: CaptureStore.defaultRoot()).readLocalStatus(id: id)?.refused != nil },
+            markRefused: { id in CaptureStore(root: CaptureStore.defaultRoot()).markRefused(id: id) })
+    }
+
+    /// True when a capture can leave the device for a server (a `deliver` closure or the shared channel).
+    static var sendsToServer: Bool { configuration.deliver != nil || bundleChannel != nil }
     static var keyStore: RelayKeyStoring = KeychainKeyStore()
     static var relayFolder = RelayFolder()
 
@@ -143,6 +169,18 @@ public extension View {
     ) -> some View {
         #if TEYLA_REVIEW && canImport(UIKit)
         return modifier(ReviewAnchorModifier(id: id, role: role, strings: strings, file: file, line: line))
+        #else
+        return self
+        #endif
+    }
+
+    /// Hides this view from every capture: its frame is painted black in the picture before the
+    /// picture is saved, shown in the overlay and sent. Use it on other people's names, messages,
+    /// health values or anything else a tester should not have to send. Does nothing outside a
+    /// build with review mode on.
+    func reviewPrivate() -> some View {
+        #if TEYLA_REVIEW && canImport(UIKit)
+        return modifier(ReviewPrivateModifier())
         #else
         return self
         #endif

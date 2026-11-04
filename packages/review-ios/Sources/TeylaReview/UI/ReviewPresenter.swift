@@ -41,7 +41,9 @@ enum ReviewPresenter {
         mic = guardian
         isPresenting = true
 
-        let anchors = AnchorRegistry.shared.snapshot()
+        // The frames painted black, and the anchors with their string keys removed where they overlap one.
+        let privateFrames = shot.privateFrames
+        let anchors = ReviewRedaction.anchors(AnchorRegistry.shared.snapshot(), frames: privateFrames)
         let environment = DeviceProbe.environment(window: window)
         let app = AppProbe.current()
         let currentScreen = AnchorRegistry.shared.currentScreen
@@ -68,19 +70,26 @@ enum ReviewPresenter {
             probe: { [weak window, weak handle] point in
                 // The overlay sits in the same window: skip it, or an unanchored control resolves to the overlay.
                 guard let window else { return (nil, nil) }
-                return DeviceProbe.accessibility(at: point, in: window, excluding: handle?.controller?.view)
+                return DeviceProbe.accessibility(at: point, in: window, excluding: handle?.controller?.view, avoiding: privateFrames)
             },
             speechEnabled: config.speech, microphone: guardian, speech: speech, strings: config.strings(),
+            noticeNeeded: { ReviewNotice.isNeeded(sendsToServer: TeylaReview.sendsToServer) },
+            acceptNotice: { ReviewNotice.accept() },
+            requiresHealthConsent: config.requiresHealthConsent,
             onClose: finish,
             onSend: { draft, report in
-                let screen = HitTester.screen(current: currentScreen, hit: draft.hit, anchors: anchors)
+                // A tap or circle on a private view records no element, identifier or label.
+                let pointed = ReviewRedaction.pointed(
+                    hit: draft.hit, identifier: draft.accessibilityIdentifier, label: draft.accessibilityLabel,
+                    point: draft.tap, region: draft.region, frames: privateFrames)
+                let screen = HitTester.screen(current: currentScreen, hit: pointed.hit, anchors: anchors)
                 let tap = draft.tap.map {
                     TapInfo(x: Double($0.x).rounded2, y: Double($0.y).rounded2,
-                            accessibilityIdentifier: draft.accessibilityIdentifier, accessibilityLabel: draft.accessibilityLabel)
+                            accessibilityIdentifier: pointed.identifier, accessibilityLabel: pointed.label)
                 }
                 let record = CaptureBuilder.make(
                     id: captureID, now: Date(), device: DeviceProbe.deviceClass(), app: app, environment: environment, screen: screen, tap: tap, region: draft.region.map(Rect.init),
-                    element: draft.hit, accessibilityElementID: draft.accessibilityIdentifier, anchors: anchors,
+                    element: pointed.hit, accessibilityElementID: pointed.identifier, anchors: anchors,
                     text: draft.text, input: draft.input, language: environment.language,
                     pngSHA256: ReviewSigner.sha256Hex(shot.png), pixelWidth: shot.pixelWidth, pixelHeight: shot.pixelHeight,
                     scale: shot.scale, microphone: micState.asInfo)

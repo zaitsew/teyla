@@ -28,7 +28,7 @@ enum Fixtures {
                                              appearance: "dark", dynamicType: "large",
                                              screen: ScreenSize(width: 390, height: 844, scale: 1))
 
-    static func record(id: UUID = UUID(), element: Anchor? = nil, anchors: [Anchor] = [], text: String = "Make it bigger") -> CaptureRecord {
+    static func record(id: UUID = UUID(), app: AppInfo = Fixtures.app, element: Anchor? = nil, anchors: [Anchor] = [], text: String = "Make it bigger") -> CaptureRecord {
         CaptureBuilder.make(
             id: id, now: Date(timeIntervalSince1970: 1_793_394_845), device: "iPhone", app: app, environment: environment,
             screen: "sample.list", tap: TapInfo(x: 331.5, y: 782, accessibilityIdentifier: nil, accessibilityLabel: nil),

@@ -104,6 +104,29 @@ def test_a_channel_key_fails_and_its_value_is_never_printed(tmp_path, capsys):
     assert any(not c["ok"] and "TeylaReviewChannelKey" in c["name"] for c in json.loads(out)["checks"])
 
 
+def test_a_channel_url_fails_and_its_value_is_never_printed(tmp_path, capsys):
+    url = "https://channel.example.test/secret-path"
+    code, out, err = run(make_app(tmp_path, plist=info(TeylaReviewChannelURL=url)), "--json", capsys=capsys)
+    assert code == 1 and url not in out + err and "secret-path" not in out + err
+    assert any(not c["ok"] and "TeylaReviewChannelURL" in c["name"] for c in json.loads(out)["checks"])
+
+
+def test_a_channel_url_fails_in_an_ipa_and_a_nested_bundle(tmp_path, capsys):
+    assert run(make_ipa(tmp_path / "u.ipa", plist=info(TeylaReviewChannelURL="https://channel.example.test")), capsys=capsys)[0] == 1
+    app = make_app(tmp_path)
+    ext = app / "PlugIns" / "Widget.appex"
+    ext.mkdir(parents=True)
+    (ext / "Info.plist").write_bytes(info(TeylaReviewChannelKey=SECRET, TeylaReviewChannelURL="https://channel.example.test"))
+    code, out, err = run(app, "--json", capsys=capsys)
+    assert code == 1 and SECRET not in out + err
+    assert sum(1 for c in json.loads(out)["checks"] if not c["ok"] and "Widget.appex" in c["name"]) == 2
+
+
+def test_an_empty_channel_url_passes(tmp_path, capsys):
+    code, _, _ = run(make_app(tmp_path, plist=info(TeylaReviewChannelURL="")), capsys=capsys)
+    assert code == 0
+
+
 def test_an_empty_channel_key_passes(tmp_path, capsys):
     code, _, _ = run(make_app(tmp_path, plist=info(TeylaReviewChannelKey="  ")), capsys=capsys)
     assert code == 0
@@ -136,7 +159,7 @@ def test_an_archive_checks_every_app_in_it(tmp_path, capsys):
 
 def test_a_clean_archive_passes(tmp_path, capsys):
     code, out, _ = run(make_archive(tmp_path), capsys=capsys)
-    assert code == 0 and out.count("ok  ") == 3
+    assert code == 0 and out.count("ok  ") == 4
 
 
 def test_an_archive_without_an_app_cannot_be_read(tmp_path, capsys):
@@ -218,7 +241,7 @@ def test_store_check_wants_exactly_one_path(capsys):
 def test_json_output_has_the_shape(tmp_path, capsys):
     code, out, _ = run(make_ipa(tmp_path / "a.ipa"), "--json", capsys=capsys)
     doc = json.loads(out)
-    assert code == 0 and doc["ok"] is True and doc["type"] == "ipa" and len(doc["checks"]) == 3
+    assert code == 0 and doc["ok"] is True and doc["type"] == "ipa" and len(doc["checks"]) == 4
 
 
 def test_a_nested_bundle_with_review_on_fails(tmp_path, capsys):

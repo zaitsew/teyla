@@ -36,7 +36,8 @@ enum ReviewDelivery {
         store: CaptureStore = CaptureStore(root: CaptureStore.defaultRoot()),
         keyStore: RelayKeyStoring = TeylaReview.keyStore,
         relayFolder: RelayFolder = TeylaReview.relayFolder,
-        deliver: ReviewDeliver? = TeylaReview.configuration.deliver
+        deliver: ReviewDeliver? = TeylaReview.effectiveDeliver,
+        noticeAccepted: @Sendable () -> Bool = { ReviewNotice.isAccepted() }
     ) async -> ReviewSaveOutcome {
         let key = keyStore.load()
         do {
@@ -44,7 +45,8 @@ enum ReviewDelivery {
         } catch {
             return .failed
         }
-        return await send(id: record.id, store: store, key: key, relayFolder: relayFolder, deliver: deliver) ? .sent : .savedOnPhone
+        let sent = await send(id: record.id, store: store, key: key, relayFolder: relayFolder, deliver: deliver, noticeAccepted: noticeAccepted)
+        return sent ? .sent : .savedOnPhone
     }
 
     private static let retryLock = NSLock()
@@ -71,7 +73,8 @@ enum ReviewDelivery {
         store: CaptureStore = CaptureStore(root: CaptureStore.defaultRoot()),
         keyStore: RelayKeyStoring = TeylaReview.keyStore,
         relayFolder: RelayFolder = TeylaReview.relayFolder,
-        deliver: ReviewDeliver? = TeylaReview.configuration.deliver
+        deliver: ReviewDeliver? = TeylaReview.effectiveDeliver,
+        noticeAccepted: @Sendable () -> Bool = { ReviewNotice.isAccepted() }
     ) async {
         guard beginRetry() else { return }
         defer { endRetry() }
@@ -80,19 +83,22 @@ enum ReviewDelivery {
         for id in store.list() {
             let status = store.readLocalStatus(id: id)
             guard status?.relayCopied == nil, status?.delivered == nil else { continue }
-            _ = await send(id: id, store: store, key: key, relayFolder: relayFolder, deliver: deliver)
+            _ = await send(id: id, store: store, key: key, relayFolder: relayFolder, deliver: deliver, noticeAccepted: noticeAccepted)
         }
     }
 
     /// The relay needs a key, because the Mac refuses an unsigned capture there. The product's
-    /// channel does not: the signed-in account vouches for the capture instead.
+    /// channel does not: the signed-in account vouches for the capture instead. No route to a server,
+    /// custom or built in, is tried until the tester has accepted the first-send notice: a capture
+    /// saved earlier, or a `deliver` set later, must not leave the phone unannounced.
     private static func send(
-        id: String, store: CaptureStore, key: RelayKey?, relayFolder: RelayFolder, deliver: ReviewDeliver?
+        id: String, store: CaptureStore, key: RelayKey?, relayFolder: RelayFolder, deliver: ReviewDeliver?,
+        noticeAccepted: @Sendable () -> Bool
     ) async -> Bool {
         if let key, relayFolder.withAccess({ (try? store.copyToRelay(id: id, relayRoot: $0, key: key)) != nil }) == true {
             return true
         }
-        guard let deliver, let upload = store.upload(id: id), await deliver(upload) else { return false }
+        guard let deliver, noticeAccepted(), let upload = store.upload(id: id), await deliver(upload) else { return false }
         store.markDelivered(id: id)
         return true
     }

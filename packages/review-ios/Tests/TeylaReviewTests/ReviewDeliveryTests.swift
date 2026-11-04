@@ -90,7 +90,7 @@ final class ReviewDeliveryTests: XCTestCase {
     func testAChannelTakesACaptureFromAPhoneWithNoKey() async {
         let record = Fixtures.record()
         let channel = Channel(accepts: true)
-        let outcome = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: channel.deliver)
+        let outcome = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: channel.deliver, noticeAccepted: { true })
         XCTAssertEqual(outcome, .sent)
         XCTAssertEqual(channel.uploads.map(\.id), [record.id])
         XCTAssertEqual(channel.uploads.first?.png, png)
@@ -101,11 +101,11 @@ final class ReviewDeliveryTests: XCTestCase {
     func testACaptureAChannelRefusedSaysSavedAndGoesOnTheNextRetry() async {
         let record = Fixtures.record()
         let channel = Channel(accepts: false)
-        let outcome = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: channel.deliver)
+        let outcome = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: channel.deliver, noticeAccepted: { true })
         XCTAssertEqual(outcome, .savedOnPhone)
         XCTAssertNil(store().readLocalStatus(id: record.id)?.delivered)
         channel.accepts = true
-        await ReviewDelivery.retryPending(store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: channel.deliver)
+        await ReviewDelivery.retryPending(store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: channel.deliver, noticeAccepted: { true })
         XCTAssertEqual(channel.uploads.count, 2)
         XCTAssertNotNil(store().readLocalStatus(id: record.id)?.delivered)
     }
@@ -114,15 +114,15 @@ final class ReviewDeliveryTests: XCTestCase {
         let record = Fixtures.record()
         _ = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: nil)
         let channel = Channel(accepts: true)
-        await ReviewDelivery.retryPending(store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: channel.deliver)
+        await ReviewDelivery.retryPending(store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: channel.deliver, noticeAccepted: { true })
         XCTAssertEqual(channel.uploads.map(\.id), [record.id])
     }
 
     func testADeliveredCaptureIsNotSentAgainByAnyRoute() async {
         let record = Fixtures.record()
         let channel = Channel(accepts: true)
-        _ = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: channel.deliver)
-        await ReviewDelivery.retryPending(store: store(), keyStore: MemoryKeyStore(key), relayFolder: folder, deliver: channel.deliver)
+        _ = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(), relayFolder: folder, deliver: channel.deliver, noticeAccepted: { true })
+        await ReviewDelivery.retryPending(store: store(), keyStore: MemoryKeyStore(key), relayFolder: folder, deliver: channel.deliver, noticeAccepted: { true })
         XCTAssertEqual(channel.uploads.count, 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: outbox(record.id).path))
     }
@@ -130,7 +130,7 @@ final class ReviewDeliveryTests: XCTestCase {
     func testAPairedPhoneUsesTheRelayAndNotTheChannel() async {
         let record = Fixtures.record()
         let channel = Channel(accepts: true)
-        let outcome = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(key), relayFolder: folder, deliver: channel.deliver)
+        let outcome = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(key), relayFolder: folder, deliver: channel.deliver, noticeAccepted: { true })
         XCTAssertEqual(outcome, .sent)
         XCTAssertTrue(channel.uploads.isEmpty)
     }
@@ -139,7 +139,7 @@ final class ReviewDeliveryTests: XCTestCase {
         let record = Fixtures.record()
         let channel = Channel(accepts: true)
         let noFolder = RelayFolder(defaults: UserDefaults(suiteName: "teyla.review.tests." + UUID().uuidString)!)
-        let outcome = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(key), relayFolder: noFolder, deliver: channel.deliver)
+        let outcome = await ReviewDelivery.save(record: record, png: png, store: store(), keyStore: MemoryKeyStore(key), relayFolder: noFolder, deliver: channel.deliver, noticeAccepted: { true })
         XCTAssertEqual(outcome, .sent)
         XCTAssertEqual(channel.uploads.count, 1)
     }

@@ -99,7 +99,9 @@ enum MacStoreEnvironment {
 enum AppProbe {
     /// The product's identity. `TeylaCommit` is an optional Info.plist key a build phase fills with
     /// `git rev-parse --short HEAD`; without it the capture has no commit.
-    static func current(bundle: Bundle = .main, channel: BuildChannel = .current) -> AppInfo {
+    static func current(
+        bundle: Bundle = .main, channel: BuildChannel = .current, configuredProduct: String? = TeylaReview.configuration.product
+    ) -> AppInfo {
         let info = bundle.infoDictionary ?? [:]
         let commit = (info["TeylaCommit"] as? String).flatMap { Self.isCommit($0) ? $0 : nil }
         return AppInfo(
@@ -107,7 +109,22 @@ enum AppProbe {
             name: (info["CFBundleDisplayName"] as? String) ?? (info["CFBundleName"] as? String),
             version: (info["CFBundleShortVersionString"] as? String) ?? "0",
             build: (info["CFBundleVersion"] as? String) ?? "0",
-            commit: commit, configuration: channel)
+            commit: commit, product: product(configured: configuredProduct, plist: info[ChannelConfig.productInfoKey]),
+            configuration: channel)
+    }
+
+    /// The slug `app.product` carries: the configuration value, else the Info.plist key
+    /// `TeylaReviewProduct`. Anything that is not a slug (`^[a-z][a-z0-9-]{0,39}$`) is left out.
+    static func product(configured: String?, plist: Any?) -> String? {
+        for candidate in [configured, ChannelConfig.text(plist)] {
+            if let candidate, isSlug(candidate) { return candidate }
+        }
+        return nil
+    }
+
+    static func isSlug(_ text: String) -> Bool {
+        guard (1...40).contains(text.utf8.count), let first = text.utf8.first, first >= 97, first <= 122 else { return false }
+        return text.utf8.allSatisfy { ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57) || $0 == 45 }
     }
 
     static func isCommit(_ text: String) -> Bool {

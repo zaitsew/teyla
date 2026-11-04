@@ -27,5 +27,23 @@ public struct ReviewStrings {
     /// channel: who receives the comment and the screenshot. Empty shows nothing.
     public var deliveryNote = ""
 
+    // The first-send notice (shown once per install, before the first capture leaves the phone).
+    public var noticeTitle = "Before you send"
+    public var noticeCaptured = "What is sent: a picture of this screen exactly as it looks now, your comment, the name and build of this app, the kind of device and system, and the element you pointed at. The picture shows everything on the screen, including other people's names or data when they are visible."
+    public var noticeRecipient = "Who gets it: the developer of this app, through a review server. Nobody else."
+    public var noticeWhy = "Why: to find and fix what you pointed at."
+    public var noticeRetention = "How long: the copy on the server is gone within the hour. The developer's Mac keeps its copy for 30 days after the report is closed, or 90 days if it is never opened."
+    public var noticeOK = "OK, send"
+    public var noticeCancel = "Cancel"
+    /// Shown above Send: the picture below is the one that is sent, with private areas painted over.
+    public var previewCaption = "This picture is what is sent. Black boxes hide private areas."
+    /// The checkbox shown before Send when `requiresHealthConsent` is on.
+    public var healthConsent = "This screen may show my health data. I agree to send it for review."
+
+    /// The notice as one text, in the order a reader needs it.
+    var noticeMessage: String {
+        [noticeCaptured, noticeRecipient, noticeWhy, noticeRetention].joined(separator: "\n\n")
+    }
+
     public init() {}
 }
