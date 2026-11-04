@@ -89,7 +89,8 @@ Two kinds of number, kept apart. Cash comes from what the owner lists; list pric
   `~/.teyla/growth/items/*.json` itself, because `teyla growth review` has no `--json`.
 
 ### products (in `teyla product show`)
-- `sale_attempts {posts, marketing, icp_meetings, last}` per product. Zero attempts means "not tried yet".
+- `sale_attempts {posts, marketing, icp_meetings, last}` per product, as `teyla growth sale-attempts` prints it (text only today; the
+  Mac app counts `~/.teyla/growth/ledger.jsonl` itself). Zero attempts means "not tried yet".
   That product gets the next marketing slot. Teyla never proposes closing a product nobody tried to sell.
 
 ## Limits every section keeps

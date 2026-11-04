@@ -19,6 +19,7 @@ actor TeylaCLI: TeylaBackend {
     private let startFixtureURL: URL?
     private let productFixtureURL: URL?
     private let growthFixtureURL: URL?
+    private let ledgerFixtureURL: URL?
     private let attentionFixtureURL: URL?
     private let consoleFixtureURL: URL?
     /// The file the owner picked with "Choose…", and what a login shell finds. Injected so a test never runs the real ones.
@@ -47,6 +48,7 @@ actor TeylaCLI: TeylaBackend {
         startFixtureURL = Self.fixtureURL(env["TEYLA_START_FIXTURE"], beside: fixtureURL, named: "start.v1.json")
         productFixtureURL = Self.fixtureURL(env["TEYLA_PRODUCT_FIXTURE"], beside: fixtureURL, named: "product.v1.json")
         growthFixtureURL = Self.fixtureURL(env["TEYLA_GROWTH_FIXTURE"], beside: fixtureURL, named: "growth.v1.json")
+        ledgerFixtureURL = Self.fixtureURL(env["TEYLA_LEDGER_FIXTURE"], beside: fixtureURL, named: "ledger.v1.jsonl")
         attentionFixtureURL = Self.fixtureURL(env["TEYLA_ATTENTION_FIXTURE"], beside: fixtureURL, named: "attention.v1.json")
         consoleFixtureURL = Self.fixtureURL(env["TEYLA_CONSOLE_FIXTURE"], beside: fixtureURL, named: "console.v1.json")
     }
@@ -207,6 +209,18 @@ actor TeylaCLI: TeylaBackend {
         }
         let folder = GrowthDrafts.directory(home: home, env: env)
         return try await Task.detached { try GrowthDrafts.read(directory: folder) }.value
+    }
+
+    /// The sale attempts per product, from the growth ledger; a preview reads `ledger.v1.jsonl` beside the state sample.
+    func saleAttempts() async throws -> SaleLedger.Read {
+        if fixtureURL != nil {
+            guard let url = ledgerFixtureURL, let text = try? String(contentsOf: url, encoding: .utf8) else {
+                throw TeylaError.fixtureUnreadable(ledgerFixtureURL?.path ?? "ledger.v1.jsonl")
+            }
+            return SaleLedger.parse(text)
+        }
+        let file = SaleLedger.file(home: home, env: env)
+        return try await Task.detached { try SaleLedger.read(file: file) }.value
     }
 
     /// One command of the Tools page. Whatever the report printed, only a command on the allow-list is run;

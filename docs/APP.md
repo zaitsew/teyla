@@ -664,6 +664,20 @@ publishes.** The allow-list in `ToolCommands` refuses every other `growth` comma
 Two layouts sit behind the Layout switch while you choose: the review queue first, or the channel board first. The
 loser and the switch are removed once you pick. Sale attempts per product belong to the Product page.
 
+## Product page: users and selling (from 2026-11-04)
+
+Between "Needs you" and the notes, a product page shows four figures: active users this week, sale attempts, what
+shipped in 7 days, and feedback and crashes. Users and shipped come from the portfolio report; a product with no usage
+counter shows a dash and says so. **Feedback, store reviews and crashes have no source yet, so that figure is a dash with
+that reason, never a zero.**
+
+Sale attempts are counted from `~/.teyla/growth/ledger.jsonl` (or under `TEYLA_HOME`) the way `teyla growth
+sale-attempts` counts them: a published post or an attempt of kind `post`, marketing (kind `ad` or `outreach`) and ICP
+meetings (kind `icp-meeting`). No command prints this as JSON, so the app reads the ledger read-only. Zero reads "Not tried
+yet. Next in line."; the page never proposes closing a product nobody tried to sell. A parked product reads "Not tried
+yet. Parked." Lines that are not JSON are counted in a note. The block is off in the store build (`Capabilities.console`).
+Preview hook: `TEYLA_LEDGER_FIXTURE` (default `ledger.v1.jsonl` beside the state sample). One considered layout.
+
 ## Tools and the command bar (from 2026-11-02)
 
 **Operations** (from 2026-11-04; it was the Tools page). The page reads `console.operations` and, top to bottom, shows:

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Mac: a product page shows users and selling.** Four figures: active users this week, sale attempts (posts,
+  marketing, ICP meetings, counted from the growth ledger), what shipped in 7 days, and feedback and crashes (a dash:
+  nothing reports them yet). A product nobody tried to sell reads "Not tried yet. Next in line."; the page never
+  proposes closing it.
+
 - **The content factory ranks by what passes and mines its own stories.** `teyla growth plan` gives the next slot to the
   idea the editor is likely to pass: a lesson with a number and an artifact first, a bare product summary never. Once a
   week the harvest step makes one model call over your policy file, the last `teyla you` report, crash and load counts,
