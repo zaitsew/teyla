@@ -3,6 +3,8 @@
     teyla review [list] [--product P] [--status S] [--all] [--json]    newest first, per product, with status
     teyla review pull [--folder DIR] [--testflight APP-ID [--product P]] [--allow-network]
     teyla review pull --vouched-folder DIR [--json]
+    teyla review pull --channel [--json]              the shared review channel, over SSH (review_channel.py)
+    teyla review channel key add|revoke|path <product> | install | uninstall
     teyla review triage <id> [--repo R] [--model M] [--dry] [--allow-network]     fix | rule | reject, one line why
     teyla review open <ids...> [--out FILE] [--owner NAME] [--ttl-min N] [--repo R]   take the leases, write the lane brief
     teyla review open <ids...> --release | --done <PR-URL>                      give the capture back, or close it
@@ -193,11 +195,11 @@ def _clean_region(region) -> dict | None:
 def _created(raw) -> str | None:
     try:
         d = _dt.datetime.fromisoformat(str(raw))
-    except ValueError:
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=_dt.timezone.utc)
+        return d.astimezone(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except (ValueError, OverflowError):    # year 1 with an offset falls off the calendar in UTC
         return None
-    if d.tzinfo is None:
-        d = d.replace(tzinfo=_dt.timezone.utc)
-    return d.astimezone(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def validate(obj, folder_name: str = "") -> tuple[dict | None, str]:
@@ -310,10 +312,11 @@ def _verify_vouched(folder: pathlib.Path, raw: dict) -> tuple[str, str]:
 
 
 def import_folder(conn: sqlite3.Connection, folder: pathlib.Path, now: float | None = None, *,
-                  vouched: bool = False) -> tuple[str, str]:
+                  vouched: bool = False, source: str = "app") -> tuple[str, str]:
     """("added" | "known" | "waiting" | "skipped", detail). Never raises for a bad folder. `vouched` is
     for a folder a caller filled from a product's own signed-in channel: only a contract capture passes,
-    and it needs no relay signature."""
+    and it needs no relay signature. `source` labels the row: "channel" marks a capture from the shared
+    review channel, whose sender nobody vouched for (`teyla review list` shows it)."""
     now = _now() if now is None else now
     name = folder.name
     if not _UUID.match(name.lower()):
@@ -345,6 +348,8 @@ def import_folder(conn: sqlite3.Connection, folder: pathlib.Path, now: float | N
             return verdict[0], f"{name}: {verdict[1]}"
         cap, why = validate(flat, name)
         pic, aud = review_wire.PICTURE, None
+        if cap is not None and vouched and source != "app":
+            cap["source"] = source
     elif vouched:
         return "skipped", f"{name}: not a capture in the contract format"
     else:
@@ -878,8 +883,9 @@ def render_list(rows: list[dict], now: float | None = None) -> str:
         verdict = (r["decision"] or {}).get("decision", "")
         lease = f"  [{r['lease_owner']} until {_iso(r['lease_expires'])[11:16]}]" if r["lease_owner"] and (r["lease_expires"] or 0) > now else ""
         el = (r["data"].get("element") or {}).get("id") or ("testflight" if r["source"] == "testflight" else "")
+        mark = "  [channel: sender unverified]" if r["source"] == "channel" else ""
         out.append(f"  {r['id'][:8]}  {r['created_at'][:10]}  {r['status']:<8} {verdict:<6} "
-                   f"{(r['screen'] or '-')[:26]:<26} {_cut(r['comment'], 56)}" + (f"  <{el}>" if el else "") + lease)
+                   f"{(r['screen'] or '-')[:26]:<26} {_cut(r['comment'], 56)}" + (f"  <{el}>" if el else "") + mark + lease)
     return "\n".join(out)
 
 
@@ -893,9 +899,10 @@ def _repo_for(product: str, flag: str | None, cfg: dict | None = None) -> pathli
     return root / product if (root / product).is_dir() else None
 
 
-def pull_vouched(conn: sqlite3.Connection, root: pathlib.Path, now: float | None = None) -> dict:
+def pull_vouched(conn: sqlite3.Connection, root: pathlib.Path, now: float | None = None, *, source: str = "app") -> dict:
     """Import every capture folder directly under `root`, a local folder the caller filled from its own
-    signed-in channel. `imported` names the ones the inbox now holds, so the caller can clear its copy."""
+    signed-in channel. `imported` names the ones the inbox now holds, so the caller can clear its copy.
+    `source` is stored on each row (see import_folder)."""
     rep = {"source": "channel", "added": 0, "known": 0, "waiting": 0, "skipped": [], "imported": [], "note": ""}
     if not root.is_dir():
         rep["note"] = f"the folder {root} does not exist"
@@ -905,7 +912,7 @@ def pull_vouched(conn: sqlite3.Connection, root: pathlib.Path, now: float | None
         if folder.name.startswith("."):
             continue
         try:
-            kind, detail = import_folder(conn, folder, now, vouched=True)
+            kind, detail = import_folder(conn, folder, now, vouched=True, source=source)
         except OSError as e:
             kind, detail = "skipped", f"{folder.name}: {e}"
         if kind in ("added", "known"):
@@ -958,6 +965,9 @@ def cmd_review(args) -> int:
             if words:
                 print("teyla review pull: no arguments", file=sys.stderr)
                 return 2
+            if args.channel:
+                from . import review_channel
+                return review_channel.cmd_pull(conn, args)
             if args.vouched_folder:
                 rep = pull_vouched(conn, pathlib.Path(args.vouched_folder).expanduser())
                 if args.json:
@@ -980,6 +990,9 @@ def cmd_review(args) -> int:
             for rep in reports:
                 _print_pull(rep)
             return 1 if any(r.get("error") for r in reports) else 0
+        if action == "channel":
+            from . import review_channel
+            return review_channel.cmd_channel(words, args)
         if action == "triage":
             if len(words) != 1:
                 print("teyla review triage: give one capture id", file=sys.stderr)
@@ -1069,7 +1082,7 @@ def cmd_review(args) -> int:
 def register(sp):
     q = sp.add_parser("review", help="the inbox of review captures: pull from the relay and TestFlight, triage, open a lane brief")
     q.set_defaults(fn=cmd_review)
-    q.add_argument("action", nargs="?", choices=["list", "pull", "triage", "open", "store-check"], default="list")
+    q.add_argument("action", nargs="?", choices=["list", "pull", "triage", "open", "channel", "store-check"], default="list")
     q.add_argument("words", nargs="*", metavar="[capture-id ... | PATH]")
     q.add_argument("--product", help="list: only this product; pull --testflight: the product name for the imported items")
     q.add_argument("--status", help="list: only this status (new, triaged, open, done, rejected)")
@@ -1077,6 +1090,8 @@ def register(sp):
     q.add_argument("--json", action="store_true")
     q.add_argument("--folder", help="pull: the relay folder (default: the one `teyla relay on` set)")
     q.add_argument("--vouched-folder", metavar="DIR", help="pull: import captures a product's own signed-in channel downloaded to DIR; they carry no relay signature")
+    q.add_argument("--channel", action="store_true", help="pull: move captures from the shared review channel (ssh and root in ~/.teyla/review-channel.toml); their sender is unverified")
+    q.add_argument("--rotate", action="store_true", help="channel key add: replace the product's existing key")
     q.add_argument("--testflight", metavar="APP-ID", help="pull: also read TestFlight screenshot feedback of this App Store Connect app")
     q.add_argument("--allow-network", action="store_true", help="safe mode: allow the model or App Store Connect call for this one run")
     q.add_argument("--repo", help="triage/open: the product repo (name under code_root or a path; default: code_root/<product>)")

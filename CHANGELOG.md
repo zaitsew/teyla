@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **A shared review channel.** `packages/review-channel/` is a write-only service (Python standard library, one container) that
+  takes feedback captures from every product and platform; `teyla review pull --channel` moves them over SSH into the inbox
+  within the hour and deletes the server copy. `teyla review channel key add|revoke|path` manages one key per product and
+  `teyla review channel install` adds the hourly agent. Captures from it are marked "sender unverified" in `teyla review list`.
+  PRIVACY row 45; see docs/REVIEW.md, "The shared channel".
 - **A production build provably has no review entry point.** `teyla review store-check PATH` reads an `.xcarchive`, `.app`,
   `.ipa`, `.aab`, `.apk` or a web `dist` and exits 1 naming what it found. docs/REVIEW.md now says a store build is a separate
   archive of the same commit, built with `TEYLA_REVIEW_ENABLED=NO` and `TEYLA_REVIEW=0`, and a TestFlight build is never promoted.

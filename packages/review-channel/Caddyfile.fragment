@@ -1,0 +1,14 @@
+# Rendered to /srv/{{name}}/Caddyfile, where the root Caddyfile imports it. `common` is the shared snippet.
+review.{{domain}} {
+	import common
+	@channel path /healthz /v1/captures/*
+	handle @channel {
+		request_body {
+			max_size 11MB
+		}
+		reverse_proxy review-channel:8080
+	}
+	handle {
+		respond 404
+	}
+}
