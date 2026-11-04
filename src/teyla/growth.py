@@ -1690,6 +1690,10 @@ def doctor_rows(store: Store, cfg: dict, now: float) -> list[tuple[str, str, str
                            ("grok", "optional X scan", "optional: only for `growth trends --x`"),
                            ("gh", "merged PRs and releases", "brew install gh")):
         add("ok" if shutil.which(tool) else ("note" if tool == "grok" else "missing"), tool, f"{shutil.which(tool)}" if shutil.which(tool) else f"not on PATH ({why}). {fix}")
+    from . import growth_story_video as story_video, update
+    add("ok" if update.pillow_available() else "missing", "reel extra",
+        "Pillow found: the daily video can be drawn" if update.pillow_available()
+        else f"Pillow is not installed, so the daily video is not drawn. Run `{story_video.UPGRADE}`")
     add("ok" if any(shutil.which(t) for t in ("whisper-cli", "whisper-cpp")) else "missing", "whisper",
         "found" if any(shutil.which(t) for t in ("whisper-cli", "whisper-cpp")) else WHISPER_LINE)
     d = bi_data_dir(cfg)
