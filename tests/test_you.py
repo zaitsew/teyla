@@ -122,6 +122,12 @@ def test_screen_blocks_an_inflected_russian_sensitive_word():
     assert screen().ok("I want the passports list to stay short and obvious") is False
 
 
+def test_screen_blocks_compact_russian_addresses_and_short_inflected_words():
+    addr = "\u0425\u043e\u0447\u0443 \u043f\u0435\u0440\u0435\u0435\u0445\u0430\u0442\u044c \u043d\u0430 \u0443\u043b.12 \u041e\u043a\u0442\u044f\u0431\u0440\u044f 5 \u0434\u043e \u0441\u043b\u0435\u0434\u0443\u044e\u0449\u0435\u0433\u043e \u043c\u0435\u0441\u044f\u0446\u0430"
+    acct = "\u0425\u043e\u0447\u0443 \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u043d\u043e\u043c\u0435\u0440 \u0441\u0447\u0451\u0442\u0430 12345 \u0434\u043b\u044f \u043f\u043e\u0435\u0437\u0434\u043a\u0438"
+    assert screen().ok(addr) is False and screen().ok(acct) is False
+
+
 def test_screen_blocks_a_russian_sensitive_word():
     assert screen().ok(RU_LINE + " \u043f\u0430\u0441\u043f\u043e\u0440\u0442") is False
     assert screen().ok(RU_LINE) is True

@@ -51,7 +51,7 @@ _WORD = re.compile("[A-Za-z\u0400-\u04ff][A-Za-z\u0400-\u04ff'-]*")
 _PHONE = re.compile(r"(?<![\w.])\+?\d[\d\s().-]{7,}\d(?![\w])")
 _NAME = r"(?:[^\W\d_][\w'.-]*\s+){0,3}"        # up to three words of a street name
 _STREET = re.compile(
-    r"(?<!\w)(?:" + "|".join(re.escape(w) for w in lex.STREET_PREFIX) + r")\s+" + _NAME + r"\d{1,5}\b|"
+    r"(?<!\w)(?:" + "|".join(re.escape(w) + (r"\s*" if w.endswith(".") else r"\s+") for w in lex.STREET_PREFIX) + r")" + _NAME + r"\d{1,5}\b|"
     r"\b\d{1,5}[a-z]?\s+" + _NAME + r"(?:" + "|".join(re.escape(w) for w in lex.STREET_SUFFIX) + r")(?!\w)|"
     r"\w+(?:strasse|stra\u00dfe)\s*\d", re.I)
 _LONG_NUMBER = re.compile(r"\d{6,}|[A-Za-z]{1,3}[ -]?\d{5,}")       # a document, card or account number
@@ -116,6 +116,8 @@ def _sensitive(word: str) -> bool:
     for w in lex.SENSITIVE:
         if len(w) <= 4:
             if word == w or word == w + "s" or word == w + "es":
+                return True
+            if not w.isascii() and len(w) == 4 and word.startswith(w):          # an inflected short Russian word
                 return True
         elif word.startswith(w[:max(5, len(w) - 2)] if len(w) > 5 else w[:-1]):
             return True
