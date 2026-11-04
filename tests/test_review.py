@@ -731,7 +731,7 @@ def test_done_marks_the_capture_and_frees_the_lease_in_one_transaction(conn, rel
     conn.set_trace_callback(statements.append)
     assert review.release_lease(conn, ID1, "a", now=T0 + 1, done_pr="https://example.com/pr/1") == (True, "")
     conn.set_trace_callback(None)
-    updates = [s for s in statements if s.startswith("UPDATE")]
+    updates = sorted({s for s in statements if s.startswith("UPDATE")})     # a trigger traces its statement again
     assert len(updates) == 1 and "status = 'done'" in updates[0] and "lease_owner = NULL" in updates[0]
     assert statements[0] == "BEGIN IMMEDIATE" and statements[-1] == "COMMIT"
     row = review.get(conn, ID1)

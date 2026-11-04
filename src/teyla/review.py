@@ -139,6 +139,9 @@ def connect(path: pathlib.Path | None = None) -> sqlite3.Connection:
         except sqlite3.OperationalError as e:     # another process added it first
             if "duplicate column" not in str(e):
                 raise
+            continue
+        if column == "opened_at":                 # unknown for what is already here, so it counts as opened: it stays
+            conn.execute("UPDATE captures SET opened_at = imported_at")
     conn.executescript(CLOSED_TRIGGERS)
     return conn
 
@@ -165,31 +168,43 @@ def prune_channel(conn: sqlite3.Connection, now: float | None = None) -> dict:
                  "AND closed_at IS NULL", (_iso(now),))
     rep: dict = {"deleted": 0, "kept": []}
     root = captures_root().resolve()
+    trash = root / ".retention"
     for cid in [r["id"] for r in conn.execute(f"SELECT id FROM captures WHERE {due}", args).fetchall()]:
-        # Taken as a lease, so a lane that wants this capture now is refused instead of losing its folder.
+        # The check, the rename and the delete hold the write lock together, so a lane that takes the capture is
+        # either refused or kept: there is no moment when it holds a capture whose folder is going away.
         conn.execute("BEGIN IMMEDIATE")
+        moved: tuple[pathlib.Path, pathlib.Path] | None = None
         try:
             r = conn.execute(f"SELECT dir FROM captures WHERE id = ? AND {due}", (cid, *args)).fetchone()
-            if r is not None:
-                conn.execute("UPDATE captures SET lease_owner = 'retention', lease_expires = ? WHERE id = ?",
-                             (now + 600, cid))
+            if r is None:
+                conn.execute("ROLLBACK")
+                continue
+            folder = pathlib.Path(r["dir"])
+            resolved = (folder if folder.is_absolute() else root / folder).resolve()
+            if root not in resolved.parents or trash in resolved.parents:
+                conn.execute("ROLLBACK")
+                rep["kept"].append(cid)
+                continue
+            if resolved.exists():
+                trash.mkdir(mode=0o700, exist_ok=True)
+                os.rename(resolved, trash / cid)
+                moved = (trash / cid, resolved)
+            conn.execute("DELETE FROM captures WHERE id = ?", (cid,))
             conn.execute("COMMIT")
-        except BaseException:
+        except OSError:
             conn.execute("ROLLBACK")
-            raise
-        if r is None:
-            continue
-        folder = pathlib.Path(r["dir"])
-        resolved = (folder if folder.is_absolute() else root / folder).resolve()
-        if root in resolved.parents:
-            shutil.rmtree(resolved, ignore_errors=True)
-        # The row is the only record of where the folder is, so it goes last and only once the folder is gone.
-        if root not in resolved.parents or resolved.exists():
-            conn.execute("UPDATE captures SET lease_owner = NULL, lease_expires = NULL WHERE id = ?", (cid,))
             rep["kept"].append(cid)
             continue
-        conn.execute("DELETE FROM captures WHERE id = ?", (cid,))
+        except BaseException:
+            conn.execute("ROLLBACK")
+            if moved:
+                os.rename(*moved)
+            raise
         rep["deleted"] += 1
+    # Outside the lock, and it also finishes what a pass that died here left behind.
+    if trash.is_dir():
+        for leftover in trash.iterdir():
+            shutil.rmtree(leftover, ignore_errors=True)
     return rep
 
 

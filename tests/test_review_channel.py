@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import shutil
 import sqlite3
 import stat
 import sys
@@ -522,15 +523,48 @@ def test_a_capture_opened_once_is_not_never_opened(world, capsys):
     assert folder.exists()
 
 
-def test_a_folder_that_cannot_go_releases_the_capture_for_the_next_pass(world, capsys, monkeypatch):
+def test_a_folder_that_cannot_move_keeps_the_row_for_the_next_pass(world, capsys, monkeypatch):
     conn, cid, folder = _one_capture(world, capsys)
     now = time.time()
     _aged(conn, cid, imported_at=review._iso(now - 200 * 86400))
-    monkeypatch.setattr(review.shutil, "rmtree", lambda *a, **k: None)
-    assert review.prune_channel(conn, now) == {"deleted": 0, "kept": [cid]}
-    row = conn.execute("SELECT lease_owner FROM captures WHERE id = ?", (cid,)).fetchone()
-    assert row["lease_owner"] is None
-    monkeypatch.undo()
+
+    def refuse(*a):
+        raise PermissionError("no")
+
+    with monkeypatch.context() as m:
+        m.setattr(review.os, "rename", refuse)
+        assert review.prune_channel(conn, now) == {"deleted": 0, "kept": [cid]}
+    assert folder.exists()
+    assert review.prune_channel(conn, now)["deleted"] == 1
+    assert not folder.exists()
+
+
+def test_a_pass_finishes_the_trash_a_dead_pass_left(world, capsys):
+    conn, _, _ = _one_capture(world, capsys)
+    left = review.captures_root() / ".retention" / "dead-pass"
+    left.mkdir(parents=True)
+    review.prune_channel(conn)
+    assert not left.exists()
+
+
+def test_a_missing_folder_does_not_keep_the_row_for_ever(world, capsys):
+    conn, cid, folder = _one_capture(world, capsys)
+    now = time.time()
+    _aged(conn, cid, imported_at=review._iso(now - 200 * 86400))
+    shutil.rmtree(folder)
+    assert review.prune_channel(conn, now)["deleted"] == 1
+
+
+def test_what_an_old_inbox_already_held_counts_as_opened(tmp_path):
+    db = tmp_path / "queue.db"
+    old = sqlite3.connect(db)
+    old.executescript(review.SCHEMA.replace("lease_expires REAL,\n  closed_at     TEXT,\n  opened_at     TEXT", "lease_expires REAL"))
+    old.execute("INSERT INTO captures (id, product, source, created_at, imported_at, data, dir) "
+                "VALUES ('a', 'p', 'channel', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '{}', '/x')")
+    old.commit()
+    old.close()
+    conn = review.connect(db)
+    assert conn.execute("SELECT opened_at FROM captures WHERE id = 'a'").fetchone()[0] == "2026-01-01T00:00:00Z"
 
 
 def test_a_lease_taken_after_the_list_was_read_wins(world, capsys):
@@ -544,11 +578,10 @@ def test_a_lease_taken_after_the_list_was_read_wins(world, capsys):
             self.inner = inner
 
         def execute(self, sql, *a):
-            out = self.inner.execute(sql, *a)
             if sql == "BEGIN IMMEDIATE":
                 self.inner.execute("UPDATE captures SET lease_owner = 'lane', lease_expires = ? WHERE id = ?",
                                    (now + 60, cid))
-            return out
+            return self.inner.execute(sql, *a)
 
     assert review.prune_channel(Racing(conn), now)["deleted"] == 0
     assert folder.exists()
