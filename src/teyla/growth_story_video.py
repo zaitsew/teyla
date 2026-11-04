@@ -337,6 +337,7 @@ def step(store: g.Store, cfg: dict, now: float, *, guard: g.Guard, reg: dict, al
         video, err = render(plan, d, gm.next_cut_number(d))
         if video is None:
             ep["status"], ep["reject_reason"] = "rejected", g.clip_text(err, 200)
+            ep["sources"] = [dict(kind="story-video", ref="", url="")]       # no video was made: the lesson may be tried again
             store.save(ep, now)
             why.append(err)
             continue

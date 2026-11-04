@@ -223,6 +223,7 @@ def test_a_failed_render_tries_the_next_lesson_then_gives_up_with_the_reason(med
     res = gm.video_step(store, cfg, NOW, guard=growth.Guard(cfg, reg), reg=reg, sessions=False)
     assert res["state"] == "gap" and "no encoder" in res["reason"]
     assert all(i["status"] == "rejected" for i in growth.Store().items().values() if i["kind"] == "episode")
+    assert len(sv.candidates(growth.Store(), DAY)) == 2                  # a failed render does not use the lessons up
 
 
 def test_pillow_missing_is_a_gap_that_names_the_upgrade_command(media, monkeypatch, tmp_path):
