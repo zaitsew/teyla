@@ -60,6 +60,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
         ("taste", "Design decisions and rules per product; renders DESIGN.md"),
         ("copy", "UI copy from a brief: write per language, judge, apply to the catalogs"),
         ("intent", "Your long prompts, verbatim, per product"),
+        ("you", "Quotes, insights and chores to hand off, from your own sessions"),
         ("scaffold", "Start a new repo with the standard files"),
         ("probe-sql", "One read-only Supabase query for a usage probe"),
         ("cloud", "Readiness of cloud sessions per repo"),

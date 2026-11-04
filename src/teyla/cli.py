@@ -45,6 +45,8 @@
   teyla voice chart <repo> [--lang L] [--out DIR] [--force] [--json]   scaffold a product's voice chart (en, es, ru); a chart is complete at 10 accepted and 5 rejected lines
   teyla copy brief|write|judge|apply ...                         UI copy from a brief: one call per language, a judge, then the catalogs (xcstrings, strings.xml, i18n)
   teyla models [--days N] [--json] [--refresh]                   model ladder + price drift report
+  teyla you [--json] [--refresh]                                 quotes, insights and chores to hand off, from your own sessions (local, private)
+  teyla you chore KEY open|done|tried|untried                    mark a chore
   teyla models watch [--refresh] [--json] [--ack [ID...]] [--seed FILE]  new models, what they replace, repos naming superseded ids
   teyla tidy [paths...] [--json] [--apply] [--quiet]              duplicates, dead references and whitespace junk in the rule and memory files; --apply: mechanical fixes only, backup first
   teyla models --write-policy [--dry] [--drop-absent]             rewrite the ladder table in ~/.agents/POLICY.md
@@ -542,6 +544,8 @@ def build_parser() -> argparse.ArgumentParser:
     from . import play as play_mod
     play_mod.register(sp)
     wiki.register(sp); feedback.register(sp); models.register(sp)
+    from . import you as you_mod
+    you_mod.register(sp)
     plugins.register(sp); plugin_install.register(sp); connectors.register(sp); control.register(sp)
     remind.register(sp); rules.register(sp); harness.register(sp); storage.register(sp)
     from . import uninstall as uninstall_mod
