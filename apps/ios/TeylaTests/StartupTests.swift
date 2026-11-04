@@ -100,7 +100,7 @@ final class StartupTests: XCTestCase {
     func testMoneyAndGrowthFigures() throws {
         let s = try decode(#"""
         {"metrics":{"money":{"enabled":true,"paying":1,"mrr_usd":4.99,"revenue_30d_usd":4.99,"ai_cost_30d_usd":12.5},
-         "growth":{"weekly_pct":6.25,"weeks":4,"on":"revenue"}}}
+         "growth":{"weekly_pct":6.3,"weeks":4,"on":"revenue"}}}
         """#)
         XCTAssertEqual(block(s, "Monetization", "MRR")?.value, "$4.99")
         XCTAssertEqual(block(s, "Monetization", "AI cost, last 30 days")?.value, "$12.50")
@@ -161,7 +161,7 @@ final class StartupTests: XCTestCase {
     func testTheAsOfTimeAndStaleAreVisible() throws {
         let now = ISODate.parse("2026-11-04T12:00:00Z")!
         let fresh = try decode(#"{"as_of":"2026-11-04T10:00:00Z","stale":false}"#)
-        XCTAssertEqual(StartupFormat.asOfLine(fresh, now: now), "As of 2 h ago")
+        XCTAssertEqual(StartupFormat.asOfLine(fresh, now: now), "As of 2h ago")
         let stale = try decode(#"{"as_of":"2026-10-23T12:00:00Z","stale":true}"#)
         XCTAssertTrue(StartupFormat.asOfLine(stale, now: now).hasPrefix("Stale:"))
         XCTAssertTrue(StartupFormat.asOfLine(stale, now: now).contains("As of"))
