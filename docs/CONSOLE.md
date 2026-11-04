@@ -69,13 +69,18 @@ Two kinds of number, kept apart. Cash comes from what the owner lists; list pric
 - `compact`: the headline, `monthly_usd`, the count of unpriced rows, `list_usd_7d` and the next renewal.
 
 ### playbook (`console_playbook.py`)
-- `guidelines [{id, title, path, updated, summary}]`: design standard, writing, voice, policy.
-- `models`: `ladder []`, `new []`, `drift []`, `arena {as_of, url, top []}`. A ranking is a shortlist,
-  never an automatic switch.
-- `knowledge {wiki, intent, corrections, taste}`.
-- `you {quotes [{text, date, product}], insights [{label, value, detail}], postcard {then, now},
-  delegation [{chore, count, last, path, who, status}]}`. Local only. It stays off the relay unless the owner turns it on.
-
+- `headline`: "Unresolved contradictions", the count `teyla you` computes: themes that came back after a rule was
+  written. A dash (`null`) until `teyla you` has run.
+- `guidelines [{id, title, path, updated, summary, exists}]`: the UX standard, writing, voice chart, UI copy, the
+  owner's policy file, and the count of product `DESIGN.md` files. `updated` is the last commit date. The Mac app opens `path`.
+- `models`: `ladder [{provider, label, orchestrate, volume, triage, note}]`, `drift []` (from `teyla models`, no
+  session scan), `new []` (catalogue models nobody acknowledged, from local caches), `arena {as_of, url, stale, top [], note,
+  last_fetch, status}`. Every arena row says "candidate, not a decision". Teyla never switches a model by itself. See
+  `teyla models arena`: the board page is behind a bot check, so the source is a snapshot the owner pastes into `~/.teyla/models/arena.json`.
+- `knowledge {wiki, intent, corrections, taste}`: wiki pages by status, intent entries by product, correction counts,
+  design decisions by kind (`fix`, `rule`, `reject`).
+- `you`: local only, see `docs/YOU.md`. It stays off the relay unless `[you] relay = true`, and then
+  `compact()` carries the quote of the day and the number of open chores, nothing else.
 ### growth (`growth.py`)
 - `target {posts_per_day_per_channel}`, `today [{platform, language, posted, target}]`, `last_public_days`, `pipeline {ideas, filming, cutting, review, ready, live}`, `episodes []`, `next_ride`,
   `trends [{title, score, hook, source, url}]`, `outreach {drafts, sent_week, replies_week, calls_week, sources []}`,
