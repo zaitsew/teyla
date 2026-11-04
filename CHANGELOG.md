@@ -5,6 +5,13 @@
 - **The apps have one small type system.** Mac and iPhone use exactly five type levels plus one style for big numbers, and
   every size, gap, radius and colour comes from a token. The iPhone has real token enums now. A test fails on a literal.
   The toolbar's status dot no longer touches the edge of its capsule.
+- **Console: the Operations section.** `teyla console operations` answers "what failed or needs capacity": machine health
+  (RAM, swap, compressor, disk with a 24 h series, agents, top apps), `leave {ok, blockers}` (can the lid close), the
+  unresolved failures from `teyla attention`, every scheduled task, the connected harnesses with versions, whether the
+  generated AGENTS.md copies match the policy, and the cached security counts. It reads local files only and returns in
+  about 7 seconds. `teyla state` starts a detached 30-minute refresh of the cache for the phone.
+- **`teyla schedules` no longer calls the relay agent STALE.** It runs `relay sync --quiet` and logs nothing, so the log's
+  age said "14 hours" while the snapshot was a minute old. The agent's run time is now the snapshot time in `relay.json`.
 - **A product can carry a tester's review captures.** `$0.deliver` hands a saved capture to the product's own backend, and
   retries what was saved earlier, with no relay key needed. The package itself still makes no network call.
   `teyla review pull --vouched-folder DIR` imports what the product's script downloaded.

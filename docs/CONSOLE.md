@@ -31,13 +31,23 @@ is `null`, and the screen shows a dash with the reason. List-price figures are a
 
 ### operations (`console_operations.py`)
 - `machine`: `verdict`, `reason`, `ram_gb`, `swap_used_gb`, `swap_total_gb`, `compressor_gb`, `pressure`,
-  `disk_free_gb`, `disk_total_gb`, `cpu_load`, `cores`, `sims`, `builds`, `agents {claude, codex, grok}`,
-  `top [{name, gb}]`, `series {disk [], swap []}`.
-- `leave`: `ok`, `blockers []`. Can the owner close the lid and go.
-- `failures [{title, detail, severity, product, action}]`, from `attention`.
-- `schedules`: `counts {attention, ok, other}`, `rows [{source, name, state, cadence, last_run, note}]`.
-- `harnesses [{name, installed, version, policy, note}]`, and `policy_sync {status, drift []}`.
-- `security {shield_issues, leak_findings, deps_vulns, unreviewed_prs}`.
+  `disk_free_gb`, `disk_total_gb`, `cpu_load`, `cores`, `sims`, `builds`, `agents {claude, codex, grok}`, `lanes`,
+  `top [{name, gb}]`, `series {disk [], swap []}` (24 h, `[epoch, GB]` pairs, at most 96).
+- `leave`: `ok`, `blockers []`. Can the owner close the lid and go: the machine is not WORSENING or CRITICAL, the disk is
+  over the guard's critical line, and no headless agent lane or build is running. `ok` is `null` when the machine
+  could not be read.
+- `failures [{title, detail, severity, product, kind, action}]`, from `attention`, offline. The headline counts those with
+  severity `act`; `info` rows are sources that are old or unread.
+- `schedules`: `counts {attention, ok, other}`, `rows [{source, name, state, cadence, last_run, note}]`, worst first.
+- `harnesses [{name, installed, version, policy, note}]` (`policy`: `synced`, `not wired` or `null`), and
+  `policy_sync {status, drift [], inbox, repos {ok, differ, missing, none, to_fix []}, last_sync}`: `drift` lists the
+  generated `~/.codex/AGENTS.md` and `~/.grok/AGENTS.md` that differ from what `teyla policy sync` would write, `inbox`
+  the hand edits waiting for review, `repos` the AGENTS.md / CLAUDE.md pairs.
+- `security {shield_issues, leak_findings, deps_vulns, unreviewed_prs, as_of {leak, deps, reviews}, notes []}`, from the
+  last cached `teyla leak --published`, `teyla deps --all` and `teyla reviews` runs. `shield_issues` stays `null`: shield
+  keeps no result between runs.
+- `notes {part: reason}`: a part that failed or was late is `null` and says why here; the others still load.
+- `compact`: the headline, `machine {verdict, disk_free_gb}`, `leave_ok` and the top three failures.
 
 ### money (`console_money.py`)
 - `subscriptions [{name, monthly_usd, category, renews, credits_usd, note}]`, from the owner's
