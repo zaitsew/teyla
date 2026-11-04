@@ -57,7 +57,8 @@ Keys are snake_case. A key that is absent means the value is unknown; `null` is 
 | `app.name` | string, optional | Display name |
 | `app.version`, `app.build` | strings | `CFBundleShortVersionString`, `CFBundleVersion` |
 | `app.commit` | string, optional, 7 to 40 lowercase hex | From the Info.plist key `TeylaCommit`. Absent when the product does not set it |
-| `app.configuration` | `debug`, `testflight` or `local` | How the build reached the phone. An App Store build never captures |
+| `app.product` | string, optional, `^[a-z][a-z0-9-]{0,39}$` | The product's slug. The Mac files the capture under it. Absent: the last part of `app.bundle_id`. A web build has a hostname for a bundle id, so it sends this |
+| `app.configuration` | `debug`, `testflight`, `local`, `play_internal` or `test_host` | How the build reached the tester: a development build, TestFlight, an ad hoc install, a Play internal track, or a web page on a test host. A store build never captures |
 | `environment.os` | string | `iOS 19.1` |
 | `environment.model` | string | Hardware identifier, `iPhone16,2` |
 | `environment.locale` | string | `es_ES` |
@@ -65,6 +66,7 @@ Keys are snake_case. A key that is absent means the value is unknown; `null` is 
 | `environment.appearance` | `light` or `dark` | |
 | `environment.dynamic_type` | `xSmall`, `small`, `medium`, `large`, `xLarge`, `xxLarge`, `xxxLarge`, `accessibilityMedium`, `accessibilityLarge`, `accessibilityXLarge`, `accessibilityXXLarge`, `accessibilityXXXLarge` or `unspecified` | The content size category |
 | `environment.screen` | `{width, height, scale}`, numbers | The window in points and its scale. `width` and `height` are the coordinate space of every `x`, `y` and `bounds` below |
+| `reporter` | string, optional, 1 to 64 characters | The sender's name as the client claims it. Nothing verifies it: treat it as a label, never as proof of who sent the capture |
 | `screen` | string, optional, `[A-Za-z0-9_.:#/-]{1,200}` | The route the product registered with `.reviewScreen` or `TeylaReview.screen`. Falls back to the tapped element's screen, then to the screen most anchors share |
 | `tap` | object, optional | Absent when the owner did not tap |
 | `tap.x`, `tap.y` | numbers | The tap in window points |

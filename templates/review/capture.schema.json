@@ -21,7 +21,8 @@
         "version": {"type": "string", "minLength": 1, "maxLength": 64},
         "build": {"type": "string", "minLength": 1, "maxLength": 64},
         "commit": {"type": "string", "pattern": "^[0-9a-f]{7,40}$"},
-        "configuration": {"enum": ["debug", "testflight", "local"]}
+        "product": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,39}$"},
+        "configuration": {"enum": ["debug", "testflight", "local", "play_internal", "test_host"]}
       }
     },
     "environment": {
@@ -47,6 +48,7 @@
         }
       }
     },
+    "reporter": {"type": "string", "minLength": 1, "maxLength": 64},
     "screen": {"type": "string", "pattern": "^[A-Za-z0-9_.:#/-]{1,200}$"},
     "region": {"$ref": "#/$defs/rect"},
     "tap": {
