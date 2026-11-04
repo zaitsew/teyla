@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **The review package builds for macOS and opens a feedback form there.** `ReviewCommands()` adds a Help menu item,
+  "Report a problem…", with Control-Option-Command-F; `ReviewMenuButton()` is the Settings row. The window is frozen with
+  `cacheDisplay` at the backing scale and opens in a window of its own beside a form sized for a pointer: click a spot or drag
+  an area, type, send. `.reviewPrivate()` paints black in the saved and sent picture, and a view that cannot report its frame
+  hides the whole window. The first-send notice, the preview, `requiresHealthConsent` and the refused states are the iOS code,
+  not a copy. The capture format stays v1 (`device: "Mac"`, `comment.input: "text"`). Maps, video and 3D views can come out
+  blank in `cacheDisplay`; the form says so when it finds one. The second lock reads StoreKit's `AppTransaction.environment`
+  (`.xcode` and `.sandbox` open the form; `.production`, an error or no answer refuse it). iOS behaviour is unchanged.
+- **`teyla review store-check` reads a Mac `.pkg`.** It expands the installer with `pkgutil --expand-full` and checks every
+  `.app` in it; Mac `.app` and `.xcarchive` bundles (`Contents/Info.plist`, `Contents/MacOS`) have tests of their own.
+
 ## 0.39.0 — 2026-11-04 — A startup page that names the next missing fact
 
 - **`teyla startup`: one page per product, with the next fact it is missing.** Types are venture, indie, open-source and
