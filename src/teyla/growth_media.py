@@ -891,9 +891,11 @@ def daily(store: g.Store, cfg: dict, now: float, *, quiet: bool = False, out=pri
             if not any(x["item"] and x["item"]["status"] == "idea" for x in g.plan(store, cfg, g.day_of(now), now, reg=reg)):
                 break
         rep = g.slot_report(store, cfg, g.day_of(now))
+        from . import growth_rank as rank
+        unused = rank.unused_stories(store, cfg)
         gaps = "; ".join(f"{x['channel']} ({g.clip_text(x['why'], 70)})" for x in rep["rows"] if x["filled"] < x["target"])
         return (f"{ok} of {total} drafts wait in review, {held} held back by the editor; today {rep['filled']} of {rep['total']} slots "
-                f"filled" + (f"; gaps: {gaps}" if gaps else "") + f"; cost ${cost:.4f}; budget left {left}")
+                f"filled" + (f"; gaps: {gaps}" if gaps else "") + f"; {unused} unused stories left; cost ${cost:.4f}; budget left {left}")
 
     store.ensure()
     for name, fn in (("harvest", do_harvest), ("trends", do_trends), ("plan", do_plan), ("video", do_video), ("draft", do_draft)):

@@ -253,6 +253,7 @@ def edit_pass(store: g.Store, cfg: dict, item: dict, chart_dir, guard: g.Guard, 
     """Score a checked draft. Under the bar: one rewrite on the rewrite model with the critique, then score again. Still
     under: the item stays a draft and says why. Only an item at or over the bar is left in `review`. Every call comes
     out of the same budget as the draft."""
+    from . import growth_rank as rank
     for rnd in (1, 2):
         if budget[0] <= 0:
             _hold(item, "budget: no model call left for the editor")
@@ -271,7 +272,14 @@ def edit_pass(store: g.Store, cfg: dict, item: dict, chart_dir, guard: g.Guard, 
             item.pop("hold_reason", None)
             return
         if rnd == 2:
+            if rank.facts_called_thin(ed["critique"]):
+                rank.mark_thin(store, item, ed["critique"], now)
             _hold(item, f"editor {ed['score']}/5 after one rewrite: {ed['critique']}")
+            return
+        if rank.facts_called_thin(ed["critique"]):
+            # The rewrite may only use these facts and may not add a number, so it cannot fix them: spend nothing more.
+            rank.mark_thin(store, item, ed["critique"], now)
+            _hold(item, f"editor {ed['score']}/5, facts too thin to rewrite: {ed['critique']}")
             return
         if budget[0] <= 0:
             _hold(item, f"editor {ed['score']}/5, no budget left to rewrite: {ed['critique']}")

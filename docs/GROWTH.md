@@ -29,7 +29,30 @@ teyla growth packets      one folder per approved item: caption, first comment, 
 teyla growth published ID URL    paste the post's URL after you posted it
 ```
 
-A slot balances formats and rotates products. The product with the fewest sale attempts goes first.
+A slot balances formats and rotates products. What the editor passes goes first, then the product with the fewest sale
+attempts (see "The planner").
+
+## The planner: what passes goes first
+
+The editor passes a draft that has a number and an artifact a reader can open. A fixed score once gave slots to product
+spotlights and worklogs the editor then held back, while stories with numbers waited: on 2026-11-04 six of eight
+attempts went to weak ideas and the budget ran out. Now `plan` ranks by what passes:
+
+- A **story** is a `lesson` or `spec-product` idea with a number and an artifact (a link, a PR number or a command in
+  backticks). It starts at 0.85. A lesson with one of the two starts at 0.55, a bare lesson at 0.35, a reaction at 0.45,
+  a worklog at 0.3, a spotlight at 0.1.
+- The editor's history moves that number. For each source and format (a PR worklog, a note lesson, a trend reaction)
+  Teyla counts the drafts the editor passed and the drafts it held back, and pulls the prior toward the observed pass
+  rate: with 9 judged drafts the history carries 75%.
+- A product with few sale attempts adds its bonus only to an idea whose quality is 0.25 or more. A product that was never
+  sold still gets the next slot (POLICY section 19), but through a story or a real demo fact, not through its summary.
+- A **bare product summary** (a spotlight whose only fact is the registry line) cannot make a post. The planner skips
+  it, and a draft that reaches the model step fails with `thin: a bare product summary` before any call, so it costs
+  nothing.
+- When the editor's critique says the facts are too thin, the rewrite is skipped (it may only use the same facts and may
+  not add a number), the idea is marked `thin_facts`, and the planner does not give that idea another channel.
+  `teyla growth retry` clears the mark.
+- `plan` and the slot report of `growth daily` end with the number of unused stories still waiting.
 
 `teyla growth daily` runs harvest, trends, plan, video and draft in that order, each step failing on its own (exit 1 if
 one did). Plan sits before draft because draft writes the planned slots. Video sits between them (see "The daily
