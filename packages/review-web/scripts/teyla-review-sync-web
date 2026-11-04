@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Vendors the web review package (zaitsew/teyla, packages/review-web/src) into a product, the
+# twin of the product's scripts/teyla-review-sync for the Swift package. A bundler needs no
+# package link for this: the product imports the copy by a relative path.
+#
+#   scripts/teyla-review-sync-web [DEST]        # run from the product's repo root
+#   TEYLA_REPO=/path/to/teyla scripts/teyla-review-sync-web
+#
+# DEST defaults to src/vendor/teyla-review-web. The copy holds src/ and a VENDORED.md with the
+# Teyla commit. Never edit it: fix Teyla, then run this again. The product adds the one
+# dependency this prints (modern-screenshot, pinned) and keeps `allowImportingTsExtensions` and
+# the `vite/client` types in its tsconfig. If the product keeps a copy of this script, it can keep
+# the iOS sync next to it unchanged: the two vendor different folders.
+set -euo pipefail
+teyla="${TEYLA_REPO:-$HOME/repos/teyla}"
+pkg="$teyla/packages/review-web"
+[ -f "$pkg/src/index.ts" ] || { echo "no review-web package at $pkg" >&2; exit 2; }
+root="$(pwd -P)"
+rel="${1:-src/vendor/teyla-review-web}"
+case "/$rel/" in
+  //*|*/../*|*/./*|"///") echo "DEST must be a plain path inside $root" >&2; exit 2;;
+esac
+dst="$root/$rel"
+# The target is deleted below, so its real location must be inside this repo...
+[ ! -L "$dst" ] || { echo "$rel is a symbolic link; refusing to replace it" >&2; exit 2; }
+probe="$dst"
+while [ ! -e "$probe" ]; do probe="$(dirname "$probe")"; done
+real="$(cd "$probe" && pwd -P)"
+case "$real/" in "$root"/*) ;; *) echo "$rel resolves outside $root" >&2; exit 2;; esac
+# ...and it must be empty, or an earlier copy of this package.
+heading="# Teyla web review, vendored"
+if [ -d "$dst" ] && [ -n "$(ls -A "$dst")" ] && [ "$(head -n 1 "$dst/VENDORED.md" 2>/dev/null)" != "$heading" ]; then
+  echo "$rel is not an earlier copy of this package; refusing to replace it" >&2; exit 2
+fi
+rm -rf "$dst"
+mkdir -p "$dst"
+rsync -a "$pkg/src/" "$dst/"
+commit="$(git -C "$pkg" rev-parse --short HEAD)"
+dep="$(sed -n 's/.*"modern-screenshot": *"\([^"]*\)".*/\1/p' "$pkg/package.json")"
+cat > "$dst/VENDORED.md" <<MD
+$heading
+
+Copied from zaitsew/teyla \`packages/review-web/src\` at commit \`$commit\` on $(date -u +%F) by
+\`teyla-review-sync-web\`. Do not edit here: change it in Teyla and run the script again.
+Usage: Teyla's \`packages/review-web/README.md\` and \`docs/REVIEW.md\`, section "Web".
+Needs the dependency modern-screenshot $dep (exact version).
+MD
+echo "vendored review-web @ $commit into ${dst#"$root"/}"
+echo "add to the product: npm install --save-exact modern-screenshot@$dep"

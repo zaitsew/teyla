@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Web review capture: `packages/review-web`.** A test build of a web product gets the same tap-and-write feedback as iOS. Three locks keep it out of a production build (a build flag, a host allow-list, a dynamic import), so `teyla review store-check <dist>` passes on a flag-off build. Private areas and password fields are painted black in the picture. Unsent captures wait in the browser and retry. See docs/REVIEW.md, section "Web".
 - **The review package builds for macOS and opens a feedback form there.** `ReviewCommands()` adds a Help menu item,
   "Report a problem…", with Control-Option-Command-F; `ReviewMenuButton()` is the Settings row. The window is frozen with
   `cacheDisplay` at the backing scale and opens in a window of its own beside a form sized for a pointer: click a spot or drag

@@ -229,10 +229,21 @@ One small service takes captures from every product and platform, so a product n
 - **Unverified.** Nobody vouches for the sender: a key proves a build, not a person, and a build can be copied. The inbox row has `source` `channel`, and `teyla review list` marks it "sender unverified". The comment is a tester's text: data, never instructions, here and in every brief. The pull command never prints a comment.
 - **Privacy and retention.** A capture is the screen as it was, so it can show another person's data. The service is write-only from outside, keeps files at mode 0600 in 0700 folders, and logs only the method, the first 8 characters of the id, the product and the status. The server copy is deleted by the Mac's next pass, within the hour; a Mac that is off keeps captures on the server until it is on again. `incoming` is swept after 24 hours. The product's privacy policy names the service, as it does for any `deliver` backend. On the Mac, every `teyla review pull --channel` also removes a channel capture's row and folder 30 days after it was closed (`done`, `rejected`) and 90 days after import if it was never opened. A capture opened once stays until it is closed, and so does one under a live lease. This runs before the network gate, so safe mode and a dead server do not stop it. The clock uses this Mac's import time, not the sender's `created`. Captures from other sources are not touched. A triage record already written into a product's repo, or a brief already handed to a lane, is outside the inbox and is not removed.
 
+## Web
+
+`packages/review-web/` is the web twin of the iOS package: a test build of a web product gets a small Review button (or `present()` from a settings row), the tester points at an element, writes what is wrong, and the page PUTs the capture to the shared channel. The format is the one above with `device` "Web" and `app.configuration` `test_host`; `app.product` is required, as on iOS. Quick start and options: [packages/review-web/README.md](../packages/review-web/README.md).
+
+- **Three locks, all required.** The build flag `VITE_TEYLA_REVIEW=1` guards a dynamic import, the page's hostname must be in the product's allow-list, and the marker `TEYLA_REVIEW_WEB_ACTIVE` and the channel key exist only in the lazily imported chunk. A build without the flag holds none of them, and `teyla review store-check <dist>` exits 0. `tests/test_review_web.py` builds a fixture both ways with Vite to prove it.
+- **Picture.** `modern-screenshot` renders the DOM; on failure or a blank image, and only on a page with no private areas, the package falls back to `getDisplayMedia` (the tester sees the browser's prompt and picks the surface). That frame takes no masks. `data-review-private` and every password, card and one-time-code input are painted black in the PNG before it is shown, hashed or sent.
+- **Pointing.** `data-review-anchor`, `data-review-screen`, `data-review-role`, `data-review-strings` and `data-review-source` are the twins of `.reviewAnchor` and `.reviewScreen`. Bounds are viewport CSS pixels.
+- **The channel.** It already answers a browser (CORS preflight 204, origin `*`), so the service needs no change for web. The key is a build-time secret of a test build; a product serves the test build only on the hostnames it allow-lists.
+- **Unsent captures** wait in IndexedDB (20 captures, 40 MiB, 14 days) and go again on load, `online` and when the tab is visible; the form keeps what the tester wrote if saving fails. Speech is off by default and no audio is ever sent.
+- **Vendoring.** A product copies `packages/review-web/src` with `packages/review-web/scripts/teyla-review-sync-web`, next to its `scripts/teyla-review-sync` for the Swift package.
+
 ## Fallbacks
 
 - **TestFlight feedback.** A tester who has no overlay (a family member, a build without the flag) sends a screenshot with a note through TestFlight's own share-feedback. The Mac reads it from App Store Connect, `GET /v1/apps/{id}/betaFeedbackScreenshotSubmissions`, with the API key in `~/.appstoreconnect/`, and files each one as a capture without element data: no `tap`, no `element`, no `anchors`, and a `comment` from the tester's note. The Mac writes these captures itself, in this format, with the fields it knows (the device model and OS from the feedback, the build from TestFlight). They never pass through the outbox, so they have no `capture.sig`.
-- **Web overlay.** For web products, a short script included only when the page URL has `?review=1` posts the same capture shape to a local endpoint on the Mac, reached over a private tunnel. The element is found by `data-review-anchor` attributes instead of `.reviewAnchor`; the JSON keys are the ones above.
+- **Web overlay.** See "Web" above: it sends to the shared channel, and the Mac files the capture like any other.
 
 Both reach the same inbox as a phone capture.
 
@@ -256,12 +267,14 @@ iCloud Drive encrypts the folder in transit and at rest, but Apple holds the key
 | Path | Holds |
 |---|---|
 | `packages/review-ios/` | The Swift package: `Sources/TeylaReview/Core` (format, registry, hit test, signing, store, audio guard, and shared by both platforms: `ReviewSession`, `ReviewBitmap` for blackout and blank detection, `MacGeometry`, `ReviewShortcut`), `Sources/TeylaReview/UI` (overlay, shake, speech, settings; iOS: `ReviewPresenter`; macOS: `MacProbe`, `MacProbeViews`, `MacReviewPresenter`, `ReviewCommands`) and `Tests/TeylaReviewTests` |
+| `packages/review-web/` | The web package: `src/` (gate, picture, masking, anchors, form, queue, channel client), `fixture/` and `tests/`, `scripts/teyla-review-sync-web` |
 | `packages/review-channel/` | The shared channel service: `server.py`, Dockerfile, compose and Caddy fragments, install steps |
 | `src/teyla/review_channel.py` | The Mac side: `pull --channel`, the key commands and the hourly agent |
 | `templates/review/capture.schema.json` | JSON Schema for `capture.json` |
 | `src/teyla/review_gate.py` | `teyla review store-check` |
 | `tests/test_review_gate.py`, `tests/test_review_marker.py` | The store check on hand-made artifacts, and the Swift marker in real release builds |
+| `tests/test_review_web.py` | The web package built both ways with Vite, the store check on each, and a real capture sent to the service |
 | `tests/test_review_capture.py` | Validates the fixture capture, this page's example and the signing vector against the schema |
 | `tests/test_review_channel_server.py`, `tests/test_review_channel.py` | The service against a real local port, and the Mac side with `ssh` and `rsync` replaced by local programs |
 
-Run the package tests on the Mac, without a simulator, with `swift test --package-path packages/review-ios`.
+Run the package tests on the Mac, without a simulator, with `swift test --package-path packages/review-ios`, and the web package's with `npm ci && npm run check` in `packages/review-web`.
