@@ -47,6 +47,9 @@
     orphan_kill     = false        the sims agent also runs `storage procs --kill --quiet` (needs sims_agent)
     sims_agent      = false        `teyla routine install` also writes an agent: storage sims --reap every 10 min
     sweep_agent     = false        ... and one for storage sweep --temp hourly; the weekly runs storage sweep
+    [growth]                       `teyla growth`: the content factory (docs/GROWTH.md)
+    daily           = false        `teyla routine install` writes an agent: growth daily at 06:30 (harvest, plan,
+                                   draft; publishes nothing). Off unless you ask for it.
     [tidy]                         `teyla tidy`: the rule and memory files checked for junk
     max_kb     = 24                a file over this many KB is a finding (an always-loaded file this big is not read)
     stale_days = 120               a dated "until" / "for now" / "temporary" / "this week" / TODO line older than this is a finding
@@ -169,6 +172,8 @@ DEFAULTS = {
     # Where `teyla correct` and the capture hook keep corrections; see corrections.py for why
     # the default is outside the repo.
     "corrections": {"store": "home"},
+    # `teyla growth daily` as a launchd agent at 06:30, written by `teyla routine install`. Opt-in.
+    "growth": {"daily": False},
     # `teyla intent`: the owner's own long prompts, kept verbatim in ~/.teyla/intent/<product>.md.
     "intent": {"enabled": True, "min_chars": 400},
     "safe": {"enabled": False, "auto_update": False},

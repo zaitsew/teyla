@@ -240,7 +240,7 @@ def test_uninstall_removes_the_optional_agents_and_their_logs(home, monkeypatch)
     logs.mkdir(parents=True)
     for label in ri.OPTIONAL_LABELS:
         (agents / f"{label}.plist").write_text("<plist/>")
-    for n in ("teyla-sims.log", "teyla-sweep.log", "teyla-load.log"):
+    for n in ("teyla-sims.log", "teyla-sweep.log", "teyla-load.log", "teyla-growth.log"):
         (logs / n).write_text("x")
     steps = uninstall.plan(home)
     targets = {(s.verb, s.target) for s in steps if s.fn}

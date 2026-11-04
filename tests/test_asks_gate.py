@@ -170,7 +170,7 @@ def test_21_runs_of_a_disabled_job_collapse_and_close_into_nothing_open():
     assert items[0].status == "done" and items[0].note == f"auto: scheduled task off {JOB}"
     assert st["done"]["run00"]["note"] == f"auto: scheduled task off {JOB}"
     assert sum(1 for a in items if a.status == "duplicate") == 20
-    assert asks.filtered_by_reason(items) == dict(resolved=0, duplicates=0, repeat_runs=20, scheduled_off=1,
+    assert asks.filtered_by_reason(items) == dict(resolved=0, duplicates=0, repeat_runs=20, same_chore=0, scheduled_off=1,
                                                  testflight_current=0, reports=0)
 
 
@@ -538,7 +538,7 @@ def test_json_adds_filtered_by_reason_and_keeps_every_old_key(world, capsys):
     j = json.loads(capsys.readouterr().out)
     assert {"waiting", "archived", "generated", "items", "groups", "muted", "muted_products", "resolved",
             "duplicates", "filtered"} <= set(j)
-    assert j["filtered"] == dict(resolved=0, duplicates=0, repeat_runs=4, scheduled_off=1, testflight_current=0, reports=1)
+    assert j["filtered"] == dict(resolved=0, duplicates=0, repeat_runs=4, same_chore=0, scheduled_off=1, testflight_current=0, reports=1)
     assert j["duplicates"] == 4 and j["waiting"] == 1 and "task" not in j["items"][0]
 
 

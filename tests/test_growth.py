@@ -246,8 +246,34 @@ def test_evergreen_ideas_need_a_public_product_with_a_summary(env):
     store, cfg = make(public=("alpha",))
     growth.harvest(store, cfg, NOW, allow_net=False, skip=("prs", "releases", "sessions", "ledger", "trends"))
     fmts = sorted(i["format"] for i in store.items().values())
-    assert fmts == ["product-spotlight", "spec-product"]
+    assert fmts == ["product-spotlight"]
     assert all(i["product"] == "alpha" for i in store.items().values())
+
+
+def test_a_spec_is_about_someone_elses_product_and_never_ours(env):
+    store, cfg = make(public=("alpha",))
+    cfg["spec_targets"] = [{"product": "Big Translator", "idea": "live, on a terrace"}, {"idea": "no product named"}, {"product": "ALPHA"}]
+    growth.harvest(store, cfg, NOW, allow_net=False, skip=("prs", "releases", "sessions", "ledger", "trends", "evergreen"))
+    specs = [i for i in store.items().values() if i["format"] == "spec-product"]
+    assert [i["idea"] for i in specs] == ["What if Big Translator was truly AI-native?"]
+    assert specs[0]["product"] == "" and "not affiliated" in " ".join(specs[0]["facts"])
+    assert "live, on a terrace" in " ".join(specs[0]["facts"])
+
+
+def test_spec_targets_load_from_the_config(env):
+    store, _ = make(public=("alpha",))
+    store.config_path.parent.mkdir(parents=True, exist_ok=True)
+    store.config_path.write_text('[[spec_target]]\nproduct = "Big Translator"\nidea = "live"\n', encoding="utf-8")
+    assert growth.load_config(store)["spec_targets"] == [{"product": "Big Translator", "idea": "live"}]
+
+
+def test_a_merged_pr_is_a_worklog_and_only_a_filmed_bet_is_true_vibe_coding(env, monkeypatch):
+    store, cfg = make(public=("alpha",))
+    cache = {"owner/alpha": {"prs": [{"number": 1, "title": "Faster sync", "merged_at": recent()},
+                                     {"number": 2, "title": "Better sync", "merged_at": recent()}]}}
+    monkeypatch.setattr(growth, "_pr_cache", lambda: cache)
+    growth.harvest(store, cfg, NOW, allow_net=False, skip=("sessions", "ledger", "trends", "evergreen"))
+    assert {i["format"] for i in store.items().values()} == {"worklog"}
 
 
 # --- trends ----------------------------------------------------------------------------------------------------
@@ -455,7 +481,7 @@ def test_dry_draft_calls_no_model_and_writes_nothing(env, monkeypatch):
 
 def test_clip_drafts_use_the_script_model_and_spec_product_asks_for_a_test(env, monkeypatch):
     store, cfg = make(channels=("youtube-en",))
-    (it,) = planned(store, cfg, idea="Imagine if Alpha was truly AI-native", fmt="spec-product")
+    (it,) = planned(store, cfg, idea="What if Big Translator was truly AI-native?", fmt="spec-product")
     fm = fake_model([dict(GOOD, hook="Imagine Alpha with an agent as its first user", body="Imagine Alpha with an agent as its first user. It reads your steps and plans the week.",
                           script="Imagine Alpha ...", acceptance_test="A prototype answers one step question.")])
     monkeypatch.setattr(growth, "call_model", fm)

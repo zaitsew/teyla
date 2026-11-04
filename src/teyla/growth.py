@@ -10,6 +10,8 @@
     teyla growth packet ID | packets    one folder per approved item, ready to upload by hand
     teyla growth published ID URL       record the URL after you posted
     teyla growth sale-attempts | log    posts, marketing and ICP meetings per product, from the ledger
+    teyla growth ride | ingest | cut    the episode: question and clock, footage, a captioned vertical in review
+    teyla growth daily                  harvest, trends, plan, draft in order (the opt-in 06:30 agent runs it)
     teyla growth outreach | doctor
 
 Daily volume comes from what happens every day; filmed footage is a richer input a few times a week, so a slot
@@ -70,7 +72,7 @@ DUB_LABEL = {
 
 DEFAULTS = dict(posts_per_day=1, approval="batch", fanout=3, draft_budget=12, voice_chart="", bi_data="",
                 public_products=[], outreach_repos=[], x_scan=False, model_short="claude-haiku-5-5", model_script="claude-sonnet-5-5",
-                grok_model="grok-4.7")
+                grok_model="grok-4.7", footage_folder="", whisper_model="")
 TREND_KEEP = 20                      # of 30: customer relevance x2 + demonstrability x2 + novelty + momentum
 GROK_TURNS = 6
 GROK_TIMEOUT_S = 300
@@ -244,7 +246,9 @@ def default_config_text(public: list[str] | None = None) -> str:
          "# Products that may be named in public, by registry id. A product not listed is never named in a draft.",
          f"public_products = {_toml_list(public or [])}", "",
          "# voice_chart = \"~/.teyla/voice/<name>\"    # a folder with en.md, es.md, ru.md; default: the only one there",
-         "# bi_data = \"~/repos/beyond-intelligence/web/data\"", "x_scan = false", "",
+         "# bi_data = \"~/repos/beyond-intelligence/web/data\"", "x_scan = false",
+         "# footage_folder = \"~/Library/Mobile Documents/com~apple~CloudDocs/Footage\"    # `growth ingest` reads video here",
+         "# whisper_model = \"~/models/ggml-small.bin\"    # a file you downloaded; Teyla downloads nothing", "",
          "[models]", f"short = \"{DEFAULTS['model_short']}\"", f"script = \"{DEFAULTS['model_script']}\"", ""]
     rows = [(p, "en", True) for p in PLATFORM_ORDER] + [(p, l, False) for l in ("ru", "es") for p in ("x", "threads", "instagram", "tiktok")]
     for p, l, on in rows:
@@ -264,13 +268,15 @@ def load_config(store: Store) -> dict:
     for k in ("posts_per_day", "fanout", "draft_budget"):
         if isinstance(raw.get(k), int) and not isinstance(raw.get(k), bool) and raw[k] >= 0:
             cfg[k] = raw[k]
-    for k in ("approval", "voice_chart", "bi_data", "grok_model"):
+    for k in ("approval", "voice_chart", "bi_data", "grok_model", "footage_folder", "whisper_model"):
         if isinstance(raw.get(k), str):
             cfg[k] = raw[k]
     if isinstance(raw.get("x_scan"), bool):
         cfg["x_scan"] = raw["x_scan"]
     if isinstance(raw.get("outreach_repos"), list):
         cfg["outreach_repos"] = [str(x).lower() for x in raw["outreach_repos"]]
+    if isinstance(raw.get("spec_target"), list):
+        cfg["spec_targets"] = [t for t in raw["spec_target"] if isinstance(t, dict)]
     if isinstance(raw.get("public_products"), list):
         cfg["public_products"] = [str(x).lower() for x in raw["public_products"]]
     models = raw.get("models") if isinstance(raw.get("models"), dict) else {}
@@ -512,10 +518,6 @@ def _is_mechanical(title: str) -> bool:
         return False
 
 
-def _pr_format(n: int) -> str:
-    return "true-vibe-coding" if n % 2 else "worklog"
-
-
 def src_prs(c: Ctx) -> tuple[int, str]:
     cache = _pr_cache()
     mapping = slug_products(c.reg, cache)
@@ -535,7 +537,7 @@ def src_prs(c: Ctx) -> tuple[int, str]:
             name = c.reg["product"][pid].get("name") or pid
             n = pr.get("number") or 0
             if c.add(ref=f"pr:{slug.lower()}#{n}", source="pr", url=f"https://github.com/{slug}/pull/{n}",
-                     kind="post", format=_pr_format(int(n)), product=pid, idea=f"Merged in {name}: {title}",
+                     kind="post", format="worklog", product=pid, idea=f"Merged in {name}: {title}",
                      facts=[f"merged pull request in {name}: {title}", f"merged {day_of(at)}"],
                      scores=dict(relevance=3, demonstrable=4, novelty=3, momentum=5 if age_days <= 1 else 3)):
                 made += 1
@@ -605,7 +607,7 @@ def src_sessions(c: Ctx) -> tuple[int, str]:
     facts = [f"{len(rows)} agent sessions in the last day", f"{', '.join(harness)} harnesses", f"${usd:.2f} at API list price"]
     if prs:
         facts.append(f"{prs} pull requests")
-    made = c.add(ref=f"sessions:{day_of(c.now)}", source="sessions", kind="post", format="true-vibe-coding",
+    made = c.add(ref=f"sessions:{day_of(c.now)}", source="sessions", kind="post", format="worklog",
                  product=ledger_product(c), idea="What my agents did yesterday, in numbers", facts=facts,
                  scores=dict(relevance=4, demonstrable=4, novelty=2, momentum=3))
     return (1 if made else 0), ""
@@ -654,22 +656,24 @@ def src_corrections(c: Ctx) -> tuple[int, str]:
 
 
 def src_notes(c: Ctx) -> tuple[int, str]:
+    """Notes tagged #content become lessons; notes tagged #spec become spec-product ideas."""
     from . import notes
     made = 0
     for n in notes.listing():
-        if not re.search(r"(?<!\w)#content\b", n["text"], re.I):
+        spec = bool(re.search(r"(?<!\w)#spec\b", n["text"], re.I))
+        if not spec and not re.search(r"(?<!\w)#content\b", n["text"], re.I):
             continue
-        text = " ".join(re.sub(r"(?<!\w)#content\b", "", n["text"], flags=re.I).split())
+        text = " ".join(re.sub(r"(?<!\w)#(content|spec)\b", "", n["text"], flags=re.I).split())
         pid = n["product"] if n["product"] in c.public else ""
-        if text and c.add(ref=f"note:{n['id']}", source="note", kind="post", format="lesson", product=pid,
-                          idea=text[:400], facts=[text[:400]], owner=True,
+        if text and c.add(ref=f"note:{n['id']}", source="note", kind="clip" if spec else "post", format="spec-product" if spec else "lesson",
+                          product="" if spec else pid, idea=text[:400], facts=[text[:400]], owner=True,
                           scores=dict(relevance=4, demonstrable=3, novelty=4, momentum=3)):
             made += 1
     return made, ""
 
 
 def src_evergreen(c: Ctx) -> tuple[int, str]:
-    """A spotlight every 14 days and an "imagine if it was AI-native" spec every 30, per public product with a summary."""
+    """A spotlight every 14 days per public product with a summary: the rotation that gives each one a sale attempt."""
     ordinal = _dt.datetime.fromtimestamp(c.now).date().toordinal()
     made = skipped = 0
     for pid in sorted(c.public):
@@ -679,15 +683,31 @@ def src_evergreen(c: Ctx) -> tuple[int, str]:
             skipped += 1
             continue
         name = p.get("name") or pid
-        for bucket, ref, fmt, idea, sc in (
-                (14, f"spotlight:{pid}:{ordinal // 14}", "product-spotlight", f"Product spotlight: {name}",
-                 dict(relevance=4, demonstrable=4, novelty=2, momentum=2)),
-                (30, f"spec:{pid}:{ordinal // 30}", "spec-product", f"Imagine if {name} was truly AI-native",
-                 dict(relevance=4, demonstrable=3, novelty=4, momentum=2))):
-            if c.add(ref=ref, source="evergreen", kind="clip" if fmt == "spec-product" else "post", format=fmt, product=pid,
-                     idea=idea, facts=[f"{name}: {summary}"], scores=sc):
-                made += 1
+        if c.add(ref=f"spotlight:{pid}:{ordinal // 14}", source="evergreen", kind="post", format="product-spotlight", product=pid,
+                 idea=f"Product spotlight: {name}", facts=[f"{name}: {summary}"],
+                 scores=dict(relevance=4, demonstrable=4, novelty=2, momentum=2)):
+            made += 1
     return made, (f"{skipped} public products have no summary in the registry" if skipped else "")
+
+
+def src_specs(c: Ctx) -> tuple[int, str]:
+    """Spec products: someone else's product reimagined, from `spec_targets` in the config. Never one of ours."""
+    targets = c.cfg.get("spec_targets") or []
+    ours = {k.lower() for k in c.reg["product"]} | {str(p.get("name") or "").lower() for p in c.reg["product"].values()}
+    made = 0
+    for t in targets:
+        name = " ".join(str(t.get("product") or "").split()) if isinstance(t, dict) else ""
+        if not name or name.lower() in ours:
+            continue
+        angle = " ".join(str(t.get("idea") or "").split())
+        facts = [f"{name} is another company's product; the prototype is unofficial and not affiliated with it"]
+        if angle:
+            facts.append(f"The owner's angle: {angle}")
+        if c.add(ref=f"spec:{name.lower()}", source="spec", kind="clip", format="spec-product",
+                 idea=f"What if {name} was truly AI-native?", facts=facts, owner=True,
+                 scores=dict(relevance=4, demonstrable=4, novelty=4, momentum=2)):
+            made += 1
+    return made, ("" if targets else "no spec_targets in the growth config")
 
 
 def bi_data_dir(cfg: dict) -> pathlib.Path:
@@ -871,7 +891,7 @@ def src_trends(c: Ctx) -> tuple[int, str]:
 
 
 SOURCES = (("prs", src_prs), ("releases", src_releases), ("sessions", src_sessions), ("ledger", src_ledger),
-           ("corrections", src_corrections), ("notes", src_notes), ("evergreen", src_evergreen), ("trends", src_trends))
+           ("corrections", src_corrections), ("notes", src_notes), ("evergreen", src_evergreen), ("specs", src_specs), ("trends", src_trends))
 
 
 def harvest(store: Store, cfg: dict, now: float, *, days: int = 3, allow_net: bool = True, skip: tuple[str, ...] = (),
@@ -899,7 +919,7 @@ def _recent(items: dict[str, dict], key: str) -> dict | None:
 
 
 def available_masters(store: Store, cfg: dict) -> list[dict]:
-    return [i for i in store.items().values() if i["platform"] == MASTER and i["status"] == "idea"
+    return [i for i in store.items().values() if i["platform"] == MASTER and i["status"] == "idea" and i["kind"] != "episode"
             and len(i.get("assigned") or []) < cfg["fanout"]]
 
 
@@ -1010,8 +1030,8 @@ DRAFT_SYSTEM = (
 )
 
 FORMAT_BRIEF = {
-    "true-vibe-coding": "A short true story of building something real by prompting AI agents end to end: the ask, what the agents did, what shipped, what went wrong. Show the log, not a theory.",
-    "spec-product": "A spec-product script titled 'Imagine if <product> was truly AI-native': what the product does when an agent is the first user, in 45 seconds of speech. End with acceptance_test, a one-day prototype test.",
+    "true-vibe-coding": "A filmed bet: before leaving, the owner set agents a named job and asked if it would finish before he is back. Open with the verdict or the stakes, then what the agents did while he was away from the keyboard, then what it cost. A failure is told as plainly as a success. Use only what the facts say happened.",
+    "spec-product": "A spec-product script, like a spec ad, about ANOTHER company's real product: 'What if <product> was truly AI-native?' Name one behaviour the product lacks today and show the owner's working prototype doing it, in 45 seconds of speech. Say it is unofficial and not affiliated. End with acceptance_test, one sentence a viewer can judge, and that a prototype must pass in one day: a one-day prototype test.",
     "worklog": "What shipped and what it cost, in numbers from the facts. One real artifact.",
     "lesson": "One thing learned the hard way, and the rule that came after it.",
     "reaction": "A builder's reaction to this news: what he would try or test, not an opinion on hype. Say what was not tried.",
@@ -1506,7 +1526,12 @@ def section(now: float) -> dict:
                        target=c["posts_per_day"]) for c in chans]
     done, target = sum(r["posted"] for r in today_rows), target_per_day(cfg)
     open_ = lambda st: sum(1 for i in items if i["status"] in st and i["platform"] != MASTER)
-    episodes = [dict(id=i["id"], idea=clip_text(i["idea"], 80), status=i["status"]) for i in items if i["kind"] == "episode" and i["status"] in OPEN]
+    eps = sorted((i for i in items if i["kind"] == "episode" and i["status"] in OPEN), key=lambda i: i["created"], reverse=True)
+    stage = lambda i: "cut" if i["status"] == "checked" else ("cutting" if i["status"] == "draft" else "filming")
+    clips = collections.Counter(i.get("parent") for i in items if i["kind"] != "episode" and i.get("parent"))
+    episodes = [dict(id=i["id"], idea=clip_text(i["idea"], 80), stage=stage(i), question=clip_text((i.get("ride") or {}).get("question", ""), 120),
+                     job=clip_text((i.get("ride") or {}).get("job", ""), 80), minutes=(i.get("ride") or {}).get("minutes"),
+                     footage=len(i.get("footage") or []), clips=clips[i["id"]]) for i in eps[:5]]
     trends = sorted((i for i in items if i.get("trend") and i["status"] == "idea" and i["platform"] == MASTER),
                     key=lambda i: -i["score"])[:5]
     week_ago = day_of(now - 7 * 86400)
@@ -1520,8 +1545,8 @@ def section(now: float) -> dict:
         target=dict(posts_per_day_per_channel=cfg["posts_per_day"]), today=today_rows,
         last_public_days=days_between(last_any, today) if last_any else None,
         queue_days=queue_days(store, cfg), gaps=gaps,
-        pipeline=dict(ideas=sum(1 for i in items if i["status"] == "idea"), filming=sum(1 for i in items if i["kind"] == "episode" and i["status"] in ("idea", "draft")),
-                      cutting=None, review=open_(("checked", "review")), ready=open_(("approved", "ready")),
+        pipeline=dict(ideas=sum(1 for i in items if i["status"] == "idea" and i["kind"] != "episode"),
+                      filming=sum(1 for i in eps if stage(i) == "filming"), cutting=sum(1 for i in eps if stage(i) == "cutting"), review=open_(("checked", "review")), ready=open_(("approved", "ready")),
                       live=sum(1 for i in items if i["status"] == "published" and (local_day(i.get("published_at")) or "") >= week_ago)),
         episodes=episodes, next_ride=None,
         trends=[dict(title=clip_text(i["idea"].removeprefix("Reaction: "), 90), score=i["score"], hook=i.get("hook", ""),
@@ -1669,7 +1694,8 @@ def cmd_review(args) -> int:
     store, cfg = _store_cfg()
     items = store.items().values()
     want = ("review", "checked") + (("failed",) if args.all else ())
-    rows = sorted((i for i in items if i["status"] in want), key=lambda i: (i.get("day", ""), i.get("channel", ""), i["created"]))
+    rows = sorted((i for i in items if i["status"] in want and i["kind"] != "episode"),
+                  key=lambda i: (i.get("day", ""), i.get("channel", ""), i["created"]))
     if not rows:
         print("nothing waits for review")
         return 0
@@ -1949,4 +1975,7 @@ def register(sp):
     a = g.add_parser("doctor", help="what the factory lacks, one line each")
     a.set_defaults(fn=cmd_doctor)
     a.add_argument("--strict", action="store_true", help="exit 1 when anything is missing")
+
+    from . import growth_media
+    growth_media.register(g)
     return q

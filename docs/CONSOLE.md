@@ -50,10 +50,23 @@ is `null`, and the screen shows a dash with the reason. List-price figures are a
 - `compact`: the headline, `machine {verdict, disk_free_gb}`, `leave_ok` and the top three failures.
 
 ### money (`console_money.py`)
+Two kinds of number, kept apart. Cash comes from what the owner lists; list price comes from the sessions.
+- `headline {label: "Cash per month", value, detail}`: the sum of the priced subscriptions. `value` is `null` when
+  nothing is listed or the file is broken; `detail` names every row with no price.
+- `forecast {monthly_usd, priced, unpriced [names], by_category {}, renewals [{name, renews, days, monthly_usd}]}`.
 - `subscriptions [{name, monthly_usd, category, renews, credits_usd, note}]`, from the owner's
-  `~/.teyla/subscriptions.toml`. Bills not listed there are `null`, never estimated.
-- `spend {days7, days30}`, each `{list_usd, billed_usd}`, plus `by_product []`, `by_model []`, `by_day []`.
-- `credits []`, `cloud []`, `actions {minutes_used, minutes_included}`.
+  `~/.teyla/subscriptions.toml` (`teyla subs`). Bills not listed there are `null`, never estimated.
+- `spend {label, as_of, days7, days30}`, each `{list_usd, sub_usd, sessions, billed_usd}`. `list_usd` is the API list
+  price of the local AI sessions and is never added to cash; `billed_usd` is what the providers' cost APIs billed for
+  the products, `null` when no admin key could be read. Plus `by_product []`, `by_model []`, `by_day []` (30 days).
+- `credits [{name, credits_usd, monthly_usd}]`, `credits_total_usd`; `providers {provider: {billed_usd_30d, reason}}`.
+- `cloud []`: the cloud and domain subscriptions, and one `usage` row per GitHub account with its Actions minutes.
+  `actions {minutes_used, minutes_included, paid_usd, accounts []}`. Hosting that nobody listed is absent, not zero.
+- `notes {part: reason}` and `file` (the path of the subscriptions file).
+- The session scan takes about 30 seconds, so `section()` never runs it. `prepare()` does, from `teyla console --refresh`
+  and the detached refresh, at most every 6 hours, and caches it in `~/.teyla/console-money.json` (mode 0600). With no
+  cache the usage fields are `null` and `notes.usage` says to refresh.
+- `compact`: the headline, `monthly_usd`, the count of unpriced rows, `list_usd_7d` and the next renewal.
 
 ### playbook (`console_playbook.py`)
 - `guidelines [{id, title, path, updated, summary}]`: design standard, writing, voice, policy.
