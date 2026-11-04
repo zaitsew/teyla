@@ -1050,7 +1050,7 @@
      "name": "Domain",
      "renews": "2026-11-12",
      "days": 8,
-     "monthly_usd": 3.0
+     "monthly_usd": 35.0
     },
     {
      "name": "Assistant plan",
@@ -1332,7 +1332,7 @@
    {
     "name": "Domain",
     "kind": "domain",
-    "monthly_usd": 3.0,
+    "monthly_usd": 35.0,
     "metered_usd": null,
     "detail": "renews 12 November"
    },
