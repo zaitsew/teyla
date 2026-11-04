@@ -619,6 +619,19 @@ does not carry shows a dash with the reason, never a zero. The store build has n
 Preview hooks: `TEYLA_CONSOLE_FIXTURE` (default `console.v1.json` beside the state sample) and
 `TEYLA_PREVIEW_SNAPSHOT_VIEW=growth|money|operations|playbook`.
 
+## Money page (from 2026-11-04)
+
+The page reads `console.money`. Cash and list price are kept apart on purpose: cash is the sum of the subscriptions the
+owner lists (`~/.teyla/subscriptions.toml`), and list price is what the local AI sessions would cost at API prices, which
+a subscription bills differently. List price is always labelled "Not cash" and is never added to cash. Top to bottom:
+four figures (cash per month, next renewal, credits included, Actions minutes); the subscriptions, the dearest first,
+with a dash and the reason for a row that has no price; what the AI providers billed in 30 days (a dash with the reason
+when there is no admin key); the list-price section with a 7 or 30 day switch, three figures (at list price, of which
+subagents, billed by the API), the last 30 days as bars, and by product and by model with a bar against the largest row
+(six rows, then "Show all"); and the cloud and GitHub Actions rows. A cloud row that is also a subscription is not
+repeated. Dollars show whole for a round amount and two decimals otherwise; an amount under one cent reads "less than
+$0.01", never zero. One considered layout, no variants.
+
 ## Tools and the command bar (from 2026-11-02)
 
 **Operations** (from 2026-11-04; it was the Tools page). The page reads `console.operations` and, top to bottom, shows:

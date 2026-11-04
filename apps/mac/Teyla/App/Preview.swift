@@ -137,7 +137,9 @@ enum Preview {
             page = flat(PortfolioView(), model: model, width: width)
         case "tools", "operations":
             page = flat(OperationsView(), model: model, width: width)
-        case "growth", "money", "playbook":
+        case "money":
+            page = flat(MoneyView(), model: model, width: width)
+        case "growth", "playbook":
             page = flat(ConsoleStubView(route: consoleRoute(which) ?? .money), model: model, width: width)
         case "settings":
             page = flat(SettingsView(), model: model, width: width)

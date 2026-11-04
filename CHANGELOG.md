@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Mac: Money is a full page.** Cash per month is the first figure and comes only from the subscriptions you list.
+  List price of the local AI sessions has its own section, labelled "Not cash", with a 7 or 30 day switch, bars by day,
+  and by product and model. Provider billing, credits, renewals, cloud rows and Actions minutes follow. A price the
+  report lacks is a dash with the reason.
+
 - **Mac: Operations is a full page.** It replaces Tools. Figures first (failures, safe to leave, disk, swap), then the
   machine with 24-hour lines, the failures with their actions, scheduled tasks worst first, harnesses and AGENTS.md sync
   state, and security counts. A figure the report lacks is a dash with the reason.

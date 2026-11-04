@@ -114,7 +114,8 @@ private struct DetailView: View {
         case .decisions: DecisionsView()
         case .portfolio: PortfolioView()
         case .diagnosis: DiagnosisView()
-        case .growth, .money, .playbook: ConsoleStubView(route: model.route)
+        case .growth, .playbook: ConsoleStubView(route: model.route)
+        case .money: MoneyView()
         case .operations: OperationsView()
         case .product(let id): ProductPageView(id: id)
         }
