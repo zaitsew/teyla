@@ -8,6 +8,12 @@
   never writes it; the file's path and a "Show in Finder" button are on the page. The voice, shortcut and iPhone switches sit
   on it too.
 
+- **The video channels get a daily clip with no filming.** When there is no clip you filmed, the best lesson the editor
+  passed becomes a silent 16 to 28 second vertical video: your own words, line by line, on a dark card, the hook in
+  the first second, the artifact on the last card. It goes through the same frame check as the session reel. Drawing
+  needs the `reel` extra: `teyla update` keeps it on a Mac with a growth config, `teyla growth doctor` has a `reel
+  extra` row, and the slot report names the command when Pillow is missing. See docs/GROWTH.md, "The daily video".
+
 - **Mac: a product page shows users and selling.** Four figures: active users this week, sale attempts (posts,
   marketing, ICP meetings, counted from the growth ledger), what shipped in 7 days, and feedback and crashes (a dash:
   nothing reports them yet). A product nobody tried to sell reads "Not tried yet. Next in line."; the page never

@@ -546,6 +546,41 @@ def repair_voice(cfg: dict, probe: dict, payload: dict, reply, usage, chart_dir,
     return reply, total
 
 
+def clip_items(store: g.Store, ep: dict, targets: list[dict], reply, video: pathlib.Path, held: str, facts: list[str], chart_dir,
+               guard: g.Guard, now: float, cost: float) -> list[dict]:
+    """One clip item per video channel for the finished `video`, checked for voice and leaks. `reply` holds the text
+    (hook, body, first_comment, script), or is a function of the channel that returns it. A video the frame check held back keeps
+    every clip out of review, as a draft that says why. Returns [{id, channel, status, reason}]."""
+    day = g.day_of(now)
+    rows = []
+    for ch in targets:
+        it = slot_item(store, ep, ch, day, now, facts)
+        try:
+            g.apply_reply(it, reply(ch) if callable(reply) else reply)
+        except g.AgentError as e:
+            it["status"], it["fail_reason"] = "failed", f"model: {e}"
+        else:
+            it["media"] = [str(video)] if video.is_file() else []
+            vrep, grep = g.check_item(it["body"], it, chart_dir, guard, hook=it["hook"], script=it.get("script", ""))
+            it["voice_check"], it["leak_check"] = vrep, grep
+            if held:
+                it["status"], it["hold_reason"], it["video_hold"] = "draft", g.clip_text(held, 300), g.clip_text(held, 300)
+            elif grep["ok"] and vrep["ok"]:
+                it["status"] = "review"
+                it.pop("fail_reason", None)
+                it.pop("hold_reason", None)
+                it.pop("video_hold", None)
+            else:
+                it["status"] = "failed"
+                it["fail_reason"] = ("blocked: " + ", ".join(grep["kinds"])) if not grep["ok"] else \
+                    "voice: " + "; ".join(f["rule"] for f in vrep["findings"] if f["level"] == "fail")
+        it["cost_usd"] = round(it.get("cost_usd", 0) + cost / len(targets), 4)
+        store.save(it, now)
+        store.log("cut", now, id=it["id"], episode=ep["id"], status=it["status"])
+        rows.append(dict(id=it["id"], channel=it["channel"], status=it["status"], reason=it.get("fail_reason", "")))
+    return rows
+
+
 def cut(store: g.Store, cfg: dict, ref: str, now: float, *, session: str = "", no_footage: bool = False,
         guard: g.Guard | None = None, reg: dict | None = None, seconds: float = 45, story=None, gate=None) -> dict:
     """The edit script through the model, the render, and one clip item per English video channel, in review.
@@ -612,37 +647,12 @@ def cut(store: g.Store, cfg: dict, ref: str, now: float, *, session: str = "", n
     if video is None:
         raise g.GrowthError(err)
     held = gate(video, d, guard) if gate else ""
-    day = g.day_of(now)
     cost = round(float((usage or {}).get("cost_usd") or 0), 4)
     row = dict(id=ep["id"], video=str(video), items=[], segments=len(segs), cost=cost, held=held)
     # What the clip may claim: the question, what was said, and what the screen showed (all guard-checked above).
     sent = transcript_for_model(transcript) if footage else ""     # exactly what the model saw
     facts = list(ep["facts"]) + [ln.split("] ", 1)[-1] for ln in sent.splitlines()] + [g.clip_text(t, 300) for t in outline]
-    for ch in targets:
-        it = slot_item(store, ep, ch, day, now, facts)
-        try:
-            g.apply_reply(it, reply)
-        except g.AgentError as e:
-            it["status"], it["fail_reason"] = "failed", f"model: {e}"
-        else:
-            it["media"] = [str(video)] if video.is_file() else []
-            vrep, grep = g.check_item(it["body"], it, chart_dir, guard, hook=it["hook"], script=it.get("script", ""))
-            it["voice_check"], it["leak_check"] = vrep, grep
-            if held:
-                it["status"], it["hold_reason"], it["video_hold"] = "draft", g.clip_text(held, 300), g.clip_text(held, 300)
-            elif grep["ok"] and vrep["ok"]:
-                it["status"] = "review"
-                it.pop("fail_reason", None)
-                it.pop("hold_reason", None)
-                it.pop("video_hold", None)
-            else:
-                it["status"] = "failed"
-                it["fail_reason"] = ("blocked: " + ", ".join(grep["kinds"])) if not grep["ok"] else \
-                    "voice: " + "; ".join(f["rule"] for f in vrep["findings"] if f["level"] == "fail")
-        it["cost_usd"] = round(it.get("cost_usd", 0) + cost / len(targets), 4)
-        store.save(it, now)
-        store.log("cut", now, id=it["id"], episode=ep["id"], status=it["status"])
-        row["items"].append(dict(id=it["id"], channel=it["channel"], status=it["status"], reason=it.get("fail_reason", "")))
+    row["items"] = clip_items(store, ep, targets, reply, video, held, facts, chart_dir, guard, now, cost)
     ep["status"] = "checked"
     ep["cut"] = dict(video=str(video), at=g.iso(now), segments=len(segs), footage=bool(footage), session=story is not None,
                      **({"held": held} if held else {}))
@@ -767,8 +777,9 @@ def worth_filming(story) -> str:
     return ""
 
 
-def video_step(store: g.Store, cfg: dict, now: float, *, guard: g.Guard, reg: dict, allow: bool = True) -> dict:
-    """Make today's clip when none exists. Returns {state: ok|skipped|gap|held, reason, items}. A gap or a held clip is
+def video_step(store: g.Store, cfg: dict, now: float, *, guard: g.Guard, reg: dict, allow: bool = True, sessions: bool = True) -> dict:
+    """Make today's clip when none exists: from the best lesson the editor passed (`growth_story_video`), else from a real
+    session (`sessions=False` leaves that out). Returns {state: ok|skipped|gap|held, reason, items}. A gap or a held clip is
     logged as `video` with the reason, and `growth plan` and the slot report show it."""
     day = g.day_of(now)
     targets = cut_targets(cfg)
@@ -786,14 +797,19 @@ def video_step(store: g.Store, cfg: dict, now: float, *, guard: g.Guard, reg: di
         return end("skipped", "a clip already covers today")
     if not allow:
         return end("skipped", "safe mode")
-    if shutil.which("ffmpeg") is None and run_tool is _REAL_RUN_TOOL:
-        return end("gap", "ffmpeg is missing: `brew install ffmpeg`")
-    from .reel import render as reel_render
-    if not reel_render.available()["pillow"] and run_tool is _REAL_RUN_TOOL:
-        return end("gap", "Pillow is missing: `pip install 'teyla[reel]'`")
+    from . import growth_story_video as sv
+    miss = sv.reel_gap()
+    if miss:
+        return end("gap", miss)
+    # A lesson the editor passed becomes the clip first; the screen of a session is the fallback.
+    story = sv.step(store, cfg, now, guard=guard, reg=reg, allow=allow)
+    if story["state"] in ("ok", "held"):
+        return end(story["state"], story["reason"], **{k: v for k, v in story.items() if k not in ("state", "reason")})
+    if not sessions:
+        return end("gap", story["reason"])
     cands = session_candidates(store, cfg, reg, now)
     if not cands:
-        return end("gap", f"no recent session to film in the last {SESSION_WINDOW_DAYS} days")
+        return end("gap", f"{story['reason']}; no recent session to film in the last {SESSION_WINDOW_DAYS} days")
     code, _ = run_tool([sys.executable, "-m", "teyla", "load", "--wait", "--kind", "build"], LOAD_WAIT_S)
     if code != 0:
         return end("gap", "the machine is busy (teyla load --wait --kind build gave up); the render waits for tomorrow")
@@ -839,7 +855,8 @@ def video_step(store: g.Store, cfg: dict, now: float, *, guard: g.Guard, reg: di
 def daily(store: g.Store, cfg: dict, now: float, *, quiet: bool = False, out=print) -> dict:
     """harvest, trends, plan (today and tomorrow), video, draft. Each step fails on its own; the others still run.
     Plan sits before draft because draft writes the planned slots. Video sits between them: on a day with no clip it
-    renders one vertical screen video from a real session for the three video channels."""
+    renders one vertical for the three video channels, from the best lesson the editor passed, else from a real session.
+    When that found nothing, a last `reel` step tries again from the lessons drafted just now."""
     steps: list[tuple[str, str, str]] = []
     reg = registry.load()
     guard = g.Guard(cfg, reg)
@@ -868,8 +885,11 @@ def daily(store: g.Store, cfg: dict, now: float, *, quiet: bool = False, out=pri
             filled += sum(1 for r in g.plan(store, cfg, day, now, reg=reg) if r["item"])
         return f"{filled} slots filled over today and tomorrow"
 
-    def do_video():
-        r = video_step(store, cfg, now, guard=guard, reg=reg, allow=allow)
+    video_state: dict = {}
+
+    def do_video(sessions: bool = True):
+        r = video_step(store, cfg, now, guard=guard, reg=reg, allow=allow, sessions=sessions)
+        video_state.update(r)
         cost = f"; cost ${r['cost']:.4f}" if r.get("cost") else ""
         return {"ok": r["reason"], "skipped": "skipped: " + r["reason"], "gap": "gap: " + r["reason"],
                 "held": "held back: " + r["reason"]}[r["state"]] + cost
@@ -900,6 +920,8 @@ def daily(store: g.Store, cfg: dict, now: float, *, quiet: bool = False, out=pri
     store.ensure()
     for name, fn in (("harvest", do_harvest), ("trends", do_trends), ("plan", do_plan), ("video", do_video), ("draft", do_draft)):
         step(name, fn)
+    if video_state.get("state") == "gap":              # the drafts of this morning may include the lesson the first try lacked
+        step("reel", lambda: do_video(sessions=False))
     store.log("daily", now, steps=[dict(step=n, state=s) for n, s, _t in steps])
     return dict(steps=steps, failed=sum(1 for _n, s, _t in steps if s == "failed"))
 

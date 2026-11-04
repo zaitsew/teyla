@@ -170,7 +170,41 @@ YouTube, Instagram and TikTok take video and nothing else. `plan` never fills th
 holds a clip with a rendered video, or it shows as a gap with the reason (`gap: no recent session ...`). A clip item
 with no video file is held at draft time without a model call.
 
-On a day with no clip, the video step of `growth daily` makes one:
+A day with a clip you filmed and cut needs no render: the filmed clip always wins. On a day with none, the video step of
+`growth daily` makes one, in this order: the **story vertical** (below), then a **session reel**.
+
+### The story vertical
+
+The best lesson the editor passed becomes a silent 16 to 28 second video: your own words, line by line, big white text
+on a plain dark card, the hook in amber from the first frame, a progress bar at the bottom and the artifact (a public
+link or a `teyla` command) on the last card. No voice, no stock footage, no model call.
+
+- **Which lesson.** A `lesson` draft of today or yesterday that the editor passed (score and hook at or above the
+  bar, which this does not change), not held, not filmed before. A lesson with a number and an artifact goes first,
+  then the higher editor score.
+- **Which lines.** The lines come from the approved draft, not from a new rewrite. The hook is the first card. The
+  body follows one whole sentence at a time, at most 8 words on screen at once, and stops at a sentence end when the
+  video would pass 28 seconds. A draft too short for 16 seconds is skipped.
+- **Which channels.** One video feeds the three video channels, each with the caption of the draft. The `lesson`
+  draft stays a text post for X and LinkedIn.
+- **The same gate.** The finished video is read back as below (`frame_gate`). A leak deletes it; any doubt holds the
+  clips as drafts.
+- **The machine.** The render waits for the machine (`teyla load --wait --kind build`).
+- **The reel extra.** Drawing needs Pillow, which ships in the `reel` extra, and ffmpeg. Without Pillow the slot
+  says `the reel extra (Pillow) is missing` with the command below, and `teyla growth doctor` shows a `reel extra`
+  row. `teyla update` keeps the extra on a Mac that has a growth config.
+
+```
+uv tool install --force --python 3.12 'teyla[reel] @ git+https://github.com/zaitsew/teyla'
+```
+
+Lessons are drafted after the video step, so a lesson written this morning is filmed tomorrow. When the video step
+finds no lesson and no session, `growth daily` tries the story vertical once more after the draft step (a step named
+`reel` in its output).
+
+### The session reel
+
+When no lesson qualifies, the video step falls back to a session:
 
 1. It picks a real session from the last two days that was not filmed before (Claude Code or Codex; sessions that
    opened a PR first), finished at least 30 minutes ago, where every repo it touched is a public product. A session

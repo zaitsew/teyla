@@ -424,13 +424,23 @@ def pillow_available() -> bool:
         return False
 
 
+def growth_wants_reel() -> bool:
+    try:
+        from .corrections import teyla_home
+        return (teyla_home() / "growth" / "config.toml").is_file()
+    except OSError:
+        return False
+
+
 def install_source(repo: str, ref: str) -> str:
     """What uv/pipx/pip install. With truststore importable here the install came with the
     `work` extra (or had it added), and a plain `git+...` reinstall would drop it — the next
     update check behind the proxy would then fail on the very release it just installed.
-    Pillow likewise means the `reel` extra, without which `teyla reel render` makes no video."""
+    Pillow likewise means the `reel` extra, without which `teyla reel render` makes no video. A Mac that runs the
+    content factory (`~/.teyla/growth/config.toml` exists) needs it for the daily video, so it gets the extra even
+    when the first install lacked it."""
     url = f"git+https://github.com/{repo}@{ref}"
-    extras = [name for name, present in (("work", truststore_available()), ("reel", pillow_available())) if present]
+    extras = [name for name, present in (("work", truststore_available()), ("reel", pillow_available() or growth_wants_reel())) if present]
     return f"teyla[{','.join(extras)}] @ {url}" if extras else url
 
 
