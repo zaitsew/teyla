@@ -338,6 +338,8 @@ struct SparklineView: View {
 struct RowCard<Leading: View, Trailing: View>: View {
     let title: String
     var detail = ""
+    /// True where the words may run over several lines (a phone), so none is cut off. The default is one line each.
+    var wraps = false
     @ViewBuilder var leading: Leading
     @ViewBuilder var trailing: Trailing
 
@@ -347,13 +349,15 @@ struct RowCard<Leading: View, Trailing: View>: View {
             VStack(alignment: .leading, spacing: Space.xxs) {
                 Text(title)
                     .font(Typo.body.weight(.semibold))
-                    .lineLimit(1)
+                    .lineLimit(wraps ? nil : 1)
+                    .fixedSize(horizontal: false, vertical: wraps)
                     .help(title)
                 if !detail.isEmpty {
                     Text(detail)
                         .font(Typo.caption)
                         .foregroundStyle(Palette.textSecondary)
-                        .lineLimit(1)
+                        .lineLimit(wraps ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: wraps)
                         .help(detail)
                 }
             }
@@ -366,8 +370,8 @@ struct RowCard<Leading: View, Trailing: View>: View {
 }
 
 extension RowCard where Leading == EmptyView {
-    init(title: String, detail: String = "", @ViewBuilder trailing: () -> Trailing) {
-        self.init(title: title, detail: detail, leading: { EmptyView() }, trailing: trailing)
+    init(title: String, detail: String = "", wraps: Bool = false, @ViewBuilder trailing: () -> Trailing) {
+        self.init(title: title, detail: detail, wraps: wraps, leading: { EmptyView() }, trailing: trailing)
     }
 }
 

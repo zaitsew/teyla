@@ -741,7 +741,8 @@ Preview hooks: `TEYLA_PREVIEW_OPEN=operations` (or `tools`) and `command-bar[:<q
 
 ## The iPhone app: Home and Decisions (from 2026-11-02)
 
-The iPhone app has three tabs: Home, Decisions and Products. It reads the same snapshot as the Mac app through the
+The iPhone app has five tabs: Home, Decisions, Products, Growth and More (see "The iPhone tabs: Growth and More"
+below). It reads the same snapshot as the Mac app through the
 relay and shares `HomeLogic.swift` with it, so the grouping, the ranking and the wording are the same.
 
 - **Home.** The same page as the Mac's Home, in one column. Top to bottom: the pulse strip, the Next line (it opens
@@ -768,5 +769,30 @@ relay and shares `HomeLogic.swift` with it, so the grouping, the ranking and the
   entry gets the same advice. The sample (`Teyla/Resources/sample-state.json`, written by
   `apps/ios/Tools/add_home_sample.py`) has 18 invented products, so all three sections and both "Show all" buttons
   appear in sample mode.
-- **Mac only.** The Operations page, the ⌘K command bar and `teyla attention` stay on the Mac: they run commands on
-  the Mac, and the phone sends only the five relay kinds.
+- **Mac only.** The ⌘K command bar and `teyla attention` stay on the Mac: they run commands on the Mac, and the
+  phone sends only the five relay kinds.
+
+## The iPhone tabs: Growth and More (from 2026-11-04)
+
+The phone has no `~/.teyla`. Its admin screens read only the compact part of each section that `teyla state` carries
+as `console` (`docs/CONSOLE.md`), parsed by `apps/mac/Teyla/Core/ConsoleCompact.swift`, which reuses the Mac's own
+parsers. A figure the compact part does not carry is a dash with the words "On your Mac", never a made-up number. Every
+screen sits on `Page`, with figures in a `StatStrip`, like the Mac.
+
+| Tab | What it shows |
+|---|---|
+| Growth | Posts today against the target, conversations this week, drafts waiting, slots with no draft; each channel with its post count; the queue; the pipeline; the products nobody tried to sell, which open Products. |
+| Products | As before, plus "Not tried to sell yet" on a product that has had no post, marketing or ICP meeting. |
+| More | Money, Operations, Playbook, Settings. Each row shows its live figure. |
+| More > Money | Cash per month, AI at list price (never called cash), next renewal. |
+| More > Operations | Failures, disk free, whether the lid can close, and the failures that need you. |
+| More > Playbook | Contradictions, models to look at, what the wiki, your words, corrections and design decisions hold. |
+| More > Settings | The Mac this phone reads, the dictation language, what travels, the version. Moved from the Home toolbar. |
+
+**Drafts do not reach the phone.** The relay is signed but not encrypted: Apple can read an iCloud Drive folder unless
+Advanced Data Protection is on. So no draft text and no approve or reject entry goes through it. Growth shows how many
+drafts wait and says to review them on the Mac. Nothing is posted from the phone.
+
+Launch options for screenshots: `-TEYLA_TAB growth|more` and `-TEYLA_MORE money|operations|playbook|settings`.
+`apps/ios/Tools/long_text_fixture.py` writes the long-text fixture (`-TEYLA_STATE_FIXTURE`), the sample with very
+long names and sentences, for checking that no text is cut.

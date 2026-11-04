@@ -1,0 +1,2393 @@
+{
+ "version": 3,
+ "generated": "2026-11-02T09:00:00Z",
+ "brief": {
+  "line": "7 decisions wait for you. Two of them are payments that block the next store upload.",
+  "source": "rules"
+ },
+ "totals": {
+  "questions": 10,
+  "running": 3,
+  "spent_today_usd": 41.2,
+  "tasks": 1,
+  "done": 2,
+  "resolved": 0,
+  "duplicates": 0
+ },
+ "asks": [
+  {
+   "id": "a0000001",
+   "kind": "question",
+   "product": "sample-app",
+   "title": "The nightly backup of the sample application has not completed for three days in a row because the storage volume it writes to was renamed and nothing was told?",
+   "question": "The nightly backup of the sample application has not completed for three days in a row because the storage volume it writes to was renamed and nothing was told?",
+   "context": "It lapses in 9 days.",
+   "options": [
+    "Renew",
+    "Later"
+   ],
+   "archived": false,
+   "link": "claude --resume 00000000-0000-4000-8000-000000000001",
+   "pr": "",
+   "harness": "claude-code",
+   "status": "open",
+   "ts": "2026-11-01T09:00:00Z",
+   "age_s": 17280,
+   "unblocks": "the next store upload",
+   "rank": 1,
+   "delivery": "claude",
+   "muted": false,
+   "triage": {
+    "bucket": "owner",
+    "action": "pay",
+    "default": "Renew",
+    "why": "A lapsed membership blocks every upload.",
+    "source": "rule"
+   }
+  },
+  {
+   "id": "a0000002",
+   "kind": "question",
+   "product": "sample-web",
+   "title": "The nightly backup of the sample application has not completed for three days in a row because the storage volume it writes to was renamed and nothing was told?",
+   "question": "The nightly backup of the sample application has not completed for three days in a row because the storage volume it writes to was renamed and nothing was told?",
+   "context": "The free plan drops custom domains on the 15th.",
+   "options": [],
+   "archived": false,
+   "link": "claude --resume 00000000-0000-4000-8000-000000000002",
+   "pr": "",
+   "harness": "claude-code",
+   "status": "open",
+   "ts": "2026-11-01T09:00:00Z",
+   "age_s": 43200,
+   "unblocks": "the launch page",
+   "rank": 2,
+   "delivery": "claude",
+   "muted": false,
+   "triage": {
+    "bucket": "owner",
+    "action": "pay",
+    "default": "",
+    "why": "Hosting is a recurring charge.",
+    "source": "rule"
+   }
+  },
+  {
+   "id": "a0000003",
+   "kind": "question",
+   "product": "sample-app",
+   "title": "Should the sign-in button use the system accent colour?",
+   "question": "Should the sign-in button use the system accent colour?",
+   "context": "",
+   "options": [
+    "Yes",
+    "No"
+   ],
+   "archived": false,
+   "link": "claude --resume 00000000-0000-4000-8000-000000000003",
+   "pr": "",
+   "harness": "claude-code",
+   "status": "open",
+   "ts": "2026-11-01T09:00:00Z",
+   "age_s": 86400,
+   "unblocks": "a sign-in only you can do",
+   "rank": 3,
+   "delivery": "claude",
+   "muted": false,
+   "triage": {
+    "bucket": "owner",
+    "action": "decide",
+    "default": "Yes",
+    "why": "Matches the platform and needs no new asset.",
+    "source": "rule"
+   }
+  },
+  {
+   "id": "a0000004",
+   "kind": "question",
+   "product": "sample-tool",
+   "title": "Ship 0.10 with the old export format, or wait for the new one?",
+   "question": "Ship 0.10 with the old export format, or wait for the new one?",
+   "context": "The new format needs two more days.",
+   "options": [
+    "Ship now",
+    "Wait"
+   ],
+   "archived": false,
+   "link": "claude --resume 00000000-0000-4000-8000-000000000004",
+   "pr": "",
+   "harness": "claude-code",
+   "status": "open",
+   "ts": "2026-11-01T09:00:00Z",
+   "age_s": 172800,
+   "unblocks": "",
+   "rank": 4,
+   "delivery": "claude",
+   "muted": false,
+   "triage": {
+    "bucket": "owner",
+    "action": "decide",
+    "default": "Wait",
+    "why": "Two days is cheaper than a migration later.",
+    "source": "rule"
+   }
+  },
+  {
+   "id": "a0000005",
+   "kind": "question",
+   "product": "sample-watch",
+   "title": "Which complication layout do you want first?",
+   "question": "Which complication layout do you want first?",
+   "context": "",
+   "options": [
+    "Compact",
+    "Wide"
+   ],
+   "archived": false,
+   "link": "claude --resume 00000000-0000-4000-8000-000000000005",
+   "pr": "",
+   "harness": "claude-code",
+   "status": "open",
+   "ts": "2026-11-01T09:00:00Z",
+   "age_s": 259200,
+   "unblocks": "",
+   "rank": 5,
+   "delivery": "claude",
+   "muted": false,
+   "triage": {
+    "bucket": "owner",
+    "action": "decide",
+    "default": "Compact",
+    "why": "Most watch faces have room for the compact one.",
+    "source": "rule"
+   }
+  },
+  {
+   "id": "a0000006",
+   "kind": "question",
+   "product": "sample-web",
+   "title": "Sign in to the analytics dashboard once so the probe can read it.",
+   "question": "Sign in to the analytics dashboard once so the probe can read it.",
+   "context": "Needs your password; nothing else can do it.",
+   "options": [],
+   "archived": false,
+   "link": "claude --resume 00000000-0000-4000-8000-000000000006",
+   "pr": "",
+   "harness": "claude-code",
+   "status": "open",
+   "ts": "2026-11-01T09:00:00Z",
+   "age_s": 345600,
+   "unblocks": "the weekly numbers",
+   "rank": 6,
+   "delivery": "claude",
+   "muted": false,
+   "triage": {
+    "bucket": "owner",
+    "action": "do",
+    "default": "",
+    "why": "Only you can sign in.",
+    "source": "rule"
+   }
+  },
+  {
+   "id": "a0000007",
+   "kind": "question",
+   "product": "sample-tool",
+   "title": "Merge the dependency update?",
+   "question": "Merge the dependency update?",
+   "context": "",
+   "options": [
+    "Merge",
+    "Skip"
+   ],
+   "archived": false,
+   "link": "claude --resume 00000000-0000-4000-8000-000000000007",
+   "pr": "",
+   "harness": "claude-code",
+   "status": "open",
+   "ts": "2026-11-01T09:00:00Z",
+   "age_s": 777600,
+   "unblocks": "",
+   "rank": 7,
+   "delivery": "claude",
+   "muted": false,
+   "triage": {
+    "bucket": "owner",
+    "action": "decide",
+    "default": "Merge",
+    "why": "Tests pass and the diff is small.",
+    "source": "rule"
+   }
+  },
+  {
+   "id": "a0000008",
+   "kind": "question",
+   "product": "sample-app",
+   "title": "Which icon variant should the beta use?",
+   "question": "Which icon variant should the beta use?",
+   "context": "",
+   "options": [
+    "A",
+    "B"
+   ],
+   "archived": false,
+   "link": "claude --resume 00000000-0000-4000-8000-000000000008",
+   "pr": "",
+   "harness": "claude-code",
+   "status": "open",
+   "ts": "2026-11-01T09:00:00Z",
+   "age_s": 129600,
+   "unblocks": "",
+   "rank": 8,
+   "delivery": "claude",
+   "muted": false,
+   "triage": {
+    "bucket": "agent",
+    "action": "decide",
+    "default": "A",
+    "why": "Both are fine; A has more contrast.",
+    "source": "rule"
+   }
+  },
+  {
+   "id": "a0000009",
+   "kind": "question",
+   "product": "sample-tool",
+   "title": "Rename the settings pane?",
+   "question": "Rename the settings pane?",
+   "context": "",
+   "options": [],
+   "archived": false,
+   "link": "claude --resume 00000000-0000-4000-8000-000000000009",
+   "pr": "",
+   "harness": "claude-code",
+   "status": "open",
+   "ts": "2026-11-01T09:00:00Z",
+   "age_s": 216000,
+   "unblocks": "",
+   "rank": 9,
+   "delivery": "claude",
+   "muted": false,
+   "triage": {
+    "bucket": "agent",
+    "action": "decide",
+    "default": "Keep the name",
+    "why": "A rename churns the docs for no gain.",
+    "source": "rule"
+   }
+  },
+  {
+   "id": "a0000010",
+   "kind": "question",
+   "product": "sample-watch",
+   "title": "Is the watch app still planned?",
+   "question": "Is the watch app still planned?",
+   "context": "",
+   "options": [],
+   "archived": false,
+   "link": "claude --resume 00000000-0000-4000-8000-000000000010",
+   "pr": "",
+   "harness": "claude-code",
+   "status": "open",
+   "ts": "2026-11-01T09:00:00Z",
+   "age_s": 1728000,
+   "unblocks": "",
+   "rank": 10,
+   "delivery": "claude",
+   "muted": false,
+   "triage": {
+    "bucket": "close",
+    "action": "decide",
+    "default": "",
+    "why": "Answered by the roadmap.",
+    "source": "rule"
+   }
+  }
+ ],
+ "tasks": [
+  {
+   "id": "t1",
+   "kind": "merge",
+   "product": "sample-tool",
+   "title": "Merge the export format change",
+   "detail": "Review done, waits for you.",
+   "link": "https://example.com/sample-tool/pull/12",
+   "age_s": 86400
+  }
+ ],
+ "done": [
+  {
+   "id": "d1",
+   "product": "sample-app",
+   "title": "Add the privacy screen",
+   "status": "done",
+   "result": [
+    "Added the screen",
+    "Tests pass"
+   ],
+   "needs": "",
+   "links": [],
+   "ended": "2026-11-02T06:00:00Z",
+   "harness": "claude-code",
+   "link": ""
+  },
+  {
+   "id": "d2",
+   "product": "sample-web",
+   "title": "Fix the broken footer links",
+   "status": "done",
+   "result": [
+    "Fixed 3 links"
+   ],
+   "needs": "",
+   "links": [],
+   "ended": "2026-11-02T05:00:00Z",
+   "harness": "claude-code",
+   "link": ""
+  }
+ ],
+ "products": [
+  {
+   "name": "sample-app",
+   "waiting": 3,
+   "muted": 0,
+   "state": "waiting",
+   "line": "",
+   "last_activity": "2026-11-02T08:50:00Z",
+   "id": "sample-app",
+   "display_name": "Sample App",
+   "stage": "beta",
+   "focus": true,
+   "primary": "ios",
+   "registered": true,
+   "issues": 0,
+   "prs_waiting": 0,
+   "next": "",
+   "repo": "~/repos/sample-app"
+  },
+  {
+   "name": "sample-tool",
+   "waiting": 2,
+   "muted": 0,
+   "state": "waiting",
+   "line": "",
+   "last_activity": "2026-11-02T08:50:00Z",
+   "id": "sample-tool",
+   "display_name": "Sample Tool",
+   "stage": "live",
+   "focus": true,
+   "primary": "macos",
+   "registered": true,
+   "issues": 0,
+   "prs_waiting": 0,
+   "next": "",
+   "repo": "~/repos/sample-tool"
+  },
+  {
+   "name": "sample-web",
+   "waiting": 2,
+   "muted": 0,
+   "state": "waiting",
+   "line": "",
+   "last_activity": "2026-11-02T08:50:00Z",
+   "id": "sample-web",
+   "display_name": "Sample Web",
+   "stage": "building",
+   "focus": true,
+   "primary": "web",
+   "registered": true,
+   "issues": 0,
+   "prs_waiting": 0,
+   "next": "",
+   "repo": "~/repos/sample-web"
+  },
+  {
+   "name": "sample-watch",
+   "waiting": 0,
+   "muted": 0,
+   "state": "active",
+   "line": "",
+   "last_activity": "2026-11-02T08:50:00Z",
+   "id": "sample-watch",
+   "display_name": "Sample Watch",
+   "stage": "building",
+   "focus": true,
+   "primary": "ios",
+   "registered": true,
+   "issues": 0,
+   "prs_waiting": 0,
+   "next": "",
+   "repo": "~/repos/sample-watch"
+  },
+  {
+   "name": "sample-lab",
+   "waiting": 0,
+   "muted": 0,
+   "state": "active",
+   "line": "",
+   "last_activity": "2026-11-02T08:50:00Z",
+   "id": "sample-lab",
+   "display_name": "Sample Lab",
+   "stage": "building",
+   "focus": false,
+   "primary": "web",
+   "registered": true,
+   "issues": 0,
+   "prs_waiting": 0,
+   "next": "",
+   "repo": "~/repos/sample-lab"
+  }
+ ],
+ "running": [
+  {
+   "product": "sample-app",
+   "title": "Wire the settings screen",
+   "harness": "claude-code",
+   "model": "claude-sonnet-5-5",
+   "since": "2026-11-02T08:40:00Z",
+   "link": "claude --resume 00000000-0000-4000-8000-000000009001",
+   "id": "r1",
+   "correct": "open"
+  },
+  {
+   "product": "sample-tool",
+   "title": "Port the export tests",
+   "harness": "codex",
+   "model": "gpt-6.1-sol",
+   "since": "2026-11-02T08:50:00Z",
+   "link": "",
+   "id": "r2",
+   "correct": "codex-queue"
+  },
+  {
+   "product": "sample-web",
+   "title": "Draft the launch page copy",
+   "harness": "claude-code",
+   "model": "claude-haiku-5-5",
+   "since": "2026-11-02T08:55:00Z",
+   "link": "claude --resume 00000000-0000-4000-8000-000000009003",
+   "id": "r3",
+   "correct": "open"
+  }
+ ],
+ "relay": {
+  "on": false,
+  "paired": false,
+  "folder": "",
+  "synced": ""
+ },
+ "notes": {
+  "inbox": 1,
+  "by_product": {
+   "sample-app": 1
+  }
+ },
+ "portfolio": {
+  "version": 1,
+  "checked": {
+   "stores": "2026-10-25T06:00:00Z",
+   "github": "2026-10-25T08:50:00Z"
+  },
+  "counts": {
+   "on_track": 16,
+   "at_risk": 1,
+   "off_track": 0,
+   "parked": 1
+  },
+  "products": [
+   {
+    "id": "sample-app",
+    "title": "Sample Application With An Unreasonably Long Product Name That Keeps Going 1",
+    "stage": "beta",
+    "focus": true,
+    "primary": "ios",
+    "users": "testers",
+    "target": "family",
+    "health": "at_risk",
+    "reasons": [
+     "The nightly backup of the sample application has not completed for three days in a row because the storage volume it writes to was renamed and nothing was told"
+    ],
+    "platforms": [
+     {
+      "platform": "ios",
+      "role": "primary",
+      "channel": "testflight",
+      "version": "1.4.0",
+      "build": "52",
+      "state": "current",
+      "detail": "Installable from your tester account",
+      "as_of": "2026-11-02T06:00:00Z",
+      "link": ""
+     },
+     {
+      "platform": "android",
+      "role": "secondary",
+      "channel": "play",
+      "version": "1.3.0",
+      "build": "14",
+      "state": "behind",
+      "detail": "",
+      "as_of": "2026-11-02T06:00:00Z",
+      "link": ""
+     },
+     {
+      "platform": "web",
+      "role": "secondary",
+      "channel": "web",
+      "version": "",
+      "build": "",
+      "state": "live",
+      "detail": "sample.example.com",
+      "as_of": "2026-11-02T06:00:00Z",
+      "link": ""
+     }
+    ],
+    "prs": {
+     "open": 1,
+     "waiting": 0,
+     "merged_7d": 14,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T08:50:00Z",
+     "sessions_7d": 10,
+     "spend_7d_usd": 860.5
+    },
+    "waiting": 3,
+    "oldest_wait_days": 2.0,
+    "tasks": 0,
+    "milestone": "family: 2 of 9 requirements left",
+    "next": "",
+    "repo": "~/code/sample-app",
+    "progress": {
+     "can_install": [
+      {
+       "platform": "ios",
+       "role": "primary",
+       "channel": "testflight",
+       "version": "1.4.0",
+       "build": "52",
+       "state": "current",
+       "detail": "Installable from your tester account",
+       "as_of": "2026-11-02T06:00:00Z",
+       "link": ""
+      },
+      {
+       "platform": "android",
+       "role": "secondary",
+       "channel": "play",
+       "version": "1.3.0",
+       "build": "14",
+       "state": "behind",
+       "detail": "",
+       "as_of": "2026-11-02T06:00:00Z",
+       "link": ""
+      },
+      {
+       "platform": "web",
+       "role": "secondary",
+       "channel": "web",
+       "version": "",
+       "build": "",
+       "state": "live",
+       "detail": "sample.example.com",
+       "as_of": "2026-11-02T06:00:00Z",
+       "link": ""
+      }
+     ],
+     "shipped_7d": {
+      "prs": 14,
+      "top": [
+       "Add the privacy screen",
+       "Fix the sign-in crash"
+      ]
+     },
+     "users": {
+      "weekly": 4,
+      "total": 12,
+      "label": "4 active this week, 12 total"
+     },
+     "milestone": "family: 2 of 9 requirements left",
+     "blocker": "Developer membership lapses in 9 days",
+     "quiet_days": 0,
+     "line": "Beta works end to end; 2 requirements left."
+    },
+    "summary": "Keeps the family's shared lists and plans in one place.",
+    "icon_jpeg": "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAMKADAAQAAAABAAAAMAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAMAAwAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMABAQEBAQEBgQEBgkGBgYJDAkJCQkMDwwMDAwMDxIPDw8PDw8SEhISEhISEhUVFRUVFRkZGRkZHBwcHBwcHBwcHP/bAEMBBAUFBwcHDAcHDB0UEBQdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHf/dAAQAA//aAAwDAQACEQMRAD8A8gApwFAFPAr9nSPKhAAKcBXV+G/A3ivxdvbw9pst3HHkNJ8scQI25XzJCqbvmB253YOcYq54g+HPjXwtai91zSpYLc9ZUKSovIHztEzhMlgBuIyemeay+sUVP2bmubtdX+47IQOKp4FAFOArsSOuED//0PJQK63wP4b/AOEu8V6b4eZ/Lju5f3jA4IijUySbTtb5tinbkEbsZ4rlAK7f4c+ILXwt410rXL4Zt4JSkp5+VJUaJn+VWJ2By2AMnGO+a/YsRzqjN0/is7ettDmhA/Q/StK07Q9Og0nSYFtrS2XZHGnQDqevJJOSSSSSSSSSTVueCC6gktbqNZoZlKSRuAysrDBVgeCCOCD1ognguoI7q1kWaGZQ8ciEMrKwyGUjggjkEdalr8fblzXe50n58/Fbwda+CvF8unafxY3MS3VuhYuyI5KlGJA6OrbeSduMknNecAV6z8Z/E+n+KfGsk+lOs1tYwJaLMjbllKMzsy8DgM5UEEg7dwJBFeUgV+xYD2jw1N1fisrnbTjof//R8pp4FAFOAr9uSKhA9J8HfFbxf4Ktf7P02WK5sRuKW90pdEZyCWQqVcdD8u7bkk4yc1peJ/jP418U6e+lTyQWNtMrJMtojIZVbHyszs7AcYIUrkEhsg4ryYCngVy/UMM6ntXTXN3sdcaaACnAUAU6vQSOyED/2Q==",
+    "metrics": {
+     "users": {
+      "total": 12,
+      "active": {
+       "7d": 4,
+       "30d": 6,
+       "365d": 9
+      },
+      "new": {
+       "7d": 1,
+       "30d": 3,
+       "365d": 8
+      }
+     },
+     "commits": {
+      "7d": 14,
+      "30d": 52,
+      "365d": 310,
+      "weeks": [
+       0,
+       3,
+       5,
+       9,
+       12,
+       8,
+       11,
+       7,
+       15,
+       10,
+       12,
+       14
+      ]
+     },
+     "spend_usd": {
+      "7d": 860.5,
+      "30d": 3400.0,
+      "365d": 9800.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   },
+   {
+    "id": "sample-tool",
+    "title": "Sample Application With An Unreasonably Long Product Name That Keeps Going 2",
+    "stage": "live",
+    "focus": true,
+    "primary": "macos",
+    "users": "testers",
+    "target": "family",
+    "health": "on_track",
+    "reasons": [
+     "The nightly backup of the sample application has not completed for three days in a row because the storage volume it writes to was renamed and nothing was told"
+    ],
+    "platforms": [
+     {
+      "platform": "macos",
+      "role": "primary",
+      "channel": "local",
+      "version": "0.9.0",
+      "build": "",
+      "state": "current",
+      "detail": "",
+      "as_of": "2026-11-02T06:00:00Z",
+      "link": ""
+     },
+     {
+      "platform": "macos",
+      "role": "primary",
+      "channel": "app-store",
+      "version": "1.1",
+      "build": "7",
+      "state": "in_review",
+      "detail": "",
+      "as_of": "2026-11-02T06:00:00Z",
+      "link": ""
+     }
+    ],
+    "prs": {
+     "open": 1,
+     "waiting": 0,
+     "merged_7d": 4,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T08:50:00Z",
+     "sessions_7d": 10,
+     "spend_7d_usd": 18.0
+    },
+    "waiting": 2,
+    "oldest_wait_days": 2.0,
+    "tasks": 0,
+    "milestone": "",
+    "next": "",
+    "repo": "~/code/sample-tool",
+    "progress": {
+     "can_install": [
+      {
+       "platform": "macos",
+       "role": "primary",
+       "channel": "local",
+       "version": "0.9.0",
+       "build": "",
+       "state": "current",
+       "detail": "",
+       "as_of": "2026-11-02T06:00:00Z",
+       "link": ""
+      },
+      {
+       "platform": "macos",
+       "role": "primary",
+       "channel": "app-store",
+       "version": "1.1",
+       "build": "7",
+       "state": "in_review",
+       "detail": "",
+       "as_of": "2026-11-02T06:00:00Z",
+       "link": ""
+      }
+     ],
+     "shipped_7d": {
+      "prs": 4,
+      "top": [
+       "Speed up the export"
+      ]
+     },
+     "users": null,
+     "milestone": "",
+     "blocker": "",
+     "quiet_days": 2,
+     "line": "Live on this Mac; 1.1 waits for review."
+    },
+    "summary": "A menu bar helper that tidies downloads.",
+    "icon_jpeg": "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAMKADAAQAAAABAAAAMAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAMAAwAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMABAQEBAQEBgQEBgkGBgYJDAkJCQkMDwwMDAwMDxIPDw8PDw8SEhISEhISEhUVFRUVFRkZGRkZHBwcHBwcHBwcHP/bAEMBBAUFBwcHDAcHDB0UEBQdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHf/dAAQAA//aAAwDAQACEQMRAD8A8qRKtIlCJVlEq4QPyJsESrSJXTeHfBfifxTvOhafJcpHndJ8qRgjGV8xyqbvmB25zjnGK09a8AeLvDVuLzWdMkhgPWRSsqLyB87RlgmSwA3Yyema64JXsX7Cq4e0UHy97O33nIIlWkShEq0iV3wgcjZ//9Dz1ErsPBfh3/hKfE+n6EX8tLmT942cERopeTacN82xTtyMZxniuZRK7nwBrVv4a8XaZrN4MwQyFZDz8qSo0bPwGJ2Bt2AMnGO9dyg7aH5LQ5HVgqnw3V/S+p936Zplho1hBpelwLb2tuuyONOgHXvySTySeSSSSSaszQw3MMlvcRrLFKpR0cBlZWGCCDwQRwQaIZobmGO4t5FlilUOjoQysrDIII4II5BFS1wn6wkrWWx8SfEbwpbeE/E8tjY8Wk8a3EClizIjEqVJIHRlbHJO3GSTmuLRK9K+KevWXiLxY82nMstvZwrbLKhyshUszMOBwGcqMZBxkHBrz9Er6WhFuC5j8kx3s1iKipfDd2P/0eRRKtIlCJVpEr3YQPxps73wp8RvE/hO2+w2Esc9oNxWC4UsiMxBJUqVYdDxu25JOMnNa2vfFPxZ4ism06Z4bO3lUpKtspUyKccMzM7AcYwpGQSDkV5qiVaRK6I0IN81tTo+vYhU/ZKo+X1BEq0iUIlWkSvRhA85s//Z",
+    "metrics": {
+     "users": {
+      "total": 6,
+      "active": {
+       "7d": 2,
+       "30d": 3,
+       "365d": 5
+      },
+      "new": {
+       "7d": 0,
+       "30d": 1,
+       "365d": 3
+      }
+     },
+     "commits": {
+      "7d": 6,
+      "30d": 22,
+      "365d": 140,
+      "weeks": [
+       1,
+       2,
+       0,
+       4,
+       3,
+       5,
+       2,
+       6,
+       4,
+       3,
+       2,
+       6
+      ]
+     },
+     "spend_usd": {
+      "7d": 18.0,
+      "30d": 70.0,
+      "365d": 400.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   },
+   {
+    "id": "sample-web",
+    "title": "Sample Application With An Unreasonably Long Product Name That Keeps Going 3",
+    "stage": "building",
+    "focus": true,
+    "primary": "web",
+    "users": "testers",
+    "target": "family",
+    "health": "on_track",
+    "reasons": [
+     "The nightly backup of the sample application has not completed for three days in a row because the storage volume it writes to was renamed and nothing was told"
+    ],
+    "platforms": [
+     {
+      "platform": "web",
+      "role": "secondary",
+      "channel": "web",
+      "version": "",
+      "build": "",
+      "state": "live",
+      "detail": "sample.example.com",
+      "as_of": "2026-11-02T06:00:00Z",
+      "link": ""
+     }
+    ],
+    "prs": {
+     "open": 1,
+     "waiting": 0,
+     "merged_7d": 6,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T08:50:00Z",
+     "sessions_7d": 10,
+     "spend_7d_usd": 240.0
+    },
+    "waiting": 2,
+    "oldest_wait_days": 2.0,
+    "tasks": 0,
+    "milestone": "launch page: 3 of 5 sections written",
+    "next": "",
+    "repo": "~/code/sample-web",
+    "progress": {
+     "can_install": [
+      {
+       "platform": "web",
+       "role": "secondary",
+       "channel": "web",
+       "version": "",
+       "build": "",
+       "state": "live",
+       "detail": "sample.example.com",
+       "as_of": "2026-11-02T06:00:00Z",
+       "link": ""
+      }
+     ],
+     "shipped_7d": {
+      "prs": 6,
+      "top": [
+       "Add the pricing section"
+      ]
+     },
+     "users": {
+      "weekly": 0,
+      "total": 0,
+      "label": ""
+     },
+     "milestone": "launch page: 3 of 5 sections written",
+     "blocker": "",
+     "quiet_days": 0,
+     "line": "Launch page is 3 of 5 sections in."
+    },
+    "summary": "A booking page for small studios.",
+    "icon_jpeg": "",
+    "metrics": {
+     "users": {
+      "total": 3,
+      "active": {
+       "7d": 1,
+       "30d": 1,
+       "365d": 3
+      },
+      "new": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     },
+     "commits": {
+      "7d": 9,
+      "30d": 31,
+      "365d": 120,
+      "weeks": [
+       0,
+       0,
+       2,
+       4,
+       6,
+       3,
+       5,
+       8,
+       4,
+       7,
+       6,
+       9
+      ]
+     },
+     "spend_usd": {
+      "7d": 240.0,
+      "30d": 900.0,
+      "365d": 2000.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   },
+   {
+    "id": "sample-watch",
+    "title": "Sample Watch",
+    "stage": "building",
+    "focus": true,
+    "primary": "ios",
+    "users": "testers",
+    "target": "family",
+    "health": "parked",
+    "reasons": [],
+    "platforms": [
+     {
+      "platform": "ios",
+      "role": "primary",
+      "channel": "testflight",
+      "version": "0.2.0",
+      "build": "3",
+      "state": "blocked",
+      "detail": "Missing entitlement",
+      "as_of": "2026-11-02T06:00:00Z",
+      "link": ""
+     }
+    ],
+    "prs": {
+     "open": 1,
+     "waiting": 0,
+     "merged_7d": 0,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T08:50:00Z",
+     "sessions_7d": 10,
+     "spend_7d_usd": 0.0
+    },
+    "waiting": 0,
+    "oldest_wait_days": 2.0,
+    "tasks": 0,
+    "milestone": "",
+    "next": "",
+    "repo": "~/code/sample-watch",
+    "progress": {
+     "can_install": [
+      {
+       "platform": "ios",
+       "role": "primary",
+       "channel": "testflight",
+       "version": "0.2.0",
+       "build": "3",
+       "state": "blocked",
+       "detail": "Missing entitlement",
+       "as_of": "2026-11-02T06:00:00Z",
+       "link": ""
+      }
+     ],
+     "shipped_7d": {
+      "prs": 0,
+      "top": []
+     },
+     "users": null,
+     "milestone": "",
+     "blocker": "",
+     "quiet_days": 21,
+     "line": "Prototype parked after the entitlement was refused."
+    },
+    "summary": "A watch face for the quiet hours.",
+    "icon_jpeg": "",
+    "metrics": {
+     "users": {
+      "total": null,
+      "active": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      },
+      "new": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     },
+     "commits": {
+      "7d": 0,
+      "30d": 0,
+      "365d": 18,
+      "weeks": [
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0
+      ]
+     },
+     "spend_usd": {
+      "7d": 0.0,
+      "30d": 0.0,
+      "365d": 12.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   },
+   {
+    "id": "sample-lab",
+    "title": "Sample Lab",
+    "stage": "building",
+    "focus": false,
+    "primary": "web",
+    "users": "testers",
+    "target": "family",
+    "health": "on_track",
+    "reasons": [],
+    "platforms": [],
+    "prs": {
+     "open": 1,
+     "waiting": 0,
+     "merged_7d": 1,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T08:50:00Z",
+     "sessions_7d": 10,
+     "spend_7d_usd": 12.0
+    },
+    "waiting": 0,
+    "oldest_wait_days": 2.0,
+    "tasks": 0,
+    "milestone": "",
+    "next": "",
+    "repo": "~/code/sample-lab",
+    "progress": {
+     "can_install": [],
+     "shipped_7d": {
+      "prs": 1,
+      "top": [
+       "Add a test page"
+      ]
+     },
+     "users": null,
+     "milestone": "",
+     "blocker": "",
+     "quiet_days": 1,
+     "line": "Early experiments."
+    },
+    "summary": "A sandbox for trying small ideas before they get a name.",
+    "icon_jpeg": "",
+    "metrics": {
+     "users": {
+      "total": null,
+      "active": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      },
+      "new": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     },
+     "commits": {
+      "7d": 14,
+      "30d": 40,
+      "365d": 95,
+      "weeks": [
+       0,
+       0,
+       0,
+       3,
+       5,
+       4,
+       8,
+       6,
+       9,
+       7,
+       11,
+       14
+      ]
+     },
+     "spend_usd": {
+      "7d": 12.0,
+      "30d": 44.0,
+      "365d": 120.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   },
+   {
+    "id": "pebble",
+    "title": "Pebble",
+    "stage": "building",
+    "focus": false,
+    "primary": "ios",
+    "users": "owner",
+    "target": "owner",
+    "health": "on_track",
+    "reasons": [],
+    "platforms": [],
+    "prs": {
+     "open": 0,
+     "waiting": 0,
+     "merged_7d": 0,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T09:00:00Z",
+     "sessions_7d": 1,
+     "spend_7d_usd": 31.0
+    },
+    "waiting": 0,
+    "oldest_wait_days": 0,
+    "tasks": 0,
+    "milestone": "",
+    "next": "",
+    "repo": "~/code/pebble",
+    "summary": "Counts steps to a goal you set for a trip.",
+    "icon_jpeg": "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAMKADAAQAAAABAAAAMAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAMAAwAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMABAQEBAQEBgQEBgkGBgYJDAkJCQkMDwwMDAwMDxIPDw8PDw8SEhISEhISEhUVFRUVFRkZGRkZHBwcHBwcHBwcHP/bAEMBBAUFBwcHDAcHDB0UEBQdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHf/dAAQAA//aAAwDAQACEQMRAD8A8gApwFAFPAr9nSPKhAAKcBXV+G/A3ivxdvbw9pst3HHkNJ8scQI25XzJCqbvmB253YOcYq54g+HPjXwtai91zSpYLc9ZUKSovIHztEzhMlgBuIyemeay+sUVP2bmubtdX+47IQOKp4FAFOArsSOuED//0PJQK63wP4b/AOEu8V6b4eZ/Lju5f3jA4IijUySbTtb5tinbkEbsZ4rlAK7f4c+ILXwt410rXL4Zt4JSkp5+VJUaJn+VWJ2By2AMnGO+a/YsRzqjN0/is7ettDmhA/Q/StK07Q9Og0nSYFtrS2XZHGnQDqevJJOSSSSSSSSSTVueCC6gktbqNZoZlKSRuAysrDBVgeCCOCD1ognguoI7q1kWaGZQ8ciEMrKwyGUjggjkEdalr8fblzXe50n58/Fbwda+CvF8unafxY3MS3VuhYuyI5KlGJA6OrbeSduMknNecAV6z8Z/E+n+KfGsk+lOs1tYwJaLMjbllKMzsy8DgM5UEEg7dwJBFeUgV+xYD2jw1N1fisrnbTjof//R8pp4FAFOAr9uSKhA9J8HfFbxf4Ktf7P02WK5sRuKW90pdEZyCWQqVcdD8u7bkk4yc1peJ/jP418U6e+lTyQWNtMrJMtojIZVbHyszs7AcYIUrkEhsg4ryYCngVy/UMM6ntXTXN3sdcaaACnAUAU6vQSOyED/2Q==",
+    "metrics": {
+     "users": {
+      "total": null,
+      "active": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      },
+      "new": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     },
+     "commits": {
+      "7d": 22,
+      "30d": 61,
+      "365d": 61,
+      "weeks": [
+       0,
+       0,
+       0,
+       0,
+       0,
+       4,
+       7,
+       9,
+       12,
+       8,
+       15,
+       22
+      ]
+     },
+     "spend_usd": {
+      "7d": 31.0,
+      "30d": 90.0,
+      "365d": 90.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   },
+   {
+    "id": "juniper",
+    "title": "Juniper",
+    "stage": "building",
+    "focus": false,
+    "primary": "web",
+    "users": "owner",
+    "target": "owner",
+    "health": "on_track",
+    "reasons": [],
+    "platforms": [],
+    "prs": {
+     "open": 0,
+     "waiting": 0,
+     "merged_7d": 0,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T09:00:00Z",
+     "sessions_7d": 1,
+     "spend_7d_usd": 26.5
+    },
+    "waiting": 0,
+    "oldest_wait_days": 0,
+    "tasks": 0,
+    "milestone": "",
+    "next": "",
+    "repo": "~/code/juniper",
+    "summary": "A recipe box that scales a recipe to the guests.",
+    "icon_jpeg": "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAMKADAAQAAAABAAAAMAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAMAAwAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMABAQEBAQEBgQEBgkGBgYJDAkJCQkMDwwMDAwMDxIPDw8PDw8SEhISEhISEhUVFRUVFRkZGRkZHBwcHBwcHBwcHP/bAEMBBAUFBwcHDAcHDB0UEBQdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHf/dAAQAA//aAAwDAQACEQMRAD8A8qRKtIlCJVlEq4QPyJsESrSJXTeHfBfifxTvOhafJcpHndJ8qRgjGV8xyqbvmB25zjnGK09a8AeLvDVuLzWdMkhgPWRSsqLyB87RlgmSwA3Yyema64JXsX7Cq4e0UHy97O33nIIlWkShEq0iV3wgcjZ//9Dz1ErsPBfh3/hKfE+n6EX8tLmT942cERopeTacN82xTtyMZxniuZRK7nwBrVv4a8XaZrN4MwQyFZDz8qSo0bPwGJ2Bt2AMnGO9dyg7aH5LQ5HVgqnw3V/S+p936Zplho1hBpelwLb2tuuyONOgHXvySTySeSSSSSaszQw3MMlvcRrLFKpR0cBlZWGCCDwQRwQaIZobmGO4t5FlilUOjoQysrDIII4II5BFS1wn6wkrWWx8SfEbwpbeE/E8tjY8Wk8a3EClizIjEqVJIHRlbHJO3GSTmuLRK9K+KevWXiLxY82nMstvZwrbLKhyshUszMOBwGcqMZBxkHBrz9Er6WhFuC5j8kx3s1iKipfDd2P/0eRRKtIlCJVpEr3YQPxps73wp8RvE/hO2+w2Esc9oNxWC4UsiMxBJUqVYdDxu25JOMnNa2vfFPxZ4ism06Z4bO3lUpKtspUyKccMzM7AcYwpGQSDkV5qiVaRK6I0IN81tTo+vYhU/ZKo+X1BEq0iUIlWkSvRhA85s//Z",
+    "metrics": {
+     "users": {
+      "total": null,
+      "active": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      },
+      "new": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     },
+     "commits": {
+      "7d": 17,
+      "30d": 48,
+      "365d": 120,
+      "weeks": [
+       0,
+       0,
+       2,
+       5,
+       6,
+       8,
+       7,
+       9,
+       11,
+       13,
+       12,
+       17
+      ]
+     },
+     "spend_usd": {
+      "7d": 26.5,
+      "30d": 80.0,
+      "365d": 190.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   },
+   {
+    "id": "marlin",
+    "title": "Marlin",
+    "stage": "building",
+    "focus": false,
+    "primary": "ios",
+    "users": "owner",
+    "target": "owner",
+    "health": "on_track",
+    "reasons": [],
+    "platforms": [],
+    "prs": {
+     "open": 0,
+     "waiting": 0,
+     "merged_7d": 0,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T09:00:00Z",
+     "sessions_7d": 1,
+     "spend_7d_usd": 15.2
+    },
+    "waiting": 0,
+    "oldest_wait_days": 0,
+    "tasks": 0,
+    "milestone": "",
+    "next": "",
+    "repo": "~/code/marlin",
+    "summary": "A tide table for people who fish from the shore.",
+    "icon_jpeg": "",
+    "metrics": {
+     "users": {
+      "total": null,
+      "active": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      },
+      "new": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     },
+     "commits": {
+      "7d": 12,
+      "30d": 33,
+      "365d": 33,
+      "weeks": [
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       3,
+       4,
+       6,
+       5,
+       8,
+       12
+      ]
+     },
+     "spend_usd": {
+      "7d": 15.2,
+      "30d": 40.0,
+      "365d": 40.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   },
+   {
+    "id": "cobalt",
+    "title": "Cobalt",
+    "stage": "building",
+    "focus": false,
+    "primary": "macos",
+    "users": "owner",
+    "target": "owner",
+    "health": "on_track",
+    "reasons": [],
+    "platforms": [],
+    "prs": {
+     "open": 0,
+     "waiting": 0,
+     "merged_7d": 0,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T09:00:00Z",
+     "sessions_7d": 1,
+     "spend_7d_usd": 11.0
+    },
+    "waiting": 0,
+    "oldest_wait_days": 0,
+    "tasks": 0,
+    "milestone": "",
+    "next": "",
+    "repo": "~/code/cobalt",
+    "summary": "Turns a folder of notes into a short weekly letter.",
+    "icon_jpeg": "",
+    "metrics": {
+     "users": {
+      "total": null,
+      "active": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      },
+      "new": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     },
+     "commits": {
+      "7d": 9,
+      "30d": 28,
+      "365d": 80,
+      "weeks": [
+       1,
+       0,
+       2,
+       3,
+       4,
+       3,
+       6,
+       5,
+       7,
+       4,
+       6,
+       9
+      ]
+     },
+     "spend_usd": {
+      "7d": 11.0,
+      "30d": 35.0,
+      "365d": 90.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   },
+   {
+    "id": "saffron",
+    "title": "Saffron",
+    "stage": "building",
+    "focus": false,
+    "primary": "web",
+    "users": "owner",
+    "target": "owner",
+    "health": "on_track",
+    "reasons": [],
+    "platforms": [],
+    "prs": {
+     "open": 0,
+     "waiting": 0,
+     "merged_7d": 0,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T09:00:00Z",
+     "sessions_7d": 1,
+     "spend_7d_usd": 9.4
+    },
+    "waiting": 0,
+    "oldest_wait_days": 0,
+    "tasks": 0,
+    "milestone": "",
+    "next": "",
+    "repo": "~/code/saffron",
+    "summary": "A pantry list that warns before things expire.",
+    "icon_jpeg": "",
+    "metrics": {
+     "users": {
+      "total": null,
+      "active": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      },
+      "new": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     },
+     "commits": {
+      "7d": 8,
+      "30d": 19,
+      "365d": 19,
+      "weeks": [
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       2,
+       3,
+       4,
+       2,
+       8
+      ]
+     },
+     "spend_usd": {
+      "7d": 9.4,
+      "30d": 22.0,
+      "365d": 22.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   },
+   {
+    "id": "tundra",
+    "title": "Tundra",
+    "stage": "building",
+    "focus": false,
+    "primary": "ios",
+    "users": "owner",
+    "target": "owner",
+    "health": "on_track",
+    "reasons": [],
+    "platforms": [],
+    "prs": {
+     "open": 0,
+     "waiting": 0,
+     "merged_7d": 0,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T09:00:00Z",
+     "sessions_7d": 1,
+     "spend_7d_usd": 7.0
+    },
+    "waiting": 0,
+    "oldest_wait_days": 0,
+    "tasks": 0,
+    "milestone": "",
+    "next": "",
+    "repo": "~/code/tundra",
+    "summary": "Offline maps for a few walking routes.",
+    "icon_jpeg": "",
+    "metrics": {
+     "users": {
+      "total": null,
+      "active": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      },
+      "new": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     },
+     "commits": {
+      "7d": 6,
+      "30d": 24,
+      "365d": 70,
+      "weeks": [
+       2,
+       0,
+       3,
+       4,
+       2,
+       5,
+       4,
+       6,
+       3,
+       5,
+       5,
+       6
+      ]
+     },
+     "spend_usd": {
+      "7d": 7.0,
+      "30d": 28.0,
+      "365d": 70.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   },
+   {
+    "id": "willow",
+    "title": "Willow",
+    "stage": "building",
+    "focus": false,
+    "primary": "ios",
+    "users": "owner",
+    "target": "owner",
+    "health": "on_track",
+    "reasons": [],
+    "platforms": [],
+    "prs": {
+     "open": 0,
+     "waiting": 0,
+     "merged_7d": 0,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T09:00:00Z",
+     "sessions_7d": 1,
+     "spend_7d_usd": 5.5
+    },
+    "waiting": 0,
+    "oldest_wait_days": 0,
+    "tasks": 0,
+    "milestone": "",
+    "next": "",
+    "repo": "~/code/willow",
+    "summary": "A habit tracker that never shows a streak.",
+    "icon_jpeg": "",
+    "metrics": {
+     "users": {
+      "total": null,
+      "active": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      },
+      "new": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     },
+     "commits": {
+      "7d": 5,
+      "30d": 17,
+      "365d": 40,
+      "weeks": [
+       0,
+       0,
+       1,
+       2,
+       3,
+       2,
+       4,
+       3,
+       2,
+       4,
+       3,
+       5
+      ]
+     },
+     "spend_usd": {
+      "7d": 5.5,
+      "30d": 20.0,
+      "365d": 45.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   },
+   {
+    "id": "lantern",
+    "title": "Lantern",
+    "stage": "live",
+    "focus": false,
+    "primary": "web",
+    "users": "owner",
+    "target": "owner",
+    "health": "on_track",
+    "reasons": [],
+    "platforms": [],
+    "prs": {
+     "open": 0,
+     "waiting": 0,
+     "merged_7d": 0,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T09:00:00Z",
+     "sessions_7d": 1,
+     "spend_7d_usd": 4.0
+    },
+    "waiting": 0,
+    "oldest_wait_days": 0,
+    "tasks": 0,
+    "milestone": "",
+    "next": "",
+    "repo": "~/code/lantern",
+    "summary": "A reading list that remembers where you stopped.",
+    "icon_jpeg": "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAMKADAAQAAAABAAAAMAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAMAAwAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMABAQEBAQEBgQEBgkGBgYJDAkJCQkMDwwMDAwMDxIPDw8PDw8SEhISEhISEhUVFRUVFRkZGRkZHBwcHBwcHBwcHP/bAEMBBAUFBwcHDAcHDB0UEBQdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHf/dAAQAA//aAAwDAQACEQMRAD8A8qRKtIlCJVlEq4QPyJsESrSJXTeHfBfifxTvOhafJcpHndJ8qRgjGV8xyqbvmB25zjnGK09a8AeLvDVuLzWdMkhgPWRSsqLyB87RlgmSwA3Yyema64JXsX7Cq4e0UHy97O33nIIlWkShEq0iV3wgcjZ//9Dz1ErsPBfh3/hKfE+n6EX8tLmT942cERopeTacN82xTtyMZxniuZRK7nwBrVv4a8XaZrN4MwQyFZDz8qSo0bPwGJ2Bt2AMnGO9dyg7aH5LQ5HVgqnw3V/S+p936Zplho1hBpelwLb2tuuyONOgHXvySTySeSSSSSaszQw3MMlvcRrLFKpR0cBlZWGCCDwQRwQaIZobmGO4t5FlilUOjoQysrDIII4II5BFS1wn6wkrWWx8SfEbwpbeE/E8tjY8Wk8a3EClizIjEqVJIHRlbHJO3GSTmuLRK9K+KevWXiLxY82nMstvZwrbLKhyshUszMOBwGcqMZBxkHBrz9Er6WhFuC5j8kx3s1iKipfDd2P/0eRRKtIlCJVpEr3YQPxps73wp8RvE/hO2+w2Esc9oNxWC4UsiMxBJUqVYdDxu25JOMnNa2vfFPxZ4ism06Z4bO3lUpKtspUyKccMzM7AcYwpGQSDkV5qiVaRK6I0IN81tTo+vYhU/ZKo+X1BEq0iUIlWkSvRhA85s//Z",
+    "metrics": {
+     "users": {
+      "total": null,
+      "active": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      },
+      "new": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     },
+     "commits": {
+      "7d": 4,
+      "30d": 12,
+      "365d": 55,
+      "weeks": [
+       1,
+       2,
+       3,
+       0,
+       4,
+       2,
+       5,
+       3,
+       2,
+       4,
+       3,
+       4
+      ]
+     },
+     "spend_usd": {
+      "7d": 4.0,
+      "30d": 14.0,
+      "365d": 60.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   },
+   {
+    "id": "quartz",
+    "title": "Quartz",
+    "stage": "building",
+    "focus": false,
+    "primary": "macos",
+    "users": "owner",
+    "target": "owner",
+    "health": "on_track",
+    "reasons": [],
+    "platforms": [],
+    "prs": {
+     "open": 0,
+     "waiting": 0,
+     "merged_7d": 0,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T09:00:00Z",
+     "sessions_7d": 1,
+     "spend_7d_usd": 3.2
+    },
+    "waiting": 0,
+    "oldest_wait_days": 0,
+    "tasks": 0,
+    "milestone": "",
+    "next": "",
+    "repo": "~/code/quartz",
+    "summary": "A clipboard history that forgets on purpose.",
+    "icon_jpeg": "",
+    "metrics": {
+     "users": {
+      "total": null,
+      "active": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      },
+      "new": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     },
+     "commits": {
+      "7d": 3,
+      "30d": 15,
+      "365d": 30,
+      "weeks": [
+       0,
+       0,
+       2,
+       1,
+       3,
+       2,
+       4,
+       2,
+       1,
+       3,
+       2,
+       3
+      ]
+     },
+     "spend_usd": {
+      "7d": 3.2,
+      "30d": 16.0,
+      "365d": 33.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   },
+   {
+    "id": "ember",
+    "title": "Ember",
+    "stage": "building",
+    "focus": false,
+    "primary": "ios",
+    "users": "owner",
+    "target": "owner",
+    "health": "on_track",
+    "reasons": [],
+    "platforms": [],
+    "prs": {
+     "open": 0,
+     "waiting": 0,
+     "merged_7d": 0,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T09:00:00Z",
+     "sessions_7d": 1,
+     "spend_7d_usd": 2.1
+    },
+    "waiting": 0,
+    "oldest_wait_days": 0,
+    "tasks": 0,
+    "milestone": "",
+    "next": "",
+    "repo": "~/code/ember",
+    "summary": "A timer for the last hour before bed.",
+    "icon_jpeg": "",
+    "metrics": {
+     "users": {
+      "total": null,
+      "active": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      },
+      "new": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     },
+     "commits": {
+      "7d": 2,
+      "30d": 9,
+      "365d": 22,
+      "weeks": [
+       0,
+       1,
+       1,
+       2,
+       3,
+       1,
+       2,
+       1,
+       0,
+       2,
+       3,
+       2
+      ]
+     },
+     "spend_usd": {
+      "7d": 2.1,
+      "30d": 9.0,
+      "365d": 24.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   },
+   {
+    "id": "nimbus",
+    "title": "Nimbus",
+    "stage": "building",
+    "focus": false,
+    "primary": "web",
+    "users": "owner",
+    "target": "owner",
+    "health": "on_track",
+    "reasons": [],
+    "platforms": [],
+    "prs": {
+     "open": 0,
+     "waiting": 0,
+     "merged_7d": 0,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T09:00:00Z",
+     "sessions_7d": 1,
+     "spend_7d_usd": 1.0
+    },
+    "waiting": 0,
+    "oldest_wait_days": 0,
+    "tasks": 0,
+    "milestone": "",
+    "next": "",
+    "repo": "~/code/nimbus",
+    "summary": "A weather page with only the next six hours.",
+    "icon_jpeg": "",
+    "metrics": {
+     "users": {
+      "total": null,
+      "active": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      },
+      "new": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     },
+     "commits": {
+      "7d": 1,
+      "30d": 6,
+      "365d": 16,
+      "weeks": [
+       0,
+       0,
+       1,
+       2,
+       1,
+       0,
+       3,
+       2,
+       1,
+       2,
+       1,
+       1
+      ]
+     },
+     "spend_usd": {
+      "7d": 1.0,
+      "30d": 5.0,
+      "365d": 17.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   },
+   {
+    "id": "thistle",
+    "title": "Thistle",
+    "stage": "building",
+    "focus": false,
+    "primary": "ios",
+    "users": "owner",
+    "target": "owner",
+    "health": "on_track",
+    "reasons": [],
+    "platforms": [],
+    "prs": {
+     "open": 0,
+     "waiting": 0,
+     "merged_7d": 0,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T09:00:00Z",
+     "sessions_7d": 1,
+     "spend_7d_usd": 0.0
+    },
+    "waiting": 0,
+    "oldest_wait_days": 0,
+    "tasks": 0,
+    "milestone": "",
+    "next": "",
+    "repo": "~/code/thistle",
+    "summary": "A garden journal with photos by date.",
+    "icon_jpeg": "",
+    "metrics": {
+     "users": {
+      "total": null,
+      "active": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      },
+      "new": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     },
+     "commits": {
+      "7d": 0,
+      "30d": 0,
+      "365d": 9,
+      "weeks": [
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0
+      ]
+     },
+     "spend_usd": {
+      "7d": 0.0,
+      "30d": 0.0,
+      "365d": 8.0
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   },
+   {
+    "id": "basalt",
+    "title": "Basalt",
+    "stage": "idea",
+    "focus": false,
+    "primary": "ios",
+    "users": "owner",
+    "target": "owner",
+    "health": "on_track",
+    "reasons": [],
+    "platforms": [],
+    "prs": {
+     "open": 0,
+     "waiting": 0,
+     "merged_7d": 0,
+     "unreviewed_7d": 0
+    },
+    "activity": {
+     "last": "2026-11-02T09:00:00Z",
+     "sessions_7d": 1,
+     "spend_7d_usd": 0.0
+    },
+    "waiting": 0,
+    "oldest_wait_days": 0,
+    "tasks": 0,
+    "milestone": "",
+    "next": "",
+    "repo": "~/code/basalt",
+    "summary": "",
+    "icon_jpeg": "",
+    "metrics": {
+     "users": {
+      "total": null,
+      "active": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      },
+      "new": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     },
+     "commits": {
+      "7d": null,
+      "30d": null,
+      "365d": null,
+      "weeks": []
+     },
+     "spend_usd": {
+      "7d": null,
+      "30d": null,
+      "365d": null
+     },
+     "money": {
+      "enabled": false,
+      "mrr_usd": null,
+      "paying": null,
+      "revenue_usd": {
+       "7d": null,
+       "30d": null,
+       "365d": null
+      }
+     }
+    }
+   }
+  ],
+  "core": [
+   "sample-app",
+   "sample-tool",
+   "sample-web",
+   "sample-watch"
+  ],
+  "core_source": "star",
+  "home": {
+   "sections": [
+    {
+     "id": "users",
+     "ids": [
+      "sample-app",
+      "sample-tool",
+      "sample-web"
+     ]
+    },
+    {
+     "id": "building",
+     "ids": [
+      "pebble",
+      "juniper",
+      "sample-lab",
+      "marlin",
+      "cobalt",
+      "saffron",
+      "tundra",
+      "willow"
+     ]
+    },
+    {
+     "id": "quiet",
+     "ids": [
+      "sample-watch",
+      "lantern",
+      "quartz",
+      "ember",
+      "nimbus",
+      "thistle",
+      "basalt"
+     ]
+    }
+   ]
+  }
+ },
+ "auto_closed": {
+  "count": 3,
+  "items": [
+   {
+    "id": "c0000001",
+    "title": "Is the beta build installable?",
+    "product": "sample-app",
+    "reason": "The build page shows it is."
+   },
+   {
+    "id": "c0000002",
+    "title": "Should the CLI print colours?",
+    "product": "sample-tool",
+    "reason": "Answered in the README."
+   },
+   {
+    "id": "c0000003",
+    "title": "Old duplicate of the hosting question",
+    "product": "sample-web",
+    "reason": "Duplicate of an open question."
+   }
+  ]
+ },
+ "console": {
+  "version": 1,
+  "generated": 1793264400,
+  "growth": {
+   "headline": {
+    "label": "Posts today",
+    "value": "4/6",
+    "detail": "target 1 a day over 6 channels"
+   },
+   "target": {
+    "posts_per_day_per_channel": 1
+   },
+   "today": [
+    {
+     "platform": "x",
+     "language": "en",
+     "posted": 1,
+     "target": 1
+    },
+    {
+     "platform": "x",
+     "language": "es",
+     "posted": 1,
+     "target": 1
+    },
+    {
+     "platform": "linkedin",
+     "language": "en",
+     "posted": 1,
+     "target": 1
+    },
+    {
+     "platform": "threads",
+     "language": "en",
+     "posted": 1,
+     "target": 1
+    },
+    {
+     "platform": "youtube",
+     "language": "en",
+     "posted": 0,
+     "target": 1
+    },
+    {
+     "platform": "instagram",
+     "language": "en",
+     "posted": 0,
+     "target": 1
+    }
+   ],
+   "last_public_days": 0,
+   "queue_days": 2.5,
+   "gaps": 1,
+   "pipeline": {
+    "ideas": 14,
+    "filming": 1,
+    "cutting": 2,
+    "review": 3,
+    "ready": 5,
+    "live": 9
+   },
+   "qualified_week": 2,
+   "not_tried": [
+    "sample-app",
+    "sample-tool",
+    "sample-web",
+    "pebble",
+    "juniper",
+    "thistle",
+    "basalt"
+   ]
+  },
+  "money": {
+   "headline": {
+    "label": "Cash per month",
+    "value": 214.0,
+    "detail": "The subscriptions you list."
+   },
+   "monthly_usd": 214.0,
+   "unpriced": 1,
+   "list_usd_7d": 388.5,
+   "next_renewal": {
+    "name": "Sample Application With An Unreasonably Long Product Name That Keeps Going",
+    "renews": "2026-11-09",
+    "days": 5
+   }
+  },
+  "operations": {
+   "headline": {
+    "label": "Unresolved failures",
+    "value": 2,
+    "detail": "2 need you."
+   },
+   "machine": {
+    "verdict": "OK",
+    "disk_free_gb": 48.2
+   },
+   "leave_ok": true,
+   "failures": [
+    {
+     "title": "The nightly backup of the sample application has not completed for three days in a row because the storage volume it writes to was renamed and nothing was told",
+     "severity": "act",
+     "detail": "The nightly backup of the sample application has not completed for three days in a row because the storage volume it writes to was renamed and nothing was told. SampleIdentifierWithoutAnySpacesAtAllSampleIdentifierWithoutAnySpacesAtAllSampleIdentifierWithoutAnySpacesAtAll"
+    },
+    {
+     "title": "The nightly backup of the sample application has not completed for three days in a row because the storage volume it writes to was renamed and nothing was told",
+     "severity": "act",
+     "detail": "The nightly backup of the sample application has not completed for three days in a row because the storage volume it writes to was renamed and nothing was told. SampleIdentifierWithoutAnySpacesAtAllSampleIdentifierWithoutAnySpacesAtAllSampleIdentifierWithoutAnySpacesAtAll"
+    }
+   ]
+  },
+  "playbook": {
+   "headline": {
+    "label": "Unresolved contradictions",
+    "value": 1,
+    "detail": "A rule came back as a correction."
+   },
+   "models": {
+    "drift": 1,
+    "new": 2,
+    "arena_as_of": "2026-10-30"
+   },
+   "knowledge": {
+    "wiki": {
+     "pages": 12,
+     "drafts": 2,
+     "confirmed": 9,
+     "stale": 1,
+     "inbox": 0
+    },
+    "intent": {
+     "entries": 31,
+     "products": 14,
+     "recent": 4
+    },
+    "corrections": {
+     "total": 58,
+     "last30": 17,
+     "repos": 6
+    },
+    "taste": {
+     "total": 22,
+     "repos": 5,
+     "fix": 12,
+     "rule": 7,
+     "reject": 3
+    }
+   },
+   "you": {
+    "quote": "The nightly backup of the sample application has not completed for three days in a row because the storage volume it writes to was renamed and nothing was told The nightly backup of the sample application has not completed for three days in a row because the storage volume it writes to was renamed and nothing was told The nightly backup of the sample application has not completed for three days in a row because the storage volume it writes to was renamed and nothing was told The nightly backup of the sample application has not completed for three days in a row because the storage volume it writes to was renamed and nothing was told",
+    "chores_open": 3
+   }
+  }
+ }
+}

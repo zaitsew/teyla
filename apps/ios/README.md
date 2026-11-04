@@ -23,8 +23,10 @@ and signature checks, and sends nothing.
 No Mac yet? Onboarding offers "See a sample": the whole app with made-up data from
 `Teyla/Resources/sample-state.json`, a banner with a Pair button, and every send simulated
 ("Sample: nothing was sent"). Launch with `TEYLA_SAMPLE=1` (or `-TEYLA_SAMPLE YES`) to start there, and with
-`-TEYLA_TAB home|decisions|products`, `-TEYLA_OPEN <product>` or `-TEYLA_OLDER open` to open a tab, a product
-or the "Older" fold. `Tools/screenshots.sh` uses these to make the store screenshots.
+`-TEYLA_TAB home|decisions|products|growth|more`, `-TEYLA_OPEN <product>`, `-TEYLA_MORE money|operations|playbook|settings`
+or `-TEYLA_OLDER open` to open a tab, a product, a row of More or the "Older" fold. `Tools/screenshots.sh` uses
+these to make the store screenshots. `Tools/long_text_fixture.py` writes a fixture with very long names and sentences
+(`-TEYLA_STATE_FIXTURE Tools/fixtures/long-text-state.json`), to check that no text is cut.
 
 Requires iOS 18 and Xcode. Scanning needs a real device; on a simulator, paste the string or open the link with
 `xcrun simctl openurl booted 'teyla-pair:v1:<key>'`.

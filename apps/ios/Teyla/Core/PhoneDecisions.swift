@@ -30,6 +30,13 @@ struct DecisionLists: Equatable {
 }
 
 enum PhoneHome {
+    /// True when Home's Next line names a question that sits in the closed Older fold: no question is fresh, some are older.
+    static func nextRevealsOlder(_ lists: DecisionLists) -> Bool { lists.fresh.isEmpty && !lists.older.isEmpty }
+
+    /// Whether the Older fold on Decisions starts open: after a tap on Next that names an older question, or on launch
+    /// with `TEYLA_OLDER=open` (screenshots).
+    static func olderFoldStartsOpen(reveals: Int, launchOpen: Bool) -> Bool { launchOpen || reveals > 0 }
+
     static let updateTitle = "Update Teyla on your Mac"
     static let updateText = "Home needs a newer Teyla on your Mac to show your products by users and activity. The rest of the app keeps working."
 

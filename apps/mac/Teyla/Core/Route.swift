@@ -31,6 +31,20 @@ enum AppRoute: Hashable, Sendable {
     }
 }
 
+extension ConsoleText {
+    /// The words of the admin section a route opens. Kept here, not in `ConsoleLogic.swift`, so the iPhone app can
+    /// compile that file without the Mac's routes.
+    static func page(for route: AppRoute) -> Page? {
+        switch route {
+        case .growth: return growth
+        case .money: return money
+        case .operations: return operations
+        case .playbook: return playbook
+        default: return nil
+        }
+    }
+}
+
 /// Whether the window shows its sidebar (Home, Decisions, Products, Growth, Money, Operations, Playbook) or only the welcome.
 /// A machine with no data and no finished diagnosis gets the welcome alone: one button, nothing else to read.
 enum Shell {
