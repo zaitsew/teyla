@@ -196,7 +196,7 @@ def test_cut_with_footage_renders_and_lands_every_clip_in_review(media, monkeypa
     assert fm.calls[0]["system"] == gm.CUT_SYSTEM and "We merged the sync fix" in fm.calls[0]["payload"]["transcript"]
     assert fm.calls[0]["payload"]["footage_seconds"] == 40.0 and fm.calls[0]["model"] == cfg["model_script"]
     ff = calls[-1]
-    assert ff[0] == "ffmpeg" and ff[2:4] == ["-v", "error"] and "/x/clip.mov" in ff and ff[-1].endswith("cut.mp4")
+    assert ff[0] == "ffmpeg" and ff[2:4] == ["-v", "error"] and "/x/clip.mov" in ff and ff[-1].endswith("cut-1.part.mp4")
     graph = ff[ff.index("-filter_complex") + 1]
     assert "trim=start=2.0:end=9.0" in graph and "concat=n=2:v=1:a=1" in graph and "overlay=0:H-h-300:enable='between(t,0.00,7.00)'" in graph
     assert "between(t,7.00,13.00)" in graph and "1080:1920" in graph
@@ -209,7 +209,8 @@ def test_cut_with_footage_renders_and_lands_every_clip_in_review(media, monkeypa
     done = s2.get(ep["id"])
     assert done["status"] == "checked" and done["cut"]["footage"] is True and done["cut"]["segments"] == 2
     assert not any(i["status"] in ("approved", "ready", "published") for i in s2.items().values())
-    assert pathlib.Path(row["video"]).stat().st_mode & 0o077 == 0 and (s2.root / "episodes" / ep["id"] / "cut.srt").is_file()
+    assert pathlib.Path(row["video"]).stat().st_mode & 0o077 == 0 and (s2.root / "episodes" / ep["id"] / "cut-1.srt").is_file()
+    assert row["video"].endswith("cut-1.mp4") and not list((s2.root / "episodes" / ep["id"]).glob("*.part.mp4"))
     assert not list((s2.root / "episodes" / ep["id"]).glob("cap*.png"))
 
 
@@ -263,7 +264,7 @@ def test_a_session_only_cut_fills_the_slots_without_footage(media, monkeypatch, 
     seen = {}
     monkeypatch.setattr(gm, "session_story", lambda sid: seen.setdefault("sid", sid) and (object(), ""))
     monkeypatch.setattr(gm, "story_strings", lambda story: ["Agent fixed the sync step", "Tests passed"])
-    monkeypatch.setattr(gm, "render_session", lambda story, d: (mp4, ""))
+    monkeypatch.setattr(gm, "render_session", lambda story, d, n=1: (mp4, ""))
     row = gm.cut(store, cfg, ep["id"], NOW)
     assert seen["sid"] == "s1" and fm.calls[0]["payload"]["session_outline"] == ["Agent fixed the sync step", "Tests passed"]
     assert fm.calls[0]["payload"]["transcript"] == "" and {i["status"] for i in row["items"]} == {"review"}
@@ -393,6 +394,8 @@ def test_the_episode_loop_through_the_command_line(media, monkeypatch, capsys, t
     assert cli.main(["growth", "ride", "--end"]) == 0
     assert cli.main(["growth", "ingest"]) == 0 and "1 new file(s)" in capsys.readouterr().out
     ep = next(i for i in growth.Store().items().values() if i["kind"] == "episode")
+    ep["footage"][0]["transcript"] = "1\n00:00:01,000 --> 00:00:04,000\nWe merged the sync fix.\n"
+    growth.Store().save(ep, NOW)
     sec = growth.section(NOW)
     assert sec["pipeline"]["cutting"] == 1 and sec["pipeline"]["filming"] == 0 and sec["episodes"][0]["stage"] == "cutting"
     assert sec["episodes"][0]["question"] == "Can I ship" and sec["episodes"][0]["footage"] == 1
@@ -471,3 +474,45 @@ def test_another_tables_flag_does_not_switch_the_growth_agent_on(home):
     config.set_value("storage.sims_agent", "true")
     assert not ri.optional_enabled(ri.GROWTH_LABEL)
     assert ri.every(ri.SIMS_LABEL) == "every 10 min"
+
+
+def test_a_recut_never_replaces_the_video_an_earlier_clip_points_to(media, monkeypatch):
+    store, cfg = make(channels=("youtube-en",))
+    ep = episode(store)
+    monkeypatch.setattr(growth, "call_model", fake_model([CLIP]))
+    monkeypatch.setattr(gm, "run_tool", fake_tool([]))
+    monkeypatch.setattr(gm, "caption_png", lambda text, path: path.write_bytes(b"p") or True)
+    first = gm.cut(store, cfg, ep["id"], NOW)
+    growth.approve(growth.Store(), first["items"][0]["id"], NOW)
+    first_video = pathlib.Path(first["video"])
+    first_video.write_bytes(b"approved footage")
+    second = gm.cut(growth.Store(), cfg, ep["id"], NOW)
+    assert second["video"] != first["video"] and second["video"].endswith("cut-2.mp4")
+    assert first_video.read_bytes() == b"approved footage"
+    assert second["items"][0]["id"] != first["items"][0]["id"]
+    assert growth.Store().get(first["items"][0]["id"])["status"] == "approved"
+    monkeypatch.setattr(gm, "run_tool", fake_tool([], writes=False))
+    with pytest.raises(growth.GrowthError, match="ffmpeg failed"):
+        gm.cut(growth.Store(), cfg, ep["id"], NOW)
+    assert first_video.read_bytes() == b"approved footage"
+
+
+def test_footage_without_a_transcript_is_not_cut(media, monkeypatch):
+    store, cfg = make(channels=CHANNELS)
+    ep = episode(store, transcript="")
+    fm = fake_model([CLIP])
+    monkeypatch.setattr(growth, "call_model", fm)
+    with pytest.raises(growth.GrowthError, match="no transcript"):
+        gm.cut(store, cfg, ep["id"], NOW)
+    assert fm.calls == []
+
+
+def test_a_clip_may_quote_a_number_that_was_said_or_shown(media, monkeypatch):
+    store, cfg = make(channels=("youtube-en",))
+    ep = episode(store, transcript="1\n00:00:01,000 --> 00:00:04,000\nThe sync dropped from 40 seconds to 12 seconds.\n")
+    said = dict(CLIP, hook="Sync fell from 40 to 12 seconds.", body="Sync fell from 40 to 12 seconds. One agent, one ride.")
+    monkeypatch.setattr(growth, "call_model", fake_model([said]))
+    monkeypatch.setattr(gm, "run_tool", fake_tool([]))
+    monkeypatch.setattr(gm, "caption_png", lambda text, path: path.write_bytes(b"p") or True)
+    row = gm.cut(store, cfg, ep["id"], NOW)
+    assert row["items"][0]["status"] == "review"

@@ -398,18 +398,26 @@ def _ts(x: float) -> str:
     return f"{int(x // 3600):02d}:{int(x % 3600 // 60):02d}:{int(x % 60):02d},{int(x % 1 * 1000):03d}"
 
 
-def render_footage(src: str, segs: list[dict], d: pathlib.Path) -> tuple[pathlib.Path | None, str]:
+def next_cut_number(d: pathlib.Path) -> int:
+    """Each cut gets its own files: a recut never replaces a video an approved clip points to."""
+    used = [int(m.group(1)) for f in d.iterdir() if (m := re.match(r"(?:cut|reel)-(\d+)", f.name))] if d.is_dir() else []
+    return max(used, default=0) + 1
+
+
+def render_footage(src: str, segs: list[dict], d: pathlib.Path, n: int = 1) -> tuple[pathlib.Path | None, str]:
     caps = []
     for k, s in enumerate(segs):
         p = d / f"cap{k}.png"
         caps.append(p if s["caption"] and caption_png(s["caption"], p) else None)
-    out = d / "cut.mp4"
-    code, err = run_tool(ffmpeg_command(src, segs, caps, str(out), has_audio(src)), FFMPEG_TIMEOUT_S)
+    out, part = d / f"cut-{n}.mp4", d / f"cut-{n}.part.mp4"
+    code, err = run_tool(ffmpeg_command(src, segs, caps, str(part), has_audio(src)), FFMPEG_TIMEOUT_S)
     for p in caps:
         if p:
             p.unlink(missing_ok=True)
-    if code != 0 or not out.is_file():
+    if code != 0 or not part.is_file():
+        part.unlink(missing_ok=True)
         return None, "ffmpeg failed: " + " ".join(err.split())[-160:]
+    os.replace(part, out)
     os.chmod(out, 0o600)
     srt, t = [], 0.0
     for k, s in enumerate(segs, 1):
@@ -417,21 +425,21 @@ def render_footage(src: str, segs: list[dict], d: pathlib.Path) -> tuple[pathlib
         if s["caption"]:
             srt.append(f"{k}\n{_ts(t)} --> {_ts(t + dur)}\n{s['caption']}\n")
         t += dur
-    g._write(d / "cut.srt", "\n".join(srt))
+    g._write(d / f"cut-{n}.srt", "\n".join(srt))
     return out, ""
 
 
-def render_session(story, d: pathlib.Path) -> tuple[pathlib.Path | None, str]:
+def render_session(story, d: pathlib.Path, n: int = 1) -> tuple[pathlib.Path | None, str]:
     """A screen vertical from the redacted session story (`teyla reel`); no footage needed."""
     from .reel import cli as rc
     from .reel import render
     if rc.audit(story, False) or story.problems():
         return None, "the session story fails redaction or its limits; not rendering"
     try:
-        res = render.render_all(story, d / "reel", seconds=45)
+        res = render.render_all(story, d / f"reel-{n}", seconds=45)
     except (RuntimeError, OSError) as e:
         return None, f"render failed: {e}"[:200]
-    mp4 = d / "reel" / "reel.mp4"
+    mp4 = d / f"reel-{n}" / "reel.mp4"
     if res.missing or not mp4.is_file():
         return None, "no video, missing: " + "; ".join(res.missing or ["reel.mp4"])
     os.chmod(mp4, 0o600)
@@ -442,7 +450,7 @@ def cut_targets(cfg: dict) -> list[dict]:
     return [c for c in g.enabled_channels(cfg) if c["platform"] in VIDEO_PLATFORMS and c["language"] == "en"]
 
 
-def slot_item(store: g.Store, ep: dict, ch: dict, day: str, now: float) -> dict:
+def slot_item(store: g.Store, ep: dict, ch: dict, day: str, now: float, facts: list[str] | None = None) -> dict:
     """The channel's item for the day: an unfilled one (idea or failed) is taken over, else a new one is made."""
     key = g.channel_key(ch)
     for it in sorted(store.items().values(), key=lambda i: i["created"]):
@@ -451,10 +459,10 @@ def slot_item(store: g.Store, ep: dict, ch: dict, day: str, now: float) -> dict:
             if old and key in (old.get("assigned") or []):
                 old["assigned"].remove(key)             # the master's seat goes back to the queue
                 store.save(old, now)
-            it.update(parent=ep["id"], format=ep["format"], idea=ep["idea"], facts=list(ep["facts"]), product=ep["product"], owner=True)
+            it.update(parent=ep["id"], format=ep["format"], idea=ep["idea"], facts=list(facts or ep["facts"]), product=ep["product"], owner=True)
             return it
     it = g.make_item(store, now, kind="clip", format=ep["format"], idea=ep["idea"], platform=ch["platform"], language="en",
-                     product=ep["product"], facts=list(ep["facts"]), day=day, channel=key, parent=ep["id"], owner=True)
+                     product=ep["product"], facts=list(facts or ep["facts"]), day=day, channel=key, parent=ep["id"], owner=True)
     it["score"], it["scores"] = ep["score"], ep["scores"]
     return it
 
@@ -478,6 +486,9 @@ def cut(store: g.Store, cfg: dict, ref: str, now: float, *, session: str = "", n
         raise g.GrowthError("ffmpeg is missing: `brew install ffmpeg`")
     footage = None if no_footage else _longest(ep.get("footage") or [])
     transcript = (footage or {}).get("transcript", "")
+    if footage and not transcript.strip():
+        raise g.GrowthError("this footage has no transcript, so what is said in it cannot be checked for leaks; "
+                            "install whisper (`teyla growth doctor`) and `ingest` again, or cut a screen vertical with --no-footage")
     ride = ep.get("ride") or {}
     hits = guard.check(transcript, ep["idea"], *ep["facts"])
     if hits:
@@ -515,16 +526,19 @@ def cut(store: g.Store, cfg: dict, ref: str, now: float, *, session: str = "", n
     if footage:
         if not segs:
             raise g.GrowthError("the edit script has no usable segments; run `teyla growth cut` again")
-        video, err = render_footage(footage["path"], segs, d)
+        video, err = render_footage(footage["path"], segs, d, next_cut_number(d))
     else:
-        video, err = render_session(story, d)
+        video, err = render_session(story, d, next_cut_number(d))
     if video is None:
         raise g.GrowthError(err)
     day = g.day_of(now)
     cost = round(float((usage or {}).get("cost_usd") or 0), 4)
     row = dict(id=ep["id"], video=str(video), items=[], segments=len(segs), cost=cost)
+    # What the clip may claim: the question, what was said, and what the screen showed (all guard-checked above).
+    spoken = [t for _a, _b, t in parse_srt(transcript)] or ([transcript.strip()] if transcript.strip() else [])
+    facts = list(ep["facts"]) + [g.clip_text(t, 300) for t in spoken][:60] + [g.clip_text(t, 300) for t in outline]
     for ch in targets:
-        it = slot_item(store, ep, ch, day, now)
+        it = slot_item(store, ep, ch, day, now, facts)
         try:
             g.apply_reply(it, reply)
         except g.AgentError as e:
