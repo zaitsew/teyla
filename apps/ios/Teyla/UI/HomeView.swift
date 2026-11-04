@@ -7,7 +7,6 @@ struct HomeView: View {
     @Environment(AppModel.self) private var model
     @Binding var tab: AppTab
     @Binding var showNewTask: Bool
-    @Binding var showSettings: Bool
 
     var body: some View {
         NavigationStack {
@@ -36,9 +35,6 @@ struct HomeView: View {
                 PortfolioDetailView(productID: route.id)
             }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showNewTask = true } label: { Text("New task").fontWeight(.semibold) }
                         .disabled(model.snapshot == nil)
@@ -73,7 +69,7 @@ private struct HomeContent: View {
                 }
             }
             NextLineButton(line: HomeNext.line(brief: snapshot.brief, top: topDecision, rankFirst: model.ownerAsks.first),
-                           revealsOlder: lists.fresh.isEmpty, tab: $tab)
+                           revealsOlder: PhoneHome.nextRevealsOlder(lists), tab: $tab)
         case .sentence:
             Text(HomeNext.sentence(brief: snapshot.brief, decisions: model.ownerAsks.count, top: topDecision,
                               rankFirst: model.ownerAsks.first))
@@ -127,7 +123,7 @@ private struct NextLineButton: View {
     var body: some View {
         if line.askID != nil {
             Button {
-                if revealsOlder { model.olderReveals += 1 }
+                model.openNext(revealingOlder: revealsOlder)
                 tab = .decisions
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: Space.s) {
@@ -308,7 +304,7 @@ struct WaitingView: View {
                     .font(Glyph.empty)
                     .foregroundStyle(Palette.textSecondary)
                 Text("Waiting for the Mac").font(Typo.section)
-                Text("Pull down to check again. Wrong key? Pair again in Settings.")
+                Text("Pull down to check again. Wrong key? Pair again in More, under Settings.")
                     .font(Typo.body).foregroundStyle(Palette.textSecondary)
             }
         }

@@ -18,7 +18,7 @@ struct PortfolioView: View {
                 LazyVStack(alignment: .leading, spacing: Space.m) {
                     if let snapshot = model.snapshot {
                         if let portfolio = snapshot.portfolio {
-                            Header(portfolio: portfolio, filter: $filter)
+                            Header(portfolio: portfolio, filter: $filter, selling: sellingLine(portfolio))
                             list(portfolio)
                         } else {
                             NoPortfolioView()
@@ -49,8 +49,15 @@ struct PortfolioView: View {
         }
     }
 
+    private func sellingLine(_ portfolio: Portfolio) -> String? {
+        let growth = model.snapshot?.console?.compact.growth ?? .missing
+        guard let none = PhoneConsole.notTried(growth, products: portfolio.products), !none.next.isEmpty else { return nil }
+        return none.next.count == 1 ? "1 product has not been tried to sell yet." : "\(none.next.count) products have not been tried to sell yet."
+    }
+
     @ViewBuilder
     private func list(_ portfolio: Portfolio) -> some View {
+        let growth = model.snapshot?.console?.compact.growth ?? .missing
         let shown = PortfolioFormat.visible(portfolio.products, filter: filter)
         if portfolio.products.isEmpty {
             Label("No products are registered on your Mac yet.", systemImage: "tray")
@@ -63,7 +70,8 @@ struct PortfolioView: View {
             RowGroup {
                 ForEach(shown) { product in
                     NavigationLink(value: ProductRoute(id: product.id)) {
-                        PortfolioRow(product: product)
+                        PortfolioRow(product: product, selling: PhoneConsole.sellingLine(
+                            productID: product.id, growth: growth, parked: product.health == .parked))
                     }
                     .buttonStyle(.plain)
                 }
@@ -80,6 +88,8 @@ struct ProductRoute: Hashable {
 private struct Header: View {
     let portfolio: Portfolio
     @Binding var filter: PortfolioFilter
+    /// "3 products are not tried to sell yet", when the Mac said which.
+    var selling: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s) {
@@ -91,6 +101,7 @@ private struct Header: View {
                 .font(Typo.caption)
                 .foregroundStyle(Palette.textSecondary)
                 .lineLimit(2)
+            if let selling { Text(selling).font(Typo.caption).foregroundStyle(Palette.primary).fixedSize(horizontal: false, vertical: true) }
             SyncLine()
             SegmentSwitch(options: PortfolioFilter.allCases.map { ($0, $0.title) }, selection: $filter,
                           spokenLabel: "Show", fills: true)
@@ -151,6 +162,8 @@ private struct PlatformChip: View {
 
 private struct PortfolioRow: View {
     let product: PortfolioProduct
+    /// "Not tried to sell yet", when the Mac says nobody posted, ran marketing or met a person who fits.
+    var selling: String?
 
     private var name: String { PortfolioFormat.title(product) }
     private var line: String {
@@ -174,6 +187,11 @@ private struct PortfolioRow: View {
                         .foregroundStyle(Palette.textSecondary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
+                    if let selling {
+                        Label(selling, systemImage: "megaphone")
+                            .font(Typo.caption.weight(.medium))
+                            .foregroundStyle(Palette.primary)
+                    }
                 }
                 Spacer(minLength: 0)
                 // "On track" on every row is noise: the pill appears when there is something to say.
@@ -272,6 +290,17 @@ struct PortfolioDetailView: View {
                 }
             }
             .accessibilityElement(children: .combine)
+
+            if let selling = PhoneConsole.sellingLine(productID: product.id, growth: snapshot.console?.compact.growth ?? .missing,
+                                                      parked: product.health == .parked) {
+                Label {
+                    Text(product.health == .parked ? selling : selling + ". It gets the next post.").fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "megaphone")
+                }
+                .font(Typo.body)
+                .foregroundStyle(Palette.primary)
+            }
 
             Group {
                 SectionHeader(title: "Why")

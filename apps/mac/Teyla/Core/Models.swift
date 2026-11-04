@@ -1107,15 +1107,18 @@ struct Console: Decodable, Equatable, Sendable {
     var money: ConsoleSection?
     var playbook: ConsoleSection?
     var growth: ConsoleSection?
+    /// The same four sections, read in full for the iPhone's screens (`ConsoleCompact.swift`).
+    var compact: ConsoleCompact
 
     enum CodingKeys: String, CodingKey { case operations, money, playbook, growth }
 
     init(operations: ConsoleSection? = nil, money: ConsoleSection? = nil, playbook: ConsoleSection? = nil,
-         growth: ConsoleSection? = nil) {
+         growth: ConsoleSection? = nil, compact: ConsoleCompact = ConsoleCompact()) {
         self.operations = operations
         self.money = money
         self.playbook = playbook
         self.growth = growth
+        self.compact = compact
     }
 
     init(from decoder: Decoder) throws {
@@ -1124,6 +1127,7 @@ struct Console: Decodable, Equatable, Sendable {
         money = c.optional(.money)
         playbook = c.optional(.playbook)
         growth = c.optional(.growth)
+        compact = (try? ConsoleCompact(from: decoder)) ?? ConsoleCompact()
     }
 }
 

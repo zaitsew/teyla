@@ -16,23 +16,22 @@ struct TeylaApp: App {
     }
 }
 
-/// The tabs; `TEYLA_TAB` (home, decisions, products) opens one on launch, for screenshots.
+/// The tabs; `TEYLA_TAB` (home, decisions, products, growth, more) opens one on launch, for screenshots.
 enum AppTab: String, Hashable {
-    case home, decisions, products
+    case home, decisions, products, growth, more
 }
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @State private var showNewTask = false
-    @State private var showSettings = false
     @State private var tab: AppTab
     private let options: LaunchOptions
 
     init() {
         let options = LaunchOptions()
         self.options = options
-        _tab = State(initialValue: AppTab(rawValue: options.tab ?? "") ?? (options.openProduct == nil ? .home : .products))
+        _tab = State(initialValue: AppTab(rawValue: options.tab ?? "") ?? (options.openProduct == nil ? (options.more == nil ? .home : .more) : .products))
     }
 
     var body: some View {
@@ -82,7 +81,7 @@ struct RootView: View {
     private var tabs: some View {
         TabView(selection: $tab) {
             Tab("Home", systemImage: "house", value: AppTab.home) {
-                HomeView(tab: $tab, showNewTask: $showNewTask, showSettings: $showSettings)
+                HomeView(tab: $tab, showNewTask: $showNewTask)
             }
             Tab("Decisions", systemImage: "checkmark.bubble", value: AppTab.decisions) {
                 DecisionsView()
@@ -91,12 +90,17 @@ struct RootView: View {
             Tab("Products", systemImage: "square.stack.3d.up", value: AppTab.products) {
                 PortfolioView(showNewTask: $showNewTask, options: options)
             }
+            Tab("Growth", systemImage: "megaphone", value: AppTab.growth) {
+                GrowthView(tab: $tab)
+            }
+            Tab("More", systemImage: "ellipsis.circle", value: AppTab.more) {
+                MoreView(options: options)
+            }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             if model.isSample { SampleBanner() }
         }
         .sheet(isPresented: $showNewTask) { NewTaskView() }
-        .sheet(isPresented: $showSettings) { SettingsView() }
     }
 }
 

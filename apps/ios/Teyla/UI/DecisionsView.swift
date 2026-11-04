@@ -99,7 +99,7 @@ private struct Questions: View {
                 Color.clear.frame(height: 0).id("older")
                 Fold(title: AskFold.heading(count: lists.older.count), detail: "waiting more than 7 days",
                      spokenTitle: "Older questions, \(lists.older.count)",
-                     startsOpen: LaunchOptions().olderOpen || model.olderReveals > 0) {
+                     startsOpen: PhoneHome.olderFoldStartsOpen(reveals: model.olderReveals, launchOpen: LaunchOptions().olderOpen)) {
                     ForEach(lists.older) { card($0) }
                 }
                 .id(model.olderReveals)  // A new reveal reopens a fold the owner closed.

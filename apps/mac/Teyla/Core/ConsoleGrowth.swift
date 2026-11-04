@@ -275,10 +275,12 @@ struct GrowthReport: Decodable, ConsoleSectionData {
     var channels: [GrowthChannel]
     /// Conversations with a person who fits, this week.
     var qualifiedWeek: Int?
+    /// The ids of the products with no sale attempt (posts, marketing, ICP meetings); nil when the report cannot tell.
+    var notTried: [String]?
 
     enum CodingKeys: String, CodingKey {
         case headline, target, today, lastPublicDays = "last_public_days", queueDays = "queue_days", gaps, pipeline, episodes,
-             nextRide = "next_ride", trends, outreach, ads, channels, qualifiedWeek = "qualified_week"
+             nextRide = "next_ride", trends, outreach, ads, channels, qualifiedWeek = "qualified_week", notTried = "not_tried"
     }
 
     /// `target` is `{"posts_per_day_per_channel": n}`.
@@ -296,7 +298,7 @@ struct GrowthReport: Decodable, ConsoleSectionData {
     init(headline: ConsoleHeadline? = nil, targetPerChannel: Int? = nil, today: [GrowthToday] = [], lastPublicDays: Int? = nil,
          queueDays: Double? = nil, gaps: Int? = nil, pipeline: GrowthPipeline? = nil, episodes: [GrowthEpisode] = [],
          nextRide: GrowthRide? = nil, trends: [GrowthTrend] = [], outreach: GrowthOutreach? = nil, ads: [GrowthAd] = [],
-         channels: [GrowthChannel] = [], qualifiedWeek: Int? = nil) {
+         channels: [GrowthChannel] = [], qualifiedWeek: Int? = nil, notTried: [String]? = nil) {
         self.headline = headline
         self.targetPerChannel = targetPerChannel
         self.today = today
@@ -311,6 +313,7 @@ struct GrowthReport: Decodable, ConsoleSectionData {
         self.ads = ads
         self.channels = channels
         self.qualifiedWeek = qualifiedWeek
+        self.notTried = notTried
     }
 
     init(from decoder: Decoder) throws {
@@ -335,5 +338,6 @@ struct GrowthReport: Decodable, ConsoleSectionData {
         let channels: [LossyBox<GrowthChannel>] = c.lenient(.channels, [])
         self.channels = channels.compactMap(\.value)
         qualifiedWeek = c.optional(.qualifiedWeek)
+        notTried = c.optional(.notTried)
     }
 }

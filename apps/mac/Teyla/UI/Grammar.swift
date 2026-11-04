@@ -77,6 +77,8 @@ struct SectionHeader<Trailing: View>: View {
     var note = ""
     var count: Int?
     @ViewBuilder var trailing: Trailing
+    /// At the accessibility text sizes the title and the note wrap instead of ending in an ellipsis.
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.m) {
@@ -84,7 +86,8 @@ struct SectionHeader<Trailing: View>: View {
                 HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                     Text(title)
                         .font(Typo.section)
-                        .lineLimit(1)
+                        .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: typeSize.isAccessibilitySize)
                         .accessibilityAddTraits(.isHeader)
                     if let count {
                         Text("\(count)")
@@ -97,7 +100,8 @@ struct SectionHeader<Trailing: View>: View {
                     Text(note)
                         .font(Typo.caption)
                         .foregroundStyle(Palette.textSecondary)
-                        .lineLimit(2)
+                        .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
+                        .fixedSize(horizontal: false, vertical: typeSize.isAccessibilitySize)
                 }
             }
             Spacer(minLength: Space.m)
@@ -151,6 +155,8 @@ struct StatTile: View {
     var detail = ""
     var tone = StatTone.neutral
     var action: (() -> Void)?
+    /// At the accessibility text sizes the words wrap instead of ending in an ellipsis.
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         if let action {
@@ -167,7 +173,8 @@ struct StatTile: View {
             Text(label)
                 .font(Typo.caption)
                 .foregroundStyle(Palette.textSecondary)
-                .lineLimit(1)
+                .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                .fixedSize(horizontal: false, vertical: typeSize.isAccessibilitySize)
             Text(value ?? Format.dash)
                 .font(Typo.number)
                 .foregroundStyle(value == nil ? Palette.textTertiary : tone.color)
@@ -176,7 +183,8 @@ struct StatTile: View {
             Text(detail.isEmpty ? " " : detail)
                 .font(Typo.caption)
                 .foregroundStyle(Palette.textSecondary)
-                .lineLimit(2, reservesSpace: true)
+                .lineLimit(typeSize.isAccessibilitySize ? 8 : 2, reservesSpace: !typeSize.isAccessibilitySize)
+                .fixedSize(horizontal: false, vertical: typeSize.isAccessibilitySize)
                 .help(detail)
         }
         .surface(padding: Space.m)
@@ -190,10 +198,11 @@ struct StatTile: View {
 struct StatStrip<Content: View>: View {
     @ViewBuilder var content: Content
     @State private var width: CGFloat = Space.pageMax
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         Group(subviews: content) { tiles in
-            let fit = Int((width + Space.m) / Space.statTileStep)
+            let fit = typeSize.isAccessibilitySize ? 1 : Int((width + Space.m) / Space.statTileStep)
             let perRow = max(1, min(tiles.count, fit))
             VStack(alignment: .leading, spacing: Space.m) {
                 ForEach(Array(stride(from: 0, to: tiles.count, by: perRow)), id: \.self) { start in
@@ -338,6 +347,8 @@ struct SparklineView: View {
 struct RowCard<Leading: View, Trailing: View>: View {
     let title: String
     var detail = ""
+    /// True where the words may run over several lines (a phone), so none is cut off. The default is one line each.
+    var wraps = false
     @ViewBuilder var leading: Leading
     @ViewBuilder var trailing: Trailing
 
@@ -347,13 +358,15 @@ struct RowCard<Leading: View, Trailing: View>: View {
             VStack(alignment: .leading, spacing: Space.xxs) {
                 Text(title)
                     .font(Typo.body.weight(.semibold))
-                    .lineLimit(1)
+                    .lineLimit(wraps ? nil : 1)
+                    .fixedSize(horizontal: false, vertical: wraps)
                     .help(title)
                 if !detail.isEmpty {
                     Text(detail)
                         .font(Typo.caption)
                         .foregroundStyle(Palette.textSecondary)
-                        .lineLimit(1)
+                        .lineLimit(wraps ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: wraps)
                         .help(detail)
                 }
             }
@@ -366,8 +379,8 @@ struct RowCard<Leading: View, Trailing: View>: View {
 }
 
 extension RowCard where Leading == EmptyView {
-    init(title: String, detail: String = "", @ViewBuilder trailing: () -> Trailing) {
-        self.init(title: title, detail: detail, leading: { EmptyView() }, trailing: trailing)
+    init(title: String, detail: String = "", wraps: Bool = false, @ViewBuilder trailing: () -> Trailing) {
+        self.init(title: title, detail: detail, wraps: wraps, leading: { EmptyView() }, trailing: trailing)
     }
 }
 

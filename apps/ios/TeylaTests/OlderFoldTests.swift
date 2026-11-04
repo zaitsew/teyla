@@ -32,3 +32,61 @@ final class OlderFoldTests: XCTestCase {
         XCTAssertTrue(split.older.isEmpty)
     }
 }
+
+/// Home's Next line, tapped when the question it names sits in the closed Older fold.
+@MainActor
+final class NextLineRevealTests: XCTestCase {
+    private struct NoKeyStore: KeyStore {
+        func load() -> Data? { nil }
+        func save(_ key: Data) throws {}
+        func delete() {}
+    }
+
+    private let generated = "2026-10-25T09:00:00Z"
+    private var now: Date { ISODate.parse(generated)! }
+
+    private func model() -> AppModel {
+        AppModel(environment: [:], defaults: UserDefaults(suiteName: "NextLineRevealTests-\(UUID().uuidString)")!,
+                 keyStore: NoKeyStore())
+    }
+
+    private func lists(_ days: [Double]) -> DecisionLists {
+        let asks = days.enumerated().map { Ask(id: "q\($0.offset)", product: "sample-app", ageSeconds: $0.element * 86_400) }
+        return DecisionLists(asks: asks, snapshot: Snapshot(generated: generated, asks: asks), now: now)
+    }
+
+    func testNextOpensTheFoldWhenEveryOpenQuestionIsOlderThanAWeek() {
+        let model = model()
+        let all = lists([9, 12, 30])
+        XCTAssertTrue(all.fresh.isEmpty)
+        XCTAssertTrue(PhoneHome.nextRevealsOlder(all))
+        XCTAssertFalse(PhoneHome.olderFoldStartsOpen(reveals: model.olderReveals, launchOpen: false), "closed before the tap")
+        model.openNext(revealingOlder: PhoneHome.nextRevealsOlder(all))
+        XCTAssertEqual(model.olderReveals, 1)
+        XCTAssertTrue(PhoneHome.olderFoldStartsOpen(reveals: model.olderReveals, launchOpen: false), "open after the tap")
+    }
+
+    func testEachTapCountsSoAFoldTheOwnerClosedOpensAgain() {
+        let model = model()
+        model.openNext(revealingOlder: true)
+        model.openNext(revealingOlder: true)
+        XCTAssertEqual(model.olderReveals, 2)
+    }
+
+    func testNextLeavesTheFoldClosedWhenAFreshQuestionIsFirst() {
+        let model = model()
+        let mixed = lists([2, 12])
+        XCTAssertFalse(PhoneHome.nextRevealsOlder(mixed))
+        model.openNext(revealingOlder: PhoneHome.nextRevealsOlder(mixed))
+        XCTAssertEqual(model.olderReveals, 0)
+        XCTAssertFalse(PhoneHome.olderFoldStartsOpen(reveals: model.olderReveals, launchOpen: false))
+    }
+
+    func testNothingOpensWhenNoQuestionWaits() {
+        XCTAssertFalse(PhoneHome.nextRevealsOlder(lists([])))
+    }
+
+    func testTheLaunchOptionOpensTheFoldForScreenshots() {
+        XCTAssertTrue(PhoneHome.olderFoldStartsOpen(reveals: 0, launchOpen: true))
+    }
+}

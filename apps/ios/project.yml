@@ -29,6 +29,26 @@ targets:
       # The visual grammar: both apps build their pages from the same components.
       - path: ../mac/Teyla/UI/Grammar.swift
         group: Shared
+      # The admin sections' parsers and words (docs/CONSOLE.md): Growth, Money, Operations and Playbook read the snapshot's
+      # compact console with the code the Mac's pages use. None of these files has a view in it.
+      - path: ../mac/Teyla/Core/ConsoleReport.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/TeylaError.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/ConsoleCompact.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/ConsoleGrowth.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/ConsoleOperations.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/ConsoleMoney.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/ConsolePlaybook.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/GrowthLogic.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/ConsoleLogic.swift
+        group: Shared
     info:
       path: Teyla/Info.plist
       properties:
@@ -77,6 +97,25 @@ targets:
         group: Shared
       # What Home and Decisions decide (who a question belongs to, what a core card says) is the Mac's code too.
       - path: ../mac/Teyla/Core/HomeLogic.swift
+        group: Shared
+      # The admin sections' parsers and words.
+      - path: ../mac/Teyla/Core/ConsoleReport.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/TeylaError.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/ConsoleCompact.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/ConsoleGrowth.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/ConsoleOperations.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/ConsoleMoney.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/ConsolePlaybook.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/GrowthLogic.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/ConsoleLogic.swift
         group: Shared
     settings:
       base:

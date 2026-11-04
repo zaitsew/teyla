@@ -474,6 +474,11 @@ final class AppModel {
     /// Counts the taps that asked Decisions to open and show its Older fold.
     var olderReveals = 0
 
+    /// A tap on Home's Next line: Decisions opens, and its Older fold too when the named question is in it.
+    func openNext(revealingOlder: Bool) {
+        if revealingOlder { olderReveals += 1 }
+    }
+
     /// Questions that wait on the owner: all of them without triage, the owner's bucket with it.
     var ownerAsks: [Ask] { Decisions.split(asks).owner }
 

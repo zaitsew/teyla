@@ -169,6 +169,8 @@ struct LaunchOptions: Equatable, Sendable {
     var openProduct: String?
     /// Opens the "Older" fold on Decisions.
     var olderOpen: Bool
+    /// Opens a row of More on launch (`money`, `operations`, `playbook`, `settings`).
+    var more: PhoneConsole.MoreItem?
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment,
          defaults: UserDefaults = .standard) {
@@ -179,5 +181,6 @@ struct LaunchOptions: Equatable, Sendable {
         tab = read("TEYLA_TAB")
         openProduct = read("TEYLA_OPEN")
         olderOpen = read("TEYLA_OLDER") == "open"
+        more = read("TEYLA_MORE").flatMap(PhoneConsole.MoreItem.init(rawValue:))
     }
 }

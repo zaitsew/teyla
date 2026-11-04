@@ -82,7 +82,7 @@ These use your own `claude`, `codex` or `grok` login. The text goes to that prov
 
 | # | Trigger | Where | What is sent | Default on |
 |---|---|---|---|---|
-| 21 | `teyla relay on` | A folder in iCloud Drive (`~/Library/Mobile Documents/com~apple~CloudDocs/Teyla`) | The text of your open questions and Teyla's proposed answers and reasons, the titles of questions Teyla closed, your session titles, and per product: stage, platform versions, pull-request counts, the titles of its last merged pull requests, user counts, milestone, spend and the one question in the way. Signed. Apple holds the keys unless you turn on Advanced Data Protection. See [RELAY.md](RELAY.md). | No |
+| 21 | `teyla relay on` | A folder in iCloud Drive (`~/Library/Mobile Documents/com~apple~CloudDocs/Teyla`) | The text of your open questions and Teyla's proposed answers and reasons, the titles of questions Teyla closed, your session titles, and per product: stage, platform versions, pull-request counts, the titles of its last merged pull requests, user counts, milestone, spend and the one question in the way; for the phone's admin screens, the compact part of each section (post counts per channel, the number of drafts waiting, the ids of products with no sale attempt, the subscription total and next renewal, failure titles, disk space, counts of what your wiki holds). No draft text goes through it. Signed. Apple holds the keys unless you turn on Advanced Data Protection. See [RELAY.md](RELAY.md). | No |
 
 ## A server on your own Mac
 

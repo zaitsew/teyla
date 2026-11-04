@@ -6,6 +6,13 @@
   `teyla state` carries `gaps` and `not_tried` (product ids only, a few bytes each) in the compact growth part. No draft text
   and no quote goes with them.
 
+- **iPhone: Growth and More tabs.** Growth shows posts today against the target, the channels still waiting for a post,
+  drafts waiting, the queue, the pipeline and the products nobody tried to sell. More holds Money, Operations, Playbook
+  and Settings (moved off the Home toolbar), each with its live figure. Products marks a product "Not tried to sell yet".
+  A figure the phone is not sent is a dash with "On your Mac". Drafts stay on the Mac: the relay is signed, not
+  encrypted. `-TEYLA_MORE` and a long-text fixture help with screenshots. The Older fold opened from Home's Next line is
+  now covered by tests.
+
 ## 0.38.0 — 2026-11-04 — The apps become an admin, and the content factory runs
 
 - **Mac: Settings is a page.** The sidebar's Settings opens Teyla's own settings file in plain groups: folders, updates,
