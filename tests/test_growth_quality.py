@@ -69,7 +69,7 @@ def test_harvest_sets_aside_chores_already_in_the_queue(env, monkeypatch):
     chore = master(store, idea="Merged in Alpha: Record the first production submission", sources=[dict(kind="pr", ref="pr:owner/alpha#2", url="")])
     real = master(store, idea="Merged in Alpha: Faster sync", sources=[dict(kind="pr", ref="pr:owner/alpha#1", url="")])
     mine = master(store, idea="Merged in Alpha: Update the readme", sources=[dict(kind="pr", ref="pr:owner/alpha#3", url="")])
-    mine["assigned"] = {"day": DAY, "channel": "x-en"}                # a chore that already holds a slot is left alone
+    mine["assigned"] = ["x-en"]                # a chore that already holds a slot is left alone
     store.save(mine, NOW)
     res = growth.harvest(store, cfg, NOW, allow_net=False, skip=("prs", "sessions", "ledger", "trends", "evergreen", "releases"))
     got = growth.Store()
