@@ -19,9 +19,13 @@ apartment rent mortgage loan debt invoice ssn license licence residence permit d
 ипотека кредит долг инн снилс вид жительство развод свадьба похороны
 """.split())
 
-# Street words: a number beside one of these is an address.
-STREET = ("street", "st.", "avenue", "ave.", "road", "rd.", "lane", "boulevard", "blvd", "calle", "avenida", "strasse",
-          "ул.", "улица", "пр-т", "проспект", "переулок", "кв.", "дом")
+# Street words. A "prefix" word comes before the name ("Calle Mayor 12"), a "suffix" word after it ("12 Main Street").
+# A number beside the name makes an address. Apartment and house markers count as prefix words.
+STREET_PREFIX = ("calle", "avenida", "plaza", "paseo", "carrer", "camino", "rue", "via", "viale", "avenue", "av.", "avda.",
+                 "ул.", "улица", "пр-т", "проспект",
+                 "переулок", "кв.", "дом", "д.", "apt", "apt.")
+STREET_SUFFIX = ("street", "st.", "avenue", "ave.", "road", "rd.", "lane", "boulevard", "blvd", "drive", "court",
+                 "strasse", "stra\u00dfe")
 
 # Words that carry no theme, in addition to the stop lists `rules_lifecycle` already uses.
 THEME_STOP = frozenset("""

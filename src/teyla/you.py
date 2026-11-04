@@ -49,8 +49,12 @@ CYR = re.compile("[\u0400-\u04ff]")
 LATIN = re.compile("[A-Za-z]")
 _WORD = re.compile("[A-Za-z\u0400-\u04ff][A-Za-z\u0400-\u04ff'-]*")
 _PHONE = re.compile(r"(?<![\w.])\+?\d[\d\s().-]{7,}\d(?![\w])")
-_STREET = re.compile(r"\b\d{1,5}\s+(?:[A-Z][a-z]+\s+){1,2}(?:" + "|".join(re.escape(s) for s in lex.STREET if s.isascii()) + r")\b|"
-                     r"(?<!\w)(?:" + "|".join(re.escape(s) for s in lex.STREET if not s.isascii()) + r")\s*\d", re.I)
+_NAME = r"(?:[^\W\d_][\w'.-]*\s+){0,3}"        # up to three words of a street name
+_STREET = re.compile(
+    r"(?<!\w)(?:" + "|".join(re.escape(w) for w in lex.STREET_PREFIX) + r")\s+" + _NAME + r"\d{1,5}\b|"
+    r"\b\d{1,5}[a-z]?\s+" + _NAME + r"(?:" + "|".join(re.escape(w) for w in lex.STREET_SUFFIX) + r")(?!\w)|"
+    r"\w+(?:strasse|stra\u00dfe)\s*\d", re.I)
+_LONG_NUMBER = re.compile(r"\d{6,}|[A-Za-z]{1,3}[ -]?\d{5,}")       # a document, card or account number
 _CODEISH = re.compile(r"https?://|www\.|`|[{}<>]|\\|/Users/|~/|\$\(|\b[a-z_]+\(\)|^\s*[#>|]|--[a-z]")
 _LIST_MARK = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
 _SENT = re.compile(r"(?<=[.!?…])\s+")
@@ -106,6 +110,18 @@ def owner_corrections() -> list[dict]:
 
 # --- the screen: what never becomes a quote -----------------------------------------------------
 
+def _sensitive(word: str) -> bool:
+    """A sensitive word in any inflection: 'passport', 'passports', and the Russian forms that share its stem.
+    A word of four letters or fewer must match whole (or with a plural s), so 'tax' does not catch 'taxi'."""
+    for w in lex.SENSITIVE:
+        if len(w) <= 4:
+            if word == w or word == w + "s" or word == w + "es":
+                return True
+        elif word.startswith(w[:max(5, len(w) - 2)] if len(w) > 5 else w[:-1]):
+            return True
+    return False
+
+
 class Screen:
     """`ok(line)` is False for a line that names a person, an address, a phone, an e-mail, a secret, a link or code,
     or touches personal documents or money. The private terms and the leak rules decide first (`leak.py`)."""
@@ -128,10 +144,9 @@ class Screen:
             return False
         if _CODEISH.search(line) or _STREET.search(line):
             return False
-        if any(sum(c.isdigit() for c in m.group(0)) >= 9 for m in _PHONE.finditer(line)):
+        if _LONG_NUMBER.search(line) or any(sum(c.isdigit() for c in m.group(0)) >= 9 for m in _PHONE.finditer(line)):
             return False
-        words = {w.lower().strip("'-") for w in _WORD.findall(line)}
-        return not (words & lex.SENSITIVE)
+        return not any(_sensitive(w.lower().strip("'-")) for w in _WORD.findall(line))
 
 
 # --- quotes -------------------------------------------------------------------------------------
@@ -214,9 +229,11 @@ def rank_with_model(pool: list[dict]) -> list[int] | None:
         order = reply["order"]
     except (ValueError, KeyError, TypeError):
         return None
-    if not isinstance(order, list) or not order or len(set(order)) != len(order) or len(order) > len(pool):
+    if not isinstance(order, list) or not order or len(order) > len(pool):
         return None
     if any(isinstance(i, bool) or not isinstance(i, int) or not 0 <= i < len(pool) for i in order):
+        return None
+    if len(set(order)) != len(order):
         return None
     return order
 
@@ -454,6 +471,8 @@ def build(now: float | None = None, *, screen: Screen | None = None, ask_items=N
         notes.append("no private-terms list was loaded: names of people are not screened out of the quotes")
     prev = prev or {}
     qotd = prev.get("quote_of_the_day") if (prev.get("quote_of_the_day") or {}).get("for") == day else None
+    if qotd is not None and not screen.ok(str(qotd.get("text") or "")):       # a private term added since: pick again
+        qotd = None
     rank = prev.get("rank") if (prev.get("rank") or {}).get("day") == day else None
     if qotd is None:
         order = None

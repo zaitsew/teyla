@@ -102,6 +102,10 @@ def test_owner_prompts_skip_machine_entries_and_the_cut_marker(home):
     ("Check my passport status before we ship it", False),
     ("The salary question should never block the sprint", False),
     ("See ~/notes/plan.md for what I want here", False),
+    ("I want to move to Calle Mayor 12 next month", False),
+    ("I want the office at Hauptstrasse 5 noted down", False),
+    ("Keep my id AB1234567 out of every screen we build", False),
+    ("I want a taxi screen and a simple settings page", True),
 ])
 def test_screen_rules(line, ok):
     assert screen().ok(line) is ok
@@ -110,6 +114,12 @@ def test_screen_rules(line, ok):
 def test_screen_defers_to_the_leak_rules_first():
     assert screen(Hits("Acme")).ok("I want Acme to stop sending these mails") is False
     assert screen(Hits("Acme")).ok("I want this to stop sending these mails") is True
+
+
+def test_screen_blocks_an_inflected_russian_sensitive_word():
+    line = "\u0425\u043e\u0447\u0443 \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u043d\u043e\u043c\u0435\u0440 \u043f\u0430\u0441\u043f\u043e\u0440\u0442\u0430 \u0434\u043b\u044f \u043f\u043e\u0435\u0437\u0434\u043a\u0438"
+    assert screen().ok(line) is False
+    assert screen().ok("I want the passports list to stay short and obvious") is False
 
 
 def test_screen_blocks_a_russian_sensitive_word():
@@ -182,7 +192,7 @@ def test_rank_with_model_sends_numbered_lines_and_validates_the_reply(monkeypatc
     assert you.rank_with_model(pool) == [4, 1, 0]
     assert seen["cmd"][seen["cmd"].index("--model") + 1] == you.RANK_MODEL
     assert seen["text"].splitlines()[0] == "0: " + pool[0]["text"] and len(seen["text"].splitlines()) == 6
-    for bad in ('{"order": [9]}', '{"order": [1, 1]}', '{"order": []}', '{"order": ["a"]}', '{"order": [true]}', '{"x": 1}', "not json"):
+    for bad in ('{"order": [[0]]}', '{"order": [{"a": 1}]}', '{"order": [9]}', '{"order": [1, 1]}', '{"order": []}', '{"order": ["a"]}', '{"order": [true]}', '{"x": 1}', "not json"):
         fake_claude(monkeypatch, bad)
         assert you.rank_with_model(pool) is None
     fake_claude(monkeypatch, '{"order": [1]}', code=1)
@@ -340,6 +350,15 @@ def test_build_stores_a_private_file_and_keeps_the_day_stable(home, tmp_path):
     assert rep["counts"]["prompts"] == 1 and rep["notes"] == []
     again = you.build(NOW + 60, screen=screen(), ask_items=[], root=tmp_path / "code", prev=json.loads((home / "you.json").read_text()))
     assert again["quote_of_the_day"] == q
+
+
+def test_a_stored_quote_is_screened_again_on_refresh(home, tmp_path):
+    seed(home)
+    first = you.build(NOW, screen=screen(), ask_items=[], root=tmp_path / "code")
+    you.save(first)
+    prev = json.loads((home / "you.json").read_text())
+    again = you.build(NOW + 60, screen=screen(Hits("every screen")), ask_items=[], root=tmp_path / "code", prev=prev)
+    assert again["quote_of_the_day"] is None
 
 
 def test_build_says_when_no_private_terms_were_loaded(home, tmp_path):
