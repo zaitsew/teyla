@@ -27,7 +27,12 @@ final class GrowthModel {
     /// What the last finished action said, kept after the draft left the queue.
     private(set) var notice: String?
 
+    /// What was done to sell each product, read from the growth ledger for the product page. nil until read.
+    private(set) var sales: SaleLedger.Read?
+    private(set) var salesFailure: String?
+
     @ObservationIgnored private let cli: any TeylaBackend
+    @ObservationIgnored private var salesReadAt: Date?
     @ObservationIgnored private var reading: Task<Void, Never>?
     @ObservationIgnored private var queued = false
     @ObservationIgnored private(set) var readAt: Date?
@@ -80,6 +85,22 @@ final class GrowthModel {
             } catch {
                 // The last queue stays on screen, marked as old: a failed read never looks like an empty queue.
                 phase = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    /// A product page opened: read the ledger when it was never read or the last read is old.
+    func loadSales() {
+        if let salesReadAt, Date().timeIntervalSince(salesReadAt) < Self.staleAfter, sales != nil { return }
+        salesReadAt = Date()
+        Task {
+            do {
+                sales = try await cli.saleAttempts()
+                salesFailure = nil
+            } catch {
+                // The last read stays on screen when there is one; a failed read is never "not tried yet".
+                salesFailure = error.localizedDescription
+                salesReadAt = nil
             }
         }
     }

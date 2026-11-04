@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Mac: a product page shows users and selling.** Four figures: active users this week, sale attempts (posts,
+  marketing, ICP meetings, counted from the growth ledger), what shipped in 7 days, and feedback and crashes (a dash:
+  nothing reports them yet). A product nobody tried to sell reads "Not tried yet. Next in line."; the page never
+  proposes closing it.
+
 - **Mac: Growth is a full page.** Slots filled today and the drafts waiting for you come first. You read a draft in
   full, with its editor score and its voice and leak checks, then approve, reject with a reason, or edit it. Approving
   only marks a draft; nothing is posted or sent from the app. Channels, pipeline, episodes, trend ideas and outreach
