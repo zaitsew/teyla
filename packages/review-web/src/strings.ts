@@ -73,7 +73,7 @@ const en: ReviewStrings = {
   noticeRecipient: "Who gets it: the developer of this app, through a review server. Nobody else.",
   noticeWhy: "Why: to find and fix what you pointed at.",
   noticeRetention:
-    "How long: the copy on the server is gone within the hour. The developer's Mac keeps its copy for 30 days after the report is closed, or 90 days if it is never opened.",
+    "How long: the copy on the server is deleted when the developer's Mac next collects it, usually within the hour. The developer's Mac keeps its copy for 30 days after the report is closed, or 90 days if it is never opened.",
   noticeOK: "OK, send",
   noticeCancel: "Cancel",
   previewCaption: "This picture is what is sent. Black boxes hide private areas.",

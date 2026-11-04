@@ -745,3 +745,16 @@ def test_a_refused_done_changes_nothing(conn, relay_root):
     ok, why = review.release_lease(conn, ID1, "b", now=T0 + 1, done_pr="https://example.com/pr/1")
     row = review.get(conn, ID1)
     assert not ok and "held by a" in why and (row["status"], row["pr"], row["lease_owner"]) == ("open", "", "a")
+
+
+def test_privacy_names_the_product_and_matches_the_first_send_notice(capsys):
+    assert review.cmd_privacy("Thing") == 0
+    out = capsys.readouterr().out
+    assert "go to Thing's developer" in out and "Test builds of Thing" in out
+    assert "next collects it, usually within the hour" in out and "30 days after the report is closed" in out and "90 days" in out
+    assert "no legal review" in out
+
+
+def test_privacy_needs_a_product(capsys):
+    assert review.cmd_privacy(None) == 2
+    assert "--product" in capsys.readouterr().err
