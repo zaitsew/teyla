@@ -3,7 +3,7 @@
     teyla product [list] [--json]                    one line per registered product
     teyla product init [--write]                     propose a registry from the git repos under code_root; --write adds the missing ones
     teyla product add <id> [--repo PATH] [--name N] [--stage S]   register one product
-    teyla product set <id> key=value...              name, stage, primary, focus, summary, aliases (comma list), add-repo, add-path
+    teyla product set <id> key=value...              name, stage, type, primary, focus, summary, aliases (comma list), add-repo, add-path
     teyla product core [<id>...] [--clear]           the core products of the home screen: show them, set them (focus), or clear
     teyla product park <id> | wake <id>              stage parked (the old stage is remembered) / back to it
     teyla product assign <ask-id-prefix|session-id> <id> [--ask-only]   file a session's asks under another product
@@ -40,6 +40,7 @@ from . import config, corrections
 
 UNASSIGNED = "unassigned"
 STAGES = ("idea", "building", "beta", "live", "parked")
+TYPES = ("venture", "indie", "open-source", "personal")   # what the owner means the product to be (docs/STARTUP.md)
 PARK_AFTER_DAYS = 30                    # init: no commit for this long proposes "parked"
 _ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*$")
 _BARE_KEY_RE = re.compile(r"[A-Za-z0-9_-]+$")
@@ -47,7 +48,7 @@ _BARE_KEY_RE = re.compile(r"[A-Za-z0-9_-]+$")
 _CLAUDE_WT_RE = re.compile(r"^(?P<root>.+?)/\.claude/worktrees(?:/|$)")
 _HOME_WT_RE = re.compile(r"/\.worktrees/(?P<name>[^/]+)(?:/|$)")
 # Written in this order; any other key a product carries (stage_before_park) follows.
-_FIELDS = ("name", "repos", "paths", "aliases", "stage", "primary", "focus", "summary", "stage_before_park")
+_FIELDS = ("name", "repos", "paths", "aliases", "stage", "type", "primary", "focus", "summary", "stage_before_park")
 
 
 class RegistryError(Exception):
@@ -82,6 +83,8 @@ def _normalise(raw: dict) -> dict:
             row[k] = str(row.get(k) or "")
         if "summary" in row:                       # optional: written back only when the owner set it
             row["summary"] = str(row["summary"] or "")
+        if "type" in row:                          # optional: the owner's choice, never inferred
+            row["type"] = str(row["type"] or "")
         reg["product"][str(pid)] = row
     asg = raw.get("assign")
     if isinstance(asg, dict):
@@ -390,6 +393,14 @@ def set_field(reg: dict, pid: str, key: str, value: str) -> str:
             return park(reg, pid)
         p["stage"] = value
         p.pop("stage_before_park", None)
+    elif key == "type":
+        if value and value not in TYPES:
+            raise ValueError(f"type must be one of {', '.join(TYPES)}, or empty to clear it")
+        if value:
+            p["type"] = value
+        else:
+            p.pop("type", None)
+            return f"{pid}: type cleared"
     elif key == "focus":
         if value.lower() not in ("true", "false", "yes", "no", "1", "0", "on", "off"):
             raise ValueError("focus must be true or false")
@@ -404,7 +415,7 @@ def set_field(reg: dict, pid: str, key: str, value: str) -> str:
         if v not in p[slot]:
             p[slot].append(v)
     else:
-        raise ValueError(f"unknown key {key!r}: name, stage, primary, focus, summary, aliases, add-repo, add-path")
+        raise ValueError(f"unknown key {key!r}: name, stage, type, primary, focus, summary, aliases, add-repo, add-path")
     return f"{pid}: {key} = {value}"
 
 
@@ -667,7 +678,7 @@ def register(sp):
     s = sub.add_parser("add", help="register one product")
     s.add_argument("id"); s.add_argument("--repo"); s.add_argument("--name")
     s.add_argument("--stage", choices=STAGES)
-    s = sub.add_parser("set", help="change fields: name stage primary focus summary aliases add-repo add-path")
+    s = sub.add_parser("set", help="change fields: name stage type primary focus summary aliases add-repo add-path")
     s.add_argument("id"); s.add_argument("assignments", nargs="*", metavar="key=value")
     s = sub.add_parser("core", help="the core products of the home screen: show, pin (sets focus), or --clear")
     s.add_argument("ids", nargs="*", metavar="id"); s.add_argument("--clear", action="store_true", help="clear every focus")

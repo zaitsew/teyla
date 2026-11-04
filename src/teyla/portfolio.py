@@ -170,6 +170,23 @@ def load_usage_cache() -> dict:
     return out
 
 
+def load_usage_ages() -> dict[str, float]:
+    """{repo folder name (lowercase): epoch of the probe that wrote the counters}, for the rungs that go stale. A row
+    written before rows carried `at` takes the file's own `at`, which can only be too new, never too old."""
+    try:
+        c = json.loads(usage_cache_path().read_text())
+    except (OSError, ValueError):
+        return {}
+    repos = c.get("repos") if isinstance(c, dict) and c.get("version") == 1 else None
+    out = {}
+    for name, row in (repos or {}).items():
+        at = row.get("at") if isinstance(row, dict) else None
+        at = at if isinstance(at, (int, float)) and not isinstance(at, bool) else c.get("at")
+        if isinstance(at, (int, float)) and not isinstance(at, bool):
+            out[str(name).lower()] = float(at)
+    return out
+
+
 def enabled(cfg: dict | None = None) -> bool:
     """The network pass may start only outside safe mode and with `gh` on PATH, as the backlog refresh."""
     try:
@@ -753,6 +770,11 @@ def refresh(now: float | None = None, *, reg: dict | None = None, cfg: dict | No
         except Exception:  # noqa: BLE001
             ok = False
         ok = refresh_metrics(reg, cache, now) and ok
+        try:                                               # today's startup snapshot rows, from the usage cache
+            from . import startup
+            startup.record_snapshots(now, reg)
+        except Exception:  # noqa: BLE001
+            ok = False
     finally:
         cache["at"] = now
         try:
@@ -1213,6 +1235,11 @@ def build(now: float, *, reg: dict, prods: list[dict], ask_rows: list[dict], tas
     by_prod = {p["id"]: p for p in prods}
     canonical = bl.get("canonical") or {}
     stores_checked = bool(cache["checked"]["stores"])
+    try:                                                   # the growth ledger and the snapshots, read once for every product
+        from . import startup
+        sctx = startup.context(now, reg)
+    except Exception:  # noqa: BLE001 — the startup block is an extra; the portfolio always builds
+        startup, sctx = None, None
     items = []
     for pid, rp in reg["product"].items():
         repos = product_repos(rp)
@@ -1242,6 +1269,12 @@ def build(now: float, *, reg: dict, prods: list[dict], ask_rows: list[dict], tas
                     "shipped_7d": {"prs": gh["shipped"], "top": gh["top"]},
                     "users": usage_of(repos, usage), "milestone": milestone, "blocker": triage.blocker(mine),
                     "quiet_days": quiet, "line": line_of(gh["open_p1"], milestone, primary_row, quiet)}
+        try:                                               # null when it cannot be computed, as a part that failed elsewhere
+            sblock = startup.block_for(sctx, now, pid=pid, rp=rp, repos=repos, usage=usage, can_install=bool(progress["can_install"]),
+                                       money_enabled=monetization_enabled(manifests),
+                                       ai_cost_30d=_optional_usd(act.get("spend_30d_usd"))) if sctx else None
+        except Exception:  # noqa: BLE001
+            sblock = None
         items.append({
             "id": pid, "title": row.get("display_name") or rp.get("name") or pid, "stage": stage,
             "focus": bool(rp.get("focus")), "primary": primary or norm_platform(rp.get("primary")),
@@ -1253,7 +1286,7 @@ def build(now: float, *, reg: dict, prods: list[dict], ask_rows: list[dict], tas
             "activity": {"last": last, "sessions_7d": int(act.get("sessions_7d") or 0),
                          "spend_7d_usd": float(act.get("spend_7d_usd") or 0)},
             "waiting": len(mine), "waiting_raw": len(mine_raw), "oldest_wait_days": oldest, "tasks": len(owner_tasks), "milestone": milestone,
-            "progress": progress,
+            "progress": progress, "startup": sblock,
             "summary": summary_of(rp, manifests, repos),
             "icon_jpeg": icon.get("b64") if isinstance(icon.get("b64"), str) else "",
             "metrics": {"users": users_metrics(repos, usage), "commits": commits_view(mine_cache.get("commits")),

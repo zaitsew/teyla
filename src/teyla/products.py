@@ -141,14 +141,19 @@ def write_cache(results: dict[str, tuple[str, dict]]) -> None:
     try:
         old = json.loads(cache_path().read_text())
         repos = dict(old["repos"]) if isinstance(old, dict) and old.get("version") == 1 else {}
-    except (OSError, ValueError, KeyError, TypeError):
+        before = old.get("at") if isinstance(old.get("at"), (int, float)) else None
+        for key, row in repos.items():          # a kept row from before rows had "at" is as old as the file was
+            if isinstance(row, dict) and "at" not in row and before is not None:
+                repos[key] = {**row, "at": before}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
         repos = {}
+    now = time.time()
     for name, (st, d) in results.items():
         key = name.lower()
         if _has_numbers(st, d) or not (isinstance(repos.get(key), dict) and repos[key].get("status") == "ok"):
-            repos[key] = {"status": st, "counters": d}
+            repos[key] = {"status": st, "counters": d, "at": now}      # "at": when this row's probe ran (startup rungs go stale at 7 days)
     try:
-        asks._atomic_write(cache_path(), json.dumps({"version": 1, "at": time.time(), "repos": repos}, indent=1))
+        asks._atomic_write(cache_path(), json.dumps({"version": 1, "at": now, "repos": repos}, indent=1))
     except OSError:
         pass                                  # the table is the product; the cache is an extra
 
