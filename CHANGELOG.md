@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The content factory ranks by what passes and mines its own stories.** `teyla growth plan` gives the next slot to the
+  idea the editor is likely to pass: a lesson with a number and an artifact first, a bare product summary never. Once a
+  week the harvest step makes one model call over your policy file, the last `teyla you` report, crash and load counts,
+  AI spend at list price, the CHANGELOG and merged fix PRs of public products. A story enters only when its excerpt exists
+  in the material, every number is in the excerpt and no leak, employer, job search, person or store dispute is named.
+  The harvest line counts what the checks dropped. See docs/GROWTH.md, "Stories".
+
 - **Mac: Playbook is a full page.** Contradictions between your rules and your corrections, the guidelines (each opens
   its file), the model ladder with new models and the arena shortlist (every row "candidate, not a decision"), counts of
   what is kept, and what the sessions say about you with the chores to hand off. A part that fails shows its reason and

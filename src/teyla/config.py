@@ -179,7 +179,7 @@ DEFAULTS = {
     "safe": {"enabled": False, "auto_update": False},
     # `teyla you`: quotes and insights from your own sessions, kept in ~/.teyla/you.json and off the relay.
     # relay = carry the quote of the day and the open-chore count to the phone; rank = let a model order the
-    # screened quote candidates once a day (`claude -p`, PRIVACY.md row 38; never in safe mode).
+    # screened quote candidates once a day (`claude -p`, PRIVACY.md row 43; never in safe mode).
     "you": {"relay": False, "rank": False},
     # `teyla state`: a model writes the brief and the ranking. Off unless turned on (it sends the open
     # questions to Anthropic through `claude -p`); never in safe mode. Off = rules only.

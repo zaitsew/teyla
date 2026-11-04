@@ -11,7 +11,7 @@ the open and closed questions of `teyla asks`, the rule files, and git. The resu
   (a delegated task, a pasted app request), when the private-terms list, the leak rules or the checks below find a
   name, an e-mail, a phone, an address, a home path, a secret, a link, code, or a personal-document or money topic.
   The pick is by rules (strong verbs, length), stable within a day. `[you] rank = true` lets Claude Haiku order the
-  top candidates once a day (PRIVACY row 38); the lines it sees are already screened.
+  top candidates once a day (PRIVACY row 43); the lines it sees are already screened.
 - insights: counts with their evidence. Intent keeps only prompts of 400 or more characters, and the figures say so.
 - postcard: an old line of yours about a product, and what git shows since: commits and tags. A weekly pick; skipped
   when git cannot confirm anything.

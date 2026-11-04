@@ -5,8 +5,8 @@ a review step and a packet you post by hand. The owner films sometimes and appro
 is Teyla's job: ideas, drafts, checks, formats, packets.
 
 Daily volume does not come from filming. It comes from what already happens every day: merged pull requests,
-releases, agent sessions, the week's spend, corrections, the owner's notes tagged `#content`, and the news in
-Beyond Intelligence. Filmed footage is a richer input a few times a week. A slot never waits for it.
+releases, agent sessions, the week's spend, corrections, the owner's notes tagged `#content`, the news in
+Beyond Intelligence, and the stories the weekly miner finds in his own records. Filmed footage is a richer input a few times a week. A slot never waits for it.
 
 ## The formats
 
@@ -60,6 +60,45 @@ video"). Set `[growth] daily = true` in Teyla's config
 (`teyla config set growth.daily=true`) and `teyla routine install` writes a launchd agent that runs it at 06:30
 (`~/Library/Logs/teyla-growth.log`). It is off by default. Nothing is published, and in safe mode the draft step is
 skipped.
+
+## Stories: the factory finds its own
+
+A post passes when it has a number and an artifact. Those stories used to exist only when the owner wrote a `#content`
+note by hand. The harvest step now finds them itself, at most once a week, in what is already on the Mac:
+
+| Material | What is read |
+|---|---|
+| `policy` | the rules file (`stories_policy`, default `~/.agents/POLICY.md`), read-only |
+| `you` | insights and chore counts of the last `teyla you` report. Never his prompts or quotes |
+| `crash`, `load` | `teyla crash` events of 30 days and the load recorder's counts of 14 days |
+| `money` | AI spend at API list price from the cached `teyla console money` usage. No subscriptions |
+| `pr:<owner/repo>#N` | up to eight merged pull requests of public products from the last 21 days whose title promises a fix and whose description tells what failed |
+| `changelog` | the newest entries of the CHANGELOG next to this install (`stories_changelog` points elsewhere) |
+
+One model call (`claude -p`, no tools, two turns at most; PRIVACY row 44) reads that material and returns candidates:
+`{claim, numbers, date, artifact, source, source_excerpt}`. The reply is data, and the check that follows is mechanical:
+
+- The excerpt must exist in the material (whitespace-normalised). Every number in the claim, and every number the model
+  lists, must appear in the excerpt, and the claim needs at least one.
+- The date must be a past day that the material names.
+- The artifact must be a GitHub URL of a public product or a `teyla` command that `teyla --help` knows. Otherwise the
+  story still enters, marked `artifact_missing`, with a fact that says no public artifact exists. The planner ranks it as a
+  partial lesson and the editor decides.
+- The leak scan, the private terms and the never-post list run on the claim, the excerpt and the artifact. A story that names
+  an employer, a job search, another person or a store-review dispute is dropped.
+- A story is told once: its id comes from its excerpt, and a story whose numbers an earlier idea already carries is a repeat.
+
+A candidate that fails a check is dropped and counted by reason (`number-not-in-excerpt`, `excerpt-not-in-source`,
+`no-number`, `bad-date`, `future-date`, `date-not-in-source`, `excluded:*`, `leak:*`, `repeat`). The harvest line reads
+`7 stories from 9 candidates (2 dropped by the checks: ...)`.
+
+Before anything leaves the machine, each line of the material is scanned. A line that hits the leak scan, a private term, the
+never-post list, an unreleased product or an excluded kind becomes `[line withheld]`, and an excerpt cannot span it. A file whose
+path looks like a secret store (`.env`, a token, a key, `credentials`, `private_keys`) is never opened. The material is data:
+the system prompt says so, and the reply is parsed, never executed.
+
+The gate is `growth_stories.due`: one good run blocks the next for seven days, a failed call retries after one day. Safe mode and
+`--no-net` skip the miner. The ledger event is `stories-run`; `config.toml` keys are `stories_policy` and `stories_changelog`.
 
 ## Quality: a post worth reading
 
@@ -213,4 +252,4 @@ See [CONSOLE.md](CONSOLE.md).
 - One channel gets at most `posts_per_day` items a day. The default is one per channel.
 - One idea feeds at most `fanout` channels (default 3).
 - A language other than English needs its voice chart. Without one the item fails its check.
-- Privacy: five calls leave the machine, all listed in [PRIVACY.md](PRIVACY.md) (rows 37 to 41). Transcription and video work stay on your Mac.
+- Privacy: six calls leave the machine, all listed in [PRIVACY.md](PRIVACY.md) (rows 37 to 41 and 44). Transcription and video work stay on your Mac.

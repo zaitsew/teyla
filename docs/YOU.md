@@ -10,7 +10,7 @@ teyla you chore KEY open|done|tried|untried
 
 The result is cached in `~/.teyla/you.json` (mode 0600) for the day. `teyla console` shows it in the Playbook
 section. It reaches the phone only when `[you] relay = true`, and then only as the quote of the day and the number
-of open chores. Nothing in this command is sent anywhere, except the optional ranking below (PRIVACY row 38).
+of open chores. Nothing in this command is sent anywhere, except the optional ranking below (PRIVACY row 43).
 
 ## What it shows
 
