@@ -127,7 +127,7 @@ private struct DiagnosisReport: View {
         let d = report.diagnosis
         VStack(alignment: .leading, spacing: Space.xl) {
             VStack(alignment: .leading, spacing: Space.s) {
-                SectionLabel("Diagnosis · last \(d.days) days")
+                SectionHeader(title: "Diagnosis · last \(d.days) days")
                 if d.empty {
                     Text("Teyla found no sessions in the last \(d.days) days.")
                         .font(Typo.pageTitle)
@@ -168,7 +168,7 @@ private struct DiagnosisReport: View {
     private var offers: some View {
         let applicable = report.applicable
         VStack(alignment: .leading, spacing: Space.m) {
-            SectionLabel(applicable.isEmpty ? "What Teyla can change" : "What Teyla can change · \(applicable.count)")
+            SectionHeader(title: applicable.isEmpty ? "What Teyla can change" : "What Teyla can change · \(applicable.count)")
             if applicable.isEmpty {
                 Label("Nothing to change right now.", systemImage: "checkmark.circle")
                     .foregroundStyle(Palette.textSecondary)

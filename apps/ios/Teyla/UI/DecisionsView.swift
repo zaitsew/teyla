@@ -5,6 +5,8 @@ import SwiftUI
 /// Pay, Decide, Do; without it they are one ranked list. Nothing that is open is left out.
 struct DecisionsView: View {
     @Environment(AppModel.self) private var model
+    /// The last `olderReveals` already scrolled to, so coming back to the tab does not scroll again.
+    @State private var revealedOlder = 0
 
     var body: some View {
         NavigationStack {
@@ -28,6 +30,13 @@ struct DecisionsView: View {
                     // Screenshots: `-TEYLA_OLDER open` also scrolls the fold into view.
                     guard LaunchOptions().olderOpen else { return }
                     try? await Task.sleep(for: .milliseconds(800))
+                    withAnimation { proxy.scrollTo("older", anchor: .top) }
+                }
+                .task(id: model.olderReveals) {
+                    // Home's Next line named a question in the fold.
+                    guard model.olderReveals != revealedOlder else { return }
+                    revealedOlder = model.olderReveals
+                    try? await Task.sleep(for: .milliseconds(300))
                     withAnimation { proxy.scrollTo("older", anchor: .top) }
                 }
                 .scrollDismissesKeyboard(.interactively)
@@ -66,6 +75,7 @@ private struct Content: View {
 // MARK: The owner's questions
 
 private struct Questions: View {
+    @Environment(AppModel.self) private var model
     let lists: DecisionLists
     let snapshot: Snapshot
     let now: Date
@@ -74,13 +84,13 @@ private struct Questions: View {
         if lists.hasTriage {
             ForEach(Decisions.grouped(lists.fresh)) { group in
                 VStack(alignment: .leading, spacing: Space.m) {
-                    SectionLabel(group.heading)
+                    SectionHeader(title: group.kind.title, count: group.asks.count)
                     ForEach(group.asks) { card($0) }
                 }
             }
         } else if !lists.fresh.isEmpty {
             VStack(alignment: .leading, spacing: Space.m) {
-                SectionLabel("Needs you \u{2014} ordered by what it unblocks")
+                SectionHeader(title: "Needs you \u{2014} ordered by what it unblocks")
                 ForEach(lists.fresh) { card($0) }
             }
         }
@@ -88,9 +98,11 @@ private struct Questions: View {
             VStack(alignment: .leading, spacing: Space.m) {
                 Color.clear.frame(height: 0).id("older")
                 Fold(title: AskFold.heading(count: lists.older.count), detail: "waiting more than 7 days",
-                     spokenTitle: "Older questions, \(lists.older.count)", startsOpen: LaunchOptions().olderOpen) {
+                     spokenTitle: "Older questions, \(lists.older.count)",
+                     startsOpen: LaunchOptions().olderOpen || model.olderReveals > 0) {
                     ForEach(lists.older) { card($0) }
                 }
+                .id(model.olderReveals)  // A new reveal reopens a fold the owner closed.
             }
         }
     }
@@ -273,7 +285,7 @@ private struct OnlyYou: View {
     var body: some View {
         if !snapshot.tasks.isEmpty {
             VStack(alignment: .leading, spacing: Space.m) {
-                SectionLabel("Only you")
+                SectionHeader(title: "Only you")
                 ForEach(snapshot.tasks) { task in
                     TaskRow(task: task, ageSeconds: PhoneFormat.age(task.ageSeconds, snapshot: snapshot, now: now))
                 }

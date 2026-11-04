@@ -52,13 +52,6 @@ enum PhoneHome {
 
     /// The note under "Decisions", the same style as the three product sections.
     static let decisionsNote = "Only you can answer these"
-
-    /// The brief: the Mac's sentence, else a count.
-    static func briefLine(_ snapshot: Snapshot) -> String {
-        if let line = snapshot.brief?.line, !line.isEmpty { return line }
-        let n = Decisions.split(snapshot.asks).owner.count
-        return n == 0 ? "Nothing needs you right now." : "\(n) \(n == 1 ? "question needs" : "questions need") you."
-    }
 }
 
 // MARK: Closing from the phone

@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Home: one sentence, a period switch, the products in three sections (people use these, being built, quiet),
-/// the top decisions, and what runs. Health, notes, finished work and the status column live on their own pages.
+/// Home: the pulse strip, the Next line, a period switch, the products in three sections (people use these, being
+/// built, quiet), the top decisions, and what runs. Health, notes, finished work and the status column live on their
+/// own pages.
 struct HomeView: View {
     var body: some View {
         Page { HomeContent() }
@@ -13,6 +14,7 @@ struct HomeView: View {
 struct HomeContent: View {
     @Environment(AppModel.self) private var model
     @AppStorage("teyla.home.period") private var storedPeriod = HomePeriod.week.rawValue
+    @AppStorage(HomeHeaderStyle.storageKey) private var storedStyle = HomeHeaderStyle.pulse.rawValue
 
     private var period: HomePeriod { HomePeriod.from(stored: storedPeriod) }
 
@@ -20,6 +22,7 @@ struct HomeContent: View {
     var body: some View {
         header
         if let snapshot = model.snapshot {
+            DailyQuoteSlot(quote: nil)
             products(snapshot.portfolio)
             if model.autoClosed.count > 0 { AutoClosedRow() }
             RunningFold()
@@ -71,19 +74,114 @@ struct HomeContent: View {
         }
     }
 
+    /// The default is the pulse strip and the Next line. `defaults write <bundle id> teyla.home.header sentence`
+    /// keeps one strict sentence instead. Either way the page title is a title, never a paragraph.
+    @ViewBuilder
     private var header: some View {
+        switch HomeHeaderStyle.from(stored: storedStyle) {
+        case .pulse:
+            PageHeader(title: "Home", context: Date().formatted(date: .complete, time: .omitted))
+            if let snapshot = model.snapshot {
+                PulseStrip(snapshot: snapshot)
+                NextLineButton(line: nextLine(snapshot))
+            }
+        case .sentence:
+            SentenceHeader()
+        }
+    }
+
+    private func nextLine(_ snapshot: Snapshot) -> HomeNextLine {
+        HomeNext.line(brief: snapshot.brief, top: model.topDecision, rankFirst: model.ownerAsks.first)
+    }
+}
+
+/// Five tiles, read from the snapshot. A figure the snapshot does not have is a dash, and the tile says why.
+private struct PulseStrip: View {
+    @Environment(AppModel.self) private var model
+    let snapshot: Snapshot
+
+    var body: some View {
+        StatStrip {
+            ForEach(HomePulse.tiles(decisions: model.ownerAsks, running: snapshot.running.count,
+                                    spend: HomeText.spend(portfolio: snapshot.portfolio, todayUSD: snapshot.totals.spentTodayUSD),
+                                    console: snapshot.console)) { tile in
+                StatTile(label: tile.label, value: tile.value, detail: tile.detail, tone: tile.tone,
+                         action: tile.kind == .decisions ? { model.go(.decisions) } : nil)
+            }
+        }
+    }
+}
+
+/// One line that names the top decision and opens it.
+private struct NextLineButton: View {
+    @Environment(AppModel.self) private var model
+    let line: HomeNextLine
+
+    var body: some View {
+        if let askID = line.askID {
+            Button {
+                model.focus(askID: askID)
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                    Text("Next").font(Typo.body.weight(.semibold)).foregroundStyle(Palette.primary)
+                    Text(line.text).font(Typo.body).foregroundStyle(Palette.text).lineLimit(1).truncationMode(.tail)
+                    Image(systemName: "arrow.right").font(Typo.caption).foregroundStyle(Palette.textSecondary)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(line.text)
+            .accessibilityLabel("Next: \(line.text)")
+            .accessibilityHint("Opens the decision")
+        } else {
+            Label(line.text, systemImage: "checkmark.circle")
+                .font(Typo.body)
+                .foregroundStyle(Palette.textSecondary)
+        }
+    }
+}
+
+/// The comparison variant: one sentence at section size and one caption. Never more than 12 words.
+private struct SentenceHeader: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
         VStack(alignment: .leading, spacing: Space.xs) {
-            Text(model.briefLine)
-                .font(Typo.pageTitle)
-                .lineSpacing(Space.xxs)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
+            Text(line)
+                .font(Typo.section)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .help(line)
             if let snapshot = model.snapshot {
                 Text(HomeText.caption(decisions: model.ownerAsks.count, running: snapshot.running.count,
                                       spend: HomeText.spend(portfolio: snapshot.portfolio, todayUSD: snapshot.totals.spentTodayUSD)))
-                    .font(Typo.body)
+                    .font(Typo.caption)
                     .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(2)
             }
+        }
+    }
+
+    private var line: String {
+        guard let snapshot = model.snapshot else { return model.briefLine }
+        return HomeNext.sentence(brief: snapshot.brief, decisions: model.ownerAsks.count, top: model.topDecision,
+                                 rankFirst: model.ownerAsks.first)
+    }
+}
+
+/// A place for the day's quote. Nothing draws until the content lane fills it.
+struct DailyQuoteSlot: View {
+    let quote: String?
+
+    var body: some View {
+        if let quote, !quote.isEmpty {
+            Text(quote)
+                .font(Typo.body)
+                .italic()
+                .foregroundStyle(Palette.textSecondary)
+                .lineLimit(2)
+                .help(quote)
         }
     }
 }
@@ -93,28 +191,7 @@ struct PeriodSwitch: View {
     @Binding var period: HomePeriod
 
     var body: some View {
-        HStack(spacing: Space.xxs) {
-            ForEach(HomePeriod.allCases) { option in
-                Button {
-                    period = option
-                } label: {
-                    Text(option.label)
-                        .font(Typo.body.weight(.semibold))
-                        .foregroundStyle(period == option ? Palette.text : Palette.textSecondary)
-                        .padding(.horizontal, Space.l)
-                        .frame(minHeight: Space.controlMin)
-                        .background(period == option ? Palette.surface : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: Radius.control))
-                        .contentShape(RoundedRectangle(cornerRadius: Radius.control))
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(period == option ? .isSelected : [])
-            }
-        }
-        .padding(Space.xs)
-        .background(Palette.track, in: RoundedRectangle(cornerRadius: Radius.card))
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Period")
+        SegmentSwitch(options: HomePeriod.allCases.map { ($0, $0.label) }, selection: $period, spokenLabel: "Period")
     }
 }
 

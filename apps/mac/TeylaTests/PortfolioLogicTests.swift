@@ -51,13 +51,11 @@ final class PortfolioLogicTests: XCTestCase {
     }
 
     func testFiguresText() {
-        XCTAssertEqual(PortfolioText.prs(PRCounts(open: 3, waiting: 1, merged7d: 14, unreviewed7d: 0)), "3 open · 14 merged 7d")
-        XCTAssertEqual(PortfolioText.prs(PRCounts(open: 0, merged7d: 0)), "0 merged 7d")
-        XCTAssertEqual(PortfolioText.prs(PRCounts(open: 1, merged7d: 4, unreviewed7d: 2)), "1 open · 4 merged 7d · 2 unreviewed")
-        XCTAssertEqual(PortfolioText.waiting(PortfolioProduct(id: "a")), "Nothing waiting")
-        XCTAssertEqual(PortfolioText.waiting(PortfolioProduct(id: "a", waiting: 3, oldestWaitDays: 9.4)), "3 waiting · oldest 9 d")
-        XCTAssertEqual(PortfolioText.waiting(PortfolioProduct(id: "a", waiting: 1, oldestWaitDays: 0.2)), "1 waiting")
-        XCTAssertEqual(PortfolioText.spend(Activity(spend7dUSD: 210.5)), "$210.50 in 7 days")
+        XCTAssertEqual(PortfolioText.prDetail(PRCounts(open: 3, waiting: 1, merged7d: 14, unreviewed7d: 0)), "14 merged in 7 days")
+        XCTAssertEqual(PortfolioText.prDetail(PRCounts(open: 1, merged7d: 4, unreviewed7d: 2)), "4 merged in 7 days · 2 unreviewed")
+        XCTAssertEqual(PortfolioText.oldestWait(PortfolioProduct(id: "a")), "")
+        XCTAssertEqual(PortfolioText.oldestWait(PortfolioProduct(id: "a", waiting: 3, oldestWaitDays: 9.4)), "oldest 9 d")
+        XCTAssertEqual(PortfolioText.oldestWait(PortfolioProduct(id: "a", waiting: 1, oldestWaitDays: 0.2)), "")
         let now = ISODate.parse("2026-10-25T09:00:00Z")!
         XCTAssertEqual(PortfolioText.lastActivity(Activity(last: "2026-10-25T07:00:00Z"), now: now), "Active 2 h ago")
         XCTAssertEqual(PortfolioText.lastActivity(Activity(), now: now), "No sessions yet")

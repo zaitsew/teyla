@@ -1,0 +1,1568 @@
+{
+  "version": 3,
+  "generated": "2026-11-02T09:00:00Z",
+  "brief": {
+    "line": "Nine decisions are waiting and two of them block the next store upload on every platform.",
+    "source": "model"
+  },
+  "totals": {
+    "questions": 10,
+    "running": 3,
+    "spent_today_usd": 41.2,
+    "tasks": 1,
+    "done": 2,
+    "resolved": 0,
+    "duplicates": 0
+  },
+  "asks": [
+    {
+      "id": "a0000001",
+      "kind": "question",
+      "product": "sample-app",
+      "title": "Renew the developer program membership?",
+      "question": "Should the next store upload wait for the answer from review, or go out now with the sync feature switched off for everyone until the reply arrives?",
+      "context": "The review answer came back with a request for more detail on how the sync works, what is stored on the device and which data leaves it, and the current notes do not cover that. The review answer came back with a request for more detail on how the sync works, what is stored on the device and which data leaves it, and the current notes do not cover that. The review answer came back with a request for more detail on how the sync works, what is stored on the device and which data leaves it, and the current notes do not cover that.",
+      "options": [
+        "Wait for review",
+        "Send without sync",
+        "Ask for a call with review"
+      ],
+      "archived": false,
+      "link": "claude --resume 00000000-0000-4000-8000-000000000001",
+      "pr": "",
+      "harness": "claude-code",
+      "status": "open",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 17280,
+      "unblocks": "the next store upload and the two follow-up builds that are queued behind it on every platform",
+      "rank": 1,
+      "delivery": "claude",
+      "muted": false,
+      "triage": {
+        "bucket": "owner",
+        "action": "pay",
+        "default": "Wait for the answer, keep the sync feature on, and prepare a second build in case review asks for the change again",
+        "why": "Sending now gives up the feature for the people already using it, and a second round of review takes less time than rebuilding the trust.",
+        "source": "rule"
+      }
+    },
+    {
+      "id": "a0000002",
+      "kind": "question",
+      "product": "sample-web",
+      "title": "Upgrade the hosting plan to keep the custom domain?",
+      "question": "Upgrade the hosting plan to keep the custom domain?",
+      "context": "The review answer came back with a request for more detail on how the sync works, what is stored on the device and which data leaves it, and the current notes do not cover that. The review answer came back with a request for more detail on how the sync works, what is stored on the device and which data leaves it, and the current notes do not cover that. The review answer came back with a request for more detail on how the sync works, what is stored on the device and which data leaves it, and the current notes do not cover that.",
+      "options": [
+        "Wait for review",
+        "Send without sync",
+        "Ask for a call with review"
+      ],
+      "archived": false,
+      "link": "claude --resume 00000000-0000-4000-8000-000000000002",
+      "pr": "",
+      "harness": "claude-code",
+      "status": "open",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 43200,
+      "unblocks": "the next store upload and the two follow-up builds that are queued behind it on every platform",
+      "rank": 2,
+      "delivery": "claude",
+      "muted": false,
+      "triage": {
+        "bucket": "owner",
+        "action": "pay",
+        "default": "Wait for the answer, keep the sync feature on, and prepare a second build in case review asks for the change again",
+        "why": "Sending now gives up the feature for the people already using it, and a second round of review takes less time than rebuilding the trust.",
+        "source": "rule"
+      }
+    },
+    {
+      "id": "a0000003",
+      "kind": "question",
+      "product": "sample-app",
+      "title": "Should the sign-in button use the system accent colour?",
+      "question": "Should the sign-in button use the system accent colour?",
+      "context": "The review answer came back with a request for more detail on how the sync works, what is stored on the device and which data leaves it, and the current notes do not cover that. The review answer came back with a request for more detail on how the sync works, what is stored on the device and which data leaves it, and the current notes do not cover that. The review answer came back with a request for more detail on how the sync works, what is stored on the device and which data leaves it, and the current notes do not cover that.",
+      "options": [
+        "Wait for review",
+        "Send without sync",
+        "Ask for a call with review"
+      ],
+      "archived": false,
+      "link": "claude --resume 00000000-0000-4000-8000-000000000003",
+      "pr": "",
+      "harness": "claude-code",
+      "status": "open",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 86400,
+      "unblocks": "the next store upload and the two follow-up builds that are queued behind it on every platform",
+      "rank": 3,
+      "delivery": "claude",
+      "muted": false,
+      "triage": {
+        "bucket": "owner",
+        "action": "decide",
+        "default": "Wait for the answer, keep the sync feature on, and prepare a second build in case review asks for the change again",
+        "why": "Sending now gives up the feature for the people already using it, and a second round of review takes less time than rebuilding the trust.",
+        "source": "rule"
+      }
+    },
+    {
+      "id": "a0000004",
+      "kind": "question",
+      "product": "sample-tool",
+      "title": "Ship 0.10 with the old export format, or wait for the new one?",
+      "question": "Ship 0.10 with the old export format, or wait for the new one?",
+      "context": "The review answer came back with a request for more detail on how the sync works, what is stored on the device and which data leaves it, and the current notes do not cover that. The review answer came back with a request for more detail on how the sync works, what is stored on the device and which data leaves it, and the current notes do not cover that. The review answer came back with a request for more detail on how the sync works, what is stored on the device and which data leaves it, and the current notes do not cover that.",
+      "options": [
+        "Wait for review",
+        "Send without sync",
+        "Ask for a call with review"
+      ],
+      "archived": false,
+      "link": "claude --resume 00000000-0000-4000-8000-000000000004",
+      "pr": "",
+      "harness": "claude-code",
+      "status": "open",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 172800,
+      "unblocks": "the next store upload and the two follow-up builds that are queued behind it on every platform",
+      "rank": 4,
+      "delivery": "claude",
+      "muted": false,
+      "triage": {
+        "bucket": "owner",
+        "action": "decide",
+        "default": "Wait for the answer, keep the sync feature on, and prepare a second build in case review asks for the change again",
+        "why": "Sending now gives up the feature for the people already using it, and a second round of review takes less time than rebuilding the trust.",
+        "source": "rule"
+      }
+    },
+    {
+      "id": "a0000005",
+      "kind": "question",
+      "product": "sample-watch",
+      "title": "Which complication layout do you want first?",
+      "question": "Which complication layout do you want first?",
+      "context": "",
+      "options": [
+        "Compact",
+        "Wide"
+      ],
+      "archived": false,
+      "link": "claude --resume 00000000-0000-4000-8000-000000000005",
+      "pr": "",
+      "harness": "claude-code",
+      "status": "open",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 259200,
+      "unblocks": "",
+      "rank": 5,
+      "delivery": "claude",
+      "muted": false,
+      "triage": {
+        "bucket": "owner",
+        "action": "decide",
+        "default": "Compact",
+        "why": "Most watch faces have room for the compact one.",
+        "source": "rule"
+      }
+    },
+    {
+      "id": "a0000006",
+      "kind": "question",
+      "product": "sample-web",
+      "title": "Sign in to the analytics dashboard once so the probe can read it.",
+      "question": "Sign in to the analytics dashboard once so the probe can read it.",
+      "context": "Needs your password; nothing else can do it.",
+      "options": [],
+      "archived": false,
+      "link": "claude --resume 00000000-0000-4000-8000-000000000006",
+      "pr": "",
+      "harness": "claude-code",
+      "status": "open",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 345600,
+      "unblocks": "the weekly numbers",
+      "rank": 6,
+      "delivery": "claude",
+      "muted": false,
+      "triage": {
+        "bucket": "owner",
+        "action": "do",
+        "default": "",
+        "why": "Only you can sign in.",
+        "source": "rule"
+      }
+    },
+    {
+      "id": "a0000007",
+      "kind": "question",
+      "product": "sample-tool",
+      "title": "Merge the dependency update?",
+      "question": "Merge the dependency update?",
+      "context": "",
+      "options": [
+        "Merge",
+        "Skip"
+      ],
+      "archived": false,
+      "link": "claude --resume 00000000-0000-4000-8000-000000000007",
+      "pr": "",
+      "harness": "claude-code",
+      "status": "open",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 777600,
+      "unblocks": "",
+      "rank": 7,
+      "delivery": "claude",
+      "muted": false,
+      "triage": {
+        "bucket": "owner",
+        "action": "decide",
+        "default": "Merge",
+        "why": "Tests pass and the diff is small.",
+        "source": "rule"
+      }
+    },
+    {
+      "id": "a0000008",
+      "kind": "question",
+      "product": "sample-app",
+      "title": "Which icon variant should the beta use?",
+      "question": "Which icon variant should the beta use?",
+      "context": "",
+      "options": [
+        "A",
+        "B"
+      ],
+      "archived": false,
+      "link": "claude --resume 00000000-0000-4000-8000-000000000008",
+      "pr": "",
+      "harness": "claude-code",
+      "status": "open",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 129600,
+      "unblocks": "",
+      "rank": 8,
+      "delivery": "claude",
+      "muted": false,
+      "triage": {
+        "bucket": "agent",
+        "action": "decide",
+        "default": "A",
+        "why": "Both are fine; A has more contrast.",
+        "source": "rule"
+      }
+    },
+    {
+      "id": "a0000009",
+      "kind": "question",
+      "product": "sample-tool",
+      "title": "Rename the settings pane?",
+      "question": "Rename the settings pane?",
+      "context": "",
+      "options": [],
+      "archived": false,
+      "link": "claude --resume 00000000-0000-4000-8000-000000000009",
+      "pr": "",
+      "harness": "claude-code",
+      "status": "open",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 216000,
+      "unblocks": "",
+      "rank": 9,
+      "delivery": "claude",
+      "muted": false,
+      "triage": {
+        "bucket": "agent",
+        "action": "decide",
+        "default": "Keep the name",
+        "why": "A rename churns the docs for no gain.",
+        "source": "rule"
+      }
+    },
+    {
+      "id": "a0000010",
+      "kind": "question",
+      "product": "sample-watch",
+      "title": "Is the watch app still planned?",
+      "question": "Is the watch app still planned?",
+      "context": "",
+      "options": [],
+      "archived": false,
+      "link": "claude --resume 00000000-0000-4000-8000-000000000010",
+      "pr": "",
+      "harness": "claude-code",
+      "status": "open",
+      "ts": "2026-11-01T09:00:00Z",
+      "age_s": 1728000,
+      "unblocks": "",
+      "rank": 10,
+      "delivery": "claude",
+      "muted": false,
+      "triage": {
+        "bucket": "close",
+        "action": "decide",
+        "default": "",
+        "why": "Answered by the roadmap.",
+        "source": "rule"
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "id": "t1",
+      "kind": "merge",
+      "product": "sample-tool",
+      "title": "Merge the export format change",
+      "detail": "Review done, waits for you.",
+      "link": "https://example.com/sample-tool/pull/12",
+      "age_s": 86400
+    }
+  ],
+  "done": [
+    {
+      "id": "d1",
+      "product": "sample-app",
+      "title": "Add the privacy screen",
+      "status": "done",
+      "result": [
+        "Added the screen",
+        "Tests pass"
+      ],
+      "needs": "",
+      "links": [],
+      "ended": "2026-11-02T06:00:00Z",
+      "harness": "claude-code",
+      "link": ""
+    },
+    {
+      "id": "d2",
+      "product": "sample-web",
+      "title": "Fix the broken footer links",
+      "status": "done",
+      "result": [
+        "Fixed 3 links"
+      ],
+      "needs": "",
+      "links": [],
+      "ended": "2026-11-02T05:00:00Z",
+      "harness": "claude-code",
+      "link": ""
+    }
+  ],
+  "products": [
+    {
+      "name": "sample-app",
+      "waiting": 3,
+      "muted": 0,
+      "state": "waiting",
+      "line": "",
+      "last_activity": "2026-11-02T08:50:00Z",
+      "id": "sample-app",
+      "display_name": "Sample App",
+      "stage": "beta",
+      "focus": true,
+      "primary": "ios",
+      "registered": true,
+      "issues": 0,
+      "prs_waiting": 0,
+      "next": "",
+      "repo": "~/repos/sample-app"
+    },
+    {
+      "name": "sample-tool",
+      "waiting": 2,
+      "muted": 0,
+      "state": "waiting",
+      "line": "",
+      "last_activity": "2026-11-02T08:50:00Z",
+      "id": "sample-tool",
+      "display_name": "Sample Tool",
+      "stage": "live",
+      "focus": true,
+      "primary": "macos",
+      "registered": true,
+      "issues": 0,
+      "prs_waiting": 0,
+      "next": "",
+      "repo": "~/repos/sample-tool"
+    },
+    {
+      "name": "sample-web",
+      "waiting": 2,
+      "muted": 0,
+      "state": "waiting",
+      "line": "",
+      "last_activity": "2026-11-02T08:50:00Z",
+      "id": "sample-web",
+      "display_name": "Sample Web",
+      "stage": "building",
+      "focus": true,
+      "primary": "web",
+      "registered": true,
+      "issues": 0,
+      "prs_waiting": 0,
+      "next": "",
+      "repo": "~/repos/sample-web"
+    },
+    {
+      "name": "sample-watch",
+      "waiting": 0,
+      "muted": 0,
+      "state": "active",
+      "line": "",
+      "last_activity": "2026-11-02T08:50:00Z",
+      "id": "sample-watch",
+      "display_name": "Sample Watch",
+      "stage": "building",
+      "focus": true,
+      "primary": "ios",
+      "registered": true,
+      "issues": 0,
+      "prs_waiting": 0,
+      "next": "",
+      "repo": "~/repos/sample-watch"
+    },
+    {
+      "name": "sample-lab",
+      "waiting": 0,
+      "muted": 0,
+      "state": "active",
+      "line": "",
+      "last_activity": "2026-11-02T08:50:00Z",
+      "id": "sample-lab",
+      "display_name": "Sample Lab",
+      "stage": "building",
+      "focus": false,
+      "primary": "web",
+      "registered": true,
+      "issues": 0,
+      "prs_waiting": 0,
+      "next": "",
+      "repo": "~/repos/sample-lab"
+    }
+  ],
+  "running": [
+    {
+      "product": "sample-app",
+      "title": "Wire the settings screen",
+      "harness": "claude-code",
+      "model": "claude-sonnet-5-5",
+      "since": "2026-11-02T08:40:00Z",
+      "link": "claude --resume 00000000-0000-4000-8000-000000009001",
+      "id": "r1",
+      "correct": "open"
+    },
+    {
+      "product": "sample-tool",
+      "title": "Port the export tests",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "since": "2026-11-02T08:50:00Z",
+      "link": "",
+      "id": "r2",
+      "correct": "codex-queue"
+    },
+    {
+      "product": "sample-web",
+      "title": "Draft the launch page copy",
+      "harness": "claude-code",
+      "model": "claude-haiku-5-5",
+      "since": "2026-11-02T08:55:00Z",
+      "link": "claude --resume 00000000-0000-4000-8000-000000009003",
+      "id": "r3",
+      "correct": "open"
+    }
+  ],
+  "relay": {
+    "on": false,
+    "paired": false,
+    "folder": "",
+    "synced": ""
+  },
+  "notes": {
+    "inbox": 1,
+    "by_product": {
+      "sample-app": 1
+    }
+  },
+  "portfolio": {
+    "version": 1,
+    "checked": {
+      "stores": "2026-10-25T06:00:00Z",
+      "github": "2026-10-25T08:50:00Z"
+    },
+    "counts": {
+      "on_track": 3,
+      "at_risk": 1,
+      "off_track": 0,
+      "parked": 1
+    },
+    "products": [
+      {
+        "id": "sample-app",
+        "title": "Sample App With A Very Long Product Name",
+        "stage": "beta",
+        "focus": true,
+        "primary": "ios",
+        "users": "testers",
+        "target": "family",
+        "health": "at_risk",
+        "reasons": [
+          "The review answer came back with a request for more detail on how the sync works, what is stored on the device and which data leaves it, and the curre"
+        ],
+        "platforms": [
+          {
+            "platform": "ios",
+            "role": "primary",
+            "channel": "testflight",
+            "version": "1.4.0",
+            "build": "52",
+            "state": "current",
+            "detail": "Installable from your tester account",
+            "as_of": "2026-11-02T06:00:00Z",
+            "link": ""
+          },
+          {
+            "platform": "android",
+            "role": "secondary",
+            "channel": "play",
+            "version": "1.3.0",
+            "build": "14",
+            "state": "behind",
+            "detail": "",
+            "as_of": "2026-11-02T06:00:00Z",
+            "link": ""
+          },
+          {
+            "platform": "web",
+            "role": "secondary",
+            "channel": "web",
+            "version": "",
+            "build": "",
+            "state": "live",
+            "detail": "sample.example.com",
+            "as_of": "2026-11-02T06:00:00Z",
+            "link": ""
+          }
+        ],
+        "prs": {
+          "open": 1,
+          "waiting": 0,
+          "merged_7d": 14,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 10,
+          "spend_7d_usd": 860.5
+        },
+        "waiting": 3,
+        "oldest_wait_days": 2.0,
+        "tasks": 0,
+        "milestone": "family: 2 of 9 requirements left",
+        "next": "\u0421\u0434\u0435\u043b\u0430\u0442\u044c \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u0443\u044e \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u0443 \u0441\u0431\u043e\u0440\u043a\u0438 \u043f\u043e\u0441\u043b\u0435 \u043e\u0442\u0432\u0435\u0442\u0430 \u0440\u0435\u0432\u044c\u044e\u0435\u0440\u0430 \u0438 \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0432\u0441\u0435 \u0441\u043a\u0440\u0438\u043d\u0448\u043e\u0442\u044b \u043d\u0430 \u043a\u0430\u0436\u0434\u043e\u043c \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0435 \u043f\u0435\u0440\u0435\u0434 \u0432\u044b\u043f\u0443\u0441\u043a\u043e\u043c",
+        "repo": "~/code/sample-app",
+        "progress": {
+          "can_install": [
+            {
+              "platform": "ios",
+              "role": "primary",
+              "channel": "testflight",
+              "version": "1.4.0",
+              "build": "52",
+              "state": "current",
+              "detail": "Installable from your tester account",
+              "as_of": "2026-11-02T06:00:00Z",
+              "link": ""
+            },
+            {
+              "platform": "android",
+              "role": "secondary",
+              "channel": "play",
+              "version": "1.3.0",
+              "build": "14",
+              "state": "behind",
+              "detail": "",
+              "as_of": "2026-11-02T06:00:00Z",
+              "link": ""
+            },
+            {
+              "platform": "web",
+              "role": "secondary",
+              "channel": "web",
+              "version": "",
+              "build": "",
+              "state": "live",
+              "detail": "sample.example.com",
+              "as_of": "2026-11-02T06:00:00Z",
+              "link": ""
+            }
+          ],
+          "shipped_7d": {
+            "prs": 14,
+            "top": [
+              "Add the privacy screen",
+              "Fix the sign-in crash"
+            ]
+          },
+          "users": {
+            "weekly": 4,
+            "total": 12,
+            "label": "4 active this week, 12 total"
+          },
+          "milestone": "family: 2 of 9 requirements left",
+          "blocker": "Developer membership lapses in 9 days",
+          "quiet_days": 0,
+          "line": "Beta works end to end; 2 requirements left."
+        },
+        "summary": "A sample app that plans a trip with a few friends.",
+        "icon_jpeg": "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAMKADAAQAAAABAAAAMAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAMAAwAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMABAQEBAQEBgQEBgkGBgYJDAkJCQkMDwwMDAwMDxIPDw8PDw8SEhISEhISEhUVFRUVFRkZGRkZHBwcHBwcHBwcHP/bAEMBBAUFBwcHDAcHDB0UEBQdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHf/dAAQAA//aAAwDAQACEQMRAD8A8gApwFAFPAr9nSPKhAAKcBXV+G/A3ivxdvbw9pst3HHkNJ8scQI25XzJCqbvmB253YOcYq54g+HPjXwtai91zSpYLc9ZUKSovIHztEzhMlgBuIyemeay+sUVP2bmubtdX+47IQOKp4FAFOArsSOuED//0PJQK63wP4b/AOEu8V6b4eZ/Lju5f3jA4IijUySbTtb5tinbkEbsZ4rlAK7f4c+ILXwt410rXL4Zt4JSkp5+VJUaJn+VWJ2By2AMnGO+a/YsRzqjN0/is7ettDmhA/Q/StK07Q9Og0nSYFtrS2XZHGnQDqevJJOSSSSSSSSSTVueCC6gktbqNZoZlKSRuAysrDBVgeCCOCD1ognguoI7q1kWaGZQ8ciEMrKwyGUjggjkEdalr8fblzXe50n58/Fbwda+CvF8unafxY3MS3VuhYuyI5KlGJA6OrbeSduMknNecAV6z8Z/E+n+KfGsk+lOs1tYwJaLMjbllKMzsy8DgM5UEEg7dwJBFeUgV+xYD2jw1N1fisrnbTjof//R8pp4FAFOAr9uSKhA9J8HfFbxf4Ktf7P02WK5sRuKW90pdEZyCWQqVcdD8u7bkk4yc1peJ/jP418U6e+lTyQWNtMrJMtojIZVbHyszs7AcYIUrkEhsg4ryYCngVy/UMM6ntXTXN3sdcaaACnAUAU6vQSOyED/2Q==",
+        "metrics": {
+          "users": {
+            "total": 12,
+            "active": {
+              "7d": 4,
+              "30d": 6,
+              "365d": 9
+            },
+            "new": {
+              "7d": 1,
+              "30d": 3,
+              "365d": 9
+            }
+          },
+          "commits": {
+            "7d": 21,
+            "30d": 80,
+            "365d": 640,
+            "weeks": [
+              30,
+              12,
+              8,
+              9,
+              15,
+              20,
+              25,
+              18,
+              22,
+              16,
+              11,
+              21
+            ]
+          },
+          "spend_usd": {
+            "7d": 860.5,
+            "30d": 2900.0,
+            "365d": 9800.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "sample-tool",
+        "title": "Sample Tool With A Very Long Product Name",
+        "stage": "live",
+        "focus": true,
+        "primary": "macos",
+        "users": "testers",
+        "target": "family",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [
+          {
+            "platform": "macos",
+            "role": "primary",
+            "channel": "local",
+            "version": "0.9.0",
+            "build": "",
+            "state": "current",
+            "detail": "",
+            "as_of": "2026-11-02T06:00:00Z",
+            "link": ""
+          },
+          {
+            "platform": "macos",
+            "role": "primary",
+            "channel": "app-store",
+            "version": "1.1",
+            "build": "7",
+            "state": "in_review",
+            "detail": "",
+            "as_of": "2026-11-02T06:00:00Z",
+            "link": ""
+          }
+        ],
+        "prs": {
+          "open": 1,
+          "waiting": 0,
+          "merged_7d": 4,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 10,
+          "spend_7d_usd": 18.0
+        },
+        "waiting": 2,
+        "oldest_wait_days": 2.0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "\u0421\u0434\u0435\u043b\u0430\u0442\u044c \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u0443\u044e \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u0443 \u0441\u0431\u043e\u0440\u043a\u0438 \u043f\u043e\u0441\u043b\u0435 \u043e\u0442\u0432\u0435\u0442\u0430 \u0440\u0435\u0432\u044c\u044e\u0435\u0440\u0430 \u0438 \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0432\u0441\u0435 \u0441\u043a\u0440\u0438\u043d\u0448\u043e\u0442\u044b \u043d\u0430 \u043a\u0430\u0436\u0434\u043e\u043c \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0435 \u043f\u0435\u0440\u0435\u0434 \u0432\u044b\u043f\u0443\u0441\u043a\u043e\u043c",
+        "repo": "~/code/sample-tool",
+        "progress": {
+          "can_install": [
+            {
+              "platform": "macos",
+              "role": "primary",
+              "channel": "local",
+              "version": "0.9.0",
+              "build": "",
+              "state": "current",
+              "detail": "",
+              "as_of": "2026-11-02T06:00:00Z",
+              "link": ""
+            },
+            {
+              "platform": "macos",
+              "role": "primary",
+              "channel": "app-store",
+              "version": "1.1",
+              "build": "7",
+              "state": "in_review",
+              "detail": "",
+              "as_of": "2026-11-02T06:00:00Z",
+              "link": ""
+            }
+          ],
+          "shipped_7d": {
+            "prs": 4,
+            "top": [
+              "Speed up the export"
+            ]
+          },
+          "users": null,
+          "milestone": "",
+          "blocker": "",
+          "quiet_days": 2,
+          "line": "Live on this Mac; 1.1 waits for review."
+        },
+        "summary": "A sample command-line tool that exports a trip as a calendar file.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": 3,
+            "active": {
+              "7d": 2,
+              "30d": 2,
+              "365d": 3
+            },
+            "new": {
+              "7d": 0,
+              "30d": 1,
+              "365d": 3
+            }
+          },
+          "commits": {
+            "7d": 9,
+            "30d": 30,
+            "365d": 210,
+            "weeks": [
+              2,
+              4,
+              5,
+              3,
+              6,
+              8,
+              4,
+              7,
+              10,
+              6,
+              5,
+              9
+            ]
+          },
+          "spend_usd": {
+            "7d": 18.0,
+            "30d": 70.0,
+            "365d": 410.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "sample-web",
+        "title": "Sample Web With A Very Long Product Name",
+        "stage": "building",
+        "focus": true,
+        "primary": "web",
+        "users": "testers",
+        "target": "family",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [
+          {
+            "platform": "web",
+            "role": "secondary",
+            "channel": "web",
+            "version": "",
+            "build": "",
+            "state": "live",
+            "detail": "sample.example.com",
+            "as_of": "2026-11-02T06:00:00Z",
+            "link": ""
+          }
+        ],
+        "prs": {
+          "open": 1,
+          "waiting": 0,
+          "merged_7d": 6,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 10,
+          "spend_7d_usd": 240.0
+        },
+        "waiting": 2,
+        "oldest_wait_days": 2.0,
+        "tasks": 0,
+        "milestone": "launch page: 3 of 5 sections written",
+        "next": "\u0421\u0434\u0435\u043b\u0430\u0442\u044c \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u0443\u044e \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u0443 \u0441\u0431\u043e\u0440\u043a\u0438 \u043f\u043e\u0441\u043b\u0435 \u043e\u0442\u0432\u0435\u0442\u0430 \u0440\u0435\u0432\u044c\u044e\u0435\u0440\u0430 \u0438 \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0432\u0441\u0435 \u0441\u043a\u0440\u0438\u043d\u0448\u043e\u0442\u044b \u043d\u0430 \u043a\u0430\u0436\u0434\u043e\u043c \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0435 \u043f\u0435\u0440\u0435\u0434 \u0432\u044b\u043f\u0443\u0441\u043a\u043e\u043c",
+        "repo": "~/code/sample-web",
+        "progress": {
+          "can_install": [
+            {
+              "platform": "web",
+              "role": "secondary",
+              "channel": "web",
+              "version": "",
+              "build": "",
+              "state": "live",
+              "detail": "sample.example.com",
+              "as_of": "2026-11-02T06:00:00Z",
+              "link": ""
+            }
+          ],
+          "shipped_7d": {
+            "prs": 6,
+            "top": [
+              "Add the pricing section"
+            ]
+          },
+          "users": {
+            "weekly": 0,
+            "total": 0,
+            "label": ""
+          },
+          "milestone": "launch page: 3 of 5 sections written",
+          "blocker": "",
+          "quiet_days": 0,
+          "line": "Launch page is 3 of 5 sections in."
+        },
+        "summary": "A launch page for the sample app, in two languages.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 14,
+            "30d": 40,
+            "365d": 40,
+            "weeks": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              3,
+              8,
+              15,
+              14
+            ]
+          },
+          "spend_usd": {
+            "7d": 240.0,
+            "30d": 700.0,
+            "365d": 700.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "sample-watch",
+        "title": "Sample Watch With A Very Long Product Name",
+        "stage": "building",
+        "focus": true,
+        "primary": "ios",
+        "users": "testers",
+        "target": "family",
+        "health": "parked",
+        "reasons": [],
+        "platforms": [
+          {
+            "platform": "ios",
+            "role": "primary",
+            "channel": "testflight",
+            "version": "0.2.0",
+            "build": "3",
+            "state": "blocked",
+            "detail": "Missing entitlement",
+            "as_of": "2026-11-02T06:00:00Z",
+            "link": ""
+          }
+        ],
+        "prs": {
+          "open": 1,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 10,
+          "spend_7d_usd": 0.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 2.0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "\u0421\u0434\u0435\u043b\u0430\u0442\u044c \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u0443\u044e \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u0443 \u0441\u0431\u043e\u0440\u043a\u0438 \u043f\u043e\u0441\u043b\u0435 \u043e\u0442\u0432\u0435\u0442\u0430 \u0440\u0435\u0432\u044c\u044e\u0435\u0440\u0430 \u0438 \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0432\u0441\u0435 \u0441\u043a\u0440\u0438\u043d\u0448\u043e\u0442\u044b \u043d\u0430 \u043a\u0430\u0436\u0434\u043e\u043c \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0435 \u043f\u0435\u0440\u0435\u0434 \u0432\u044b\u043f\u0443\u0441\u043a\u043e\u043c",
+        "repo": "~/code/sample-watch",
+        "progress": {
+          "can_install": [
+            {
+              "platform": "ios",
+              "role": "primary",
+              "channel": "testflight",
+              "version": "0.2.0",
+              "build": "3",
+              "state": "blocked",
+              "detail": "Missing entitlement",
+              "as_of": "2026-11-02T06:00:00Z",
+              "link": ""
+            }
+          ],
+          "shipped_7d": {
+            "prs": 0,
+            "top": []
+          },
+          "users": null,
+          "milestone": "",
+          "blocker": "",
+          "quiet_days": 21,
+          "line": "Prototype parked after the entitlement was refused."
+        },
+        "summary": "A watch face that shows the day's plan.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 3,
+            "30d": 12,
+            "365d": 60,
+            "weeks": [
+              0,
+              0,
+              1,
+              4,
+              3,
+              0,
+              0,
+              2,
+              1,
+              1,
+              2,
+              3
+            ]
+          },
+          "spend_usd": {
+            "7d": 0.0,
+            "30d": 8.0,
+            "365d": 60.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "sample-lab",
+        "title": "Sample Lab With A Very Long Product Name",
+        "stage": "building",
+        "focus": false,
+        "primary": "web",
+        "users": "testers",
+        "target": "family",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 1,
+          "waiting": 0,
+          "merged_7d": 1,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 10,
+          "spend_7d_usd": 12.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 2.0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "\u0421\u0434\u0435\u043b\u0430\u0442\u044c \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u0443\u044e \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u0443 \u0441\u0431\u043e\u0440\u043a\u0438 \u043f\u043e\u0441\u043b\u0435 \u043e\u0442\u0432\u0435\u0442\u0430 \u0440\u0435\u0432\u044c\u044e\u0435\u0440\u0430 \u0438 \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0432\u0441\u0435 \u0441\u043a\u0440\u0438\u043d\u0448\u043e\u0442\u044b \u043d\u0430 \u043a\u0430\u0436\u0434\u043e\u043c \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0435 \u043f\u0435\u0440\u0435\u0434 \u0432\u044b\u043f\u0443\u0441\u043a\u043e\u043c",
+        "repo": "~/code/sample-lab",
+        "progress": {
+          "can_install": [],
+          "shipped_7d": {
+            "prs": 1,
+            "top": [
+              "Add a test page"
+            ]
+          },
+          "users": null,
+          "milestone": "",
+          "blocker": "",
+          "quiet_days": 1,
+          "line": "Early experiments."
+        },
+        "summary": "An experiment with an offline map.",
+        "icon_jpeg": "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAMKADAAQAAAABAAAAMAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAMAAwAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMABAQEBAQEBgQEBgkGBgYJDAkJCQkMDwwMDAwMDxIPDw8PDw8SEhISEhISEhUVFRUVFRkZGRkZHBwcHBwcHBwcHP/bAEMBBAUFBwcHDAcHDB0UEBQdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHf/dAAQAA//aAAwDAQACEQMRAD8A8qRKtIlCJVlEq4QPyJsESrSJXTeHfBfifxTvOhafJcpHndJ8qRgjGV8xyqbvmB25zjnGK09a8AeLvDVuLzWdMkhgPWRSsqLyB87RlgmSwA3Yyema64JXsX7Cq4e0UHy97O33nIIlWkShEq0iV3wgcjZ//9Dz1ErsPBfh3/hKfE+n6EX8tLmT942cERopeTacN82xTtyMZxniuZRK7nwBrVv4a8XaZrN4MwQyFZDz8qSo0bPwGJ2Bt2AMnGO9dyg7aH5LQ5HVgqnw3V/S+p936Zplho1hBpelwLb2tuuyONOgHXvySTySeSSSSSaszQw3MMlvcRrLFKpR0cBlZWGCCDwQRwQaIZobmGO4t5FlilUOjoQysrDIII4II5BFS1wn6wkrWWx8SfEbwpbeE/E8tjY8Wk8a3EClizIjEqVJIHRlbHJO3GSTmuLRK9K+KevWXiLxY82nMstvZwrbLKhyshUszMOBwGcqMZBxkHBrz9Er6WhFuC5j8kx3s1iKipfDd2P/0eRRKtIlCJVpEr3YQPxps73wp8RvE/hO2+w2Esc9oNxWC4UsiMxBJUqVYdDxu25JOMnNa2vfFPxZ4ism06Z4bO3lUpKtspUyKccMzM7AcYwpGQSDkV5qiVaRK6I0IN81tTo+vYhU/ZKo+X1BEq0iUIlWkSvRhA85s//Z",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 7,
+            "30d": 25,
+            "365d": 120,
+            "weeks": [
+              1,
+              0,
+              2,
+              5,
+              9,
+              6,
+              3,
+              4,
+              5,
+              6,
+              7,
+              7
+            ]
+          },
+          "spend_usd": {
+            "7d": 12.0,
+            "30d": 40.0,
+            "365d": 190.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "sample-notes",
+        "title": "Sample Notes With A Very Long Product Name",
+        "stage": "live",
+        "focus": false,
+        "primary": "ios",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 0.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "\u0421\u0434\u0435\u043b\u0430\u0442\u044c \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u0443\u044e \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u0443 \u0441\u0431\u043e\u0440\u043a\u0438 \u043f\u043e\u0441\u043b\u0435 \u043e\u0442\u0432\u0435\u0442\u0430 \u0440\u0435\u0432\u044c\u044e\u0435\u0440\u0430 \u0438 \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0432\u0441\u0435 \u0441\u043a\u0440\u0438\u043d\u0448\u043e\u0442\u044b \u043d\u0430 \u043a\u0430\u0436\u0434\u043e\u043c \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0435 \u043f\u0435\u0440\u0435\u0434 \u0432\u044b\u043f\u0443\u0441\u043a\u043e\u043c",
+        "repo": "~/code/sample-notes",
+        "facts": [],
+        "summary": "Short notes that sync between two phones.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": 30,
+            "active": {
+              "7d": null,
+              "30d": 11,
+              "365d": 24
+            },
+            "new": {
+              "7d": 2,
+              "30d": 8,
+              "365d": 30
+            }
+          },
+          "commits": {
+            "7d": 0,
+            "30d": 4,
+            "365d": 90,
+            "weeks": [
+              0,
+              0,
+              1,
+              2,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "spend_usd": {
+            "7d": 0.0,
+            "30d": 3.0,
+            "365d": 40.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "sample-kit",
+        "title": "Sample Kit With A Very Long Product Name",
+        "stage": "building",
+        "focus": false,
+        "primary": "web",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 0.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "\u0421\u0434\u0435\u043b\u0430\u0442\u044c \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u0443\u044e \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u0443 \u0441\u0431\u043e\u0440\u043a\u0438 \u043f\u043e\u0441\u043b\u0435 \u043e\u0442\u0432\u0435\u0442\u0430 \u0440\u0435\u0432\u044c\u044e\u0435\u0440\u0430 \u0438 \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0432\u0441\u0435 \u0441\u043a\u0440\u0438\u043d\u0448\u043e\u0442\u044b \u043d\u0430 \u043a\u0430\u0436\u0434\u043e\u043c \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0435 \u043f\u0435\u0440\u0435\u0434 \u0432\u044b\u043f\u0443\u0441\u043a\u043e\u043c",
+        "repo": "~/code/sample-kit",
+        "facts": [],
+        "summary": "A starter kit for the next sample.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 5,
+            "30d": 5,
+            "365d": 5,
+            "weeks": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              5
+            ]
+          },
+          "spend_usd": {
+            "7d": 3.0,
+            "30d": 3.0,
+            "365d": 3.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "sample-play",
+        "title": "Sample Play With A Very Long Product Name",
+        "stage": "building",
+        "focus": false,
+        "primary": "android",
+        "users": "owner",
+        "target": "owner",
+        "health": "on_track",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 0.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "\u0421\u0434\u0435\u043b\u0430\u0442\u044c \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u0443\u044e \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u0443 \u0441\u0431\u043e\u0440\u043a\u0438 \u043f\u043e\u0441\u043b\u0435 \u043e\u0442\u0432\u0435\u0442\u0430 \u0440\u0435\u0432\u044c\u044e\u0435\u0440\u0430 \u0438 \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0432\u0441\u0435 \u0441\u043a\u0440\u0438\u043d\u0448\u043e\u0442\u044b \u043d\u0430 \u043a\u0430\u0436\u0434\u043e\u043c \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0435 \u043f\u0435\u0440\u0435\u0434 \u0432\u044b\u043f\u0443\u0441\u043a\u043e\u043c",
+        "repo": "~/code/sample-play",
+        "facts": [],
+        "summary": "A small game, not started yet.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": null,
+            "30d": null,
+            "365d": null,
+            "weeks": []
+          },
+          "spend_usd": {
+            "7d": null,
+            "30d": null,
+            "365d": null
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      },
+      {
+        "id": "sample-old",
+        "title": "Sample Old With A Very Long Product Name",
+        "stage": "parked",
+        "focus": false,
+        "primary": "ios",
+        "users": "owner",
+        "target": "owner",
+        "health": "parked",
+        "reasons": [],
+        "platforms": [],
+        "prs": {
+          "open": 0,
+          "waiting": 0,
+          "merged_7d": 0,
+          "unreviewed_7d": 0
+        },
+        "activity": {
+          "last": "2026-11-02T08:50:00Z",
+          "sessions_7d": 1,
+          "spend_7d_usd": 0.0
+        },
+        "waiting": 0,
+        "oldest_wait_days": 0,
+        "tasks": 0,
+        "milestone": "",
+        "next": "\u0421\u0434\u0435\u043b\u0430\u0442\u044c \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u0443\u044e \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u0443 \u0441\u0431\u043e\u0440\u043a\u0438 \u043f\u043e\u0441\u043b\u0435 \u043e\u0442\u0432\u0435\u0442\u0430 \u0440\u0435\u0432\u044c\u044e\u0435\u0440\u0430 \u0438 \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0432\u0441\u0435 \u0441\u043a\u0440\u0438\u043d\u0448\u043e\u0442\u044b \u043d\u0430 \u043a\u0430\u0436\u0434\u043e\u043c \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0435 \u043f\u0435\u0440\u0435\u0434 \u0432\u044b\u043f\u0443\u0441\u043a\u043e\u043c",
+        "repo": "~/code/sample-old",
+        "facts": [],
+        "summary": "An old idea, parked.",
+        "icon_jpeg": "",
+        "metrics": {
+          "users": {
+            "total": null,
+            "active": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            },
+            "new": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          },
+          "commits": {
+            "7d": 0,
+            "30d": 0,
+            "365d": 14,
+            "weeks": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "spend_usd": {
+            "7d": 0.0,
+            "30d": 0.0,
+            "365d": 12.0
+          },
+          "money": {
+            "enabled": false,
+            "mrr_usd": null,
+            "paying": null,
+            "revenue_usd": {
+              "7d": null,
+              "30d": null,
+              "365d": null
+            }
+          }
+        }
+      }
+    ],
+    "core": [
+      "sample-app",
+      "sample-tool",
+      "sample-web",
+      "sample-watch"
+    ],
+    "core_source": "star",
+    "home": {
+      "sections": [
+        {
+          "id": "users",
+          "ids": [
+            "sample-app",
+            "sample-tool",
+            "sample-notes"
+          ]
+        },
+        {
+          "id": "building",
+          "ids": [
+            "sample-web",
+            "sample-lab",
+            "sample-kit"
+          ]
+        },
+        {
+          "id": "quiet",
+          "ids": [
+            "sample-watch",
+            "sample-old",
+            "sample-play"
+          ]
+        }
+      ]
+    }
+  },
+  "auto_closed": {
+    "count": 3,
+    "items": [
+      {
+        "id": "c0000001",
+        "title": "Is the beta build installable?",
+        "product": "sample-app",
+        "reason": "The build page shows it is."
+      },
+      {
+        "id": "c0000002",
+        "title": "Should the CLI print colours?",
+        "product": "sample-tool",
+        "reason": "Answered in the README."
+      },
+      {
+        "id": "c0000003",
+        "title": "Old duplicate of the hosting question",
+        "product": "sample-web",
+        "reason": "Duplicate of an open question."
+      }
+    ]
+  },
+  "console": {
+    "version": 1,
+    "generated": "2026-11-02T09:00:00Z",
+    "operations": {
+      "headline": {
+        "label": "Unresolved failures",
+        "value": 2,
+        "detail": "Nightly backup did not run (+1 more)"
+      },
+      "machine": {
+        "verdict": "BUSY",
+        "disk_free_gb": 38.4
+      },
+      "leave_ok": false,
+      "failures": [
+        {
+          "title": "Nightly backup did not run",
+          "severity": "act"
+        }
+      ]
+    },
+    "money": {
+      "headline": {
+        "label": "Cash per month",
+        "value": 412.0,
+        "detail": "6 of 7 subscriptions priced; no price for Sample Hosting"
+      },
+      "monthly_usd": 412.0,
+      "unpriced": 1,
+      "list_usd_7d": 1130.4,
+      "next_renewal": {
+        "name": "Sample Hosting",
+        "renews": "2026-11-15",
+        "days": 13
+      }
+    },
+    "playbook": {
+      "error": "playbook file could not be read"
+    },
+    "growth": {
+      "headline": {
+        "label": "Posts today",
+        "value": "4/18",
+        "detail": "target 18 a day over 6 channels"
+      },
+      "target": {
+        "posts_per_day_per_channel": 3
+      },
+      "today": []
+    }
+  }
+}

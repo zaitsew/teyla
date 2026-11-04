@@ -59,11 +59,15 @@ struct PortfolioView: View {
             Label("Nothing needs attention.", systemImage: "checkmark.circle")
                 .foregroundStyle(Palette.textSecondary)
         }
-        ForEach(shown) { product in
-            NavigationLink(value: ProductRoute(id: product.id)) {
-                PortfolioRow(product: product)
+        if !shown.isEmpty {
+            RowGroup {
+                ForEach(shown) { product in
+                    NavigationLink(value: ProductRoute(id: product.id)) {
+                        PortfolioRow(product: product)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .buttonStyle(.plain)
         }
     }
 }
@@ -77,35 +81,19 @@ private struct Header: View {
     let portfolio: Portfolio
     @Binding var filter: PortfolioFilter
 
-    @ViewBuilder private var chips: some View {
-        ForEach(PortfolioFilter.allCases) { option in
-            Button {
-                filter = option
-            } label: {
-                Label(option.title, systemImage: filter == option ? "checkmark" : "line.3.horizontal.decrease")
-                    .lineLimit(1)
-            }
-            .buttonStyle(.bordered)
-            .tint(filter == option ? Palette.primary : Palette.textSecondary)
-            .accessibilityAddTraits(filter == option ? .isSelected : [])
-        }
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.xs) {
+        VStack(alignment: .leading, spacing: Space.s) {
             Text(PortfolioFormat.headline(for: portfolio))
-                .font(Typo.section)
-                .fixedSize(horizontal: false, vertical: true)
+                .font(Typo.body)
+                .foregroundStyle(Palette.textSecondary)
+                .lineLimit(2)
             Text(PortfolioFormat.checkedLine(portfolio, now: Date()))
                 .font(Typo.caption)
                 .foregroundStyle(Palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(2)
             SyncLine()
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: Space.s) { chips }
-                VStack(alignment: .leading, spacing: Space.s) { chips }
-            }
-            .padding(.top, Space.xs)
+            SegmentSwitch(options: PortfolioFilter.allCases.map { ($0, $0.title) }, selection: $filter,
+                          spokenLabel: "Show", fills: true)
         }
         .padding(.bottom, Space.xs)
     }
@@ -164,48 +152,78 @@ private struct PlatformChip: View {
 private struct PortfolioRow: View {
     let product: PortfolioProduct
 
+    private var name: String { PortfolioFormat.title(product) }
+    private var line: String {
+        if let line = ProductLine.text(product) { return line }
+        let summary = HomeFactsBuilder.summary(product)
+        return summary.isEmpty ? HomeFactsBuilder.noSummary : summary
+    }
+    /// "Beta · testers · 3 questions wait": the stage shares a line with the reason, so the name keeps the top line.
+    private var subtitle: String {
+        [PortfolioFormat.stageLine(product), line].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s) {
-            HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-                FlowLayout(spacing: Space.s) {
-                    HealthPill(health: product.health)
-                    let stage = PortfolioFormat.stageLine(product)
-                    if !stage.isEmpty {
-                        Text(stage).font(Typo.caption).foregroundStyle(Palette.textSecondary)
-                    }
+            HStack(spacing: Space.m) {
+                ProductIcon(product: product, monogram: Monogram.letter(for: name), size: Space.iconRow, radius: Radius.iconRow)
+                VStack(alignment: .leading, spacing: Space.xxs) {
+                    Text(name).font(Typo.cardTitle).lineLimit(1)
+                    Text(subtitle)
+                        .font(Typo.caption)
+                        .foregroundStyle(Palette.textSecondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                 }
                 Spacer(minLength: 0)
+                // "On track" on every row is noise: the pill appears when there is something to say.
+                if product.health != .onTrack { HealthPill(health: product.health) }
                 Image(systemName: "chevron.right")
                     .font(Typo.caption.weight(.semibold))
                     .foregroundStyle(Palette.textTertiary)
                     .accessibilityHidden(true)
             }
-            Text(PortfolioFormat.title(product))
-                .font(Typo.cardTitle)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-            if let reason = product.reasons.first {
-                Text(reason)
-                    .font(Typo.body)
-                    .foregroundStyle(Palette.textSecondary)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if !product.platforms.isEmpty {
-                FlowLayout(spacing: Space.m) {
-                    ForEach(product.platforms) { PlatformChip(platform: $0) }
-                }
-            }
-            if product.waiting > 0 {
-                Label(PortfolioFormat.waitingLine(product.waiting), systemImage: "hourglass")
-                    .font(Typo.caption.weight(.semibold))
-                    .foregroundStyle(Palette.needsYou)
+            HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                platforms
+                Spacer(minLength: 0)
+                spark.frame(width: Space.tableSpark, alignment: .trailing)
+                figure("\(product.prs.open)", "PRs")
+                figure("\(product.waiting)", "Waiting", tone: product.waiting > 0 ? Palette.needsYou : nil)
+                figure(HomeNumbers.dollars(product.activity.spend7dUSD), "7 days")
+                    .accessibilityLabel("Spend over 7 days: \(HomeNumbers.dollars(product.activity.spend7dUSD))")
             }
         }
-        .card()
+        .padding(.vertical, Space.m)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens the product")
+    }
+
+    private var platforms: some View {
+        HStack(spacing: Space.xs) {
+            ForEach(product.platforms) { platform in
+                Image(systemName: PortfolioFormat.platformSymbol(platform.platform))
+                    .font(Typo.caption)
+                    .foregroundStyle(platform.state.color)
+                    .accessibilityLabel(PortfolioFormat.platformLine(platform))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var spark: some View {
+        let facts = HomeFactsBuilder.facts(product, period: .week)
+        if let label = facts.sparkLabel {
+            SparklineView(heights: facts.sparkHeights, label: label)
+        }
+    }
+
+    private func figure(_ value: String, _ label: String, tone: Color? = nil) -> some View {
+        VStack(alignment: .trailing, spacing: Space.xxs) {
+            Text(value).font(Typo.body.weight(.semibold)).monospacedDigit().foregroundStyle(tone ?? Palette.text).lineLimit(1)
+            Text(label).font(Typo.caption).foregroundStyle(Palette.textSecondary).lineLimit(1)
+        }
+        .frame(width: Space.tableFigure, alignment: .trailing)
     }
 }
 
@@ -256,7 +274,7 @@ struct PortfolioDetailView: View {
             .accessibilityElement(children: .combine)
 
             Group {
-                SectionLabel("Why")
+                SectionHeader(title: "Why")
                 if product.reasons.isEmpty {
                     Text(product.health == .parked ? "This product is parked." : "Nothing is holding it back.")
                         .foregroundStyle(Palette.textSecondary)
@@ -275,16 +293,16 @@ struct PortfolioDetailView: View {
                 }
             }
 
-            if !product.milestone.isEmpty || !product.next.isEmpty {
+            if !product.milestone.isEmpty || ProductLine.shortEnglish(product.next) != nil {
                 VStack(alignment: .leading, spacing: Space.s) {
                     if !product.milestone.isEmpty { Fact(title: "Milestone", text: product.milestone) }
-                    if !product.next.isEmpty { Fact(title: "Next step", text: product.next) }
+                    if let next = ProductLine.shortEnglish(product.next) { Fact(title: "Next step", text: next) }
                 }
                 .card()
             }
 
             Group {
-                SectionLabel("Platforms")
+                SectionHeader(title: "Platforms")
                 if product.platforms.isEmpty {
                     Text("No platform is registered for this product.").foregroundStyle(Palette.textSecondary)
                 }
@@ -292,7 +310,7 @@ struct PortfolioDetailView: View {
             }
 
             Group {
-                SectionLabel("Pull requests")
+                SectionHeader(title: "Pull requests")
                 HStack(alignment: .top, spacing: Space.l) {
                     Number(value: product.prs.open, label: "open")
                     Number(value: product.prs.waiting, label: "wait on you", highlight: product.prs.waiting > 0)
@@ -304,7 +322,7 @@ struct PortfolioDetailView: View {
             }
 
             Group {
-                SectionLabel("Activity")
+                SectionHeader(title: "Activity")
                 VStack(alignment: .leading, spacing: Space.s) {
                     Text(PortfolioFormat.sessionsLine(product.activity, now: now))
                     Text(PortfolioFormat.spendLine(product.activity)).foregroundStyle(Palette.textSecondary)
@@ -317,7 +335,7 @@ struct PortfolioDetailView: View {
             let asks = PortfolioFormat.questions(for: product, in: snapshot.asks)
             if !asks.isEmpty {
                 Group {
-                    SectionLabel("Needs you")
+                    SectionHeader(title: "Needs you")
                     ForEach(asks) { ask in
                         QuestionCard(ask: ask, ageSeconds: PhoneFormat.age(ask.ageSeconds, snapshot: snapshot, now: now))
                     }

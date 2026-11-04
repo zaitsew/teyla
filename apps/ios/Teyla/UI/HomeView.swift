@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Home: one sentence, a Week / Month / Year switch, the products people use, the top decisions, the products being
+/// Home: the pulse strip, the Next line, a Week / Month / Year switch, the products people use, the top decisions, the products being
 /// built, the quiet ones, and what runs. Health, tasks, finished work and the questions agents can settle live on the
 /// Decisions and Products tabs.
 struct HomeView: View {
@@ -30,7 +30,8 @@ struct HomeView: View {
             .scrollDismissesKeyboard(.interactively)
             .background(Palette.background)
             .refreshable { await model.refresh() }
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Home")
+            .navigationBarTitleDisplayMode(.large)
             .navigationDestination(for: ProductRoute.self) { route in
                 PortfolioDetailView(productID: route.id)
             }
@@ -53,21 +54,34 @@ private struct HomeContent: View {
     @Binding var tab: AppTab
     /// One period for the whole page, remembered. It changes numbers only, never who sits where.
     @AppStorage("teyla.home.period") private var storedPeriod = HomePeriod.week.rawValue
+    @AppStorage(HomeHeaderStyle.storageKey) private var storedStyle = HomeHeaderStyle.pulse.rawValue
 
     private var period: HomePeriod { HomePeriod.from(stored: storedPeriod) }
+    /// The first fresh decision, in rank order; else the oldest one still open, as on the Mac.
+    private var lists: DecisionLists { DecisionLists(asks: model.asks, snapshot: snapshot, now: Date()) }
+    private var topDecision: Ask? { lists.fresh.first ?? lists.older.first }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.s) {
-            Text(PhoneHome.briefLine(snapshot))
+        switch HomeHeaderStyle.from(stored: storedStyle) {
+        case .pulse:
+            StatStrip {
+                ForEach(HomePulse.tiles(decisions: model.ownerAsks, running: snapshot.running.count,
+                                        spend: HomeText.spend(portfolio: snapshot.portfolio, todayUSD: snapshot.totals.spentTodayUSD),
+                                        console: snapshot.console)) { tile in
+                    StatTile(label: tile.label, value: tile.value, detail: tile.detail, tone: tile.tone,
+                             action: tile.kind == .decisions ? { tab = .decisions } : nil)
+                }
+            }
+            NextLineButton(line: HomeNext.line(brief: snapshot.brief, top: topDecision, rankFirst: model.ownerAsks.first),
+                           revealsOlder: lists.fresh.isEmpty, tab: $tab)
+        case .sentence:
+            Text(HomeNext.sentence(brief: snapshot.brief, decisions: model.ownerAsks.count, top: topDecision,
+                              rankFirst: model.ownerAsks.first))
                 .font(Typo.section)
-                .fixedSize(horizontal: false, vertical: true)
-            Text(HomeText.caption(decisions: model.ownerAsks.count, running: snapshot.running.count,
-                                  spend: HomeText.spend(portfolio: snapshot.portfolio, todayUSD: snapshot.totals.spentTodayUSD)))
-                .font(Typo.body)
-                .foregroundStyle(Palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            SyncLine()
+                .lineLimit(2)
         }
+        SyncLine()
+        DailyQuoteSlot(quote: nil)
 
         SentFromPhone(snapshot: snapshot)
         if let sections = PhoneHome.sections(snapshot.portfolio) {
@@ -102,6 +116,52 @@ private struct HomeContent: View {
     }
 }
 
+/// One line that names the top decision. The Decisions tab lists it first, so the tab is where it opens.
+private struct NextLineButton: View {
+    @Environment(AppModel.self) private var model
+    let line: HomeNextLine
+    /// Every open question is older than 7 days, so the one named here sits in the closed fold.
+    let revealsOlder: Bool
+    @Binding var tab: AppTab
+
+    var body: some View {
+        if line.askID != nil {
+            Button {
+                if revealsOlder { model.olderReveals += 1 }
+                tab = .decisions
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                    Text("Next").font(Typo.body.weight(.semibold)).foregroundStyle(Palette.primary)
+                    Text(line.text).font(Typo.body).foregroundStyle(Palette.text).lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").font(Typo.caption).foregroundStyle(Palette.textTertiary)
+                }
+                .frame(minHeight: Space.touchMin)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Next: \(line.text)")
+            .accessibilityHint("Opens Decisions")
+        } else {
+            Label(line.text, systemImage: "checkmark.circle")
+                .font(Typo.body)
+                .foregroundStyle(Palette.textSecondary)
+        }
+    }
+}
+
+/// A place for the day's quote. Nothing draws until the content lane fills it.
+private struct DailyQuoteSlot: View {
+    let quote: String?
+
+    var body: some View {
+        if let quote, !quote.isEmpty {
+            Text(quote).font(Typo.body).italic().foregroundStyle(Palette.textSecondary).lineLimit(3)
+        }
+    }
+}
+
 /// What this phone sent that no card shows any more: new tasks, and answers whose question the Mac dropped.
 struct SentFromPhone: View {
     @Environment(AppModel.self) private var model
@@ -111,7 +171,7 @@ struct SentFromPhone: View {
         let sent = model.sentWithoutCard(in: snapshot)
         if !sent.isEmpty {
             VStack(alignment: .leading, spacing: Space.s) {
-                SectionLabel("Sent from this iPhone")
+                SectionHeader(title: "Sent from this iPhone")
                 ForEach(sent) { action in
                     VStack(alignment: .leading, spacing: Space.xs) {
                         Text(heading(of: action)).font(Typo.body.weight(.semibold))

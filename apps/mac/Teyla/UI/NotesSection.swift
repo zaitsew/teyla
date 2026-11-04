@@ -8,7 +8,7 @@ struct NotesSection: View {
         let list = model.noteList
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.s) {
-                SectionLabel("Notes")
+                SectionHeader(title: "Notes")
                 Chip(text: "Inbox \(list.inbox)", color: list.inbox > 0 ? Palette.needsYou : Palette.primary)
                     .padding(.bottom, Space.xs)
                     .accessibilityLabel("\(list.inbox) in the inbox")

@@ -132,9 +132,7 @@ extension View {
 
 // MARK: Numbers
 
-enum StatTone {
-    case neutral, needsYou, danger, saving
-
+extension StatTone {
     var color: Color {
         switch self {
         case .neutral: return Palette.text
@@ -187,15 +185,63 @@ struct StatTile: View {
     }
 }
 
-/// Tiles in a row that wraps. All the same width, all the same height.
+/// Tiles in equal columns that fill the width, and wrap when they no longer fit.
+/// A short last row shares the whole width, so it never leaves a hole.
 struct StatStrip<Content: View>: View {
     @ViewBuilder var content: Content
+    @State private var width: CGFloat = Space.pageMax
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: Space.statTileMin), spacing: Space.m, alignment: .top)],
-                  alignment: .leading, spacing: Space.m) {
-            content
+        Group(subviews: content) { tiles in
+            let fit = Int((width + Space.m) / Space.statTileStep)
+            let perRow = max(1, min(tiles.count, fit))
+            VStack(alignment: .leading, spacing: Space.m) {
+                ForEach(Array(stride(from: 0, to: tiles.count, by: perRow)), id: \.self) { start in
+                    HStack(alignment: .top, spacing: Space.m) {
+                        ForEach(tiles[start..<min(start + perRow, tiles.count)]) { $0 }
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
+        .onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
+    }
+}
+
+/// A few options, one chosen: Week / Month / Year, All / Needs attention. One look on every page.
+struct SegmentSwitch<Value: Hashable>: View {
+    let options: [(value: Value, label: String)]
+    @Binding var selection: Value
+    var spokenLabel = ""
+    /// True where the segments share the whole width, as on a phone.
+    var fills = false
+
+    var body: some View {
+        HStack(spacing: Space.xxs) {
+            ForEach(options, id: \.value) { option in
+                let chosen = option.value == selection
+                Button {
+                    selection = option.value
+                } label: {
+                    Text(option.label)
+                        .font(Typo.body.weight(.semibold))
+                        .foregroundStyle(chosen ? Palette.text : Palette.textSecondary)
+                        .lineLimit(1)
+                        .padding(.horizontal, Space.l)
+                        .frame(maxWidth: fills ? .infinity : nil, minHeight: Space.controlMin)
+                        .background(chosen ? Palette.selectedSegment : Color.clear,
+                                    in: RoundedRectangle(cornerRadius: Radius.control))
+                        .contentShape(RoundedRectangle(cornerRadius: Radius.control))
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(chosen ? .isSelected : [])
+            }
+        }
+        .padding(Space.xs)
+        .background(Palette.track, in: RoundedRectangle(cornerRadius: Radius.card))
+        .fixedSize(horizontal: !fills, vertical: false)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(spokenLabel)
     }
 }
 
@@ -221,7 +267,7 @@ struct Scorecard<Icon: View, Footer: View>: View {
                 icon
                 VStack(alignment: .leading, spacing: Space.xxs) {
                     HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-                        Text(title).font(Typo.cardTitle).lineLimit(1)
+                        Text(title).font(Typo.section).lineLimit(1)
                         if !badge.isEmpty {
                             Text(badge).font(Typo.caption).foregroundStyle(Palette.textSecondary).lineLimit(1)
                         }

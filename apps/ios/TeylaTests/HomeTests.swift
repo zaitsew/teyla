@@ -136,14 +136,6 @@ final class PhoneHomeTests: XCTestCase {
         XCTAssertEqual(HomeSectionKind.quiet.note, "Under 5 commits this week and no new users")
         XCTAssertEqual(PhoneHome.decisionsNote, "Only you can answer these")
     }
-
-    func testTheBriefIsTheMacsSentenceOrACount() throws {
-        let snapshot = try homeSnapshot()
-        XCTAssertEqual(PhoneHome.briefLine(snapshot), "7 decisions wait for you. Two of them are payments that block the next store upload.")
-        let bare = Snapshot(generated: "2026-11-02T09:00:00Z", asks: [Ask(id: "a", product: "p", question: "A?")])
-        XCTAssertEqual(PhoneHome.briefLine(bare), "1 question needs you.")
-        XCTAssertEqual(PhoneHome.briefLine(Snapshot(generated: "2026-11-02T09:00:00Z")), "Nothing needs you right now.")
-    }
 }
 
 final class HomeSectionsOnThePhoneTests: XCTestCase {

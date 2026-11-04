@@ -45,8 +45,13 @@ The window has three states.
 
 **Home.** A page that scrolls. Top to bottom:
 
-1. One sentence (`brief.line`) and a quiet line under it (decisions waiting, sessions running, and the spend,
-   labelled "API-equivalent": what the work would cost at API list prices, not a bill).
+1. **The pulse strip and the Next line.** Five tiles: Decisions (opens the page), Running, Posts today
+   (`console.growth`), Cash per month (`console.money`, with the week at API list prices as its small line) and Disk free
+   (`console.operations.machine`, with the verdict and the failures). A figure with no source shows a dash and the reason,
+   never a zero. Under them, one line of at most 10 words names the top decision and opens it: `brief.line` when
+   `brief.source` is `model` and it fits, otherwise a rule line, the product and the question's first words. A slot for
+   the day's quote draws nothing while it is empty. `teyla.home.header` set to `sentence` shows one line of at most 12
+   words and a caption instead.
 2. A **Week / Month / Year** switch, 44 pt high, for the whole page. It changes the numbers and nothing else: it never
    moves a product or reorders a section. The choice is remembered (`teyla.home.period` in the app's defaults).
 3. **People use these.** One hero card per product in `portfolio.home` section `users`: icon (`icon_jpeg`, else the
@@ -641,7 +646,8 @@ Preview hooks: `TEYLA_PREVIEW_OPEN=tools` and `command-bar[:<query>]`, with `TEY
 The iPhone app has three tabs: Home, Decisions and Products. It reads the same snapshot as the Mac app through the
 relay and shares `HomeLogic.swift` with it, so the grouping, the ranking and the wording are the same.
 
-- **Home.** The same page as the Mac's Home, in one column. Top to bottom: the brief and the sync line; a
+- **Home.** The same page as the Mac's Home, in one column. Top to bottom: the pulse strip, the Next line (it opens
+  the Decisions tab) and the sync line; a
   **Week / Month / Year** switch (44 pt high, for the whole page, remembered as `teyla.home.period`); **People use
   these** (a full-width card per product: icon or letter, name, stage, `summary`, active / new / total users for the
   period, commits with a 12-week bar chart, agent spend, and a Monetization row that reads "Off" while

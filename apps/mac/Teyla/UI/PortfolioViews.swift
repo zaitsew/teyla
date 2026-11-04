@@ -98,26 +98,17 @@ struct PortfolioView: View {
     }
 
     private func header(_ portfolio: Portfolio) -> some View {
-        VStack(alignment: .leading, spacing: Space.xs) {
-            Text("All products").font(Typo.pageTitle)
-            Text(PortfolioText.summary(portfolio.counts)).font(Typo.cardTitle)
-            TimelineView(.periodic(from: .now, by: 30)) { context in
-                Text(PortfolioText.checked(stores: portfolio.checkedStores, github: portfolio.checkedGitHub,
-                                           now: context.date))
-                    .font(Typo.body)
-                    .foregroundStyle(Palette.textSecondary)
-            }
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            PageHeader(title: "All products",
+                       context: PortfolioText.summary(portfolio.counts) + " · "
+                           + PortfolioText.checked(stores: portfolio.checkedStores, github: portfolio.checkedGitHub,
+                                                   now: context.date))
         }
     }
 
     private func controls(_ portfolio: Portfolio) -> some View {
         HStack(spacing: Space.l) {
-            Picker("Show", selection: $filter) {
-                ForEach(PortfolioFilter.allCases) { Text($0.title).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            SegmentSwitch(options: PortfolioFilter.allCases.map { ($0, $0.title) }, selection: $filter, spokenLabel: "Show")
             if portfolio.counts.parked > 0, filter == .all {
                 Toggle("Show parked (\(portfolio.counts.parked))", isOn: $showParked)
                     .toggleStyle(.checkbox)
@@ -130,96 +121,158 @@ struct PortfolioView: View {
     private func rows(_ portfolio: Portfolio) -> some View {
         let shown = filter.apply(portfolio.products, showParked: showParked)
         if shown.isEmpty {
-            Label(filter == .needsAttention ? "Nothing needs attention." : "No products to show.",
-                  systemImage: "checkmark.circle")
-                .foregroundStyle(Palette.textSecondary)
+            EmptyState(symbol: "checkmark.circle",
+                       title: filter == .needsAttention ? "Nothing needs attention." : "No products to show.",
+                       detail: "")
         } else {
-            VStack(spacing: Space.s) {
-                ForEach(shown) { product in
-                    PortfolioRow(product: product)
-                }
-            }
+            ProductTable(products: shown)
         }
     }
 
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: Space.s) {
-            Label("Update the teyla command to see your products (needs 0.32)", systemImage: "arrow.down.circle")
-                .font(Typo.cardTitle)
-            Text("This screen reads the products from `teyla state`. Your current command is older.")
-                .foregroundStyle(Palette.textSecondary)
-        }
-        .padding(.top, Space.s)
+        EmptyState(symbol: "arrow.down.circle", title: "Update the teyla command to see products (needs 0.32).",
+                   detail: "This screen reads the products from `teyla state`.")
     }
 }
 
-private struct PortfolioRow: View {
+/// The products as one table: a header row, then one row each, with every figure in its own aligned column.
+private struct ProductTable: View {
+    let products: [PortfolioProduct]
+    @State private var width: CGFloat = Space.pageMax
+
+    private var compact: Bool { width < Space.tableCompact }
+
+    var body: some View {
+        RowGroup {
+            ProductTableHeader(compact: compact)
+            ForEach(products) { product in
+                ProductTableRow(product: product, compact: compact)
+            }
+        }
+        .onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
+    }
+}
+
+private struct ProductTableHeader: View {
+    let compact: Bool
+
+    var body: some View {
+        HStack(spacing: Space.m) {
+            Text("Product").frame(maxWidth: .infinity, alignment: .leading)
+            if !compact { Text("Commits").frame(width: Space.tableSpark, alignment: .leading) }
+            Text("Platforms").frame(width: Space.tablePlatforms, alignment: .leading)
+            Text("PRs").frame(width: Space.tableFigure, alignment: .trailing)
+            Text("Waiting").frame(width: Space.tableFigure, alignment: .trailing)
+            Text("Spend 7d").frame(width: Space.tableFigure, alignment: .trailing)
+            if !compact { Text("Active").frame(width: Space.tableFigure, alignment: .trailing) }
+        }
+        .font(Typo.caption)
+        .foregroundStyle(Palette.textSecondary)
+        .lineLimit(1)
+        .padding(.vertical, Space.s)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct ProductTableRow: View {
     @Environment(AppModel.self) private var model
     let product: PortfolioProduct
+    let compact: Bool
+
+    private var name: String { HomeFactsBuilder.name(product) }
+    private var line: String {
+        if let line = ProductLine.text(product) { return line }
+        let summary = HomeFactsBuilder.summary(product)
+        return summary.isEmpty ? HomeFactsBuilder.noSummary : summary
+    }
 
     var body: some View {
         Button {
             model.go(.product(product.id))
         } label: {
-            HStack(alignment: .top, spacing: Space.xl) {
-                VStack(alignment: .leading, spacing: Space.s) {
-                    titleRow
-                    if let line = summaryLine {
-                        Text(line)
-                            .font(Typo.body)
-                            .foregroundStyle(Palette.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: Space.m) {
+                identity.frame(maxWidth: .infinity, alignment: .leading)
+                if !compact { spark.frame(width: Space.tableSpark, alignment: .leading) }
+                PlatformIcons(platforms: product.platforms).frame(width: Space.tablePlatforms, alignment: .leading)
+                figure("\(product.prs.open)", dim: product.prs.open == 0)
+                figure("\(product.waiting)", dim: product.waiting == 0, tone: product.waiting > 0 ? Palette.needsYou : nil)
+                figure(HomeNumbers.dollars(product.activity.spend7dUSD), dim: product.activity.spend7dUSD == 0)
+                if !compact {
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        figure(PortfolioText.lastActiveShort(product.activity, now: context.date), dim: false)
                     }
-                    PlatformStrip(platforms: product.platforms)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                figures
-                    .frame(width: Space.portfolioFigures, alignment: .leading)
             }
-            .card()
-            .contentShape(RoundedRectangle(cornerRadius: Radius.card))
+            .padding(.vertical, Space.s)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .overlay(alignment: .topLeading) {
-            StarButton(id: product.id, starred: product.focus)
-                .padding(Space.m)
-        }
-        .help("Open the \(product.title) page")
+        .help("Open the \(name) page")
         .accessibilityHint("Opens the product page")
     }
 
-    private var titleRow: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-            HealthPill(health: product.health)
-            Text(product.title).font(Typo.cardTitle)
-            if !product.stage.isEmpty {
-                Text(product.stage.capitalized).font(Typo.caption).foregroundStyle(Palette.textSecondary)
+    private var identity: some View {
+        HStack(spacing: Space.m) {
+            StarButton(id: product.id, starred: product.focus)
+            ProductIcon(product: product, monogram: Monogram.letter(for: name), size: Space.iconRow, radius: Radius.iconRow)
+            VStack(alignment: .leading, spacing: Space.xxs) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                    Text(name).font(Typo.body.weight(.semibold)).lineLimit(1)
+                    if !product.stage.isEmpty {
+                        Text(product.stage.capitalized).font(Typo.caption).foregroundStyle(Palette.textSecondary).lineLimit(1)
+                    }
+                    // "On track" on every row is noise: the pill appears when there is something to say.
+                    if product.health != .onTrack { HealthPill(health: product.health).fixedSize() }
+                }
+                Text(line)
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(line)
             }
         }
-        .padding(.leading, Space.xl)
     }
 
-    /// The first reason; for a healthy product, the next step or milestone.
-    private var summaryLine: String? {
-        if let reason = product.reasons.first { return reason }
-        if !product.next.isEmpty { return "Next: \(product.next)" }
-        return product.milestone.isEmpty ? nil : product.milestone
-    }
-
-    private var figures: some View {
-        VStack(alignment: .leading, spacing: Space.xs) {
-            Label(PortfolioText.prs(product.prs), systemImage: "arrow.triangle.pull")
-            Label(PortfolioText.waiting(product), systemImage: "bubble.left")
-                .foregroundStyle(product.waiting > 0 ? Palette.text : Palette.textSecondary)
-            TimelineView(.periodic(from: .now, by: 60)) { context in
-                Label(PortfolioText.lastActivity(product.activity, now: context.date), systemImage: "clock")
-            }
-            Label(PortfolioText.spend(product.activity), systemImage: "dollarsign.circle")
-                .monospacedDigit()
+    @ViewBuilder
+    private var spark: some View {
+        let facts = HomeFactsBuilder.facts(product, period: .week)
+        if let label = facts.sparkLabel {
+            SparklineView(heights: facts.sparkHeights, label: label)
+        } else {
+            Text(Format.dash).font(Typo.caption).foregroundStyle(Palette.textTertiary)
         }
-        .font(Typo.caption)
-        .foregroundStyle(Palette.textSecondary)
-        .labelStyle(FigureLabelStyle())
+    }
+
+    private func figure(_ text: String, dim: Bool, tone: Color? = nil) -> some View {
+        Text(text)
+            .font(Typo.body)
+            .monospacedDigit()
+            .foregroundStyle(tone ?? (dim ? Palette.textTertiary : Palette.text))
+            .lineLimit(1)
+            .frame(width: Space.tableFigure, alignment: .trailing)
+    }
+}
+
+/// One small icon per platform, coloured by its state. The tooltip and VoiceOver say the build and the state, so
+/// colour never carries the meaning alone.
+struct PlatformIcons: View {
+    let platforms: [PlatformStatus]
+
+    var body: some View {
+        HStack(spacing: Space.xs) {
+            if platforms.isEmpty {
+                Text(Format.dash).font(Typo.caption).foregroundStyle(Palette.textTertiary)
+            }
+            ForEach(platforms) { platform in
+                Image(systemName: PlatformSymbol.name(for: platform.platform))
+                    .font(Typo.caption)
+                    .foregroundStyle(platform.state.color)
+                    .help(PortfolioText.chip(platform))
+                    .accessibilityLabel(PortfolioText.chip(platform))
+            }
+        }
+        .lineLimit(1)
     }
 }
 
@@ -275,7 +328,7 @@ struct ProductFiguresColumn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.xl) {
             VStack(alignment: .leading, spacing: Space.xs) {
-                SectionLabel("Platforms")
+                SectionHeader(title: "Platforms")
                 ForEach(product.platforms) { platform in
                     platformRow(platform)
                 }
@@ -284,18 +337,17 @@ struct ProductFiguresColumn: View {
                 }
             }
             VStack(alignment: .leading, spacing: Space.xs) {
-                SectionLabel("Work")
-                Label(PortfolioText.prs(product.prs), systemImage: "arrow.triangle.pull")
-                Label(PortfolioText.waiting(product), systemImage: "bubble.left")
-                Label(PortfolioText.lastActivity(product.activity, now: Date()), systemImage: "clock")
-                Label(PortfolioText.spend(product.activity), systemImage: "dollarsign.circle").monospacedDigit()
-                if !product.next.isEmpty {
-                    Label("Next: \(product.next)", systemImage: "arrow.right.circle")
+                SectionHeader(title: "Work")
+                Group {
+                    Label(PortfolioText.lastActivity(product.activity, now: Date()), systemImage: "clock")
+                    if let next = ProductLine.shortEnglish(product.next) {
+                        Label("Next: \(next)", systemImage: "arrow.right.circle")
+                    }
                 }
+                .font(Typo.body)
+                .foregroundStyle(Palette.textSecondary)
+                .labelStyle(FigureLabelStyle())
             }
-            .font(Typo.body)
-            .foregroundStyle(Palette.textSecondary)
-            .labelStyle(FigureLabelStyle())
         }
     }
 
@@ -315,10 +367,7 @@ struct ProductFiguresColumn: View {
             }
             // The link line already says the address; do not repeat it as detail.
             if !platform.detail.isEmpty, platform.detail != Format.linkLabel(platform.link) {
-                Text(platform.detail)
-                    .font(Typo.body)
-                    .foregroundStyle(Palette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                ClampedText(text: platform.detail, lines: 2)
             }
             if let date = ISODate.parse(platform.asOf) {
                 Text("Checked \(Format.ago(seconds: Date().timeIntervalSince(date)))")

@@ -41,16 +41,18 @@ struct Snapshot: Decodable, Equatable, Sendable {
     var portfolio: Portfolio?
     /// Questions Teyla closed itself in the last 24 hours; nil from a CLI that does not close any.
     var autoClosed: AutoClosed?
+    /// The compact console: one headline per admin section; nil until the first `teyla console` refresh.
+    var console: Console?
 
     enum CodingKeys: String, CodingKey {
-        case version, generated, brief, totals, asks, products, running, tasks, done, relay, portfolio
+        case version, generated, brief, totals, asks, products, running, tasks, done, relay, portfolio, console
         case autoClosed = "auto_closed"
     }
 
     init(version: Int = 1, generated: String = "", brief: Brief? = nil, totals: Totals = Totals(),
          asks: [Ask] = [], products: [Product] = [], running: [RunningSession] = [],
          tasks: [OwnerTask] = [], done: [DoneItem] = [], relay: Relay? = nil, portfolio: Portfolio? = nil,
-         autoClosed: AutoClosed? = nil) {
+         autoClosed: AutoClosed? = nil, console: Console? = nil) {
         self.version = version
         self.generated = generated
         self.brief = brief
@@ -63,10 +65,12 @@ struct Snapshot: Decodable, Equatable, Sendable {
         self.relay = relay
         self.portfolio = portfolio
         self.autoClosed = autoClosed
+        self.console = console
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        console = c.optional(.console)
         version = c.lenient(.version, 1)
         generated = c.lenient(.generated, "")
         brief = c.optional(.brief)
@@ -1091,5 +1095,115 @@ enum ISODate {
 
     static func format(_ date: Date) -> String {
         date.formatted(.iso8601)
+    }
+}
+
+// MARK: The console
+
+/// `console` in `teyla state` (docs/CONSOLE.md). Every part is optional: a failing source sends `error`, an unknown
+/// figure sends null, and the screen shows a dash with the reason.
+struct Console: Decodable, Equatable, Sendable {
+    var operations: ConsoleSection?
+    var money: ConsoleSection?
+    var playbook: ConsoleSection?
+    var growth: ConsoleSection?
+
+    enum CodingKeys: String, CodingKey { case operations, money, playbook, growth }
+
+    init(operations: ConsoleSection? = nil, money: ConsoleSection? = nil, playbook: ConsoleSection? = nil,
+         growth: ConsoleSection? = nil) {
+        self.operations = operations
+        self.money = money
+        self.playbook = playbook
+        self.growth = growth
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        operations = c.optional(.operations)
+        money = c.optional(.money)
+        playbook = c.optional(.playbook)
+        growth = c.optional(.growth)
+    }
+}
+
+/// One section's compact part: what Home reads. The section screens read the full `teyla console` report.
+struct ConsoleSection: Decodable, Equatable, Sendable {
+    var headline: ConsoleHeadline?
+    var error: String?
+    /// Operations: the machine's verdict and free disk.
+    var machine: ConsoleMachine?
+    /// Money: the listed subscriptions per month, and the last 7 days at API list prices.
+    var monthlyUSD: Double?
+    var listUSD7d: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case headline, error, machine
+        case monthlyUSD = "monthly_usd"
+        case listUSD7d = "list_usd_7d"
+    }
+
+    init(headline: ConsoleHeadline? = nil, error: String? = nil, machine: ConsoleMachine? = nil,
+         monthlyUSD: Double? = nil, listUSD7d: Double? = nil) {
+        self.headline = headline
+        self.error = error
+        self.machine = machine
+        self.monthlyUSD = monthlyUSD
+        self.listUSD7d = listUSD7d
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        headline = c.optional(.headline)
+        error = c.optional(.error)
+        machine = c.optional(.machine)
+        monthlyUSD = c.optional(.monthlyUSD)
+        listUSD7d = c.optional(.listUSD7d)
+    }
+}
+
+/// `{label, value, detail}`. The value is a string, a number or null; the number stays a number for the formatter.
+struct ConsoleHeadline: Decodable, Equatable, Sendable {
+    var label: String
+    var text: String?
+    var number: Double?
+    var detail: String
+
+    enum CodingKeys: String, CodingKey { case label, value, detail }
+
+    init(label: String = "", text: String? = nil, number: Double? = nil, detail: String = "") {
+        self.label = label
+        self.text = text
+        self.number = number
+        self.detail = detail
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        label = c.lenient(.label, "")
+        detail = c.lenient(.detail, "")
+        text = try? c.decode(String.self, forKey: .value)
+        number = try? c.decode(Double.self, forKey: .value)
+    }
+}
+
+struct ConsoleMachine: Decodable, Equatable, Sendable {
+    var verdict: String?
+    var diskFreeGB: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case verdict
+        case diskFreeGB = "disk_free_gb"
+    }
+
+    init(verdict: String? = nil, diskFreeGB: Double? = nil) {
+        self.verdict = verdict
+        self.diskFreeGB = diskFreeGB
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        verdict = c.optional(.verdict)
+        diskFreeGB = c.optional(.diskFreeGB)
     }
 }

@@ -169,6 +169,182 @@ enum HomeText {
     static let noPortfolio = "Update the teyla command to see your products (needs 0.35)."
 }
 
+// MARK: The pulse strip
+
+/// What a figure means, and so what colour it takes. Green is for money saved and nothing else.
+enum StatTone: Equatable, Sendable {
+    case neutral, needsYou, danger, saving
+}
+
+/// One tile of the strip at the top of Home. No value means a dash, and `detail` says why.
+struct PulseTile: Equatable, Identifiable, Sendable {
+    enum Kind: String, Sendable { case decisions, running, posts, cash, machine }
+
+    var kind: Kind
+    var label: String
+    var value: String?
+    var detail: String
+    var tone = StatTone.neutral
+
+    var id: String { kind.rawValue }
+}
+
+enum HomePulse {
+    /// Why a console figure is a dash when there is no console at all.
+    static let notRead = "Not read yet"
+
+    static func tiles(decisions: [Ask], running: Int, spend: (usd: Double, window: String)?, console: Console?) -> [PulseTile] {
+        [decisionsTile(decisions), runningTile(running), postsTile(console?.growth), cashTile(console?.money, spend: spend),
+         machineTile(console?.operations)]
+    }
+
+    static func decisionsTile(_ asks: [Ask]) -> PulseTile {
+        let pay = asks.filter { $0.decisionGroup == .pay }.count
+        let detail = asks.isEmpty ? "Nothing waits on you" : pay > 0 ? "\(pay) to pay" : "Only you can answer"
+        return PulseTile(kind: .decisions, label: "Decisions", value: "\(asks.count)", detail: detail,
+                         tone: asks.isEmpty ? .neutral : .needsYou)
+    }
+
+    static func runningTile(_ count: Int) -> PulseTile {
+        PulseTile(kind: .running, label: "Running", value: "\(count)", detail: count == 1 ? "agent session" : "agent sessions")
+    }
+
+    static func postsTile(_ section: ConsoleSection?) -> PulseTile {
+        let headline = section?.headline
+        return PulseTile(kind: .posts, label: "Posts today", value: headline.flatMap(text),
+                         detail: reason(section) ?? headline?.detail ?? "")
+    }
+
+    /// The owner's listed subscriptions; the small line is the week at API list prices, labelled as such.
+    static func cashTile(_ section: ConsoleSection?, spend: (usd: Double, window: String)?) -> PulseTile {
+        let usd = section?.monthlyUSD ?? section?.headline?.number
+        let week = (section?.listUSD7d).map { (usd: $0, window: "this week") } ?? spend
+        let detail = week.map { "\(HomeText.dollars($0.usd)) list price \($0.window)" }
+        return PulseTile(kind: .cash, label: "Cash per month", value: usd.map(HomeText.dollars),
+                         detail: detail ?? reason(section) ?? section?.headline?.detail ?? "")
+    }
+
+    static func machineTile(_ section: ConsoleSection?) -> PulseTile {
+        let verdict = section?.machine?.verdict?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+        let disk = section?.machine?.diskFreeGB
+        var parts: [String] = []
+        if !verdict.isEmpty { parts.append("Machine \(verdict.lowercased())") }
+        if let failures = section?.headline?.number, failures > 0 {
+            parts.append("\(Int(failures)) \(failures == 1 ? "failure" : "failures")")
+        }
+        // The number is the disk, so only a critical machine colours it; "busy" is said in the small line.
+        return PulseTile(kind: .machine, label: "Disk free", value: disk.map { "\(Int($0.rounded())) GB" },
+                         detail: reason(section) ?? parts.joined(separator: ", "),
+                         tone: disk != nil && verdict == "CRITICAL" ? .danger : .neutral)
+    }
+
+    /// "4/6" stays as sent, a number loses its ".0"; nil is a dash.
+    private static func text(_ headline: ConsoleHeadline) -> String? {
+        if let text = headline.text, !text.isEmpty { return text }
+        return headline.number.map { $0 == $0.rounded() ? "\(Int($0))" : "\($0)" }
+    }
+
+    /// Why a section has no figure: no section at all, or the source failed.
+    private static func reason(_ section: ConsoleSection?) -> String? {
+        guard let section else { return notRead }
+        return section.error.map { "Could not read: \($0)" }
+    }
+}
+
+// MARK: The Next line
+
+/// The one line under the strip: the top decision, and a click away from it.
+struct HomeNextLine: Equatable, Sendable {
+    var text: String
+    /// The question it opens; nil when nothing waits.
+    var askID: String?
+}
+
+/// How the top of Home reads. `pulse` is the default; `sentence` keeps a strict one-line headline.
+enum HomeHeaderStyle: String, CaseIterable, Sendable {
+    case pulse, sentence
+
+    static let storageKey = "teyla.home.header"
+
+    static func from(stored: String) -> HomeHeaderStyle { HomeHeaderStyle(rawValue: stored) ?? .pulse }
+}
+
+enum HomeNext {
+    static let maxWords = 10
+    static let sentenceMaxWords = 12
+    static let nothing = "Nothing waits on you."
+
+    static func wordCount(_ text: String) -> Int { text.split(whereSeparator: \.isWhitespace).count }
+
+    /// The first `limit` words, with an ellipsis when some were cut.
+    static func clip(_ text: String, words limit: Int) -> String {
+        let words = text.split(whereSeparator: \.isWhitespace)
+        guard words.count > limit else { return words.joined(separator: " ") }
+        return words.prefix(limit).joined(separator: " ") + "…"
+    }
+
+    /// A model's line only when it obeys the limit and speaks of the question the tap opens; otherwise the rule line:
+    /// product, then the question's first words. `rankFirst` is the highest-ranked question, which the brief leads
+    /// with. `top` differs from it when that question sits in the Older fold, and the brief would then name another.
+    static func line(brief: Brief?, top: Ask?, rankFirst: Ask?) -> HomeNextLine {
+        guard let top else { return HomeNextLine(text: nothing, askID: nil) }
+        if top.id == rankFirst?.id, let model = modelLine(brief, limit: maxWords) {
+            return HomeNextLine(text: model, askID: top.id)
+        }
+        let product = Format.product(top.product)
+        let room = max(1, maxWords - wordCount(product))
+        return HomeNextLine(text: "\(product): \(clip(top.question, words: room))", askID: top.id)
+    }
+
+    /// The comparison variant: one sentence of at most 12 words.
+    static func sentence(brief: Brief?, decisions: Int, top: Ask?, rankFirst: Ask?) -> String {
+        if top?.id == rankFirst?.id, let model = modelLine(brief, limit: sentenceMaxWords) { return model }
+        guard let top else { return nothing }
+        return "\(Decisions.summaryShort(count: decisions)) Top: \(clip(Format.product(top.product), words: 3))."
+    }
+
+    private static func modelLine(_ brief: Brief?, limit: Int) -> String? {
+        guard let brief, brief.source == "model" else { return nil }
+        let line = brief.line.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !line.isEmpty && !line.contains("\n") && wordCount(line) <= limit ? line : nil
+    }
+}
+
+extension Decisions {
+    /// "3 decisions wait."
+    static func summaryShort(count: Int) -> String {
+        count == 1 ? "1 decision waits." : "\(count) decisions wait."
+    }
+}
+
+// MARK: A product's one line
+
+enum ProductLine {
+    static let maxWords = 12
+    static let maxCharacters = 80
+
+    /// The line under a product's name: why it needs attention, else its next step when that reads as a short English
+    /// line, else how many items are open, else its milestone. A raw next step is a session's words, in any language
+    /// and any length, so it never shows as it came.
+    static func text(_ product: PortfolioProduct) -> String? {
+        if let reason = product.reasons.first, !reason.isEmpty { return reason }
+        if let next = shortEnglish(product.next) { return "Next: \(next)" }
+        let open = product.waiting + product.prs.waiting
+        if open > 0 { return "\(open) open \(open == 1 ? "item" : "items")" }
+        return product.milestone.isEmpty ? nil : product.milestone
+    }
+
+    /// The text when it is one line of at most 12 words and 80 characters in Latin script; nil otherwise.
+    static func shortEnglish(_ raw: String) -> String? {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !text.contains("\n"), text.count <= maxCharacters,
+              HomeNext.wordCount(text) <= maxWords else { return nil }
+        let letters = text.unicodeScalars.filter { CharacterSet.letters.contains($0) }
+        guard letters.allSatisfy({ $0.value < 0x250 }) else { return nil }
+        return text
+    }
+}
+
 // MARK: Core product cards
 
 /// What can be installed and what cannot yet, from a product's platform rows. Only `current` and `live` are
