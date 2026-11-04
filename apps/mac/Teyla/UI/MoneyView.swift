@@ -24,7 +24,7 @@ private struct MoneyBody: View {
             SubscriptionsSection(report: report)
             ProvidersSection(providers: report.providers)
             SpendSection(report: report)
-            CloudSection(cloud: report.cloud, actions: report.actions)
+            CloudSection(cloud: report.cloud, subscriptions: report.subscriptions, actions: report.actions)
         }
     }
 
@@ -219,10 +219,11 @@ private struct ShareRow: View {
 
 private struct CloudSection: View {
     let cloud: [MoneyCloud]
+    let subscriptions: [MoneySubscription]
     let actions: MoneyActions?
 
     var body: some View {
-        let others = MoneyLogic.cloudWithoutActions(cloud, actions: actions)
+        let others = MoneyLogic.cloudRows(cloud, subscriptions: subscriptions, actions: actions)
         VStack(alignment: .leading, spacing: Space.m) {
             SectionHeader(title: "Cloud and Actions", note: "Minutes beyond the plan are billed.")
             if others.isEmpty, (actions?.accounts ?? []).isEmpty {

@@ -444,17 +444,20 @@ enum MoneyLogic {
 
     /// "12 Nov", for a renewal or a day on a line.
     static func shortDay(_ date: Date) -> String {
-        date.formatted(.dateTime.day().month(.abbreviated).locale(Locale(identifier: "en_GB")).timeZone(.gmt))
+        var style = Date.FormatStyle().day().month(.abbreviated)
+        style.locale = Locale(identifier: "en_GB")
+        style.timeZone = TimeZone(identifier: "UTC") ?? .gmt
+        return date.formatted(style)
     }
 
-    /// Dollars: whole above 100, two decimals below, a dash (nil) for no figure. Money is never rounded to zero:
+    /// Dollars: whole above 100 and for a round amount, two decimals otherwise, a dash (nil) for no figure. Money is never rounded to zero:
     /// a positive amount under one cent reads "less than $0.01".
     static func usd(_ value: Double?) -> String? {
         guard let value else { return nil }
         if value > 0, value < 0.005 { return "less than $0.01" }
         let sign = value < 0 ? "-" : ""
         let amount = abs(value)
-        if amount >= 100 { return sign + "$" + amount.formatted(.number.precision(.fractionLength(0)).locale(Locale(identifier: "en_US"))) }
+        if amount >= 100 || amount == amount.rounded() { return sign + "$" + amount.formatted(.number.precision(.fractionLength(0)).locale(Locale(identifier: "en_US"))) }
         return sign + "$" + amount.formatted(.number.precision(.fractionLength(2)).locale(Locale(identifier: "en_US")))
     }
 
@@ -609,7 +612,8 @@ enum MoneyLogic {
     /// What the list-price section is, in the report's own words when it has them.
     static func spendNote(_ spend: MoneySpend?) -> String {
         let label = spend?.label ?? ""
-        return label.isEmpty ? "Not cash. What local AI sessions would cost at API prices." : label
+        if label.isEmpty { return "Not cash. What local AI sessions would cost at API prices." }
+        return label.lowercased().contains("not cash") ? label : label + " Not cash."
     }
 
     /// Whole minutes: "47".
@@ -626,10 +630,14 @@ enum MoneyLogic {
         return parts.isEmpty ? "The report gave no allowance." : parts.joined(separator: " · ")
     }
 
-    /// Cloud rows other than the GitHub Actions ones, which the account rows below them already say.
-    static func cloudWithoutActions(_ rows: [MoneyCloud], actions: MoneyActions?) -> [MoneyCloud] {
-        guard let actions, !actions.accounts.isEmpty else { return rows }
-        return rows.filter { !$0.name.hasPrefix("GitHub Actions") }
+    /// Cloud rows that no other row already says: not a subscription listed above, not a GitHub Actions account
+    /// (those have their own rows with minutes).
+    static func cloudRows(_ rows: [MoneyCloud], subscriptions: [MoneySubscription], actions: MoneyActions?) -> [MoneyCloud] {
+        let listed = Set(subscriptions.map { $0.name.lowercased() })
+        let hasAccounts = !(actions?.accounts.isEmpty ?? true)
+        return rows.filter { row in
+            !listed.contains(row.name.lowercased()) && !(hasAccounts && row.name.hasPrefix("GitHub Actions"))
+        }
     }
 
     /// "25 of 2,000 minutes · free plan · most use: dremo, qupa".
