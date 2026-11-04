@@ -20,5 +20,6 @@ DerivedData/
 
 # Swift packages (packages/*): build output
 packages/*/.build/
+packages/*/node_modules/
 packages/*/.swiftpm/
 site/.wrangler/

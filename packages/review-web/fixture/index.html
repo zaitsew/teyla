@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Review fixture</title>
+<style>body{font-family:system-ui;margin:24px;background:#fff;color:#111}.card{border:1px solid #888;padding:12px;margin:12px 0;border-radius:8px}</style></head>
+<body>
+<div id="app" data-review-screen="fixture.home">
+  <h1 data-review-anchor="fixture.home.title" data-review-strings="home.title">Fixture</h1>
+  <div class="card" data-review-anchor="fixture.home.card">
+    <p>Visible text that the picture must show.</p>
+    <button id="add" data-review-anchor="fixture.home.addButton" data-review-strings="home.add" data-review-source="src/main.ts:12">Add</button>
+  </div>
+  <div class="card" data-review-private id="secret">Account number 1234 5678 (private)</div>
+  <label>Password <input type="password" id="pw" value="hunter2"></label>
+</div>
+<script type="module" src="/src/main.ts"></script>
+</body></html>

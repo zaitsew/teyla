@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Web review capture: `packages/review-web`.** A test build of a web product gets the same tap-and-write feedback as iOS. Three locks keep it out of a production build (a build flag, a host allow-list, a dynamic import), so `teyla review store-check <dist>` passes on a flag-off build. Private areas and password fields are painted black in the picture. Unsent captures wait in the browser and retry. See docs/REVIEW.md, section "Web".
+
 ## 0.39.0 — 2026-11-04 — A startup page that names the next missing fact
 
 - **`teyla startup`: one page per product, with the next fact it is missing.** Types are venture, indie, open-source and

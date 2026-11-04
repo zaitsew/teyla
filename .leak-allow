@@ -26,6 +26,8 @@ src/teyla/lexicon.py
 src/teyla/copy_lexicon.py
 # the quote picker's strong-verb, sensitive-topic and theme-stop words (`teyla you`)
 src/teyla/you_lexicon.py
+# the web review package's Russian UI strings (the product's translation, matching iOS)
+packages/review-web/src/strings.ts
 tests/test_detect.py
 tests/test_numbers.py
 tests/test_corrections.py
