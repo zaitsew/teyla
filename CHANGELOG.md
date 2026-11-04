@@ -7,7 +7,8 @@
 - **`teyla startup`: one page per product, with the next fact it is missing.** Types are venture, indie, open-source and
   personal; unset uses the venture ladder. Rungs (Built, Tried, Used, Retained, Paid, Repeating, Sustaining) are earned from
   stored evidence and checked on their own. Zero, unknown and stale stay different. Agent-claimed growth rows do not count.
-  Startup commands read the cache and make no new network call. Weekly snapshots go to `~/.teyla/startup/snapshots.jsonl`.
+  Startup commands read the cache and make no new network call. `teyla portfolio --refresh` writes one row per product per
+  day to `~/.teyla/startup/snapshots.jsonl`.
   See docs/STARTUP.md.
 - **`teyla startup yc`: a 15-box YC sheet.** A box means "I can answer this honestly, with evidence"; a true $0 still checks
   `pay`. All 15 show the apply link. Teyla never submits. Answers stay on the Mac in a 0600 file, an agent's answer is a draft,
