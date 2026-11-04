@@ -395,3 +395,22 @@ def test_uninstall_when_nothing_is_installed_is_quiet(world, capsys):
 def test_an_unknown_channel_command_prints_usage_and_exits_2(world, capsys):
     assert cli.main(["review", "channel", "frobnicate"]) == 2
     assert "key add" in capsys.readouterr().err
+
+
+def test_a_date_that_falls_off_the_calendar_does_not_stop_the_pull():
+    assert review._created("0001-01-01T00:00:00+01:00") is None
+
+
+def test_a_rotation_the_server_refuses_keeps_the_working_key(world, monkeypatch):
+    rc = review_channel
+    path = rc.key_path("alpha")
+    rc._write_secret(path, "old-secret")
+
+    class Refused:
+        returncode = 1
+
+    monkeypatch.setattr(rc.Remote, "keys_edit", lambda self, slug, line: Refused())
+    with pytest.raises(rc.ChannelError):
+        rc.key_add(rc.Remote("deploy@example.com", "/data"), "alpha", rotate=True)
+    assert path.read_text().strip() == "old-secret"
+    assert not path.with_name(path.name + ".new").exists()

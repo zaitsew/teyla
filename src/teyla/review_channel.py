@@ -137,7 +137,10 @@ class Remote:
         file beside it and renaming over it."""
         d = shlex.quote(f"{self.root}/keys")
         add = f"echo {shlex.quote(line)}; " if line else ""
-        cmd = (f'd={d}; f="$d/keys.txt"; t=$(mktemp "$d/.keys.XXXXXX") && '
+        # mkdir is the lock: without one, an add that read the file before a revoke could restore the revoked key.
+        cmd = (f'd={d}; f="$d/keys.txt"; l="$d/.keys.lock"; n=0; '
+               f'until mkdir "$l" 2>/dev/null; do n=$((n+1)); [ "$n" -ge 20 ] && exit 75; sleep 1; done; '
+               f'trap \'rmdir "$l"\' EXIT; t=$(mktemp "$d/.keys.XXXXXX") && '
                f'{{ if [ -f "$f" ]; then grep -v -e " {slug}$" "$f"; fi; {add}true; }} > "$t" && '
                f'chmod 644 "$t" && mv -f "$t" "$f" || {{ rm -f "$t"; exit 1; }}')
         return self.run(cmd, timeout=60)
@@ -279,10 +282,14 @@ def key_add(remote: Remote, product: str, rotate: bool = False) -> pathlib.Path:
         raise ChannelError(f"{product} already has a key at {path}. `key revoke {product}` first, or add --rotate", 1)
     secret = secrets.token_urlsafe(32)
     digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+    # Saved first: a rotation whose local write fails must not leave the server on a key nobody holds.
+    pending = path.with_name(path.name + ".new")
+    _write_secret(pending, secret)
     r = remote.keys_edit(product, f"{digest} {product}")
     if r.returncode != 0:
+        pending.unlink(missing_ok=True)
         raise ChannelError(f"the server did not take the key (ssh exited {r.returncode}); nothing was stored here", 1)
-    _write_secret(path, secret)
+    os.replace(pending, path)
     return path
 
 

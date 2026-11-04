@@ -41,6 +41,7 @@ SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 SHA_FIELD = re.compile(r"^[0-9a-fA-F]{64}$")
 DRAIN_MAX = MIB          # a refused request this small has its body read and dropped, so the client sees the answer
+BIG_BODY = MIB           # a body above this takes a big-body slot, so the sum stays under the container's memory limit
 
 
 @dataclass
@@ -48,11 +49,12 @@ class Config:
     data: str
     keys: str
     max_png: int = 10 * MIB
-    max_json: int = 1 * MIB
+    max_json: int = 256 * 1024   # the Mac's review.MAX_JSON: a larger one would upload and never import
     per_product_day: int = 20
     total_day: int = 100
     max_bytes: int = 500 * MIB
     max_concurrent: int = 8
+    max_big_bodies: int = 2
     timeout: float = 30.0
     body_deadline: float = 120.0
     incoming_ttl: float = 24 * 3600
@@ -262,6 +264,7 @@ class Server(ThreadingHTTPServer):
         self.store = Store(cfg)
         self.keys = Keys(cfg.keys)
         self.slots = threading.BoundedSemaphore(cfg.max_concurrent)
+        self.big_bodies = threading.BoundedSemaphore(cfg.max_big_bodies)
         self._stop = threading.Event()
         super().__init__(addr, Handler)
 
@@ -340,7 +343,7 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, ConnectionError):
                 pass
 
-    def _read_body(self, n: int) -> bytes:
+    def _read_body(self, n: int) -> bytearray:
         buf, deadline = bytearray(), time.monotonic() + self.server.cfg.body_deadline
         while len(buf) < n:
             if time.monotonic() > deadline:
@@ -349,7 +352,7 @@ class Handler(BaseHTTPRequestHandler):
             if not chunk:
                 raise ConnectionError("closed")
             buf += chunk
-        return bytes(buf)
+        return buf                # no bytes() copy: it would double the memory a body holds
 
     # --- methods ---
     def _no(self) -> None:
@@ -407,6 +410,18 @@ class Handler(BaseHTTPRequestHandler):
         limit = cfg.max_png if name == "capture.png" else cfg.max_json
         if length > limit:
             return self.reply(413, "too large")
+        # Before the reservation, so a busy answer spends none of the day's captures.
+        big = length > BIG_BODY
+        if big and not self.server.big_bodies.acquire(blocking=False):
+            return self.reply(503, "busy", **{"Retry-After": "5"})
+        try:
+            self._put(product, cid, name, length)
+        finally:
+            if big:
+                self.server.big_bodies.release()
+
+    def _put(self, product: str, cid: str, name: str, length: int) -> None:
+        store = self.server.store
         verdict = store.reserve(product, cid, length)
         if verdict == "ready":
             self.reply(200, "ok")

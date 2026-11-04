@@ -94,7 +94,7 @@ wheels = [
 
 [[package]]
 name = "teyla"
-version = "0.37.4"
+version = "0.38.1"
 source = { editable = "." }
 
 [package.optional-dependencies]

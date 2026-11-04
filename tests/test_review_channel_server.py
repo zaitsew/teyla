@@ -161,7 +161,7 @@ def test_bad_bodies_are_refused(box):
 def test_size_limits_are_checked_before_the_body_is_read(box):
     cid = uid(6)
     assert box.header_only("PUT", f"/v1/captures/{cid}/capture.png", 10 * rc.MIB + 1) == 413
-    assert box.header_only("PUT", f"/v1/captures/{cid}/capture.json", rc.MIB + 1) == 413
+    assert box.header_only("PUT", f"/v1/captures/{cid}/capture.json", 256 * 1024 + 1) == 413
     assert box.header_only("PUT", f"/v1/captures/{cid}/capture.png", None) == 411
     assert box.header_only("PUT", f"/v1/captures/{cid}/capture.png", 5, key="nope") == 401
 
@@ -385,3 +385,18 @@ def test_expect_continue_is_answered_only_after_the_request_passed(box):
                 rest += chunk
             assert b"200 OK" in rest
         s.close()
+
+
+def test_a_third_big_body_is_turned_away_and_spends_nothing(tmp_path):
+    # Two 10 MiB bodies fit the container's 64 MiB; eight would not.
+    b = Box(tmp_path)
+    try:
+        held = [b.srv.big_bodies.acquire(blocking=False) for _ in range(2)]
+        assert all(held)
+        cid = uid(90)
+        assert b.header_only("PUT", f"/v1/captures/{cid}/capture.png", rc.MIB + 1) == 503
+        for _ in held:
+            b.srv.big_bodies.release()
+        assert b.put(cid, "capture.png", rc.PNG_MAGIC + b"\0" * (rc.MIB + 1))[0] == 200
+    finally:
+        b.stop()

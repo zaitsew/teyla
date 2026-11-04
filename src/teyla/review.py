@@ -195,11 +195,11 @@ def _clean_region(region) -> dict | None:
 def _created(raw) -> str | None:
     try:
         d = _dt.datetime.fromisoformat(str(raw))
-    except ValueError:
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=_dt.timezone.utc)
+        return d.astimezone(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except (ValueError, OverflowError):    # year 1 with an offset falls off the calendar in UTC
         return None
-    if d.tzinfo is None:
-        d = d.replace(tzinfo=_dt.timezone.utc)
-    return d.astimezone(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def validate(obj, folder_name: str = "") -> tuple[dict | None, str]:
