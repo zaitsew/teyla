@@ -1,5 +1,6 @@
-# Add this site block to your Caddyfile. Replace {{host}} with the DNS name you chose for the channel.
-{{host}} {
+# Rendered to /srv/{{name}}/Caddyfile, where the root Caddyfile imports it. `common` is the shared snippet.
+review.{{domain}} {
+	import common
 	@channel path /healthz /v1/captures/*
 	handle @channel {
 		request_body {

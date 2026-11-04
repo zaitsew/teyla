@@ -6,30 +6,31 @@ A capture can show another person's data, so nothing can be read, listed or dele
 
 ## Install
 
-You need a Linux box with Docker, SSH access as a user whose uid is 1000 (the container runs as uid 1000, and the Mac reads and deletes what it writes), and a reverse proxy that terminates TLS (a Caddy fragment is included).
+You need the shared server from `templates/platform` (Docker, Caddy, the external `apps` network) and SSH access as a user whose uid is 1000: the container runs as uid 1000, and the Mac reads and deletes what it writes.
 
-1. **Make the data folder** on the box. `/srv/review-channel` is the example; use any path and keep it in step with the compose file.
+1. **Make the folders** on the box, as that user. Run this before step 2, so Docker does not create them as root.
 
    ```sh
-   sudo mkdir -p /srv/review-channel/{ready,incoming,state,keys}
-   sudo chown -R 1000:1000 /srv/review-channel
-   sudo chmod -R go-rwx /srv/review-channel/{ready,incoming,state}
+   mkdir -p /srv/review-channel/app /srv/review-channel/data/{ready,incoming,state,keys}
+   chmod -R go-rwx /srv/review-channel/data
+   chmod go+rx /srv/review-channel/data /srv/review-channel/data/keys
    ```
 
-2. **Run the service.** Copy this folder next to your compose file, merge `docker-compose.fragment.yml` into it (the service joins the external `apps` network and publishes no port), then:
+2. **Copy the service and start it.** From a checkout of this repo, copy `server.py` and `Dockerfile` into `/srv/review-channel/app/`, and these fragments to a temporary folder on the box together with `templates/platform/add-product.sh`. Then, on the box:
 
    ```sh
-   docker compose up -d --build review-channel
+   bash add-product.sh review-channel 8080 --from <that folder> --domain <your domain>
+   cd /srv && docker compose up -d --build review-channel
    docker compose logs --tail 5 review-channel     # "listening on 8080"
    ```
 
-3. **Put it behind TLS.** Choose a DNS name and point it at the box. Add `Caddyfile.fragment` to your Caddyfile with `{{host}}` replaced by that name, then reload Caddy. The fragment forwards only `/healthz` and `/v1/captures/*`, and caps a request body at 11 MB.
+3. **Point DNS at the box.** `review.<your domain>`, an A record, DNS only. Caddy gets the certificate when the name resolves. Do this before step 2 on a new name, so the first attempt does not fail.
 
 4. **Tell the Mac.** Create `~/.teyla/review-channel.toml`:
 
    ```toml
    ssh  = "user@host"             # the SSH login from the start of this page
-   root = "/srv/review-channel"   # the data folder from step 1
+   root = "/srv/review-channel/data"   # the data folder from step 1
    ```
 
 5. **Make a key per product** on the Mac. It prints only where the secret is stored.
@@ -72,7 +73,7 @@ The UUID is lowercase. A capture is complete when both files are in and the pict
 | `server.py` | the service |
 | `Dockerfile` | a pinned `python:3.12-alpine` image, runs as uid 1000 |
 | `docker-compose.fragment.yml` | the service, the `apps` network, 64 MB, the data and keys volumes |
-| `Caddyfile.fragment` | the site block, with `{{host}}` to fill in |
+| `Caddyfile.fragment` | the site block for `review.{{domain}}` |
 | `keys/keys.txt` (on the box) | one `<sha256 of the key> <product>` per line; written by the Mac over SSH |
 
 Tests: `tests/test_review_channel_server.py` in the repo root starts the service on a local port. Run it with `./check.sh`.
