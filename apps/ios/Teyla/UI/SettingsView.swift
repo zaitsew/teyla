@@ -66,13 +66,17 @@ struct SettingsView: View {
             SectionHeader(title: "Voice",
                           note: "Speech is recognised on this iPhone only. No audio leaves it.")
             RowGroup {
-                RowCard(title: "Dictation language", wraps: true) {
+                VStack(alignment: .leading, spacing: Space.xxs) {
+                    Text("Dictation language").font(Typo.body.weight(.semibold))
                     Picker("Dictation language", selection: $languageID) {
                         ForEach(DictationLanguage.allCases) { Text($0.title).tag($0.rawValue) }
                     }
                     .labelsHidden()
                     .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .padding(.vertical, Space.s)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
