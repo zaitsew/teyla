@@ -6,6 +6,8 @@
   `teyla state` carries `gaps` and `not_tried` (product ids only, a few bytes each) in the compact growth part. No draft text
   and no quote goes with them.
 
+## 0.38.0 — 2026-11-04 — The apps become an admin, and the content factory runs
+
 - **Mac: Settings is a page.** The sidebar's Settings opens Teyla's own settings file in plain groups: folders, updates,
   machine guard, disk clean-up, what Teyla keeps, which products and agents it looks at. A value the file does not set shows
   its default in grey. Environment variables show their names only, and no secret is ever shown. The page reads the file and
