@@ -98,7 +98,7 @@ final class GrowthModel {
                 sales = try await cli.saleAttempts()
                 salesFailure = nil
             } catch {
-                // The last read stays on screen when there is one; a failed read is never "not tried yet".
+                // The page hides older counts while the failure stands; a failed read is never "not tried yet".
                 salesFailure = error.localizedDescription
                 salesReadAt = nil
             }

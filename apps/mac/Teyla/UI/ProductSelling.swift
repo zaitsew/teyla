@@ -11,7 +11,8 @@ struct ProductSellingSection: View {
 
     var body: some View {
         let growth = model.growth
-        let attempts = growth.sales?.attempts(for: productID)
+        // A failed refresh hides the older counts: a stale zero must not read as "not tried yet".
+        let attempts = growth.salesFailure == nil ? growth.sales?.attempts(for: productID) : nil
         VStack(alignment: .leading, spacing: Space.m) {
             SectionHeader(title: "Users and selling", note: "What people do with it, and what was done to sell it.")
             StatStrip {

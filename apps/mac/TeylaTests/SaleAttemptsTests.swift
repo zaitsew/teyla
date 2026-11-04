@@ -48,6 +48,14 @@ final class SaleAttemptsTests: XCTestCase {
         XCTAssertFalse(read.attempts(for: "anything").tried)
     }
 
+    func testALedgerThatCannotBeReadIsAnErrorNotZero() {
+        // A directory where the file should be: it exists, so it is not "missing", and reading it fails.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sale-ledger-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        XCTAssertThrowsError(try SaleLedger.read(file: dir))
+    }
+
     func testTheLedgerLivesUnderTeylaHomeWhenSet() {
         XCTAssertEqual(SaleLedger.file(home: "/h", env: [:]).path, "/h/.teyla/growth/ledger.jsonl")
         XCTAssertEqual(SaleLedger.file(home: "/h", env: ["TEYLA_HOME": "/t"]).path, "/t/growth/ledger.jsonl")

@@ -33,10 +33,14 @@ enum SaleLedger {
         return URL(fileURLWithPath: (base as NSString).appendingPathComponent("growth")).appendingPathComponent("ledger.jsonl")
     }
 
-    /// A missing ledger is no attempts yet, not an error; a ledger that cannot be read is.
+    /// A ledger that does not exist is no attempts yet, not an error. Any other failure (no permission on the folder or the
+    /// file, bad encoding) throws, so an unreadable ledger never reads as zero attempts.
     static func read(file: URL) throws -> Read {
-        guard FileManager.default.fileExists(atPath: file.path) else { return Read(byProduct: [:], skipped: 0) }
-        return parse(try String(contentsOf: file, encoding: .utf8))
+        do {
+            return parse(try String(contentsOf: file, encoding: .utf8))
+        } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
+            return Read(byProduct: [:], skipped: 0)
+        }
     }
 
     static func parse(_ text: String) -> Read {
