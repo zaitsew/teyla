@@ -632,6 +632,18 @@ subagents, billed by the API), the last 30 days as bars, and by product and by m
 repeated. Dollars show whole for a round amount and two decimals otherwise; an amount under one cent reads "less than
 $0.01", never zero. One considered layout, no variants.
 
+## Playbook page (from 2026-11-04)
+
+The page reads `console.playbook`. Each part loads on its own: a part that fails shows its reason in place and the rest
+stay. Top to bottom: four figures (unresolved contradictions, guidelines, models to look at, corrections in 30 days);
+the contradictions (a rule you wrote, then corrected twice or more); the guidelines, each of which opens its file when the
+report says the file exists; the model ladder per provider (plans and reviews, builds, quick jobs), where the ladder
+differs from the catalogue, new catalogue models nobody has looked at, and the arena shortlist, where every row says
+"candidate, not a decision"; counts of what is kept (your words, corrections, wiki pages, design decisions); and what
+the sessions say about you: the quote of the day (others behind "Show more"), the prompt figures, a then-and-now card,
+and the chores to hand off, the open ones first. Backticks the source writes around commands are dropped. The page reads
+this Mac's own files only and sends nothing. One considered layout, no variants.
+
 ## Tools and the command bar (from 2026-11-02)
 
 **Operations** (from 2026-11-04; it was the Tools page). The page reads `console.operations` and, top to bottom, shows:
