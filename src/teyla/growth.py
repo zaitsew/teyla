@@ -450,6 +450,11 @@ def attempt_rows(store: Store, reg: dict | None = None) -> dict[str, dict]:
     return rows
 
 
+def products_not_tried(store: Store) -> list[str]:
+    """The ids of the registered products with no sale attempt at all: the ones that get the next marketing slot."""
+    return sorted(pid for pid, r in attempt_rows(store).items() if not r["tried"])
+
+
 def attempt_total(r: dict) -> int:
     return r["posts"] + r["marketing"] + r["icp_meetings"]
 
@@ -1745,12 +1750,16 @@ def section(now: float) -> dict:
     out = outreach_summary(store, cfg)
     slots = plan(store, cfg, today, now, commit=False) if chans else []
     gaps = sum(1 for r in slots if not r["item"])
+    try:   # the registry may be unreadable: then nobody can say who was tried, and the phone shows a dash
+        not_tried = products_not_tried(store)
+    except Exception:  # noqa: BLE001
+        not_tried = None
     return dict(
         headline=dict(label="Posts today", value=f"{done}/{target}" if chans else None,
                       detail=f"target {target} a day over {len(chans)} channels" if chans else "no channel enabled: run `teyla growth init`"),
         target=dict(posts_per_day_per_channel=cfg["posts_per_day"]), today=today_rows,
         last_public_days=days_between(last_any, today) if last_any else None,
-        queue_days=queue_days(store, cfg), gaps=gaps,
+        queue_days=queue_days(store, cfg), gaps=gaps, not_tried=not_tried,
         pipeline=dict(ideas=sum(1 for i in items if i["status"] == "idea" and i["kind"] != "episode"),
                       filming=sum(1 for i in eps if stage(i) == "filming"), cutting=sum(1 for i in eps if stage(i) == "cutting"), review=open_(("checked", "review")), ready=open_(("approved", "ready")),
                       live=sum(1 for i in items if i["status"] == "published" and (local_day(i.get("published_at")) or "") >= week_ago)),
@@ -1766,10 +1775,11 @@ def section(now: float) -> dict:
 
 
 def compact(sec: dict) -> dict:
-    """What the phone carries: counts and the headline, no draft and no quote."""
+    """What the phone carries: counts and the headline, no draft and no quote. `gaps` is the slots today with no
+    draft; `not_tried` the ids of the products with no sale attempt (a few bytes each, no text)."""
     if sec.get("error"):
         return {"error": sec["error"]}
-    keys = ("headline", "target", "today", "last_public_days", "queue_days", "pipeline", "qualified_week")
+    keys = ("headline", "target", "today", "last_public_days", "queue_days", "gaps", "pipeline", "qualified_week", "not_tried")
     return {k: sec[k] for k in keys if k in sec}
 
 
