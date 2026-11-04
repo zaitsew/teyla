@@ -217,3 +217,37 @@ def test_a_changed_byte_breaks_the_signature():
         ["teyla-review-v1", cap["id"], cap["created"], hashlib.sha256(forged).hexdigest(), vec["capture_png_sha256"]]
     )
     assert _hmac(key, message) != vec["capture_sig"]
+
+
+@pytest.mark.parametrize("channel", ["debug", "testflight", "local", "play_internal", "test_host"])
+def test_every_build_channel_a_client_can_name_is_valid(capture, schema, channel):
+    capture["app"]["configuration"] = channel
+    assert check(capture, schema) == []
+
+
+def test_a_web_capture_names_its_product_and_reporter(capture, schema):
+    capture["app"].update(bundle_id="app.example.test", product="sample-web", configuration="test_host")
+    capture["reporter"] = "A tester"
+    assert check(capture, schema) == []
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda c: c["app"].update(product="Wine"),
+        lambda c: c["app"].update(product="1wine"),
+        lambda c: c["app"].update(product="a" * 41),
+        lambda c: c["app"].update(product=""),
+        lambda c: c.update(reporter=""),
+        lambda c: c.update(reporter="x" * 65),
+        lambda c: c.update(reporter=7),
+    ],
+)
+def test_a_bad_product_or_reporter_is_refused(capture, schema, mutate):
+    mutate(capture)
+    assert check(capture, schema)
+
+
+def test_product_and_reporter_are_optional(capture, schema):
+    assert "product" not in capture["app"] and "reporter" not in capture
+    assert "product" not in schema["properties"]["app"]["required"] and "reporter" not in schema["required"]

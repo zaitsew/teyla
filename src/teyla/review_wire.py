@@ -29,6 +29,7 @@ FUTURE_SLACK_S = 10 * 60
 PICTURE = "capture.png"
 STATUS_DIR = "review-status"
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
+_SLUG = re.compile(r"^[a-z][a-z0-9-]{0,39}$")
 
 
 def sha256_hex(data: bytes) -> str:
@@ -69,7 +70,10 @@ def normalize(obj: dict) -> tuple[dict | None, str]:
     screen = obj.get("screen")
     if not screen and el:
         screen = el.get("screen")
-    flat = {"id": obj.get("id"), "product": bundle.rsplit(".", 1)[-1], "screen": screen or "",
+    # A web build has a hostname for a bundle id, so a client that knows its slug sends `app.product`.
+    slug = app.get("product")
+    product = slug if isinstance(slug, str) and _SLUG.fullmatch(slug) else bundle.rsplit(".", 1)[-1]
+    flat = {"id": obj.get("id"), "product": product, "screen": screen or "",
             "element": flat_el, "tap": {"x": tap.get("x"), "y": tap.get("y")} if tap else None,
             "region": obj.get("region"),
             "comment": comment["text"], "created_at": obj.get("created"), "build": app.get("build", ""),

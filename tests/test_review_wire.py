@@ -236,3 +236,30 @@ def test_the_cli_lists_what_it_imported_as_json(tmp_path, capsys):
     assert cli.main(["review", "pull", "--vouched-folder", str(box), "--json"]) == 0
     rep = json.loads(capsys.readouterr().out)
     assert rep["source"] == "channel" and rep["imported"] == [CID]
+
+
+def _contract(**app):
+    obj = json.loads((CAP / "capture.json").read_text())
+    obj["app"].update(app)
+    return obj
+
+
+def test_normalize_takes_the_product_from_app_product_when_present():
+    flat, why = review_wire.normalize(_contract(bundle_id="app.example.test", product="sample-web"))
+    assert why == "" and flat["product"] == "sample-web"
+
+
+def test_normalize_falls_back_to_the_bundle_id_tail():
+    flat, _ = review_wire.normalize(_contract())
+    assert flat["product"] == "sampleapp"
+    flat, _ = review_wire.normalize(_contract(product="Not A Slug"))
+    assert flat["product"] == "sampleapp"
+    flat, _ = review_wire.normalize(_contract(product="ok\n"))
+    assert flat["product"] == "sampleapp"
+
+
+def test_normalize_reads_a_capture_with_a_reporter_and_a_new_channel():
+    obj = _contract(configuration="play_internal")
+    obj["reporter"] = "A tester"
+    flat, why = review_wire.normalize(obj)
+    assert why == "" and flat["comment"]

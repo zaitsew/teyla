@@ -40,7 +40,7 @@ import stat
 import sys
 import time
 
-from . import config, docs_check, net, relay, review_asc, review_wire, state, taste
+from . import config, docs_check, net, relay, review_asc, review_gate, review_wire, state, taste
 from .control import state as control
 
 MODEL = "claude-sonnet-5-5"                  # the ladder's default worker (POLICY §1)
@@ -937,6 +937,8 @@ def _print_pull(rep: dict) -> None:
 
 def cmd_review(args) -> int:
     action, words = args.action, list(getattr(args, "words", []) or [])
+    if action == "store-check":              # reads one artifact; needs no inbox
+        return review_gate.cmd_store_check(words, args.json)
     conn = connect()
     try:
         if action == "list":
@@ -1067,8 +1069,8 @@ def cmd_review(args) -> int:
 def register(sp):
     q = sp.add_parser("review", help="the inbox of review captures: pull from the relay and TestFlight, triage, open a lane brief")
     q.set_defaults(fn=cmd_review)
-    q.add_argument("action", nargs="?", choices=["list", "pull", "triage", "open"], default="list")
-    q.add_argument("words", nargs="*", metavar="[capture-id ...]")
+    q.add_argument("action", nargs="?", choices=["list", "pull", "triage", "open", "store-check"], default="list")
+    q.add_argument("words", nargs="*", metavar="[capture-id ... | PATH]")
     q.add_argument("--product", help="list: only this product; pull --testflight: the product name for the imported items")
     q.add_argument("--status", help="list: only this status (new, triaged, open, done, rejected)")
     q.add_argument("--all", action="store_true", help="list: include done and rejected captures")
