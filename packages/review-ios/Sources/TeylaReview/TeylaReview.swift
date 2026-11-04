@@ -62,6 +62,10 @@ public enum TeylaReview {
 
     public static func configure(_ change: (inout Configuration) -> Void) {
         change(&configuration)
+        #if os(macOS)
+        // The Mac cannot tell TestFlight from the App Store by the receipt file; ask StoreKit once.
+        if isEnabled { MacStoreEnvironment.refreshOnce() }
+        #endif
         #if TEYLA_REVIEW && canImport(UIKit)
         ShakeShortcut.shared.set(enabled: configuration.shake && isActive)
         if isActive { ReviewLifecycle.installOnce() }
