@@ -34,6 +34,7 @@ GROWTH_PCT = 5.0                            # operating default, not a benchmark
 RETAINED_MIN = 3
 REPEAT_PAYERS = 3
 KEPT_DAYS = 30
+WINDOW_DAYS = 30                            # two revenue windows must not overlap
 STATUSES = ("met", "missing", "unknown", "stale", "not_applicable")
 OPEN_STATUSES = ("missing", "unknown", "stale")        # a rung in one of these can be `next`
 
@@ -131,16 +132,15 @@ def write_snapshots(now: float, rows: list[dict]) -> None:
 # --- facts: the numbers the rungs read ------------------------------------------------------------------------
 
 def _external(explicit, raw):
-    """(external people, assumed). A probe's `external_*` key wins; otherwise one account for the owner comes off."""
-    if explicit is not None:
+    """(external people, assumed). `explicit` is what repos printed as `external_*`; `raw` is the raw count of the other
+    repos, from which one account for the owner comes off, once per product."""
+    if raw is None:
         return explicit, False
-    if raw is not None:
-        return max(raw - 1, 0), True
-    return None, False
+    return (explicit or 0) + max(raw - 1, 0), True
 
 
 def facts(now: float, *, pid: str, rp: dict, repos, usage: dict, ages: dict, money_enabled: bool, can_install: bool,
-          ai_cost_30d: float | None, attempts: dict) -> dict:
+          ai_cost_30d: float | None, attempts: dict, install_known: bool = True) -> dict:
     """The numbers one product's rungs read, from the caches. None means no source reports it."""
     def get(keys):
         return portfolio._sum_keys(repos, usage, keys, portfolio._count)
@@ -149,6 +149,7 @@ def facts(now: float, *, pid: str, rp: dict, repos, usage: dict, ages: dict, mon
             "new_7d": portfolio._NEW_KEYS["7d"], "ext_users": ("external_users",), "ext_wau": ("external_wau",),
             "ext_retained": ("external_retained_7d",)}
     u = {k: get(v) for k, v in keys.items()}
+    fallback = {"ext_users": "total", "ext_wau": "wau", "ext_retained": "retained"}
     read = [k for ks in (*keys.values(), *portfolio._MONEY_KEYS.values()) for k in ks]       # every counter a rung reads
     contributing = [r.name.lower() for r in repos
                     if any(portfolio._money_number((usage.get(r.name.lower()) or {}).get(k)) is not None for k in read)]
@@ -157,15 +158,28 @@ def facts(now: float, *, pid: str, rp: dict, repos, usage: dict, ages: dict, mon
     # Without a time for every probe that contributed, freshness cannot be shown, so it is not claimed.
     u["at"] = min(stamps) if stamps and all(s is not None for s in stamps) else None
     u["fresh"] = u["at"] is not None and now - u["at"] <= FRESH_DAYS * 86400
-    users, a1 = _external(u["ext_users"], u["total"])
-    wau, a2 = _external(u["ext_wau"], u["wau"])
-    ret, a3 = _external(u["ext_retained"], u["retained"])
+    def outside(ext_key: str) -> tuple[int | None, bool]:
+        """Repo by repo: a repo's own `external_*` counter, and the raw counter of the repos that print none."""
+        explicit, raw = None, None
+        for r in repos:
+            one = {r.name.lower(): usage.get(r.name.lower()) or {}}
+            e = portfolio._sum_keys([r], one, keys[ext_key], portfolio._count)
+            if e is not None:
+                explicit = (explicit or 0) + e
+            else:
+                n = portfolio._sum_keys([r], one, keys[fallback[ext_key]], portfolio._count)
+                raw = raw if n is None else (raw or 0) + n
+        return _external(explicit, raw)
+
+    users, a1 = outside("ext_users")
+    wau, a2 = outside("ext_wau")
+    ret, a3 = outside("ext_retained")
     u.update(external=users, external_wau=wau, external_retained=ret,
              assumed=bool((a1 and users is not None) or (a2 and wau is not None) or (a3 and ret is not None)))
     m = portfolio.money_metrics(money_enabled, repos, usage)
     money = {"enabled": money_enabled, "paying": m["paying"], "mrr_usd": m["mrr_usd"],
              "revenue_30d_usd": m["revenue_usd"]["30d"], "ai_cost_30d_usd": ai_cost_30d}
-    return {"id": pid, "registry_stage": rp.get("stage") or "", "can_install": can_install, "usage": u, "money": money,
+    return {"id": pid, "registry_stage": rp.get("stage") or "", "can_install": can_install, "install_known": install_known, "usage": u, "money": money,
             "attempts": attempts}
 
 
@@ -236,9 +250,16 @@ def rungs(now: float, f: dict, ladder: tuple, snaps: list[dict]) -> tuple[list[d
     rev, paying = money["revenue_30d_usd"], money["paying"]
     out: dict[str, tuple[str, str]] = {}
 
-    installable = f["can_install"] or f["registry_stage"] in ("beta", "live")
-    out["built"] = ("met", "Installable" if f["can_install"] else f"Stage {f['registry_stage']}") if installable \
-        else ("missing", "Not installable yet")
+    if f["can_install"]:
+        out["built"] = ("met", "Installable")
+    elif f["registry_stage"] in ("beta", "live"):
+        out["built"] = ("met", f"Stage {f['registry_stage']}")
+    elif (u["total"] or 0) >= 1:
+        out["built"] = ("met", "People have accounts")
+    elif f["install_known"]:
+        out["built"] = ("missing", "Not installable yet")
+    else:
+        out["built"] = ("unknown", "Teyla sees no store or site for it")
 
     n = att["posts"] + att["marketing"] + att["icp_meetings"]
     claimed = att.get("claimed", 0)
@@ -257,7 +278,7 @@ def rungs(now: float, f: dict, ladder: tuple, snaps: list[dict]) -> tuple[list[d
         known = paying is not None or rev is not None
         out["paid"] = (_gate(known, fresh, (paying or 0) >= 1 or (rev or 0) > 0),
                        f"{_n(paying)} payers, revenue in 30 days {_n(rev, ' USD')}")
-        prior = _snapshot_at_least([r for r in snaps if (_days_between(r["day"], today) or 0) <= 60], today, 27)
+        prior = _snapshot_at_least([r for r in snaps if (_days_between(r["day"], today) or 0) <= 60], today, WINDOW_DAYS)
         two_windows = bool(rev and rev > 0 and prior and (prior.get("revenue_30d_usd") or 0) > 0)
         out["repeating"] = (_gate(known, fresh, (paying or 0) >= REPEAT_PAYERS or two_windows),
                             f"{_n(paying)} payers, needs {REPEAT_PAYERS}, or revenue in 2 windows of 30 days")
@@ -305,7 +326,8 @@ def next_of(pid: str, rows: list[dict], f: dict, now: float) -> dict | None:
     u = f["usage"]
     age = int((now - u["at"]) // 86400) if u["at"] else None
     if rid == "built":
-        text, cmd = "It cannot be installed yet.", f"teyla portfolio --product {pid}"
+        text = "It cannot be installed yet." if status == "missing" else "Teyla cannot tell whether it can be installed."
+        cmd = f"teyla portfolio --product {pid}"
     elif rid == "tried":
         claimed = f["attempts"].get("claimed", 0)
         text = (f"{claimed} {'attempt was' if claimed == 1 else 'attempts were'} logged by an agent and do not count. "
@@ -338,9 +360,10 @@ def evaluate(now: float, f: dict, rp: dict, snaps: list[dict], pid: str) -> dict
     ladder = LADDERS[typ]
     rs, g = rungs(now, f, ladder, snaps)
     stage = stage_of(rs)
+    built_unknown = next(r["status"] for r in rs if r["id"] == "built") == "unknown"
     u, money, att = f["usage"], f["money"], f["attempts"]
     block = {
-        "type": typ, "type_set": type_set, "stage": stage, "stage_title": TITLES[stage],
+        "type": typ, "type_set": type_set, "stage": stage, "stage_title": "Not known" if stage == "none" and built_unknown else TITLES[stage],
         "parked": f["registry_stage"] == "parked",
         "as_of": _iso(u["at"]) if u["has"] and u["at"] else None,
         "stale": bool(u["has"] and not u["fresh"]),
@@ -368,9 +391,9 @@ def context(now: float, reg: dict) -> dict:
 
 
 def block_for(ctx: dict, now: float, *, pid: str, rp: dict, repos, usage: dict, can_install: bool, money_enabled: bool,
-              ai_cost_30d: float | None) -> dict:
+              ai_cost_30d: float | None, install_known: bool = True) -> dict:
     f = facts(now, pid=pid, rp=rp, repos=repos, usage=usage, ages=ctx["ages"], money_enabled=money_enabled,
-              can_install=can_install, ai_cost_30d=ai_cost_30d, attempts=ctx["attempts"][pid])
+              can_install=can_install, ai_cost_30d=ai_cost_30d, attempts=ctx["attempts"][pid], install_known=install_known)
     return evaluate(now, f, rp, ctx["snaps"].get(pid, []), pid)
 
 
@@ -406,7 +429,7 @@ def focus_of(items: list[dict]) -> str | None:
 
 def _view(now: float) -> list[dict]:
     from . import state
-    return state.build(now, model_brief=False)["portfolio"]["products"]
+    return state.build(now, model_brief=False, refresh=False)["portfolio"]["products"]
 
 
 def report(now: float, items: list[dict]) -> dict:
@@ -447,7 +470,10 @@ def render_list(rep: dict) -> str:
     L.append("Other products" if rep["focus"] else "Products")
     L += [_line(p) for p in others] or ["  none"]
     L.append("")
-    L.append("Stages: " + ", ".join(f"{n} {TITLES[k]}" for k, n in sorted(rep["counts"].items(), key=lambda kv: kv[0])))
+    titles: dict[str, int] = {}
+    for p in rep["products"]:
+        titles[p["stage_title"]] = titles.get(p["stage_title"], 0) + 1
+    L.append("Stages: " + ", ".join(f"{n} {t}" for t, n in sorted(titles.items())))
     unset = sum(1 for p in rep["products"] if not p["type_set"])
     if unset:
         L.append(f"{unset} products have no type (shown with ?). They use the venture ladder. Choose one: teyla product set <id> type=<type>")

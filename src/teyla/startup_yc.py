@@ -16,7 +16,9 @@ session is a draft and checks nothing until the owner confirms it. No network ca
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as _dt
+import fcntl
 import json
 import os
 import pathlib
@@ -99,6 +101,19 @@ def _dump(answers: dict[str, dict]) -> str:
             L += [f"[box.{box}]", f"text = {registry._str(a['text'])}", f"status = {registry._str(a['status'])}",
                   f"by = {registry._str(a['by'])}", f"at = {registry._str(a['at'])}", ""]
     return "\n".join(L)
+
+
+@contextlib.contextmanager
+def _locked():
+    """One writer at a time, around read-change-write: without it, two answers at once lose one of them."""
+    d = startup.home()
+    d.mkdir(parents=True, exist_ok=True)
+    fd = os.open(d / "yc.lock", os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)                              # closing the descriptor drops the lock
 
 
 def save_answers(pid: str, answers: dict[str, dict]) -> None:
@@ -295,14 +310,15 @@ def cmd_answer(pid: str, box: str, text: str) -> int:
     if p is None:
         return _fail(msg, rc)
     agent = startup.in_agent_session()
-    answers = load_answers(pid)
-    if agent and answers.get(box, {}).get("status") == "confirmed":
-        return _fail(f"you confirmed '{box}' yourself; an agent cannot replace it. Write it from your own shell")
-    if answers_path(pid).exists() and not _readable(pid):
-        return _fail(f"{answers_path(pid)} does not parse; fix it by hand first")
-    answers[box] = {"text": text, "status": "draft" if agent else "confirmed", "by": "agent" if agent else "owner",
-                    "at": startup._iso(now)}
-    save_answers(pid, answers)
+    with _locked():
+        answers = load_answers(pid)
+        if agent and answers.get(box, {}).get("status") == "confirmed":
+            return _fail(f"you confirmed '{box}' yourself; an agent cannot replace it. Write it from your own shell")
+        if answers_path(pid).exists() and not _readable(pid):
+            return _fail(f"{answers_path(pid)} does not parse; fix it by hand first")
+        answers[box] = {"text": text, "status": "draft" if agent else "confirmed", "by": "agent" if agent else "owner",
+                        "at": startup._iso(now)}
+        save_answers(pid, answers)
     print(f"{pid} {box}: " + ("draft saved. It checks nothing until you run: " + f"teyla startup yc confirm {pid} {box}"
                               if agent else "answer saved and confirmed"))
     return 0
@@ -323,15 +339,16 @@ def cmd_confirm(pid: str, box: str) -> int:
         return _fail(f"unknown box '{box}': {', '.join(BOX_IDS)}", 2)
     if pid not in registry.load()["product"]:
         return _fail(f"no product '{pid}' in the registry", 2)
-    answers = load_answers(pid)
-    a = answers.get(box)
-    if not a:
-        return _fail(f"no answer for '{box}' on {pid} to confirm")
-    if a["status"] == "confirmed":
-        print(f"{pid} {box}: already confirmed")
-        return 0
-    answers[box] = {**a, "status": "confirmed", "by": "owner", "at": startup._iso(time.time())}
-    save_answers(pid, answers)
+    with _locked():
+        answers = load_answers(pid)
+        a = answers.get(box)
+        if not a:
+            return _fail(f"no answer for '{box}' on {pid} to confirm")
+        if a["status"] == "confirmed":
+            print(f"{pid} {box}: already confirmed")
+            return 0
+        answers[box] = {**a, "status": "confirmed", "by": "owner", "at": startup._iso(time.time())}
+        save_answers(pid, answers)
     print(f"{pid} {box}: confirmed")
     return 0
 

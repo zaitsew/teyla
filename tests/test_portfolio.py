@@ -818,7 +818,7 @@ def command(tmp_path, monkeypatch):
     monkeypatch.setattr(asks, "collect", lambda *a, **k: [])
     monkeypatch.setattr(state, "repo_index", lambda: {})
     monkeypatch.setattr(state, "spent_today", lambda now: None)
-    monkeypatch.setattr(state, "backlog_view", lambda now: dict(backlog.EMPTY, prs=[], issues=[], counts={}, canonical={}))
+    monkeypatch.setattr(state, "backlog_view", lambda now, **k: dict(backlog.EMPTY, prs=[], issues=[], counts={}, canonical={}))
     monkeypatch.setenv("TEYLA_CLAUDE_SESSIONS", str(tmp_path / "none"))
     monkeypatch.setattr(state, "dispatched", lambda: [])
     return reg

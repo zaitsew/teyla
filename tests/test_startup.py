@@ -2,6 +2,7 @@
 the focus product, and the portfolio block. Nothing here reaches the network, a probe or the real ~/.teyla."""
 from __future__ import annotations
 
+import datetime
 import json
 import pathlib
 import stat
@@ -324,3 +325,54 @@ def test_the_startup_commands_print_for_a_person(tmp_path, monkeypatch, capsys):
     assert cli.main(["startup", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["focus"] == "app"
     assert cli.main(["startup", "show", "nope"]) == 2
+
+
+def test_a_product_teyla_cannot_see_is_unknown_not_unbuilt():
+    b = block(install=False, rp={"stage": "building"}, usage=None)
+    # the default: a known platform with no build
+    assert status(b, "built") == "missing" and b["stage_title"] == "Not built"
+    rp = {"stage": "building"}
+    repos = [pathlib.Path("/code/app")]
+    f = startup.facts(NOW, pid="app", rp=rp, repos=repos, usage={}, ages={}, money_enabled=False, can_install=False,
+                      ai_cost_30d=None, attempts=growth.tally([], ["app"], TODAY)["app"], install_known=False)
+    seen = startup.evaluate(NOW, f, rp, [], "app")
+    assert status(seen, "built") == "unknown"
+    assert seen["stage_title"] == "Not known"
+    assert seen["next"]["text"] == "Teyla cannot tell whether it can be installed."
+
+
+def test_accounts_prove_a_product_is_built():
+    b = block(install=False, usage={"users_total": "2"})
+    assert status(b, "built") == "met"
+
+
+def test_an_external_counter_in_one_repo_does_not_hide_another_repo():
+    rp = {"stage": "live"}
+    repos = [pathlib.Path("/code/a"), pathlib.Path("/code/b")]
+    usage = {"a": {"external_users": "0"}, "b": {"users_total": "10"}}
+    f = startup.facts(NOW, pid="app", rp=rp, repos=repos, usage=usage, ages={"a": NOW, "b": NOW}, money_enabled=False,
+                      can_install=True, ai_cost_30d=None, attempts=growth.tally([], ["app"], TODAY)["app"])
+    assert f["usage"]["external"] == 9
+    assert f["usage"]["assumed"] is True
+
+
+def test_overlapping_revenue_windows_do_not_earn_repeating():
+    def snap(days):
+        day = (datetime.date.fromisoformat(TODAY) - datetime.timedelta(days=days)).isoformat()
+        return {"id": "app", "day": day, "revenue_30d_usd": 10}
+    usage = {"revenue_30d_usd": "10", "paying_users": "1"}
+    assert status(block(usage=usage, money=True, snaps=[snap(27)]), "repeating") == "missing"
+    assert status(block(usage=usage, money=True, snaps=[snap(30)]), "repeating") == "met"
+
+
+def test_the_startup_commands_start_no_refresh(monkeypatch):
+    from teyla import backlog, console, portfolio, state
+    called = []
+    monkeypatch.setattr(portfolio, "spawn_refresh", lambda *a, **k: called.append("portfolio"))
+    monkeypatch.setattr(console, "spawn_refresh", lambda *a, **k: called.append("console") or True)
+    monkeypatch.setattr(backlog, "spawn_refresh", lambda *a, **k: called.append("backlog"))
+    monkeypatch.setattr(state, "_spawn_refresh", lambda: called.append("spend"))
+    monkeypatch.setattr(portfolio, "enabled", lambda *a, **k: True)
+    monkeypatch.setattr(state, "backlog_enabled", lambda: True)
+    startup._view(NOW)
+    assert called == []

@@ -191,3 +191,20 @@ def test_the_sheet_refuses_a_product_that_is_not_a_venture(monkeypatch, capsys):
     assert "for venture products" in capsys.readouterr().err
     assert cli.main(["startup", "yc", "answer", "app", "building", "x"]) == 1
     assert cli.main(["startup", "yc", "ghost"]) == 2
+
+
+def test_two_answers_at_once_both_survive():
+    import threading
+    start = threading.Barrier(2)
+
+    def write(box):
+        start.wait()
+        with startup_yc._locked():
+            answers = startup_yc.load_answers("app")
+            answers[box] = {"text": box, "status": "confirmed", "by": "owner", "at": "2026-11-04T00:00:00Z"}
+            startup_yc.save_answers("app", answers)
+
+    threads = [threading.Thread(target=write, args=(b,)) for b in ("building", "does")]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert set(startup_yc.load_answers("app")) == {"building", "does"}

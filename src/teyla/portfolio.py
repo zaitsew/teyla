@@ -1271,6 +1271,7 @@ def build(now: float, *, reg: dict, prods: list[dict], ask_rows: list[dict], tas
                     "quiet_days": quiet, "line": line_of(gh["open_p1"], milestone, primary_row, quiet)}
         try:                                               # null when it cannot be computed, as a part that failed elsewhere
             sblock = startup.block_for(sctx, now, pid=pid, rp=rp, repos=repos, usage=usage, can_install=bool(progress["can_install"]),
+                                       install_known=any(r.get("state") not in ("", None, "unknown") for r in rows),
                                        money_enabled=monetization_enabled(manifests),
                                        ai_cost_30d=_optional_usd(act.get("spend_30d_usd"))) if sctx else None
         except Exception:  # noqa: BLE001
