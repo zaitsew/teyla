@@ -63,6 +63,10 @@ There is no install-channel check as on iOS: Play internal testing and productio
 
 The picture shows the screen as the tester saw it, so it can show another person's data. `Modifier.reviewPrivate()` registers the composable's bounds; at capture time each one, plus 2 dp, is painted black in the PNG **before** the form shows it and before it is hashed, saved or sent. A tap or area that touches a masked area records no `element`, and an anchor that overlaps one loses its `strings`. A composable that cannot report its bounds (they are not a number, or reading them fails) hides the **whole window**.
 
+**A moving screen.** `PixelCopy` returns the last frame the screen showed, which lags the layout by a few frames. So the capture waits until the private areas have held their place for 3 frames, and checks again after the copy. If they do not settle within 1.5 s, it refuses and nothing is sent. A private area that never stops moving cannot be reported.
+
+**Backup.** The queue lives in `noBackupFilesDir`, so Auto Backup never carries a queued report off the device.
+
 **Password fields are not detected.** Compose has no password type that the library can see from outside, so a `PasswordVisualTransformation` field, a card field or a one-time-code field is **not** masked unless the product marks it with `reviewPrivate()`. Mark every one of them. (A classic `View` password field is not covered either; this package is for Compose screens.)
 
 **`FLAG_SECURE`.** A window that sets `FLAG_SECURE` is protected on purpose, and a copy of it comes out black. The package does not send that picture as if it were the screen: it checks the flag first, shows `strings.secureScreen` ("This screen is protected from screenshots by the app, so review mode cannot take a picture of it. Nothing was sent.") and opens nothing. A product that wants feedback on such a screen sets the flag off in its `internal` build.

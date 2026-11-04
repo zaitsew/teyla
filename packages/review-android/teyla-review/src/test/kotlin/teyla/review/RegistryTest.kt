@@ -1,6 +1,7 @@
 package teyla.review
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -76,5 +77,35 @@ class RegistryTest {
         r.add(Kind.Anchor, "a.top", ReviewRole.Other, emptyList(), frame(10.0, 10.0, 10.0, 10.0))
         r.add(Kind.Anchor, "a.low", ReviewRole.Other, emptyList(), frame(10.0, 60.0, 10.0, 10.0))
         assertEquals(listOf("outer", "inner"), r.snapshot(100.0, 100.0, 1.0).anchors.map { it.screen })
+    }
+
+    @Test
+    fun aPictureWaitsUntilThePrivateAreasHoldStill() {
+        val still = StillWatch(needed = 2)
+        val a = Frame(0.0, 0.0, 10.0, 10.0)
+        val moved = Frame(0.0, 5.0, 10.0, 10.0)
+        assertFalse(still.observe(listOf(a)))
+        assertFalse(still.observe(listOf(a)))
+        assertFalse(still.observe(listOf(moved)))
+        assertFalse(still.observe(listOf(moved)))
+        assertTrue(still.observe(listOf(moved)))
+    }
+
+    @Test
+    fun anAreaThatAppearsCountsAsMovement() {
+        val still = StillWatch(needed = 1)
+        val a = Frame(0.0, 0.0, 10.0, 10.0)
+        assertFalse(still.observe(emptyList()))
+        assertFalse(still.observe(listOf(a)))
+        assertTrue(still.observe(listOf(a)))
+    }
+
+    @Test
+    fun theOrderOfTheAreasIsNotMovement() {
+        val still = StillWatch(needed = 1)
+        val a = Frame(0.0, 0.0, 10.0, 10.0)
+        val b = Frame(0.0, 20.0, 10.0, 10.0)
+        assertFalse(still.observe(listOf(a, b)))
+        assertTrue(still.observe(listOf(b, a)))
     }
 }

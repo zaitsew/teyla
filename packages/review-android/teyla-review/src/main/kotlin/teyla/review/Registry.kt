@@ -19,6 +19,22 @@ internal class Entry(
 
 internal class Snapshot(val anchors: List<Anchor>, val privateFrames: List<Frame>)
 
+internal const val STILL_FRAMES = 3
+internal const val STILL_TIMEOUT_MS = 1500L
+
+/** Says when the private areas have held their place for [needed] frames running. A new or removed area counts as movement. */
+internal class StillWatch(private val needed: Int = STILL_FRAMES) {
+    private var last: Set<Frame>? = null
+    private var unchanged = 0
+
+    fun observe(frames: List<Frame>): Boolean {
+        val now = frames.toSet()
+        unchanged = if (now == last) unchanged + 1 else 0
+        last = now
+        return unchanged >= needed
+    }
+}
+
 internal class Registry {
     private val lock = Any()
     private val entries = LinkedHashMap<Long, Entry>()

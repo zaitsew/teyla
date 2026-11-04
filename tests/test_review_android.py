@@ -288,3 +288,10 @@ def test_the_golden_capture_breaks_the_schema_when_a_field_is_wrong():
     schema = json.loads(SCHEMA.read_text())
     doc["app"]["configuration"] = "release"
     assert validate(doc, schema, schema) != []
+
+
+def test_the_queue_stays_out_of_auto_backup():
+    """A queued report holds a picture of the screen; only noBackupFilesDir keeps Auto Backup off it."""
+    sources = PKG / "teyla-review" / "src" / "main" / "kotlin" / "teyla" / "review"
+    text = "".join(p.read_text() for p in sources.glob("*.kt"))
+    assert "noBackupFilesDir" in text and ".filesDir" not in text and ".cacheDir" not in text

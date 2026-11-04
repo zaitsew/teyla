@@ -16,6 +16,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.view.Choreographer
 import android.view.PixelCopy
 import android.widget.Toast
 import java.io.ByteArrayOutputStream
@@ -74,7 +75,8 @@ internal object ReviewOverlay {
             override fun putBoolean(key: String, value: Boolean) { prefs.edit().putBoolean(key, value).apply() }
         }
         // Nothing goes out before the tester has accepted the first-send notice, whatever waits in the queue.
-        queue = FileQueue(File(application.filesDir, "teyla-review/queue"), { e ->
+        // noBackupFilesDir: a queued report holds a picture of the screen, and Auto Backup must not carry it off.
+        queue = FileQueue(File(application.noBackupFilesDir, "teyla-review/queue"), { e ->
             if (isAccepted(kv)) deliverWith(route, e) else ChannelResult.Retry
         })
 
@@ -159,17 +161,43 @@ internal object ReviewOverlay {
         val h = decor.height
         if (w <= 0 || h <= 0) { fail(strings.pictureFailed); return }
         val density = activity.resources.displayMetrics.density.toDouble().coerceAtLeast(0.5)
-        // Bounds are read now, on the main thread, as close to the copy as they can be.
-        val snapshot = ReviewState.registry.snapshot(w / density, h / density, density)
-        val bitmap = try { Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888) } catch (e: OutOfMemoryError) { fail(strings.pictureFailed); return }
-        try {
-            PixelCopy.request(window, bitmap, { result ->
-                if (result != PixelCopy.SUCCESS) { bitmap.recycle(); fail(strings.pictureFailed); return@request }
-                worker.execute { finishFreeze(activity, cfg, bitmap, snapshot, density) }
-            }, main)
-        } catch (e: IllegalArgumentException) {
-            bitmap.recycle(); fail(strings.pictureFailed)
+        val deadline = SystemClock.uptimeMillis() + STILL_TIMEOUT_MS
+        val read = { ReviewState.registry.snapshot(w / density, h / density, density) }
+
+        fun copy(snapshot: Snapshot, again: () -> Unit) {
+            val bitmap = try { Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888) } catch (e: OutOfMemoryError) { fail(strings.pictureFailed); return }
+            try {
+                PixelCopy.request(window, bitmap, { result ->
+                    when {
+                        result != PixelCopy.SUCCESS -> { bitmap.recycle(); fail(strings.pictureFailed) }
+                        // Something moved while the copy ran, so this mask may not fit this picture.
+                        read().privateFrames.toSet() != snapshot.privateFrames.toSet() -> { bitmap.recycle(); again() }
+                        else -> worker.execute { finishFreeze(activity, cfg, bitmap, snapshot, density) }
+                    }
+                }, main)
+            } catch (e: IllegalArgumentException) {
+                bitmap.recycle(); fail(strings.pictureFailed)
+            }
         }
+
+        // PixelCopy returns the last frame the screen showed, which lags the layout by a few frames. A mask read
+        // while a list scrolls would sit beside the text it hides, so wait until the private areas hold still.
+        // If they never do, refuse: no picture is better than an unmasked one.
+        fun awaitStill() {
+            val still = StillWatch()
+            Choreographer.getInstance().postFrameCallback(object : Choreographer.FrameCallback {
+                override fun doFrame(frameTimeNanos: Long) {
+                    if (activity.isFinishing || decor.width != w || decor.height != h || SystemClock.uptimeMillis() > deadline) {
+                        fail(strings.pictureFailed)
+                        return
+                    }
+                    val snapshot = read()
+                    if (still.observe(snapshot.privateFrames)) copy(snapshot) { awaitStill() }
+                    else Choreographer.getInstance().postFrameCallback(this)
+                }
+            })
+        }
+        awaitStill()
     }
 
     private fun finishFreeze(activity: Activity, cfg: ReviewConfig, source: Bitmap, snapshot: Snapshot, density: Double) {

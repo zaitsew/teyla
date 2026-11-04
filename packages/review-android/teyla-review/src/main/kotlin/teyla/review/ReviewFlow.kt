@@ -104,7 +104,10 @@ internal fun ReviewFlow(session: Session, strings: ReviewStrings, onClose: () ->
         val panel: @Composable (Modifier) -> Unit = { m ->
             Column(m.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 when (step) {
-                    Step.Point -> PointPanel(session, strings, tap, region, onExit = onClose, onNext = { step = Step.Comment })
+                    Step.Point -> PointPanel(
+                        session, strings, tap, region, onExit = onClose, onNext = { step = Step.Comment },
+                        onWholeScreen = { tapX = null; tapY = null; region = null; step = Step.Comment },
+                    )
                     Step.Comment -> CommentPanel(
                         session, strings, comment, { comment = it }, healthOk, { healthOk = it }, sending, saveFailed,
                         onBack = { step = Step.Point },
@@ -148,6 +151,7 @@ internal fun ReviewFlow(session: Session, strings: ReviewStrings, onClose: () ->
 @Composable
 private fun PointPanel(
     session: Session, strings: ReviewStrings, tap: Point?, region: Frame?, onExit: () -> Unit, onNext: () -> Unit,
+    onWholeScreen: () -> Unit,
 ) {
     Text(strings.modeTitle, style = MaterialTheme.typography.titleLarge)
     Text(if (session.television) strings.dpadHint else strings.modeHint)
@@ -157,7 +161,7 @@ private fun PointPanel(
         OutlinedButton(onClick = onExit) { Text(strings.exit) }
         Button(onClick = onNext, enabled = tap != null) { Text(strings.next) }
     }
-    TextButton(onClick = onNext) { Text(strings.wholeScreen) }
+    TextButton(onClick = onWholeScreen) { Text(strings.wholeScreen) }
 }
 
 @Composable
