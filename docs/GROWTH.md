@@ -22,7 +22,7 @@ Beyond Intelligence. Filmed footage is a richer input a few times a week. A slot
 ```
 teyla growth harvest      new ideas from the sources above (nothing confidential: every idea is scanned)
 teyla growth trends       trend ideas scored against your audience (relevance x2, demonstrability x2, novelty, momentum; keep 20/30)
-teyla growth plan         fill today's slot of every enabled channel; an empty slot shows as a gap
+teyla growth plan         fill today's slot of every enabled channel; an empty slot shows as a gap with its reason
 teyla growth draft        write the planned items through your `claude -p`, check voice and leaks, then an editor scores the hook
 teyla growth review       what waits for you, best editor score first; approve, reject (with a reason) or edit
 teyla growth packets      one folder per approved item: caption, first comment, media, the platform's upload page
@@ -31,8 +31,9 @@ teyla growth published ID URL    paste the post's URL after you posted it
 
 A slot balances formats and rotates products. The product with the fewest sale attempts goes first.
 
-`teyla growth daily` runs harvest, trends, plan and draft in that order, each step failing on its own (exit 1 if one
-did). Plan sits before draft because draft writes the planned slots. Set `[growth] daily = true` in Teyla's config
+`teyla growth daily` runs harvest, trends, plan, video and draft in that order, each step failing on its own (exit 1 if
+one did). Plan sits before draft because draft writes the planned slots. Video sits between them (see "The daily
+video"). Set `[growth] daily = true` in Teyla's config
 (`teyla config set growth.daily=true`) and `teyla routine install` writes a launchd agent that runs it at 06:30
 (`~/Library/Logs/teyla-growth.log`). It is off by default. Nothing is published, and in safe mode the draft step is
 skipped.
@@ -101,6 +102,31 @@ teyla growth cut ID [--session SID] [--no-footage]                a vertical cut
 - An episode is not an idea in the queue and never appears in `review`. The console section shows it under
   `episodes` (stage `filming`, `cutting` or `cut`) and in the `pipeline` counts.
 
+## The daily video
+
+YouTube, Instagram and TikTok take video and nothing else. `plan` never fills their slots with a text post: a slot
+holds a clip with a rendered video, or it shows as a gap with the reason (`gap: no recent session ...`). A clip item
+with no video file is held at draft time without a model call.
+
+On a day with no clip, the video step of `growth daily` makes one:
+
+1. It picks a real session from the last two days that was not filmed before (Claude Code or Codex; sessions that
+   opened a PR first), finished at least 30 minutes ago, where every repo it touched is a public product. A session
+   that touched a private repo is never filmed. It builds the redacted story with `teyla reel`. A story with fewer than three beats, or with
+   no commit, passing test run or PR, is skipped. Up to six sessions are tried.
+2. It waits for the machine (`teyla load --wait --kind build`), renders a 1080x1920 screen video of about 24 seconds
+   with Pillow and ffmpeg on your Mac, and asks `growth cut` for the hook and the caption (up to two repair calls when the caption breaks the voice chart). One file feeds all three
+   channels, each with its own caption. Every string the video draws is scanned before the render.
+3. It reads the finished video back before you see it: length 10 to 30 s, size 1080x1920, one frame per second taken
+   out and read as text with the OCR helper that Filmare installs (`~/.local/share/filmare/bin/ocr`), and the text
+   scanned for secrets, e-mails, home paths, your private terms and products you have not released. A leak deletes the
+   video. A missing helper, a wrong length or any other doubt keeps the clips as drafts with `hold_reason`: not in
+   `review`, and the slot stays a gap. Three frames (first, middle, last) stay next to the video in
+   `~/.teyla/growth/episodes/<id>/frames-reel/` so you can look.
+
+Filmare's own `render` is not used here: its first run downloads a 170 MB browser, which needs your yes. `growth cut`
+by hand has no frame gate: you watch the clip in `review`. A day with footage you filmed and cut needs no render.
+
 ## Store
 
 Everything lives in `~/.teyla/growth/` (folders mode 0700, files 0600), never in a repo:
@@ -109,7 +135,7 @@ Everything lives in `~/.teyla/growth/` (folders mode 0700, files 0600), never in
 |---|---|
 | `config.toml` | channels (platform, language, enabled, posts per day), public products, models, `footage_folder`, `whisper_model` |
 | `items/<id>.json` | one idea or post: kind, format, idea, hook, body, facts, sources, score, checks, status |
-| `ledger.jsonl` | append-only events: assign, draft, approve, reject (with the reason), packet, published, attempt, ride, ingest, cut, daily |
+| `ledger.jsonl` | append-only events: assign, draft, approve, reject (with the reason), packet, published, attempt, ride, ingest, cut, video, daily |
 | `episodes/<id>/` | an episode's transcript, the cut video and its captions file |
 | `packets/<day>/<platform>-<language>/` | `caption.txt`, `first-comment.txt`, the media, `upload.url` |
 

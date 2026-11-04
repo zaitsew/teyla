@@ -1021,8 +1021,19 @@ def pick_idea(masters: list[dict], key: str, last: dict | None, attempts: dict, 
     return best
 
 
+def is_video_channel(ch: dict) -> bool:
+    return bool(PLATFORMS[ch["platform"]]["video"])
+
+
+def video_ready(it: dict) -> bool:
+    """A clip item whose video file exists. Only such an item fills a slot of a video channel."""
+    return any(os.path.isfile(p) for p in it.get("media") or [])
+
+
 def plan(store: Store, cfg: dict, day: str, now: float, *, commit: bool = True, reg: dict | None = None) -> list[dict]:
-    """One row per slot of every enabled channel: filled with an item, or a gap. Commit writes the new items."""
+    """One row per slot of every enabled channel: filled with an item, or a gap. Commit writes the new items.
+    A video channel (YouTube, Instagram, TikTok) is never filled with a text post: its slot holds a clip with a video
+    (`growth cut` or the daily video step makes it) or shows as a gap with the reason."""
     attempts = attempt_rows(store, reg)
     items = store.items()
     masters = available_masters(store, cfg)
@@ -1031,11 +1042,16 @@ def plan(store: Store, cfg: dict, day: str, now: float, *, commit: bool = True, 
     rows = []
     for ch in enabled_channels(cfg):
         key = channel_key(ch)
+        video = is_video_channel(ch)
         have = sorted((i for i in items.values() if i.get("day") == day and i.get("channel") == key
-                       and i["status"] not in ("rejected", "failed") and not i.get("hold_reason")), key=lambda i: i["created"])
+                       and i["status"] not in ("rejected", "failed") and not i.get("hold_reason")
+                       and (not video or video_ready(i))), key=lambda i: i["created"])
         for n in range(1, ch["posts_per_day"] + 1):
             if n <= len(have):
                 rows.append(dict(channel=key, slot=n, item=have[n - 1]))
+                continue
+            if video:
+                rows.append(dict(channel=key, slot=n, item=None, gap=video_gap(store, day)))
                 continue
             m = pick_idea(masters, key, _recent(items, key), attempts, formats_today, used_today, cfg)
             if m is None:
@@ -1063,6 +1079,14 @@ def plan(store: Store, cfg: dict, day: str, now: float, *, commit: bool = True, 
 GOOD_STATES = ("review", "checked", "approved", "ready", "published")
 
 
+def video_gap(store: Store, day: str) -> str:
+    """Why a video channel has no clip today: the last reason the video step logged, else that nothing made one yet."""
+    for row in reversed(store.ledger()):
+        if row.get("ev") == "video" and row.get("day") == day:
+            return str(row.get("reason") or "no video yet")
+    return "no video yet; `teyla growth cut` or the daily video step makes one"
+
+
 def slot_report(store: Store, cfg: dict, day: str) -> dict:
     """Per enabled channel on `day`: the slot is filled (an item the owner can see) or a gap, and why. A weak post never
     fills a slot, so the target stays visible: `filled` of `total`, and a reason for each gap."""
@@ -1071,11 +1095,13 @@ def slot_report(store: Store, cfg: dict, day: str) -> dict:
     for ch in enabled_channels(cfg):
         key = channel_key(ch)
         mine = [i for i in items if i.get("day") == day and i.get("channel") == key and i["status"] != "rejected"]
-        ok = [i for i in mine if i["status"] in GOOD_STATES]
+        video = is_video_channel(ch)
+        ok = [i for i in mine if i["status"] in GOOD_STATES and (not video or video_ready(i))]
         why = ""
         if len(ok) < ch["posts_per_day"]:
             why = next((i.get("hold_reason") or i.get("fail_reason") or "" for i in sorted(mine, key=lambda i: i["created"], reverse=True)
-                        if i.get("hold_reason") or i.get("fail_reason")), "") or ("not drafted yet" if mine else "no idea left")
+                        if i.get("hold_reason") or i.get("fail_reason")), "")
+            why = why or (video_gap(store, day) if video else ("not drafted yet" if mine else "no idea left"))
         rows.append(dict(channel=key, filled=min(len(ok), ch["posts_per_day"]), target=ch["posts_per_day"], why=why))
     return dict(rows=rows, filled=sum(r["filled"] for r in rows), total=sum(r["target"] for r in rows))
 
@@ -1093,7 +1119,7 @@ def render_plan(rows: list[dict], day: str, qd: float | None) -> str:
         if it:
             L.append(f"  {r['channel']:<14} {it['id']}  {it['status']:<8} {it['format']:<17} {clip_text(it['hook'] or it['idea'])}")
         else:
-            L.append(f"  {r['channel']:<14} gap: no idea left. Run `teyla growth harvest`.")
+            L.append(f"  {r['channel']:<14} gap: {r['gap']}" if r.get("gap") else f"  {r['channel']:<14} gap: no idea left. Run `teyla growth harvest`.")
     return "\n".join(L) + "\n"
 
 
@@ -1259,6 +1285,11 @@ def draft_one(store: Store, cfg: dict, item: dict, chart_dir, guard: Guard, reg:
     long = item["kind"] in ("clip", "episode") or item["format"] == "spec-product"
     model = cfg["model_script"] if long else cfg["model_short"]
     row = dict(id=item["id"], channel=item.get("channel", ""), model=model, cost=0.0, calls=0)
+    if PLATFORMS[item["platform"]]["video"] and not video_ready(item):
+        q._hold(item, "no video to post: a clip needs a rendered video (`teyla growth cut`); no text is drafted for it")
+        store.save(item, now)
+        store.log("held", now, id=item["id"], reason="no-video")
+        return dict(row, state="draft", reason=item["hold_reason"])
     if q.pr_ref(item) and not item.get("enriched"):
         res = q.enrich_pr(item, guard)
         if not res["ok"]:
