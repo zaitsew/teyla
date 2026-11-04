@@ -878,13 +878,14 @@ def run_trends(store: Store, cfg: dict, now: float, *, x: bool = False, guard: G
     kept, killed, specs = [], [], []
     screened: list[tuple[str, dict]] = []
     for ref, c in fresh:                                   # nothing leaves the machine before the guard has read it
-        hits = guard.check(c.get("title", ""), c.get("summary", ""), c.get("url") or "")
+        hits = guard.check(*(str(c.get(k) or "") for k in ("title", "summary", "url", "date", "via")))
         if hits:
             why = f"confidential overlap ({kinds_text(hits)})"
             killed.append((c["title"], why))
             store.log("trend-killed", now, ref=ref, reason=why, score=0, scorer="guard")
         else:
             screened.append((ref, c))
+    n_new = len(fresh)
     fresh = screened
     judged: dict[int, dict] = {}
     cost = 0.0
@@ -930,7 +931,7 @@ def run_trends(store: Store, cfg: dict, now: float, *, x: bool = False, guard: G
             store.save(sp, now)
             store.log("idea", now, id=sp["id"], source="trend", format="spec-product", scorer=scorer)
             specs.append(sp)
-    return dict(kept=kept, killed=killed, rows=rows, specs=specs, scored=len(judged), candidates=len(fresh), cost=cost)
+    return dict(kept=kept, killed=killed, rows=rows, specs=specs, scored=len(judged), candidates=n_new, cost=cost)
 
 
 _REAL_RUN_GROK = run_grok

@@ -387,6 +387,13 @@ def test_a_trend_with_a_private_term_never_reaches_the_model(env, tmp_path, monk
     sent = json.dumps(fm.calls[0]["payload"])
     assert TERM not in sent and len(fm.calls[0]["payload"]["candidates"]) == 1
     assert any("confidential overlap" in why for _t, why in res["killed"]) and [i["idea"] for i in res["kept"]] == ["Reaction: Agent runner"]
+    assert res["candidates"] == 2                                      # the count includes the screened-out one
+    d2 = write_bi(tmp_path / "b", [bi_item("Agent runner two", date=f"{TERM} 2026-10-29")])
+    store2, cfg2 = make(extra=f'bi_data = "{d2}"')
+    fm2 = fake_model([dict(items=[verdict(0)])])
+    monkeypatch.setattr(growth, "call_model", fm2)
+    growth.run_trends(store2, cfg2, NOW)
+    assert fm2.calls == [] or TERM not in json.dumps(fm2.calls[0]["payload"])          # every field sent is screened
 
 
 def test_an_owner_edit_clears_the_hold(env, monkeypatch):
