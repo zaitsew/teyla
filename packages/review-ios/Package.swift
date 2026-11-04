@@ -14,7 +14,9 @@ let review: [SwiftSetting] =
 
 let package = Package(
     name: "TeylaReview",
-    platforms: [.iOS(.v17), .macOS(.v14)],   // macOS only so `swift test` runs on the Mac without a simulator
+    // iOS and macOS are both real targets: the overlay is one SwiftUI file, and only the window,
+    // the picture and the probes differ (Sources/TeylaReview/UI/Mac*.swift). `swift test` runs on the Mac.
+    platforms: [.iOS(.v17), .macOS(.v14)],
     products: [
         .library(name: "TeylaReview", targets: ["TeylaReview"]),
     ],

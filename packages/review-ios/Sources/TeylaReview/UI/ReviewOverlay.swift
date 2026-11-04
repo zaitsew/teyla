@@ -1,13 +1,12 @@
-#if TEYLA_REVIEW && canImport(UIKit)
+#if TEYLA_REVIEW && (canImport(UIKit) || os(macOS))
 import SwiftUI
-import UIKit
 
 /// Review mode. The frozen app shrinks into a framed picture so the mode cannot be mistaken for a
 /// hang, and the owner goes through three steps: point at something, say what is wrong, see what
 /// became of it. The picture is scaled, but every point kept here is a window point, so the anchors'
 /// bounds and the capture stay in the coordinates the format promises.
 struct ReviewOverlay: View {
-    let image: UIImage
+    let image: ReviewPlatform.NativeImage
     let size: CGSize
     let anchors: [Anchor]
     let probe: (CGPoint) -> (identifier: String?, label: String?)
@@ -15,6 +14,9 @@ struct ReviewOverlay: View {
     let microphone: MicrophoneGuard
     let speech: SpeechCapture
     let strings: ReviewStrings
+    /// A line under the picture's caption when part of the picture is known to have come out wrong
+    /// (a blank map). Nil shows nothing.
+    var pictureNote: String?
     /// True while the first-send notice has not been accepted on this install and the capture can
     /// leave the device. Asked at each Send.
     let noticeNeeded: () -> Bool
@@ -29,7 +31,7 @@ struct ReviewOverlay: View {
     private enum Step: Equatable { case point, comment, done(ReviewSaveOutcome) }
 
     @State private var step = Step.point
-    @State private var entered = false
+    @State private var entered = ReviewPlatform.isPointer
     @State private var tap: CGPoint?
     @State private var region: CGRect?
     @State private var drawing: CGRect?
@@ -49,19 +51,11 @@ struct ReviewOverlay: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            if entered {
-                banner.transition(.move(edge: .top).combined(with: .opacity))
-            }
-            stage
-            if entered {
-                panel.transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
+        layout
         // The first frame fills the window, the picture exactly over the app it froze. Then the
         // safe area and the keyboard apply, so the panel never sits under either.
         .ignoresSafeArea(.container, edges: entered ? [] : .all)
-        .background(Color(uiColor: .secondarySystemBackground).ignoresSafeArea())
+        .background(ReviewPlatform.panelBackground.ignoresSafeArea())
         .onAppear { withAnimation(.spring(duration: 0.35)) { entered = true } }
         .onDisappear { stopListening() }
         .alert(strings.noticeTitle, isPresented: $showNotice) {
@@ -73,6 +67,33 @@ struct ReviewOverlay: View {
         } message: {
             Text(strings.noticeMessage)
         }
+    }
+
+    @ViewBuilder
+    private var layout: some View {
+        #if os(macOS)
+        // A window, not a phone: the picture takes the room and the form sits beside it.
+        HStack(spacing: 0) {
+            stage
+            Divider()
+            VStack(spacing: 0) {
+                banner
+                panel
+                Spacer(minLength: 0)
+            }
+            .frame(width: 320)
+        }
+        #else
+        VStack(spacing: 0) {
+            if entered {
+                banner.transition(.move(edge: .top).combined(with: .opacity))
+            }
+            stage
+            if entered {
+                panel.transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        #endif
     }
 
     // MARK: the banner
@@ -98,7 +119,7 @@ struct ReviewOverlay: View {
     }
 
     private var bannerHint: String {
-        step == .point ? strings.modeHint : ""
+        step == .point ? (ReviewPlatform.isPointer ? strings.modeHintPointer : strings.modeHint) : ""
     }
 
     // MARK: the picture
@@ -116,7 +137,7 @@ struct ReviewOverlay: View {
     private func picture(scale: CGFloat) -> some View {
         let shape = RoundedRectangle(cornerRadius: entered ? 16 : 0, style: .continuous)
         return ZStack(alignment: .topLeading) {
-            Image(uiImage: image)
+            Image(reviewImage: image)
                 .resizable()
                 .frame(width: size.width * scale, height: size.height * scale)
                 .gesture(touch(scale: scale))
@@ -229,6 +250,7 @@ struct ReviewOverlay: View {
             HStack {
                 Button(strings.exit, action: onClose)
                     .buttonStyle(.bordered)
+                    .reviewCancelShortcut()
                     .accessibilityIdentifier("teyla.review.exit")
                 Spacer()
                 Button(selection == nil ? strings.wholeScreen : strings.next) {
@@ -248,11 +270,11 @@ struct ReviewOverlay: View {
                 .font(.subheadline.weight(.semibold))
             HStack(alignment: .bottom, spacing: 8) {
                 TextField(strings.placeholder, text: $text, axis: .vertical)
-                    .lineLimit(1...4)
+                    .lineLimit(ReviewPlatform.isPointer ? 3...8 : 1...4)
                     .textFieldStyle(.plain)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
-                    .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .background(ReviewPlatform.fieldBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .focused($focused)
                     .disabled(sending)
                     .accessibilityIdentifier("teyla.review.comment")
@@ -288,6 +310,12 @@ struct ReviewOverlay: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("teyla.review.preview-caption")
+            if let pictureNote {
+                Text(pictureNote)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("teyla.review.picture-note")
+            }
             if requiresHealthConsent {
                 Button {
                     healthConsentGiven.toggle()
@@ -318,6 +346,7 @@ struct ReviewOverlay: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(sending)
+                .reviewCancelShortcut()
                 .accessibilityIdentifier("teyla.review.back")
                 Spacer()
                 if sending {
@@ -335,11 +364,11 @@ struct ReviewOverlay: View {
 
     private func donePanel(_ outcome: ReviewSaveOutcome) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(outcome == .sent ? strings.sentTitle : strings.savedTitle,
-                  systemImage: outcome == .sent ? "checkmark.circle.fill" : "iphone")
+            Label(outcome == .sent ? strings.sentTitle : (ReviewPlatform.isPointer ? strings.savedTitleMac : strings.savedTitle),
+                  systemImage: outcome == .sent ? "checkmark.circle.fill" : ReviewPlatform.savedSymbol)
                 .font(.subheadline.weight(.semibold))
                 .accessibilityIdentifier("teyla.review.outcome")
-            Text(outcome == .sent ? strings.sentDetail : strings.savedDetail)
+            Text(outcome == .sent ? strings.sentDetail : (ReviewPlatform.isPointer ? strings.savedDetailMac : strings.savedDetail))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -423,7 +452,7 @@ struct ReviewOverlay: View {
             if outcome == .failed {
                 failure = strings.saveFailed
             } else {
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                ReviewPlatform.success()
                 withAnimation(.easeInOut(duration: 0.2)) { step = .done(outcome) }
             }
         }

@@ -23,6 +23,16 @@ public struct ReviewStrings {
     public var savedTitle = "Saved on this phone"
     public var savedDetail = "It has not been sent: this phone is not connected to the review inbox yet."
     public var done = "Done"
+    // The Mac: a pointer and a menu instead of a finger and a shake.
+    /// The Help menu item and the Settings row.
+    public var reportProblem = "Report a problem…"
+    /// The title of the window that holds the frozen picture and the form.
+    public var windowTitle = "Report a problem"
+    public var modeHintPointer = "The window is frozen. Click a spot or drag around an area."
+    public var savedTitleMac = "Saved on this Mac"
+    public var savedDetailMac = "It has not been sent: this Mac is not connected to the review inbox yet."
+    /// Shown when part of the picture (a map, a video, a 3D view) came out blank.
+    public var blankNote = "A map, video or 3D area can come out blank in this picture. If that is the problem, say so in your comment."
     /// Shown under the comment field when the capture leaves the device through the product's
     /// channel: who receives the comment and the screenshot. Empty shows nothing.
     public var deliveryNote = ""
