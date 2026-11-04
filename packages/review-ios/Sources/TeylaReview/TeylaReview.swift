@@ -47,9 +47,10 @@ public enum TeylaReview {
     static var effectiveDeliver: ReviewDeliver? {
         if let deliver = configuration.deliver { return deliver }
         guard let config = bundleChannel else { return nil }
-        return ChannelDelivery.deliver(config: config, markRefused: { id in
-            CaptureStore(root: CaptureStore.defaultRoot()).markRefused(id: id)
-        })
+        return ChannelDelivery.deliver(
+            config: config,
+            isRefused: { id in CaptureStore(root: CaptureStore.defaultRoot()).readLocalStatus(id: id)?.refused != nil },
+            markRefused: { id in CaptureStore(root: CaptureStore.defaultRoot()).markRefused(id: id) })
     }
 
     /// True when a capture can leave the device for a server (a `deliver` closure or the shared channel).

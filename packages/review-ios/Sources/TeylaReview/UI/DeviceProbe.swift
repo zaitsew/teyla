@@ -19,7 +19,9 @@ enum DeviceProbe {
 
     /// The frozen picture: the key window as it is, at its own scale, with every `.reviewPrivate()`
     /// view painted black. The overlay shows this same picture and it is the one that is saved and sent.
-    static func screenshot(of window: UIWindow) -> (png: Data, pixelWidth: Int, pixelHeight: Int, scale: Double)? {
+    /// `privateFrames` are the painted rectangles in window points: the capture's metadata is kept
+    /// away from them too (`ReviewRedaction`).
+    static func screenshot(of window: UIWindow) -> (png: Data, pixelWidth: Int, pixelHeight: Int, scale: Double, privateFrames: [CGRect])? {
         let format = UIGraphicsImageRendererFormat.preferred()
         format.opaque = true
         let renderer = UIGraphicsImageRenderer(bounds: window.bounds, format: format)
@@ -31,20 +33,27 @@ enum DeviceProbe {
         }
         guard let png = image.pngData() else { return nil }
         let scale = Double(format.scale)
-        return (png, Int((window.bounds.width * format.scale).rounded()), Int((window.bounds.height * format.scale).rounded()), scale)
+        return (png, Int((window.bounds.width * format.scale).rounded()), Int((window.bounds.height * format.scale).rounded()), scale, masks)
     }
 
     /// The identifier and label under a point, from the UIKit views. SwiftUI keeps most elements out
     /// of UIKit, so this is the fallback when no anchor is under the tap. The overlay is presented
     /// in the same window, so `overlay` (its view) is skipped: the hit test sees the app underneath.
-    static func accessibility(at point: CGPoint, in window: UIWindow, excluding overlay: UIView? = nil) -> (identifier: String?, label: String?) {
+    /// A view that overlaps a private rectangle (`avoiding`) lends neither identifier nor label: a row
+    /// that holds a hidden name usually carries a label that spells it out.
+    static func accessibility(
+        at point: CGPoint, in window: UIWindow, excluding overlay: UIView? = nil, avoiding: [CGRect] = []
+    ) -> (identifier: String?, label: String?) {
         var view = underlyingView(at: point, in: window, excluding: overlay)
         var identifier: String?
         var label: String?
         while let current = view {
-            if identifier == nil, let id = current.accessibilityIdentifier, !id.isEmpty { identifier = id }
-            if label == nil, let text = current.accessibilityLabel, !text.isEmpty { label = text }
-            if identifier != nil, label != nil { break }
+            let frame = current.convert(current.bounds, to: nil)
+            if !avoiding.contains(where: { $0.intersects(frame) }) {
+                if identifier == nil, let id = current.accessibilityIdentifier, !id.isEmpty { identifier = id }
+                if label == nil, let text = current.accessibilityLabel, !text.isEmpty { label = text }
+                if identifier != nil, label != nil { break }
+            }
             view = current.superview
         }
         return (identifier, label)

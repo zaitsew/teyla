@@ -98,17 +98,25 @@ enum ChannelDelivery {
                          contentType: "application/json", key: config.key, session: session)
     }
 
+    /// True when the JSON carries `app.product`. A capture saved before the field existed has none,
+    /// and the service would answer 403 for it, so it is not sent (and not marked refused).
+    static func hasProduct(_ json: Data) -> Bool {
+        guard let object = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
+              let app = object["app"] as? [String: Any], let product = app["product"] as? String else { return false }
+        return AppProbe.isSlug(product)
+    }
+
     /// The closure the package uses when the product set none. True only after both files answer
-    /// 200. A refusal is reported to `markRefused` so the capture is not sent again. Until the tester
-    /// has accepted the first-send notice (`accepted`), nothing is sent: a capture saved before the
-    /// product added the channel must not leave the phone unannounced.
+    /// 200. A refusal is reported to `markRefused`, and `isRefused` stops the next attempt: the state
+    /// belongs to this route, so a `deliver` closure set later is not affected by it. A capture
+    /// without `app.product` waits locally, unsent and unmarked.
     static func deliver(
         config: ChannelConfig, session: URLSession = .channel,
-        accepted: @escaping @Sendable () -> Bool = { ReviewNotice.isAccepted() },
+        isRefused: @escaping @Sendable (String) -> Bool = { _ in false },
         markRefused: @escaping @Sendable (String) -> Void
     ) -> ReviewDeliver {
         { upload in
-            guard accepted() else { return false }
+            guard !isRefused(upload.id), hasProduct(upload.json) else { return false }
             switch await send(upload, config: config, session: session) {
             case .delivered: return true
             case .retryLater: return false

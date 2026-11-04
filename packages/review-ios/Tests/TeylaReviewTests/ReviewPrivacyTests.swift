@@ -109,4 +109,56 @@ final class ReviewPrivacyTests: XCTestCase {
         r.remove(token: a)
         XCTAssertEqual(r.snapshot(), [])
     }
+
+    // MARK: nothing about a private view reaches capture.json
+
+    private let frames = [CGRect(x: 20, y: 100, width: 200, height: 40)]
+    private func anchor(_ id: String, _ rect: CGRect, strings: [String]) -> Anchor {
+        Fixtures.anchor(id, rect, strings: strings)
+    }
+
+    func testATapInsideAPrivateRegionKeepsNoElementIdentifierOrLabel() {
+        let hit = anchor("profile.weight", CGRect(x: 20, y: 100, width: 200, height: 40), strings: ["profile.weight.title"])
+        let out = ReviewRedaction.pointed(hit: hit, identifier: "weightValue", label: "Weight 72 kg",
+                                          point: CGPoint(x: 50, y: 120), region: nil, frames: frames)
+        XCTAssertNil(out.hit); XCTAssertNil(out.identifier); XCTAssertNil(out.label)
+    }
+
+    func testACircledAreaThatTouchesAPrivateRegionKeepsNothingEither() {
+        let out = ReviewRedaction.pointed(hit: anchor("a", .zero, strings: []), identifier: "x", label: "y",
+                                          point: CGPoint(x: 300, y: 300), region: CGRect(x: 200, y: 130, width: 150, height: 200), frames: frames)
+        XCTAssertNil(out.hit); XCTAssertNil(out.identifier); XCTAssertNil(out.label)
+    }
+
+    func testATapOutsideEveryPrivateRegionIsUnchanged() {
+        let hit = anchor("list.add", CGRect(x: 300, y: 700, width: 60, height: 60), strings: ["list.add"])
+        let out = ReviewRedaction.pointed(hit: hit, identifier: "add", label: "Add", point: CGPoint(x: 330, y: 730), region: nil, frames: frames)
+        XCTAssertEqual(out.hit, hit); XCTAssertEqual(out.identifier, "add"); XCTAssertEqual(out.label, "Add")
+        XCTAssertEqual(ReviewRedaction.pointed(hit: hit, identifier: "add", label: "Add", point: CGPoint(x: 330, y: 730), region: nil, frames: []).label, "Add")
+    }
+
+    func testAnAnchorThatOverlapsAPrivateRegionLosesItsStringKeys() {
+        let over = anchor("profile.row", CGRect(x: 0, y: 90, width: 390, height: 60), strings: ["profile.weight.value"])
+        let clear = anchor("list.add", CGRect(x: 300, y: 700, width: 60, height: 60), strings: ["list.add"])
+        let out = ReviewRedaction.anchors([over, clear], frames: frames)
+        XCTAssertEqual(out[0].strings, [])
+        XCTAssertEqual(out[0].id, "profile.row")
+        XCTAssertEqual(out[1].strings, ["list.add"])
+    }
+
+    func testTheWrittenCaptureHoldsNoTraceOfAPrivateTap() throws {
+        let hit = anchor("profile.weight", CGRect(x: 20, y: 100, width: 200, height: 40), strings: ["profile.weight.title"])
+        let anchors = ReviewRedaction.anchors([hit], frames: frames)
+        let out = ReviewRedaction.pointed(hit: hit, identifier: "weightValue", label: "Weight 72 kg",
+                                          point: CGPoint(x: 50, y: 120), region: nil, frames: frames)
+        let record = CaptureBuilder.make(
+            now: Date(), device: "iPhone", app: Fixtures.app, environment: Fixtures.environment, screen: "profile",
+            tap: TapInfo(x: 50, y: 120, accessibilityIdentifier: out.identifier, accessibilityLabel: out.label),
+            element: out.hit, accessibilityElementID: out.identifier, anchors: anchors, text: "wrong", input: .text, language: "en",
+            pngSHA256: String(repeating: "0", count: 64), pixelWidth: 390, pixelHeight: 844, scale: 1,
+            microphone: MicrophoneInfo(hostAudioInUse: false, category: nil))
+        let json = String(decoding: try CaptureCoding.encoder().encode(record), as: UTF8.self)
+        for secret in ["Weight 72 kg", "weightValue", "profile.weight.title"] { XCTAssertFalse(json.contains(secret), secret) }
+        XCTAssertNil(record.element)
+    }
 }
