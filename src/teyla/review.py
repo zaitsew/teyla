@@ -130,20 +130,25 @@ def connect(path: pathlib.Path | None = None) -> sqlite3.Connection:
             pass
     conn.execute("PRAGMA busy_timeout = 15000")
     conn.executescript(SCHEMA)
-    have = {r["name"] for r in conn.execute("PRAGMA table_info(captures)")}
-    for column in ("closed_at", "opened_at"):
-        if column in have:
-            continue
-        try:
-            conn.execute(f"ALTER TABLE captures ADD COLUMN {column} TEXT")
-        except sqlite3.OperationalError as e:     # another process added it first
-            if "duplicate column" not in str(e):
-                raise
-            continue
-        if column == "opened_at":                 # unknown for what is already here, so it counts as opened: it stays
-            conn.execute("UPDATE captures SET opened_at = imported_at")
+    if {"closed_at", "opened_at"} - _columns(conn):
+        conn.execute("BEGIN IMMEDIATE")           # with the backfill: a pass that dies between them must not leave
+        try:                                      # a column that says "never opened" about what was opened
+            have = _columns(conn)
+            if "closed_at" not in have:
+                conn.execute("ALTER TABLE captures ADD COLUMN closed_at TEXT")
+            if "opened_at" not in have:
+                conn.execute("ALTER TABLE captures ADD COLUMN opened_at TEXT")
+                conn.execute("UPDATE captures SET opened_at = imported_at")   # unknown, so it counts as opened: it stays
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
     conn.executescript(CLOSED_TRIGGERS)
     return conn
+
+
+def _columns(conn: sqlite3.Connection) -> set[str]:
+    return {r["name"] for r in conn.execute("PRAGMA table_info(captures)")}
 
 
 def _now() -> float:
@@ -152,6 +157,40 @@ def _now() -> float:
 
 def _iso(epoch: float) -> str:
     return _dt.datetime.fromtimestamp(epoch, _dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _folder_inside(root: pathlib.Path, trash: pathlib.Path, recorded: str) -> pathlib.Path | None:
+    """Where a row's `dir` points, or None when that is outside the inbox or in the retention trash."""
+    folder = pathlib.Path(recorded)
+    resolved = (folder if folder.is_absolute() else root / folder).resolve()
+    return None if root not in resolved.parents or trash in resolved.parents else resolved
+
+
+def _finish_retention(conn: sqlite3.Connection, root: pathlib.Path, trash: pathlib.Path, rep: dict) -> None:
+    """Empty the trash. A row still there means a pass died before its commit: nothing was deleted, and a lane may
+    hold that capture, so its folder goes back. A folder without a row is what a commit already deleted."""
+    if not trash.is_dir():
+        return
+    for leftover in sorted(trash.iterdir()):
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            r = conn.execute("SELECT dir FROM captures WHERE id = ?", (leftover.name,)).fetchone()
+            if r is not None:
+                home = _folder_inside(root, trash, r["dir"])
+                if home is None or home.exists():
+                    raise OSError(f"no place to restore {leftover.name}")
+                os.rename(leftover, home)
+            conn.execute("COMMIT")
+        except OSError:
+            conn.execute("ROLLBACK")
+            if leftover.name not in rep["kept"]:       # the pass empties the trash twice
+                rep["kept"].append(leftover.name)
+            continue
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        if r is None:
+            shutil.rmtree(leftover, ignore_errors=True)
 
 
 def prune_channel(conn: sqlite3.Connection, now: float | None = None) -> dict:
@@ -169,6 +208,7 @@ def prune_channel(conn: sqlite3.Connection, now: float | None = None) -> dict:
     rep: dict = {"deleted": 0, "kept": []}
     root = captures_root().resolve()
     trash = root / ".retention"
+    _finish_retention(conn, root, trash, rep)
     for cid in [r["id"] for r in conn.execute(f"SELECT id FROM captures WHERE {due}", args).fetchall()]:
         # The check, the rename and the delete hold the write lock together, so a lane that takes the capture is
         # either refused or kept: there is no moment when it holds a capture whose folder is going away.
@@ -179,9 +219,8 @@ def prune_channel(conn: sqlite3.Connection, now: float | None = None) -> dict:
             if r is None:
                 conn.execute("ROLLBACK")
                 continue
-            folder = pathlib.Path(r["dir"])
-            resolved = (folder if folder.is_absolute() else root / folder).resolve()
-            if root not in resolved.parents or trash in resolved.parents:
+            resolved = _folder_inside(root, trash, r["dir"])
+            if resolved is None:
                 conn.execute("ROLLBACK")
                 rep["kept"].append(cid)
                 continue
@@ -201,10 +240,7 @@ def prune_channel(conn: sqlite3.Connection, now: float | None = None) -> dict:
                 os.rename(*moved)
             raise
         rep["deleted"] += 1
-    # Outside the lock, and it also finishes what a pass that died here left behind.
-    if trash.is_dir():
-        for leftover in trash.iterdir():
-            shutil.rmtree(leftover, ignore_errors=True)
+    _finish_retention(conn, root, trash, rep)
     return rep
 
 

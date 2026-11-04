@@ -567,6 +567,45 @@ def test_what_an_old_inbox_already_held_counts_as_opened(tmp_path):
     assert conn.execute("SELECT opened_at FROM captures WHERE id = 'a'").fetchone()[0] == "2026-01-01T00:00:00Z"
 
 
+def test_a_pass_that_died_before_its_commit_gives_the_folder_back(world, capsys):
+    conn, cid, folder = _one_capture(world, capsys)
+    now = time.time()
+    _aged(conn, cid, imported_at=review._iso(now - 200 * 86400))
+    conn.execute("UPDATE captures SET lease_owner = 'lane', lease_expires = ? WHERE id = ?", (now + 60, cid))
+    trash = review.captures_root() / ".retention"
+    trash.mkdir()
+    folder.rename(trash / cid)
+    assert review.prune_channel(conn, now) == {"deleted": 0, "kept": []}
+    assert folder.exists() and not (trash / cid).exists()
+    assert conn.execute("SELECT lease_owner FROM captures WHERE id = ?", (cid,)).fetchone()[0] == "lane"
+
+
+def test_a_restore_with_nowhere_to_go_deletes_nothing(world, capsys):
+    conn, cid, folder = _one_capture(world, capsys)
+    trash = review.captures_root() / ".retention"
+    (trash / cid).mkdir(parents=True)
+    (trash / cid / "kept.txt").write_text("x")
+    assert review.prune_channel(conn)["kept"] == [cid]
+    assert folder.exists() and (trash / cid / "kept.txt").exists()
+
+
+def test_the_new_columns_and_the_backfill_land_together(tmp_path):
+    db = tmp_path / "queue.db"
+    old = sqlite3.connect(db)
+    old.executescript(review.SCHEMA.replace("lease_expires REAL,\n  closed_at     TEXT,\n  opened_at     TEXT", "lease_expires REAL"))
+    old.execute("INSERT INTO captures (id, product, source, created_at, imported_at, data, dir) "
+                "VALUES ('a', 'p', 'channel', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '{}', '/x')")
+    old.execute("CREATE TRIGGER boom BEFORE UPDATE ON captures BEGIN SELECT RAISE(ABORT, 'died here'); END")
+    old.commit()
+    with pytest.raises(sqlite3.IntegrityError):
+        review.connect(db)
+    assert "opened_at" not in {r[1] for r in old.execute("PRAGMA table_info(captures)")}
+    old.execute("DROP TRIGGER boom")
+    old.commit()
+    old.close()
+    assert review.connect(db).execute("SELECT opened_at FROM captures").fetchone()[0] == "2026-01-01T00:00:00Z"
+
+
 def test_a_lease_taken_after_the_list_was_read_wins(world, capsys):
     conn, cid, folder = _one_capture(world, capsys)
     now = time.time()
