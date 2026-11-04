@@ -79,7 +79,8 @@ CREATE TABLE IF NOT EXISTS captures (
   pr            TEXT NOT NULL DEFAULT '',
   lease_owner   TEXT,
   lease_expires REAL,
-  closed_at     TEXT
+  closed_at     TEXT,
+  opened_at     TEXT
 );
 CREATE INDEX IF NOT EXISTS captures_by_product ON captures (product, created_at);
 """
@@ -92,6 +93,9 @@ BEGIN UPDATE captures SET closed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHER
 CREATE TRIGGER IF NOT EXISTS captures_reopened AFTER UPDATE OF status ON captures
 WHEN NEW.status NOT IN ('done', 'rejected') AND OLD.status IN ('done', 'rejected')
 BEGIN UPDATE captures SET closed_at = NULL WHERE id = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS captures_opened AFTER UPDATE OF status ON captures
+WHEN NEW.status = 'open' AND OLD.status != 'open'
+BEGIN UPDATE captures SET opened_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = NEW.id AND opened_at IS NULL; END;
 """
 
 # What the first-send notice promises a tester about a capture from the shared channel.
@@ -126,9 +130,12 @@ def connect(path: pathlib.Path | None = None) -> sqlite3.Connection:
             pass
     conn.execute("PRAGMA busy_timeout = 15000")
     conn.executescript(SCHEMA)
-    if "closed_at" not in {r["name"] for r in conn.execute("PRAGMA table_info(captures)")}:
+    have = {r["name"] for r in conn.execute("PRAGMA table_info(captures)")}
+    for column in ("closed_at", "opened_at"):
+        if column in have:
+            continue
         try:
-            conn.execute("ALTER TABLE captures ADD COLUMN closed_at TEXT")
+            conn.execute(f"ALTER TABLE captures ADD COLUMN {column} TEXT")
         except sqlite3.OperationalError as e:     # another process added it first
             if "duplicate column" not in str(e):
                 raise
@@ -146,34 +153,42 @@ def _iso(epoch: float) -> str:
 
 def prune_channel(conn: sqlite3.Connection, now: float | None = None) -> dict:
     """Delete channel captures past their retention: 30 days after closing, 90 after import if never opened.
-    `imported_at` is this Mac's clock; `created_at` is the sender's. An open capture is someone's work and stays.
-    {deleted, kept: [ids whose folder could not be removed]}. Other sources are the owner's own and stay."""
+    `imported_at` is this Mac's clock; `created_at` is the sender's. A capture someone opened is work, so it stays
+    until it is closed. {deleted, kept: [ids whose folder could not be removed]}. Other sources are the owner's own."""
     now = _now() if now is None else now
-    closed_before = _iso(now - CLOSED_DAYS * 86400)
-    unopened_before = _iso(now - UNOPENED_DAYS * 86400)
+    due = ("source = 'channel' AND (lease_expires IS NULL OR lease_expires <= ?) AND ("
+           "(status IN ('done', 'rejected') AND closed_at < ?) OR "
+           "(status IN ('new', 'triaged') AND opened_at IS NULL AND imported_at < ?))")
+    args = (now, _iso(now - CLOSED_DAYS * 86400), _iso(now - UNOPENED_DAYS * 86400))
     # A capture closed before this clock existed starts it today.
     conn.execute("UPDATE captures SET closed_at = ? WHERE source = 'channel' AND status IN ('done', 'rejected') "
                  "AND closed_at IS NULL", (_iso(now),))
-    rows = conn.execute(
-        "SELECT id, dir FROM captures WHERE source = 'channel' AND (lease_expires IS NULL OR lease_expires <= ?) AND ("
-        "(status IN ('done', 'rejected') AND closed_at < ?) OR (status IN ('new', 'triaged') AND imported_at < ?))",
-        (now, closed_before, unopened_before)).fetchall()
     rep: dict = {"deleted": 0, "kept": []}
     root = captures_root().resolve()
-    for r in rows:
+    for cid in [r["id"] for r in conn.execute(f"SELECT id FROM captures WHERE {due}", args).fetchall()]:
+        # Taken as a lease, so a lane that wants this capture now is refused instead of losing its folder.
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            r = conn.execute(f"SELECT dir FROM captures WHERE id = ? AND {due}", (cid, *args)).fetchone()
+            if r is not None:
+                conn.execute("UPDATE captures SET lease_owner = 'retention', lease_expires = ? WHERE id = ?",
+                             (now + 600, cid))
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        if r is None:
+            continue
         folder = pathlib.Path(r["dir"])
-        if not folder.is_absolute():
-            folder = root / folder
+        resolved = (folder if folder.is_absolute() else root / folder).resolve()
+        if root in resolved.parents:
+            shutil.rmtree(resolved, ignore_errors=True)
         # The row is the only record of where the folder is, so it goes last and only once the folder is gone.
-        resolved = folder.resolve()
-        if root not in resolved.parents:
-            rep["kept"].append(r["id"])
+        if root not in resolved.parents or resolved.exists():
+            conn.execute("UPDATE captures SET lease_owner = NULL, lease_expires = NULL WHERE id = ?", (cid,))
+            rep["kept"].append(cid)
             continue
-        shutil.rmtree(resolved, ignore_errors=True)
-        if resolved.exists():
-            rep["kept"].append(r["id"])
-            continue
-        conn.execute("DELETE FROM captures WHERE id = ?", (r["id"],))
+        conn.execute("DELETE FROM captures WHERE id = ?", (cid,))
         rep["deleted"] += 1
     return rep
 

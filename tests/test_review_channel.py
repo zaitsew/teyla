@@ -506,8 +506,59 @@ def test_a_row_pointing_outside_the_inbox_deletes_nothing(world, capsys, tmp_pat
 def test_an_old_inbox_gains_the_column(tmp_path):
     db = tmp_path / "queue.db"
     old = sqlite3.connect(db)
-    old.executescript(review.SCHEMA.replace("lease_expires REAL,\n  closed_at     TEXT", "lease_expires REAL"))
+    old.executescript(review.SCHEMA.replace("lease_expires REAL,\n  closed_at     TEXT,\n  opened_at     TEXT", "lease_expires REAL"))
     old.close()
     conn = review.connect(db)
-    assert "closed_at" in {r["name"] for r in conn.execute("PRAGMA table_info(captures)")}
+    assert {"closed_at", "opened_at"} <= {r["name"] for r in conn.execute("PRAGMA table_info(captures)")}
+
+
+def test_a_capture_opened_once_is_not_never_opened(world, capsys):
+    conn, cid, folder = _one_capture(world, capsys)
+    now = time.time()
+    conn.execute("UPDATE captures SET status = 'open' WHERE id = ?", (cid,))
+    conn.execute("UPDATE captures SET status = 'new' WHERE id = ?", (cid,))
+    _aged(conn, cid, imported_at=review._iso(now - 200 * 86400))
+    assert review.prune_channel(conn, now)["deleted"] == 0
+    assert folder.exists()
+
+
+def test_a_folder_that_cannot_go_releases_the_capture_for_the_next_pass(world, capsys, monkeypatch):
+    conn, cid, folder = _one_capture(world, capsys)
+    now = time.time()
+    _aged(conn, cid, imported_at=review._iso(now - 200 * 86400))
+    monkeypatch.setattr(review.shutil, "rmtree", lambda *a, **k: None)
+    assert review.prune_channel(conn, now) == {"deleted": 0, "kept": [cid]}
+    row = conn.execute("SELECT lease_owner FROM captures WHERE id = ?", (cid,)).fetchone()
+    assert row["lease_owner"] is None
+    monkeypatch.undo()
+
+
+def test_a_lease_taken_after_the_list_was_read_wins(world, capsys):
+    conn, cid, folder = _one_capture(world, capsys)
+    now = time.time()
+    _aged(conn, cid, imported_at=review._iso(now - 200 * 86400))
+
+    class Racing:
+        """The other process takes its lease between the list and the claim."""
+        def __init__(self, inner):
+            self.inner = inner
+
+        def execute(self, sql, *a):
+            out = self.inner.execute(sql, *a)
+            if sql == "BEGIN IMMEDIATE":
+                self.inner.execute("UPDATE captures SET lease_owner = 'lane', lease_expires = ? WHERE id = ?",
+                                   (now + 60, cid))
+            return out
+
+    assert review.prune_channel(Racing(conn), now)["deleted"] == 0
+    assert folder.exists()
+    assert conn.execute("SELECT lease_owner FROM captures WHERE id = ?", (cid,)).fetchone()[0] == "lane"
+
+
+def test_safe_mode_still_removes_what_is_past_retention(world, capsys, monkeypatch):
+    conn, cid, folder = _one_capture(world, capsys)
+    _aged(conn, cid, imported_at=review._iso(time.time() - 200 * 86400))
+    monkeypatch.setattr(review_channel.net, "gate", lambda *a, **k: False)
+    assert pull(capsys)[0] == 1
+    assert not folder.exists()
 
