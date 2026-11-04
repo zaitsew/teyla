@@ -10,6 +10,8 @@
     teyla growth packet ID | packets    one folder per approved item, ready to upload by hand
     teyla growth published ID URL       record the URL after you posted
     teyla growth sale-attempts | log    posts, marketing and ICP meetings per product, from the ledger
+    teyla growth ride | ingest | cut    the episode: question and clock, footage, a captioned vertical in review
+    teyla growth daily                  harvest, trends, plan, draft in order (the opt-in 06:30 agent runs it)
     teyla growth outreach | doctor
 
 Daily volume comes from what happens every day; filmed footage is a richer input a few times a week, so a slot
@@ -70,7 +72,7 @@ DUB_LABEL = {
 
 DEFAULTS = dict(posts_per_day=1, approval="batch", fanout=3, draft_budget=12, voice_chart="", bi_data="",
                 public_products=[], outreach_repos=[], x_scan=False, model_short="claude-haiku-5-5", model_script="claude-sonnet-5-5",
-                grok_model="grok-4.7")
+                grok_model="grok-4.7", footage_folder="", whisper_model="")
 TREND_KEEP = 20                      # of 30: customer relevance x2 + demonstrability x2 + novelty + momentum
 GROK_TURNS = 6
 GROK_TIMEOUT_S = 300
@@ -244,7 +246,9 @@ def default_config_text(public: list[str] | None = None) -> str:
          "# Products that may be named in public, by registry id. A product not listed is never named in a draft.",
          f"public_products = {_toml_list(public or [])}", "",
          "# voice_chart = \"~/.teyla/voice/<name>\"    # a folder with en.md, es.md, ru.md; default: the only one there",
-         "# bi_data = \"~/repos/beyond-intelligence/web/data\"", "x_scan = false", "",
+         "# bi_data = \"~/repos/beyond-intelligence/web/data\"", "x_scan = false",
+         "# footage_folder = \"~/Library/Mobile Documents/com~apple~CloudDocs/Footage\"    # `growth ingest` reads video here",
+         "# whisper_model = \"~/models/ggml-small.bin\"    # a file you downloaded; Teyla downloads nothing", "",
          "[models]", f"short = \"{DEFAULTS['model_short']}\"", f"script = \"{DEFAULTS['model_script']}\"", ""]
     rows = [(p, "en", True) for p in PLATFORM_ORDER] + [(p, l, False) for l in ("ru", "es") for p in ("x", "threads", "instagram", "tiktok")]
     for p, l, on in rows:
@@ -264,7 +268,7 @@ def load_config(store: Store) -> dict:
     for k in ("posts_per_day", "fanout", "draft_budget"):
         if isinstance(raw.get(k), int) and not isinstance(raw.get(k), bool) and raw[k] >= 0:
             cfg[k] = raw[k]
-    for k in ("approval", "voice_chart", "bi_data", "grok_model"):
+    for k in ("approval", "voice_chart", "bi_data", "grok_model", "footage_folder", "whisper_model"):
         if isinstance(raw.get(k), str):
             cfg[k] = raw[k]
     if isinstance(raw.get("x_scan"), bool):
@@ -899,7 +903,7 @@ def _recent(items: dict[str, dict], key: str) -> dict | None:
 
 
 def available_masters(store: Store, cfg: dict) -> list[dict]:
-    return [i for i in store.items().values() if i["platform"] == MASTER and i["status"] == "idea"
+    return [i for i in store.items().values() if i["platform"] == MASTER and i["status"] == "idea" and i["kind"] != "episode"
             and len(i.get("assigned") or []) < cfg["fanout"]]
 
 
@@ -1506,7 +1510,12 @@ def section(now: float) -> dict:
                        target=c["posts_per_day"]) for c in chans]
     done, target = sum(r["posted"] for r in today_rows), target_per_day(cfg)
     open_ = lambda st: sum(1 for i in items if i["status"] in st and i["platform"] != MASTER)
-    episodes = [dict(id=i["id"], idea=clip_text(i["idea"], 80), status=i["status"]) for i in items if i["kind"] == "episode" and i["status"] in OPEN]
+    eps = sorted((i for i in items if i["kind"] == "episode" and i["status"] in OPEN), key=lambda i: i["created"], reverse=True)
+    stage = lambda i: "cut" if i["status"] == "checked" else ("cutting" if i["status"] == "draft" else "filming")
+    clips = collections.Counter(i.get("parent") for i in items if i["kind"] != "episode" and i.get("parent"))
+    episodes = [dict(id=i["id"], idea=clip_text(i["idea"], 80), stage=stage(i), question=clip_text((i.get("ride") or {}).get("question", ""), 120),
+                     job=clip_text((i.get("ride") or {}).get("job", ""), 80), minutes=(i.get("ride") or {}).get("minutes"),
+                     footage=len(i.get("footage") or []), clips=clips[i["id"]]) for i in eps[:5]]
     trends = sorted((i for i in items if i.get("trend") and i["status"] == "idea" and i["platform"] == MASTER),
                     key=lambda i: -i["score"])[:5]
     week_ago = day_of(now - 7 * 86400)
@@ -1520,8 +1529,8 @@ def section(now: float) -> dict:
         target=dict(posts_per_day_per_channel=cfg["posts_per_day"]), today=today_rows,
         last_public_days=days_between(last_any, today) if last_any else None,
         queue_days=queue_days(store, cfg), gaps=gaps,
-        pipeline=dict(ideas=sum(1 for i in items if i["status"] == "idea"), filming=sum(1 for i in items if i["kind"] == "episode" and i["status"] in ("idea", "draft")),
-                      cutting=None, review=open_(("checked", "review")), ready=open_(("approved", "ready")),
+        pipeline=dict(ideas=sum(1 for i in items if i["status"] == "idea" and i["kind"] != "episode"),
+                      filming=sum(1 for i in eps if stage(i) == "filming"), cutting=sum(1 for i in eps if stage(i) == "cutting"), review=open_(("checked", "review")), ready=open_(("approved", "ready")),
                       live=sum(1 for i in items if i["status"] == "published" and (local_day(i.get("published_at")) or "") >= week_ago)),
         episodes=episodes, next_ride=None,
         trends=[dict(title=clip_text(i["idea"].removeprefix("Reaction: "), 90), score=i["score"], hook=i.get("hook", ""),
@@ -1669,7 +1678,8 @@ def cmd_review(args) -> int:
     store, cfg = _store_cfg()
     items = store.items().values()
     want = ("review", "checked") + (("failed",) if args.all else ())
-    rows = sorted((i for i in items if i["status"] in want), key=lambda i: (i.get("day", ""), i.get("channel", ""), i["created"]))
+    rows = sorted((i for i in items if i["status"] in want and i["kind"] != "episode"),
+                  key=lambda i: (i.get("day", ""), i.get("channel", ""), i["created"]))
     if not rows:
         print("nothing waits for review")
         return 0
@@ -1949,4 +1959,7 @@ def register(sp):
     a = g.add_parser("doctor", help="what the factory lacks, one line each")
     a.set_defaults(fn=cmd_doctor)
     a.add_argument("--strict", action="store_true", help="exit 1 when anything is missing")
+
+    from . import growth_media
+    growth_media.register(g)
     return q
