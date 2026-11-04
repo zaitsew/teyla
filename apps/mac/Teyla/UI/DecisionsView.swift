@@ -7,24 +7,18 @@ struct DecisionsView: View {
 
     var body: some View {
         ScrollViewReader { reader in
-            ScrollView {
-                VStack(alignment: .leading, spacing: Space.xl) {
-                    header
-                    if model.snapshot == nil {
-                        SnapshotEmptyView()
-                    } else {
-                        questions
-                        CloseSuggestions()
-                        AgentsFold()
-                        OnlyYou()
-                        if model.capabilities.notes { NotesSection() }
-                        DoneFold()
-                    }
+            Page(maxWidth: Space.readingPage) {
+                header
+                if model.snapshot == nil {
+                    SnapshotEmptyView()
+                } else {
+                    questions
+                    CloseSuggestions()
+                    AgentsFold()
+                    OnlyYou()
+                    if model.capabilities.notes { NotesSection() }
+                    DoneFold()
                 }
-                .padding(.horizontal, Space.page)
-                .padding(.vertical, Space.xl)
-                .readingWidth()
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
             // `initial`: a notification opened from Home sets the focus before this page exists.
             .onChange(of: model.focusedAskID, initial: true) { _, id in
@@ -32,7 +26,6 @@ struct DecisionsView: View {
                 withAnimation(.easeOut(duration: 0.25)) { reader.scrollTo(id, anchor: .top) }
             }
         }
-        .background(Palette.background)
         .navigationTitle("Decisions")
     }
 

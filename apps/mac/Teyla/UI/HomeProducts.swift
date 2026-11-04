@@ -5,24 +5,6 @@ import SwiftUI
 
 // MARK: Pieces
 
-/// A section title and the rule that put a product in it.
-struct HomeSectionHeader: View {
-    let title: String
-    let note: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Space.xxs) {
-            Text(title)
-                .font(Typo.section)
-                .accessibilityAddTraits(.isHeader)
-            Text(note)
-                .font(Typo.caption)
-                .foregroundStyle(Palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-}
-
 /// The icon from the CLI, or the first letter of the name on a tint of the primary colour.
 struct ProductIcon: View {
     let product: PortfolioProduct
@@ -58,53 +40,6 @@ struct MonogramTile: View {
             .foregroundStyle(Palette.primary)
             .frame(width: size, height: size)
             .background(Palette.primaryTint)
-    }
-}
-
-/// Commits per week as small bars; the newest week stands out. Nothing is drawn for a product with no weeks.
-struct SparklineView: View {
-    let heights: [Double]
-    let label: String
-    let height: CGFloat
-    let barWidth: CGFloat
-
-    var body: some View {
-        HStack(alignment: .bottom, spacing: Space.xxs) {
-            ForEach(heights.indices, id: \.self) { index in
-                RoundedRectangle(cornerRadius: Radius.bar)
-                    .fill(color(index))
-                    .frame(width: barWidth, height: max(Space.xxs, height * heights[index]))
-            }
-        }
-        .frame(height: height, alignment: .bottom)
-        .accessibilityElement()
-        .accessibilityLabel(label)
-    }
-
-    private func color(_ index: Int) -> Color {
-        if index == heights.count - 1 { return Palette.primary }
-        return heights[index] > 0 ? Palette.primaryMuted : Palette.border
-    }
-}
-
-/// The surface of a card: white on light, raised on dark, with a hairline border.
-private struct CardSurface: ViewModifier {
-    let radius: CGFloat
-    let padding: CGFloat
-
-    func body(content: Content) -> some View {
-        content
-            .padding(padding)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Palette.surface, in: RoundedRectangle(cornerRadius: radius))
-            .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(Palette.border, lineWidth: Space.hairline))
-            .contentShape(RoundedRectangle(cornerRadius: radius))
-    }
-}
-
-private extension View {
-    func cardSurface(radius: CGFloat, padding: CGFloat) -> some View {
-        modifier(CardSurface(radius: radius, padding: padding))
     }
 }
 
@@ -195,7 +130,7 @@ private struct HeroCard: View {
             }
             MonetizationChip(text: facts.money)
         }
-        .cardSurface(radius: Radius.panel, padding: Space.l)
+        .surface(radius: Radius.panel)
         .opensProduct(id: product.id, name: facts.name, spoken: facts.spoken)
     }
 }
@@ -277,7 +212,7 @@ private struct BuiltCard: View {
                 }
             }
         }
-        .cardSurface(radius: Radius.card, padding: Space.m)
+        .surface(padding: Space.m)
         .opensProduct(id: product.id, name: facts.name, spoken: facts.spoken)
     }
 }

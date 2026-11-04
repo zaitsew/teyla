@@ -2,6 +2,9 @@ import Foundation
 
 /// Small text helpers, kept free of UI so they can be tested.
 enum Format {
+    /// What a figure shows when it is not known. Never a made-up zero.
+    static let dash = "—"
+
     /// "wine-cellar" becomes "Wine Cellar"; "(no repo)" becomes "Other".
     static func product(_ name: String) -> String {
         if name.isEmpty || name.hasPrefix("(") { return "Other" }

@@ -31,9 +31,15 @@ enum Space {
     static let iconHero: CGFloat = 48
     static let iconCard: CGFloat = 34
     static let iconRow: CGFloat = 26
-    /// The commits-per-week bars.
-    static let sparkHeight: CGFloat = 28
-    static let sparkBar: CGFloat = 5
+    /// The commits-per-week bars: height and width on a hero card, and on a row.
+    static let sparkHeroHeight: CGFloat = 28
+    static let sparkHeroBar: CGFloat = 5
+    static let sparkCardHeight: CGFloat = 18
+    static let sparkCardBar: CGFloat = 3
+    /// A page stops here on an iPad.
+    static let pageMax: CGFloat = 640
+    /// A `StatTile` is at least this wide, so two fit a phone.
+    static let statTileMin: CGFloat = 150
 }
 
 enum Radius {

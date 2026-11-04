@@ -84,25 +84,16 @@ struct PortfolioView: View {
     @State private var showParked = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Space.xl) {
-                if let portfolio = model.snapshot?.portfolio {
-                    header(portfolio)
-                    controls(portfolio)
-                    rows(portfolio)
-                } else {
-                    VStack(alignment: .leading, spacing: Space.xs) {
-                        Text("All products").font(Typo.pageTitle)
-                        emptyState
-                    }
-                }
+        Page {
+            if let portfolio = model.snapshot?.portfolio {
+                header(portfolio)
+                controls(portfolio)
+                rows(portfolio)
+            } else {
+                PageHeader(title: "All products")
+                emptyState
             }
-            .padding(.horizontal, Space.page)
-            .padding(.vertical, Space.xl)
-            .frame(maxWidth: Space.portfolioMax, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Palette.background)
         .navigationTitle("All products")
     }
 

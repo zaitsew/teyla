@@ -26,6 +26,9 @@ targets:
       # What Home and Decisions decide (who a question belongs to, what a core card says) is the Mac's code too.
       - path: ../mac/Teyla/Core/HomeLogic.swift
         group: Shared
+      # The visual grammar: both apps build their pages from the same components.
+      - path: ../mac/Teyla/UI/Grammar.swift
+        group: Shared
     info:
       path: Teyla/Info.plist
       properties:

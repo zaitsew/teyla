@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **The apps share one visual grammar.** `apps/mac/Teyla/UI/Grammar.swift`, compiled into the iPhone app too, holds `Page`,
+  `PageHeader`, `SectionHeader`, `StatTile`, `Scorecard`, `RowCard`, `EmptyState`, `ErrorRow` and `ClampedText`.
+  `apps/mac/README.md` says how to use them. The PNG hook now draws every page: `TEYLA_PREVIEW_SNAPSHOT_VIEW` takes
+  `decisions`, `portfolio`, `product:<id>`, `tools` and `settings`.
 - **The apps have one small type system.** Mac and iPhone use exactly five type levels plus one style for big numbers, and
   every size, gap, radius and colour comes from a token. The iPhone has real token enums now. A test fails on a literal.
   The toolbar's status dot no longer touches the edge of its capsule.

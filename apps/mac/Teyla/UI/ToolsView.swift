@@ -8,37 +8,30 @@ struct ToolsView: View {
     var body: some View {
         let tools = model.tools
         ScrollViewReader { reader in
-            ScrollView {
-                VStack(alignment: .leading, spacing: Space.xl) {
-                    header(tools)
-                    if let notice = tools.notice { Notice(text: notice) { tools.dismissNotice() } }
-                    if let why = tools.failure { ReadFailure(message: why) }
-                    if let report = tools.report {
-                        let (act, info) = ToolsPage.sections(report)
-                        if !act.isEmpty { section("Needs you", items: act) }
-                        if !info.isEmpty { section("Worth a look", items: info) }
-                        if report.items.isEmpty, tools.failure == nil { quiet(report) }
-                    } else if tools.isLoading {
-                        HStack(spacing: Space.s) {
-                            ProgressView().controlSize(.small)
-                            Text("This reads local files only and can take half a minute.")
-                                .font(Typo.caption)
-                                .foregroundStyle(Palette.textSecondary)
-                        }
+            Page(maxWidth: Space.readingPage) {
+                header(tools)
+                if let notice = tools.notice { Notice(text: notice) { tools.dismissNotice() } }
+                if let why = tools.failure { ReadFailure(message: why) }
+                if let report = tools.report {
+                    let (act, info) = ToolsPage.sections(report)
+                    if !act.isEmpty { section("Needs you", items: act) }
+                    if !info.isEmpty { section("Worth a look", items: info) }
+                    if report.items.isEmpty, tools.failure == nil { quiet(report) }
+                } else if tools.isLoading {
+                    HStack(spacing: Space.s) {
+                        ProgressView().controlSize(.small)
+                        Text("This reads local files only and can take half a minute.")
+                            .font(Typo.caption)
+                            .foregroundStyle(Palette.textSecondary)
                     }
-                    if model.capabilities.diagnosis { diagnosis }
                 }
-                .padding(.horizontal, Space.page)
-                .padding(.vertical, Space.xl)
-                .readingWidth()
-                .frame(maxWidth: .infinity, alignment: .leading)
+                if model.capabilities.diagnosis { diagnosis }
             }
             .onChange(of: tools.focusedItemID, initial: true) { _, id in
                 guard let id else { return }
                 withAnimation(.easeOut(duration: 0.25)) { reader.scrollTo(id, anchor: .top) }
             }
         }
-        .background(Palette.background)
         .navigationTitle("Tools")
         .onAppear { tools.opened() }
     }

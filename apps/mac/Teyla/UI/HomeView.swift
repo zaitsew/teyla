@@ -4,37 +4,20 @@ import SwiftUI
 /// the top decisions, and what runs. Health, notes, finished work and the status column live on their own pages.
 struct HomeView: View {
     var body: some View {
-        ScrollView {
-            HomeContent()
-                .padding(.horizontal, Space.page)
-                .padding(.vertical, Space.xl)
-                .frame(maxWidth: Space.homeMax, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .background(Palette.background)
-        .navigationTitle("Home")
+        Page { HomeContent() }
+            .navigationTitle("Home")
     }
 }
 
-/// The page without its scroll view, so a screenshot can draw all of it at once.
+/// The blocks of Home, in order.
 struct HomeContent: View {
     @Environment(AppModel.self) private var model
-    /// A screenshot has no scroll view to make a lazy stack draw what is below the fold, so it asks for a plain one.
-    var eager = false
     @AppStorage("teyla.home.period") private var storedPeriod = HomePeriod.week.rawValue
 
     private var period: HomePeriod { HomePeriod.from(stored: storedPeriod) }
 
-    var body: some View {
-        if eager {
-            VStack(alignment: .leading, spacing: Space.xl) { page }
-        } else {
-            LazyVStack(alignment: .leading, spacing: Space.xl) { page }
-        }
-    }
-
     @ViewBuilder
-    private var page: some View {
+    var body: some View {
         header
         if let snapshot = model.snapshot {
             products(snapshot.portfolio)
@@ -54,7 +37,7 @@ struct HomeContent: View {
             HomeDecisionsSection()
         case .legacy(let cards):
             VStack(alignment: .leading, spacing: Space.m) {
-                HomeSectionHeader(title: "Products", note: "Update the teyla command to rank them by users and activity.")
+                SectionHeader(title: "Products", note: "Update the teyla command to rank them by users and activity.")
                 if cards.isEmpty {
                     Text("No products yet.").foregroundStyle(Palette.textSecondary)
                 } else {
@@ -78,7 +61,7 @@ struct HomeContent: View {
     private func section(_ sections: [HomeSection], _ kind: HomeSectionKind) -> some View {
         if let section = sections.first(where: { $0.kind == kind }), !section.products.isEmpty {
             VStack(alignment: .leading, spacing: Space.m) {
-                HomeSectionHeader(title: kind.title, note: kind.note)
+                SectionHeader(title: kind.title, note: kind.note)
                 switch kind {
                 case .users: HeroGrid(products: section.products, period: period)
                 case .building: BuiltGrid(products: section.products, period: period)
@@ -204,7 +187,7 @@ private struct HomeDecisionsSection: View {
         let fresh = AskFold.partition(owner) { model.age(of: $0) }.fresh
         let shown = Decisions.homeList(fresh)
         VStack(alignment: .leading, spacing: Space.m) {
-            HomeSectionHeader(title: "Decisions", note: "Only you can answer these")
+            SectionHeader(title: "Decisions", note: "Only you can answer these")
             if owner.isEmpty {
                 Label("Nothing waits on you.", systemImage: "checkmark.circle")
                     .foregroundStyle(Palette.textSecondary)

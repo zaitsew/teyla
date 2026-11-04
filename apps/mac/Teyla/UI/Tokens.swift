@@ -32,8 +32,12 @@ enum Space {
     static let heroCardMin: CGFloat = 320
     /// A "Being built" card is at least this wide.
     static let builtCardMin: CGFloat = 300
-    /// Home stops here, so three cards in a row stay readable.
-    static let homeMax: CGFloat = 1100
+    /// A wide page stops here, so three cards in a row stay readable.
+    static let pageMax: CGFloat = 1100
+    /// A reading page stops here: `readingCard` and the gutter on each side.
+    static let readingPage: CGFloat = 776
+    /// A `StatTile` is at least this wide; the strip fits as many as the page has room for.
+    static let statTileMin: CGFloat = 150
     /// The tap area of the star on a product.
     static let starTarget: CGFloat = 24
     /// The least height of anything a person presses (a switch segment, a row).
@@ -53,8 +57,6 @@ enum Space {
     static let quietName: CGFloat = 160
     /// Ask cards, done cards, task rows and prose stop here (45 to 75 characters a line).
     static let readingCard: CGFloat = 720
-    /// The Portfolio rows stop here, so the platform strip stays readable.
-    static let portfolioMax: CGFloat = 1100
     /// The figures column on a Portfolio row.
     static let portfolioFigures: CGFloat = 220
     /// The width of the menu-bar popover.

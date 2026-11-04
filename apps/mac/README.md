@@ -157,6 +157,28 @@ Views use the tokens in `Teyla/UI/Tokens.swift` (the iPhone has the same names i
 five levels (`pageTitle`, `section`, `cardTitle`, `body`, `caption`) plus `number` for big figures. A view picks a level and may change its
 weight; it never sets a size, a gap, a radius or a colour. `tests/test_app_design_tokens.py` fails on a literal.
 
+### The visual grammar
+
+`Teyla/UI/Grammar.swift` holds the pieces every page is built from. The iPhone target compiles the same file. A new page uses these before it
+makes anything of its own.
+
+| Component | Use it for | How |
+|---|---|---|
+| `Page` | The scaffold of a page: scroll view, gutter, column width, gap between blocks | `Page(maxWidth: Space.readingPage) { ... }`; the default width is `Space.pageMax` |
+| `PageHeader` | The title of a page and one line of context, once per page | `PageHeader(title: "Money", context: "Bills against list price")`, with an optional trailing control |
+| `SectionHeader` | The title of a block, the rule for what is in it, a count | `SectionHeader(title: "Failures", note: "Unresolved, newest first", count: 3)` |
+| `StatStrip` + `StatTile` | One figure each: a label, a number, one small line. `value: nil` shows a dash, and `detail` says why | `StatStrip { StatTile(label: "Disk free", value: "27 GB", detail: "OK", tone: .neutral) }`; `action:` makes it a button |
+| `Scorecard` | A thing with a score: identity, a row of numbers, a footer | `Scorecard(title:, badge:, summary:, numbers: [ScoreNumber(value:, label:)]) { icon } footer: { ... }` |
+| `RowGroup` + `RowCard` | A list: one surface, a line between rows, one line of title and one of detail | `RowGroup { RowCard(title:, detail:) { leading } trailing: { ... } }` |
+| `SparklineView` | Small bars per week; the newest stands out | `SparklineView(heights:, label:)` |
+| `EmptyState` | A block with nothing in it: what is missing and the next step, at most two sentences | `EmptyState(title: "No bills listed.", detail: "Add them to subscriptions.toml.")` |
+| `ErrorRow` | A block that failed: says which and why, and the rest of the page keeps working | `ErrorRow(section: "Money", message: why) { retry }` |
+| `ClampedText` | Anything a person or a model wrote: stops after `lines` and offers More | `ClampedText(text: long, lines: 3)` |
+| `.surface()` | The fill and hairline of a card | `.surface(radius: Radius.panel)` |
+
+Rules that keep it tidy: one number per tile; a figure with no source is `nil`, never 0; list-price figures say so in their label; every text has
+a `lineLimit` and a way to read the rest (`ClampedText`, a `.help` tooltip, or the page the row opens).
+
 **Samples.** `python3 Tools/make_fixtures.py` rebuilds `TeylaTests/Fixtures/*.json` from the real CLI, run on a made-up HOME
 (`--keep` prints its path). Run it again when the CLI's JSON changes.
 
@@ -165,7 +187,7 @@ weight; it never sets a size, a gap, a radius or a colour. `tests/test_app_desig
 **Screenshots.** With `TEYLA_STATE_FIXTURE` set, these variables shape the preview (they are ignored
 otherwise): `TEYLA_PREVIEW_APPEARANCE=light|dark`, `TEYLA_PREVIEW_SIZE=<w>x<h>`,
 `TEYLA_PREVIEW_SCROLL=end`, `TEYLA_PREVIEW_OPEN=new-task|quick-note|settings|pair (the Connect iPhone sheet)|diagnosis|home|decisions|portfolio|product:<id>|focus:<ask id>`,
-`TEYLA_PREVIEW_SNAPSHOT=<path.png>` with `TEYLA_PREVIEW_SNAPSHOT_VIEW=home|window|connect-phone|setup|setup-hand|setup-paired` (draws that view in one image and quits; `window` is the window with its toolbar;
+`TEYLA_PREVIEW_SNAPSHOT=<path.png>` with `TEYLA_PREVIEW_SNAPSHOT_VIEW=home|decisions|portfolio|product:<id>|tools|settings|window|connect-phone|setup|setup-hand|setup-paired` (draws that view in one image at `TEYLA_PREVIEW_WIDTH` and quits; `window` is the window with its toolbar;
 `setup` is the store build's first screen), `TEYLA_PREVIEW_DRAFT=<text>`, `TEYLA_PREVIEW_START_DELAY=<seconds>` (how long the simulated diagnosis takes)
 and `TEYLA_PREVIEW_NO_BINARY=1` (shows the not-found screen). The welcome is `state.empty.v1.json`. Capture a window with `screencapture -l <window id>`.
 
