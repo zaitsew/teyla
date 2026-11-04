@@ -45,6 +45,7 @@
   teyla voice chart <repo> [--lang L] [--out DIR] [--force] [--json]   scaffold a product's voice chart (en, es, ru); a chart is complete at 10 accepted and 5 rejected lines
   teyla copy brief|write|judge|apply ...                         UI copy from a brief: one call per language, a judge, then the catalogs (xcstrings, strings.xml, i18n)
   teyla models [--days N] [--json] [--refresh]                   model ladder + price drift report
+  teyla models arena [--refresh] [--json]                        cost/value shortlist from the arena.ai agent Pareto board (candidates, never a decision)
   teyla you [--json] [--refresh]                                 quotes, insights and chores to hand off, from your own sessions (local, private)
   teyla you chore KEY open|done|tried|untried                    mark a chore
   teyla models watch [--refresh] [--json] [--ack [ID...]] [--seed FILE]  new models, what they replace, repos naming superseded ids

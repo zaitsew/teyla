@@ -31,6 +31,7 @@ PATTERNS = {
 ALLOWED = {
     "update.py": {1, 2},
     "models.py": {3},
+    "models_arena.py": {37},
     "plugin_install.py": {4},
     "backlog.py": {5},
     "reviews.py": {6},
