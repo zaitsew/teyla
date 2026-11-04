@@ -1428,9 +1428,10 @@
     "id": "design_md",
     "title": "Product design files",
     "path": "~/repos",
-    "updated": null,
+    "updated": "2026-11-03",
     "summary": "6 of 9 products have a DESIGN.md.",
-    "exists": true
+    "exists": true,
+    "count": 6
    }
   ],
   "models": {
@@ -1478,13 +1479,22 @@
     }
    ],
    "drift": [
-    "claude-opus-5 is still used in 2 routes"
+    {
+     "flag": "retired",
+     "provider": "anthropic",
+     "entry": "claude-opus-5",
+     "detail": "claude-opus-5 is still named on the ladder, and the catalogue marks it superseded."
+    },
+    "sample-model-5 is used in 2 routes but not on the ladder"
    ],
    "new": [
     {
-     "id": "sample-model-6",
      "provider": "openai",
-     "seen": "2026-11-03"
+     "id": "sample-model-6",
+     "name": "Sample Model 6",
+     "date": "2026-11-03",
+     "price": "$1/$5",
+     "replaces": "Sol"
     }
    ],
    "new_note": "Nobody has acknowledged these models yet.",
@@ -1497,13 +1507,28 @@
       "rank": 1,
       "model": "Model A",
       "score": 1510,
-      "note": "candidate, not a decision"
+      "cost": 0.35,
+      "pareto": true,
+      "in_ladder": true,
+      "status": "candidate, not a decision"
      },
      {
       "rank": 2,
       "model": "Model B",
       "score": 1498,
-      "note": "candidate, not a decision"
+      "cost": 0.2,
+      "pareto": true,
+      "in_ladder": false,
+      "status": "candidate, not a decision"
+     },
+     {
+      "rank": 3,
+      "model": "Model C",
+      "score": 1470,
+      "cost": null,
+      "pareto": false,
+      "in_ladder": false,
+      "status": "candidate, not a decision"
      }
     ],
     "note": "A snapshot pasted by the owner.",
