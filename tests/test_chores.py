@@ -64,7 +64,8 @@ def test_a_question_that_offers_a_choice_or_a_long_report_is_not_a_request():
 def test_every_chore_has_a_path_and_a_person():
     assert {c.key for c in chores.PATHS} == set(chores._PATTERNS)
     assert all(c.path and c.who and c.label for c in chores.PATHS)
-    assert not any(chores.BY_KEY[k].collapse for k in ("secret", "testflight_tap", "device_check"))
+    assert not any(chores.BY_KEY[k].collapse for k in ("secret", "testflight_tap", "device_check", "dns"))
+    assert chores.key_of("Open Play Console on your phone and check the release") == "device_check"
 
 
 WORDINGS = ("Sign Chrome in", "Please sign in to Chrome", "Chrome is signed out; sign in again",

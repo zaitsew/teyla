@@ -115,10 +115,11 @@ starts with an imperative verb ("Sign in to X", "Run the migration") or holds a 
 - *Same chore.* Asks for one manual chore ("Sign Chrome in" in seven wordings, "Open Play Console" in three) fold into
   the newest, per product and per chore key. The key comes from `src/teyla/chores.py`: rules over the title and the
   question, not a model and not a similarity, and only for these chores: `chrome_signin`, `gcloud_auth`,
-  `developer_apple`, `app_store_connect`, `play_console`, `dns`, `scheduled_task_cleanup`. An ask folds only when it is
+  `developer_apple`, `app_store_connect`, `play_console`, `scheduled_task_cleanup`. An ask folds only when it is
   a short request (an action word, 280 characters or fewer), offers no options and no choice ("which", "should I"),
-  is not aimed at another version, and does not `needs_owner`. A key, a TestFlight tap and a check on a device are
-  chores too, but they never fold: they are a secret, a step on your device, or a thing only you can do. The note is
+  is not aimed at another version, and does not `needs_owner`. A key, a TestFlight tap, a check on a device and a DNS
+  record are chores too, but they never fold: they are a secret, a step on your device, a thing only you can do, or one
+  record out of several. A step on a device wins over a portal name ("Open Play Console on your phone"). The note is
   `auto: same chore <id>`; `undo` of the kept ask puts the repeats back under it. A question that merely mentions
   a portal ("Which Play Console track?") is not a chore and stays.
 

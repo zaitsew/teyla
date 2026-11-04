@@ -24,7 +24,8 @@ class Chore:
     collapse: bool      # asks of this chore may be folded into the newest one
 
 
-# The order is the priority when a text matches more than one chore.
+# The order is the priority when a text matches more than one chore. A step on a device comes before any portal,
+# so "open Play Console on your phone" is a device step and never folds.
 PATHS: tuple[Chore, ...] = (
     Chore("testflight_tap", "Tap View in TestFlight",
           "None. Apple shows a new tester nothing until they tap the invitation e-mail once per app; no API skips it.",
@@ -32,6 +33,9 @@ PATHS: tuple[Chore, ...] = (
     Chore("secret", "Paste an API key, secret or password",
           "One secret store: you paste each secret once, an agent reads it by name and never prints it.",
           "You, once per secret", False),
+    Chore("device_check", "Check on a device",
+          "A simulator run covers layout. Sensors, Health data and real-network behaviour need the physical device.",
+          "You, on the device", False),
     Chore("gcloud_auth", "Sign in to gcloud",
           "A service account for the one project (or workload identity) lets an agent act without your browser. "
           "`gcloud auth login` as yourself needs your browser.",
@@ -54,13 +58,10 @@ PATHS: tuple[Chore, ...] = (
           "You, once to invite the service account", True),
     Chore("dns", "DNS record",
           "A Cloudflare API token scoped to one zone (DNS edit) lets an agent add records. Registrar changes stay human.",
-          "You, once to create the scoped token", True),
+          "You, once to create the scoped token", False),     # two asks for two different records are two tasks
     Chore("scheduled_task_cleanup", "Scheduled-task cleanup",
           "An agent can list and disable tasks (`teyla schedules`) and ask you to approve the list.",
           "You, to approve the list", True),
-    Chore("device_check", "Check on a device",
-          "A simulator run covers layout. Sensors, Health data and real-network behaviour need the physical device.",
-          "You, on the device", False),
 )
 BY_KEY = {c.key: c for c in PATHS}
 
