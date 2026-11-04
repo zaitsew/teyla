@@ -417,3 +417,15 @@ def test_a_retried_thin_pr_is_checked_again(env, monkeypatch):
     growth.retry(growth.Store(), it["id"], NOW)
     growth.run_draft(growth.Store(), cfg, NOW, limit=5, day=None, dry=False)
     assert growth.Store().get(it["id"])["status"] == "failed" and fm.calls == []
+
+
+def test_our_own_source_label_does_not_trip_the_screen(env, tmp_path, monkeypatch):
+    # the source label is ours ("beyond-intelligence"); a product of that name must not kill every candidate it labels
+    d = write_bi(tmp_path, [bi_item("Agent runner")])
+    store, cfg = make(extra=f'bi_data = "{d}"')
+    real = growth.bi_candidate
+    monkeypatch.setattr(growth, "bi_candidate", lambda it: dict(real(it), via="gamma"))          # gamma is a registered, unreleased product
+    fm = fake_model([dict(items=[verdict(0)])])
+    monkeypatch.setattr(growth, "call_model", fm)
+    res = growth.run_trends(store, cfg, NOW)
+    assert len(fm.calls[0]["payload"]["candidates"]) == 1 and [i["idea"] for i in res["kept"]] == ["Reaction: Agent runner"]

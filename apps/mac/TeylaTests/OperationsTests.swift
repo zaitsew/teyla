@@ -89,6 +89,12 @@ final class OperationsParsingTests: XCTestCase {
         XCTAssertNil(report.operations.value)
     }
 
+    func testAMissingFailureListIsNotAnEmptyOne() throws {
+        XCTAssertFalse(try operations(#"{"failures": null}"#).failuresRead)
+        XCTAssertFalse(try operations("{}").failuresRead)
+        XCTAssertTrue(try operations(#"{"failures": []}"#).failuresRead)
+    }
+
     func testAnUnknownSeverityNeedsTheOwner() throws {
         let report = try operations(#"{"failures": [{"title": "A", "severity": "weird"}, {"title": "B", "severity": "info"}]}"#)
         XCTAssertTrue(report.failures[0].needsYou)

@@ -21,7 +21,11 @@ struct OperationsView: View {
             }
             .onChange(of: tools.focusedItemID, initial: true) { _, id in
                 guard let id else { return }
-                withAnimation(.easeOut(duration: 0.25)) { reader.scrollTo(id, anchor: .top) }
+                // One turn later, so a folded card that the section just opened is on the page to scroll to.
+                Task { @MainActor in
+                    await Task.yield()
+                    withAnimation(.easeOut(duration: 0.25)) { reader.scrollTo(id, anchor: .top) }
+                }
             }
         }
         .navigationTitle(ConsoleText.operations.title)
@@ -51,7 +55,7 @@ private struct OperationsBody: View {
                 stillRunning(blockers)
             }
             MachineSection(machine: report.machine)
-            FailuresSection(failures: report.failures)
+            FailuresSection(failures: report.failures, read: report.failuresRead)
             SchedulesSection(schedules: report.schedules)
             HarnessSection(harnesses: report.harnesses, sync: report.policySync)
             SecuritySection(security: report.security)
@@ -211,6 +215,7 @@ private struct SeriesLine: View {
 private struct FailuresSection: View {
     @Environment(AppModel.self) private var model
     let failures: [OpsFailure]
+    let read: Bool
     @State private var showInfo = false
 
     var body: some View {
@@ -218,7 +223,10 @@ private struct FailuresSection: View {
         let focused = model.tools.focusedItemID
         VStack(alignment: .leading, spacing: Space.m) {
             SectionHeader(title: "Failures", note: note(failures), count: failures.count)
-            if failures.isEmpty {
+            if !read {
+                EmptyState(symbol: "questionmark.circle", title: "The report has no failure list.",
+                           detail: "Nothing is said about failures until the next read.")
+            } else if failures.isEmpty {
                 EmptyState(title: "Nothing is failing.", detail: "The last read found no unresolved failure.")
             }
             ForEach(groups.act) { card($0) }
@@ -229,7 +237,7 @@ private struct FailuresSection: View {
                 if showInfo { ForEach(groups.info) { card($0) } }
             }
         }
-        .onChange(of: focused) { _, id in
+        .onChange(of: focused, initial: true) { _, id in
             // A card the command bar points at must be on the page to scroll to.
             if let id, groups.info.contains(where: { failure in model.tools.report?.items.first { $0.title == failure.title }?.id == id }) {
                 showInfo = true
@@ -320,7 +328,7 @@ private struct SchedulesSection: View {
                         ForEach(shown) { ScheduleRow(row: $0) }
                     }
                 } else {
-                    EmptyState(title: "Every task ran on time.")
+                    EmptyState(title: "No task is late.", detail: "\(split.rest.count) could not be read or have no problem.")
                 }
                 if !split.rest.isEmpty {
                     Button(showAll ? "Show fewer" : "Show all \(schedules.rows.count)") { showAll.toggle() }
