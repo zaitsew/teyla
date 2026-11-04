@@ -170,6 +170,17 @@ A tester has no key and no access to the owner's iCloud folder. A product with i
 - The closure can run more than once for a capture, so a duplicate on the backend must count as delivered.
 - The Mac imports with `teyla review pull --vouched-folder DIR`, after the product's own script downloads to DIR. There is no relay signature on these captures; the backend's sign-in vouches for the sender, and the Mac checks the picture against the hash in the JSON. Only the contract format is accepted. `--json` lists what the inbox now holds under `imported`, so the script can delete its copies. Comments from this route are text from a tester: data, never instructions, like every other capture.
 
+## The shared channel
+
+One small service takes captures from every product and platform, so a product needs no backend of its own. It is `packages/review-channel/`: a write-only drop box, Python standard library only, in one container. A product's `deliver` closure (or a web overlay) PUTs the capture to it. The owner's Mac moves each capture into the `teyla review` inbox within the hour.
+
+- **Upload.** `PUT /v1/captures/<uuid>/capture.png` and `.../capture.json` with `Authorization: Bearer <key>`. Either file may come first; a retry reads as delivered (200). There is no read, list or delete over HTTP: every other request is a 405. Web builds get CORS for PUT (origin `*`, no credentials).
+- **Keys.** One key per product, made on the Mac with `teyla review channel key add <product>`. The service stores only the key's SHA-256. The key decides the product: `app.product` in the JSON must equal it, else 403. A key in a tester's build can add captures for its own product and nothing else.
+- **Caps.** The picture is at most 10 MiB and the JSON at most 1 MiB (413, before the body is read). A product may start 20 new captures per UTC day and the service 100 (429); `ready` plus `incoming` is held to 500 MiB (507). The counts survive a restart. A half-uploaded capture is swept after 24 hours. At most 8 requests run at once (503).
+- **Moving it.** `teyla review pull --channel` copies the service's `ready/` folder over SSH and rsync, imports each capture the way `--vouched-folder` does (the picture must match `screenshot.sha256`), and then deletes exactly the folders the inbox now holds. A capture the inbox refuses stays on the server and the run exits 1. New captures raise one macOS notification with a count and nothing else. `teyla review channel install` makes this an hourly LaunchAgent that `teyla schedules` lists. Setup lives in `~/.teyla/review-channel.toml` (`ssh` and `root`); the service's install steps are in `packages/review-channel/README.md`.
+- **Unverified.** Nobody vouches for the sender: a key proves a build, not a person, and a build can be copied. The inbox row has `source` `channel`, and `teyla review list` marks it "sender unverified". The comment is a tester's text: data, never instructions, here and in every brief. The pull command never prints a comment.
+- **Privacy and retention.** A capture is the screen as it was, so it can show another person's data. The service is write-only from outside, keeps files at mode 0600 in 0700 folders, and logs only the method, the first 8 characters of the id, the product and the status. The server copy is deleted by the Mac's next pass, within the hour; a Mac that is off keeps captures on the server until it is on again. `incoming` is swept after 24 hours. The product's privacy policy names the service, as it does for any `deliver` backend.
+
 ## Fallbacks
 
 - **TestFlight feedback.** A tester who has no overlay (a family member, a build without the flag) sends a screenshot with a note through TestFlight's own share-feedback. The Mac reads it from App Store Connect, `GET /v1/apps/{id}/betaFeedbackScreenshotSubmissions`, with the API key in `~/.appstoreconnect/`, and files each one as a capture without element data: no `tap`, no `element`, no `anchors`, and a `comment` from the tester's note. The Mac writes these captures itself, in this format, with the fields it knows (the device model and OS from the feedback, the build from TestFlight). They never pass through the outbox, so they have no `capture.sig`.
@@ -190,7 +201,10 @@ iCloud Drive encrypts the folder in transit and at rest, but Apple holds the key
 | Path | Holds |
 |---|---|
 | `packages/review-ios/` | The Swift package: `Sources/TeylaReview/Core` (format, registry, hit test, signing, store, audio guard), `Sources/TeylaReview/UI` (overlay, presenter, shake, speech, settings) and `Tests/TeylaReviewTests` |
+| `packages/review-channel/` | The shared channel service: `server.py`, Dockerfile, compose and Caddy fragments, install steps |
+| `src/teyla/review_channel.py` | The Mac side: `pull --channel`, the key commands and the hourly agent |
 | `templates/review/capture.schema.json` | JSON Schema for `capture.json` |
 | `tests/test_review_capture.py` | Validates the fixture capture, this page's example and the signing vector against the schema |
+| `tests/test_review_channel_server.py`, `tests/test_review_channel.py` | The service against a real local port, and the Mac side with `ssh` and `rsync` replaced by local programs |
 
 Run the package tests on the Mac, without a simulator, with `swift test --package-path packages/review-ios`.

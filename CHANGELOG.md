@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **A shared review channel.** `packages/review-channel/` is a write-only service (Python standard library, one container) that
+  takes feedback captures from every product and platform; `teyla review pull --channel` moves them over SSH into the inbox
+  within the hour and deletes the server copy. `teyla review channel key add|revoke|path` manages one key per product and
+  `teyla review channel install` adds the hourly agent. Captures from it are marked "sender unverified" in `teyla review list`.
+  PRIVACY row 45; see docs/REVIEW.md, "The shared channel".
+
 ## 0.38.1 — 2026-11-04 — The iPhone gets the admin tabs
 
 - **The phone's Growth snapshot says how many slots have no draft, and which products nobody tried to sell.**

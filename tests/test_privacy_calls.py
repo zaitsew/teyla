@@ -53,6 +53,7 @@ ALLOWED = {
     "providers.py": {19},
     "products.py": {20},
     "review.py": {23},
+    "review_channel.py": {45},
     "review_asc.py": {24},
     "ux_judge.py": {25},
     "scout_design.py": {26},

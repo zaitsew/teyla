@@ -6,6 +6,7 @@ Derived from the writers, not from memory; each line below names the module that
     ~/Library/LaunchAgents/com.zaitsew.teyla.{sims,sweep,load}.plist  routine_install  unload + remove (only exist when
                                  [storage] sims_agent / sweep_agent / [guard] agent is on)
     ~/Library/LaunchAgents/com.zaitsew.teyla.relay.plist             relay            unload + remove (only exists after `teyla relay on`)
+    ~/Library/LaunchAgents/com.zaitsew.teyla.review-channel.plist    review_channel   unload + remove (only exists after `teyla review channel install`)
     ~/Library/LaunchAgents/com.teyla.<product>.<routine>.plist      control.triggers unload + remove
     ~/Library/Logs/teyla-{daily,weekly,sims,sweep,load,relay}.log, com.teyla.*.log  routine_install, triggers  remove
     ~/.claude/CLAUDE.md          the `@~/.agents/POLICY.md` import   policy.sync      edit: drop that line
@@ -72,7 +73,8 @@ def _generated_by_teyla(text: str) -> bool:
     return first.startswith(SKILL_MARKERS)
 
 
-ROUTINE_LABELS = (_ri.DAILY_LABEL, _ri.LABEL, *_ri.OPTIONAL_LABELS, "com.zaitsew.teyla.relay")
+ROUTINE_LABELS = (_ri.DAILY_LABEL, _ri.LABEL, *_ri.OPTIONAL_LABELS, "com.zaitsew.teyla.relay",
+                  "com.zaitsew.teyla.review-channel")
 TRIGGER_PREFIX = "com.teyla."
 
 
@@ -195,7 +197,7 @@ def _launch_agents(home: pathlib.Path) -> list[Step]:
         if plist.exists():
             steps.append(Step("remove", plist, "its plist", lambda plist=plist: _rm(plist)))
     logs = home / "Library" / "Logs"
-    for name in ("teyla-daily.log", "teyla-weekly.log", "teyla-sims.log", "teyla-sweep.log", "teyla-load.log", "teyla-growth.log", "teyla-relay.log"):
+    for name in ("teyla-daily.log", "teyla-weekly.log", "teyla-sims.log", "teyla-sweep.log", "teyla-load.log", "teyla-growth.log", "teyla-relay.log", "teyla-review-channel.log"):
         if (logs / name).exists():
             steps.append(Step("remove", logs / name, "routine log", lambda p=logs / name: _rm(p)))
     if logs.is_dir():
