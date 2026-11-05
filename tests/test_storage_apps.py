@@ -445,6 +445,20 @@ def test_switching_to_the_app_during_the_scan_stops_the_quit(mac, clock):
     assert mac.quit_calls == []                                  # the next tick saw it in front: idle starts over
 
 
+def test_a_use_seen_by_the_recheck_restarts_the_idle_clock(mac, clock):
+    mac.add("Slack", "com.example.slack")
+    settle(mac, clock, conf())
+    def switch_and_leave():
+        mac.front = "com.example.slack"
+    mac.on_ps = switch_and_leave
+    tick(mac, clock, conf())
+    assert mac.quit_calls == []
+    mac.on_ps, mac.front = None, None                            # the owner left before the next tick looked
+    clock.minutes(6)
+    tick(mac, clock, conf())
+    assert mac.quit_calls == []
+
+
 def test_relaunching_the_app_during_the_scan_stops_the_quit(mac, clock):
     mac.add("Slack", "com.example.slack")
     settle(mac, clock, conf())

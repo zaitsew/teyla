@@ -453,7 +453,10 @@ def still_safe(row: Row, ctx: Ctx) -> bool:
     if fresh is None:
         return False
     same = [a for a in fresh if a.key == row.app.key]
-    return len(same) == 1 and same[0].pid == row.app.pid and row.app.folder.lower() not in front_folders(fresh)
+    if row.app.folder.lower() in front_folders(fresh):
+        row.ent["last_front"] = ctx.now()                  # a use seen here restarts the idle clock like one seen by a tick
+        return False
+    return len(same) == 1 and same[0].pid == row.app.pid
 
 
 def _is_docker(a: App) -> bool:
