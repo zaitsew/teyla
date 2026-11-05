@@ -13,13 +13,16 @@ An app is *eligible* only when ALL of this holds:
 - it is a running Foreground app (`lsappinfo list`; menu-bar and background processes never count) with a bundle id;
 - it matches the list, and it is not in the protected set that no setting changes: Finder, Teyla, Claude,
   ChatGPT, Codex, Terminal, iTerm2, Ghostty, Xcode, Simulator, Cursor, Zed, Google Chrome, Safari, Firefox, Arc;
-- it is not in front, and it has been idle for `apps_quit_idle_h` hours. Idle is the time since it was last
-  in front, or since the tick first saw it, whichever is later (`~/.teyla/state/app-front.json`). An app
-  that stops running is forgotten, so a relaunch starts the clock over;
+- it is not in front, nor is an app inside the same `.app`, and it has been idle for `apps_quit_idle_h` hours. Idle
+  is the time since it was last in front, or since the tick first saw it, whichever is later
+  (`~/.teyla/state/app-front.json`). An app that stops running is forgotten, so a relaunch starts the clock over.
+  The tick samples once a minute, so a use shorter than that between two ticks can go unseen; the quit is still
+  a Cmd-Q, which asks about unsaved work;
+- it is the only running instance of its bundle, and the apps read again right before the request still agree;
 - a quit request was not already refused for it: an app that stayed (an unsaved-changes dialog is the usual
   reason) is not asked again until it has been in front;
-- Docker (`com.docker.docker`, `com.electron.dockerdesktop`) runs no container: `docker ps -q` exits 0
-  with no output within 5 s. A failure or a timeout means skip.
+- Docker (`com.docker.docker`, `com.electron.dockerdesktop`) runs no container: `docker --context desktop-linux
+  ps -q` exits 0 with no output within 5 s. A failure or a timeout means skip.
 
 `guard tick` calls it every minute when the mode is not `off` (step 7 of its docstring). The tick quits
 only while memory is tight: the kernel pressure is warn or worse, or the compressor holds
@@ -65,6 +68,7 @@ DOCKER_TIMEOUT_S = 5
 LSAPPINFO_TIMEOUT_S = 10
 MANUAL_WAIT_STEPS = 10          # x 0.5 s: how long `--quit` waits to see which apps went
 DOCKER_BUNDLES = ("com.docker.docker", "com.electron.dockerdesktop")
+DOCKER_CONTEXT = "desktop-linux"    # Docker Desktop's own engine on a Mac
 NOTIFY_TITLE = "Teyla"
 
 # Never quit, whatever the list says. Matched against the display name, the `.app` folder name and the bundle id.
@@ -82,10 +86,11 @@ LISTED, PROTECTED, NOT_LISTED, IN_FRONT, NOT_IDLE = "listed", "protected", "not 
 
 # --- the machine, behind objects tests replace -----------------------------------------------
 
-def quit_bundle(bundle_id: str) -> str:
-    """Ask the running app with this bundle id to quit, like Cmd-Q (`NSRunningApplication.terminate`).
-    Returns "requested", "not-running" or "failed"; it does not wait. AppKit is loaded here and nowhere else."""
-    if sys.platform != "darwin" or not bundle_id:
+def quit_bundle(bundle_id: str, pid: int) -> str:
+    """Ask this one process to quit, like Cmd-Q (`NSRunningApplication.terminate`), if it still is this bundle:
+    another instance of the app, or a reused pid, is left alone. Returns "requested", "not-running" or "failed";
+    it does not wait. AppKit is loaded here and nowhere else."""
+    if sys.platform != "darwin" or not bundle_id or not pid:
         return "failed"
     try:
         import ctypes
@@ -101,13 +106,14 @@ def quit_bundle(bundle_id: str) -> str:
             return ctypes.CFUNCTYPE(restype, ctypes.c_void_p, ctypes.c_void_p, *argtypes)(("objc_msgSend", objc))
 
         sel = objc.sel_registerName
-        name = msg(ctypes.c_void_p, [ctypes.c_char_p])(objc.objc_getClass(b"NSString"), sel(b"stringWithUTF8String:"),
-                                                       bundle_id.encode())
-        found = msg(ctypes.c_void_p, [ctypes.c_void_p])(objc.objc_getClass(b"NSRunningApplication"),
-                                                        sel(b"runningApplicationsWithBundleIdentifier:"), name)
-        if not found or not msg(ctypes.c_ulong, [])(found, sel(b"count")):
+        app = msg(ctypes.c_void_p, [ctypes.c_int])(objc.objc_getClass(b"NSRunningApplication"),
+                                                   sel(b"runningApplicationWithProcessIdentifier:"), pid)
+        if not app:
             return "not-running"
-        app = msg(ctypes.c_void_p, [ctypes.c_ulong])(found, sel(b"objectAtIndex:"), 0)
+        name = msg(ctypes.c_void_p, [])(app, sel(b"bundleIdentifier"))
+        utf8 = msg(ctypes.c_char_p, [])(name, sel(b"UTF8String")) if name else None
+        if not utf8 or utf8.decode() != bundle_id:
+            return "not-running"
         return "requested" if msg(ctypes.c_bool, [])(app, sel(b"terminate")) else "failed"
     except Exception:  # noqa: BLE001 — a failing quit is "not done", never a crash of the guard
         return "failed"
@@ -116,7 +122,7 @@ def quit_bundle(bundle_id: str) -> str:
 @dataclasses.dataclass
 class Ctx:
     run: Callable = storage_procs.run_command      # lsappinfo, ps, docker
-    quit_app: Callable[[str], str] = quit_bundle
+    quit_app: Callable[[str, int], str] = quit_bundle
     now: Callable[[], float] = time.time
     sleep: Callable[[float], None] = time.sleep
     platform: str = sys.platform
@@ -215,6 +221,11 @@ def parse_lsappinfo(text: str) -> list[App]:
     return out
 
 
+def front_folders(apps: list[App]) -> set[str]:
+    """The `.app` folders in use: "Docker Desktop" in front means Docker.app around it is in use too."""
+    return {a.folder.lower() for a in apps if a.front}
+
+
 def running_apps(ctx: Ctx) -> list[App] | None:
     """One `lsappinfo list`. None when it fails: nothing is known, so nothing changes."""
     rc, out = ctx.run(["lsappinfo", "list"], LSAPPINFO_TIMEOUT_S)
@@ -278,10 +289,12 @@ def classify(apps: list[App], state: dict, s: dict, mem: dict, now: float) -> li
     rows = []
     # Listing the name people see ("Docker Desktop") means the app around it, which is the one that can quit.
     outer = {a.folder.lower() for a in apps if a.nested and is_listed(a, s["list"])}
+    in_use = front_folders(apps)
+    keys = [a.key for a in apps]
     for a in apps:
         ent = (state.get("apps") or {}).get(a.key) or {}
         idle = _idle_s(ent, now)
-        if a.front:
+        if a.folder.lower() in in_use:
             status = IN_FRONT
         elif is_protected(a):
             status = PROTECTED
@@ -293,7 +306,9 @@ def classify(apps: list[App], state: dict, s: dict, mem: dict, now: float) -> li
             status = LISTED
         # A dry-run "gone" mark only keeps dry mode's total honest: it must not shield an app once quits are real.
         gone = ent.get("dry_gone") and s["mode"] == "dry"
-        ok = status == LISTED and bool(a.bundle_id) and not a.nested and not ent.get("held") and not gone and not ent.get("pending")
+        # Two instances of one bundle share one state entry, so nothing says which of them is idle: neither goes.
+        ok = (status == LISTED and bool(a.bundle_id) and not a.nested and keys.count(a.key) == 1
+              and not ent.get("held") and not gone and not ent.get("pending"))
         rows.append(Row(a, status, mem.get(a.folder.lower(), 0), idle, ent, ok))
     return rows
 
@@ -408,12 +423,13 @@ def observe(apps: list[App], state: dict, now: float) -> list[dict]:
         ent.pop("pending", None)
         if not gone:
             ent["held"] = True
+    in_use = front_folders(apps)
     for a in apps:
         ent = old.get(a.key)
         if not ent or ent.get("pid") != a.pid:
             ent = {"first_seen": now, "last_front": None, "pid": a.pid}
         ent["name"] = a.name
-        if a.front:
+        if a.folder.lower() in in_use:
             ent["last_front"] = now
             ent.pop("held", None)
             ent.pop("dry_gone", None)
@@ -423,9 +439,21 @@ def observe(apps: list[App], state: dict, now: float) -> list[dict]:
 
 
 def docker_idle(ctx: Ctx) -> bool:
-    """True only when `docker ps -q` exits 0 with empty output within 5 s. Anything else means "may be busy"."""
-    rc, out = ctx.run(["docker", "ps", "-q"], DOCKER_TIMEOUT_S)
+    """True only when Docker Desktop's own engine answers with no containers within 5 s. It names the context:
+    the selected one may be a remote engine, whose empty list says nothing about the containers here. Anything
+    else means "may be busy"."""
+    rc, out = ctx.run(["docker", "--context", DOCKER_CONTEXT, "ps", "-q"], DOCKER_TIMEOUT_S)
     return rc == 0 and not out.strip()
+
+
+def still_safe(row: Row, ctx: Ctx) -> bool:
+    """Read the apps again right before the request: the scan and the Docker check take seconds, and the owner
+    may have switched to this app or relaunched it. An unreadable answer means no."""
+    fresh = running_apps(ctx)
+    if fresh is None:
+        return False
+    same = [a for a in fresh if a.key == row.app.key]
+    return len(same) == 1 and same[0].pid == row.app.pid and row.app.folder.lower() not in front_folders(fresh)
 
 
 def _is_docker(a: App) -> bool:
@@ -452,6 +480,8 @@ def _quit_one(row: Row, ctx: Ctx, m: str, why: str, now: float, real: bool, out:
             ent["docker_skip"] = now
             out.append(_row(m, "skipped-docker", ent, row.memory, idle, "docker ps did not answer with no containers"))
             return False
+    if not still_safe(row, ctx):
+        return False
     if m == "dry":
         ent["dry_gone"] = True
         out.append(_row(m, "would-quit", ent, row.memory, idle, why))
@@ -459,7 +489,7 @@ def _quit_one(row: Row, ctx: Ctx, m: str, why: str, now: float, real: bool, out:
     if not real:
         out.append(_row("dry", "would-quit", ent, row.memory, idle, why))
         return True
-    res = ctx.quit_app(a.bundle_id)
+    res = ctx.quit_app(a.bundle_id, a.pid)
     if res == "requested":
         ent["pending"] = {"mode": m, "memory": row.memory, "idle_min": int((idle or 0) // 60), "reason": why, "at": now}
         return True

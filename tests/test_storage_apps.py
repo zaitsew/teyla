@@ -72,6 +72,8 @@ class Mac:
         self.next_pid = 1000
         self.calls: list[list[str]] = []
         self.quit_calls: list[str] = []
+        self.quit_pids: list[int] = []
+        self.on_ps = None                        # runs during the memory scan: the owner acts in that gap
         self.stubborn: set[str] = set()          # an unsaved-changes dialog: terminate is accepted, the app stays
         self.docker = (0, "")
         self.lsappinfo_fails = False
@@ -103,6 +105,8 @@ class Mac:
                            f'    pid = {a["pid"]} token=[sess=1] type="{a["kind"]}" flavor=3 Version="1"\n')
             return 0, "".join(out)
         if cmd[0] == "ps":
+            if self.on_ps:
+                self.on_ps()
             rows = [f"{a['pid']:>6} 1 {a['mb'] * 1024:>8} 0.0 01:00:00 /Applications/{a['folder']}.app/Contents/MacOS/{a['folder']}"
                     for a in self.apps.values()]
             return 0, "\n".join(rows + ["     1     0     1000 0.0 05-00:00:00 /sbin/launchd"])
@@ -112,9 +116,10 @@ class Mac:
             return 0, OK_SYSCTL
         return 127, ""
 
-    def quit_app(self, bundle):
+    def quit_app(self, bundle, pid):
         self.quit_calls.append(bundle)
-        if bundle not in self.apps:
+        self.quit_pids.append(pid)
+        if bundle not in self.apps or self.apps[bundle]["pid"] != pid:
             return "not-running"
         if bundle not in self.stubborn:
             self.remove(bundle)
@@ -384,7 +389,7 @@ def test_an_app_that_stays_is_journaled_still_running_and_not_asked_again_until_
 def test_a_refused_request_is_journaled_at_once_and_not_retried(mac, clock):
     mac.add("Slack", "com.example.slack")
     settle(mac, clock)
-    mac.quit_app = lambda b: "failed"
+    mac.quit_app = lambda b, p: "failed"
     tick(mac, clock)
     assert actions() == [("still-running", "Slack")] and "not accepted" in journal_rows()[0]["reason"]
 
@@ -410,6 +415,72 @@ def test_dry_mode_quits_nothing_and_does_not_count_an_app_twice(mac, clock):
     assert len(journal_rows()) == 2
     rep = sa.report(7, now=clock())
     assert rep["total"] == {"quits": 0, "freed": 0, "would_quits": 2, "would_free": 800 * 1024 ** 2}
+
+
+def test_the_request_names_the_pid_it_checked(mac, clock):
+    mac.add("Slack", "com.example.slack")
+    settle(mac, clock, conf())
+    tick(mac, clock, conf())
+    assert mac.quit_pids == [mac.next_pid - 1]
+
+
+def test_two_instances_of_a_bundle_are_left_alone(mac, clock):
+    mac.add("Slack", "com.example.slack")
+    mac.apps["second"] = {**mac.apps["com.example.slack"], "pid": 9001}
+    settle(mac, clock, conf())
+    clock.hours(5)
+    tick(mac, clock, conf())
+    assert mac.quit_calls == []
+
+
+def test_switching_to_the_app_during_the_scan_stops_the_quit(mac, clock):
+    mac.add("Slack", "com.example.slack")
+    settle(mac, clock, conf())
+    mac.on_ps = lambda: setattr(mac, "front", "com.example.slack")
+    tick(mac, clock, conf())
+    assert mac.quit_calls == [] and journal_rows() == []
+    mac.on_ps = None
+    clock.minutes(6)
+    tick(mac, clock, conf())
+    assert mac.quit_calls == []                                  # the next tick saw it in front: idle starts over
+
+
+def test_relaunching_the_app_during_the_scan_stops_the_quit(mac, clock):
+    mac.add("Slack", "com.example.slack")
+    settle(mac, clock, conf())
+    mac.on_ps = lambda: mac.apps["com.example.slack"].update(pid=9001)
+    tick(mac, clock, conf())
+    assert mac.quit_calls == []
+
+
+def test_an_unreadable_recheck_stops_the_quit(mac, clock):
+    mac.add("Slack", "com.example.slack")
+    settle(mac, clock, conf())
+    mac.on_ps = lambda: setattr(mac, "lsappinfo_fails", True)
+    tick(mac, clock, conf())
+    assert mac.quit_calls == []
+
+
+def test_a_nested_app_in_front_keeps_the_outer_app(mac, clock):
+    c = conf(apps_quit_list=["Docker"])
+    mac.add("Docker", "com.docker.docker", folder="Docker")
+    mac.add("Docker Desktop", "com.electron.dockerdesktop", folder="Docker.app/Contents/MacOS/Docker Desktop")
+    settle(mac, clock, c)
+    mac.front = "com.electron.dockerdesktop"
+    tick(mac, clock, c)
+    assert mac.quit_calls == []
+    mac.front = None
+    clock.minutes(6)
+    tick(mac, clock, c)
+    assert mac.quit_calls == []                                  # it was in use a moment ago
+
+
+def test_docker_is_asked_about_its_own_engine(mac, clock):
+    c = conf(apps_quit_list=["Docker"])
+    mac.add("Docker", "com.docker.docker", folder="Docker")
+    settle(mac, clock, c)
+    tick(mac, clock, c)
+    assert ["docker", "--context", "desktop-linux", "ps", "-q"] in mac.calls
 
 
 def test_a_dry_run_mark_does_not_shield_an_app_once_quits_are_real(mac, clock):
@@ -486,7 +557,7 @@ def test_docker_is_quit_only_when_docker_ps_answers_with_no_containers(mac, cloc
     settle(mac, clock)
     tick(mac, clock)
     assert (mac.quit_calls == ["com.docker.docker"]) is quits
-    assert ["docker", "ps", "-q"] in mac.calls
+    assert ["docker", "--context", "desktop-linux", "ps", "-q"] in mac.calls
     if not quits:
         assert actions() == [("skipped-docker", "Docker")]
 
@@ -526,12 +597,12 @@ def test_a_bad_mode_reads_as_off_and_not_macos_does_nothing(mac, clock):
     mac.add("Slack", "com.example.slack")
     assert sa.mode(conf(apps_quit="maybe")) == "off" and sa.mode(conf(apps_quit="ON")) == "on"
     assert tick(mac, clock, platform="linux") == [] and mac.calls == []
-    assert sa.quit_bundle("") == "failed"
+    assert sa.quit_bundle("", 1) == "failed" and sa.quit_bundle("com.example.slack", 0) == "failed"
 
 
 def test_quit_bundle_off_macos_does_nothing(monkeypatch):
     monkeypatch.setattr(sa.sys, "platform", "linux")
-    assert sa.quit_bundle("com.example.slack") == "failed"
+    assert sa.quit_bundle("com.example.slack", 1) == "failed"
 
 
 # --- guard.tick ------------------------------------------------------------------------------------------------
