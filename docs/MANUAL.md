@@ -407,6 +407,24 @@ exists) and `--kill` ends them: SIGTERM, 10 seconds, SIGKILL only for a
 pid that still has the same start time and did not exit since the check. `teyla storage` and `teyla doctor` show what they hold.
 `teyla config set storage.orphan_kill=true` lets the optional `storage.sims_agent` do it every 10 minutes.
 
+Apps you leave open for days hold memory too. `teyla storage apps` lists the running foreground apps with
+their memory and the hours since each was last in front. Name the ones that may go, and let the guard quit
+them while memory is tight:
+
+    teyla config set guard.apps_quit_list="Slack,Zoom"
+    teyla config set guard.apps_quit=dry        # a week of would-quit rows, one notice, nothing quit
+    teyla storage apps --report                 # what it would have done
+    teyla config set guard.apps_quit=on
+
+It needs the guard agent (`guard.agent=true`, `teyla routine install`). An app goes only when it is listed,
+not in front, idle for `guard.apps_quit_idle_h` hours (4) and memory is tight: kernel pressure warn or
+worse, the compressor at `guard.compressor_crit_pct` of RAM, or swap-out at `guard.swapout_mb_s`. A full disk or a
+busy CPU does not count. One app per `guard.apps_quit_every_min` minutes (5), the largest first. The quit is the
+Cmd-Q request: an app with unsaved changes stays open and is not asked again until you have used it.
+Finder, Teyla, Claude, ChatGPT, Codex, your terminals and editors, Xcode, Simulator and the browsers are
+protected and cannot be listed. Docker is quit only when it runs no container. `teyla storage apps --quit`
+does one pass now, whatever the memory; `--dry` shows it first.
+
 `teyla reviews` reads the review ledger (`review.ledger`) against `gh pr list --state merged` and
 counts, per repo, PRs merged without a review, merged with a P1 still open, and skipped with a
 logged reason. PRs under `review.min_lines` changed lines (default 7) and docs-only PRs are exempt.
