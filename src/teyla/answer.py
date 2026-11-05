@@ -254,7 +254,7 @@ def execute(step: dict, text: str) -> tuple[bool, str]:
         if code != 0:
             return False, f"could not copy the answer: {out}"
         code, out = run(step["cmd"])
-        return code == 0, ("answer copied; paste it into the session" if code == 0 else out)
+        return code == 0, ("answer copied to the clipboard and the session opened" if code == 0 else out)
     code, out = run(step["cmd"], cwd=step.get("cwd"), detach=step.get("detach"))
     return code == 0, (step.get("detail") or out) if code == 0 else (out or f"exit {code}")
 

@@ -6,6 +6,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -102,7 +103,7 @@ def test_tools_list_shape():
     assert not any(t["annotations"]["destructiveHint"] for t in tools)
     answer = next(t for t in tools if t["name"] == "teyla_answer")
     assert answer["inputSchema"]["required"] == ["id", "text"]
-    assert "user wrote or explicitly approved" in answer["description"] and "made up" in answer["description"]
+    assert "as the owner's own answer" in answer["description"]
     assert answer["annotations"]["openWorldHint"] is False
     assert next(t for t in tools if t["name"] == "teyla_routines")["annotations"]["openWorldHint"] is True
 
@@ -134,9 +135,14 @@ CASES = [
 
 @pytest.mark.parametrize("name,args,argv", CASES)
 def test_each_tool_builds_the_right_argv(runner, name, args, argv):
+    runner.out = '{"findings": []}' if name == "teyla_monitor" else "ok\n"
     r = call(name, args)
     assert runner.calls[0][0] == argv
-    assert r["result"] == {"content": [{"type": "text", "text": "ok\n"}], "isError": False}
+    if name == "teyla_monitor":      # the report is passed on with the `omitted` field added
+        assert json.loads(r["result"]["content"][0]["text"]) == {"findings": [], "omitted": mcp.MONITOR_OMITTED}
+        assert r["result"]["isError"] is False
+    else:
+        assert r["result"] == {"content": [{"type": "text", "text": "ok\n"}], "isError": False}
 
 
 def test_a_shell_metacharacter_stays_one_argv_item(runner):
@@ -337,3 +343,121 @@ def test_monitor_no_mark_seen_keeps_a10(monkeypatch):
         args = cli.build_parser().parse_args(argv)
         args.fn(args)
         assert len(calls) == want, argv
+
+
+# --- MCP text states facts ----------------------------------------------------------------------
+# Anthropic directory review, 2026-11-04: instructions, descriptions and outputs describe what the server does and
+# returns; they do not command the assistant. This is the scan one of the owner's other MCP servers uses. It covers what the
+# server writes (metadata, errors, the notes it adds, and what the CLI modules behind the tools say in their own
+# words). Text that sessions, products or the owner wrote reaches the client as data and is not scanned.
+
+COMMANDS = re.compile(r"\b(always|never|must|should|cite|tell|ask|say|do not|don't|make sure|remember|check|use|pass|give|leave"
+                      r"|recommend)\b", re.I)
+
+
+def strings(o):
+    if isinstance(o, str):
+        yield o
+    elif isinstance(o, dict):
+        for k, v in o.items():
+            yield from strings(k)
+            yield from strings(v)
+    elif isinstance(o, (list, tuple)):
+        for v in o:
+            yield from strings(v)
+
+
+def no_commands(texts, label):
+    for t in texts:
+        assert not COMMANDS.search(t), f"{label}: {t!r}"
+
+
+def test_the_scan_catches_what_it_is_for():
+    for bad in ("Always cite the source", "Only send text the user approved; never an answer", "Use dry=true",
+                "Check before a build", "ask the owner", "Do not call this first"):
+        assert COMMANDS.search(bad), bad
+
+
+def test_initialize_and_tool_metadata_carry_no_commands():
+    (init,) = talk(req(1, "initialize", {"protocolVersion": "2025-06-18"}))
+    no_commands(strings(init["result"]), "initialize")
+    no_commands(strings(mcp.list_tools()), "tools/list")          # names, titles, descriptions, parameter descriptions
+    no_commands(mcp.SUMMARY.values(), "--list-tools")
+    assert set(mcp.SUMMARY) == set(NAMES)
+
+
+def test_error_texts_carry_no_commands(monkeypatch):
+    bad = [("no_such_tool", {}), ("teyla_asks", {"days": "7"}), ("teyla_asks", {"days": 0}), ("teyla_asks", {"days": 99999}),
+           ("teyla_asks", {"all": "yes"}), ("teyla_asks", {"product": 3}), ("teyla_asks", {"nope": 1}),
+           ("teyla_asks", {"product": "a\0b"}), ("teyla_answer", {"id": "ab"}), ("teyla_answer", {"id": "ab", "text": "  "}),
+           ("teyla_answer", {"id": "--json", "text": "x"}), ("teyla_intent", {"product": "backfill"}),
+           ("teyla_routines", {"paths": "a"}), ("teyla_routines", {"paths": ["--issues"]}), ("teyla_load", {"record": True})]
+    for name, args in bad:
+        r = call(name, args)
+        no_commands([r["error"]["message"]], f"{name} {args}")
+    for msg in ({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": 3},
+                {"jsonrpc": "2.0", "id": 1, "method": "no/such"}, {"jsonrpc": "2.0", "id": True, "method": "ping"}, "[]", "{", "[3]"):
+        for r in talk(msg):
+            no_commands(strings(r), repr(msg))
+    (r,) = talk(req(1, "tools/call", {"name": "teyla_load", "arguments": [1]}))
+    no_commands([r["error"]["message"]], "arguments")
+    (r,) = talk(req(1, "tools/call", {"name": 5}))
+    no_commands([r["error"]["message"]], "name")
+    for runner_ in (Runner(boom=subprocess.TimeoutExpired(["x"], 1)), Runner(boom=OSError("gone")), Runner(boom=RuntimeError("bug")),
+                    Runner(rc=1, out="", err="")):
+        monkeypatch.setattr(mcp, "run_teyla", runner_)
+        no_commands(strings(call("teyla_load")["result"]), "command failure")
+    monkeypatch.setattr(mcp, "run_teyla", Runner(out="x" * (mcp.MAX_TEXT + 5)))
+    no_commands(call("teyla_asks")["result"]["content"][0]["text"][mcp.MAX_TEXT:], "output cut note")
+    monkeypatch.setattr(mcp, "run_teyla", Runner(out="not json"))
+    no_commands(strings(call("teyla_monitor")["result"]), "monitor, unreadable report")
+
+
+def test_monitor_findings_keep_their_facts_and_lose_the_imperative_sentences(monkeypatch):
+    finding = {"id": "A6", "severity": "medium", "title": "No pre-merge review skill used", "evidence": "skills invoked: none",
+               "action": "Use /review before each PR and /codex or /grok review before anything touching money."}
+    report = {"metrics": {"n_sessions": 3}, "findings": [finding, dict(finding, id="A7")], "schema": "teyla.report.v1"}
+    assert COMMANDS.search(finding["action"])
+    monkeypatch.setattr(mcp, "run_teyla", Runner(out=json.dumps(report)))
+    r = call("teyla_monitor")["result"]
+    assert r["isError"] is False
+    out = json.loads(r["content"][0]["text"])
+    assert out["metrics"] == report["metrics"] and out["schema"] == "teyla.report.v1"
+    assert [{k: v for k, v in f.items()} for f in out["findings"]] == [
+        {"id": "A6", "severity": "medium", "title": finding["title"], "evidence": "skills invoked: none"},
+        {"id": "A7", "severity": "medium", "title": finding["title"], "evidence": "skills invoked: none"}]
+    assert out["omitted"] == mcp.MONITOR_OMITTED
+    no_commands(strings(out["omitted"]), "omitted")
+    no_commands(strings(out["findings"]), "findings")
+
+
+def test_the_other_tools_pass_their_output_through_unchanged(monkeypatch):
+    monkeypatch.setattr(mcp, "run_teyla", Runner(out='{"x": 1}\n'))
+    for n in set(NAMES) - {"teyla_monitor"}:
+        r = call(n, {"id": "abc", "text": "t"} if n == "teyla_answer" else {})["result"]
+        assert r["content"][0]["text"] == '{"x": 1}\n'
+
+
+def test_the_modules_behind_the_tools_state_facts_in_what_they_return(monkeypatch):
+    """The words the CLI commands behind the tools put in their JSON: lookup errors, delivery details, verdicts."""
+    from teyla import answer, asks, load, routines
+    from test_answer_confirm import ask
+    texts = [asks.resolve("ab", [])[1], asks.resolve("abcdef", [])[1],
+             asks.resolve("aaa", [ask("aaaa0001"), ask("aaaa0002")])[1]]
+    texts += [answer.answer(ask(harness="claude-desktop", session="", link=""), "yes")["detail"],
+              answer.answer(ask(harness="codex", session="", link=""), "yes")["detail"],
+              answer.answer(ask(), "yes", dry=True, clipboard=False)["detail"], answer.NOT_CONFIRMED, answer.QUEUE_DETAIL]
+    monkeypatch.setattr(answer, "run", lambda cmd, **kw: (0, ""))
+    texts.append(answer.execute({"copy": True, "cmd": ["open", "x"]}, "yes")[1])
+    gib = 1 << 30
+    worst = load.Snapshot(time="2026-10-09T20:25:00+02:00", ram_bytes=24 * gib, ncpu=10, load1=90.0, load5=90.0, load15=90.0,
+                          swap_total_bytes=8 * gib, swap_used_bytes=8 * gib, pressure=4, compressor_bytes=20 * gib,
+                          disk_free_bytes=gib, procs=load.Procs(
+                              sims=9, sim_udids=["u"], drivers=[load.Driver(i, "xcodebuild", 0, 60) for i in range(9)]))
+    texts += load.assess(worst, {}).reasons + load.assess(worst, {}, load.Trend(
+        swap_gb_30m=9.0, swap_recent_gb=2.0, disk_free_30m_gb=1.0, disk_recent_gb=2.0, swapout_mb_s=500.0)).reasons
+    texts += [load.OK, load.BUSY, load.CRITICAL, load.WORSENING]
+    texts += [routines.failing_detail({"streak": 2, "since": None, "streak_open": True, "error": "boom"}), routines.PAUSED,
+              routines.PAUSED_LOADED, "ok", "STALE", "FAILING", "NOT LOADED", "unknown", "BROKEN", "UNTESTED", "RE-TEST"]
+    assert len(texts) > 15
+    no_commands(texts, "CLI output")

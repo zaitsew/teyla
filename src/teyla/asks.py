@@ -1300,10 +1300,10 @@ def collect(days: int = DEFAULT_DAYS, now: float | None = None, desktop: str | N
 def resolve(prefix: str, items: list[Ask]) -> tuple[Ask | None, str]:
     p = prefix.strip().lower()
     if len(p) < 3:
-        return None, f"{prefix!r} is too short: give at least 3 characters of an id"
+        return None, f"{prefix!r} is too short: an id needs at least 3 characters"
     hits = [a for a in items if a.id.startswith(p)]
     if not hits:
-        return None, f"no item with an id starting {prefix!r} (try `teyla asks --all`)"
+        return None, f"no item with an id starting {prefix!r} (`teyla asks --all` lists closed and hidden items too)"
     if len(hits) > 1:
         return None, f"{prefix!r} matches {len(hits)} items: " + ", ".join(a.id for a in hits)
     return hits[0], ""
