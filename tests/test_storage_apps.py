@@ -489,6 +489,23 @@ def test_a_nested_app_in_front_keeps_the_outer_app(mac, clock):
     assert mac.quit_calls == []                                  # it was in use a moment ago
 
 
+@pytest.mark.parametrize("listed", ["Docker", "Docker Desktop"])
+def test_an_outer_app_that_is_not_foreground_still_quits_for_the_app_inside_it(mac, clock, listed):
+    c = conf(apps_quit_list=[listed])
+    mac.add("Docker", "com.docker.docker", folder="Docker", kind="UIElement")
+    mac.add("Docker Desktop", "com.electron.dockerdesktop", folder="Docker.app/Contents/MacOS/Docker Desktop")
+    settle(mac, clock, c)
+    tick(mac, clock, c)
+    assert mac.quit_calls == ["com.docker.docker"]
+
+
+def test_a_menu_bar_app_with_nothing_inside_it_stays_out(mac, clock):
+    mac.add("Tray", "com.example.tray", kind="UIElement")
+    settle(mac, clock, conf(apps_quit_list=["Tray"]))
+    tick(mac, clock, conf(apps_quit_list=["Tray"]))
+    assert mac.quit_calls == []
+
+
 def test_docker_is_asked_about_its_own_engine(mac, clock):
     c = conf(apps_quit_list=["Docker"])
     mac.add("Docker", "com.docker.docker", folder="Docker")
