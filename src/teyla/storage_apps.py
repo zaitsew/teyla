@@ -174,6 +174,12 @@ class App:
     def key(self) -> str:
         return self.bundle_id or self.folder
 
+    @property
+    def nested(self) -> bool:
+        """A bundle inside another app ("Docker Desktop.app" inside Docker.app): the outer app is what quits,
+        and asking both would count the same memory twice."""
+        return self.path.find(".app") != self.path.rfind(".app")
+
 
 def _outer_folder(path: str) -> str:
     """"/Applications/Docker.app/Contents/MacOS/Docker Desktop.app" -> "Docker": the app the memory is counted under."""
@@ -270,6 +276,8 @@ def classify(apps: list[App], state: dict, s: dict, mem: dict, now: float) -> li
     """One row per app, status first-match: in front, protected, not listed, not idle yet, listed. `eligible`
     is `listed` and no refusal, no pending request and no dry-run "gone" mark on it, and a bundle id to quit by."""
     rows = []
+    # Listing the name people see ("Docker Desktop") means the app around it, which is the one that can quit.
+    outer = {a.folder.lower() for a in apps if a.nested and is_listed(a, s["list"])}
     for a in apps:
         ent = (state.get("apps") or {}).get(a.key) or {}
         idle = _idle_s(ent, now)
@@ -277,14 +285,15 @@ def classify(apps: list[App], state: dict, s: dict, mem: dict, now: float) -> li
             status = IN_FRONT
         elif is_protected(a):
             status = PROTECTED
-        elif not is_listed(a, s["list"]):
+        elif a.nested or not (is_listed(a, s["list"]) or a.folder.lower() in outer):
             status = NOT_LISTED
         elif idle is None or idle < s["idle_h"] * 3600:
             status = NOT_IDLE
         else:
             status = LISTED
-        ok = (status == LISTED and bool(a.bundle_id) and not ent.get("held") and not ent.get("dry_gone")
-              and not ent.get("pending"))
+        # A dry-run "gone" mark only keeps dry mode's total honest: it must not shield an app once quits are real.
+        gone = ent.get("dry_gone") and s["mode"] == "dry"
+        ok = status == LISTED and bool(a.bundle_id) and not a.nested and not ent.get("held") and not gone and not ent.get("pending")
         rows.append(Row(a, status, mem.get(a.folder.lower(), 0), idle, ent, ok))
     return rows
 
@@ -560,7 +569,7 @@ def render_report(rep: dict) -> list[str]:
 def manual_pass(conf: dict | None, ctx: Ctx, dry: bool) -> dict:
     """`--quit`: every eligible listed app, now, whatever the memory and the pause. Waits up to 5 s to see which
     went; journals `quit` / `still-running` itself. `dry` reports only: nothing is written or quit."""
-    s = settings(conf)
+    s = {**settings(conf), "mode": "manual"}
     apps = running_apps(ctx)
     if apps is None:
         return {"lines": ["`lsappinfo list` failed; nothing changed"], "rows": []}

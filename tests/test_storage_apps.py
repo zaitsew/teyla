@@ -412,6 +412,43 @@ def test_dry_mode_quits_nothing_and_does_not_count_an_app_twice(mac, clock):
     assert rep["total"] == {"quits": 0, "freed": 0, "would_quits": 2, "would_free": 800 * 1024 ** 2}
 
 
+def test_a_dry_run_mark_does_not_shield_an_app_once_quits_are_real(mac, clock):
+    dry = conf(apps_quit="dry")
+    mac.add("Slack", "com.example.slack")
+    settle(mac, clock, dry)
+    tick(mac, clock, dry)
+    assert actions() == [("would-quit", "Slack")] and mac.quit_calls == []
+    clock.minutes(6)
+    tick(mac, clock, conf(apps_quit="on"))
+    assert mac.quit_calls == ["com.example.slack"]
+
+
+def test_a_manual_quit_in_dry_mode_ignores_the_dry_run_mark(mac, clock):
+    dry = conf(apps_quit="dry")
+    mac.add("Slack", "com.example.slack")
+    settle(mac, clock, dry)
+    tick(mac, clock, dry)
+    sa.manual_pass(dry, ctx_of(mac, clock), dry=False)
+    assert mac.quit_calls == ["com.example.slack"]
+
+
+@pytest.mark.parametrize("listed", ["Docker", "Docker Desktop"])
+def test_an_app_inside_another_quits_through_the_outer_one_and_counts_once(mac, clock, listed):
+    c = conf(apps_quit="dry", apps_quit_list=[listed])
+    mac.add("Docker", "com.docker.docker", folder="Docker", mb=500)
+    mac.add("Docker Desktop", "com.electron.dockerdesktop", folder="Docker.app/Contents/MacOS/Docker Desktop", mb=100)
+    settle(mac, clock, c)
+    tick(mac, clock, c)
+    for _ in range(3):
+        clock.minutes(6)
+        tick(mac, clock, c)
+    assert actions() == [("would-quit", "Docker")]
+    on = conf(apps_quit="on", apps_quit_list=[listed])
+    clock.minutes(6)
+    tick(mac, clock, on)
+    assert mac.quit_calls == ["com.docker.docker"]
+
+
 def test_dry_mode_posts_one_notification_after_a_week(mac, clock):
     c = conf(apps_quit="dry")
     notes = []
