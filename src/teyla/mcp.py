@@ -90,38 +90,38 @@ TOOLS = [
     _tool("teyla_asks", "Open questions waiting on you",
           "The questions the owner's AI agent sessions (Claude Code, Codex) have left waiting, newest first, each with "
           "an id, the product, the session and the question text. Read-only.",
-          {"days": _days("Look back this many days (default 21)."),
+          {"days": _days("Window in days (default 21)."),
            "product": {"type": "string", "description": "Only this product (its registry id)."},
            "all": {"type": "boolean", "description": "Also list closed and hidden questions, and those of parked products."}},
           [], _argv_asks, 60, read_only=True),
     _tool("teyla_answer", "Answer a waiting question",
-          "Deliver the owner's answer to the local Claude Code or Codex session that asked (by resuming it). "
-          "Only send text the user wrote or explicitly approved; never an answer the model made up. "
-          "Use dry=true to see what would run without running it.",
-          {"id": {"type": "string", "minLength": 1, "description": "The ask id, or a prefix of it, from teyla_asks."},
-           "text": {"type": "string", "minLength": 1, "description": "The answer, exactly as the user wants it sent."},
-           "dry": {"type": "boolean", "description": "Print the commands that would run; run nothing."}},
+          "Delivers the owner's answer to the local Claude Code or Codex session that asked (by resuming it). "
+          "The text is typed into that session as the owner's own answer, exactly as given. "
+          "With dry=true it prints the commands that would run and runs none.",
+          {"id": {"type": "string", "minLength": 1, "description": "The id of a waiting question, or a prefix of it, as teyla_asks lists it."},
+           "text": {"type": "string", "minLength": 1, "description": "The answer text, delivered as given."},
+           "dry": {"type": "boolean", "description": "When true, prints the commands that would run and runs none."}},
           ["id", "text"], _argv_answer, 300, read_only=False, idempotent=False),
     _tool("teyla_intent", "The owner's own words for a product",
-          "The long prompts the owner wrote for a product, verbatim, newest last. Read this before writing a plan or a "
-          "spec, and quote it instead of summarising. Without a product, one line per product. Read-only.",
-          {"product": {"type": "string", "description": "The product name. Omit to list every product."},
+          "The long prompts the owner wrote for a product, stored verbatim, newest last. Without a product, one line "
+          "per product. Read-only.",
+          {"product": {"type": "string", "description": "The product name; without it the tool lists every product."},
            "days": _days("Only the last N days."),
            "grep": {"type": "string", "description": "Only entries containing this text (case-insensitive)."}},
           [], _argv_intent, 60, read_only=True),
     _tool("teyla_load", "Machine load verdict",
-          "Whether this Mac can take heavy work now: OK, BUSY or CRITICAL, with the numbers (memory, swap, load, "
-          "simulators, builds). Check before a build, a simulator boot or a headless agent. Read-only.",
+          "Whether this Mac has room for heavy work now (a build, a simulator boot, a headless agent): OK, BUSY or "
+          "CRITICAL, with the numbers (memory, swap, load, simulators, builds). Read-only.",
           {}, [], lambda a: ["load", "--json"], 30, read_only=True),
     _tool("teyla_routines", "Routine health",
           "Whether each product's scheduled routines ran, and the manual checks in its teyla.toml: loaded, last run, "
-          "stale or broken. May ask GitHub for workflow status through the owner's `gh` login. Read-only; files no issues.",
+          "stale or broken. May query GitHub for workflow status through the owner's `gh` login. Read-only; opens no issues.",
           {"paths": {"type": "array", "items": {"type": "string", "minLength": 1},
-                     "description": "Repo directories or teyla.toml files. Omit for every product on this machine."}},
+                     "description": "Repo directories or teyla.toml files; without it the tool covers every product on this machine."}},
           [], _argv_routines, 120, read_only=True, open_world=True),
     _tool("teyla_monitor", "AI session usage summary",
           "How the owner's AI coding sessions were used: tokens, models, cost at list price, corrections and the "
-          "advice that follows. Local logs only. Read-only: it does not mark any advice as seen.",
+          "findings with their evidence. Local logs only. Read-only: it does not mark any finding as seen.",
           {"days": _days("Report window in days (default: all local history)."),
            "project": {"type": "string", "description": "Only sessions whose project or directory contains this text."}},
           [], _argv_monitor, 180, read_only=True),
@@ -129,7 +129,7 @@ TOOLS = [
 BY_NAME = {t["name"]: t for t in TOOLS}
 SUMMARY = {   # for --list-tools
     "teyla_asks": "questions your agent sessions are waiting on",
-    "teyla_answer": "send your answer to the session that asked (only text you approved)",
+    "teyla_answer": "send your answer to the session that asked, as your own words",
     "teyla_intent": "your own words for a product, verbatim",
     "teyla_load": "can this Mac take heavy work now: OK, BUSY or CRITICAL",
     "teyla_routines": "whether each product's scheduled routines and checks ran",
@@ -171,11 +171,28 @@ def run_teyla(argv: list[str], timeout: float) -> tuple[int, str, str]:
 def _cut(text: str) -> str:
     if len(text) <= MAX_TEXT:
         return text
-    return text[:MAX_TEXT] + f"\n\n[output cut: {len(text) - MAX_TEXT} more characters; narrow the query, e.g. with days or product]"
+    return text[:MAX_TEXT] + f"\n\n[output cut: {len(text) - MAX_TEXT} more characters; the days and product arguments narrow the query]"
 
 
 def _result(text: str, is_error: bool) -> dict:
     return {"content": [{"type": "text", "text": _cut(text) or "(no output)"}], "isError": is_error}
+
+
+# What the monitor report leaves out of the MCP answer: each finding's `action` is one imperative sentence written for
+# the owner at a terminal. The answer keeps id, severity, title and evidence and says where the sentences are.
+MONITOR_OMITTED = {"findings[].action": "one suggested change per finding id, printed by `teyla monitor` in a terminal"}
+
+
+def _monitor_as_data(out: str) -> str:
+    report = json.loads(out)
+    for f in report.get("findings") or []:
+        if isinstance(f, dict):
+            f.pop("action", None)
+    report["omitted"] = MONITOR_OMITTED
+    return json.dumps(report, indent=1, ensure_ascii=False)
+
+
+AS_DATA = {"teyla_monitor": _monitor_as_data}     # tool name -> answer filter; the other tools print facts only
 
 
 def call_tool(name: str, arguments: dict) -> dict:
@@ -190,6 +207,11 @@ def call_tool(name: str, arguments: dict) -> dict:
     if rc != 0:
         body = "\n".join(s.strip() for s in (err, out) if s.strip())
         return _result(f"teyla {argv[0]} exited with status {rc}.\n{body}".rstrip(), True)
+    if name in AS_DATA:
+        try:
+            out = AS_DATA[name](out)
+        except (ValueError, AttributeError):
+            return _result(f"teyla {argv[0]} printed output that is not the expected JSON report.", True)
     return _result(out, False)
 
 
@@ -204,30 +226,30 @@ def _check(name: str, key: str, spec: dict, value) -> None:
     where = f"{name}.{key}"
     if t == "integer":
         if isinstance(value, bool) or not isinstance(value, int):
-            raise ParamError(f"{where} must be an integer")
+            raise ParamError(f"{where} is not an integer")
         if not spec.get("minimum", value) <= value <= spec.get("maximum", value):
-            raise ParamError(f"{where} must be between {spec['minimum']} and {spec['maximum']}")
+            raise ParamError(f"{where} takes values from {spec['minimum']} to {spec['maximum']}")
     elif t == "boolean":
         if not isinstance(value, bool):
-            raise ParamError(f"{where} must be a boolean")
+            raise ParamError(f"{where} is not a boolean")
     elif t == "string":
         if not isinstance(value, str):
-            raise ParamError(f"{where} must be a string")
+            raise ParamError(f"{where} is not a string")
         if spec.get("minLength") and not value.strip():
-            raise ParamError(f"{where} must not be empty")
+            raise ParamError(f"{where} is empty")
         if len(value) > MAX_ARG or "\0" in value:
             raise ParamError(f"{where} is too long or holds a NUL character")
         if (name, key) in POSITIONAL and value.startswith("-"):
-            raise ParamError(f"{where} must not start with '-'")
+            raise ParamError(f"{where} starts with '-', which is not accepted")
         if (name, key) == ("teyla_intent", "product") and value in INTENT_WORDS:
             raise ParamError(f"{where} is a reserved word of the intent command")
     elif t == "array":
         if not isinstance(value, list) or len(value) > 50:
-            raise ParamError(f"{where} must be an array of at most 50 items")
+            raise ParamError(f"{where} is not an array of at most 50 items")
         for i, v in enumerate(value):
             _check(name, f"{key}[{i}]", spec["items"], v)
             if v.startswith("-"):
-                raise ParamError(f"{where}[{i}] must not start with '-'")
+                raise ParamError(f"{where}[{i}] starts with '-', which is not accepted")
 
 
 def validate(name: str, arguments) -> dict:
@@ -235,13 +257,13 @@ def validate(name: str, arguments) -> dict:
     if arguments is None:
         arguments = {}
     if not isinstance(arguments, dict):
-        raise ParamError("arguments must be an object")
+        raise ParamError("arguments is not an object")
     for k in arguments:
         if k not in schema["properties"]:
             raise ParamError(f"unknown argument {k!r} for {name}")
     for k in schema["required"]:
         if k not in arguments:
-            raise ParamError(f"{name} needs {k!r}")
+            raise ParamError(f"{name} requires {k!r}")
     for k, v in arguments.items():
         _check(name, k, schema["properties"][k], v)
     return arguments
@@ -265,9 +287,9 @@ def handle(msg) -> dict | None:
     if "id" not in msg:
         return None                       # a notification (notifications/initialized, /cancelled): no reply
     if not isinstance(method, str) or isinstance(id_, bool) or not isinstance(id_, (str, int)):
-        return _error(None, INVALID_REQUEST, "method must be a string and id a string or an integer")
+        return _error(None, INVALID_REQUEST, "method is not a string, or id is neither a string nor an integer")
     if params is not None and not isinstance(params, dict):
-        return _error(id_, INVALID_PARAMS, "params must be an object")
+        return _error(id_, INVALID_PARAMS, "params is not an object")
     params = params or {}
     if method == "initialize":
         asked = params.get("protocolVersion")
@@ -282,7 +304,7 @@ def handle(msg) -> dict | None:
     if method == "tools/call":
         name = params.get("name")
         if not isinstance(name, str) or name not in BY_NAME:
-            return _error(id_, INVALID_PARAMS, f"unknown tool {name!r}" if isinstance(name, str) else "name must be a string")
+            return _error(id_, INVALID_PARAMS, f"unknown tool {name!r}" if isinstance(name, str) else "name is not a string")
         try:
             args = validate(name, params.get("arguments"))
         except ParamError as e:

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The MCP server's own text states facts and gives no commands.** Anthropic's directory review asked that instructions,
+  tool and parameter descriptions and tool outputs describe what the server does, not tell the assistant what to do.
+  Twelve descriptions and fourteen error texts are reworded; behaviour, tool names and schemas are unchanged. The one
+  data change: `teyla_monitor` leaves out each finding's `action` (an imperative sentence for the owner at a terminal) and
+  adds `omitted` saying where those sentences are printed. `teyla asks` and `teyla answer` lookup errors, and the clipboard
+  detail of `teyla answer`, are reworded the same way. `tests/test_mcp.py` scans all of it with the command regex the directory review suggested.
+
 ## 0.40.0 — 2026-11-05 — Test builds report from every platform, and idle apps go when memory is tight
 
 - **`teyla storage apps`: quit the apps you listed when memory is tight and you have not used them for hours.** Off by default (`guard.apps_quit = off | dry | on`, `guard.apps_quit_list`, `apps_quit_idle_h` 4, `apps_quit_every_min` 5). `guard tick` asks one idle listed app to quit, the largest, at most one per 5 minutes, only on memory pressure, a full compressor or heavy swap-out (disk and CPU load do not count). It is the Cmd-Q request, never a signal; an app with unsaved changes stays and is not asked again until it was in front. Finder, Teyla, Claude, ChatGPT, Codex, terminals, editors, Xcode, Simulator and browsers are protected, Docker only goes with no container running. `dry` journals `would-quit` rows in `~/.teyla/app-quit.tsv` and posts one notice after a week; `--report` sums them per app; `--quit` runs one pass now. The quit call was tried on one app from a launchd job; a full tick in `on` mode has not run yet. See docs/MANUAL.md.
