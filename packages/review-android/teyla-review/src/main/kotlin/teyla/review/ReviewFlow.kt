@@ -102,18 +102,28 @@ internal fun ReviewFlow(session: Session, strings: ReviewStrings, onClose: () ->
             PointingPicture(session, step == Step.Point, tap, region, m) { t, r -> tapX = t?.x; tapY = t?.y; region = r }
         }
         val panel: @Composable (Modifier) -> Unit = { m ->
-            Column(m.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                when (step) {
-                    Step.Point -> PointPanel(
-                        session, strings, tap, region, onExit = onClose, onNext = { step = Step.Comment },
-                        onWholeScreen = { tapX = null; tapY = null; region = null; step = Step.Comment },
-                    )
-                    Step.Comment -> CommentPanel(
-                        session, strings, comment, { comment = it }, healthOk, { healthOk = it }, sending, saveFailed,
+            // The comment step's buttons stay outside the scroll: with the keyboard open the text field fills
+            // the space, and a Send button at the end of the scroll would sit cut off at the keyboard's edge.
+            Column(m) {
+                Column(
+                    Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    when (step) {
+                        Step.Point -> PointPanel(
+                            session, strings, tap, region, onExit = onClose, onNext = { step = Step.Comment },
+                            onWholeScreen = { tapX = null; tapY = null; region = null; step = Step.Comment },
+                        )
+                        Step.Comment -> CommentPanel(session, strings, comment, { comment = it }, healthOk, { healthOk = it }, sending)
+                        Step.Done -> DonePanel(strings, delivered, onClose)
+                    }
+                }
+                if (step == Step.Comment) {
+                    CommentButtons(
+                        session, strings, comment, healthOk, sending, saveFailed,
                         onBack = { step = Step.Point },
                         onSend = { if (ReviewOverlay.noticeNeeded()) showNotice = true else doSend() },
                     )
-                    Step.Done -> DonePanel(strings, delivered, onClose)
                 }
             }
         }
@@ -168,7 +178,7 @@ private fun PointPanel(
 private fun CommentPanel(
     session: Session, strings: ReviewStrings,
     comment: String, onComment: (String) -> Unit, healthOk: Boolean, onHealth: (Boolean) -> Unit,
-    sending: Boolean, failed: Boolean, onBack: () -> Unit, onSend: () -> Unit,
+    sending: Boolean,
 ) {
     Text(strings.commentTitle, style = MaterialTheme.typography.titleLarge)
     OutlinedTextField(
@@ -183,11 +193,21 @@ private fun CommentPanel(
             Text(strings.healthConsent, style = MaterialTheme.typography.bodyMedium)
         }
     }
-    if (failed) Text(strings.saveFailed, color = MaterialTheme.colorScheme.error)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onBack, enabled = !sending) { Text(strings.back) }
-        Button(onClick = onSend, enabled = canSend(comment, sending, session.requiresHealthConsent, healthOk)) {
-            Text(if (sending) strings.saving else if (failed) strings.retry else strings.send)
+}
+
+/** Back and Send, with the reason Send became Retry, so the keyboard never hides any of them. */
+@Composable
+private fun CommentButtons(
+    session: Session, strings: ReviewStrings, comment: String, healthOk: Boolean,
+    sending: Boolean, failed: Boolean, onBack: () -> Unit, onSend: () -> Unit,
+) {
+    Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (failed) Text(strings.saveFailed, color = MaterialTheme.colorScheme.error)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onBack, enabled = !sending) { Text(strings.back) }
+            Button(onClick = onSend, enabled = canSend(comment, sending, session.requiresHealthConsent, healthOk)) {
+                Text(if (sending) strings.saving else if (failed) strings.retry else strings.send)
+            }
         }
     }
 }
