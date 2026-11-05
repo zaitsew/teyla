@@ -194,13 +194,15 @@ def _outer_folder(path: str) -> str:
 
 
 def parse_lsappinfo(text: str) -> list[App]:
-    """The Foreground apps of `lsappinfo list`. An entry starts ` 1) "Name" ASN:0x0-0x2002: `, and the one in
-    front carries `(in front)` there; the indented lines hold `bundleID=`, `bundle path=` and `pid = N ... type=`."""
-    out, cur = [], None
+    """The Foreground apps of `lsappinfo list`, plus the app around a Foreground app nested in it. An entry starts
+    ` 1) "Name" ASN:0x0-0x2002: `, and the one in front carries `(in front)` there; the indented lines hold
+    `bundleID=`, `bundle path=` and `pid = N ... type=`."""
+    out, other, cur = [], [], None
 
     def close():
-        if cur and cur.get("pid") and cur.get("type") == "Foreground" and cur.get("path"):
-            out.append(App(cur["name"], cur.get("bundle_id"), cur["path"], _outer_folder(cur["path"]), cur["pid"], cur["front"]))
+        if cur and cur.get("pid") and cur.get("path"):
+            app = App(cur["name"], cur.get("bundle_id"), cur["path"], _outer_folder(cur["path"]), cur["pid"], cur["front"])
+            (out if cur.get("type") == "Foreground" else other).append(app)
 
     for line in text.splitlines():
         m = _HEADER.match(line)
@@ -218,7 +220,9 @@ def parse_lsappinfo(text: str) -> list[App]:
         if m:
             cur["pid"], cur["type"] = int(m.group(1)), m.group(2)
     close()
-    return out
+    # Docker.app is a UIElement and shows only through the Foreground app inside it, yet it is the one that quits.
+    inner = {a.folder.lower() for a in out if a.nested}
+    return out + [a for a in other if not a.nested and a.folder.lower() in inner]
 
 
 def front_folders(apps: list[App]) -> set[str]:
