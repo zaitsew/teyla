@@ -49,6 +49,14 @@
    main display; each crash puts a "SpringBoard quit unexpectedly" dialog on the Mac (12 in six minutes
    on 2026-10-30). The tick shuts it down (`storage_sims.stop_crash_loops`). It reads the report files and
    device folders only; `simctl` runs for a broken device alone.
+
+7. Idle apps (`guard.apps_quit` = "off" | "dry" | "on", default off: no subprocess at all). While memory is
+   tight (kernel pressure warn or worse, the compressor at `compressor_crit_pct` of RAM, or the swap-out rate at
+   `swapout_mb_s`; disk and CPU load do not count) the tick asks one app of `guard.apps_quit_list` to quit, the
+   largest that has not been in front for `apps_quit_idle_h` hours, at most one per `apps_quit_every_min`
+   minutes. It is the Cmd-Q request, never a signal; the next tick journals `quit` or `still-running` in
+   `~/.teyla/app-quit.tsv`. A failure here becomes one line and the tick goes on. `--dry` quits and writes
+   nothing. See `storage_apps.py` and `teyla storage apps`.
 """
 from __future__ import annotations
 
@@ -62,7 +70,7 @@ import sys
 import time
 from typing import Callable
 
-from . import config, load, storage, storage_procs, storage_sims
+from . import config, load, storage, storage_apps, storage_procs, storage_sims
 
 ALERT_NAME = "load.alert"
 ALERT_STATE = "guard-alert.json"
@@ -82,6 +90,7 @@ NOTIFY_TITLE = "Teyla: machine overloaded"
 class Env:
     run: Callable = storage_procs.run_command           # ps, sysctl (the snapshot)
     notify_run: Callable = storage_procs.run_command    # osascript
+    quit_app: Callable = storage_apps.quit_bundle       # NSRunningApplication.terminate, by bundle id
     ctx: storage_procs.Ctx = dataclasses.field(default_factory=storage_procs.Ctx)   # the signalling of daemons
     now: Callable[[], float] = time.time
     platform: str = sys.platform
@@ -147,9 +156,9 @@ def notification_text(verdict: load.Verdict, since: float) -> str:
     return text if len(text) <= 160 else text[:159] + "…"
 
 
-def _notify(env: Env, text: str) -> None:
+def _notify(env: Env, text: str, title: str = NOTIFY_TITLE) -> None:
     env.notify_run(["osascript", "-e",
-                    f'display notification "{_applescript(text)}" with title "{NOTIFY_TITLE}"'], NOTIFY_TIMEOUT_S)
+                    f'display notification "{_applescript(text)}" with title "{_applescript(title)}"'], NOTIFY_TIMEOUT_S)
 
 
 def _alert_on(conf: dict) -> bool:
@@ -381,6 +390,20 @@ def disk_sweep(snap: load.Snapshot, conf: dict, now: float, dry: bool = False) -
     return [head + f"{kind} sweep removed {load.gb(res['total'])}, {load.gb(res['free_after'])} free now"]
 
 
+# --- idle apps ----------------------------------------------------------------------------------------------
+
+def idle_apps(snap: load.Snapshot, trend, conf: dict, env: Env, dry: bool = False) -> list[str]:
+    """Step 7. Does nothing, and runs nothing, while `guard.apps_quit` is off. Never raises: a failure is one line."""
+    if storage_apps.mode(conf) == "off":
+        return []
+    try:
+        ctx = storage_apps.Ctx(run=env.run, quit_app=env.quit_app, now=env.now, platform=env.platform)
+        notify = None if config.safe_mode() else (lambda text: _notify(env, text, storage_apps.NOTIFY_TITLE))
+        return storage_apps.tick(conf, snap, trend, ctx, notify, dry=dry)
+    except Exception as e:  # noqa: BLE001 — the rest of the tick must go on
+        return [f"apps: {type(e).__name__}: {e}"]
+
+
 # --- one tick ---------------------------------------------------------------------------------------------
 
 def tick(conf: dict | None = None, env: Env | None = None, dry: bool = False) -> dict:
@@ -412,6 +435,7 @@ def tick(conf: dict | None = None, env: Env | None = None, dry: bool = False) ->
         res["lines"] += reap(idle_daemons(snap, conf, now, record=not dry), env, dry=dry)
     res["lines"] += disk_sweep(snap, conf, now, dry=dry)
     res["lines"] += storage_sims.stop_crash_loops(snap.procs.sim_udids, dry=dry)
+    res["lines"] += idle_apps(snap, trend, conf, env, dry=dry)
     return res
 
 

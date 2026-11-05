@@ -6,6 +6,7 @@ of it that is safe to give back.
     teyla storage sims [--reap] [--dry] [--json] booted simulators: in use or idle; --reap shuts the idle ones down
     teyla storage sweep [--temp] [--dry] [--json] temp build output, old DerivedData, caches, logs (storage_sweep.py)
     teyla storage procs [--kill] [--dry] [--json] dev processes whose worktree or temp folder is gone (storage_procs.py)
+    teyla storage apps [--quit] [--dry] [--report] [--days N] [--json]   quit listed apps idle for hours when memory is tight (storage_apps.py)
 
 Parallel agent work leaves a lot behind: dozens of agent worktrees under
 `<repo>/.claude/worktrees` and `~/.worktrees` (gigabytes, most of them clean and already on the
@@ -1056,6 +1057,9 @@ def cmd_storage(args):
     if args.action == "procs":
         from . import storage_procs
         return storage_procs.cmd_procs(args, cfg)
+    if args.action == "apps":
+        from . import storage_apps
+        return storage_apps.cmd_apps(args, cfg)
     if args.action == "sims":
         from . import storage_sims
         return storage_sims.cmd_sims(args, cfg)
@@ -1097,14 +1101,17 @@ def cmd_storage(args):
 def register(sp):
     q = sp.add_parser("storage", help="what agent work holds on disk and in RAM, and removing the part that is safe to")
     q.set_defaults(fn=cmd_storage)
-    q.add_argument("action", nargs="?", choices=["report", "clean", "sims", "sweep", "procs"], default="report")
+    q.add_argument("action", nargs="?", choices=["report", "clean", "sims", "sweep", "procs", "apps"], default="report")
     q.add_argument("--json", action="store_true")
     q.add_argument("--no-sizes", action="store_true", help="report: skip `du` (fast; verdicts only)")
     q.add_argument("--apply", action="store_true", help="clean: remove the SAFE rows (default: dry run)")
     q.add_argument("--auto", action="store_true", help="clean: apply only if storage.auto_clean is true; silent otherwise (the daily routine)")
     q.add_argument("--quiet", action="store_true", help="clean: print nothing when nothing was removed; sims/sweep/procs: print only what was done")
     q.add_argument("--reap", action="store_true", help="sims: shut down idle simulators and delete old ones matching storage.sim_prune_pattern")
-    q.add_argument("--dry", action="store_true", help="sims --reap / sweep / procs --kill: say what would be done, do nothing")
+    q.add_argument("--dry", action="store_true", help="sims --reap / sweep / procs --kill / apps --quit: say what would be done, do nothing")
     q.add_argument("--kill", action="store_true", help="procs: end the orphan processes (SIGTERM, then SIGKILL after 10 s); default: list them")
     q.add_argument("--temp", action="store_true", help="sweep: only the temp build output (the hourly agent)")
+    q.add_argument("--quit", action="store_true", help="apps: quit every eligible listed app now, whatever the memory (default: list the apps)")
+    q.add_argument("--report", action="store_true", help="apps: per app, from the journal, how many quits and how much memory freed")
+    q.add_argument("--days", type=int, default=7, help="apps --report: how many days back (default 7)")
     return q

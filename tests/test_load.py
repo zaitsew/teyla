@@ -433,7 +433,8 @@ def test_guard_defaults():
                  "swapout_mb_s": 20, "swap_grow_gb_30m": 4, "trend_window_min": 15, "hold_min": 10,
                  "compressor_warn_pct": 30, "compressor_crit_pct": 45, "load_warn_per_core": 4.0, "load_crit_per_core": 10.0,
                  "wait_timeout_s": 900, "settle_s": 180, "agent": False, "gradle_idle_min": 30, "alert": True,
-                 "disk_warn_gb": 25, "disk_crit_gb": 10, "disk_sweep": True}
+                 "disk_warn_gb": 25, "disk_crit_gb": 10, "disk_sweep": True,
+                 "apps_quit": "off", "apps_quit_list": [], "apps_quit_idle_h": 4, "apps_quit_every_min": 5}
     assert load.guard_conf({"guard": {"max_sims": 5}})["max_sims"] == 5
     assert load.guard_conf({})["max_sims"] == 2
 
