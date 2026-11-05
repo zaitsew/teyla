@@ -247,6 +247,16 @@ def test_chrome_renderers_and_all_of_chrome():
     assert p.chrome_rss_bytes == 1300 * 1024
 
 
+def test_chrome_renderer_with_a_renamed_helper():
+    helpers = f"{CHROME}/Frameworks/Google Chrome Framework.framework/Versions/1/Helpers"
+    p = classify(
+        ps_line(1, f"{helpers}/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer) --type=renderer", rss_kb=400),
+        ps_line(2, f"{helpers}/Google Chrome Helper (Aperitif).app/Contents/MacOS/Google Chrome Helper (Aperitif) --type=gpu-process", rss_kb=200),
+    )
+    assert p.chrome_renderers == 1 and p.chrome_renderer_rss_bytes == 400 * 1024
+    assert p.chrome_rss_bytes == 600 * 1024
+
+
 def test_vms_and_top_apps_fold_helpers_into_the_app():
     p = classify(
         ps_line(1, "/System/Library/Frameworks/Virtualization.framework/Versions/A/XPCServices/com.apple.Virtualization.VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine", rss_kb=3000),
