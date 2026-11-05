@@ -568,7 +568,8 @@ def classify(rows: list[Row]) -> Procs:
             out.kotlinc += 1
         if r.name == "Google Chrome":
             out.chrome_rss_bytes += r.rss_bytes
-            if r.exe == "Google Chrome Helper (Renderer)":
+            # Chrome renames its helpers ("Google Chrome Helper (Aperitif Renderer)", seen on 155+).
+            if r.exe.startswith("Google Chrome Helper (") and r.exe.endswith("Renderer)"):
                 out.chrome_renderers += 1
                 out.chrome_renderer_rss_bytes += r.rss_bytes
         if r.exe.startswith("com.apple.Virtualization") or p.startswith("qemu-system"):
