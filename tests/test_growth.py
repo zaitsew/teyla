@@ -689,14 +689,10 @@ def test_sale_attempts_say_not_tried_yet_and_never_propose_a_kill(env, monkeypat
     store.log("attempt", NOW, product="alpha", kind="ad")
     rows = growth.attempt_rows(store)
     assert rows["alpha"]["posts"] == 1 and rows["alpha"]["marketing"] == 1 and rows["alpha"]["icp_meetings"] == 1
-    assert rows["beta"]["tried"] is False and rows["alpha"]["last"] == day_today()
+    assert rows["beta"]["tried"] is False and rows["alpha"]["last"] == growth.day_of(NOW)
     # The phone's list names the products nobody tried to sell, and drops alpha once it has attempts.
     assert growth.products_not_tried(store) == ["beta", "gamma"]
     assert growth.compact(growth.section(NOW))["not_tried"] == ["beta", "gamma"]
-
-
-def day_today():
-    return time.strftime("%Y-%m-%d")
 
 
 def test_log_validates_the_product(env, capsys):
