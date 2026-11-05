@@ -114,6 +114,13 @@
                                    is CRITICAL, shown first by the session-start hook while it is under 5 minutes
                                    old, plus one macOS notification per incident (not in safe mode, at most one per
                                    30 min); removed after three ticks below CRITICAL
+    apps_quit = "off"              off | dry | on: `guard tick` quits the apps in apps_quit_list that nobody used for
+                                   apps_quit_idle_h hours, one per apps_quit_every_min minutes, only while memory is
+                                   tight (docs: `teyla storage apps`); dry journals what it would quit. A feature pack never sets it.
+    apps_quit_list = []            names, .app folder names or bundle ids, case-insensitive:
+                                   `teyla config set guard.apps_quit_list="Slack,Docker Desktop"`
+    apps_quit_idle_h = 4           an app first seen, or last in front, less than this long ago is not idle yet
+    apps_quit_every_min = 5        at most one app per this many minutes
     [features]                     `teyla features`: Teyla's packs (docs/FEATURES.md)
     chosen = ["cost", "load"]      the packs picked in the checklist of `teyla start` or turned on since
     muted  = []                    packs that never remind, even when their problem shows up here
@@ -220,7 +227,10 @@ DEFAULTS = {
               # Free disk on the home volume. APFS swap shares the container: a full disk leaves swap no
               # room, and the Mac hangs under memory pressure without writing a panic (2026-10-11).
               # disk_sweep: under [storage] sweep_urgent_free_gb, `guard tick` runs the sweep itself (full every 6 h).
-              "disk_warn_gb": 25, "disk_crit_gb": 10, "disk_sweep": True},
+              "disk_warn_gb": 25, "disk_crit_gb": 10, "disk_sweep": True,
+              # `storage apps`: quit listed apps nobody used for hours while memory is tight. off | dry | on.
+              # Never turned on by a feature pack; the list is names, .app folder names or bundle ids.
+              "apps_quit": "off", "apps_quit_list": [], "apps_quit_idle_h": 4, "apps_quit_every_min": 5},
     # The plugin's opt-in hooks (plugin/hooks/context-budget.sh, land-check.sh). Off by default: where
     # the same hooks are already wired some other way, a second copy doubles each note.
     # The hooks read these keys from the file with awk/tomllib, not through this module.
