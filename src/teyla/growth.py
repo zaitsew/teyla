@@ -1911,7 +1911,9 @@ def section(now: float) -> dict:
     trends = sorted((i for i in items if i.get("trend") and i["status"] == "idea" and i["platform"] == MASTER),
                     key=lambda i: -i["score"])[:5]
     week_ago = day_of(now - 7 * 86400)
-    qualified = sum(1 for r in store.ledger() if r.get("ev") == "attempt" and r.get("kind") == "icp-meeting" and str(r.get("day")) >= week_ago)
+    # A batched row stands for `n` meetings; an agent's claim counts for nothing, as in the sale attempts.
+    qualified = sum(row_n(r) for r in store.ledger() if r.get("ev") == "attempt" and r.get("kind") == "icp-meeting"
+                    and not is_claimed(r) and str(r.get("day")) >= week_ago)
     out = outreach_summary(store, cfg)
     slots = plan(store, cfg, today, now, commit=False) if chans else []
     gaps = sum(1 for r in slots if not r["item"])
