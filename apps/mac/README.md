@@ -12,14 +12,14 @@ of its own: it runs the Teyla CLI. The design and the data contract are in
 ```sh
 brew install xcodegen                 # once
 # make sure `teyla` is on your PATH (see the repo README)
-cd apps/mac && ./install.sh           # builds Release, copies Teyla.app to ~/Applications
-open ~/Applications/Teyla.app
+cd apps/mac && ./install.sh           # builds Release, copies it to ~/Applications/Teyla Admin.app
+open ~/Applications/"Teyla Admin.app"
 ```
 
 No CLI yet? Preview with the sample data (writes are simulated, nothing is delivered or started):
 
 ```sh
-open -n --env TEYLA_STATE_FIXTURE="$PWD/../../tests/fixtures/state.v2.json" ~/Applications/Teyla.app
+open -n --env TEYLA_STATE_FIXTURE="$PWD/../../tests/fixtures/state.v2.json" ~/Applications/"Teyla Admin.app"
 ```
 
 Requires macOS 15 and Xcode. The app is ad-hoc signed for local use only. Its bundle id is `com.zaitsew.teyla.local`;

@@ -753,7 +753,7 @@ def test_connect_prints_the_pairing_string_when_the_hand_over_fails(connect_env,
     assert ("Paste this into Teyla on your Mac or iPhone, or scan its QR code in Teyla on the Mac (Connect iPhone). "
             "It is the key: do not share it.") in cap.err
     assert "needs no pairing" not in cap.err
-    (connect_env.home / "Applications" / "Teyla.app").mkdir(parents=True)
+    (connect_env.home / "Applications" / "Teyla Admin.app").mkdir(parents=True)
     assert cli.main(["relay", "connect"]) == 0
     assert "needs no pairing" in capsys.readouterr().err
     assert cli.main(["relay", "connect", "--json"]) == 0

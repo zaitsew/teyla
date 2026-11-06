@@ -3,6 +3,7 @@
 ## Unreleased
 
 - **`teyla growth activity`: a GitHub-style graph of your marketing and sales activity.** Any post, comment, reply, e-mail, DM, call, meeting, ad or outreach is +1. `teyla growth log` takes the new kinds and `response`, an optional `--product`, `--count N` (1..50) and `--day` (up to 7 days back). Weeks are ISO weeks, Monday first; levels come from the quartiles; the streak and the longest run are shown, with meetings held and responses as outcomes. A row logged from an agent session is a claim and counts for nothing. `--json` is the contract for the apps (`version` 1). No network call. See docs/GROWTH.md, "Activity".
+- **The full Mac build is now Teyla Admin.** `apps/mac/install.sh` installs it as `~/Applications/Teyla Admin.app`, so Finder, Spotlight and the Dock tell it apart from the store build named Teyla (which TestFlight keeps updated in `/Applications` and which has no admin sections). The old `~/Applications/Teyla.app` is removed only when its bundle id is the full build's, `com.zaitsew.teyla.local`; the bundle id and settings are unchanged.
 - **The MCP server's own text states facts and gives no commands.** Anthropic's directory review asked that instructions,
   tool and parameter descriptions and tool outputs describe what the server does, not tell the assistant what to do.
   Twelve descriptions and fourteen error texts are reworded; behaviour, tool names and schemas are unchanged. The one

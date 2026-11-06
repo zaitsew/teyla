@@ -28,7 +28,14 @@ xcodebuild \
 app="build/Build/Products/Release/Teyla.app"
 [ -d "$app" ] || { echo "Build finished but $app is missing." >&2; exit 1; }
 
+dest="$HOME/Applications/Teyla Admin.app"
 mkdir -p "$HOME/Applications"
-rm -rf "$HOME/Applications/Teyla.app"
-ditto "$app" "$HOME/Applications/Teyla.app"
-echo "Installed: $HOME/Applications/Teyla.app"
+# Builds before 0.41 were installed as Teyla.app. Remove that copy only when it is this full build,
+# never a store build someone put there.
+old="$HOME/Applications/Teyla.app"
+if [ -d "$old" ] && [ "$(defaults read "$old/Contents/Info" CFBundleIdentifier 2>/dev/null)" = "com.zaitsew.teyla.local" ]; then
+  rm -rf "$old"
+fi
+rm -rf "$dest"
+ditto "$app" "$dest"
+echo "Installed: $dest"
