@@ -41,7 +41,14 @@ from . import corrections, growth_publish, net, registry, state, voice
 KINDS = ("post", "thread", "clip", "carousel", "episode")
 FORMATS = ("true-vibe-coding", "spec-product", "worklog", "lesson", "reaction", "product-spotlight")
 STATUSES = ("idea", "draft", "checked", "review", "approved", "ready", "published", "failed", "rejected")
-ATTEMPT_KINDS = ("icp-meeting", "ad", "post", "outreach")
+# Everything that counts as +1 on the activity graph, and the `--kind` values of `teyla growth log`.
+# `response` is an outcome (someone answered you): it is logged and shown, but it is not an attempt and not a +1.
+ACTIVITY_KINDS = ("post", "comment", "reply", "email", "dm", "call", "meeting", "icp-meeting", "ad", "outreach", "response")
+ATTEMPT_KINDS = ACTIVITY_KINDS
+MARKETING_KINDS = ("ad", "outreach", "comment", "reply", "email", "dm", "call", "meeting")
+MEETING_KINDS = ("meeting", "icp-meeting", "call")
+MAX_COUNT = 50
+BACKDATE_DAYS = 7
 OPEN = ("idea", "draft", "checked", "review", "approved", "ready")          # not yet published, not dead
 MASTER = "master"
 ID_RE = re.compile(r"^g[0-9]{4}-[a-z0-9]{4,8}$")
@@ -427,13 +434,20 @@ def refs_seen(store: Store) -> set[str]:
 # --- sale attempts -------------------------------------------------------------------------------------------
 
 def attempt_kind(r: dict) -> str | None:
-    """What a ledger row is as a sale attempt: "post", "marketing" (an ad or outreach), "icp" (an ICP meeting), else None."""
+    """What a ledger row is as a sale attempt: "post", "marketing" (an ad, outreach, comment, reply, e-mail, DM, call or
+    meeting), "icp" (an ICP meeting), else None. A `response` is an outcome, not an attempt."""
     kind = "post" if r.get("ev") == "published" else (r.get("kind") if r.get("ev") == "attempt" else None)
     if kind == "post":
         return "post"
-    if kind in ("ad", "outreach"):
+    if kind in MARKETING_KINDS:
         return "marketing"
     return "icp" if kind == "icp-meeting" else None
+
+
+def row_n(r: dict) -> int:
+    """How many +1 a ledger row stands for: its `n` (1 when absent or invalid)."""
+    n = r.get("n")
+    return n if isinstance(n, int) and not isinstance(n, bool) and 1 <= n <= MAX_COUNT else 1
 
 
 def is_claimed(r: dict) -> bool:
@@ -457,19 +471,20 @@ def tally(rows: list[dict], pids, today: str | None = None) -> dict[str, dict]:
         if row is None or kind is None:
             continue
         if is_claimed(r):
-            row["claimed"] += 1
+            row["claimed"] += row_n(r)
             continue
         day = str(r.get("day") or "")
+        n = row_n(r)
         if kind == "post":
-            row["posts"] += 1
+            row["posts"] += n
             if today and day >= since7:
-                row["posts_7d"] += 1
+                row["posts_7d"] += n
         elif kind == "marketing":
-            row["marketing"] += 1
+            row["marketing"] += n
         else:
-            row["icp_meetings"] += 1
+            row["icp_meetings"] += n
             if today and day >= since30:
-                row["icp_meetings_30d"] += 1
+                row["icp_meetings_30d"] += n
         row["last"] = max(row["last"], day)
     return out
 
@@ -507,6 +522,114 @@ def render_attempts(rows: dict[str, dict]) -> str:
             L.append(f"  {pid:<22} " + ("personal, not for sale" if r.get("type") == "personal" else "not tried yet") + tag + claim)
         else:
             L.append(f"  {pid:<22} posts {r['posts']}  marketing {r['marketing']}  ICP meetings {r['icp_meetings']}  last {r['last']}{tag}{claim}")
+    return "\n".join(L) + "\n"
+
+
+# --- activity graph ------------------------------------------------------------------------------------------
+
+def activity_kind(r: dict) -> str | None:
+    """The activity kind a ledger row counts as: "post" for a `published` row, the `kind` of an `attempt` row, else None."""
+    if r.get("ev") == "published":
+        return "post"
+    if r.get("ev") == "attempt" and r.get("kind") in ACTIVITY_KINDS:
+        return r["kind"]
+    return None
+
+
+def activity_levels(counts: list[int]) -> dict[int, int]:
+    """Level 1..4 for each distinct non-zero count, GitHub style. With the non-zero day counts sorted, the thresholds
+    t1, t2, t3 are the nearest-rank quartile values; a count's level is 1 + how many thresholds it is above.
+    Monotonic: a higher count never gets a lower level. With fewer than four distinct values the levels simply
+    use fewer steps (all equal counts are level 1). Zero is level 0 and is not in the result."""
+    vals = sorted(c for c in counts if c > 0)
+    if not vals:
+        return {}
+    th = [vals[max(0, -(-k * len(vals) // 4) - 1)] for k in (1, 2, 3)]
+    return {c: 1 + sum(c > t for t in th) for c in set(vals)}
+
+
+def activity(rows: list[dict], today: str, weeks: int = 53) -> dict:
+    """The activity graph (JSON contract version 1). Days run from the Monday `weeks`-1 weeks before this week's Monday
+    to `today`. A day's count is the sum of `n` over `published` rows and `attempt` rows of an activity kind other than
+    `response`, not claimed by an agent."""
+    t = _dt.date.fromisoformat(today)
+    start = t - _dt.timedelta(days=t.weekday() + 7 * (weeks - 1))
+    first = start.isoformat()
+    per: dict[str, dict[str, int]] = {}
+    by_kind: dict[str, int] = {}
+    meetings = responses = claimed = 0
+    for r in rows:
+        kind = activity_kind(r)
+        day = str(r.get("day") or "")
+        if kind is None or not (first <= day <= today):
+            continue
+        if is_claimed(r):
+            claimed += row_n(r)
+            continue
+        n = row_n(r)
+        if kind == "response":
+            responses += n
+            continue
+        per.setdefault(day, {})
+        per[day][kind] = per[day].get(kind, 0) + n
+        by_kind[kind] = by_kind.get(kind, 0) + n
+        if kind in MEETING_KINDS:
+            meetings += n
+    counts = {d: sum(k.values()) for d, k in per.items()}
+    levels = activity_levels(list(counts.values()))
+    days, d = [], start
+    while d <= t:
+        iso_d = d.isoformat()
+        c = counts.get(iso_d, 0)
+        days.append(dict(day=iso_d, count=c, level=levels.get(c, 0) if c else 0, kinds=dict(per.get(iso_d, {}))))
+        d += _dt.timedelta(days=1)
+    longest = run = 0
+    for x in days:
+        run = run + 1 if x["count"] else 0
+        longest = max(longest, run)
+    streak, i = 0, len(days) - 1
+    if i >= 0 and not days[i]["count"]:
+        i -= 1
+    while i >= 0 and days[i]["count"]:
+        streak += 1
+        i -= 1
+    monday = (t - _dt.timedelta(days=t.weekday())).isoformat()
+    return {"version": 1, "today": today, "weeks": weeks, "start": first, "days": days,
+            "total": sum(counts.values()), "today_count": counts.get(today, 0),
+            "week_count": sum(c for dd, c in counts.items() if dd >= monday),
+            "streak": streak, "longest": longest,
+            "by_kind": {k: by_kind[k] for k in ACTIVITY_KINDS if by_kind.get(k)},
+            "outcomes": {"meetings": meetings, "responses": responses}, "claimed": claimed,
+            "kinds": list(ACTIVITY_KINDS)}
+
+
+def render_activity(a: dict) -> str:
+    shades = "\u00b7\u2591\u2592\u2593\u2588"
+    days = a["days"]
+    start = _dt.date.fromisoformat(a["start"])
+    ncols = a["weeks"]
+    grid = [[" "] * ncols for _ in range(7)]
+    for x in days:
+        d = _dt.date.fromisoformat(x["day"])
+        grid[d.weekday()][(d - start).days // 7] = shades[x["level"]]
+    months, last_end, prev = [" "] * ncols, -1, None
+    for c in range(ncols):
+        m = (start + _dt.timedelta(days=7 * c)).month
+        if m != prev and c > last_end:
+            label = (start + _dt.timedelta(days=7 * c)).strftime("%b")
+            if c + 3 <= ncols:
+                months[c:c + 3] = list(label)
+                last_end = c + 3
+        prev = m
+    L = [f"activity: {a['total']} in the last {a['weeks']} weeks \u00b7 today {a['today_count']} \u00b7 "
+         f"streak {a['streak']} days (longest {a['longest']})", "    " + "".join(months).rstrip()]
+    for i, name in enumerate(("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")):
+        L.append(f"{name}  " + "".join(grid[i]).rstrip())
+    L.append("by kind: " + (", ".join(f"{k} {v}" for k, v in a["by_kind"].items()) or "nothing yet"))
+    o = a["outcomes"]
+    L.append(f"outcomes: meetings held {o['meetings']} \u00b7 responses {o['responses']}")
+    if a["claimed"]:
+        L.append(f"{a['claimed']} logged from an agent session, not counted until you log them yourself")
     return "\n".join(L) + "\n"
 
 
@@ -1788,7 +1911,9 @@ def section(now: float) -> dict:
     trends = sorted((i for i in items if i.get("trend") and i["status"] == "idea" and i["platform"] == MASTER),
                     key=lambda i: -i["score"])[:5]
     week_ago = day_of(now - 7 * 86400)
-    qualified = sum(1 for r in store.ledger() if r.get("ev") == "attempt" and r.get("kind") == "icp-meeting" and str(r.get("day")) >= week_ago)
+    # A batched row stands for `n` meetings; an agent's claim counts for nothing, as in the sale attempts.
+    qualified = sum(row_n(r) for r in store.ledger() if r.get("ev") == "attempt" and r.get("kind") == "icp-meeting"
+                    and not is_claimed(r) and str(r.get("day")) >= week_ago)
     out = outreach_summary(store, cfg)
     slots = plan(store, cfg, today, now, commit=False) if chans else []
     gaps = sum(1 for r in slots if not r["item"])
@@ -2098,19 +2223,51 @@ def cmd_attempts(args) -> int:
 
 def cmd_log(args) -> int:
     store, _ = _store_cfg()
-    reg = registry.load()
-    if args.product not in reg["product"]:
-        import difflib
-        near = difflib.get_close_matches(args.product, list(reg["product"]), n=1)
-        return _fail(GrowthError(f"{args.product!r} is not in the product registry" + (f"; did you mean {near[0]}?" if near else "")))
+    if args.product:
+        reg = registry.load()
+        if args.product not in reg["product"]:
+            import difflib
+            near = difflib.get_close_matches(args.product, list(reg["product"]), n=1)
+            return _fail(GrowthError(f"{args.product!r} is not in the product registry" + (f"; did you mean {near[0]}?" if near else "")))
+    count = args.count
+    if not 1 <= count <= MAX_COUNT:
+        return _fail(GrowthError(f"--count must be between 1 and {MAX_COUNT}"))
     from . import startup
     now = time.time()
-    extra = {"by": "agent"} if startup.in_agent_session() else {}
-    store.log("attempt", now, product=args.product, kind=args.kind, note=(args.note or "")[:400], **extra)
-    if extra:
-        print(f"logged {args.kind} for {args.product} as claimed by an agent. It counts once you log it from your own shell.")
+    fields: dict = {}
+    if args.product:
+        fields["product"] = args.product
+    if args.day:
+        today = _dt.date.fromisoformat(day_of(now))
+        try:
+            d = _dt.date.fromisoformat(args.day)
+        except ValueError:
+            return _fail(GrowthError(f"--day must be YYYY-MM-DD, got {args.day!r}"))
+        if d > today:
+            return _fail(GrowthError(f"--day {args.day} is in the future; use today or up to {BACKDATE_DAYS} days back"))
+        if d < today - _dt.timedelta(days=BACKDATE_DAYS):
+            return _fail(GrowthError(f"--day {args.day} is more than {BACKDATE_DAYS} days back; the oldest day allowed is "
+                                     f"{(today - _dt.timedelta(days=BACKDATE_DAYS)).isoformat()}"))
+        fields["day"] = d.isoformat()
+    if count > 1:
+        fields["n"] = count
+    if startup.in_agent_session():
+        fields["by"] = "agent"
+    store.log("attempt", now, kind=args.kind, note=(args.note or "")[:400], **fields)
+    what = args.kind + (f" x{count}" if count > 1 else "") + (f" for {args.product}" if args.product else "")
+    if "by" in fields:
+        print(f"logged {what} as claimed by an agent. It counts once you log it from your own shell.")
     else:
-        print(f"logged {args.kind} for {args.product}")
+        print(f"logged {what}")
+    return 0
+
+
+def cmd_activity(args) -> int:
+    if not 1 <= args.weeks <= 53:
+        return _fail(GrowthError("--weeks must be between 1 and 53"))
+    store, _ = _store_cfg()
+    a = activity(store.ledger(), day_of(time.time()), args.weeks)
+    print(json.dumps(a, indent=2) if args.json else render_activity(a), end="\n" if args.json else "")
     return 0
 
 
@@ -2233,10 +2390,16 @@ def register(sp):
 
     a = g.add_parser("log", help="record a sale attempt that happened outside Teyla")
     a.set_defaults(fn=cmd_log)
-    a.add_argument("--product", required=True)
-    a.add_argument("--kind", required=True, choices=ATTEMPT_KINDS)
+    a.add_argument("--product", help="the product it was about; optional (a comment is often not about one)")
+    a.add_argument("--kind", required=True, choices=ACTIVITY_KINDS)
     a.add_argument("--note", default="")
-    a.add_argument("--day", help=argparse.SUPPRESS)
+    a.add_argument("--count", type=int, default=1, metavar="N", help=f"how many +1 (1..{MAX_COUNT}, default 1)")
+    a.add_argument("--day", metavar="YYYY-MM-DD", help=f"the day it happened: today or up to {BACKDATE_DAYS} days back")
+
+    a = g.add_parser("activity", help="the +1 graph: every post, comment, email, meeting; streaks and outcomes")
+    a.set_defaults(fn=cmd_activity)
+    a.add_argument("--weeks", type=int, default=53, metavar="N", help="weeks to show, 1..53 (default 53)")
+    a.add_argument("--json", action="store_true")
 
     a = g.add_parser("outreach", help="read-only: outreach counts from the products that track them; Teyla never sends")
     a.set_defaults(fn=cmd_outreach)
