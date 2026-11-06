@@ -279,7 +279,7 @@ that folder is untrusted: both directions are signed with a key the two devices 
   bytes before it decodes or shows anything; a bad signature shows "Waiting for the Mac" and
   nothing else. One file, so iCloud never delivers a snapshot without its signature.
 - `outbox/<uuid>.json`: written by the phone, one per action:
-  `{v: 1, id: <uuid>, kind: answer|say|dispatch|close|reopen, target: <ask id | running id | product | closed ask id>,
+  `{v: 1, id: <uuid>, kind: answer|say|dispatch|close|reopen|activity, target: <ask id | running id | product | closed ask id>,
   about: <hex sha256 of the text the owner saw>, text, created: <ISO time>, device, sig}`.
   For `answer`, `about` hashes the question; for `say`, the session title; for `dispatch`, the
   product name. The Mac refuses an entry whose `about` does not match what it has now, so a
@@ -289,7 +289,14 @@ that folder is untrusted: both directions are signed with a key the two devices 
   for a question whose triage bucket is `close` (`about` hashes its question, as for an answer), and `reopen`
   runs `teyla asks undo <id>` (`about` hashes the id, because a closed question is no longer in the
   snapshot; `asks undo` refuses one that is not closed). A Mac whose Teyla predates them answers `malformed entry`
-  and does nothing. No other command is built from an entry.
+  and does nothing.
+  `activity` (added with the activity graph) is the Growth tab's "+1": `target` is one of the eleven kinds of
+  `teyla growth log --kind` (`post`, `comment`, `reply`, `email`, `dm`, `call`, `meeting`, `icp-meeting`, `ad`,
+  `outreach`, `response`), `text` is the fixed string `+1`, and `about` is the hex SHA-256 of the kind. The Mac checks `target`
+  against its own fixed list, never against the entry, and runs exactly `teyla growth log --kind <target>`; `sent/` says
+  `logged`. A kind outside the list, a `text` other than `+1` or a wrong `about` is refused before anything runs. An older Mac,
+  whose pattern for `kind` has five names, answers `malformed entry: kind` and does nothing; the phone shows that line as it is.
+  No other command is built from an entry.
 - `sent/<uuid>.json`: written by the Mac: `{id, ok, via, detail, done_at}`. The outbox entry
   is removed. The phone shows the result and deletes `sent/` entries it has shown.
 
@@ -302,7 +309,7 @@ lowercase hex HMAC-SHA256 of a message:
   `device`, then `text`, joined with `\n`, UTF-8. `text` is last, so a newline inside it is safe.
   No other field is signed and no JSON canonical form is needed. Every field but `text` must
   match a strict pattern with no line break, so the split is unambiguous: `v` digits, `id` a UUID,
-  `kind` one of the five, `target` `[A-Za-z0-9_.:#/-]{1,200}`, `about` 64 hex, `created` an ISO
+  `kind` one of the six, `target` `[A-Za-z0-9_.:#/-]{1,200}`, `about` 64 hex, `created` an ISO
   time, `device` `[A-Za-z0-9 ._-]{1,64}`. Both sides reject an entry that does not, before
   checking its signature.
 
@@ -644,6 +651,36 @@ the sessions say about you: the quote of the day (others behind "Show more"), th
 and the chores to hand off, the open ones first. Backticks the source writes around commands are dropped. The page reads
 this Mac's own files only and sends nothing. One considered layout, no variants.
 
+## Activity graph (Growth page, Mac and iPhone)
+
+Owner, verbatim: "I need some tracker similar to github commits to track my marketing & sales activities (any post, comment,
+email, meeting, etc. counts as +1)." The graph is GitHub's contribution graph for the growth ledger. Every number comes from one
+command, `teyla growth activity --json [--weeks N]` (version 1: `days[]` of `{day, count, level, kinds}` from `start` to
+`today`, ISO weeks Monday first, plus `total`, `today_count`, `week_count`, `streak`, `longest`, `by_kind`, `outcomes`,
+`claimed`, `kinds`). `teyla growth log --kind <kind> [--product P] [--count N]` adds to it. The app counts nothing itself.
+
+- **Mac, Growth page, top.** An "Activity" card: 7 rows (Mon to Sun) by one column per week, month labels above, Mon/Wed/Fri
+  at the left, five levels in the accent, a Less/More legend, a tooltip per square ("Thu 6 Nov: 3 — 2 comments, 1 email",
+  "No activity" for an empty day). Under it one line (total in the last year, today, streak and longest) and one line for outcomes
+  (meetings held, responses). Rows an agent logged are a claim: "N logged by an agent, not counted". The "+1" button (⌘L) opens a
+  popover: kind (`response` reads "Got a response"), an optional product from the products the app knows, a count from 1 to 50.
+  Log runs `teyla growth log` through the Tools allow-list (`ActivityLog.check`: a known kind, a product that cannot be read as a
+  flag, a count 1 to 50, nothing else) and reads the graph again; a failure shows the command's own text. A `teyla` without
+  `growth activity` shows one line, "Update the teyla command to see activity.", and nothing else breaks.
+- **Two layouts to compare** (a new screen needs two variants). `year` (default): 53 weeks, 11 pt squares, 3 pt gaps.
+  `quarter`: 17 weeks, 18 pt squares, the streak as a big number. Pick one with
+  `defaults write com.zaitsew.teyla.local teyla.activity.layout quarter` (`year` returns). The one the owner keeps stays and the
+  other goes.
+- **The phone.** The Mac adds `activity` to `state.teyla` (additive; the snapshot version stays 3): `{today, start, days: [{day, count,
+  level}] for the last 17 whole ISO weeks, today_count, week_count, streak, longest, total, kinds}`. Counts only: no notes, no
+  products, no kinds per day, no outcomes. `total` is the year's total, so the card can read "T this year". The Growth tab shows
+  the grid, today, the streak and the year total, and a "+1" that lists the kinds. A tap signs and writes one `activity` outbox entry (see
+  the relay: same key, same scheme) and the card shows the `sent/` answer: waiting, logged, or the Mac's refusal as it is. A
+  snapshot without `activity` (an older Mac) hides the card. The squares are decorative for VoiceOver; the card reads "Activity: N
+  today, streak S days, T this year" as one element, and all text follows Dynamic Type.
+- **Not on Home.** Home already has five tiles; a sixth line would crowd it, so the page that owns the graph is Growth.
+- **Store build.** The sandboxed Mac build has no command to run, so it has no card; it reads the same snapshot field as the phone.
+
 ## Growth page (from 2026-11-04)
 
 The page reads `console.growth` plus the draft files. `teyla console` carries counts only, and `teyla growth review` has
@@ -770,7 +807,7 @@ relay and shares `HomeLogic.swift` with it, so the grouping, the ranking and the
   `apps/ios/Tools/add_home_sample.py`) has 18 invented products, so all three sections and both "Show all" buttons
   appear in sample mode.
 - **Mac only.** The ⌘K command bar and `teyla attention` stay on the Mac: they run commands on the Mac, and the
-  phone sends only the five relay kinds.
+  phone sends only the six relay kinds.
 
 ## The iPhone tabs: Growth and More (from 2026-11-04)
 
@@ -781,7 +818,7 @@ screen sits on `Page`, with figures in a `StatStrip`, like the Mac.
 
 | Tab | What it shows |
 |---|---|
-| Growth | Posts today against the target, conversations this week, drafts waiting, slots with no draft; each channel with its post count; the queue; the pipeline; the products nobody tried to sell, which open Products. |
+| Growth | The activity graph (17 weeks, today, streak, "+1"); posts today against the target, conversations this week, drafts waiting, slots with no draft; each channel with its post count; the queue; the pipeline; the products nobody tried to sell, which open Products. |
 | Products | As before, plus "Not tried to sell yet" on a product that has had no post, marketing or ICP meeting, and the earned stage ("Built") beside it. A product page leads with the startup block's next fact; see "The startup page on the phone". |
 | More | Money, Operations, Playbook, Settings. Each row shows its live figure. |
 | More > Money | Cash per month, AI at list price (never called cash), next renewal. |

@@ -53,6 +53,20 @@ open -n path/to/Teyla.app --args -storeSampleMode YES
 Signing and upload use the App Store Connect key, never a password: `DEVELOPMENT_TEAM` stays empty in the project and
 the release script passes the team. Version 0.32.0, build number `CURRENT_PROJECT_VERSION` 2 (1 went to TestFlight on 26 October).
 
+## Activity graph
+
+Growth opens with an Activity card: the contribution graph of your marketing and sales activity, fed by `teyla growth activity`.
+A "+1" button (⌘L) logs one post, comment, email, meeting and so on with `teyla growth log`. Two layouts exist to compare:
+
+```sh
+defaults write com.zaitsew.teyla.local teyla.activity.layout quarter   # 17 weeks, large squares, the streak as a big number
+defaults write com.zaitsew.teyla.local teyla.activity.layout year      # 53 weeks (the default)
+defaults delete com.zaitsew.teyla.local teyla.activity.layout          # back to the default
+```
+
+A preview reads `TeylaTests/Fixtures/activity.v1.json` beside the state sample (`TEYLA_ACTIVITY_FIXTURE` names another file);
+`python3 Tools/make_activity_fixture.py` writes it. Details: [`docs/APP.md`](../../docs/APP.md), "Activity graph".
+
 ## First run
 
 - **No `teyla` found:** the window gives `uv tool install --python 3.12 git+https://github.com/zaitsew/teyla` with Copy, "Check again"

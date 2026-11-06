@@ -122,6 +122,9 @@ enum OutboxKind: String, Codable, Sendable, CaseIterable {
     case close
     /// Reopen one closed question (`teyla asks undo <id>`). These two send no text to a session.
     case reopen
+    /// One "+1" from the Growth tab (`teyla growth log --kind <target>` on the Mac). `target` is an activity kind from a fixed list,
+    /// `text` is `+1`, and `about` hashes the kind. A Mac whose Teyla predates it answers "malformed entry".
+    case activity
 }
 
 struct OutboxEntry: Codable, Equatable, Sendable {
@@ -134,6 +137,9 @@ struct OutboxEntry: Codable, Equatable, Sendable {
     var device: String
     var text: String
     var sig: String
+
+    /// The fixed text of an `activity` entry.
+    static let activityText = "+1"
 
     /// The signed message: the lines `teyla-outbox-v1`, `v`, `id`, `kind`, `target`, `about`,
     /// `created`, `device`, then `text`, joined with `\n`. `text` is last, so a newline in it is safe.
@@ -149,8 +155,13 @@ struct OutboxEntry: Codable, Equatable, Sendable {
         guard OutboxEntry.isUUID(id) else { throw RelayError.invalidField("id") }
         guard OutboxEntry.isTarget(target) else { throw RelayError.invalidField("target") }
         // A target that becomes a command-line argument must not start like an option.
-        if kind == .close || kind == .reopen, target.hasPrefix("-") || target.hasPrefix(".") {
+        if kind == .close || kind == .reopen || kind == .activity, target.hasPrefix("-") || target.hasPrefix(".") {
             throw RelayError.invalidField("target")
+        }
+        // An activity entry names one of the fixed kinds and carries the fixed text, so no free text can become a command.
+        if kind == .activity {
+            guard ActivityKind.isKnown(target) else { throw RelayError.invalidField("target") }
+            guard text == Self.activityText else { throw RelayError.invalidField("text") }
         }
         guard OutboxEntry.isHex64(about) else { throw RelayError.invalidField("about") }
         guard OutboxEntry.isISOTime(created) else { throw RelayError.invalidField("created") }

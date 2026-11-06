@@ -21,6 +21,7 @@ actor TeylaCLI: TeylaBackend {
     private let growthFixtureURL: URL?
     private let ledgerFixtureURL: URL?
     private let configFixtureURL: URL?
+    private let activityFixtureURL: URL?
     private let attentionFixtureURL: URL?
     private let consoleFixtureURL: URL?
     private let ycFixtureURL: URL?
@@ -54,6 +55,7 @@ actor TeylaCLI: TeylaBackend {
         configFixtureURL = Self.fixtureURL(env["TEYLA_CONFIG_FIXTURE"], beside: fixtureURL, named: "config.v1.toml")
         attentionFixtureURL = Self.fixtureURL(env["TEYLA_ATTENTION_FIXTURE"], beside: fixtureURL, named: "attention.v1.json")
         consoleFixtureURL = Self.fixtureURL(env["TEYLA_CONSOLE_FIXTURE"], beside: fixtureURL, named: "console.v1.json")
+        activityFixtureURL = Self.fixtureURL(env["TEYLA_ACTIVITY_FIXTURE"], beside: fixtureURL, named: "activity.v1.json")
         ycFixtureURL = Self.fixtureURL(env["TEYLA_YC_FIXTURE"], beside: fixtureURL, named: "yc.v1.json")
     }
 
@@ -225,6 +227,27 @@ actor TeylaCLI: TeylaBackend {
         }
         let file = SaleLedger.file(home: home, env: env)
         return try await Task.detached { try SaleLedger.read(file: file) }.value
+    }
+
+    /// The activity graph. A `teyla` without `growth activity` exits 2 with "invalid choice" or "unrecognized", which reads as
+    /// "update the command", not as a failure. A preview reads `activity.v1.json` beside the state sample; without one it
+    /// answers as an older command would.
+    func activity(weeks: Int) async throws -> ActivityReport {
+        if fixtureURL != nil {
+            guard let url = activityFixtureURL, let data = try? Data(contentsOf: url) else {
+                throw TeylaError.unavailable(ActivityLogic.updateMessage)
+            }
+            return try ActivityReport.decode(data)
+        }
+        let out = try await run(["growth", "activity", "--json", "--weeks", String(weeks)], timeout: 30)
+        guard out.status == 0 else {
+            let text = out.stderrText
+            if out.status == 2 || text.contains("invalid choice") || text.contains("unrecognized") {
+                throw TeylaError.unavailable(ActivityLogic.updateMessage)
+            }
+            throw TeylaError.failed(code: out.status, message: Self.oneLine(text))
+        }
+        return try ActivityReport.decode(out.stdout)
     }
 
     /// Teyla's settings file; a preview reads `config.v1.toml` beside the state sample.

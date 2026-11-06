@@ -861,3 +861,103 @@ def test_the_plist_stays_valid_with_xml_characters_in_the_folder(tmp_path, monke
     relay.relay_on(load=lambda *a: "")
     plist = plistlib.loads(relay.plist_path().read_bytes())
     assert plist["WatchPaths"] == [str(folder / "outbox")]
+
+
+# --- activity: the phone's +1 ----------------------------------------------------------------
+
+def test_activity_runs_growth_log_for_exactly_one_known_kind(env):
+    env.run_result = (0, "logged", "")
+    e = env.entry(kind="activity", target="comment", about=sha("comment"), text="+1")
+    env.drop(e)
+    env.sync()
+    assert env.commands == [["teyla", "growth", "log", "--kind", "comment"]]
+    assert env.answers == []
+    sent = env.sent(e["id"])
+    assert sent["ok"] is True and sent["via"] == "growth" and sent["detail"] == "logged"
+
+
+@pytest.mark.parametrize("kind", relay.ACTIVITY_KINDS)
+def test_every_listed_activity_kind_is_accepted(env, kind):
+    e = env.entry(kind="activity", target=kind, about=sha(kind), text="+1")
+    env.drop(e)
+    env.sync()
+    assert env.commands == [["teyla", "growth", "log", "--kind", kind]]
+
+
+@pytest.mark.parametrize("target", ["--all", "unknown", "Post", "rm", "post;ls", "post/../x", "-"])
+def test_activity_refuses_free_text_and_unknown_kinds(env, target):
+    e = env.entry(kind="activity", target=target, about=sha(target), text="+1")
+    env.drop(e)
+    env.sync()
+    assert env.commands == []
+    assert env.sent(e["id"])["ok"] is False
+
+
+def test_activity_refuses_a_wrong_about(env):
+    refused(env, env.entry(kind="activity", target="post", about=sha("comment"), text="+1"), "changed since you read it")
+
+
+def test_activity_text_must_be_the_fixed_plus_one(env):
+    refused(env, env.entry(kind="activity", target="post", about=sha("post"), text="+50 --count 50"), "malformed entry: text")
+
+
+def test_a_failed_activity_log_reports_the_command_text(env):
+    env.run_result = (1, "", "teyla growth: unknown product")
+    e = env.entry(kind="activity", target="post", about=sha("post"), text="+1")
+    env.drop(e)
+    env.sync()
+    sent = env.sent(e["id"])
+    assert sent["ok"] is False and "unknown product" in sent["detail"]
+
+
+def test_an_older_teyla_without_growth_log_is_reported(env):
+    env.run_result = (2, "", "error: argument cmd: invalid choice: 'log'")
+    e = env.entry(kind="activity", target="post", about=sha("post"), text="+1")
+    env.drop(e)
+    env.sync()
+    assert "cannot log activity" in env.sent(e["id"])["detail"]
+
+
+def test_the_phone_can_still_run_only_the_listed_commands_with_activity(env):
+    env.drop(env.entry(kind="activity", target="email", about=sha("email"), text="+1"))
+    env.sync()
+    assert [c[1:3] for c in env.commands] == [["growth", "log"]]
+
+
+def _activity_json(**kw):
+    days = [{"day": f"2026-10-{d:02d}", "count": d % 3, "level": d % 3, "kinds": {"note": "secret"}} for d in range(1, 31)]
+    raw = {"version": 1, "today": "2026-10-30", "weeks": 17, "start": "2026-10-01", "days": days, "total": 300,
+           "today_count": 2, "week_count": 5, "streak": 3, "longest": 9, "by_kind": {"post": 4}, "claimed": 1,
+           "outcomes": {"meetings": 1, "responses": 2}, "kinds": ["post", "comment", "bogus"]}
+    raw.update(kw)
+    return json.dumps(raw)
+
+
+def test_the_phone_snapshot_carries_counts_only(env):
+    view = relay.activity_view(lambda cmd, t: (0, _activity_json(), ""), ["teyla"])
+    assert view["today_count"] == 2 and view["streak"] == 3 and view["longest"] == 9 and view["total"] == 300
+    assert view["kinds"] == ["post", "comment"]
+    assert set(view["days"][0]) == {"day", "count", "level"}
+    assert "secret" not in json.dumps(view) and "outcomes" not in view and "by_kind" not in view and "claimed" not in view
+
+
+def test_the_phone_snapshot_has_no_activity_when_the_command_is_missing_or_broken():
+    assert relay.activity_view(lambda c, t: (2, "", "invalid choice"), ["teyla"]) is None
+    assert relay.activity_view(lambda c, t: (0, "not json", ""), ["teyla"]) is None
+    assert relay.activity_view(lambda c, t: (0, "{}", ""), ["teyla"]) is None
+
+
+
+def test_the_phone_gets_seventeen_whole_weeks_starting_on_a_monday():
+    full = (pathlib.Path(__file__).parent.parent / "apps/mac/TeylaTests/Fixtures/activity.v1.json").read_text()
+    view = relay.activity_view(lambda cmd, t: (0, full, ""), ["teyla"])
+    assert view["start"] == "2026-07-13" and dt.date.fromisoformat(view["start"]).weekday() == 0
+    assert view["days"][-1]["day"] == "2026-11-06" and len(view["days"]) == 117
+    assert view["total"] == 719                      # the year's total, not the 17 weeks'
+    assert view["streak"] == 5 and view["today_count"] == 6
+
+
+def test_the_snapshot_asks_for_17_weeks():
+    seen = []
+    relay.activity_view(lambda cmd, t: (seen.append(cmd), (1, "", ""))[1], ["teyla"])
+    assert seen == [["teyla", "growth", "activity", "--json", "--weeks", "17"]]

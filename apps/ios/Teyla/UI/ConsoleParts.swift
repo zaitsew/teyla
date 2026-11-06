@@ -8,6 +8,8 @@ struct ConsoleScreen<Value: Equatable & Sendable, Content: View>: View {
     @Environment(AppModel.self) private var model
     let page: ConsoleText.Page
     let pick: (ConsoleCompact) -> ConsoleLoad<Value>
+    /// Shown above the section whatever the console holds (Growth's activity card).
+    var leading: AnyView?
     @ViewBuilder var content: (Value) -> Content
 
     var body: some View {
@@ -21,6 +23,7 @@ struct ConsoleScreen<Value: Equatable & Sendable, Content: View>: View {
                         .fixedSize(horizontal: false, vertical: true)
                     SyncLine()
                 }
+                if let leading { leading }
                 switch load {
                 case .data(let value):
                     content(value)

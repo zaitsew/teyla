@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **An activity graph in the Mac and iPhone apps.** Growth leads with the contribution graph of your marketing and sales activity
+  (any post, comment, email or meeting counts +1): 53 weeks on the Mac, 17 on the phone, today, the streak and the outcomes. A "+1"
+  button (⌘L on the Mac) logs one with `teyla growth log`; on the phone it is a new signed outbox kind, `activity`, that the Mac turns into
+  exactly `teyla growth log --kind <kind>` for one of eleven fixed kinds. The relay snapshot gains an `activity` block of counts
+  (version stays 3). Two Mac layouts, `year` and `quarter`, switch with `defaults write com.zaitsew.teyla.local teyla.activity.layout`.
+  Needs `teyla growth activity`; an older command shows "Update the teyla command to see activity.". See docs/APP.md, "Activity graph".
+
 - **The MCP server's own text states facts and gives no commands.** Anthropic's directory review asked that instructions,
   tool and parameter descriptions and tool outputs describe what the server does, not tell the assistant what to do.
   Twelve descriptions and fourteen error texts are reworded; behaviour, tool names and schemas are unchanged. The one
