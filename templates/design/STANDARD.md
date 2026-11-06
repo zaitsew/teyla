@@ -204,6 +204,30 @@ A comment becomes a fix, a rule or a reject, with a reason. A rule is proposed, 
 by the agent; the owner confirms it. A scoped decision (one screen, one component, the product)
 never widens on its own.
 
+### R20. Figma is a snapshot and a sketchpad, never the spec
+Since 2026-11-06 · Scope: every product with a UI · Check: review (no PR cites Figma as the reason a screen is right)
+
+The code and the product's tokens (DTCG files under `design/tokens/`) are the source. A Figma
+file is never a merge input, and nobody keeps it in step with the code by hand. A product runs
+to about 40 frames; a hand-kept file drifts within weeks, and the next agent trusts it over the
+code. Decided 2026-11-06, after Codex and Grok both advised against a living Figma file.
+
+1. **A snapshot per store version.** When the primary platform ships a store version, or the
+   owner asks, the agent regenerates the product's Figma file from the code through the Figma
+   MCP: the tokens as variables with light and dark modes, the components, and the screens of
+   the screenshot tour in their states. The cover names the commit it was drawn from. The next
+   store version regenerates it; nobody edits it to follow the code.
+2. **Variants may be sketched in Figma.** The two R18 variants of a new or reworked screen may be
+   drawn in Figma from the product's library, so the owner compares and comments on one canvas.
+   Only the chosen variant is built, and R18's review on the device applies to the build.
+3. **The gate stays in the repo:** screenshot diffs against the accepted baselines,
+   `teyla ux check` and the rubric in Part 5. A new baseline is accepted in the PR, by name.
+4. **Seats and limits.** A View seat allows 20 Figma MCP read calls a month; writes do not
+   count. A Starter team holds 3 design files, so most product files stay in the owner's
+   drafts. A paid seat or plan is a charge under POLICY §11: state the price, ask twice.
+
+The product's `design/README.md` links its Figma file and names the commit of the last snapshot.
+
 ## Part 5. The review rubric
 
 The five items below judge a screen, by a person or by `teyla ux judge`. Each is scored 0, 1 or
