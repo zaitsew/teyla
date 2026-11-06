@@ -256,9 +256,28 @@ end an item. Only an approved item gets a packet or a published mark.
 
 `teyla growth sale-attempts` counts, per product, posts, marketing and ICP meetings from the ledger. A product with
 zero attempts reads "not tried yet" and gets the next slots. No view proposes closing a product that nobody tried
-to sell. Log what happens outside Teyla with `teyla growth log --product P --kind icp-meeting|ad|post|outreach`.
+to sell. Log what happens outside Teyla with `teyla growth log [--product P] --kind KIND [--count N] [--day YYYY-MM-DD]`,
+where KIND is `post`, `comment`, `reply`, `email`, `dm`, `call`, `meeting`, `icp-meeting`, `ad`, `outreach` or `response`.
+A post counts as a post; an ad, outreach, comment, reply, e-mail, DM, call or meeting as marketing; an ICP meeting as an
+ICP meeting. A `response` (someone answered you) is an outcome, not an attempt. `--product` is optional (a comment is
+often not about one product); a row without a product stays out of the per-product counts. `--count` (1..50) logs several
+at once; `--day` backdates a row by up to 7 days.
 Run from an agent session, the row carries `by: agent`: it is *claimed*, shown as a count beside the product, and counts
 for nothing until you log it yourself. A product with `type = personal` is not for sale, so it is never "not tried yet".
+
+## Activity
+
+`teyla growth activity [--weeks N] [--json]` draws a GitHub-style graph of your marketing and sales activity: any post,
+comment, reply, e-mail, DM, call, meeting, ad or outreach is +1 (`--count` adds more). Weeks are ISO weeks, Monday first,
+the window ends today (local date). Levels 1..4 come from the quartiles of the non-zero days. The streak is the run of
+days with at least one +1 that ends today, or yesterday when today has none. Published posts count too. A row logged
+from an agent session is a claim: it is counted in `claimed` and in no day. `response` rows are not +1; they show as
+an outcome beside the meetings held (`meeting`, `icp-meeting`, `call`).
+
+JSON (`version` 1): `today`, `weeks`, `start`, `days` (every day from `start` to `today`, oldest first, each
+`{day, count, level, kinds}` with non-zero kinds only), `total`, `today_count`, `week_count`, `streak`, `longest`,
+`by_kind` (non-zero kinds), `outcomes` (`meetings`, `responses`), `claimed`, and `kinds` (the list an app builds its +1
+menu from).
 
 ## Outreach
 

@@ -2,13 +2,13 @@
 
 ## Unreleased
 
+- **`teyla growth activity`: a GitHub-style graph of your marketing and sales activity.** Any post, comment, reply, e-mail, DM, call, meeting, ad or outreach is +1. `teyla growth log` takes the new kinds and `response`, an optional `--product`, `--count N` (1..50) and `--day` (up to 7 days back). Weeks are ISO weeks, Monday first; levels come from the quartiles; the streak and the longest run are shown, with meetings held and responses as outcomes. A row logged from an agent session is a claim and counts for nothing. `--json` is the contract for the apps (`version` 1). No network call. See docs/GROWTH.md, "Activity".
 - **An activity graph in the Mac and iPhone apps.** Growth leads with the contribution graph of your marketing and sales activity
   (any post, comment, email or meeting counts +1): 53 weeks on the Mac, 17 on the phone, today, the streak and the outcomes. A "+1"
   button (⌘L on the Mac) logs one with `teyla growth log`; on the phone it is a new signed outbox kind, `activity`, that the Mac turns into
   exactly `teyla growth log --kind <kind>` for one of eleven fixed kinds. The relay snapshot gains an `activity` block of counts
   (version stays 3). Two Mac layouts, `year` and `quarter`, switch with `defaults write com.zaitsew.teyla.local teyla.activity.layout`.
   Needs `teyla growth activity`; an older command shows "Update the teyla command to see activity.". See docs/APP.md, "Activity graph".
-
 - **The MCP server's own text states facts and gives no commands.** Anthropic's directory review asked that instructions,
   tool and parameter descriptions and tool outputs describe what the server does, not tell the assistant what to do.
   Twelve descriptions and fourteen error texts are reworded; behaviour, tool names and schemas are unchanged. The one

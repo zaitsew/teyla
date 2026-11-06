@@ -82,7 +82,7 @@
   teyla schedules forget KEY [KEY...]                              acknowledge VANISHED tasks removed on purpose (clears the banner)
   teyla console [SECTION] [--json] [--refresh]                     the data behind the app's admin sections
   teyla subs [list|add|set|remove] [NAME] [--monthly USD] ...      the recurring bills the Money section adds up (~/.teyla/subscriptions.toml)
-  teyla growth [init|harvest|trends|plan|draft|review|approve|packets|sale-attempts|doctor]   the content factory: daily slots per channel, drafts you approve, packets you post
+  teyla growth [init|harvest|trends|plan|draft|review|approve|packets|sale-attempts|activity|doctor]   the content factory: daily slots per channel, drafts you approve, packets you post
   teyla startup [show <id> | yc [<id>] | yc answer|confirm|export ...] [--json]   the next fact each product is missing, and the YC sheet
   teyla attention [--json]                                         what is wrong on this Mac's backend now, in one list (read-only, no network)
   teyla reviews [--days N] [--json] [--quiet] [repo...]            review debt: merged PRs never reviewed, merged with an open P1, skipped
