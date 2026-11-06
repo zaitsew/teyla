@@ -361,6 +361,128 @@ def test_other_users_tmp_dirs_and_symlinks_stay(tmp_path):
     assert real.exists() and not foreign.exists()
 
 
+# --- SwiftPM clones and pytest runs in temp ------------------------------------------------------
+
+def spm_packages(d: pathlib.Path, seconds=2 * DAY) -> pathlib.Path:
+    """SwiftPM's SourcePackages next to a DerivedData Build: a clone that ships test certificates."""
+    pkg = d / "SourcePackages" / "checkouts" / "swift-nio-ssl"
+    (pkg / ".git").mkdir(parents=True)
+    (pkg / "Tests").mkdir()
+    (pkg / "Tests" / "server.pem").write_text("test certificate")
+    (d / "SourcePackages" / "repositories" / "swift-nio-ssl-1a2b" / "objects").mkdir(parents=True)
+    age(d, seconds)
+    return pkg
+
+
+class GitRunner(Runner):
+    """`git status` answers (rc, out); `git ls-files` says the package tracks the file when `tracked`."""
+
+    def __init__(self, out="", rc=0, tracked=True):
+        super().__init__(tools={"lsof"})
+        self.status, self.tracked = (rc, out), tracked
+
+    def run(self, cmd, timeout=600):
+        self.calls.append(list(cmd))
+        if cmd[0] == "git" and "ls-files" in cmd:
+            return (0, cmd[-1] + "\n") if self.tracked else (1, "error: pathspec did not match")
+        if cmd[0] == "git":
+            return self.status
+        return 1, ""
+
+
+def git_says(out="", rc=0, tracked=True):
+    return GitRunner(out, rc, tracked)
+
+
+def test_a_key_file_the_package_does_not_track_keeps_a_temp_build(tmp_path):
+    """Untracked, ignored or inside a submodule: `git ls-files --error-unmatch` fails for each."""
+    d = derived_dir(tmp_path / "tmp", "dd")
+    spm_packages(d)
+    runner = git_says(tracked=False)
+    assert sw.temp_builds(make_ctx(tmp_path, runner=runner)).items == 0 and (d / "SourcePackages").exists()
+    assert runner.ran("git", "-C", str(d / "SourcePackages" / "checkouts" / "swift-nio-ssl"), "ls-files")
+
+
+def test_a_temp_build_with_clean_swift_packages_goes(tmp_path):
+    d = derived_dir(tmp_path / "tmp" / "session-1" / "scratchpad", "dd")
+    spm_packages(d)
+    res = sw.temp_builds(make_ctx(tmp_path, runner=git_says()))
+    assert res.items == 1 and not (d / "Build").exists() and not (d / "SourcePackages").exists()
+
+
+def test_a_temp_build_whose_package_checkout_changed_or_git_cannot_tell_stays(tmp_path):
+    d = derived_dir(tmp_path / "tmp", "dd")
+    spm_packages(d)
+    for runner in (git_says(" M Sources/x.swift"), git_says("!! signing.p12"), git_says(rc=128)):
+        assert sw.temp_builds(make_ctx(tmp_path, runner=runner)).items == 0 and (d / "SourcePackages").exists()
+    runner = git_says(" M Sources/x.swift")
+    sw.temp_builds(make_ctx(tmp_path, runner=runner))
+    status = [c for c in runner.ran("git") if "status" in c]
+    assert status and all("--ignored=matching" in c for c in status), "an ignored file must show"
+    (d / "SourcePackages" / "checkouts" / "not-a-clone").mkdir()
+    age(d, 2 * DAY)
+    assert sw.temp_builds(make_ctx(tmp_path, runner=git_says())).items == 0, "no .git: nothing vouches for it"
+
+
+def test_a_key_file_outside_swiftpm_clones_still_keeps_a_temp_build(tmp_path):
+    d = derived_dir(tmp_path / "tmp", "dd")
+    spm_packages(d)
+    (d / "SourcePackages" / "signing.p12").write_text("secret")
+    age(d, 2 * DAY)
+    assert sw.temp_builds(make_ctx(tmp_path, runner=git_says())).items == 0
+    assert (d / "SourcePackages" / "signing.p12").exists()
+
+
+def test_a_verify_dir_with_clean_swift_packages_goes_and_an_edited_one_stays(tmp_path):
+    root = tmp_path / "tmp"
+    clean = verify_dir(root, "app-verify")
+    spm_packages(clean)
+    edited = verify_dir(root, "tool-verify")
+    spm_packages(edited)
+
+    class R(GitRunner):
+        def run(self, cmd, timeout=600):
+            if cmd[0] == "git" and "status" in cmd and "tool-verify" in cmd[2]:
+                self.calls.append(list(cmd))
+                return 0, "?? local.swift"
+            return super().run(cmd, timeout)
+
+    res = sw.temp_dirs(make_ctx(tmp_path, dry=True, runner=R()))
+    assert any("tool-verify" in line and "Swift package" in line for line in res.lines)
+    res = sw.temp_dirs(make_ctx(tmp_path, runner=R()))
+    assert not clean.exists() and edited.exists() and res.items == 1
+
+
+def pytest_run(base: pathlib.Path, n: int, seconds=2 * DAY) -> pathlib.Path:
+    d = base / f"pytest-{n}"
+    (d / "test_x0").mkdir(parents=True)
+    (d / "test_x0" / "out.txt").write_bytes(b"0" * 300)
+    age(d, seconds)
+    return d
+
+
+def test_old_pytest_runs_go_but_the_newest_three_and_current_stay(tmp_path):
+    base = tmp_path / "tmp" / "pytest-of-someone"
+    runs = {n: pytest_run(base, n) for n in (7, 44, 132, 364, 365, 366)}
+    (base / "pytest-current").symlink_to(runs[7])
+    (runs[44] / "test_x0" / ".git").mkdir()   # a test's throwaway repo does not keep a run
+    age(runs[44], 2 * DAY)
+    keyed = pytest_run(base, 50)
+    (keyed / "test_x0" / "fake.p8").write_text("not a real key")
+    age(keyed, 2 * DAY)
+    res = sw.temp_dirs(make_ctx(tmp_path, runner=lsof_tools()))
+    assert not runs[44].exists() and not runs[132].exists() and res.items == 2
+    assert all(runs[n].exists() for n in (7, 364, 365, 366)) and keyed.exists()
+
+
+def test_a_recent_pytest_run_stays(tmp_path):
+    base = tmp_path / "tmp" / "pytest-of-someone"
+    old = pytest_run(base, 1, seconds=2 * H)
+    for n in (2, 3, 4):
+        pytest_run(base, n)
+    assert sw.temp_dirs(make_ctx(tmp_path, free=50 * GIB, runner=lsof_tools())).items == 0 and old.exists()
+
+
 # --- release leftovers --------------------------------------------------------------------------
 
 def test_export_leftovers_go_when_they_hold_only_what_xcodebuild_writes(tmp_path):
@@ -583,6 +705,51 @@ def test_unknown_process_list_removes_no_app_cache(tmp_path):
     old = app_cache(tmp_path, "ms-playwright/chromium-1208")
     app_cache(tmp_path, "ms-playwright/chromium-1243")
     assert sw.app_caches(make_ctx(tmp_path, procs=None)).items == 0 and old.exists()
+
+
+def user_dir(tmp_path) -> pathlib.Path:
+    """macOS's per-user folder: T is $TMPDIR, C the caches, X the code-sign clones."""
+    u = tmp_path / "var" / "folders" / "ab" / "xyz"
+    (u / "T").mkdir(parents=True)
+    return u
+
+
+def test_chrome_code_sign_clones_go_only_while_chrome_is_closed(tmp_path):
+    u = user_dir(tmp_path)
+    clone = u / "X" / "com.google.Chrome.code_sign_clone" / "code_sign_clone.Ab12Cd"
+    (clone / "Google Chrome.app").mkdir(parents=True)
+    (clone / "Google Chrome.app" / "bin").write_bytes(b"0" * 700)
+    age(clone, 2 * H)
+    roots = [u / "T"]
+    chrome = ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --type=renderer"]
+    assert sw.app_caches(make_ctx(tmp_path, tmp_roots=roots, procs=chrome)).items == 0 and clone.exists()
+    assert sw.app_caches(make_ctx(tmp_path, tmp_roots=roots, procs=None)).items == 0 and clone.exists()
+    res = sw.app_caches(make_ctx(tmp_path, tmp_roots=roots))
+    assert res.items == 1 and not clone.exists() and clone.parent.exists()
+    assert "Chrome code-sign clone" in res.lines[0]
+
+
+def test_the_clang_module_cache_goes_only_when_urgent_and_no_compiler_runs(tmp_path):
+    u = user_dir(tmp_path)
+    mc = u / "C" / "clang" / "ModuleCache"
+    mc.mkdir(parents=True)
+    (mc / "Foundation.pcm").write_bytes(b"0" * 900)
+    age(mc, 3 * H)
+    roots = [u / "T"]
+    assert sw.app_caches(make_ctx(tmp_path, tmp_roots=roots, free=50 * GIB)).items == 0 and mc.exists()
+    busy = ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend -frontend -c"]
+    assert sw.app_caches(make_ctx(tmp_path, tmp_roots=roots, free=5 * GIB, procs=busy)).items == 0 and mc.exists()
+    assert sw.app_caches(make_ctx(tmp_path, tmp_roots=roots, free=5 * GIB)).items == 1 and not mc.exists()
+
+
+def test_an_idle_docker_desktop_update_download_goes(tmp_path):
+    u = user_dir(tmp_path)
+    d = u / "T" / "DockerDesktopUpdates"
+    d.mkdir()
+    (d / "Docker.dmg").write_bytes(b"0" * 400)
+    age(d, 8 * DAY)
+    res = sw.app_caches(make_ctx(tmp_path, tmp_roots=[u / "T"]))
+    assert res.items == 1 and not d.exists()
 
 
 # --- docker ------------------------------------------------------------------------------------------
