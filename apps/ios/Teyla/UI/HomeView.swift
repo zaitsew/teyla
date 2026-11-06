@@ -186,6 +186,7 @@ struct SentFromPhone: View {
         case .say: return "Correction \u{00B7} \(action.label)"
         case .close: return "Close \u{00B7} \(action.label)"
         case .reopen: return "Reopen \u{00B7} \(action.label)"
+        case .activity: return "+1 \u{00B7} \(action.label)"
         }
     }
 }

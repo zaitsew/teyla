@@ -41,6 +41,14 @@ enum Space {
     static let sparkHeroBar: CGFloat = 5
     static let sparkCardHeight: CGFloat = 18
     static let sparkCardBar: CGFloat = 3
+    /// The activity graph: the gap between squares, the weekday labels at the left, the month labels above, and the widest a square gets.
+    static let activityGap: CGFloat = 3
+    static let activityLabelColumn: CGFloat = 32
+    static let activityMonthRow: CGFloat = 16
+    static let activityCellMax: CGFloat = 22
+    static let activityCellMin: CGFloat = 8
+    /// The legend squares.
+    static let activityLegend: CGFloat = 11
     /// A page stops here on an iPad.
     static let pageMax: CGFloat = 640
     /// A `StatTile` is at least this wide, so two fit a phone.
@@ -113,6 +121,8 @@ enum Palette {
     /// Tints of the roles above: a letter tile, the older bars of a chart, a chip.
     static let primaryTint = primary.opacity(0.14)
     static let primaryMuted = primary.opacity(0.35)
+    /// The five levels of the activity graph: a quiet fill, then the accent in four strengths.
+    static let activityLevels: [Color] = [track, primary.opacity(0.3), primary.opacity(0.5), primary.opacity(0.75), primary]
     static let dangerTint = danger.opacity(0.14)
     /// The selected segment of a switch: white in light, a lifted grey in dark.
     static let selectedSegment = Color.brand(light: 0xFFFFFF, dark: 0x3A3A3C)

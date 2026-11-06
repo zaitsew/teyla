@@ -26,6 +26,10 @@ A `claimed` entry found at the start of a pass was cut off between claim and res
 `ok: false, "interrupted; check the session, then send again"` and is never retried. The journal
 holds no text. Entries older than 8 days are dropped: the 7-day window makes a replay impossible.
 
+One more kind, `activity`, is the phone's "+1" on the Growth tab: `target` is one of `ACTIVITY_KINDS`, `text` is
+the fixed string `+1`, `about` is the SHA-256 of the kind, and it runs exactly `teyla growth log --kind <target>`.
+The kind is checked against the fixed list, so free text never reaches a command line.
+
 Two more kinds exist for the Decisions screen, and they run exactly one command each: `close` runs
 `teyla asks accept-close <id> --json` for a question in triage bucket `close`, and `reopen` runs
 `teyla asks undo <id>`. Neither sends text anywhere. `close` is checked against the question the owner
@@ -75,16 +79,19 @@ MAX_AGE_S = 7 * 86400
 MAX_AHEAD_S = 600
 JOURNAL_KEEP_S = 8 * 86400
 YOUNG_FILE_S = 120               # a file this fresh that does not parse may still be arriving
-KINDS = ("answer", "say", "dispatch", "close", "reopen")
+KINDS = ("answer", "say", "dispatch", "close", "reopen", "activity")
+# The kinds of `teyla growth log --kind`: the phone's `activity` entry may name only these. Fixed here, never read from an entry.
+ACTIVITY_KINDS = ("post", "comment", "reply", "email", "dm", "call", "meeting", "icp-meeting", "ad", "outreach", "response")
+ACTIVITY_WEEKS = 17
 FIELDS = frozenset({"v", "id", "kind", "target", "about", "text", "created", "device", "sig"})
 DETAIL_MAX = 300
-RUN_TIMEOUT_S = {"say": 60, "dispatch": 180, "close": 60, "reopen": 60}
+RUN_TIMEOUT_S = {"say": 60, "dispatch": 180, "close": 60, "reopen": 60, "activity": 60}
 
 _UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 _UUID_RE = re.compile(_UUID, re.ASCII | re.IGNORECASE)
 _FILE_RE = re.compile(_UUID + r"\.json", re.ASCII | re.IGNORECASE)
 _PATTERNS = {
-    "kind": re.compile(r"answer|say|dispatch|close|reopen", re.ASCII),
+    "kind": re.compile(r"answer|say|dispatch|close|reopen|activity", re.ASCII),
     "target": re.compile(r"[A-Za-z0-9_.:#/-]{1,200}", re.ASCII),
     "about": re.compile(r"[0-9a-f]{64}", re.ASCII),
     "created": re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})", re.ASCII),
@@ -736,6 +743,58 @@ def deliver_ask_action(kind: str, target: str, runner, base: list[str]) -> tuple
     return False, "", _last_line(err) or _last_line(out) or f"exit {code}"
 
 
+def deliver_activity(target: str, runner, base: list[str]) -> tuple[bool, str, str]:
+    """`teyla growth log --kind <kind>`: one +1 from the phone. The kind comes from `ACTIVITY_KINDS`, never from free text."""
+    if target not in ACTIVITY_KINDS:
+        return False, "", "unknown activity kind"
+    code, out, err = runner([*base, "growth", "log", "--kind", target], RUN_TIMEOUT_S["activity"])
+    if code == 2 and ("invalid choice" in err or "unrecognized" in err):
+        return False, "", "this Teyla cannot log activity yet"
+    if code == 124:
+        return False, "", "timed out; check the log on the Mac"
+    if code == 0:
+        return True, "growth", "logged"
+    return False, "", _clip(_last_line(err) or _last_line(out) or f"exit {code}")
+
+
+def activity_view(runner=None, base: list[str] | None = None) -> dict | None:
+    """The activity graph for the phone, counts only: no notes, no products, no kinds per day. `total` is the year's. None when this Teyla
+    has no `growth activity` or it fails, so the snapshot simply has no card."""
+    runner = runner or run_command
+    code, out, _err = runner([*(base or teyla_command()), "growth", "activity", "--json", "--weeks", str(ACTIVITY_WEEKS)], 30)
+    if code != 0:
+        return None
+    try:
+        raw = json.loads(out)
+    except ValueError:
+        return None
+    if not isinstance(raw, dict) or not isinstance(raw.get("days"), list):
+        return None
+    days = []
+    for d in raw["days"]:
+        if isinstance(d, dict) and isinstance(d.get("day"), str) and type(d.get("count")) is int:
+            lvl = d.get("level")
+            days.append({"day": d["day"], "count": d["count"], "level": lvl if type(lvl) is int else 0})
+    if not days:
+        return None
+    try:
+        last = _dt.date.fromisoformat(days[-1]["day"])
+    except ValueError:
+        return None
+    # Whole ISO weeks: the Monday of the last day's week, minus 16 weeks. The grid then starts on a Monday.
+    first = (last - _dt.timedelta(days=last.weekday(), weeks=ACTIVITY_WEEKS - 1)).isoformat()
+    days = [d for d in days if d["day"] >= first]
+    if not days:
+        return None
+    def num(k):
+        v = raw.get(k)
+        return v if type(v) is int else 0
+    kinds = [k for k in raw.get("kinds", []) if k in ACTIVITY_KINDS] or list(ACTIVITY_KINDS)
+    return {"today": raw.get("today") if isinstance(raw.get("today"), str) else days[-1]["day"],
+            "start": days[0]["day"], "days": days, "today_count": num("today_count"), "week_count": num("week_count"),
+            "total": raw["total"] if type(raw.get("total")) is int else sum(d["count"] for d in days), "streak": num("streak"), "longest": num("longest"), "kinds": kinds}
+
+
 def deliver_answer(item: asks.Ask, text: str, answer_fn) -> tuple[bool, str, str]:
     res = answer_fn(item, text, clipboard=False)
     return bool(res.get("ok")), str(res.get("via") or ""), str(res.get("detail") or "")
@@ -819,6 +878,12 @@ def _decide(p: Pass, e: dict) -> tuple[bool, str, str, str]:
             return no("Teyla no longer suggests closing that question")
     elif kind == "reopen":
         seen = target
+    elif kind == "activity":
+        if target not in ACTIVITY_KINDS:
+            return no("unknown activity kind")
+        if e["text"] != "+1":
+            return no("malformed entry: text")
+        seen = target
     elif kind == "say":
         seen = p.running.get(target)
         if seen is None:
@@ -834,6 +899,8 @@ def _decide(p: Pass, e: dict) -> tuple[bool, str, str, str]:
             ok, via, detail = deliver_answer(p.items[target], e["text"], p.answer_fn)
         elif kind in ("close", "reopen"):
             ok, via, detail = deliver_ask_action(kind, target, p.runner, p.base)
+        elif kind == "activity":
+            ok, via, detail = deliver_activity(target, p.runner, p.base)
         else:
             ok, via, detail = deliver_subcommand(kind, target, e["text"], p.runner, p.base)
     except Exception as exc:  # noqa: BLE001 — whatever went wrong, the entry has been claimed: report, never retry
@@ -894,7 +961,11 @@ def process_outbox(p: Pass) -> list[dict]:
 
 def default_source(now: float):
     items = asks.collect(asks.DEFAULT_DAYS, now)
-    return snapshot.build(now, items=items), items
+    snap = snapshot.build(now, items=items)
+    act = activity_view()                       # additive: an older `teyla` has no `growth activity`, and the card is hidden
+    if act is not None:
+        snap["activity"] = act
+    return snap, items
 
 
 def write_snapshot(dirs: Dirs, key: bytes, snap: dict) -> None:

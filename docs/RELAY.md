@@ -25,12 +25,13 @@ teyla relay pair      # prints the pairing string (the same one again later): pa
 | File | Written by | Holds |
 |---|---|---|
 | `state.teyla` | Mac | The signature, then the snapshot: open questions with Teyla's triage, the core products with their progress, questions Teyla closed, running sessions, tasks, finished work, today's spend |
-| `outbox/<id>.json` | Phone | One signed action: an answer, a correction to a running session, a new task for a product, closing a question Teyla suggests closing, or reopening one that was closed |
+| `outbox/<id>.json` | Phone | One signed action: an answer, a correction to a running session, a new task for a product, closing a question Teyla suggests closing, reopening one that was closed, or logging one activity (+1) |
 | `sent/<id>.json` | Mac | The result of one action: `ok`, how it was delivered, a detail |
 
 The Mac runs `teyla relay sync` when `outbox/` changes and every 60 seconds. It delivers an action only when the signature is valid, the action is under 7 days old, and the question has not changed since you read it. Each action is delivered once. If the Mac stops in the middle of one, the phone shows "interrupted; check the session, then send again", and Teyla does not retry it.
 
 Closing and reopening run `teyla asks accept-close <id>` and `teyla asks undo <id>` on the Mac, one question at a time. They send no text to a session.
+Logging an activity runs `teyla growth log --kind <kind>` for one of eleven fixed kinds; the entry's text is the fixed `+1`.
 
 An answer never goes to the clipboard. When only the Mac can deliver it, the phone shows "needs the Mac" and the question stays open.
 

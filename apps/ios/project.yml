@@ -49,6 +49,9 @@ targets:
         group: Shared
       - path: ../mac/Teyla/Core/ConsoleLogic.swift
         group: Shared
+      # The activity graph's grid, words and kinds (docs/APP.md): the Growth tab draws the 17 weeks the Mac sends.
+      - path: ../mac/Teyla/Core/Activity.swift
+        group: Shared
     info:
       path: Teyla/Info.plist
       properties:
@@ -116,6 +119,8 @@ targets:
       - path: ../mac/Teyla/Core/GrowthLogic.swift
         group: Shared
       - path: ../mac/Teyla/Core/ConsoleLogic.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/Activity.swift
         group: Shared
     settings:
       base:

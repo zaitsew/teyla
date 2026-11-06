@@ -110,6 +110,17 @@ enum Space {
     /// The Settings window and the new-task sheet.
     static let settingsWidth: CGFloat = 460
     static let taskSheetWidth: CGFloat = 520
+    /// The activity graph: a day's square and the gap between squares, on the year layout and on the quarter layout.
+    static let activityCell: CGFloat = 11
+    static let activityGap: CGFloat = 3
+    static let activityCellLarge: CGFloat = 18
+    static let activityGapLarge: CGFloat = 4
+    /// The weekday labels at the left of the grid.
+    static let activityLabelColumn: CGFloat = 32
+    /// The month labels above the grid.
+    static let activityMonthRow: CGFloat = 16
+    /// The "+1" popover.
+    static let logPopoverWidth: CGFloat = 280
     /// The main window never gets smaller than this.
     static let windowMinWidth: CGFloat = 760
     static let windowMinHeight: CGFloat = 460
@@ -185,6 +196,8 @@ enum Palette {
     static let primaryMuted = primary.opacity(0.35)
     static let dangerTint = danger.opacity(0.14)
     static let track = border.opacity(0.55)
+    /// The five levels of the activity graph: a quiet fill, then the accent in four strengths.
+    static let activityLevels: [Color] = [border.opacity(0.45), primary.opacity(0.3), primary.opacity(0.5), primary.opacity(0.75), primary]
     /// Fine print a reader can skip, and a control that is off.
     static let textTertiary = textSecondary.opacity(0.7)
 }

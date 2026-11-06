@@ -31,7 +31,17 @@ final class GrowthModel {
     private(set) var sales: SaleLedger.Read?
     private(set) var salesFailure: String?
 
+    /// The activity graph (`teyla growth activity`). nil until read, or while the command cannot say.
+    private(set) var activity: ActivityReport?
+    /// Why there is no graph: an older command ("Update the teyla command to see activity."), or a failed read.
+    private(set) var activityNote: String?
+    private(set) var activityOutdated = false
+    /// A "+1" is running, or what the last one said when it failed.
+    private(set) var logging = false
+    private(set) var logFailure: String?
+
     @ObservationIgnored private let cli: any TeylaBackend
+    @ObservationIgnored private var activityGate = CoalescedRead()
     @ObservationIgnored private var salesReadAt: Date?
     @ObservationIgnored private var reading: Task<Void, Never>?
     @ObservationIgnored private var queued = false
@@ -61,6 +71,7 @@ final class GrowthModel {
     func opened() { refresh(force: false) }
 
     func refresh(force: Bool = true) {
+        if force { loadActivity() }   // activity logged from the command line shows up with the page's own refresh
         if !force, let readAt, Date().timeIntervalSince(readAt) < Self.staleAfter, phase == .ready { return }
         if isLoading {
             queued = true
@@ -104,6 +115,58 @@ final class GrowthModel {
             }
         }
     }
+
+    // MARK: Activity
+
+    /// The card opened or the layout changed: read the graph. `weeks` is 53 whatever the layout, so switching never reads twice.
+    func loadActivity() {
+        guard activityGate.request() else { return }
+        Task {
+            defer { if activityGate.finish() { readActivityAgain() } }
+            do {
+                activity = try await cli.activity(weeks: 53)
+                activityNote = nil
+                activityOutdated = false
+            } catch TeylaError.unavailable(let why) {
+                activity = nil
+                activityOutdated = true
+                activityNote = why
+            } catch {
+                // The last graph stays on screen while the read fails.
+                activityOutdated = false
+                activityNote = error.localizedDescription
+            }
+        }
+    }
+
+    /// A request came in while a read ran: the gate is still busy, so read once more.
+    private func readActivityAgain() {
+        activityGate = CoalescedRead()
+        loadActivity()
+    }
+
+    /// "+1": `teyla growth log --kind <kind> [--product P] [--count N]`, then the graph is read again. `done` is told whether it worked,
+    /// so the popover closes only on success and the command's own error text stays visible on failure.
+    func logActivity(kind: String, product: String?, count: Int, done: @escaping @MainActor (Bool) -> Void = { _ in }) {
+        guard !logging, ActivityKind.isKnown(kind), ActivityLog.countRange.contains(count) else { return }
+        logging = true
+        logFailure = nil
+        Task {
+            do {
+                _ = try await cli.runTool(ActivityLog.argv(kind: kind, product: product, count: count))
+                logging = false
+                loadActivity()
+                changed()
+                done(true)
+            } catch {
+                logging = false
+                logFailure = error.localizedDescription
+                done(false)
+            }
+        }
+    }
+
+    func clearLogFailure() { logFailure = nil }
 
     // MARK: Actions
 

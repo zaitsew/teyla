@@ -52,6 +52,8 @@ enum ToolCommands {
             let keys = Array(argv.dropFirst(2))
             guard keys.count <= 20, keys.allSatisfy(isTaskKey) else { return .refused("A task id is not valid.") }
             return .allowed
+        case _ where argv.count >= 2 && argv[0] == "growth" && argv[1] == "log":
+            return ActivityLog.check(argv)
         case _ where argv.first == "growth":
             return GrowthActions.check(argv)
         default:

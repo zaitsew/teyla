@@ -22,6 +22,7 @@ struct GrowthView: View {
         let growth = model.console.report?.growth
         Page {
             ConsoleHeader(page: ConsoleText.growth)
+            ActivityCard()
             ConsoleBlock(name: ConsoleText.growth.title, pick: { $0.growth }) { report in
                 GrowthBody(report: report)
             }

@@ -374,6 +374,8 @@ final class AppModel {
             case .say: return !snapshot.running.contains { $0.ref == action.target }
             // Closing and reopening report on the Decisions tab, not in "Sent from this iPhone".
             case .close, .reopen: return false
+            // A "+1" reports on the Growth tab's activity card.
+            case .activity: return false
             }
         }
     }
@@ -510,6 +512,15 @@ final class AppModel {
                        label: ask.title.isEmpty ? Format.product(ask.product) : ask.title, text: "close")
         }
     }
+
+    /// Asks the Mac to log one activity of this kind (`teyla growth log --kind <kind>`). The result comes back in `activityResult`.
+    @discardableResult
+    func logActivity(kind: String) async -> Bool {
+        await send(kind: .activity, target: kind, aboutText: kind, label: ActivityKind.label(kind), text: OutboxEntry.activityText)
+    }
+
+    /// The newest "+1" sent from this phone and what the Mac said, or nil when none is kept.
+    var activityResult: PendingAction? { pending.last { $0.kind == .activity } }
 
     /// Asks the Mac to reopen one question (`id` is its id). `label` is for lists only.
     @discardableResult

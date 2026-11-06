@@ -43,16 +43,18 @@ struct Snapshot: Decodable, Equatable, Sendable {
     var autoClosed: AutoClosed?
     /// The compact console: one headline per admin section; nil until the first `teyla console` refresh.
     var console: Console?
+    /// The activity graph in counts only (the last 17 weeks); nil from a Mac that does not send it.
+    var activity: ActivityGlimpse?
 
     enum CodingKeys: String, CodingKey {
-        case version, generated, brief, totals, asks, products, running, tasks, done, relay, portfolio, console
+        case version, generated, brief, totals, asks, products, running, tasks, done, relay, portfolio, console, activity
         case autoClosed = "auto_closed"
     }
 
     init(version: Int = 1, generated: String = "", brief: Brief? = nil, totals: Totals = Totals(),
          asks: [Ask] = [], products: [Product] = [], running: [RunningSession] = [],
          tasks: [OwnerTask] = [], done: [DoneItem] = [], relay: Relay? = nil, portfolio: Portfolio? = nil,
-         autoClosed: AutoClosed? = nil, console: Console? = nil) {
+         autoClosed: AutoClosed? = nil, console: Console? = nil, activity: ActivityGlimpse? = nil) {
         self.version = version
         self.generated = generated
         self.brief = brief
@@ -66,11 +68,13 @@ struct Snapshot: Decodable, Equatable, Sendable {
         self.portfolio = portfolio
         self.autoClosed = autoClosed
         self.console = console
+        self.activity = activity
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         console = c.optional(.console)
+        activity = c.optional(.activity)
         version = c.lenient(.version, 1)
         generated = c.lenient(.generated, "")
         brief = c.optional(.brief)
