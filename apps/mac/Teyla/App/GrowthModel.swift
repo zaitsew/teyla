@@ -41,7 +41,7 @@ final class GrowthModel {
     private(set) var logFailure: String?
 
     @ObservationIgnored private let cli: any TeylaBackend
-    @ObservationIgnored private var activityReading = false
+    @ObservationIgnored private var activityGate = CoalescedRead()
     @ObservationIgnored private var salesReadAt: Date?
     @ObservationIgnored private var reading: Task<Void, Never>?
     @ObservationIgnored private var queued = false
@@ -71,6 +71,7 @@ final class GrowthModel {
     func opened() { refresh(force: false) }
 
     func refresh(force: Bool = true) {
+        if force { loadActivity() }   // activity logged from the command line shows up with the page's own refresh
         if !force, let readAt, Date().timeIntervalSince(readAt) < Self.staleAfter, phase == .ready { return }
         if isLoading {
             queued = true
@@ -119,10 +120,9 @@ final class GrowthModel {
 
     /// The card opened or the layout changed: read the graph. `weeks` is 53 whatever the layout, so switching never reads twice.
     func loadActivity() {
-        guard !activityReading else { return }
-        activityReading = true
+        guard activityGate.request() else { return }
         Task {
-            defer { activityReading = false }
+            defer { if activityGate.finish() { readActivityAgain() } }
             do {
                 activity = try await cli.activity(weeks: 53)
                 activityNote = nil
@@ -137,6 +137,12 @@ final class GrowthModel {
                 activityNote = error.localizedDescription
             }
         }
+    }
+
+    /// A request came in while a read ran: the gate is still busy, so read once more.
+    private func readActivityAgain() {
+        activityGate = CoalescedRead()
+        loadActivity()
     }
 
     /// "+1": `teyla growth log --kind <kind> [--product P] [--count N]`, then the graph is read again. `done` is told whether it worked,

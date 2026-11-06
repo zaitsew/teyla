@@ -229,3 +229,21 @@ final class ActivityLogCommandTests: XCTestCase {
         }
     }
 }
+
+final class CoalescedReadTests: XCTestCase {
+    func testARequestDuringAReadRunsAgainAfterIt() {
+        var gate = CoalescedRead()
+        XCTAssertTrue(gate.request())
+        XCTAssertFalse(gate.request())   // e.g. the refresh after a +1, while an older read is running
+        XCTAssertTrue(gate.finish())     // read again
+        gate = CoalescedRead()
+        XCTAssertTrue(gate.request())
+    }
+
+    func testNoRequestMeansNoSecondRead() {
+        var gate = CoalescedRead()
+        XCTAssertTrue(gate.request())
+        XCTAssertFalse(gate.finish())
+        XCTAssertTrue(gate.request())
+    }
+}

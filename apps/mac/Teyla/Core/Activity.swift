@@ -317,3 +317,24 @@ enum ActivityLogic {
     /// The line the Home page and the menu would show: "Activity: today 3 · streak 5".
     static func oneLine(_ report: ActivityReport) -> String { "Activity: today \(report.todayCount) · streak \(report.streak)" }
 }
+
+
+/// Coalesces reads: a request made while a read is in flight is not lost, it runs once more when that read ends.
+struct CoalescedRead: Equatable {
+    private(set) var reading = false
+    private(set) var dirty = false
+
+    /// A read is wanted. True means start it now; false means one is running and will run again afterwards.
+    mutating func request() -> Bool {
+        if reading { dirty = true; return false }
+        reading = true
+        return true
+    }
+
+    /// The read ended. True means a request came in meanwhile, so read again (the gate stays busy).
+    mutating func finish() -> Bool {
+        if dirty { dirty = false; return true }
+        reading = false
+        return false
+    }
+}
