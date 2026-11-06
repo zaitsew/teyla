@@ -10,10 +10,13 @@ covers idle simulators. This sweeps the rest, each category with its own age and
 - temp builds      Xcode DerivedData and .xcresult folders in /tmp, $TMPDIR and session scratchpads
                    idle >= sweep_temp_hours (24); only the parts Xcode wrote go, never anything
                    inside a git checkout, and no mount point is entered. Under sweep_urgent_free_gb (20)
-                   free, 2 hours is enough.
+                   free, 2 hours is enough. SwiftPM's own clones (SourcePackages/checkouts, repositories)
+                   do not count as a checkout or as key files once git says every checkout is clean.
 - temp dirs        `tmp.XXXXXXXXXX` (mktemp -d) and `*-verify*` folders, with their sibling `<name>.log`, directly
-                   in /tmp and $TMPDIR; same idle rule as temp builds, plus no open file (`lsof +D`). Never a
-                   mount point (or a folder holding one), a git checkout, or a tree with .pem/.key/.p8/.p12 files
+                   in /tmp and $TMPDIR, and pytest runs (`pytest-of-<user>/pytest-<N>`) but the newest 3;
+                   same idle rule as temp builds, plus no open file (`lsof +D`). Never a mount point (or a
+                   folder holding one), a git checkout (a pytest run may hold test repos), an edited Swift
+                   package checkout, or a tree with .pem/.key/.p8/.p12 files
 - release leftovers  XcodeDistPipeline.* folders `xcodebuild -exportArchive` leaves in $TMPDIR,
                    idle >= sweep_release_days (3)
 - simulators       devices named by storage.sim_prune_pattern, shut down and unused >= sweep_sim_days
@@ -22,8 +25,11 @@ covers idle simulators. This sweeps the rest, each category with its own age and
                    a folder without info.plist is a cache every project shares and stays
 - codex runtimes   ~/.cache/codex-runtimes/codex-runtime-install-* an update left, >= sweep_codex_days (2)
 - app caches       in ~/Library/Caches: Playwright browser revisions older than the newest of the same
-                   browser that no installed Playwright pins (`.links`), and app-updater downloads (`*.ShipIt/update.*`, `*-updater`), each idle
-                   >= sweep_app_cache_days (7) and named by no process
+                   browser that no installed Playwright pins (`.links`), and app-updater downloads (`*.ShipIt/update.*`, `*-updater`,
+                   $TMPDIR/DockerDesktopUpdates), each idle >= sweep_app_cache_days (7) and named by no process.
+                   Also Chrome's code-sign clones ($TMPDIR/../X) idle 1 h while Chrome is not running, and,
+                   under sweep_urgent_free_gb, the clang module cache ($TMPDIR/../C/clang/ModuleCache) idle
+                   2 h while no compiler runs
 - package caches   `uv cache prune`, `pnpm store prune`, `npm cache verify`, each its own tool; under
                    sweep_critical_free_gb (10) free, `npm cache clean --force` and `deno clean` instead
 - docker           dangling images and build cache older than sweep_docker_days (7), and — for
@@ -80,6 +86,11 @@ TMP_DIR_NAME = re.compile(r"tmp\.[A-Za-z0-9]{6,12}")   # mktemp -d
 VERIFY_GLOB = "*-verify*"
 SECRET_SUFFIXES = (".pem", ".key", ".p8", ".p12")
 LSOF_TIMEOUT_S = 120
+SPM_CLONES = ("checkouts", "repositories")
+PYTEST_RUN = re.compile(r"pytest-(\d+)")
+PYTEST_KEEP = 3   # pytest's own tmp_path_retention_count: the newest runs stay
+# A compiler that may be reading the clang module cache right now.
+COMPILER = re.compile(r"(^|/)(clang|clang\+\+|swiftc|swift-frontend|swift-build|xcodebuild)(\s|$)")
 
 
 def settings(cfg: dict | None = None) -> dict:
@@ -129,9 +140,18 @@ def have_tool(name: str) -> bool:
     return shutil.which(name, path=_tool_path()) is not None
 
 
+def _darwin_temp_dir() -> str:
+    """The per-user temp folder, for a job started without TMPDIR. "" off macOS or on error."""
+    try:
+        r = subprocess.run(["getconf", "DARWIN_USER_TEMP_DIR"], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
 def default_tmp_roots() -> list[pathlib.Path]:
     roots = []
-    for p in (pathlib.Path("/tmp"), pathlib.Path(os.environ.get("TMPDIR") or "/tmp")):
+    for p in (pathlib.Path("/tmp"), pathlib.Path(os.environ.get("TMPDIR") or _darwin_temp_dir() or "/tmp")):
         real = pathlib.Path(os.path.realpath(p))
         if real.is_dir() and real not in roots:
             roots.append(real)
@@ -252,15 +272,28 @@ def only_has(d, allowed) -> bool:
     return all(allowed.fullmatch(n) for n in names)
 
 
+def _spm_clone(dirpath: str, name: str) -> bool:
+    """`dirpath/name` is where SwiftPM keeps its own clones: checkouts/ (working trees) or
+    repositories/ (bare mirrors) in a SourcePackages folder. `_edited_packages` vouches for them."""
+    return name in SPM_CLONES and os.path.basename(dirpath) == "SourcePackages"
+
+
+def _inside_spm_clone(path: str) -> bool:
+    parts = pathlib.PurePath(path).parts
+    return any(parts[i] == "SourcePackages" and parts[i + 1] in SPM_CLONES for i in range(len(parts) - 1))
+
+
 def in_checkout(d, parts) -> bool:
-    """A .git in `d` or any directory above it, or anywhere inside any of `parts`."""
+    """A .git in `d` or any directory above it, or anywhere inside any of `parts` outside SwiftPM's
+    own clones (2026-11-06: every temp DerivedData with Swift packages stayed, 8.5 GB of it)."""
     p = pathlib.Path(d)
     if any((x / ".git").exists() for x in (p, *p.parents)):
         return True
     for part in parts:
-        for _, dirnames, filenames in os.walk(part):
+        for dirpath, dirnames, filenames in os.walk(part):
             if ".git" in dirnames or ".git" in filenames:
                 return True
+            dirnames[:] = [n for n in dirnames if not _spm_clone(dirpath, n)]
     return False
 
 
@@ -347,6 +380,8 @@ def temp_builds(ctx: Ctx) -> Result:
             continue
         if not os.path.lexists(d) or in_checkout(d, parts) or not idle(ctx, d, minutes):
             continue
+        if any(_edited_packages(ctx, x) for x in parts if x.is_dir()):
+            continue
         # xcodebuild drops hundreds of tiny ResultBundle_*.xcresult into $TMPDIR: those share one
         # line, anything from 100 MB up gets its own.
         if ctx.size(*parts) >= SMALL_BUILD:
@@ -376,7 +411,9 @@ def _holds_keys_or_mount(ctx: Ctx, d) -> str:
 
     try:
         for dirpath, dirnames, filenames in os.walk(d, onerror=unreadable):
-            if any(n.lower().endswith(SECRET_SUFFIXES) for n in filenames):
+            # Test certificates a Swift package ships (swift-nio-ssl, swift-crypto) are its own files;
+            # one the package does not track shows in `_edited_packages` instead.
+            if not _inside_spm_clone(dirpath) and any(n.lower().endswith(SECRET_SUFFIXES) for n in filenames):
                 return "it holds key files"
             if any(not os.path.islink(os.path.join(dirpath, n)) and ctx.mount_point(os.path.join(dirpath, n))
                    for n in dirnames):
@@ -396,9 +433,41 @@ def _open_files(ctx: Ctx, d) -> bool:
     return rc != 1 or bool(out.strip())
 
 
+def _edited_packages(ctx: Ctx, tree) -> bool:
+    """A SwiftPM checkout in a SourcePackages folder anywhere under `tree` has changes git reports,
+    is not a git checkout at all, or git cannot tell."""
+    for dirpath, dirnames, _ in os.walk(tree):
+        if os.path.basename(dirpath) == "SourcePackages":
+            if _edited_checkouts(ctx, pathlib.Path(dirpath).parent, strict=True):
+                return True
+            dirnames[:] = []
+        else:
+            dirnames[:] = [n for n in dirnames if n not in (".git", "node_modules")
+                           and not os.path.islink(os.path.join(dirpath, n))]
+    return False
+
+
+def _pytest_runs(ctx: Ctx, root: pathlib.Path) -> list[pathlib.Path]:
+    """`pytest-of-<user>/pytest-<N>` runs pytest left, except the newest PYTEST_KEEP and the one
+    `pytest-current` points at (2026-11-06: 8 old runs, 1.4 GB)."""
+    found = []
+    for base in sorted(root.glob("pytest-of-*")):
+        try:
+            if base.is_symlink() or not base.is_dir() or os.lstat(base).st_uid != ctx.uid:
+                continue
+            current = os.path.realpath(base / "pytest-current") if (base / "pytest-current").is_symlink() else ""
+            runs = sorted((int(m.group(1)), d) for d in base.iterdir()
+                          if (m := PYTEST_RUN.fullmatch(d.name)) and d.is_dir() and not d.is_symlink())
+        except OSError:
+            continue
+        found += [d for _, d in runs[:-PYTEST_KEEP] if os.path.realpath(d) != current]
+    return found
+
+
 def _temp_dir_candidates(ctx: Ctx) -> list[pathlib.Path]:
     found = []
     for root in ctx.tmp_roots:
+        found += _pytest_runs(ctx, pathlib.Path(root))
         try:
             entries = sorted(pathlib.Path(root).iterdir())
         except OSError:
@@ -430,7 +499,9 @@ def temp_dirs(ctx: Ctx) -> Result:
         if ctx.mount_point(d):
             keep(d, "it is a mount point")
             continue
-        if in_checkout(d, [d]):
+        # Tests make throwaway repos in their tmp_path; pytest itself deletes old runs whatever they hold.
+        pytest_run = d.parent.name.startswith("pytest-of-")
+        if not pytest_run and in_checkout(d, [d]):
             keep(d, "it is a git checkout")
             continue
         if not idle(ctx, d, minutes):
@@ -439,6 +510,9 @@ def temp_dirs(ctx: Ctx) -> Result:
         why = _holds_keys_or_mount(ctx, d)
         if why:
             keep(d, why)
+            continue
+        if _edited_packages(ctx, d):
+            keep(d, "a Swift package checkout in it has changes, or git cannot tell")
             continue
         if _open_files(ctx, d):
             keep(d, "a process has files in it open")
@@ -525,13 +599,16 @@ def simulators(ctx: Ctx) -> Result:
 
 # --- Xcode DerivedData ----------------------------------------------------------------------
 
-def _edited_checkouts(ctx: Ctx, d: pathlib.Path) -> bool:
-    """A Swift package checkout under `d` has uncommitted changes, or git cannot tell."""
+def _edited_checkouts(ctx: Ctx, d: pathlib.Path, strict: bool = False) -> bool:
+    """A Swift package checkout under `d` has uncommitted changes, or git cannot tell. `strict`: an
+    entry in checkouts/ that is not a git checkout counts as changed too."""
     checkouts = d / "SourcePackages" / "checkouts"
     if not checkouts.is_dir():
         return False
     for c in checkouts.iterdir():
         if c.is_symlink() or not (c / ".git").exists():
+            if strict:
+                return True
             continue
         # Untracked files count whatever the checkout's own config says.
         rc, out = ctx.run(["git", "-C", str(c), "-c", "status.showUntrackedFiles=all", "status", "--porcelain",
@@ -618,10 +695,14 @@ def _playwright_pinned(pw: pathlib.Path) -> set[str] | None:
 
 
 def _app_cache_dirs(ctx: Ctx) -> list[tuple[str, pathlib.Path]]:
+    found = []
+    for user in _user_dirs(ctx):
+        d = user / "T" / "DockerDesktopUpdates"
+        if d.is_dir() and not d.is_symlink():
+            found.append(("Docker Desktop update download", d))
     caches = ctx.home / "Library" / "Caches"
     if not caches.is_dir():
-        return []
-    found = []
+        return found
     pw = caches / "ms-playwright"
     pinned = _playwright_pinned(pw) if pw.is_dir() else None
     if pinned is not None:
@@ -641,11 +722,43 @@ def _app_cache_dirs(ctx: Ctx) -> list[tuple[str, pathlib.Path]]:
     return found
 
 
+def _user_dirs(ctx: Ctx) -> list[pathlib.Path]:
+    """The per-user folder macOS keeps T (temp), C (caches) and X (code-sign clones) in: the parent
+    of a temp root named T."""
+    return [pathlib.Path(r).parent for r in ctx.tmp_roots if pathlib.Path(r).name == "T"]
+
+
+def _running(ctx: Ctx, pattern: re.Pattern) -> bool:
+    """A live process's command line matches `pattern`. Unknown process list: assume yes."""
+    return ctx.procs is None or any(pattern.search(line) for line in ctx.procs)
+
+
+def _tool_leftovers(ctx: Ctx) -> list[tuple[str, pathlib.Path]]:
+    """What a tool rebuilds when it next starts, each only while that tool is not running:
+    - X/com.google.Chrome*.code_sign_clone/*: the copy of the app Chrome makes at launch; crashed
+      sessions leave theirs (2026-11-06: 1.4 GB). Idle 1 h and no Chrome.
+    - C/clang/ModuleCache: shared by every compile, so only under sweep_urgent_free_gb, idle 2 h and
+      no compiler running (2026-11-06: 1.2 GB)."""
+    found = []
+    chrome = re.compile(r"/Google Chrome[^/]*\.app/")
+    for user in _user_dirs(ctx):
+        if not _running(ctx, chrome):
+            for clones in sorted((user / "X").glob("com.google.Chrome*.code_sign_clone")):
+                if clones.is_dir() and not clones.is_symlink():
+                    found += [("Chrome code-sign clone", c, 60) for c in sorted(clones.iterdir())
+                              if c.is_dir() and not c.is_symlink()]
+        modules = user / "C" / "clang" / "ModuleCache"
+        if (ctx.free < ctx.cfg["urgent_free_gb"] * GIB and modules.is_dir() and not modules.is_symlink()
+                and not _running(ctx, COMPILER)):
+            found.append(("clang module cache", modules, 120))
+    return found
+
+
 def app_caches(ctx: Ctx) -> Result:
     r = Result("app caches")
-    minutes = ctx.cfg["app_cache_days"] * 1440
-    for label, d in _app_cache_dirs(ctx):
-        if not idle(ctx, d, minutes):
+    days = ctx.cfg["app_cache_days"] * 1440
+    for label, d, minutes in [(*x, days) for x in _app_cache_dirs(ctx)] + _tool_leftovers(ctx):
+        if not idle(ctx, d, minutes) or ctx.mount_point(d):
             continue
         size = ctx.size(d)
         if ctx.dry or _rm(d):
