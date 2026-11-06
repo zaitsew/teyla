@@ -374,8 +374,33 @@ def spm_packages(d: pathlib.Path, seconds=2 * DAY) -> pathlib.Path:
     return pkg
 
 
-def git_says(out="", rc=0):
-    return Runner({("git",): (rc, out), ("lsof",): (1, "")}, tools={"lsof"})
+class GitRunner(Runner):
+    """`git status` answers (rc, out); `git ls-files` says the package tracks the file when `tracked`."""
+
+    def __init__(self, out="", rc=0, tracked=True):
+        super().__init__(tools={"lsof"})
+        self.status, self.tracked = (rc, out), tracked
+
+    def run(self, cmd, timeout=600):
+        self.calls.append(list(cmd))
+        if cmd[0] == "git" and "ls-files" in cmd:
+            return (0, cmd[-1] + "\n") if self.tracked else (1, "error: pathspec did not match")
+        if cmd[0] == "git":
+            return self.status
+        return 1, ""
+
+
+def git_says(out="", rc=0, tracked=True):
+    return GitRunner(out, rc, tracked)
+
+
+def test_a_key_file_the_package_does_not_track_keeps_a_temp_build(tmp_path):
+    """Untracked, ignored or inside a submodule: `git ls-files --error-unmatch` fails for each."""
+    d = derived_dir(tmp_path / "tmp", "dd")
+    spm_packages(d)
+    runner = git_says(tracked=False)
+    assert sw.temp_builds(make_ctx(tmp_path, runner=runner)).items == 0 and (d / "SourcePackages").exists()
+    assert runner.ran("git", "-C", str(d / "SourcePackages" / "checkouts" / "swift-nio-ssl"), "ls-files")
 
 
 def test_a_temp_build_with_clean_swift_packages_goes(tmp_path):
@@ -392,7 +417,8 @@ def test_a_temp_build_whose_package_checkout_changed_or_git_cannot_tell_stays(tm
         assert sw.temp_builds(make_ctx(tmp_path, runner=runner)).items == 0 and (d / "SourcePackages").exists()
     runner = git_says(" M Sources/x.swift")
     sw.temp_builds(make_ctx(tmp_path, runner=runner))
-    assert all("--ignored=matching" in c for c in runner.ran("git")), "an ignored file must show"
+    status = [c for c in runner.ran("git") if "status" in c]
+    assert status and all("--ignored=matching" in c for c in status), "an ignored file must show"
     (d / "SourcePackages" / "checkouts" / "not-a-clone").mkdir()
     age(d, 2 * DAY)
     assert sw.temp_builds(make_ctx(tmp_path, runner=git_says())).items == 0, "no .git: nothing vouches for it"
@@ -414,16 +440,16 @@ def test_a_verify_dir_with_clean_swift_packages_goes_and_an_edited_one_stays(tmp
     edited = verify_dir(root, "tool-verify")
     spm_packages(edited)
 
-    class R(Runner):
+    class R(GitRunner):
         def run(self, cmd, timeout=600):
-            self.calls.append(list(cmd))
-            if cmd[0] == "git":
-                return (0, "?? local.swift") if "tool-verify" in cmd[2] else (0, "")
-            return 1, ""
+            if cmd[0] == "git" and "status" in cmd and "tool-verify" in cmd[2]:
+                self.calls.append(list(cmd))
+                return 0, "?? local.swift"
+            return super().run(cmd, timeout)
 
-    res = sw.temp_dirs(make_ctx(tmp_path, dry=True, runner=R(tools={"lsof"})))
+    res = sw.temp_dirs(make_ctx(tmp_path, dry=True, runner=R()))
     assert any("tool-verify" in line and "Swift package" in line for line in res.lines)
-    res = sw.temp_dirs(make_ctx(tmp_path, runner=R(tools={"lsof"})))
+    res = sw.temp_dirs(make_ctx(tmp_path, runner=R()))
     assert not clean.exists() and edited.exists() and res.items == 1
 
 

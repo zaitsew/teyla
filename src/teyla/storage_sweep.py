@@ -278,9 +278,19 @@ def _spm_clone(dirpath: str, name: str) -> bool:
     return name in SPM_CLONES and os.path.basename(dirpath) == "SourcePackages"
 
 
-def _inside_spm_clone(path: str) -> bool:
+def _tracked_package_file(ctx: Ctx, path: str) -> bool:
+    """`path` is in SourcePackages/checkouts/<package> and that package's own git tracks it. A file
+    in a submodule, untracked or ignored is not: `ls-files --error-unmatch` fails for each."""
     parts = pathlib.PurePath(path).parts
-    return any(parts[i] == "SourcePackages" and parts[i + 1] in SPM_CLONES for i in range(len(parts) - 1))
+    for i in range(len(parts) - 3):
+        if parts[i] == "SourcePackages" and parts[i + 1] == "checkouts":
+            pkg = pathlib.Path(*parts[:i + 3])
+            if pkg.is_symlink() or not (pkg / ".git").exists():
+                return False
+            rel = str(pathlib.PurePath(*parts[i + 3:]))
+            rc, out = ctx.run(["git", "-C", str(pkg), "ls-files", "--error-unmatch", "--", rel], 60)
+            return rc == 0 and out.strip() == rel
+    return False
 
 
 def in_checkout(d, parts) -> bool:
@@ -411,9 +421,10 @@ def _holds_keys_or_mount(ctx: Ctx, d) -> str:
 
     try:
         for dirpath, dirnames, filenames in os.walk(d, onerror=unreadable):
-            # Test certificates a Swift package ships (swift-nio-ssl, swift-crypto) are its own files;
-            # one the package does not track shows in `_edited_packages` instead.
-            if not _inside_spm_clone(dirpath) and any(n.lower().endswith(SECRET_SUFFIXES) for n in filenames):
+            # Test certificates a Swift package ships (swift-nio-ssl, swift-crypto) are its own files.
+            # Only a file that package's git tracks is exempt: untracked, ignored or in a submodule, it stays.
+            if any(n.lower().endswith(SECRET_SUFFIXES) and not _tracked_package_file(ctx, os.path.join(dirpath, n))
+                   for n in filenames):
                 return "it holds key files"
             if any(not os.path.islink(os.path.join(dirpath, n)) and ctx.mount_point(os.path.join(dirpath, n))
                    for n in dirnames):
