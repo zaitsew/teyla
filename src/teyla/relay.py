@@ -494,7 +494,8 @@ def _print_connect(res: dict, as_json: bool) -> None:
     print("\n".join(progress), file=sys.stderr)
     print(res["pairing"])
     print(PAIR_TEXT, file=sys.stderr)
-    if pathlib.Path("~/Applications/Teyla.app").expanduser().exists():
+    # The full build is "Teyla Admin.app"; builds before 0.41 were installed as Teyla.app.
+    if any(pathlib.Path(f"~/Applications/{n}.app").expanduser().exists() for n in ("Teyla Admin", "Teyla")):
         print("The full Teyla app on this Mac needs no pairing: it shows the iPhone QR code under Connect iPhone.",
               file=sys.stderr)
 

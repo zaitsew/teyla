@@ -9,6 +9,7 @@
   exactly `teyla growth log --kind <kind>` for one of eleven fixed kinds. The relay snapshot gains an `activity` block of counts
   (version stays 3). Two Mac layouts, `year` and `quarter`, switch with `defaults write com.zaitsew.teyla.local teyla.activity.layout`.
   Needs `teyla growth activity`; an older command shows "Update the teyla command to see activity.". See docs/APP.md, "Activity graph".
+- **The full Mac build is now Teyla Admin.** `apps/mac/install.sh` installs it as `~/Applications/Teyla Admin.app`, so Finder, Spotlight and the Dock tell it apart from the store build named Teyla (which TestFlight keeps updated in `/Applications` and which has no admin sections). The old `~/Applications/Teyla.app` is removed only when its bundle id is the full build's, `com.zaitsew.teyla.local`; the bundle id and settings are unchanged.
 - **The MCP server's own text states facts and gives no commands.** Anthropic's directory review asked that instructions,
   tool and parameter descriptions and tool outputs describe what the server does, not tell the assistant what to do.
   Twelve descriptions and fourteen error texts are reworded; behaviour, tool names and schemas are unchanged. The one
