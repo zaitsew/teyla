@@ -388,8 +388,11 @@ def test_a_temp_build_with_clean_swift_packages_goes(tmp_path):
 def test_a_temp_build_whose_package_checkout_changed_or_git_cannot_tell_stays(tmp_path):
     d = derived_dir(tmp_path / "tmp", "dd")
     spm_packages(d)
-    for runner in (git_says(" M Sources/x.swift"), git_says(rc=128)):
+    for runner in (git_says(" M Sources/x.swift"), git_says("!! signing.p12"), git_says(rc=128)):
         assert sw.temp_builds(make_ctx(tmp_path, runner=runner)).items == 0 and (d / "SourcePackages").exists()
+    runner = git_says(" M Sources/x.swift")
+    sw.temp_builds(make_ctx(tmp_path, runner=runner))
+    assert all("--ignored=matching" in c for c in runner.ran("git")), "an ignored file must show"
     (d / "SourcePackages" / "checkouts" / "not-a-clone").mkdir()
     age(d, 2 * DAY)
     assert sw.temp_builds(make_ctx(tmp_path, runner=git_says())).items == 0, "no .git: nothing vouches for it"

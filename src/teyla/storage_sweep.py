@@ -600,8 +600,9 @@ def simulators(ctx: Ctx) -> Result:
 # --- Xcode DerivedData ----------------------------------------------------------------------
 
 def _edited_checkouts(ctx: Ctx, d: pathlib.Path, strict: bool = False) -> bool:
-    """A Swift package checkout under `d` has uncommitted changes, or git cannot tell. `strict`: an
-    entry in checkouts/ that is not a git checkout counts as changed too."""
+    """A Swift package checkout under `d` has uncommitted changes, or git cannot tell. `strict` (the
+    temp sweeps, which skip the key-file check inside the clones): an entry in checkouts/ that is not a
+    git checkout, or any file git ignores, counts as changed too, so a key file a .gitignore hides stays."""
     checkouts = d / "SourcePackages" / "checkouts"
     if not checkouts.is_dir():
         return False
@@ -612,7 +613,8 @@ def _edited_checkouts(ctx: Ctx, d: pathlib.Path, strict: bool = False) -> bool:
             continue
         # Untracked files count whatever the checkout's own config says.
         rc, out = ctx.run(["git", "-C", str(c), "-c", "status.showUntrackedFiles=all", "status", "--porcelain",
-                           "--untracked-files=all", "--ignore-submodules=none"], 60)
+                           "--untracked-files=all", "--ignore-submodules=none",
+                           *(["--ignored=matching"] if strict else [])], 60)
         if rc != 0 or out.strip():
             return True
     return False
