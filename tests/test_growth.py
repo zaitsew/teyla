@@ -738,6 +738,14 @@ def test_section_matches_the_console_contract(env, monkeypatch):
     assert "trends" not in small and "https://x.com" not in json.dumps(small)
 
 
+def test_qualified_week_counts_a_batched_row_by_n_and_skips_claims(env, monkeypatch):
+    store, _cfg, _items = drafted(env, monkeypatch, channels=("x-en",))
+    store.log("attempt", NOW, product="alpha", kind="icp-meeting", n=5)
+    store.log("attempt", NOW, product="alpha", kind="icp-meeting")
+    store.log("attempt", NOW, product="alpha", kind="icp-meeting", by="agent")
+    assert growth.section(NOW)["qualified_week"] == 6
+
+
 def test_compact_carries_the_gaps_and_the_products_nobody_tried_to_sell_and_stays_small(env, monkeypatch):
     drafted(env, monkeypatch, channels=("x-en", "linkedin-en"))
     sec = growth.section(NOW)
