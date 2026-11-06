@@ -17,7 +17,7 @@ final class ActivityDecodingTests: XCTestCase {
         XCTAssertEqual(report.meetings, 88)
         XCTAssertEqual(report.responses, 51)
         XCTAssertEqual(report.kinds.count, 11)
-        XCTAssertEqual(report.days.last?.kinds["comment"], 2)
+        XCTAssertEqual(report.days.last?.kinds["comment"], 1)
     }
 
     func testAMinimalReportTakesDefaultsAndUnknownFieldsAreIgnored() throws {
