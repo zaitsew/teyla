@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **The full Mac build is now Teyla Admin.** `apps/mac/install.sh` installs it as `~/Applications/Teyla Admin.app`, so Finder, Spotlight and the Dock tell it apart from the store build named Teyla (which TestFlight keeps updated in `/Applications` and which has no admin sections). The old `~/Applications/Teyla.app` is removed only when its bundle id is the full build's, `com.zaitsew.teyla.local`; the bundle id and settings are unchanged.
 - **The MCP server's own text states facts and gives no commands.** Anthropic's directory review asked that instructions,
   tool and parameter descriptions and tool outputs describe what the server does, not tell the assistant what to do.
   Twelve descriptions and fourteen error texts are reworded; behaviour, tool names and schemas are unchanged. The one

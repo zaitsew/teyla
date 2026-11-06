@@ -141,7 +141,7 @@ Bare `teyla` prints a welcome of at most 15 lines: what Teyla is, three live num
 
 ```bash
 brew install xcodegen                       # once
-cd apps/mac && ./install.sh                 # builds Teyla.app into ~/Applications (macOS 15, Xcode)
+cd apps/mac && ./install.sh                 # builds Teyla Admin.app into ~/Applications (macOS 15, Xcode)
 teyla state                                 # what the window shows, in the terminal
 teyla answer <id> -- "<text>"               # send an answer without opening the session
 ```
