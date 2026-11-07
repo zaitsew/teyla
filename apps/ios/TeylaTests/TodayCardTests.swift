@@ -30,7 +30,7 @@ final class TodayCardDecodingTests: XCTestCase {
         XCTAssertEqual(gtm.distributionFigure, "2")
         XCTAssertEqual(gtm.waitingSpoken, "Nothing waits for you.")
         XCTAssertTrue(gtm.goals.isEmpty)
-        XCTAssertNil(TodayCard.fraction(gtm))
+        XCTAssertNil(gtm.distributionFraction)
     }
 
     func testABrokenBlockDoesNotBreakTheSnapshot() throws {

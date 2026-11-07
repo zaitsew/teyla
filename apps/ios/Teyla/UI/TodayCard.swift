@@ -23,7 +23,7 @@ struct TodayCard: View {
                         Spacer(minLength: Space.s)
                         Text("\(gtm.outcomesWeek) outcomes this week").font(Typo.caption).foregroundStyle(Palette.textSecondary)
                     }
-                    if let fraction = Self.fraction(gtm) {
+                    if let fraction = gtm.distributionFraction {
                         ProgressView(value: fraction).tint(Palette.primaryMuted)
                     }
                 }
@@ -38,10 +38,6 @@ struct TodayCard: View {
             }
             .card()
         }
-    }
-
-    static func fraction(_ gtm: GtmGlimpse) -> Double? {
-        TodayLogic.distributionFraction(GtmDistribution(today: gtm.distribution.today, target: gtm.distribution.target))
     }
 
     private func figure(_ value: String, _ label: String) -> some View {

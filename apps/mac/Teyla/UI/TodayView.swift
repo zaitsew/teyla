@@ -432,13 +432,26 @@ private struct NextRow: View {
 private struct WaitingBySource: View {
     let today: GtmToday
 
-    private var groups: [(kind: String, waiting: GtmWaiting, rows: [(id: String, count: Int)])] {
-        ["reply", "send", "follow_up", "approve"].compactMap { kind in
+    private struct WaitingGroup {
+        var kind: String
+        var waiting: GtmWaiting
+        var rows: [WaitingRow]
+    }
+
+    private struct WaitingRow: Hashable {
+        var id: String
+        var count: Int
+    }
+
+    private var groups: [WaitingGroup] {
+        var out: [WaitingGroup] = []
+        for kind in ["reply", "send", "follow_up", "approve"] {
             let waiting = today.waiting(kind)
             // The growth drafts are the queue above; other sources' approvals are listed here.
-            let rows = waiting.sources.filter { !(kind == "approve" && $0.id == "growth") }
-            return rows.isEmpty ? nil : (kind, waiting, rows)
+            let rows = waiting.sources.filter { !(kind == "approve" && $0.id == "growth") }.map { WaitingRow(id: $0.id, count: $0.count) }
+            if !rows.isEmpty { out.append(WaitingGroup(kind: kind, waiting: waiting, rows: rows)) }
         }
+        return out
     }
 
     var body: some View {

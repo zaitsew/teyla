@@ -135,6 +135,11 @@ struct GtmGlimpse: Decodable, Equatable, Sendable {
         return parts.isEmpty ? "Nothing waits for you." : parts.joined(separator: ", ") + "."
     }
 
+    /// Today's sends over the daily target, 0 to 1; nil with no target.
+    var distributionFraction: Double? {
+        TodayLogic.distributionFraction(GtmDistribution(today: distribution.today, target: distribution.target))
+    }
+
     var distributionFigure: String { TodayLogic.distributionFigure(GtmDistribution(today: distribution.today, target: distribution.target)) }
 
     /// One sentence for VoiceOver over the whole card.

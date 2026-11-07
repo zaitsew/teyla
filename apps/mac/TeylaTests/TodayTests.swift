@@ -200,11 +200,11 @@ final class TodayLogicTests: XCTestCase {
     }
 
     func testTheOpenTargetIsTheFirstWebSource() throws {
-        let json = #"""
-        {"id": "d", "status": "review", "kind": "post", "platform": "x", "language": "en", "format": "post", "product": "",
-         "idea": "i", "body": "b", "sources": [{"kind": "session", "ref": "abc123"}, {"kind": "pr", "url": "https://example.com/pr/1"}]}
-        """#
-        let draft = try JSONDecoder().decode(GrowthDraft.self, from: Data(json.utf8))
-        XCTAssertEqual(TodayLogic.openTarget(draft)?.absoluteString, "https://example.com/pr/1")
+        let boxes = try JSONDecoder().decode([LossyBox<GrowthDraft>].self, from: SampleFiles.data("growth.v1.json"))
+        let drafts = boxes.compactMap(\.value)
+        XCTAssertEqual(TodayLogic.openTarget(drafts[0])?.absoluteString, "https://example.com/sample-app/pull/12")
+        // A source that is only a reference (no web address) opens nothing.
+        let session = try XCTUnwrap(drafts.first { $0.sources.first?.link == "session-0412" })
+        XCTAssertNil(TodayLogic.openTarget(session))
     }
 }
