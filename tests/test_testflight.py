@@ -129,6 +129,26 @@ def test_nothing_installable(tmp_path, monkeypatch, capsys):
     assert "macOS" in cap.out and "you can install nothing" in cap.out and "120: expired" in cap.out
 
 
+def test_newer_expired_builds_are_not_behind(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    product(tmp_path)
+    fake_tool(monkeypatch, payload(plat(behind=2, inst=("1.8.0", "118"),
+                                        blockers=["120: expired", "119: expired"])))
+    rc, cap = go(capsys)
+    assert rc == 0
+    assert cap.out.strip().endswith("you can install 118 — current; 2 newer expired")
+
+
+def test_expired_and_processing_counts_only_the_processing_one(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    product(tmp_path)
+    fake_tool(monkeypatch, payload(plat(behind=2, inst=("1.8.0", "118"),
+                                        blockers=["120: processing", "119: expired"])))
+    rc, cap = go(capsys)
+    assert rc == 1
+    assert "— 1 behind: 120: processing; 119: expired" in cap.out
+
+
 def test_two_platforms_one_behind_fails(tmp_path, monkeypatch, capsys):
     platform_toml(tmp_path)
     product(tmp_path)
@@ -356,7 +376,7 @@ def test_quiet_error_and_nothing_installable_rows(tmp_path, monkeypatch, capsys,
     go(capsys, "--quiet")
     # the manifest also declares iOS, which the tool said nothing about: no build at all
     assert problems.read_text().splitlines() == [
-        "testflight|app-a|MAC_OS|none\tapp-a macOS: 1 behind, none installable — 120: expired",
+        "testflight|app-a|MAC_OS|none\tapp-a macOS: none installable — 120: expired",
         "testflight|app-a|IOS|none\tapp-a iOS: none installable"]
 
 
