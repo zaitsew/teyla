@@ -636,6 +636,8 @@ def build_parser() -> argparse.ArgumentParser:
     post_mod.register(sp)
     from . import copy_lane as copy_lane_mod
     copy_lane_mod.register(sp)
+    from . import whats_new as whats_new_mod
+    whats_new_mod.register(sp)
     from . import start as start_mod
     start_mod.register(sp)
     from . import web as web_mod

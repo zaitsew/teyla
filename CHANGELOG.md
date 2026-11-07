@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **`teyla whats-new`: a store "What's New" that names what a user would notice.** `draft <repo> --version V` lists the PRs merged since the newest version tag (any prefix, or `--since`), splits user-facing candidates from internal ones (docs, tests, CI, deps, listing and policy items) and prints a template body; `--write` creates `docs/whats-new/<V>/<locale>.txt` placeholders and never overwrites real text. `check` exits 1 for a locale with no file, an empty or placeholder file, or a generic line such as "Bug fixes and improvements" in English, Spanish or Russian. Offline. See docs/COMMANDS.md.
 - **AI directory listings show up as platforms.** A repo's `teyla.toml` can declare `[directories.claude]`, `[directories.chatgpt]` and `[directories.gemini]`, each with the state copied from the portal (`published`, `approved`, `needs_changes`, `in_review`, `draft`, ...), the kind (`connector`, `plugin`, `app`) and the date. `teyla portfolio` adds one row per listing after the device platforms, with role `directory`: `published` reads `live`, `approved` and `needs_changes` read `blocked`. These rows never change health and are never something to install. The Mac app draws them after a divider in the Platforms column, which is now wide enough for eight icons; the iPhone app names them. Teyla reads no portal, so a row is as fresh as its `as_of`.
 
 ## 0.41.0 — 2026-11-07 — An activity graph, Teyla Admin, and apps that show the release number
