@@ -381,8 +381,11 @@ version 2. `apps/mac/TeylaTests/Fixtures/state.sample.v3.json` is the reference.
   - `health`: `on_track`, `at_risk`, `off_track` or `parked`. `reasons[]`: at most 3 short lines
     that explain it, worst first; empty when on track.
   - `platforms[]`, primary first: `{platform, role, channel, version, build, state, detail, as_of, link}`.
-    `platform`: `ios`, `macos`, `android`, `web`, `watch`. `role`: `primary` or `secondary`.
-    `channel`: `testflight`, `app_store`, `play`, `web` or `local`. `state`: `live` (a public store
+    `platform`: `ios`, `macos`, `android`, `web`, `watch`, or an AI directory: `claude`, `chatgpt`, `gemini`.
+    `role`: `primary`, `secondary`, or `directory` (an AI directory listing; these rows come after the device
+    platforms, never change health and never appear in `progress.can_install`).
+    `channel`: `testflight`, `app_store`, `play`, `web` or `local`; for a directory row the listing kind:
+    `connector`, `plugin` or `app`. `state`: `live` (a public store
     version, or a site URL the repo's `teyla.toml` declares; Teyla does not fetch it), `in_review`, `current` (the newest build reached the owner),
     `behind` (a newer build exists that the owner cannot install yet), `blocked` (only the owner can
     clear it; `detail` says how), `none` (no build yet) or `unknown` (not checked, or the check failed).
@@ -391,6 +394,12 @@ version 2. `apps/mac/TeylaTests/Fixtures/state.sample.v3.json` is the reference.
     The newest track decides on Google Play: a production release at a code at or above the internal one is
     `current`, not `behind`. Until a whole store pass has worked (`checked.stores` is ""), a platform reads
     `unknown`, never `behind`.
+    A directory row comes from `[directories.<id>]` in the repo's `teyla.toml` (`state`, `kind`, `as_of`,
+    optional `link`, `version`, `note`); Teyla reads no portal, so `as_of` is the date the state was copied.
+    The portal's word maps to a state: `published` is `live`; `submitted` and `in_review` are `in_review`;
+    `approved` (only the owner's Publish is left) and `needs_changes` are `blocked`; `ready`, `draft`,
+    `rejected` and `parked` are `none`; anything else is `unknown`. `detail` starts with the directory and
+    the kind ("Claude connector · Published").
   - `prs`: `{open, waiting, merged_7d, unreviewed_7d, open_p1}` — open PRs, PRs that wait on the owner's
     merge, PRs merged in 7 days, merged in 7 days with no review in the ledger, and merged in 7 days with
     an open P1.

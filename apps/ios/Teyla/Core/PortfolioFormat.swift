@@ -93,6 +93,9 @@ enum PortfolioFormat {
         case "android": return "Android"
         case "web": return "Web"
         case "watch": return "Watch"
+        case "claude": return "Claude"
+        case "chatgpt": return "ChatGPT"
+        case "gemini": return "Gemini"
         default: return platform.isEmpty ? "Other" : platform.prefix(1).uppercased() + platform.dropFirst()
         }
     }
@@ -104,6 +107,9 @@ enum PortfolioFormat {
         case "android": return "smartphone"
         case "web": return "globe"
         case "watch": return "applewatch"
+        case "claude": return "asterisk"
+        case "chatgpt": return "bubble.left.and.bubble.right"
+        case "gemini": return "sparkle"
         default: return "square.stack.3d.up"
         }
     }

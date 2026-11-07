@@ -305,6 +305,9 @@ struct PlatformIcons: View {
                 Text(Format.dash).font(Typo.caption).foregroundStyle(Palette.textTertiary)
             }
             ForEach(platforms) { platform in
+                if platform.isDirectory, platform.id == platforms.first(where: \.isDirectory)?.id {
+                    Divider().frame(height: Space.m)          // devices on the left, AI directories on the right
+                }
                 Image(systemName: PlatformSymbol.name(for: platform.platform))
                     .font(Typo.caption)
                     .foregroundStyle(platform.state.color)

@@ -236,6 +236,65 @@ def test_a_platform_with_no_data_is_unknown_and_local_tools_say_so(tmp_path):
     assert p["milestone"] == ""                                                         # owner, no target beyond it
 
 
+DIRECTORIES_TOML = """[product]
+name = "app-a"
+[productize]
+users = "owner"
+platforms = ["ios"]
+primary = "ios"
+[directories.gemini]
+state = "draft"
+[directories.chatgpt]
+state = "In review"
+kind = "app"
+version = "1.0.0"
+as_of = 2027-01-10
+[directories.claude]
+state = "approved"
+as_of = "2027-01-12"
+link = "https://directory.example.com/sample"
+[directories.other]
+state = "published"
+"""
+
+
+def test_ai_directories_follow_the_device_platforms_and_keep_their_portal_state(tmp_path):
+    reg, _ = one(tmp_path, toml=DIRECTORIES_TOML)
+    p = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None,
+                        cache=portfolio.load_cache())["products"][0]
+    assert [(x["platform"], x["role"], x["channel"], x["state"]) for x in p["platforms"]] == [
+        ("ios", "primary", "local", "unknown"), ("claude", "directory", "connector", "blocked"),
+        ("chatgpt", "directory", "app", "in_review"), ("gemini", "directory", "connector", "none")]
+    by = {x["platform"]: x for x in p["platforms"]}
+    assert by["claude"]["detail"] == "Claude connector · Approved, waiting for the owner's Publish"
+    assert (by["claude"]["link"], by["claude"]["as_of"]) == ("https://directory.example.com/sample", "2027-01-12")
+    assert (by["chatgpt"]["version"], by["chatgpt"]["as_of"]) == ("1.0.0", "2027-01-10")   # a TOML date reads as ISO
+    assert all(set(x) == {"platform", "role", "channel", "version", "build", "state", "detail", "as_of", "link",
+                          "review_unknown"} for x in p["platforms"])
+    assert p["reasons"] == ["No session recorded"]      # an approved listing is the owner's step, not a product failure
+    assert p["progress"]["can_install"] == []           # a listing is nothing to install
+    assert p["next"] == "Claude connector · Approved, waiting for the owner's Publish"
+
+
+def test_a_directory_row_reads_a_bare_state_a_note_and_an_unknown_word(tmp_path):
+    rows = portfolio.directory_rows([{"directories": {
+        "claude": {"state": "needs-changes", "kind": "plugin", "note": "Blocked by  directory policy", "link": "ftp://x"},
+        "chatgpt": "published", "gemini": {"state": "lost", "link": "https://[sample"}}}])
+    assert [(r["platform"], r["channel"], r["state"], r["detail"], r["link"]) for r in rows] == [
+        ("claude", "plugin", "blocked", "Claude plugin · Blocked by directory policy", ""),
+        ("chatgpt", "connector", "live", "ChatGPT connector · Published", ""),
+        ("gemini", "connector", "unknown", "Gemini connector · Unknown state 'lost'", "")]
+
+
+def test_a_blocked_device_wins_the_next_line_over_a_directory(tmp_path, monkeypatch):
+    toml = TOML + '[directories.claude]\nstate = "approved"\n'
+    reg, cache, _ = stores(tmp_path, monkeypatch, tf_payload(tf_plat(behind=1, inst=None, blockers=["Invited, not accepted"])),
+                           play_payload(internal=[rel(14)]), toml=toml)
+    p = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None, cache=cache)["products"][0]
+    assert (p["platforms"][0]["state"], p["platforms"][-1]["platform"]) == ("blocked", "claude")
+    assert p["next"] == p["platforms"][0]["detail"]
+
+
 def test_a_product_without_a_manifest_takes_the_registry_primary(tmp_path):
     reg, _ = one(tmp_path, toml="")
     p = portfolio.build(NOW, reg=reg, prods=[], ask_rows=[], tasks=[], bl={}, ledger=None,
