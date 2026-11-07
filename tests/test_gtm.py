@@ -160,6 +160,15 @@ def test_usage_probe_counters_feed_the_adapter():
     assert next(s for s in status if s["id"] == "batrack")["state"] == "ok"
 
 
+def test_a_usage_probe_from_last_week_counts_zero():
+    g = goals()
+    last_sunday = time.mktime((2026, 11, 1, 20, 0, 0, 0, 0, -1))
+    docs, status = gtm.collect(g, DAY, NOW, usage={"batrack": {"sent_week": "20"}}, usage_ages={"batrack": last_sunday},
+                               growth_rows=[], growth_items={}, outreach_repos=[])
+    assert next(s for s in status if s["id"] == "batrack")["state"] == "stale"
+    assert gtm.counters(docs)["distribution"]["week"] == 0
+
+
 def test_review_queue_waits_for_approval():
     items = {"g1104-aaaa": {"status": "review", "kind": "post", "platform": "x"},
              "g1104-bbbb": {"status": "checked", "kind": "post", "platform": "x", "hold_reason": "weak"},
@@ -206,7 +215,7 @@ def test_wrong_toml_types_are_errors_not_crashes():
     g = goals('distribution = 10\ngoal = "x"\n')
     assert len(g["errors"]) == 2 and g["goals"] == []
     g = goals('[[goal]]\nid = "a"\nfunnel = "x"\nweekly = 3\nmap = 1\nsources = "y"\n')
-    assert g["errors"] == [] and g["goals"][0]["funnel"] == [] and g["goals"][0]["sources"] == []
+    assert len(g["errors"]) == 4 and g["goals"][0]["funnel"] == [] and g["goals"][0]["sources"] == []
 
 
 def test_bad_goal_lines_are_errors_not_crashes():

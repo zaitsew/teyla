@@ -226,6 +226,9 @@ def load_goals(path: pathlib.Path | None = None) -> dict:
             out["errors"].append(f"goal {i + 1}: needs an id")
             continue
         gid = _clean_stage(g["id"])
+        for key, kind in (("funnel", list), ("sources", list), ("offer_fit", list), ("weekly", dict), ("map", dict)):
+            if key in g and not isinstance(g[key], kind):
+                out["errors"].append(f"goal {gid}: `{key}` must be a {'list' if kind is list else 'table'}")
         if gid in seen:
             out["errors"].append(f"goal {gid}: the id is used twice")
             continue
@@ -508,6 +511,7 @@ def collect(goals: dict, day: str, now: float, *, runner=None, usage: dict | Non
             continue
         if doc["updated"] is None:
             doc["updated"] = now
+        doc["week"] = week_of(day_of(doc["updated"]))   # a probe from last week says nothing of this week's counts
         accept(doc, "usage probe")
     for sid in sorted(wanted - set(docs)):
         status.append(dict(id=sid, state="missing", via="", line=f"a goal names it, but nothing feeds it: drop "
