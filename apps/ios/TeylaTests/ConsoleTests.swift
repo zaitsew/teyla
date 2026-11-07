@@ -77,12 +77,23 @@ final class ConsoleTests: XCTestCase {
     func testGrowthTilesNameTheTargetAndWhatWaits() throws {
         let growth = try XCTUnwrap(sampleConsole().compact.growth.value)
         let tiles = PhoneConsole.growthTiles(growth)
-        XCTAssertEqual(tiles.map(\.label), ["Posts today", "Conversations", "Waiting for you", "Slots with no draft"])
+        XCTAssertEqual(tiles.map(\.label), ["Posts today", "Conversations", "Waiting for you", "Slots with no draft", "Replies today"])
         XCTAssertEqual(tiles[0].value, "4/6")
         XCTAssertEqual(tiles[0].tone, .needsYou, "two channels still wait for a post")
         XCTAssertEqual(tiles[2].value, "3")
         XCTAssertEqual(PhoneConsole.draftsLine(growth), "3 drafts wait for you on your Mac.")
         XCTAssertTrue(PhoneConsole.draftsStayHome.contains("nothing is posted from here"))
+    }
+
+    func testTheEngageTileCountsRepliesAndIsADashWithoutAList() throws {
+        let compact = try console(#"{"growth": {"today": [], "engage": {"day": "2026-11-07", "scanned": true, "total": 20, "done": 3, "goal": 20}}}"#)
+        let growth = try XCTUnwrap(compact.growth.value)
+        let tile = PhoneConsole.engageTile(growth.engage)
+        XCTAssertEqual(tile.value, "3/20")
+        XCTAssertEqual(tile.tone, .needsYou)
+        XCTAssertNil(PhoneConsole.engageTile(nil).value)
+        XCTAssertNil(PhoneConsole.engageTile(GrowthEngageCount(day: "2026-11-07")).value)
+        XCTAssertEqual(PhoneConsole.engageTile(GrowthEngageCount(scanned: true, total: 4, done: 4)).tone, .saving)
     }
 
     func testChannelsStillWaitingForAPostComeFirst() throws {

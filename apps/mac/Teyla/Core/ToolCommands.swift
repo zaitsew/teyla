@@ -4,8 +4,9 @@ import Foundation
 /// `command` and `preview` come from the CLI, but a command the list does not name is refused and shown as refused:
 /// a newer CLI, a damaged file or a hostile one can print anything, and none of it reaches a process.
 ///
-/// What is on the list: approve, reject or edit one growth draft (`GrowthActions`), forget a task that vanished, sweep what agents left on the disk (and its dry run), apply one
-/// offer (and its dry run), and read the stores and GitHub again. Nothing that charges money, sends a message,
+/// What is on the list: approve, reject or edit one growth draft (`GrowthActions`), publish up to six items the owner
+/// already approved to the networks he connected, read today's engage list and mark its rows done (`GrowthEngage`), forget a task that vanished, sweep what agents left on the disk (and its dry run), apply one
+/// offer (and its dry run), and read the stores and GitHub again. Nothing that charges money, sends a message, replies,
 /// deploys or submits to a store is, and nothing is ever added by the CLI's output.
 enum ToolCommands {
     enum Check: Equatable, Sendable {
@@ -55,7 +56,7 @@ enum ToolCommands {
         case _ where argv.count >= 2 && argv[0] == "growth" && argv[1] == "log":
             return ActivityLog.check(argv)
         case _ where argv.first == "growth":
-            return GrowthActions.check(argv)
+            return GrowthEngage.check(argv) ?? GrowthActions.check(argv)
         default:
             return .refused("Teyla does not run this from the app: \(display(argv)).")
         }

@@ -14,7 +14,7 @@ enum GrowthLayout: String, CaseIterable {
 
 /// Growth: did every channel get its post today, and what waits for the owner. Top to bottom: four figures, then
 /// either the review queue or the channel board first, the pipeline, what is in the works, trend ideas and outreach.
-/// Approving only marks a draft: nothing on this page posts, sends or publishes.
+/// Approving only marks a draft. "Publish to connected networks" on an approved item is the one click that posts.
 struct GrowthView: View {
     @Environment(AppModel.self) private var model
 
@@ -56,6 +56,8 @@ private struct GrowthBody: View {
                 ChannelCards(report: report)
                 ReviewQueue(compact: true)
             }
+            ReadyToPublish()
+            EngageSection()
             PipelineSection(pipeline: report.pipeline)
             InTheWorks(report: report)
             TrendsSection(trends: report.trends)

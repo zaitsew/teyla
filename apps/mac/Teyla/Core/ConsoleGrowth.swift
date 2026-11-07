@@ -277,10 +277,12 @@ struct GrowthReport: Decodable, ConsoleSectionData {
     var qualifiedWeek: Int?
     /// The ids of the products with no sale attempt (posts, marketing, ICP meetings); nil when the report cannot tell.
     var notTried: [String]?
+    /// Today's reply list (`teyla growth engage`); nil from an older command.
+    var engage: GrowthEngageCount?
 
     enum CodingKeys: String, CodingKey {
         case headline, target, today, lastPublicDays = "last_public_days", queueDays = "queue_days", gaps, pipeline, episodes,
-             nextRide = "next_ride", trends, outreach, ads, channels, qualifiedWeek = "qualified_week", notTried = "not_tried"
+             nextRide = "next_ride", trends, outreach, ads, channels, qualifiedWeek = "qualified_week", notTried = "not_tried", engage
     }
 
     /// `target` is `{"posts_per_day_per_channel": n}`.
@@ -298,7 +300,7 @@ struct GrowthReport: Decodable, ConsoleSectionData {
     init(headline: ConsoleHeadline? = nil, targetPerChannel: Int? = nil, today: [GrowthToday] = [], lastPublicDays: Int? = nil,
          queueDays: Double? = nil, gaps: Int? = nil, pipeline: GrowthPipeline? = nil, episodes: [GrowthEpisode] = [],
          nextRide: GrowthRide? = nil, trends: [GrowthTrend] = [], outreach: GrowthOutreach? = nil, ads: [GrowthAd] = [],
-         channels: [GrowthChannel] = [], qualifiedWeek: Int? = nil, notTried: [String]? = nil) {
+         channels: [GrowthChannel] = [], qualifiedWeek: Int? = nil, notTried: [String]? = nil, engage: GrowthEngageCount? = nil) {
         self.headline = headline
         self.targetPerChannel = targetPerChannel
         self.today = today
@@ -314,6 +316,7 @@ struct GrowthReport: Decodable, ConsoleSectionData {
         self.channels = channels
         self.qualifiedWeek = qualifiedWeek
         self.notTried = notTried
+        self.engage = engage
     }
 
     init(from decoder: Decoder) throws {
@@ -339,5 +342,34 @@ struct GrowthReport: Decodable, ConsoleSectionData {
         self.channels = channels.compactMap(\.value)
         qualifiedWeek = c.optional(.qualifiedWeek)
         notTried = c.optional(.notTried)
+        engage = c.optional(.engage)
+    }
+}
+
+/// `engage {day, scanned, total, done, goal}`: the posts worth a reply today and how many the owner answered.
+struct GrowthEngageCount: Decodable, Equatable, Sendable {
+    var day: String
+    var scanned: Bool
+    var total: Int
+    var done: Int
+    var goal: Int
+
+    enum CodingKeys: String, CodingKey { case day, scanned, total, done, goal }
+
+    init(day: String = "", scanned: Bool = false, total: Int = 0, done: Int = 0, goal: Int = 20) {
+        self.day = day
+        self.scanned = scanned
+        self.total = total
+        self.done = done
+        self.goal = goal
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        day = c.lenient(.day, "")
+        scanned = c.lenient(.scanned, false)
+        total = max(0, c.lenient(.total, 0))
+        done = max(0, c.lenient(.done, 0))
+        goal = max(1, c.lenient(.goal, 20))
     }
 }

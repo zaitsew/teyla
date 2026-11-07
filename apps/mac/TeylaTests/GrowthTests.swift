@@ -301,3 +301,96 @@ final class GrowthLogicTests: XCTestCase {
         XCTAssertNil(GrowthLogic.editorWords(GrowthDraft(id: "g1104-abcd")))
     }
 }
+
+// MARK: Publish and engage
+
+final class GrowthEngageTests: XCTestCase {
+    func testOnlyTheAppsOwnEngageAndPublishCommandsPass() {
+        let allowed: [[String]] = [
+            GrowthEngage.list(scan: true),
+            GrowthEngage.list(scan: false),
+            GrowthEngage.done([1]),
+            GrowthEngage.done([3, 40]),
+            GrowthEngage.done(EngageRow(n: 4, url: "https://x.com/a/status/1")),
+            GrowthEngage.publish(["g1104-a1b2"]),
+            GrowthEngage.publish(["g1104-a1b2", "g1104-c3d4"]),
+        ]
+        for argv in allowed { XCTAssertTrue(ToolCommands.check(argv).isAllowed, "\(argv)") }
+        let refused: [[String]] = [
+            ["growth", "publish", "g1104-a1b2"],
+            ["growth", "publish", "--day", "2026-11-07", "--json"],
+            ["growth", "publish", "g1104-a1b2", "--retry", "--json"],
+            ["growth", "publish", "g1104-a1b2", "g1104-a1b2", "--json"],
+            ["growth", "publish", "../etc", "--json"],
+            GrowthEngage.publish((1...7).map { "g1104-aaa\($0)" }),
+            ["growth", "connect", "linkedin"],
+            ["growth", "engage"],
+            ["growth", "engage", "init"],
+            ["growth", "engage", "open", "1"],
+            ["growth", "engage", "done"],
+            ["growth", "engage", "done", "0"],
+            ["growth", "engage", "done", "41"],
+            ["growth", "engage", "done", "01"],
+            ["growth", "engage", "done", "-1"],
+            ["growth", "engage", "done", "1", "--force"],
+            ["growth", "engage", "done", "1", "--url=http://x.com/a"],
+            ["growth", "engage", "done", "1", "2", "--url=https://x.com/a"],
+            ["growth", "engage", "done", "--url=https://x.com/a"],
+            ["growth", "engage", "--json", "--refresh"],
+        ]
+        for argv in refused {
+            if case .refused = ToolCommands.check(argv) { continue }
+            XCTFail("\(argv) must be refused")
+        }
+    }
+
+    func testTheEngageListDecodesAndDropsALinkThatIsNotHTTPS() throws {
+        let json = #"""
+        {"version": 1, "day": "2026-11-07", "goal": 20, "total": 2, "done": 1,
+         "rows": [{"n": 1, "url": "https://x.com/a/status/1", "author": "@a", "group": "founders", "why": "w", "angle": "ask", "source": "x", "done": true},
+                  {"n": 2, "url": "javascript:alert(1)", "author": "@b"},
+                  {"n": 3, "url": "https://b.example.com/p/1", "author": "B", "source": "rss"}],
+         "sources": {"x": "1 scan", "rss": "1 feed"}, "notes": [], "targets": {"exists": true, "x": 2, "rss": 1}}
+        """#
+        let doc = try EngageReport.decode(Data(json.utf8))
+        XCTAssertEqual(doc.rows.map(\.n), [1, 3])
+        XCTAssertEqual(doc.nextOpen?.n, 3)
+        XCTAssertTrue(doc.targetsExist)
+        XCTAssertEqual(doc.targetHandles, 3)
+        XCTAssertEqual(doc.sources["x"], "1 scan")
+    }
+
+    func testAPublishReportSaysWhatWentLiveAndWhatNeedsTheOwner() throws {
+        let json = #"""
+        {"version": 1, "published": 1, "already": 0, "packets": 1, "failed": 1,
+         "results": [{"id": "g1104-a1b2", "network": "linkedin", "status": "published", "url": "https://www.linkedin.com/feed/update/urn:li:share:1"},
+                     {"id": "g1104-a1b2", "network": "x", "status": "packet", "message": "X stays manual"},
+                     {"id": "g1104-c3d4", "network": "threads", "status": "unknown", "message": "check threads"}]}
+        """#
+        let report = try PublishReport.decode(Data(json.utf8))
+        XCTAssertEqual(report.results.count, 3)
+        XCTAssertTrue(report.results[0].isLive)
+        XCTAssertNotNil(report.results[0].link)
+        XCTAssertTrue(report.results[2].needsOwner)
+        XCTAssertEqual(report.summary, "1 published, 1 to post by hand from the packet, 1 need you.")
+    }
+
+    func testOnlyApprovedItemsOnANetworkAreReady() {
+        let items = [
+            GrowthDraft(id: "g1104-aaaa", status: "approved", platform: "linkedin", updated: "2026-11-02"),
+            GrowthDraft(id: "g1104-bbbb", status: "ready", platform: "threads", updated: "2026-11-01"),
+            GrowthDraft(id: "g1104-cccc", status: "approved", platform: "master"),
+            GrowthDraft(id: "g1104-dddd", status: "approved", kind: "episode", platform: "youtube"),
+            GrowthDraft(id: "g1104-eeee", status: "review", platform: "x"),
+            GrowthDraft(id: "g1104-ffff", status: "published", platform: "x"),
+        ]
+        XCTAssertEqual(GrowthEngage.ready(items).map(\.id), ["g1104-bbbb", "g1104-aaaa"])
+    }
+
+    func testTheConsoleCarriesTheEngageCount() throws {
+        let json = #"{"today": [], "engage": {"day": "2026-11-07", "scanned": true, "total": 20, "done": 4, "goal": 20}}"#
+        let report = try JSONDecoder().decode(GrowthReport.self, from: Data(json.utf8))
+        XCTAssertEqual(report.engage, GrowthEngageCount(day: "2026-11-07", scanned: true, total: 20, done: 4, goal: 20))
+        XCTAssertNil(try JSONDecoder().decode(GrowthReport.self, from: Data(#"{"today": []}"#.utf8)).engage)
+    }
+}
