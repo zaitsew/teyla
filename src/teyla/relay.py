@@ -795,6 +795,52 @@ def activity_view(runner=None, base: list[str] | None = None) -> dict | None:
             "total": raw["total"] if type(raw.get("total")) is int else sum(d["count"] for d in days), "streak": num("streak"), "longest": num("longest"), "kinds": kinds}
 
 
+GTM_KINDS = ("approve", "send", "reply", "follow_up")
+GTM_GOALS = 4
+GTM_TARGETS = 6
+
+
+def gtm_view(runner=None, base: list[str] | None = None) -> dict | None:
+    """The GTM Today card for the phone (docs/GTM.md): counts, the owner's own goal titles and targets, the ordered next
+    actions as kinds and counts. No source names, no links, no doctor lines. None when this Teyla has no `gtm` or it fails."""
+    runner = runner or run_command
+    code, out, _err = runner([*(base or teyla_command()), "gtm", "today", "--json"], 30)
+    if code != 0:
+        return None
+    try:
+        raw = json.loads(out)
+    except ValueError:
+        return None
+    if not isinstance(raw, dict) or raw.get("version") != 1 or not isinstance(raw.get("day"), str):
+        return None
+
+    def n(v):
+        return v if type(v) is int and v >= 0 else 0
+
+    def total(k):
+        v = raw.get(k)
+        return n(v.get("total")) if isinstance(v, dict) else 0
+
+    dist = raw.get("distribution") if isinstance(raw.get("distribution"), dict) else {}
+    target = dist.get("target")
+    goals = []
+    for g in raw.get("goals") or []:
+        if not isinstance(g, dict) or not isinstance(g.get("id"), str):
+            continue
+        rows = [{"stage": str(t["stage"])[:40], "count": n(t.get("count")), "target": n(t.get("target"))}
+                for t in g.get("targets") or [] if isinstance(t, dict) and isinstance(t.get("stage"), str)][:GTM_TARGETS]
+        dl = g.get("days_left")
+        goals.append({"id": g["id"][:40], "title": str(g.get("title") or g["id"])[:80],
+                      "days_left": dl if type(dl) is int else None, "targets": rows})
+    nxt = [{"kind": a["kind"], "count": n(a.get("count"))} for a in raw.get("next") or []
+           if isinstance(a, dict) and a.get("kind") in (*GTM_KINDS, "distribute")]
+    return {"day": raw["day"], **{k: total(k) for k in GTM_KINDS},
+            "distribution": {"today": n(dist.get("today")), "target": target if type(target) is int and target > 0 else None,
+                             "week": n(dist.get("week"))},
+            "outcomes_week": n((raw.get("outcomes") or {}).get("week")) if isinstance(raw.get("outcomes"), dict) else 0,
+            "has_goals": raw.get("has_goals") is True, "goals": goals[:GTM_GOALS], "next": nxt}
+
+
 def deliver_answer(item: asks.Ask, text: str, answer_fn) -> tuple[bool, str, str]:
     res = answer_fn(item, text, clipboard=False)
     return bool(res.get("ok")), str(res.get("via") or ""), str(res.get("detail") or "")
@@ -965,6 +1011,9 @@ def default_source(now: float):
     act = activity_view()                       # additive: an older `teyla` has no `growth activity`, and the card is hidden
     if act is not None:
         snap["activity"] = act
+    gtm = gtm_view()                            # additive: an older `teyla` has no `gtm`, and the Today card is hidden
+    if gtm is not None:
+        snap["gtm"] = gtm
     return snap, items
 
 
