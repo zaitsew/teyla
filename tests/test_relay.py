@@ -961,3 +961,44 @@ def test_the_snapshot_asks_for_17_weeks():
     seen = []
     relay.activity_view(lambda cmd, t: (seen.append(cmd), (1, "", ""))[1], ["teyla"])
     assert seen == [["teyla", "growth", "activity", "--json", "--weeks", "17"]]
+
+
+# --- gtm: the Today card ---------------------------------------------------------------------
+
+def _gtm_json(**kw):
+    raw = {"version": 1, "day": "2026-11-07", "week": "2026-W45", "has_goals": True,
+           "approve": {"total": 6, "by_source": {"growth": 4, "src": 2}, "links": {"src": "https://example.com/q"}},
+           "send": {"total": 5, "by_source": {"src": 5}, "links": {}}, "reply": {"total": 2, "by_source": {}, "links": {}},
+           "follow_up": {"total": 0, "by_source": {}, "links": {}},
+           "distribution": {"today": 3, "target": 10, "week": 21, "claimed_by_agents": 4},
+           "preparation": {"today": 40, "week": 283}, "outcomes": {"today": 1, "week": 9},
+           "goals": [{"id": "relationships", "title": "Conversations", "deadline": "2027-03-01", "days_left": 114,
+                      "targets": [{"stage": "conversation", "count": 6, "target": 15}]}],
+           "next": [{"kind": "reply", "count": 2, "label": "answer 2 replies", "sources": ["src"]},
+                    {"kind": "rm -rf", "count": 1}],
+           "sources": [{"id": "src", "state": "ok", "line": "secret-path"}], "doctor": ["src: missing: secret-path"]}
+    raw.update(kw)
+    return json.dumps(raw)
+
+
+def test_the_gtm_card_carries_counts_and_goals_only():
+    view = relay.gtm_view(lambda cmd, t: (0, _gtm_json(), ""), ["teyla"])
+    assert view is not None and view["approve"] == 6 and view["send"] == 5 and view["reply"] == 2
+    assert view["distribution"] == {"today": 3, "target": 10, "week": 21} and view["outcomes_week"] == 9
+    assert view["goals"][0]["targets"] == [{"stage": "conversation", "count": 6, "target": 15}]
+    assert view["next"] == [{"kind": "reply", "count": 2}]
+    text = json.dumps(view)
+    assert "secret-path" not in text and "example.com" not in text and "src" not in text and "preparation" not in text
+
+
+def test_the_gtm_card_is_hidden_when_the_command_is_missing_or_broken():
+    assert relay.gtm_view(lambda c, t: (2, "", "invalid choice"), ["teyla"]) is None
+    assert relay.gtm_view(lambda c, t: (0, "nope", ""), ["teyla"]) is None
+    assert relay.gtm_view(lambda c, t: (0, _gtm_json(version=2), ""), ["teyla"]) is None
+
+
+def test_the_gtm_card_runs_gtm_today_json():
+    seen = []
+    relay.gtm_view(lambda cmd, t: (seen.append(cmd), (1, "", ""))[1], ["teyla"])
+    assert seen == [["teyla", "gtm", "today", "--json"]]
+

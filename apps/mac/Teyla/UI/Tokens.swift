@@ -121,6 +121,9 @@ enum Space {
     static let activityMonthRow: CGFloat = 16
     /// The "+1" popover.
     static let logPopoverWidth: CGFloat = 280
+    /// Today: the narrowest the selected draft's column gets before the next actions drop below it, and the reject form.
+    static let todayMainMin: CGFloat = 380
+    static let todayRejectWidth: CGFloat = 340
     /// The main window never gets smaller than this.
     static let windowMinWidth: CGFloat = 760
     static let windowMinHeight: CGFloat = 460

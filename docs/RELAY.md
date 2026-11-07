@@ -24,7 +24,7 @@ teyla relay pair      # prints the pairing string (the same one again later): pa
 
 | File | Written by | Holds |
 |---|---|---|
-| `state.teyla` | Mac | The signature, then the snapshot: open questions with Teyla's triage, the core products with their progress, questions Teyla closed, running sessions, tasks, finished work, today's spend |
+| `state.teyla` | Mac | The signature, then the snapshot: open questions with Teyla's triage, the core products with their progress, questions Teyla closed, running sessions, tasks, finished work, today's spend, and the GTM Today card (`gtm`, from `teyla gtm today --json`) |
 | `outbox/<id>.json` | Phone | One signed action: an answer, a correction to a running session, a new task for a product, closing a question Teyla suggests closing, reopening one that was closed, or logging one activity (+1) |
 | `sent/<id>.json` | Mac | The result of one action: `ok`, how it was delivered, a detail |
 
@@ -37,7 +37,7 @@ An answer never goes to the clipboard. When only the Mac can deliver it, the pho
 
 ## Privacy
 
-The snapshot holds the text of your questions, Teyla's proposed answers, the titles of your sessions, and for each core product a progress line, the titles of its last merged pull requests, its user counts and its milestone. iCloud Drive encrypts it in transit and at rest, but Apple holds the keys unless you turn on Advanced Data Protection. Turn it on if Apple should not be able to read the snapshot. The signature stops anyone who can write to the folder from sending actions. It does not hide the snapshot.
+The snapshot holds the text of your questions, Teyla's proposed answers, the titles of your sessions, and for each core product a progress line, the titles of its last merged pull requests, its user counts and its milestone, and, when `teyla gtm` is set up, the GTM Today card: waiting counts, today's distribution against its target, your goal titles with their weekly targets and days left (no source names, no links, no people). iCloud Drive encrypts it in transit and at rest, but Apple holds the keys unless you turn on Advanced Data Protection. Turn it on if Apple should not be able to read the snapshot. The signature stops anyone who can write to the folder from sending actions. It does not hide the snapshot.
 
 Safe mode (`teyla config set safe.enabled=true`) makes `sync` do nothing.
 

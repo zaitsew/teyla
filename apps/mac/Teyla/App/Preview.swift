@@ -5,7 +5,8 @@ import SwiftUI
 /// Hooks for taking screenshots of the app with sample data. They work only with
 /// `TEYLA_STATE_FIXTURE` set, so a real run never reads them.
 ///
-///     TEYLA_PREVIEW_OPEN   new-task | quick-note | settings | pair | focus:<ask id> | diagnosis | home | decisions | portfolio | growth | money | operations | playbook | config | command-bar[:<query>] | product:<id> | yc:<id> (the product page and its YC sheet)
+///     TEYLA_PREVIEW_OPEN   new-task | quick-note | settings | pair | focus:<ask id> | diagnosis | home | today | decisions | portfolio | growth | money | operations | playbook | config | command-bar[:<query>] | product:<id> | yc:<id> (the product page and its YC sheet)
+///     TEYLA_GTM_FIXTURE   the Today sample (default: gtm-today.v1.json beside the state sample)
 ///     TEYLA_START_FIXTURE / TEYLA_PRODUCT_FIXTURE / TEYLA_ATTENTION_FIXTURE / TEYLA_CONSOLE_FIXTURE  the diagnosis, product-page,
 ///                         Operations-actions and admin-section samples (default: start.v1.json, product.v1.json,
 ///                         attention.v1.json and console.v1.json beside the state sample)
@@ -18,7 +19,7 @@ import SwiftUI
 ///     TEYLA_PREVIEW_HOME_HEADER  pulse | sentence: the header variant of Home
 ///     TEYLA_PREVIEW_SNAPSHOT  <path.png>: draw the whole Home page in one image (width TEYLA_PREVIEW_WIDTH, default
 ///                         1100 pt, in the appearance above), save it and quit. For screenshots without a screen to click
-///     TEYLA_PREVIEW_SNAPSHOT_VIEW  home (default) | decisions | portfolio | product:<id> | yc:<id> | growth | money | operations | playbook | config | settings | window (the window
+///     TEYLA_PREVIEW_SNAPSHOT_VIEW  home (default) | today | decisions | portfolio | product:<id> | yc:<id> | growth | money | operations | playbook | config | settings | window (the window
 ///                         as it stands, with its toolbar; the size comes from TEYLA_PREVIEW_SIZE) | connect-phone (the "Connect iPhone"
 ///                         sheet) | setup (the store build's first screen; Home elsewhere)
 @MainActor
@@ -99,6 +100,8 @@ enum Preview {
                 model.runDiagnosis()
             case "home":
                 model.go(.home)
+            case "today":
+                model.go(.today)
             case "decisions":
                 model.go(.decisions)
             case "portfolio":
@@ -155,6 +158,8 @@ enum Preview {
             page = flat(MoneyView(), model: model, width: width)
         case "playbook":
             page = flat(PlaybookView(), model: model, width: width)
+        case "today":
+            page = flat(TodayView(), model: model, width: width)
         case "growth":
             page = flat(GrowthView(), model: model, width: width)
         case "config":
@@ -196,6 +201,7 @@ enum Preview {
     /// The page a preview name points at: the four admin sections (`tools` is the old name of Operations).
     private static func consoleRoute(_ name: String) -> AppRoute? {
         switch name {
+        case "today": return .today
         case "growth": return .growth
         case "money": return .money
         case "operations", "tools": return .operations

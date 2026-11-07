@@ -2,6 +2,8 @@ import Foundation
 
 /// What the main window's detail pane shows.
 enum AppRoute: Hashable, Sendable {
+    /// Today, the admin build's first screen: what waits for the owner, did enough go out, which goal moved (`teyla gtm today`).
+    case today
     /// Home: the core products, the top decisions, and what runs.
     case home
     /// Every question that waits on the owner, then what agents handle, tasks, notes and finished work.
@@ -21,6 +23,9 @@ enum AppRoute: Hashable, Sendable {
     /// Teyla's settings in plain groups, and this app's own switches. The Settings window (⌘,) stays.
     case settings
     case product(String)
+
+    /// The page the window opens on: Today in the admin build (it runs the command), Home in the store build.
+    static func initial(capabilities: Capabilities) -> AppRoute { capabilities.console ? .today : .home }
 
     /// The four admin sections that read `teyla console`.
     var isConsole: Bool {

@@ -67,6 +67,44 @@ defaults delete com.zaitsew.teyla.local teyla.activity.layout          # back to
 A preview reads `TeylaTests/Fixtures/activity.v1.json` beside the state sample (`TEYLA_ACTIVITY_FIXTURE` names another file);
 `python3 Tools/make_activity_fixture.py` writes it. Details: [`docs/APP.md`](../../docs/APP.md), "Activity graph".
 
+## Today
+
+The admin build opens on **Today** (the first row of the sidebar; the store build opens on Home and has no Today). It answers
+what waits for you, did enough go out, and which goal moved. It reads `teyla gtm today --json` (the contract is in
+[`docs/GTM.md`](../../docs/GTM.md)) and the drafts the Growth page already reads, and it never posts or sends: Approve only marks
+a draft, and Open goes to the item's own page. No commit counts appear on it.
+
+It shows the ordered next actions, the drafts waiting for approval, what waits to be sent or answered per source (an Open button
+when the source gave a page), today's distribution against the daily target, this week's outcomes against each goal's targets
+with the days left, and the source checks folded at the bottom. The "+1" button and ⌘L work here as on Growth.
+
+| Key | Does |
+|---|---|
+| ↑ / ↓ or K / J | move the selected draft |
+| A | approve the selected draft (it only marks it) |
+| S | skip to the next draft; the draft does not change |
+| O | open the draft's first source page, or the full draft on Growth when it has none |
+| ⌘R | read again |
+| ⌘L | log a "+1" |
+
+Reject needs a reason, so it is a button that opens a small form. Two layouts exist to compare (they differ in structure):
+
+```sh
+defaults write com.zaitsew.teyla.local teyla.today.layout queue   # the next draft large, the actions beside it, a number strip (the default)
+defaults write com.zaitsew.teyla.local teyla.today.layout board   # three counters and goal progress first, the queue as a list below
+defaults delete com.zaitsew.teyla.local teyla.today.layout        # back to the default
+```
+
+A preview reads `TeylaTests/Fixtures/gtm-today.v1.json` beside the state sample (`TEYLA_GTM_FIXTURE` names another file). A `teyla`
+without `gtm` shows one line, "Update the teyla command to see Today.". Screenshots, with the sample data:
+`TEYLA_STATE_FIXTURE=TeylaTests/Fixtures/state.sample.v3.json TEYLA_PREVIEW_SNAPSHOT=out.png TEYLA_PREVIEW_SNAPSHOT_VIEW=today
+TEYLA_PREVIEW_APPEARANCE=dark Teyla -teyla.today.layout board` (the launch argument sets the layout for that run only).
+
+| queue (default) | board |
+|---|---|
+| ![Today, queue layout, light](../../docs/img/mac/today-queue-light.png) | ![Today, board layout, light](../../docs/img/mac/today-board-light.png) |
+| ![Today, queue layout, dark](../../docs/img/mac/today-queue-dark.png) | ![Today, board layout, dark](../../docs/img/mac/today-board-dark.png) |
+
 ## First run
 
 - **No `teyla` found:** the window gives `uv tool install --python 3.12 git+https://github.com/zaitsew/teyla` with Copy, "Check again"

@@ -7,7 +7,6 @@ import SwiftUI
 struct ActivityCard: View {
     @Environment(AppModel.self) private var model
     @AppStorage(ActivityLayout.key) private var layoutName = ActivityLayout.year.rawValue
-    @State private var showLog = false
 
     private var layout: ActivityLayout { ActivityLayout.stored(layoutName) }
 
@@ -15,11 +14,7 @@ struct ActivityCard: View {
         let growth = model.growth
         VStack(alignment: .leading, spacing: Space.m) {
             SectionHeader(title: "Activity", note: "Every post, comment, email and meeting counts as +1.") {
-                Button { showLog = true } label: { Label("+1", systemImage: "plus") }
-                    .keyboardShortcut("l", modifiers: .command)
-                    .disabled(growth.activityOutdated)
-                    .help("Log one activity (⌘L)")
-                    .popover(isPresented: $showLog, arrowEdge: .bottom) { ActivityLogForm(isPresented: $showLog) }
+                ActivityPlusOne()
             }
             if let report = growth.activity {
                 ActivityBody(report: report, layout: layout)
@@ -36,6 +31,22 @@ struct ActivityCard: View {
         }
         .card()
         .onAppear { growth.loadActivity() }
+    }
+}
+
+/// The "+1" button and its popover, with ⌘L. The Growth page and Today both show it, so ⌘L logs from either screen.
+struct ActivityPlusOne: View {
+    @Environment(AppModel.self) private var model
+    @State private var showLog = false
+
+    var body: some View {
+        Button { showLog = true } label: { Label("+1", systemImage: "plus") }
+            .keyboardShortcut("l", modifiers: .command)
+            .disabled(model.growth.activityOutdated)
+            .help("Log one activity (⌘L)")
+            .accessibilityLabel("Log one activity")
+            .popover(isPresented: $showLog, arrowEdge: .bottom) { ActivityLogForm(isPresented: $showLog) }
+            .onAppear { model.growth.loadActivity() }
     }
 }
 

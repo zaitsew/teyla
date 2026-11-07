@@ -42,7 +42,7 @@ final class AppModel {
     private(set) var selectedProduct: String? = UserDefaults.standard.string(forKey: "selectedProduct")
 
     /// What the detail pane shows; the sidebar sets it.
-    var route: AppRoute = .home
+    var route: AppRoute = AppRoute.initial(capabilities: Capabilities.current)
     /// The teyla command was not found: the window shows how to install it, or lets the owner choose the file.
     private(set) var teylaMissing = false
     /// "Check again" is looking, and whether the last look found nothing.
@@ -70,6 +70,7 @@ final class AppModel {
     let tools: ToolsModel
     let console: ConsoleModel
     let growth: GrowthModel
+    let todayPage: TodayModel
     let startup: StartupModel
     let commandBar: CommandBarModel
     let settingsPage: SettingsModel
@@ -102,6 +103,7 @@ final class AppModel {
         tools = ToolsModel(cli: cli)
         console = ConsoleModel(cli: cli)
         growth = GrowthModel(cli: cli)
+        todayPage = TodayModel(cli: cli)
         startup = StartupModel(cli: cli)
         commandBar = CommandBarModel()
         settingsPage = SettingsModel(cli: cli)
@@ -116,7 +118,10 @@ final class AppModel {
         firstRun.applied = { [weak self] in self?.refresh() }
         productPage.changed = { [weak self] in self?.refresh() }
         tools.changed = { [weak self] in self?.refresh() }
-        growth.changed = { [weak self] in self?.console.refresh(rebuild: true) }
+        growth.changed = { [weak self] in
+            self?.console.refresh(rebuild: true)
+            self?.todayPage.refresh()
+        }
         startup.changed = { [weak self] in self?.refresh() }
         commandBar.source = { [weak self] in self?.commandEntries() ?? [] }
         noteList.changed = { [weak self] in self?.productPage.refreshQuick() }
@@ -239,11 +244,21 @@ final class AppModel {
                 // The Tools report is heavier than the snapshot: it is read again only when it is 10 minutes old.
                 if self?.capabilities.tools == true { self?.tools.refresh(force: false) }
                 if self?.capabilities.console == true { self?.console.refresh(force: false) }
+                // Today shows the numbers and the drafts: both are read again, or a draft added elsewhere would not appear.
+                if self?.capabilities.console == true, self?.route == .today {
+                    self?.todayPage.refresh(force: false)
+                    self?.growth.refresh(force: false)
+                }
             }
         }
         refresh()
         if capabilities.tools { tools.refresh(force: false) }
         if capabilities.console { console.refresh(force: false) }
+        // The admin build opens on Today: its numbers and the drafts are read at once.
+        if capabilities.console, route == .today {
+            todayPage.opened()
+            growth.opened()
+        }
     }
 
     /// The command is read every minute; the relay folder every 10 seconds, as well as when it changes.
@@ -370,6 +385,10 @@ final class AppModel {
         if next == .operations { tools.opened() }
         if next.isConsole, capabilities.console { console.opened() }
         if next == .growth, capabilities.console { growth.opened() }
+        if next == .today, capabilities.console {
+            todayPage.opened()
+            growth.opened()
+        }
         if next == .settings, capabilities.console { settingsPage.load() }
     }
 

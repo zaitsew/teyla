@@ -114,6 +114,7 @@ private struct DetailView: View {
 
     @ViewBuilder private var page: some View {
         switch model.route {
+        case .today: TodayView()
         case .home: HomeView()
         case .decisions: DecisionsView()
         case .portfolio: PortfolioView()
@@ -128,7 +129,7 @@ private struct DetailView: View {
     }
 }
 
-/// Home, Decisions and Products, then the four admin sections, and Settings at the foot. A product opens from a card or a
+/// Today (the admin build only), Home, Decisions and Products, then the four admin sections, and Settings at the foot. A product opens from a card or a
 /// row, not from the sidebar.
 private struct SidebarView: View {
     @Environment(AppModel.self) private var model
@@ -137,6 +138,11 @@ private struct SidebarView: View {
     var body: some View {
         // The diagnosis page has no row of its own: Operations stays selected while it shows.
         List(selection: Binding(get: { model.route == .diagnosis ? .operations : model.route }, set: { model.go($0 ?? .home) })) {
+            if model.capabilities.console {
+                Label("Today", systemImage: "sun.max")
+                    .badge(model.todayPage.today.map { TodayLogic.waitingTotal($0) } ?? 0)
+                    .tag(AppRoute.today)
+            }
             Label("Home", systemImage: "house")
                 .tag(AppRoute.home)
             Label("Decisions", systemImage: "tray")
