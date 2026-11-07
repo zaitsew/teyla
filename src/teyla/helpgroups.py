@@ -45,6 +45,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
         ("startup", "The next fact each product is missing; the YC sheet"),
         ("productize", "What stands between each product and its second user"),
         ("growth", "The content factory: daily slots, drafts to approve, packets"),
+        ("gtm", "The GTM cockpit: what waits for you today, the week per goal"),
         ("shield", "Does each product keep its security contract, and how old is the proof"),
         ("platform", "The shared resources every product reuses"),
         ("testflight", "Did the iOS build reach a person"),
