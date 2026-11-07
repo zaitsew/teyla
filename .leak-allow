@@ -24,6 +24,8 @@ cyrillic:
 src/teyla/lexicon.py
 # the copy judge's per-language word lists (interjections, first person, imperatives)
 src/teyla/copy_lexicon.py
+# generic store release-note lines per language (`teyla whats-new check`)
+src/teyla/whats_new_lexicon.py
 # the quote picker's strong-verb, sensitive-topic and theme-stop words (`teyla you`)
 src/teyla/you_lexicon.py
 # the web review package's Russian UI strings (the product's translation, matching iOS)
