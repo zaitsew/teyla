@@ -11,6 +11,8 @@ import pytest
 from teyla import cli, growth, growth_publish as gp, net
 from test_growth import NOW, drafted, env  # noqa: F401
 
+REAL_HTTP = gp.http                                       # taken at import, before any fixture replaces it
+
 
 class Fake:
     """A scripted network: each call takes the first matching (method, url fragment) answer."""
@@ -305,3 +307,61 @@ def test_the_section_reports_a_connected_channel(env, monkeypatch):
     connect_linkedin()
     sec = growth.section(NOW)
     assert next(c for c in sec["channels"] if c["platform"] == "linkedin")["connected"] is True
+
+
+# --- review round 1 -----------------------------------------------------------------------------------------------
+
+def test_a_dropped_connection_on_an_upload_put_may_have_gone_live(monkeypatch):
+    import urllib.request
+
+    def boom(*a, **k):
+        raise TimeoutError("read timed out")
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    fresh = REAL_HTTP                                      # the conftest fake replaces gp.http in every test
+    with pytest.raises(gp.PublishError) as e:
+        fresh("PUT", "https://www.googleapis.com/upload/x", data=b"chunk")
+    assert e.value.posted is None
+    with pytest.raises(gp.PublishError) as e:
+        fresh("GET", "https://graph.threads.net/x")
+    assert e.value.posted is False
+
+
+def test_a_second_publish_while_the_first_holds_the_lock_posts_nothing(env, monkeypatch):
+    store, cfg, (it,) = approved(env, monkeypatch)
+    connect_linkedin()
+    with gp._idem_lock(store, gp.idem_key(it["id"], "linkedin")) as held:
+        assert held
+        row = gp.publish_one(growth.Store(), cfg, it, NOW, h=Fake())
+    assert row["status"] == "unknown" and "running now" in row["message"]
+    assert not [r for r in growth.Store().ledger() if r["ev"] == "publish-start"]
+
+
+def test_media_on_a_text_only_network_goes_to_the_packet(env, monkeypatch, tmp_path):
+    store, cfg, (it,) = approved(env, monkeypatch)
+    connect_linkedin()
+    pic = tmp_path / "slide.png"
+    pic.write_bytes(b"png")
+    it["media"] = [str(pic)]
+    row = gp.publish_one(store, cfg, it, NOW, h=Fake())
+    assert row["status"] == "packet" and "text only" in row["message"]
+
+
+def test_a_token_refresh_that_fails_does_not_stop_the_batch(env, monkeypatch):
+    store, cfg, (it,) = approved(env, monkeypatch)
+    connect_linkedin()
+
+    def refresh(creds, now, h):
+        raise gp.PublishError("token endpoint busy", posted=False)
+    monkeypatch.setattr(gp, "refresh", refresh)
+    doc = gp.publish_many(store, cfg, [it], NOW, h=Fake())
+    assert doc["results"][0]["status"] == "failed" and "refresh" in doc["results"][0]["message"] and doc["failed"] == 1
+
+
+def test_cli_publish_json_exits_0_with_the_failure_in_the_report(env, monkeypatch, capsys):
+    store, cfg, (it,) = approved(env, monkeypatch)
+    connect_linkedin()
+    monkeypatch.setattr(gp, "http", Fake(("POST", "rest/posts", R(422, {"message": "bad text"}))))
+    monkeypatch.setattr(net, "allowed", lambda cfg=None: True)
+    rc = cli.main(["growth", "publish", it["id"], "--json"])
+    doc = json.loads(capsys.readouterr().out)
+    assert rc == 0 and doc["failed"] == 1 and doc["results"][0]["status"] == "failed"

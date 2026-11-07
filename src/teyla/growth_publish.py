@@ -23,7 +23,9 @@ The rules every adapter keeps:
 from __future__ import annotations
 
 import base64
+import contextlib
 import dataclasses
+import fcntl
 import hashlib
 import json
 import os
@@ -38,6 +40,8 @@ import urllib.request
 from typing import Callable, Protocol
 
 PUBLISHABLE = ("approved", "ready")
+# Adapters that post text only: an item with media attached goes out from its packet instead.
+TEXT_ONLY = ("linkedin", "threads")
 
 # platform -> the host names a post URL on it may have. A mismatch is a warning (a short link is legitimate),
 # never a refusal.
@@ -244,8 +248,10 @@ def http(method: str, url: str, *, headers: dict | None = None, data: bytes | No
         return Response(e.code, {k.lower(): v for k, v in (e.headers or {}).items()}, body)
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         host = urllib.parse.urlsplit(url).netloc
+        # A request that carried data (POST or PUT, an upload's last chunk included) may have arrived before the
+        # connection dropped: say "may be live", so the next run waits for --retry instead of posting twice.
         raise PublishError(f"cannot reach {host}: {type(e).__name__}",
-                           posted=None if method == "POST" and data else False) from None
+                           posted=None if data is not None or method in ("POST", "PUT") else False) from None
 
 
 def _scrub(text: str, *secrets_: str) -> str:
@@ -685,8 +691,42 @@ def publish_one(store, cfg, it: dict, now: float, *, retry: bool = False, h: Cal
             return _fallback(store, cfg, it, now, row, str(e))
     if network not in adapters:
         return _fallback(store, cfg, it, now, row, f"{network} has no API adapter; it stays manual")
+    if network in TEXT_ONLY and it.get("media"):
+        return _fallback(store, cfg, it, now, row, f"{network} publishing sends text only and this item has media attached; "
+                                                     "post it from the packet")
     idem = idem_key(it["id"], network)
     row["idem"] = idem
+    with _idem_lock(store, idem) as held:
+        if not held:
+            return dict(row, status="unknown", message=f"another publish of {it['id']} to {network} is running now; "
+                                                        "wait for it, then check the ledger")
+        return _publish_locked(store, cfg, it, now, row, network, idem, retry=retry, h=h, adapters=adapters, cp=cp)
+
+
+@contextlib.contextmanager
+def _idem_lock(store, idem: str):
+    """One publish per item and network at a time, across processes: the ledger check and the `publish-start` row
+    happen under an exclusive, non-blocking lock. A second run while the first holds it is told so and posts nothing."""
+    from . import growth
+    folder = store.root / "locks"
+    growth._private_dir(folder)
+    fd = os.open(folder / f"publish-{idem}.lock", os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+def _publish_locked(store, cfg, it, now, row, network, idem, *, retry, h, adapters, cp) -> dict:
+    from . import growth, net
     state, url = _idem_state(store, idem)
     if state == "published":
         return dict(row, status="already", url=url, message="already published (ledger)")
@@ -708,6 +748,8 @@ def publish_one(store, cfg, it: dict, now: float, *, retry: bool = False, h: Cal
             save_creds(network, creds)
     except NotConnected as e:
         return _fallback(store, cfg, it, now, row, str(e))
+    except PublishError as e:                                # the token refresh failed; nothing was posted
+        return dict(row, status="failed", message=f"could not refresh the {network} token: {e}")
     store.log("publish-start", now, id=it["id"], platform=network, idem=idem)
     try:
         res = adapters[network](it, creds, h, cp)

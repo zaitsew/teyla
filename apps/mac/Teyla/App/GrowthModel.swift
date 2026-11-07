@@ -228,7 +228,7 @@ final class GrowthModel {
                 refresh()
                 changed()
             } catch {
-                // Exit 1 means at least one network failed; the CLI's line says which. Read the queue again either way.
+                // With --json the CLI exits 0 and reports failures per network; an error here is the command itself failing.
                 publishFailure = error.localizedDescription
                 refresh()
                 changed()
@@ -263,7 +263,7 @@ final class GrowthModel {
         Task {
             defer { marking.remove(row.n) }
             do {
-                _ = try await cli.runTool(GrowthEngage.done([row.n]))
+                _ = try await cli.runTool(GrowthEngage.done(row))
                 if var doc = engage, let i = doc.rows.firstIndex(where: { $0.n == row.n }) {
                     doc.rows[i].done = true
                     doc.done = doc.rows.filter(\.done).count

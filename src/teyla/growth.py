@@ -2242,7 +2242,9 @@ def cmd_publish(args) -> int:
         return _fail(e)
     doc = growth_publish.publish_many(store, cfg, items, now, retry=args.retry)
     print(json.dumps(doc, indent=2) if args.json else growth_publish.render(doc), end="\n" if args.json else "")
-    return 1 if doc["failed"] else 0
+    # With --json the report is the answer: `failed` counts what needs you, and the exit code stays 0 so a caller
+    # (the Mac app) reads the per-network lines instead of an error. Without --json a failure exits 1.
+    return 1 if doc["failed"] and not args.json else 0
 
 
 def cmd_connect(args) -> int:

@@ -427,11 +427,20 @@ def build(store, cfg: dict, now: float, *, scan: bool = True, refresh: bool = Fa
             sources["x"] = f"{len(xs)} posts from {len(parsed['posts'])} the scan returned"
         except ValueError as e:
             sources["x"] = f"failed: {str(e)[:120]}"
-    rows = rank(xs + feeds, replied_recently(store, now))
-    if cached:                                               # a refresh keeps what you already marked done
-        done = {r["url"] for r in cached["rows"] if r.get("done")}
-        for r in rows:
-            r["done"] = r["url"] in done
+    if cached and not called:
+        # A refresh that could not scan X (budget spent, safe mode, no grok) keeps the X rows it already had.
+        xs = [dict(r) for r in cached["rows"] if r.get("source") == "x"]
+    elif cached and xs == [] and str(sources.get("x", "")).startswith("failed"):
+        xs = [dict(r) for r in cached["rows"] if r.get("source") == "x"]
+    # Rows already marked done today stay on the list, done: your own replies must not drop them as "replied lately".
+    kept_done = [dict(r) for r in (cached or {}).get("rows", []) if r.get("done")]
+    done_urls = {r["url"] for r in kept_done}
+    rows = rank([r for r in xs + feeds if r["url"] not in done_urls], replied_recently(store, now) - done_urls)
+    for r in rows:
+        r["done"] = False
+    rows = kept_done + rows[:max(0, GOAL - len(kept_done))]
+    for i, r in enumerate(rows, 1):
+        r["n"] = i
     doc = dict(version=1, day=day, generated_at=g.iso(now), goal=GOAL, total=len(rows), done=sum(1 for r in rows if r["done"]),
                rows=rows, sources=sources, notes=notes[:10], targets=_targets_info(t))
     save_cache(store, doc)
@@ -439,29 +448,37 @@ def build(store, cfg: dict, now: float, *, scan: bool = True, refresh: bool = Fa
     return doc
 
 
-def mark_done(store, ns: list[int], now: float) -> tuple[dict, list[dict]]:
-    """Mark rows done and log one `attempt` row of kind `reply` for the new ones. Marking a row twice adds nothing."""
+def mark_done(store, ns: list[int], now: float, *, expect_url: str = "") -> tuple[dict, list[dict]]:
+    """Mark rows done and log one `attempt` row of kind `reply` for the new ones. Marking a row twice adds nothing.
+    `expect_url` (one row only) refuses when the row number now points at another post: a new day or a refresh renumbers."""
     from . import startup
     g = _g()
     day = g.day_of(now)
     doc = read_cache(store, day)
     if not doc:
         raise EngageError("no list for today yet: run `teyla growth engage` first")
+    by = "agent" if startup.in_agent_session() else "owner"
     by_n = {r.get("n"): r for r in doc["rows"]}
     bad = [n for n in ns if n not in by_n]
     if bad:
         raise EngageError(f"no row {', '.join(map(str, bad))} today; the rows are 1 to {len(doc['rows'])}")
+    if expect_url:
+        if len(ns) != 1:
+            raise EngageError("--url goes with one row number")
+        if by_n[ns[0]].get("url") != expect_url:
+            raise EngageError(f"row {ns[0]} is another post now (the list was renewed); read the list again and mark that post")
     new = []
     for n in dict.fromkeys(ns):
         r = by_n[n]
-        if not r.get("done"):
+        # A row an agent marked is a claim; the owner marking it afterwards is the confirmation and is logged.
+        if not r.get("done") or (r.get("done_by") == "agent" and by == "owner"):
             r["done"] = True
             r["done_at"] = g.iso(now)
+            r["done_by"] = by
             new.append(r)
     if new:
         save_cache(store, doc)
-        fields = dict(by="agent" if startup.in_agent_session() else "owner", note="engage",
-                      engage_urls=[r["url"] for r in new])
+        fields = dict(by=by, note="engage", engage_urls=[r["url"] for r in new])
         if len(new) > 1:
             fields["n"] = len(new)
         store.log("attempt", now, kind="reply", **fields)
@@ -519,7 +536,7 @@ def cmd_engage(args) -> int:
         return 0
     if sub == "done":
         try:
-            doc, new = mark_done(store, args.n, now)
+            doc, new = mark_done(store, args.n, now, expect_url=getattr(args, "url", "") or "")
         except EngageError as e:
             return g._fail(e)
         from . import startup
@@ -558,6 +575,7 @@ def register(g) -> None:
     b.set_defaults(fn=cmd_engage)
     b = e.add_parser("done", help="you replied to these rows: logs one reply activity row")
     b.add_argument("n", type=int, nargs="+", metavar="N")
+    b.add_argument("--url", default="", help="the post you replied to: refuse when row N is now a different post")
     b.set_defaults(fn=cmd_engage)
     b = e.add_parser("open", help="open row N in the browser")
     b.add_argument("n", type=int, metavar="N")

@@ -311,6 +311,7 @@ final class GrowthEngageTests: XCTestCase {
             GrowthEngage.list(scan: false),
             GrowthEngage.done([1]),
             GrowthEngage.done([3, 40]),
+            GrowthEngage.done(EngageRow(n: 4, url: "https://x.com/a/status/1")),
             GrowthEngage.publish(["g1104-a1b2"]),
             GrowthEngage.publish(["g1104-a1b2", "g1104-c3d4"]),
         ]
@@ -332,6 +333,9 @@ final class GrowthEngageTests: XCTestCase {
             ["growth", "engage", "done", "01"],
             ["growth", "engage", "done", "-1"],
             ["growth", "engage", "done", "1", "--force"],
+            ["growth", "engage", "done", "1", "--url=http://x.com/a"],
+            ["growth", "engage", "done", "1", "2", "--url=https://x.com/a"],
+            ["growth", "engage", "done", "--url=https://x.com/a"],
             ["growth", "engage", "--json", "--refresh"],
         ]
         for argv in refused {

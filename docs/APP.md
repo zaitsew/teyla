@@ -713,13 +713,13 @@ button is the only thing in the app that posts, and only to a network you connec
 
 **Engage** (from 2026-11-07) reads `teyla growth engage --json --no-scan` when the page opens; "Find today's posts" lets
 the CLI run the day's one cached scan. Each row shows the author, the group, the post's first lines and one angle. Open
-opens the post in the browser; Done runs `teyla growth engage done <n>`. Keys: ↑ and ↓ move, Return opens, D marks done
+opens the post in the browser; Done runs `teyla growth engage done <n> --url=<the post>`, which the CLI refuses when the row is another post now. Keys: ↑ and ↓ move, Return opens, D marks done
 and steps to the next open row. The app never writes or sends a reply. The iPhone shows "Replies today" (done of
 listed) from `console.growth.engage`.
 
 The allow-list (`GrowthEngage.check`, then `GrowthActions.check`) refuses every other `growth` command: a publish needs
-`--json` and 1 to 6 item ids, with no `--day` and no `--retry`; engage allows only the two reads and `done` with 1 to 20
-row numbers from 1 to 40. `connect` never runs from the app.
+`--json` and 1 to 6 item ids, with no `--day` and no `--retry`; engage allows only the two reads, `done` with 1 to 20
+row numbers from 1 to 40, and `done` with one row and `--url=<https link>`. `connect` never runs from the app.
 
 Two layouts sit behind the Layout switch while you choose: the review queue first, or the channel board first. The
 loser and the switch are removed once you pick. Sale attempts per product belong to the Product page.

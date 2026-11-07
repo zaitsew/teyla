@@ -257,8 +257,10 @@ teyla growth publish --day 2026-11-07    # every approved item planned for that 
   `teyla growth publish <id> --json` after a confirmation and shows the result per network.
 
 `teyla growth publish --json` prints `{version, results: [{id, network, status, url, message, warning}], published,
-already, packets, failed}`. `status` is `published`, `already`, `packet`, `failed`, `unknown` or `refused`. The exit
-code is 1 when one failed.
+already, packets, failed}`. `status` is `published`, `already`, `packet`, `failed`, `unknown` or `refused`. With
+`--json` the exit code is 0 and `failed` counts what needs you; without it, a failure exits 1. Two runs of the same item
+and network at once cannot both post: the second one is told the first is running.
+LinkedIn and Threads send text only: an item with media attached goes out from its packet.
 
 ## Engage
 
@@ -271,6 +273,7 @@ teyla growth engage init      # writes ~/.teyla/growth/targets.toml with placeho
 teyla growth engage           # today's list (one cached X scan a day, plus your feeds)
 teyla growth engage open 3    # open row 3 in the browser
 teyla growth engage done 3 5  # you replied to rows 3 and 5: one activity row, kind reply, by you
+teyla growth engage done 3 --url https://x.com/...   # the same, refused if row 3 is another post now
 ```
 
 - `targets.toml` has four groups: `founders`, `c-level`, `investors`, `builders`. Each takes `x` (handles) and `rss`
@@ -279,7 +282,9 @@ teyla growth engage done 3 5  # you replied to rows 3 and 5: one activity row, k
   more; the second refresh of a day reads the cache. `--no-scan` reads the cache only.
 - A row keeps only an `x.com` status link by a handle in your targets file, and only an angle short enough to be an angle.
   A post you replied to in the last 14 days does not come back.
-- `done` from an agent session is logged as a claim (`by: agent`), and the activity graph shows it apart.
+- `done` from an agent session is logged as a claim (`by: agent`), and the activity graph shows it apart. The
+  owner marking the same row afterwards is logged too, as the confirmation.
+- A refresh keeps the rows you already marked done, and keeps the X rows when it cannot scan again today.
 - The Mac admin's Growth page has an "Engage" section: ↑ and ↓ move, Return opens the post, D marks it done. The iPhone
   shows the count as "Replies today".
 

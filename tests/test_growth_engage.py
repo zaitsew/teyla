@@ -175,3 +175,47 @@ def test_cli_init_json_and_done(env, monkeypatch, capsys):
     assert doc["version"] == 1 and doc["rows"] == [] and doc["goal"] == 20
     assert cli.main(["growth", "engage", "done", "1"]) == 2
     assert "no list for today" in capsys.readouterr().err
+
+
+# --- review round 1 -----------------------------------------------------------------------------------------------
+
+def test_a_refresh_keeps_the_rows_you_marked_done(env):
+    store, cfg = setup()
+    rss = lambda url, timeout=10: RSS
+    ge.build(store, cfg, NOW, grok=grok_reply(POSTS), fetch=rss)
+    ge.mark_done(store, [1, 2], NOW)
+    doc = ge.build(store, cfg, NOW, refresh=True, grok=grok_reply(POSTS), fetch=rss)
+    assert doc["done"] == 2 and sum(1 for r in doc["rows"] if r["done"]) == 2
+    assert [r["n"] for r in doc["rows"]] == list(range(1, len(doc["rows"]) + 1))
+
+
+def test_a_refresh_with_no_scan_left_keeps_the_x_rows(env):
+    store, cfg = setup()
+    rss = lambda url, timeout=10: RSS
+    first = ge.build(store, cfg, NOW, grok=grok_reply(POSTS), fetch=rss)
+    ge.build(store, cfg, NOW, refresh=True, grok=grok_reply(POSTS), fetch=rss)
+    third = ge.build(store, cfg, NOW, refresh=True, grok=lambda *a, **k: pytest.fail("over budget"), fetch=rss)
+    xs = lambda d: sorted(r["url"] for r in d["rows"] if r["source"] == "x")
+    assert xs(third) == xs(first) and "2 X scans today" in third["sources"]["x"]
+
+
+def test_the_owner_confirms_a_row_an_agent_claimed(env, monkeypatch):
+    from teyla import startup
+    store, cfg = setup()
+    ge.build(store, cfg, NOW, grok=grok_reply(POSTS), fetch=lambda url, timeout=10: RSS)
+    monkeypatch.setenv(startup.AGENT_ENV[0], "1")
+    ge.mark_done(store, [1], NOW)
+    monkeypatch.delenv(startup.AGENT_ENV[0])
+    monkeypatch.setattr(startup, "in_agent_session", lambda: False)
+    _, new = ge.mark_done(store, [1], NOW)
+    rows = [r for r in store.ledger() if r["ev"] == "attempt"]
+    assert len(new) == 1 and [r["by"] for r in rows] == ["agent", "owner"]
+
+
+def test_done_with_a_url_refuses_a_row_that_is_another_post_now(env):
+    store, cfg = setup()
+    doc = ge.build(store, cfg, NOW, grok=grok_reply(POSTS), fetch=lambda url, timeout=10: RSS)
+    with pytest.raises(ge.EngageError):
+        ge.mark_done(store, [1], NOW, expect_url="https://x.com/someone/status/9")
+    _, new = ge.mark_done(store, [1], NOW, expect_url=doc["rows"][0]["url"])
+    assert len(new) == 1

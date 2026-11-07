@@ -227,6 +227,11 @@ enum GrowthEngage {
         ["growth", "engage", "done"] + rows.map(String.init)
     }
 
+    /// One row, with the post it must still be: the CLI refuses when a new day or a refresh renumbered the list.
+    static func done(_ row: EngageRow) -> [String] {
+        ["growth", "engage", "done", String(row.n), "--url=\(row.url)"]
+    }
+
     static func publish(_ ids: [String]) -> [String] {
         ["growth", "publish"] + ids + ["--json"]
     }
@@ -239,7 +244,13 @@ enum GrowthEngage {
         case "engage":
             if argv == list(scan: true) || argv == list(scan: false) { return .allowed }
             guard argv.count >= 4, argv[2] == "done" else { return refused }
-            let numbers = argv.dropFirst(3)
+            var numbers = argv.dropFirst(3)
+            if let last = numbers.last, last.hasPrefix("--") {
+                guard numbers.count == 2, last.hasPrefix("--url="), isOpenable(String(last.dropFirst("--url=".count))) else {
+                    return .refused("Mark one row with --url=<its https link>.")
+                }
+                numbers = numbers.dropLast()
+            }
             guard numbers.count <= maxDone, numbers.allSatisfy({ text in
                 text.allSatisfy(\.isASCII) && Int(text).map { (1...maxRow).contains($0) && String($0) == text } == true
             }) else { return .refused("Mark 1 to \(maxDone) rows, each a number from 1 to \(maxRow).") }
