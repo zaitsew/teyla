@@ -244,7 +244,11 @@ final class AppModel {
                 // The Tools report is heavier than the snapshot: it is read again only when it is 10 minutes old.
                 if self?.capabilities.tools == true { self?.tools.refresh(force: false) }
                 if self?.capabilities.console == true { self?.console.refresh(force: false) }
-                if self?.capabilities.console == true, self?.route == .today { self?.todayPage.refresh(force: false) }
+                // Today shows the numbers and the drafts: both are read again, or a draft added elsewhere would not appear.
+                if self?.capabilities.console == true, self?.route == .today {
+                    self?.todayPage.refresh(force: false)
+                    self?.growth.refresh(force: false)
+                }
             }
         }
         refresh()

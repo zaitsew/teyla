@@ -16,6 +16,7 @@ struct TodayCard: View {
                         figure("\(gtm.approve)", "to approve")
                         figure("\(gtm.send)", "to send")
                         figure("\(gtm.reply)", "replies")
+                        figure("\(gtm.followUp)", "follow-ups")
                     }
                     HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                         Text(gtm.distributionFigure).font(Typo.cardTitle.monospacedDigit())

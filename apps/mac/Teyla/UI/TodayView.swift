@@ -26,6 +26,10 @@ struct TodayView: View {
         Page {
             header(page)
             if let today = page.today {
+                // A read that failed after a good one keeps the last report on screen; say so, with a retry.
+                if let why = page.note, !page.outdated {
+                    ErrorRow(section: "Today", message: "\(why) The numbers below are from the last read.") { page.refresh() }
+                }
                 switch layout {
                 case .queue: QueueLayout(today: today, selection: $selected)
                 case .board: BoardLayout(today: today, selection: $selected)
