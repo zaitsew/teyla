@@ -29,7 +29,8 @@ without `--allow-network`.
 
 `--quiet` prints nothing: it writes one `key<TAB>text` line per platform that is behind, has nothing
 installable or could not be read to `~/.teyla/testflight.problems` (what the session-start banner and
-the digest read), and removes the file when every platform is current. The daily routine runs it; in
+the digest read), and removes the file when every platform is current. A newer build that expired is not
+counted as behind: it was withdrawn, so nobody waits for it. The daily routine runs it; in
 safe mode it does nothing and exits 0.
 
 China mainland (POLICY §15, store review). Generative AI in the China storefront needs a Chinese permit
@@ -248,11 +249,17 @@ def china_problem_lines(rows: list[dict]) -> list[tuple[str, str]]:
     return out
 
 
+def _expired(p: dict) -> int:
+    """Newer builds that expired. Someone withdrew them (by hand, or Apple after 90 days), so nobody waits for them."""
+    return sum(1 for b in (p.get("blockers") or []) if str(b).rstrip().endswith(": expired"))
+
+
 def _behind(p: dict) -> int:
     try:
-        return max(int(p.get("behind") or 0), 0)
+        n = max(int(p.get("behind") or 0), 0)
     except (TypeError, ValueError):
         return 0
+    return max(n - _expired(p), 0)
 
 
 def platform_verdict(p: dict) -> str:
@@ -273,7 +280,8 @@ def platform_line(product: str, p: dict, verdict: str) -> str:
     can = f"you can install {inst.get('build', '?')}" if inst else "you can install nothing"
     blockers = [str(b) for b in (p.get("blockers") or [])]
     if verdict == "current":
-        tail = "current"
+        k = _expired(p)
+        tail = "current" + (f"; {k} newer expired" if k else "")
     else:
         n = _behind(p)
         tail = (f"{n} behind" if n else "none installable") + (": " + "; ".join(blockers) if blockers else "")

@@ -10,10 +10,13 @@ apple_bundle_id = "com.zaitsew.teyla"   # the iPhone and Mac store builds share 
 # The Mac App Store build. `teyla testflight` compares the date of its newest upload with the newest
 # change on main to these sources, and warns with the release command when the build lags. The full app
 # (`com.zaitsew.teyla.local`, scheme `Teyla`) is installed by apps/mac/install.sh and is not a store build.
+# Since 2026-11-07 the owner keeps only Teyla Admin on his Mac and asked to drop the store build from TestFlight
+# too. Upload a Mac store build only for a Mac App Store submission, never as a routine train step.
 [[release.store_target]]
 platform = "macos"
 scheme = "TeylaStore"
 project = "apps/mac/Teyla.xcodeproj"
+frozen = "2026-11-07: the owner uses Teyla Admin, not the store build"
 # The TeylaStore sources in apps/mac/project.yml: the app folder minus the command-running files,
 # plus the relay client shared with the iPhone app.
 paths = [
