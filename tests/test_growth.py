@@ -734,7 +734,8 @@ def test_section_matches_the_console_contract(env, monkeypatch):
     sec = growth.section(NOW)
     assert sec["headline"]["value"] == "1/2" and sec["last_public_days"] == 0 and sec["pipeline"]["live"] == 1
     small = growth.compact(sec)
-    assert set(small) <= {"headline", "target", "today", "last_public_days", "queue_days", "gaps", "pipeline", "qualified_week", "not_tried"}
+    assert set(small) <= {"headline", "target", "today", "last_public_days", "queue_days", "gaps", "pipeline", "qualified_week", "not_tried", "engage"}
+    assert small["engage"] == {"day": growth.day_of(NOW), "scanned": False, "total": 0, "done": 0, "goal": 20}
     assert "trends" not in small and "https://x.com" not in json.dumps(small)
 
 

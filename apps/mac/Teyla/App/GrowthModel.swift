@@ -14,12 +14,27 @@ enum GrowthAct: Equatable, Sendable {
 
 /// The review queue of the Growth page: the drafts waiting for the owner, and approve, reject and edit.
 /// Reading changes nothing. Each action runs `teyla growth ...` (the allow-list is `GrowthActions`), reads the queue again
-/// and asks the console to rebuild its counts. Nothing here posts, sends or publishes anything: an approved draft is
-/// only marked, and the owner posts it by hand from its packet.
+/// and asks the console to rebuild its counts. Approving only marks a draft. Publishing is a second, separate click on an
+/// approved item: `teyla growth publish <id> --json` posts it to the networks the owner connected, and gives a packet for the rest.
+/// The engage list only opens posts and records the replies the owner wrote himself.
 @MainActor
 @Observable
 final class GrowthModel {
     private(set) var drafts: [GrowthDraft] = []
+    /// Approved items that can go out (`GrowthEngage.ready`).
+    private(set) var ready: [GrowthDraft] = []
+    /// Item ids with a publish running.
+    private(set) var publishing: Set<String> = []
+    /// What the last publish of each item said, per network, by item id; kept after the item left the list.
+    private(set) var published: [String: [PublishResult]] = [:]
+    private(set) var publishFailure: String?
+
+    /// Today's engage list. nil until read.
+    private(set) var engage: EngageReport?
+    private(set) var engageLoading = false
+    private(set) var engageFailure: String?
+    /// Rows a `done` is running for.
+    private(set) var marking: Set<Int> = []
     private(set) var skipped = 0
     private(set) var phase: ConsolePhase = .idle
     /// What each draft's last action did, by item id. A draft with no entry is idle.
@@ -88,6 +103,7 @@ final class GrowthModel {
             do {
                 let read = try await cli.growthDrafts()
                 drafts = GrowthDrafts.waiting(read.drafts)
+                ready = GrowthEngage.ready(read.drafts)
                 skipped = read.skipped
                 readAt = Date()
                 phase = .ready
@@ -189,6 +205,78 @@ final class GrowthModel {
     }
 
     func dismissNotice() { notice = nil }
+
+    // MARK: Publish
+
+    /// "Publish to connected networks": the CLI posts each approved item where a network is connected, writes a packet
+    /// for the rest, and records each URL in the ledger. A second click on a published item does nothing new (idempotent).
+    func publish(_ items: [GrowthDraft]) {
+        let ids = items.map(\.id).filter { !publishing.contains($0) }
+        guard !ids.isEmpty, ids.count <= GrowthEngage.maxPublish else { return }
+        publishing.formUnion(ids)
+        publishFailure = nil
+        Task {
+            defer { publishing.subtract(ids) }
+            do {
+                let text = try await cli.runTool(GrowthEngage.publish(ids))
+                if let report = try? PublishReport.decode(Data(text.utf8)) {
+                    for id in ids { published[id] = report.results.filter { $0.itemID == id } }
+                    notice = report.summary
+                } else {
+                    notice = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                refresh()
+                changed()
+            } catch {
+                // Exit 1 means at least one network failed; the CLI's line says which. Read the queue again either way.
+                publishFailure = error.localizedDescription
+                refresh()
+                changed()
+            }
+        }
+    }
+
+    func clearPublishFailure() { publishFailure = nil }
+
+    // MARK: Engage
+
+    /// Read today's list. `scan` lets the CLI run the day's one cached scan; the page opening reads the cache only.
+    func loadEngage(scan: Bool = false) {
+        guard !engageLoading else { return }
+        engageLoading = true
+        Task {
+            defer { engageLoading = false }
+            do {
+                let text = try await cli.runTool(GrowthEngage.list(scan: scan))
+                engage = try EngageReport.decode(Data(text.utf8))
+                engageFailure = nil
+            } catch {
+                engageFailure = error.localizedDescription
+            }
+        }
+    }
+
+    /// The owner replied on the network: record it (`teyla growth engage done <n>`, an activity row by the owner).
+    func markDone(_ row: EngageRow) {
+        guard !row.done, !marking.contains(row.n) else { return }
+        marking.insert(row.n)
+        Task {
+            defer { marking.remove(row.n) }
+            do {
+                _ = try await cli.runTool(GrowthEngage.done([row.n]))
+                if var doc = engage, let i = doc.rows.firstIndex(where: { $0.n == row.n }) {
+                    doc.rows[i].done = true
+                    doc.done = doc.rows.filter(\.done).count
+                    engage = doc
+                }
+                engageFailure = nil
+                loadActivity()
+                changed()
+            } catch {
+                engageFailure = error.localizedDescription
+            }
+        }
+    }
 
     private func run(_ draft: GrowthDraft, argv: [String], busy: String, done: String) {
         guard !(acts[draft.id]?.isBusy ?? false) else { return }

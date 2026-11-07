@@ -26,7 +26,9 @@ teyla growth plan         fill today's slot of every enabled channel; an empty s
 teyla growth draft        write the planned items through your `claude -p`, check voice and leaks, then an editor scores the hook
 teyla growth review       what waits for you, best editor score first; approve, reject (with a reason) or edit
 teyla growth packets      one folder per approved item: caption, first comment, media, the platform's upload page
-teyla growth published ID URL    paste the post's URL after you posted it
+teyla growth publish ID   post an approved item where its network is connected; a packet for the rest
+teyla growth published ID URL    paste the post's URL after you posted it by hand
+teyla growth engage       today's posts worth a reply, each with an angle; you write the reply
 ```
 
 A slot balances formats and rotates products. What the editor passes goes first, then the product with the fewest sale
@@ -223,6 +225,68 @@ When no lesson qualifies, the video step falls back to a session:
 Filmare's own `render` is not used here: its first run downloads a 170 MB browser, which needs your yes. `growth cut`
 by hand has no frame gate: you watch the clip in `review`. A day with footage you filmed and cut needs no render.
 
+## Publishing
+
+Approving marks a draft. Publishing is a second, separate step, and only for an approved item:
+
+```
+teyla growth connect linkedin            # once per network, in your own terminal; the token goes to the macOS Keychain
+teyla growth connect --status            # which networks are connected, and for how many more days
+teyla growth publish g1107-ab12          # post one approved item (or its approved children, for a master idea)
+teyla growth publish --day 2026-11-07    # every approved item planned for that day
+```
+
+| Network | API | What goes out | Connect |
+|---|---|---|---|
+| LinkedIn | Posts API, as you (a member post) | the approved text | a LinkedIn app with "Share on LinkedIn" and "Sign In with LinkedIn using OpenID Connect"; redirect `http://127.0.0.1:8765/callback` |
+| Threads | Threads API | the approved text, 500 characters at most | a Meta app with the Threads use case. Meta needs an https redirect: register one, pass it with `--redirect-uri` (or `[publish.redirect]` in the config), and paste the address the browser lands on |
+| Instagram | Instagram API with Instagram Login, a professional account | the attached video as a Reel, with the caption | a Meta app; an https redirect, as for Threads |
+| YouTube | Data API v3, resumable upload | the attached vertical video as a Short | a Google OAuth client of type Desktop app; redirect `http://127.0.0.1:8765/callback`. An app Google has not audited can upload only private videos: Teyla says so and uploads private until the audit passes |
+| X | none | a packet, always | X stays manual. Its API is paid; `x_paid = true` in `[publish]` would need your two yeses, and no X adapter is built |
+
+- `connect` runs only in your own terminal: it asks for the app's client id and secret (hidden), opens the consent page
+  in your browser and stores one Keychain item per network (`teyla-growth-<network>`). No token is ever written to a file
+  or a log, and the agent never reads one. `teyla growth connect <network> --forget` removes it.
+- `publish` is idempotent. Each item and network has a key. A second run of a published item does nothing. A run that started and
+  never finished stops with a line that says how to check, and `--retry` posts again only when you say so.
+- A refusal (4xx) means nothing went live. A 5xx or a timeout on the last call may have gone live: the item is marked
+  `unknown` until you check.
+- A network that is not connected, an item with no adapter (X), or safe mode gets today's packet instead, and the line says why.
+- Every post lands in the ledger as `published`, with its URL, `by: owner-approved` and `via: api`.
+- The Mac admin shows approved items under "Ready to publish" with one button, "Publish to connected networks". It runs
+  `teyla growth publish <id> --json` after a confirmation and shows the result per network.
+
+`teyla growth publish --json` prints `{version, results: [{id, network, status, url, message, warning}], published,
+already, packets, failed}`. `status` is `published`, `already`, `packet`, `failed`, `unknown` or `refused`. The exit
+code is 1 when one failed.
+
+## Engage
+
+`teyla growth engage` lists today's posts worth a reply from the people you follow on purpose. The goal is 20 a day.
+Each row has the post, the author, why the group matters and one angle for a reply. It never gives a ready reply: you
+write every reply yourself, on the network, then mark it done.
+
+```
+teyla growth engage init      # writes ~/.teyla/growth/targets.toml with placeholder handles; replace them
+teyla growth engage           # today's list (one cached X scan a day, plus your feeds)
+teyla growth engage open 3    # open row 3 in the browser
+teyla growth engage done 3 5  # you replied to rows 3 and 5: one activity row, kind reply, by you
+```
+
+- `targets.toml` has four groups: `founders`, `c-level`, `investors`, `builders`. Each takes `x` (handles) and `rss`
+  (feed URLs, Substack included). A placeholder handle is skipped.
+- The X scan is one `grok -p` call a day with a small turn cap, cached in `engage/<day>.json`. `--refresh` runs it once
+  more; the second refresh of a day reads the cache. `--no-scan` reads the cache only.
+- A row keeps only an `x.com` status link by a handle in your targets file, and only an angle short enough to be an angle.
+  A post you replied to in the last 14 days does not come back.
+- `done` from an agent session is logged as a claim (`by: agent`), and the activity graph shows it apart.
+- The Mac admin's Growth page has an "Engage" section: ↑ and ↓ move, Return opens the post, D marks it done. The iPhone
+  shows the count as "Replies today".
+
+`teyla growth engage --json` prints `{version, day, generated_at, goal, total, done, rows: [{n, url, author, group, why,
+angle, source, date, text, done}], sources: {x, rss}, notes, targets: {exists, x, rss, placeholders, errors}}`.
+`teyla console growth` carries `engage {day, scanned, total, done, goal}`.
+
 ## Store
 
 Everything lives in `~/.teyla/growth/` (folders mode 0700, files 0600), never in a repo:
@@ -234,6 +298,8 @@ Everything lives in `~/.teyla/growth/` (folders mode 0700, files 0600), never in
 | `ledger.jsonl` | append-only events: assign, draft, approve, reject (with the reason), packet, published, attempt, ride, ingest, cut, video, daily |
 | `episodes/<id>/` | an episode's transcript, the cut video and its captions file |
 | `packets/<day>/<platform>-<language>/` | `caption.txt`, `first-comment.txt`, the media, `upload.url` |
+| `targets.toml` | the people and feeds `engage` reads, in four groups |
+| `engage/<day>.json` | the day's engage list, cached |
 
 Item status runs `idea`, `draft`, `checked`, `review`, `approved`, `ready`, `published`; `failed` and `rejected`
 end an item. Only an approved item gets a packet or a published mark.
@@ -247,8 +313,9 @@ end an item. Only an approved item gets a packet or a published mark.
   or family, and every number in it must appear in the facts Teyla gathered.
 - The voice chart of the language decides the voice. A draft is written in its language, never translated. It
   passes `teyla voice check` or it fails, after one retry.
-- Teyla publishes nothing by itself. The only publisher is the manual one: you post, then record the URL.
-  It never likes, follows, sends a DM or a cold email, and it never scrapes.
+- Teyla publishes nothing by itself. An item goes out only after you approved it and then ran `teyla growth publish`
+  (or clicked "Publish to connected networks"), and only through a network's official API that you connected.
+  It never replies, likes, follows, sends a DM or a cold email, and it never scrapes.
 - AI-dubbed audio is labelled in the caption.
 - Model calls go through one function, with a timeout and a per-run budget (`draft_budget`, default 30).
 
@@ -294,7 +361,7 @@ teyla growth doctor                     # what is missing, one line each
 
 `doctor` checks the voice chart, ffmpeg, filmare, whisper, Beyond Intelligence, grok, claude and the private terms
 file. For speech to text it prints `brew install whisper-cpp` and the model size; it downloads nothing.
-Platform credentials are not needed: the manual packet works with none.
+Platform credentials are not needed: the manual packet works with none. `teyla growth connect` adds them, network by network.
 
 ## The console
 
@@ -307,4 +374,5 @@ See [CONSOLE.md](CONSOLE.md).
 - One channel gets at most `posts_per_day` items a day. The default is one per channel.
 - One idea feeds at most `fanout` channels (default 3).
 - A language other than English needs its voice chart. Without one the item fails its check.
-- Privacy: six calls leave the machine, all listed in [PRIVACY.md](PRIVACY.md) (rows 37 to 41 and 44). Transcription and video work stay on your Mac.
+- Privacy: the calls that leave the machine are listed in [PRIVACY.md](PRIVACY.md): rows 37 to 41 and 44, publishing
+  (rows 46 to 49, only for a network you connected) and engage (rows 50 and 51). Transcription and video work stay on your Mac.

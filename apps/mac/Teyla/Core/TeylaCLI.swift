@@ -275,7 +275,9 @@ actor TeylaCLI: TeylaBackend {
                 ? "Simulated preview: the fixture is read-only.\nNothing would be removed from a real machine."
                 : "Simulated: the fixture is read-only."
         }
-        let out = try await run(argv, timeout: argv.first == "storage" ? 600 : 180)
+        // A sweep, a publish (a video upload) and the day's engage scan may take minutes.
+        let long = argv.first == "storage" || argv.starts(with: ["growth", "publish"]) || argv.starts(with: ["growth", "engage"])
+        let out = try await run(argv, timeout: long ? 600 : 180)
         let text = String(decoding: out.stdout, as: UTF8.self)
         guard out.status == 0 else {
             throw TeylaError.failed(code: out.status, message: Self.oneLine(out.stderrText.isEmpty ? text : out.stderrText))

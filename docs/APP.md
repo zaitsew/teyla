@@ -704,8 +704,22 @@ ideas (each opens its page and only starts a draft); and outreach counts.
 
 A draft opens to its full text, hook, first comment, facts, sources, editor score and critique, and the voice and leak
 checks. Three actions run `teyla growth approve`, `reject --reason` and `edit --body`. Approve is off while a check
-failed or never ran, with the reason beside it. **Approving only marks a draft: nothing in the app posts, sends or
-publishes.** The allow-list in `ToolCommands` refuses every other `growth` command. Outreach is counts only.
+failed or never ran, with the reason beside it. **Approving only marks a draft.** Outreach is counts only.
+
+**Ready to publish** (from 2026-11-07) lists approved items (`approved` or `ready`, not an episode, not a master idea),
+oldest first. Each has one button, "Publish to connected networks". After a confirmation it runs `teyla growth publish
+<id> --json` and shows one line per network: live with its link, a packet to post by hand, or what went wrong. That
+button is the only thing in the app that posts, and only to a network you connected with `teyla growth connect`.
+
+**Engage** (from 2026-11-07) reads `teyla growth engage --json --no-scan` when the page opens; "Find today's posts" lets
+the CLI run the day's one cached scan. Each row shows the author, the group, the post's first lines and one angle. Open
+opens the post in the browser; Done runs `teyla growth engage done <n>`. Keys: ↑ and ↓ move, Return opens, D marks done
+and steps to the next open row. The app never writes or sends a reply. The iPhone shows "Replies today" (done of
+listed) from `console.growth.engage`.
+
+The allow-list (`GrowthEngage.check`, then `GrowthActions.check`) refuses every other `growth` command: a publish needs
+`--json` and 1 to 6 item ids, with no `--day` and no `--retry`; engage allows only the two reads and `done` with 1 to 20
+row numbers from 1 to 40. `connect` never runs from the app.
 
 Two layouts sit behind the Layout switch while you choose: the review queue first, or the channel board first. The
 loser and the switch are removed once you pick. Sale attempts per product belong to the Product page.

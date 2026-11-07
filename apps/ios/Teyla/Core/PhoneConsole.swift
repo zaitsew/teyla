@@ -77,7 +77,19 @@ enum PhoneConsole {
             ConsoleTile(label: "Slots with no draft", value: growth.gaps.map(String.init),
                         detail: growth.gaps == nil ? onMac : "Today",
                         tone: (growth.gaps ?? 0) > 0 ? .needsYou : .neutral),
+            engageTile(growth.engage),
         ]
+    }
+
+    /// Replies today from the engage list: done of listed. A dash when the Mac sent none, or nothing was scanned today.
+    static func engageTile(_ engage: GrowthEngageCount?) -> ConsoleTile {
+        guard let engage, engage.scanned || engage.total > 0 else {
+            return ConsoleTile(label: "Replies today", value: nil, detail: engage == nil ? onMac : "Not scanned today, on your Mac")
+        }
+        let open = max(0, engage.total - engage.done)
+        return ConsoleTile(label: "Replies today", value: "\(engage.done)/\(engage.total)",
+                           detail: open == 0 ? "Every listed post answered" : "\(open) posts worth a reply, on your Mac",
+                           tone: open > 0 ? .needsYou : .saving)
     }
 
     /// The channels, those still waiting for today's post first.
