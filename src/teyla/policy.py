@@ -11,7 +11,7 @@
     ~/.cursor/skills/teyla-policy/SKILL.md   a user-level skill carrying the same text as AGENTS.md
                                         (Cursor has no global rules file; skills under ~/.cursor/skills
                                         load in every project — Cursor 3.19.7 create-skill/SKILL.md)
-    <repo>/AGENTS.md                    symlink → CLAUDE.md when only CLAUDE.md exists (Cursor, Zed, Hermes, Grok, Codex read AGENTS.md)
+    <repo>/AGENTS.md                    symlink → CLAUDE.md when only CLAUDE.md exists (Cursor, Hermes, Grok, Codex read AGENTS.md)
 
 Why AGENTS.md is generated rather than a symlink: the owner's own rules — which repos may be
 merged into without asking, how releases are cut, the layout, git safety — live in
@@ -52,14 +52,25 @@ WORK_MARKER = "<!-- teyla-template: work"
 TEMPLATE_MARKER_RE = __import__("re").compile(r"<!-- teyla-template: (\w+)")
 IMPORT_LINE = "@~/.agents/POLICY.md"
 HERMES_MARK = "## Operating policy"
+_HERMES_SHORT = ("Short form: the most capable model orchestrates and cheaper models do volume work; get a cross-provider second opinion before non-trivial designs; "
+                 "use connectors before CLIs before browser before computer use; ask about product decisions with a proposed default, never ask for permission to proceed; "
+                 "stop only at a real blocker (a key, a payment, a sign-in) and then open the exact page and name the exact file; "
+                 "deliver plug-and-play (README, setup, .env.example, first-run check); say when something is unverified")
+_HERMES_WORK_SWAP = ("get a cross-provider second opinion before non-trivial designs",
+                     "get a second opinion from a fresh same-provider session before non-trivial designs; send code only to providers IT approved")
+# The first version of the section named POLICY.md only. Kept so a sync replaces it silently.
+HERMES_BLOCK_V1 = f"""
+
+{HERMES_MARK}
+Follow ~/.agents/POLICY.md — read it at session start. {_HERMES_SHORT}.
+"""
+HERMES_BLOCK_V1_WORK = HERMES_BLOCK_V1.replace(*_HERMES_WORK_SWAP)
 HERMES_BLOCK = f"""
 
 {HERMES_MARK}
-Follow ~/.agents/POLICY.md — read it at session start. Short form: the most capable model orchestrates and cheaper models do volume work; get a cross-provider second opinion before non-trivial designs; use connectors before CLIs before browser before computer use; ask about product decisions with a proposed default, never ask for permission to proceed; stop only at a real blocker (a key, a payment, a sign-in) and then open the exact page and name the exact file; deliver plug-and-play (README, setup, .env.example, first-run check); say when something is unverified.
+Follow ~/.agents/POLICY.md and the owner's rules in ~/.claude/CLAUDE.md — read both at session start. {_HERMES_SHORT}; merge without asking only into a repo on the MERGE-APPROVED list in ~/.claude/CLAUDE.md, elsewhere open the PR and stop; merge, never squash; never force-push.
 """
-HERMES_BLOCK_WORK = HERMES_BLOCK.replace(
-    "get a cross-provider second opinion before non-trivial designs",
-    "get a second opinion from a fresh same-provider session before non-trivial designs; send code only to providers IT approved")
+HERMES_BLOCK_WORK = HERMES_BLOCK.replace(*_HERMES_WORK_SWAP)
 
 
 def hermes_block() -> str:
@@ -545,7 +556,7 @@ def sync(dry=False, owner: str | None = None, unattended: bool = False) -> list[
             else:
                 ok, line = _keep_edit("hermes", key, f"{_tilde(p)} (the Operating policy section)",
                                       text[span[0]:span[1]].strip(), block, dry,
-                                      known_alt=(HERMES_BLOCK.strip(), HERMES_BLOCK_WORK.strip()))
+                                      known_alt=tuple(b.strip() for b in (HERMES_BLOCK, HERMES_BLOCK_WORK, HERMES_BLOCK_V1, HERMES_BLOCK_V1_WORK)))
                 if line:
                     done.append(line)
                 if not ok:
@@ -667,6 +678,37 @@ def _same_file(a: pathlib.Path, b: pathlib.Path) -> bool:
         return False
 
 
+MERGE_COMPACT_NOTE = ("(Comments stripped in this copy; the dated provenance for each entry is in ~/.claude/CLAUDE.md. "
+                      "A repo added under the standing exception is written there, with the kickoff sentence quoted verbatim.)")
+
+
+def _compact_merge_block(lines: list[str]) -> list[str]:
+    """The MERGE-APPROVED REPOS fenced block without its `#` provenance comments, plus a pointer line
+    after the closing fence. Repo lines keep their names and order. No such block: unchanged."""
+    at = next((i for i, ln in enumerate(lines) if "MERGE-APPROVED REPOS" in ln), None)
+    if at is None:
+        return lines
+    inside = sum(1 for ln in lines[:at] if ln.strip().startswith("```")) % 2 == 1
+    i = at + 1
+    if not inside:
+        while i < len(lines) and not lines[i].strip().startswith("```"):
+            i += 1
+        if i >= len(lines):
+            return lines
+        i += 1
+    close = next((j for j in range(i, len(lines)) if lines[j].strip().startswith("```")), None)
+    if close is None:
+        return lines
+    kept = []
+    for ln in lines[i:close]:
+        if ln.lstrip().startswith("#"):
+            continue
+        ln = re.sub(r"\s+#.*$", "", ln).rstrip()
+        if ln.strip():
+            kept.append(ln)
+    return lines[:i] + kept + [lines[close], MERGE_COMPACT_NOTE] + lines[close + 1:]
+
+
 def owner_rules(text: str) -> str | None:
     """CLAUDE.md's text as the other harnesses should get it, or None when it holds nothing but
     the policy import (and headings, blank lines) — then AGENTS.md stays a plain symlink.
@@ -705,6 +747,7 @@ def owner_rules(text: str) -> str | None:
                 del out[i:j]
                 continue
         i += 1
+    out = _compact_merge_block(out)
     body = "\n".join(out).strip()
     if all(not l.strip() or l.lstrip().startswith("#") for l in body.splitlines()):
         return None

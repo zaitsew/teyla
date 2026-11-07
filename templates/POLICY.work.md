@@ -1,6 +1,6 @@
 # How to run a session — shared policy for every AI harness
 
-Read by Claude Code, Codex, Hermes, Grok CLI, Cursor and Zed. One file, one policy.
+Read by Claude Code, Codex, Hermes, Grok CLI and Cursor. One file, one policy.
 Owner: {{owner}}. Edit here, never in a copy.
 
 <!-- teyla-template: work — code on this machine goes only to AI providers IT approved for it -->
