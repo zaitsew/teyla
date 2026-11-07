@@ -45,16 +45,18 @@ struct Snapshot: Decodable, Equatable, Sendable {
     var console: Console?
     /// The activity graph in counts only (the last 17 weeks); nil from a Mac that does not send it.
     var activity: ActivityGlimpse?
+    /// The GTM Today card in counts only (docs/GTM.md); nil from a Mac that does not send it, and the phone then hides the card.
+    var gtm: GtmGlimpse?
 
     enum CodingKeys: String, CodingKey {
-        case version, generated, brief, totals, asks, products, running, tasks, done, relay, portfolio, console, activity
+        case version, generated, brief, totals, asks, products, running, tasks, done, relay, portfolio, console, activity, gtm
         case autoClosed = "auto_closed"
     }
 
     init(version: Int = 1, generated: String = "", brief: Brief? = nil, totals: Totals = Totals(),
          asks: [Ask] = [], products: [Product] = [], running: [RunningSession] = [],
          tasks: [OwnerTask] = [], done: [DoneItem] = [], relay: Relay? = nil, portfolio: Portfolio? = nil,
-         autoClosed: AutoClosed? = nil, console: Console? = nil, activity: ActivityGlimpse? = nil) {
+         autoClosed: AutoClosed? = nil, console: Console? = nil, activity: ActivityGlimpse? = nil, gtm: GtmGlimpse? = nil) {
         self.version = version
         self.generated = generated
         self.brief = brief
@@ -69,12 +71,14 @@ struct Snapshot: Decodable, Equatable, Sendable {
         self.autoClosed = autoClosed
         self.console = console
         self.activity = activity
+        self.gtm = gtm
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         console = c.optional(.console)
         activity = c.optional(.activity)
+        gtm = c.optional(.gtm)
         version = c.lenient(.version, 1)
         generated = c.lenient(.generated, "")
         brief = c.optional(.brief)

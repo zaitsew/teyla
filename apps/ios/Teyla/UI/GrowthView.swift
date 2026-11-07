@@ -7,7 +7,7 @@ struct GrowthView: View {
 
     var body: some View {
         NavigationStack {
-            ConsoleScreen(page: ConsoleText.growth, pick: { $0.growth }, leading: AnyView(ActivityCard())) { growth in
+            ConsoleScreen(page: ConsoleText.growth, pick: { $0.growth }, leading: AnyView(VStack(alignment: .leading, spacing: Space.xl) { TodayCard(); ActivityCard() })) { growth in
                 GrowthContent(growth: growth, tab: $tab)
             }
             .navigationTitle(ConsoleText.growth.title)

@@ -3437,5 +3437,31 @@
       "outreach",
       "response"
     ]
+  },
+  "gtm": {
+    "day": "2026-11-07",
+    "approve": 6,
+    "send": 5,
+    "reply": 2,
+    "follow_up": 1,
+    "distribution": {"today": 3, "target": 10, "week": 21},
+    "outcomes_week": 9,
+    "has_goals": true,
+    "goals": [
+      {"id": "relationships", "title": "Conversations with founders and executives", "days_left": 114,
+       "targets": [{"stage": "approached", "count": 21, "target": 60},
+                   {"stage": "conversation", "count": 6, "target": 15},
+                   {"stage": "intro", "count": 2, "target": 3}]},
+      {"id": "testers", "title": "Activated testers", "days_left": 38,
+       "targets": [{"stage": "signed_up", "count": 12, "target": 20},
+                   {"stage": "activated", "count": 4, "target": 10}]}
+    ],
+    "next": [
+      {"kind": "reply", "count": 2},
+      {"kind": "approve", "count": 6},
+      {"kind": "send", "count": 5},
+      {"kind": "follow_up", "count": 1},
+      {"kind": "distribute", "count": 7}
+    ]
   }
 }

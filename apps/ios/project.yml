@@ -52,6 +52,13 @@ targets:
       # The activity graph's grid, words and kinds (docs/APP.md): the Growth tab draws the 17 weeks the Mac sends.
       - path: ../mac/Teyla/Core/Activity.swift
         group: Shared
+      # The Today card's counts and words (docs/GTM.md): the Growth tab shows what the Mac sends in `gtm`, read-only.
+      - path: ../mac/Teyla/Core/Gtm.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/TodayLogic.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/GtmGlimpse.swift
+        group: Shared
     info:
       path: Teyla/Info.plist
       properties:
@@ -121,6 +128,12 @@ targets:
       - path: ../mac/Teyla/Core/ConsoleLogic.swift
         group: Shared
       - path: ../mac/Teyla/Core/Activity.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/Gtm.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/TodayLogic.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/GtmGlimpse.swift
         group: Shared
     settings:
       base:
