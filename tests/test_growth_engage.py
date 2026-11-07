@@ -219,3 +219,14 @@ def test_done_with_a_url_refuses_a_row_that_is_another_post_now(env):
         ge.mark_done(store, [1], NOW, expect_url="https://x.com/someone/status/9")
     _, new = ge.mark_done(store, [1], NOW, expect_url=doc["rows"][0]["url"])
     assert len(new) == 1
+
+
+def test_kept_x_rows_follow_the_current_targets(env):
+    store, cfg = setup()
+    rss = lambda url, timeout=10: RSS
+    ge.build(store, cfg, NOW, grok=grok_reply(POSTS), fetch=rss)
+    ge.build(store, cfg, NOW, refresh=True, grok=grok_reply(POSTS), fetch=rss)
+    ge.targets_path(store).write_text(TARGETS.replace('"@cto_bob"', ""))
+    doc = ge.build(store, cfg, NOW, refresh=True, grok=lambda *a, **k: pytest.fail("over budget"), fetch=rss)
+    authors = {r["author"] for r in doc["rows"] if r["source"] == "x"}
+    assert "@cto_bob" not in authors and "@alice_builds" in authors

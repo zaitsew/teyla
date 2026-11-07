@@ -427,11 +427,12 @@ def build(store, cfg: dict, now: float, *, scan: bool = True, refresh: bool = Fa
             sources["x"] = f"{len(xs)} posts from {len(parsed['posts'])} the scan returned"
         except ValueError as e:
             sources["x"] = f"failed: {str(e)[:120]}"
-    if cached and not called:
-        # A refresh that could not scan X (budget spent, safe mode, no grok) keeps the X rows it already had.
-        xs = [dict(r) for r in cached["rows"] if r.get("source") == "x"]
-    elif cached and xs == [] and str(sources.get("x", "")).startswith("failed"):
-        xs = [dict(r) for r in cached["rows"] if r.get("source") == "x"]
+    if cached and (not called or (xs == [] and str(sources.get("x", "")).startswith("failed"))):
+        # A refresh that could not scan X (budget spent, safe mode, no grok, a failed scan) keeps the X rows it had,
+        # but only those whose author is still in the targets file, under the group it has now.
+        hg = handle_group(t)
+        xs = [dict(r, group=hg[a]) for r in cached["rows"] if r.get("source") == "x"
+              and (a := str(r.get("author") or "").lstrip("@").lower()) in hg]
     # Rows already marked done today stay on the list, done: your own replies must not drop them as "replied lately".
     kept_done = [dict(r) for r in (cached or {}).get("rows", []) if r.get("done")]
     done_urls = {r["url"] for r in kept_done}
