@@ -119,3 +119,17 @@ def test_generic_list_covers_other_scripts():
     assert wn.is_generic("Performance improvements")
     assert wn.is_generic("mejoras y corrección de errores")
     assert not wn.is_generic("Fixes a crash when sharing a trip")
+
+
+def test_squash_merge_next_to_merge_commits_is_listed(repo):
+    (repo / "s.txt").write_text("s")
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "Offline maps for saved trips (#6)")
+    items = wn.merged_changes(repo, "v1.0.0")
+    assert {"pr": 6, "title": "Offline maps for saved trips"} in items
+    assert {"pr": 2, "title": "Share a trip as a link"} in items
+
+
+def test_note_made_only_of_stock_lines_is_generic():
+    assert wn.is_generic("- Bug fixes.\n- Performance improvements.\n")
+    assert not wn.is_generic("- Bug fixes.\n- Share a trip as a link.\n")

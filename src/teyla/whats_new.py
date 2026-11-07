@@ -27,6 +27,7 @@ INTERNAL = re.compile(
     r"|\b(?:bump|dependabot|dependencies|store listing|listing|screenshots?|policy|changelog|readme|lint|typo)\b",
     re.I)
 MERGE_RE = re.compile(r"^Merge pull request #(\d+) from (\S+)")
+SQUASH_RE = re.compile(r"^(.*\S)\s+\(#(\d+)\)$")
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -51,23 +52,30 @@ def _head(repo: pathlib.Path) -> str:
 
 
 def merged_changes(repo: pathlib.Path, since: str) -> list[dict]:
+    """Every change that landed on the mainline: merge commits, squash merges and direct commits alike."""
     rng = f"{since}..{_head(repo)}"
     sep = "\x1f"
-    out = _git(repo, "log", "--merges", "--first-parent", f"--format=%s{sep}%b\x1e", rng)
+    out = _git(repo, "log", "--first-parent", f"--format=%P{sep}%s{sep}%b\x1e", rng)
     items = []
     for rec in out.split("\x1e"):
         if not rec.strip():
             continue
-        subject, _, body = rec.strip("\n").partition(sep)
-        m = MERGE_RE.match(subject.strip())
-        first = next((ln.strip() for ln in body.splitlines() if ln.strip()), "")
+        parents, _, rest = rec.strip("\n").partition(sep)
+        subject, _, body = rest.partition(sep)
+        subject = subject.strip()
+        if len(parents.split()) > 1:
+            m = MERGE_RE.match(subject)
+            first = next((ln.strip() for ln in body.splitlines() if ln.strip()), "")
+            if m:
+                items.append({"pr": int(m.group(1)), "title": first or m.group(2).split("/", 1)[-1].replace("-", " ")})
+            else:
+                items.append({"pr": None, "title": first or subject})
+            continue
+        m = SQUASH_RE.match(subject)
         if m:
-            items.append({"pr": int(m.group(1)), "title": first or m.group(2).split("/", 1)[-1].replace("-", " ")})
-        else:
-            items.append({"pr": None, "title": first or subject.strip()})
-    if not items:  # no merge commits: fall back to every commit
-        out = _git(repo, "log", "--format=%s", rng)
-        items = [{"pr": None, "title": s.strip()} for s in out.splitlines() if s.strip()]
+            items.append({"pr": int(m.group(2)), "title": m.group(1).strip()})
+        elif subject:
+            items.append({"pr": None, "title": subject})
     return items
 
 
@@ -122,7 +130,12 @@ _GENERIC = {_norm(g) for g in GENERIC_NOTES}
 
 
 def is_generic(text: str) -> bool:
-    return _norm(text) in _GENERIC
+    """True when the note names nothing: the whole text, or every line of it, is a stock phrase."""
+    if _norm(text) in _GENERIC:
+        return True
+    lines = [_norm(ln) for ln in text.splitlines()]
+    lines = [ln for ln in lines if ln]
+    return bool(lines) and all(ln in _GENERIC for ln in lines)
 
 
 def check_locale(repo: pathlib.Path, version: str, locale: str) -> tuple[bool, str]:
