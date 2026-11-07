@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.43.0 — 2026-11-07 — Teyla Admin opens on Today, and a Today card on the iPhone
 
 - **Teyla Admin opens on Today; the iPhone shows a Today card.** The admin Mac build's first screen reads `teyla gtm today --json`: the ordered next actions, the drafts waiting for approval (A approves, which only marks a draft; S skips; O opens; Reject asks for a reason), what waits per source with an Open button when the source gave a page, today's sends against the daily target, this week's outcomes against each goal's targets with the days left, and the source checks. Two layouts, `queue` and `board`, switch with `defaults write com.zaitsew.teyla.local teyla.today.layout`. No commit counts. The store build has no Today. See apps/mac/README.md, "Today".
 - **The iPhone snapshot carries the GTM Today card.** `teyla relay sync` adds a `gtm` block from `teyla gtm today --json`: waiting counts, today's distribution against its target, goal titles with weekly targets and days left. It has no source names, no links and no people. An older `teyla` leaves it out and the card stays hidden.
