@@ -22,7 +22,7 @@ listing is written by `apps/store/app-store.py` from `apps/store/listing/`; this
 | Category | Developer Tools (secondary: Productivity) |
 | Price | Free, no in-app purchases |
 | Availability | Every storefront except China mainland (`CHN`) |
-| Version / build | `CFBundleShortVersionString` 0.32.0; `CFBundleVersion` is `CURRENT_PROJECT_VERSION`, raised by hand in `project.yml` before each upload |
+| Version / build | `CFBundleShortVersionString` is the release version, set by `scripts/release.sh` (the App Store version record stays 0.32.0 while the 4.3 reply is open); `CFBundleVersion` is `CURRENT_PROJECT_VERSION`, raised by hand in `project.yml` before each upload |
 | Marketing URL | https://teyla.dev/ |
 | Support URL | https://teyla.dev/support/ |
 | Privacy policy URL | https://teyla.dev/privacy/ |
