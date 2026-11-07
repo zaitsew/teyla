@@ -100,6 +100,11 @@ without `gtm` shows one line, "Update the teyla command to see Today.". Screensh
 `TEYLA_STATE_FIXTURE=TeylaTests/Fixtures/state.sample.v3.json TEYLA_PREVIEW_SNAPSHOT=out.png TEYLA_PREVIEW_SNAPSHOT_VIEW=today
 TEYLA_PREVIEW_APPEARANCE=dark Teyla -teyla.today.layout board` (the launch argument sets the layout for that run only).
 
+| queue (default) | board |
+|---|---|
+| ![Today, queue layout, light](../../docs/img/mac/today-queue-light.png) | ![Today, board layout, light](../../docs/img/mac/today-board-light.png) |
+| ![Today, queue layout, dark](../../docs/img/mac/today-queue-dark.png) | ![Today, board layout, dark](../../docs/img/mac/today-board-dark.png) |
+
 ## First run
 
 - **No `teyla` found:** the window gives `uv tool install --python 3.12 git+https://github.com/zaitsew/teyla` with Copy, "Check again"
