@@ -488,6 +488,7 @@ uv tool uninstall teyla    # then remove the command; with pipx: pipx uninstall 
 - [REVIEW](REVIEW.md): the iPhone review overlay, the capture format and how a capture reaches the Mac
 - [MATRIX](MATRIX.md): the capture matrix for UI drift: `teyla ux shots`, `diff` and `accept`, the `design/tour.yaml` manifest and what the app must honor
 - [GROWTH](GROWTH.md): `teyla growth`, the content factory: daily slots per channel, drafts you approve, packets you post by hand
+- [GTM](GTM.md): `teyla gtm`, the cockpit: what waits for you today, distribution and outcomes against your goals, the weekly review
 - [MANUAL](MANUAL.md): the whole method and the numbers behind each threshold
 - [ROADMAP](ROADMAP.md): what is next
 

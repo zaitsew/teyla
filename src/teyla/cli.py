@@ -83,6 +83,7 @@
   teyla console [SECTION] [--json] [--refresh]                     the data behind the app's admin sections
   teyla subs [list|add|set|remove] [NAME] [--monthly USD] ...      the recurring bills the Money section adds up (~/.teyla/subscriptions.toml)
   teyla growth [init|harvest|trends|plan|draft|review|approve|packets|sale-attempts|activity|doctor]   the content factory: daily slots per channel, drafts you approve, packets you post
+  teyla gtm [today|week|init|doctor] [--json]   the GTM cockpit: approvals, sends, replies, distribution and outcomes vs goals
   teyla startup [show <id> | yc [<id>] | yc answer|confirm|export ...] [--json]   the next fact each product is missing, and the YC sheet
   teyla attention [--json]                                         what is wrong on this Mac's backend now, in one list (read-only, no network)
   teyla reviews [--days N] [--json] [--quiet] [repo...]            review debt: merged PRs never reviewed, merged with an open P1, skipped
@@ -597,6 +598,8 @@ def build_parser() -> argparse.ArgumentParser:
     growth_mod.register(sp)
     from . import startup as startup_mod
     startup_mod.register(sp)
+    from . import gtm as gtm_mod
+    gtm_mod.register(sp)
     q = sp.add_parser("help", help="the commands in six groups; --all lists every one; help COMMAND shows its options")
     q.set_defaults(fn=cmd_help); q.add_argument("words", nargs="*", metavar="[--all | COMMAND]")
     from . import registry as registry_mod

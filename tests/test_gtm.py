@@ -1,0 +1,239 @@
+"""`teyla gtm`: the three counters, the source schema, prefixed funnels and what a missing source does (docs/GTM.md).
+Every test runs in the tmp TEYLA_HOME of conftest.py, with invented sources and no real product data."""
+from __future__ import annotations
+
+import json
+import time
+
+import pytest
+
+from teyla import cli, gtm
+
+DAY = "2026-11-04"                       # a Wednesday in 2026-W45
+WEEK = "2026-W45"
+NOW = time.mktime((2026, 11, 4, 12, 0, 0, 0, 0, -1))
+UPDATED = "2026-11-04T09:00:00Z"
+
+
+def goals(text: str = gtm.EXAMPLE_GOALS) -> dict:
+    p = gtm.home() / "goals.toml"
+    gtm._write(p, text)
+    return gtm.load_goals(p)
+
+
+def drop(name: str, doc: dict) -> None:
+    gtm._write(gtm.drop_dir() / f"{name}.json", json.dumps(doc))
+
+
+def collect(g: dict, rows=(), items=None, usage=None, runner=None):
+    return gtm.collect(g, DAY, NOW, runner=runner, usage=usage or {}, usage_ages={}, growth_rows=list(rows),
+                       growth_items=items or {}, outreach_repos=[])
+
+
+# --- the counters --------------------------------------------------------------------------------------------
+
+def test_agent_rows_never_count_as_distribution():
+    rows = [
+        {"ev": "published", "day": DAY},
+        {"ev": "attempt", "kind": "dm", "day": DAY, "n": 3},
+        {"ev": "attempt", "kind": "email", "day": "2026-11-02"},
+        {"ev": "attempt", "kind": "dm", "day": DAY, "by": "agent", "n": 5},     # claimed: 0 distribution
+        {"ev": "attempt", "kind": "response", "day": DAY},
+        {"ev": "attempt", "kind": "icp-meeting", "day": DAY},
+        {"ev": "idea", "day": DAY}, {"ev": "draft", "day": DAY}, {"ev": "draft", "day": "2026-11-03"},
+        {"ev": "published", "day": "2026-11-01"},                                  # last week
+    ]
+    docs, _ = collect(gtm.load_goals(gtm.home() / "none.toml"), rows)
+    c = gtm.counters(docs)
+    assert c["distribution"]["today"] == 4 and c["distribution"]["week"] == 5
+    assert c["distribution"]["claimed_by_agents"] == 5
+    assert c["outcomes"]["week"] == 2 and c["outcomes"]["by_stage"] == {"replied": 1, "conversation": 1}
+    assert c["preparation"]["week"] == 3 and c["preparation"]["today"] == 2
+
+
+def test_stage_class_reads_the_last_part():
+    assert gtm.counter_of("network.sent") == "distribution"
+    assert gtm.counter_of("investor.conversation") == "outcomes"
+    assert gtm.counter_of("drafted") == "preparation"
+
+
+# --- the schema ----------------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("doc,why", [
+    ({"source": "x", "updated": UPDATED}, "counts"),
+    ({"source": "x", "counts": {"sent": -1}, "updated": UPDATED}, "whole number"),
+    ({"source": "x", "counts": {"sent": True}, "updated": UPDATED}, "whole number"),
+    ({"source": "x", "counts": {}, "updated": "yesterday"}, "updated"),
+    ({"source": "x", "counts": {}, "updated": UPDATED, "week": "45"}, "week"),
+    ({"source": "x", "counts": {}, "waiting": [], "updated": UPDATED}, "waiting"),
+    ([1, 2], "object"),
+])
+def test_validate_refuses_a_bad_document(doc, why):
+    out, reason = gtm.validate(doc)
+    assert out is None and why in reason
+
+
+def test_validate_keeps_only_http_links_and_normalises_keys():
+    out, why = gtm.validate({"source": "Demo-Src", "counts": {"Signed-Up": 2}, "updated": UPDATED,
+                             "links": {"approve": "https://example.com/q", "send": "file:///etc/passwd"}})
+    assert why == "" and out["source"] == "demo_src" and out["counts"] == {"signed_up": 2}
+    assert out["links"] == {"approve": "https://example.com/q"}
+
+
+# --- sources -------------------------------------------------------------------------------------------------
+
+def test_a_missing_source_is_one_doctor_line_and_never_fails():
+    g = goals()
+    docs, status = collect(g)
+    missing = {s["id"] for s in status if s["state"] == "missing"}
+    assert {"outreach", "batrack", "contacts", "accounts"} <= missing
+    t = gtm.today_report(g, docs, status, DAY)
+    assert sum(1 for line in t["doctor"] if line.startswith("contacts:")) == 1
+    assert [x["id"] for x in t["goals"]] == ["relationships", "testers", "investors"]
+
+
+def test_a_broken_command_is_reported_and_the_rest_still_reads():
+    g = goals(gtm.EXAMPLE_GOALS + '\n[[source]]\nid = "outreach"\ncommand = ["exporter", "--json"]\n')
+    drop("outreach", {"source": "outreach", "counts": {"network.sent": 99}, "updated": UPDATED})   # never replaces a broken entry
+    docs, status = collect(g, runner=lambda cmd: (3, "", "boom\n"))
+    row = next(s for s in status if s["id"] == "outreach")
+    assert row["state"] == "broken" and "boom" in row["line"]
+    assert "outreach" not in {d["source"] for d in docs}
+
+
+def test_a_command_source_is_read():
+    g = goals(gtm.EXAMPLE_GOALS + '\n[[source]]\nid = "accounts"\ncommand = ["exporter"]\n')
+    out = json.dumps({"source": "whatever", "counts": {"invited": 30, "activated": 7}, "updated": UPDATED})
+    docs, _ = collect(g, runner=lambda cmd: (0, out, ""))
+    testers = gtm.goal_funnel(next(x for x in g["goals"] if x["id"] == "testers"), docs)
+    assert {r["stage"]: r["count"] for r in testers["rows"]} == {"invited": 30, "signed_up": 0, "activated": 7, "retained": 0}
+    assert testers["rows"][2]["conversion"] is None          # signed_up is 0: no ratio, not a division error
+
+
+def test_prefixed_stages_feed_only_their_goal():
+    g = goals()
+    drop("outreach", {"source": "outreach", "updated": UPDATED, "week": WEEK,
+                   "counts": {"network.sent": 20, "network.replied": 6, "network.conversation": 3, "investor.sent": 4,
+                              "investor.conversation": 1},
+                   "waiting": {"network.send": 5, "investor.send": 2, "reply": 3},
+                   "offer_fit": {"network.hire": 1, "network.product": 2, "investor.hire": 9},
+                   "links": {"send": "https://example.com/send"}})
+    docs, status = collect(g)
+    rel = gtm.goal_funnel(g["goals"][0], docs)
+    inv = gtm.goal_funnel(g["goals"][2], docs)
+    assert {r["stage"]: r["count"] for r in rel["rows"]}["approached"] == 20
+    assert {r["stage"]: r["count"] for r in rel["rows"]}["conversation"] == 3
+    assert rel["offer_fit"] == {"hire": 1, "consulting": 0, "product": 2}
+    assert {r["stage"]: r["count"] for r in inv["rows"]} == {"identified": 0, "approached": 4, "conversation": 1, "follow_up": 0}
+    t = gtm.today_report(g, docs, status, DAY)
+    assert t["send"]["total"] == 7 and t["send"]["links"] == {"outreach": "https://example.com/send"}
+    assert [a["kind"] for a in t["next"]][:2] == ["reply", "send"]
+
+
+def test_counts_for_another_week_count_zero():
+    g = goals()
+    drop("contacts", {"source": "contacts", "counts": {"network.conversation": 4}, "updated": UPDATED, "week": "2026-W44",
+                    "channels": {"email": {"network.replied": 2}}, "offer_fit": {"network.hire": 1}})
+    docs, status = collect(g)
+    assert next(s for s in status if s["id"] == "contacts")["state"] == "stale"
+    assert gtm.counters(docs)["outcomes"]["week"] == 0
+    w = gtm.week_report(g, docs, status, WEEK, DAY)
+    assert w["channels"] == {} and w["goals"][0]["offer_fit"]["hire"] == 0
+
+
+def test_today_counts_from_another_day_are_dropped():
+    g = goals()
+    drop("accounts", {"source": "accounts", "counts": {"invited": 3}, "today": {"invited": 3},
+                      "updated": "2026-11-03T09:00:00Z"})
+    docs, _ = collect(g)
+    assert gtm.counters(docs)["distribution"]["today"] == 0
+    assert gtm.counters(docs)["distribution"]["week"] == 3
+
+
+def test_usage_probe_counters_feed_the_adapter():
+    g = goals()
+    usage = {"batrack": {"drafts_open": "4", "gtm_network.replied": "2", "jobs": "10", "replies": "50"}}
+    docs, status = collect(g, usage=usage)
+    doc = next(d for d in docs if d["source"] == "batrack")
+    assert doc["waiting"] == {"approve": 4}
+    assert doc["counts"] == {"network.replied": 2}           # an all-time `replies` never counts as this week
+    assert next(s for s in status if s["id"] == "batrack")["state"] == "ok"
+
+
+def test_review_queue_waits_for_approval():
+    items = {"g1104-aaaa": {"status": "review", "kind": "post", "platform": "x"},
+             "g1104-bbbb": {"status": "checked", "kind": "post", "platform": "x", "hold_reason": "weak"},
+             "g1104-cccc": {"status": "review", "kind": "post", "platform": "master"}}
+    g = goals()
+    docs, status = collect(g, items=items)
+    t = gtm.today_report(g, docs, status, DAY)
+    assert t["approve"]["by_source"] == {"growth": 1}
+    assert t["next"][0]["command"] == "teyla growth review"
+
+
+def test_distribution_gap_and_deadline():
+    g = goals()
+    docs, status = collect(g, rows=[{"ev": "published", "day": DAY}])
+    t = gtm.today_report(g, docs, status, DAY)
+    assert t["distribution"] == {"today": 1, "target": 10, "week": 1, "claimed_by_agents": 0}
+    assert t["next"][-1]["kind"] == "distribute" and t["next"][-1]["count"] == 9
+    assert t["goals"][0]["days_left"] == 117
+
+
+def test_week_report_lists_missed_targets_and_channels():
+    g = goals()
+    drop("outreach", {"source": "outreach", "updated": UPDATED, "counts": {"network.sent": 10, "network.conversation": 5},
+                   "stalled": {"network.replied": 2}, "channels": {"email": {"network.replied": 2, "network.sent": 8}}})
+    docs, status = collect(g)
+    w = gtm.week_report(g, docs, status, WEEK, DAY)
+    rel = w["goals"][0]
+    assert rel["missed"]["conversation"] == 10 and rel["missed"]["approached"] == 50
+    assert rel["stalled"] == {"replied": 2}
+    assert w["channels"] == {"email": {"network.replied": 2}}
+    assert "missed:" in gtm.render_week(w)
+
+
+# --- goals and the command line ------------------------------------------------------------------------------
+
+def test_example_goals_load_clean_with_offer_fit():
+    g = goals()
+    assert g["errors"] == [] and g["per_day"] == 10
+    rel = g["goals"][0]
+    assert rel["funnel"][-1] == "offer_fit" and rel["offer_fit"] == ["hire", "consulting", "product"]
+
+
+def test_wrong_toml_types_are_errors_not_crashes():
+    g = goals('distribution = 10\ngoal = "x"\n')
+    assert len(g["errors"]) == 2 and g["goals"] == []
+    g = goals('[[goal]]\nid = "a"\nfunnel = "x"\nweekly = 3\nmap = 1\nsources = "y"\n')
+    assert g["errors"] == [] and g["goals"][0]["funnel"] == [] and g["goals"][0]["sources"] == []
+
+
+def test_bad_goal_lines_are_errors_not_crashes():
+    g = goals('[[goal]]\ntitle = "no id"\n[[goal]]\nid = "a"\ndeadline = "soon"\n[goal.weekly]\nx = "lots"\n')
+    assert len(g["errors"]) == 3 and g["goals"][0]["deadline"] == ""
+
+
+def test_cli_runs_with_nothing_set_up(capsys):
+    assert cli.main(["gtm", "--json"]) == 0
+    t = json.loads(capsys.readouterr().out)
+    assert t["version"] == 1 and t["has_goals"] is False
+    assert any("teyla gtm init" in line for line in t["doctor"])
+    assert cli.main(["gtm", "week"]) == 0
+    assert cli.main(["gtm", "doctor"]) == 0
+
+
+def test_cli_init_then_week_saves_and_rereads(capsys):
+    assert cli.main(["gtm", "init"]) == 0
+    assert cli.main(["gtm", "init"]) == 1
+    assert cli.main(["gtm", "today"]) == 0
+    saved = list(gtm.weeks_dir().glob("*.json"))
+    assert len(saved) == 1
+    assert cli.main(["gtm", "week", "--week", saved[0].stem, "--json"]) == 0
+    assert cli.main(["gtm", "week", "--week", "2020-W01"]) == 1
+    assert cli.main(["gtm", "week", "--week", "soon"]) == 2
+
+
+def test_gtm_dir_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("TEYLA_GTM_DIR", str(tmp_path / "g"))
+    assert gtm.goals_path() == tmp_path / "g" / "goals.toml"
