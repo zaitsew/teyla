@@ -16,7 +16,7 @@ import subprocess
 
 import pytest
 
-from teyla import config, load, net, providers, routine_install, startup, update
+from teyla import config, growth_engage, growth_publish, load, net, providers, routine_install, startup, update
 from teyla.control import triggers
 from teyla.adapters import claude_code, codex, cursor, grok, hermes
 
@@ -276,3 +276,28 @@ def fake_home(tmp_path_factory, monkeypatch):
     monkeypatch.setattr(policy, "ACK_PATH", home / ".teyla" / "ack.json")
     monkeypatch.setattr(uninstall, "_launchctl_list", lambda: "")
     return FakeHome(home)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_keychain_or_network_for_growth(monkeypatch):
+    """`teyla growth connect` and `publish` keep tokens in the Keychain and call LinkedIn, Meta and Google; `engage`
+    starts grok and reads feeds. A test never reaches any of them: the Keychain is a dict, and the network functions
+    fail loudly unless a test hands its own."""
+    vault: dict[str, str] = {}
+    monkeypatch.setattr(growth_publish, "_kc_get", lambda svc: vault.get(svc))
+    monkeypatch.setattr(growth_publish, "_kc_exists", lambda svc: svc in vault)
+    monkeypatch.setattr(growth_publish, "_kc_set", lambda svc, value: vault.__setitem__(svc, value))
+    monkeypatch.setattr(growth_publish, "_kc_delete", lambda svc: vault.pop(svc, None) is not None)
+
+    def no_http(*a, **k):
+        raise AssertionError("a test reached growth_publish.http: hand the function a fake `h`")
+
+    def no_grok(*a, **k):
+        raise AssertionError("a test reached growth_engage.run_grok: pass grok=")
+
+    def no_feed(*a, **k):
+        raise AssertionError("a test reached growth_engage.fetch_feed: pass fetch=")
+    monkeypatch.setattr(growth_publish, "http", no_http)
+    monkeypatch.setattr(growth_engage, "run_grok", no_grok)
+    monkeypatch.setattr(growth_engage, "fetch_feed", no_feed)
+    yield vault

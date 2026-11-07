@@ -9,6 +9,8 @@
     teyla growth review | show | approve | reject | edit | attach | retry
     teyla growth packet ID | packets    one folder per approved item, ready to upload by hand
     teyla growth published ID URL       record the URL after you posted
+    teyla growth connect NET | publish  OAuth for LinkedIn, Threads, Instagram, YouTube; post approved items
+    teyla growth engage [done N]        20 posts a day worth your reply, from your targets file
     teyla growth sale-attempts | log    posts, marketing and ICP meetings per product, from the ledger
     teyla growth ride | ingest | cut    the episode: question and clock, footage, a captioned vertical in review
     teyla growth daily                  harvest, trends, plan, draft in order (the opt-in 06:30 agent runs it)
@@ -36,7 +38,7 @@ import time
 import tomllib
 import urllib.parse
 
-from . import corrections, growth_publish, net, registry, state, voice
+from . import corrections, growth_engage, growth_publish, net, registry, state, voice
 
 KINDS = ("post", "thread", "clip", "carousel", "episode")
 FORMATS = ("true-vibe-coding", "spec-product", "worklog", "lesson", "reaction", "product-spotlight")
@@ -258,7 +260,11 @@ def default_config_text(public: list[str] | None = None) -> str:
          "# bi_data = \"~/repos/beyond-intelligence/web/data\"", "x_scan = false",
          "# footage_folder = \"~/Library/Mobile Documents/com~apple~CloudDocs/Footage\"    # `growth ingest` reads video here",
          "# whisper_model = \"~/models/ggml-small.bin\"    # a file you downloaded; Teyla downloads nothing", "",
-         "[models]", f"short = \"{DEFAULTS['model_short']}\"", f"script = \"{DEFAULTS['model_script']}\"", ""]
+         "[models]", f"short = \"{DEFAULTS['model_short']}\"", f"script = \"{DEFAULTS['model_script']}\"", "",
+         "# `teyla growth publish` (docs/GROWTH.md, Publishing). X stays manual: x_paid needs your two yeses (POLICY section 11).",
+         "[publish]", "x_paid = false", "youtube_privacy = \"public\"    # public, unlisted or private",
+         "# [publish.redirect]   # the https address you registered in the Meta app; LinkedIn and YouTube use 127.0.0.1",
+         "# threads = \"https://example.com/oauth\"", "# instagram = \"https://example.com/oauth\"", ""]
     rows = [(p, "en", True) for p in PLATFORM_ORDER] + [(p, l, False) for l in ("ru", "es") for p in ("x", "threads", "instagram", "tiktok")]
     for p, l, on in rows:
         L += ["[[channel]]", f"platform = \"{p}\"", f"language = \"{l}\"", f"enabled = {'true' if on else 'false'}",
@@ -267,7 +273,8 @@ def default_config_text(public: list[str] | None = None) -> str:
 
 
 def load_config(store: Store) -> dict:
-    cfg = dict(DEFAULTS, public_products=[], outreach_repos=[], channels=[], errors=[], exists=store.config_path.is_file())
+    cfg = dict(DEFAULTS, public_products=[], outreach_repos=[], channels=[], errors=[], exists=store.config_path.is_file(),
+               publish=dict(x_paid=False, youtube_privacy="public", redirect={}))
     raw: dict = {}
     if cfg["exists"]:
         try:
@@ -288,6 +295,14 @@ def load_config(store: Store) -> dict:
         cfg["spec_targets"] = [t for t in raw["spec_target"] if isinstance(t, dict)]
     if isinstance(raw.get("public_products"), list):
         cfg["public_products"] = [str(x).lower() for x in raw["public_products"]]
+    pub = raw.get("publish") if isinstance(raw.get("publish"), dict) else {}
+    redirect = pub.get("redirect") if isinstance(pub.get("redirect"), dict) else {}
+    privacy = pub.get("youtube_privacy")
+    cfg["publish"] = dict(x_paid=pub.get("x_paid") is True,
+                          youtube_privacy=privacy if privacy in ("public", "unlisted", "private") else "public",
+                          redirect={str(k): str(v) for k, v in redirect.items() if isinstance(v, str) and v.strip()})
+    if isinstance(raw.get("engage_about"), str) and raw["engage_about"].strip():
+        cfg["engage_about"] = raw["engage_about"].strip()[:200]
     models = raw.get("models") if isinstance(raw.get("models"), dict) else {}
     for k, key in (("short", "model_short"), ("script", "model_script"), ("editor", "model_editor"), ("rewrite", "model_rewrite")):
         if isinstance(models.get(k), str) and models[k].strip():
@@ -1915,6 +1930,7 @@ def section(now: float) -> dict:
     qualified = sum(row_n(r) for r in store.ledger() if r.get("ev") == "attempt" and r.get("kind") == "icp-meeting"
                     and not is_claimed(r) and str(r.get("day")) >= week_ago)
     out = outreach_summary(store, cfg)
+    connected = {p: growth_publish.is_connected(p) for p in {c["platform"] for c in cfg["channels"]}}
     slots = plan(store, cfg, today, now, commit=False) if chans else []
     gaps = sum(1 for r in slots if not r["item"])
     try:   # the registry may be unreadable: then nobody can say who was tried, and the phone shows a dash
@@ -1936,8 +1952,9 @@ def section(now: float) -> dict:
         outreach=dict(drafts=len(out["drafts"]) + out["drafts_waiting"], sent_week=out["sent_week"], replies_week=out["replies_week"],
                       calls_week=out["calls_week"], sources=[dict(source=s["source"], connected=s["connected"]) for s in out["sources"]]),
         ads=[dict(product=r.get("product"), day=r.get("day")) for r in store.ledger() if r.get("ev") == "attempt" and r.get("kind") == "ad"][-5:],
-        channels=[dict(platform=c["platform"], language=c["language"], connected=False, last_post=last_by_channel.get(channel_key(c)))
-                  for c in cfg["channels"]],
+        channels=[dict(platform=c["platform"], language=c["language"], connected=connected.get(c["platform"], False),
+                       last_post=last_by_channel.get(channel_key(c))) for c in cfg["channels"]],
+        engage=growth_engage.counts(store, now),
         qualified_week=qualified)
 
 
@@ -1946,7 +1963,7 @@ def compact(sec: dict) -> dict:
     draft; `not_tried` the ids of the products with no sale attempt (a few bytes each, no text)."""
     if sec.get("error"):
         return {"error": sec["error"]}
-    keys = ("headline", "target", "today", "last_public_days", "queue_days", "gaps", "pipeline", "qualified_week", "not_tried")
+    keys = ("headline", "target", "today", "last_public_days", "queue_days", "gaps", "pipeline", "qualified_week", "not_tried", "engage")
     return {k: sec[k] for k in keys if k in sec}
 
 
@@ -2211,6 +2228,55 @@ def cmd_published(args) -> int:
     return 0
 
 
+def cmd_publish(args) -> int:
+    store, cfg = _store_cfg()
+    err = _need_config(cfg)
+    if err:
+        return _fail(GrowthError(err))
+    now = time.time()
+    if not args.ids and not args.day:
+        return _fail(GrowthError("name item ids, or --day D for every approved item of a day"))
+    try:
+        items = growth_publish.targets(store, args.ids, resolve_day(args.day, now) if args.day else None)
+    except GrowthError as e:
+        return _fail(e)
+    doc = growth_publish.publish_many(store, cfg, items, now, retry=args.retry)
+    print(json.dumps(doc, indent=2) if args.json else growth_publish.render(doc), end="\n" if args.json else "")
+    # With --json the report is the answer: `failed` counts what needs you, and the exit code stays 0 so a caller
+    # (the Mac app) reads the per-network lines instead of an error. Without --json a failure exits 1.
+    return 1 if doc["failed"] and not args.json else 0
+
+
+def cmd_connect(args) -> int:
+    store, cfg = _store_cfg()
+    if args.status or not args.network:
+        rows = growth_publish.status_rows()
+        if args.json:
+            print(json.dumps(dict(version=1, networks=rows), indent=2))
+        else:
+            for r in rows:
+                print(f"  {r['network']:<10} {'connected' if r['connected'] else 'not connected':<14} {r['detail']}")
+        return 0
+    net_ = args.network.lower()
+    if args.forget:
+        gone = growth_publish.forget(net_)
+        print(f"{net_}: the Keychain item {'is removed' if gone else 'was not there'}")
+        return 0
+    if not sys.stdin.isatty():
+        return _fail(GrowthError(f"connect is yours to run, in your own terminal: teyla growth connect {net_}"))
+    if net_ != "x" and not net.allowed():
+        print(net.refusal("the OAuth token exchange"), file=sys.stderr)
+        return 1
+    try:
+        got = growth_publish.connect(net_, cfg, redirect_uri=args.redirect_uri or "", paste=args.paste)
+    except (growth_publish.NotConnected, growth_publish.PublishRefused, growth_publish.PublishError) as e:
+        return _fail(GrowthError(str(e)))
+    days = int((float(got.get("expires_at") or 0) - time.time()) // 86400)
+    print(f"connected {net_}" + (f" as {got['user']}" if got.get("user") else "") +
+          f"; the token is in the Keychain (service {growth_publish.service(net_)}), valid about {days} days")
+    return 0
+
+
 def cmd_attempts(args) -> int:
     store, _ = _store_cfg()
     rows = attempt_rows(store)
@@ -2383,6 +2449,26 @@ def register(sp):
     a.set_defaults(fn=cmd_published)
     a.add_argument("id")
     a.add_argument("url")
+
+    a = g.add_parser("publish", help="post approved items through the networks you connected; the rest get a packet")
+    a.set_defaults(fn=cmd_publish)
+    a.add_argument("ids", nargs="*", metavar="ID", help="item ids; a master idea stands for its approved channel items")
+    a.add_argument("--day", metavar="D", help="every approved item of this day (today, tomorrow or YYYY-MM-DD)")
+    a.add_argument("--retry", action="store_true", help="post again after an earlier run started and never finished")
+    a.add_argument("--json", action="store_true")
+    a.add_argument("--allow-network", action="store_true", help="safe mode: allow the publish calls for this one run")
+
+    a = g.add_parser("connect", help="connect LinkedIn, Threads, Instagram or YouTube (OAuth, you sign in); X stays manual")
+    a.set_defaults(fn=cmd_connect)
+    a.add_argument("network", nargs="?", choices=[*growth_publish.NETWORKS, "x"])
+    a.add_argument("--status", action="store_true", help="which networks are connected (never a token)")
+    a.add_argument("--forget", action="store_true", help="remove the network's Keychain item")
+    a.add_argument("--redirect-uri", metavar="URI", help="the redirect address registered in the app")
+    a.add_argument("--paste", action="store_true", help="paste the address the browser landed on instead of the loopback answer")
+    a.add_argument("--json", action="store_true")
+    a.add_argument("--allow-network", action="store_true", help="safe mode: allow the token calls for this one run")
+
+    growth_engage.register(g)
 
     a = g.add_parser("sale-attempts", help="per product: posts, marketing, ICP meetings; zero is 'not tried yet'")
     a.set_defaults(fn=cmd_attempts)

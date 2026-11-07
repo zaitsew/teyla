@@ -67,6 +67,8 @@ ALLOWED = {
     "mcp_probe.py": {33},
     "shield.py": {34},
     "growth.py": {37, 38, 39, 40, 41, 44},
+    "growth_publish.py": {46, 47, 48, 49},
+    "growth_engage.py": {50, 51},
 }
 
 
