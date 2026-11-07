@@ -65,7 +65,7 @@ enum Space {
     /// The columns of an All products row: a figure, the commits bars, the platform icons.
     static let tableFigure: CGFloat = 64
     static let tableSpark: CGFloat = 64
-    static let tablePlatforms: CGFloat = 84
+    static let tablePlatforms: CGFloat = 140    // up to five devices and three AI directories
     /// Below this width the table drops the bars and the last-active column.
     static let tableCompact: CGFloat = 720
     /// The width of the menu-bar popover.

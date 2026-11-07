@@ -792,6 +792,8 @@ struct PlatformStatus: Decodable, Equatable, Identifiable, Sendable {
     var id: String { "\(platform)/\(channel)" }
     var state: PlatformState { PlatformState(rawValue: stateRaw) ?? .unknown }
     var isPrimary: Bool { role == "primary" }
+    /// An AI directory listing (Claude, ChatGPT, Gemini), not a device platform.
+    var isDirectory: Bool { role == "directory" }
 
     enum CodingKeys: String, CodingKey {
         case platform, role, channel, version, build, detail, link

@@ -33,6 +33,17 @@ final class PortfolioLogicTests: XCTestCase {
         XCTAssertEqual(PortfolioText.channelName("testflight"), "TestFlight")
         XCTAssertEqual(PortfolioText.channelName("play"), "Google Play")
         XCTAssertEqual(PortfolioText.channelName(""), "")
+        XCTAssertEqual(PortfolioText.channelName("connector"), "Connector")
+    }
+
+    func testAIDirectoryRows() {
+        let claude = PlatformStatus(platform: "claude", role: "directory", channel: "connector", state: "live")
+        XCTAssertEqual(PortfolioText.chip(claude), "Claude · live")
+        XCTAssertTrue(claude.isDirectory)
+        XCTAssertEqual(PortfolioText.chip(PlatformStatus(platform: "chatgpt", role: "directory", version: "1.0.0",
+                                                         state: "in_review")), "ChatGPT 1.0.0 · in review")
+        XCTAssertEqual(PortfolioText.symbols(for: "gemini"), ["sparkle"])
+        XCTAssertFalse(PlatformStatus(platform: "ios", role: "primary").isDirectory)
     }
 
     func testSummaryLeavesOutZeros() {

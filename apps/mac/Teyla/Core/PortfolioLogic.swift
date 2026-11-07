@@ -75,6 +75,9 @@ enum PortfolioText {
         case "android": return "Android"
         case "web": return "Web"
         case "watch": return "Watch"
+        case "claude": return "Claude"
+        case "chatgpt": return "ChatGPT"
+        case "gemini": return "Gemini"
         default: return id.prefix(1).uppercased() + id.dropFirst()
         }
     }
@@ -117,6 +120,10 @@ enum PortfolioText {
         case "web": return ["globe"]
         case "watch": return ["applewatch"]
         case "android": return ["smartphone", "apps.iphone"]
+        // AI directory listings: no brand marks, one generic symbol each.
+        case "claude": return ["asterisk", "staroflife"]
+        case "chatgpt": return ["bubble.left.and.bubble.right"]
+        case "gemini": return ["sparkle"]
         default: return ["square.dashed"]
         }
     }
@@ -128,7 +135,7 @@ enum PortfolioText {
         return parts.joined(separator: " · ")
     }
 
-    /// "TestFlight", "App Store", "Google Play", "Web", "Local".
+    /// "TestFlight", "App Store", "Google Play", "Web", "Local"; for an AI directory row, "Connector", "Plugin", "App".
     static func channelName(_ channel: String) -> String {
         switch channel {
         case "testflight": return "TestFlight"
@@ -136,6 +143,9 @@ enum PortfolioText {
         case "play": return "Google Play"
         case "web": return "Web"
         case "local": return "Local"
+        case "connector": return "Connector"
+        case "plugin": return "Plugin"
+        case "app": return "App"
         default: return channel.isEmpty ? "" : channel.prefix(1).uppercased() + channel.dropFirst()
         }
     }

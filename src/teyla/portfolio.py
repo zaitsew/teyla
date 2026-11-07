@@ -37,6 +37,10 @@ Platform state: `current` (the newest build reached the owner), `behind`, `block
 (`[productize] url`, or `[release] web_url`; Teyla does not open it) and a Google Play production release that
 is rolling out. The tool payloads carry no App Store public version or review state, so iOS and macOS are
 never `live` or `in_review`.
+
+AI directory listings (Claude, ChatGPT, Gemini) are rows too, after the device platforms, with role `directory`:
+`[directories.<id>]` in a repo's teyla.toml holds the state copied from the portal and its date (`directory_rows`).
+They never change health and never count as something the owner can install.
 """
 from __future__ import annotations
 
@@ -78,6 +82,23 @@ PLATFORMS = ("ios", "macos", "android", "web", "watch")
 PLATFORM_LABEL = {"ios": "iOS", "macos": "macOS", "android": "Android", "web": "Web", "watch": "Watch"}
 _PLATFORM_ALIASES = {"iphone": "ios", "mac": "macos", "osx": "macos", "garmin": "watch", "wear": "watch"}
 ASC_PLATFORM = {"IOS": "ios", "MAC_OS": "macos"}
+# AI directory listings: `[directories.<id>]` in a repo's teyla.toml. Their rows follow the device platforms with
+# role "directory"; they never change health and are never something to install.
+DIRECTORIES = ("claude", "chatgpt", "gemini")
+DIRECTORY_LABEL = {"claude": "Claude", "chatgpt": "ChatGPT", "gemini": "Gemini"}
+DIRECTORY_KINDS = ("connector", "plugin", "app")
+# The word the portal shows -> (platform state, the line for a person).
+DIRECTORY_STATES = {
+    "published": ("live", "Published"),
+    "approved": ("blocked", "Approved, waiting for the owner's Publish"),
+    "needs_changes": ("blocked", "Needs changes"),
+    "submitted": ("in_review", "Submitted"),
+    "in_review": ("in_review", "In review"),
+    "ready": ("none", "Pack ready, not submitted"),
+    "draft": ("none", "Draft, not submitted"),
+    "rejected": ("none", "Rejected"),
+    "parked": ("none", "Parked"),
+}
 HEALTH_ORDER = {"off_track": 0, "at_risk": 1, "on_track": 2, "parked": 3}
 HEALTH_WORD = {"off_track": "off track", "at_risk": "at risk", "on_track": "on track", "parked": "parked"}
 STATE_ORDER = ("blocked", "behind", "none", "unknown", "in_review", "current", "live")
@@ -883,6 +904,46 @@ def _platform_rows(plats: list[str], primary: str, manifests: list[dict], stored
     return out
 
 
+def directory_rows(manifests: list[dict]) -> list[dict]:
+    """One row per AI directory a repo declares, in DIRECTORIES order; the first manifest that names a
+    directory wins. The state is what the owner or a session copied from the portal, with its date: Teyla
+    reads no portal, so a row is as fresh as its `as_of`.
+
+        [directories.claude]
+        state = "published"          # published | approved | needs_changes | submitted | in_review | ready | draft | rejected | parked
+        kind = "connector"           # connector | plugin | app
+        as_of = "2026-11-07"
+        link = "https://claude.ai/directory/connectors/sample"
+        version = "1.0.0"            # optional
+        note = "one line"            # optional, replaces the default line
+    """
+    found: dict[str, dict] = {}
+    for m in manifests:
+        for key, entry in (m.get("directories") or {}).items():
+            d = str(key).strip().lower()
+            if d in DIRECTORIES and d not in found:
+                found[d] = entry if isinstance(entry, dict) else {"state": entry}
+    out = []
+    for d in DIRECTORIES:
+        if d not in found:
+            continue
+        e = found[d]
+        word = str(e.get("state") or "").strip().lower().replace(" ", "_").replace("-", "_")
+        kind = str(e.get("kind") or "connector").strip().lower()
+        kind = kind if kind in DIRECTORY_KINDS else "connector"
+        state, line = DIRECTORY_STATES.get(word, ("unknown", f"Unknown state {word!r}" if word else "No state given"))
+        note = " ".join(str(e.get("note") or "").split())
+        link = str(e.get("link") or "").strip()
+        link = link if urlparse(link).scheme in ("http", "https") and urlparse(link).netloc else ""
+        as_of = e.get("as_of")
+        as_of = as_of.isoformat() if isinstance(as_of, (_dt.date, _dt.datetime)) else str(as_of or "")
+        row = _row(d, kind, state, f"{DIRECTORY_LABEL[d]} {kind} · {note or line}",
+                   version=str(e.get("version") or ""), as_of=as_of, link=link)
+        row["role"] = "directory"
+        out.append(row)
+    return out
+
+
 def _public(row: dict) -> dict:
     keys = ("platform", "role", "channel", "version", "build", "state", "detail", "as_of", "link")
     out = {k: row.get(k, "") if k != "state" else (row.get(k) or "unknown") for k in keys}
@@ -1246,7 +1307,8 @@ def build(now: float, *, reg: dict, prods: list[dict], ask_rows: list[dict], tas
         manifests = parse_manifests(repos)
         users, target, milestone = _milestone(manifests, mail)
         plats, primary = declared_platforms(rp, manifests)
-        rows = _platform_rows(plats, primary, manifests, cache["stores"].get(pid) or {}, stores_checked)
+        devices = _platform_rows(plats, primary, manifests, cache["stores"].get(pid) or {}, stores_checked)
+        rows = devices + directory_rows(manifests)
         slugs = _slugs(repos, canonical)
         names = {r.name.lower() for r in repos}
         gh = _github_view(slugs, names, cache, bl, ledger, threshold, now)
@@ -1261,17 +1323,17 @@ def build(now: float, *, reg: dict, prods: list[dict], ask_rows: list[dict], tas
         mine_cache = cache["metrics"].get(pid) if isinstance(cache["metrics"].get(pid), dict) else {}
         icon = mine_cache.get("icon") if isinstance(mine_cache.get("icon"), dict) else {}
         stage = rp.get("stage") or ""
-        health, reasons = health_of(stage, rows, primary, gh["open_p1"], last_epoch, now)
-        blocked = next((r for r in rows if r["state"] == "blocked"), None)
+        health, reasons = health_of(stage, devices, primary, gh["open_p1"], last_epoch, now)
+        blocked = next((r for r in rows if r["state"] == "blocked"), None)    # a device first: rows put directories last
         quiet = max(int((now - last_epoch) // 86400), 0) if last_epoch is not None else None
         primary_row = next((r for r in rows if r["platform"] == primary), None)
-        progress = {"can_install": _can_install(rows),
+        progress = {"can_install": _can_install(devices),
                     "shipped_7d": {"prs": gh["shipped"], "top": gh["top"]},
                     "users": usage_of(repos, usage), "milestone": milestone, "blocker": triage.blocker(mine),
                     "quiet_days": quiet, "line": line_of(gh["open_p1"], milestone, primary_row, quiet)}
         try:                                               # null when it cannot be computed, as a part that failed elsewhere
             sblock = startup.block_for(sctx, now, pid=pid, rp=rp, repos=repos, usage=usage, can_install=bool(progress["can_install"]),
-                                       install_known=any(r.get("state") not in ("", None, "unknown") for r in rows),
+                                       install_known=any(r.get("state") not in ("", None, "unknown") for r in devices),
                                        money_enabled=monetization_enabled(manifests),
                                        ai_cost_30d=_optional_usd(act.get("spend_30d_usd"))) if sctx else None
         except Exception:  # noqa: BLE001
