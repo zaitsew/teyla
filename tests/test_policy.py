@@ -769,3 +769,73 @@ def test_a_disabled_harnesses_unreadable_file_is_never_read(_isolated_paths):
     config.set_value("harness.disabled", "hermes")
     st = policy.status()
     assert "hermes" not in st and st["codex"] is not None
+
+
+# --- compact merge list, Hermes sees the owner's rules -------------------------
+
+_MERGE_RULES = """# Rules
+
+```
+MERGE-APPROVED REPOS
+  acme/tool-one
+  acme/tool-two                # added on request, verbatim:
+                               # "quoted request text"
+  acme/tool-three              # added later
+                               # (second line)
+```
+
+## After
+Keep going.
+"""
+
+
+def _repo_names(text: str) -> list[str]:
+    lines = text.splitlines()
+    at = next(i for i, l in enumerate(lines) if "MERGE-APPROVED REPOS" in l)
+    out = []
+    for l in lines[at + 1:]:
+        if l.strip().startswith("```"):
+            break
+        out.append(l.split()[0])
+    return out
+
+
+def test_generated_copy_drops_merge_comments_and_keeps_names(_isolated_paths):
+    _wire(_isolated_paths, _MERGE_RULES)
+    text = policy.agents_text()
+    block = text[text.index("MERGE-APPROVED REPOS"):]
+    block = block[:block.index("```")]
+    assert _repo_names(text) == ["acme/tool-one", "acme/tool-two", "acme/tool-three"]
+    assert "#" not in block and "quoted request text" not in text
+    assert "```\n" + policy.MERGE_COMPACT_NOTE + "\n" in text
+    assert policy.CLAUDE_GLOBAL.read_text() == _MERGE_RULES  # the source is never touched
+
+
+def test_no_merge_block_leaves_the_rules_unchanged(_isolated_paths):
+    rules = "# Rules\n\nNever force-push. # not a comment to strip\n"
+    _wire(_isolated_paths, rules)
+    text = policy.agents_text()
+    assert "Never force-push. # not a comment to strip" in text
+    assert policy.MERGE_COMPACT_NOTE not in text
+
+
+def test_hermes_block_names_both_files_in_both_variants():
+    for block in (policy.HERMES_BLOCK, policy.HERMES_BLOCK_WORK):
+        assert "~/.agents/POLICY.md and the owner's rules in ~/.claude/CLAUDE.md" in block
+        assert "MERGE-APPROVED" in block and "never force-push" in block
+    assert "IT approved" in policy.HERMES_BLOCK_WORK and "IT approved" not in policy.HERMES_BLOCK
+
+
+@pytest.mark.parametrize("old", ["HERMES_BLOCK_V1", "HERMES_BLOCK_V1_WORK"])
+def test_previous_hermes_block_is_upgraded_without_an_inbox_entry(_isolated_paths, old):
+    soul = policy.TARGETS["hermes"]
+    soul.parent.mkdir(parents=True)
+    soul.write_text("# Soul\n\nBe kind.\n" + getattr(policy, old))
+    _wire(_isolated_paths, None, harnesses=())
+    if old.endswith("WORK"):
+        policy.POLICY.write_text(policy.TEMPLATE_WORK.read_text().replace("{{owner}}", "Owner"))
+    policy.sync()
+    out = soul.read_text()
+    assert policy.hermes_block().strip() in out and "Be kind." in out
+    assert "read it at session start" not in out
+    assert policy.pending_edits() == []
