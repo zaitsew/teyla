@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/release.sh 0.7.1 — run ./check.sh, bump the four version strings, commit, tag,
+# scripts/release.sh 0.7.1 — run ./check.sh, bump the version strings (package, plugin, listing, apps), commit, tag,
 # push, and create the GitHub release from this laptop (POLICY §10: no Actions). `teyla
 # update` on every machine picks it up within a day (daily routine) or at the next session
 # start; it reads releases/latest, so the release — not only the tag — must exist.
@@ -18,8 +18,12 @@ sed -i '' "s/^version = \".*\"/version = \"$v\"/" pyproject.toml
 sed -i '' "s/^__version__ = \".*\"/__version__ = \"$v\"/" src/teyla/__init__.py
 sed -i '' "s/\"version\": \".*\"/\"version\": \"$v\"/" plugin/.claude-plugin/plugin.json
 sed -i '' "s/^| Version | .* |$/| Version | $v |/" docs/DIRECTORY.md   # the listing pack quotes the manifest's version
+# The apps carry the release version too, so TestFlight and the Mac show the same number as the CLI.
+# Build numbers (CURRENT_PROJECT_VERSION) stay a separate, per-upload bump.
+sed -i '' -E "s/^( +CFBundleShortVersionString: )\"[^\"]*\"/\\1\"$v\"/" apps/ios/project.yml apps/mac/project.yml
 git checkout -q -b "release-$v"
-git add pyproject.toml src/teyla/__init__.py plugin/.claude-plugin/plugin.json docs/DIRECTORY.md
+git add pyproject.toml src/teyla/__init__.py plugin/.claude-plugin/plugin.json docs/DIRECTORY.md \
+  apps/ios/project.yml apps/mac/project.yml
 git commit -q -m "release $v"
 git push -q -u origin "release-$v"
 # One PR per logical unit, merged not squashed — a release bump is a unit like any other.
