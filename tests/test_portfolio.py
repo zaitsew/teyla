@@ -279,7 +279,7 @@ def test_ai_directories_follow_the_device_platforms_and_keep_their_portal_state(
 def test_a_directory_row_reads_a_bare_state_a_note_and_an_unknown_word(tmp_path):
     rows = portfolio.directory_rows([{"directories": {
         "claude": {"state": "needs-changes", "kind": "plugin", "note": "Blocked by  directory policy", "link": "ftp://x"},
-        "chatgpt": "published", "gemini": {"state": "lost"}}}])
+        "chatgpt": "published", "gemini": {"state": "lost", "link": "https://[sample"}}}])
     assert [(r["platform"], r["channel"], r["state"], r["detail"], r["link"]) for r in rows] == [
         ("claude", "plugin", "blocked", "Claude plugin · Blocked by directory policy", ""),
         ("chatgpt", "connector", "live", "ChatGPT connector · Published", ""),

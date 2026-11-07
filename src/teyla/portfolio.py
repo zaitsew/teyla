@@ -934,7 +934,11 @@ def directory_rows(manifests: list[dict]) -> list[dict]:
         state, line = DIRECTORY_STATES.get(word, ("unknown", f"Unknown state {word!r}" if word else "No state given"))
         note = " ".join(str(e.get("note") or "").split())
         link = str(e.get("link") or "").strip()
-        link = link if urlparse(link).scheme in ("http", "https") and urlparse(link).netloc else ""
+        try:
+            parts = urlparse(link)
+            link = link if parts.scheme in ("http", "https") and parts.netloc else ""
+        except ValueError:                         # "https://[x": a bad link is dropped, never the whole portfolio
+            link = ""
         as_of = e.get("as_of")
         as_of = as_of.isoformat() if isinstance(as_of, (_dt.date, _dt.datetime)) else str(as_of or "")
         row = _row(d, kind, state, f"{DIRECTORY_LABEL[d]} {kind} · {note or line}",
