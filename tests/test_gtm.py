@@ -397,7 +397,10 @@ def test_today_counts_drafts_per_goal_and_untagged():
     assert t["draft_goals"] == {"g1104-a": "relationships", "g1104-b": "alpha_fans"}
     assert t["approve"]["by_source"]["growth"] == 4                                         # same filter as the queue count
     text = gtm.render_today(t)
-    assert "drafts for this goal: 4" in text and "6 drafts have no goal" in text
+    assert t["untagged_sources"] == {"outreach": 4}                                         # only the source can place these
+    assert "drafts for this goal: 4" in text
+    assert "2 drafts have no goal (`teyla growth tag ID --goal GOAL`)" in text              # c, d: a tag places them
+    assert "4 source drafts have no goal (outreach 4)" in text and "must report `<stage_prefix>.approve`" in text
 
 
 def test_draft_goals_is_capped():
@@ -415,6 +418,9 @@ def test_a_source_without_the_prefix_or_not_listed_is_untagged():
     docs, status = collect(g)
     t = gtm.today_report(g, docs, status, DAY)
     assert t["untagged_drafts"] == 5 and t["goals"][0]["drafts"]["total"] == 0
+    assert t["untagged_sources"] == {"stranger": 5}
+    text = gtm.render_today(t)
+    assert "5 source drafts have no goal (stranger 5)" in text and "teyla growth tag" not in text   # no growth draft: no tag hint
 
 
 def test_an_empty_draft_matcher_list_allows_nothing_and_survives_goal_set():

@@ -84,6 +84,8 @@ Each waiting growth draft (the `teyla growth review` queue) belongs to at most o
 
 A source that reports `waiting.approve` under a prefix (`network.approve`) counts for the goal with that `stage_prefix`,
 when the source is in the goal's `sources`. An unprefixed `approve` count cannot be told apart, so it counts as untagged.
+`untagged_sources` names those sources with their counts (they are part of `untagged_drafts`), and `teyla gtm today` lists them
+instead of suggesting `teyla growth tag`, which only places growth drafts. The fix is on the source: report `<stage_prefix>.approve`.
 
 ## Sources: how a product feeds the cockpit
 
@@ -153,7 +155,7 @@ A source carries counts and links to its own queue: never a person's name, a han
              "drafts": {"total": 5, "growth": 4, "by_source": {"growth": 4, "outreach": 1}},
              "targets": [{"stage": "conversation", "count": 6, "target": 15, "counter": "outcomes",
                           "history": [{"week": "2026-W38", "count": null}, "...", {"week": "2026-W45", "count": 6}]}]}],
-  "untagged_drafts": 1, "draft_goals": {"g1107-ab3d": "relationships"},
+  "untagged_drafts": 1, "untagged_sources": {}, "draft_goals": {"g1107-ab3d": "relationships"},
   "next": [{"kind": "reply", "count": 2, "label": "answer 2 replies", "sources": ["outreach"]},
            {"kind": "approve", "count": 6, "label": "approve or skip 6 drafts", "command": "teyla growth review", "sources": ["outreach", "growth"]}],
   "sources": [{"id": "growth", "state": "ok", "via": "growth ledger", "line": "..."}],
