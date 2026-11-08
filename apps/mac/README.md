@@ -81,12 +81,14 @@ Top to bottom:
 - **The lead goal**, the one furthest behind this week, as a large card: its title, "done when", deadline and weeks left, a pace
   chip ("Behind this week · 14 short" or "On pace this week"), one row of circles per outcome target (one circle per unit of the
   weekly number; a circle fills only for a real outcome that came back, never for a draft or a send; above 30 a thin bar), and
-  "Next for this goal". Replies open the source's own page; drafts go to Growth. "Log a conversation" opens the "+1" form on
+  "Next for this goal" ("2 replies to answer, then 8 drafts for this goal"). Replies open the source's own page; drafts go to Growth. "Log a conversation" opens the "+1" form on
   "Meeting". Clicking the title opens the goal's weeks to its deadline, the last eight weeks per outcome and where its counts
   come from.
 - **The other goals** as thin rows. A goal with no number asks "What would count as progress this week?" and "Set a number" runs
   `teyla gtm goal set`.
-- **The activity graph** (the same card as on Growth), then the sources that are not connected and the folded source checks.
+- **The activity graph** (the same card as on Growth), then a quiet line when drafts have no goal ("11 drafts have no goal. Assign
+  them on Growth."), the sources that are not connected and the folded source checks. On Growth each waiting draft has a goal menu;
+  choosing one runs `teyla growth tag ID --goal=GOAL` (or `none`) and reads Today again.
 
 With no goal yet, Today asks for one outcome and one weekly number (and the daily send target when no goals file exists) and
 runs `teyla gtm goal add`. Drafts are reviewed on Growth.

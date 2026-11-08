@@ -23,6 +23,22 @@ final class TodayCardDecodingTests: XCTestCase {
         XCTAssertEqual(gtm.waitingSpoken, "6 drafts to approve, 5 items to send, 2 replies to answer, 1 follow-up due.")
     }
 
+    func testTheLeadGoalsDraftsShapeTheNextLine() throws {
+        let json = #"""
+        {"version": 3, "gtm": {"day": "2026-11-07", "approve": 22, "reply": 2, "has_goals": true, "untagged_drafts": 11,
+         "goals": [{"id": "a", "title": "Lead", "short": 9, "drafts": 8, "targets": [{"stage": "conversation", "count": 0, "target": 9}]}],
+         "next": [{"kind": "reply", "count": 2}, {"kind": "approve", "count": 22}]}}
+        """#
+        let gtm = try XCTUnwrap(PhoneFormat.decodeSnapshot(Data(json.utf8)).gtm)
+        XCTAssertEqual(gtm.goals.first?.drafts, 8)
+        XCTAssertEqual(gtm.untaggedDrafts, 11)
+        XCTAssertEqual(gtm.nextTitle, "2 replies to answer, then 8 drafts for this goal")
+        XCTAssertEqual(gtm.untaggedLine, "11 drafts have no goal.")
+        let old = try XCTUnwrap(PhoneFormat.decodeSnapshot(Data(#"{"version": 3, "gtm": {"day": "d", "reply": 2, "next": [{"kind": "reply", "count": 2}], "goals": [{"id": "a", "title": "T"}]}}"#.utf8)).gtm)
+        XCTAssertEqual(old.nextTitle, "2 replies to answer")
+        XCTAssertNil(old.untaggedLine)
+    }
+
     func testANullTargetAndAMinimalBlockTakeDefaults() throws {
         let json = #"{"version": 3, "gtm": {"day": "2026-11-07", "distribution": {"today": 2, "target": null}}}"#
         let gtm = try XCTUnwrap(PhoneFormat.decodeSnapshot(Data(json.utf8)).gtm)

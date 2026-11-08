@@ -125,9 +125,11 @@ struct GtmGoal: Equatable, Sendable, Decodable, Identifiable {
     var fedBy: [String]
     var unfed: [String]
     var targets: [GtmTarget]
+    /// Drafts waiting for this goal, from every source (`drafts.total`); 0 from an older command.
+    var drafts: Int
 
     init(id: String, title: String, doneWhen: String? = nil, deadline: String? = nil, daysLeft: Int? = nil, weeksLeft: Int? = nil,
-         short: Int = 0, fedBy: [String] = [], unfed: [String] = [], targets: [GtmTarget] = []) {
+         short: Int = 0, fedBy: [String] = [], unfed: [String] = [], targets: [GtmTarget] = [], drafts: Int = 0) {
         self.id = id
         self.title = title
         self.doneWhen = doneWhen
@@ -138,10 +140,23 @@ struct GtmGoal: Equatable, Sendable, Decodable, Identifiable {
         self.fedBy = fedBy
         self.unfed = unfed
         self.targets = targets
+        self.drafts = drafts
+    }
+
+    private struct Drafts: Decodable {
+        var total = 0
+
+        init() {}
+
+        private enum Keys: String, CodingKey { case total }
+
+        init(from decoder: Decoder) throws {
+            total = try decoder.container(keyedBy: Keys.self).lenient(.total, 0)
+        }
     }
 
     private enum Keys: String, CodingKey {
-        case id, title, deadline, targets, short, unfed
+        case id, title, deadline, targets, short, unfed, drafts
         case doneWhen = "done_when", daysLeft = "days_left", weeksLeft = "weeks_left", fedBy = "fed_by"
     }
 
@@ -158,6 +173,8 @@ struct GtmGoal: Equatable, Sendable, Decodable, Identifiable {
         unfed = c.lenient(.unfed, [])
         let boxes: [LossyBox<GtmTarget>] = c.lenient(.targets, [])
         targets = boxes.compactMap(\.value)
+        let waiting: Drafts = c.lenient(.drafts, Drafts())
+        drafts = max(waiting.total, 0)
     }
 
     /// The targets that count what came back; they alone fill circles.
@@ -239,11 +256,16 @@ struct GtmToday: Equatable, Sendable, Decodable {
     var next: [GtmNext] = []
     var sources: [GtmSource] = []
     var doctor: [String] = []
+    /// Waiting drafts no goal claims; 0 from an older command.
+    var untaggedDrafts = 0
+    /// Growth item id -> the goal it counts for. An item with no goal (or an explicit "no goal") is not in it.
+    var draftGoals: [String: String] = [:]
 
     init() {}
 
     private enum Keys: String, CodingKey {
         case version, day, week, approve, send, reply, distribution, preparation, outcomes, goals, next, sources, doctor
+        case untaggedDrafts = "untagged_drafts", draftGoals = "draft_goals"
         case hasGoals = "has_goals", followUp = "follow_up", weekEnd = "week_end"
     }
 
@@ -287,6 +309,8 @@ struct GtmToday: Equatable, Sendable, Decodable {
         let sourceBoxes: [LossyBox<GtmSource>] = c.lenient(.sources, [])
         sources = sourceBoxes.compactMap(\.value)
         doctor = c.lenient(.doctor, [])
+        untaggedDrafts = max(c.lenient(.untaggedDrafts, 0), 0)
+        draftGoals = c.lenient(.draftGoals, [:])
     }
 
     static func decode(_ data: Data) throws -> GtmToday {

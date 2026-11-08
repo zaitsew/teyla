@@ -228,7 +228,15 @@
       }
      ]
     }
-   ]
+   ],
+   "drafts": {
+    "total": 8,
+    "growth": 6,
+    "by_source": {
+     "growth": 6,
+     "outreach": 2
+    }
+   }
   },
   {
    "id": "testers",
@@ -283,7 +291,14 @@
       }
      ]
     }
-   ]
+   ],
+   "drafts": {
+    "total": 3,
+    "growth": 3,
+    "by_source": {
+     "growth": 3
+    }
+   }
   },
   {
    "id": "investors",
@@ -295,9 +310,20 @@
    "short": 0,
    "fed_by": [],
    "unfed": [],
-   "targets": []
+   "targets": [],
+   "drafts": {
+    "total": 0,
+    "growth": 0,
+    "by_source": {}
+   }
   }
  ],
+ "untagged_drafts": 11,
+ "draft_goals": {
+  "g1104-a1b2": "relationships",
+  "g1104-c3d4": "relationships",
+  "g1103-e5f6": "testers"
+ },
  "next": [
   {
    "kind": "reply",

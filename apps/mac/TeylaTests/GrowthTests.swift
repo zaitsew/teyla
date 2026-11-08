@@ -179,6 +179,17 @@ final class GrowthActionTests: XCTestCase {
         XCTAssertEqual(ToolCommands.check(GrowthActions.edit("g1104-a1b2", body: "New text", hook: "New hook")), .allowed)
     }
 
+    func testTagIsOnTheListForAGoalOrNone() {
+        XCTAssertEqual(GrowthActions.tag("g1104-a1b2", goal: "relationships"), ["growth", "tag", "g1104-a1b2", "--goal=relationships"])
+        XCTAssertEqual(GrowthActions.tag("g1104-a1b2", goal: nil), ["growth", "tag", "g1104-a1b2", "--goal=none"])
+        XCTAssertEqual(ToolCommands.check(GrowthActions.tag("g1104-a1b2", goal: "relationships")), .allowed)
+        XCTAssertEqual(ToolCommands.check(GrowthActions.tag("g1104-a1b2", goal: nil)), .allowed)
+        XCTAssertFalse(ToolCommands.check(["growth", "tag", "g1104-a1b2", "--goal=a b"]).isAllowed)
+        XCTAssertFalse(ToolCommands.check(["growth", "tag", "g1104-a1b2", "--goal=-x"]).isAllowed)
+        XCTAssertFalse(ToolCommands.check(["growth", "tag", "g1104-a1b2", "relationships"]).isAllowed)
+        XCTAssertFalse(ToolCommands.check(["growth", "tag", "../x", "--goal=none"]).isAllowed)
+    }
+
     func testAValueThatStartsWithADashStaysAValue() {
         XCTAssertEqual(GrowthActions.reject("g1104-a1b2", reason: "-x is not a flag"),
                        ["growth", "reject", "g1104-a1b2", "--reason=-x is not a flag"])

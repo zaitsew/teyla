@@ -830,3 +830,37 @@ def test_repo_files_of_the_feature_have_no_cyrillic():
     root = pathlib.Path(growth.__file__).resolve().parents[2]
     for f in (root / "src/teyla/growth.py", root / "src/teyla/growth_publish.py", root / "docs/GROWTH.md", pathlib.Path(__file__)):
         assert not any("\u0400" <= c <= "\u04ff" for c in f.read_text(encoding="utf-8")), f
+
+
+# --- tag: link a draft to a GTM goal ---------------------------------------------------------------------------
+
+def test_tag_writes_and_clears_a_goal_and_names_the_ids_when_it_is_unknown(env, capsys):
+    from teyla import gtm
+    gtm._write(gtm.home() / "goals.toml", gtm.EXAMPLE_GOALS)
+    store, _ = make()
+    store.save({"id": "g1104-aaaa", "kind": "post", "platform": "x", "product": "alpha", "status": "review"}, NOW)
+    store.save({"id": "g1104-bbbb", "kind": "post", "platform": "x", "product": "alpha", "status": "review"}, NOW)
+    assert cli.main(["growth", "tag", "g1104-aaaa", "g1104-bbbb", "--goal", "testers"]) == 0
+    fresh = growth.Store().items()
+    assert fresh["g1104-aaaa"]["goal"] == "testers" and fresh["g1104-bbbb"]["goal"] == "testers"
+    assert fresh["g1104-aaaa"]["updated"] != growth.iso(NOW)
+    assert cli.main(["growth", "tag", "g1104-aaaa", "--goal=none"]) == 0
+    assert growth.Store().items()["g1104-aaaa"]["goal"] == ""
+    capsys.readouterr()
+    assert cli.main(["growth", "tag", "g1104-aaaa", "--goal", "nope"]) == 2
+    err = capsys.readouterr().err
+    assert "relationships" in err and "testers" in err and "investors" in err
+    assert growth.Store().items()["g1104-aaaa"]["goal"] == ""
+    assert cli.main(["growth", "tag", "g1104-aaaa", "g9999-zzzz", "--goal", "testers"]) == 2       # unknown item: nothing written
+    assert growth.Store().items()["g1104-aaaa"]["goal"] == ""
+
+
+def test_tag_auto_drops_the_manual_tag_so_the_rules_decide(env):
+    from teyla import gtm
+    gtm._write(gtm.home() / "goals.toml", gtm.EXAMPLE_GOALS)
+    store, _ = make()
+    store.save({"id": "g1104-cccc", "kind": "post", "platform": "x", "product": "alpha", "status": "review", "goal": ""}, NOW)
+    assert cli.main(["growth", "tag", "g1104-cccc", "--goal", "auto"]) == 0
+    it = growth.Store().items()["g1104-cccc"]
+    assert "goal" not in it
+    assert gtm.draft_goal(it, gtm.load_goals()) == ("relationships", "rule")     # the example goal claims posts

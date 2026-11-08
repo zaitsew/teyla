@@ -334,6 +334,72 @@ final class GoalFirstLogicTests: XCTestCase {
         XCTAssertNil(TodayLogic.nextStep(only), "a gap in the daily target is not a step for a goal")
     }
 
+    func testDraftFieldsDecodeAndOldJSONTakesDefaults() throws {
+        let today = try full()
+        XCTAssertEqual(today.goals.map(\.drafts), [8, 3, 0])
+        XCTAssertEqual(today.untaggedDrafts, 11)
+        XCTAssertEqual(today.draftGoals["g1104-a1b2"], "relationships")
+        let old = try GtmToday.decode(Data(#"{"version": 1, "goals": [{"id": "g", "title": "Old"}]}"#.utf8))
+        XCTAssertEqual(old.goals[0].drafts, 0)
+        XCTAssertEqual(old.untaggedDrafts, 0)
+        XCTAssertEqual(old.draftGoals, [:])
+        let odd = try GtmToday.decode(Data(#"{"version": 1, "untagged_drafts": "x", "draft_goals": 3, "goals": [{"id": "g", "drafts": {"total": "x"}}]}"#.utf8))
+        XCTAssertEqual(odd.untaggedDrafts, 0)
+        XCTAssertEqual(odd.goals[0].drafts, 0)
+    }
+
+    func testTheGoalNextLineNamesRepliesThenThisGoalsDrafts() throws {
+        XCTAssertEqual(TodayLogic.goalNextTitle(replies: 2, goalDrafts: 8), "2 replies to answer, then 8 drafts for this goal")
+        XCTAssertEqual(TodayLogic.goalNextTitle(replies: 1, goalDrafts: 1), "1 reply to answer, then 1 draft for this goal")
+        XCTAssertEqual(TodayLogic.goalNextTitle(replies: 2, goalDrafts: 0), "2 replies to answer")
+        XCTAssertEqual(TodayLogic.goalNextTitle(replies: 0, goalDrafts: 8), "8 drafts for this goal")
+        XCTAssertNil(TodayLogic.goalNextTitle(replies: 0, goalDrafts: 0))
+    }
+
+    func testTheFeaturedGoalsNextStep() throws {
+        let today = try full()
+        let lead = try XCTUnwrap(TodayLogic.featured(today.goals))
+        let both = try XCTUnwrap(TodayLogic.nextStep(today, goal: lead))
+        XCTAssertEqual(both.kind, "reply")
+        XCTAssertEqual(both.title, "2 replies to answer, then 8 drafts for this goal")
+        XCTAssertEqual(both.button, "Answer replies")
+        XCTAssertEqual(both.link?.absoluteString, "https://example.com/outreach/inbox")
+
+        var noReplies = today
+        noReplies.reply = GtmWaiting()
+        noReplies.next = today.next.filter { $0.kind != "reply" }
+        let drafts = try XCTUnwrap(TodayLogic.nextStep(noReplies, goal: lead))
+        XCTAssertEqual(drafts.kind, "approve")
+        XCTAssertEqual(drafts.title, "8 drafts for this goal")
+        XCTAssertEqual(drafts.button, "Review drafts")
+        XCTAssertNil(drafts.link)
+
+        var none = lead
+        none.drafts = 0
+        XCTAssertEqual(TodayLogic.nextStep(noReplies, goal: none)?.kind, "approve", "falls back to the command's own list")
+        XCTAssertEqual(TodayLogic.nextStep(noReplies, goal: none)?.title, "Approve or skip 22 drafts")
+        XCTAssertEqual(TodayLogic.nextStep(today, goal: none)?.title, "2 replies to answer", "no drafts for this goal: no 'then' part")
+        XCTAssertEqual(TodayLogic.nextStep(today, goal: nil)?.title, "Answer 2 replies")
+
+        var replyOnly = today
+        replyOnly.reply = GtmWaiting(total: 2, bySource: ["outreach": 2])
+        XCTAssertEqual(TodayLogic.nextStep(replyOnly, goal: lead)?.kind, "reply")
+    }
+
+    func testTheUntaggedFooterAndTheDraftGoalLabel() throws {
+        let today = try full()
+        XCTAssertEqual(TodayLogic.untaggedWords(11)?.text, "11 drafts have no goal.")
+        XCTAssertEqual(TodayLogic.untaggedWords(11)?.action, "Assign them on Growth.")
+        XCTAssertEqual(TodayLogic.untaggedWords(1)?.text, "1 draft has no goal.")
+        XCTAssertEqual(TodayLogic.untaggedWords(1)?.action, "Assign it on Growth.")
+        XCTAssertNil(TodayLogic.untaggedWords(0))
+        XCTAssertEqual(TodayLogic.draftGoalTitle("g1103-e5f6", in: today), "Activated testers on two focus products")
+        XCTAssertEqual(TodayLogic.draftGoalTitle("g1104-zzzz", in: today), "No goal")
+        var gone = today
+        gone.draftGoals["g1104-a1b2"] = "deleted_goal"
+        XCTAssertEqual(TodayLogic.draftGoalTitle("g1104-a1b2", in: gone), "No goal")
+    }
+
     func testAReplyWithNoLinkHasNoLinkSoTheButtonGoesToGrowth() throws {
         var today = try full()
         today.reply = GtmWaiting(total: 2, bySource: ["outreach": 2], links: [:])

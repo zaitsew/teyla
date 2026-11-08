@@ -294,6 +294,36 @@ enum TodayLogic {
         var link: URL?
     }
 
+    /// "2 replies to answer, then 8 drafts for this goal"; "8 drafts for this goal" with no replies; nil with neither.
+    static func goalNextTitle(replies: Int, goalDrafts: Int) -> String? {
+        let own = goalDrafts == 1 ? "1 draft for this goal" : "\(goalDrafts) drafts for this goal"
+        if replies > 0 {
+            let first = waitingWords("reply", count: replies)
+            return first.prefix(1).uppercased() + first.dropFirst() + (goalDrafts > 0 ? ", then \(own)" : "")
+        }
+        guard goalDrafts > 0 else { return nil }
+        return own.prefix(1).uppercased() + own.dropFirst()
+    }
+
+    /// The footer sentence for drafts no goal claims, and the words of the link that goes to Growth. nil with none.
+    static func untaggedWords(_ count: Int) -> (text: String, action: String)? {
+        guard count > 0 else { return nil }
+        return count == 1 ? ("1 draft has no goal.", "Assign it on Growth.") : ("\(count) drafts have no goal.", "Assign them on Growth.")
+    }
+
+    /// The featured goal's next step: replies first, then this goal's drafts, else the command's own ordered list.
+    static func nextStep(_ today: GtmToday, goal: GtmGoal?) -> NextStep? {
+        if let goal, let title = goalNextTitle(replies: today.reply.total, goalDrafts: goal.drafts) {
+            if today.reply.total > 0, let base = nextStep(today), base.kind == "reply" {
+                return NextStep(kind: "reply", title: title, detail: base.detail, button: base.button, link: base.link)
+            }
+            if today.reply.total == 0 {
+                return NextStep(kind: "approve", title: title, detail: nextDetail("approve"), button: "Review drafts", link: nil)
+            }
+        }
+        return nextStep(today)
+    }
+
     static func nextStep(_ today: GtmToday) -> NextStep? {
         guard let next = today.next.first(where: { nextKinds.contains($0.kind) }) else { return nil }
         let link = next.sources.lazy.compactMap { link(today.waiting(next.kind), source: $0) }.first
@@ -325,6 +355,16 @@ enum TodayLogic {
         let words = waitingWords(kind, count: count)
         return words.prefix(1).uppercased() + words.dropFirst()
     }
+
+    // MARK: Drafts and goals
+
+    /// The goal a waiting growth draft counts for, from `draft_goals`; nil for "no goal" (a draft with an explicit "none" too).
+    static func draftGoal(_ draftID: String, in today: GtmToday) -> GtmGoal? {
+        today.draftGoals[draftID].flatMap { id in today.goals.first { $0.id == id } }
+    }
+
+    /// The label of a draft's goal menu: the goal's title, or "No goal".
+    static func draftGoalTitle(_ draftID: String, in today: GtmToday) -> String { draftGoal(draftID, in: today)?.title ?? "No goal" }
 
     // MARK: Other goals
 

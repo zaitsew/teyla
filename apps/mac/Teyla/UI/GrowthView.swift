@@ -170,6 +170,7 @@ private struct DraftCard: View {
         let act = model.growth.act(for: draft.id)
         VStack(alignment: .leading, spacing: Space.m) {
             header
+            if let today = model.todayPage.today, !today.goals.isEmpty { goalMenu(today) }
             if isOpen {
                 openBody(act: act)
             } else if !draft.body.isEmpty {
@@ -184,6 +185,35 @@ private struct DraftCard: View {
         .accessibilityElement(children: .contain)
         // A saved edit changes the draft: only then does the editor close.
         .onChange(of: draft) { if mode == .editing { mode = .reading } }
+    }
+
+    /// Which goal this draft counts for. Choosing runs `teyla growth tag`; Today and this list are read again.
+    private func goalMenu(_ today: GtmToday) -> some View {
+        let current = TodayLogic.draftGoal(draft.id, in: today)
+        return HStack(spacing: Space.xs) {
+            Text("Goal").font(Typo.caption).foregroundStyle(Palette.textSecondary)
+            Menu {
+                ForEach(today.goals) { goal in
+                    Button { model.growth.tag(draft, goal: goal.id, title: goal.title) } label: {
+                        if goal.id == current?.id { Label(goal.title, systemImage: "checkmark") } else { Text(goal.title) }
+                    }
+                }
+                Divider()
+                Button { model.growth.tag(draft, goal: nil, title: nil) } label: {
+                    if current == nil { Label("No goal", systemImage: "checkmark") } else { Text("No goal") }
+                }
+                // `--goal=auto` drops a manual tag, so the [goal.drafts] rules in goals.toml decide again.
+                Button("Let the rules decide") { model.growth.tag(draft, goal: "auto", title: "the goal its rules pick") }
+            } label: {
+                Text(TodayLogic.draftGoalTitle(draft.id, in: today)).font(Typo.caption.weight(.medium)).lineLimit(1)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(busy)
+            .help("The goal this draft counts for on Today")
+            .accessibilityLabel("Goal for this draft: \(TodayLogic.draftGoalTitle(draft.id, in: today))")
+            Spacer(minLength: 0)
+        }
     }
 
     private var header: some View {

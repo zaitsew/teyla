@@ -974,12 +974,14 @@ def _gtm_json(**kw):
            "preparation": {"today": 40, "week": 283}, "outcomes": {"today": 1, "week": 9},
            "goals": [{"id": "relationships", "title": "Conversations", "done_when": "A sale", "deadline": "2027-03-01",
                       "days_left": 114, "weeks_left": 16, "short": 9, "fed_by": ["src"], "unfed": ["secret-source"],
+                      "drafts": {"total": 3, "growth": 2, "by_source": {"src": 1, "growth": 2}},
                       "targets": [{"stage": "conversation", "count": 6, "target": 15, "counter": "outcomes",
                                    "history": [{"week": "2026-W45", "count": 6}]},
                                   {"stage": "approached", "count": 21, "target": 60, "counter": "distribution"},
                                   {"stage": "odd", "count": 1, "target": 2, "counter": "rm -rf"}]}],
            "next": [{"kind": "reply", "count": 2, "label": "answer 2 replies", "sources": ["src"]},
                     {"kind": "rm -rf", "count": 1}],
+           "untagged_drafts": 4, "draft_goals": {"g1107-ab3d": "relationships"},
            "sources": [{"id": "src", "state": "ok", "line": "secret-path"}], "doctor": ["src: missing: secret-path"]}
     raw.update(kw)
     return json.dumps(raw)
@@ -995,10 +997,19 @@ def test_the_gtm_card_carries_counts_and_goals_only():
                                {"stage": "odd", "count": 1, "target": 2, "counter": "outcomes"}]
     assert (goal["done_when"], goal["weeks_left"], goal["short"], goal["days_left"]) == ("A sale", 16, 9, 114)
     assert goal["deadline"] == "2027-03-01"
+    assert goal["drafts"] == 3 and view["untagged_drafts"] == 4
     assert view["next"] == [{"kind": "reply", "count": 2}]
     text = json.dumps(view)
     assert "secret-path" not in text and "example.com" not in text and "src" not in text and "preparation" not in text
     assert "history" not in text and "secret-source" not in text and "fed_by" not in text
+    assert "g1107-ab3d" not in text and "by_source" not in text
+
+
+def test_an_old_gtm_document_without_drafts_still_makes_a_card():
+    raw = json.loads(_gtm_json())
+    del raw["untagged_drafts"], raw["goals"][0]["drafts"]
+    view = relay.gtm_view(lambda cmd, t: (0, json.dumps(raw), ""), ["teyla"])
+    assert view["goals"][0]["drafts"] == 0 and view["untagged_drafts"] == 0
 
 
 def test_the_gtm_card_is_hidden_when_the_command_is_missing_or_broken():

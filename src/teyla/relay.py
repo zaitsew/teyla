@@ -838,14 +838,16 @@ def gtm_view(runner=None, base: list[str] | None = None) -> dict | None:
                       "done_when": done_when[:120] if isinstance(done_when, str) and done_when.strip() else None,
                       "deadline": deadline if isinstance(deadline, str) and len(deadline) == 10 else None,
                       "days_left": dl if type(dl) is int else None, "weeks_left": wl if type(wl) is int else None,
-                      "short": n(g.get("short")), "targets": rows})
+                      "short": n(g.get("short")), "targets": rows,
+                      "drafts": n(g["drafts"].get("total")) if isinstance(g.get("drafts"), dict) else 0})
     nxt = [{"kind": a["kind"], "count": n(a.get("count"))} for a in raw.get("next") or []
            if isinstance(a, dict) and a.get("kind") in (*GTM_KINDS, "distribute")]
     return {"day": raw["day"], **{k: total(k) for k in GTM_KINDS},
             "distribution": {"today": n(dist.get("today")), "target": target if type(target) is int and target > 0 else None,
                              "week": n(dist.get("week"))},
             "outcomes_week": n((raw.get("outcomes") or {}).get("week")) if isinstance(raw.get("outcomes"), dict) else 0,
-            "has_goals": raw.get("has_goals") is True, "goals": goals[:GTM_GOALS], "next": nxt}
+            "has_goals": raw.get("has_goals") is True, "goals": goals[:GTM_GOALS], "next": nxt,
+            "untagged_drafts": n(raw.get("untagged_drafts"))}
 
 
 def deliver_answer(item: asks.Ask, text: str, answer_fn) -> tuple[bool, str, str]:
