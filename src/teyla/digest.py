@@ -149,6 +149,10 @@ def play_items() -> list[tuple[str, str]]:
     return problem_file_items("play.problems")
 
 
+def freshness_items() -> list[tuple[str, str]]:
+    return problem_file_items("freshness.problems")
+
+
 def problem_file_candidates() -> list[dict]:
     """Weekly-digest candidates from the two problem files: one line each, however many tasks or
     platforms it names, with the command that shows the rest."""
@@ -156,10 +160,13 @@ def problem_file_candidates() -> list[dict]:
     for rank, cid, items, cmd, what in ((2, "schedules", schedule_items(), "teyla schedules", "scheduled task"),
                                         (3, "testflight", testflight_items(), "teyla testflight",
                                          "TestFlight platform"),
-                                        (4, "play", play_items(), "teyla play", "Google Play product")):
+                                        (4, "play", play_items(), "teyla play", "Google Play product"),
+                                        (5, "freshness", freshness_items(), "teyla freshness",
+                                         "stale README or store item")):
         if items:
             n = len(items)
             head = f"{n} {what}{'s' if n != 1 else ''} not current" if cid in ("testflight", "play") else \
+                f"{n} {what}{'s' if n != 1 else ''}" if cid == "freshness" else \
                 f"{n} {what}{'s' if n != 1 else ''} not running"
             out.append(dict(rank=rank, id=cid, text=_short(f"{head}: {_clean(items[0][1])}", 90), step=cmd, cmd=True))
     return out
@@ -188,6 +195,7 @@ def write_banner_items(checks: list[dict] | None = None, today: _dt.date | None 
     items += schedule_items()
     items += testflight_items()
     items += play_items()
+    items += freshness_items()
     items += reminder_items(today=today)
     p = banner_items_path()
     try:
