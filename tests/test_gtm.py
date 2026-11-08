@@ -415,3 +415,13 @@ def test_a_source_without_the_prefix_or_not_listed_is_untagged():
     docs, status = collect(g)
     t = gtm.today_report(g, docs, status, DAY)
     assert t["untagged_drafts"] == 5 and t["goals"][0]["drafts"]["total"] == 0
+
+
+def test_an_empty_draft_matcher_list_allows_nothing_and_survives_goal_set():
+    goals(gtm.EXAMPLE_GOALS.replace('kinds = ["post"]', 'products = []\nkinds = ["post"]', 1))
+    g = gtm.load_goals()
+    assert g["goals"][0]["drafts"]["products"] == [] and g["goals"][0]["drafts"]["kinds"] == ["post"]
+    item = {"id": "g1104-dddd", "kind": "post", "platform": "x", "product": "alpha", "status": "review"}
+    assert gtm.draft_goal(item, g) == (None, None)
+    gtm.set_goal("relationships", weekly={"intro": 4})
+    assert gtm.load_goals()["goals"][0]["drafts"]["products"] == []

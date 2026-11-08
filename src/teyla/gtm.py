@@ -262,9 +262,8 @@ def load_goals(path: pathlib.Path | None = None) -> dict:
             for key in DRAFT_FIELDS:
                 if key in g["drafts"] and not isinstance(g["drafts"][key], list):
                     out["errors"].append(f"goal {gid}: drafts.{key} must be a list")
-                vals = [_clean_stage(x) for x in strings(g["drafts"].get(key)) if str(x).strip()]
-                if vals:
-                    drafts[key] = vals
+                if key in g["drafts"]:       # an empty list allows nothing; it never widens the rule
+                    drafts[key] = [_clean_stage(x) for x in strings(g["drafts"][key]) if str(x).strip()]
         out["goals"].append(dict(
             id=gid, drafts=drafts, title=str(g.get("title") or gid)[:120], deadline=deadline, funnel=funnel, weekly=weekly,
             done_when=str(g.get("done_when") or "").strip()[:160],
@@ -342,7 +341,7 @@ def render_goal(g: dict) -> str:
     if g.get("drafts") is not None:
         L.append("[goal.drafts]")
         for key in DRAFT_FIELDS:
-            if g["drafts"].get(key):
+            if key in g["drafts"]:
                 L.append(f"{_toml_key(key)} = [{', '.join(_toml_str(x) for x in g['drafts'][key])}]")
     return "\n".join(L) + "\n"
 
