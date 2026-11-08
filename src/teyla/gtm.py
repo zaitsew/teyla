@@ -878,11 +878,16 @@ def goal_history(gid: str, stage: str, weeks: list[str]) -> list[int | None]:
     return out
 
 
-def draft_report(goals: dict, docs: list[dict]) -> tuple[dict, int, dict]:
-    """({goal id: {total, growth, by_source}}, drafts with no goal, {item id: goal id}) for the drafts waiting now."""
+def draft_report(goals: dict, docs: list[dict]) -> tuple[dict, int, dict, dict]:
+    """({goal id: {total, growth, by_source}}, drafts with no goal, {item id: goal id}, {source: count no goal can take}).
+
+    The last map is the part of the untagged count that a tag cannot fix: a source's own `approve` count, bare or under
+    a prefix no goal listing that source uses. Only the source can change that, by reporting `<stage_prefix>.approve`.
+    """
     per = {g["id"]: dict(total=0, growth=0, by_source={}) for g in goals["goals"]}
     draft_goals: dict[str, str] = {}
     untagged = 0
+    unplaced: dict[str, int] = {}
     for doc in docs:
         if doc["source"] != "growth":
             continue
@@ -904,18 +909,19 @@ def draft_report(goals: dict, docs: list[dict]) -> tuple[dict, int, dict]:
             owners = [g for g in goals["goals"] if pre and g["prefix"] == pre and doc["source"] in g["sources"]]
             if not owners:
                 untagged += v          # an unprefixed count cannot say which goal it serves
+                unplaced[doc["source"]] = unplaced.get(doc["source"], 0) + v
             for g in owners:
                 per[g["id"]]["by_source"][doc["source"]] = per[g["id"]]["by_source"].get(doc["source"], 0) + v
     for p in per.values():
         if p["growth"]:
             p["by_source"]["growth"] = p["growth"]
         p["total"] = sum(p["by_source"].values())
-    return per, untagged, draft_goals
+    return per, untagged, draft_goals, unplaced
 
 
 def today_report(goals: dict, docs: list[dict], status: list[dict], day: str) -> dict:
     c = counters(docs)
-    per_goal, untagged, draft_goals = draft_report(goals, docs)
+    per_goal, untagged, draft_goals, unplaced = draft_report(goals, docs)
     t = dict(version=VERSION, day=day, week=week_of(day), has_goals=goals["exists"])
     for kind in WAITING_KINDS:
         t[kind] = _waiting(docs, kind)
@@ -941,6 +947,7 @@ def today_report(goals: dict, docs: list[dict], status: list[dict], day: str) ->
                                targets=targets, short=short, fed_by=f["fed_by"], unfed=f["unfed"],
                                drafts=per_goal[g["id"]]))
     t["untagged_drafts"] = untagged
+    t["untagged_sources"] = unplaced        # source id -> drafts only that source can place; part of untagged_drafts
     t["draft_goals"] = draft_goals
     t["next"] = next_actions(t)
     t["sources"] = status
@@ -1017,9 +1024,14 @@ def render_today(t: dict) -> str:
         L.append(f"{g['title']} (deadline {g['deadline'] or 'none'}{dl})")
         L.append("  " + ("  ".join(f"{r['stage']} {r['count']}/{r['target']}" for r in g["targets"]) or "no weekly targets"))
         L.append(f"  drafts for this goal: {g['drafts']['total']}")
-    if t["untagged_drafts"]:
-        n = t["untagged_drafts"]
+    from_sources = t.get("untagged_sources") or {}
+    n = t["untagged_drafts"] - sum(from_sources.values())          # growth drafts: a tag places them
+    if n > 0:
         L.append(f"{n} draft{'s' if n != 1 else ''} {'have' if n != 1 else 'has'} no goal (`teyla growth tag ID --goal GOAL`)")
+    if from_sources:
+        named = ", ".join(f"{sid} {c}" for sid, c in sorted(from_sources.items()))
+        L.append(f"{sum(from_sources.values())} source drafts have no goal ({named}): a tag cannot place them; "
+                 "the source must report `<stage_prefix>.approve` and be listed in a goal's sources")
     for line in t["doctor"]:
         L.append(f"doctor  {line}")
     return "\n".join(L) + "\n"
