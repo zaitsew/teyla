@@ -1,0 +1,21 @@
+title: Home
+level: 1
+platforms: [ios, macos]
+route: home
+job: Show what to cook tonight.
+primary_action: Start cooking
+states: [loaded, empty]
+layout:
+  compact: One column; the tonight card above the shelf.
+  regular: Two columns; the shelf beside the tonight card.
+  wide: Three columns with the shopping list pinned right.
+  assert: testHomeWideShowsThreeColumns
+links:
+  - to: recipes
+    via: tap Recipes tab
+    tested: true
+  - to: shopping
+    via: tap Shopping tab
+    tested: true
+features: [Home, Tonight card]
+source: [App/Recipes/Home.swift]

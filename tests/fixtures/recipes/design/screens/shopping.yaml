@@ -1,0 +1,15 @@
+title: Shopping list
+level: 1
+platforms: [ios]
+route: shopping
+job: Tick off what to buy.
+primary_action: Add item
+layout:
+  compact: A single list.
+  regular: A single list, wider rows.
+  wide: Two lists side by side.
+links:
+  - to: home
+    via: tap Home tab
+    tested: false
+features: [Shopping list]

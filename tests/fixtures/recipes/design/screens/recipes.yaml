@@ -1,0 +1,20 @@
+title: Recipes
+level: 1
+platforms: [ios, macos]
+route: recipes
+job: Browse saved recipes and start a new one.
+primary_action: Add recipe
+states: [empty, loaded, error]
+layout:
+  compact: A single list.
+  regular: A list with a detail pane.
+  wide: A grid of cards.
+links:
+  - to: recipe
+    via: tap a row
+    tested: true
+  - to: add-recipe
+    via: tap Add
+    tested: false
+features: [Recipe list]
+source: [App/Recipes/RecipeList.swift]
