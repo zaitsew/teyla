@@ -59,53 +59,109 @@ struct GtmDistribution: Equatable, Sendable, Decodable {
     }
 }
 
+/// One week of a target's history: the ISO week, and the count the saved run held. nil: no run saved that week.
+struct GtmWeek: Equatable, Sendable, Decodable {
+    var week: String
+    var count: Int?
+
+    init(week: String, count: Int? = nil) {
+        self.week = week
+        self.count = count
+    }
+
+    private enum Keys: String, CodingKey { case week, count }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        week = try c.decode(String.self, forKey: .week)
+        count = c.optional(.count)
+    }
+}
+
 struct GtmTarget: Equatable, Sendable, Decodable {
     var stage: String
     var count: Int
     var target: Int
+    /// "outcomes" (something came back), "distribution" (something went out) or "preparation". An older command names none:
+    /// the target then counts as an outcome.
+    var counter: String
+    /// The eight weeks ending with this one; empty from an older command.
+    var history: [GtmWeek]
 
-    init(stage: String, count: Int, target: Int) {
+    init(stage: String, count: Int, target: Int, counter: String = "outcomes", history: [GtmWeek] = []) {
         self.stage = stage
         self.count = count
         self.target = target
+        self.counter = counter
+        self.history = history
     }
 
-    private enum Keys: String, CodingKey { case stage, count, target }
+    private enum Keys: String, CodingKey { case stage, count, target, counter, history }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         stage = try c.decode(String.self, forKey: .stage)
         count = c.lenient(.count, 0)
         target = c.lenient(.target, 0)
+        counter = c.lenient(.counter, "outcomes")
+        let weeks: [LossyBox<GtmWeek>] = c.lenient(.history, [])
+        history = weeks.compactMap(\.value)
     }
+
+    var isOutcome: Bool { counter == "outcomes" }
 }
 
 struct GtmGoal: Equatable, Sendable, Decodable, Identifiable {
     var id: String
     var title: String
+    /// What reaching the goal means, in the owner's words.
+    var doneWhen: String?
     var deadline: String?
     var daysLeft: Int?
+    var weeksLeft: Int?
+    /// How far this week's outcome targets are from their numbers, added up. A distribution target never counts.
+    var short: Int
+    /// Sources that feed this goal and answer, and sources it names that are not connected.
+    var fedBy: [String]
+    var unfed: [String]
     var targets: [GtmTarget]
 
-    init(id: String, title: String, deadline: String? = nil, daysLeft: Int? = nil, targets: [GtmTarget] = []) {
+    init(id: String, title: String, doneWhen: String? = nil, deadline: String? = nil, daysLeft: Int? = nil, weeksLeft: Int? = nil,
+         short: Int = 0, fedBy: [String] = [], unfed: [String] = [], targets: [GtmTarget] = []) {
         self.id = id
         self.title = title
+        self.doneWhen = doneWhen
         self.deadline = deadline
         self.daysLeft = daysLeft
+        self.weeksLeft = weeksLeft
+        self.short = short
+        self.fedBy = fedBy
+        self.unfed = unfed
         self.targets = targets
     }
 
-    private enum Keys: String, CodingKey { case id, title, deadline, daysLeft = "days_left", targets }
+    private enum Keys: String, CodingKey {
+        case id, title, deadline, targets, short, unfed
+        case doneWhen = "done_when", daysLeft = "days_left", weeksLeft = "weeks_left", fedBy = "fed_by"
+    }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         id = try c.decode(String.self, forKey: .id)
         title = c.lenient(.title, id)
+        doneWhen = c.optional(.doneWhen)
         deadline = c.optional(.deadline)
         daysLeft = c.optional(.daysLeft)
+        weeksLeft = c.optional(.weeksLeft)
+        short = c.lenient(.short, 0)
+        fedBy = c.lenient(.fedBy, [])
+        unfed = c.lenient(.unfed, [])
         let boxes: [LossyBox<GtmTarget>] = c.lenient(.targets, [])
         targets = boxes.compactMap(\.value)
     }
+
+    /// The targets that count what came back; they alone fill circles.
+    var outcomeTargets: [GtmTarget] { targets.filter(\.isOutcome) }
 }
 
 /// One line of the ordered "what next" list.
@@ -167,6 +223,8 @@ struct GtmToday: Equatable, Sendable, Decodable {
     var version = 1
     var day = ""
     var week = ""
+    /// The Sunday of this ISO week, "YYYY-MM-DD"; empty from an older command.
+    var weekEnd = ""
     var hasGoals = false
     var approve = GtmWaiting()
     var send = GtmWaiting()
@@ -186,7 +244,7 @@ struct GtmToday: Equatable, Sendable, Decodable {
 
     private enum Keys: String, CodingKey {
         case version, day, week, approve, send, reply, distribution, preparation, outcomes, goals, next, sources, doctor
-        case hasGoals = "has_goals", followUp = "follow_up"
+        case hasGoals = "has_goals", followUp = "follow_up", weekEnd = "week_end"
     }
 
     private struct Pair: Decodable {
@@ -209,6 +267,7 @@ struct GtmToday: Equatable, Sendable, Decodable {
         version = c.lenient(.version, 1)
         day = c.lenient(.day, "")
         week = c.lenient(.week, "")
+        weekEnd = c.lenient(.weekEnd, "")
         hasGoals = c.lenient(.hasGoals, false)
         approve = c.lenient(.approve, GtmWaiting())
         send = c.lenient(.send, GtmWaiting())

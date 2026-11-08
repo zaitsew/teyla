@@ -798,11 +798,13 @@ def activity_view(runner=None, base: list[str] | None = None) -> dict | None:
 GTM_KINDS = ("approve", "send", "reply", "follow_up")
 GTM_GOALS = 4
 GTM_TARGETS = 6
+GTM_COUNTERS = ("outcomes", "distribution", "preparation")
 
 
 def gtm_view(runner=None, base: list[str] | None = None) -> dict | None:
     """The GTM Today card for the phone (docs/GTM.md): counts, the owner's own goal titles and targets, the ordered next
-    actions as kinds and counts. No source names, no links, no doctor lines. None when this Teyla has no `gtm` or it fails."""
+    actions as kinds and counts. Each goal also carries `done_when`, `weeks_left`, `short` and each target its `counter`, so the
+    phone can draw the goal first. No source names, no links, no doctor lines. None when this Teyla has no `gtm` or it fails."""
     runner = runner or run_command
     code, out, _err = runner([*(base or teyla_command()), "gtm", "today", "--json"], 30)
     if code != 0:
@@ -827,11 +829,16 @@ def gtm_view(runner=None, base: list[str] | None = None) -> dict | None:
     for g in raw.get("goals") or []:
         if not isinstance(g, dict) or not isinstance(g.get("id"), str):
             continue
-        rows = [{"stage": str(t["stage"])[:40], "count": n(t.get("count")), "target": n(t.get("target"))}
+        rows = [{"stage": str(t["stage"])[:40], "count": n(t.get("count")), "target": n(t.get("target")),
+                 "counter": t["counter"] if t.get("counter") in GTM_COUNTERS else "outcomes"}
                 for t in g.get("targets") or [] if isinstance(t, dict) and isinstance(t.get("stage"), str)][:GTM_TARGETS]
-        dl = g.get("days_left")
+        dl, wl, deadline = g.get("days_left"), g.get("weeks_left"), g.get("deadline")
+        done_when = g.get("done_when")
         goals.append({"id": g["id"][:40], "title": str(g.get("title") or g["id"])[:80],
-                      "days_left": dl if type(dl) is int else None, "targets": rows})
+                      "done_when": done_when[:120] if isinstance(done_when, str) and done_when.strip() else None,
+                      "deadline": deadline if isinstance(deadline, str) and len(deadline) == 10 else None,
+                      "days_left": dl if type(dl) is int else None, "weeks_left": wl if type(wl) is int else None,
+                      "short": n(g.get("short")), "targets": rows})
     nxt = [{"kind": a["kind"], "count": n(a.get("count"))} for a in raw.get("next") or []
            if isinstance(a, dict) and a.get("kind") in (*GTM_KINDS, "distribute")]
     return {"day": raw["day"], **{k: total(k) for k in GTM_KINDS},

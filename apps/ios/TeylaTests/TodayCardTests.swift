@@ -17,7 +17,7 @@ final class TodayCardDecodingTests: XCTestCase {
         XCTAssertEqual(gtm.waitingTotal, 14)
         XCTAssertEqual(gtm.distribution.target, 10)
         XCTAssertEqual(gtm.goals.first?.daysLeft, 38)
-        XCTAssertEqual(gtm.goals.first?.targets, [GtmGlimpse.Target(stage: "activated", count: 4, target: 10)])
+        XCTAssertEqual(gtm.goals.first?.targets, [GtmGlimpse.Target(stage: "activated", count: 4, target: 10, counter: "outcomes")])
         XCTAssertEqual(gtm.next.map(\.kind), ["reply", "distribute"])
         XCTAssertEqual(gtm.distributionFigure, "3 of 10")
         XCTAssertEqual(gtm.waitingSpoken, "6 drafts to approve, 5 items to send, 2 replies to answer, 1 follow-up due.")
@@ -37,5 +37,30 @@ final class TodayCardDecodingTests: XCTestCase {
         let snapshot = try PhoneFormat.decodeSnapshot(Data(#"{"version": 3, "gtm": "not an object"}"#.utf8))
         XCTAssertNil(snapshot.gtm)
         XCTAssertEqual(snapshot.version, 3)
+    }
+
+    func testTheGoalFirstFieldsDecodeAndAnOlderMacStillWorks() throws {
+        let json = #"""
+        {"version": 3, "gtm": {"day": "2026-11-07", "approve": 22, "reply": 2, "distribution": {"today": 3, "target": 10, "week": 21},
+         "has_goals": true,
+         "goals": [{"id": "a", "title": "Small", "short": 3, "targets": [{"stage": "intro", "count": 0, "target": 3, "counter": "outcomes"}]},
+                   {"id": "b", "title": "Big", "done_when": "A sale", "days_left": 114, "weeks_left": 16, "short": 14,
+                    "targets": [{"stage": "approached", "count": 21, "target": 60, "counter": "distribution"},
+                                {"stage": "conversation", "count": 1, "target": 15, "counter": "outcomes"}]}],
+         "next": [{"kind": "distribute", "count": 7}, {"kind": "reply", "count": 2}]}}
+        """#
+        let gtm = try XCTUnwrap(PhoneFormat.decodeSnapshot(Data(json.utf8)).gtm)
+        XCTAssertEqual(gtm.goals[1].weeksLeft, 16)
+        XCTAssertEqual(gtm.goals[1].short, 14)
+        XCTAssertEqual(gtm.lead?.id, "b")
+        XCTAssertEqual(gtm.lead?.outcomeTargets.map(\.stage), ["conversation"])
+        XCTAssertEqual(gtm.nextTitle, "2 replies to answer")
+        XCTAssertEqual(gtm.cameBack, 2)
+        XCTAssertEqual(gtm.stripSpoken, "Sent 3 of 10 today. 2 that came back are waiting. 22 prepared.")
+
+        let old = try XCTUnwrap(PhoneFormat.decodeSnapshot(Data(#"{"version": 3, "gtm": {"day": "2026-11-07", "goals": [{"id": "g", "targets": [{"stage": "intro", "count": 1, "target": 3}]}]}}"#.utf8)).gtm)
+        XCTAssertEqual(old.goals[0].targets[0].counter, "outcomes")
+        XCTAssertEqual(old.goals[0].short, 0)
+        XCTAssertNil(old.nextTitle)
     }
 }

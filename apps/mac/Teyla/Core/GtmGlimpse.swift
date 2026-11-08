@@ -32,45 +32,70 @@ struct GtmGlimpse: Decodable, Equatable, Sendable {
         var stage: String
         var count: Int
         var target: Int
+        /// "outcomes", "distribution" or "preparation"; a Mac that sends none means an outcome.
+        var counter: String
 
-        init(stage: String, count: Int = 0, target: Int = 0) {
+        init(stage: String, count: Int = 0, target: Int = 0, counter: String = "outcomes") {
             self.stage = stage
             self.count = count
             self.target = target
+            self.counter = counter
         }
 
-        private enum Keys: String, CodingKey { case stage, count, target }
+        private enum Keys: String, CodingKey { case stage, count, target, counter }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: Keys.self)
             stage = try c.decode(String.self, forKey: .stage)
             count = c.lenient(.count, 0)
             target = c.lenient(.target, 0)
+            counter = c.lenient(.counter, "outcomes")
         }
     }
 
     struct Goal: Decodable, Equatable, Sendable, Identifiable {
         var id: String
         var title: String
+        var doneWhen: String?
+        var deadline: String?
         var daysLeft: Int?
+        var weeksLeft: Int?
+        var short: Int
         var targets: [Target]
 
-        init(id: String, title: String, daysLeft: Int? = nil, targets: [Target] = []) {
+        init(id: String, title: String, doneWhen: String? = nil, deadline: String? = nil, daysLeft: Int? = nil, weeksLeft: Int? = nil, short: Int = 0, targets: [Target] = []) {
             self.id = id
             self.title = title
+            self.doneWhen = doneWhen
+            self.deadline = deadline
             self.daysLeft = daysLeft
+            self.weeksLeft = weeksLeft
+            self.short = short
             self.targets = targets
         }
 
-        private enum Keys: String, CodingKey { case id, title, daysLeft = "days_left", targets }
+        private enum Keys: String, CodingKey {
+            case id, title, short, targets, deadline
+            case doneWhen = "done_when", daysLeft = "days_left", weeksLeft = "weeks_left"
+        }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: Keys.self)
             id = try c.decode(String.self, forKey: .id)
             title = c.lenient(.title, id)
+            doneWhen = c.optional(.doneWhen)
+            deadline = c.optional(.deadline)
             daysLeft = c.optional(.daysLeft)
+            weeksLeft = c.optional(.weeksLeft)
+            short = c.lenient(.short, 0)
             let boxes: [LossyBox<Target>] = c.lenient(.targets, [])
             targets = boxes.compactMap(\.value)
+        }
+
+        /// The same goal in the Mac's own type, so the choices of `TodayLogic` (which goal leads, its pace) are the Mac's.
+        var asGoal: GtmGoal {
+            GtmGoal(id: id, title: title, doneWhen: doneWhen, deadline: deadline, daysLeft: daysLeft, weeksLeft: weeksLeft, short: short,
+                    targets: targets.map { GtmTarget(stage: $0.stage, count: $0.count, target: $0.target, counter: $0.counter) })
         }
     }
 
@@ -127,6 +152,29 @@ struct GtmGlimpse: Decodable, Equatable, Sendable {
     }
 
     var waitingTotal: Int { approve + send + reply + followUp }
+
+    /// The goal that leads on the phone, as on the Mac: the largest shortfall.
+    var lead: GtmGoal? { TodayLogic.featured(goals.map(\.asGoal)) }
+
+    /// The first reply, approval, send or follow-up of the ordered list, as a sentence.
+    var nextTitle: String? {
+        next.first { TodayLogic.nextKinds.contains($0.kind) }.map { TodayLogic.nextTitle(kind: $0.kind, count: $0.count) }
+    }
+
+    var nextDetail: String? { next.first { TodayLogic.nextKinds.contains($0.kind) }.flatMap { TodayLogic.nextDetail($0.kind) } }
+
+    /// Replies and follow-ups that came back and wait.
+    var cameBack: Int { reply + followUp }
+
+    /// One sentence for the quiet line: Sent, Came back, Prepared.
+    var stripSpoken: String {
+        var today = GtmToday()
+        today.distribution = GtmDistribution(today: distribution.today, target: distribution.target, week: distribution.week)
+        today.reply = GtmWaiting(total: reply)
+        today.followUp = GtmWaiting(total: followUp)
+        today.approve = GtmWaiting(total: approve)
+        return TodayLogic.stripSpoken(today)
+    }
 
     /// "6 drafts to approve, 5 items to send, 2 replies to answer": only what is above zero; "Nothing waits for you."
     var waitingSpoken: String {

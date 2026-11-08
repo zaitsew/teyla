@@ -29,6 +29,9 @@ targets:
       # The visual grammar: both apps build their pages from the same components.
       - path: ../mac/Teyla/UI/Grammar.swift
         group: Shared
+      # A goal's row of circles and its pace chip: the Today card draws what the Mac's Today page draws.
+      - path: ../mac/Teyla/UI/GoalBeads.swift
+        group: Shared
       # The admin sections' parsers and words (docs/CONSOLE.md): Growth, Money, Operations and Playbook read the snapshot's
       # compact console with the code the Mac's pages use. None of these files has a view in it.
       - path: ../mac/Teyla/Core/ConsoleReport.swift
@@ -59,12 +62,14 @@ targets:
         group: Shared
       - path: ../mac/Teyla/Core/GtmGlimpse.swift
         group: Shared
+      - path: ../mac/Teyla/Core/GtmGoalCommands.swift
+        group: Shared
     info:
       path: Teyla/Info.plist
       properties:
         CFBundleName: Teyla
         CFBundleDisplayName: Teyla
-        CFBundleShortVersionString: "0.43.0"
+        CFBundleShortVersionString: "0.44.0"
         # Raise CURRENT_PROJECT_VERSION below by hand for each upload: the release tool does not.
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         # The Mac's pairing code is a QR code holding `teyla-pair:v1:<key>`; the system Camera opens it here.
@@ -134,6 +139,8 @@ targets:
       - path: ../mac/Teyla/Core/TodayLogic.swift
         group: Shared
       - path: ../mac/Teyla/Core/GtmGlimpse.swift
+        group: Shared
+      - path: ../mac/Teyla/Core/GtmGoalCommands.swift
         group: Shared
     settings:
       base:

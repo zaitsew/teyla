@@ -91,11 +91,11 @@ Go-to-market has its own daily screen. `teyla gtm` is the cockpit for getting us
 ## The Mac and iPhone apps
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/mac/product-dark.png">
-  <img alt="Teyla for Mac: one product's page, with its platforms, pull requests and spend" src="docs/img/mac/product-light.png" width="720">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/mac/today-dark.png">
+  <img alt="Teyla for Mac, Today: each goal as a row of circles that fill with real outcomes, the next step for the leading goal, and the activity graph" src="docs/img/mac/today-light.png" width="720">
 </picture>
 
-Teyla for Mac is a window and a menu-bar icon: today's brief, questions you answer in place, the portfolio and the diagnosis. It runs the `teyla` command, so install that first, then build the app (macOS 15, Xcode):
+Teyla for Mac is a window and a menu-bar icon: Today (your goals and the next step that moves them), Home, the decisions waiting on you, your products, and Growth, Money, Operations and Playbook. It runs the `teyla` command, so install that first, then build the app (macOS 15, Xcode):
 
 ```bash
 brew install xcodegen && git clone https://github.com/zaitsew/teyla && cd teyla/apps/mac && ./install.sh

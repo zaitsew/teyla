@@ -1,78 +1,78 @@
 import SwiftUI
 
-/// The Today card at the top of the Growth tab, read-only: what waits for you, today's sends against the target, and one row per goal
-/// with its weekly targets and the days left. The Mac sends counts and the owner's goal titles in the snapshot's `gtm`; there are no
-/// names, links or messages in it, and no commit counts. An older Mac sends no `gtm`, and the card is hidden.
-/// VoiceOver reads the top of the card as one sentence, and each goal as one sentence.
+/// The Today card at the top of the Growth tab, read-only: the goal furthest behind with one row of circles per outcome target,
+/// how it stands this week, one line on what is next, and the quiet line (Sent, Came back, Prepared). The Mac sends counts and the
+/// owner's goal titles in the snapshot's `gtm`; there are no names, links or messages in it, and no commit counts. A circle fills
+/// only for a real outcome that came back; a draft or a send never fills one. An older Mac sends no `gtm`, and the card is hidden.
+/// VoiceOver reads each row of circles as one sentence, and the quiet line as one sentence.
 struct TodayCard: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
         if let gtm = model.snapshot?.gtm {
             VStack(alignment: .leading, spacing: Space.m) {
-                SectionHeader(title: "Today", note: gtm.day.isEmpty ? "What waits for you and what you sent." : gtm.day)
-                VStack(alignment: .leading, spacing: Space.m) {
-                    HStack(alignment: .firstTextBaseline, spacing: Space.l) {
-                        figure("\(gtm.approve)", "to approve")
-                        figure("\(gtm.send)", "to send")
-                        figure("\(gtm.reply)", "replies")
-                        figure("\(gtm.followUp)", "follow-ups")
-                    }
-                    HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-                        Text(gtm.distributionFigure).font(Typo.cardTitle.monospacedDigit())
-                        Text("sent today").font(Typo.caption).foregroundStyle(Palette.textSecondary)
-                        Spacer(minLength: Space.s)
-                        Text("\(gtm.outcomesWeek) outcomes this week").font(Typo.caption).foregroundStyle(Palette.textSecondary)
-                    }
-                    if let fraction = gtm.distributionFraction {
-                        ProgressView(value: fraction).tint(Palette.primaryMuted)
-                    }
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(gtm.spoken)
-                if gtm.goals.isEmpty {
-                    Text(gtm.hasGoals ? "No goal has a weekly target." : "Add goals on your Mac with `teyla gtm init`.")
-                        .font(Typo.caption).foregroundStyle(Palette.textSecondary)
+                SectionHeader(title: "Today", note: TodayLogic.dayWords(gtm.day) ?? gtm.day)
+                if let lead = gtm.lead {
+                    LeadGoal(goal: lead, gtm: gtm)
                 } else {
-                    ForEach(gtm.goals) { goal in GoalRow(goal: goal) }
+                    Text(gtm.hasGoals ? "No goal has a weekly number yet." : "Set a goal on your Mac: open Today there.")
+                        .font(Typo.caption).foregroundStyle(Palette.textSecondary)
                 }
+                QuietLine(gtm: gtm)
             }
             .card()
         }
     }
+}
 
-    private func figure(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: Space.xxs) {
-            Text(value).font(Typo.number)
-            Text(label).font(Typo.caption).foregroundStyle(Palette.textSecondary)
+private struct LeadGoal: View {
+    let goal: GtmGoal
+    let gtm: GtmGlimpse
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.m) {
+            VStack(alignment: .leading, spacing: Space.xs) {
+                Text(goal.title).font(Typo.cardTitle).fixedSize(horizontal: false, vertical: true)
+                Text(TodayLogic.goalMeta(goal)).font(Typo.caption).foregroundStyle(Palette.textSecondary)
+                if let pace = TodayLogic.pace(goal) { PaceChip(pace: pace) }
+            }
+            ForEach(goal.outcomeTargets, id: \.stage) { target in
+                VStack(alignment: .leading, spacing: Space.xs) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(TodayLogic.stageLabel(target.stage)).font(Typo.caption)
+                        Spacer(minLength: Space.s)
+                        Text(TodayLogic.targetWords(target)).font(Typo.caption.weight(.semibold).monospacedDigit())
+                    }
+                    GoalBeads(target: target)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(TodayLogic.beadsSpoken(target))
+            }
+            if let next = gtm.nextTitle {
+                Divider()
+                VStack(alignment: .leading, spacing: Space.xxs) {
+                    Text("Next").font(Typo.caption).foregroundStyle(Palette.textSecondary)
+                    Text(next).font(Typo.body.weight(.semibold))
+                    if let detail = gtm.nextDetail { Text(detail).font(Typo.caption).foregroundStyle(Palette.textSecondary) }
+                }
+                .accessibilityElement(children: .combine)
+            }
         }
     }
 }
 
-private struct GoalRow: View {
-    let goal: GtmGlimpse.Goal
+/// Sent today, what came back and waits, what agents prepared: one quiet line. Prepared is agent work, so it is never accented.
+private struct QuietLine: View {
+    let gtm: GtmGlimpse
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.xs) {
-            Divider()
-            HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-                Text(goal.title).font(Typo.body.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: Space.s)
-                if let left = TodayLogic.daysLeftWords(goal.daysLeft) {
-                    Text(left).font(Typo.caption).foregroundStyle(Palette.textSecondary).multilineTextAlignment(.trailing)
-                }
-            }
-            ForEach(goal.targets, id: \.stage) { target in
-                HStack {
-                    Text(TodayLogic.stageName(target.stage).capitalized).font(Typo.caption)
-                    Spacer(minLength: Space.s)
-                    Text(TodayLogic.targetWords(GtmTarget(stage: target.stage, count: target.count, target: target.target)))
-                        .font(Typo.caption.weight(.semibold).monospacedDigit())
-                }
-            }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(TodayLogic.goalSpoken(GtmGoal(id: goal.id, title: goal.title, daysLeft: goal.daysLeft,
-                                                          targets: goal.targets.map { GtmTarget(stage: $0.stage, count: $0.count, target: $0.target) })))
+        let sent = gtm.distribution.target.map { "\(gtm.distribution.today) of \($0)" } ?? "\(gtm.distribution.today)"
+        let back = gtm.cameBack == 0 ? "none waiting" : "\(gtm.cameBack) waiting"
+        Text("Sent \(sent)  ·  Came back \(back)  ·  Prepared \(gtm.approve)")
+            .font(Typo.caption.monospacedDigit())
+            .foregroundStyle(Palette.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(gtm.stripSpoken)
     }
 }

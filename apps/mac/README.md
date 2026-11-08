@@ -69,41 +69,47 @@ A preview reads `TeylaTests/Fixtures/activity.v1.json` beside the state sample (
 
 ## Today
 
-The admin build opens on **Today** (the first row of the sidebar; the store build opens on Home and has no Today). It answers
-what waits for you, did enough go out, and which goal moved. It reads `teyla gtm today --json` (the contract is in
-[`docs/GTM.md`](../../docs/GTM.md)) and the drafts the Growth page already reads, and it never posts or sends: Approve only marks
-a draft, and Open goes to the item's own page. No commit counts appear on it.
+The admin build opens on **Today** (the first row of the sidebar; the store build opens on Home and has no Today). It is goal
+first: which outcome you work toward, how many real events came back this week against its number, and the one thing to do next.
+It reads `teyla gtm today --json` (the contract is in [`docs/GTM.md`](../../docs/GTM.md)). It never posts or sends: a button opens a
+page, or runs the local `teyla gtm goal` command. No commit counts appear on it.
 
-It shows the ordered next actions, the drafts waiting for approval, what waits to be sent or answered per source (an Open button
-when the source gave a page), today's distribution against the daily target, this week's outcomes against each goal's targets
-with the days left, and the source checks folded at the bottom. The "+1" button and ⌘L work here as on Growth.
+Top to bottom:
+
+- **A quiet strip.** Sent today as ticks against the daily target, Came back (replies and follow-ups that wait), Prepared (drafts
+  agents wrote; agent work, so never in the accent colour).
+- **The lead goal**, the one furthest behind this week, as a large card: its title, "done when", deadline and weeks left, a pace
+  chip ("Behind this week · 14 short" or "On pace this week"), one row of circles per outcome target (one circle per unit of the
+  weekly number; a circle fills only for a real outcome that came back, never for a draft or a send; above 30 a thin bar), and
+  "Next for this goal". Replies open the source's own page; drafts go to Growth. "Log a conversation" opens the "+1" form on
+  "Meeting". Clicking the title opens the goal's weeks to its deadline, the last eight weeks per outcome and where its counts
+  come from.
+- **The other goals** as thin rows. A goal with no number asks "What would count as progress this week?" and "Set a number" runs
+  `teyla gtm goal set`.
+- **The activity graph** (the same card as on Growth), then the sources that are not connected and the folded source checks.
+
+With no goal yet, Today asks for one outcome and one weekly number (and the daily send target when no goals file exists) and
+runs `teyla gtm goal add`. Drafts are reviewed on Growth.
 
 | Key | Does |
 |---|---|
-| ↑ / ↓ or K / J | move the selected draft |
-| A | approve the selected draft (it only marks it) |
-| S | skip to the next draft; the draft does not change |
-| O | open the draft's first source page, or the full draft on Growth when it has none |
+| ⏎ | the primary action of the lead goal's Next line |
 | ⌘R | read again |
 | ⌘L | log a "+1" |
 
-Reject needs a reason, so it is a button that opens a small form. Two layouts exist to compare (they differ in structure):
-
-```sh
-defaults write com.zaitsew.teyla.local teyla.today.layout queue   # the next draft large, the actions beside it, a number strip (the default)
-defaults write com.zaitsew.teyla.local teyla.today.layout board   # three counters and goal progress first, the queue as a list below
-defaults delete com.zaitsew.teyla.local teyla.today.layout        # back to the default
-```
-
-A preview reads `TeylaTests/Fixtures/gtm-today.v1.json` beside the state sample (`TEYLA_GTM_FIXTURE` names another file). A `teyla`
-without `gtm` shows one line, "Update the teyla command to see Today.". Screenshots, with the sample data:
+A preview reads `TeylaTests/Fixtures/gtm-today.v1.json` beside the state sample (`TEYLA_GTM_FIXTURE` names another file;
+`gtm-today.empty.v1.json` is the first run). A `teyla` without `gtm` shows one line, "Update the teyla command to see Today.".
+Screenshots, with the sample data:
 `TEYLA_STATE_FIXTURE=TeylaTests/Fixtures/state.sample.v3.json TEYLA_PREVIEW_SNAPSHOT=out.png TEYLA_PREVIEW_SNAPSHOT_VIEW=today
-TEYLA_PREVIEW_APPEARANCE=dark Teyla -teyla.today.layout board` (the launch argument sets the layout for that run only).
+TEYLA_PREVIEW_APPEARANCE=dark Teyla` (add `TEYLA_GTM_FIXTURE=TeylaTests/Fixtures/gtm-today.empty.v1.json` for the first run).
 
-| queue (default) | board |
+| Light | Dark |
 |---|---|
-| ![Today, queue layout, light](../../docs/img/mac/today-queue-light.png) | ![Today, board layout, light](../../docs/img/mac/today-board-light.png) |
-| ![Today, queue layout, dark](../../docs/img/mac/today-queue-dark.png) | ![Today, board layout, dark](../../docs/img/mac/today-board-dark.png) |
+| ![Today, light](../../docs/img/mac/today-light.png) | ![Today, dark](../../docs/img/mac/today-dark.png) |
+
+First run, light:
+
+![Today, first run, light](../../docs/img/mac/today-first-run-light.png)
 
 ## First run
 

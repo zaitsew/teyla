@@ -159,12 +159,18 @@ private struct ActivityLegend: View {
 }
 
 /// The "+1" popover: what kind, for which product, how many. Log runs `teyla growth log` and the graph is read again.
-private struct ActivityLogForm: View {
+struct ActivityLogForm: View {
     @Environment(AppModel.self) private var model
     @Binding var isPresented: Bool
-    @State private var kind = "post"
+    @State private var kind: String
     @State private var product = ""
     @State private var count = 1
+
+    /// `kind` is the one the form opens on; "Log a conversation" on Today opens it on "meeting".
+    init(isPresented: Binding<Bool>, kind: String = "post") {
+        _isPresented = isPresented
+        _kind = State(initialValue: ActivityKind.isKnown(kind) ? kind : "post")
+    }
 
     var body: some View {
         let growth = model.growth

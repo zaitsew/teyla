@@ -52,6 +52,10 @@ protocol TeylaBackend: Sendable {
     func activity(weeks: Int) async throws -> ActivityReport
     /// `teyla gtm today --json`: the Today cockpit (docs/GTM.md). An older command without it throws `unavailable`.
     func gtmToday() async throws -> GtmToday
+    /// `teyla gtm goal add`: writes a goal (and, when no goals file exists, the daily send target) to `~/.teyla/gtm/goals.toml`.
+    func gtmGoalAdd(title: String, weekly: [GtmWeeklyNumber], deadline: String?, doneWhen: String?, perDay: Int?) async throws
+    /// `teyla gtm goal set <id>`: changes a goal's weekly numbers, title, deadline or "done when".
+    func gtmGoalSet(id: String, weekly: [GtmWeeklyNumber], title: String?, deadline: String?, doneWhen: String?) async throws
     /// Teyla's settings file, read as it is (no command runs).
     func teylaConfig() async throws -> TeylaConfig
     /// Runs one command of the Tools page and returns what it printed. Only commands `ToolCommands` allows are run.
@@ -89,6 +93,8 @@ extension TeylaBackend {
     func saleAttempts() async throws -> SaleLedger.Read { throw Self.none }
     func activity(weeks: Int) async throws -> ActivityReport { throw Self.none }
     func gtmToday() async throws -> GtmToday { throw Self.none }
+    func gtmGoalAdd(title: String, weekly: [GtmWeeklyNumber], deadline: String?, doneWhen: String?, perDay: Int?) async throws { throw Self.none }
+    func gtmGoalSet(id: String, weekly: [GtmWeeklyNumber], title: String?, deadline: String?, doneWhen: String?) async throws { throw Self.none }
     func teylaConfig() async throws -> TeylaConfig { throw Self.none }
     func runTool(_ argv: [String]) async throws -> String { throw Self.none }
     func apply(offerID: String) async throws -> String { throw Self.none }

@@ -972,8 +972,12 @@ def _gtm_json(**kw):
            "follow_up": {"total": 0, "by_source": {}, "links": {}},
            "distribution": {"today": 3, "target": 10, "week": 21, "claimed_by_agents": 4},
            "preparation": {"today": 40, "week": 283}, "outcomes": {"today": 1, "week": 9},
-           "goals": [{"id": "relationships", "title": "Conversations", "deadline": "2027-03-01", "days_left": 114,
-                      "targets": [{"stage": "conversation", "count": 6, "target": 15}]}],
+           "goals": [{"id": "relationships", "title": "Conversations", "done_when": "A sale", "deadline": "2027-03-01",
+                      "days_left": 114, "weeks_left": 16, "short": 9, "fed_by": ["src"], "unfed": ["secret-source"],
+                      "targets": [{"stage": "conversation", "count": 6, "target": 15, "counter": "outcomes",
+                                   "history": [{"week": "2026-W45", "count": 6}]},
+                                  {"stage": "approached", "count": 21, "target": 60, "counter": "distribution"},
+                                  {"stage": "odd", "count": 1, "target": 2, "counter": "rm -rf"}]}],
            "next": [{"kind": "reply", "count": 2, "label": "answer 2 replies", "sources": ["src"]},
                     {"kind": "rm -rf", "count": 1}],
            "sources": [{"id": "src", "state": "ok", "line": "secret-path"}], "doctor": ["src: missing: secret-path"]}
@@ -985,10 +989,16 @@ def test_the_gtm_card_carries_counts_and_goals_only():
     view = relay.gtm_view(lambda cmd, t: (0, _gtm_json(), ""), ["teyla"])
     assert view is not None and view["approve"] == 6 and view["send"] == 5 and view["reply"] == 2
     assert view["distribution"] == {"today": 3, "target": 10, "week": 21} and view["outcomes_week"] == 9
-    assert view["goals"][0]["targets"] == [{"stage": "conversation", "count": 6, "target": 15}]
+    goal = view["goals"][0]
+    assert goal["targets"] == [{"stage": "conversation", "count": 6, "target": 15, "counter": "outcomes"},
+                               {"stage": "approached", "count": 21, "target": 60, "counter": "distribution"},
+                               {"stage": "odd", "count": 1, "target": 2, "counter": "outcomes"}]
+    assert (goal["done_when"], goal["weeks_left"], goal["short"], goal["days_left"]) == ("A sale", 16, 9, 114)
+    assert goal["deadline"] == "2027-03-01"
     assert view["next"] == [{"kind": "reply", "count": 2}]
     text = json.dumps(view)
     assert "secret-path" not in text and "example.com" not in text and "src" not in text and "preparation" not in text
+    assert "history" not in text and "secret-source" not in text and "fed_by" not in text
 
 
 def test_the_gtm_card_is_hidden_when_the_command_is_missing_or_broken():
