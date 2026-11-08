@@ -22,6 +22,8 @@ dependencies = []
 work = ["truststore>=0.9"]
 # teyla reel render draws frames with Pillow and pipes them to ffmpeg (ffmpeg comes from PATH).
 reel = ["pillow>=10"]
+# teyla taste add <url> takes screenshots and computed styles with a headless browser (then: playwright install chromium).
+capture = ["playwright>=1.45"]
 
 [project.scripts]
 teyla = "teyla.cli:main"
