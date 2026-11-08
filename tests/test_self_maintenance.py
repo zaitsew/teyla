@@ -291,14 +291,18 @@ def test_wrapper_stale_detects_moved_binary(_home):
     w = routine_install.WRAPPER_PATH
     w.parent.mkdir(parents=True, exist_ok=True)
     w.write_text('#!/bin/bash\ndate > ~/.teyla/weekly.last\nTEYLA="/old/place/teyla"\n'
-                 f'OUT_DIR="{routine_install._runs_root()}/$(date +%F)"\n"$TEYLA" models watch --refresh\n"$TEYLA" tidy --quiet\n"$TEYLA" lang --quiet\n"$TEYLA" reviews --quiet\n"$TEYLA" scout design --quiet\n"$TEYLA" deps --all --quiet\n"$TEYLA" leak --published --quiet\n"$TEYLA" freshness --quiet\n"$TEYLA" digest --write\n')
+                 f'OUT_DIR="{routine_install._runs_root()}/$(date +%F)"\n"$TEYLA" models watch --refresh\n"$TEYLA" tidy --quiet\n"$TEYLA" lang --quiet\n"$TEYLA" reviews --quiet\n"$TEYLA" scout design --quiet\n"$TEYLA" deps --all --quiet\n"$TEYLA" leak --published --quiet\n"$TEYLA" freshness --fetch --quiet\n"$TEYLA" digest --write\n')
     assert routine_install._wrapper_stale(w, "/new/place/teyla")
     assert not routine_install._wrapper_stale(w, "/old/place/teyla")
     # a wrapper from before `teyla freshness` never looks for a stale README or store text
-    w.write_text(w.read_text().replace('"$TEYLA" freshness --quiet\n', ""))
+    w.write_text(w.read_text().replace('"$TEYLA" freshness --fetch --quiet\n', ""))
     assert routine_install._wrapper_stale(w, "/old/place/teyla")
-    w.write_text(w.read_text().replace('"$TEYLA" digest', '"$TEYLA" freshness --quiet\n"$TEYLA" digest'))
+    w.write_text(w.read_text().replace('"$TEYLA" digest', '"$TEYLA" freshness --fetch --quiet\n"$TEYLA" digest'))
     assert not routine_install._wrapper_stale(w, "/old/place/teyla")
+    # a wrapper with plain `freshness --quiet` reads refs that are days old: rewritten
+    w.write_text(w.read_text().replace("freshness --fetch --quiet", "freshness --quiet"))
+    assert routine_install._wrapper_stale(w, "/old/place/teyla")
+    w.write_text(w.read_text().replace("freshness --quiet", "freshness --fetch --quiet"))
     assert routine_install._wrapper_stale(routine_install.DAILY_WRAPPER_PATH, "/x")
     assert routine_install.is_stale()
     # a wrapper from before catch-up never stamps, so it is stale whatever binary it names
