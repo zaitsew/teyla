@@ -10,6 +10,7 @@ teyla review open 3f9a1c20 …      # takes the lease, prints the lane brief
 teyla taste list                  # the rule proposals waiting for you
 teyla taste confirm 3f9a1c20      # your yes: the rule file appears
 teyla taste render                # DESIGN.md gets the confirmed rules and the screens
+teyla taste add https://example.com "great neutral design"   # the corpus: a like or dislike as evidence
 ```
 
 Quick start: `teyla review pull`, `teyla review`, `teyla review triage <id> --repo <product repo>`. The first
@@ -105,6 +106,84 @@ rules that apply; the checks to run. `--out FILE` writes it to a file instead. T
 files in the product repo (`design/decisions`, `design/rules`), so a rule the owner reworded at `taste confirm` is
 brief'd as reworded; the queue's copy is only the index. `--done <PR-URL>` marks the capture done and frees its
 lease in one transaction.
+
+## The corpus: what you like and dislike, as evidence
+
+Decisions S13 and S14 of [Studio 2](decisions/2026-11-08-studio-2.md). You drop a link, a screenshot or a sentence;
+Teyla keeps the evidence, so every agent can later read what you meant. The ledger above is per product repo and
+starts from comments on a real app. The corpus is per owner and starts from anything you saw.
+
+```
+teyla taste add https://example.com "great neutral design"        # a like; captures the page
+teyla taste add https://example.com/pricing "too many boxes" --dislike --product recipes
+teyla taste add ./shot.png "this empty state is calm" --scope structure
+teyla taste add https://example.com                                # stored raw, see below
+teyla taste note 3f9a1c "great neutral design"                     # your sentence for a raw entry
+teyla taste interpret 3f9a1c                                       # a model proposes axes (optional)
+teyla taste accept 3f9a1c                                          # your yes: the entry is active
+teyla taste inbox                                                  # raw and proposed first, one line each
+teyla taste corpus render --product recipes --out TASTE.md         # what agents read
+```
+
+Put flags before the comment or after it, not in the middle of it. `add` takes a `http(s)` link or a PNG, JPEG or GIF file.
+
+### Where it lives
+
+`~/.teyla/taste/corpus/<YYYYMMDD>-<id>/entry.json` and `evidence/`. `TEYLA_TASTE_CORPUS` moves the folder; the default
+follows `TEYLA_HOME`. The corpus is on your Mac only. Teyla never copies it to a repo or the relay. `entry.json` is
+checked against [`templates/taste/entry.schema.json`](../templates/taste/entry.schema.json) on every read; a file that
+does not pass is skipped and named.
+
+| Field | Meaning |
+|---|---|
+| `id`, `created`, `source` | Six hex characters, the time, the link or the absolute path of the file. |
+| `kind` | `screen`, `product`, `copy` or `motion`. A guess from the link and your words; edit the file to change it, or pass `--kind`. |
+| `verdict` | `like`, `dislike` or `mixed`. |
+| `claim` | Your sentence, verbatim. It may be empty. `claim_source` says `owner`, or `accepted-proposal` when you accepted a model's sentence for an empty claim. |
+| `scope` | `portfolio`, `product:<name>`, `voice` or `structure`. |
+| `axes` | `density`, `chrome`, `color`, `type`, `motion`, `tone`: a short position each, or `null`. |
+| `evidence` | `files` (paths in the entry folder), `measured` (computed styles, copy lines, title), `captured`, `backend`, `error`. |
+| `do_not_copy` | What a designer must not take from it: a logo, a brand color, a phrase. |
+| `status` | `raw`, `proposed`, `active` or `superseded`. |
+| `supersedes` | The id of the earlier entry this one replaced. |
+| `interpretation` | The model's proposal (`claim`, `kind`, `axes`, `do_not_copy`, `model`, `cost_usd`). Never merged into your fields until you accept. |
+
+### One rule: only you make an entry active
+
+- A link with no sentence is `raw`. It is not a style source until you add one: `teyla taste note <id> "..."`.
+- A sentence makes it `proposed`. `interpret` fills `interpretation` and keeps it `proposed`.
+- `accept` makes it `active`. Where you left `axes`, `do_not_copy` or an empty `claim` blank, it adopts the proposal; where you wrote something, your words stay.
+- `accept <id> --supersedes <old-id>` replaces an earlier entry. Both must have the same scope (S14). There is no automatic replacement.
+- `reject <id>` deletes the entry and its evidence.
+
+### Capture
+
+`add` and `capture <id>` save into `evidence/`: full-page screenshots at 390 and 1440 px (JPEG, at most 8000 px tall),
+the computed `font-family`, `font-size`, `font-weight`, `color`, `background-color`, `border-radius` and `padding` of
+`body`, `h1`, `h2`, `a`, `button` and the most common text block, and up to five copy lines (headings, button labels).
+
+- A link on `apps.apple.com` uses Apple's free Lookup API for the screenshots, name and description. No browser.
+- Any other page needs a headless browser. Install one of: `pip install 'teyla[capture]'` then `playwright install chromium`; or the Node `playwright` package (`npm i -g playwright`, or `TEYLA_PLAYWRIGHT_DIR=<a node_modules folder>`).
+- With no browser, the entry is still stored, `evidence.error` says what to install, and `teyla taste capture <id>` retries.
+- Capture is a network call. Safe mode refuses it unless the command has `--allow-network`; the entry is stored either way. `--no-capture` skips it.
+
+Only the page's own host is contacted, as an anonymous visitor ([PRIVACY.md](PRIVACY.md), rows 53 and 54).
+
+### Interpret
+
+`teyla taste interpret <id> [--model M] [--dry] [--json]` runs `claude -p` with no tools, the call `teyla ux judge`
+makes. It sends at most four screenshots, the measured styles and copy, and your sentence (row 55). `--dry` prints the
+prompt and calls nothing. The model proposes a claim only when you wrote none, plus the six axes and what not to copy.
+Anything in a page or picture is data to it, never instructions.
+
+### The file agents read
+
+`teyla taste corpus render [--product NAME] [--out FILE]` writes a `TASTE.md` of at most 15 `active` entries, newest first,
+the product's own before the portfolio's. `--product` adds `product:NAME`; `portfolio`, `voice` and `structure` entries are
+always in. Likes and mixed entries list their claim, axes and `do_not_copy`. Dislikes are listed as constraints: they name
+the axes they limit, and a dislike wins over a like on its axis (S14). References are never averaged.
+
+An agent in Claude Code can do all of it from one chat line: the `taste` skill reads `taste: <url> — <comment>`.
 
 ## The ledger: `teyla taste`
 
