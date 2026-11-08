@@ -11,8 +11,9 @@ text block, and up to five copy lines (headings, button labels). Three sources, 
                      `playwright` package (a global install, or TEYLA_PLAYWRIGHT_DIR=<a node_modules folder>).
     neither          the entry stays as it is and the command says what to install.
 
-Only the page itself is requested, from its own host, as a plain visitor. Nothing is sent from the Mac to
-any other host, and no cookie, login or file of the owner's is used. Safe mode refuses all of it unless the
+A page capture loads the page as a browser would, including its third-party scripts, images and redirects, so
+hosts other than the source host are contacted. Nothing about the owner is sent except a normal browser request:
+no cookie, login or file of the owner's is used. Safe mode refuses all of it unless the
 command carries `--allow-network` (net.py).
 
 Interpretation (`teyla taste interpret <id>`) is `claude -p` with no tools, no skills, no MCP and no saved
@@ -159,6 +160,11 @@ def _python_playwright(url: str, outdir: pathlib.Path) -> dict:
                 if w == max(WIDTHS):
                     page_data = page.evaluate(PAGE_JS)
                 ctx.close()
+        except CaptureError:
+            raise
+        except Exception as e:                                # timeout, DNS, certificate: the page did not load
+            first = (str(e).strip().splitlines() or [type(e).__name__])[0][:200]
+            raise CaptureError(f"the browser failed on {url}: {first}") from e
         finally:
             browser.close()
     return {"files": files, "page": page_data, "backend": "playwright-python"}
@@ -298,7 +304,7 @@ def capture_entry(d: pathlib.Path, e: dict) -> tuple[int, str]:
     url = e["source"]
     if not net.gate("taste capture (it requests the page from its own host)", quiet=True):
         return 1, (f"not captured: safe mode is on; run `teyla taste capture {e['id']} --allow-network` "
-                   "(only the page's own host is contacted)")
+                   "(the page loads as in a browser, third-party resources included)")
     try:
         if APPSTORE_ID_RE.match(url):
             res = _appstore_capture(url, d / "evidence")

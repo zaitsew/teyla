@@ -646,5 +646,5 @@ def register(sp):
     c.add_argument("--model", help="interpret: the model (default claude-sonnet-5-5)")
     c.add_argument("--limit", type=int, default=40, help="inbox: at most this many lines")
     c.add_argument("--out", help="corpus render: write the TASTE.md to this file")
-    c.add_argument("--allow-network", action="store_true", help="add, capture, interpret: safe mode: allow the call for this one run")
+    c.add_argument("--allow-network", action="store_true", help="add, capture, interpret: safe mode: allow the call for this one run. A page capture loads the page as a browser would, third-party resources included; nothing about you is sent except a normal browser request")
     return q

@@ -433,3 +433,47 @@ def test_render_is_capped_at_fifteen_active_entries(corpus):
 def test_the_existing_ledger_still_lists(tmp_path, capsys):
     (tmp_path / "design" / "decisions").mkdir(parents=True)
     assert cli.main(["taste", "list", str(tmp_path)]) == 0
+
+
+def test_python_playwright_navigation_errors_are_recorded_not_raised(corpus, monkeypatch, tmp_path, capsys):
+    import sys
+    import types
+
+    class Boom(Exception):
+        pass
+
+    class Page:
+        def goto(self, *a, **k):
+            raise Boom("net::ERR_NAME_NOT_RESOLVED at https://nope.invalid/\nCall log: ...")
+
+    class Ctx:
+        def new_page(self):
+            return Page()
+
+    class Browser:
+        def new_context(self, **k):
+            return Ctx()
+
+        def close(self):
+            pass
+
+    class PW:
+        chromium = types.SimpleNamespace(launch=lambda **k: Browser())
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    mod = types.ModuleType("playwright")
+    sync = types.ModuleType("playwright.sync_api")
+    sync.sync_playwright = lambda: PW()
+    monkeypatch.setitem(sys.modules, "playwright", mod)
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", sync)
+    monkeypatch.setattr(taste_capture.importlib.util, "find_spec", lambda name: object())
+    assert add(["https://nope.invalid/", "nice"]) == 0
+    d, e = only_entry(corpus)
+    assert "ERR_NAME_NOT_RESOLVED" in e["evidence"]["error"] and e["evidence"]["files"] == []
+    cap = capsys.readouterr()
+    assert "capture failed" in cap.err and e["id"] in cap.out

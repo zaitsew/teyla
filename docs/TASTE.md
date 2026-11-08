@@ -167,7 +167,7 @@ the computed `font-family`, `font-size`, `font-weight`, `color`, `background-col
 - With no browser, the entry is still stored, `evidence.error` says what to install, and `teyla taste capture <id>` retries.
 - Capture is a network call. Safe mode refuses it unless the command has `--allow-network`; the entry is stored either way. `--no-capture` skips it.
 
-Only the page's own host is contacted, as an anonymous visitor ([PRIVACY.md](PRIVACY.md), rows 53 and 54).
+A page capture loads the page as a browser would, including its third-party scripts, images and redirects, so hosts other than the page's own are contacted. Nothing about you is sent except a normal browser request: no cookie, login or file. An App Store link contacts only `itunes.apple.com` and `*.mzstatic.com`. See [PRIVACY.md](PRIVACY.md), rows 53 and 54.
 
 ### Interpret
 
