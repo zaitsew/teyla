@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.44.1 — 2026-11-08 — A weekly check that the README and the store listing follow the product
 
 - **`teyla freshness`: does the README, the store text and the screenshots still match the product.** For each product it counts the user-facing changes (the `teyla whats-new` split) that landed on the default branch since the newest commit of `README.md`, the oldest local screenshot the README shows (logos, icons and SVGs are skipped), the What's New notes (`docs/whats-new/`, `release_notes.txt` or `whats_new.txt`; a generic note is flagged, and a product with no notes file yet, as on a first store version, is skipped), the store listing text (release notes excluded) and the store screenshots, all read from the default branch. Maintenance does not count: a change must touch a path outside docs, tests, hooks, `teyla.toml` and the store files. A check is stale at 10 changes and 14 days; `[freshness]` in `teyla.toml` sets `changes`, `days`, `skip`, `listing`, `screenshots` and `whats_new`. `--quiet` writes `~/.teyla/freshness.problems`, which the session-start banner and the weekly digest read (rank 5, "N stale README or store items"); the weekly routine runs it and an older wrapper is rewritten. Offline: git only, no model call. See docs/COMMANDS.md.
 
