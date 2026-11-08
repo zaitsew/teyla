@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.45.1 — 2026-11-08 — The weekly freshness check reads fresh refs
 
-- **`teyla freshness --fetch` reads fresh refs.** It runs `git fetch --quiet origin` in each product repo first (30 s limit; a failed fetch is noted on the row and the check reads the last known refs). Without it nothing changes, but a stale result now says to use it. The weekly routine passes `--fetch`, so a README refreshed yesterday is no longer reported stale from old refs; an older wrapper is rewritten. New privacy row 52.
+- **`teyla freshness --fetch` reads fresh refs.** It runs `git fetch --quiet origin` in each product repo first (30 s limit; a failed fetch is noted on the row and the check reads the last known refs). Without it nothing changes, but a stale result now says to use it. The weekly routine passes `--fetch`, so a README refreshed yesterday is no longer reported stale from old refs; an older wrapper is rewritten. Safe mode refuses the fetch unless the command carries `--allow-network`. New privacy row 52.
 
 ## 0.45.0 — 2026-11-08 — Drafts count for a goal
 
