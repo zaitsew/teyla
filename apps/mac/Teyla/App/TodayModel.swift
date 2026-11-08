@@ -14,6 +14,9 @@ final class TodayModel {
     @ObservationIgnored private(set) var readAt: Date?
     /// A goal write is running (the form shows a spinner and disables its button).
     private(set) var goalBusy = false
+    @ObservationIgnored private var releaseAfterRead = false
+    /// A goal was added in this session; the first run keeps Create off until Today shows it, even when the read fails.
+    private(set) var goalCreated = false
     /// The command's own words when the last goal write failed; nil otherwise. Nothing changed when this is set.
     private(set) var goalFailure: String?
 
@@ -40,6 +43,10 @@ final class TodayModel {
                     refresh()
                 } else {
                     isLoading = false
+                    if releaseAfterRead {
+                        releaseAfterRead = false
+                        goalBusy = false
+                    }
                 }
             }
             do {
@@ -66,13 +73,16 @@ final class TodayModel {
                  done: @escaping @MainActor (Bool) -> Void = { _ in }) {
         write(done: done) { [cli] in
             try await cli.gtmGoalAdd(title: title, weekly: weekly, deadline: deadline, doneWhen: doneWhen, perDay: perDay)
+            await MainActor.run { self.goalCreated = true }
         }
     }
 
     /// `teyla gtm goal set <id> --weekly stage=N`, then Today is read again.
-    func setWeekly(goalID: String, stage: String, count: Int, done: @escaping @MainActor (Bool) -> Void = { _ in }) {
+    func setWeekly(goalID: String, stage: String, count: Int, replacing old: String? = nil,
+                   done: @escaping @MainActor (Bool) -> Void = { _ in }) {
         write(done: done) { [cli] in
-            try await cli.gtmGoalSet(id: goalID, weekly: [GtmWeeklyNumber(stage: stage, count: count)], title: nil, deadline: nil, doneWhen: nil)
+            try await cli.gtmGoalSet(id: goalID, weekly: TodayLogic.weeklyChange(stage: stage, count: count, replacing: old),
+                                     title: nil, deadline: nil, doneWhen: nil)
         }
     }
 
@@ -85,7 +95,8 @@ final class TodayModel {
         Task {
             do {
                 try await action()
-                goalBusy = false
+                // Stay busy until Today is read again, so a second click cannot write the same goal twice.
+                releaseAfterRead = true
                 refresh()
                 done(true)
             } catch {

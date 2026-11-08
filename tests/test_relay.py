@@ -994,6 +994,7 @@ def test_the_gtm_card_carries_counts_and_goals_only():
                                {"stage": "approached", "count": 21, "target": 60, "counter": "distribution"},
                                {"stage": "odd", "count": 1, "target": 2, "counter": "outcomes"}]
     assert (goal["done_when"], goal["weeks_left"], goal["short"], goal["days_left"]) == ("A sale", 16, 9, 114)
+    assert goal["deadline"] == "2027-03-01"
     assert view["next"] == [{"kind": "reply", "count": 2}]
     text = json.dumps(view)
     assert "secret-path" not in text and "example.com" not in text and "src" not in text and "preparation" not in text

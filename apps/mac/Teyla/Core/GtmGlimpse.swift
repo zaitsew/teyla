@@ -57,15 +57,17 @@ struct GtmGlimpse: Decodable, Equatable, Sendable {
         var id: String
         var title: String
         var doneWhen: String?
+        var deadline: String?
         var daysLeft: Int?
         var weeksLeft: Int?
         var short: Int
         var targets: [Target]
 
-        init(id: String, title: String, doneWhen: String? = nil, daysLeft: Int? = nil, weeksLeft: Int? = nil, short: Int = 0, targets: [Target] = []) {
+        init(id: String, title: String, doneWhen: String? = nil, deadline: String? = nil, daysLeft: Int? = nil, weeksLeft: Int? = nil, short: Int = 0, targets: [Target] = []) {
             self.id = id
             self.title = title
             self.doneWhen = doneWhen
+            self.deadline = deadline
             self.daysLeft = daysLeft
             self.weeksLeft = weeksLeft
             self.short = short
@@ -73,7 +75,7 @@ struct GtmGlimpse: Decodable, Equatable, Sendable {
         }
 
         private enum Keys: String, CodingKey {
-            case id, title, short, targets
+            case id, title, short, targets, deadline
             case doneWhen = "done_when", daysLeft = "days_left", weeksLeft = "weeks_left"
         }
 
@@ -82,6 +84,7 @@ struct GtmGlimpse: Decodable, Equatable, Sendable {
             id = try c.decode(String.self, forKey: .id)
             title = c.lenient(.title, id)
             doneWhen = c.optional(.doneWhen)
+            deadline = c.optional(.deadline)
             daysLeft = c.optional(.daysLeft)
             weeksLeft = c.optional(.weeksLeft)
             short = c.lenient(.short, 0)
@@ -91,7 +94,7 @@ struct GtmGlimpse: Decodable, Equatable, Sendable {
 
         /// The same goal in the Mac's own type, so the choices of `TodayLogic` (which goal leads, its pace) are the Mac's.
         var asGoal: GtmGoal {
-            GtmGoal(id: id, title: title, doneWhen: doneWhen, daysLeft: daysLeft, weeksLeft: weeksLeft, short: short,
+            GtmGoal(id: id, title: title, doneWhen: doneWhen, deadline: deadline, daysLeft: daysLeft, weeksLeft: weeksLeft, short: short,
                     targets: targets.map { GtmTarget(stage: $0.stage, count: $0.count, target: $0.target, counter: $0.counter) })
         }
     }

@@ -832,10 +832,11 @@ def gtm_view(runner=None, base: list[str] | None = None) -> dict | None:
         rows = [{"stage": str(t["stage"])[:40], "count": n(t.get("count")), "target": n(t.get("target")),
                  "counter": t["counter"] if t.get("counter") in GTM_COUNTERS else "outcomes"}
                 for t in g.get("targets") or [] if isinstance(t, dict) and isinstance(t.get("stage"), str)][:GTM_TARGETS]
-        dl, wl = g.get("days_left"), g.get("weeks_left")
+        dl, wl, deadline = g.get("days_left"), g.get("weeks_left"), g.get("deadline")
         done_when = g.get("done_when")
         goals.append({"id": g["id"][:40], "title": str(g.get("title") or g["id"])[:80],
                       "done_when": done_when[:120] if isinstance(done_when, str) and done_when.strip() else None,
+                      "deadline": deadline if isinstance(deadline, str) and len(deadline) == 10 else None,
                       "days_left": dl if type(dl) is int else None, "weeks_left": wl if type(wl) is int else None,
                       "short": n(g.get("short")), "targets": rows})
     nxt = [{"kind": a["kind"], "count": n(a.get("count"))} for a in raw.get("next") or []

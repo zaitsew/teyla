@@ -206,6 +206,13 @@ final class GoalFirstLogicTests: XCTestCase {
                 targets: counters.enumerated().map { GtmTarget(stage: "s\($0.offset)", count: 0, target: 5, counter: $0.element) })
     }
 
+    func testChangingTheStageClearsTheOldNumber() {
+        XCTAssertEqual(TodayLogic.weeklyChange(stage: "intro", count: 3, replacing: "conversation"),
+                       [GtmWeeklyNumber(stage: "intro", count: 3), GtmWeeklyNumber(stage: "conversation", count: 0)])
+        XCTAssertEqual(TodayLogic.weeklyChange(stage: "intro", count: 3, replacing: "intro"), [GtmWeeklyNumber(stage: "intro", count: 3)])
+        XCTAssertEqual(TodayLogic.weeklyChange(stage: "intro", count: 3, replacing: nil), [GtmWeeklyNumber(stage: "intro", count: 3)])
+    }
+
     func testStagesAreHumanised() {
         let expected = ["conversation": "Conversations", "intro": "Intros", "offer_fit": "Offer fit", "activated": "Activated",
                         "signed_up": "Sign-ups", "replied": "Replies", "proposal": "Proposals", "paid": "Paying",

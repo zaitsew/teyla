@@ -341,7 +341,9 @@ private struct SetNumberForm: View {
                 Spacer(minLength: Space.s)
                 Button("Cancel") { isPresented = false }.keyboardShortcut(.cancelAction)
                 Button("Save") {
-                    page.setWeekly(goalID: goal.id, stage: stage, count: count) { ok in if ok { isPresented = false } }
+                    // A different stage replaces the old number; `goal set` merges, so the old one is sent as 0.
+                    let old = TodayLogic.rowTarget(goal)?.stage
+                    page.setWeekly(goalID: goal.id, stage: stage, count: count, replacing: old) { ok in if ok { isPresented = false } }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(page.goalBusy)
@@ -645,7 +647,7 @@ private struct TodayFirstRun: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(page.goalBusy || !titleOK)
+                    .disabled(page.goalBusy || page.goalCreated || !titleOK)
                 if page.goalBusy { ProgressView().controlSize(.small) }
             }
         }

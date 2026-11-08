@@ -331,6 +331,14 @@ enum TodayLogic {
     /// The target a thin row draws: the first outcome target. nil: the goal has no number yet.
     static func rowTarget(_ goal: GtmGoal) -> GtmTarget? { goal.outcomeTargets.first }
 
+    /// The `--weekly` pairs for "Set a number": the new number, and the old stage at 0 when the stage changed, because
+    /// `teyla gtm goal set` merges numbers and would otherwise keep both.
+    static func weeklyChange(stage: String, count: Int, replacing old: String?) -> [GtmWeeklyNumber] {
+        var out = [GtmWeeklyNumber(stage: stage, count: count)]
+        if let old, !old.isEmpty, old != stage { out.append(GtmWeeklyNumber(stage: old, count: 0)) }
+        return out
+    }
+
     /// "0 of 12", with " · source not connected" when the goal names a source nothing feeds and no source answers for it.
     static func rowCount(_ goal: GtmGoal, target: GtmTarget) -> String {
         let words = targetWords(target)

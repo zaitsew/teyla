@@ -311,3 +311,13 @@ def test_goal_set_cli_needs_a_change():
     assert cli.main(["gtm", "goal", "set", "testers"]) == 2
     assert cli.main(["gtm", "goal", "set", "testers", "--weekly", "activated=10"]) == 0
     assert next(x for x in gtm.load_goals()["goals"] if x["id"] == "testers")["weekly"]["activated"] == 10
+
+
+def test_goal_set_keeps_a_dotted_map_key_one_key():
+    goals(gtm.EXAMPLE_GOALS.replace('[goal.map]                 # a source\'s stage name -> this funnel\'s stage name\nsent = "approached"',
+                                    '[goal.map]\n"network.sent" = "approached"', 1))
+    assert gtm.load_goals()["goals"][0]["map"] == {"network.sent": "approached"}
+    gtm.set_goal("relationships", weekly={"intro": 4})
+    loaded = gtm.load_goals()
+    assert not loaded["errors"] and loaded["goals"][0]["map"] == {"network.sent": "approached"}
+    assert '"network.sent" = "approached"' in gtm.goals_path().read_text(encoding="utf-8")

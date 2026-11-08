@@ -290,6 +290,12 @@ def _toml_str(v: str) -> str:
     return json.dumps(str(v), ensure_ascii=False)
 
 
+def _toml_key(k: str) -> str:
+    """A bare key when TOML allows one; quoted otherwise, so `network.sent` stays one key and never a nested table."""
+    k = str(k)
+    return k if k and all(c.isascii() and (c.isalnum() or c in "_-") for c in k) else _toml_str(k)
+
+
 def parse_weekly(pairs: list[str]) -> dict:
     """["conversation=15", "intro=3"] -> {"conversation": 15, "intro": 3}. 0 removes a target."""
     out = {}
@@ -316,9 +322,9 @@ def render_goal(g: dict) -> str:
     if g.get("prefix"):
         L.append(f"stage_prefix = {_toml_str(g['prefix'])}")
     if g.get("map"):
-        L += ["[goal.map]"] + [f"{k} = {_toml_str(v)}" for k, v in g["map"].items()]
+        L += ["[goal.map]"] + [f"{_toml_key(k)} = {_toml_str(v)}" for k, v in g["map"].items()]
     if g.get("weekly"):
-        L += ["[goal.weekly]"] + [f"{k} = {n}" for k, n in g["weekly"].items()]
+        L += ["[goal.weekly]"] + [f"{_toml_key(k)} = {n}" for k, n in g["weekly"].items()]
     return "\n".join(L) + "\n"
 
 
