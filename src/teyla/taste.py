@@ -132,6 +132,8 @@ def _scalar_in(raw: str):
         if len(raw) < 2 or raw[-1] != "'":
             raise ValueError(f"bad single-quoted string {raw[:40]!r}")
         return raw[1:-1].replace("''", "'")
+    if raw[0] == "[" and re.search(r"\]\s+#", raw):
+        raw = re.split(r"\]\s+#", raw, maxsplit=1)[0] + "]"
     if raw == "[]":
         return []
     if raw == "{}":
@@ -193,7 +195,7 @@ def _map(lines, i: int, indent: int):
             break
         key, rest = _key_value(content)
         i += 1
-        if rest.strip() == "":
+        if rest.strip() == "" or rest.lstrip().startswith("#"):
             if i < len(lines) and (lines[i][0] > indent or (lines[i][0] == indent and lines[i][1].startswith("- "))):
                 out[key], i = _block(lines, i, lines[i][0])
             else:

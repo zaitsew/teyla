@@ -1,0 +1,33 @@
+version: 1
+fixed_date: 2026-01-15T09:41:00Z
+seed: 7
+network_stub: true
+languages: [en, es]
+looks: [light, dark, large]
+runs: 3
+device: {name: Example Phone, width_pt: 393, height_pt: 852}
+routes:
+  - id: home
+    path: /home
+    states: [loaded, empty]
+  - id: recipes
+    path: /recipes
+    states: [loaded]
+  - id: recipe
+    path: /recipe
+    states: [loaded]
+  - id: shopping
+    path: /shopping
+    states: [loaded]
+  - id: settings
+    path: /settings
+    states: [loaded]
+  - id: orphan-route
+    path: /orphan
+    states: [loaded]
+  - id: add-recipe
+    path: /add
+    states: [loaded]
+  - id: settings-units
+    path: /settings/units
+    states: [loaded]

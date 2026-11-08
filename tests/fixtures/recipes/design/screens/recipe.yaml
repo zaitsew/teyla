@@ -1,0 +1,12 @@
+title: Recipe
+parent: recipes
+platforms: [ios, macos]
+route: recipe
+job: Read one recipe and cook it step by step.
+primary_action: Start cooking
+layout:
+  compact: Steps in one scrolling column.
+  regular: Ingredients left, steps right.
+  wide: Ingredients, steps and timers side by side.
+features: [Recipe detail]
+source: [App/Recipes/RecipeDetail.swift]

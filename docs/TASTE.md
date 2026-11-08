@@ -235,7 +235,8 @@ children (`recipe.list.addButton.icon`). A scope never widens on its own: to wid
 
 ### `design/screens/<screen>.yaml`
 
-The inventory entry of one screen; the file name is the screen id.
+The inventory entry of one screen; the file name is the screen id. The same file is the screen registry: `parent`, `links`, `level`,
+`platforms`, `route`, `layout`, `features` and `source` are optional keys that feed `teyla ux atlas` ([ATLAS.md](ATLAS.md)).
 
 ```yaml
 job: Browse saved recipes and start a new one.

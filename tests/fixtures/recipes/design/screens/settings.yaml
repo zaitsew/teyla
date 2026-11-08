@@ -1,0 +1,6 @@
+title: Settings
+level: 1
+platforms: [ios, macos, web]
+route: settings
+job: Change units and language.
+primary_action: Done

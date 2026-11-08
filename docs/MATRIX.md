@@ -5,6 +5,8 @@ model's glance (`docs/STUDIO.md`, decisions S6 and S11). The product's own scree
 of screens in light, dark and the largest accessibility text size, in every shipped language. Teyla runs
 the tour three times, checks the accessibility tree, and compares the result with an accepted baseline.
 
+`teyla ux atlas` shows which screens these captures cover ([ATLAS.md](ATLAS.md)).
+
 Only iOS (XCUITest on a simulator) is wired. Web uses Playwright `toHaveScreenshot`; Compose follows later.
 
 ## Quick start

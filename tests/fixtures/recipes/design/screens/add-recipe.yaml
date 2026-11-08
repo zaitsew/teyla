@@ -1,0 +1,7 @@
+title: Add recipe
+parent: recipes
+platforms: [ios]
+route: add-recipe
+job: Write a new recipe.
+primary_action: Save
+features: ["Recipe editor"]

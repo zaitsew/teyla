@@ -1,0 +1,21 @@
+# One screen of the product: design/screens/<id>.yaml (docs/ATLAS.md). The file name is the id.
+# Every key is optional; fill what you know and `teyla ux registry check` says what is missing.
+title: Recipes                    # the name people use
+level: 1                          # 1 = a tab root; default: the parent's level plus one
+# parent: home                    # the screen this one opens from
+platforms: [ios]                  # ios, ipados, macos, web, android; each one is expected to be captured
+route: recipes                    # the route id in design/tour.yaml that captures it
+job: Browse saved recipes and start a new one.
+primary_action: Add recipe
+states: [empty, loaded, error]
+layout:                           # decision S18: one sentence per size class
+  compact: A single list.
+  regular: A list with a detail pane.
+  wide: A grid of cards.
+  assert: testRecipesLayoutContract   # the test that enforces the contract
+links:
+  - to: recipe-detail
+    via: tap a row
+    tested: true                  # a UI test walks this edge
+features: [Recipe list]           # sections of docs/FEATURES.md, or an anchor from a row
+source: [App/Recipes/RecipeList.swift]
