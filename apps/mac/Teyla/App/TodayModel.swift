@@ -12,6 +12,10 @@ final class TodayModel {
     private(set) var outdated = false
     private(set) var isLoading = false
     @ObservationIgnored private(set) var readAt: Date?
+    /// A goal write is running (the form shows a spinner and disables its button).
+    private(set) var goalBusy = false
+    /// The command's own words when the last goal write failed; nil otherwise. Nothing changed when this is set.
+    private(set) var goalFailure: String?
 
     @ObservationIgnored private let cli: any TeylaBackend
     @ObservationIgnored private var gate = CoalescedRead()
@@ -51,6 +55,43 @@ final class TodayModel {
                 // The last report stays on screen while the read fails.
                 outdated = false
                 note = error.localizedDescription
+            }
+        }
+    }
+
+    // MARK: Goals
+
+    /// `teyla gtm goal add`, then Today is read again. `done` is told whether it worked, so a form closes only on success.
+    func addGoal(title: String, weekly: [GtmWeeklyNumber], deadline: String?, doneWhen: String?, perDay: Int?,
+                 done: @escaping @MainActor (Bool) -> Void = { _ in }) {
+        write(done: done) { [cli] in
+            try await cli.gtmGoalAdd(title: title, weekly: weekly, deadline: deadline, doneWhen: doneWhen, perDay: perDay)
+        }
+    }
+
+    /// `teyla gtm goal set <id> --weekly stage=N`, then Today is read again.
+    func setWeekly(goalID: String, stage: String, count: Int, done: @escaping @MainActor (Bool) -> Void = { _ in }) {
+        write(done: done) { [cli] in
+            try await cli.gtmGoalSet(id: goalID, weekly: [GtmWeeklyNumber(stage: stage, count: count)], title: nil, deadline: nil, doneWhen: nil)
+        }
+    }
+
+    func clearGoalFailure() { goalFailure = nil }
+
+    private func write(done: @escaping @MainActor (Bool) -> Void, _ action: @escaping @Sendable () async throws -> Void) {
+        guard !goalBusy else { return }
+        goalBusy = true
+        goalFailure = nil
+        Task {
+            do {
+                try await action()
+                goalBusy = false
+                refresh()
+                done(true)
+            } catch {
+                goalBusy = false
+                goalFailure = error.localizedDescription
+                done(false)
             }
         }
     }

@@ -42,6 +42,7 @@ per_day = 10                     # posts + approaches you send per day
 [[goal]]
 id = "relationships"
 title = "Conversations with founders and executives"
+done_when = "A hire, a consulting deal or a product sale"
 deadline = "2027-03-01"
 funnel = ["identified", "approached", "replied", "conversation", "intro", "offer_fit"]
 offer_fit = ["hire", "consulting", "product"]   # decided after the conversation
@@ -59,13 +60,14 @@ offer_fit = 1
 | Key | Meaning |
 |---|---|
 | `id`, `title` | the goal's key and the line the screens show |
+| `done_when` | optional: one line on what reaching the goal means; the screens show it under the title |
 | `deadline` | `YYYY-MM-DD`; the screens show the days left |
 | `funnel` | the stages in order. Conversion is each stage's count over the stage before |
 | `offer_fit` | the options of the `offer_fit` stage; sources report them under `offer_fit` |
 | `sources` | the source ids that feed this goal. `growth` is the growth ledger |
 | `stage_prefix` | a source stage `<prefix>.<stage>` feeds only the goal with that prefix; an unprefixed stage feeds every goal that lists the source |
 | `map` | renames a source stage (by its full name or its last part) to a funnel stage |
-| `weekly` | the weekly target per stage. `gtm week` lists what was missed and repeats the targets as next week's; edit the file to change them |
+| `weekly` | the weekly target per stage. `gtm week` lists what was missed and repeats the targets as next week's |
 
 `[[source]]` entries name a read-only command or a file (see below). A broken line becomes a `goals:` doctor line,
 never a crash.
@@ -132,8 +134,11 @@ A source carries counts and links to its own queue: never a person's name, a han
   "distribution": {"today": 3, "target": 10, "week": 21, "claimed_by_agents": 0},
   "preparation":  {"today": 40, "week": 283},
   "outcomes":     {"today": 1, "week": 9},
-  "goals": [{"id": "relationships", "title": "...", "deadline": "2027-03-01", "days_left": 114,
-             "targets": [{"stage": "conversation", "count": 6, "target": 15}]}],
+  "week_end": "2026-11-08",
+  "goals": [{"id": "relationships", "title": "...", "done_when": "...", "deadline": "2027-03-01", "days_left": 114,
+             "weeks_left": 17, "short": 12, "fed_by": ["growth"], "unfed": ["contacts"],
+             "targets": [{"stage": "conversation", "count": 6, "target": 15, "counter": "outcomes",
+                          "history": [{"week": "2026-W38", "count": null}, "...", {"week": "2026-W45", "count": 6}]}]}],
   "next": [{"kind": "reply", "count": 2, "label": "answer 2 replies", "sources": ["outreach"]},
            {"kind": "approve", "count": 6, "label": "approve or skip 6 drafts", "command": "teyla growth review", "sources": ["outreach", "growth"]}],
   "sources": [{"id": "growth", "state": "ok", "via": "growth ledger", "line": "..."}],
@@ -143,6 +148,9 @@ A source carries counts and links to its own queue: never a person's name, a han
 
 `next` is the ordered list the screens lead with: replies, approvals, sends, follow-ups, then the distribution gap.
 `approve.by_source.growth` is the growth review queue (`teyla growth review`), held drafts excluded.
+Each target names its `counter`. `short` adds up how far this week's outcome targets are from their numbers; a
+distribution target (approaches) never counts toward it. `history` holds the stage's count in the eight weeks ending with
+this one, read from the saved weeks; `null` is a week no run saved.
 
 ## `teyla gtm week --json`
 
@@ -157,5 +165,12 @@ week can be reviewed after the sources moved on.
 
 ## In the apps
 
-The admin build of Teyla for Mac opens on the Today cockpit; the iPhone shows a Today card through the relay. Both read
+The admin build of Teyla for Mac opens on Today; the iPhone shows a Today card through the relay. Both read
 `teyla gtm today --json`. The store build has neither.
+
+Today puts the goals first. The goal with the most to do leads as a large card. It has one row per outcome target and
+one circle per unit of the weekly number. A circle fills only when a real outcome came back; a draft or a send never
+fills one. Under the rows, "Next" names the work that moves the goal: replies first, then drafts. The other goals sit
+below as thin rows, and a goal with no number asks for one. Sent, Came back and Prepared stay one quiet line at the top. The activity
+graph (posts, comments, emails and meetings) follows the goals. With no goals file, Today opens on a three-step setup
+that writes the first goal with `teyla gtm goal add`.

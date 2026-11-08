@@ -693,17 +693,20 @@ command, `teyla growth activity --json [--weeks N]` (version 1: `days[]` of `{da
 ## Today (Mac admin build and iPhone)
 
 The admin build of the Mac app opens on Today, built from one command: `teyla gtm today --json` (version 1, contract in
-[`GTM.md`](GTM.md)). The app counts nothing itself and shows no commit counts. The ordered `next` list, the `approve`, `send`,
-`reply` and `follow_up` groups per source (each with the source's own `http(s)` link as an Open button), `distribution` against its
-target (`target` may be null), `outcomes` and the `goals` with `days_left` are drawn as they come; `doctor` lines and sources
-that are not `ok` sit folded at the bottom. The drafts waiting for approval are the Growth page's: the same `GrowthModel`, the same
-approve and reject commands. Keys: ↑/↓ or K/J select, A approve, S skip (move on, the draft stays as it is), O open, ⌘R refresh,
-⌘L "+1". Two layouts (`teyla.today.layout` = `queue` default | `board`), described in `apps/mac/README.md`. A `teyla` without
-`gtm` shows "Update the teyla command to see Today.". The store build has no Today: it runs no command.
+[`GTM.md`](GTM.md)). The app counts nothing itself and shows no commit counts. The page is goal first: a quiet strip (Sent as ticks
+against `distribution.target`, Came back as replies plus follow-ups, Prepared as the drafts waiting), the goal with the largest
+`short` as a large card with one row of circles per outcome target (a circle fills only for a real outcome; drafts and sends never fill
+one), "Next for this goal" from the ordered `next` list (replies open the source's own `http(s)` link, drafts go to Growth), the other
+goals as thin rows (a goal with no number offers "Set a number", which runs `teyla gtm goal set`), then the activity graph, then sources
+that are not `ok` and the folded `doctor` lines. Clicking the lead goal's title opens its weeks, the last eight weeks per outcome and
+where its counts come from. With no goal, Today asks for one outcome and one weekly number and runs `teyla gtm goal add`. The drafts
+themselves are reviewed on Growth. Keys: ⏎ the primary action, ⌘R refresh, ⌘L "+1". A `teyla` without `gtm` shows "Update the teyla
+command to see Today.". The store build has no Today: it runs no command.
 
 The phone: the Mac adds an optional `gtm` object to `state.teyla` (`relay.gtm_view()`: counts per waiting kind, `distribution`,
-`outcomes_week`, the owner's goal titles with `days_left` and weekly targets, `next` as kinds and counts; no source names, links or
-doctor lines). The Growth tab shows a read-only Today card above Activity and hides it when `gtm` is absent.
+`outcomes_week`, the owner's goal titles with `done_when`, `days_left`, `weeks_left`, `short` and weekly targets with their `counter`,
+`next` as kinds and counts; no source names, links, history or doctor lines). The Growth tab shows the lead goal's circles, its pace,
+one Next line and the quiet Sent, Came back and Prepared line above Activity, and hides the card when `gtm` is absent.
 
 ## Growth page (from 2026-11-04)
 

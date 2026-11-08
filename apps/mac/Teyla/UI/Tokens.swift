@@ -121,9 +121,26 @@ enum Space {
     static let activityMonthRow: CGFloat = 16
     /// The "+1" popover.
     static let logPopoverWidth: CGFloat = 280
-    /// Today: the narrowest the selected draft's column gets before the next actions drop below it, and the reject form.
-    static let todayMainMin: CGFloat = 380
-    static let todayRejectWidth: CGFloat = 340
+    /// Today: one circle of a goal's weekly number, its outline, the thin bar that replaces circles above 30, a tick of "Sent".
+    static let bead: CGFloat = 12
+    static let beadStroke: CGFloat = 1.5
+    static let beadBar: CGFloat = 6
+    static let tick: CGFloat = 8
+    /// Today: the label column and the count column of a row of circles, the title column and the height of a thin goal row.
+    static let beadLabel: CGFloat = 120
+    static let beadCount: CGFloat = 90
+    static let goalTitleColumn: CGFloat = 300
+    static let goalCountColumn: CGFloat = 200
+    static let thinRow: CGFloat = 64
+    /// Today: the numbered circle of a setup step, the form column and the preview column of the first-run page, the popover to set a number.
+    static let stepBadge: CGFloat = 22
+    static let setupFormMin: CGFloat = 380
+    static let setupPreviewMin: CGFloat = 280
+    static let numberPopoverWidth: CGFloat = 300
+    /// Today: a week of a goal's history, and the sheet that shows it.
+    static let historyCell: CGFloat = 26
+    static let historyWeekLabel: CGFloat = 110
+    static let goalSheetWidth: CGFloat = 560
     /// The main window never gets smaller than this.
     static let windowMinWidth: CGFloat = 760
     static let windowMinHeight: CGFloat = 460
@@ -203,6 +220,8 @@ enum Palette {
     static let activityLevels: [Color] = [border.opacity(0.45), primary.opacity(0.3), primary.opacity(0.5), primary.opacity(0.75), primary]
     /// Fine print a reader can skip, and a control that is off.
     static let textTertiary = textSecondary.opacity(0.7)
+    /// The outline of an empty circle of a weekly number.
+    static let beadEmpty = textSecondary.opacity(0.4)
 }
 
 extension Color {

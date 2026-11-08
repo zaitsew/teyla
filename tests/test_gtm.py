@@ -246,3 +246,68 @@ def test_cli_init_then_week_saves_and_rereads(capsys):
 def test_gtm_dir_override(monkeypatch, tmp_path):
     monkeypatch.setenv("TEYLA_GTM_DIR", str(tmp_path / "g"))
     assert gtm.goals_path() == tmp_path / "g" / "goals.toml"
+
+
+# --- goal-first Today: shortfall, history, writing goals -------------------------------------------------------
+
+def test_today_goal_carries_done_when_short_and_counter():
+    g = goals()
+    docs, status = collect(g, rows=[{"ev": "attempt", "kind": "call", "day": DAY, "by": "owner"}])
+    t = gtm.today_report(g, docs, status, DAY)
+    rel = t["goals"][0]
+    assert rel["done_when"] == "A hire, a consulting deal or a product sale"
+    assert rel["weeks_left"] == 17 and t["week_end"] == "2026-11-08"
+    kinds = {x["stage"]: x["counter"] for x in rel["targets"]}
+    assert kinds["approached"] == "distribution" and kinds["conversation"] == "outcomes"
+    # Outcomes only: 14 conversations + 3 intros + 1 offer fit short. The 60 approaches never count toward a goal.
+    assert rel["short"] == 14 + 3 + 1
+
+
+def test_history_reads_saved_weeks_and_marks_gaps():
+    g = goals()
+    gtm._write(gtm.weeks_dir() / "2026-W43.json", json.dumps(
+        {"week": "2026-W43", "goals": [{"id": "relationships", "funnel": [{"stage": "conversation", "count": 4}]}]}))
+    docs, status = collect(g)
+    t = gtm.today_report(g, docs, status, DAY)
+    hist = next(x for x in t["goals"][0]["targets"] if x["stage"] == "conversation")["history"]
+    assert len(hist) == 8 and hist[-1] == {"week": WEEK, "count": 0}
+    assert {"week": "2026-W43", "count": 4} in hist
+    assert hist[0] == {"week": "2026-W38", "count": None}
+
+
+def test_goal_add_creates_the_file_then_appends(capsys):
+    assert cli.main(["gtm", "goal", "add", "--title", "Paying customers", "--weekly", "paid=2", "--per-day", "8",
+                     "--deadline", "2027-01-31", "--done-when", "Ten paying teams", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["id"] == "paying_customers" and out["weekly"] == {"paid": 2} and out["sources"] == ["growth"]
+    loaded = gtm.load_goals()
+    assert loaded["per_day"] == 8 and not loaded["errors"]
+    assert cli.main(["gtm", "goal", "add", "--title", "Paying customers"]) == 0
+    assert [x["id"] for x in gtm.load_goals()["goals"]] == ["paying_customers", "paying_customers_2"]
+    assert cli.main(["gtm", "goal", "add", "--title", "x", "--weekly", "paid=lots"]) == 2
+    assert cli.main(["gtm", "goal", "add", "--title", "x", "--deadline", "soon"]) == 2
+
+
+def test_goal_set_rewrites_only_its_block():
+    goals()
+    before = gtm.goals_path().read_text(encoding="utf-8")
+    g = gtm.set_goal("investors", weekly={"conversation": 3, "intro": 1}, done_when="A lead investor")
+    assert g["weekly"] == {"conversation": 3, "intro": 1} and g["done_when"] == "A lead investor"
+    assert "intro" in g["funnel"]
+    after = gtm.goals_path().read_text(encoding="utf-8")
+    assert after.split("id = \"investors\"")[0].rstrip() == before.split("id = \"investors\"")[0].rstrip()
+    assert "# [[source]]" in after                     # comments after the block survive
+    loaded = gtm.load_goals()
+    assert not loaded["errors"] and [x["id"] for x in loaded["goals"]] == ["relationships", "testers", "investors"]
+    assert loaded["goals"][0]["map"] == {"sent": "approached"}
+    g = gtm.set_goal("investors", weekly={"intro": 0})
+    assert g["weekly"] == {"conversation": 3}
+    with pytest.raises(gtm.GtmError):
+        gtm.set_goal("nobody", weekly={"x": 1})
+
+
+def test_goal_set_cli_needs_a_change():
+    goals()
+    assert cli.main(["gtm", "goal", "set", "testers"]) == 2
+    assert cli.main(["gtm", "goal", "set", "testers", "--weekly", "activated=10"]) == 0
+    assert next(x for x in gtm.load_goals()["goals"] if x["id"] == "testers")["weekly"]["activated"] == 10

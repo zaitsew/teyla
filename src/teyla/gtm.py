@@ -4,6 +4,8 @@
     teyla gtm week [--week YYYY-Www] [--json]   funnel per goal, conversion per stage, stalled items, channels, next targets
     teyla gtm init [--force]            write ~/.teyla/gtm/goals.toml with neutral example goals
     teyla gtm doctor                    each source: read, stale, broken or missing, one line each
+    teyla gtm goal add --title T [--weekly STAGE=N ...] [--deadline D] [--done-when TEXT]   add a goal (the app's first run)
+    teyla gtm goal set ID [--weekly STAGE=N ...] [--title T] [--deadline D] [--done-when TEXT]   change one goal
 
 Three counters never mix. Preparation is what agents produced (ideas, drafts, cuts); it is never a success metric.
 Distribution is what the owner sent: posts he published and approaches he logged. A row logged from an agent session
@@ -139,6 +141,7 @@ per_day = 10
 [[goal]]
 id = "relationships"
 title = "Conversations with founders and executives"
+done_when = "A hire, a consulting deal or a product sale"
 deadline = "2027-03-01"
 funnel = ["identified", "approached", "replied", "conversation", "intro", "offer_fit"]
 offer_fit = ["hire", "consulting", "product"]
@@ -250,6 +253,7 @@ def load_goals(path: pathlib.Path | None = None) -> dict:
                 weekly[_clean_stage(k)] = n
         out["goals"].append(dict(
             id=gid, title=str(g.get("title") or gid)[:120], deadline=deadline, funnel=funnel, weekly=weekly,
+            done_when=str(g.get("done_when") or "").strip()[:160],
             sources=[_clean_stage(s) for s in strings(g.get("sources"))],
             prefix=_clean_stage(g.get("stage_prefix") or ""),
             map={_clean_stage(k): _clean_stage(v) for k, v in table(g.get("map")).items() if isinstance(v, str)},
@@ -275,6 +279,166 @@ def init(force: bool = False) -> pathlib.Path:
     _write(p, EXAMPLE_GOALS)
     _private_dir(drop_dir())
     return p
+
+
+# --- writing goals (the app's first run and "Set a number") ----------------------------------------------------
+
+_HEADER = __import__("re").compile(r"^\s*\[\[?\s*([A-Za-z0-9_.\-]+)\s*\]\]?\s*(#.*)?$")
+
+
+def _toml_str(v: str) -> str:
+    return json.dumps(str(v), ensure_ascii=False)
+
+
+def parse_weekly(pairs: list[str]) -> dict:
+    """["conversation=15", "intro=3"] -> {"conversation": 15, "intro": 3}. 0 removes a target."""
+    out = {}
+    for raw in pairs or []:
+        k, sep, v = str(raw).partition("=")
+        stage = _clean_stage(k)
+        n = _count(int(v)) if sep and v.strip().isdigit() else None
+        if not stage or n is None:
+            raise GtmError(f"--weekly {raw!r}: give STAGE=N, N a whole number from 0 to {MAX_COUNT}")
+        out[stage] = n
+    return out
+
+
+def render_goal(g: dict) -> str:
+    """One `[[goal]]` block from a goal as `load_goals` returns it."""
+    L = ["[[goal]]", f"id = {_toml_str(g['id'])}", f"title = {_toml_str(g['title'])}"]
+    if g.get("done_when"):
+        L.append(f"done_when = {_toml_str(g['done_when'])}")
+    if g.get("deadline"):
+        L.append(f"deadline = {_toml_str(g['deadline'])}")
+    for key in ("funnel", "offer_fit", "sources"):
+        if g.get(key):
+            L.append(f"{key} = [{', '.join(_toml_str(x) for x in g[key])}]")
+    if g.get("prefix"):
+        L.append(f"stage_prefix = {_toml_str(g['prefix'])}")
+    if g.get("map"):
+        L += ["[goal.map]"] + [f"{k} = {_toml_str(v)}" for k, v in g["map"].items()]
+    if g.get("weekly"):
+        L += ["[goal.weekly]"] + [f"{k} = {n}" for k, n in g["weekly"].items()]
+    return "\n".join(L) + "\n"
+
+
+def _goal_spans(lines: list[str]) -> list[tuple[int, int]]:
+    """(start, end) line ranges of each `[[goal]]` block with its `[goal.*]` tables, in file order."""
+    spans, start = [], None
+    for i, line in enumerate(lines):
+        m = _HEADER.match(line)
+        if not m:
+            continue
+        name = m.group(1)
+        if line.lstrip().startswith("[[") and name == "goal":
+            if start is not None:
+                spans.append((start, i))
+            start = i
+        elif start is not None and not name.startswith("goal."):
+            spans.append((start, i))
+            start = None
+    if start is not None:
+        spans.append((start, len(lines)))
+    out = []
+    for a, b in spans:          # comments and blank lines after a block belong to what follows it
+        while b > a + 1 and (not lines[b - 1].strip() or lines[b - 1].lstrip().startswith("#")):
+            b -= 1
+        out.append((a, b))
+    return out
+
+
+def _check_deadline(deadline: str | None) -> str | None:
+    if deadline is None:
+        return None
+    if deadline == "":
+        return ""
+    try:
+        return _dt.date.fromisoformat(deadline).isoformat()
+    except ValueError:
+        raise GtmError(f"--deadline {deadline!r} is not YYYY-MM-DD") from None
+
+
+def add_goal(title: str, *, gid: str = "", weekly: dict | None = None, deadline: str | None = None,
+             done_when: str = "", sources: list[str] | None = None, per_day: int | None = None) -> dict:
+    """Append one goal to goals.toml, creating the file when there is none. Returns the goal as `load_goals` reads it."""
+    title = " ".join(str(title).split())[:120]
+    if not title:
+        raise GtmError("--title is empty")
+    path = goals_path()
+    cur = load_goals(path)
+    if cur["errors"]:
+        raise GtmError(f"{path.name} has errors; fix them first: {cur['errors'][0]}")
+    gid = _clean_stage(gid or title)[:40].strip("_") or "goal"
+    taken = {g["id"] for g in cur["goals"]}
+    base, n = gid, 2
+    while gid in taken:
+        gid, n = f"{base}_{n}", n + 1
+    weekly = weekly or {}
+    g = dict(id=gid, title=title, done_when=" ".join(str(done_when or "").split())[:160],
+             deadline=_check_deadline(deadline) or "", funnel=list(weekly), weekly={k: v for k, v in weekly.items() if v},
+             sources=[_clean_stage(s) for s in (sources or ["growth"])], prefix="", map={}, offer_fit=[])
+    if cur["exists"]:
+        text = path.read_text(encoding="utf-8")
+        if per_day is not None and cur["per_day"] != per_day:
+            raise GtmError("--per-day changes an existing file; edit [distribution] per_day in goals.toml")
+    else:
+        text = "# Goals for `teyla gtm` (docs/GTM.md). Local only: this file never goes into a repo.\nversion = 1\n"
+        if per_day is not None:
+            text += f"\n[distribution]\nper_day = {per_day}\n"
+    text = text.rstrip("\n") + "\n\n" + render_goal(g)
+    _write_checked(path, text, gid)
+    return next(x for x in load_goals(path)["goals"] if x["id"] == gid)
+
+
+def set_goal(gid: str, *, weekly: dict | None = None, title: str | None = None, deadline: str | None = None,
+             done_when: str | None = None) -> dict:
+    """Change one goal in goals.toml. Only that goal's block is rewritten; comments inside it are not kept."""
+    path = goals_path()
+    cur = load_goals(path)
+    if not cur["exists"]:
+        raise GtmError("no goals.toml yet: `teyla gtm goal add` creates it")
+    if cur["errors"]:
+        raise GtmError(f"{path.name} has errors; fix them first: {cur['errors'][0]}")
+    gid = _clean_stage(gid)
+    order = [g["id"] for g in cur["goals"]]
+    if gid not in order:
+        raise GtmError(f"no goal {gid!r}; goals: {', '.join(order) or 'none'}")
+    g = dict(cur["goals"][order.index(gid)])
+    if title is not None:
+        g["title"] = " ".join(title.split())[:120] or g["title"]
+    if done_when is not None:
+        g["done_when"] = " ".join(done_when.split())[:160]
+    if deadline is not None:
+        g["deadline"] = _check_deadline(deadline) or ""
+    if weekly:
+        w = dict(g["weekly"])
+        for k, n in weekly.items():
+            if n:
+                w[k] = n
+            else:
+                w.pop(k, None)
+        g["weekly"] = w
+        g["funnel"] = (g["funnel"] + [k for k in w if k not in g["funnel"]]) if g["funnel"] else list(w)
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    spans = _goal_spans(lines)
+    if len(spans) != len(order):
+        raise GtmError(f"{path.name}: could not find each [[goal]] block; edit it by hand")
+    a, b = spans[order.index(gid)]
+    trail = "\n" if b < len(lines) and lines[b].strip() else ""
+    text = "".join(lines[:a]) + render_goal(g) + trail + "".join(lines[b:])
+    _write_checked(path, text, gid)
+    return next(x for x in load_goals(path)["goals"] if x["id"] == gid)
+
+
+def _write_checked(path: pathlib.Path, text: str, gid: str) -> None:
+    """Write goals.toml only when the new text parses and still holds the goal; the old file stays otherwise."""
+    try:
+        doc = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as e:
+        raise GtmError(f"the change would break {path.name} ({e}); nothing written") from None
+    if not any(isinstance(g, dict) and _clean_stage(g.get("id") or "") == gid for g in doc.get("goal") or []):
+        raise GtmError(f"the change lost goal {gid!r}; nothing written")
+    _write(path, text)
 
 
 # --- sources -------------------------------------------------------------------------------------------------
@@ -630,6 +794,31 @@ def next_actions(t: dict) -> list[dict]:
     return acts
 
 
+HISTORY_WEEKS = 7     # past weeks shown beside this one: eight in all
+
+
+def past_weeks(week: str, n: int) -> list[str]:
+    """The n ISO weeks before `week`, oldest first."""
+    mon = _dt.date.fromisoformat(week_range(week)[0])
+    return [week_of((mon - _dt.timedelta(weeks=i)).isoformat()) for i in range(n, 0, -1)]
+
+
+def goal_history(gid: str, stage: str, weeks: list[str]) -> list[int | None]:
+    """A stage's count in each saved week (`save_week`); None for a week no run saved."""
+    out: list[int | None] = []
+    for w in weeks:
+        n = None
+        try:
+            rep = json.loads((weeks_dir() / f"{w}.json").read_text(encoding="utf-8"))
+            g = next((x for x in rep.get("goals") or [] if x.get("id") == gid), None)
+            r = next((x for x in (g or {}).get("funnel") or [] if x.get("stage") == stage), None)
+            n = _count(r.get("count")) if r else (0 if g else None)
+        except (OSError, ValueError, AttributeError):
+            n = None
+        out.append(n)
+    return out
+
+
 def today_report(goals: dict, docs: list[dict], status: list[dict], day: str) -> dict:
     c = counters(docs)
     t = dict(version=VERSION, day=day, week=week_of(day), has_goals=goals["exists"])
@@ -639,13 +828,22 @@ def today_report(goals: dict, docs: list[dict], status: list[dict], day: str) ->
                              claimed_by_agents=c["distribution"]["claimed_by_agents"])
     t["preparation"] = dict(today=c["preparation"]["today"], week=c["preparation"]["week"])
     t["outcomes"] = dict(today=c["outcomes"]["today"], week=c["outcomes"]["week"])
+    t["week_end"] = week_range(t["week"])[1]
     t["goals"] = []
+    past = past_weeks(t["week"], HISTORY_WEEKS)
     for g in goals["goals"]:
         f = goal_funnel(g, docs)
-        t["goals"].append(dict(id=g["id"], title=g["title"], deadline=g["deadline"] or None,
-                               days_left=days_left(g["deadline"], day),
-                               targets=[dict(stage=r["stage"], count=r["count"], target=r["target"]) for r in f["rows"]
-                                        if r["target"] is not None]))
+        dl = days_left(g["deadline"], day)
+        targets = [dict(stage=r["stage"], count=r["count"], target=r["target"], counter=r["counter"],
+                        history=[dict(week=w, count=n) for w, n in zip(past, goal_history(g["id"], r["stage"], past))]
+                        + [dict(week=t["week"], count=r["count"])])
+                   for r in f["rows"] if r["target"] is not None]
+        # How far the week's outcomes are from their targets. Distribution and preparation never count toward a goal.
+        short = sum(max(0, x["target"] - x["count"]) for x in targets if x["counter"] == "outcomes")
+        t["goals"].append(dict(id=g["id"], title=g["title"], done_when=g.get("done_when") or None,
+                               deadline=g["deadline"] or None, days_left=dl,
+                               weeks_left=None if dl is None else max(0, -(-dl // 7)),
+                               targets=targets, short=short, fed_by=f["fed_by"], unfed=f["unfed"]))
     t["next"] = next_actions(t)
     t["sources"] = status
     t["doctor"] = doctor_lines(goals, status)
@@ -817,6 +1015,29 @@ def cmd_doctor(args) -> int:
     return 0
 
 
+def cmd_goal(args) -> int:
+    try:
+        weekly = parse_weekly(args.weekly)
+        if args.goal_cmd == "add":
+            g = add_goal(args.title, gid=args.id or "", weekly=weekly, deadline=args.deadline, done_when=args.done_when or "",
+                         sources=args.source or None, per_day=args.per_day)
+        else:
+            if not (weekly or args.title is not None or args.deadline is not None or args.done_when is not None):
+                raise GtmError("nothing to change: give --weekly, --title, --deadline or --done-when")
+            g = set_goal(args.id, weekly=weekly, title=args.title, deadline=args.deadline, done_when=args.done_when)
+    except GtmError as e:
+        print(f"teyla gtm: {e}", file=sys.stderr)
+        return 2
+    out = dict(id=g["id"], title=g["title"], done_when=g.get("done_when") or None, deadline=g["deadline"] or None,
+               weekly=g["weekly"], sources=g["sources"])
+    if args.json:
+        print(json.dumps(out, indent=2))
+    else:
+        print(f"{'added' if args.goal_cmd == 'add' else 'changed'} goal {g['id']}: {g['title']} · "
+              + (_by(g["weekly"]) or "no weekly numbers yet"))
+    return 0
+
+
 def register(sp):
     q = sp.add_parser("gtm", help="the GTM cockpit: what waits for you today, the week's funnel per goal; never sends",
                       description=__doc__.split("\n\n")[0])
@@ -835,4 +1056,21 @@ def register(sp):
     a.add_argument("--force", action="store_true")
     a = g.add_parser("doctor", help="each source: ok, stale, broken or missing")
     a.set_defaults(fn=cmd_doctor)
+    a = g.add_parser("goal", help="add a goal or change one in goals.toml (the app's first run uses this)")
+    gg = a.add_subparsers(dest="goal_cmd", required=True)
+    b = gg.add_parser("add", help="append a goal; creates goals.toml when there is none")
+    b.set_defaults(fn=cmd_goal)
+    b.add_argument("--title", required=True, help="the outcome, in your words")
+    b.add_argument("--id", help="a short id (default: from the title)")
+    b.add_argument("--per-day", type=int, help="the daily send target, when this creates goals.toml")
+    b.add_argument("--source", action="append", metavar="ID", help="a source that feeds it (default: growth)")
+    c = gg.add_parser("set", help="change one goal's weekly numbers, title, deadline or done-when; STAGE=0 removes a number")
+    c.set_defaults(fn=cmd_goal)
+    c.add_argument("id")
+    c.add_argument("--title")
+    for x in (b, c):
+        x.add_argument("--weekly", action="append", metavar="STAGE=N", help="a weekly number, e.g. conversation=15")
+        x.add_argument("--deadline", metavar="YYYY-MM-DD")
+        x.add_argument("--done-when", help="what reaching the goal means, one line")
+        x.add_argument("--json", action="store_true")
     return q
