@@ -26,7 +26,7 @@ TEXT = [p for p in SHIPPED if p != ICON]  # the icon is the one binary file the 
 SKILLS = sorted(PLUGIN.glob("skills/*/SKILL.md"))
 COMMANDS = sorted(PLUGIN.glob("commands/*.md"))
 # Components that run the separately installed CLI, and the ones that must not need it.
-NEEDS_CLI = {"adoption-review", "tidy", "wiki-pass", "harvest", "correct"}
+NEEDS_CLI = {"adoption-review", "tidy", "wiki-pass", "harvest", "correct", "taste"}
 NO_CLI = {"review", "rule"}
 
 

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Teyla taste corpus entry",
+  "description": "One thing the owner likes or dislikes: entry.json in ~/.teyla/taste/corpus/<YYYYMMDD>-<id>/. Owner fields and the model's interpretation are kept apart (docs/TASTE.md, The corpus).",
+  "type": "object",
+  "required": ["id", "created", "source", "kind", "verdict", "claim", "scope", "axes", "evidence", "do_not_copy", "status", "supersedes", "interpretation"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {"type": "string", "pattern": "^[0-9a-f]{6}$"},
+    "created": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"},
+    "source": {"type": "string", "minLength": 1},
+    "kind": {"type": "string", "enum": ["screen", "product", "copy", "motion"]},
+    "verdict": {"type": "string", "enum": ["like", "dislike", "mixed"]},
+    "claim": {"type": "string"},
+    "claim_source": {"type": "string", "enum": ["owner", "accepted-proposal"]},
+    "scope": {"type": "string", "pattern": "^(portfolio|voice|structure|product:[a-z0-9][a-z0-9._-]*)$"},
+    "axes": {
+      "type": "object",
+      "required": ["density", "chrome", "color", "type", "motion", "tone"],
+      "additionalProperties": false,
+      "properties": {
+        "density": {"type": ["string", "null"]},
+        "chrome": {"type": ["string", "null"]},
+        "color": {"type": ["string", "null"]},
+        "type": {"type": ["string", "null"]},
+        "motion": {"type": ["string", "null"]},
+        "tone": {"type": ["string", "null"]}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["files", "measured", "captured"],
+      "additionalProperties": false,
+      "properties": {
+        "files": {"type": "array", "items": {"type": "string"}},
+        "measured": {"type": "object"},
+        "captured": {"type": ["string", "null"]},
+        "backend": {"type": ["string", "null"]},
+        "error": {"type": ["string", "null"]}
+      }
+    },
+    "do_not_copy": {"type": "array", "items": {"type": "string"}},
+    "status": {"type": "string", "enum": ["raw", "proposed", "active", "superseded"]},
+    "supersedes": {"type": ["string", "null"]},
+    "interpretation": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["claim", "kind", "axes", "do_not_copy", "model", "created"],
+      "properties": {
+        "claim": {"type": ["string", "null"]},
+        "kind": {"type": ["string", "null"]},
+        "axes": {"type": "object"},
+        "do_not_copy": {"type": "array", "items": {"type": "string"}},
+        "model": {"type": "string"},
+        "created": {"type": "string"},
+        "cost_usd": {"type": ["number", "null"]}
+      }
+    }
+  }
+}

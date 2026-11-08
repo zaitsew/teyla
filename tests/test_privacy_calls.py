@@ -70,6 +70,7 @@ ALLOWED = {
     "growth_publish.py": {46, 47, 48, 49},
     "growth_engage.py": {50, 51},
     "freshness.py": {52},
+    "taste_capture.py": {53, 54, 55},
 }
 
 
