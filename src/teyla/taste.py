@@ -4,6 +4,9 @@
     teyla taste confirm <id> [--repo R] [--rule TEXT] [--scope S]   the owner's yes: set `confirmed`, write the rule file
     teyla taste render [repo] [--dry]                 regenerate "Rules from review" and "Screens" in DESIGN.md
 
+The same command also keeps the taste corpus, the owner's likes and dislikes as evidence (taste_corpus.py,
+taste_capture.py): add, note, capture, interpret, accept, reject, inbox, corpus render.
+
 The ledger is plain files in the product's own repo (formats and examples: docs/TASTE.md):
 
     design/decisions/<id>.json        one decision per captured comment: fix, rule or reject
@@ -38,6 +41,7 @@ SCREENS_MARK = ("<!-- teyla:screens -->", "<!-- /teyla:screens -->")
 RULES_HEADING = "## Rules from review"
 SCREENS_HEADING = "## Screens"
 MIN_PREFIX = 4
+CORPUS_ACTIONS = ("add", "note", "capture", "interpret", "accept", "reject", "inbox", "corpus")
 
 
 # --- the YAML subset ------------------------------------------------------------------------------
@@ -579,6 +583,9 @@ def render_list(repo: pathlib.Path, rows: list[dict]) -> str:
 
 def cmd_taste(args) -> int:
     action = args.action
+    if action in CORPUS_ACTIONS:
+        from . import taste_corpus
+        return taste_corpus.cmd(args)
     words = list(getattr(args, "words", []) or [])
     try:
         if action == "confirm":
@@ -621,12 +628,23 @@ def cmd_taste(args) -> int:
 def register(sp):
     q = sp.add_parser("taste", help="a product's taste ledger: rule proposals, confirm one, render DESIGN.md from the files")
     q.set_defaults(fn=cmd_taste)
-    q.add_argument("action", nargs="?", choices=["list", "confirm", "render"], default="list")
-    q.add_argument("words", nargs="*", metavar="[repo | decision-id]")
+    q.add_argument("action", nargs="?", choices=["list", "confirm", "render", *CORPUS_ACTIONS], default="list")
+    q.add_argument("words", nargs="*", metavar="[repo | decision-id | url comment...]")
     q.add_argument("--repo", help="confirm: the product repo (name under code_root or a path; default: the current git root)")
     q.add_argument("--all", action="store_true", help="list: every decision, not only rule proposals")
     q.add_argument("--rule", help="confirm: the rule wording, replacing the proposed one")
-    q.add_argument("--scope", help="confirm: product, screen:<id> or component:<id>")
+    q.add_argument("--scope", help="confirm: product, screen:<id> or component:<id>; add: portfolio, product:<name>, voice or structure")
     q.add_argument("--dry", action="store_true", help="render: show the result, write nothing")
     q.add_argument("--json", action="store_true")
+    c = q.add_argument_group("corpus (docs/TASTE.md, The corpus)")
+    c.add_argument("--dislike", action="store_true", help="add: you dislike it")
+    c.add_argument("--mixed", action="store_true", help="add: some of it you like, some not")
+    c.add_argument("--product", help="add: scope the entry to one product; corpus render: that product's entries")
+    c.add_argument("--kind", help="add: screen, product, copy or motion (default: a guess)")
+    c.add_argument("--no-capture", action="store_true", help="add: store the entry only; capture later with `taste capture <id>`")
+    c.add_argument("--supersedes", help="accept: the id of an earlier entry in the same scope that this one replaces")
+    c.add_argument("--model", help="interpret: the model (default claude-sonnet-5-5)")
+    c.add_argument("--limit", type=int, default=40, help="inbox: at most this many lines")
+    c.add_argument("--out", help="corpus render: write the TASTE.md to this file")
+    c.add_argument("--allow-network", action="store_true", help="add, capture, interpret: safe mode: allow the call for this one run. A page capture loads the page as a browser would, third-party resources included; nothing about you is sent except a normal browser request")
     return q
