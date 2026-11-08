@@ -1,6 +1,6 @@
 """`teyla freshness` -- do the README, the README images, the store text and the store screenshots still match the product.
 
-    teyla freshness [path...] [--json] [--quiet]
+    teyla freshness [path...] [--json] [--quiet] [--fetch]
 
 A README that shows a screen from 16 releases ago, or a store "What's New" that says "Bug fixes and
 improvements" on every version, is wrong in a way no test sees. For each product this command asks git how many
@@ -26,7 +26,9 @@ commit is older than `days` (default 14). A product tunes it in its teyla.toml:
     listing = ["apps/store/listing/**"]        # default: the usual places that exist
     screenshots = ["docs/screenshots/**/*.png"]
 
-Offline: local git only, no network, no model call. Exit 0 when nothing is stale, 1 otherwise, 2 for a path
+Offline by default: local git only, no network, no model call, so it reads the remote-tracking refs as they
+are. `--fetch` first runs `git fetch --quiet origin` in each product repo (30 s limit; a failure is noted on
+the product's row and the check reads the last known refs); the weekly routine passes it. Exit 0 when nothing is stale, 1 otherwise, 2 for a path
 with no teyla.toml. `--quiet` prints nothing and writes `~/.teyla/freshness.problems` (`key<TAB>text`, what the
 session-start banner and the weekly digest read); the file is removed when nothing is stale.
 """
@@ -47,6 +49,7 @@ from . import cloud, productize, testflight, whats_new
 
 DEFAULT_CHANGES = 10
 DEFAULT_DAYS = 14
+FETCH_TIMEOUT = 30
 CHECKS = ("readme", "readme-images", "whats-new", "listing", "screenshots")
 DEFAULT_LISTING = ("apps/store/listing/**", "docs/store/listing*.json", "content/store/**/*.txt",
                    "fastlane/metadata/**", "store/**/*.txt")
@@ -386,7 +389,22 @@ def _error(manifest: dict, msg: str) -> dict:
             "error": msg, "checks": []}
 
 
-def run(paths: list[str] | None = None, now: dt.datetime | None = None) -> list[dict]:
+def fetch_origin(repo: pathlib.Path) -> str | None:
+    """`git fetch --quiet origin` in `repo`. None on success, else a short reason. Never raises."""
+    try:
+        r = subprocess.run(["git", "-C", str(repo), "fetch", "--quiet", "origin"], capture_output=True,
+                           text=True, timeout=FETCH_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return f"timed out after {FETCH_TIMEOUT} s"
+    except (OSError, subprocess.SubprocessError) as e:
+        return type(e).__name__
+    if r.returncode == 0:
+        return None
+    lines = [ln.strip() for ln in (r.stderr or r.stdout).splitlines() if ln.strip()]
+    return (lines[-1] if lines else f"exit {r.returncode}")[:120]
+
+
+def run(paths: list[str] | None = None, now: dt.datetime | None = None, fetch: bool = False) -> list[dict]:
     rows = []
     for mp in productize.find_manifests(paths):
         m = productize.parse(mp)
@@ -396,7 +414,11 @@ def run(paths: list[str] | None = None, now: dt.datetime | None = None) -> list[
             if paths:
                 rows.append(_error(m, f"teyla.toml does not parse: {m['error']}"))
             continue
-        rows.append(check_product(m, now))
+        err = fetch_origin(pathlib.Path(m["repo"])) if fetch else None
+        row = check_product(m, now)
+        if fetch:
+            row["fetch"] = "ok" if err is None else f"failed: {err}"
+        rows.append(row)
     return rows
 
 
@@ -410,11 +432,16 @@ def _stale(r: dict) -> list[dict]:
     return [c for c in r["checks"] if c["verdict"] == "stale"]
 
 
-def render_text(rows: list[dict]) -> str:
+HINT = "Results read local refs; `teyla freshness --fetch` refreshes them first."
+
+
+def render_text(rows: list[dict], fetched: bool = False) -> str:
     if not rows:
         return "no product with a teyla.toml found.\n"
     out = []
     for r in rows:
+        if r.get("fetch", "ok").startswith("failed"):
+            out.append(f"{r['product']}: fetch {r['fetch']}; read the last known refs")
         if r["verdict"] == "error":
             out.append(f"{r['product']}: {r['error']}")
             continue
@@ -424,6 +451,8 @@ def render_text(rows: list[dict]) -> str:
             continue
         out.append(f"{r['product']}: {len(stale)} stale ({', '.join(c['check'] for c in stale)})")
         out += [f"  {c['text']}" for c in stale]
+    if not fetched and any(_stale(r) for r in rows if r["verdict"] != "error"):
+        out.append(HINT)
     return "\n".join(out) + "\n"
 
 
@@ -464,14 +493,15 @@ def cmd_freshness(args):
     if args.paths and not productize.find_manifests(args.paths):
         print("teyla: no teyla.toml at " + ", ".join(args.paths), file=sys.stderr)
         return 2
-    rows = run(args.paths or None)
+    fetch = getattr(args, "fetch", False)
+    rows = run(args.paths or None, fetch=fetch)
     if quiet:
         write_problems(rows)
         return exit_code(rows)
     if getattr(args, "json", False):
         print(json.dumps(rows, indent=2))
     else:
-        print(render_text(rows), end="")
+        print(render_text(rows, fetched=fetch), end="")
     return exit_code(rows)
 
 
@@ -481,6 +511,8 @@ def register(sp):
     q.set_defaults(fn=cmd_freshness)
     q.add_argument("paths", nargs="*")
     q.add_argument("--json", action="store_true")
+    q.add_argument("--fetch", action="store_true",
+                   help="git fetch origin in each product repo first (a failure is noted, not fatal)")
     q.add_argument("--quiet", action="store_true",
                    help="print nothing; write ~/.teyla/freshness.problems (removed when nothing is stale)")
     return q

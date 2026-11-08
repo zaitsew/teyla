@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **`teyla freshness --fetch` reads fresh refs.** It runs `git fetch --quiet origin` in each product repo first (30 s limit; a failed fetch is noted on the row and the check reads the last known refs). Without it nothing changes, but a stale result now says to use it. The weekly routine passes `--fetch`, so a README refreshed yesterday is no longer reported stale from old refs; an older wrapper is rewritten. New privacy row 52.
+
 ## 0.45.0 — 2026-11-08 — Drafts count for a goal
 
 - **A waiting draft belongs to one goal, so Today can say "N drafts for this goal".** A goal in `~/.teyla/gtm/goals.toml` takes a `[goal.drafts]` table with `products`, `platforms` and `kinds` lists; the first goal whose lists all match claims the draft, and an empty list matches nothing. `teyla growth tag ID... --goal GOAL` tags a draft by hand and wins over the rules; `--goal none` keeps it out of every goal and `--goal auto` hands it back to the rules. A tag naming a goal that is gone is ignored. `teyla gtm today --json` adds, per goal, `drafts {total, growth, by_source}`, and at the top `untagged_drafts` and `draft_goals`. `teyla gtm init` writes an example rule. See docs/GTM.md, "Drafts and goals".

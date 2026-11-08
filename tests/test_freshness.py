@@ -298,7 +298,7 @@ def test_the_digest_and_the_banner_read_the_problems(tmp_path):
 
 def test_the_weekly_routine_runs_it_before_the_digest():
     t = routine_install.WRAPPER_TEMPLATE
-    assert t.index("freshness --quiet") < t.index("digest --write")
+    assert t.index("freshness --fetch --quiet") < t.index("digest --write")
 
 
 def _merge_files(repo, n, title, files, when=RECENT):
@@ -403,3 +403,80 @@ def test_logos_and_brand_marks_are_not_readme_screenshots(tmp_path, rel):
     git(r, "add", ".")
     git(r, "commit", "-q", "-m", "readme again", when=OLD)
     assert checks(freshness.run()[0])["readme-images"]["path"] == "docs/home.png"
+
+
+# --- --fetch ---------------------------------------------------------------------------
+
+def _spy_fetch(monkeypatch, result=None):
+    calls = []
+    monkeypatch.setattr(freshness, "fetch_origin", lambda repo: calls.append(repo.name) or result)
+    return calls
+
+
+def test_fetch_runs_once_per_repo_and_is_recorded(tmp_path, monkeypatch):
+    product(tmp_path, name="one")
+    product(tmp_path, name="two")
+    calls = _spy_fetch(monkeypatch)
+    rows = freshness.run(fetch=True)
+    assert sorted(calls) == ["one", "two"]
+    assert [r["fetch"] for r in rows] == ["ok", "ok"]
+
+
+def test_no_fetch_without_the_flag(tmp_path, monkeypatch):
+    product(tmp_path)
+    calls = _spy_fetch(monkeypatch)
+    rows = freshness.run()
+    assert calls == [] and "fetch" not in rows[0]
+    main(["freshness"])
+    assert calls == []
+
+
+def test_a_failed_fetch_is_noted_and_not_fatal(tmp_path, monkeypatch, capsys):
+    r = product(tmp_path)
+    features(r, 11)
+    _spy_fetch(monkeypatch, "could not resolve host")
+    rows = freshness.run(fetch=True)
+    assert rows[0]["fetch"] == "failed: could not resolve host"
+    assert rows[0]["verdict"] == "stale"               # checked against the last known refs
+    assert main(["freshness", "--fetch"]) == 1
+    out = capsys.readouterr().out
+    assert "app: fetch failed: could not resolve host; read the last known refs" in out
+    assert "app: 1 stale" in out
+
+
+def test_fetch_origin_reports_failure_without_raising(tmp_path):
+    r = product(tmp_path)                              # no remote named origin
+    reason = freshness.fetch_origin(r)
+    assert reason and "origin" in reason
+    assert freshness.fetch_origin(tmp_path / "missing") is not None
+
+
+def test_fetch_origin_updates_the_tracking_refs(tmp_path):
+    r = product(tmp_path)
+    bare = tmp_path / "remote.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(r), str(bare)], check=True, capture_output=True)
+    git(r, "remote", "add", "origin", str(bare))
+    assert freshness.fetch_origin(r) is None
+    assert subprocess.run(["git", "-C", str(r), "rev-parse", "origin/main"], capture_output=True).returncode == 0
+
+
+def test_json_has_the_fetch_note_only_with_the_flag(tmp_path, monkeypatch, capsys):
+    r = product(tmp_path, first_when=RECENT)
+    _spy_fetch(monkeypatch, "timed out after 30 s")
+    assert main(["freshness", str(r), "--json", "--fetch"]) == 0
+    assert json.loads(capsys.readouterr().out)[0]["fetch"] == "failed: timed out after 30 s"
+    assert main(["freshness", str(r), "--json"]) == 0
+    assert "fetch" not in json.loads(capsys.readouterr().out)[0]
+
+
+def test_the_hint_shows_only_when_stale_and_not_fetched(tmp_path, monkeypatch, capsys):
+    ok = product(tmp_path, name="ok-app", first_when=RECENT)
+    assert main(["freshness", str(ok)]) == 0
+    assert "--fetch" not in capsys.readouterr().out
+    stale = product(tmp_path, name="stale-app")
+    features(stale, 11)
+    assert main(["freshness", str(stale)]) == 1
+    assert freshness.HINT in capsys.readouterr().out
+    _spy_fetch(monkeypatch)
+    assert main(["freshness", str(stale), "--fetch"]) == 1
+    assert freshness.HINT not in capsys.readouterr().out
