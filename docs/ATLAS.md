@@ -82,7 +82,7 @@ a screen with no route, a tour route no screen names.
 
 ## `teyla ux atlas [repo] [--out DIR] [--lang L] [--open]`
 
-Writes `atlas.html` and `img/` into `DIR` (default `<repo>/design/atlas/`). Add that folder to the product's `.gitignore`
+Writes `atlas.html` and `atlas-img/` into `DIR` (default `<repo>/design/atlas/`). The atlas clears only `atlas-img/`, and only when its own marker file `.teyla-atlas` is inside; any other folder of that name makes it refuse with exit 2. Add that folder to the product's `.gitignore`
 or commit it; the page is regenerated from code either way. `--lang` picks the language of the screenshots shown
 (default: the first language of the tour). The page has no external request, so it works from `file://` and in an
 air-gapped review.

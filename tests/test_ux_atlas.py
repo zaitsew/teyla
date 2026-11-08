@@ -248,3 +248,36 @@ def test_the_commands_are_listed_in_help_and_the_docs():
     for rel in ("docs/COMMANDS.md", "src/teyla/cli.py"):
         text = (root / rel).read_text()
         assert "teyla ux atlas" in text and "teyla ux registry check" in text, rel
+
+
+def test_a_foreign_img_folder_survives_and_a_foreign_atlas_img_is_refused(repo, tmp_path, capsys):
+    out = tmp_path / "out"
+    (out / "img").mkdir(parents=True)
+    (out / "img" / "logo.png").write_bytes(b"keep")
+    ua.write_atlas(repo, out)
+    assert (out / "img" / "logo.png").read_bytes() == b"keep"
+    assert (out / "atlas-img" / ".teyla-atlas").is_file()
+    ua.write_atlas(repo, out)                                      # a second run clears its own folder
+    (out / "atlas-img" / "stale.png").write_bytes(b"x")
+    ua.write_atlas(repo, out)
+    assert not (out / "atlas-img" / "stale.png").exists()
+    other = tmp_path / "other"
+    (other / "atlas-img").mkdir(parents=True)
+    (other / "atlas-img" / "mine.png").write_bytes(b"keep")
+    assert cli.main(["ux", "atlas", str(repo), "--out", str(other)]) == 2
+    assert (other / "atlas-img" / "mine.png").read_bytes() == b"keep"
+    assert "did not make it" in capsys.readouterr().err
+
+
+def test_the_screen_template_parses_with_its_comments():
+    from teyla import taste
+    root = pathlib.Path(__file__).parent.parent
+    entry = taste.load_file(root / "templates" / "design" / "screen.yaml")
+    assert entry["layout"]["wide"] == "A grid of cards." and entry["links"][0]["tested"] is True
+    assert entry["platforms"] == ["ios"] and entry["route"] == "recipes"
+
+
+def test_the_filters_are_per_platform_and_the_map_applies_them(repo, tmp_path):
+    page = ua.write_atlas(repo, tmp_path / "out")[0].read_text()
+    assert "function cap(s){return fp?" in page and "(fc==='captured')===cap(s)" in page
+    assert "fit();filter();" in page                               # the map starts filtered like the grid

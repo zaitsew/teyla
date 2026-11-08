@@ -11,7 +11,7 @@ lists (default: ios). It is captured on a platform when a screenshot of its rout
 `check` validates the entries and prints expected against captured per platform and look. It exits 1 on an
 invalid entry only; a missing capture, a missing layout contract or an unknown source file is a warning.
 `atlas` writes one self-contained `atlas.html` (inline CSS and JS, no CDN) plus the screenshots it shows, in
-`img/` next to it. Nothing here touches the network.
+`atlas-img/` next to it. Nothing here touches the network.
 """
 from __future__ import annotations
 
@@ -41,6 +41,12 @@ LAYOUT_KEYS = set(SIZE_CLASSES) | {"assert"}
 CODE_SUFFIXES = {".swift", ".kt", ".java", ".m", ".py", ".ts", ".tsx", ".js", ".jsx", ".dart"}
 SKIP_DIRS = {".git", "node_modules", "build", "DerivedData", ".build", "Pods", ".venv", "dist", "shots", "atlas"}
 MAX_SCAN_BYTES = 2_000_000
+IMG_DIR = "atlas-img"
+IMG_MARK = ".teyla-atlas"
+
+
+class AtlasRefused(Exception):
+    pass
 
 
 # --- the registry ---------------------------------------------------------------------------------
@@ -543,7 +549,7 @@ def _pick(caps: list[dict], platform: str, route: str, lang: str | None) -> list
 
 def build_data(repo: pathlib.Path, out: pathlib.Path | None, lang: str | None = None,
                today: str | None = None) -> tuple[dict, Registry]:
-    """The atlas as plain data. With `out`, the screenshots it shows are copied to out/img/."""
+    """The atlas as plain data. With `out`, the screenshots it shows are copied to out/atlas-img/."""
     reg = load_registry(repo)
     caps = scan_captures(repo)
     cov = coverage(reg, caps)
@@ -558,7 +564,7 @@ def build_data(repo: pathlib.Path, out: pathlib.Path | None, lang: str | None = 
         imgs = []
         for p in e["platforms"]:
             for c in (_pick(caps, p, e["route"], lang) if e["route"] else []):
-                rel = f"img/{p}/{c['look']}/{c['route']}.{c['state'] or 'screen'}.png"
+                rel = f"{IMG_DIR}/{p}/{c['look']}/{c['route']}.{c['state'] or 'screen'}.png"
                 if out is not None and rel not in copied:
                     dest = out / rel
                     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -661,8 +667,19 @@ def render_html(data: dict) -> str:
 
 def write_atlas(repo: pathlib.Path, out: pathlib.Path, lang: str | None = None) -> tuple[pathlib.Path, dict]:
     out = pathlib.Path(out)
-    shutil.rmtree(out / "img", ignore_errors=True)
     out.mkdir(parents=True, exist_ok=True)
+    img = out / IMG_DIR
+    if img.is_symlink() or (img.exists() and not img.is_dir()):
+        raise AtlasRefused(f"{img} exists and is not a folder the atlas made; choose another --out")
+    if img.exists():
+        if not (img / IMG_MARK).is_file():
+            if any(img.iterdir()):
+                raise AtlasRefused(f"{img} exists and the atlas did not make it (no {IMG_MARK} inside); "
+                                   "nothing was changed. Choose another --out, or remove that folder yourself.")
+        else:
+            shutil.rmtree(img)
+    img.mkdir(exist_ok=True)
+    (img / IMG_MARK).write_text("Made by `teyla ux atlas`; the next run clears this folder.\n")
     data, _ = build_data(repo, out, lang)
     path = out / "atlas.html"
     path.write_text(render_html(data), encoding="utf-8")
@@ -719,7 +736,8 @@ var D=JSON.parse(document.getElementById('atlas-data').textContent),S={},fp='',f
 D.screens.forEach(function(s){S[s.id]=s});
 function el(t,a,x){var n=document.createElementNS(x?'http://www.w3.org/2000/svg':'http://www.w3.org/1999/xhtml',t);for(var k in a||{})n.setAttribute(k,a[k]);return n}
 function txt(t,s,x){var n=document.createElement(t);n.textContent=s;if(x)n.className=x;return n}
-function shown(s){return (!fp||s.platforms.indexOf(fp)>=0)&&(!fc||(fc==='captured')===s.captured)}
+function cap(s){return fp?!!(s.got[fp]&&s.got[fp].length):s.captured}
+function shown(s){return (!fp||s.platforms.indexOf(fp)>=0)&&(!fc||(fc==='captured')===cap(s))}
 function filter(){
  document.querySelectorAll('.card').forEach(function(c){c.classList.toggle('hidden',!shown(S[c.dataset.screen]));
   c.querySelectorAll('.plat').forEach(function(p){p.classList.toggle('hidden',!!fp&&p.dataset.platform!==fp)})});
@@ -774,7 +792,7 @@ function build(){
   var t=el('text',{x:10,y:19},1);t.textContent=s.title.length>24?s.title.slice(0,23)+'…':s.title;n.appendChild(t);
   var u=el('text',{x:10,y:35,'class':'s'},1);u.textContent=s.id.length>28?s.id.slice(0,27)+'…':s.id;n.appendChild(u);
   n.onclick=function(ev){ev.stopPropagation();open(s.id)};nd.appendChild(n)});
- g.appendChild(ed);g.appendChild(nd);svg.appendChild(g);fit();
+ g.appendChild(ed);g.appendChild(nd);svg.appendChild(g);fit();filter();
 }
 function fit(){var xs=D.screens.map(function(s){return s.x+W}),ys=D.screens.map(function(s){return s.y+H});
  var w=Math.max.apply(null,xs.concat([W]))+40,h=Math.max.apply(null,ys.concat([H]))+40;vb={x:-20,y:-20,w:w,h:h};apply()}
@@ -801,7 +819,7 @@ if(location.hash==='#map')view(true);
 # --- the CLI --------------------------------------------------------------------------------------
 
 def add_arguments(q) -> None:
-    q.add_argument("--out", metavar="DIR", help="atlas: where atlas.html and img/ go (default: <repo>/design/atlas)")
+    q.add_argument("--out", metavar="DIR", help="atlas: where atlas.html and atlas-img/ go (default: <repo>/design/atlas)")
     q.add_argument("--lang", help="atlas: the language of the screenshots shown (default: the tour's first language)")
     q.add_argument("--open", action="store_true", help="atlas: open atlas.html in the browser")
 
@@ -834,7 +852,11 @@ def cmd(args) -> int:
     if repo is None:
         return 2
     out = pathlib.Path(args.out).expanduser() if args.out else repo / "design" / "atlas"
-    path, data = write_atlas(repo, out, args.lang)
+    try:
+        path, data = write_atlas(repo, out, args.lang)
+    except AtlasRefused as e:
+        print(f"teyla ux atlas: {e}", file=sys.stderr)
+        return 2
     c = data["coverage"]
     print(f"{path}\n{len(data['screens'])} screen(s), captured / expected {c['captured']} / {c['expected']} ({c['percent']}%)"
           + (f", {len(data['errors'])} invalid entr{'y' if len(data['errors']) == 1 else 'ies'} (teyla ux registry check)" if data["errors"] else ""))
