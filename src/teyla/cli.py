@@ -91,6 +91,7 @@
   teyla reviews settle OWNER/REPO#N --outcome fixed|false --decision PATH --reason TEXT [--commit SHA] [--dry]   close an open P1 on a merged PR, with evidence in git
   teyla review [list|pull|triage ID|open IDS...]                   the inbox of review captures: pull from the relay and TestFlight, triage to fix|rule|reject, lane brief
   teyla taste [list|confirm ID|render [repo]]                      the taste ledger: rule proposals, the owner's confirm, DESIGN.md rendered from the files
+  teyla taste add <url|image> [comment] [--dislike|--mixed] [--product N]   the taste corpus: a like or dislike as evidence; also note, capture, interpret, accept, reject, inbox, corpus render
   teyla products [path...]                                       real-usage counters from every repo's ./check.sh usage
   teyla routines [path...] [--json]                               routines + manual checks from every repo's teyla.toml
   teyla check <product> <check> ok|broken [--note TEXT]            confirm a manual check: status + today's date in its teyla.toml
