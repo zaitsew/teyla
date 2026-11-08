@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **`teyla freshness`: does the README, the store text and the screenshots still match the product.** For each product it counts the user-facing changes (the `teyla whats-new` split) that landed on the default branch since the newest commit of `README.md`, the oldest local image the README shows, `docs/whats-new/` (store products only; a generic newest note is also flagged), the store listing text and the store screenshots. A check is stale at 10 changes and 14 days; `[freshness]` in `teyla.toml` sets `changes`, `days`, `skip`, `listing` and `screenshots`. `--quiet` writes `~/.teyla/freshness.problems`, which the session-start banner and the weekly digest read (rank 5, "N stale README or store items"); the weekly routine runs it and an older wrapper is rewritten. Offline: git only, no model call. See docs/COMMANDS.md.
+
 ## 0.43.0 — 2026-11-07 — Teyla Admin opens on Today, and a Today card on the iPhone
 
 - **Teyla Admin opens on Today; the iPhone shows a Today card.** The admin Mac build's first screen reads `teyla gtm today --json`: the ordered next actions, the drafts waiting for approval (A approves, which only marks a draft; S skips; O opens; Reject asks for a reason), what waits per source with an Open button when the source gave a page, today's sends against the daily target, this week's outcomes against each goal's targets with the days left, and the source checks. Two layouts, `queue` and `board`, switch with `defaults write com.zaitsew.teyla.local teyla.today.layout`. No commit counts. The store build has no Today. See apps/mac/README.md, "Today".
