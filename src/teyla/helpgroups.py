@@ -56,7 +56,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
         ("routines", "Whether each product's scheduled checks ran"),
         ("check", "Confirm a manual check in a product's teyla.toml"),
         ("docs", "Does a repo's README describe the product as it is now"),
-        ("ux", "UX standard check; judge which of two screens is better"),
+        ("ux", "UX standard check, screen atlas, screen judge"),
         ("hosts", "Every host a repo's code can reach, against its privacy table"),
         ("scout", "The weekly design scout: what changed, and rule proposals"),
         ("review", "Comments made on the real app: pull, triage, lane brief"),

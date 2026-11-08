@@ -27,7 +27,7 @@ SUMMARY_MAX = 140
 # often a heading or front matter, and this line is what the app shows beside the title.
 STANDARDS = (
     ("ux", "UX and UI standard", "templates/design/STANDARD.md",
-     "One standard for every screen: do one thing, show it first, say it in few words. Audited by `teyla ux check`."),
+     "One standard for every screen: one job, shown first, in few words. `teyla ux check` audits it; `teyla ux atlas` lists every screen."),
     ("writing", "Writing and reporting", "docs/WRITING.md",
      "Three registers: agent replies, product copy, marketing. Answer first, short sentences, a ban list."),
     ("voice", "Voice chart", "templates/voice/VOICE.md",

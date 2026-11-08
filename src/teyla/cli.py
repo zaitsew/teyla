@@ -129,6 +129,8 @@
   teyla ux shots <repo> [--check-manifest] [--dry] [--runs N] [--budget-min N] [--keep-temp] [--strict]   capture matrix: light/dark/large text x languages, 3 runs, a11y + layout checks
   teyla ux diff <repo>                                            design/shots against design/shots/baseline: changed, new, missing, unstable; exit 1 on any
   teyla ux accept <repo> --yes [--allow-unstable]                 make the run the baseline, record who and when
+  teyla ux registry check [repo] [--json]                         the screen registry (design/screens): invalid entries, expected vs captured per platform and look; exit 1 on invalid
+  teyla ux atlas [repo] [--out DIR] [--lang L] [--open]           one HTML atlas of every screen (grid and navigation map) with "captured / expected" and the feature gaps
   teyla ux judge A.png B.png [--repo R] [--both-orders] [--dry]  which of two screens is better on the five rubric items; --calibrate REPO against your decided pairs
   teyla scout design [--week W] [--dry] [--no-model]            the weekly design scout: what changed, at most two rule proposals
   teyla hosts [repo...] [--all] [--write] [--json] [--quiet]    every host a repo's code can reach, by file and line, against docs/PRIVACY.md; exit 1 on an undocumented host

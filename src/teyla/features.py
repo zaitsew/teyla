@@ -94,7 +94,7 @@ PACKS: tuple[Pack, ...] = (
     Pack("design", "UX and UI", KIT,
          "Agents ship screens with noise, weak hierarchy and copy nobody reviewed.",
          "Checks UI code against one standard, judges two screens, keeps accepted screenshots and design decisions.",
-         ("teyla ux check <repo>", "teyla ux judge <a.png> <b.png>", "teyla ux shots", "teyla taste", "teyla kit")),
+         ("teyla ux check <repo>", "teyla ux atlas <repo>", "teyla ux judge <a.png> <b.png>", "teyla ux shots", "teyla taste", "teyla kit")),
     Pack("ship", "Ship and test", KIT,
          "A build is uploaded but no tester can install it, and pull requests merge without a review.",
          "Tracks every product per platform, whether a build reached a person, unreviewed merges, comments from the real app.",
