@@ -401,7 +401,7 @@ def fetch_origin(repo: pathlib.Path) -> str | None:
     if r.returncode == 0:
         return None
     lines = [ln.strip() for ln in (r.stderr or r.stdout).splitlines() if ln.strip()]
-    return (lines[-1] if lines else f"exit {r.returncode}")[:120]
+    return (lines[0] if lines else f"exit {r.returncode}")[:120]
 
 
 def run(paths: list[str] | None = None, now: dt.datetime | None = None, fetch: bool = False) -> list[dict]:
