@@ -480,3 +480,14 @@ def test_the_hint_shows_only_when_stale_and_not_fetched(tmp_path, monkeypatch, c
     _spy_fetch(monkeypatch)
     assert main(["freshness", str(stale), "--fetch"]) == 1
     assert freshness.HINT not in capsys.readouterr().out
+
+
+def test_safe_mode_refuses_the_fetch(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TEYLA_SAFE", "1")
+    product(tmp_path, name="app")
+    calls = _spy_fetch(monkeypatch)
+    rows = freshness.run(fetch=True)
+    assert calls == [] and "fetch" not in rows[0]
+    main(["freshness", "--fetch"])
+    assert "safe mode is on" in capsys.readouterr().err
+    assert calls == []

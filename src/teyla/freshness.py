@@ -28,7 +28,8 @@ commit is older than `days` (default 14). A product tunes it in its teyla.toml:
 
 Offline by default: local git only, no network, no model call, so it reads the remote-tracking refs as they
 are. `--fetch` first runs `git fetch --quiet origin` in each product repo (30 s limit; a failure is noted on
-the product's row and the check reads the last known refs); the weekly routine passes it. Exit 0 when nothing is stale, 1 otherwise, 2 for a path
+the product's row and the check reads the last known refs); the weekly routine passes it. Safe mode refuses
+the fetch (unless the command carries --allow-network) and the check reads the refs as they are. Exit 0 when nothing is stale, 1 otherwise, 2 for a path
 with no teyla.toml. `--quiet` prints nothing and writes `~/.teyla/freshness.problems` (`key<TAB>text`, what the
 session-start banner and the weekly digest read); the file is removed when nothing is stale.
 """
@@ -45,7 +46,7 @@ import sys
 import tomllib
 import urllib.parse
 
-from . import cloud, productize, testflight, whats_new
+from . import cloud, net, productize, testflight, whats_new
 
 DEFAULT_CHANGES = 10
 DEFAULT_DAYS = 14
@@ -405,6 +406,7 @@ def fetch_origin(repo: pathlib.Path) -> str | None:
 
 
 def run(paths: list[str] | None = None, now: dt.datetime | None = None, fetch: bool = False) -> list[dict]:
+    fetch = fetch and net.allowed()  # safe mode: no fetch, whoever asks (the weekly routine passes --fetch)
     rows = []
     for mp in productize.find_manifests(paths):
         m = productize.parse(mp)
@@ -494,6 +496,8 @@ def cmd_freshness(args):
         print("teyla: no teyla.toml at " + ", ".join(args.paths), file=sys.stderr)
         return 2
     fetch = getattr(args, "fetch", False)
+    if fetch and not net.gate("`git fetch` in each product repo", quiet=quiet):
+        fetch = False
     rows = run(args.paths or None, fetch=fetch)
     if quiet:
         write_problems(rows)
