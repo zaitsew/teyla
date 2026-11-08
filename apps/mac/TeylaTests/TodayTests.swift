@@ -413,6 +413,10 @@ final class GtmGoalCommandsTests: XCTestCase {
     func testSetBuildsTheWeeklyFlag() {
         XCTAssertEqual(GtmGoalCommands.setArguments(id: "relationships", weekly: [GtmWeeklyNumber(stage: "signed_up", count: 12)]),
                        ["gtm", "goal", "set", "relationships", "--weekly=signed_up=12", "--json"])
+        XCTAssertEqual(GtmGoalCommands.setArguments(id: "g", weekly: TodayLogic.weeklyChange(stage: "intro", count: 3, replacing: "conversation"))?
+            .filter { $0.hasPrefix("--weekly") }, ["--weekly=intro=3", "--weekly=conversation=0"])
+        XCTAssertNil(GtmGoalCommands.addArguments(title: "T", weekly: [GtmWeeklyNumber(stage: "intro", count: 0)], deadline: nil,
+                                                  doneWhen: nil, perDay: nil))
         XCTAssertNil(GtmGoalCommands.setArguments(id: "--evil", weekly: []))
         XCTAssertNil(GtmGoalCommands.setArguments(id: "a b", weekly: []))
         XCTAssertNil(GtmGoalCommands.setArguments(id: "g", weekly: [], title: "  "))

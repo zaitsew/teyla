@@ -42,10 +42,12 @@ enum GtmGoalCommands {
         return one.isEmpty ? nil : String(one.prefix(titleLimit))
     }
 
-    private static func weekly(_ numbers: [GtmWeeklyNumber]) -> [String]? {
+    /// `allowZero`: `goal set` takes STAGE=0 to remove a number (a stage that was replaced); `goal add` does not.
+    private static func weekly(_ numbers: [GtmWeeklyNumber], allowZero: Bool = false) -> [String]? {
         var out: [String] = []
         for number in numbers {
-            guard isStage(number.stage), countRange.contains(number.count) else { return nil }
+            let ok = countRange.contains(number.count) || (allowZero && number.count == 0)
+            guard isStage(number.stage), ok else { return nil }
             out.append("--weekly=\(number.stage)=\(number.count)")
         }
         return out
@@ -69,7 +71,7 @@ enum GtmGoalCommands {
 
     /// `gtm goal set ID [--weekly=STAGE=N] [--title=T] [--deadline=D] [--done-when=T] --json`; nil when a part is invalid.
     static func setArguments(id: String, weekly numbers: [GtmWeeklyNumber], title: String? = nil, deadline: String? = nil, doneWhen: String? = nil) -> [String]? {
-        guard isGoalID(id), let weekly = weekly(numbers) else { return nil }
+        guard isGoalID(id), let weekly = weekly(numbers, allowZero: true) else { return nil }
         var argv = ["gtm", "goal", "set", id] + weekly
         if let title { guard let one = line(title) else { return nil }; argv.append("--title=\(one)") }
         if let deadline {
