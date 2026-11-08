@@ -140,6 +140,7 @@ def test_the_oldest_readme_image_is_chosen_and_http_images_are_ignored(tmp_path)
     git(r, "commit", "-q", "-m", "readme", when=RECENT)
     features(r, 11, when=RECENT)
     assert freshness.readme_images(r) == ["docs/old.png", "docs/new.png", "assets/dark.svg"]
+    assert [x for x in freshness.readme_images(r) if not freshness.is_brand_image(x)] == ["docs/old.png", "docs/new.png"]
     c = checks(freshness.run()[0])["readme-images"]
     assert c["verdict"] == "stale" and c["path"] == "docs/old.png"
     assert "README image docs/old.png" in c["text"]
@@ -347,3 +348,58 @@ def test_the_listing_and_screenshot_globs_are_maintenance_too(tmp_path):
     for i in range(1, 13):
         _merge_files(r, i, f"Update store art {i}", [f"store-text/{i}.txt", f"shots/{i}.jpg"])
     assert checks(freshness.run()[0])["readme"]["changes"] == 0
+
+
+def test_counting_and_dating_use_the_default_branch_not_the_checked_out_one(tmp_path):
+    r = product(tmp_path)
+    features(r, 11)
+    git(r, "checkout", "-q", "-b", "wip")
+    for i in range(30):
+        commit(r, {f"app/Sources/Wip{i}.swift": "x"}, f"Add wip {i}", RECENT)
+    assert checks(freshness.run()[0])["readme"]["changes"] == 11   # the 30 on `wip` are not on main
+
+
+def test_files_are_discovered_on_the_default_branch_even_from_a_feature_branch(tmp_path):
+    r = product(tmp_path, files={"docs/screenshots/a.png": "a", "docs/shot.png": "s",
+                                 "content/store/en/list.txt": "t"})
+    write(r, "README.md", "# App\n![s](docs/shot.png)\n")
+    git(r, "add", ".")
+    git(r, "commit", "-q", "-m", "readme", when=OLD)
+    features(r, 11)
+    git(r, "checkout", "-q", "-b", "cleanup")
+    git(r, "rm", "-q", "-r", "docs/screenshots", "docs/shot.png", "content")
+    write(r, "README.md", "# App without images\n")
+    git(r, "add", ".")
+    git(r, "commit", "-q", "-m", "remove everything", when=RECENT)
+    c = checks(freshness.run()[0])
+    assert c["screenshots"]["verdict"] == "stale" and c["listing"]["verdict"] == "stale"
+    assert c["readme-images"]["verdict"] == "stale" and c["readme-images"]["path"] == "docs/shot.png"
+    assert c["readme"]["verdict"] == "stale"
+
+
+def test_release_notes_do_not_reset_the_listing_date(tmp_path):
+    r = product(tmp_path, files={"fastlane/metadata/en-US/description.txt": "d",
+                                 "fastlane/metadata/en-US/release_notes.txt": "Share a trip as a link\n"})
+    features(r, 11)
+    commit(r, {"fastlane/metadata/en-US/release_notes.txt": "Dark mode for the map\n"}, "notes", RECENT)
+    c = checks(freshness.run()[0])
+    assert c["listing"]["verdict"] == "stale" and c["listing"]["since"] == OLD[:10]
+    assert c["whats-new"]["verdict"] == "ok"
+    r2 = product(tmp_path, name="notes-only", files={"fastlane/metadata/en-US/release_notes.txt": "A real note\n"})
+    assert checks(freshness.run([str(r2)])[0])["listing"]["verdict"] == "skip"
+
+
+@pytest.mark.parametrize("rel", ["brand/shot.png", "docs/Logo-dark.png", "docs/app-icon.png", "docs/lockup.png",
+                                 "docs/badge.png", "docs/watermark.png", "design/logo.svg", "docs/diagram.svg"])
+def test_logos_and_brand_marks_are_not_readme_screenshots(tmp_path, rel):
+    r = product(tmp_path, files={rel: "x"})
+    write(r, "README.md", f"# App\n![x]({rel})\n")
+    git(r, "add", ".")
+    git(r, "commit", "-q", "-m", "readme", when=OLD)
+    features(r, 11)
+    assert checks(freshness.run()[0])["readme-images"]["verdict"] == "skip"
+    commit(r, {"docs/home.png": "h"}, "shot", OLD)
+    write(r, "README.md", f"# App\n![x]({rel})\n![h](docs/home.png)\n")
+    git(r, "add", ".")
+    git(r, "commit", "-q", "-m", "readme again", when=OLD)
+    assert checks(freshness.run()[0])["readme-images"]["path"] == "docs/home.png"

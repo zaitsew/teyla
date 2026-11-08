@@ -33,7 +33,8 @@ session-start banner and the weekly digest read); the file is removed when nothi
 from __future__ import annotations
 
 import datetime as dt
-import glob
+import posixpath
+import subprocess
 import json
 import os
 import pathlib
@@ -42,7 +43,7 @@ import sys
 import tomllib
 import urllib.parse
 
-from . import productize, testflight, whats_new
+from . import cloud, productize, testflight, whats_new
 
 DEFAULT_CHANGES = 10
 DEFAULT_DAYS = 14
@@ -98,14 +99,57 @@ def _glob(pattern: str) -> str:
     return f":(glob){pattern}"
 
 
-def _matches(repo: pathlib.Path, patterns: list[str]) -> list[str]:
-    """The patterns that match at least one file in the work tree."""
-    out = []
-    for pat in patterns:
-        hits = glob.glob(pat, root_dir=repo, recursive=True)
-        if any((repo / h).is_file() for h in hits):
-            out.append(pat)
-    return out
+class Tree:
+    """The files of the repo's default branch. Counting changes and dating artifacts both use `ref`
+    (`cloud.default_ref`, the resolver `testflight.newest_change` uses), and files are discovered from that
+    ref, not from whatever branch is checked out. Falls back to the work tree only when git cannot answer."""
+
+    def __init__(self, repo: pathlib.Path):
+        self.repo = repo
+        self.ref = cloud.default_ref(repo)
+        self.files = self._ls_tree()
+        self._set = set(self.files) if self.files is not None else None
+
+    def _ls_tree(self) -> list[str] | None:
+        try:
+            r = subprocess.run(["git", "-C", str(self.repo), "ls-tree", "-r", "-z", "--name-only", self.ref],
+                               capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if r.returncode != 0:
+            return None
+        return sorted(f for f in r.stdout.split("\0") if f)
+
+    def listing(self) -> list[str]:
+        if self.files is not None:
+            return self.files
+        out = []
+        for dirpath, dirs, names in os.walk(self.repo):
+            dirs[:] = [d for d in dirs if d not in (".git", "node_modules")]
+            out += [(pathlib.Path(dirpath) / n).relative_to(self.repo).as_posix() for n in names]
+        return sorted(out)
+
+    def has(self, rel: str) -> bool:
+        return rel in self._set if self._set is not None else (self.repo / rel).is_file()
+
+    def read(self, rel: str) -> str | None:
+        if self._set is not None:
+            if rel not in self._set:
+                return None
+            try:
+                r = subprocess.run(["git", "-C", str(self.repo), "show", f"{self.ref}:{rel}"],
+                                   capture_output=True, timeout=30)
+            except (OSError, subprocess.SubprocessError):
+                return None
+            return r.stdout.decode("utf-8", "replace") if r.returncode == 0 else None
+        try:
+            return (self.repo / rel).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+
+    def match(self, patterns) -> list[str]:
+        res = [_glob_re(p) for p in patterns]
+        return [f for f in self.listing() if any(r.match(f) for r in res)]
 
 
 def _glob_re(pattern: str) -> re.Pattern:
@@ -139,12 +183,12 @@ def maintenance_matcher(extra: list[str] | tuple = ()):
     return is_maintenance
 
 
-def merged_changes_with_files(repo: pathlib.Path, since: str) -> list[dict]:
+def merged_changes_with_files(repo: pathlib.Path, since: str, ref: str) -> list[dict]:
     """`whats_new.merged_changes` plus the commit `sha` and the `files` each change touched on the mainline
     (a merge commit against its first parent). One git call. Same order, newest first."""
     sep = "\x1f"
     out = whats_new._git(repo, "log", "--first-parent", "-m", "--name-only",
-                         f"--format=\x1e%H{sep}%P{sep}%s{sep}%b{sep}", f"{since}..{whats_new._head(repo)}")
+                         f"--format=\x1e%H{sep}%P{sep}%s{sep}%b{sep}", f"{since}..{ref}")
     items = []
     for rec in out.split("\x1e"):
         if not rec.strip():
@@ -173,7 +217,7 @@ def _user_changes(repo: pathlib.Path, sha: str, cache: dict) -> list[dict]:
     if sha not in cache:
         is_maint = cache.get("_maint") or maintenance_matcher()
         try:
-            items = merged_changes_with_files(repo, sha)
+            items = merged_changes_with_files(repo, sha, cache["_ref"])
         except RuntimeError:
             items = []
         titled = whats_new.split_changes(items)[0]
@@ -181,32 +225,36 @@ def _user_changes(repo: pathlib.Path, sha: str, cache: dict) -> list[dict]:
     return cache[sha]
 
 
-def readme_images(repo: pathlib.Path) -> list[str]:
-    """Repo-relative paths of the local files README.md shows, in order of appearance, each once."""
-    readme = repo / "README.md"
-    try:
-        text = readme.read_text(encoding="utf-8", errors="replace")
-    except OSError:
+def readme_images(repo: pathlib.Path, tree: Tree | None = None) -> list[str]:
+    """Repo-relative paths of the files README.md shows (read from the default branch), in order of
+    appearance, each once."""
+    tree = tree or Tree(repo)
+    text = tree.read("README.md")
+    if text is None:
         return []
     refs = _MD_IMG.findall(text) + _IMG_SRC.findall(text)
     for srcset in _SRCSET.findall(text):
         refs += [c.strip().split()[0] for c in srcset.split(",") if c.strip()]
-    root = repo.resolve()
     out: list[str] = []
     for ref in refs:
         if re.match(r"^(?:[a-z][a-z0-9+.-]*:|//)", ref, re.I):
             continue                      # http(s), data:, mailto: and protocol-relative URLs
         ref = urllib.parse.unquote(re.split(r"[?#]", ref, maxsplit=1)[0]).lstrip("/")
-        if not ref:
+        rel = posixpath.normpath(ref) if ref else ""
+        if not rel or rel == "." or rel.startswith("../") or rel == "..":
             continue
-        p = (root / ref).resolve()
-        try:
-            rel = p.relative_to(root).as_posix()
-        except ValueError:
-            continue
-        if p.is_file() and rel not in out:
+        if tree.has(rel) and rel not in out:
             out.append(rel)
     return out
+
+
+BRAND_WORDS = ("logo", "icon", "lockup", "badge", "mark")
+
+
+def is_brand_image(rel: str) -> bool:
+    """A logo or brand mark: it never needs re-capturing from a build."""
+    low = rel.lower()
+    return low.startswith("brand/") or low.endswith(".svg") or any(w in low.rsplit("/", 1)[-1] for w in BRAND_WORDS)
 
 
 # --- one check ----------------------------------------------------------------------
@@ -240,17 +288,13 @@ def _version_key(name: str):
     return (tuple(int(n) for n in re.findall(r"\d+", name)), name)
 
 
-def notes_files(repo: pathlib.Path, extra: list[str]) -> list[str]:
-    """Tracked files that hold a store What's New: docs/whats-new/, store metadata files, configured globs."""
-    pats = [_glob(g) for g in (*DEFAULT_NOTES, *extra)]
-    try:
-        out = whats_new._git(repo, "ls-files", "-z", "--", *pats)
-    except RuntimeError:
-        return []
-    return sorted({f for f in out.split("\0") if f})
+def notes_files(tree: Tree, extra: list[str]) -> list[str]:
+    """Files of the default branch that hold a store What's New: docs/whats-new/, store metadata files,
+    configured globs."""
+    return tree.match([*DEFAULT_NOTES, *extra])
 
 
-def _generic_note(repo: pathlib.Path, files: list[str]) -> str | None:
+def _generic_note(tree: Tree, files: list[str]) -> str | None:
     """The first notes file whose whole text is a stock phrase. Under docs/whats-new/ only the newest
     version directory counts (older versions keep what they shipped); any other file is the current text."""
     prefix = "docs/whats-new/"
@@ -259,10 +303,7 @@ def _generic_note(repo: pathlib.Path, files: list[str]) -> str | None:
     for f in files:
         if f.startswith(prefix) and not (newest and f.startswith(f"{prefix}{newest}/")):
             continue
-        try:
-            text = (repo / f).read_text(encoding="utf-8").strip()
-        except (OSError, UnicodeDecodeError):
-            continue
+        text = (tree.read(f) or "").strip()
         if text and not text.startswith("TODO") and whats_new.is_generic(text):
             return f
     return None
@@ -276,7 +317,8 @@ def _ships_to_store(manifest: dict) -> bool:
 def check_product(manifest: dict, now: dt.datetime | None = None) -> dict:
     repo, product = pathlib.Path(manifest["repo"]), manifest["product"]
     cfg = settings(repo)
-    cache: dict = {"_maint": maintenance_matcher((*(cfg["listing"] or DEFAULT_LISTING),
+    tree = Tree(repo)
+    cache: dict = {"_ref": tree.ref, "_maint": maintenance_matcher((*(cfg["listing"] or DEFAULT_LISTING),
                                                   *(cfg["screenshots"] or DEFAULT_SCREENSHOTS),
                                                   *DEFAULT_NOTES, *cfg["whats_new"]))}
     items: list[dict] = []
@@ -285,14 +327,14 @@ def check_product(manifest: dict, now: dt.datetime | None = None) -> dict:
         items.append(_item(check, "skip") if check in cfg["skip"] else fn())
 
     def readme():
-        if not (repo / "README.md").is_file():
+        if not tree.has("README.md"):
             return _item("readme", "stale", path="README.md", text=f"{product} README: no README.md")
         return _evaluate(repo, product, "readme", "README", "Update it to what ships today.",
                          testflight.newest_change(repo, [":(literal)README.md"]), cfg, cache, "README.md", now)
 
     def images():
         found = []
-        for rel in readme_images(repo):
+        for rel in (r for r in readme_images(repo, tree) if not is_brand_image(r)):
             ch = testflight.newest_change(repo, [f":(literal){rel}"])
             if ch:
                 found.append((ch["when"], rel, ch))
@@ -303,11 +345,11 @@ def check_product(manifest: dict, now: dt.datetime | None = None) -> dict:
                          "Re-capture it from the current build.", ch, cfg, cache, rel, now)
 
     def notes():
-        files = notes_files(repo, cfg["whats_new"])
+        files = notes_files(tree, cfg["whats_new"])
         if not files:
             # The policy asks for What's New from the second store version on; a first version has none.
             return _item("whats-new", "skip", text=NO_NOTES_YET if _ships_to_store(manifest) else "")
-        generic = _generic_note(repo, files)
+        generic = _generic_note(tree, files)
         if generic:
             return _item("whats-new", "stale", path=generic, text=f"{product}: {generic} is a generic line")
         where = "docs/whats-new" if any(f.startswith("docs/whats-new/") for f in files) else files[0]
@@ -315,21 +357,24 @@ def check_product(manifest: dict, now: dt.datetime | None = None) -> dict:
                          testflight.newest_change(repo, [f":(literal){f}" for f in files]), cfg, cache,
                          where, now)
 
-    def group(check, label, advice, configured, defaults):
+    notes_patterns = [*DEFAULT_NOTES, *cfg["whats_new"]]
+
+    def group(check, label, advice, configured, defaults, drop_notes=False):
         def fn():
-            pats = _matches(repo, configured or list(defaults))
+            notes = set(tree.match(notes_patterns)) if drop_notes else set()
+            pats = [p for p in (configured or list(defaults)) if set(tree.match([p])) - notes]
             if not pats:
                 return _item(check, "skip")
-            return _evaluate(repo, product, check, label, advice,
-                             testflight.newest_change(repo, [_glob(p) for p in pats]), cfg, cache,
-                             ", ".join(pats), now)
+            spec = [_glob(p) for p in pats] + ([f":(exclude,glob){n}" for n in notes_patterns] if drop_notes else [])
+            return _evaluate(repo, product, check, label, advice, testflight.newest_change(repo, spec),
+                             cfg, cache, ", ".join(pats), now)
         return fn
 
     run("readme", readme)
     run("readme-images", images)
     run("whats-new", notes)
     run("listing", group("listing", "store listing text", "Update the listing text to what ships today.",
-                         cfg["listing"], DEFAULT_LISTING))
+                         cfg["listing"], DEFAULT_LISTING, drop_notes=True))
     run("screenshots", group("screenshots", "store screenshots", "Re-capture the screenshots.",
                              cfg["screenshots"], DEFAULT_SCREENSHOTS))
     verdict = "stale" if any(i["verdict"] == "stale" for i in items) else "ok"
