@@ -164,19 +164,35 @@ def test_a_missing_readme_is_stale(tmp_path):
 
 def test_whats_new_is_skipped_for_a_product_that_is_not_in_a_store(tmp_path):
     product(tmp_path)
-    assert checks(freshness.run()[0])["whats-new"]["verdict"] == "skip"
-
-
-def test_a_store_product_without_whats_new_is_stale(tmp_path):
-    product(tmp_path, '[productize.distribution]\nios = "testflight-internal"\n')
     c = checks(freshness.run()[0])["whats-new"]
-    assert c["verdict"] == "stale" and "no docs/whats-new/" in c["text"]
-    assert "the next store version has no What's New" in c["text"]
+    assert c["verdict"] == "skip" and c["text"] == ""
 
 
-def test_android_play_counts_as_a_store_product(tmp_path):
-    product(tmp_path, '[productize.distribution]\nandroid = "play-internal"\n')
-    assert checks(freshness.run()[0])["whats-new"]["verdict"] == "stale"
+@pytest.mark.parametrize("toml", ['[productize.distribution]\nios = "testflight-internal"\n',
+                                  '[productize.distribution]\nandroid = "play-internal"\n'])
+def test_a_store_product_with_no_notes_yet_is_skipped_not_stale(tmp_path, toml):
+    r = product(tmp_path, toml)
+    features(r, 12)
+    row = freshness.run()[0]
+    c = checks(row)["whats-new"]
+    assert c["verdict"] == "skip" and c["text"] == "no What's New file yet (a first store version has none)"
+    assert row["verdict"] == "stale" and "whats-new" not in freshness.render_text([row])   # only the README
+
+
+@pytest.mark.parametrize("rel", ["content/store/play/en-US/release_notes.txt", "apps/store/listing/ios/en-US/whats_new.txt",
+                                 "docs/whats-new-1.2.txt", "custom/notes/en.txt"])
+def test_notes_in_other_places_are_found_and_go_stale(tmp_path, rel):
+    r = product(tmp_path, '[freshness]\nwhats_new = ["custom/notes/*.txt"]\n', files={rel: "Share a trip as a link\n"})
+    features(r, 11)
+    c = checks(freshness.run()[0])["whats-new"]
+    assert c["verdict"] == "stale" and c["changes"] == 11 and c["path"] != "docs/whats-new"
+
+
+def test_a_generic_note_outside_docs_is_flagged(tmp_path):
+    product(tmp_path, files={"content/store/app-store/en-US/release_notes.txt": "Bug fixes and improvements\n"},
+            first_when=RECENT)
+    c = checks(freshness.run()[0])["whats-new"]
+    assert c["verdict"] == "stale" and "release_notes.txt is a generic line" in c["text"]
 
 
 def test_a_generic_newest_note_is_flagged(tmp_path):
@@ -209,8 +225,8 @@ def test_listing_and_screenshots_skip_when_absent_and_go_stale_when_old(tmp_path
 
 
 def test_configured_globs_replace_the_defaults(tmp_path):
-    r = product(tmp_path, '[freshness]\nlisting = ["store-text/*.md"]\nscreenshots = ["nothing/**"]\n',
-                files={"store-text/en.md": "t", "docs/screenshots/a.png": "p"})
+    r = product(tmp_path, '[freshness]\nlisting = ["store-text/*.txt"]\nscreenshots = ["nothing/**"]\n',
+                files={"store-text/en.txt": "t", "docs/screenshots/a.png": "p"})
     features(r, 11)
     c = checks(freshness.run()[0])
     assert c["listing"]["verdict"] == "stale"
@@ -282,3 +298,52 @@ def test_the_digest_and_the_banner_read_the_problems(tmp_path):
 def test_the_weekly_routine_runs_it_before_the_digest():
     t = routine_install.WRAPPER_TEMPLATE
     assert t.index("freshness --quiet") < t.index("digest --write")
+
+
+def _merge_files(repo, n, title, files, when=RECENT):
+    git(repo, "checkout", "-q", "-b", f"m{n}")
+    for f in files:
+        write(repo, f, f'# {n}\n[product]\nname = "app"\n' if f == "teyla.toml" else str(n))
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", f"work {n}", when=when)
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--no-ff", f"m{n}", "-m", f"Merge pull request #{n} from owner/m{n}", "-m", title, when=when)
+
+
+def test_a_change_that_touches_only_maintenance_paths_is_not_user_facing(tmp_path):
+    r = product(tmp_path, files={"fastlane/screenshots/a.png": "a", "docs/whats-new/1.0/en.txt": "Share a trip\n"})
+    maintenance = [["scripts/leak_check.py", ".githooks/pre-push"], ["README.md", "docs/x.md"], ["teyla.toml"],
+                   ["tests/test_a.py"], ["app/Tests/AppTests/ATests.swift"], ["app/Sources/FooTest.swift"],
+                   ["package-lock.json", "Cargo.lock"], ["brand/logo.svg", "design/a.fig"], [".github/w.yml"],
+                   ["fastlane/screenshots/b.png"], ["check.sh", ".leak-allow"], ["docs/whats-new/1.1/en.txt"]]
+    for i, files in enumerate(maintenance, 1):
+        _merge_files(r, i, f"Regenerate gate {i}", files)
+    c = checks(freshness.run()[0])["readme"]
+    assert c["verdict"] == "ok" and c["changes"] == 0 and c["examples"] == []
+
+
+def test_one_product_path_makes_a_change_user_facing_and_examples_come_from_the_filtered_list(tmp_path):
+    r = product(tmp_path)
+    _merge_files(r, 1, "Shield: leak-gate hooks and owner-data fixes", [".githooks/pre-push"])
+    for i in range(2, 13):
+        _merge_files(r, i, f"Share a trip as a link {i}", ["docs/a.md", f"app/Sources/Feature{i}.swift"])
+    c = checks(freshness.run()[0])["readme"]
+    assert c["verdict"] == "stale" and c["changes"] == 11
+    assert all("Shield" not in e for e in c["examples"]) and "Share a trip" in c["text"]
+
+
+def test_a_single_parent_commit_is_judged_by_its_own_files(tmp_path):
+    r = product(tmp_path)
+    for i in range(11):
+        commit(r, {f"app/Sources/F{i}.swift": "x"}, f"Add feature {i}", RECENT)
+    for i in range(5):
+        commit(r, {f"docs/n{i}.md": "x"}, f"Add notes {i}", RECENT)
+    c = checks(freshness.run()[0])["readme"]
+    assert c["verdict"] == "stale" and c["changes"] == 11
+
+
+def test_the_listing_and_screenshot_globs_are_maintenance_too(tmp_path):
+    r = product(tmp_path, '[freshness]\nlisting = ["store-text/*.txt"]\nscreenshots = ["shots/**"]\n')
+    for i in range(1, 13):
+        _merge_files(r, i, f"Update store art {i}", [f"store-text/{i}.txt", f"shots/{i}.jpg"])
+    assert checks(freshness.run()[0])["readme"]["changes"] == 0

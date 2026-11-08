@@ -4,15 +4,17 @@
 
 A README that shows a screen from 16 releases ago, or a store "What's New" that says "Bug fixes and
 improvements" on every version, is wrong in a way no test sees. For each product this command asks git how many
-user-facing changes (the same split `teyla whats-new` uses: docs, tests, CI, deps and listing items do not count)
-landed on the default branch since the newest commit that touched each of
+user-facing changes landed on the default branch since the newest commit that touched each of
 
     readme          README.md
     readme-images   the oldest local image README.md shows
-    whats-new       docs/whats-new/ (store products only; also a generic newest note)
+    whats-new       the store What's New files (docs/whats-new/, **/release_notes.txt, **/whats_new.txt,
+                    **/whats-new*.txt, `[freshness] whats_new`); none yet is a skip; a generic note is stale
     listing         the store listing text
     screenshots     the store screenshots
 
+A change is user-facing when its title is not internal (the split `teyla whats-new` uses) and it touched at
+least one path that is not maintenance (docs, tests, hooks, `*.md`, `teyla.toml`, locks, brand, the store files).
 A check is stale when at least `changes` user-facing changes (default 10) landed since that commit AND the
 commit is older than `days` (default 14). A product tunes it in its teyla.toml:
 
@@ -20,6 +22,7 @@ commit is older than `days` (default 14). A product tunes it in its teyla.toml:
     changes = 10
     days = 14
     skip = ["readme-images"]
+    whats_new = ["store/notes/*.txt"]
     listing = ["apps/store/listing/**"]        # default: the usual places that exist
     screenshots = ["docs/screenshots/**/*.png"]
 
@@ -49,6 +52,14 @@ DEFAULT_LISTING = ("apps/store/listing/**", "docs/store/listing*.json", "content
 DEFAULT_SCREENSHOTS = ("docs/screenshots/**/*.png", "docs/store/**/*.png", "content/store/**/*.png",
                        "fastlane/screenshots/**", "brand/out/store/**")
 
+DEFAULT_NOTES = ("docs/whats-new/**", "**/whats_new.txt", "**/whats-new*.txt", "**/release_notes.txt")
+NO_NOTES_YET = "no What's New file yet (a first store version has none)"
+# Paths a change can touch without a user ever seeing it. Matched as globs; a pattern with no `/` also
+# matches a file name at any depth. The store paths themselves are added per product.
+MAINTENANCE = ("*.md", "docs/**", "tests/**", "test/**", "**/*Tests/**", "**/*Test*.swift", ".github/**",
+               ".githooks/**", "scripts/leak*", ".leak-allow", "teyla.toml", "check.sh", "*.lock",
+               "package-lock.json", "brand/**", "design/**")
+
 _MD_IMG = re.compile(r"!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+(?:\"[^\"]*\"|'[^']*'))?\s*\)")
 _IMG_SRC = re.compile(r"<img\b[^>]*?\bsrc\s*=\s*[\"']([^\"']+)[\"']", re.I)
 _SRCSET = re.compile(r"<source\b[^>]*?\bsrcset\s*=\s*[\"']([^\"']+)[\"']", re.I)
@@ -77,7 +88,8 @@ def settings(repo: pathlib.Path) -> dict:
         return [x for x in v if isinstance(x, str) and x.strip()] if isinstance(v, list) else []
 
     return {"changes": num("changes", DEFAULT_CHANGES), "days": num("days", DEFAULT_DAYS),
-            "skip": set(strs("skip")), "listing": strs("listing"), "screenshots": strs("screenshots")}
+            "skip": set(strs("skip")), "listing": strs("listing"), "screenshots": strs("screenshots"),
+            "whats_new": strs("whats_new")}
 
 
 # --- git helpers --------------------------------------------------------------------
@@ -96,12 +108,76 @@ def _matches(repo: pathlib.Path, patterns: list[str]) -> list[str]:
     return out
 
 
+def _glob_re(pattern: str) -> re.Pattern:
+    out, i = "", 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            out += "(?:.*/)?"
+            i += 3
+        elif pattern.startswith("**", i):
+            out += ".*"
+            i += 2
+        elif pattern[i] == "*":
+            out += "[^/]*"
+            i += 1
+        elif pattern[i] == "?":
+            out += "[^/]"
+            i += 1
+        else:
+            out += re.escape(pattern[i])
+            i += 1
+    return re.compile(out + r"\Z")
+
+
+def maintenance_matcher(extra: list[str] | tuple = ()):
+    """A function: is this repo-relative path maintenance (docs, tests, hooks, store text) rather than product?"""
+    res = [(_glob_re(g), "/" not in g) for g in (*MAINTENANCE, *extra)]
+
+    def is_maintenance(path: str) -> bool:
+        base = path.rsplit("/", 1)[-1]
+        return any(r.match(path) or (bare and r.match(base)) for r, bare in res)
+    return is_maintenance
+
+
+def merged_changes_with_files(repo: pathlib.Path, since: str) -> list[dict]:
+    """`whats_new.merged_changes` plus the commit `sha` and the `files` each change touched on the mainline
+    (a merge commit against its first parent). One git call. Same order, newest first."""
+    sep = "\x1f"
+    out = whats_new._git(repo, "log", "--first-parent", "-m", "--name-only",
+                         f"--format=\x1e%H{sep}%P{sep}%s{sep}%b{sep}", f"{since}..{whats_new._head(repo)}")
+    items = []
+    for rec in out.split("\x1e"):
+        if not rec.strip():
+            continue
+        sha, parents, subject, body, files = (rec.split(sep, 4) + [""] * 5)[:5]
+        subject = subject.strip()
+        title, pr = subject, None
+        if len(parents.split()) > 1:
+            m = whats_new.MERGE_RE.match(subject)
+            first = next((ln.strip() for ln in body.splitlines() if ln.strip()), "")
+            title = first or (m.group(2).split("/", 1)[-1].replace("-", " ") if m else subject)
+            pr = int(m.group(1)) if m else None
+        else:
+            m = whats_new.SQUASH_RE.match(subject)
+            if m:
+                title, pr = m.group(1).strip(), int(m.group(2))
+        if title:
+            items.append({"pr": pr, "title": title, "sha": sha,
+                          "files": [f for f in files.splitlines() if f.strip()]})
+    return items
+
+
 def _user_changes(repo: pathlib.Path, sha: str, cache: dict) -> list[dict]:
+    """The changes since `sha` a user could notice: a title that is not internal AND at least one file that
+    is not maintenance."""
     if sha not in cache:
+        is_maint = cache.get("_maint") or maintenance_matcher()
         try:
-            cache[sha] = whats_new.split_changes(whats_new.merged_changes(repo, sha))[0]
+            items = merged_changes_with_files(repo, sha)
         except RuntimeError:
-            cache[sha] = []
+            items = []
+        titled = whats_new.split_changes(items)[0]
+        cache[sha] = [c for c in titled if any(not is_maint(f) for f in c["files"])]
     return cache[sha]
 
 
@@ -164,33 +240,45 @@ def _version_key(name: str):
     return (tuple(int(n) for n in re.findall(r"\d+", name)), name)
 
 
-def _generic_note(repo: pathlib.Path) -> str | None:
-    """`docs/whats-new/<v>/<file>` of the newest version directory when a note there is a stock phrase."""
-    base = repo / "docs" / "whats-new"
-    dirs = [d for d in base.iterdir() if d.is_dir()] if base.is_dir() else []
-    if not dirs:
-        return None
-    newest = max(dirs, key=lambda d: _version_key(d.name))
-    for f in sorted(newest.glob("*.txt")):
+def notes_files(repo: pathlib.Path, extra: list[str]) -> list[str]:
+    """Tracked files that hold a store What's New: docs/whats-new/, store metadata files, configured globs."""
+    pats = [_glob(g) for g in (*DEFAULT_NOTES, *extra)]
+    try:
+        out = whats_new._git(repo, "ls-files", "-z", "--", *pats)
+    except RuntimeError:
+        return []
+    return sorted({f for f in out.split("\0") if f})
+
+
+def _generic_note(repo: pathlib.Path, files: list[str]) -> str | None:
+    """The first notes file whose whole text is a stock phrase. Under docs/whats-new/ only the newest
+    version directory counts (older versions keep what they shipped); any other file is the current text."""
+    prefix = "docs/whats-new/"
+    versions = {f.split("/")[2] for f in files if f.startswith(prefix) and f.count("/") >= 3}
+    newest = max(versions, key=_version_key) if versions else None
+    for f in files:
+        if f.startswith(prefix) and not (newest and f.startswith(f"{prefix}{newest}/")):
+            continue
         try:
-            text = f.read_text(encoding="utf-8").strip()
-        except OSError:
+            text = (repo / f).read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeDecodeError):
             continue
         if text and not text.startswith("TODO") and whats_new.is_generic(text):
-            return f"docs/whats-new/{newest.name}/{f.name}"
+            return f
     return None
 
 
-def _ships_to_store(manifest: dict, repo: pathlib.Path) -> bool:
+def _ships_to_store(manifest: dict) -> bool:
     dist = (manifest.get("productize") or {}).get("distribution") or {}
-    play = "play" in str(dist.get("android") or "").lower()
-    return testflight.in_scope(manifest) or play or (repo / "docs" / "whats-new").is_dir()
+    return testflight.in_scope(manifest) or "play" in str(dist.get("android") or "").lower()
 
 
 def check_product(manifest: dict, now: dt.datetime | None = None) -> dict:
     repo, product = pathlib.Path(manifest["repo"]), manifest["product"]
     cfg = settings(repo)
-    cache: dict = {}
+    cache: dict = {"_maint": maintenance_matcher((*(cfg["listing"] or DEFAULT_LISTING),
+                                                  *(cfg["screenshots"] or DEFAULT_SCREENSHOTS),
+                                                  *DEFAULT_NOTES, *cfg["whats_new"]))}
     items: list[dict] = []
 
     def run(check, fn):
@@ -215,19 +303,17 @@ def check_product(manifest: dict, now: dt.datetime | None = None) -> dict:
                          "Re-capture it from the current build.", ch, cfg, cache, rel, now)
 
     def notes():
-        if not _ships_to_store(manifest, repo):
-            return _item("whats-new", "skip")
-        base = repo / "docs" / "whats-new"
-        if not base.is_dir():
-            return _item("whats-new", "stale", path="docs/whats-new/",
-                         text=f"{product}: no docs/whats-new/: the next store version has no What's New")
-        generic = _generic_note(repo)
+        files = notes_files(repo, cfg["whats_new"])
+        if not files:
+            # The policy asks for What's New from the second store version on; a first version has none.
+            return _item("whats-new", "skip", text=NO_NOTES_YET if _ships_to_store(manifest) else "")
+        generic = _generic_note(repo, files)
         if generic:
             return _item("whats-new", "stale", path=generic, text=f"{product}: {generic} is a generic line")
-        return _evaluate(repo, product, "whats-new", "docs/whats-new",
-                         "Write the next What's New from them.",
-                         testflight.newest_change(repo, [":(literal)docs/whats-new/"]), cfg, cache,
-                         "docs/whats-new/", now)
+        where = "docs/whats-new" if any(f.startswith("docs/whats-new/") for f in files) else files[0]
+        return _evaluate(repo, product, "whats-new", where, "Write the next What's New from them.",
+                         testflight.newest_change(repo, [f":(literal){f}" for f in files]), cfg, cache,
+                         where, now)
 
     def group(check, label, advice, configured, defaults):
         def fn():
