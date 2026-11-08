@@ -273,6 +273,35 @@ actor TeylaCLI: TeylaBackend {
         return try GtmToday.decode(out.stdout)
     }
 
+    /// `teyla gtm goal add ...`: the CLI's refusal (exit 2, one stderr line) is shown as it is. A preview simulates the write.
+    func gtmGoalAdd(title: String, weekly: [GtmWeeklyNumber], deadline: String?, doneWhen: String?, perDay: Int?) async throws {
+        guard let argv = GtmGoalCommands.addArguments(title: title, weekly: weekly, deadline: deadline, doneWhen: doneWhen, perDay: perDay) else {
+            throw TeylaError.failed(code: 2, message: "The goal has a part Teyla cannot write: check the title, the numbers and the date.")
+        }
+        try await goalCommand(argv)
+    }
+
+    /// `teyla gtm goal set <id> ...`.
+    func gtmGoalSet(id: String, weekly: [GtmWeeklyNumber], title: String?, deadline: String?, doneWhen: String?) async throws {
+        guard let argv = GtmGoalCommands.setArguments(id: id, weekly: weekly, title: title, deadline: deadline, doneWhen: doneWhen) else {
+            throw TeylaError.failed(code: 2, message: "The goal has a part Teyla cannot write: check the numbers and the date.")
+        }
+        try await goalCommand(argv)
+    }
+
+    private func goalCommand(_ argv: [String]) async throws {
+        if fixtureURL != nil {
+            try? await Task.sleep(for: .milliseconds(400))
+            return
+        }
+        let out = try await run(argv, timeout: 60)
+        guard out.status == 0 else {
+            let text = out.stderrText
+            if text.contains("invalid choice") || text.contains("unrecognized") { throw TeylaError.unavailable(TodayLogic.updateMessage) }
+            throw TeylaError.failed(code: out.status, message: Self.oneLine(text))
+        }
+    }
+
     /// Teyla's settings file; a preview reads `config.v1.toml` beside the state sample.
     func teylaConfig() async throws -> TeylaConfig {
         if fixtureURL != nil {

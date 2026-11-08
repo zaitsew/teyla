@@ -55,6 +55,11 @@ enum Space {
     static let statTileMin: CGFloat = 150
     /// One tile and the gap after it: how `StatStrip` counts the columns that fit.
     static let statTileStep: CGFloat = statTileMin + m
+    /// Today: one circle of a goal's weekly number, its outline, the thin bar that replaces circles above 30, a tick of "Sent".
+    static let bead: CGFloat = 10
+    static let beadStroke: CGFloat = 1.5
+    static let beadBar: CGFloat = 6
+    static let tick: CGFloat = 6
 }
 
 enum Radius {
@@ -121,6 +126,8 @@ enum Palette {
     /// Tints of the roles above: a letter tile, the older bars of a chart, a chip.
     static let primaryTint = primary.opacity(0.14)
     static let primaryMuted = primary.opacity(0.35)
+    /// The outline of an empty circle of a weekly number.
+    static let beadEmpty = textSecondary.opacity(0.5)
     /// The five levels of the activity graph: a quiet fill, then the accent in four strengths.
     static let activityLevels: [Color] = [track, primary.opacity(0.3), primary.opacity(0.5), primary.opacity(0.75), primary]
     static let dangerTint = danger.opacity(0.14)

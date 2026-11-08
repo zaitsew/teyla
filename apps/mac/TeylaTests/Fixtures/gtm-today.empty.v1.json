@@ -1,0 +1,18 @@
+{
+ "version": 1,
+ "day": "2026-11-07",
+ "week": "2026-W45",
+ "week_end": "2026-11-08",
+ "has_goals": false,
+ "approve": {"total": 0, "by_source": {}, "links": {}},
+ "send": {"total": 0, "by_source": {}, "links": {}},
+ "reply": {"total": 0, "by_source": {}, "links": {}},
+ "follow_up": {"total": 0, "by_source": {}, "links": {}},
+ "distribution": {"today": 0, "target": null, "week": 0, "claimed_by_agents": 0},
+ "preparation": {"today": 0, "week": 0},
+ "outcomes": {"today": 0, "week": 0},
+ "goals": [],
+ "next": [],
+ "sources": [],
+ "doctor": ["goals: no goals file yet: run `teyla gtm goal add` or use the setup on Today"]
+}
