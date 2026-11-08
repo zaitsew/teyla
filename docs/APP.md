@@ -705,7 +705,7 @@ command to see Today.". The store build has no Today: it runs no command.
 
 The phone: the Mac adds an optional `gtm` object to `state.teyla` (`relay.gtm_view()`: counts per waiting kind, `distribution`,
 `outcomes_week`, the owner's goal titles with `done_when`, `days_left`, `weeks_left`, `short` and weekly targets with their `counter`,
-`next` as kinds and counts; no source names, links, history or doctor lines). The Growth tab shows the lead goal's circles, its pace,
+`next` as kinds and counts, each goal's `drafts` total and `untagged_drafts`; no source names, links, history or doctor lines). The Growth tab shows the lead goal's circles, its pace,
 one Next line and the quiet Sent, Came back and Prepared line above Activity, and hides the card when `gtm` is absent.
 
 ## Growth page (from 2026-11-04)

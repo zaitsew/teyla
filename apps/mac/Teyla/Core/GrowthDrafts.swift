@@ -250,6 +250,9 @@ enum GrowthActions {
         return argv
     }
 
+    /// `teyla growth tag <id> --goal=<goal id | none>`: which goal a draft counts for. `nil` means "no goal".
+    static func tag(_ id: String, goal: String?) -> [String] { ["growth", "tag", id, "--goal=\(goal ?? "none")"] }
+
     /// The allow-list's answer for a `growth` command.
     static func check(_ argv: [String]) -> ToolCommands.Check {
         guard argv.count >= 3, argv[0] == "growth", GrowthDrafts.isItemID(argv[2]) else {
@@ -264,6 +267,11 @@ enum GrowthActions {
         case ("reject", 4):
             guard let reason = value("--reason=", argv[3]), !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   reason.count <= reasonLimit else { return .refused("A reason of 1 to \(reasonLimit) characters is needed.") }
+            return .allowed
+        case ("tag", 4):
+            guard let goal = value("--goal=", argv[3]), goal == "none" || GtmGoalCommands.isGoalID(goal) else {
+                return .refused("A goal id, or none, is needed.")
+            }
             return .allowed
         case ("edit", 4), ("edit", 5):
             guard let body = value("--body=", argv[3]), !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,

@@ -321,3 +321,97 @@ def test_goal_set_keeps_a_dotted_map_key_one_key():
     loaded = gtm.load_goals()
     assert not loaded["errors"] and loaded["goals"][0]["map"] == {"network.sent": "approached"}
     assert '"network.sent" = "approached"' in gtm.goals_path().read_text(encoding="utf-8")
+
+
+# --- drafts and goals ----------------------------------------------------------------------------------------
+
+def draft(i, **kw):
+    it = {"id": f"g1104-{i}", "kind": "post", "platform": "linkedin", "product": "alpha", "status": "review"}
+    it.update(kw)
+    return it
+
+
+def items(*its):
+    return {i["id"]: i for i in its}
+
+
+DRAFT_GOALS = (gtm.EXAMPLE_GOALS.replace('kinds = ["post"]', 'kinds = ["post"]\nplatforms = ["linkedin", "x"]')
+               + '\n[[goal]]\nid = "alpha_fans"\ntitle = "Alpha fans"\nsources = ["growth"]\n[goal.drafts]\nproducts = ["alpha"]\n')
+
+
+def test_the_example_goal_matches_posts_and_round_trips():
+    g = goals()
+    assert g["goals"][0]["drafts"] == {"kinds": ["post"]} and g["goals"][1]["drafts"] is None
+    text = gtm.render_goal(g["goals"][0])
+    assert "[goal.drafts]" in text and 'kinds = ["post"]' in text
+    p = gtm.home() / "round.toml"
+    gtm._write(p, text)
+    assert gtm.load_goals(p)["goals"][0]["drafts"] == {"kinds": ["post"]}
+
+
+def test_goal_set_keeps_the_drafts_table():
+    goals(DRAFT_GOALS)
+    gtm.set_goal("relationships", weekly={"intro": 4})
+    g = gtm.load_goals()
+    assert g["errors"] == [] and g["goals"][0]["weekly"]["intro"] == 4
+    assert g["goals"][0]["drafts"] == {"platforms": ["linkedin", "x"], "kinds": ["post"]}
+    assert g["goals"][3]["drafts"] == {"products": ["alpha"]}
+
+
+def test_an_empty_drafts_table_matches_nothing_and_bad_ones_are_error_lines():
+    g = goals('[[goal]]\nid = "a"\n[goal.drafts]\n[[goal]]\nid = "b"\ndrafts = 3\n[[goal]]\nid = "c"\n[goal.drafts]\nkinds = "post"\n')
+    assert g["goals"][0]["drafts"] == {} and gtm.draft_goal(draft("a"), g) == (None, None)
+    assert len(g["errors"]) == 2 and any("drafts" in e for e in g["errors"])
+
+
+def test_rules_need_every_listed_field_and_the_first_goal_wins():
+    g = goals(DRAFT_GOALS)
+    assert gtm.draft_goal(draft("a"), g) == ("relationships", "rule")
+    assert gtm.draft_goal(draft("b", platform="threads"), g) == ("alpha_fans", "rule")       # kinds+platforms fail, products match
+    assert gtm.draft_goal(draft("c", platform="threads", product="beta"), g) == (None, None)
+    assert gtm.draft_goal(draft("d", kind="clip", platform="x"), g) == ("alpha_fans", "rule")
+
+
+def test_a_manual_tag_beats_rules_and_none_means_no_goal():
+    g = goals(DRAFT_GOALS)
+    assert gtm.draft_goal(draft("a", goal="alpha_fans"), g) == ("alpha_fans", "manual")
+    assert gtm.draft_goal(draft("b", goal=""), g) == (None, "manual")
+    assert gtm.draft_goal(draft("c", goal="gone"), g) == ("relationships", "rule")           # a stale tag is ignored
+
+
+def test_today_counts_drafts_per_goal_and_untagged():
+    g = goals(DRAFT_GOALS)
+    its = items(draft("a"), draft("b", goal="alpha_fans"), draft("c", goal=""), draft("d", platform="tiktok", product="beta"),
+                draft("e", kind="episode"), draft("f", platform="master"), draft("g", hold_reason="x", status="draft"),
+                draft("h", status="published"))
+    drop("outreach", {"source": "outreach", "updated": UPDATED, "week": WEEK, "counts": {},
+                      "waiting": {"network.approve": 3, "investor.approve": 2, "approve": 4}})
+    docs, status = collect(g, items=its)
+    t = gtm.today_report(g, docs, status, DAY)
+    rel, alpha = t["goals"][0], t["goals"][3]
+    assert rel["drafts"] == {"total": 4, "growth": 1, "by_source": {"growth": 1, "outreach": 3}}
+    assert alpha["drafts"] == {"total": 1, "growth": 1, "by_source": {"growth": 1}}
+    assert t["goals"][2]["drafts"]["by_source"] == {"outreach": 2}                        # investor prefix, source listed
+    assert t["goals"][1]["drafts"]["total"] == 0                                            # testers: no growth, no prefix
+    assert t["untagged_drafts"] == 2 + 4                                                    # c, d + the unprefixed approve
+    assert t["draft_goals"] == {"g1104-a": "relationships", "g1104-b": "alpha_fans"}
+    assert t["approve"]["by_source"]["growth"] == 4                                         # same filter as the queue count
+    text = gtm.render_today(t)
+    assert "drafts for this goal: 4" in text and "6 drafts have no goal" in text
+
+
+def test_draft_goals_is_capped():
+    g = goals(DRAFT_GOALS)
+    its = items(*[draft(f"{n:04d}") for n in range(gtm.MAX_DRAFT_GOALS + 20)])
+    docs, status = collect(g, items=its)
+    t = gtm.today_report(g, docs, status, DAY)
+    assert len(t["draft_goals"]) == gtm.MAX_DRAFT_GOALS
+    assert t["goals"][0]["drafts"]["growth"] == gtm.MAX_DRAFT_GOALS + 20
+
+
+def test_a_source_without_the_prefix_or_not_listed_is_untagged():
+    g = goals()
+    drop("stranger", {"source": "stranger", "updated": UPDATED, "week": WEEK, "counts": {}, "waiting": {"network.approve": 5}})
+    docs, status = collect(g)
+    t = gtm.today_report(g, docs, status, DAY)
+    assert t["untagged_drafts"] == 5 and t["goals"][0]["drafts"]["total"] == 0

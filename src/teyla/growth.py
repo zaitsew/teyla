@@ -2115,6 +2115,33 @@ def cmd_review(args) -> int:
     return 0
 
 
+def cmd_tag(args) -> int:
+    """Link drafts to a GTM goal (or to none). The item's `goal` overrides the rules in goals.toml; `teyla gtm` reads it."""
+    from . import gtm
+    store, _ = _store_cfg()
+    goals = gtm.load_goals()
+    ids = [g["id"] for g in goals["goals"]]
+    want = args.goal.strip()
+    auto = want.lower() == "auto"           # drop the manual tag: the rules in goals.toml decide again
+    gid = "" if want.lower() in ("none", "auto") else gtm._clean_stage(want)
+    if gid and gid not in ids:
+        print(f"teyla growth: no goal {want!r}; goals: {', '.join(ids) or 'none (`teyla gtm goal add`)'}; `none` means no goal, `auto` lets the rules decide",
+              file=sys.stderr)
+        return 2
+    try:
+        found = [store.get(ref) for ref in args.ids]
+    except GrowthError as e:
+        return _fail(e)
+    for it in found:
+        if auto:
+            it.pop("goal", None)
+        else:
+            it["goal"] = gid
+        store.save(it, time.time())
+        print(f"{it['id']}: {'the rules decide' if auto else 'no goal' if not gid else 'goal ' + gid}")
+    return 0
+
+
 def cmd_show(args) -> int:
     store, _ = _store_cfg()
     try:
@@ -2404,6 +2431,11 @@ def register(sp):
     a = g.add_parser("review", help="list drafts waiting for you")
     a.set_defaults(fn=cmd_review)
     a.add_argument("--all", action="store_true", help="also list failed and held items, with the reason")
+
+    a = g.add_parser("tag", help="link drafts to a GTM goal, or to none (overrides the rules in goals.toml)")
+    a.set_defaults(fn=cmd_tag)
+    a.add_argument("ids", nargs="+", metavar="ID")
+    a.add_argument("--goal", required=True, metavar="GOAL|none|auto", help="a goal id from `teyla gtm`; none = no goal; auto = the rules decide")
 
     a = g.add_parser("show", help="one item in full")
     a.set_defaults(fn=cmd_show)

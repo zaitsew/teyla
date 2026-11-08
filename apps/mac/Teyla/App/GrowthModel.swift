@@ -204,6 +204,12 @@ final class GrowthModel {
             busy: "Saving…", done: "Saved. The voice and leak checks ran again.")
     }
 
+    /// Which goal a draft counts for: `teyla growth tag`. `nil` is "no goal". Today and Growth are read again after it.
+    func tag(_ draft: GrowthDraft, goal: String?, title: String?) {
+        run(draft, argv: GrowthActions.tag(draft.id, goal: goal), busy: "Saving…",
+            done: title.map { "Counts for \($0)." } ?? "Counts for no goal.")
+    }
+
     func dismissNotice() { notice = nil }
 
     // MARK: Publish

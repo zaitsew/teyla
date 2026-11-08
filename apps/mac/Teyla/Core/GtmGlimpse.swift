@@ -62,8 +62,10 @@ struct GtmGlimpse: Decodable, Equatable, Sendable {
         var weeksLeft: Int?
         var short: Int
         var targets: [Target]
+        /// Drafts waiting for this goal; 0 from a Mac that does not send it.
+        var drafts: Int
 
-        init(id: String, title: String, doneWhen: String? = nil, deadline: String? = nil, daysLeft: Int? = nil, weeksLeft: Int? = nil, short: Int = 0, targets: [Target] = []) {
+        init(id: String, title: String, doneWhen: String? = nil, deadline: String? = nil, daysLeft: Int? = nil, weeksLeft: Int? = nil, short: Int = 0, targets: [Target] = [], drafts: Int = 0) {
             self.id = id
             self.title = title
             self.doneWhen = doneWhen
@@ -72,10 +74,11 @@ struct GtmGlimpse: Decodable, Equatable, Sendable {
             self.weeksLeft = weeksLeft
             self.short = short
             self.targets = targets
+            self.drafts = drafts
         }
 
         private enum Keys: String, CodingKey {
-            case id, title, short, targets, deadline
+            case id, title, short, targets, deadline, drafts
             case doneWhen = "done_when", daysLeft = "days_left", weeksLeft = "weeks_left"
         }
 
@@ -90,12 +93,13 @@ struct GtmGlimpse: Decodable, Equatable, Sendable {
             short = c.lenient(.short, 0)
             let boxes: [LossyBox<Target>] = c.lenient(.targets, [])
             targets = boxes.compactMap(\.value)
+            drafts = max(c.lenient(.drafts, 0), 0)
         }
 
         /// The same goal in the Mac's own type, so the choices of `TodayLogic` (which goal leads, its pace) are the Mac's.
         var asGoal: GtmGoal {
             GtmGoal(id: id, title: title, doneWhen: doneWhen, deadline: deadline, daysLeft: daysLeft, weeksLeft: weeksLeft, short: short,
-                    targets: targets.map { GtmTarget(stage: $0.stage, count: $0.count, target: $0.target, counter: $0.counter) })
+                    targets: targets.map { GtmTarget(stage: $0.stage, count: $0.count, target: $0.target, counter: $0.counter) }, drafts: drafts)
         }
     }
 
@@ -127,11 +131,14 @@ struct GtmGlimpse: Decodable, Equatable, Sendable {
     var hasGoals = false
     var goals: [Goal] = []
     var next: [Next] = []
+    /// Waiting drafts no goal claims.
+    var untaggedDrafts = 0
 
     init() {}
 
     private enum Keys: String, CodingKey {
         case day, approve, send, reply, distribution, goals, next
+        case untaggedDrafts = "untagged_drafts"
         case followUp = "follow_up", outcomesWeek = "outcomes_week", hasGoals = "has_goals"
     }
 
@@ -149,6 +156,7 @@ struct GtmGlimpse: Decodable, Equatable, Sendable {
         goals = goalBoxes.compactMap(\.value)
         let nextBoxes: [LossyBox<Next>] = c.lenient(.next, [])
         next = nextBoxes.compactMap(\.value)
+        untaggedDrafts = max(c.lenient(.untaggedDrafts, 0), 0)
     }
 
     var waitingTotal: Int { approve + send + reply + followUp }
@@ -157,11 +165,19 @@ struct GtmGlimpse: Decodable, Equatable, Sendable {
     var lead: GtmGoal? { TodayLogic.featured(goals.map(\.asGoal)) }
 
     /// The first reply, approval, send or follow-up of the ordered list, as a sentence.
+    /// The lead goal's own drafts come into it ("2 replies to answer, then 8 drafts for this goal"), as on the Mac.
     var nextTitle: String? {
-        next.first { TodayLogic.nextKinds.contains($0.kind) }.map { TodayLogic.nextTitle(kind: $0.kind, count: $0.count) }
+        if let own = TodayLogic.goalNextTitle(replies: reply, goalDrafts: lead?.drafts ?? 0) { return own }
+        return next.first { TodayLogic.nextKinds.contains($0.kind) }.map { TodayLogic.nextTitle(kind: $0.kind, count: $0.count) }
     }
 
-    var nextDetail: String? { next.first { TodayLogic.nextKinds.contains($0.kind) }.flatMap { TodayLogic.nextDetail($0.kind) } }
+    var nextDetail: String? {
+        if TodayLogic.goalNextTitle(replies: reply, goalDrafts: lead?.drafts ?? 0) != nil { return TodayLogic.nextDetail(reply > 0 ? "reply" : "approve") }
+        return next.first { TodayLogic.nextKinds.contains($0.kind) }.flatMap { TodayLogic.nextDetail($0.kind) }
+    }
+
+    /// "11 drafts have no goal. Assign them on Growth." on the Mac; the phone says the first sentence only.
+    var untaggedLine: String? { TodayLogic.untaggedWords(untaggedDrafts)?.text }
 
     /// Replies and follow-ups that came back and wait.
     var cameBack: Int { reply + followUp }

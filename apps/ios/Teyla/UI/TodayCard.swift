@@ -19,6 +19,9 @@ struct TodayCard: View {
                         .font(Typo.caption).foregroundStyle(Palette.textSecondary)
                 }
                 QuietLine(gtm: gtm)
+                if let untagged = gtm.untaggedLine {
+                    Text(untagged).font(Typo.caption).foregroundStyle(Palette.textSecondary)
+                }
             }
             .card()
         }

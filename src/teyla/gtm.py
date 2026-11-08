@@ -33,6 +33,8 @@ VERSION = 1
 SOURCE_TIMEOUT_S = 20
 STALE_DAYS = 7
 MAX_COUNT = 100_000
+DRAFT_FIELDS = ("products", "platforms", "kinds")      # keys of a goal's `[goal.drafts]` matcher
+MAX_DRAFT_GOALS = 500
 WAITING_KINDS = ("approve", "send", "reply", "follow_up")
 # A stage counts as distribution or as an outcome by name; every other stage a source reports is preparation.
 DISTRIBUTION_STAGES = ("posted", "approached", "sent", "invited", "applied")
@@ -154,6 +156,8 @@ approached = 60
 conversation = 15
 intro = 3
 offer_fit = 1
+[goal.drafts]              # growth drafts that count for this goal: every listed field must match
+kinds = ["post"]           # optional: products, platforms, kinds; `teyla growth tag` overrides one draft
 
 [[goal]]
 id = "testers"
@@ -229,7 +233,8 @@ def load_goals(path: pathlib.Path | None = None) -> dict:
             out["errors"].append(f"goal {i + 1}: needs an id")
             continue
         gid = _clean_stage(g["id"])
-        for key, kind in (("funnel", list), ("sources", list), ("offer_fit", list), ("weekly", dict), ("map", dict)):
+        for key, kind in (("funnel", list), ("sources", list), ("offer_fit", list), ("weekly", dict), ("map", dict),
+                          ("drafts", dict)):
             if key in g and not isinstance(g[key], kind):
                 out["errors"].append(f"goal {gid}: `{key}` must be a {'list' if kind is list else 'table'}")
         if gid in seen:
@@ -251,8 +256,17 @@ def load_goals(path: pathlib.Path | None = None) -> dict:
                 out["errors"].append(f"goal {gid}: weekly.{k} is not a whole number")
             else:
                 weekly[_clean_stage(k)] = n
+        drafts = None
+        if isinstance(g.get("drafts"), dict):
+            drafts = {}
+            for key in DRAFT_FIELDS:
+                if key in g["drafts"] and not isinstance(g["drafts"][key], list):
+                    out["errors"].append(f"goal {gid}: drafts.{key} must be a list")
+                vals = [_clean_stage(x) for x in strings(g["drafts"].get(key)) if str(x).strip()]
+                if vals:
+                    drafts[key] = vals
         out["goals"].append(dict(
-            id=gid, title=str(g.get("title") or gid)[:120], deadline=deadline, funnel=funnel, weekly=weekly,
+            id=gid, drafts=drafts, title=str(g.get("title") or gid)[:120], deadline=deadline, funnel=funnel, weekly=weekly,
             done_when=str(g.get("done_when") or "").strip()[:160],
             sources=[_clean_stage(s) for s in strings(g.get("sources"))],
             prefix=_clean_stage(g.get("stage_prefix") or ""),
@@ -325,6 +339,11 @@ def render_goal(g: dict) -> str:
         L += ["[goal.map]"] + [f"{_toml_key(k)} = {_toml_str(v)}" for k, v in g["map"].items()]
     if g.get("weekly"):
         L += ["[goal.weekly]"] + [f"{_toml_key(k)} = {n}" for k, n in g["weekly"].items()]
+    if g.get("drafts") is not None:
+        L.append("[goal.drafts]")
+        for key in DRAFT_FIELDS:
+            if g["drafts"].get(key):
+                L.append(f"{_toml_key(key)} = [{', '.join(_toml_str(x) for x in g['drafts'][key])}]")
     return "\n".join(L) + "\n"
 
 
@@ -548,6 +567,40 @@ def from_usage(sid: str, counters: dict, at: float | None) -> dict | None:
     return doc if (doc["counts"] or doc["waiting"]) else None
 
 
+def waiting_items(items: dict) -> list[dict]:
+    """The growth drafts that wait for the owner: the review queue (`teyla growth review`), episodes, masters and held items out."""
+    return [i for i in items.values() if i.get("status") in ("review", "checked") and i.get("kind") != "episode"
+            and i.get("platform") != "master" and not i.get("hold_reason")]
+
+
+def _draft_stub(i: dict) -> dict:
+    """What goal matching reads from a draft; never its text."""
+    d = {k: str(i.get(k) or "") for k in ("id", "product", "platform", "kind")}
+    if isinstance(i.get("goal"), str):
+        d["goal"] = i["goal"]
+    return d
+
+
+def draft_goal(item: dict, goals) -> tuple[str | None, str | None]:
+    """(goal id, via) for a growth draft. A manual `goal` on the item wins (`""` means no goal; an id no goal has any more is
+    ignored); else the first goal in file order whose `[goal.drafts]` matches every field it lists; else (None, None)."""
+    gl = goals["goals"] if isinstance(goals, dict) else goals
+    ids = {g["id"] for g in gl}
+    manual = item.get("goal")
+    if isinstance(manual, str):
+        if not manual.strip():
+            return None, "manual"
+        if _clean_stage(manual) in ids:
+            return _clean_stage(manual), "manual"
+    for g in gl:
+        m = g.get("drafts")
+        if not m:
+            continue                       # no table, or an empty one: matches nothing
+        if all(_clean_stage(item.get(field[:-1]) or "") in vals for field, vals in m.items()):
+            return g["id"], "rule"
+    return None, None
+
+
 def ledger_source(rows: list[dict], items: dict, day: str, week: str, now: float) -> dict:
     """The growth ledger as a source: posts and approaches the owner logged, replies and meetings, agent output, and the
     review queue. An agent's claimed attempt counts only under `claimed`."""
@@ -585,8 +638,8 @@ def ledger_source(rows: list[dict], items: dict, day: str, week: str, now: float
             add(counts, stage, n)
             if d == day:
                 add(today, stage, n)
-    review = sum(1 for i in items.values() if i.get("status") in ("review", "checked") and i.get("kind") != "episode"
-                 and i.get("platform") != "master" and not i.get("hold_reason"))
+    waiting = waiting_items(items)
+    review = len(waiting)
     formats: dict[str, int] = {}
     for i in items.values():
         if i.get("status") == "published":
@@ -595,7 +648,8 @@ def ledger_source(rows: list[dict], items: dict, day: str, week: str, now: float
                 add(formats, f"{i.get('platform') or '?'}/{i.get('format') or '?'}", 1)
     return dict(source="growth", counts=counts, today=today, waiting={"approve": review} if review else {}, stalled={},
                 channels={}, offer_fit={}, links={}, updated=now, week=week, via="growth ledger",
-                preparation=dict(week=prep_week, today=prep_today), claimed=claimed, formats=formats)
+                preparation=dict(week=prep_week, today=prep_today), claimed=claimed, formats=formats,
+                drafts=[_draft_stub(i) for i in waiting])
 
 
 def _local_day(ts) -> str:
@@ -825,8 +879,44 @@ def goal_history(gid: str, stage: str, weeks: list[str]) -> list[int | None]:
     return out
 
 
+def draft_report(goals: dict, docs: list[dict]) -> tuple[dict, int, dict]:
+    """({goal id: {total, growth, by_source}}, drafts with no goal, {item id: goal id}) for the drafts waiting now."""
+    per = {g["id"]: dict(total=0, growth=0, by_source={}) for g in goals["goals"]}
+    draft_goals: dict[str, str] = {}
+    untagged = 0
+    for doc in docs:
+        if doc["source"] != "growth":
+            continue
+        for it in doc.get("drafts") or []:
+            gid, _via = draft_goal(it, goals)
+            if gid is None:
+                untagged += 1
+                continue
+            per[gid]["growth"] += 1
+            if len(draft_goals) < MAX_DRAFT_GOALS:
+                draft_goals[it["id"]] = gid
+    for doc in docs:
+        if doc["source"] == "growth":
+            continue
+        for k, v in doc["waiting"].items():
+            pre, name = split_stage(k)
+            if name != "approve" or not v:
+                continue
+            owners = [g for g in goals["goals"] if pre and g["prefix"] == pre and doc["source"] in g["sources"]]
+            if not owners:
+                untagged += v          # an unprefixed count cannot say which goal it serves
+            for g in owners:
+                per[g["id"]]["by_source"][doc["source"]] = per[g["id"]]["by_source"].get(doc["source"], 0) + v
+    for p in per.values():
+        if p["growth"]:
+            p["by_source"]["growth"] = p["growth"]
+        p["total"] = sum(p["by_source"].values())
+    return per, untagged, draft_goals
+
+
 def today_report(goals: dict, docs: list[dict], status: list[dict], day: str) -> dict:
     c = counters(docs)
+    per_goal, untagged, draft_goals = draft_report(goals, docs)
     t = dict(version=VERSION, day=day, week=week_of(day), has_goals=goals["exists"])
     for kind in WAITING_KINDS:
         t[kind] = _waiting(docs, kind)
@@ -849,7 +939,10 @@ def today_report(goals: dict, docs: list[dict], status: list[dict], day: str) ->
         t["goals"].append(dict(id=g["id"], title=g["title"], done_when=g.get("done_when") or None,
                                deadline=g["deadline"] or None, days_left=dl,
                                weeks_left=None if dl is None else max(0, -(-dl // 7)),
-                               targets=targets, short=short, fed_by=f["fed_by"], unfed=f["unfed"]))
+                               targets=targets, short=short, fed_by=f["fed_by"], unfed=f["unfed"],
+                               drafts=per_goal[g["id"]]))
+    t["untagged_drafts"] = untagged
+    t["draft_goals"] = draft_goals
     t["next"] = next_actions(t)
     t["sources"] = status
     t["doctor"] = doctor_lines(goals, status)
@@ -924,6 +1017,10 @@ def render_today(t: dict) -> str:
         dl = f", {g['days_left']} days left" if g["days_left"] is not None else ""
         L.append(f"{g['title']} (deadline {g['deadline'] or 'none'}{dl})")
         L.append("  " + ("  ".join(f"{r['stage']} {r['count']}/{r['target']}" for r in g["targets"]) or "no weekly targets"))
+        L.append(f"  drafts for this goal: {g['drafts']['total']}")
+    if t["untagged_drafts"]:
+        n = t["untagged_drafts"]
+        L.append(f"{n} draft{'s' if n != 1 else ''} {'have' if n != 1 else 'has'} no goal (`teyla growth tag ID --goal GOAL`)")
     for line in t["doctor"]:
         L.append(f"doctor  {line}")
     return "\n".join(L) + "\n"

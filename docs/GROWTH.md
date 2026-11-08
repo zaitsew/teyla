@@ -25,6 +25,7 @@ teyla growth trends       trend ideas scored against your audience (relevance x2
 teyla growth plan         fill today's slot of every enabled channel; an empty slot shows as a gap with its reason
 teyla growth draft        write the planned items through your `claude -p`, check voice and leaks, then an editor scores the hook
 teyla growth review       what waits for you, best editor score first; approve, reject (with a reason) or edit
+teyla growth tag ID... --goal GOAL|none   link drafts to a GTM goal (docs/GTM.md, "Drafts and goals"); `none` means no goal
 teyla growth packets      one folder per approved item: caption, first comment, media, the platform's upload page
 teyla growth publish ID   post an approved item where its network is connected; a packet for the rest
 teyla growth published ID URL    paste the post's URL after you posted it by hand

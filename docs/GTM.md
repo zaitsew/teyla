@@ -67,10 +67,23 @@ offer_fit = 1
 | `sources` | the source ids that feed this goal. `growth` is the growth ledger |
 | `stage_prefix` | a source stage `<prefix>.<stage>` feeds only the goal with that prefix; an unprefixed stage feeds every goal that lists the source |
 | `map` | renames a source stage (by its full name or its last part) to a funnel stage |
+| `[goal.drafts]` | optional matcher for growth drafts: lists `products`, `platforms`, `kinds`. A draft counts for the goal when every listed field matches; the first goal in file order that matches wins. An empty table matches nothing |
 | `weekly` | the weekly target per stage. `gtm week` lists what was missed and repeats the targets as next week's |
 
 `[[source]]` entries name a read-only command or a file (see below). A broken line becomes a `goals:` doctor line,
 never a crash.
+
+## Drafts and goals
+
+Each waiting growth draft (the `teyla growth review` queue) belongs to at most one goal. The order of precedence:
+
+1. a manual tag: `teyla growth tag ID... --goal GOAL` writes `goal` on the item; `--goal none` writes `goal: ""` and
+   rules no longer apply. A tag naming a goal that is gone is ignored;
+2. the first goal whose `[goal.drafts]` matches the draft;
+3. no goal. These drafts count under `untagged_drafts`.
+
+A source that reports `waiting.approve` under a prefix (`network.approve`) counts for the goal with that `stage_prefix`,
+when the source is in the goal's `sources`. An unprefixed `approve` count cannot be told apart, so it counts as untagged.
 
 ## Sources: how a product feeds the cockpit
 
@@ -137,8 +150,10 @@ A source carries counts and links to its own queue: never a person's name, a han
   "week_end": "2026-11-08",
   "goals": [{"id": "relationships", "title": "...", "done_when": "...", "deadline": "2027-03-01", "days_left": 114,
              "weeks_left": 17, "short": 12, "fed_by": ["growth"], "unfed": ["contacts"],
+             "drafts": {"total": 5, "growth": 4, "by_source": {"growth": 4, "outreach": 1}},
              "targets": [{"stage": "conversation", "count": 6, "target": 15, "counter": "outcomes",
                           "history": [{"week": "2026-W38", "count": null}, "...", {"week": "2026-W45", "count": 6}]}]}],
+  "untagged_drafts": 1, "draft_goals": {"g1107-ab3d": "relationships"},
   "next": [{"kind": "reply", "count": 2, "label": "answer 2 replies", "sources": ["outreach"]},
            {"kind": "approve", "count": 6, "label": "approve or skip 6 drafts", "command": "teyla growth review", "sources": ["outreach", "growth"]}],
   "sources": [{"id": "growth", "state": "ok", "via": "growth ledger", "line": "..."}],
@@ -148,6 +163,8 @@ A source carries counts and links to its own queue: never a person's name, a han
 
 `next` is the ordered list the screens lead with: replies, approvals, sends, follow-ups, then the distribution gap.
 `approve.by_source.growth` is the growth review queue (`teyla growth review`), held drafts excluded.
+Each goal's `drafts` counts the drafts waiting for it (see "Drafts and goals"); `untagged_drafts` counts those no goal
+claims, and `draft_goals` maps each waiting growth item id to its goal (at most 500), so an app can show the goal beside a draft.
 Each target names its `counter`. `short` adds up how far this week's outcome targets are from their numbers; a
 distribution target (approaches) never counts toward it. `history` holds the stage's count in the eight weeks ending with
 this one, read from the saved weeks; `null` is a week no run saved.
@@ -170,7 +187,9 @@ The admin build of Teyla for Mac opens on Today; the iPhone shows a Today card t
 
 Today puts the goals first. The goal with the most to do leads as a large card. It has one row per outcome target and
 one circle per unit of the weekly number. A circle fills only when a real outcome came back; a draft or a send never
-fills one. Under the rows, "Next" names the work that moves the goal: replies first, then drafts. The other goals sit
+fills one. Under the rows, "Next" names the work that moves the goal: replies first, then the drafts for this goal
+("2 replies to answer, then 8 drafts for this goal"). A quiet footer, "11 drafts have no goal. Assign them on Growth.",
+appears while drafts wait that no goal claims; each draft on the Growth page has a goal menu that runs `teyla growth tag`. The other goals sit
 below as thin rows, and a goal with no number asks for one. Sent, Came back and Prepared stay one quiet line at the top. The activity
 graph (posts, comments, emails and meetings) follows the goals. With no goals file, Today opens on a three-step setup
 that writes the first goal with `teyla gtm goal add`.

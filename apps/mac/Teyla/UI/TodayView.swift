@@ -174,7 +174,7 @@ private struct FeaturedGoalCard: View {
     }
 
     @ViewBuilder private var next: some View {
-        let step = TodayLogic.nextStep(today)
+        let step = TodayLogic.nextStep(today, goal: goal)
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .center, spacing: Space.l) {
                 nextText(step)
@@ -691,11 +691,22 @@ private struct TodayFirstRun: View {
 
 /// Sources that did not answer cleanly, and the folded checks behind them.
 private struct TodayFooter: View {
+    @Environment(AppModel.self) private var model
     let today: GtmToday
 
     var body: some View {
         let down = TodayLogic.sourcesNotOK(today)
         VStack(alignment: .leading, spacing: Space.s) {
+            if let untagged = TodayLogic.untaggedWords(today.untaggedDrafts) {
+                HStack(spacing: Space.xs) {
+                    Text(untagged.text).font(Typo.caption).foregroundStyle(Palette.textSecondary)
+                    Button(untagged.action) { model.go(.growth) }
+                        .buttonStyle(.link)
+                        .font(Typo.caption)
+                        .help("Open Growth and give each draft a goal")
+                }
+                .accessibilityElement(children: .combine)
+            }
             if down > 0 {
                 HStack(spacing: Space.s) {
                     Circle().fill(Palette.needsYou).frame(width: Space.dot, height: Space.dot).accessibilityHidden(true)
