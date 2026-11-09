@@ -598,6 +598,8 @@ def build_parser() -> argparse.ArgumentParser:
     console_mod.register(sp)
     from . import subs as subs_mod
     subs_mod.register(sp)
+    from . import brief as brief_mod
+    brief_mod.register(sp)
     from . import growth as growth_mod
     growth_mod.register(sp)
     from . import startup as startup_mod

@@ -33,6 +33,7 @@ other's work), with Opus's share. `teyla lanes` is the per-subagent-type view.
 """
 from __future__ import annotations
 
+import argparse
 import datetime as _dt
 import json
 import os
@@ -462,7 +463,8 @@ def report(days: int = 7, rows=None, actions=None, with_actions: bool = True, bi
                            for p, b in bills.items() if "daily" not in b]
     F = findings(rows, actions, coverage=coverage, spikes=providers.spikes(bills, days))
     win = window_totals(wide, days)
-    waste = waste_usd(rows, F)
+    win_part = {r["sid"]: window_totals([r], days)["total_usd"] / r["usd"] for r in rows if r["usd"] > 0}
+    waste = waste_usd(rows, F, win_part)
     span = _window(days)
     return dict(days=days, window=dict(first=span[0], last=span[-1]), total_usd=win["total_usd"],
                 session_usd=sum(r["usd"] for r in rows), sub_usd=win["sub_usd"], waste_usd=waste,
@@ -473,25 +475,27 @@ def report(days: int = 7, rows=None, actions=None, with_actions: bool = True, bi
                 providers=providers.totals(bills, days))
 
 
-def waste_usd(rows: list[dict], F: list[dict]) -> float:
+def waste_usd(rows: list[dict], F: list[dict], share: dict | None = None) -> float:
     """The waste total without counting a dollar twice: a session with no outcome is waste whole
     (its re-reads and loops are inside that); any other session's W2/W3/W6 dollars are capped at
     what it cost. W7 is product API spend, not part of the sessions' total, so it is reported on its
-    own (product_waste_usd) and never inflates the share; W8 is minutes, not dollars."""
+    own (product_waste_usd) and never inflates the share; W8 is minutes, not dollars. `share` maps a
+    session id to the part of its cost inside the report window (default 1): a resumed session's
+    waste is prorated by it, so the waste never exceeds the window's spend."""
     idle = {sid for f in F if f["id"] in ("W1", "W5") for sid in f.get("sids") or []}
     shown = {f["id"] for f in F}  # a rule under the floor is not reported, so its dollars do not count
 
     def partial(r):
         return ((r["reread_usd"] if "W2" in shown else 0) + (r["loop_usd"] if "W6" in shown else 0)
                 + (r["top_tier_sub_saving"] if "W3" in shown else 0))
-    per_session = sum(r["usd"] if r["sid"] in idle else min(r["usd"], partial(r)) for r in rows)
+    share = share or {}
+    per_session = sum((r["usd"] if r["sid"] in idle else min(r["usd"], partial(r))) * share.get(r["sid"], 1.0) for r in rows)
     return per_session
 
 
 def summary_line(rep: dict) -> str:
     total = rep["total_usd"]
-    basis = rep.get("session_usd") or total  # waste is measured on whole sessions
-    share = f" ({rep['waste_usd'] / basis * 100:.0f}%)" if basis else ""
+    share = f" ({rep['waste_usd'] / total * 100:.0f}%)" if total else ""
     product = rep.get("product_waste_usd") or 0
     return (f"spend {rep['days']}d: {_money(total)} API-equivalent, {_money(rep['waste_usd'])} of it waste{share}"
             + (f", plus {_money(product)} of product API spikes" if product else "")
@@ -873,10 +877,20 @@ def cmd_spend(args) -> int:
     return 0
 
 
+def _days_arg(v: str) -> int:
+    try:
+        n = int(v)
+    except ValueError:
+        n = 0
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"--days must be a whole number of at least 1, not {v!r}")
+    return n
+
+
 def register(sp):
     q = sp.add_parser("spend", help="what the AI work cost and which part of it bought nothing (W1–W8), each with a fix")
     q.set_defaults(fn=cmd_spend)
-    q.add_argument("--days", type=int, default=None, help="the window (default 7); with --session, how far back to look for the id (default 30)")
+    q.add_argument("--days", type=_days_arg, default=None, help="the window (default 7); with --session, how far back to look for the id (default 30)")
     q.add_argument("--json", action="store_true")
     q.add_argument("--by-day", action="store_true", help="one row per day: total, subagent cost, and subagent cost/calls by model family (Opus, Sonnet, Haiku, Fable, other), with Opus's share")
     q.add_argument("--session", metavar="ID", help="one session by id or id prefix: harness, project, times, cost by model and by day, subagents (ambiguous prefix exits 2, unknown 1)")

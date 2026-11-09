@@ -181,3 +181,28 @@ def test_session_json_keys_and_split(monkeypatch, capsys):
     assert sum(d["by_day"].values()) == pytest.approx(d["total_usd"], abs=0.001)
     assert sum(d["by_model"].values()) == pytest.approx(d["total_usd"])
     assert d["note"] == "API list price; subscription use and billed spend differ."
+
+
+# --- review fixes ------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("flags", [["--days", "0"], ["--days", "-3", "--by-day"], ["--days", "x"], ["--session", "ab", "--days", "0"]])
+def test_days_below_one_is_refused_by_the_parser(flags, capsys):
+    p = argparse.ArgumentParser()
+    spend.register(p.add_subparsers())
+    with pytest.raises(SystemExit) as e:
+        p.parse_args(["spend", *flags])
+    assert e.value.code == 2 and "--days must be a whole number of at least 1" in capsys.readouterr().err
+
+
+def test_window_waste_never_exceeds_the_window_total(monkeypatch):
+    # $50 spent 20 days ago, $1 today, no outcome: a W1 finding of $51 over the session life.
+    s = _session("idle-resumed", [(_ago(20), 1_000_000), (_ago(0.1), 20_000)], cwd="/work/demo")
+    rows = _rows([s])
+    monkeypatch.setattr(spend, "session_rows", lambda d: rows)
+    real = spend.findings
+    monkeypatch.setattr(spend, "findings", lambda rows, actions=None, **k: real(rows, actions, outcome_of=lambda r: False, **k))
+    rep = spend.report(7, with_actions=False, bills={})
+    assert rep["total_usd"] == pytest.approx(1.0)
+    assert any(f["id"] == "W1" for f in rep["findings"])
+    assert rep["waste_usd"] == pytest.approx(1.0) and rep["waste_usd"] <= rep["total_usd"]
+    assert "(100%)" in spend.summary_line(rep) and "$51" not in spend.summary_line(rep)
