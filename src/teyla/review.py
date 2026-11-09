@@ -566,6 +566,8 @@ def pull_testflight(conn: sqlite3.Connection, app_id: str, product: str, client,
     except review_asc.AscError as e:
         rep.update(note=str(e), error=True)
         return rep
+    rep["newest"] = max((str(i["attributes"].get("createdDate") or "") for i in items if isinstance(i.get("attributes"), dict)), default="")
+    rep["seen"] = len(items)
     for item in items:
         raw = review_asc.to_capture(item, product)
         if raw is None:
