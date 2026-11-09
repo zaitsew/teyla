@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.47.2 — 2026-11-09 — Claude Fable 5.2 is the top Anthropic tier
+
+- **Teyla prices `claude-fable-5-2`.** It has its own row: $8 input, $10 five-minute cache write, $0.20 cache read, $40 output per 1M tokens, orchestrate tier, verified against Anthropic's pricing page on 2026-11-09. Before, the id fell through to the `claude-fable-5` row and a cache read cost $1.00. Fable 5.1 stays as the previous generation so old transcripts still price; both count in the `fable` family.
+- The work-policy template's Anthropic ladder row now reads Claude Fable 5.2, Sonnet 5.5, Opus 5.5 and Haiku 5.5. Tests cover the price row, the family and the ladder-entry name "Claude Fable 5.2".
+
 ## 0.47.1 — 2026-11-09 — The guard stops refusing work on old swap
 
 - **Old swap under memory pressure is no longer CRITICAL.** Swap at or above `guard.swap_crit_pct` while pressure is warn counts only while swap is still written: it grew more than 0.2 GB in the last 5 minutes, or the swap-out rate is at least 5 MB/s. On 2026-11-09 swap sat flat at 9.8 GB for three hours, each build pushed pressure to warn, and the guard refused builds and simulators for 385 minutes on a mostly idle machine. Replayed with the new rule and hold: 171 minutes, and no wait past the timeout (was 7).

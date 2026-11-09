@@ -146,9 +146,9 @@ def test_advise_a8_absent_when_only_not_installed_harnesses_are_missing():
 # --- A12: connector-heavy work suppresses A2/A4 and fires instead --------------------------
 
 def _connector_heavy_session():
-    s = _session("connector-heavy", model="claude-fable-5")  # orchestrate-tier, per pricing.PRICES
+    s = _session("connector-heavy", model="claude-fable-5-2")  # orchestrate-tier, per pricing.PRICES
     # Drive orchestrator_share and cache_read_ratio well above the A2/A4 thresholds.
-    s.usage["claude-fable-5"] = Counter(input_tokens=1000, output_tokens=2_000_000,
+    s.usage["claude-fable-5-2"] = Counter(input_tokens=1000, output_tokens=2_000_000,
                                          cache_read_input_tokens=400_000_000, cache_creation_input_tokens=0)
     s.tools = Counter({"mcp__jira__search": 40, "mcp__jira__read": 30, "Bash": 10, "Read": 10})
     return s

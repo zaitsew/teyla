@@ -20,7 +20,7 @@ row below only when it is.
 <!-- ladder:start — maintained by `teyla models --write-policy`; edit rows by hand if you must, keep the markers -->
 | provider | orchestrate / hardest tasks | volume work | throwaway / triage | note |
 |---|---|---|---|---|
-| Anthropic | Claude Fable 5.1 | Opus 5, Sonnet 5 | Haiku 4.5 | Fable inherits by default in subagents — always pass model: |
+| Anthropic | Claude Fable 5.2 | Sonnet 5.5 (default worker), Opus 5.5 (hard sub-tasks) | Haiku 5.5 | Fable inherits by default in subagents — always pass model: |
 <!-- ladder:end -->
 
 - In Claude Code, pass `model:` explicitly on every `Agent` call; "inherit" means Fable.
