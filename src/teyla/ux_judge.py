@@ -33,9 +33,12 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import pathlib
 import re
+import subprocess
 import sys
+import tempfile
 
 from . import net, state, taste
 
@@ -155,6 +158,42 @@ def judge_command(model: str) -> list[str]:
     cmd[cmd.index("--output-format") + 1] = "stream-json"
     cmd += ["--input-format", "stream-json", "--verbose"]
     return cmd
+
+
+FILTER_MODEL = "gpt-6.1-sol"                 # the OpenAI ladder's default worker (POLICY §1); the filter's judge
+
+
+def codex_binary() -> str | None:
+    """The lane wrapper (`codex exec` on the Standard tier, behind the machine guard), or None when absent."""
+    from . import copy_lane
+    return copy_lane.lane_binary()
+
+
+def codex_command(out_path: str, images: list[str], model: str = FILTER_MODEL, binary: str = "codex-lane") -> list[str]:
+    """`codex exec` through the lane wrapper: read-only, no saved session, no skills catalogue, no sub-agents, the
+    pictures attached with --image (one flag each, so the prompt on stdin is never read as a picture), the final
+    message in `out_path`."""
+    return [binary, "-m", model, "-s", "read-only", "-c", 'model_reasoning_effort="medium"',
+            "-c", "skills.include_instructions=false", "--disable", "multi_agent", "--skip-git-repo-check",
+            "--ephemeral", *[f"--image={p}" for p in images], "-o", out_path, "-"]
+
+
+def _run_codex(prompt: str, images: list[str], model: str) -> tuple[int, str]:
+    """(exit code, the model's final message); 127 when codex-lane is missing. Tests replace this one function."""
+    binary = codex_binary()
+    if binary is None:
+        return 127, ""
+    with tempfile.TemporaryDirectory(prefix="teyla-judge-") as tmp:
+        out = os.path.join(tmp, "last.md")
+        try:
+            r = subprocess.run(codex_command(out, images, model, binary), input=prompt, capture_output=True,
+                               text=True, timeout=JUDGE_TIMEOUT_S, cwd=tmp)
+        except (OSError, subprocess.SubprocessError):
+            return 127, ""
+        try:
+            return r.returncode, pathlib.Path(out).read_text(encoding="utf-8")
+        except OSError:
+            return r.returncode or 1, ""
 
 
 def _run(cmd: list[str], input_text: str) -> tuple[int, str]:
@@ -427,6 +466,9 @@ def _dry_pair_names(pairs: list[dict]) -> str:
 
 
 def cmd_judge(args) -> int:
+    if getattr(args, "filter", None):
+        from . import ux_filter
+        return ux_filter.cmd_filter(args)
     model = args.model or MODEL
     words = list(args.repos or [])
     try:

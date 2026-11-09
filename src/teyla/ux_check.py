@@ -774,5 +774,10 @@ def register(sp):
     q.add_argument("--calibrate", metavar="REPO", help="judge: compare the judge with the owner's decided pairs in REPO's design/references/calibration/")
     q.add_argument("--model", help="judge: the model (default claude-sonnet-5-5)")
     q.add_argument("--both-orders", action="store_true", help="judge: ask twice with the pictures swapped; a disagreement is a tie")
+    q.add_argument("--filter", nargs="+", metavar="PATH", help="judge: filter mode: variant screenshots (files or folders) to hold against --baseline; the judge only filters, it never ranks")
+    q.add_argument("--baseline", help="judge --filter: the shipped screen the variants are held against")
+    q.add_argument("--provider", choices=["codex", "claude"], default="codex", help="judge --filter: codex (OpenAI, default) or claude (a same-provider judge)")
+    q.add_argument("--bar", type=int, default=2, help="judge --filter: points a variant must trail the baseline by, in both orders, to be held back (default 2)")
+    q.add_argument("--slice", help="judge --filter: the folder that keeps the two-rounds record (default: the variants' folder)")
     q.add_argument("--allow-network", action="store_true", help="judge: safe mode: allow the model call for this one run")
     return q

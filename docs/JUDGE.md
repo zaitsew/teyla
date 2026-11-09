@@ -48,6 +48,43 @@ decide. A product's score is the share of its screens that beat their reference,
 disagree on the winner. Models prefer the first picture more often than chance, so use it for pairs that
 matter and in the calibration run when the judge shows a position habit (all its mistakes on one side).
 
+## Filter mode: hold weak variants back
+
+```
+teyla ux judge --filter variants/ --baseline current.png --repo atlas    # a folder, or several files
+teyla ux judge --filter a.png b.png --baseline current.png --dry          # print the prompt, call nothing
+```
+
+A slice makes several variants of one screen. `--filter` runs each variant against the baseline (the shipped
+screen) so the weak ones do not reach you. It follows S7: only pairs, never a lone picture, and both orders are
+asked, so the model's liking for the first picture cancels out. The prompt carries `DESIGN.md` and your active
+taste entries in scope (at most 15, the same selection as `teyla taste corpus render`; a dislike wins on the axis
+it names) as data.
+
+**The bar.** For one variant, in each order, `delta` is the variant's total minus the baseline's, over the rubric
+items both pictures were assessed on. The variant is **held back** when `delta <= -BAR` in **both** orders. `BAR`
+is `--bar`, default 2, at least 1. Everything else passes: a tie, a win, one order disagreeing, nothing assessed,
+or a call that failed (listed as "not judged"; a tooling fault never blocks you).
+
+**The output rule.** The judge only filters. It prints "passes to the owner" and "held back" with one reason per
+held-back variant. It never prints a ranking, a winner or a "best" among the variants, and never a score for a
+variant that passed. Scores appear only in a held-back reason (point gap and the items that dropped) and in
+`--json`. A score is never shown as a decision; you choose among what passes.
+
+**Two rounds at most.** A variant is judged at most twice per slice (a first pass and one re-judge after a fix).
+The count is in `<slice>/.judge-rounds.json`, keyed by file name; the slice is `--slice`, or the folder of the
+first variant. A third judgement is refused before any call (exit 2) and names the variants; take them out of
+the list. Merge what was filtered and decide the rest yourself.
+
+**Provider.** Claude builds the variants, so the filter asks another provider: GPT-6.1 Sol through `codex-lane`
+(`codex exec`, read-only, no saved session, Standard tier, the pictures attached with `--image`). `--model`
+changes the model. When `codex-lane` is missing or `codex` exits non-zero, the run falls back to `claude -p`
+(Sonnet 5.5) and says "same-provider judge" in the output and on stderr; `--provider claude` asks for that path
+directly. A same-provider filter shares the builder's blind spots: weigh it less. What leaves the Mac: the
+baseline and variant screenshots, `DESIGN.md` and the taste entries ([PRIVACY.md](PRIVACY.md), row 56). Safe mode
+refuses without `--allow-network`; `--dry` never calls. The filter is not calibrated by `--calibrate` (that
+measures the pair judge); it is a gate on weak work, not evidence of good work.
+
 ## How the pictures travel
 
 `claude -p` is started with no tools, no skills, no MCP and no saved session (the call `teyla review triage`

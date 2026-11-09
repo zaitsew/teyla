@@ -134,6 +134,7 @@
   teyla ux registry check [repo] [--json]                         the screen registry (design/screens): invalid entries, expected vs captured per platform and look; exit 1 on invalid
   teyla ux atlas [repo] [--out DIR] [--lang L] [--open]           one HTML atlas of every screen (grid and navigation map) with "captured / expected" and the feature gaps
   teyla ux judge A.png B.png [--repo R] [--both-orders] [--dry]  which of two screens is better on the five rubric items; --calibrate REPO against your decided pairs
+  teyla ux judge --filter VARIANTS --baseline B.png [--repo R]   hold weak variants back from the owner (OpenAI judge, two rounds at most); never ranks
   teyla scout design [--week W] [--dry] [--no-model]            the weekly design scout: what changed, at most two rule proposals
   teyla hosts [repo...] [--all] [--write] [--json] [--quiet]    every host a repo's code can reach, by file and line, against docs/PRIVACY.md; exit 1 on an undocumented host
   teyla deps [repo] [--all] [--json] [--quiet] [--no-cache] [--dry]   known vulnerabilities in the pinned versions of the lockfiles (OSV); exit 1 on a HIGH/CRITICAL with a fix, 2 on a gap

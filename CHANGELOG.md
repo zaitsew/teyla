@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **`teyla ux judge --filter`: a vision filter for design variants, on another provider.** `teyla ux judge --filter VARIANTS --baseline CURRENT.png [--repo R]` judges each variant in a pair against the shipped screen, in both orders, with the product's DESIGN.md and its active taste entries (at most 15). A variant trailing the baseline by `--bar` points (default 2) in both orders is held back; the rest pass to the owner. The output lists "passes to the owner" and "held back" with a reason; it never ranks, names a winner or shows a score for a passed variant. The default judge is GPT-6.1 Sol through `codex-lane` (read-only, Standard tier); a missing or failing codex falls back to `claude -p`, labelled a same-provider judge. Two judgements per variant per slice; a third is refused. PRIVACY row 56.
+
 ## 0.48.0 — 2026-11-09 — A budget at the Agent call, one spend total, a platform gate
 
 - **`teyla brief`: a sprint contract with a budget, enforced where new work starts.** `teyla brief <product> --goal G --usd N --hours N` writes the contract under `~/.teyla/briefs/<product>/` and makes it active. `teyla brief --hook` is a Claude Code PreToolUse hook for the Agent and Task tools. Under 80% of the budget (dollars or hours, whichever is further along) it allows the call. From 80% it refuses with "start no new lane", and from 100% with "checkpoint now". It binds each session it sees to the contract, costs the bound sessions at list price, logs refusals to `briefs/refusals.tsv` and fails open on any error. `--raise-usd N --reason "..."` is the owner's override; `--close` ends the contract. Nothing leaves the machine. docs/COMMANDS.md has the settings block.
