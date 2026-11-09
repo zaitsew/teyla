@@ -905,7 +905,7 @@ def _install_wrappers(_home, monkeypatch):
 def test_the_daily_wrapper_syncs_the_policy_and_an_older_one_is_rewritten(_home, monkeypatch):
     _install_wrappers(_home, monkeypatch)
     text = routine_install.DAILY_WRAPPER_PATH.read_text()
-    assert "\nteyla policy sync --quiet\n" in text
+    assert "\nteyla policy sync --quiet || _rc=1\n" in text
     assert text.index("teyla policy sync --quiet") < text.index("teyla routine catch-up")
     assert "policy sync" not in routine_install.WRAPPER_PATH.read_text()
     assert not routine_install.is_stale()
