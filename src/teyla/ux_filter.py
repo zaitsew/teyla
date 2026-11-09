@@ -217,19 +217,25 @@ def load_rounds(d: pathlib.Path) -> dict:
         return {}
 
 
-def rounds_key(v: pathlib.Path) -> str:
-    return v.name
+def label(v: pathlib.Path, d: pathlib.Path) -> str:
+    """The variant's identity in a slice: its path relative to the slice folder (so `a/screen.png` and
+    `b/screen.png` differ), or its absolute path when it lies outside the slice."""
+    r = v.resolve()
+    try:
+        return r.relative_to(d.resolve()).as_posix()
+    except ValueError:
+        return r.as_posix()
 
 
 def refused_rounds(d: pathlib.Path, variants: list[pathlib.Path]) -> list[str]:
     done = load_rounds(d)
-    return [v.name for v in variants if int(done.get(rounds_key(v), {}).get("rounds", 0)) >= MAX_ROUNDS]
+    return [label(v, d) for v in variants if int(done.get(label(v, d), {}).get("rounds", 0)) >= MAX_ROUNDS]
 
 
 def record_rounds(d: pathlib.Path, judged: list[pathlib.Path]) -> None:
     done = load_rounds(d)
     for v in judged:
-        row = done.setdefault(rounds_key(v), {"rounds": 0})
+        row = done.setdefault(label(v, d),{"rounds": 0})
         row["rounds"] = int(row.get("rounds", 0)) + 1
         row["last"] = taste.today()
         row["sha256"] = hashlib.sha256(v.read_bytes()).hexdigest()[:16]
@@ -239,26 +245,28 @@ def record_rounds(d: pathlib.Path, judged: list[pathlib.Path]) -> None:
 # --- the run --------------------------------------------------------------------------------------
 
 def run_filter(variants: list[pathlib.Path], baseline: pathlib.Path, repo: pathlib.Path | None, *, provider: str,
-               model: str | None, bar: int) -> dict:
+               model: str | None, bar: int, sdir: pathlib.Path | None = None) -> dict:
+    sdir = sdir or variants[0].parent
     base = ux_judge.read_image(baseline)
+    images = [ux_judge.read_image(v) for v in variants]       # every picture is checked before any model call
     design = ux_judge.design_text(repo)
     judge = Judge(provider, model, design, taste_text(taste_entries(repo)))
     passes, held, unjudged, judged = [], [], [], []
-    for v in variants:
-        img = ux_judge.read_image(v)
+    for v, img in zip(variants, images):
+        name = label(v, sdir)
         try:
-            first = judge.ask(base, img, (str(baseline), str(v)))
-            second = judge.ask(img, base, (str(v), str(baseline)))
+            first = judge.ask(base, img, (str(baseline.resolve()), str(v.resolve())))
+            second = judge.ask(img, base, (str(v.resolve()), str(baseline.resolve())))
         except JudgeError as e:
-            unjudged.append({"variant": v.name, "why": str(e)})
+            unjudged.append({"variant": name, "why": str(e)})
             continue
         judged.append(v)
         dec = decide(first, second, bar)
         if dec["held"]:
-            held.append({"variant": v.name, "reason": reason(dec, bar), "deltas": dec["deltas"],
+            held.append({"variant": name, "reason": reason(dec, bar), "deltas": dec["deltas"],
                          "assessed": dec["assessed"]})
         else:
-            passes.append({"variant": v.name, "deltas": dec["deltas"], "assessed": dec["assessed"]})
+            passes.append({"variant": name, "deltas": dec["deltas"], "assessed": dec["assessed"]})
     return {"baseline": baseline.name, "provider": judge.provider, "model": judge.model,
             "same_provider": judge.same_provider, "judge": judge.label(), "bar": bar, "passes": passes,
             "held_back": held, "unjudged": unjudged, "judged_paths": judged}
@@ -317,7 +325,7 @@ def cmd_filter(args) -> int:
             return 0
         if not net.gate("ux judge --filter (it sends screenshots, the design file and your taste entries to the model provider)"):
             return 1
-        res = run_filter(variants, baseline, repo, provider=args.provider, model=args.model, bar=args.bar)
+        res = run_filter(variants, baseline, repo, provider=args.provider, model=args.model, bar=args.bar, sdir=sdir)
         if res["judged_paths"]:
             record_rounds(sdir, res["judged_paths"])
     except (JudgeError, FileNotFoundError) as e:

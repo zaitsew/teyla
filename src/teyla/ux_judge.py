@@ -175,7 +175,7 @@ def codex_command(out_path: str, images: list[str], model: str = FILTER_MODEL, b
     message in `out_path`."""
     return [binary, "-m", model, "-s", "read-only", "-c", 'model_reasoning_effort="medium"',
             "-c", "skills.include_instructions=false", "--disable", "multi_agent", "--skip-git-repo-check",
-            "--ephemeral", *[f"--image={p}" for p in images], "-o", out_path, "-"]
+            "--ephemeral", *[f"--image={os.path.abspath(p)}" for p in images], "-o", out_path, "-"]
 
 
 def _run_codex(prompt: str, images: list[str], model: str) -> tuple[int, str]:

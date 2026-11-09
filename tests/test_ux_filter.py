@@ -176,3 +176,42 @@ def test_existing_pair_judge_is_unchanged(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(ux_judge, "_run", lambda cmd, inp: (0, stream(reply([2] * 5, [1] * 5))))
     assert cli.main(["ux", "judge", str(a), str(b), "--allow-network"]) == 0
     assert capsys.readouterr().out.startswith("winner: A")
+
+
+def test_relative_paths_reach_codex_as_absolute_paths(slice_, monkeypatch):
+    d, base = slice_
+    cmd = ux_judge.codex_command("/tmp/o", ["rel/x.png", "y.png"], binary="codex-lane")
+    imgs = [c for c in cmd if c.startswith("--image=")]
+    assert imgs and all(pathlib.Path(c.split("=", 1)[1]).is_absolute() for c in imgs)
+    monkeypatch.chdir(d.parent)                      # the documented form: relative folder and baseline
+    fake = Fake({"good.png": 0, "weak.png": 0, "meh.png": 0})
+    assert run(["--filter", "slice", "--baseline", "base.png"], monkeypatch, fake) == 0
+    assert fake.calls and all(pathlib.Path(p).is_absolute() for c in fake.calls for p in c[1])
+
+
+def test_a_bad_picture_fails_before_any_call_and_records_nothing(slice_, monkeypatch, capsys):
+    d, base = slice_
+    (d / "zzz-bad.png").write_bytes(b"not an image")
+    fake = Fake({"good.png": 0, "weak.png": 0, "meh.png": 0})
+    assert run(["--filter", str(d), "--baseline", str(base)], monkeypatch, fake) == 1
+    assert "zzz-bad.png" in capsys.readouterr().err
+    assert not fake.calls and not (d / ux_filter.ROUNDS_FILE).exists()
+
+
+def test_same_file_name_in_two_folders_are_two_variants(tmp_path, slice_, monkeypatch, capsys):
+    _, base = slice_
+    s = tmp_path / "s2"
+    for sub in ("a", "b"):
+        (s / sub).mkdir(parents=True)
+        (s / sub / "screen.png").write_bytes(png((5, 5, 5)))
+    args = ["--filter", str(s / "a" / "screen.png"), str(s / "b" / "screen.png"), "--baseline", str(base), "--slice", str(s)]
+    fake = Fake({"screen.png": -4})
+    assert run(args, monkeypatch, fake) == 0
+    out = capsys.readouterr().out
+    assert "a/screen.png: trails" in out and "b/screen.png: trails" in out
+    rounds = json.loads((s / ux_filter.ROUNDS_FILE).read_text())
+    assert sorted(rounds) == ["a/screen.png", "b/screen.png"] and all(r["rounds"] == 1 for r in rounds.values())
+    only_a = ["--filter", str(s / "a" / "screen.png"), "--baseline", str(base), "--slice", str(s)]
+    assert run(only_a, monkeypatch, fake) == 0
+    assert run(only_a, monkeypatch, fake) == 2       # a/ is at its cap; b/ keeps its own count
+    assert json.loads((s / ux_filter.ROUNDS_FILE).read_text())["b/screen.png"]["rounds"] == 1
