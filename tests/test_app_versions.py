@@ -21,3 +21,12 @@ def test_release_script_bumps_the_apps():
     script = (ROOT / "scripts/release.sh").read_text()
     assert "CFBundleShortVersionString" in script
     assert "apps/ios/project.yml apps/mac/project.yml" in script
+
+
+def test_release_script_installs_with_teyla_update():
+    # A bare `uv tool install --force` dropped the reel extra (Pillow) after 0.47.0; `teyla update` keeps extras.
+    script = (ROOT / "scripts/release.sh").read_text()
+    tail = script.split('gh release create', 1)[1]
+    assert "teyla update" in tail
+    commands = [line for line in script.splitlines() if not line.lstrip().startswith("#")]
+    assert not any("uv tool install" in line for line in commands)

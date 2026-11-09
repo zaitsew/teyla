@@ -236,7 +236,7 @@ def test_pillow_missing_is_a_gap_that_names_the_upgrade_command(media, monkeypat
     reg = gm.registry.load()
     res = gm.video_step(store, cfg, NOW, guard=growth.Guard(cfg, reg), reg=reg)
     assert res["state"] == "gap" and res["reason"].startswith("the reel extra (Pillow) is missing")
-    assert "uv tool install --force --python 3.12 'teyla[reel] @ git+https://github.com/zaitsew/teyla'" in res["reason"]
+    assert "`teyla update --force`" in res["reason"]
     assert growth.video_gap(growth.Store(), DAY).startswith("the reel extra (Pillow) is missing")      # the slot report shows it
     monkeypatch.setattr(reel_render, "available", lambda: {"pillow": True, "ffmpeg": None})
     monkeypatch.setattr(shutil, "which", lambda *a, **k: None)

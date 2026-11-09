@@ -35,3 +35,10 @@ git push origin "v$v"
 [ "$(PYTHONPATH=src python3 -m teyla --version)" = "$v" ] || { echo "package version is not $v"; exit 1; }
 gh release create "v$v" --title "$v" --generate-notes
 echo "merged the bump, pushed v$v and created the release"
+# Install the release on this Mac the way every other machine gets it. `teyla update` keeps the
+# installed extras (work = truststore, reel = Pillow); a bare `uv tool install --force git+...`
+# drops them, and 0.47.0 lost the daily video that way. The release exists already, so a failed
+# install only warns.
+if command -v teyla >/dev/null; then
+  teyla update || echo "release v$v is out, but installing it here failed: run \`teyla update\`"
+fi
