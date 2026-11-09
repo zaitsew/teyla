@@ -820,10 +820,47 @@ def to_json(rep: dict) -> dict:
 
 # --- the command ------------------------------------------------------------------------------------------------------
 
+def cmd_pull(args) -> int:
+    """`teyla crash --pull`: the hourly agent's step. Quiet, offline-safe, fails open: with --quiet it exits 0
+    when safe mode, a missing key or the network stops it, and says nothing."""
+    from . import crash_feed, net, review, review_asc
+    quiet = getattr(args, "quiet", False)
+    if not net.gate("the TestFlight crash and feedback pull", quiet=quiet):
+        return 0 if quiet else 1
+    try:
+        cfg = review_asc.load_config()
+    except review_asc.AscError as e:
+        if not quiet:
+            print(f"teyla crash --pull: {e}", file=sys.stderr)
+        return 0 if quiet else 1
+    try:
+        conn = review.connect()
+        res = crash_feed.pull(review_asc.Client(cfg), conn)
+    except Exception as e:  # noqa: BLE001 — fail open: an hourly job must never leave a failure behind
+        if not quiet:
+            print(f"teyla crash --pull: {type(e).__name__}: {e}", file=sys.stderr)
+        return 0 if quiet else 1
+    if args.json:
+        print(json.dumps(res, indent=1, ensure_ascii=False))
+    elif not quiet:
+        if not res["apps"]:
+            print("no product names `[release] apple_bundle_id` in a teyla.toml: nothing to pull")
+        for a in res["apps"]:
+            print(f"{a['product']}: {a['new_crashes']} new crash(es), {a['new_screenshots']} new screenshot(s); {a['text']}")
+    return 1 if res["errors"] and not quiet else 0
+
+
 def cmd_crash(args) -> int:
     if args.days < 1:
         print("teyla crash: --days must be 1 or more", file=sys.stderr)
         return 2
+    if getattr(args, "pull", False):
+        return cmd_pull(args)
+    from . import crash_feed
+    if getattr(args, "device", False):
+        dev = crash_feed.report(args.days)
+        print(json.dumps(dev, indent=1, ensure_ascii=False) if args.json else crash_feed.render(dev))
+        return 0
     rep = report(args.days)
     # Acknowledge before printing, so the footer does not call incidents unacknowledged right above
     # the line that acknowledges them. `[new]` still marks what this run acknowledged.
@@ -833,10 +870,16 @@ def cmd_crash(args) -> int:
             n = ack([it["event"].id for it in rep["items"]])
         except OSError as e:
             err = e
+    dev = crash_feed.report(args.days)
     if args.json:
-        print(json.dumps(to_json(rep), indent=1, ensure_ascii=False))
+        out = to_json(rep)
+        if dev["apps"]:
+            out["device"] = dev
+        print(json.dumps(out, indent=1, ensure_ascii=False))
     else:
         print(render(rep, acked=n is not None))
+        if dev["apps"]:
+            print("\n" + crash_feed.render(dev))
     if err is not None:
         print(f"teyla crash: could not record the acknowledgement: {err}", file=sys.stderr)
         return 1
@@ -852,4 +895,8 @@ def register(sp):
     q.add_argument("--days", type=int, default=DEFAULT_DAYS, metavar="N", help="how far back to look (default 7)")
     q.add_argument("--json", action="store_true", help="the report as JSON")
     q.add_argument("--ack", action="store_true", help="mark every listed incident seen (doctor and the banner stop warning)")
+    q.add_argument("--device", action="store_true", help="only the device crashes pulled from TestFlight, and whether that feed is fresh")
+    q.add_argument("--pull", action="store_true", help="read crashes and screenshot feedback from App Store Connect now (the hourly agent's step)")
+    q.add_argument("--quiet", action="store_true", help="--pull: print nothing and exit 0 when it cannot run")
+    q.add_argument("--allow-network", action="store_true", help="safe mode: allow the App Store Connect call for this one run")
     return q

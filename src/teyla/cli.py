@@ -66,7 +66,7 @@
   teyla remind list | done <n>                                    everything pending; clear the n-th
   teyla load [--json] [--record] [--quiet] [--admit KIND] [--wait --kind KIND] [--timeout S] [--cwd DIR]   machine load: snapshot, verdict (exit 0 OK, 1 BUSY, 2 CRITICAL), admission, wait for a slot
   teyla guard tick [--quiet] [--dry] | status                    the guard by itself: record, alert file, stop idle Gradle/Kotlin daemons (the load agent runs tick every minute)
-  teyla crash [--days N] [--json] [--ack]                         after a crash: the panic, the machine's load before it, what to change
+  teyla crash [--days N] [--json] [--ack] [--device] [--pull [--quiet]]   after a crash: the panic, the machine's load before it, what to change; --device/--pull: TestFlight device crashes
   teyla storage [--json] [--no-sizes]                             disk and RAM held by agent work: worktrees, build output, caches
   teyla storage clean [--apply] [--auto]                          remove finished worktrees and idle build output (dry run by default)
   teyla storage sims [--reap] [--dry] [--json]                    booted simulators: in use or idle; --reap shuts down the idle ones

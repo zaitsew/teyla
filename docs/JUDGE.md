@@ -81,7 +81,7 @@ the list. Merge what was filtered and decide the rest yourself.
 changes the model. When `codex-lane` is missing or `codex` exits non-zero, the run falls back to `claude -p`
 (Sonnet 5.5) and says "same-provider judge" in the output and on stderr; `--provider claude` asks for that path
 directly. A same-provider filter shares the builder's blind spots: weigh it less. What leaves the Mac: the
-baseline and variant screenshots, `DESIGN.md` and the taste entries ([PRIVACY.md](PRIVACY.md), row 56). Safe mode
+baseline and variant screenshots, `DESIGN.md` and the taste entries ([PRIVACY.md](PRIVACY.md), row 57). Safe mode
 refuses without `--allow-network`; `--dry` never calls. The filter is not calibrated by `--calibrate` (that
 measures the pair judge); it is a gate on weak work, not evidence of good work.
 
