@@ -264,7 +264,7 @@ def test_cli_session_flag_pins_and_accepts_comma_list(env, capsys):
 def test_unpinned_open_prints_autobind_note(env, capsys):
     _t, _root, repo = env
     assert cli.main(["brief", "widget", "--usd", "10", "--hours", "2", "--repo", str(repo)]) == 0
-    assert "auto-binding counts every session" in capsys.readouterr().out
+    assert "auto-binding counts every session" in capsys.readouterr().err
     assert "pinned" not in brief.load_active("widget")[1]
 
 
@@ -315,3 +315,32 @@ def test_add_session_to_pinned_contract(env, capsys):
 def test_add_session_refused_on_unpinned_contract(env):
     start(env[2])
     assert cli.main(["brief", "widget", "--add-session", OTHER]) == 2
+
+
+def test_json_output_stays_parseable_with_autobind_note(env, capsys):
+    _t, _root, repo = env
+    assert cli.main(["brief", "widget", "--usd", "10", "--hours", "2", "--json", "--repo", str(repo)]) == 0
+    cap = capsys.readouterr()
+    assert json.loads(cap.out)["contract"]["usd"] == 10
+    assert "auto-binding" in cap.err
+
+
+def test_concurrent_opens_one_wins_and_none_is_silently_closed(env):
+    import threading
+    _t, _root, repo = env
+    results = []
+    gate = threading.Barrier(8)
+
+    def go():
+        gate.wait()
+        try:
+            results.append(brief.create("widget", usd=1, hours=10, repo=str(repo), replace=False)[0])
+        except brief.ActiveContract:
+            results.append(None)
+
+    ts = [threading.Thread(target=go) for _ in range(8)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert len([r for r in results if r]) == 1
+    files = list((config.TEYLA_DIR / "briefs" / "widget").glob("*.toml"))
+    assert len(files) == 1 and "closed" not in files[0].read_text()

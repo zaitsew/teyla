@@ -181,9 +181,28 @@ def _parse(ts: str) -> _dt.datetime:
 
 def create(product: str, *, goal: str = "", slice_: str = "", platform: str = "", usd: float, hours: float,
            gates: list[str] | None = None, repo: str = ".", sessions: list[str] | None = None,
-           ) -> tuple[pathlib.Path, dict]:
+           replace: bool = True) -> tuple[pathlib.Path, dict]:
+    """Open a contract. With replace=False, raise ActiveContract when another is active, unclosed and unexpired.
+    The check, the close of the previous one and the activation run under one exclusive per-product lock."""
+    import fcntl
     d = briefs_dir() / _safe(product)
     d.mkdir(parents=True, exist_ok=True)
+    with open(d / ".open.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not replace:
+            old = blocking_active(product)
+            if old:
+                raise ActiveContract(old)
+        return _create_locked(d, product, goal, slice_, platform, usd, hours, gates, repo, sessions)
+
+
+class ActiveContract(Exception):
+    def __init__(self, found):
+        super().__init__(found[0].name)
+        self.path, self.contract = found
+
+
+def _create_locked(d, product, goal, slice_, platform, usd, hours, gates, repo, sessions):
     prev = load_active(product) if active_path(product) else None
     if prev:
         pc = prev[1]
@@ -387,17 +406,19 @@ def cmd_brief(args) -> int:
         if args.usd is None or args.hours is None:
             print("teyla brief: a new contract needs --usd and --hours", file=sys.stderr)
             return 2
-        old = blocking_active(product)
-        if old and not getattr(args, "replace", False):
-            print(f"teyla brief: {product} already has an active contract ({old[0].name}: "
-                  f"{old[1].get('goal') or 'no goal'}). Close it with `teyla brief {product} --close`, "
+        try:
+            path, c = create(product, goal=args.goal or "", slice_=args.slice or "", platform=args.platform or "",
+                             usd=args.usd, hours=args.hours, gates=args.gate, repo=cwd, sessions=pin_ids,
+                             replace=bool(getattr(args, "replace", False)))
+        except ActiveContract as e:
+            print(f"teyla brief: {product} already has an active contract ({e.path.name}: "
+                  f"{e.contract.get('goal') or 'no goal'}). Close it with `teyla brief {product} --close`, "
                   "or open this one with --replace.", file=sys.stderr)
             return 1
-        path, c = create(product, goal=args.goal or "", slice_=args.slice or "", platform=args.platform or "",
-                         usd=args.usd, hours=args.hours, gates=args.gate, repo=cwd, sessions=pin_ids)
         if not pin_ids:
             print("note: auto-binding counts every session of this product that starts a subagent. "
-                  "To count only your own, pin it: add --session ID (repeatable), or --add-session ID later.")
+                  "To count only your own, pin it: add --session ID (repeatable), or --add-session ID later.",
+                  file=sys.stderr)
     else:
         found = load_active(product)
         if not found:
