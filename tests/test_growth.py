@@ -14,6 +14,7 @@ import pytest
 from teyla import cli, corrections, growth, growth_publish, growth_quality, registry
 
 REAL_CALL_MODEL = growth.call_model
+REAL_SOURCES = growth.SOURCES
 NOW = time.mktime((2026, 11, 4, 9, 0, 0, 0, 0, -1))
 DAY = "2026-11-04"
 TERM = "zzprivateterm"
@@ -82,6 +83,8 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("TEYLA_PRIVATE_TERMS", str(terms))
     monkeypatch.setenv("BI_DATA_DIR", str(tmp_path / "nobi"))
     monkeypatch.setattr(growth, "_pr_cache", lambda: {})
+    # the weekly week-results idea is tested in test_growth_formats; elsewhere it would be one more item in every harvest
+    monkeypatch.setattr(growth, "SOURCES", tuple(s for s in REAL_SOURCES if s[0] != "week"))
     monkeypatch.setattr(growth, "_sessions", lambda days: [])
     monkeypatch.setattr(growth, "run_gh", lambda args, timeout=60: (1, ""))
     monkeypatch.setattr(growth, "run_grok", lambda p, model="x", timeout=1: (1, ""))
@@ -496,7 +499,8 @@ def test_clip_drafts_use_the_script_model_and_spec_product_asks_for_a_test(env, 
     store, cfg = make(channels=("x-en",))
     (it,) = planned(store, cfg, idea="What if Big Translator was truly AI-native?", fmt="spec-product")
     fm = fake_model([dict(GOOD, hook="Imagine Alpha with an agent as its first user", body="Imagine Alpha with an agent as its first user. It reads your steps and plans the week.",
-                          script="Imagine Alpha ...", acceptance_test="A prototype answers one step question.")])
+                          script="Imagine Alpha ...", acceptance_test="A prototype answers one step question.",
+                          first_comment="Would you ship this in Big Translator?")])
     monkeypatch.setattr(growth, "call_model", fm)
     growth.run_draft(store, cfg, NOW, limit=2, day=None, dry=False)
     got = growth.Store().get(it["id"])

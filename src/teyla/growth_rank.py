@@ -104,6 +104,8 @@ def history(store: g.Store) -> dict[tuple[str, str], tuple[int, int]]:
 
 def prior(item: dict) -> float:
     cls = story_class(item)
+    if cls in g.formats.PRIOR:                       # the owner's formats (growth_formats.PRIOR)
+        return g.formats.PRIOR[cls]
     if cls == "story":
         return PRIOR["story"]
     if cls == "lesson-partial":

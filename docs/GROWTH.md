@@ -5,17 +5,73 @@ a review step and a packet you post by hand. The owner films sometimes and appro
 is Teyla's job: ideas, drafts, checks, formats, packets.
 
 Daily volume does not come from filming. It comes from what already happens every day: merged pull requests,
-releases, agent sessions, the week's spend, corrections, the owner's notes tagged `#content`, the news in
+releases, agent sessions, the week's spend, corrections, the owner's notes tagged `#content` (or another format tag), the news in
 Beyond Intelligence, and the stories the weekly miner finds in his own records. Filmed footage is a richer input a few times a week. A slot never waits for it.
 
 ## The formats
 
-- **True Vibe Coding** is a filmed bet: agents get a named job, and the owner asks whether it will finish before he is
-  back from a ride or a trip. Only `teyla growth ride` and footage make this format. A merged PR is a worklog.
-- **Spec Product** works like a spec ad, about another company's product: "What if <product> was truly AI-native?", with
-  a working prototype, marked unofficial. It never targets one of your own products. Ideas come from `[[spec_target]]`
-  in the config (`product`, `idea`) and from notes tagged `#spec`.
-- **Worklog, Lesson, Reaction and Product spotlight** fill the other slots from the daily sources.
+A note tag picks the format. A plain `#content` note stays a lesson. If a note carries several tags, the first in this
+list wins. Each format has a drafting brief the model gets and a planner prior (how likely the editor passes a draft of
+it before the editor's own history moves that number).
+
+| Tag | Format | What it is | Prior |
+|---|---|---|---|
+| `#spec` | `spec-product` | "What if <product> was truly AI-native?" about another company's product, with a working prototype, marked unofficial. Never one of your own products. Ideas also come from `[[spec_target]]` in the config (`product`, `idea`, optional `founder` or `handle`, an `@name` for the first reply). | story rules |
+| `#tvc` | `true-vibe-coding` | A filmed bet: agents get a named job and the owner asks whether it will finish before he is back. `teyla growth ride` and footage make it; a `#tvc` note adds one by hand. A merged PR is a worklog. | 0.4 |
+| `#wow` | `wow-use-case` | One surprising real use of an AI product or agent, shown working. | 0.6 |
+| `#case` | `case-study` | A business, a startup or a personal-productivity case, with the numbers the facts carry and no others. | 0.55 |
+| `#week` | `week-results` | The week in counts Teyla gathered: merged pull requests, items published, calls and meetings you logged. See "Week results". | 0.6 |
+| `#ainative` | `ai-native` | "How to become AI-native?", with receipts from the owner's own factory (the facts carry last week's counts too). | 0.5 |
+| `#predict` | `prediction` | Where a technology goes, as a dated claim. The model also writes `claim`, one sentence a later post can check; `teyla growth published` stores it as a `prediction` row in the ledger with the day and the post URL. | 0.4 |
+| `#viral` | `viral-remix` | Borrows the structure of a viral post, never its claims, numbers, names or wording. The note must carry the source URL; it stays on the item (`source_url`) and never enters the post. A `#viral` note with no URL makes no idea. | 0.35 |
+| `#inadviser` | `inadviser-verdict` | A value-for-money verdict on one product, from an `inadviser.com` page the note links (a note with no such URL makes no idea). A verdict on value, never financial advice. | 0.5 |
+| `#research` | `research-note` | A research note about a problem or a product before it is built. The product may be one that is in no registry (a planned product): the note names it, the draft says "researching" and never that the product exists, launched, ships or can be tried. A checked claim word fails the draft. | 0.45 |
+| `#content` | `lesson` | One thing learned the hard way, and the rule that came after it. | story rules |
+
+**Worklog, Reaction and Product spotlight** fill the other slots from the daily sources (merged PRs, trends, the
+14-day product rotation). The number and artifact rules of "The planner" apply to lessons and spec products; the new
+formats use their prior and the editor's history.
+
+Ideas tagged `#spec`, `#tvc`, `#wow` are clips (shown on screen); the rest are text first. A note's product is set only
+when it is a `public_products` entry (its own product, or the one public product its text names). A note that names a
+product you did not list as public is blocked like any other idea.
+
+### Week results
+
+`week-results` uses only counts Teyla gathered, for the last completed ISO week (Monday to Sunday): merged pull
+requests (from the portfolio cache; no line when the cache is empty, never a zero), content items published (the
+ledger), and calls and meetings you logged yourself (`teyla growth log`; a row an agent only claimed counts for
+nothing). The brief says so, and the guard refuses every other number: revenue, MRR, conversion and user counts stay
+blocked in drafts, and a `#week` note's own numbers are dropped, so its text gives the angle and the counts give the
+facts. One idea is made per completed week by harvest; a `#week` note adds another.
+
+## Calls to action
+
+One call to action (CTA) per post, chosen by format. The model writes the words; the code builds every link and every
+tag, so a model cannot invent a link or tag a stranger.
+
+| Format | CTA | Where |
+|---|---|---|
+| `spec-product` | a question to the founder; the company or founder is tagged **only in the first reply**, never "let's meet" in the post body | first comment |
+| `true-vibe-coding`, `wow-use-case`, `inadviser-verdict` | early access | link in the first comment |
+| `case-study`, `ai-native` | "tell me about your team, let's talk" | last line of the body |
+| `week-results`, `prediction` | follow for the next one | last line of the body |
+| `research-note` | "join the research" | form link in the first comment |
+| the rest | none | |
+
+- **The early-access link** is `https://accounts.fabriquefutur.com/early/<product>?ref=<platform>`. The product must be
+  public and have a form at the accounts hub; a form is named without hyphens (`some-app` is `someapp`). Teyla reads
+  which forms exist from the hub's cockpit source (`~/.teyla/gtm/sources/accounts-early-access.json`), so a new form is used
+  from the next run; `early_products` in the config replaces that list (an empty list means none). Without a form the
+  post carries no early-access CTA, and `teyla growth doctor` says so. The link goes in the first comment on every network, never in the
+  post body (a link in the body fails the draft).
+- **The research link** is `research_form` in the config (an `https://` address) with `?ref=<platform>`. Without it a
+  `#research` draft is held before any model call, with the reason.
+- **No comment-gating.** "Comment X to get access", "reply with X to join" and the like fail the leak check
+  (`engagement-bait`), and the editor scores them 0.
+- **A public CTA never mentions hiring, a job search or an employer** (POLICY section 19; the kinds `hiring`,
+  `job-search` and `employer` block a draft). Whether someone can hire the owner is decided in a private conversation.
+- The owner's own `edit` is not held to these rules; the factory's drafts are.
 
 ## The daily loop
 
@@ -315,8 +371,9 @@ end an item. Only an approved item gets a packet or a published mark.
 - A draft names only products you list as `public_products` in the config. Everything else is "unreleased".
 - Every draft and every idea is scanned by the leak scanner and your private terms file. A hit blocks the item and
   names the kind of the term, never its value.
-- A draft never mentions a job search or an employer, revenue or user counts, money advice, politics, health
-  or family, and every number in it must appear in the facts Teyla gathered.
+- A draft never mentions a job search, hiring or an employer, revenue, MRR, conversion or user counts, money advice,
+  politics, health or family, never gates something behind a comment, and every number in it must appear in the facts
+  Teyla gathered.
 - The voice chart of the language decides the voice. A draft is written in its language, never translated. It
   passes `teyla voice check` or it fails, after one retry.
 - Teyla publishes nothing by itself. An item goes out only after you approved it and then ran `teyla growth publish`
@@ -365,8 +422,8 @@ teyla growth init --public teyla        # writes ~/.teyla/growth/config.toml
 teyla growth doctor                     # what is missing, one line each
 ```
 
-`doctor` checks the voice chart, ffmpeg, filmare, whisper, Beyond Intelligence, grok, claude and the private terms
-file. For speech to text it prints `brew install whisper-cpp` and the model size; it downloads nothing.
+`doctor` checks the voice chart, ffmpeg, filmare, whisper, Beyond Intelligence, grok, claude, the private terms
+file, the research form link and the early-access forms of your public products. For speech to text it prints `brew install whisper-cpp` and the model size; it downloads nothing.
 Platform credentials are not needed: the manual packet works with none. `teyla growth connect` adds them, network by network.
 
 ## The console

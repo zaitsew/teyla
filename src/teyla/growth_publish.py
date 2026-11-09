@@ -766,6 +766,7 @@ def _publish_locked(store, cfg, it, now, row, network, idem, *, retry, h, adapte
                       published_by=network, published_via="api", publish_idem=idem)
     store.log("published", now, id=it["id"], product=it.get("product"), platform=network, language=it.get("language"),
               url=res.url, by="owner-approved", via="api", idem=idem)
+    growth.log_prediction(store, it, now, res.url)
     return dict(row, status="published", url=res.url, warning=res.warning, message="published")
 
 

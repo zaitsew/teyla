@@ -38,10 +38,10 @@ import time
 import tomllib
 import urllib.parse
 
-from . import corrections, growth_engage, growth_publish, net, registry, state, voice
+from . import corrections, growth_engage, growth_formats as formats, growth_publish, net, registry, state, voice
 
 KINDS = ("post", "thread", "clip", "carousel", "episode")
-FORMATS = ("true-vibe-coding", "spec-product", "worklog", "lesson", "reaction", "product-spotlight")
+FORMATS = ("true-vibe-coding", "spec-product", "worklog", "lesson", "reaction", "product-spotlight") + formats.NEW + formats.NEW
 STATUSES = ("idea", "draft", "checked", "review", "approved", "ready", "published", "failed", "rejected")
 # Everything that counts as +1 on the activity graph, and the `--kind` values of `teyla growth log`.
 # `response` is an outcome (someone answered you): it is logged and shown, but it is not an attempt and not a +1.
@@ -258,6 +258,8 @@ def default_config_text(public: list[str] | None = None) -> str:
          f"public_products = {_toml_list(public or [])}", "",
          "# voice_chart = \"~/.teyla/voice/<name>\"    # a folder with en.md, es.md, ru.md; default: the only one there",
          "# bi_data = \"~/repos/beyond-intelligence/web/data\"", "x_scan = false",
+         "# research_form = \"https://...\"    # the form a #research post links to, in its first comment",
+         "# early_products = [\"<id>\"]    # products with an early-access form; default: the ones the accounts hub reports",
          "# footage_folder = \"~/Library/Mobile Documents/com~apple~CloudDocs/Footage\"    # `growth ingest` reads video here",
          "# whisper_model = \"~/models/ggml-small.bin\"    # a file you downloaded; Teyla downloads nothing", "",
          "[models]", f"short = \"{DEFAULTS['model_short']}\"", f"script = \"{DEFAULTS['model_script']}\"", "",
@@ -273,7 +275,7 @@ def default_config_text(public: list[str] | None = None) -> str:
 
 
 def load_config(store: Store) -> dict:
-    cfg = dict(DEFAULTS, public_products=[], outreach_repos=[], channels=[], errors=[], exists=store.config_path.is_file(),
+    cfg = dict(DEFAULTS, public_products=[], outreach_repos=[], research_form="", channels=[], errors=[], exists=store.config_path.is_file(),
                publish=dict(x_paid=False, youtube_privacy="public", redirect={}))
     raw: dict = {}
     if cfg["exists"]:
@@ -289,6 +291,10 @@ def load_config(store: Store) -> dict:
             cfg[k] = raw[k]
     if isinstance(raw.get("x_scan"), bool):
         cfg["x_scan"] = raw["x_scan"]
+    if isinstance(raw.get("research_form"), str) and raw["research_form"].strip():
+        cfg["research_form"] = raw["research_form"].strip()
+    if isinstance(raw.get("early_products"), list):
+        cfg["early_products"] = [str(x).lower() for x in raw["early_products"]]
     if isinstance(raw.get("outreach_repos"), list):
         cfg["outreach_repos"] = [str(x).lower() for x in raw["outreach_repos"]]
     if isinstance(raw.get("spec_target"), list):
@@ -342,15 +348,23 @@ _NEVER = {
                   r"job offers?|interview loops?|(visa|o-1a?|eb-1a?) (petition|evidence))\b",
     "employer": r"\b(my employer|my day job|my boss|my manager)\b",
     "revenue-or-runway": r"\b(revenue|mrr|arr|runway|burn rate|valuation|profit(s|able)?)\b",
+    "conversion": r"\b(conversion (rates?|funnels?|numbers?)|conversions? (rose|fell|grew|doubled|went)|\d[\d.,]*\s*%\s+(conversion|converted)|converted \d)",
+    "hiring": r"\b(hire me|hiring me|hire us|available for (hire|work)|open to (new )?(opportunities|offers|roles)|"
+              r"looking for (new )?(opportunities|roles)|seeking (a )?(role|position|opportunit\w+)|we'?re hiring|now hiring|"
+              r"job openings?|work for me|join my team|can hire me)\b",
     "user-count": r"\b\d[\d,.]*k?\s+(active\s+|paying\s+)?(users|customers|subscribers|downloads)\b",
     "money-advice": r"\b(financial advice|investment advice|invest in|buy (the )?(stock|crypto|bitcoin))\b",
     "result-promise": r"\b(10x|guaranteed|you will (earn|save|ship|make))\b",
-    "engagement-bait": r"\b(like if|rt if|retweet if|tag (a|your) (friend|stranger)|comment [\"'“]?\w+[\"'”]? (and|&) i)",
+    "engagement-bait": r"\b(like if|rt if|retweet if|tag (a|your) (friend|stranger)|comment [\"'“]?\w+[\"'”]? (and|&) i|"
+                       r"(comment|reply|dm|message)( me)?( with)? [\"'“]?[\w-]+[\"'”]? (to|and) (get|receive|access|unlock|join|win|be)\b|"
+                       r"(comment|reply) below (to|and) (get|receive|access|unlock|join|win))",
     "politics-or-religion": r"\b(politics|political|election|religion|religious)\b",
     "health-or-family": r"\b(my (wife|husband|kids?|children|daughter|son|mother|father|doctor)|diagnos\w+|my health)\b",
 }
 # The same kinds in Spanish and Russian (the channels' other languages). Russian is written as escapes.
 _NEVER_MORE = {
+    "hiring": r"\b(contr[a\u00e1]tame|disponible para (trabajar|contrataci[o\u00f3]n)|\u043d\u0430\u0439\u043c\u0438\u0442\u0435 \u043c\u0435\u043d\u044f|"
+              r"\u0432\u043e\u0437\u044c\u043c\u0438\u0442\u0435 \u043c\u0435\u043d\u044f \u043d\u0430 \u0440\u0430\u0431\u043e\u0442\u0443)\b",
     "job-search": r"\b(busco (un )?(trabajo|empleo)|buscando (un )?(trabajo|empleo)|reclutador(es)?|mi curr[i\u00ed]culum|"
                   r"b[u\u00fa]squeda de empleo|\u0438\u0449\u0443 (\u043d\u043e\u0432\u0443\u044e )?\u0440\u0430\u0431\u043e\u0442\u0443|"
                   r"\u043f\u043e\u0438\u0441\u043a \u0440\u0430\u0431\u043e\u0442\u044b|\u0440\u0435\u043a\u0440\u0443\u0442\u0435\u0440\w*|"
@@ -847,21 +861,48 @@ def src_corrections(c: Ctx) -> tuple[int, str]:
     return (1 if made else 0), ""
 
 
+def week_counts(c: Ctx) -> list[str]:
+    """The facts of the last completed week: counts Teyla gathered, and no other number (formats.week_facts)."""
+    cache = _pr_cache()
+    days = None
+    if cache:
+        days = [day_of(at) for row in cache.values() for pr in row.get("prs") or []
+                if (at := parse_ts(pr.get("merged_at"))) is not None]
+    return formats.week_facts(day_of(c.now), days, c.store.ledger(), is_claimed, row_n, MEETING_KINDS)
+
+
 def src_notes(c: Ctx) -> tuple[int, str]:
-    """Notes tagged #content become lessons; notes tagged #spec become spec-product ideas."""
+    """A note's tag picks the format (formats.TAGS): #spec, #tvc, #wow, #case, #week, #ainative, #predict, #viral,
+    #inadviser, #research; plain #content stays a lesson."""
     from . import notes
     made = 0
+    skipped: collections.Counter = collections.Counter()
+    counts: list[str] | None = None
     for n in notes.listing():
-        spec = bool(re.search(r"(?<!\w)#spec\b", n["text"], re.I))
-        if not spec and not re.search(r"(?<!\w)#content\b", n["text"], re.I):
+        fmt = formats.note_format(n["text"])
+        if not fmt:
             continue
-        text = " ".join(re.sub(r"(?<!\w)#(content|spec)\b", "", n["text"], flags=re.I).split())
-        pid = n["product"] if n["product"] in c.public else ""
-        if text and c.add(ref=f"note:{n['id']}", source="note", kind="clip" if spec else "post", format="spec-product" if spec else "lesson",
-                          product="" if spec else pid, idea=text[:400], facts=[text[:400]], owner=True,
-                          scores=dict(relevance=4, demonstrable=3, novelty=4, momentum=3)):
+        if fmt in ("week-results", "ai-native") and counts is None:
+            counts = week_counts(c)
+        fields, why = formats.note_idea(fmt, formats.strip_tags(n["text"]), note_product=n["product"], public=c.public,
+                                        reg=c.reg, counts=counts or [])
+        if fields is None:
+            skipped[f"#{next(t for t, f in formats.TAGS if f == fmt)} {why}"] += 1
+            continue
+        url = fields.pop("url", "")
+        if c.add(ref=f"note:{n['id']}", source="note", url=url, **fields):
             made += 1
-    return made, ""
+    return made, "; ".join(f"{v} note(s) skipped: {k}" for k, v in sorted(skipped.items()))
+
+
+def src_week(c: Ctx) -> tuple[int, str]:
+    """One week-results idea per completed ISO week, made of counts Teyla gathered (merged PRs, items published, calls
+    and meetings you logged). Never revenue, MRR, conversion or users."""
+    start, end, ref = formats.last_week(day_of(c.now))
+    made = c.add(ref=f"week:{ref}", source="week", kind="post", format="week-results", product="",
+                 idea=f"Week results, {start} to {end}", facts=week_counts(c),
+                 scores=dict(relevance=4, demonstrable=3, novelty=3, momentum=4))
+    return (1 if made else 0), ""
 
 
 def src_evergreen(c: Ctx) -> tuple[int, str]:
@@ -895,7 +936,8 @@ def src_specs(c: Ctx) -> tuple[int, str]:
         facts = [f"{name} is another company's product; the prototype is unofficial and not affiliated with it"]
         if angle:
             facts.append(f"The owner's angle: {angle}")
-        if c.add(ref=f"spec:{name.lower()}", source="spec", kind="clip", format="spec-product",
+        tags = formats.handles(" ".join(str(t.get(k) or "") for k in ("founder", "handle")))
+        if c.add(ref=f"spec:{name.lower()}", source="spec", kind="clip", format="spec-product", tags=tags,
                  idea=f"What if {name} was truly AI-native?", facts=facts, owner=True,
                  scores=dict(relevance=4, demonstrable=4, novelty=4, momentum=2)):
             made += 1
@@ -1135,7 +1177,7 @@ def src_trends(c: Ctx) -> tuple[int, str]:
 
 
 SOURCES = (("prs", src_prs), ("releases", src_releases), ("sessions", src_sessions), ("ledger", src_ledger),
-           ("corrections", src_corrections), ("notes", src_notes), ("stories", src_stories), ("evergreen", src_evergreen), ("specs", src_specs),
+           ("corrections", src_corrections), ("notes", src_notes), ("week", src_week), ("stories", src_stories), ("evergreen", src_evergreen), ("specs", src_specs),
            ("trends", src_trends))
 
 
@@ -1263,7 +1305,8 @@ def plan(store: Store, cfg: dict, day: str, now: float, *, commit: bool = True, 
             item = make_item(store, now, kind=PLATFORMS[ch["platform"]]["kind"], format=m["format"], idea=m["idea"],
                              platform=ch["platform"], language=ch["language"], product=m["product"], hook=m.get("hook", ""),
                              facts=m.get("facts") or [], sources=m.get("sources") or [], day=day, channel=key, parent=m["id"],
-                             owner=bool(m.get("owner")), source_material=m.get("source_material"))
+                             owner=bool(m.get("owner")), source_material=m.get("source_material"),
+                             tags=list(m.get("tags") or []), source_url=m.get("source_url", ""))
             item["score"], item["scores"] = m["score"], m["scores"]
             m.setdefault("assigned", []).append(key)
             used_today[m["id"]] += 1
@@ -1345,7 +1388,11 @@ DRAFT_SYSTEM = (
     "Reply with strict JSON only, no prose and no code fence: "
     '{"hook": "<the first line, the point>", "body": "<the post or caption, ready to paste, with the hook as its first sentence>", '
     '"first_comment": "<optional, one line or empty>", "script": "<for a clip: the spoken script, otherwise empty>", '
-    '"acceptance_test": "<only for the spec-product format: one sentence a prototype must pass in one day, otherwise empty>"}.'
+    '"acceptance_test": "<only for the spec-product format: one sentence a prototype must pass in one day, otherwise empty>", '
+    '"claim": "<only for the prediction format: the dated claim as one sentence a later post can check, otherwise empty>"}. '
+    "The cta field of the JSON you get says which one call to action the post has and how to write it. One call to action "
+    "per post. Never write a link or an @ tag yourself: the code adds them. Never ask a reader to comment, reply or message "
+    "a keyword to get something. A call to action never mentions hiring, a job search or an employer."
 )
 
 FORMAT_BRIEF = {
@@ -1355,6 +1402,7 @@ FORMAT_BRIEF = {
     "lesson": "One thing learned the hard way, and the rule that came after it.",
     "reaction": "A builder's reaction to this news: the fact first, then the one concrete thing he will try on his own repo or product (the fact that starts with 'What I will try'), not an opinion on hype.",
     "product-spotlight": "One product, one job it does for one person, plain words.",
+    **formats.BRIEFS,
 }
 
 
@@ -1444,6 +1492,9 @@ def check_item(text: str, item: dict, chart_dir: pathlib.Path | None, guard: Gua
     vrep = dict(ok=not any(f["level"] == "fail" for f in findings), chart=chart_name,
                 findings=[dict(level=f["level"], rule=f["rule"], message=f["message"]) for f in findings])
     hits = guard.check(text, hook, script, item.get("first_comment", ""), facts=" ".join(item.get("facts") or []) + " " + item.get("idea", ""))
+    if editorial:                                   # the owner's own edit is not held to the factory's CTA rules
+        vrep["findings"] += [dict(f) for f in formats.findings(item, text, hook, script)]
+        vrep["ok"] = not any(f["level"] == "fail" for f in vrep["findings"])
     return vrep, dict(ok=not hits, kinds=[h["kind"] for h in hits])
 
 
@@ -1464,6 +1515,7 @@ def draft_payload(store: Store, item: dict, chart_dir: pathlib.Path | None, reg:
         limit_characters=spec["limit"], video=spec["video"], idea=item["idea"], hook_hint=item.get("hook", ""),
         product=dict(name=p.get("name") or item["product"], summary=p.get("summary", "")) if item["product"] else None,
         facts=item.get("facts") or [], source_material=item.get("source_material"),
+        cta=dict(kind=(item.get("cta") or {}).get("kind", "none"), brief=formats.brief(item.get("cta") or {})),
         voice_chart=dict(text=chart_text, banned=banned, preferred=preferred), owner_brief=brief, never_post=never,
         recent_rejections=recent_rejections(store, item),
         dubbed_label=DUB_LABEL.get(item["language"], "") if item.get("dubbed") else "")
@@ -1478,9 +1530,10 @@ def apply_reply(item: dict, reply) -> str:
         raise AgentError("the reply has no `body`")
     item["body"] = reply["body"].strip()
     item["hook"] = clip_text(str(reply.get("hook") or "") or item["body"], 300)
-    for k in ("first_comment", "script", "acceptance_test"):
+    for k in ("first_comment", "script", "acceptance_test", "claim"):
         v = reply.get(k)
         item[k] = v.strip() if isinstance(v, str) else ""
+    formats.apply_cta(item)
     return item["body"]
 
 
@@ -1495,6 +1548,15 @@ def draft_one(store: Store, cfg: dict, item: dict, chart_dir, guard: Guard, reg:
         q._hold(item, "no video to post: a clip needs a rendered video (`teyla growth cut`); no text is drafted for it")
         store.save(item, now)
         store.log("held", now, id=item["id"], reason="no-video")
+        return dict(row, state="draft", reason=item["hold_reason"])
+    cta = formats.resolve(item, cfg, reg)
+    item["cta"] = dict(kind=cta["kind"], link=cta["link"], handles=cta["handles"])
+    if cta["note"]:
+        store.log("cta", now, id=item["id"], note=cta["note"])
+    if cta["hold"]:                                  # no model call: the post could not carry its call to action
+        q._hold(item, cta["hold"])
+        store.save(item, now)
+        store.log("held", now, id=item["id"], reason="cta")
         return dict(row, state="draft", reason=item["hold_reason"])
     from . import growth_rank as rank
     thin = rank.thin_reason(item, store.items().get(item.get("parent") or ""))
@@ -1685,9 +1747,11 @@ def render_item(it: dict, full: bool = False) -> str:
         body = it["body"] if full else clip_text(it["body"], 160)
         L.append(f"  body: {body}" if not full else "  body:\n    " + body.replace("\n", "\n    "))
     if full:
-        for k in ("hook", "first_comment", "script", "acceptance_test"):
+        for k in ("hook", "first_comment", "script", "acceptance_test", "claim"):
             if it.get(k):
                 L.append(f"  {k}: {it[k]}")
+        if (it.get("cta") or {}).get("kind", "none") != "none":
+            L.append(f"  cta: {it['cta']['kind']}" + (f" -> {it['cta']['link']}" if it["cta"].get("link") else ""))
         L.append(f"  facts: {'; '.join(it.get('facts') or [])}")
         for s in it.get("sources") or []:
             L.append(f"  source: {s.get('kind')} {s.get('url') or s.get('ref')}")
@@ -1766,6 +1830,12 @@ def packets_for_day(store: Store, day: str, now: float, cfg: dict) -> list[tuple
     return out
 
 
+def log_prediction(store: Store, it: dict, now: float, url: str) -> None:
+    """A published prediction keeps its dated claim in the ledger, so a later post can check it (every publish path calls this)."""
+    if it.get("format") == "prediction" and it.get("claim"):
+        store.log("prediction", now, id=it["id"], claim=it["claim"], url=url)
+
+
 def mark_published(store: Store, ref: str, url: str, now: float, publisher: str = "manual") -> tuple[dict, str]:
     it = store.get(ref)
     try:
@@ -1775,6 +1845,7 @@ def mark_published(store: Store, ref: str, url: str, now: float, publisher: str 
     set_status(store, it, "published", now, published_url=res.url, published_at=iso(now), published_by=publisher)
     store.log("published", now, id=it["id"], product=it["product"], platform=it["platform"], language=it["language"],
               url=res.url)
+    log_prediction(store, it, now, res.url)
     return it, res.warning
 
 
@@ -1867,6 +1938,12 @@ def doctor_rows(store: Store, cfg: dict, now: float) -> list[tuple[str, str, str
         add("ok" if (cd / "BRIEF.md").is_file() else "note", "voice brief", "BRIEF.md found" if (cd / "BRIEF.md").is_file() else "no BRIEF.md: drafts lose the owner's never-post list")
     add("ok" if cfg["public_products"] else "missing", "public products",
         ", ".join(cfg["public_products"]) if cfg["public_products"] else "none listed: no product may be named. Set public_products in config.toml")
+    add("ok" if formats.research_link(cfg, "x") else "note", "research form",
+        "set" if formats.research_link(cfg, "x") else "no research_form in config.toml: a #research post is held until it has a form link")
+    forms = formats.early_forms(cfg)
+    miss = [x for x in cfg["public_products"] if formats.early_slug(x) not in forms]
+    add("ok" if not miss else "note", "early access",
+        "every public product has a form" if not miss else f"no early-access form known for {', '.join(miss)}: posts about them carry no early-access link (the hub reports its forms in ~/.teyla/gtm/sources/accounts-early-access.json, or set early_products)")
     from . import leak
     add("ok" if leak.load_config(None).terms else "note", "private terms", "loaded" if leak.load_config(None).terms else "no ~/.config/teyla/private-terms.txt: only the generic leak rules run")
     for tool, why, fix in (("ffmpeg", "cuts and formats video", "brew install ffmpeg"),
