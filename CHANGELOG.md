@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.47.0 — 2026-11-09 — The owner's content formats and calls to action
 
 - **`teyla growth` knows the owner's formats and calls to action.** A note tag picks the format: `#spec`, `#tvc`, `#wow`, `#case`, `#week`, `#ainative`, `#predict`, `#viral`, `#inadviser`, `#research` (plain `#content` stays a lesson). New formats: `wow-use-case`, `case-study`, `week-results`, `ai-native`, `prediction`, `viral-remix`, `inadviser-verdict`, `research-note`, each with a drafting brief and a planner prior. One call to action per post, chosen by format: a founder question with the tag only in the first reply (spec), early access (a link built from `https://accounts.fabriquefutur.com/early/<product>?ref=<platform>`, in the first comment, never the body), "tell me about your team, let's talk" (case study, AI-native), follow (week results, prediction), join the research (a form link from `research_form`). The guard now refuses comment-gating, hiring talk and conversion numbers; `week-results` uses only counts Teyla gathered (merged PRs, items published, logged calls and meetings), made once per completed week; a prediction's dated claim is stored when it is published; a `#research` note about a product that is in no registry drafts a post that never says the product exists. `teyla growth doctor` reports the research form and the early-access forms. See docs/GROWTH.md, "The formats" and "Calls to action".
 
