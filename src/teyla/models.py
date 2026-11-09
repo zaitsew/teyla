@@ -333,7 +333,7 @@ def _is_descriptive_only(name: str) -> bool:
 
 
 def resolve_ladder_entry(name: str, provider: str, models_dev: dict, cli_ids: list[str]) -> dict | None:
-    """Map a human ladder-table entry ('Grok 4.6', 'Claude Fable 5.1', 'GPT-6 Astra') to a concrete
+    """Map a human ladder-table entry ('Grok 4.6', 'Claude Fable 5.2', 'GPT-6 Astra') to a concrete
     id. Returns {'id', 'family', 'release_date', 'cost', 'source'} or None — None is LADDER-UNKNOWN.
     A pure-prose entry with no model claim in it (no digit, no non-filler word) resolves to a
     descriptive placeholder rather than None, so it never causes a false LADDER-UNKNOWN."""

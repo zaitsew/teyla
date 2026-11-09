@@ -14,6 +14,8 @@ CATALOGUE = {
                             "cost": {"input": 10, "output": 50, "cache_read": 1, "cache_write": 12.5}},
         "claude-fable-5-1": {"name": "Claude Fable 5.1", "family": "claude-fable", "release_date": "2026-09-01",
                               "cost": {"input": 10, "output": 50, "cache_read": 0.25, "cache_write": 12.5}},
+        "claude-fable-5-2": {"name": "Claude Fable 5.2", "family": "claude-fable", "release_date": "2026-11-09",
+                              "cost": {"input": 8, "output": 40, "cache_read": 0.2, "cache_write": 10}},
         "claude-opus-5": {"name": "Claude Opus 5", "family": "claude-opus", "release_date": "2026-07-24",
                            "cost": {"input": 5, "output": 25, "cache_read": 0.5, "cache_write": 6.25}},
         "claude-sonnet-5": {"name": "Claude Sonnet 5", "family": "claude-sonnet", "release_date": "2026-06-29",
@@ -46,7 +48,7 @@ POLICY_FIXTURE = """# How to run a session
 <!-- ladder:start — maintained by `teyla models --write-policy` -->
 | provider | orchestrate / hardest tasks | volume work | throwaway / triage | note |
 |---|---|---|---|---|
-| Anthropic | Claude Fable 5.1 | Opus 5, Sonnet 5 | Haiku 4.5 | anthropic note |
+| Anthropic | Claude Fable 5.2 | Opus 5, Sonnet 5 | Haiku 4.5 | anthropic note |
 | OpenAI | GPT-6 Astra | GPT-5.6 Sol/Terra | GPT-5.6 Luna | openai note |
 | xAI | Grok 4.6 | Grok 4.6, Grok 4.5 | — | xai note |
 <!-- ladder:end -->
@@ -101,7 +103,7 @@ def _isolated_paths(tmp_path, monkeypatch):
 def test_parse_ladder_splits_cells_and_expands_slash_prefix():
     ladder = models.parse_ladder(POLICY_FIXTURE)
     assert set(ladder) == {"anthropic", "openai", "xai"}
-    assert ladder["anthropic"]["orchestrate"] == ["Claude Fable 5.1"]
+    assert ladder["anthropic"]["orchestrate"] == ["Claude Fable 5.2"]
     assert ladder["anthropic"]["volume"] == ["Opus 5", "Sonnet 5"]
     assert ladder["anthropic"]["triage"] == ["Haiku 4.5"]
     # "GPT-5.6 Sol/Terra" -> two entries, prefix shared
@@ -142,6 +144,7 @@ def test_parse_ladder_no_markers_returns_empty():
 
 @pytest.mark.parametrize("name,provider,expect_id", [
     ("Claude Fable 5.1", "anthropic", "claude-fable-5-1"),
+    ("Claude Fable 5.2", "anthropic", "claude-fable-5-2"),
     ("Opus 5", "anthropic", "claude-opus-5"),
     ("Sonnet 5", "anthropic", "claude-sonnet-5"),
     ("Haiku 4.5", "anthropic", "claude-haiku-4-5"),
@@ -184,7 +187,7 @@ def _snapshot(**kw):
 
 
 def test_drift_flags_ladder_unknown_model():
-    text = POLICY_FIXTURE.replace("Claude Fable 5.1 |", "Claude Zeta 9 |", 1)
+    text = POLICY_FIXTURE.replace("Claude Fable 5.2 |", "Claude Zeta 9 |", 1)
     from teyla import policy as _policy
     _policy.POLICY.write_text(text)
     snap = _snapshot()
@@ -240,7 +243,7 @@ def test_drift_flags_price_missing_for_ladder_model_not_in_pricing(monkeypatch):
     monkeypatch.setattr(pricing, "PRICES", {})
     snap = _snapshot()
     flags = models.drift(snap)
-    missing = [f for f in flags if f["flag"] == "PRICE-STALE" and f["entry"] == "Claude Fable 5.1"]
+    missing = [f for f in flags if f["flag"] == "PRICE-STALE" and f["entry"] == "Claude Fable 5.2"]
     assert missing
 
 
@@ -256,6 +259,7 @@ def test_drift_empty_for_a_fully_current_ladder_and_full_credentials(monkeypatch
     # gpt-6-astra, which has no models.dev cost) — real pricing.PRICES has its own known-stale
     # entries (that's what the other PRICE-STALE test exercises) and would fail this one.
     clean_prices = {
+        "claude-fable-5-2": (8, 10, 0.2, 40, "orchestrate", True),
         "claude-fable-5-1": (10, 12.5, 0.25, 50, "orchestrate", True),
         "claude-opus-5": (5, 6.25, 0.5, 25, "volume", True),
         "claude-sonnet-5": (2, 2.5, 0.2, 10, "volume", True),
@@ -296,7 +300,7 @@ def test_write_policy_keeps_known_models_and_appends_review_note():
     diff, changed = models.write_policy(dry=False, claude_used_models=[])
     from teyla import policy as _policy
     after = _policy.POLICY.read_text()
-    assert "Claude Fable 5.1" in after
+    assert "Claude Fable 5.2" in after
     assert "Opus 5, Sonnet 5" in after
     assert "reviewed" in after and "by teyla models" in after
 
@@ -386,22 +390,32 @@ def test_cmd_models_no_warning_with_drop_absent(capsys, monkeypatch):
 def test_write_prices_infers_tier_from_ladder():
     path = models.write_prices(claude_used_models=[])
     data = json.loads(path.read_text())
-    assert data["claude-fable-5-1"]["tier"] == "orchestrate"
+    assert data["claude-fable-5-2"]["tier"] == "orchestrate"
     assert data["claude-opus-5"]["tier"] == "volume"
     assert data["claude-haiku-4-5"]["tier"] == "triage"
-    # claude-fable-5 (the older release) is not named by the ladder -> unknown
+    # claude-fable-5 and 5.1 (older releases) are not named by the ladder -> unknown
     assert data["claude-fable-5"]["tier"] == "unknown"
-    assert data["claude-fable-5-1"]["verified"] is True
-    assert data["claude-fable-5-1"]["source"] == "models.dev"
+    assert data["claude-fable-5-1"]["tier"] == "unknown"
+    assert data["claude-fable-5-2"]["verified"] is True
+    assert data["claude-fable-5-2"]["source"] == "models.dev"
+
+
+def test_builtin_price_fable_5_2_has_its_own_row(monkeypatch, tmp_path):
+    monkeypatch.setattr(pricing, "OVERRIDE_PATH", tmp_path / "no-prices.json")
+    row = pricing.PRICES["claude-fable-5-2"]
+    assert row == (8.0, 10.0, 0.2, 40.0, "orchestrate", True)
+    assert pricing.lookup("claude-fable-5-2-20261109") == row  # not the claude-fable-5 fallback (read $1.00)
+    assert pricing.lookup("claude-fable-5-1-20260901")[2] == 0.25
+    assert pricing.PRICES["claude-fable-5-1"][2] == 0.25  # the previous version still prices old transcripts
 
 
 def test_pricing_effective_prices_prefers_written_overrides():
     models.write_prices(claude_used_models=[])
-    row = pricing.lookup("claude-fable-5-1-20260901")
+    row = pricing.lookup("claude-fable-5-2-20261109")
     assert row is not None
     in_price, cache_write, cache_read, out_price, tier, verified = row
-    assert in_price == 10
-    assert out_price == 50
+    assert in_price == 8
+    assert out_price == 40
     assert tier == "orchestrate"
 
 

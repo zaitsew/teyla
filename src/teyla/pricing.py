@@ -18,15 +18,19 @@ PRICES = {
     # cache_write is the 5-minute TTL price (1.25x input); a 1-hour write costs 2x input and is
     # priced from `input` in cost_usd, not from this column.
     # Anthropic: input/output checked against the claude-api skill's price table
-    # and its prompt-caching page (reads $0.25 on Fable 5.1, $0.20 on Opus 5.5 and
+    # and its prompt-caching page (reads $0.20 on Fable 5.2, Opus 5.5 and
     # Sonnet 5.5, 0.1x input elsewhere; writes 1.25x / 2x).
-    "claude-fable-5-1": (10.0, 12.5, 0.25, 50.0, "orchestrate", True),
+    # Fable 5.2: $8 in / $10 5m write / $0.20 read / $40 out, from Anthropic's pricing page
+    # (platform.claude.com/docs/en/about-claude/pricing), read 2026-11-09.
+    "claude-fable-5-2": (8.0, 10.0, 0.2, 40.0, "orchestrate", True),
     "claude-opus-5-5": (4.0, 5.0, 0.2, 20.0, "volume", True),
     "claude-sonnet-5-5": (2.0, 2.5, 0.2, 10.0, "volume", True),
     # Haiku 5.5 has two rate cards by prompt length: these are the <=100K-token rates; above that
     # it is $0.50/$2.50 (5x), which this table does not model. The ladder's triage tier since 2026-10-07.
     "claude-haiku-5-5": (0.1, 0.125, 0.01, 0.5, "triage", True),
-    # Previous generations stay so old transcripts still price.
+    # Previous generations stay so old transcripts still price. Fable 5.1 (reads $0.25) is the
+    # previous top tier (lookup takes the longest prefix, so it never falls to "claude-fable-5").
+    "claude-fable-5-1": (10.0, 12.5, 0.25, 50.0, "orchestrate", True),
     "claude-haiku-4-5": (1.0, 1.25, 0.1, 5.0, "triage", True),
     # Fable 5's reads were 0.1x input: the $0.25 read rate arrived with Fable 5.1.
     "claude-fable-5": (10.0, 12.5, 1.0, 50.0, "orchestrate", True),

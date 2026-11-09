@@ -349,11 +349,11 @@ def test_ack_flags_are_refused_outside_watch(env, capsys):
 def test_seed_with_list_and_dict_shapes(env, tmp_path, capsys):
     seed = tmp_path / "other.json"
     seed.write_text(json.dumps({"known": {
-        "anthropic": ["claude-fable-5", "claude-fable-5-1", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"],
+        "anthropic": ["claude-fable-5", "claude-fable-5-1", "claude-fable-5-2", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"],
         "openai": {"gpt-5.6-sol": {"seen": "x"}, "gpt-5.6-terra": 1, "gpt-5.6-luna": 1, "gpt-5.5": 1},
         "xai": [{"id": "grok-4.6"}]}}))
     code, out = run(["models", "watch", "--seed", str(seed)], capsys)
-    assert "imported 10 known model(s)" in out and "first run" not in out
+    assert "imported 11 known model(s)" in out and "first run" not in out
     assert [n["id"] for n in json.loads(run(["models", "watch", "--json"], capsys)[1])["new"]] == ["grok-4.5"]
     known = json.loads(env.known.read_text())["known"]
     assert known["openai"] == ["gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]

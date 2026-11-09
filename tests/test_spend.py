@@ -185,3 +185,12 @@ def test_outcome_looks_in_touched_repos_too(tmp_path, monkeypatch):
                GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
     subprocess.run(["git", "-C", str(tmp_path / "b"), "commit", "-q", "--allow-empty", "-m", "x"], check=True, env=env)
     assert spend.outcome(_row(cwd=str(tmp_path / "a"), project="a", repos=["b"])) is True
+
+
+def test_fable_5_2_prices_from_its_own_row_and_counts_as_fable(monkeypatch, tmp_path):
+    from teyla import pricing
+    monkeypatch.setattr(pricing, "OVERRIDE_PATH", tmp_path / "no-prices.json")
+    row = pricing.lookup("claude-fable-5-2")
+    assert row[2] == 0.2 and row[4] == "orchestrate"       # not claude-fable-5's $1.00 read
+    assert pricing.family("claude-fable-5-2") == "fable"
+    assert pricing.lookup("claude-fable-5-1")[2] == 0.25   # the previous version still prices
