@@ -46,3 +46,8 @@ state = "parked"
 kind = "plugin"
 as_of = 2026-10-29
 note = "OpenAI accepts neither skills-only nor local MCP plugins (docs/DIRECTORY.md section 6)"
+
+# Hosts that appear in the code but are never requested by Teyla (docs/HOSTS.md). The early-access link is written into
+# a draft's first comment (growth_formats.py); only the reader's click ever reaches it.
+[privacy]
+hosts = ["accounts.fabriquefutur.com"]
