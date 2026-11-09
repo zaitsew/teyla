@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.47.1 — 2026-11-09 — The guard stops refusing work on old swap
+
+- **Old swap under memory pressure is no longer CRITICAL.** Swap at or above `guard.swap_crit_pct` while pressure is warn counts only while swap is still written: it grew more than 0.2 GB in the last 5 minutes, or the swap-out rate is at least 5 MB/s. On 2026-11-09 swap sat flat at 9.8 GB for three hours, each build pushed pressure to warn, and the guard refused builds and simulators for 385 minutes on a mostly idle machine. Replayed with the new rule and hold: 171 minutes, and no wait past the timeout (was 7).
+- **The hold after CRITICAL or WORSENING is 5 minutes** (`guard.hold_min`, was 10). The settle lease already stops two admissions on one reading.
+- **The CRITICAL notification names the app holding the most memory** ("Most memory: Google Chrome 9.6 GB"), and a swap reason says "and growing", so it no longer reads as "40% of RAM used".
+
 ## 0.47.0 — 2026-11-09 — The owner's content formats and calls to action
 
 - **`teyla growth` knows the owner's formats and calls to action.** A note tag picks the format: `#spec`, `#tvc`, `#wow`, `#case`, `#week`, `#ainative`, `#predict`, `#viral`, `#inadviser`, `#research` (plain `#content` stays a lesson). New formats: `wow-use-case`, `case-study`, `week-results`, `ai-native`, `prediction`, `viral-remix`, `inadviser-verdict`, `research-note`, each with a drafting brief and a planner prior. One call to action per post, chosen by format: a founder question with the tag only in the first reply (spec), early access (a link built from `https://accounts.fabriquefutur.com/early/<product>?ref=<platform>`, in the first comment, never the body), "tell me about your team, let's talk" (case study, AI-native), follow (week results, prediction), join the research (a form link from `research_form`). The guard now refuses comment-gating, hiring talk and conversion numbers; `week-results` uses only counts Teyla gathered (merged PRs, items published, logged calls and meetings), made once per completed week; a prediction's dated claim is stored when it is published; a `#research` note about a product that is in no registry drafts a post that never says the product exists. `teyla growth doctor` reports the research form and the early-access forms. See docs/GROWTH.md, "The formats" and "Calls to action".
