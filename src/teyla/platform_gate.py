@@ -117,18 +117,30 @@ def _git(repo: pathlib.Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
 
 
-def _lines(p: subprocess.CompletedProcess) -> list[str]:
-    return [ln for ln in p.stdout.splitlines() if ln.strip()]
+def _git_z(repo: pathlib.Path, *args: str) -> tuple[int, list[str], str]:
+    """Run git with `-z` output: NUL-separated, never quoted (core.quotePath cannot hide a path);
+    decoded as UTF-8 with surrogateescape so any byte sequence survives."""
+    p = subprocess.run(["git", "-C", str(repo), *args], capture_output=True)
+    names = [n for n in p.stdout.decode("utf-8", "surrogateescape").split("\0") if n]
+    return p.returncode, names, p.stderr.decode("utf-8", "replace").strip()
+
+
+def _rev_of(rng: str | None) -> str:
+    """The revision whose teyla.toml counts for `A..B` or `A...B`: B (HEAD when empty); else HEAD."""
+    if rng and ".." in rng:
+        return rng.split("..")[-1].lstrip(".") or "HEAD"
+    return "HEAD"
 
 
 def files_in_range(repo: pathlib.Path, rng: str) -> list[str]:
-    p = _git(repo, "diff", "--name-only", rng)
-    if p.returncode:
-        raise GateError(f"git diff {rng} failed: {p.stderr.strip()}")
-    return _lines(p)
+    # --no-renames: a move reports both the source and the destination path
+    rc, names, err = _git_z(repo, "diff", "--name-only", "-z", "--no-renames", rng)
+    if rc:
+        raise GateError(f"git diff {rng} failed: {err}")
+    return names
 
 
-def files_default(repo: pathlib.Path) -> tuple[list[str], str]:
+def files_default(repo: pathlib.Path) -> tuple[list[str], str]:  # the range is merge-base..HEAD
     for base in ("origin/main", "main"):
         if _git(repo, "rev-parse", "--verify", "-q", base + "^{commit}").returncode:
             continue
@@ -139,11 +151,10 @@ def files_default(repo: pathlib.Path) -> tuple[list[str], str]:
     return [], ""
 
 
-def files_pre_push(repo: pathlib.Path, text: str, remote: str | None) -> tuple[list[str], str]:
-    """Files touched by the commits a push adds, from git's `<lref> <lsha> <rref> <rsha>` lines."""
-    files: list[str] = []
-    ranges: list[str] = []
-    seen = set()
+def files_pre_push(repo: pathlib.Path, text: str, remote: str | None) -> list[tuple[list[str], str, str]]:
+    """Per pushed ref `(files, label, local sha)`: the files touched by the commits the push adds, from git's
+    `<lref> <lsha> <rref> <rsha>` lines. The sha names the revision whose teyla.toml applies."""
+    groups: list[tuple[list[str], str, str]] = []
     for line in text.splitlines():
         parts = line.split()
         if len(parts) < 4:
@@ -156,26 +167,24 @@ def files_pre_push(repo: pathlib.Path, text: str, remote: str | None) -> tuple[l
         else:                               # new branch: what no remote-tracking ref has
             excl = ["--remotes=" + remote] if remote else ["--remotes"]
             label = f"new:{lsha[:12]}"
-        p = _git(repo, "log", "--name-only", "--format=", "-m", lsha, "--not", *excl)
-        if p.returncode:
-            raise GateError(f"git log for {label} failed: {p.stderr.strip()}")
-        ranges.append(label)
-        for f in _lines(p):
-            if f not in seen:
-                seen.add(f)
-                files.append(f)
-    return files, ",".join(ranges)
+        rc, names, err = _git_z(repo, "log", "--name-only", "-z", "--no-renames", "--format=", "-m", lsha,
+                                "--not", *excl)
+        if rc:
+            raise GateError(f"git log for {label} failed: {err}")
+        groups.append((list(dict.fromkeys(names)), label, lsha))
+    return groups
 
 
 # --- the check -------------------------------------------------------------------------------
 
-def load_manifest(repo: pathlib.Path) -> dict | None:
-    f = repo / "teyla.toml"
-    if not f.is_file():
+def load_manifest(repo: pathlib.Path, rev: str) -> dict | None:
+    """teyla.toml as committed at `rev`, never the working tree: an uncommitted trigger is not pushed."""
+    p = subprocess.run(["git", "-C", str(repo), "show", f"{rev}:teyla.toml"], capture_output=True)
+    if p.returncode:
         return None
     try:
-        return tomllib.loads(f.read_text())
-    except (tomllib.TOMLDecodeError, OSError):
+        return tomllib.loads(p.stdout.decode("utf-8", "replace"))
+    except tomllib.TOMLDecodeError:
         return None
 
 
@@ -258,17 +267,32 @@ def run(repo: pathlib.Path, *, rng: str | None = None, pre_push: bool = False, r
     label = (label or os.environ.get("TEYLA_PLATFORM_LABEL") or "").strip() or None
     if label and label not in LABELS:
         raise GateError(f"unknown label '{label}'; valid labels: {', '.join(LABELS)}")
-    manifest = load_manifest(repo)
-    if manifest is None or not isinstance(manifest.get("productize"), dict):
-        return 0, evaluate(None, [])
     if pre_push:
-        files, used = files_pre_push(repo, stdin_text, remote)
+        groups = files_pre_push(repo, stdin_text, remote)
     elif rng:
-        files, used = files_in_range(repo, rng), rng
+        groups = [(files_in_range(repo, rng), rng, _rev_of(rng))]
     else:
         files, used = files_default(repo)
-    result = evaluate(manifest, files)
-    result["range"] = used
+        groups = [(files, used, "HEAD")]
+    result = {"ok": True, "checked": False, "note": NO_MAP, "violations": []}
+    merged: dict[str, dict] = {}
+    for files, used, rev in groups:
+        manifest = load_manifest(repo, rev)
+        if manifest is None or not isinstance(manifest.get("productize"), dict):
+            continue
+        r = evaluate(manifest, files)
+        if not r["checked"]:
+            result["note"] = r["note"]
+            continue
+        result.update(checked=True, primary=r["primary"])
+        result["touched"] = sorted(set(result.get("touched", [])) | set(r["touched"]))
+        for v in r["violations"]:
+            m = merged.setdefault(v["platform"], dict(v, files=[]))
+            m["files"] += [f for f in v["files"] if f not in m["files"]]
+    result["violations"] = list(merged.values())
+    result["ok"] = not merged
+    result["range"] = ",".join(g[1] for g in groups)
+    used = result["range"]
     if result["ok"]:
         return 0, result
     if label:

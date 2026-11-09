@@ -184,10 +184,11 @@ def test_no_path_map_passes_with_one_line(repo, capsys):
 
 
 def test_no_teyla_toml_and_a_single_platform_pass(repo, capsys):
-    (repo.dir / "teyla.toml").unlink()
+    repo.git("rm", "-q", "teyla.toml")
+    repo.git("commit", "-q", "-m", "drop")
     code, out = repo.check(capsys, "--range", rng(repo))
     assert code == 0 and "nothing checked" in out
-    (repo.dir / "teyla.toml").write_text('[productize]\nplatforms = ["ios"]\n[productize.paths]\nios = ["a/**"]\n')
+    repo.commit("one", {"teyla.toml": '[productize]\nplatforms = ["ios"]\n[productize.paths]\nios = ["a/**"]\n'})
     code, _ = repo.check(capsys)
     assert code == 0
 
@@ -250,6 +251,57 @@ def test_pre_push_deletion_is_skipped(repo, capsys, monkeypatch):
     _stdin(monkeypatch, f"(delete) {zeros} refs/heads/old {repo.rev()}\n")
     code, _ = repo.check(capsys, "--pre-push")
     assert code == 0
+
+
+# --- review round: quoted paths, renames, the committed manifest -----------------------------------
+
+def test_a_non_ascii_path_under_a_secondary_platform_is_caught(repo, capsys):
+    repo.commit("mac", {"apps/macos/\u00e9.swift": "a\n"})
+    code, out = repo.check(capsys, "--range", rng(repo))
+    assert code == 1
+    assert "macos: no trigger" in out and "\u00e9.swift" in out
+
+
+def test_a_non_ascii_path_in_pre_push_is_caught(repo, capsys, monkeypatch):
+    repo.commit("mac", {"apps/macos/\u00e9.swift": "a\n"})
+    _stdin(monkeypatch, f"refs/heads/main {repo.rev()} refs/heads/main {repo.base}\n")
+    code, out = repo.check(capsys, "--pre-push")
+    assert code == 1 and "macos" in out
+
+
+def test_moving_a_file_out_of_a_secondary_path_counts_the_source(repo, capsys):
+    repo.toml('[productize.triggers]\nmacos = "2026-10-06: the owner asked for it"\n')
+    repo.commit("mac", {"apps/macos/App.swift": "same content\n" * 20, "teyla.toml": (repo.dir / "teyla.toml").read_text()})
+    base = repo.rev()
+    repo.toml()                                        # trigger removed in the same push
+    (repo.dir / "shared").mkdir()
+    repo.git("mv", "apps/macos/App.swift", "shared/App.swift")
+    repo.git("add", "-A")
+    repo.git("commit", "-q", "-m", "move")
+    code, out = repo.check(capsys, "--range", f"{base}..{repo.rev()}")
+    assert code == 1
+    assert "apps/macos/App.swift" in out
+
+
+def test_an_uncommitted_trigger_does_not_pass_a_push(repo, capsys, monkeypatch):
+    repo.git("checkout", "-q", "-b", "feature")
+    repo.commit("mac", {"apps/macos/App.swift": "a\n"})
+    repo.toml('[productize.triggers]\nmacos = "2026-10-06: the owner asked for it"\n')   # working tree only
+    code, out = repo.check(capsys, "--range", rng(repo))
+    assert code == 1 and "macos: no trigger" in out
+    code, _ = repo.check(capsys)
+    assert code == 1
+    _stdin(monkeypatch, f"refs/heads/main {repo.rev()} refs/heads/main {repo.base}\n")
+    code, _ = repo.check(capsys, "--pre-push")
+    assert code == 1
+
+
+def test_a_trigger_committed_in_the_pushed_revision_passes(repo, capsys, monkeypatch):
+    repo.toml('[productize.triggers]\nmacos = "2026-10-06: the owner asked for it"\n')
+    repo.commit("mac", {"apps/macos/App.swift": "a\n"})
+    _stdin(monkeypatch, f"refs/heads/main {repo.rev()} refs/heads/main {repo.base}\n")
+    code, out = repo.check(capsys, "--pre-push")
+    assert code == 0, out
 
 
 # --- the hook ---------------------------------------------------------------------------------------
