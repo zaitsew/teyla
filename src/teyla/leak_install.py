@@ -120,6 +120,24 @@ fi
 """
 
 
+_PLATFORM_STEP = """# platform gate (POLICY section 14): a push that touches a non-primary platform needs a dated trigger
+if [ "${TEYLA_PLATFORM:-1}" = "0" ]; then
+  _tlg_home="${TEYLA_HOME:-$HOME/.teyla}"
+  { mkdir -p "$_tlg_home" && printf '%s\\t%s\\t%s\\t%s\\t%s\\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")" "TEYLA_PLATFORM=0" "-" "pre-push" >> "$_tlg_home/platform-gate.tsv"; } || {
+    echo "teyla platform gate: cannot record the skip in $_tlg_home/platform-gate.tsv; a skip that is not on record is not a skip" >&2
+    [ "$_tlg_rc" -lt 1 ] && _tlg_rc=1
+  }
+elif command -v teyla >/dev/null 2>&1 && teyla platform --help </dev/null 2>/dev/null | grep -q 'check:'; then
+  teyla platform check --pre-push --remote "$_tlg_remote" < "$_tlg_in" >&2
+  _tlg_one=$?
+  if [ "$_tlg_one" -ne 0 ]; then
+    echo "teyla platform gate: pre-push refused (exit $_tlg_one); add the trigger, or set TEYLA_PLATFORM=0 for this command" >&2
+    [ "$_tlg_one" -gt "$_tlg_rc" ] && _tlg_rc=$_tlg_one
+  fi
+fi
+"""
+
+
 def block(hook: str) -> str:
     """The delimited sh snippet. TEYLA_LEAK=0 skips the scan, but the skip must be on record: when the log cannot
     be written the hook refuses. Otherwise it scans, then runs a hook left in `.git/hooks`, and exits non-zero on a
@@ -128,6 +146,7 @@ def block(hook: str) -> str:
     push = hook == "pre-push"
     head = '_tlg_remote="${1:-origin}"\n' + _TAKE if push else ""
     scan = _PUSH_SCAN if push else _COMMIT_SCAN
+    platform = _PLATFORM_STEP if push else ""
     legacy_in = ' < "$_tlg_in"' if push else ""
     cleanup = 'rm -f "$_tlg_in"; ' if push else ""
     tail = 'exec < "$_tlg_in"\nrm -f "$_tlg_in"\n' if push else ""
@@ -144,7 +163,7 @@ elif ! command -v teyla >/dev/null 2>&1; then
   _tlg_rc=2
 else
 {scan}fi
-_tlg_legacy="$(git rev-parse --git-common-dir 2>/dev/null)/hooks/{hook}"
+{platform}_tlg_legacy="$(git rev-parse --git-common-dir 2>/dev/null)/hooks/{hook}"
 if [ "$_tlg_rc" -eq 0 ] && [ -z "${{TEYLA_LEAK_CHAIN:-}}" ] && [ -f "$_tlg_legacy" ] && [ -x "$_tlg_legacy" ] && ! [ "$_tlg_legacy" -ef "$0" ]; then
   TEYLA_LEAK_CHAIN=1 "$_tlg_legacy" "$@"{legacy_in} || _tlg_rc=$?
 fi

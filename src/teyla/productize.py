@@ -32,6 +32,10 @@ So a repo declares what it serves today and what it should serve next, in the sa
     [productize.triggers]           # R10: every platform but `primary`, with a dated reason
     ios = "2026-01-15: the owner asked for it"
 
+    [productize.paths]              # platform -> globs; `teyla platform check` (pre-push) enforces R10 with it
+    ios = ["apps/ios/**"]
+    web = ["web/**"]
+
     [[productize.blocker]]
     what = "external TestFlight group"
     who = "owner"

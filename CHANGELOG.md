@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **`teyla platform check`: the one-primary-platform rule is a pre-push gate.** A push that touches a platform other than `primary` (mapped by the new `[productize.paths]` table in `teyla.toml`) fails unless that platform has a dated `[productize.triggers]` entry. The failure names the files, the trigger problem and the line to add. Files matching no pattern are shared. `--label security|data-loss|backend-break` (or `TEYLA_PLATFORM_LABEL`) passes a same-day exception and logs a row in `~/.teyla/platform-gate.tsv`; no log row, no pass. The hook `teyla leak install` writes runs it on the pushed refs; `TEYLA_PLATFORM=0` skips one push and is logged. Rerun `teyla leak install` in each repo to pick it up.
+
 ## 0.47.2 — 2026-11-09 — Claude Fable 5.2 is the top Anthropic tier
 
 - **Teyla prices `claude-fable-5-2`.** It has its own row: $8 input, $10 five-minute cache write, $0.20 cache read, $40 output per 1M tokens, orchestrate tier, verified against Anthropic's pricing page on 2026-11-09. Before, the id fell through to the `claude-fable-5` row and a cache read cost $1.00. Fable 5.1 stays as the previous generation so old transcripts still price; both count in the `fable` family.

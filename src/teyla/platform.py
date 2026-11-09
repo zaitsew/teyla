@@ -437,6 +437,9 @@ def to_json(rows: list[dict]) -> dict:
 
 def cmd_platform(args):
     action = getattr(args, "action", None)
+    if action == "check":
+        from . import platform_gate
+        return platform_gate.cmd_check(args)
     if action == "init":
         print(init(owner=getattr(args, "owner", None), force=getattr(args, "force", False)))
         return 0
@@ -458,8 +461,14 @@ def cmd_platform(args):
 def register(sp):
     q = sp.add_parser("platform", help="the shared resources set up once and reused by every product")
     q.set_defaults(fn=cmd_platform)
-    q.add_argument("action", nargs="?", choices=["init", "env-example"],
-                   help="init: write ~/.teyla/platform.toml; env-example: the secrets skeleton, names only")
+    q.add_argument("action", nargs="?", choices=["init", "env-example", "check"],
+                   help="init: write ~/.teyla/platform.toml; env-example: the secrets skeleton, names only; "
+                        "check: fail when a push touches a non-primary platform without a dated trigger")
+    q.add_argument("--repo", help="check: the repo (default: the current directory)")
+    q.add_argument("--range", help="check: A..B, the commits to check")
+    q.add_argument("--pre-push", action="store_true", help="check: read git's pre-push ref lines on stdin")
+    q.add_argument("--remote", help="check --pre-push: the remote being pushed to")
+    q.add_argument("--label", help="check: a §14 exception (security, data-loss, backend-break); logged")
     q.add_argument("--owner", help="init: the name written into the manifest")
     q.add_argument("--force", action="store_true", help="init: overwrite an existing manifest")
     q.add_argument("--json", action="store_true")
