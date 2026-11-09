@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Device crashes: `teyla crash --pull` and `teyla crash --device`.** `--pull` reads TestFlight crash submissions (with each new crash log) and screenshot feedback from App Store Connect, read-only, with the key `teyla review pull --testflight` already uses, for every product whose `teyla.toml` names `[release] apple_bundle_id`. Crashes go to `~/.teyla/crash-feed/` and appear in their own section of `teyla crash` (never mixed with Mac panics); screenshots go to `teyla review list`. Ids dedupe by UUIDv5; the tester's e-mail is dropped. `[crash] feed_agent = true` plus `teyla routine install` runs `crash --pull --quiet` every hour; the step does nothing and exits 0 in safe mode, without a key or offline. `teyla doctor` WARNs `testflight:feed` when an app's last good pull is over 3 hours old, or when a build was uploaded in the last 7 days, the feed returned submissions before, and the newest is over 14 days old ("feed may be frozen"). New docs/PRIVACY.md row 56.
+
 ## 0.48.0 — 2026-11-09 — A budget at the Agent call, one spend total, a platform gate
 
 - **`teyla brief`: a sprint contract with a budget, enforced where new work starts.** `teyla brief <product> --goal G --usd N --hours N` writes the contract under `~/.teyla/briefs/<product>/` and makes it active. `teyla brief --hook` is a Claude Code PreToolUse hook for the Agent and Task tools. Under 80% of the budget (dollars or hours, whichever is further along) it allows the call. From 80% it refuses with "start no new lane", and from 100% with "checkpoint now". It binds each session it sees to the contract, costs the bound sessions at list price, logs refusals to `briefs/refusals.tsv` and fails open on any error. `--raise-usd N --reason "..."` is the owner's override; `--close` ends the contract. Nothing leaves the machine. docs/COMMANDS.md has the settings block.
