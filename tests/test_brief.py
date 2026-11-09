@@ -230,3 +230,88 @@ def test_session_cost_ignores_other_sessions(env):
     transcript(root, SID, 1_000_000)
     transcript(root, "22222222-aaaa-bbbb-cccc-000000000002", 5_000_000)
     assert session_cost.session_cost(SID)["usd"] == pytest.approx(10.0)
+
+
+OTHER = "33333333-aaaa-bbbb-cccc-000000000003"
+
+
+def test_pinned_contract_ignores_unlisted_session(env):
+    _t, root, repo = env
+    brief.create("widget", usd=1, hours=10, repo=str(repo), sessions=[SID])
+    transcript(root, SID, 1_000_000)  # $10 against $1: the listed session is over
+    transcript(root, OTHER, 1000)
+    assert call(repo, sid=OTHER) == (0, "")
+    assert brief.load_active("widget")[1]["sessions"] == [SID]
+
+
+def test_pinned_listed_session_over_80_percent_refuses_with_subagents(env):
+    _t, root, repo = env
+    brief.create("widget", usd=100, hours=10, repo=str(repo), sessions=[SID])
+    transcript(root, SID, 4_000_000, sub_out=4_500_000)  # $40 + $45 subagent, counted once
+    code, err = call(repo)
+    assert code == 2 and "$85.00 of $100" in err
+
+
+def test_cli_session_flag_pins_and_accepts_comma_list(env, capsys):
+    _t, _root, repo = env
+    assert cli.main(["brief", "widget", "--usd", "10", "--hours", "2", "--session", "a,b", "--session", "c",
+                     "--repo", str(repo)]) == 0
+    c = brief.load_active("widget")[1]
+    assert c["pinned"] is True and c["sessions"] == ["a", "b", "c"]
+    assert "auto-binding" not in capsys.readouterr().out
+
+
+def test_unpinned_open_prints_autobind_note(env, capsys):
+    _t, _root, repo = env
+    assert cli.main(["brief", "widget", "--usd", "10", "--hours", "2", "--repo", str(repo)]) == 0
+    assert "auto-binding counts every session" in capsys.readouterr().out
+    assert "pinned" not in brief.load_active("widget")[1]
+
+
+def test_old_contract_without_pinned_still_auto_binds(env):
+    _t, root, repo = env
+    path, c = start(repo)
+    assert "pinned" not in c
+    transcript(root, SID, 1000)
+    call(repo)
+    assert brief.load_active("widget")[1]["sessions"] == [SID]
+
+
+def test_second_open_refused_then_replace_works(env, capsys):
+    _t, _root, repo = env
+    args = ["brief", "widget", "--usd", "10", "--hours", "2", "--repo", str(repo)]
+    assert cli.main(args) == 0
+    first = brief.load_active("widget")[0]
+    capsys.readouterr()
+    assert cli.main([*args, "--goal", "second"]) == 1
+    err = capsys.readouterr().err
+    assert first.name in err and "--close" in err and "--replace" in err
+    assert brief.load_active("widget")[0] == first
+    assert cli.main([*args, "--goal", "second", "--replace"]) == 0
+    assert brief.load_active("widget")[1]["goal"] == "second"
+
+
+def test_open_after_close_or_expiry_needs_no_replace(env):
+    _t, _root, repo = env
+    args = ["brief", "widget", "--usd", "10", "--hours", "2", "--repo", str(repo)]
+    assert cli.main(args) == 0
+    assert cli.main(["brief", "widget", "--close"]) == 0
+    assert cli.main(args) == 0
+    path, c = brief.load_active("widget")
+    c["started"] = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=20)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    brief._write(path, c)
+    assert cli.main(args) == 0
+
+
+def test_add_session_to_pinned_contract(env, capsys):
+    _t, root, repo = env
+    brief.create("widget", usd=1, hours=10, repo=str(repo), sessions=[SID])
+    assert cli.main(["brief", "widget", "--add-session", OTHER]) == 0
+    assert brief.load_active("widget")[1]["sessions"] == [SID, OTHER]
+    transcript(root, OTHER, 1_000_000)  # now counted: $10 against $1
+    assert call(repo, sid=OTHER)[0] == 2
+
+
+def test_add_session_refused_on_unpinned_contract(env):
+    start(env[2])
+    assert cli.main(["brief", "widget", "--add-session", OTHER]) == 2

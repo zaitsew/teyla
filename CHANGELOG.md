@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **`teyla brief` can pin a contract to its own sessions.** `--session ID` (repeatable, or a comma list) lists the sessions up front and sets `pinned = true`; the hook then never auto-binds another session of the product and passes it silently. Subagent calls carry the parent's session id, so they count once. `--add-session ID` adds one to a pinned contract. Without `--session`, auto-binding is unchanged and the command prints one line saying it counts every session of the product that starts a subagent.
+- **Opening a second contract no longer replaces the first.** While another contract for the product is active, unclosed and unexpired, `teyla brief` exits 1 and names it; close it with `--close`, or pass `--replace`. This changes the old silent replacement.
+
 ## 0.48.0 — 2026-11-09 — A budget at the Agent call, one spend total, a platform gate
 
 - **`teyla brief`: a sprint contract with a budget, enforced where new work starts.** `teyla brief <product> --goal G --usd N --hours N` writes the contract under `~/.teyla/briefs/<product>/` and makes it active. `teyla brief --hook` is a Claude Code PreToolUse hook for the Agent and Task tools. Under 80% of the budget (dollars or hours, whichever is further along) it allows the call. From 80% it refuses with "start no new lane", and from 100% with "checkpoint now". It binds each session it sees to the contract, costs the bound sessions at list price, logs refusals to `briefs/refusals.tsv` and fails open on any error. `--raise-usd N --reason "..."` is the owner's override; `--close` ends the contract. Nothing leaves the machine. docs/COMMANDS.md has the settings block.
