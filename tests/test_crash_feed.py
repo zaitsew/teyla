@@ -251,3 +251,55 @@ def test_the_feed_agent_is_off_by_default_and_hourly_when_asked(agent_home):
     config.set_value("crash.feed_agent", "false")
     ri.install()
     assert not p["plist"].exists() and not p["wrapper"].exists()
+
+
+# --- review fixes (teyla#472) ---------------------------------------------------------------------------
+
+class FlakyLog(Fake):
+    """The crash-log route fails while `down` is true."""
+
+    down = True
+
+    def get_json(self, url):
+        if "/crashLog" in url and self.down:
+            self.urls.append(url)
+            raise review_asc.AscError("App Store Connect is unreachable (URLError)")
+        return super().get_json(url)
+
+
+def test_a_failed_crash_log_download_is_retried_on_the_next_pull_and_then_given_up(env, conn):
+    fake = FlakyLog(routes([crash_item()]))
+    rep = crash_feed.pull(fake, conn, NOW)
+    assert rep["apps"][0]["new_crashes"] == 1
+    (rec,) = crash_feed.load()["crashes"].values()
+    assert "log" not in rec and rec["log_attempts"] == 1
+    fake.down = False
+    rep = crash_feed.pull(fake, conn, NOW + dt.timedelta(hours=1))
+    (rec,) = crash_feed.load()["crashes"].values()
+    assert rec["log"] and rec["summary"]["exception"].startswith("EXC_BAD_ACCESS") and "log_attempts" not in rec
+    assert rep["apps"][0]["new_crashes"] == 0, "a retried log is not a new crash"
+    # a log that never arrives is tried LOG_TRIES times, no more
+    bad = FlakyLog(routes([crash_item("c-2")]))
+    for h in range(2, 8):
+        crash_feed.pull(bad, conn, NOW + dt.timedelta(hours=h))
+    assert sum("/c-2/crashLog" in u for u in bad.urls) == crash_feed.LOG_TRIES
+
+
+def test_retention_does_not_make_pruned_crashes_new_again(env, conn, monkeypatch):
+    monkeypatch.setattr(crash_feed, "KEEP", 5)
+    items = [crash_item(f"c-{i}", when=f"2026-11-{1 + i % 8:02d}T10:{i % 60:02d}:00.000Z") for i in range(8)]
+    rep = crash_feed.pull(Fake(routes(items)), conn, NOW)
+    assert rep["apps"][0]["new_crashes"] == 8 and len(crash_feed.load()["crashes"]) == 5
+    again = crash_feed.pull(Fake(routes(items)), conn, NOW + dt.timedelta(hours=1))
+    assert again["apps"][0]["new_crashes"] == 0
+    assert len(crash_feed.load()["seen"]) == 8
+
+
+def test_an_empty_answer_keeps_the_newest_submission_so_a_frozen_feed_still_shows(env, conn):
+    crash_feed.pull(Fake(routes([crash_item(when="2026-10-01T10:00:00.000Z")])), conn, NOW)
+    before = crash_feed.load()["apps"]["com.example.recipes"]
+    crash_feed.pull(Fake(routes()), conn, NOW + dt.timedelta(hours=1))
+    after = crash_feed.load()["apps"]["com.example.recipes"]
+    assert after["newest_submission"] == before["newest_submission"] == "2026-10-01T10:00:00.000Z"
+    assert after["crash_count"] == 1 and len(crash_feed.load()["seen"]) == 1
+    assert crash_feed.freshness(after, NOW + dt.timedelta(hours=1))[0] == "may-be-frozen"

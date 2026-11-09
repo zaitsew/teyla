@@ -36,6 +36,7 @@ from . import config, productize, review_asc
 STALE_PULL_H = 3
 QUIET_DAYS = 14
 RECENT_BUILD_DAYS = 7
+LOG_TRIES = 3         # attempts to fetch one crash log before giving up on it
 KEEP = 200            # crash records kept in feed.json, newest first
 
 
@@ -76,6 +77,9 @@ def load() -> dict:
         d["apps"] = {}
     if not isinstance(d.get("crashes"), dict):
         d["crashes"] = {}
+    if not isinstance(d.get("seen"), dict):
+        # crash id -> product: the dedup index, never pruned by retention (a store from before it is seeded from its crashes)
+        d["seen"] = {cid: c.get("product", "") for cid, c in d["crashes"].items() if isinstance(c, dict)}
     return d
 
 
@@ -136,22 +140,38 @@ def _pull_app(app: dict, rec: dict, client, conn, state: dict, now: dt.datetime)
         raise review_asc.AscError(f"no app with bundle id {app['bundle_id']} in App Store Connect for this key")
     rec["app_id"] = app_id
     items = review_asc.fetch_crash_submissions(app_id, client)
+    seen = state["seen"]
     new = 0
     for item in items:
         c = review_asc.crash_record(item, app["product"])
-        if c is None or c["id"] in state["crashes"]:
+        if c is None:
             continue
         apple_id = c.pop("_apple_id")
+        old = state["crashes"].get(c["id"])
+        if c["id"] in seen and (old is None or old.get("log") or old.get("log_attempts", 0) >= LOG_TRIES):
+            continue            # reported before; its log is stored, given up on, or its record was pruned
+        if old is not None:
+            c = old             # a retry: only the log is missing
         try:
             log = review_asc.fetch_crash_log(apple_id, client)
         except review_asc.AscError:
             log = ""
-        c["summary"] = review_asc.crash_summary(log) if log else {}
         if log:
             config.write_private(store_dir() / f"{c['id']}.log", log)
             c["log"] = f"{c['id']}.log"
+            c["summary"] = review_asc.crash_summary(log)
+            c.pop("log_attempts", None)
+        else:
+            c["summary"] = c.get("summary") or {}
+            c["log_attempts"] = int(c.get("log_attempts", 0)) + 1     # a bounded retry on the next pulls
         state["crashes"][c["id"]] = c
-        new += 1
+        if c["id"] not in seen:
+            new += 1
+        seen[c["id"]] = app["product"]
+    if items:       # an empty answer never wipes the dedup index of this product
+        returned = {review_asc.crash_record(i, "")["id"] for i in items if review_asc.crash_record(i, "")}
+        for cid in [k for k, v in seen.items() if v == app["product"] and k not in returned]:
+            del seen[cid]       # Apple no longer returns it, so it cannot come back as new
     shots = review.pull_testflight(conn, app_id, app["product"], client)
     if shots.get("error"):
         raise review_asc.AscError(str(shots.get("note") or "the screenshot pull failed"))
@@ -159,11 +179,16 @@ def _pull_app(app: dict, rec: dict, client, conn, state: dict, now: dt.datetime)
     dates = [str((i.get("attributes") or {}).get("createdDate") or "") for i in items if isinstance(i.get("attributes"), dict)]
     dates.append(str(shots.get("newest") or ""))
     mine = [c["created_at"] for c in state["crashes"].values() if c.get("product") == app["product"]]
+    fresh = max([d for d in dates + mine if d], default="")
     rec.update(product=app["product"], bundle_id=app["bundle_id"], last_pull=_iso(now), last_error="",
-               newest_submission=max([d for d in dates + mine if d], default=""),
-               crash_count=len(mine), screenshot_count=int(shots.get("seen") or 0),
                new_crashes=new, new_screenshots=int(shots.get("added") or 0),
                newest_upload=upload or rec.get("newest_upload", ""))
+    if fresh:       # only a non-empty answer moves these; an empty one keeps the last values
+        rec["newest_submission"] = max(fresh, rec.get("newest_submission", ""))
+    if items:
+        rec["crash_count"] = len(mine)
+    if shots.get("seen"):
+        rec["screenshot_count"] = int(shots["seen"])
 
 
 def pull(client, conn, now: dt.datetime | None = None, paths: list[str] | None = None) -> dict:
