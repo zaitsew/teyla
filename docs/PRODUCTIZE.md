@@ -107,7 +107,10 @@ platform features land on first; every other entry in `platforms` needs a writte
 platform it is unmet until `primary` is set to one of them and every other platform has a
 dated trigger, and the detail names what is missing. It is agent work (the history and the
 owner's requests say why a platform exists), so it shows up as an agent step. Secondary
-platforms catch up in parity trains, not feature by feature. POLICY §11 has the rule and
+platforms catch up in parity trains, not feature by feature. `[productize.paths]` maps each platform to
+glob patterns (`ios = ["apps/ios/**"]`); with it, `teyla platform check` (run by the pre-push hook of
+`teyla leak install`) fails a push that touches a platform without its dated trigger. A file that matches no
+pattern is shared. A security, data-loss or backend-break fix passes with `--label`, and the use is logged. POLICY §11 has the rule and
 the release cadence that goes with it.
 
 **Config out of code.** Every host, key name and identifier in `.env.example` and in

@@ -75,6 +75,7 @@
   teyla config set safe.enabled=true                              work mode: no network (--allow-network per command), no self-update
   teyla update [--check] [--force] [--wire] [--quiet]            newer release → install, then policy sync/refresh, plugin refresh, routines
   teyla platform [init|env-example] [--json] [--no-net]          the shared resources set up once, and the step for each missing one
+  teyla platform check [--range A..B|--pre-push] [--label L] [--json]  fail when a push touches a non-primary platform without a dated trigger
   teyla productize [path...] [--json] [--owner-steps]            what stands between each product and its second user
   teyla testflight [path...] [--json] [--quiet] [--china] [--allow-network]    did the build reach a person: newest upload vs newest build your tester can install; --china: is any app still available in China mainland
   teyla freshness [path...] [--json] [--quiet] [--fetch]             do the README, README images, store text and screenshots still match the product (offline; --fetch updates refs first)
