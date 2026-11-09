@@ -46,7 +46,9 @@ PASSING = ("review", "checked", "approved", "ready", "published")
 FONTS = (("/System/Library/Fonts/Supplemental/Arial Bold.ttf", 0), ("/System/Library/Fonts/Helvetica.ttc", 1),
          ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 0), ("/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf", 0),
          ("/usr/share/fonts/TTF/DejaVuSans-Bold.ttf", 0))
-UPGRADE = "uv tool install --force --python 3.12 'teyla[reel] @ git+https://github.com/zaitsew/teyla'"
+# `teyla update --force` reinstalls the current release with the reel extra (a growth config exists) and keeps
+# the work extra; a bare `uv tool install --force` would drop work and install main instead of the release.
+UPGRADE = "teyla update --force"
 
 _URL = re.compile(r"https?://\S+")
 _SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(`])")

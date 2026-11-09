@@ -251,10 +251,11 @@ link or a `teyla` command) on the last card. No voice, no stock footage, no mode
 - **The machine.** The render waits for the machine (`teyla load --wait --kind build`).
 - **The reel extra.** Drawing needs Pillow, which ships in the `reel` extra, and ffmpeg. Without Pillow the slot
   says `the reel extra (Pillow) is missing` with the command below, and `teyla growth doctor` shows a `reel extra`
-  row. `teyla update` keeps the extra on a Mac that has a growth config.
+  row. `teyla update` keeps the extra on a Mac that has a growth config. When it is missing, reinstall the
+  current release; this adds `reel` and keeps the `work` extra, which a bare `uv tool install --force` would drop:
 
 ```
-uv tool install --force --python 3.12 'teyla[reel] @ git+https://github.com/zaitsew/teyla'
+teyla update --force
 ```
 
 Lessons are drafted after the video step, so a lesson written this morning is filmed tomorrow. When the video step

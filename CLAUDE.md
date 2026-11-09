@@ -6,6 +6,7 @@ Contributor rules live in `CONTRIBUTING.md`. The short version:
 
 - `./check.sh` is the gate (leak check, then pytest). There is no CI on push.
 - One PR per logical unit. Merge, never squash. Never force-push.
+- Install a release on this Mac with `teyla update`, never a bare `uv tool install --force`: it drops the `work` and `reel` extras.
 - Everything in the repo is English. Fixtures are generic: no real names, e-mails, home paths or Cyrillic.
 - A new call that leaves the machine needs a row in `docs/PRIVACY.md` and an entry in `tests/test_privacy_calls.py`.
 - `AGENTS.md` is the install guide for an agent. Change it when a command or flag it names changes;
