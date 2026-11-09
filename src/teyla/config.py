@@ -91,11 +91,12 @@
     max_builds = 2                 build drivers (xcodebuild, swift-build, gradle, cargo): more is BUSY; `--admit build` refuses at this many
     max_lanes = 0                  headless agent lanes (codex exec, grok -p, claude -p): `--admit lane` refuses at this many; 0 = no cap
     swap_crit_pct = 40             swap used, percent of RAM: CRITICAL at or above, while memory pressure is warn or worse
-                                   (swap used alone says nothing: pages stay swapped out after the pressure is gone)
+                                   and swap is still growing (swap used alone says nothing: pages stay swapped out after
+                                   the pressure is gone)
     swapout_mb_s = 20              WORSENING when the swap-out rate over the last 3 minutes is at or above this (0 = off)
     swap_grow_gb_30m = 4           ... or swap used is growing faster than this per 30 minutes (and still growing)
     trend_window_min = 15          the history the swap and disk slopes are fitted over
-    hold_min = 10                  after CRITICAL or WORSENING, new simulators and builds wait this many minutes
+    hold_min = 5                   after CRITICAL or WORSENING, new simulators and builds wait this many minutes
                                    without either (0 = no hold); running work is never touched
     compressor_warn_pct = 30       memory compressor size, percent of RAM: BUSY at or above
     compressor_crit_pct = 45       ... CRITICAL at or above
@@ -218,7 +219,7 @@ DEFAULTS = {
     # `teyla load`: thresholds of the machine guard. Percentages are of physical RAM; load is per core.
     "guard": {"enabled": True, "max_sims": 2, "max_builds": 2, "max_lanes": 0,
               "swap_crit_pct": 40, "swapout_mb_s": 20, "swap_grow_gb_30m": 4,
-              "trend_window_min": 15, "hold_min": 10, "compressor_warn_pct": 30, "compressor_crit_pct": 45,
+              "trend_window_min": 15, "hold_min": 5, "compressor_warn_pct": 30, "compressor_crit_pct": 45,
               "load_warn_per_core": 4.0, "load_crit_per_core": 10.0, "wait_timeout_s": 900,
               # a sim or build let in blocks the next one for this long, until its processes show in the counts
               "settle_s": 180,

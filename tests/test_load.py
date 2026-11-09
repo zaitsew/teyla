@@ -358,7 +358,7 @@ def test_unknown_fields_trip_nothing():
 def test_reasons_carry_the_number_and_the_threshold_critical_first():
     v = load.assess(snap(swap_used_bytes=int(11.7 * GIB), load1=579.67, pressure=2, procs=procs(sims=4)), {})
     assert v.level == "CRITICAL"
-    assert v.reasons[0] == "swap 11.7 GB = 49% of RAM (critical ≥ 40% under memory pressure)"
+    assert v.reasons[0] == "swap 11.7 GB = 49% of RAM and growing (critical ≥ 40% under memory pressure)"   # no trend: assumed growing
     assert v.reasons[1] == "load 580 on 10 cores (critical ≥ 100)"
     assert any("pressure is warn" in r for r in v.reasons) and any("4 simulators booted (max 2)" in r for r in v.reasons)
     assert v.n_critical == 2
@@ -440,7 +440,7 @@ def test_lane_cap_is_off_by_default_and_counts_headless_lanes():
 def test_guard_defaults():
     g = config.DEFAULTS["guard"]
     assert g == {"enabled": True, "max_sims": 2, "max_builds": 2, "max_lanes": 0, "swap_crit_pct": 40,
-                 "swapout_mb_s": 20, "swap_grow_gb_30m": 4, "trend_window_min": 15, "hold_min": 10,
+                 "swapout_mb_s": 20, "swap_grow_gb_30m": 4, "trend_window_min": 15, "hold_min": 5,
                  "compressor_warn_pct": 30, "compressor_crit_pct": 45, "load_warn_per_core": 4.0, "load_crit_per_core": 10.0,
                  "wait_timeout_s": 900, "settle_s": 180, "agent": False, "gradle_idle_min": 30, "alert": True,
                  "disk_warn_gb": 25, "disk_crit_gb": 10, "disk_sweep": True,
@@ -922,9 +922,9 @@ def test_replay_marks_a_swap_spike_worsening_and_holds_new_work_after_it():
     assert not by_min[worse[0]]["sim"] and not by_min[worse[0]]["build"]
     last_bad = max(int(m) for m in worse)
     assert by_min[f"{last_bad + 1:02d}"]["held"] and not by_min[f"{last_bad + 1:02d}"]["sim"]       # the hold
-    assert by_min[f"{last_bad + 11:02d}"]["sim"] and not by_min[f"{last_bad + 11:02d}"]["held"]       # ten minutes later
+    assert by_min[f"{last_bad + 6:02d}"]["sim"] and not by_min[f"{last_bad + 6:02d}"]["held"]         # five minutes later
     (d,) = days
-    assert d["levels"]["WORSENING"] == len(worse) and d["episodes"] == 1 and d["new_min"] > 10 and d["timeouts"] == 0
+    assert d["levels"]["WORSENING"] == len(worse) and d["episodes"] == 1 and d["new_min"] > 5 and d["timeouts"] == 0
 
 
 def test_replay_hold_can_be_switched_off_and_a_calm_swap_never_trips():
@@ -1054,6 +1054,24 @@ def test_worsening_trips_on_each_signal_alone_and_not_on_a_flat_history():
     assert load.assess(now_snap(), {"swapout_mb_s": 50}, out).level == "OK"
 
 
+def test_old_swap_under_pressure_is_critical_only_while_swap_still_grows():
+    """2026-11-09: swap flat at 9.8 GB (41% of 24 GB) for three hours; each build pushed pressure to warn and
+    the flat swap made it CRITICAL, then the hold refused builds on an idle machine."""
+    flat = [hist_row(m, swap_gb=9.8) for m in range(0, 15)]
+    s = now_snap(15, swap_gb=9.8, pressure=2)
+    v = load.assess(s, {}, load.compute_trend(flat, s, {}))
+    assert v.level == "BUSY" and v.reasons == ["memory pressure is warn (level 2)"]
+    grow = [hist_row(m, swap_gb=9.0 + 0.1 * m) for m in range(0, 15)]                    # 0.5 GB in the last 5 min
+    s2 = now_snap(15, swap_gb=10.5, pressure=2)
+    v2 = load.assess(s2, {}, load.compute_trend(grow, s2, {}))
+    assert v2.level == "CRITICAL" and v2.reasons[0] == "swap 10.5 GB = 44% of RAM and growing (critical ≥ 40% under memory pressure)"
+    writing = load.compute_trend([hist_row(14, swap_gb=9.8, swapout=0)], now_snap(swap_gb=9.8, pressure=2, swapout=6 * 1024 ** 2 * 60), {})
+    assert writing.swap_recent_gb is None and load.assess(now_snap(swap_gb=9.8, pressure=2), {}, writing).level == "CRITICAL"   # swap-out 6 MB/s
+    assert load.assess(now_snap(swap_gb=9.8, pressure=2), {}, load.compute_trend([], now_snap(), {})).level == "CRITICAL"       # no history: assume it grows
+    assert load.assess(s, {}, None).level == "CRITICAL"                                                                          # no trend at all, as before
+    assert load.assess(now_snap(15, swap_gb=9.8, pressure=1), {}, load.compute_trend(flat, s, {})).level == "OK"
+
+
 def test_critical_wins_over_worsening_and_keeps_both_reasons():
     out = load.compute_trend([hist_row(14, swapout=0)], now_snap(swapout=30 * 1024 ** 2 * 60, pressure=4), {})
     v = load.assess(now_snap(pressure=4), {}, out)
@@ -1078,15 +1096,15 @@ def test_a_worsening_machine_refuses_new_sims_and_builds_whatever_the_count_but_
     assert load.decide("sim", s, {}, None).allowed                                       # no trend, as before
 
 
-def test_the_hold_keeps_refusing_for_ten_minutes_after_the_last_bad_sample():
+def test_the_hold_keeps_refusing_for_five_minutes_after_the_last_bad_sample():
     calm = now_snap(15, swap_gb=4.0)
     rows = [hist_row(m, swap_gb=4.0, level="BUSY") for m in range(0, 15)]
-    assert load.decide("sim", calm, {}, load.compute_trend(rows + [{**hist_row(7), "level": "CRITICAL"}], calm, {})).allowed is False
-    t = load.compute_trend(rows + [{**hist_row(7), "level": "CRITICAL"}], calm, {})
+    assert load.decide("sim", calm, {}, load.compute_trend(rows + [{**hist_row(12), "level": "CRITICAL"}], calm, {})).allowed is False
+    t = load.compute_trend(rows + [{**hist_row(12), "level": "CRITICAL"}], calm, {})
     d = load.decide("build", calm, {}, t)
-    assert d.level == "OK" and d.reason.startswith("held after CRITICAL 8 min ago") and "(2 min left)" in d.message
+    assert d.level == "OK" and d.reason.startswith("held after CRITICAL 3 min ago") and "(2 min left)" in d.message
     assert load.decide("lane", calm, {}, t).allowed
-    assert load.decide("sim", calm, {}, load.compute_trend(rows + [{**hist_row(4), "level": "WORSENING"}], calm, {})).allowed   # 11 min ago
+    assert load.decide("sim", calm, {}, load.compute_trend(rows + [{**hist_row(9), "level": "WORSENING"}], calm, {})).allowed   # 6 min ago
     assert load.decide("sim", calm, {"hold_min": 0}, t).allowed                          # no hold configured
     assert load.decide("sim", calm, {"hold_min": 30}, load.compute_trend(rows + [{**hist_row(4), "level": "WORSENING"}], calm, {"hold_min": 30})).allowed is False
 
@@ -1149,7 +1167,7 @@ def test_a_rate_across_a_long_gap_or_a_reboot_is_not_recorded():
 def test_wait_blocks_through_the_hold_and_goes_on_when_it_has_passed():
     clock, out, err = Clock(), Sink(), Sink()
     calm = now_snap(15)
-    held = load.compute_trend([hist_row(m, level="BUSY") for m in range(0, 15)] + [{**hist_row(7), "level": "CRITICAL"}], calm, {})
+    held = load.compute_trend([hist_row(m, level="BUSY") for m in range(0, 15)] + [{**hist_row(12), "level": "CRITICAL"}], calm, {})
     free = load.compute_trend([hist_row(m, level="BUSY") for m in range(0, 15)], calm, {})
     seq = iter([held, held, free])
     code = load.wait("sim", {}, 900, poll_s=15, clock=clock.now, sleeper=clock.sleep, snap_fn=lambda: calm, out=out, err=err,
@@ -1199,9 +1217,9 @@ def test_admit_through_the_command_refuses_during_the_hold_and_logs_the_verdict_
     now = dt.datetime.now().astimezone()
     for m in range(8, 0, -1):
         s = snap(time=(now - dt.timedelta(minutes=m)).isoformat(timespec="seconds"), disk_free_bytes=40 * GIB)
-        load.record(s, load.Verdict("WORSENING" if m == 5 else "BUSY"))
+        load.record(s, load.Verdict("WORSENING" if m == 3 else "BUSY"))
     assert load.cmd_load(args(admit="sim"), run=quiet.run) == 2
-    assert "held after WORSENING 5 min ago" in capsys.readouterr().out
+    assert "held after WORSENING 3 min ago" in capsys.readouterr().out
     assert load.cmd_load(args(admit="lane"), run=quiet.run) == 0
     row = [r for r in decisions() if r["kind"] == "sim"][0]
     assert row["decision"] == "refused" and row["reason"].startswith("held after WORSENING")
