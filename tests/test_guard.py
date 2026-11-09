@@ -306,6 +306,18 @@ def test_the_notification_text_is_escaped_for_applescript():
     assert guard._applescript('a "b" \\c') == 'a \\"b\\" \\\\c'
 
 
+def test_the_notification_names_the_app_holding_the_most_memory_and_stays_short():
+    v = load.Verdict("CRITICAL", ["swap 9.8 GB = 41% of RAM and growing (critical ≥ 40% under memory pressure)"], 1, [])
+    s = load.Snapshot(time="2026-11-09T01:28:00", procs=load.Procs(top=[("Google Chrome", int(9.6 * load.GIB)), ("claude", 4 * load.GIB)]))
+    since = dt.datetime(2026, 11, 9, 1, 28).timestamp()
+    assert guard.notification_text(v, since, s) == ("CRITICAL since 01:28: swap 9.8 GB = 41% of RAM and growing."
+                                                     " Most memory: Google Chrome 9.6 GB")
+    long = load.Verdict("CRITICAL", ["x" * 300], 1, [])
+    text = guard.notification_text(long, since, s)
+    assert len(text) == 160 and text.endswith("…. Most memory: Google Chrome 9.6 GB")
+    assert guard.notification_text(v, since) == "CRITICAL since 01:28: swap 9.8 GB = 41% of RAM and growing"
+
+
 # --- reaping idle daemons -----------------------------------------------------------------------------------
 
 def state_files():

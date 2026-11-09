@@ -150,10 +150,14 @@ def _applescript(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def notification_text(verdict: load.Verdict, since: float) -> str:
+def notification_text(verdict: load.Verdict, since: float, snap: load.Snapshot | None = None) -> str:
+    """Why, then the app holding the most memory: the one thing the owner can close himself."""
     reasons = [_THRESHOLD.sub("", r) for r in verdict.reasons[:2]]
-    text = f"CRITICAL since {dt.datetime.fromtimestamp(since):%H:%M}: " + "; ".join(reasons)
-    return text if len(text) <= 160 else text[:159] + "…"
+    top = snap.procs.top[:1] if snap is not None else []
+    tail = f". Most memory: {top[0][0]} {load.gb(top[0][1])}" if top else ""
+    head = f"CRITICAL since {dt.datetime.fromtimestamp(since):%H:%M}: " + "; ".join(reasons)
+    room = 160 - len(tail)
+    return (head if len(head) <= room else head[:room - 1] + "…") + tail
 
 
 def _notify(env: Env, text: str, title: str = NOTIFY_TITLE) -> None:
@@ -190,7 +194,7 @@ def update_alert(snap: load.Snapshot, verdict: load.Verdict, conf: dict, env: En
         did.append(f"alert {'written' if entering else 'kept'}: {path}")
         if entering and (notified is None or now - notified >= NOTIFY_EVERY_S):
             if env.platform == "darwin" and not config.safe_mode():
-                _notify(env, notification_text(verdict, since))
+                _notify(env, notification_text(verdict, since, snap))
                 notified = now
                 did.append("notification posted")
     elif since is not None or path.exists():

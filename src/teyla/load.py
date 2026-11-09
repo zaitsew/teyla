@@ -43,7 +43,8 @@ process (`native_footprints`, ctypes on libSystem; the provider is injectable). 
 names and the `load.tsv` columns keep theirs (`compiler_rss_bytes`, `daemon_rss_bytes`, `chrome_rss_bytes`, ...)
 so `--replay` reads old files; their values are footprint from that release on, and rows written before it hold RSS.
 
-Verdict (`assess`). CRITICAL when memory pressure is 4, swap used >= `guard.swap_crit_pct` of RAM while pressure is >= 2, the
+Verdict (`assess`). CRITICAL when memory pressure is 4, swap used >= `guard.swap_crit_pct` of RAM while pressure is >= 2 and swap
+is still being written (grew more than 0.2 GB in the last 5 minutes, or swap-out >= 5 MB/s; assumed without a trend), the
 one-minute load >= `guard.load_crit_per_core` x cores, or the compressor >= `guard.compressor_crit_pct`
 of RAM, or free disk under `guard.disk_crit_gb` (APFS swap lives in the same container, so a full disk
 leaves the memory compressor nowhere to go). WORSENING (needs the trend, below) when memory is getting worse
@@ -145,6 +146,7 @@ MIN_SPAN_S = 300            # a slope needs this much history ...
 MIN_POINTS = 4              # ... and this many points
 MAX_RATE_GAP_S = 300        # a rate between two rows further apart than this is not recorded
 RECENT_GROWTH_GB = 0.2      # growth in the last five minutes that counts as "still growing"
+SWAP_ACTIVE_MB_S = 5        # a swap-out rate at or above this means swap is still being written
 TAIL_BYTES = 64 * 1024      # how much of the end of load.tsv the trend reads
 PROGRESS_EVERY_S = 60
 
@@ -743,6 +745,14 @@ def _worsening(trend: "Trend | None", snap: Snapshot, conf: dict | None) -> list
     return out
 
 
+def _swap_active(trend: "Trend | None") -> bool:
+    """Is swap still being written? Without the history to tell (no trend, a short one), assume it is."""
+    if trend is None or (trend.swap_recent_gb is None and trend.swapout_mb_s is None):
+        return True
+    return ((trend.swap_recent_gb is not None and trend.swap_recent_gb > RECENT_GROWTH_GB)
+            or (trend.swapout_mb_s is not None and trend.swapout_mb_s >= SWAP_ACTIVE_MB_S))
+
+
 def assess(snap: Snapshot, conf: dict | None = None, trend: "Trend | None" = None) -> Verdict:
     """OK, BUSY, WORSENING or CRITICAL, with one short sentence per thing that tripped. Unknown fields
     trip nothing. WORSENING needs the `trend` (history of the last minutes); without one the verdict is
@@ -761,10 +771,12 @@ def assess(snap: Snapshot, conf: dict | None = None, trend: "Trend | None" = Non
         label = f"swap {gb(snap.swap_used_bytes)} = {swap:.0f}% of RAM"
         # Swapped-out pages stay in swap long after the pressure that pushed them out is gone: swap used
         # is information, not a warning (it kept BUSY on 70-95% of samples every day). It is CRITICAL only
-        # while the kernel still reports pressure; whether swap is growing is the trend's job.
+        # while the kernel still reports pressure and swap is still being written. On 2026-11-09 swap sat
+        # flat at 9.8 GB (41%) from 01:28 to 04:44; each build pushed pressure to warn, the flat swap made
+        # that CRITICAL, and the hold after it refused builds for 111 minutes on a machine at load 1-3.
         under_pressure = snap.pressure is not None and snap.pressure >= 2
-        if swap >= _num(conf, "swap_crit_pct") and under_pressure:
-            crit.append(f"{label} (critical ≥ {_num(conf, 'swap_crit_pct'):g}% under memory pressure)")
+        if swap >= _num(conf, "swap_crit_pct") and under_pressure and _swap_active(trend):
+            crit.append(f"{label} and growing (critical ≥ {_num(conf, 'swap_crit_pct'):g}% under memory pressure)")
 
     if snap.load1 is not None and snap.ncpu:
         label = f"load {snap.load1:.0f} on {snap.ncpu} cores"
