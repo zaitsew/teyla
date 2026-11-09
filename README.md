@@ -74,7 +74,7 @@ Subagents cost $390; Opus ran 64% of that.
   O2 Run subagents on Sonnet unless they say otherwise: about $60-$140 a month
 ```
 
-*List price* is what the tokens would cost through the API; a subscription bills differently. *Context* is everything a session has read so far, re-read on every turn. A *subagent* is a helper agent a session starts for one side task. `teyla spend --days 7` and `teyla web` show the same numbers later.
+*List price* is what the tokens would cost through the API; a subscription bills differently. *Context* is everything a session has read so far, re-read on every turn. A *subagent* is a helper agent a session starts for one side task. `teyla spend --days 7` and `teyla web` show the same numbers later. `teyla brief` puts a dollar and hour budget on a build session and stops new subagents at 80% (see docs/COMMANDS.md).
 
 ## What's waiting on you
 
