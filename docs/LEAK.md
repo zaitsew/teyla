@@ -246,6 +246,10 @@ directory that is literally named `install` or `terms` needs `./install`.
   (`teyla leak --outgoing "$1" --quiet`; git passes the remote name as `$1`): POSIX `sh`, executable. Sets
   `core.hooksPath` to `.githooks`. When the scan fails, the hook runs it again without `--quiet` so the masked
   findings print, then exits with the scanner's code: 1 for a blocker, 2 for a surface it could not read.
+- The pre-push block also runs `teyla platform check --pre-push --remote "$1"` on the same ref lines and folds its exit
+  code in (POLICY §14; see COMMANDS.md). `TEYLA_PLATFORM=0` skips it for one push and writes a row to
+  `~/.teyla/platform-gate.tsv`; the hook refuses when that row cannot be written. A `teyla` without `platform check`
+  passes the step silently. Rerunning `teyla leak install` rewrites an installed block in place.
 - A hook that is already there and is not ours keeps its content. Our call goes in at the top (after a shebang)
   between `# >>> teyla leak gate` and `# <<< teyla leak gate`. If `core.hooksPath` already names another directory
   inside the repo, the hooks go there; a path outside the repo is refused. Running it twice changes nothing.
