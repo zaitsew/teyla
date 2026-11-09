@@ -183,7 +183,8 @@ EDITOR_SYSTEM = (
     '(a change, a bug, a command, a build) he could open; "number_or_surprise" = does it carry a number from the facts '
     'or a result that is not what he expected; "checkable" = could he verify the claim from a link, a log or a build. '
     "A post made of titles, process talk or praise for itself scores low. A post that talks about the post (what the "
-    "title is, what the author did not measure, what the post proves) scores 0 on the hook. Be strict: 3 is a post you "
+    "title is, what the author did not measure, what the post proves) scores 0 on the hook. A post that asks the reader to "
+    "comment, reply or message a keyword to get something scores 0 on every part. Be strict: 3 is a post you "
     "would only publish if nothing better was available. In the critique, say in at most 40 words what is missing and "
     "which of the given facts could fix it. You may not invent a number, a name or a claim: if the facts are too thin "
     'for a good post, say so. Reply with strict JSON only, no prose, no code fence: {"hook": 0-5, "artifact": 0-5, '
