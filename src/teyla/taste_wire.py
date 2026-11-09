@@ -34,7 +34,8 @@ MAX_JSON = 64 * 1024
 MAX_IMAGE = 5 * 1024 * 1024
 MAX_SENTENCE = relay.MAX_TEXT
 MAX_URL = 2000
-YOUNG_S = 600                    # a folder this fresh may still be arriving from iCloud: look again next pass
+YOUNG_S = 600                    # a drop first seen on this Mac less than this long ago may still be arriving from iCloud
+MAX_TRIES = 3                    # an import that fails (a corpus that cannot be written) is tried this often, then given up
 FIELDS = frozenset({"v", "id", "created", "device", "verdict", "url", "image", "sentence"})
 IMAGES = {"image.jpg": ".jpg", "image.png": ".png"}
 VERDICTS = ("like", "dislike")
@@ -84,7 +85,7 @@ def shape(obj) -> str:
         return "malformed drop: give a link or a picture, not both or neither"
     if url is not None and (not isinstance(url, str) or len(url) > MAX_URL or not taste_corpus.is_url(url)):
         return "malformed drop: url"
-    if image is not None and image not in IMAGES:
+    if image is not None and (not isinstance(image, str) or image not in IMAGES):
         return "malformed drop: image"
     return ""
 
@@ -115,18 +116,20 @@ def _read_file(dfd: int, name: str, cap: int) -> tuple[bytes | None, str]:
         return f.read(cap + 1), ""
 
 
-def _newest(dfd: int) -> float:
-    t = 0.0
+def seen_path() -> pathlib.Path:
+    return relay.ctl.home() / "taste-seen.json"
+
+
+def _load_seen() -> dict[str, float]:
+    """When this Mac first saw each drop that is still waiting. The grace for files still arriving counts from
+    here: a synced modification time says when the phone wrote a file, not when iCloud delivered it."""
     try:
-        t = os.fstat(dfd).st_mtime
-        for n in os.listdir(dfd):
-            try:
-                t = max(t, os.stat(n, dir_fd=dfd, follow_symlinks=False).st_mtime)
-            except OSError:
-                pass
-    except OSError:
-        pass
-    return t
+        got = json.loads(seen_path().read_text())
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(got, dict):
+        return {}
+    return {k: float(v) for k, v in got.items() if isinstance(k, str) and isinstance(v, (int, float))}
 
 
 def _remove(parent_fd: int, name: str) -> None:
@@ -167,8 +170,11 @@ def import_drop(obj: dict, image: bytes | None, add_fn=None) -> str:
         if tmp is not None:
             tmp.cleanup()
     if obj["url"] is None:                        # the temporary path is gone; name the source for what it is
-        e["source"] = f"iphone-share-{obj['id'][:8]}{IMAGES[obj['image']]}"
-        taste_corpus.write_entry(d, e)
+        try:
+            e["source"] = f"iphone-share-{obj['id'][:8]}{IMAGES[obj['image']]}"
+            taste_corpus.write_entry(d, e)
+        except OSError:
+            pass                                      # the entry exists; a retry would add it twice
     return e["id"]
 
 
@@ -179,18 +185,31 @@ def pull(dirs: "relay.Dirs", key: bytes, now: float, add_fn=None) -> list[dict]:
     if box is None:
         return []
     out: list[dict] = []
+    seen = _load_seen()
+    before = dict(seen)
     try:
         names = sorted(n for n in os.listdir(box) if relay._UUID_RE.fullmatch(n))[:MAX_PER_PASS]
         for name in names:
-            res = _one(box, name, key, now, add_fn)
+            try:
+                res = _one(box, name, key, now, add_fn, seen)
+            except Exception as exc:  # noqa: BLE001 - one odd folder must never stop the drops after it
+                res = {"id": name.lower(), "kind": "taste", "ok": False,
+                       "detail": f"skipped: {type(exc).__name__}: {relay._clip(str(exc), 120)}"}
             if res is not None:
                 out.append(res)
+        waiting = {n.lower() for n in os.listdir(box)}
+        seen = {k: v for k, v in seen.items() if k in waiting and now - v < relay.JOURNAL_KEEP_S}
+        if seen != before:
+            try:
+                relay._write_json(seen_path(), seen)
+            except OSError:
+                pass
     finally:
         os.close(box)
     return out
 
 
-def _one(box: int, name: str, key: bytes, now: float, add_fn) -> dict | None:
+def _one(box: int, name: str, key: bytes, now: float, add_fn, seen: dict[str, float]) -> dict | None:
     did = name.lower()
 
     def refuse(why: str) -> dict:
@@ -201,7 +220,7 @@ def _one(box: int, name: str, key: bytes, now: float, add_fn) -> dict | None:
     if dfd is None:
         return refuse("not a plain folder")
     try:
-        young = now - _newest(dfd) < YOUNG_S
+        young = now - seen.setdefault(did, now) < YOUNG_S
         raw, why = _read_file(dfd, "taste.json", MAX_JSON)
         sig, why_s = _read_file(dfd, "taste.sig", 1024)
         if raw is None or sig is None:
@@ -237,17 +256,32 @@ def _one(box: int, name: str, key: bytes, now: float, add_fn) -> dict | None:
             return refuse("too old (more than 7 days); share it again")
         if age < -relay.MAX_AHEAD_S:
             return refuse("dated in the future; check the phone's clock")
+        tries = 0
         if not relay._claim({"id": did, "kind": "taste", "target": "taste"}, now):
-            _remove(box, name)                        # a replay, or a pass that was cut off: never imported twice
-            return {"id": did, "kind": "taste", "ok": False, "detail": "replay: already handled"}
+            rec = relay._journal_read(did) or {}
+            res = rec.get("result") if isinstance(rec.get("result"), dict) else {}
+            if rec.get("state") != "retry":           # imported, or a pass was cut off: never imported twice
+                _remove(box, name)
+                return {"id": did, "kind": "taste", "ok": False, "detail": "replay: already handled"}
+            tries = res.get("tries") if type(res.get("tries")) is int else MAX_TRIES
+            relay._journal_set(did, "claimed", now, {"tries": tries})
         try:
             eid = import_drop(obj, image or None, add_fn)
-            ok, detail = True, f"added {eid} ({obj['verdict']}, {'proposed' if obj['sentence'].strip() else 'raw'})"
-        except Exception as exc:                        # noqa: BLE001 - claimed: report, never retry
-            ok, detail = False, f"could not add it ({type(exc).__name__}: {relay._clip(str(exc), 120)})"
-        relay._journal_set(did, "done", now, {"ok": ok, "via": "taste", "detail": relay._clip(detail)})
-        _remove(box, name)
-        return {"id": did, "kind": "taste", "ok": ok, "detail": detail}
+        except Exception as exc:                        # noqa: BLE001
+            tries += 1
+            why = f"{type(exc).__name__}: {relay._clip(str(exc), 120)}"
+            if tries < MAX_TRIES:                       # the drop stays in the outbox; the next pass tries again
+                relay._journal_set(did, "retry", now, {"tries": tries, "ok": False, "detail": why})
+                return {"id": did, "kind": "taste", "ok": False,
+                        "detail": f"could not add it, will retry ({tries}/{MAX_TRIES}): {why}"}
+            detail = f"could not add it after {MAX_TRIES} tries: {why}"
+            relay._journal_set(did, "done", now, {"ok": False, "via": "taste", "detail": relay._clip(detail)})
+            _remove(box, name)
+            return {"id": did, "kind": "taste", "ok": False, "detail": detail}
+        detail = f"added {eid} ({obj['verdict']}, {'proposed' if obj['sentence'].strip() else 'raw'})"
+        relay._journal_set(did, "done", now, {"ok": True, "via": "taste", "detail": relay._clip(detail)})
+        _remove(box, name)                              # only now, after the corpus entry is on disk
+        return {"id": did, "kind": "taste", "ok": True, "detail": detail}
     finally:
         os.close(dfd)
 

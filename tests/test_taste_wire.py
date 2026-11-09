@@ -33,26 +33,31 @@ class Env:
         (tmp_path / "home").mkdir()
 
     def drop(self, did=DID, *, url="https://example.com/a", image=None, image_bytes=None, sentence="",
-             verdict="like", created=None, key=KEY, mtime=None):
+             verdict="like", created=None, key=KEY, seen_ago=None, **extra):
         created = created or iso(NOW - 60)
         obj = {"v": 1, "id": did, "created": created, "device": "iPhone", "verdict": verdict,
                "url": None if image else url, "image": image, "sentence": sentence}
+        obj.update(extra)
         raw = json.dumps(obj).encode()
         pic = JPEG if image_bytes is None else image_bytes
         d = self.root / "outbox" / "taste" / did
         d.mkdir(parents=True)
         (d / "taste.json").write_bytes(raw)
-        if image:
+        if isinstance(image, str):
             (d / image).write_bytes(pic)
-        (d / "taste.sig").write_text(taste_wire.drop_sig(key, did, created, raw, pic if image else b""))
-        if mtime is not None:
-            for p in (*d.iterdir(), d):
-                os.utime(p, (mtime, mtime))
+        (d / "taste.sig").write_text(taste_wire.drop_sig(key, did, created, raw, pic if isinstance(image, str) else b""))
+        if seen_ago is not None:                        # this Mac first saw the drop that long ago
+            seen = taste_wire._load_seen()
+            seen[did] = NOW - seen_ago
+            relay._write_json(taste_wire.seen_path(), seen)
         return d
 
     def pull(self, now=NOW):
+        return self.pull_with(None, now)
+
+    def pull_with(self, add_fn, now=NOW):
         with relay.Dirs(self.root).open() as dirs:
-            return taste_wire.pull(dirs, KEY, now)
+            return taste_wire.pull(dirs, KEY, now, add_fn)
 
 
 @pytest.fixture
@@ -102,32 +107,30 @@ def test_a_picture_is_kept_as_evidence_and_the_source_is_not_a_temp_path(env):
 
 
 def test_a_wrong_key_is_refused_once_the_folder_is_not_young(env):
-    env.drop(key=bytes(32), mtime=NOW - 3600)
+    env.drop(key=bytes(32), seen_ago=3600)
     [r] = env.pull()
     assert (r["ok"], r["detail"]) == (False, "bad signature")
     assert entries() == []
 
 
 def test_a_bad_signature_on_a_young_folder_waits_for_the_rest_of_the_files(env):
-    d = env.drop(key=bytes(32), mtime=NOW - 5)
+    d = env.drop(key=bytes(32), seen_ago=5)
     assert env.pull() == []
     assert d.exists()
 
 
 def test_a_missing_picture_waits_then_is_refused(env):
-    d = env.drop(image="image.jpg", mtime=NOW - 5)
+    d = env.drop(image="image.jpg")
     (d / "image.jpg").unlink()
     assert env.pull() == []
-    for p in (*d.iterdir(), d):
-        os.utime(p, (NOW - 3600, NOW - 3600))
+    taste_wire.seen_path().write_text(json.dumps({DID: NOW - 3600}))
     [r] = env.pull()
     assert r["ok"] is False and "missing" in r["detail"]
 
 
 def test_a_changed_picture_breaks_the_signature(env):
-    d = env.drop(image="image.jpg", mtime=NOW - 3600)
+    d = env.drop(image="image.jpg", seen_ago=3600)
     (d / "image.jpg").write_bytes(JPEG + b"x")
-    os.utime(d, (NOW - 3600, NOW - 3600))
     [r] = env.pull()
     assert (r["ok"], r["detail"]) == (False, "bad signature")
 
@@ -171,12 +174,11 @@ def test_a_picture_that_is_not_an_image_is_refused(env):
 
 
 def test_a_linked_picture_is_not_followed(env, tmp_path):
-    d = env.drop(image="image.jpg", mtime=NOW - 3600)
+    d = env.drop(image="image.jpg", seen_ago=3600)
     secret = tmp_path / "secret.jpg"
     secret.write_bytes(JPEG)
     (d / "image.jpg").unlink()
     (d / "image.jpg").symlink_to(secret)
-    os.utime(d, (NOW - 3600, NOW - 3600))
     [r] = env.pull()
     assert r["ok"] is False and entries() == []
 
@@ -215,3 +217,62 @@ def test_list_without_corpus_flag_still_lists_the_ledger(env, tmp_path, capsys, 
     taste_corpus.add(["https://example.com/a", "calm"])
     cli.main(["taste", "list", "--repo", str(tmp_path)])
     assert "example.com" not in capsys.readouterr().out
+
+
+# --- review fixes (teyla#473) -----------------------------------------------------------------------
+
+def test_a_failed_import_keeps_the_drop_and_retries_then_gives_up(env):
+    d = env.drop(sentence="calm")
+    calls = []
+
+    def failing(words, **kw):
+        calls.append(words)
+        raise PermissionError("corpus is read-only")
+
+    [r] = env.pull_with(failing)
+    assert r["ok"] is False and "will retry (1/3)" in r["detail"]
+    assert d.exists() and entries() == []
+    [r] = env.pull_with(failing)
+    assert "will retry (2/3)" in r["detail"] and d.exists()
+    [r] = env.pull_with(failing)
+    assert "after 3 tries" in r["detail"] and not d.exists()
+    assert len(calls) == 3
+    assert env.pull() == []
+
+
+def test_a_drop_that_failed_once_is_imported_when_the_corpus_works_again(env):
+    d = env.drop(sentence="calm")
+
+    def failing(words, **kw):
+        raise PermissionError("busy")
+
+    env.pull_with(failing)
+    [r] = env.pull()
+    assert r["ok"] is True and not d.exists()
+    assert len(entries()) == 1
+    [r] = env.pull_with(failing) if env.drop() else []     # the same id again is a replay, not a second import
+    assert r["detail"] == "replay: already handled" and len(entries()) == 1
+
+
+def test_files_still_arriving_get_their_grace_from_when_this_mac_first_saw_the_drop(env):
+    d = env.drop(image="image.jpg")
+    (d / "image.jpg").unlink()
+    for p in (*d.iterdir(), d):
+        os.utime(p, (NOW - 7200, NOW - 7200))           # the phone wrote it two hours ago, offline
+    assert env.pull() == [] and d.exists()              # first seen now: wait
+    assert json.loads(taste_wire.seen_path().read_text()) == {DID: NOW}
+    assert env.pull(now=NOW + 60) == [] and d.exists()
+    [r] = env.pull(now=NOW + 3600)
+    assert r["ok"] is False and "missing" in r["detail"] and not d.exists()
+
+
+@pytest.mark.parametrize("bad", [[1, 2], {"a": 1}, 7, True])
+def test_a_malformed_image_field_never_blocks_the_drops_after_it(env, bad):
+    first = "0a000000-0000-4000-8000-000000000001"
+    env.drop(did=first, url=None, image=bad)
+    env.drop(sentence="fine")
+    res = env.pull()
+    by_id = {r["id"]: r for r in res}
+    assert by_id[first]["ok"] is False and "image" in by_id[first]["detail"]
+    assert by_id[DID]["ok"] is True
+    assert len(entries()) == 1
