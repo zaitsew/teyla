@@ -409,6 +409,38 @@ def test_daily_wrapper_template_runs_storage_clean_auto_quiet():
     assert "teyla storage clean --auto --quiet" in routine_install.DAILY_WRAPPER_TEMPLATE
 
 
+def test_daily_wrapper_exit_is_a_crash_not_doctors_findings(tmp_path):
+    """2026-11-09: launchd showed the daily at exit 1 every day. The script's status was its last
+    step's, so a crash in `storage clean` (or doctor's "needs you") read as a failed run."""
+    t = routine_install.DAILY_WRAPPER_TEMPLATE
+    assert "teyla doctor --quiet || true\n" in t
+    assert t.rstrip().endswith('exit "$_rc"')
+    assert "teyla storage clean --auto --quiet || _rc=1\n" in t
+    # A wrapper written before this change is rewritten on the next install.
+    old = t.replace('exit "$_rc"\n', "")
+    w = tmp_path / "daily.sh"
+    w.write_text(old.format(env_sh="", stamp="/x/daily.last", label="l", teyla_bin="/x/teyla",
+                            update_line="teyla update --quiet"))
+    monkey = routine_install.DAILY_WRAPPER_PATH
+    try:
+        routine_install.DAILY_WRAPPER_PATH = w
+        assert routine_install._wrapper_stale(w, "/x/teyla")
+    finally:
+        routine_install.DAILY_WRAPPER_PATH = monkey
+
+
+def test_patch_ids_reads_a_diff_that_is_not_utf8(tmp_path):
+    """`git show` of a Latin-1 file is not UTF-8; decoding it as text crashed `storage clean`."""
+    repo = tmp_path / "r"
+    repo.mkdir()
+    _git(repo, "-c", "init.defaultBranch=main", "init")
+    (repo / "latin1.txt").write_bytes(b"caf\xe9 \xc4 na\xefve\n")
+    _git(repo, "add", ".")
+    _git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "latin-1")
+    ids = storage._patch_ids(str(repo), ["show", "HEAD"])
+    assert ids is not None and len(ids) == 1
+
+
 # --- what `git worktree remove` would destroy without complaint (review findings) ----------
 
 def _safe_row(tmp_path, code_root, wt, now):

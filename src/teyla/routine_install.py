@@ -112,9 +112,11 @@ DAILY_PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 DAILY_WRAPPER_TEMPLATE = """#!/usr/bin/env bash
 # Written by `teyla routine install`. Daily: pull a newer Teyla release if there is one
 # (which re-wires policy, plugin and these wrappers), then refresh the doctor summary the
-# session-start hook shows. Exit status is doctor's: 0 clean, 1 something needs you.
+# session-start hook shows. Exit status: 0 when every step ran, 1 when one crashed. Doctor's
+# findings are not a failed run: they reach the banner, not launchd's exit column.
 set -uo pipefail
 {env_sh}
+_rc=0
 echo "== $(date -u +%FT%TZ) teyla daily"
 date -u +%FT%TZ > "{stamp}"
 export TEYLA_IN_ROUTINE="{label}"
@@ -123,7 +125,7 @@ TEYLA="{teyla_bin}"
 # `update` may have replaced the binary in place; call it by name from here on.
 # A session over $250 in the last day or Actions past 80% of the included minutes: a notification
 # and a banner line (doctor, next, writes the banner). Silent otherwise.
-teyla spend --alert
+teyla spend --alert || _rc=1
 # Every scheduled task outside a repo (Claude desktop, launchd, cloud routines, GitHub): did it run, what
 # vanished. Updates ~/.teyla/schedules.json and the problem file the banner reads; a failure here never
 # fails the daily. It runs before `doctor`, which builds the banner, so a new problem shows today.
@@ -135,17 +137,19 @@ teyla play --quiet || true
 # Questions AI sessions left waiting on you: refreshes ~/.teyla/asks.count, the line the session-start
 # hook prints. Local files only, so safe mode runs it too.
 teyla asks --quiet || true
-teyla doctor --quiet
+# Exit 1 from doctor means "something needs you": the banner shows it; the run did not fail.
+teyla doctor --quiet || true
 # Refresh ~/.teyla/routines/<product>.line, the one-liners the session-start hook shows.
 teyla routines >/dev/null 2>&1
 # The generated copies of the policy (Codex, Grok, Cursor, Hermes) follow ~/.agents/POLICY.md and
 # ~/.claude/CLAUDE.md; a hand edit found in one is filed in ~/.teyla/policy-inbox/ first. Local files
 # only, so safe mode runs it too.
-teyla policy sync --quiet
+teyla policy sync --quiet || _rc=1
 # A weekly that launchd skipped (the Mac was off at its minute) runs now instead of never.
-teyla routine catch-up --quiet
+teyla routine catch-up --quiet || _rc=1
 # Finished worktrees and idle build output go, when storage.auto_clean is on; silent otherwise.
-teyla storage clean --auto --quiet
+teyla storage clean --auto --quiet || _rc=1
+exit "$_rc"
 """
 
 INTERVAL_PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
@@ -343,6 +347,10 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         return True
     if path == DAILY_WRAPPER_PATH and "spend --alert" not in text:
         # Written before `teyla spend`: the daily would never alert on a spend spike.
+        return True
+    if path == DAILY_WRAPPER_PATH and 'exit "$_rc"' not in text:
+        # Written when the exit status was the last step's: doctor's "needs you" or a crash in
+        # `storage clean` made launchd and `teyla schedules` show the daily as FAILING every day.
         return True
     if path == DAILY_WRAPPER_PATH and "storage clean" not in text:
         # Written before `teyla storage`: the daily would never clean.

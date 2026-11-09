@@ -110,7 +110,7 @@ def _git(cwd, *args, timeout=60) -> tuple[int, str]:
         # --no-optional-locks: a plain `git status` rewrites the index, and the index mtime is
         # how idleness is measured — the scan would otherwise make every tree look fresh.
         r = subprocess.run(["git", "--no-optional-locks", "-C", str(cwd), *args],
-                           capture_output=True, text=True, timeout=timeout)
+                           capture_output=True, text=True, errors="replace", timeout=timeout)
     except (OSError, subprocess.TimeoutExpired) as e:
         return 1, str(e)
     return r.returncode, r.stdout
@@ -384,16 +384,21 @@ def ignored_work(path: str) -> tuple[list[str], list[str]]:
 
 def _patch_ids(path: str, args: list[str], stdin: str | None = None) -> set[str] | None:
     try:
-        show = subprocess.run(["git", "--no-optional-locks", "-C", path, *args], input=stdin,
-                              capture_output=True, text=True, timeout=300)
+        # Bytes, not text: a diff carries any file's bytes (a Latin-1 fixture, a binary patch), and
+        # decoding one as UTF-8 crashed the daily's `storage clean` on 2026-11-09. patch-id hashes
+        # the bytes, so they must reach it unchanged; only its hex output is decoded.
+        show = subprocess.run(["git", "--no-optional-locks", "-C", path, *args],
+                              input=stdin.encode() if stdin is not None else None,
+                              capture_output=True, timeout=300)
         # --verbatim: --stable ignores whitespace, and indentation is meaning in Python or YAML.
         pid = subprocess.run(["git", "-C", path, "patch-id", "--verbatim"], input=show.stdout,
-                             capture_output=True, text=True, timeout=300)
+                             capture_output=True, timeout=300)
     except (OSError, subprocess.TimeoutExpired):
         return None
     if show.returncode != 0 or pid.returncode != 0:
         return None
-    return {line.split()[0] for line in pid.stdout.splitlines() if line.strip()}
+    out = pid.stdout.decode("ascii", errors="replace")
+    return {line.split()[0] for line in out.splitlines() if line.strip()}
 
 
 # Every worktree of one repository shares its remote branches: `git log -p --remotes` over a
