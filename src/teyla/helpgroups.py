@@ -76,6 +76,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
         ("advise", "Just the findings of the report, each with one action"),
         ("sessions", "One line per session"),
         ("lanes", "Subagent lanes by type and model: cost and review findings"),
+        ("brief", "The sprint contract: a goal, a budget, a brake at the Agent call"),
         ("grok-cost", "What Grok CLI sessions cost at list price"),
         ("models", "The model ladder and price drift"),
         ("connectors", "Usage of each connector (MCP server)"),
