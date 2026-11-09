@@ -226,6 +226,36 @@ def _log_refusal(product: str, sid: str, pct: float, spend: float, tool: str) ->
         pass
 
 
+def bind(path: pathlib.Path, sid: str) -> dict:
+    """Add `sid` to the contract's sessions under an exclusive lock, so two sessions binding at once both land."""
+    import fcntl
+    with open(path.with_suffix(".lock"), "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        c = tomllib.loads(path.read_text())
+        sessions = [str(x) for x in c.get("sessions") or []]
+        if sid not in sessions:
+            sessions.append(sid)
+            c["sessions"] = sessions
+            _write(path, c)
+        return c
+
+
+def _expired_note(path: pathlib.Path, product: str, sid: str) -> str:
+    """One stderr note per session that the contract has expired; "" after the first."""
+    seen = path.with_suffix(".expired")
+    try:
+        if sid in seen.read_text().split():
+            return ""
+    except OSError:
+        pass
+    try:
+        with open(seen, "a") as fh:
+            fh.write(sid + "\n")
+    except OSError:
+        pass
+    return f"sprint contract for {product} has expired: close it with `teyla brief {product} --close`.\n"
+
+
 def hook(stdin_text: str) -> tuple[int, str]:
     """(exit code, stderr text). Any error answers (0, "")."""
     try:
@@ -244,10 +274,12 @@ def hook(stdin_text: str) -> tuple[int, str]:
         sid = str(data.get("session_id") or "")
         sessions = [str(s) for s in c.get("sessions") or []]
         age_h = (_now() - _parse(c["started"])).total_seconds() / 3600.0
-        if sid and sid not in sessions and age_h < 2 * float(c.get("hours") or 0):
-            sessions.append(sid)
-            c["sessions"] = sessions
-            _write(path, c)
+        if sid and sid not in sessions:
+            if age_h >= 2 * float(c.get("hours") or 0):
+                # Past the binding window: this session is not under the contract and passes.
+                return 0, _expired_note(path, product, sid)
+            c = bind(path, sid)
+            sessions = [str(s) for s in c.get("sessions") or []]
         from .session_cost import session_cost
         spend = 0.0
         for s in sessions:

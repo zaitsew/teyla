@@ -140,6 +140,29 @@ def test_session_bound_on_first_call(env):
     assert brief.load_active("widget")[1]["sessions"] == [SID]
 
 
+def test_expired_contract_does_not_block_a_new_session(env):
+    _t, root, repo = env
+    path, c = start(repo, usd=1, hours=1)
+    c["started"] = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=20)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    brief._write(path, c)
+    transcript(root, SID, 5_000_000)
+    code, err = call(repo)
+    assert code == 0 and "expired" in err and "--close" in err
+    assert call(repo) == (0, "")  # the note comes once per session
+    assert brief.load_active("widget")[1]["sessions"] == []
+
+
+def test_concurrent_binds_both_land(env):
+    import threading
+    _t, _root, repo = env
+    path, _c = start(repo)
+    sids = [f"sess-{i}" for i in range(12)]
+    ts = [threading.Thread(target=brief.bind, args=(path, s)) for s in sids]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert sorted(brief.load_active("widget")[1]["sessions"]) == sorted(sids)
+
+
 def test_session_not_bound_when_contract_is_old(env):
     _t, root, repo = env
     path, c = start(repo, hours=1)
