@@ -33,6 +33,7 @@ other's work), with Opus's share. `teyla lanes` is the per-subagent-type view.
 """
 from __future__ import annotations
 
+import argparse
 import datetime as _dt
 import json
 import os
@@ -141,6 +142,12 @@ def _day_fields(s) -> dict:
                 sub_calls=list(s.sub_calls or []))
 
 
+def _cutoff(days: int) -> str:
+    """The UTC instant `days` ago, as the prefix of an ISO timestamp: a session counts in a window
+    when it was last active at or after it."""
+    return (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+
+
 def session_rows(days: int = 7, sessions=None, grok_rows=None) -> list[dict]:
     """One row per session in the window, every harness: what it cost and the inputs of the rules."""
     from .adapters import since_epoch
@@ -148,7 +155,7 @@ def session_rows(days: int = 7, sessions=None, grok_rows=None) -> list[dict]:
     if sessions is None:
         from .adapters import load_all
         sessions = load_all(since=since_epoch(days))
-    cutoff = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    cutoff = _cutoff(days)
     rows = []
     for s in sessions:
         # In the window when it was active in it: a session resumed today counts today (its whole
@@ -398,42 +405,91 @@ def findings(rows: list[dict], actions: list[dict] | None = None, outcome_of=out
 
 # --- report ----------------------------------------------------------------------------------
 
+def _window(days: int, today: _dt.date | None = None) -> list[str]:
+    """The last `days` local days, oldest first, today included: the one window every total uses."""
+    today = today or _dt.date.today()
+    return [(today - _dt.timedelta(days=i)).isoformat() for i in range(days - 1, -1, -1)]
+
+
+def _row_day_models(r: dict) -> dict:
+    """Per local day, per model: what a row cost. A row with no per-day split (a hand-made row, or a
+    harness without message times) books its whole cost on the day it was last active."""
+    if r.get("day_model_usd"):
+        return r["day_model_usd"]
+    from .adapters import local_day
+    return {local_day(r.get("last") or r.get("first")): dict(r.get("by_model") or {})}
+
+
+def _row_day_usd(r: dict) -> dict:
+    if r.get("day_usd"):
+        return r["day_usd"]
+    return {d: sum(mm.values()) for d, mm in _row_day_models(r).items()}
+
+
+def window_totals(rows: list[dict], days: int, today: _dt.date | None = None) -> dict:
+    """What the last `days` local days cost, split by the day each message was sent: the total, the
+    subagents' part, and the total by harness and by model. The number `--by-day` adds up."""
+    win = set(_window(days, today))
+    by_harness, by_model, sub = Counter(), Counter(), 0.0
+    for r in rows:
+        for d, mm in _row_day_models(r).items():
+            if d in win:
+                by_harness[r["harness"]] += sum(mm.values())
+                for m, v in mm.items():
+                    by_model[m] += v
+        sub += sum(v for d, mm in (r.get("sub_day_model_usd") or {}).items() if d in win for v in mm.values())
+    return dict(total_usd=sum(by_harness.values()), sub_usd=sub, by_harness=dict(by_harness.most_common()),
+                by_model=dict(by_model.most_common()))
+
+
 def report(days: int = 7, rows=None, actions=None, with_actions: bool = True, bills=None) -> dict:
+    """`total_usd` is the window total: cost split by the local day each message was sent, over the last
+    `days` local days, the same number `--by-day` adds up. `session_usd` is the whole lifetime cost of
+    the sessions active in the window (a session resumed today counts its earlier days too), the
+    basis of the per-session findings and `top_sessions`."""
     from . import providers
-    rows = session_rows(days) if rows is None else rows
+    if rows is None:
+        # One more day than asked: a message from the oldest local day can sit in a session whose last
+        # activity is before the UTC cutoff. Findings look at the sessions active in the window only.
+        wide = session_rows(days + 1)
+        cut = _cutoff(days)
+        rows = [r for r in wide if (r["last"] or r["first"] or "")[:19] >= cut]
+    else:
+        wide = rows
     if actions is None and with_actions:
         actions = actions_usage()
     bills = providers.read(days) if bills is None else bills
     coverage: list[str] = [f"W7: {p} not read ({b.get('skipped') or b.get('error')})"
                            for p, b in bills.items() if "daily" not in b]
     F = findings(rows, actions, coverage=coverage, spikes=providers.spikes(bills, days))
-    by_harness, by_model = Counter(), Counter()
-    for r in rows:
-        by_harness[r["harness"]] += r["usd"]
-        for m, v in r["by_model"].items():
-            by_model[m] += v
-    total = sum(by_harness.values())
-    waste = waste_usd(rows, F)
-    return dict(days=days, total_usd=total, sub_usd=sum(r["sub_usd"] for r in rows), waste_usd=waste,
+    win = window_totals(wide, days)
+    win_part = {r["sid"]: window_totals([r], days)["total_usd"] / r["usd"] for r in rows if r["usd"] > 0}
+    waste = waste_usd(rows, F, win_part)
+    span = _window(days)
+    return dict(days=days, window=dict(first=span[0], last=span[-1]), total_usd=win["total_usd"],
+                session_usd=sum(r["usd"] for r in rows), sub_usd=win["sub_usd"], waste_usd=waste,
                 product_waste_usd=sum(f["usd"] for f in F if f["id"] == "W7"),
-                by_harness=dict(by_harness.most_common()), by_model=dict(by_model.most_common()),
-                findings=F, actions=actions, subagent_mix=subagent_mix(days, rows),
+                by_harness=win["by_harness"], by_model=win["by_model"],
+                findings=F, actions=actions, subagent_mix=subagent_mix(days, wide),
                 top_sessions=[{k: v for k, v in r.items() if k not in DAY_KEYS} for r in rows[:5]], sessions=len(rows), coverage=coverage,
                 providers=providers.totals(bills, days))
 
 
-def waste_usd(rows: list[dict], F: list[dict]) -> float:
+def waste_usd(rows: list[dict], F: list[dict], share: dict | None = None) -> float:
     """The waste total without counting a dollar twice: a session with no outcome is waste whole
     (its re-reads and loops are inside that); any other session's W2/W3/W6 dollars are capped at
     what it cost. W7 is product API spend, not part of the sessions' total, so it is reported on its
-    own (product_waste_usd) and never inflates the share; W8 is minutes, not dollars."""
+    own (product_waste_usd) and never inflates the share; W8 is minutes, not dollars. `share` maps a
+    session id to the part of its cost inside the report window (default 1): a resumed session's
+    waste is prorated by it, so the waste never exceeds the window's spend."""
     idle = {sid for f in F if f["id"] in ("W1", "W5") for sid in f.get("sids") or []}
     shown = {f["id"] for f in F}  # a rule under the floor is not reported, so its dollars do not count
 
     def partial(r):
         return ((r["reread_usd"] if "W2" in shown else 0) + (r["loop_usd"] if "W6" in shown else 0)
                 + (r["top_tier_sub_saving"] if "W3" in shown else 0))
-    per_session = sum(r["usd"] if r["sid"] in idle else min(r["usd"], partial(r)) for r in rows)
+    share = share or {}
+    per_session = sum((r["usd"] if r["sid"] in idle else min(r["usd"], partial(r))) * share.get(r["sid"], 1.0) for r in rows)
     return per_session
 
 
@@ -448,7 +504,9 @@ def summary_line(rep: dict) -> str:
 
 def render(rep: dict) -> str:
     L = [f"teyla spend — last {rep['days']} days, API list price (a subscription bills differently)", "",
-         f"total {_money(rep['total_usd'])} over {rep['sessions']} sessions  ·  "
+         f"window total {_money(rep['total_usd'])} ({rep['window']['first']} to {rep['window']['last']}, local days, "
+         f"cost by the day each message was sent; the number `--by-day` adds up)",
+         f"{rep['sessions']} sessions active in the window, {_money(rep['session_usd'])} over their whole life  ·  "
          + "  ·  ".join(f"{h} {_money(v)}" for h, v in rep["by_harness"].items() if v >= 0.01)
          + (f"  ·  of which subagents {_money(rep['sub_usd'])}" if rep["sub_usd"] else ""),
          "by model: " + ", ".join(f"{m} {_money(v)}" for m, v in list(rep["by_model"].items())[:6])]
@@ -468,7 +526,7 @@ def render(rep: dict) -> str:
     if rep.get("actions") is None:
         L.append("  W8 GitHub Actions: not checked (no gh, no network, or safe mode)")
     L += [f"  {c}" for c in rep.get("coverage") or []]
-    L += ["", NOT_COVERED, "", "top sessions:"]
+    L += ["", NOT_COVERED, "", "top sessions (whole session cost, not the window part):"]
     L += [f"  {_money(r['usd']):>7}  {r['harness']:<11} {_who(r)}" for r in rep["top_sessions"]]
     return "\n".join(L)
 
@@ -656,14 +714,13 @@ def write_alert_file(lines: list[str]) -> None:
 
 def _by_day_raw(days: int, rows: list[dict] | None, today: _dt.date | None) -> dict:
     from .pricing import family, tier
-    today = today or _dt.date.today()
-    window = [(today - _dt.timedelta(days=i)).isoformat() for i in range(days - 1, -1, -1)]
+    window = _window(days, today)
     rows = session_rows(days + 1) if rows is None else rows
     out = {d: dict(day=d, total_usd=0.0, sub_usd=0.0, top_usd=0.0, sessions=0,
                    families={f: dict(usd=0.0, calls=0) for f in FAMILIES}) for d in window}
     for r in rows:
         touched = set()
-        for d, usd in (r.get("day_usd") or {}).items():
+        for d, usd in _row_day_usd(r).items():
             if d in out:
                 out[d]["total_usd"] += usd
                 touched.add(d)
@@ -715,7 +772,7 @@ def subagent_mix(days: int = 7, rows: list[dict] | None = None, today: _dt.date 
                 opus_calls=fam["opus"]["calls"], opus_share=_share(fam["opus"]["usd"], sub))
 
 
-def render_by_day(rows: list[dict]) -> str:
+def render_by_day(rows: list[dict], total: float) -> str:
     cell = lambda v: f"{_money(v['usd'])}/{v['calls']}" if v["usd"] or v["calls"] else "-"
     pct = lambda x: f"{x * 100:.0f}%" if x is not None else "-"
     L = ["teyla spend --by-day — API list price; subagent columns are cost/calls by the model family the subagent ran on", "",
@@ -725,15 +782,82 @@ def render_by_day(rows: list[dict]) -> str:
         L.append(f"{r['day']:<10}  {_money(r['total_usd']):>8}  {_money(r['sub_usd']):>9}  "
                  + "  ".join(f"{cell(r['families'][f]):>13}" for f in FAMILIES)
                  + f"  {pct(r['top_share']):>14}  {pct(r['opus_share']):>10}")
+    L += ["", f"window total {_money(total)}, {rows[0]['day']} to {rows[-1]['day']}: the same number `teyla spend` prints"]
     return "\n".join(L)
+
+
+# --- one session -----------------------------------------------------------------------------
+
+LIST_PRICE_NOTE = "API list price; subscription use and billed spend differ."
+
+
+def find_session(rows: list[dict], key: str) -> tuple[list[dict], str | None]:
+    """The rows whose id is `key` or starts with it. An exact id wins over longer ids that share it."""
+    hit = [r for r in rows if r["sid"] == key] or [r for r in rows if r["sid"].startswith(key)]
+    return hit, None
+
+
+def session_detail(r: dict) -> dict:
+    from .pricing import family
+    by_day = {}
+    for d, usd in sorted(_row_day_usd(r).items()):
+        by_day[d] = round(usd, 4)
+    sub_family = defaultdict(float)
+    for mm in (r.get("sub_day_model_usd") or {}).values():
+        for m, v in mm.items():
+            sub_family[family(m)] += v
+    return dict(
+        id=r["sid"], harness=r["harness"], project=r["project"], cwd=r["cwd"], first=r["first"], last=r["last"],
+        total_usd=r["usd"], session_usd=r["usd"] - r["sub_usd"], subagents_usd=r["sub_usd"],
+        by_model=dict(sorted(r["by_model"].items(), key=lambda kv: -kv[1])), by_day=by_day,
+        subagent_count=len(r.get("sub_calls") or []),
+        subagent_by_family={f: round(v, 4) for f, v in sorted(sub_family.items(), key=lambda kv: -kv[1])},
+        prs=r.get("prs") or 0, note=LIST_PRICE_NOTE)
+
+
+def render_session(d: dict) -> str:
+    L = [f"session {d['id']}", f"{d['harness']} · {d['project']} · {d['cwd'] or 'no cwd'}",
+         f"first {d['first']}  last {d['last']}", "",
+         f"total {_money(d['total_usd'])}  =  session {_money(d['session_usd'])} + subagents {_money(d['subagents_usd'])}",
+         "by model: " + (", ".join(f"{m} {_money(v)}" for m, v in d["by_model"].items()) or "-"),
+         "by local day: " + (", ".join(f"{k} {_money(v)}" for k, v in d["by_day"].items()) or "-"),
+         f"subagents: {d['subagent_count']} calls" + (", " + ", ".join(f"{f} {_money(v)}" for f, v in d["subagent_by_family"].items())
+                                                    if d["subagent_by_family"] else ""),
+         f"PR links: {d['prs']}" if d["prs"] else "PR links: none known", "", d["note"]]
+    return "\n".join(L)
+
+
+def cmd_session(args) -> int:
+    key = args.session.strip()
+    rows = session_rows(max(1, args.days))
+    hit, _ = find_session(rows, key)
+    if not key or not hit:
+        print(f"no session with an id starting {key!r} active in the last {args.days} days (try --days N)", file=sys.stderr)
+        return 1
+    if len(hit) > 1:
+        print(f"{len(hit)} sessions start with {key!r}; give more of the id:", file=sys.stderr)
+        for r in hit:
+            print(f"  {r['sid']}  {r['harness']:<11} {_money(r['usd']):>8}  {r['project']}  {r['last']}", file=sys.stderr)
+        return 2
+    d = session_detail(hit[0])
+    print(json.dumps(d, indent=1, default=str) if args.json else render_session(d))
+    return 0
 
 
 # --- command ---------------------------------------------------------------------------------
 
 def cmd_spend(args) -> int:
+    if getattr(args, "session", None):
+        args.days = getattr(args, "days", None) or 30
+        return cmd_session(args)
+    args.days = getattr(args, "days", None) or 7
     if args.by_day:
-        rows = by_day(max(1, args.days))
-        print(json.dumps(dict(days=args.days, rows=rows), indent=1) if args.json else render_by_day(rows))
+        days = max(1, args.days)
+        wide = session_rows(days + 1)
+        rows = by_day(days, wide)
+        total = round(window_totals(wide, days)["total_usd"], 2)  # not the sum of the rounded rows: the cents of `teyla spend`
+        print(json.dumps(dict(days=args.days, total_usd=total, rows=rows), indent=1) if args.json
+              else render_by_day(rows, total))
         return 0
     if args.alert:
         from . import providers
@@ -753,12 +877,23 @@ def cmd_spend(args) -> int:
     return 0
 
 
+def _days_arg(v: str) -> int:
+    try:
+        n = int(v)
+    except ValueError:
+        n = 0
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"--days must be a whole number of at least 1, not {v!r}")
+    return n
+
+
 def register(sp):
     q = sp.add_parser("spend", help="what the AI work cost and which part of it bought nothing (W1–W8), each with a fix")
     q.set_defaults(fn=cmd_spend)
-    q.add_argument("--days", type=int, default=7)
+    q.add_argument("--days", type=_days_arg, default=None, help="the window (default 7); with --session, how far back to look for the id (default 30)")
     q.add_argument("--json", action="store_true")
     q.add_argument("--by-day", action="store_true", help="one row per day: total, subagent cost, and subagent cost/calls by model family (Opus, Sonnet, Haiku, Fable, other), with Opus's share")
+    q.add_argument("--session", metavar="ID", help="one session by id or id prefix: harness, project, times, cost by model and by day, subagents (ambiguous prefix exits 2, unknown 1)")
     q.add_argument("--alert", action="store_true",
                    help="the daily check: a session over spend.alert_session_usd in the last day, a project or the day over its budget yesterday, Actions past 80%%")
     q.add_argument("--no-write", action="store_true", help="--alert: print only; leave ~/.teyla/spend.alert and the dedupe state alone")
