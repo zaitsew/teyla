@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Taste from the phone: share a link or a picture to Teyla.** Teyla for iPhone has a Share extension: a link or a picture, Like or Dislike, and an optional sentence (the keyboard's microphone dictates it). It lands on the Mac as a corpus entry. With a sentence the entry is `proposed`; without one it is `raw`. The extension writes into an App Group queue and holds no key; the app signs the request and writes `outbox/taste/<uuid>/` into the relay folder, and `teyla relay sync` imports it (`taste_wire.py`: signature, size caps, fixed file names, at most once, never run as a command). A sync pass does not capture the page; `teyla taste capture <id>` does.
+- **`teyla taste list --corpus`** lists the corpus entries with a count per state, and `--status`, `--verdict`, `--limit` and `--json`. `teyla taste list` without the flag is unchanged.
+
 ## 0.48.0 — 2026-11-09 — A budget at the Agent call, one spend total, a platform gate
 
 - **`teyla brief`: a sprint contract with a budget, enforced where new work starts.** `teyla brief <product> --goal G --usd N --hours N` writes the contract under `~/.teyla/briefs/<product>/` and makes it active. `teyla brief --hook` is a Claude Code PreToolUse hook for the Agent and Task tools. Under 80% of the budget (dollars or hours, whichever is further along) it allows the call. From 80% it refuses with "start no new lane", and from 100% with "checkpoint now". It binds each session it sees to the contract, costs the bound sessions at list price, logs refusals to `briefs/refusals.tsv` and fails open on any error. `--raise-usd N --reason "..."` is the owner's override; `--close` ends the contract. Nothing leaves the machine. docs/COMMANDS.md has the settings block.

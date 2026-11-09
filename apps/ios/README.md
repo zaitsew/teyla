@@ -53,6 +53,12 @@ Requires iOS 18 and Xcode. Scanning needs a real device; on a simulator, paste t
 - **Shared code.** `Models.swift`, `Format.swift` and `HomeLogic.swift` come from `apps/mac/Teyla/Core`, so both
   apps decode the snapshot and word Home the same way. Everything else here is iPhone-only.
 
+- **Taste from the share sheet.** The `TeylaShare` extension takes a link or a picture, Like or Dislike and an optional
+  sentence, and saves it into the App Group `group.com.zaitsew.teyla` (`Shared/TasteQueue.swift` is compiled into both
+  targets). The app signs what is queued and writes `outbox/taste/<uuid>/` into the relay folder on its next refresh
+  (`Core/TasteDelivery.swift`); the Mac imports it ([`docs/TASTE.md`](../../docs/TASTE.md#from-the-phone)). The extension
+  holds no key. The App Group must be registered for both bundle ids, and `CURRENT_PROJECT_VERSION` is set on both targets.
+
 ## Development
 
 ```sh

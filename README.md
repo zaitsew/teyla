@@ -103,7 +103,7 @@ Teyla for Mac is a window and a menu-bar icon: Today (your goals and the next st
 brew install xcodegen && git clone https://github.com/zaitsew/teyla && cd teyla/apps/mac && ./install.sh
 ```
 
-The iPhone app reads a signed folder in your own iCloud Drive that `teyla relay on` keeps current. There is no Teyla server and no account. [APP.md](docs/APP.md) has the contract.
+The iPhone app reads a signed folder in your own iCloud Drive that `teyla relay on` keeps current. Share a link or a picture to Teyla from the iOS share sheet to add a like or dislike to your [taste corpus](docs/TASTE.md#from-the-phone). There is no Teyla server and no account. [APP.md](docs/APP.md) has the contract.
 
 ## Privacy
 

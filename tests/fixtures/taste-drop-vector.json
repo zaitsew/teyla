@@ -1,0 +1,8 @@
+{
+ "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+ "id": "5b0c1d2e-3f40-4a51-8b62-73c4d5e6f708",
+ "created": "2026-11-09T10:00:00Z",
+ "json": "{\"created\":\"2026-11-09T10:00:00Z\",\"device\":\"iPhone\",\"id\":\"5b0c1d2e-3f40-4a51-8b62-73c4d5e6f708\",\"image\":null,\"sentence\":\"calm, lots of air\",\"url\":\"https://example.com/a\",\"v\":1,\"verdict\":\"like\"}",
+ "message": "teyla-taste-v1\n5b0c1d2e-3f40-4a51-8b62-73c4d5e6f708\n2026-11-09T10:00:00Z\ne17f7ef2dd699191d475799a9436521f27882f184b4e7521309793a03bf805aa\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+ "sig": "0e98d94d52a28145f9e576603c55cf551bbb031cb4fbdb1b077eb00fe5190a4f"
+}

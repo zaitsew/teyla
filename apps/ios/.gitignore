@@ -2,3 +2,6 @@
 Teyla.xcodeproj
 build/
 Teyla/Info.plist
+TeylaShare/Info.plist
+Teyla/Teyla.entitlements
+TeylaShare/TeylaShare.entitlements

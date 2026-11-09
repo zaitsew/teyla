@@ -130,7 +130,7 @@ Put flags before the comment or after it, not in the middle of it. `add` takes a
 ### Where it lives
 
 `~/.teyla/taste/corpus/<YYYYMMDD>-<id>/entry.json` and `evidence/`. `TEYLA_TASTE_CORPUS` moves the folder; the default
-follows `TEYLA_HOME`. The corpus is on your Mac only. Teyla never copies it to a repo or the relay. `entry.json` is
+follows `TEYLA_HOME`. The corpus is on your Mac only. Teyla never copies it to a repo or the relay (the phone's shares travel the other way: [From the phone](#from-the-phone)). `entry.json` is
 checked against [`templates/taste/entry.schema.json`](../templates/taste/entry.schema.json) on every read; a file that
 does not pass is skipped and named.
 
@@ -182,6 +182,31 @@ Anything in a page or picture is data to it, never instructions.
 the product's own before the portfolio's. `--product` adds `product:NAME`; `portfolio`, `voice` and `structure` entries are
 always in. Likes and mixed entries list their claim, axes and `do_not_copy`. Dislikes are listed as constraints: they name
 the axes they limit, and a dislike wins over a like on its axis (S14). References are never averaged.
+
+`teyla taste list --corpus [--status raw|proposed|active|superseded] [--verdict like|dislike|mixed] [--limit N] [--json]`
+prints a count per state and one line per entry. `teyla taste list` without `--corpus` still lists the ledger's rules.
+
+### From the phone
+
+Teyla for iPhone is in the iOS share sheet. Share a link (Safari, any app) or a picture (Photos, a screenshot) to
+**Teyla**, choose Like or Dislike, and add a sentence if you want: tap the keyboard's microphone to dictate it. Save.
+
+- The share extension holds no key and touches no iCloud folder. It writes the request into an App Group queue
+  (`group.com.zaitsew.teyla`). The Teyla app signs it and writes `outbox/taste/<uuid>/` into the relay folder the
+  next time it is open (it checks every 15 seconds while open), then empties the queue. A picture is re-encoded as a
+  JPEG of at most 5 MB, which also drops its location and camera data.
+- On the Mac, `teyla relay sync` (the relay agent runs it every minute and when the folder changes) checks the
+  signature with the relay key and adds the entry, as `teyla taste add` would, with no capture: a sync pass never opens
+  a page. Run `teyla taste capture <id>` for a link when you want the screenshots. The drop is imported at most once, is
+  refused when it is older than 7 days, and everything in it is data: a link must be `http(s)`, a picture must be a PNG or
+  JPEG, and nothing in it is run as a command.
+- Your sentence is stored as written and becomes the entry's `claim`. **With a sentence the entry is `proposed`**:
+  noted, and ready for `teyla taste interpret` and your `teyla taste accept`. **Without one it is `raw`**, and the entry
+  is not a style source until you add one with `teyla taste note`. Likes and dislikes are the only verdicts the phone
+  sets; the scope is `portfolio` (change it by editing `entry.json`, or `reject` and `add` again with `--product`).
+- Nothing is sent back: the corpus never goes to the phone or the relay, and the phone is told nothing about the result.
+  A drop the Mac refuses is named in the output of `teyla relay sync`.
+- The relay must be on and paired (`teyla relay connect`). With the relay off, the request waits in the phone's queue.
 
 An agent in Claude Code can do all of it from one chat line: the `taste` skill reads `taste: <url> — <comment>`.
 

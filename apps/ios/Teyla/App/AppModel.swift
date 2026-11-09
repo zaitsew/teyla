@@ -329,7 +329,38 @@ final class AppModel {
             }
         }
         await collectSent(store)
+        await flushTasteQueue(store: store, key: key)
         prune()
+    }
+
+    /// Signs and writes what the Share extension saved (`TasteQueue`), oldest first. A request that cannot be written
+    /// stays in the queue for the next refresh; one that can never be valid is dropped, so it does not block the rest.
+    private(set) var tasteDelivered = 0
+
+    func flushTasteQueue(store: RelayStore, key: Data, queue: TasteQueue? = TasteQueue.shared()) async {
+        guard let queue else { return }
+        let device = RelayCrypto.sanitizedDevice(UIDevice.current.name)
+        let delivered = await Task.detached(priority: .utility) { () -> Int in
+            var n = 0
+            for item in queue.pending() {
+                let drop: TasteDrop
+                do {
+                    drop = try TasteDrop.make(item.request, image: item.image, device: device, key: key)
+                } catch {
+                    queue.remove(id: item.request.id)
+                    continue
+                }
+                do {
+                    try store.writeTaste(drop)
+                    queue.remove(id: item.request.id)
+                    n += 1
+                } catch {
+                    break
+                }
+            }
+            return n
+        }.value
+        tasteDelivered += delivered
     }
 
     private func loadSample() {

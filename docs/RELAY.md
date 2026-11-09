@@ -25,6 +25,7 @@ teyla relay pair      # prints the pairing string (the same one again later): pa
 | File | Written by | Holds |
 |---|---|---|
 | `state.teyla` | Mac | The signature, then the snapshot: open questions with Teyla's triage, the core products with their progress, questions Teyla closed, running sessions, tasks, finished work, today's spend, and the GTM Today card (`gtm`, from `teyla gtm today --json`) |
+| `outbox/taste/<uuid>/` | Phone | One signed like or dislike from the iPhone's share sheet: `taste.json`, `taste.sig` and an optional `image.jpg` (at most 5 MB). The Mac adds it to the taste corpus ([TASTE.md](TASTE.md#from-the-phone)); it is never run as a command |
 | `outbox/<id>.json` | Phone | One signed action: an answer, a correction to a running session, a new task for a product, closing a question Teyla suggests closing, reopening one that was closed, or logging one activity (+1) |
 | `sent/<id>.json` | Mac | The result of one action: `ok`, how it was delivered, a detail |
 
