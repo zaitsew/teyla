@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **`teyla spend` and `teyla spend --by-day` now agree.** Over 14 days on one Mac they differed by $190: the headline booked the whole cost of every session active in the window, including the days before it that a resumed session had already spent. The headline `total_usd` is now the window total, cost by the local day each message was sent over the last N local days, the same number `--by-day` adds up (it now prints and returns it). `session_usd` keeps the whole lifetime cost of the sessions active in the window, which the findings and the top-sessions list use.
+- **`teyla spend --session <id>`** shows one session: total at list price, session against subagents, cost by model and by local day, subagent calls and their cost by model family. An ambiguous id prefix exits 2, an unknown one exits 1.
+
 ## 0.47.2 — 2026-11-09 — Claude Fable 5.2 is the top Anthropic tier
 
 - **Teyla prices `claude-fable-5-2`.** It has its own row: $8 input, $10 five-minute cache write, $0.20 cache read, $40 output per 1M tokens, orchestrate tier, verified against Anthropic's pricing page on 2026-11-09. Before, the id fell through to the `claude-fable-5` row and a cache read cost $1.00. Fable 5.1 stays as the previous generation so old transcripts still price; both count in the `fable` family.
