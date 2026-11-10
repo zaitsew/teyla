@@ -32,6 +32,25 @@ Nothing leaves the device unless both channel keys are set or you set `$0.delive
 gets it, why, how long); the words are `ReviewStrings.notice*`. Mark views a tester must not have to send with `.reviewPrivate()`;
 `$0.requiresHealthConsent = true` adds a checkbox before Send.
 
+## Usage capture (test builds)
+
+Records which screens and actions a tester uses, how long a named job takes, dead ends and repeat taps, so a design decision can be
+measured before and after. Debug and TestFlight only: every call returns at once in an App Store build. No content, no titles, no free
+text; only ids you declare. Details, wire and privacy: [docs/REVIEW.md](../../docs/REVIEW.md), "Usage capture".
+
+```swift
+TeylaUsage.configure(screens: ["trip.timeline", "settings.main"], actions: ["trip.addButton", "plan.save"], tasks: ["plan.day"])
+TimelineView().usageScreen("trip.timeline")                      // or TeylaUsage.screen("trip.timeline")
+TeylaUsage.action("plan.save", result: .done)                    // .done .cancelled .error .undone
+TeylaUsage.task("plan.day", .start); TeylaUsage.task("plan.day", .success)
+TeylaUsage.setVariant(decision: "nav", variant: "bottom-bar")    // from a Lab switch; every later event carries it
+```
+
+Put `.usageConsentNotice()` once on the root view: a tester who is not the owner sees Allow / Not now (`ReviewStrings.usage*`) before anything
+leaves the device. The owner's device, paired with `teyla relay pair`, sends on its own. It sends through the shared channel (the same
+Info.plist keys as captures), so with no channel keys nothing is sent. Also: `.usageTap("id")` counts taps on an element, and
+`TeylaUsage.sheetDismissed(_:changed:)` reports a sheet closed with nothing changed. Read the result with `teyla usage <product>`.
+
 ## On a Mac
 
 A Mac has no shake, so the way in is a menu item and a shortcut:

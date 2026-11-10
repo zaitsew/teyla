@@ -57,6 +57,7 @@ You need the shared server from `templates/platform` (Docker, Caddy, the externa
 | `GET /healthz` | 200 |
 | `PUT /v1/captures/<uuid>/capture.png` | 200 stored (or already delivered); 400 not a PNG; 401; 411 no Content-Length; 413 over 10 MiB; 422 picture does not match `screenshot.sha256`; 429 daily cap; 507 storage full; 503 busy |
 | `PUT /v1/captures/<uuid>/capture.json` | the same, with 256 KiB; 400 unless `v` is 1, `id` equals the path and `screenshot.sha256` is there; 403 unless `app.product` equals the key's product |
+| `PUT /v1/captures/<uuid>/usage.json` | a usage batch from a test build, no picture: 200 stored (it moves to `ready/` at once); 400 unless `kind` is `usage`, `v` is 1, `id` equals the path and `events` is a list; 403 unless `app.product` equals the key's product; 413 over 256 KiB; 429 over 300 batches per product per day (a separate count from captures) |
 | `OPTIONS` on those paths | 204, CORS for web builds: origin `*`, no credentials, methods PUT, headers `authorization` and `content-type` |
 | anything else | 405 |
 

@@ -6,12 +6,15 @@ A tester's build PUTs `capture.json` and `capture.png` here. The owner's Mac mov
 
     PUT /v1/captures/<uuid>/capture.png    Authorization: Bearer <key>
     PUT /v1/captures/<uuid>/capture.json   Authorization: Bearer <key>
+    PUT /v1/captures/<uuid>/usage.json     Authorization: Bearer <key>   (a batch of usage events, no picture)
     OPTIONS (the same paths)               CORS for web builds
     GET /healthz                           200
 
 A key belongs to one product. The key decides the product, and `app.product` in the JSON must equal it.
 Files land in `incoming/<product>/<id>/` under temporary names. When both are there and the picture
 matches `screenshot.sha256`, the folder is renamed to `ready/<product>/<id>/`, which is what the Mac reads.
+A usage batch is one file with no picture: it is complete on its own and moves to `ready/` at once. It has
+its own daily cap, so usage never uses up the day's feedback captures.
 
 Environment: RC_DATA (default /data), RC_KEYS (default /keys/keys.txt), RC_PORT (8080), RC_BIND (0.0.0.0).
 The keys file holds one `<sha256 hex of the key> <product slug>` per line; it is read again when it changes.
@@ -36,7 +39,7 @@ from typing import Callable
 MIB = 1024 * 1024
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-PUT_PATH = re.compile(rf"^/v1/captures/({UUID})/(capture\.png|capture\.json)$")
+PUT_PATH = re.compile(rf"^/v1/captures/({UUID})/(capture\.png|capture\.json|usage\.json)$")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 SHA_FIELD = re.compile(r"^[0-9a-fA-F]{64}$")
@@ -51,6 +54,7 @@ class Config:
     max_png: int = 10 * MIB
     max_json: int = 256 * 1024   # the Mac's review.MAX_JSON: a larger one would upload and never import
     per_product_day: int = 20
+    usage_per_product_day: int = 300
     total_day: int = 100
     max_bytes: int = 500 * MIB
     max_concurrent: int = 8
@@ -164,7 +168,7 @@ class Store:
     def incoming_dir(self, product: str, cid: str) -> str:
         return os.path.join(self.incoming, product, cid)
 
-    def reserve(self, product: str, cid: str, length: int) -> str:
+    def reserve(self, product: str, cid: str, length: int, usage: bool = False) -> str:
         """"ready" (already delivered, count nothing), "rate" (429), "full" (507) or "ok"."""
         with self.lock:
             if os.path.isdir(self.ready_dir(product, cid)):
@@ -173,15 +177,23 @@ class Store:
                 self.counts = self._fresh()
             key = f"{product}/{cid}"
             new = key not in self.counts["ids"] and not os.path.isdir(self.incoming_dir(product, cid))
-            if new and (self.counts["products"].get(product, 0) >= self.cfg.per_product_day
-                        or self.counts["total"] >= self.cfg.total_day):
+            # Usage batches count apart: they have their own per-product cap and do not touch the capture totals.
+            used = self.counts.setdefault("usage", {})
+            if new and usage:
+                if used.get(product, 0) >= self.cfg.usage_per_product_day:
+                    return "rate"
+            elif new and (self.counts["products"].get(product, 0) >= self.cfg.per_product_day
+                          or self.counts["total"] >= self.cfg.total_day):
                 return "rate"
             if self.usage() + self.inflight + length > self.cfg.max_bytes:
                 return "full"
             if new:
                 self.counts["ids"].append(key)
-                self.counts["products"][product] = self.counts["products"].get(product, 0) + 1
-                self.counts["total"] += 1
+                if usage:
+                    used[product] = used.get(product, 0) + 1
+                else:
+                    self.counts["products"][product] = self.counts["products"].get(product, 0) + 1
+                    self.counts["total"] += 1
                 self._save()
             self.inflight += length
             return "ok"
@@ -212,6 +224,10 @@ class Store:
                 except OSError:
                     pass
                 raise
+            if name == "usage.json":
+                _mkdir(os.path.join(self.ready, product))
+                os.rename(d_in, d_ready)       # a usage batch has no picture to wait for
+                return "complete"
             png, js = os.path.join(d_in, "capture.png"), os.path.join(d_in, "capture.json")
             if not (os.path.isfile(png) and os.path.isfile(js)):
                 return "stored"
@@ -422,7 +438,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _put(self, product: str, cid: str, name: str, length: int) -> None:
         store = self.server.store
-        verdict = store.reserve(product, cid, length)
+        verdict = store.reserve(product, cid, length, usage=(name == "usage.json"))
         if verdict == "ready":
             self.reply(200, "ok")
             return self._drain(length)
@@ -459,6 +475,14 @@ class Handler(BaseHTTPRequestHandler):
             app = obj.get("app")
             if not isinstance(app, dict) or app.get("product") != product:
                 return 403, "product mismatch"
+            if name == "usage.json":
+                if obj.get("kind") != "usage" or not isinstance(obj.get("events"), list):
+                    return 400, "not a usage batch"
+                try:
+                    result = self.server.store.put(product, cid, name, body)
+                except OSError:
+                    return 500, "could not store"
+                return 200, "ok"
             shot = obj.get("screenshot")
             if not isinstance(shot, dict) or not isinstance(shot.get("sha256"), str) or not SHA_FIELD.match(shot["sha256"]):
                 return 400, "screenshot.sha256 missing"
