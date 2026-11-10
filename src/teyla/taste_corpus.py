@@ -460,9 +460,11 @@ def cmd(args) -> int:
             status, verdict = getattr(args, "status", None), getattr(args, "verdict", None)
             ents = [e for e in ents if (not status or e["status"] == status) and (not verdict or e["verdict"] == verdict)]
             lim = max(1, args.limit)
+            from . import taste_wire
+            failed = taste_wire.failed_drops()
             if args.json:
-                print(json.dumps({"corpus": str(corpus_dir()), "counts": counts, "entries": ents[:lim], "problems": problems},
-                                 indent=1, ensure_ascii=False))
+                print(json.dumps({"corpus": str(corpus_dir()), "counts": counts, "entries": ents[:lim], "problems": problems,
+                                  "failed_drops": failed}, indent=1, ensure_ascii=False))
                 return 0
             if not ents:
                 print(f"no corpus entries{' match' if status or verdict else ''} ({corpus_dir()}): teyla taste add <url> \"what you like about it\"")
@@ -472,14 +474,19 @@ def cmd(args) -> int:
                 print(inbox_line(e))
             if len(ents) > lim:
                 print(f"... {len(ents) - lim} more (--limit)")
+            for f in failed:
+                print(taste_wire.failed_line(f))
             for p in problems:
                 print(f"skipped: {p}", file=sys.stderr)
             return 0
         if action == "inbox":
             ents, problems = inbox_rows(True)
             lim = max(1, args.limit)
+            from . import taste_wire
+            failed = taste_wire.failed_drops()
             if args.json:
-                print(json.dumps({"corpus": str(corpus_dir()), "entries": ents[:lim], "problems": problems}, indent=1, ensure_ascii=False))
+                print(json.dumps({"corpus": str(corpus_dir()), "entries": ents[:lim], "problems": problems,
+                                  "failed_drops": failed}, indent=1, ensure_ascii=False))
                 return 0
             if not ents:
                 print(f"the corpus is empty ({corpus_dir()}): teyla taste add <url> \"what you like about it\"")
@@ -487,6 +494,8 @@ def cmd(args) -> int:
                 print(inbox_line(e))
             if len(ents) > lim:
                 print(f"... {len(ents) - lim} more (--limit)")
+            for f in failed:
+                print(taste_wire.failed_line(f))
             for p in problems:
                 print(f"skipped: {p}", file=sys.stderr)
             return 0

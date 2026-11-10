@@ -13,7 +13,8 @@ phone-to-Mac entry (`relay.py`):
 would make it, minus the capture: a pass never opens a page. The sentence is stored as written; with a sentence the
 entry is `proposed` (ready for `teyla taste accept`), without one it is `raw`. The folder is anyone-can-write iCloud,
 so everything in it is data until the signature holds: sizes are capped before reading, names are fixed, nothing is
-followed through a link, and an id is imported at most once (the relay journal, as for entries).
+followed through a link, and an id is imported at most once. `taste-journal.json` records every drop, and a folder is deleted only after its import is
+recorded there.
 """
 from __future__ import annotations
 
@@ -39,7 +40,7 @@ MAX_TRIES = 3                    # an import that fails (a corpus that cannot be
 FIELDS = frozenset({"v", "id", "created", "device", "verdict", "url", "image", "sentence"})
 IMAGES = {"image.jpg": ".jpg", "image.png": ".png"}
 VERDICTS = ("like", "dislike")
-MAX_PER_PASS = 20
+MAX_PER_PASS = 20                # real import attempts per pass; failed and incomplete drops never count
 
 _HEX64 = re.compile(r"[0-9a-f]{64}", re.ASCII)
 
@@ -116,20 +117,56 @@ def _read_file(dfd: int, name: str, cap: int) -> tuple[bytes | None, str]:
         return f.read(cap + 1), ""
 
 
-def seen_path() -> pathlib.Path:
-    return relay.ctl.home() / "taste-seen.json"
+class JournalError(Exception):
+    """The drop journal cannot be read or written. A pass that meets it stops and deletes nothing."""
 
 
-def _load_seen() -> dict[str, float]:
-    """When this Mac first saw each drop that is still waiting. The grace for files still arriving counts from
-    here: a synced modification time says when the phone wrote a file, not when iCloud delivered it."""
+def journal_path() -> pathlib.Path:
+    return relay.ctl.home() / "taste-journal.json"
+
+
+def _load_journal() -> dict[str, dict]:
+    """id -> {"state": "waiting"|"failed"|"imported", "first_seen", "attempts", "error", "path"}.
+    A missing file is an empty journal. One that exists and cannot be read stops the pass: guessing would
+    import the same drop twice."""
     try:
-        got = json.loads(seen_path().read_text())
-    except (OSError, ValueError):
+        text = journal_path().read_text()
+    except FileNotFoundError:
         return {}
+    except OSError as exc:
+        raise JournalError(f"cannot read {journal_path()}: {exc}") from exc
+    try:
+        got = json.loads(text)
+    except ValueError as exc:
+        raise JournalError(f"{journal_path()} is not JSON") from exc
     if not isinstance(got, dict):
-        return {}
-    return {k: float(v) for k, v in got.items() if isinstance(k, str) and isinstance(v, (int, float))}
+        raise JournalError(f"{journal_path()} is not a JSON object")
+    return {k: v for k, v in got.items() if isinstance(k, str) and isinstance(v, dict)}
+
+
+def _save_journal(journal: dict[str, dict]) -> None:
+    try:
+        relay._write_json(journal_path(), journal)
+    except OSError as exc:
+        raise JournalError(f"cannot write {journal_path()}: {exc}") from exc
+
+
+def _int(v, default: int = 0) -> int:
+    return v if type(v) is int else default
+
+
+def failed_drops() -> list[dict]:
+    """The drops given up on, for `teyla taste inbox` and `list --corpus`. An unreadable journal lists none."""
+    try:
+        j = _load_journal()
+    except JournalError:
+        return []
+    return [{"id": k, "attempts": _int(v.get("attempts")), "error": str(v.get("error", "")), "path": str(v.get("path", ""))}
+            for k, v in sorted(j.items()) if v.get("state") == "failed"]
+
+
+def failed_line(f: dict) -> str:
+    return f"{f['id']}  failed  {f['attempts']} tries  {f['error']}  folder: {f['path']}"
 
 
 def _remove(parent_fd: int, name: str) -> None:
@@ -180,107 +217,135 @@ def import_drop(obj: dict, image: bytes | None, add_fn=None) -> str:
 
 def pull(dirs: "relay.Dirs", key: bytes, now: float, add_fn=None) -> list[dict]:
     """Import every verified drop in `outbox/taste/`. One result per drop that was decided this pass:
-    {"id", "kind": "taste", "ok", "detail"}. A drop still arriving is left alone."""
+    {"id", "kind": "taste", "ok", "detail"}. A drop still arriving is left alone.
+
+    The journal (`taste-journal.json`) is the only record. A folder is deleted in one case: the journal says
+    this drop's corpus entry was written, and that row was saved first. A drop that fails is counted in the
+    journal; at MAX_TRIES it is `failed` and later passes skip it without reading it. Nothing else deletes."""
     box = _open_dir(DIR, dirs.outbox)
     if box is None:
         return []
     out: list[dict] = []
-    seen = _load_seen()
-    before = dict(seen)
+    base = pathlib.Path(dirs.folder) / "outbox" / DIR
     try:
-        names = sorted(n for n in os.listdir(box) if relay._UUID_RE.fullmatch(n))[:MAX_PER_PASS]
-        for name in names:
+        journal = _load_journal()
+        before = json.dumps(journal, sort_keys=True)
+        names = sorted(n for n in os.listdir(box) if relay._UUID_RE.fullmatch(n))
+        imports = [0]
+        try:
+            for name in names:
+                if journal.get(name.lower(), {}).get("state") == "failed":
+                    continue                              # given up on: one dict lookup, no file is read
+                if imports[0] >= MAX_PER_PASS:
+                    break                                 # only real import attempts count; the rest wait
+                try:
+                    res = _one(box, name, base / name, key, now, add_fn, journal, imports)
+                except JournalError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - one odd folder must never stop the drops after it
+                    res = {"id": name.lower(), "kind": "taste", "ok": False,
+                           "detail": f"skipped: {type(exc).__name__}: {relay._clip(str(exc), 120)}"}
+                if res is not None:
+                    out.append(res)
+        except JournalError as exc:
+            out.append({"id": "journal", "kind": "taste", "ok": False,
+                        "detail": f"stopped, nothing was deleted: {relay._clip(str(exc), 160)}"})
+            return out
+        present = {n.lower() for n in names}
+        keep = {k: v for k, v in journal.items()
+                if (k in present and v.get("state") != "imported")
+                or (v.get("state") == "imported" and now - float(v.get("at") or now) < relay.JOURNAL_KEEP_S)}
+        if json.dumps(keep, sort_keys=True) != before:
             try:
-                res = _one(box, name, key, now, add_fn, seen)
-            except Exception as exc:  # noqa: BLE001 - one odd folder must never stop the drops after it
-                res = {"id": name.lower(), "kind": "taste", "ok": False,
-                       "detail": f"skipped: {type(exc).__name__}: {relay._clip(str(exc), 120)}"}
-            if res is not None:
-                out.append(res)
-        waiting = {n.lower() for n in os.listdir(box)}
-        seen = {k: v for k, v in seen.items() if k in waiting and now - v < relay.JOURNAL_KEEP_S}
-        if seen != before:
-            try:
-                relay._write_json(seen_path(), seen)
-            except OSError:
-                pass
+                _save_journal(keep)
+            except JournalError:
+                pass                                      # first-seen times and old rows only; nothing is deleted
     finally:
         os.close(box)
     return out
 
 
-def _one(box: int, name: str, key: bytes, now: float, add_fn, seen: dict[str, float]) -> dict | None:
+def _one(box: int, name: str, path: pathlib.Path, key: bytes, now: float, add_fn, journal: dict[str, dict],
+         imports: list[int]) -> dict | None:
     did = name.lower()
-
-    def refuse(why: str) -> dict:
+    row = journal.setdefault(did, {"state": "waiting", "first_seen": now, "attempts": 0, "error": "", "path": str(path)})
+    if row.get("state") == "imported":                    # saved earlier, but the folder is still here: finish the delete
         _remove(box, name)
-        return {"id": did, "kind": "taste", "ok": False, "detail": why}
+        return {"id": did, "kind": "taste", "ok": False, "detail": "replay: already handled"}
 
+    def fail(why: str, detail: str | None = None, counted: bool = False) -> dict:
+        """Count a failed attempt (unless it was counted before the import), save it, keep the folder.
+        At MAX_TRIES the drop is `failed`."""
+        if not counted:
+            row["attempts"] = _int(row.get("attempts")) + 1
+        row["error"] = relay._clip(why, 160)
+        row["path"] = str(path)
+        n = row["attempts"]
+        if n >= MAX_TRIES:
+            row["state"] = "failed"
+        _save_journal(journal)
+        if row["state"] == "failed":
+            return {"id": did, "kind": "taste", "ok": False,
+                    "detail": f"{detail or why} (given up after {MAX_TRIES} tries; the folder stays: {path})"}
+        return {"id": did, "kind": "taste", "ok": False, "detail": detail or why}
+
+    first = row.get("first_seen")
+    first = float(first) if isinstance(first, (int, float)) else now
+    young = now - first < YOUNG_S
     dfd = _open_dir(name, box)
     if dfd is None:
-        return refuse("not a plain folder")
+        return fail("not a plain folder")
     try:
-        young = now - seen.setdefault(did, now) < YOUNG_S
         raw, why = _read_file(dfd, "taste.json", MAX_JSON)
         sig, why_s = _read_file(dfd, "taste.sig", 1024)
         if raw is None or sig is None:
             if "missing" in (why, why_s) and young:
                 return None
-            return refuse(f"taste.json or taste.sig: {why if raw is None else why_s}")
+            return fail(f"taste.json or taste.sig: {why if raw is None else why_s}")
         try:
             obj = json.loads(raw.decode("utf-8"))
         except (ValueError, RecursionError):
-            return None if young else refuse("taste.json is not JSON")
+            return None if young else fail("taste.json is not JSON")
         bad = shape(obj)
         if not bad and obj["id"].lower() != did:
             bad = "malformed drop: id does not match the folder name"
         if bad:
-            return refuse(bad)
+            return fail(bad)
         image = b""
         if obj["image"] is not None:
             img, why_i = _read_file(dfd, obj["image"], MAX_IMAGE)
             if img is None:
                 if why_i == "missing" and young:
                     return None
-                return refuse(f"{obj['image']}: {why_i}")
+                return fail(f"{obj['image']}: {why_i}")
             if taste_corpus_media(img) is None:
-                return refuse("the picture is not a PNG or JPEG")
+                return fail("the picture is not a PNG or JPEG")
             image = img
         sig_text = sig.decode("ascii", "replace").strip()
         good = _HEX64.fullmatch(sig_text) and hmac.compare_digest(
             drop_sig(key, obj["id"], obj["created"], raw, image).encode("ascii"), sig_text.encode("ascii"))
         if not good:
-            return None if young else refuse("bad signature")
+            return None if young else fail("bad signature")
         age = now - (relay._created_epoch(obj["created"]) or 0.0)
         if age > relay.MAX_AGE_S:
-            return refuse("too old (more than 7 days); share it again")
+            return fail("too old (more than 7 days); share it again")
         if age < -relay.MAX_AHEAD_S:
-            return refuse("dated in the future; check the phone's clock")
-        tries = 0
-        if not relay._claim({"id": did, "kind": "taste", "target": "taste"}, now):
-            rec = relay._journal_read(did) or {}
-            res = rec.get("result") if isinstance(rec.get("result"), dict) else {}
-            if rec.get("state") != "retry":           # imported, or a pass was cut off: never imported twice
-                _remove(box, name)
-                return {"id": did, "kind": "taste", "ok": False, "detail": "replay: already handled"}
-            tries = res.get("tries") if type(res.get("tries")) is int else MAX_TRIES
-            relay._journal_set(did, "claimed", now, {"tries": tries})
+            return fail("dated in the future; check the phone's clock")
+        imports[0] += 1
+        row["attempts"] = _int(row.get("attempts")) + 1   # counted and saved before the import: a crash cannot loop
+        _save_journal(journal)                            # cannot save: the pass stops, nothing is imported
         try:
             eid = import_drop(obj, image or None, add_fn)
-        except Exception as exc:                        # noqa: BLE001
-            tries += 1
+        except Exception as exc:                          # noqa: BLE001
             why = f"{type(exc).__name__}: {relay._clip(str(exc), 120)}"
-            if tries < MAX_TRIES:                       # the drop stays in the outbox; the next pass tries again
-                relay._journal_set(did, "retry", now, {"tries": tries, "ok": False, "detail": why})
-                return {"id": did, "kind": "taste", "ok": False,
-                        "detail": f"could not add it, will retry ({tries}/{MAX_TRIES}): {why}"}
-            detail = f"could not add it after {MAX_TRIES} tries: {why}"
-            relay._journal_set(did, "done", now, {"ok": False, "via": "taste", "detail": relay._clip(detail)})
-            _remove(box, name)
-            return {"id": did, "kind": "taste", "ok": False, "detail": detail}
+            n = row["attempts"]
+            nice = (f"could not add it, will retry ({n}/{MAX_TRIES}): {why}" if n < MAX_TRIES
+                    else f"could not add it after {MAX_TRIES} tries: {why}")
+            return fail(f"could not add it: {why}", nice, counted=True)
         detail = f"added {eid} ({obj['verdict']}, {'proposed' if obj['sentence'].strip() else 'raw'})"
-        relay._journal_set(did, "done", now, {"ok": True, "via": "taste", "detail": relay._clip(detail)})
-        _remove(box, name)                              # only now, after the corpus entry is on disk
+        row.update({"state": "imported", "at": now, "error": "", "entry": eid})
+        _save_journal(journal)                            # confirmed on disk: only now may the folder go
+        _remove(box, name)
         return {"id": did, "kind": "taste", "ok": True, "detail": detail}
     finally:
         os.close(dfd)

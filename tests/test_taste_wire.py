@@ -47,9 +47,7 @@ class Env:
             (d / image).write_bytes(pic)
         (d / "taste.sig").write_text(taste_wire.drop_sig(key, did, created, raw, pic if isinstance(image, str) else b""))
         if seen_ago is not None:                        # this Mac first saw the drop that long ago
-            seen = taste_wire._load_seen()
-            seen[did] = NOW - seen_ago
-            relay._write_json(taste_wire.seen_path(), seen)
+            set_row(did, first_seen=NOW - seen_ago)
         return d
 
     def pull(self, now=NOW):
@@ -58,6 +56,22 @@ class Env:
     def pull_with(self, add_fn, now=NOW):
         with relay.Dirs(self.root).open() as dirs:
             return taste_wire.pull(dirs, KEY, now, add_fn)
+
+
+def journal():
+    try:
+        return json.loads(taste_wire.journal_path().read_text())
+    except FileNotFoundError:
+        return {}
+
+
+def set_row(did, **kw):
+    j = journal()
+    row = {"state": "waiting", "first_seen": NOW, "attempts": 0, "error": "", "path": ""}
+    row.update(j.get(did, {}))
+    row.update(kw)
+    j[did] = row
+    relay._write_json(taste_wire.journal_path(), j)
 
 
 @pytest.fixture
@@ -123,9 +137,9 @@ def test_a_missing_picture_waits_then_is_refused(env):
     d = env.drop(image="image.jpg")
     (d / "image.jpg").unlink()
     assert env.pull() == []
-    taste_wire.seen_path().write_text(json.dumps({DID: NOW - 3600}))
+    set_row(DID, first_seen=NOW - 3600)
     [r] = env.pull()
-    assert r["ok"] is False and "missing" in r["detail"]
+    assert r["ok"] is False and "missing" in r["detail"] and d.exists()
 
 
 def test_a_changed_picture_breaks_the_signature(env):
@@ -235,9 +249,10 @@ def test_a_failed_import_keeps_the_drop_and_retries_then_gives_up(env):
     [r] = env.pull_with(failing)
     assert "will retry (2/3)" in r["detail"] and d.exists()
     [r] = env.pull_with(failing)
-    assert "after 3 tries" in r["detail"] and not d.exists()
+    assert "after 3 tries" in r["detail"] and d.exists()      # given up, never deleted
     assert len(calls) == 3
-    assert env.pull() == []
+    assert env.pull_with(failing) == [] and len(calls) == 3   # skipped on later passes
+    assert d.exists() and journal()[DID]["state"] == "failed"
 
 
 def test_a_drop_that_failed_once_is_imported_when_the_corpus_works_again(env):
@@ -260,10 +275,10 @@ def test_files_still_arriving_get_their_grace_from_when_this_mac_first_saw_the_d
     for p in (*d.iterdir(), d):
         os.utime(p, (NOW - 7200, NOW - 7200))           # the phone wrote it two hours ago, offline
     assert env.pull() == [] and d.exists()              # first seen now: wait
-    assert json.loads(taste_wire.seen_path().read_text()) == {DID: NOW}
+    assert journal()[DID]["first_seen"] == NOW
     assert env.pull(now=NOW + 60) == [] and d.exists()
     [r] = env.pull(now=NOW + 3600)
-    assert r["ok"] is False and "missing" in r["detail"] and not d.exists()
+    assert r["ok"] is False and "missing" in r["detail"] and d.exists()
 
 
 @pytest.mark.parametrize("bad", [[1, 2], {"a": 1}, 7, True])
@@ -276,3 +291,111 @@ def test_a_malformed_image_field_never_blocks_the_drops_after_it(env, bad):
     assert by_id[first]["ok"] is False and "image" in by_id[first]["detail"]
     assert by_id[DID]["ok"] is True
     assert len(entries()) == 1
+
+
+# --- the journal decides every delete (teyla#473, supersedes #479) -----------------------------------
+
+def test_a_folder_is_deleted_only_after_its_import_is_in_the_journal(env, monkeypatch):
+    seen = []
+    real = taste_wire._remove
+
+    def checked(parent_fd, name):
+        seen.append(journal().get(name, {}).get("state"))
+        real(parent_fd, name)
+
+    monkeypatch.setattr(taste_wire, "_remove", checked)
+    env.drop(sentence="calm")
+    env.pull()
+    assert seen == ["imported"]
+
+
+def test_a_refused_drop_is_never_deleted(env):
+    d = env.drop(key=bytes(32), seen_ago=3600)
+    env.drop(did="6b0c1d2e-3f40-4a51-8b62-73c4d5e6f708", created=iso(NOW - 9 * 86400))
+    old = env.root / "outbox" / "taste" / "6b0c1d2e-3f40-4a51-8b62-73c4d5e6f708"
+    for _ in range(4):
+        env.pull()
+    assert d.exists() and old.exists()
+    assert {v["state"] for v in journal().values()} == {"failed"}
+
+
+def test_three_failures_mark_the_drop_failed_and_it_no_longer_counts_toward_the_cap(env, monkeypatch):
+    monkeypatch.setattr(taste_wire, "MAX_PER_PASS", 1)
+    bad = env.drop(did="0a000000-0000-4000-8000-000000000001", sentence="bad")
+    good = env.drop(sentence="good")
+    calls = []
+
+    def add(words, **kw):
+        calls.append(words)
+        if "bad" in words:
+            raise PermissionError("no")
+        return taste_corpus.add(words, **kw)
+
+    for _ in range(3):
+        env.pull_with(add)
+    assert journal()["0a000000-0000-4000-8000-000000000001"]["state"] == "failed" and bad.exists()
+    assert good.exists() and entries() == []            # the cap of 1 kept the valid drop waiting behind the bad one
+    n = len(calls)
+    [r] = env.pull_with(add)                            # the failed drop is skipped, so the valid one gets the slot
+    assert r["ok"] is True and len(calls) == n + 1 and not good.exists() and bad.exists()
+
+
+def test_a_journal_that_cannot_be_written_stops_the_pass_with_nothing_deleted(env, monkeypatch):
+    d = env.drop(sentence="calm")
+    real = relay._write_json
+
+    def broken(path, obj, *a, **kw):
+        if pathlib.Path(path) == taste_wire.journal_path():
+            raise OSError("disk full")
+        return real(path, obj, *a, **kw)
+
+    monkeypatch.setattr(relay, "_write_json", broken)
+    [r] = env.pull()
+    assert r["ok"] is False and "nothing was deleted" in r["detail"]
+    assert d.exists() and entries() == []
+
+
+def test_a_journal_that_fails_after_the_import_keeps_the_folder(env, monkeypatch):
+    d = env.drop(sentence="calm")
+    real, writes = relay._write_json, []
+
+    def second_fails(path, obj, *a, **kw):
+        if pathlib.Path(path) == taste_wire.journal_path():
+            writes.append(1)
+            if len(writes) >= 2:
+                raise OSError("disk full")
+        return real(path, obj, *a, **kw)
+
+    monkeypatch.setattr(relay, "_write_json", second_fails)
+    env.pull()
+    assert d.exists()                                    # the import is not recorded, so nothing may be deleted
+
+
+def test_many_failed_drops_do_not_starve_a_newer_valid_one(env):
+    box = env.root / "outbox" / "taste"
+    box.mkdir(parents=True)
+    rows = {}
+    for i in range(500):
+        did = f"{i:08x}-0000-4000-8000-000000000000"
+        (box / did).mkdir()
+        rows[did] = {"state": "failed", "first_seen": NOW - 9999, "attempts": 3, "error": "bad signature", "path": str(box / did)}
+    relay._write_json(taste_wire.journal_path(), rows)
+    env.drop(sentence="the valid one")
+    res = env.pull()
+    assert [(r["id"], r["ok"]) for r in res] == [(DID, True)]
+    assert len(entries()) == 1 and len(list(box.iterdir())) == 500
+
+
+def _failed_row(path="/x/outbox/taste/" + DID):
+    relay._write_json(taste_wire.journal_path(), {DID: {"state": "failed", "first_seen": NOW, "attempts": 3,
+                                                       "error": "bad signature", "path": path}})
+
+
+def test_the_inbox_and_the_corpus_list_show_each_failed_drop(env, capsys):
+    _failed_row()
+    for argv in (["taste", "inbox"], ["taste", "list", "--corpus"]):
+        assert cli.main(argv) == 0
+        out = capsys.readouterr().out
+        assert DID in out and "3 tries" in out and "bad signature" in out and "/x/outbox/taste/" + DID in out
+    assert cli.main(["taste", "inbox", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["failed_drops"][0]["id"] == DID
