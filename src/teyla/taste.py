@@ -433,7 +433,8 @@ def confirm(repo: pathlib.Path, prefix: str, *, rule: str | None = None, scope: 
         _write_atomic(path, dumps({
             "wording": wording, "scope": d["scope"], "example_capture": d.get("capture", did),
             "date": old.get("date") or str(d.get("date") or on), "confirmed": True,
-            "confirmed_on": old.get("confirmed_on") or on, "decision": did}))
+            "confirmed_on": old.get("confirmed_on") or on, "decision": did,
+            **({"reach": d["reach"]} if d.get("reach") else {})}))
         result["rule_file"] = str(path.relative_to(repo))
     elif d["decision"] == "rule":
         path = rule_file_for(repo, did)
