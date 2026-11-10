@@ -73,6 +73,16 @@ final class Dictation {
         Task { await start(field: field, language: language, current: current, onText: onText, generation: mine) }
     }
 
+    /// Hold mode: starts listening for `field` and never toggles off. The caller calls `stop()` on release.
+    /// A release before the permission prompt or the engine is ready cancels the pending start.
+    func begin(field: String, language: DictationLanguage, current: String, onText: @escaping (String) -> Void) {
+        guard activeField != field else { return }
+        stop()
+        message = nil
+        let mine = generation
+        Task { await start(field: field, language: language, current: current, onText: onText, generation: mine) }
+    }
+
     func stop() {
         generation += 1
         guard activeField != nil || engine.isRunning || tapInstalled else { return }

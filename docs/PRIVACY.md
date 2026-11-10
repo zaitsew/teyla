@@ -130,6 +130,10 @@ checks other than row 1 read local files only. `teyla attention` makes no call e
 safe mode or `--allow-network` say. A source that would need the network is read from its cache and the row says how old
 the cache is.
 
+The iPhone app's Lab "Morning post card" drafts on the device (Apple's on-device model or a local rule) and sends
+nothing: its answers and drafts stay in the app's own storage, and the LinkedIn and X buttons only hand the text to those
+apps, where you post it.
+
 ## URLs in the code that are not calls
 
 `teyla hosts` reads Teyla's own source and lists every host literal. These appear in it and are never

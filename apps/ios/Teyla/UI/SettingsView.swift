@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @AppStorage("dictationLanguage") private var languageID = DictationLanguage.english.rawValue
+    @AppStorage(MorningCardLogic.labKey) private var morningCardOn = false
     @State private var confirmForget = false
     @State private var showFolderPicker = false
 
@@ -13,6 +14,7 @@ struct SettingsView: View {
         Page {
             macBlock
             voiceBlock
+            labBlock
             travelsBlock
             aboutBlock
         }
@@ -77,6 +79,18 @@ struct SettingsView: View {
                 }
                 .padding(.vertical, Space.s)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private var labBlock: some View {
+        VStack(alignment: .leading, spacing: Space.m) {
+            SectionHeader(title: "Lab",
+                          note: "One question each morning, one post in your words. Drafts stay on this iPhone.")
+            RowGroup {
+                Toggle("Morning post card", isOn: $morningCardOn)
+                    .font(Typo.body.weight(.semibold))
+                    .padding(.vertical, Space.s)
             }
         }
     }
