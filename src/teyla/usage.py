@@ -162,6 +162,10 @@ def import_folder(product: str | None, folder: pathlib.Path, now: float | None =
         sent = ""
     events = [e for e in (_safe_event(x) for x in obj["events"]) if e]
     rep.update(ok=True, events=len(events), dropped=len(obj["events"]) - len(events))
+    if events and max(e["t"] for e in events) < (now if now is not None else time.time()) - RETENTION_DAYS * 86400:
+        rep["expired"] = True       # past the retention the notice promises (same rule as `prune`): read, not stored
+        rep["events"] = 0
+        return rep
     dest = product_dir(product) / f"{folder.name}.json"
     if dest.exists():
         rep["known"] = True
