@@ -102,6 +102,7 @@ public enum PostCutter {
     public static func sentences(_ note: String) -> [String] {
         var s = note.replacingOccurrences(of: "\r", with: "")
         for f in filler { s = s.replacingOccurrences(of: f, with: "", options: [.regularExpression, .caseInsensitive]) }
+        s = capitalizingSentenceStarts(s)
         var out: [String] = []
         s.enumerateSubstrings(in: s.startIndex..., options: .bySentences) { sub, _, _, _ in
             guard var t = sub?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return }
@@ -109,6 +110,25 @@ public enum PostCutter {
             out.append(t.prefix(1).uppercased() + t.dropFirst())
         }
         return out
+    }
+
+    /// Typed or dictated notes often start sentences in lower case ("layout. if you"), and the
+    /// sentence splitter does not split there. Capitalise each start, and a lone "i", first.
+    static func capitalizingSentenceStarts(_ text: String) -> String {
+        var chars = Array(text)
+        var start = true
+        for i in chars.indices {
+            let c = chars[i]
+            if start, c.isLetter {
+                chars[i] = Character(c.uppercased())
+                start = false
+            } else if ".!?".contains(c) {
+                start = true
+            } else if !c.isWhitespace {
+                start = false
+            }
+        }
+        return String(chars).replacingOccurrences(of: #"\bi\b(?=[\s',.!?])"#, with: "I", options: .regularExpression)
     }
 
     public static func draft(note: String) -> PostDraft {

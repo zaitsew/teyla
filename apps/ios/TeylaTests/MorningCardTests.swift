@@ -124,6 +124,12 @@ final class MorningCardTests: XCTestCase {
         XCTAssertTrue(x.hasSuffix("\u{2026}"))
     }
 
+    func testCutterSplitsLowercaseSentences() {
+        let parts = PostCutter.sentences("i thought it would take a day. it took 20 minutes. if you build alone, reuse your screens")
+        XCTAssertEqual(parts, ["I thought it would take a day.", "It took 20 minutes.", "If you build alone, reuse your screens"])
+        XCTAssertEqual(PostCutter.capitalizingSentenceStarts("version 2.5 is out"), "Version 2.5 is out")
+    }
+
     func testPrepareStripsTagsAndLinks() {
         XCTAssertEqual(PostRules.prepare("Shipped it #buildinpublic today"), "Shipped it today")
         XCTAssertEqual(PostRules.prepare("Fixed the sync (github.com/x/y) today."), "Fixed the sync today.")
