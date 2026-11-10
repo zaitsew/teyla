@@ -238,6 +238,39 @@ def test_a_failed_import_keeps_the_drop_and_retries_then_gives_up(env):
     assert "after 3 tries" in r["detail"] and not d.exists()
     assert len(calls) == 3
     assert env.pull() == []
+    kept = taste_wire.failed_dir() / DID               # given up is not deleted: the share is kept, with the reason
+    assert (kept / "taste.json").is_file() and (kept / "taste.sig").is_file()
+    assert "read-only" in (kept / "reason.txt").read_text()
+
+
+def test_a_corpus_that_fails_for_every_pass_never_destroys_the_share(env):
+    env.drop(sentence="calm")
+
+    def failing(words, **kw):
+        raise PermissionError("corpus is read-only")
+
+    for _ in range(taste_wire.MAX_TRIES):
+        env.pull_with(failing)
+    assert (taste_wire.failed_dir() / DID / "taste.json").is_file()
+
+
+def test_a_journal_that_cannot_be_written_never_turns_the_drop_into_a_replay(env, monkeypatch):
+    d = env.drop(sentence="calm")
+
+    def failing(words, **kw):
+        raise PermissionError("busy")
+
+    real = relay._journal_set
+
+    def disk_full(jid, state, now, result=None):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(relay, "_journal_set", disk_full)
+    env.pull_with(failing)
+    monkeypatch.setattr(relay, "_journal_set", real)
+    for _ in range(2):
+        env.pull()
+        assert d.exists() and entries() == []          # no corpus entry on record: the drop is never deleted
 
 
 def test_a_drop_that_failed_once_is_imported_when_the_corpus_works_again(env):

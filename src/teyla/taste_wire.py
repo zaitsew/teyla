@@ -151,6 +151,25 @@ def _remove(parent_fd: int, name: str) -> None:
         pass
 
 
+def failed_dir() -> pathlib.Path:
+    """Where a verified drop that could not be imported is kept. Local, not in the synced relay folder: the phone
+    must not see it as a new drop, and iCloud must not move it around."""
+    return relay.ctl.home() / "taste-failed"
+
+
+def _quarantine(dfd: int, did: str, reason: str) -> pathlib.Path:
+    """Copy the drop's plain files and the reason out of the outbox. Raises when the copy fails; the caller then
+    leaves the drop where it is."""
+    dest = failed_dir() / did
+    dest.mkdir(parents=True, exist_ok=True)
+    for n in os.listdir(dfd):
+        data, _ = _read_file(dfd, n, MAX_IMAGE)
+        if data is not None:
+            (dest / n).write_bytes(data)
+    (dest / "reason.txt").write_text(reason + "\n")
+    return dest
+
+
 def import_drop(obj: dict, image: bytes | None, add_fn=None) -> str:
     """Create the corpus entry for a drop that has been verified. Returns the entry id."""
     add_fn = add_fn or taste_corpus.add
@@ -260,9 +279,12 @@ def _one(box: int, name: str, key: bytes, now: float, add_fn, seen: dict[str, fl
         if not relay._claim({"id": did, "kind": "taste", "target": "taste"}, now):
             rec = relay._journal_read(did) or {}
             res = rec.get("result") if isinstance(rec.get("result"), dict) else {}
-            if rec.get("state") != "retry":           # imported, or a pass was cut off: never imported twice
-                _remove(box, name)
+            if rec.get("state") == "done" and res.get("ok") is True:
+                _remove(box, name)                    # only a drop whose corpus entry exists is ever deleted as a replay
                 return {"id": did, "kind": "taste", "ok": False, "detail": "replay: already handled"}
+            if rec.get("state") != "retry":           # a pass was cut off, the journal is unreadable or the drop was
+                return {"id": did, "kind": "taste", "ok": False,   # quarantined: keep the drop, import nothing
+                        "detail": "held: no corpus entry is on record for it; the drop is left untouched"}
             tries = res.get("tries") if type(res.get("tries")) is int else MAX_TRIES
             relay._journal_set(did, "claimed", now, {"tries": tries})
         try:
@@ -275,6 +297,8 @@ def _one(box: int, name: str, key: bytes, now: float, add_fn, seen: dict[str, fl
                 return {"id": did, "kind": "taste", "ok": False,
                         "detail": f"could not add it, will retry ({tries}/{MAX_TRIES}): {why}"}
             detail = f"could not add it after {MAX_TRIES} tries: {why}"
+            dest = _quarantine(dfd, did, detail)        # a copy that fails leaves the drop in the outbox
+            detail += f"; kept in {dest}"
             relay._journal_set(did, "done", now, {"ok": False, "via": "taste", "detail": relay._clip(detail)})
             _remove(box, name)
             return {"id": did, "kind": "taste", "ok": False, "detail": detail}

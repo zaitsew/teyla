@@ -209,6 +209,9 @@ Teyla for iPhone is in the iOS share sheet. Share a link (Safari, any app) or a 
 - The relay must be on and paired (`teyla relay connect`). With the relay off, the request waits in the phone's queue.
 
 An agent in Claude Code can do all of it from one chat line: the `taste` skill reads `taste: <url> — <comment>`.
+- A drop is never deleted unless its corpus entry exists. After 3 failed imports it is copied to
+  `<teyla home>/taste-failed/<uuid>/` (local, not the synced relay folder) with a `reason.txt`, then removed from the
+  outbox. If the relay journal cannot be written, or a pass was cut off, the drop stays in the outbox untouched.
 
 ## The ledger: `teyla taste`
 
