@@ -315,3 +315,38 @@ def test_the_json_row_of_a_card_is_a_plain_question(card):
     row = c.to_dict(asks._now())
     json.dumps(row)
     assert row["options"][0].endswith("(recommended)") and "session" not in row
+
+
+# --- review fixes (codex P2s on #482) --------------------------------------------------------------
+
+def test_an_unquoted_numeric_option_id_is_refused(repo):
+    p = dc.folder(repo, "bottom-bar") / "options.yaml"
+    data = taste.load_file(p)
+    data["options"][1]["id"] = 2
+    p.write_text(taste.dumps(data))
+    with pytest.raises(dc.DesignError) as e:
+        dc.check_options(repo, "bottom-bar")
+    assert "quoted string" in str(e.value)
+
+
+def test_an_unreadable_pick_is_not_overwritten_without_supersede(repo):
+    rows = dc.load_map(repo)
+    rows[0]["status"] = "picked"
+    write_map(repo, rows)
+    (dc.folder(repo, "bottom-bar") / "pick.yaml").write_text("{{{ unclosed\n")
+    with pytest.raises(dc.DesignError) as e:
+        dc.do_pick(repo, "bottom-bar", "three-tabs", SENTENCE)
+    assert "cannot be read" in str(e.value)
+    assert "unclosed" in (dc.folder(repo, "bottom-bar") / "pick.yaml").read_text()
+    dc.do_pick(repo, "bottom-bar", "three-tabs", SENTENCE, supersede=True)
+
+
+def test_scope_all_keeps_its_reach_through_confirm(repo):
+    rows = dc.load_map(repo)
+    rows[0]["status"] = "picked"
+    write_map(repo, rows)
+    dc.do_pick(repo, "bottom-bar", "three-tabs", SENTENCE, scope="all")
+    prop = next(d for d in taste.load_decisions(repo) if d.get("source") == "design-cycle")
+    res = taste.confirm(repo, prop["id"][:8])
+    rule = taste.load_file(repo / res["rule_file"])
+    assert rule["reach"] == "all-products"

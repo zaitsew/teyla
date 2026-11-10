@@ -274,7 +274,10 @@ def options_problems(data: dict) -> list[str]:
         if not isinstance(o, dict):
             out.append(f"option {i} is not a mapping")
             continue
-        oid = str(o.get("id", ""))
+        if not isinstance(o.get("id"), str):
+            out.append(f"option {i}: id must be a quoted string, not {o.get('id')!r}")
+            continue
+        oid = o["id"]
         if not ID_RE.match(oid) or oid == NONE:
             out.append(f"option {i}: id {oid!r} must be lowercase letters, digits and dashes, and not `none`")
         elif oid in seen:
@@ -396,6 +399,8 @@ def do_pick(repo: pathlib.Path, did: str, choice: str, sentence: str, scope: str
     if choice != NONE and choice not in by:
         raise DesignError(f"no option {choice!r} for {did}: " + ", ".join([*by, NONE]))
     old = load_pick(repo, did)
+    if old is None and (folder(repo, did) / "pick.yaml").is_file() and not supersede:
+        raise DesignError(f"{did}/pick.yaml exists but cannot be read; fix it, or pass --supersede to replace it")
     if old is not None and not supersede:
         raise DesignError(f"{did} already has a pick ({old.get('option')}); pass --supersede to replace it")
     on = on or taste.today()
