@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Refuse a push that would put private data or non-English text on the public remote.
+# Refuse a push that would put private data or non-English text on the public remote, or that
+# carries code the tests reject (POLICY section 10: ./check.sh is the gate, enforced here).
 # Enable once per clone: git config core.hooksPath .githooks
 # stdin, one line per ref: <local ref> <local sha> <remote ref> <remote sha>
 set -euo pipefail
@@ -9,6 +10,7 @@ py=python3
 [ -x .venv/bin/python ] && py=.venv/bin/python
 zero=0000000000000000000000000000000000000000
 fail=0
+touched=0
 "$py" scripts/leak_check.py || fail=1
 url="${2:-${1:-origin}}"
 # What the destination already holds is asked of the destination itself (its push URL may
@@ -28,8 +30,35 @@ while read -r _lref lsha _rref rsha; do
     range="$lsha"                                         # empty or unreachable destination: all history
   fi
   "$py" scripts/leak_check.py --commits "$range" </dev/null || fail=1
+  # Does the pushed range touch code the tests cover? ($range is shas and --not only.)
+  # shellcheck disable=SC2086
+  if [ -n "$(git log --name-only --pretty=format: $range -- src tests apps scripts packages \
+      pyproject.toml check.sh .githooks 2>/dev/null)" ]; then touched=1; fi
 done
 if [ "$fail" -ne 0 ]; then
   echo "pre-push: leak check failed; fix the findings above (private terms: CONTRIBUTING.md)" >&2
   exit 1
+fi
+# Tests run only when the leak check passed (a failed push should not cost eleven minutes).
+# TEYLA_PREPUSH_TESTS=0 skips them for one push; the skip is logged, and a skip that cannot
+# be logged is refused.
+if [ "$touched" -eq 1 ] && [ -x ./check.sh ]; then
+  if [ "${TEYLA_PREPUSH_TESTS:-1}" = "0" ]; then
+    home="${TEYLA_HOME:-$HOME/.teyla}"
+    { mkdir -p "$home" && printf '%s\t%s\n' "$(date +%Y-%m-%dT%H:%M:%S)" "$(basename "$root")" \
+        >> "$home/prepush-skips.log"; } || {
+      echo "pre-push: cannot record the skip in $home/prepush-skips.log; a skip that is not on record is not a skip" >&2
+      exit 1
+    }
+    echo "pre-push: tests skipped (TEYLA_PREPUSH_TESTS=0), logged in $home/prepush-skips.log" >&2
+  else
+    # The full suite is a build on a shared Mac: queue it. A missing teyla runs it at once.
+    if command -v teyla >/dev/null 2>&1; then teyla load --wait --kind build </dev/null >&2 || exit 1; fi
+    echo "pre-push: running ./check.sh (TEYLA_PREPUSH_TESTS=0 skips it, logged)" >&2
+    # git's own variables must not leak into the tests' scratch repositories
+    env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_PREFIX ./check.sh </dev/null >&2 || {
+      echo "pre-push: ./check.sh failed; fix the failures above before pushing" >&2
+      exit 1
+    }
+  fi
 fi
