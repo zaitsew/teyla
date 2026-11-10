@@ -180,53 +180,38 @@ control it can tell from the code; the copy judge reads the rest.
 
 ## Part 4. The review process
 
-### R18. Two variants, reviewed on the device, one round
-Since 2026-10-16 · Scope: every new or reworked screen · Check: review (the PR)
+### R18. A decision card: two or three options, recommended first, after a dossier
+Since 2026-11-10 · Scope: every new or reworked screen and every taste change · Check: review (the PR links the pick)
 
 Design is reviewed by the owner on the device, because a screen that looks right in a
-screenshot can still be wrong in the hand.
+screenshot can still be wrong in the hand. The cycle is in `templates/design/CYCLE.md`.
 
-1. **Two variants.** Two genuinely different ones, not two colour schemes of one idea. They
-   differ in structure: what is the primary action, what is removed, what is one step away.
+1. **A decision card, after a dossier (R21).** Two or three options, never more. The recommended
+   one is first, with a one-line why. Options differ in structure: what is the primary action,
+   what is removed, what is one step away. Not two colour schemes of one idea.
 2. **Owner review on the phone** (or the real device: Mac, watch). Screenshots alone are not
    a review.
-3. **One round of comments.** The owner picks and comments once. The agent does not keep
-   iterating on its own taste.
-4. **Apply only the accepted cuts.** No "while I was there" additions.
+3. **One pick.** The owner picks, or says "none" with one sentence. The pick is stored with his
+   words. The agent does not keep iterating on its own taste.
+4. **Apply only the picked option.** No "while I was there" additions.
 5. **Screenshots in the PR**, before and after, for each changed screen, in light and dark.
 6. **A cut list**: what was removed, one line each. An empty cut list is a PR that added things.
 7. Run `teyla ux check` before opening the PR.
 
-### R19. Every change is a decision with a scope
-Since 2026-10-30 · Scope: every UX comment from the owner · Check: review (the PR links the decision)
+### R21. Research before options
+Since 2026-11-10 · Scope: every card shown to the owner · Check: review (`teyla design options` refuses a thin dossier)
 
-A comment becomes a fix, a rule or a reject, with a reason. A rule is proposed, never promoted
-by the agent; the owner confirms it. A scoped decision (one screen, one component, the product)
-never widens on its own.
+No option is shown before a dossier exists: the owner's own words and earlier picks, usage,
+guidelines, how 6 to 10 products solve it, what practitioners report. Every item is labelled
+guideline, observation or hypothesis. A popular app or a post is never evidence by itself.
 
-### R20. Figma is a snapshot and a sketchpad, never the spec
-Since 2026-11-06 · Scope: every product with a UI · Check: review (no PR cites Figma as the reason a screen is right)
+### R22. One decision at a time, in map order
+Since 2026-11-10 · Scope: every redesign and every UX comment from the owner · Check: `teyla design` (refuses a pick before its needs, a build before its pick)
 
-The code and the product's tokens (DTCG files under `design/tokens/`) are the source. A Figma
-file is never a merge input, and nobody keeps it in step with the code by hand. A product runs
-to about 40 frames; a hand-kept file drifts within weeks, and the next agent trusts it over the
-code. Decided 2026-11-06, after Codex and Grok both advised against a living Figma file.
-
-1. **A snapshot per store version.** When the primary platform ships a store version, or the
-   owner asks, the agent regenerates the product's Figma file from the code through the Figma
-   MCP: the tokens as variables with light and dark modes, the components, and the screens of
-   the screenshot tour in their states. The cover names the commit it was drawn from. The next
-   store version regenerates it; nobody edits it to follow the code.
-2. **Variants may be sketched in Figma.** The two R18 variants of a new or reworked screen may be
-   drawn in Figma from the product's library, so the owner compares and comments on one canvas.
-   Only the chosen variant is built, and R18's review on the device applies to the build.
-3. **The gate stays in the repo:** screenshot diffs against the accepted baselines,
-   `teyla ux check` and the rubric in Part 5. A new baseline is accepted in the PR, by name.
-4. **Seats and limits.** A View seat allows 20 Figma MCP read calls a month; writes do not
-   count. A Starter team holds 3 design files, so most product files stay in the owner's
-   drafts. A paid seat or plan is a charge under POLICY §11: state the price, ask twice.
-
-The product's `design/README.md` links its Figma file and names the commit of the last snapshot.
+A redesign is a map of 8 to 12 decisions, structure before look. A decision is built only after
+it is picked, and picked only after the decisions it needs. A comment becomes a fix, a rule or a
+reject, with a reason. A rule is proposed, never promoted by the agent; the owner confirms it. A
+scoped decision (one screen, one component, the product) never widens on its own.
 
 ## Part 5. The review rubric
 
@@ -259,7 +244,7 @@ Answer each with yes or no. Fix every no, or say why in the PR.
 7. Are there about four tap targets or fewer, with the rest behind a menu, a sheet or a detail screen?
 8. Are there zero raw font sizes, colours and spacing values in my diff?
 9. Does every button start with a verb, in 3 words or fewer, with no "Please", no "!" and no "oops"?
-10. Did I run `teyla ux check`, attach before and after screenshots, and build two variants?
+10. Did I run `teyla ux check`, attach before and after screenshots, and show a decision card of two or three options, recommended first?
 
 ## What the audit cannot see
 
@@ -281,3 +266,10 @@ Not counted toward the 20. Advice and tests that help, and rules that were cut t
   to tap. (advisory, since 2026-10-16)
 - **Undo beats confirm.** Prefer an undo toast to a dialog when the action is cheap to reverse.
   (advisory, since 2026-10-30)
+- **Figma is a snapshot and a sketchpad, never the spec** (was R20; advisory since 2026-11-10, moved
+  to keep the standard at 20 rules). The code and the product's DTCG tokens under `design/tokens/` are
+  the source. A Figma file is never a merge input and nobody keeps it in step with the code by hand.
+  Regenerate it from the code through the Figma MCP when the primary ships a store version or the
+  owner asks; the cover names the commit. The options of an R18 card may be sketched there first;
+  only the picked option is built. The gate stays in the repo: screenshot diffs, `teyla ux check`
+  and the Part 5 rubric. A paid Figma seat or plan is a charge under POLICY section 11.

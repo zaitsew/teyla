@@ -1,0 +1,15 @@
+options:
+  - id: three-tabs
+    recommended: true
+    why: Fewest items, and Today stays one tap away.
+    summary: Three tabs, Today, Plan and More, with a single add button.
+    user_does: Adds from any tab with one button; finds the rest under More.
+    removes_or_moves: Moves Settings and Archive under More; removes the Search tab.
+    evidence: Platform guideline of five tabs or fewer; hypothesis that fewer tabs raise Today use.
+    cost: One screen to rebuild; Search moves to a pull-down.
+  - id: five-tabs
+    summary: Five tabs, each a top-level section.
+    user_does: Taps the section; no add button on the bar.
+    removes_or_moves: Nothing; Search stays a tab.
+    evidence: Today's behaviour; no usage data to show a tab is unused.
+    cost: None to build; the bar stays crowded.
