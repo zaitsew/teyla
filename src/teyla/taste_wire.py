@@ -40,6 +40,7 @@ FIELDS = frozenset({"v", "id", "created", "device", "verdict", "url", "image", "
 IMAGES = {"image.jpg": ".jpg", "image.png": ".png"}
 VERDICTS = ("like", "dislike")
 MAX_PER_PASS = 20
+MAX_SCAN = 400                   # drops looked at per pass, held ones included
 
 _HEX64 = re.compile(r"[0-9a-f]{64}", re.ASCII)
 
@@ -158,15 +159,25 @@ def failed_dir() -> pathlib.Path:
 
 
 def _quarantine(dfd: int, did: str, reason: str) -> pathlib.Path:
-    """Copy the drop's plain files and the reason out of the outbox. Raises when the copy fails; the caller then
-    leaves the drop where it is."""
+    """Copy the drop's plain files and the reason out of the outbox, then read every copy back and compare size and
+    sha256. Raises on any read, write or mismatch; the caller then leaves the drop where it is. A file the reader
+    refuses by policy (a link, a directory, over its cap) is not copied and is named in the reason."""
     dest = failed_dir() / did
     dest.mkdir(parents=True, exist_ok=True)
-    for n in os.listdir(dfd):
-        data, _ = _read_file(dfd, n, MAX_IMAGE)
-        if data is not None:
-            (dest / n).write_bytes(data)
-    (dest / "reason.txt").write_text(reason + "\n")
+    notes: list[str] = []
+    for n in sorted(os.listdir(dfd)):
+        data, why = _read_file(dfd, n, MAX_IMAGE)
+        if data is None:
+            if why in ("not a regular file", "too large"):
+                notes.append(f"not copied: {n} ({why})")
+                continue
+            raise OSError(f"quarantine: cannot read {n}: {why}")
+        target = dest / ("original-" + n if n == "reason.txt" else n)
+        target.write_bytes(data)
+        back = target.read_bytes()
+        if len(back) != len(data) or sha256_bytes(back) != sha256_bytes(data):
+            raise OSError(f"quarantine: the copy of {n} does not match")
+    (dest / "reason.txt").write_text("\n".join([reason, *notes]) + "\n")
     return dest
 
 
@@ -207,8 +218,11 @@ def pull(dirs: "relay.Dirs", key: bytes, now: float, add_fn=None) -> list[dict]:
     seen = _load_seen()
     before = dict(seen)
     try:
-        names = sorted(n for n in os.listdir(box) if relay._UUID_RE.fullmatch(n))[:MAX_PER_PASS]
+        names = sorted(n for n in os.listdir(box) if relay._UUID_RE.fullmatch(n))[:MAX_SCAN]
+        worked = 0
         for name in names:
+            if worked >= MAX_PER_PASS:
+                break
             try:
                 res = _one(box, name, key, now, add_fn, seen)
             except Exception as exc:  # noqa: BLE001 - one odd folder must never stop the drops after it
@@ -216,6 +230,8 @@ def pull(dirs: "relay.Dirs", key: bytes, now: float, add_fn=None) -> list[dict]:
                        "detail": f"skipped: {type(exc).__name__}: {relay._clip(str(exc), 120)}"}
             if res is not None:
                 out.append(res)
+                if not res.get("held"):                  # a held drop never uses up the pass's allowance
+                    worked += 1
         waiting = {n.lower() for n in os.listdir(box)}
         seen = {k: v for k, v in seen.items() if k in waiting and now - v < relay.JOURNAL_KEEP_S}
         if seen != before:
@@ -232,6 +248,11 @@ def _one(box: int, name: str, key: bytes, now: float, add_fn, seen: dict[str, fl
     did = name.lower()
 
     def refuse(why: str) -> dict:
+        """The drop leaves the outbox only through a verified quarantine copy; any failure keeps it."""
+        if dfd is None:
+            return {"id": did, "kind": "taste", "ok": False, "held": True,
+                    "detail": f"{why}; not a folder this Mac can open, left untouched"}
+        _quarantine(dfd, did, why)
         _remove(box, name)
         return {"id": did, "kind": "taste", "ok": False, "detail": why}
 
@@ -283,7 +304,7 @@ def _one(box: int, name: str, key: bytes, now: float, add_fn, seen: dict[str, fl
                 _remove(box, name)                    # only a drop whose corpus entry exists is ever deleted as a replay
                 return {"id": did, "kind": "taste", "ok": False, "detail": "replay: already handled"}
             if rec.get("state") != "retry":           # a pass was cut off, the journal is unreadable or the drop was
-                return {"id": did, "kind": "taste", "ok": False,   # quarantined: keep the drop, import nothing
+                return {"id": did, "kind": "taste", "ok": False, "held": True,   # quarantined: keep, import nothing
                         "detail": "held: no corpus entry is on record for it; the drop is left untouched"}
             tries = res.get("tries") if type(res.get("tries")) is int else MAX_TRIES
             relay._journal_set(did, "claimed", now, {"tries": tries})

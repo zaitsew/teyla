@@ -209,9 +209,11 @@ Teyla for iPhone is in the iOS share sheet. Share a link (Safari, any app) or a 
 - The relay must be on and paired (`teyla relay connect`). With the relay off, the request waits in the phone's queue.
 
 An agent in Claude Code can do all of it from one chat line: the `taste` skill reads `taste: <url> — <comment>`.
-- A drop is never deleted unless its corpus entry exists. After 3 failed imports it is copied to
-  `<teyla home>/taste-failed/<uuid>/` (local, not the synced relay folder) with a `reason.txt`, then removed from the
-  outbox. If the relay journal cannot be written, or a pass was cut off, the drop stays in the outbox untouched.
+- A drop leaves the outbox only when the relay journal records a successful import, or when a copy was written to
+  `<teyla home>/taste-failed/<uuid>/` (local, not the synced relay folder) and every file was read back and matched.
+  That covers a drop refused for any reason (3 failed imports, older than 7 days, bad shape); `reason.txt` says why.
+  Any failure while copying, an unwritable journal or a cut-off pass leaves the drop untouched. Held drops do not use
+  up a pass's allowance of 20.
 
 ## The ledger: `teyla taste`
 

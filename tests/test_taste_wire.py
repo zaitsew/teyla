@@ -309,3 +309,48 @@ def test_a_malformed_image_field_never_blocks_the_drops_after_it(env, bad):
     assert by_id[first]["ok"] is False and "image" in by_id[first]["detail"]
     assert by_id[DID]["ok"] is True
     assert len(entries()) == 1
+
+
+# --- review fixes (teyla#479): a drop leaves the outbox only through a journal success or a verified copy ---------
+
+def test_an_expired_drop_is_quarantined_not_deleted(env):
+    d = env.drop(created=iso(NOW - 8 * 86400))
+    [r] = env.pull()
+    assert "too old" in r["detail"] and not d.exists()
+    kept = taste_wire.failed_dir() / DID
+    assert (kept / "taste.json").is_file() and "too old" in (kept / "reason.txt").read_text()
+
+
+def test_a_failed_read_during_quarantine_keeps_the_drop(env, monkeypatch):
+    d = env.drop(image="image.jpg", sentence="calm")
+    real = taste_wire._read_file
+    seen = {"n": 0, "on": False}
+
+    def flaky(dfd, name, cap):
+        if seen["on"] and name == "image.jpg":
+            seen["n"] += 1
+            if seen["n"] == 2:                       # the first read is the importer's, the second is the copy's
+                return None, "not a readable file"
+        return real(dfd, name, cap)
+
+    def failing(words, **kw):
+        raise PermissionError("busy")
+
+    env.pull_with(failing)
+    env.pull_with(failing)
+    monkeypatch.setattr(taste_wire, "_read_file", flaky)
+    seen["on"] = True
+    env.pull_with(failing)
+    assert d.exists() and (d / "image.jpg").is_file()
+
+
+def test_held_drops_do_not_starve_newer_drops(env):
+    held = [f"00000000-0000-4000-8000-{i:012d}" for i in range(taste_wire.MAX_PER_PASS)]
+    for h in held:
+        env.drop(h)
+        relay._claim({"id": h, "kind": "taste", "target": "taste"}, NOW)    # a pass was cut off: held
+    new = "ffffffff-0000-4000-8000-000000000001"
+    env.drop(new, url="https://example.com/new")
+    res = {r["id"]: r for r in env.pull()}
+    assert res[new]["ok"] is True
+    assert all((env.root / "outbox" / "taste" / h).exists() for h in held)
