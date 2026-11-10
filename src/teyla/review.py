@@ -1030,6 +1030,9 @@ def pull_vouched(conn: sqlite3.Connection, root: pathlib.Path, now: float | None
     `source` is stored on each row (see import_folder)."""
     rep = {"source": "channel", "added": 0, "known": 0, "waiting": 0, "skipped": [], "imported": [], "note": "",
            "usage_batches": 0, "usage_events": 0, "usage_imported": []}
+    # Before anything that can stop the pass, as `cmd_pull` does for the channel: a Mac that only uses
+    # --vouched-folder still keeps tester usage no longer than the notice promises.
+    rep["usage_pruned"] = usage_store.prune(now)
     if not root.is_dir():
         rep["note"] = f"the folder {root} does not exist"
         rep["error"] = True

@@ -384,3 +384,16 @@ def test_a_usage_batch_does_not_stop_a_capture_in_the_same_folder(home):
         assert conn.execute("SELECT COUNT(*) FROM captures").fetchone()[0] == 1
     finally:
         conn.close()
+
+
+def test_a_vouched_pull_deletes_an_expired_batch_even_with_nothing_new(home):
+    box = home / "download"
+    folder(box, batch(SESSION))
+    conn = review.connect()
+    try:
+        review.pull_vouched(conn, box, now=T0)
+        assert [f.stem for f in stored(home)] == [B1]
+        rep = review.pull_vouched(conn, home / "empty", now=T0 + 201 * DAY)      # not even a folder: still pruned
+    finally:
+        conn.close()
+    assert rep["usage_pruned"] == 1 and stored(home) == []
