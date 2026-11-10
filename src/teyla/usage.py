@@ -64,7 +64,7 @@ def _clean_event(raw) -> dict | None:
     t, k, b = raw.get("t"), raw.get("k"), raw.get("b")
     if isinstance(t, bool) or not isinstance(t, int) or not (1_500_000_000 <= t <= 4_000_000_000):
         return None
-    if k not in KINDS or not isinstance(b, str) or not BUILD.match(b):
+    if not isinstance(k, str) or k not in KINDS or not isinstance(b, str) or not BUILD.match(b):
         return None
     out: dict = {"t": t, "k": k, "b": b}
     ident = raw.get("id")
@@ -76,7 +76,7 @@ def _clean_event(raw) -> dict | None:
     else:
         out["id"] = ident
     r = raw.get("r")
-    if r not in RESULTS[k]:
+    if (r is not None and not isinstance(r, str)) or r not in RESULTS[k]:
         return None
     if r is not None:
         out["r"] = r
@@ -92,6 +92,14 @@ def _clean_event(raw) -> dict | None:
             return None
         out["d"] = dict(sorted(d.items()))
     return out
+
+
+def _safe_event(raw) -> dict | None:
+    """One bad event is dropped; it never stops the batch or the pull."""
+    try:
+        return _clean_event(raw)
+    except (TypeError, ValueError, KeyError, AttributeError, RecursionError):
+        return None
 
 
 def _clean_declared(raw) -> dict:
@@ -134,7 +142,7 @@ def import_folder(product: str, folder: pathlib.Path, now: float | None = None) 
     sent = obj.get("sent")
     if not isinstance(sent, str) or len(sent) > 40:
         sent = ""
-    events = [e for e in (_clean_event(x) for x in obj["events"]) if e]
+    events = [e for e in (_safe_event(x) for x in obj["events"]) if e]
     rep.update(ok=True, events=len(events), dropped=len(obj["events"]) - len(events))
     dest = product_dir(product) / f"{folder.name}.json"
     if dest.exists():

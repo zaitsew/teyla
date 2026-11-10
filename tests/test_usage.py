@@ -164,6 +164,60 @@ def test_a_bad_usage_batch_stays_on_the_server_and_is_reported(home):
     assert stored(home) == []
 
 
+def test_an_event_with_an_unhashable_field_is_dropped_and_never_stops_the_import(home):
+    bad = [ev(1, "action", "plan.save", []), ev(2, "action", "plan.save", {"a": 1}),
+           {"t": T0, "k": ["screen"], "b": "212", "id": "home.main"},
+           {"t": T0, "k": "screen", "b": "212", "id": ["home.main"]},
+           {"t": T0, "k": "screen", "b": ["212"], "id": "home.main"}]
+    good = ev(7, "screen", "home.main")
+    got = usage.import_folder("sample", folder(home / "in", batch(bad + [good])))
+    assert got["ok"] and got["events"] == 1 and got["dropped"] == len(bad)
+
+
+def test_one_batch_that_raises_does_not_stop_the_pull_or_the_cleanup(home, monkeypatch):
+    ready = home / "server" / "ready"
+    folder(ready / "sample", batch(SESSION, cid=B1))
+    folder(ready / "sample", batch(SESSION, cid=B2))
+    real = usage.import_folder
+
+    def flaky(product, d, now=None):
+        if d.name == B1:
+            raise TypeError("unhashable type: 'list'")
+        return real(product, d, now)
+    monkeypatch.setattr(usage, "import_folder", flaky)
+    conn = review.connect()
+    try:
+        remote = FakeRemote(ready)
+        rep = review_channel.pull_remote(conn, remote)
+        assert rep["usage_batches"] == 1 and len(rep["skipped"]) == 1
+        assert remote.deleted == [("sample", B2)]
+    finally:
+        conn.close()
+
+
+def test_usage_retention_runs_even_when_the_pull_cannot_start(home, monkeypatch):
+    usage.import_folder("sample", folder(home / "a", batch([ev(0, "screen", "home.main")], cid=B1)))
+    path = stored(home)[0]
+    old = T0 - 400 * DAY
+    data = json.loads(path.read_text())
+    data["events"][0]["t"] = old
+    path.write_text(json.dumps(data))
+    monkeypatch.setattr(review.time, "time", lambda: T0) if hasattr(review, "time") else None
+    monkeypatch.setattr(usage.time, "time", lambda: T0)
+    monkeypatch.setattr(review, "prune_channel", lambda conn: {"deleted": 0, "kept": []})
+
+    def no_config():
+        raise review_channel.ChannelError("no channel config", 2)
+    monkeypatch.setattr(review_channel, "load_config", no_config)
+    conn = review.connect()
+    try:
+        args = type("A", (), {"json": False})()
+        assert review_channel.cmd_pull(conn, args) == 2
+    finally:
+        conn.close()
+    assert stored(home) == []
+
+
 # --- the report ---------------------------------------------------------------------------------
 
 def load(home, *batches):

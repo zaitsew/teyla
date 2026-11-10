@@ -35,10 +35,14 @@ final class UsageStore {
         }
     }
 
-    static func defaultURL() -> URL {
+    /// Application Support is shared by unsandboxed macOS apps, so the folder carries the bundle id: two
+    /// apps on one Mac never read or send each other's events.
+    static func defaultURL(bundleID: String? = Bundle.main.bundleIdentifier) -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        return base.appendingPathComponent("TeylaReview", isDirectory: true).appendingPathComponent("usage.json")
+        let safe = String((bundleID ?? "unknown-app").drop(while: { $0 == "." }).map { $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" ? $0 : "_" }.prefix(120))
+        return base.appendingPathComponent("TeylaReview", isDirectory: true)
+            .appendingPathComponent(safe, isDirectory: true).appendingPathComponent("usage.json")
     }
 
     var events: [UsageEvent] { lock.lock(); defer { lock.unlock() }; return state.events }
@@ -56,11 +60,13 @@ final class UsageStore {
     }
 
     /// The pending batch if one is waiting, else the oldest events (up to the limits) as a new batch.
+    /// A new batch is written to disk before it is returned, so a crash during the upload cannot
+    /// make the next launch send the same events under another id.
     func nextBatch(maxEvents: Int, maxBytes: Int, makeID: () -> String = { UUID().uuidString.lowercased() }) -> Batch? {
-        lock.lock(); defer { lock.unlock() }
-        if let pending = state.pending, !pending.events.isEmpty { return pending }
+        lock.lock()
+        if let pending = state.pending, !pending.events.isEmpty { lock.unlock(); return pending }
         state.pending = nil
-        guard !state.events.isEmpty else { return nil }
+        guard !state.events.isEmpty else { lock.unlock(); return nil }
         var take = 0, bytes = 0
         let encoder = JSONEncoder()
         for event in state.events {
@@ -73,6 +79,8 @@ final class UsageStore {
         state.events.removeFirst(take)
         state.pending = batch
         unsaved += 1
+        lock.unlock()
+        flush()
         return batch
     }
 

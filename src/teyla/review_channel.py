@@ -218,7 +218,10 @@ def pull_remote(conn, remote: Remote, now: float | None = None) -> dict:
                     continue
                 if (folder / "usage.json").is_file() and not (folder / "capture.json").exists():
                     # A usage batch (packages/review-ios, "Usage capture"): not a capture, so it never reaches the inbox.
-                    got = usage.import_folder(sdir.name, folder, now)
+                    try:
+                        got = usage.import_folder(sdir.name, folder, now)
+                    except Exception as e:  # one bad batch never stops the pull or the server cleanup
+                        got = {"ok": False, "why": f"unreadable ({type(e).__name__})"}
                     if got["ok"]:
                         held.append((sdir.name, folder.name))
                         rep["usage_batches"] += 1
@@ -265,6 +268,7 @@ def _print(rep: dict) -> None:
 def cmd_pull(conn, args) -> int:
     # Before anything that can stop the pass: no config, safe mode and a dead server all leave the Mac's copy to expire.
     pruned = review.prune_channel(conn)
+    usage_pruned = usage.prune()
     try:
         cfg = load_config()
     except ChannelError as e:
@@ -273,7 +277,7 @@ def cmd_pull(conn, args) -> int:
     if not net.gate("the review channel pull (ssh and rsync)"):
         return 1
     rep = pull_remote(conn, Remote(cfg["ssh"], cfg["root"]))
-    rep["pruned"] = pruned["deleted"] + usage.prune()
+    rep["pruned"] = pruned["deleted"] + usage_pruned
     if pruned["kept"]:
         rep["skipped"].append(f"{len(pruned['kept'])} capture(s) past retention could not be removed; the next pass retries")
     if args.json:

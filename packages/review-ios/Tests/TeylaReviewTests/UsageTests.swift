@@ -300,6 +300,30 @@ final class UsageTests: XCTestCase {
         XCTAssertEqual(store.pending?.events.map(\.t), [0, 1, 2])     // the batch in flight is dropped last
     }
 
+    func testANewBatchIsOnDiskBeforeTheUploadSoARelaunchReusesItsId() {
+        let url = Fixtures.tempDir().appendingPathComponent("usage.json")
+        let first = UsageStore(url: url)
+        for n in 0..<3 { first.append(UsageEvent(t: n, k: .screen, id: "trip.timeline", r: nil, ms: nil, b: "1", d: nil)) }
+        let batch = first.nextBatch(maxEvents: 10, maxBytes: 100_000, makeID: { "batch-one" })
+        XCTAssertEqual(batch?.id, "batch-one")
+        // The app dies here: no confirm, no flush. A new launch reads the file.
+        let relaunched = UsageStore(url: url)
+        XCTAssertEqual(relaunched.pending?.id, "batch-one")
+        let again = relaunched.nextBatch(maxEvents: 10, maxBytes: 100_000, makeID: { "another-id" })
+        XCTAssertEqual(again?.id, "batch-one")
+        XCTAssertEqual(again?.events.map(\.t), [0, 1, 2])
+    }
+
+    func testTheDefaultStoragePathIsScopedByBundleId() {
+        let a = UsageStore.defaultURL(bundleID: "com.example.alpha")
+        let b = UsageStore.defaultURL(bundleID: "com.example.beta")
+        XCTAssertNotEqual(a, b)
+        XCTAssertTrue(a.path.contains("com.example.alpha"))
+        XCTAssertEqual(a.lastPathComponent, "usage.json")
+        XCTAssertFalse(UsageStore.defaultURL(bundleID: "../evil/x").pathComponents.contains(".."))
+        XCTAssertTrue(UsageStore.defaultURL(bundleID: nil).path.contains("unknown-app"))
+    }
+
     func testTheFileStaysUnderTheByteCap() {
         let url = Fixtures.tempDir().appendingPathComponent("usage.json")
         let store = UsageStore(url: url, maxEvents: 5_000, maxBytes: 4_000)
