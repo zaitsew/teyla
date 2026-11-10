@@ -5,7 +5,7 @@
     teyla taste render [repo] [--dry]                 regenerate "Rules from review" and "Screens" in DESIGN.md
 
 The same command also keeps the taste corpus, the owner's likes and dislikes as evidence (taste_corpus.py,
-taste_capture.py): add, note, capture, interpret, accept, reject, inbox, corpus render.
+taste_capture.py): add, note, capture, interpret, accept, reject, inbox, list --corpus, corpus render.
 
 The ledger is plain files in the product's own repo (formats and examples: docs/TASTE.md):
 
@@ -585,7 +585,7 @@ def render_list(repo: pathlib.Path, rows: list[dict]) -> str:
 
 def cmd_taste(args) -> int:
     action = args.action
-    if action in CORPUS_ACTIONS:
+    if action in CORPUS_ACTIONS or (action == "list" and getattr(args, "corpus", False)):
         from . import taste_corpus
         return taste_corpus.cmd(args)
     words = list(getattr(args, "words", []) or [])
@@ -634,6 +634,7 @@ def register(sp):
     q.add_argument("words", nargs="*", metavar="[repo | decision-id | url comment...]")
     q.add_argument("--repo", help="confirm: the product repo (name under code_root or a path; default: the current git root)")
     q.add_argument("--all", action="store_true", help="list: every decision, not only rule proposals")
+    q.add_argument("--corpus", action="store_true", help="list: the corpus entries (raw, proposed, active, superseded) instead of the ledger's rules; see --status, --verdict")
     q.add_argument("--rule", help="confirm: the rule wording, replacing the proposed one")
     q.add_argument("--scope", help="confirm: product, screen:<id> or component:<id>; add: portfolio, product:<name>, voice or structure")
     q.add_argument("--dry", action="store_true", help="render: show the result, write nothing")
@@ -646,7 +647,9 @@ def register(sp):
     c.add_argument("--no-capture", action="store_true", help="add: store the entry only; capture later with `taste capture <id>`")
     c.add_argument("--supersedes", help="accept: the id of an earlier entry in the same scope that this one replaces")
     c.add_argument("--model", help="interpret: the model (default claude-sonnet-5-5)")
-    c.add_argument("--limit", type=int, default=40, help="inbox: at most this many lines")
+    c.add_argument("--limit", type=int, default=40, help="inbox, list --corpus: at most this many lines")
+    c.add_argument("--status", choices=["raw", "proposed", "active", "superseded"], help="list --corpus: only entries in this state")
+    c.add_argument("--verdict", choices=["like", "dislike", "mixed"], help="list --corpus: only likes, dislikes or mixed")
     c.add_argument("--out", help="corpus render: write the TASTE.md to this file")
     c.add_argument("--allow-network", action="store_true", help="add, capture, interpret: safe mode: allow the call for this one run. A page capture loads the page as a browser would, third-party resources included; nothing about you is sent except a normal browser request")
     return q

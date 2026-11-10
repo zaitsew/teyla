@@ -18,6 +18,9 @@ targets:
     platform: iOS
     sources:
       - Teyla
+      # The Share extension's queue: compiled into the extension too, and depends on nothing else.
+      - path: Shared/TasteQueue.swift
+        group: Shared
       # The snapshot models and text helpers are shared with the Mac app, not copied.
       - path: ../mac/Teyla/Core/Models.swift
         group: Shared
@@ -64,6 +67,15 @@ targets:
         group: Shared
       - path: ../mac/Teyla/Core/GtmGoalCommands.swift
         group: Shared
+    # The Share extension (docs/TASTE.md, "From the phone"). It is embedded in the app.
+    dependencies:
+      - target: TeylaShare
+    # The App Group is the queue the extension writes and the app empties. The relay key stays in the app's Keychain.
+    entitlements:
+      path: Teyla/Teyla.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.zaitsew.teyla
     info:
       path: Teyla/Info.plist
       properties:
@@ -92,12 +104,51 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.zaitsew.teyla
         # iPhone only. XcodeGen's iOS default is "1,2", so it is set here, on the target (POLICY 15).
         TARGETED_DEVICE_FAMILY: "1"
-        CURRENT_PROJECT_VERSION: 9
+        CURRENT_PROJECT_VERSION: 10
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Teyla/Info.plist
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
+  TeylaShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - TeylaShare
+      # Compiled into the app too; it depends on nothing else, so the extension never holds the relay key.
+      - path: Shared/TasteQueue.swift
+        group: Shared
+    entitlements:
+      path: TeylaShare/TeylaShare.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.zaitsew.teyla
+    info:
+      path: TeylaShare/Info.plist
+      properties:
+        CFBundleName: Teyla
+        CFBundleDisplayName: Teyla
+        CFBundleShortVersionString: "0.49.0"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsImageWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+    settings:
+      base:
+        PRODUCT_NAME: TeylaShare
+        PRODUCT_BUNDLE_IDENTIFIER: com.zaitsew.teyla.share
+        TARGETED_DEVICE_FAMILY: "1"
+        CURRENT_PROJECT_VERSION: 10
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: TeylaShare/Info.plist
+        SWIFT_VERSION: "5.0"
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
   TeylaTests:
     type: bundle.unit-test
     platform: iOS
@@ -106,6 +157,8 @@ targets:
       - TeylaTests
       - Teyla/Core
       - Teyla/App/AppModel.swift
+      - path: Shared/TasteQueue.swift
+        group: Shared
       - path: ../mac/Teyla/Core/Models.swift
         group: Shared
       - path: ../mac/Teyla/Core/Format.swift

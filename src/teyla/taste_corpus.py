@@ -7,12 +7,14 @@
     teyla taste accept <id> [--supersedes ID]   the owner's yes: the entry becomes `active`
     teyla taste reject <id>                     the owner's no: the entry is removed from the corpus
     teyla taste inbox [--all] [--json]          every entry, `raw` and `proposed` first, one line each
+    teyla taste list --corpus [--status S] [--verdict V] [--json]   the same, with a count per state and filters
     teyla taste corpus render [--product N] [--out FILE]    a TASTE.md of at most 15 active entries
 
 The corpus is `~/.teyla/taste/corpus/<YYYYMMDD>-<id>/{entry.json,evidence/}`. `TEYLA_TASTE_CORPUS` moves it; the
 default follows `TEYLA_HOME`. entry.json is checked against templates/taste/entry.schema.json on every read.
 The owner's fields (claim, verdict, scope, kind, axes, do_not_copy) and the model's `interpretation` are separate.
-Only `accept` makes an entry `active`, and only `active` entries reach a style source. Nothing here touches the
+Only `accept` makes an entry `active`, and only `active` entries reach a style source. A like or dislike shared from the iPhone arrives as an entry
+too (taste_wire.py). Nothing here touches the
 network; capture and interpretation are in taste_capture.py.
 """
 from __future__ import annotations
@@ -452,11 +454,39 @@ def cmd(args) -> int:
                 d, e = find(words[0])
                 return taste_capture.cmd_interpret(d, e, model=args.model, dry=args.dry, as_json=args.json)
             return 0
+        if action == "list":
+            ents, problems = inbox_rows(True)
+            counts = {s: sum(1 for e in ents if e["status"] == s) for s in STATUSES}
+            status, verdict = getattr(args, "status", None), getattr(args, "verdict", None)
+            ents = [e for e in ents if (not status or e["status"] == status) and (not verdict or e["verdict"] == verdict)]
+            lim = max(1, args.limit)
+            from . import taste_wire
+            failed = taste_wire.failed_drops()
+            if args.json:
+                print(json.dumps({"corpus": str(corpus_dir()), "counts": counts, "entries": ents[:lim], "problems": problems,
+                                  "failed_drops": failed}, indent=1, ensure_ascii=False))
+                return 0
+            if not ents:
+                print(f"no corpus entries{' match' if status or verdict else ''} ({corpus_dir()}): teyla taste add <url> \"what you like about it\"")
+            else:
+                print("corpus: " + ", ".join(f"{n} {s}" for s, n in counts.items() if n))
+            for e in ents[:lim]:
+                print(inbox_line(e))
+            if len(ents) > lim:
+                print(f"... {len(ents) - lim} more (--limit)")
+            for f in failed:
+                print(taste_wire.failed_line(f))
+            for p in problems:
+                print(f"skipped: {p}", file=sys.stderr)
+            return 0
         if action == "inbox":
             ents, problems = inbox_rows(True)
             lim = max(1, args.limit)
+            from . import taste_wire
+            failed = taste_wire.failed_drops()
             if args.json:
-                print(json.dumps({"corpus": str(corpus_dir()), "entries": ents[:lim], "problems": problems}, indent=1, ensure_ascii=False))
+                print(json.dumps({"corpus": str(corpus_dir()), "entries": ents[:lim], "problems": problems,
+                                  "failed_drops": failed}, indent=1, ensure_ascii=False))
                 return 0
             if not ents:
                 print(f"the corpus is empty ({corpus_dir()}): teyla taste add <url> \"what you like about it\"")
@@ -464,6 +494,8 @@ def cmd(args) -> int:
                 print(inbox_line(e))
             if len(ents) > lim:
                 print(f"... {len(ents) - lim} more (--limit)")
+            for f in failed:
+                print(taste_wire.failed_line(f))
             for p in problems:
                 print(f"skipped: {p}", file=sys.stderr)
             return 0

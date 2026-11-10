@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Taste from the phone: share a link or a picture to Teyla.** Teyla for iPhone has a Share extension: a link or a picture, Like or Dislike, and an optional sentence (the keyboard's microphone dictates it). It lands on the Mac as a corpus entry. With a sentence the entry is `proposed`; without one it is `raw`. The extension writes into an App Group queue and holds no key; the app signs the request and writes `outbox/taste/<uuid>/` into the relay folder, and `teyla relay sync` imports it (`taste_wire.py`: signature, size caps, fixed file names, at most once, never run as a command). A sync pass does not capture the page; `teyla taste capture <id>` does.
+- **`teyla taste list --corpus`** lists the corpus entries with a count per state, and `--status`, `--verdict`, `--limit` and `--json`. `teyla taste list` without the flag is unchanged.
+
 ## 0.49.0 — 2026-11-10 — Device crashes from TestFlight, a judge that filters, contracts pinned to sessions
 
 - **Device crashes: `teyla crash --pull` and `teyla crash --device`.** `--pull` reads TestFlight crash submissions (with each new crash log) and screenshot feedback from App Store Connect, read-only, with the key `teyla review pull --testflight` already uses, for every product whose `teyla.toml` names `[release] apple_bundle_id`. Crashes go to `~/.teyla/crash-feed/` and appear in their own section of `teyla crash` (never mixed with Mac panics); screenshots go to `teyla review list`. Ids dedupe by UUIDv5; the tester's e-mail is dropped. `[crash] feed_agent = true` plus `teyla routine install` runs `crash --pull --quiet` every hour; the step does nothing and exits 0 in safe mode, without a key or offline. `teyla doctor` WARNs `testflight:feed` when an app's last good pull is over 3 hours old, or when a build was uploaded in the last 7 days, the feed returned submissions before, and the newest is over 14 days old ("feed may be frozen"). New docs/PRIVACY.md row 56.

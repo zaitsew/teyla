@@ -36,6 +36,10 @@ Two more kinds exist for the Decisions screen, and they run exactly one command 
 saw (`about` is the SHA-256 of its text, as for an answer); `reopen` has no open question to show, so
 its `about` is the SHA-256 of the id, and `asks undo` itself refuses a question that is not closed.
 
+One more thing travels the same way, in its own folder: `outbox/taste/<uuid>/` holds a signed like or dislike from the
+iPhone's Share extension (a link or a picture, and an optional sentence). `taste_wire.py` checks and imports it as a
+corpus entry; it is never run as a command.
+
 An answer never falls back to the clipboard (`answer.answer(clipboard=False)`): a question that only
 `copy and open` could deliver stays open and `sent/` says "needs the Mac". Safe mode makes `sync`
 a no-op. The launchd agent `com.zaitsew.teyla.relay` runs `sync` when the outbox changes and every
@@ -1014,6 +1018,15 @@ def process_outbox(p: Pass) -> list[dict]:
     return out
 
 
+def _pull_taste(dirs: Dirs, key: bytes, now: float) -> list[dict]:
+    """The Share extension's taste drops (`taste_wire.py`). One bad drop never stops the pass."""
+    from . import taste_wire
+    try:
+        return taste_wire.pull(dirs, key, now)
+    except Exception as exc:  # noqa: BLE001
+        return [{"id": "taste", "kind": "taste", "ok": False, "detail": f"taste drops: {_clip(str(exc), 120)}"}]
+
+
 def default_source(now: float):
     items = asks.collect(asks.DEFAULT_DAYS, now)
     snap = snapshot.build(now, items=items)
@@ -1065,6 +1078,7 @@ def sync(*, now: float | None = None, source=None, answer_fn=None, runner=None, 
             p = Pass(dirs, key, now, snap, items, answer_fn or answer_mod.answer, runner or run_command,
                      base or teyla_command())
             processed = process_outbox(p)
+            processed += _pull_taste(dirs, key, now)
             if processed or recovered:
                 snap, _ = source(now)          # what was just answered is no longer waiting
                 write_snapshot(dirs, key, snap)
