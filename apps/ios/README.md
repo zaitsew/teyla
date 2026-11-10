@@ -50,6 +50,11 @@ Requires iOS 18 and Xcode. Scanning needs a real device; on a simulator, paste t
 - **Voice** uses Apple Speech with `requiresOnDeviceRecognition = true`, in English, Spanish or Russian.
   A language without an on-device model does not start; there is no server fallback. The text fills the
   field and nothing is sent until you tap Send.
+- **Lab: Morning post card.** Settings > Lab > Morning post card puts one card at the top of the Growth tab, off by
+  default. It asks one question each morning (about the newest merged pull request in the snapshot). You answer by
+  typing or by holding the microphone (on-device speech, 60 s at most), and Draft makes a LinkedIn and an X version
+  on this iPhone. "Copy + open" hands the text to LinkedIn or X; Teyla never posts. The answer, the drafts and the
+  link of yesterday's post stay on the phone (UserDefaults) and are never sent to the Mac or the relay.
 - **Shared code.** `Models.swift`, `Format.swift` and `HomeLogic.swift` come from `apps/mac/Teyla/Core`, so both
   apps decode the snapshot and word Home the same way. Everything else here is iPhone-only.
 

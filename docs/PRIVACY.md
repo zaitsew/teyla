@@ -25,6 +25,8 @@ with `--allow-network`. The gate is `src/teyla/net.py`.
 | 53 | `teyla taste add <url>` and `teyla taste capture <id>` (a page that is not on apps.apple.com; `--no-capture` skips it) | The page's host and every host the page itself loads from (third-party scripts, images, fonts, redirects), through a headless Chromium (Playwright, which you install: `pip install 'teyla[capture]'`) | The page loads as in any browser at 390 and 1440 px, and those hosts see a normal browser request (address, browser identity, the page's URL). Nothing else about you is sent: no cookie, login or file of yours. Screenshots, computed styles and up to five copy lines stay on your Mac in `~/.teyla/taste/corpus/`. | No (you run it) | closed |
 | 54 | `teyla taste add <apps.apple.com link>` and `teyla taste capture <id>` for such a link | `itunes.apple.com` (the free Lookup API) and `*.mzstatic.com` (Apple's screenshot images) | A GET of `/lookup?id=<app id>&country=<code>`, then a GET of up to five screenshot URLs the answer names, only from those two hosts. A normal request; nothing else about you. | No (you run it) | closed |
 | 55 | `teyla taste interpret <id>` (not `--dry`) | Anthropic, through `claude -p` (Sonnet) | The entry's screenshots (at most four, as image blocks), the page's computed styles and copy lines, and your sentence. No tools, no settings, no saved session. | No (you run it) | closed |
+| 56 | `teyla crash --pull`, and the hourly agent `[crash] feed_agent = true` that runs `teyla crash --pull --quiet` | `api.appstoreconnect.apple.com` (and, through row 24's code, the screenshot URL Apple returns) | Read-only GETs only, signed as in row 24, for each product whose `teyla.toml` names `[release] apple_bundle_id`: the app id for the bundle id, the beta crash submissions and the crash log of each new one, the beta screenshot feedback (row 24), and the date of the newest build. Nothing about you is sent. The tester's e-mail is dropped; crashes are stored in `~/.teyla/crash-feed/` (mode 0600). | No: `crash.feed_agent = false` by default, and `--pull` is a command you run | closed: `--quiet` does nothing and exits 0; by hand, `--allow-network` |
+| 57 | `teyla ux judge --filter VARIANTS --baseline B.png` (not `--dry`) | OpenAI, through `codex-lane` (`codex exec`, read-only, no saved session, Standard tier, GPT-6.1 Sol); when codex is missing or fails, Anthropic through `claude -p` (Sonnet), labelled a same-provider judge | The baseline and each variant screenshot (PNG, JPEG or GIF, at most 5 MB each), the product's `DESIGN.md` (first 12,000 characters) when `--repo` is given, and the owner's active taste entries in scope (at most 15: verdict, claim, axes, do-not-copy). Two calls per variant, one per order. | No (you run it) | closed |
 | 42 | `teyla models arena --refresh` (see [CONSOLE.md](CONSOLE.md), Playbook) | `arena.ai` | One plain GET of the public page `https://arena.ai/leaderboard/agent/pareto`, with no cookie and no user data. The page sits behind a bot check; Teyla does not pass it. When the answer is a challenge it reads nothing and says so, and a snapshot you pasted into `~/.teyla/models/arena.json` stays in charge. | No (needs `--refresh`) | closed |
 
 ## Calls through tools you already have
@@ -127,6 +129,10 @@ checks other than row 1 read local files only. `teyla attention` makes no call e
 `net.offline()`, which closes the gate for every reader it borrows (schedules, portfolio, doctor, offers), whatever
 safe mode or `--allow-network` say. A source that would need the network is read from its cache and the row says how old
 the cache is.
+
+The iPhone app's Lab "Morning post card" drafts on the device (Apple's on-device model or a local rule) and sends
+nothing: its answers and drafts stay in the app's own storage, and the LinkedIn and X buttons only hand the text to those
+apps, where you post it.
 
 ## URLs in the code that are not calls
 

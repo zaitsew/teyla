@@ -50,6 +50,9 @@
     [growth]                       `teyla growth`: the content factory (docs/GROWTH.md)
     daily           = false        `teyla routine install` writes an agent: growth daily at 06:30 (harvest, plan,
                                    draft; publishes nothing). Off unless you ask for it.
+    [crash]                        `teyla crash --pull`: device crashes and feedback from TestFlight
+    feed_agent      = false        `teyla routine install` writes an agent: crash --pull --quiet every hour (read-only
+                                   App Store Connect calls with the release tool's key; docs/PRIVACY.md row 56)
     [tidy]                         `teyla tidy`: the rule and memory files checked for junk
     max_kb     = 24                a file over this many KB is a finding (an always-loaded file this big is not read)
     stale_days = 120               a dated "until" / "for now" / "temporary" / "this week" / TODO line older than this is a finding
@@ -182,6 +185,8 @@ DEFAULTS = {
     "corrections": {"store": "home"},
     # `teyla growth daily` as a launchd agent at 06:30, written by `teyla routine install`. Opt-in.
     "growth": {"daily": False},
+    # `teyla crash --pull --quiet` hourly, written by `teyla routine install`: TestFlight crashes and feedback. Opt-in.
+    "crash": {"feed_agent": False},
     # `teyla intent`: the owner's own long prompts, kept verbatim in ~/.teyla/intent/<product>.md.
     "intent": {"enabled": True, "min_chars": 400},
     "safe": {"enabled": False, "auto_update": False},
