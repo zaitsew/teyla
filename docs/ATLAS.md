@@ -101,7 +101,7 @@ If `docs/FEATURES.md` exists, every section with a table whose first column is "
 ## Rules
 
 - A new screen adds its registry entry in the same PR, like a feature adds its row ([decision S19]).
-- Figma frames are generated from the atlas, never drawn by hand (STANDARD, the advisory note "Figma is a snapshot").
+- Figma frames are generated from the atlas, never drawn by hand (STANDARD R20).
 - The atlas shows what the registry says. A screen missing from the registry is invisible, and `registry check` cannot
   find it: keep the entry next to the screen.
 
