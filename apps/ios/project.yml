@@ -69,7 +69,7 @@ targets:
       properties:
         CFBundleName: Teyla
         CFBundleDisplayName: Teyla
-        CFBundleShortVersionString: "0.48.0"
+        CFBundleShortVersionString: "0.49.0"
         # Raise CURRENT_PROJECT_VERSION below by hand for each upload: the release tool does not.
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         # The Mac's pairing code is a QR code holding `teyla-pair:v1:<key>`; the system Camera opens it here.
