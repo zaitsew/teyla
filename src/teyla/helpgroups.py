@@ -60,6 +60,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
         ("hosts", "Every host a repo's code can reach, against its privacy table"),
         ("scout", "The weekly design scout: what changed, and rule proposals"),
         ("review", "Comments made on the real app: pull, triage, lane brief"),
+        ("usage", "What testers use in a test build: screens, jobs, dead ends"),
         ("taste", "Design decisions and rules per product; renders DESIGN.md"),
         ("copy", "UI copy from a brief: write per language, judge, apply to the catalogs"),
         ("whats-new", "Store What's New: draft from merged PRs, check every locale"),

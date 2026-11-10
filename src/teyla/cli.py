@@ -91,6 +91,7 @@
   teyla reviews [--days N] [--json] [--quiet] [repo...]            review debt: merged PRs never reviewed, merged with an open P1, skipped
   teyla reviews settle OWNER/REPO#N --outcome fixed|false --decision PATH --reason TEXT [--commit SHA] [--dry]   close an open P1 on a merged PR, with evidence in git
   teyla review [list|pull|triage ID|open IDS...]                   the inbox of review captures: pull from the relay and TestFlight, triage to fix|rule|reject, lane brief
+  teyla usage PRODUCT [--since DATE] [--before BUILD] [--after BUILD] [--json]   usage events from test builds: top screens and actions, time per job, dead ends, repeat taps
   teyla taste [list|confirm ID|render [repo]]                      the taste ledger: rule proposals, the owner's confirm, DESIGN.md rendered from the files
   teyla taste add <url|image> [comment] [--dislike|--mixed] [--product N]   the taste corpus: a like or dislike as evidence; also note, capture, interpret, accept, reject, inbox, list --corpus, corpus render
   teyla products [path...]                                       real-usage counters from every repo's ./check.sh usage
@@ -624,6 +625,8 @@ def build_parser() -> argparse.ArgumentParser:
     relay_mod.register(sp)
     from . import review as review_mod
     review_mod.register(sp)
+    from . import usage as usage_mod
+    usage_mod.register(sp)
     from . import taste as taste_mod
     taste_mod.register(sp)
     from . import dispatch as dispatch_mod

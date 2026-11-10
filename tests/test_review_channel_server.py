@@ -400,3 +400,49 @@ def test_a_third_big_body_is_turned_away_and_spends_nothing(tmp_path):
         assert b.put(cid, "capture.png", rc.PNG_MAGIC + b"\0" * (rc.MIB + 1))[0] == 200
     finally:
         b.stop()
+
+
+# --- usage batches: the same channel and key, a file with no picture ------------------------------
+
+def usage_batch(cid: str, product: str = "alpha", **over) -> bytes:
+    d = {"v": 1, "kind": "usage", "id": cid, "install": uid(99), "sent": "2026-11-10T10:00:00Z",
+         "app": {"bundle_id": f"com.example.{product}", "product": product, "version": "1.0", "build": "3"},
+         "declared": {"screens": ["home.main"], "actions": [], "tasks": []},
+         "events": [{"t": 1_793_400_000, "k": "screen", "id": "home.main", "b": "3"}]}
+    d.update(over)
+    return json.dumps(d).encode()
+
+
+def test_a_usage_batch_is_complete_on_its_own_and_lands_in_ready(box):
+    cid = uid(40)
+    assert box.put(cid, "usage.json", usage_batch(cid))[0] == 200
+    d = box.ready("alpha", cid)
+    assert [p.name for p in d.iterdir()] == ["usage.json"] and stat.S_IMODE(d.stat().st_mode) == 0o700
+    assert not box.incoming("alpha", cid).exists()
+    assert box.put(cid, "usage.json", usage_batch(cid))[0] == 200                  # a retry is free
+
+
+def test_a_usage_batch_follows_the_product_rule_and_must_say_it_is_usage(box):
+    cid = uid(41)
+    assert box.put(cid, "usage.json", usage_batch(cid, "beta"))[0] == 403
+    assert box.put(cid, "usage.json", usage_batch(cid), key=KEY_B)[0] == 403
+    assert box.put(cid, "usage.json", usage_batch(uid(42)))[0] == 400              # id differs from the path
+    assert box.put(cid, "usage.json", usage_batch(cid, kind="capture"))[0] == 400
+    assert box.put(cid, "usage.json", usage_batch(cid, events="none"))[0] == 400
+    assert box.put(cid, "usage.json", b"{nope")[0] == 400
+    assert box.put(cid, "usage.json", usage_batch(cid), key="nope")[0] == 401
+    assert not box.ready("alpha", cid).exists() and not box.incoming("alpha", cid).exists()
+
+
+def test_usage_batches_have_their_own_cap_and_do_not_spend_the_captures(tmp_path):
+    b = Box(tmp_path, usage_per_product_day=2, per_product_day=1)
+    try:
+        assert [b.put(uid(50 + i), "usage.json", usage_batch(uid(50 + i)))[0] for i in range(3)] == [200, 200, 429]
+        assert b.send_both(uid(60)) == (200, 200)                                  # the one capture of the day is still there
+        assert b.put(uid(50), "usage.json", usage_batch(uid(50)))[0] == 200        # delivered already: free
+    finally:
+        b.stop()
+
+
+def test_a_usage_batch_over_the_json_limit_is_refused_unread(box):
+    assert box.header_only("PUT", f"/v1/captures/{uid(70)}/usage.json", 256 * 1024 + 1) == 413

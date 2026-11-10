@@ -50,6 +50,21 @@ public struct ReviewStrings {
     /// The checkbox shown before Send when `requiresHealthConsent` is on.
     public var healthConsent = "This screen may show my health data. I agree to send it for review."
 
+    // The usage-capture notice (shown once per install to a tester who is not the owner, before any usage event is sent).
+    public var usageNoticeTitle = "Help improve this test build?"
+    public var usageNoticeCaptured = "What is recorded: which screens you open, which buttons you use and how each action ended, how long a job takes, the build number and which design option is switched on. Never what you type, titles, names, contacts or your location."
+    public var usageNoticeRecipient = "Who gets it: the developer of this app, through a review server. Nobody else. It carries a random number made for this install, not your name, account or device."
+    public var usageNoticeWhy = "Why: to see which parts of the app get used and where people get stuck."
+    public var usageNoticeRetention = "How long: the server copy is deleted when the developer's Mac next collects it, usually within the hour. The developer's Mac keeps the events for 180 days."
+    public var usageNoticeNotNow = "If you choose Not now, nothing leaves this device and what was recorded is deleted."
+    public var usageAllow = "Allow"
+    public var usageNotNow = "Not now"
+
+    /// The usage notice as one text, in the order a reader needs it.
+    var usageNoticeMessage: String {
+        [usageNoticeCaptured, usageNoticeRecipient, usageNoticeWhy, usageNoticeRetention, usageNoticeNotNow].joined(separator: "\n\n")
+    }
+
     /// The notice as one text, in the order a reader needs it.
     var noticeMessage: String {
         [noticeCaptured, noticeRecipient, noticeWhy, noticeRetention].joined(separator: "\n\n")

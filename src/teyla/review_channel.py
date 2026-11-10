@@ -37,7 +37,7 @@ import sys
 import tempfile
 import tomllib
 
-from . import config, net, review, routine_install as ri
+from . import config, net, review, routine_install as ri, usage
 from .control import state as control
 
 LABEL = "com.zaitsew.teyla.review-channel"
@@ -193,7 +193,8 @@ def _name(text: str) -> str:
 def pull_remote(conn, remote: Remote, now: float | None = None) -> dict:
     """One pass. {source, added, known, waiting, skipped: [...], imported: [ids], deleted, left, note, error?}."""
     rep: dict = {"source": "channel", "added": 0, "known": 0, "waiting": 0, "skipped": [], "imported": [],
-                 "deleted": 0, "left": 0, "note": ""}
+                 "deleted": 0, "left": 0, "note": "",
+                 "usage_batches": 0, "usage_events": 0}
     with tempfile.TemporaryDirectory(prefix="teyla-review-channel-") as tmp:
         box = pathlib.Path(tmp) / "ready"
         box.mkdir(mode=0o700)
@@ -214,6 +215,17 @@ def pull_remote(conn, remote: Remote, now: float | None = None) -> dict:
                 if folder.is_symlink() or not folder.is_dir() or not UUID.match(folder.name):
                     rep["skipped"].append(f"{sdir.name}/{_name(folder.name)}: not a capture folder; left on the server")
                     _discard(folder)
+                    continue
+                if (folder / "usage.json").is_file() and not (folder / "capture.json").exists():
+                    # A usage batch (packages/review-ios, "Usage capture"): not a capture, so it never reaches the inbox.
+                    got = usage.import_folder(sdir.name, folder, now)
+                    if got["ok"]:
+                        held.append((sdir.name, folder.name))
+                        rep["usage_batches"] += 1
+                        rep["usage_events"] += 0 if got["known"] else got["events"]
+                    else:
+                        rep["skipped"].append(f"{sdir.name}/{folder.name}: {got['why']}; left on the server")
+                    shutil.rmtree(folder, ignore_errors=True)
                     continue
                 if _declared_product(folder) != sdir.name:
                     rep["skipped"].append(f"{folder.name}: its app.product is not '{sdir.name}'; left on the server")
@@ -237,6 +249,8 @@ def pull_remote(conn, remote: Remote, now: float | None = None) -> dict:
 
 def _print(rep: dict) -> None:
     line = (f"channel: {rep['added']} new, {rep['known']} already known, {rep['deleted']} deleted from the server")
+    if rep.get("usage_batches"):
+        line += f", {rep['usage_batches']} usage batch(es) with {rep['usage_events']} new events (teyla usage <product>)"
     if rep.get("pruned"):
         line += f", {rep['pruned']} past retention removed here"
     if rep.get("waiting"):
@@ -259,7 +273,7 @@ def cmd_pull(conn, args) -> int:
     if not net.gate("the review channel pull (ssh and rsync)"):
         return 1
     rep = pull_remote(conn, Remote(cfg["ssh"], cfg["root"]))
-    rep["pruned"] = pruned["deleted"]
+    rep["pruned"] = pruned["deleted"] + usage.prune()
     if pruned["kept"]:
         rep["skipped"].append(f"{len(pruned['kept'])} capture(s) past retention could not be removed; the next pass retries")
     if args.json:
