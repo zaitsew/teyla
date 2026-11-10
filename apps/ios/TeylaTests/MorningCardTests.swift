@@ -128,6 +128,14 @@ final class MorningCardTests: XCTestCase {
         let parts = PostCutter.sentences("i thought it would take a day. it took 20 minutes. if you build alone, reuse your screens")
         XCTAssertEqual(parts, ["I thought it would take a day.", "It took 20 minutes.", "If you build alone, reuse your screens"])
         XCTAssertEqual(PostCutter.capitalizingSentenceStarts("version 2.5 is out"), "Version 2.5 is out")
+        // An uppercase form longer than one character must not trap: U+00DF uppercases to "SS".
+        XCTAssertEqual(PostCutter.capitalizingSentenceStarts("\u{00DF}x. ok"), "SSx. Ok")
+    }
+
+    func testXVersionCutsTextWithoutSpaces() {
+        let x = PostCutter.xVersion([String(repeating: "a", count: 400) + "."])
+        XCTAssertEqual(x.count, 280)
+        XCTAssertTrue(x.hasPrefix("aaa"))
     }
 
     func testPrepareStripsTagsAndLinks() {

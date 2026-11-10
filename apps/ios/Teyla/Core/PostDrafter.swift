@@ -115,20 +115,23 @@ public enum PostCutter {
     /// Typed or dictated notes often start sentences in lower case ("layout. if you"), and the
     /// sentence splitter does not split there. Capitalise each start, and a lone "i", first.
     static func capitalizingSentenceStarts(_ text: String) -> String {
-        var chars = Array(text)
+        // Built as a String: an uppercase form can be more than one character ("ß" → "SS").
+        var out = ""
         var start = true
-        for i in chars.indices {
-            let c = chars[i]
+        for c in text {
             if start, c.isLetter {
-                chars[i] = Character(c.uppercased())
+                out += c.uppercased()
                 start = false
-            } else if ".!?".contains(c) {
+                continue
+            }
+            if ".!?".contains(c) {
                 start = true
             } else if !c.isWhitespace {
                 start = false
             }
+            out.append(c)
         }
-        return String(chars).replacingOccurrences(of: #"\bi\b(?=[\s',.!?])"#, with: "I", options: .regularExpression)
+        return out.replacingOccurrences(of: #"\bi\b(?=[\s',.!?])"#, with: "I", options: .regularExpression)
     }
 
     public static func draft(note: String) -> PostDraft {
@@ -148,6 +151,8 @@ public enum PostCutter {
                 if next.count > limit - 1 { break }
                 x = next
             }
+            // A first word longer than the limit (text without spaces, such as Japanese) is cut by characters.
+            if x.isEmpty { x = String(first.prefix(limit - 1)) }
             return x + "…"
         }
         let last = parts.count > 1 ? parts[parts.count - 1] : nil

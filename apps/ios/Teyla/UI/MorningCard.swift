@@ -53,6 +53,7 @@ struct MorningCard: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { state = MorningCardLogic.load() } else { endHold() }
         }
+        .onAppear { state = MorningCardLogic.load() }
         .onDisappear { endHold() }
     }
 
