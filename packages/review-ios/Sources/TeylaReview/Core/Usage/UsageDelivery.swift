@@ -1,5 +1,24 @@
 import Foundation
 
+/// One usage batch, as a product's own backend receives it.
+public struct ReviewUsageBatch: Sendable {
+    /// The batch id (a lowercase UUID). A retry of the same batch carries the same id: store by it, so a
+    /// repeat is a no-op.
+    public let id: String
+    /// The encoded `usage.json` bytes: ids, counts and durations only, as the shared channel would get them.
+    public let json: Data
+
+    public init(id: String, json: Data) {
+        self.id = id
+        self.json = json
+    }
+}
+
+/// Hands a usage batch to the product's backend, the twin of `ReviewDeliver`. True only once the backend holds
+/// it; false (or no answer) keeps the batch for a later try under the same id. A batch sent twice must count
+/// as delivered.
+public typealias ReviewUsageDeliver = @Sendable (ReviewUsageBatch) async -> Bool
+
 /// What leaves the device: one JSON file per batch, PUT to the shared review channel with the same bearer key
 /// as a capture, at `/v1/captures/<batch id>/usage.json`. The server tells it from a capture by the file name.
 enum UsageDelivery {
@@ -64,6 +83,21 @@ enum UsageDelivery {
     static func put(_ body: Data, id: String, config: ChannelConfig, session: URLSession) async -> ChannelResult {
         guard ChannelDelivery.isValidID(id) else { return .refused }
         return await ChannelDelivery.put(body, to: url(config, id: id), contentType: "application/json", key: config.key, session: session)
+    }
+}
+
+extension UsageDelivery {
+    /// The route a batch takes: the product's `deliverUsage` closure when it set one (it wins, as `deliver`
+    /// does for captures); else the shared channel when the Info.plist holds both keys; else nil, and nothing
+    /// leaves the device. A false answer is `.retryLater`: the batch stays, with its id.
+    static func transport(
+        deliverUsage: ReviewUsageDeliver?, channel: ChannelConfig?, session: URLSession = .channel
+    ) -> UsageSender.Transport? {
+        if let deliverUsage {
+            return { body, id in await deliverUsage(ReviewUsageBatch(id: id, json: body)) ? .delivered : .retryLater }
+        }
+        guard let channel else { return nil }
+        return { body, id in await put(body, id: id, config: channel, session: session) }
     }
 }
 

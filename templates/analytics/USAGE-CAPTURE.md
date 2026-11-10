@@ -73,6 +73,38 @@ archive that holds the channel key.
   `NSPrivacyCollectedDataTypeLinked` false, `NSPrivacyCollectedDataTypeTracking` false and purposes
   `NSPrivacyCollectedDataTypePurposeAnalytics`.
 
+## 4b. Variants of the paperwork
+
+**A product with its own backend** sets `TeylaReview.configure { $0.deliverUsage = { batch in ... } }` and holds no
+channel key. Change these lines above:
+
+- Section 1: replace "a server run by <owner>, which deletes its copy when the developer collects it, usually
+  within the hour" with "the app's own server, which keeps them <retention> and then deletes them".
+- Section 2, **Where it runs / Storage**: the batch goes to the product's backend through the `deliverUsage`
+  closure; there is no channel host. Name the retention of the backend's copy. The Mac keeps 180 days.
+- **Identity.** The batch holds a random install id and no account. The upload is authenticated, so the
+  product's backend sees which account sent it. Pick one and write it down: either the backend does not store
+  the account with the batch (the receiving route drops it), or the privacy text says it does ("events are
+  linked to your account"). In the second case the App Privacy answer "Linked to the user's identity" becomes
+  Yes for test builds, and section 3 changes with it.
+- Owner: with no relay pairing the owner also sees Allow / Not now once. Do not add an owner check.
+- Mac side: the product's script downloads each batch as `<batch id>/usage.json` into a folder and runs
+  `teyla review pull --vouched-folder DIR`, then deletes its own copies of the ids in `usage_imported`.
+
+**One archive for TestFlight and the App Store** (`TEYLA_REVIEW_ENABLED` on in both). The sentence "The App Store
+configuration defines no `TEYLA_REVIEW_ENABLED` and holds no channel key" is true only when the product has
+two configurations; keep it for that case. For the same-archive case, write instead: "The same binary ships to
+TestFlight and the App Store. Review mode is off at runtime on a production receipt, so on the App Store it
+records and sends nothing." Then:
+
+- `teyla review store-check` cannot prove the absence of the switch in this archive: it fails an archive with
+  `TeylaReviewEnabled` on. Say in the PR that the product relies on the runtime receipt check, and cite the
+  test (`UsageTests.testAStoreBuildRecordsNothingAndWritesNoFile`) that holds it.
+- Never put a channel key in this archive: `store-check` fails on it, and it would ship to the store. This is
+  why the same-archive case uses `deliverUsage`.
+- The public privacy text keeps the "Test builds" paragraph (section 1); the App Privacy answer in section 3
+  stays "Data Not Collected" for the store, because the store install records nothing.
+
 ## 5. Internal notes (not public)
 
 - Wire it with `TeylaUsage.configure(screens:actions:tasks:)` at launch and `.usageConsentNotice()` on the root

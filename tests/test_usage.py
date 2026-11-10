@@ -306,3 +306,81 @@ def test_the_text_report_is_readable_and_prints_no_install_id(home, capsys):
 def test_usage_is_in_the_help_groups():
     from teyla import helpgroups
     assert any(name == "usage" for rows in helpgroups.GROUPS.values() for name, _ in rows)
+
+
+# --- a product's own backend: `teyla review pull --vouched-folder DIR` ---------------------------------
+
+def test_the_vouched_folder_files_a_usage_batch_and_leaves_the_inbox_alone(home, capsys):
+    box = home / "download"
+    d = folder(box, batch(SESSION))
+    assert cli.main(["review", "pull", "--vouched-folder", str(box), "--json"]) == 0
+    rep = json.loads(capsys.readouterr().out)
+    assert (rep["usage_batches"], rep["usage_events"], rep["usage_imported"]) == (1, len(SESSION), [B1])
+    assert rep["added"] == 0 and rep["imported"] == [] and rep["skipped"] == []
+    assert [f.stem for f in stored(home)] == [B1]
+    assert (d / "usage.json").is_file()                     # the source folder is the caller's to delete
+    conn = review.connect()
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM captures").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_the_vouched_folder_cleans_a_batch_like_the_channel_does(home):
+    messy = batch([ev(0, "screen", "home.main", d={"keep": 3, "bad": {"x": 1}, "list": [1]}), {"k": "nonsense"}])
+    messy["email"] = "someone@example.invalid"
+    box = home / "download"
+    folder(box, messy)
+    conn = review.connect()
+    try:
+        rep = review.pull_vouched(conn, box)
+    finally:
+        conn.close()
+    assert rep["usage_batches"] == 1
+    text = stored(home)[0].read_text()
+    assert "someone@example.invalid" not in text and '"bad"' not in text
+
+
+def test_a_bad_usage_batch_is_skipped_and_the_others_still_import(home):
+    box = home / "download"
+    folder(box, batch(SESSION, product="other-product", cid=B2))
+    folder(box, batch(SESSION, product="Bad Slug!", cid=B3))
+    folder(box, batch(SESSION, cid=B1))
+    conn = review.connect()
+    try:
+        rep = review.pull_vouched(conn, box)
+    finally:
+        conn.close()
+    assert sorted(rep["usage_imported"]) == sorted([B1, B2]) and rep["usage_batches"] == 2
+    assert len(rep["skipped"]) == 1 and B3 in rep["skipped"][0]
+    assert [f.stem for f in stored(home)] == [B1] and [f.stem for f in stored(home, "other-product")] == [B2]
+
+
+def test_a_duplicate_usage_batch_id_is_ignored(home):
+    box = home / "download"
+    folder(box, batch(SESSION))
+    conn = review.connect()
+    try:
+        review.pull_vouched(conn, box)
+        rep = review.pull_vouched(conn, box)
+    finally:
+        conn.close()
+    assert rep["usage_imported"] == [B1] and rep["usage_events"] == 0 and rep["skipped"] == []
+    assert len(stored(home)) == 1
+
+
+def test_a_usage_batch_does_not_stop_a_capture_in_the_same_folder(home):
+    cap = pathlib.Path(__file__).parent / "fixtures" / "review-capture"
+    cid = "3b9f1d2e-6a41-4c7e-9d0a-5e2f8b7c1a64"
+    box = home / "download"
+    folder(box, batch(SESSION))
+    shutil.copytree(cap, box / cid)
+    (box / cid / "status.json").unlink()
+    (box / cid / "capture.sig").unlink()
+    conn = review.connect()
+    try:
+        rep = review.pull_vouched(conn, box)
+        assert rep["imported"] == [cid] and rep["usage_imported"] == [B1] and rep["skipped"] == []
+        assert conn.execute("SELECT COUNT(*) FROM captures").fetchone()[0] == 1
+    finally:
+        conn.close()

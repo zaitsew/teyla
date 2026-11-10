@@ -27,6 +27,11 @@ public enum TeylaReview {
         /// that shared channel itself. With neither, no capture leaves the device.
         /// Set `strings.deliveryNote` with it, so the tester knows where the capture goes.
         public var deliver: ReviewDeliver?
+        /// The same for usage batches (`TeylaUsage`): a product with its own backend sends them here, so
+        /// the Info.plist channel keys are not needed. When it is set, all usage sending goes through it
+        /// and the shared channel is not used. Recording, the allow-list and the Allow / Not now notice are
+        /// unchanged; a false answer keeps the batch for a later try under the same id.
+        public var deliverUsage: ReviewUsageDeliver?
         /// The product's slug, for `app.product` in every capture: it must equal the product the
         /// shared channel's key was made for. Falls back to the Info.plist key `TeylaReviewProduct`.
         public var product: String?

@@ -135,8 +135,7 @@ public enum TeylaUsage {
                 declared: { rec.declared },
                 install: { UsageInstall.id() },
                 transport: {
-                    guard let config = TeylaReview.bundleChannel else { return nil }
-                    return { body, id in await UsageDelivery.put(body, id: id, config: config, session: .channel) }
+                    UsageDelivery.transport(deliverUsage: TeylaReview.configuration.deliverUsage, channel: TeylaReview.bundleChannel)
                 })
         }
     }

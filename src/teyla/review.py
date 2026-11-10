@@ -43,6 +43,7 @@ import sys
 import time
 
 from . import config, docs_check, net, relay, review_asc, review_gate, review_wire, state, taste
+from . import usage as usage_store
 from .control import state as control
 
 MODEL = "claude-sonnet-5-5"                  # the ladder's default worker (POLICY §1)
@@ -1027,13 +1028,28 @@ def pull_vouched(conn: sqlite3.Connection, root: pathlib.Path, now: float | None
     """Import every capture folder directly under `root`, a local folder the caller filled from its own
     signed-in channel. `imported` names the ones the inbox now holds, so the caller can clear its copy.
     `source` is stored on each row (see import_folder)."""
-    rep = {"source": "channel", "added": 0, "known": 0, "waiting": 0, "skipped": [], "imported": [], "note": ""}
+    rep = {"source": "channel", "added": 0, "known": 0, "waiting": 0, "skipped": [], "imported": [], "note": "",
+           "usage_batches": 0, "usage_events": 0, "usage_imported": []}
     if not root.is_dir():
         rep["note"] = f"the folder {root} does not exist"
         rep["error"] = True
         return rep
     for folder in sorted(root.iterdir(), key=lambda p: p.name):
         if folder.name.startswith("."):
+            continue
+        if (folder / "usage.json").is_file() and not (folder / "capture.json").exists():
+            # A usage batch from a product's own backend: filed under ~/.teyla/usage/, never in the inbox.
+            # One bad batch is skipped; the others and the captures go on.
+            try:
+                got = usage_store.import_folder(None, folder, now)
+            except Exception as e:
+                got = {"ok": False, "why": f"unreadable ({type(e).__name__})"}
+            if got["ok"]:
+                rep["usage_batches"] += 1
+                rep["usage_events"] += 0 if got["known"] else got["events"]
+                rep["usage_imported"].append(folder.name.lower())
+            else:
+                rep["skipped"].append(f"{folder.name}: usage batch refused ({got['why']})")
             continue
         try:
             kind, detail = import_folder(conn, folder, now, vouched=True, source=source)
@@ -1055,6 +1071,8 @@ def _print_pull(rep: dict) -> None:
         line += f", {rep['waiting']} still syncing"
     if rep.get("receipts"):
         line += f", {rep['receipts']} receipt(s) sent to the phone"
+    if rep.get("usage_batches"):
+        line += f", {rep['usage_batches']} usage batch(es) with {rep['usage_events']} new events (teyla usage <product>)"
     if rep["skipped"]:
         line += f", {len(rep['skipped'])} skipped"
     print(line + (f" ({rep['note']})" if rep.get("note") else ""))
@@ -1238,7 +1256,7 @@ def register(sp):
     q.add_argument("--all", action="store_true", help="list: include done and rejected captures")
     q.add_argument("--json", action="store_true")
     q.add_argument("--folder", help="pull: the relay folder (default: the one `teyla relay on` set)")
-    q.add_argument("--vouched-folder", metavar="DIR", help="pull: import captures a product's own signed-in channel downloaded to DIR; they carry no relay signature")
+    q.add_argument("--vouched-folder", metavar="DIR", help="pull: import captures and usage batches (<id>/usage.json) a product's own backend downloaded to DIR; no relay signature")
     q.add_argument("--channel", action="store_true", help="pull: move captures from the shared review channel (ssh and root in ~/.teyla/review-channel.toml); their sender is unverified")
     q.add_argument("--rotate", action="store_true", help="channel key add: replace the product's existing key")
     q.add_argument("--testflight", metavar="APP-ID", help="pull: also read TestFlight screenshot feedback of this App Store Connect app")
