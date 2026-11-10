@@ -180,29 +180,27 @@ control it can tell from the code; the copy judge reads the rest.
 
 ## Part 4. The review process
 
-### R18. Two variants, reviewed on the device, one round
-Since 2026-10-16 · Scope: every new or reworked screen · Check: review (the PR)
+### R18. A decision card: two or three options, recommended first, after a dossier
+Since 2026-11-10 · Scope: every new or reworked screen and every taste change · Check: review (the PR links the pick)
 
 Design is reviewed by the owner on the device, because a screen that looks right in a
-screenshot can still be wrong in the hand.
+screenshot can still be wrong in the hand. The cycle is in `templates/design/CYCLE.md`.
 
-1. **Two variants.** Two genuinely different ones, not two colour schemes of one idea. They
-   differ in structure: what is the primary action, what is removed, what is one step away.
-2. **Owner review on the phone** (or the real device: Mac, watch). Screenshots alone are not
+1. **Research before options.** No option is shown before a dossier exists: the owner's own
+   words and earlier picks, usage, guidelines, how 6 to 10 products solve it, what practitioners
+   report. Every item is labelled guideline, observation or hypothesis. A popular app or a post
+   is never evidence by itself. `teyla design options` refuses a thin dossier.
+2. **A decision card.** Two or three options, never more. The recommended
+   one is first, with a one-line why. Options differ in structure: what is the primary action,
+   what is removed, what is one step away. Not two colour schemes of one idea.
+3. **Owner review on the phone** (or the real device: Mac, watch). Screenshots alone are not
    a review.
-3. **One round of comments.** The owner picks and comments once. The agent does not keep
-   iterating on its own taste.
-4. **Apply only the accepted cuts.** No "while I was there" additions.
-5. **Screenshots in the PR**, before and after, for each changed screen, in light and dark.
-6. **A cut list**: what was removed, one line each. An empty cut list is a PR that added things.
-7. Run `teyla ux check` before opening the PR.
-
-### R19. Every change is a decision with a scope
-Since 2026-10-30 · Scope: every UX comment from the owner · Check: review (the PR links the decision)
-
-A comment becomes a fix, a rule or a reject, with a reason. A rule is proposed, never promoted
-by the agent; the owner confirms it. A scoped decision (one screen, one component, the product)
-never widens on its own.
+4. **One pick.** The owner picks, or says "none" with one sentence. The pick is stored with his
+   words. The agent does not keep iterating on its own taste.
+5. **Apply only the picked option.** No "while I was there" additions.
+6. **Screenshots in the PR**, before and after, for each changed screen, in light and dark.
+7. **A cut list**: what was removed, one line each. An empty cut list is a PR that added things.
+8. Run `teyla ux check` before opening the PR.
 
 ### R20. Figma is a snapshot and a sketchpad, never the spec
 Since 2026-11-06 · Scope: every product with a UI · Check: review (no PR cites Figma as the reason a screen is right)
@@ -217,9 +215,9 @@ code. Decided 2026-11-06, after Codex and Grok both advised against a living Fig
    MCP: the tokens as variables with light and dark modes, the components, and the screens of
    the screenshot tour in their states. The cover names the commit it was drawn from. The next
    store version regenerates it; nobody edits it to follow the code.
-2. **Variants may be sketched in Figma.** The two R18 variants of a new or reworked screen may be
-   drawn in Figma from the product's library, so the owner compares and comments on one canvas.
-   Only the chosen variant is built, and R18's review on the device applies to the build.
+2. **Options may be sketched in Figma.** The options of an R18 card may be drawn in Figma from
+   the product's library, so the owner compares and comments on one canvas. Only the picked
+   option is built, and R18's review on the device applies to the build.
 3. **The gate stays in the repo:** screenshot diffs against the accepted baselines,
    `teyla ux check` and the rubric in Part 5. A new baseline is accepted in the PR, by name.
 4. **Seats and limits.** A View seat allows 20 Figma MCP read calls a month; writes do not
@@ -227,6 +225,14 @@ code. Decided 2026-11-06, after Codex and Grok both advised against a living Fig
    drafts. A paid seat or plan is a charge under POLICY §11: state the price, ask twice.
 
 The product's `design/README.md` links its Figma file and names the commit of the last snapshot.
+
+### R22. One decision at a time, in map order
+Since 2026-11-10 · Scope: every redesign and every UX comment from the owner · Check: `teyla design` (refuses a pick before its needs, a build before its pick)
+
+A redesign is a map of 8 to 12 decisions, structure before look. A decision is built only after
+it is picked, and picked only after the decisions it needs. A comment becomes a fix, a rule or a
+reject, with a reason. A rule is proposed, never promoted by the agent; the owner confirms it. A
+scoped decision (one screen, one component, the product) never widens on its own.
 
 ## Part 5. The review rubric
 
@@ -259,7 +265,7 @@ Answer each with yes or no. Fix every no, or say why in the PR.
 7. Are there about four tap targets or fewer, with the rest behind a menu, a sheet or a detail screen?
 8. Are there zero raw font sizes, colours and spacing values in my diff?
 9. Does every button start with a verb, in 3 words or fewer, with no "Please", no "!" and no "oops"?
-10. Did I run `teyla ux check`, attach before and after screenshots, and build two variants?
+10. Did I run `teyla ux check`, attach before and after screenshots, and show a decision card of two or three options, recommended first?
 
 ## What the audit cannot see
 
@@ -281,3 +287,4 @@ Not counted toward the 20. Advice and tests that help, and rules that were cut t
   to tap. (advisory, since 2026-10-16)
 - **Undo beats confirm.** Prefer an undo toast to a dialog when the action is cheap to reverse.
   (advisory, since 2026-10-30)
+- **Every change is a decision with a scope** (was R19; folded into R22 on 2026-11-10).

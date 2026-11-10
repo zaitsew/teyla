@@ -263,6 +263,8 @@ def answer(a: asks.Ask, text: str, dry: bool = False, now: float | None = None,
            wait_s: float | None = None, clipboard: bool = True) -> dict:
     """`clipboard=False` (the iPhone relay) never takes the copy-and-open fallback: that answer needs the
     owner at the Mac, so it fails with "needs the Mac" and the question stays open."""
+    if a.harness == asks.DESIGN_HARNESS:
+        return answer_design(a, text, dry)
     steps = plan(a, text)
     base = {"ok": False, "via": "", "detail": "", "id": a.id}
     needs_mac = False
@@ -293,6 +295,20 @@ def answer(a: asks.Ask, text: str, dry: bool = False, now: float | None = None,
         failures.append(f"{s['via']}: {detail}")
     base["detail"] = "; ".join(failures + (["needs the Mac"] if needs_mac else []))
     return base
+
+
+def answer_design(a: asks.Ask, text: str, dry: bool = False) -> dict:
+    """A design card: the answer is the owner's pick. Same code as `teyla design pick`; no session is involved."""
+    from . import design_cycle
+    if dry:
+        return {"ok": True, "via": "design-pick", "detail": "would write pick.yaml for " + a.session.partition("::")[2],
+                "id": a.id, "dry": True}
+    try:
+        res = design_cycle.answer_card(a.session, text)
+    except design_cycle.DesignError as e:
+        return {"ok": False, "via": "", "detail": str(e), "id": a.id}
+    return {"ok": True, "via": "design-pick", "id": a.id,
+            "detail": f"{res['id']}: picked {res['option']}; rule proposal {res['proposal'][:8]} waits for `teyla taste confirm`"}
 
 
 def _mark_done(ask_id: str, via: str, now: float | None) -> None:

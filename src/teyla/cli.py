@@ -94,6 +94,9 @@
   teyla usage PRODUCT [--since DATE] [--before BUILD] [--after BUILD] [--json]   usage events from test builds: top screens and actions, time per job, dead ends, repeat taps
   teyla taste [list|confirm ID|render [repo]]                      the taste ledger: rule proposals, the owner's confirm, DESIGN.md rendered from the files
   teyla taste add <url|image> [comment] [--dislike|--mixed] [--product N]   the taste corpus: a like or dislike as evidence; also note, capture, interpret, accept, reject, inbox, list --corpus, corpus render
+  teyla design map|next|status <product>                           the design cycle: a decision map, one decision at a time, research before options (templates/design/CYCLE.md)
+  teyla design dossier|options|built <product> <id>               scaffold the five-part dossier; check 2-3 options, recommended first, and open the card; mark a picked decision built
+  teyla design pick <product> <id> <option|none> --sentence "..." [--scope screen|product|all] [--supersede]   store the owner's pick and open a taste rule proposal
   teyla products [path...]                                       real-usage counters from every repo's ./check.sh usage
   teyla routines [path...] [--json]                               routines + manual checks from every repo's teyla.toml
   teyla check <product> <check> ok|broken [--note TEXT]            confirm a manual check: status + today's date in its teyla.toml
@@ -629,6 +632,8 @@ def build_parser() -> argparse.ArgumentParser:
     usage_mod.register(sp)
     from . import taste as taste_mod
     taste_mod.register(sp)
+    from . import design_cycle as design_cycle_mod
+    design_cycle_mod.register(sp)
     from . import dispatch as dispatch_mod
     dispatch_mod.register(sp)
     from . import docs_check as docs_check_mod

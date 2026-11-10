@@ -1,0 +1,12 @@
+decisions:
+  - id: jobs
+    title: What the product is for
+    journey: the first day of a new user
+    needs: []
+    status: picked
+  - id: bottom-bar
+    title: The bottom bar and the first screen
+    journey: an ordinary day
+    needs:
+      - jobs
+    status: options

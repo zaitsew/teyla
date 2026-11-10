@@ -72,6 +72,7 @@ REMINDER_WINDOW_DAYS = 7
 TAIL_BYTES = 256 * 1024          # enough for the last turn of a transcript; they run to tens of MB
 STATE_KEEP_DAYS = 180
 KINDS = ("question", "blocked", "gate", "reminder", "report")
+DESIGN_HARNESS = "teyla-design"      # an Ask from `teyla design options`: answered into pick.yaml, not into a session
 OPEN_LINK = "claude://claude.ai/epitaxy/"
 
 
@@ -702,6 +703,21 @@ def collect_gates() -> list[Ask]:
     return out
 
 
+def collect_design_cards() -> list[Ask]:
+    """An open design decision card (`teyla design options`): options valid, no pick yet. It is a question
+    with the options as chips, recommended first; `teyla answer` on it writes the pick."""
+    from . import design_cycle
+    out = []
+    for c in design_cycle.open_cards():
+        ref = f"{c['repo']}::{c['decision']}"
+        out.append(Ask(id=make_id("design", ref, ""), kind="question", product=registry.resolve(str(c["repo"])),
+                       title=clip(f"Design decision: {c['title']}", TITLE_MAX),
+                       question=clip(design_cycle.card_text(c), QUESTION_MAX), context="",
+                       options=design_cycle.card_chips(c), when=_now(), archived=False,
+                       link="teyla answer <id> <option> <your reason>", pr="", harness=DESIGN_HARNESS, session=ref))
+    return out
+
+
 def collect_reminders(path: pathlib.Path | None = None, today: _dt.date | None = None) -> list[Ask]:
     from . import remind
     today = today or _dt.date.today()
@@ -1285,7 +1301,7 @@ def collect(days: int = DEFAULT_DAYS, now: float | None = None, desktop: str | N
     now = _now() if now is None else now
     since = now - days * 86400
     items = (collect_claude(since, desktop, projects) + collect_codex(since, codex_root, codex_archive)
-             + collect_gates() + collect_reminders(reminders, _dt.datetime.fromtimestamp(now).date()))
+             + collect_design_cards() + collect_gates() + collect_reminders(reminders, _dt.datetime.fromtimestamp(now).date()))
     seen, unique = set(), []
     for a in items:
         if a.id not in seen:
@@ -1293,7 +1309,7 @@ def collect(days: int = DEFAULT_DAYS, now: float | None = None, desktop: str | N
             unique.append(a)
     apply_state(unique, load_state() if st is None else st, now)
     settle(unique, now, st=st, fetch=fetch, runner=runner)
-    unique.sort(key=lambda a: a.when)
+    unique.sort(key=lambda a: (a.harness != DESIGN_HARNESS, a.when))      # an open decision card first
     return unique
 
 
@@ -1458,7 +1474,8 @@ def group(items: list[Ask], reg: dict | None = None, flat: bool = False) -> list
         by.setdefault(a.product, []).append(a)
     if flat:
         return sorted(by.items(), key=lambda kv: min(a.when for a in kv[1]))
-    return sorted(by.items(), key=lambda kv: (kv[0] == registry.UNASSIGNED,
+    return sorted(by.items(), key=lambda kv: (not any(a.harness == DESIGN_HARNESS for a in kv[1]),
+                                              kv[0] == registry.UNASSIGNED,
                                               not (reg["product"].get(kv[0]) or {}).get("focus"),
                                               min(a.when for a in kv[1])))
 
