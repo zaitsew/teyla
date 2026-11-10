@@ -113,10 +113,28 @@ def _clean_declared(raw) -> dict:
     return out
 
 
-def import_folder(product: str, folder: pathlib.Path, now: float | None = None) -> dict:
-    """Check one `usage.json` batch and store it. {ok, events, dropped, known, why}. `ok` False means the batch
-    is not a usage batch this Mac can read; the caller leaves the server copy alone."""
-    rep = {"ok": False, "events": 0, "dropped": 0, "known": False, "why": ""}
+def batch_product(folder: pathlib.Path) -> str:
+    """The product a `usage.json` batch names in `app.product`, or "" when it names none that is a slug. For a
+    folder whose product is not known from where it lies (`--vouched-folder`); `import_folder` checks the rest."""
+    path = folder / "usage.json"
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_JSON:
+            return ""
+        app = json.loads(path.read_text(encoding="utf-8")).get("app")
+        product = app.get("product") if isinstance(app, dict) else None
+    except (OSError, ValueError, AttributeError):
+        return ""
+    return product if isinstance(product, str) and SLUG.match(product) else ""
+
+
+def import_folder(product: str | None, folder: pathlib.Path, now: float | None = None) -> dict:
+    """Check one `usage.json` batch and store it. {ok, events, dropped, known, why, product}. `ok` False means the
+    batch is not a usage batch this Mac can read; the caller leaves the server copy alone. `product` None reads it
+    from the batch's `app.product` (a folder whose product is not known from its path)."""
+    rep = {"ok": False, "events": 0, "dropped": 0, "known": False, "why": "", "product": ""}
+    if product is None:
+        product = batch_product(folder)
+    rep["product"] = product
     if not SLUG.match(product) or not UUID.match(folder.name):
         rep["why"] = "not a usage batch path"
         return rep

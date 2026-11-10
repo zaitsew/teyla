@@ -157,6 +157,11 @@ still fails an archive that holds the channel key.
 |---|---|---|---|
 | The app goes to the background or comes to the front, and events are waiting | The review channel the build's Info.plist names (`TeylaReviewChannelURL`), `PUT /v1/captures/<batch id>/usage.json`, with the product's channel key | A batch of events (at most 800, under 180 KB): the kind (`session`, `screen`, `action`, `task`, `dead_end`, `repeat_tap`), a time, a screen route, an action id or a task name from the list the app declared, a result word (`done`, `cancelled`, `error`, `undone`, `start`, `success`, `cancel`), a duration in milliseconds, the build number and the design variant switched on. The batch also names the app (bundle id, version, build, product slug, `testflight` or `debug`), the declared id lists, and a random id made for this install. Never text a person typed, a title, a name, a contact, a location, the vendor id, the advertising id or the device name. No third-party SDK. | The owner's device (paired with the owner's Mac) sends on its own. Any other tester sends only after one notice, once per install: "Allow" sends, "Not now" deletes what was recorded and sends nothing, ever. A build with no channel configured sends nothing. |
 
+A product with its own backend sets `TeylaReview.configure { $0.deliverUsage = ... }` instead: the batch (the same bytes, no channel key) goes to the
+product's server through the product's own closure, and the Info.plist channel is not used. That call is the product's, not Teyla's, and adds no outbound
+call to the `teyla` command. The product's backend sees the account that uploaded, so the product's privacy text must say whether it stores it
+with the batch. On the Mac, `teyla review pull --vouched-folder DIR` reads a local folder and makes no call.
+
 On the device the events sit in a ring buffer in the app's Application Support folder (at most 5,000 events or 1 MB; the oldest go first) until a send
 is allowed. The server copy goes when the Mac's next `teyla review pull --channel` collects it, within the hour; the Mac keeps events for 180 days.
 
