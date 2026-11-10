@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Usage import skips batches past the 180-day retention.** A batch whose newest event is older than the window is read and reported (so the product can delete its copy) but not stored, in `--vouched-folder` and the channel pull alike; before, `prune` deleted it and the next pull filed it again. Every `--vouched-folder` pull also prunes first, as the channel pull does.
+
 - **Usage capture for a product with its own backend: `deliverUsage` and `review pull --vouched-folder`.** `TeylaReview.configure { $0.deliverUsage = { batch in ... } }` (next to `deliver`) hands each usage batch, its id and the encoded `usage.json` bytes, to the product's own backend; it is async and returns true once the backend holds the batch. When it is set the Info.plist channel keys are not used, so one archive can go to TestFlight and the App Store with no key inside. Recording, the allow-list and the Allow / Not now notice are unchanged, and `false` retries later with the same batch id. `teyla review pull --vouched-folder DIR` now also takes usage batches laid out as `<batch id>/usage.json`: same checks as the channel pull (unknown fields and non-scalar values dropped, duplicates ignored by batch id), filed in `~/.teyla/usage/<product>/`, never in the review inbox, no banner. A bad batch is skipped and the rest import; `DIR` is left untouched and `--json` lists `usage_imported`. `templates/analytics/USAGE-CAPTURE.md` gains the own-backend and same-archive variants and what an authenticated upload means for identity. No new call leaves the Mac.
 
 ## 0.50.0 — 2026-11-10 — A design cycle of decisions, usage capture in test builds, taste from the phone

@@ -397,3 +397,17 @@ def test_a_vouched_pull_deletes_an_expired_batch_even_with_nothing_new(home):
     finally:
         conn.close()
     assert rep["usage_pruned"] == 1 and stored(home) == []
+
+
+def test_an_expired_batch_in_the_vouched_folder_is_not_stored(home):
+    box = home / "download"
+    folder(box, batch(SESSION))
+    conn = review.connect()
+    try:
+        rep = review.pull_vouched(conn, box, now=T0 + 201 * DAY)
+        rep2 = review.pull_vouched(conn, box, now=T0 + 201 * DAY)      # and not again on the next pull
+    finally:
+        conn.close()
+    assert stored(home) == []
+    assert rep["usage_events"] == 0 and rep2["usage_events"] == 0 and rep["skipped"] == []
+    assert rep["usage_imported"] == [B1]            # read and dealt with: the product may delete its copy
