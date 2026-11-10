@@ -99,6 +99,8 @@ final class UsageStore {
         defer { lock.unlock() }
         unsaved = 0
         guard let url else { return }
+        // Nothing recorded and nothing on disk: a build that records nothing leaves no file.
+        if state.events.isEmpty, state.pending == nil, !FileManager.default.fileExists(atPath: url.path) { return }
         guard var data = try? JSONEncoder().encode(state) else { return }
         // The byte cap: drop the oldest tenth until the file fits.
         while data.count > maxBytes, !(state.events.isEmpty && state.pending == nil) {
