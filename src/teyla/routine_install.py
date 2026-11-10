@@ -41,12 +41,14 @@ DAILY_STAMP_PATH = pathlib.Path.home() / ".teyla" / "daily.last"
 
 # Optional agents, written only when config asks for them (`[storage] sims_agent`, `sweep_agent`,
 # `[guard] agent`). They run on an interval, not at a calendar time, so catch-up has nothing to do
-# for them. They do local work only (no network), so safe mode (a work Mac) leaves them as they are.
+# for them. Most do local work only (no network), so safe mode (a work Mac) leaves them as they are; the growth
+# and crash-feed agents reach the network, and each of their steps checks safe mode itself.
 SIMS_LABEL = "com.zaitsew.teyla.sims"
 SWEEP_LABEL = "com.zaitsew.teyla.sweep"
 LOAD_LABEL = "com.zaitsew.teyla.load"
 GROWTH_LABEL = "com.zaitsew.teyla.growth"
-OPTIONAL_LABELS = (SIMS_LABEL, SWEEP_LABEL, LOAD_LABEL, GROWTH_LABEL)
+CRASHFEED_LABEL = "com.zaitsew.teyla.crashfeed"
+OPTIONAL_LABELS = (SIMS_LABEL, SWEEP_LABEL, LOAD_LABEL, GROWTH_LABEL, CRASHFEED_LABEL)
 # label -> the config flag that switches it on (`[table] key`), seconds between runs, `teyla` arguments,
 # wrapper, log and stamp names, what it does; `suggest`: doctor mentions it (INFO) while it is off.
 OPTIONAL = {
@@ -65,6 +67,12 @@ OPTIONAL = {
     GROWTH_LABEL: dict(table="growth", key="daily", interval=86400, calendar=(6, 30), args="growth daily --quiet",
                        wrapper="growth.sh", log="teyla-growth.log", stamp="growth.last",
                        what="harvests ideas, plans the day's slots and drafts them for your review; publishes nothing"),
+    # The hourly TestFlight pull (src/teyla/crash_feed.py, docs/PRIVACY.md row 56): device crashes into
+    # `teyla crash --device`, screenshot feedback into `teyla review list`. Read-only App Store Connect calls;
+    # in safe mode `--quiet` makes the step do nothing and exit 0. Off unless `[crash] feed_agent = true`.
+    CRASHFEED_LABEL: dict(table="crash", key="feed_agent", interval=3600, args="crash --pull --quiet",
+                          wrapper="crashfeed.sh", log="teyla-crashfeed.log", stamp="crashfeed.last",
+                          what="pulls TestFlight crashes and screenshot feedback into teyla crash and teyla review"),
 }
 # The weekly wrapper's extra line when storage.sweep_agent is on.
 SWEEP_LINE = '"$TEYLA" storage sweep --quiet'

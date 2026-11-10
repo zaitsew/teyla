@@ -197,3 +197,96 @@ def to_capture(item: dict, product: str = "") -> dict | None:
         "device": device,
         "_picture_url": url,
     }
+
+
+# --- device crashes (`teyla crash --pull`, docs/PRIVACY.md row 56) -------------------------------------------
+# Same key, same Client, same read-only GETs. Nothing here writes to Apple.
+
+LOG_CAP = 64 * 1024
+
+
+def _app_id(app_id: str) -> str:
+    if not app_id.isdigit():
+        raise AscError(f"{app_id!r} is not an App Store Connect app id (digits only)")
+    return app_id
+
+
+def lookup_app_id(bundle_id: str, client) -> str:
+    """The numeric app id of a bundle id, or "" when the key's team has no such app."""
+    q = urllib.parse.quote(bundle_id, safe="")
+    page = client.get_json(f"{API}/v1/apps?filter[bundleId]={q}&limit=1&fields[apps]=bundleId")
+    for d in page.get("data") or []:
+        if isinstance(d, dict) and str(d.get("id") or "").isdigit():
+            return str(d["id"])
+    return ""
+
+
+def fetch_crash_submissions(app_id: str, client) -> list[dict]:
+    """betaFeedbackCrashSubmissions of one app, newest first, at most MAX_PAGES pages."""
+    url = f"{API}/v1/apps/{_app_id(app_id)}/betaFeedbackCrashSubmissions?limit={PAGE}&sort=-createdDate"
+    out: list[dict] = []
+    for _ in range(MAX_PAGES):
+        page = client.get_json(url)
+        out += [d for d in page.get("data") or [] if isinstance(d, dict)]
+        url = ((page.get("links") or {}).get("next")) or ""
+        if not url:
+            break
+    return out
+
+
+def fetch_crash_log(submission_id: str, client) -> str:
+    """The crash log text of one submission (its `crashLog` relationship), capped. "" when there is none."""
+    if not submission_id or "/" in submission_id or "?" in submission_id:
+        return ""
+    page = client.get_json(f"{API}/v1/betaFeedbackCrashSubmissions/{urllib.parse.quote(submission_id, safe='')}/crashLog")
+    d = page.get("data")
+    a = d.get("attributes") if isinstance(d, dict) and isinstance(d.get("attributes"), dict) else {}
+    return str(a.get("logText") or "")[:LOG_CAP]
+
+
+def newest_upload(app_id: str, client) -> str:
+    """The uploadedDate (ISO text) of the app's newest build, or ""."""
+    page = client.get_json(f"{API}/v1/builds?filter[app]={_app_id(app_id)}&sort=-uploadedDate&limit=1&fields[builds]=uploadedDate")
+    for d in page.get("data") or []:
+        a = d.get("attributes") if isinstance(d, dict) and isinstance(d.get("attributes"), dict) else {}
+        if a.get("uploadedDate"):
+            return str(a["uploadedDate"])
+    return ""
+
+
+def crash_summary(log: str) -> dict:
+    """Exception type, termination reason and the first frames of the crashed thread, from a crash log's text."""
+    lines = log.splitlines()
+    pick = lambda key: next((ln.split(":", 1)[1].strip()[:160] for ln in lines if ln.startswith(key + ":")), "")  # noqa: E731
+    frames: list[str] = []
+    on = False
+    for ln in lines:
+        if ln.startswith("Thread ") and "Crashed" in ln:
+            on = True
+            continue
+        if on:
+            if not ln.strip():
+                break
+            frames.append(" ".join(ln.split())[:140])
+            if len(frames) >= 6:
+                break
+    return {"exception": pick("Exception Type"), "termination": pick("Termination Reason"), "frames": frames}
+
+
+def crash_record(item: dict, product: str = "") -> dict | None:
+    """One crash submission as a stored record. The tester's e-mail is never copied."""
+    sid = str(item.get("id") or "")
+    a = item.get("attributes") if isinstance(item.get("attributes"), dict) else {}
+    if not sid:
+        return None
+    bundle = str(a.get("buildBundleId") or "")
+    return {
+        "id": str(uuid.uuid5(NAMESPACE, "testflight-crash:" + sid)),
+        "product": product or (bundle.rsplit(".", 1)[-1] if bundle else "unknown"),
+        "created_at": str(a.get("createdDate") or ""),
+        "device": " ".join(x for x in (str(a.get("deviceModel") or ""), str(a.get("osVersion") or "")) if x),
+        "build": str(a.get("buildNumber") or ""),
+        "platform": str(a.get("appPlatform") or ""),
+        "comment": str(a.get("comment") or "").strip()[:500],
+        "_apple_id": sid,
+    }

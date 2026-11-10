@@ -65,6 +65,17 @@ def _crash_check() -> dict:
     return _check(level, "machine:crash", detail, fix)
 
 
+def _device_feed_check() -> dict | None:
+    """`testflight:feed`: WARN when the hourly TestFlight pull is stale or the feed may be frozen
+    (crash_feed.py has the rule). None until a pull has ever run: nothing to judge."""
+    try:
+        from . import crash_feed
+        row = crash_feed.doctor_row()
+    except Exception as e:  # noqa: BLE001 — a feed read must not break doctor
+        return _check("INFO", "testflight:feed", f"unknown ({e})")
+    return _check(row[0], "testflight:feed", row[1], row[2]) if row else None
+
+
 # The words of the Play release tool when the owner's Google login has lapsed.
 _GCLOUD_LOGIN = re.compile(r"gcloud could not print|gcloud login has expired")
 
@@ -464,6 +475,9 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     if scan_repos:
         out.append(_load_check(cfg))
         out.append(_crash_check())
+        feed = _device_feed_check()
+        if feed:
+            out.append(feed)
 
     # --- policy detectors: the rules in POLICY.md that files can prove broken --------------
     from . import detect
