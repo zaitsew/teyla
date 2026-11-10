@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.50.1 — 2026-11-10 — Usage capture for a product with its own backend
 
 - **Usage import skips batches past the 180-day retention.** A batch whose newest event is older than the window is read and reported (so the product can delete its copy) but not stored, in `--vouched-folder` and the channel pull alike; before, `prune` deleted it and the next pull filed it again. Every `--vouched-folder` pull also prunes first, as the channel pull does.
 
