@@ -204,6 +204,15 @@ Teyla for iPhone is in the iOS share sheet. Share a link (Safari, any app) or a 
   noted, and ready for `teyla taste interpret` and your `teyla taste accept`. **Without one it is `raw`**, and the entry
   is not a style source until you add one with `teyla taste note`. Likes and dislikes are the only verdicts the phone
   sets; the scope is `portfolio` (change it by editing `entry.json`, or `reject` and `add` again with `--product`).
+- **The importer deletes a drop folder in one case only:** `~/.teyla/taste-journal.json` records that the drop's corpus
+  entry was written, and that row was saved first. It never expires, moves or copies a folder. A drop that fails
+  (a bad signature, a corpus that cannot be written) is counted in the journal with its last error. After 3 failed
+  attempts it is `failed`: later passes skip it, it stays on disk, and it never counts toward the 20 imports a pass
+  makes. A drop still arriving is skipped until it is complete; its grace counts from when this Mac first saw it. If
+  the journal cannot be read or written, the pass stops and deletes nothing.
+- `teyla taste inbox` and `teyla taste list --corpus` print one line per failed drop: id, tries, last error and the
+  folder. Cleaning up is yours: remove the folder with `rm -r <folder>`, or delete that id's row from
+  `taste-journal.json` to make the next pass try it again.
 - Nothing is sent back: the corpus never goes to the phone or the relay, and the phone is told nothing about the result.
   A drop the Mac refuses is named in the output of `teyla relay sync`.
 - The relay must be on and paired (`teyla relay connect`). With the relay off, the request waits in the phone's queue.
