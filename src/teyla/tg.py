@@ -71,6 +71,7 @@ TAP_WAIT_S = 9.0               # answer a tap with the next card when the work i
 DELIVERY_GAP_S = 5
 DELIVERY_PER_HOUR = 20
 QUEUE_TTL_S = 60
+ANSWERED_KEEP_S = 7 * 86400    # an ask answered from here never comes back on a card while it stays open this long
 HEARTBEAT_QUEUE_S = 900        # the heartbeat rescans the queue at most this often; it only refreshes the time otherwise
 USED_KEEP = 64
 FREE_MAX_BYTES = 600           # a typed answer must fit the confirm card whole: it is shown, never cut
@@ -297,6 +298,7 @@ class Bot:
         self.st.setdefault("used", [])
         self.st.setdefault("skipped", {})
         self.st.setdefault("sent", [])
+        self.st.setdefault("answered", {})
         self._queue: tuple[float, dict, list] | None = None
         self.worker: threading.Thread | None = None
 
@@ -317,9 +319,22 @@ class Bot:
             self._queue = (now, items, rows)
         return self._queue[1], self._queue[2]
 
+    def live(self, items: dict, rows: list) -> list:
+        """Open rows, minus the asks answered from here. A delivery that started but is not confirmed yet leaves its
+        ask open (the asks scan closes it once the reply shows in the transcript); offering it again would let a
+        second tap start a second run."""
+        now = self.clock()
+        open_ids = {r["id"] for r in rows if r["id"] in items}
+        self.st["answered"] = {k: v for k, v in self.st["answered"].items()
+                               if k in open_ids and now - v < ANSWERED_KEEP_S}
+        return [r for r in rows if r["id"] in items and r["id"] not in self.st["answered"]]
+
+    def count(self, items: dict, rows: list) -> int:
+        return len(self.live(items, rows))
+
     def next_row(self, items: dict, rows: list, after: str = "") -> dict | None:
         """The first open row, skipped ones last (oldest skip first). `after` is left out unless nothing else is open."""
-        live = [r for r in rows if r["id"] in items]
+        live = self.live(items, rows)
         open_ids = {r["id"] for r in live}
         self.st["skipped"] = {k: v for k, v in self.st["skipped"].items() if k in open_ids}
         skipped = self.st["skipped"]
@@ -368,7 +383,7 @@ class Bot:
     def fresh_card(self, result: str = "", after: str = "") -> dict:
         items, rows = self.queue(fresh=True)
         row = self.next_row(items, rows, after)
-        n = len([r for r in rows if r["id"] in items])
+        n = self.count(items, rows)
         if row is None:
             return self.empty_card(n, result)
         return self.ask_card(items[row["id"]], row, n, result)
@@ -505,8 +520,8 @@ class Bot:
     def _after(self, result: str, ask_id: str, stay: bool, skip: bool) -> None:
         """The next card. `stay`: the same ask again (a failed delivery, a cancelled confirm)."""
         items, rows = self.queue(fresh=True)
-        n = len([r for r in rows if r["id"] in items])
-        if stay and ask_id in items and items[ask_id].status == "open":
+        n = self.count(items, rows)
+        if stay and ask_id in items and items[ask_id].status == "open" and ask_id not in self.st["answered"]:
             row = next((r for r in rows if r["id"] == ask_id), {})
             self.ask_card(items[ask_id], row, n, result)
             return
@@ -540,8 +555,14 @@ class Bot:
             return ("Closed." if code == 0 else "Not closed: " + " ".join(lines)[:80]), code != 0
         if not deliverable(a):
             return "This one cannot be answered from Telegram. Answer it on the Mac.", True
+        if a.id in self.st["answered"]:
+            return "Already answered from here; check the session.", False
         res = self.answer_fn(a, spec["text"], clipboard=False)
         ok, via, detail = bool(res.get("ok")), str(res.get("via") or ""), str(res.get("detail") or "")
+        if ok:
+            with self.lock:
+                self.st["answered"][a.id] = self.clock()
+                self.save()
         log("answer", ask=a.id, ok=ok, via=via)
         if not ok:
             return "Not sent: " + detail[:100], True
@@ -577,7 +598,7 @@ class Bot:
     def free_text(self, text: str) -> None:
         if re.search(r"[\x00-\x08\x0b-\x1f\x7f]", text):
             return self.say("That text holds control characters; send plain text.")
-        if len(text.encode("utf-8")) > FREE_MAX_BYTES:
+        if len(json.dumps(text, ensure_ascii=False).encode("utf-8")) > FREE_MAX_BYTES:   # as it sits in the card
             return self.say(f"Too long for the card ({len(text)} characters). Keep it under about "
                             f"{FREE_MAX_BYTES // 2} characters, or answer on the Mac.")
         with self.lock:
@@ -586,9 +607,9 @@ class Bot:
                 return self.say("Still working on the last tap. Send it again in a moment.")
             items, rows = self.queue()
             a = items.get(card.get("ask", ""))
-            if a is None or a.status != "open" or not deliverable(a):
+            if a is None or a.status != "open" or not deliverable(a) or a.id in self.st["answered"]:
                 return self.say("No question on the card can take a typed answer now. /asks sends the card.")
-            self.confirm_card(a, text, len([r for r in rows if r["id"] in items]))
+            self.confirm_card(a, text, self.count(items, rows))
             self.save()
         log("confirm_card", ask=a.id)
         self.send_card()
@@ -612,9 +633,10 @@ class Bot:
             if card.get("busy") or not card.get("msg"):
                 return
             items, rows = self.queue(max_age=HEARTBEAT_QUEUE_S)
-            n = len([r for r in rows if r["id"] in items])
+            n = self.count(items, rows)
             a = items.get(card.get("ask", ""))
-            if card.get("ask") and (a is None or a.status != "open" or question_hash(a) != card.get("qh")):
+            if card.get("ask") and (a is None or a.status != "open" or question_hash(a) != card.get("qh")
+                                    or card["ask"] in self.st["answered"]):
                 self.fresh_card(result="The last question was closed elsewhere.")
             elif not card.get("ask") and n:
                 self.fresh_card()
@@ -624,6 +646,8 @@ class Bot:
         self.push_view()
 
     def digest_due(self, now: float) -> bool:
+        if cfg_path().exists():                       # `teyla tg digest` writes the file while the agent runs
+            self.cfg["digest"] = read_cfg().get("digest")
         at = str(self.cfg.get("digest") or "")
         if not re.fullmatch(r"[0-2][0-9]:[0-5][0-9]", at):
             return False
@@ -632,7 +656,7 @@ class Bot:
 
     def digest(self, now: float) -> None:
         items, rows = self.queue(fresh=True)
-        n = len([r for r in rows if r["id"] in items])
+        n = self.count(items, rows)
         self.st["digest_day"] = _dt.datetime.fromtimestamp(now).date().isoformat()
         self.save()
         if n:
@@ -801,6 +825,7 @@ def setup(read_token=None, out=print, no_agent: bool = False, api_for=None, wait
         c = read_cfg()
         c.update(who, bot=username, paired=_dt.datetime.now().isoformat(timespec="seconds"))
         write_cfg(c)
+        state_path().unlink(missing_ok=True)          # another bot or account: its offset and card ids mean nothing here
         api("sendMessage", {"chat_id": who["chat_id"], "text": "Paired with Teyla on your Mac. Your open questions "
                             "arrive here as one card. /asks sends it again."})
     except TgError as e:

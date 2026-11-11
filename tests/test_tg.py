@@ -411,3 +411,59 @@ def test_digest_is_off_by_default_and_once_a_day(setup_bot):
     bot.digest(1e9)
     assert not bot.digest_due(1e9)
     assert api.of("sendMessage")[-1]["text"].startswith("1 question waits")
+
+
+# --- review round 1 ---------------------------------------------------------------------------
+
+def test_unconfirmed_delivery_is_never_offered_again(setup_bot):
+    clock = [1000.0]
+    bot, api, world = setup_bot([_ask("a1", options=["Yes"]), _ask("a2", options=["Go"])], clock=lambda: clock[0])
+    world.answer_result = {"ok": True, "via": "claude-bg", "detail": "started, not confirmed yet"}
+    real = world.answer
+
+    def answer(a, text, clipboard=True):             # the real answer() leaves an unconfirmed ask open
+        res = real(a, text, clipboard)
+        a.status = "open"
+        return res
+    bot.answer_fn = answer
+    tap(bot, "0")
+    assert bot.card["ask"] == "a2" and "not confirmed yet" in bot.card["view"]["r"]
+    assert bot.card["view"]["n"] == 1
+    tap(bot, "s")                                     # skipping a2 must not bring a1 back
+    assert bot.card["ask"] == "a2"
+    bot._queue = None
+    bot.heartbeat()
+    assert bot.card["ask"] == "a2"
+    clock[0] += tg.DELIVERY_GAP_S
+    tap(bot, "0")
+    assert [d[0] for d in world.delivered] == ["a1", "a2"]
+    assert bot.card["view"]["m"] == "e"
+
+
+def test_typed_answer_is_measured_as_it_sits_in_the_card(setup_bot):
+    bot, api, world = setup_bot([_ask("a1", question="Q" * 400)])
+    text(bot, '"' * 400)                              # 400 bytes raw, 800 once JSON-escaped
+    assert "Too long" in api.of("sendMessage")[-1]["text"] and bot.card["view"]["m"] == "a"
+    longest = '"' * (tg.FREE_MAX_BYTES // 2 - 1)
+    text(bot, longest)
+    assert bot.card["view"]["f"] == longest
+    assert len(api.of("sendWidget")[-1]["chat_data"].encode()) <= tg_card.STATE_BUDGET
+
+
+def test_running_agent_reads_the_digest_setting(setup_bot):
+    bot, api, world = setup_bot([_ask("a1")])
+    tg.write_cfg({"owner_id": OWNER, "chat_id": OWNER, "digest": "00:00"})
+    assert bot.digest_due(1e9)
+    tg.write_cfg({"owner_id": OWNER, "chat_id": OWNER, "digest": None})
+    assert not bot.digest_due(1e9)
+
+
+def test_pairing_again_drops_the_old_bot_state(monkeypatch):
+    tg._write_private(tg.state_path(), {"offset": 999999, "card": {"msg": 77}})
+    monkeypatch.setattr(tg, "store_token", lambda t: None)
+    monkeypatch.setattr(tg, "secrets", type("S", (), {"token_hex": staticmethod(lambda n: "c0de")}))
+    api = FakeAPI()
+    api.batches = [[{"update_id": 3, "message": {"text": "/start c0de", "from": {"id": OWNER},
+                                                  "chat": {"id": OWNER, "type": "private"}}}]]
+    assert tg.setup(read_token=lambda: TOKEN, out=lambda s: None, no_agent=True, api_for=lambda t: api, wait_s=5) == 0
+    assert not tg.state_path().exists()
