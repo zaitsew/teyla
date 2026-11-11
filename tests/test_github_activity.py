@@ -107,3 +107,17 @@ def test_relay_github_view_is_counts_only():
         raise RuntimeError("x")
 
     assert relay.github_view("2026-11-12", 0, source=boom) is None
+
+
+def test_a_53_week_window_asks_for_one_year_at_most_and_the_cache_then_serves():
+    seen = []
+
+    def runner(cmd):
+        seen.append(cmd)
+        return 0, answer([("2026-11-12", 2, "FIRST_QUARTILE")]), ""
+
+    g = ga.activity("2026-11-12", 53, now=0, runner=runner)
+    assert "from=2025-11-13T00:00:00Z" in seen[0]
+    assert g["start"] == "2025-11-10" and g["days"][0]["count"] == 0 and g["today_count"] == 2
+    ga.activity("2026-11-12", 53, now=60, runner=runner)
+    assert len(seen) == 1

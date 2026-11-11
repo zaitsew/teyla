@@ -12,12 +12,14 @@ quartiles (`contributionLevel`), not recounted here.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as _dt
 import json
 import os
 import pathlib
 import shutil
 import subprocess
+import tempfile
 import time
 from typing import Callable
 
@@ -25,6 +27,7 @@ from . import net
 from .control.state import home
 
 CACHE_S = 600
+MAX_SPAN_DAYS = 364         # GitHub answers a contributionsCollection range of at most one year
 CALL_TIMEOUT_S = 20
 LEVELS = {"NONE": 0, "FIRST_QUARTILE": 1, "SECOND_QUARTILE": 2, "THIRD_QUARTILE": 3, "FOURTH_QUARTILE": 4}
 QUERY = ("query($from:DateTime!,$to:DateTime!){viewer{login contributionsCollection(from:$from,to:$to)"
@@ -50,6 +53,13 @@ def window_start(today: str, weeks: int) -> str:
     return (t - _dt.timedelta(days=t.weekday() + 7 * (weeks - 1))).isoformat()
 
 
+def fetch_start(today: str, weeks: int) -> str:
+    """The first day asked of GitHub: the window's first Monday, but never more than a year back (GitHub refuses a longer
+    range). A 53-week window shows its first days as 0."""
+    t = _dt.date.fromisoformat(today)
+    return max(window_start(today, weeks), (t - _dt.timedelta(days=MAX_SPAN_DAYS)).isoformat())
+
+
 def parse(out: str) -> list[dict] | None:
     """The days of a `gh api graphql` answer, oldest first: {day, count, level}. None when the answer is not one."""
     try:
@@ -69,7 +79,7 @@ def parse(out: str) -> list[dict] | None:
 
 def fetch(today: str, weeks: int = 53, runner: Runner | None = None) -> list[dict] | None:
     """One call for the days from the window's first Monday to `today`. None on any failure."""
-    start = window_start(today, weeks)
+    start = fetch_start(today, weeks)
     cmd = ["gh", "api", "graphql", "-f", f"query={QUERY}",
            "-f", f"from={start}T00:00:00Z", "-f", f"to={today}T23:59:59Z"]
     code, out, _err = (runner or _run)(cmd)
@@ -85,11 +95,18 @@ def _load() -> dict:
 
 
 def _save(c: dict) -> None:
+    """Atomic, with a temp file of its own: the relay, the Telegram agent and the CLI may refresh at the same time. A failed
+    write only loses the cache."""
     p = cache_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(c))
-    os.replace(tmp, p)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=p.parent, prefix=".github-activity.", suffix=".tmp")
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(c))
+        os.replace(tmp, p)
+    except OSError:
+        with contextlib.suppress(OSError, UnboundLocalError):
+            os.unlink(tmp)
 
 
 def days(today: str, weeks: int = 53, now: float | None = None, runner: Runner | None = None,
@@ -99,12 +116,13 @@ def days(today: str, weeks: int = 53, now: float | None = None, runner: Runner |
     now = time.time() if now is None else now
     c = _load()
     start = window_start(today, weeks)
-    stale = (now - float(c.get("at") or 0) > max_age or c.get("today") != today or str(c.get("start") or "9") > start)
+    stale = (now - float(c.get("at") or 0) > max_age or c.get("today") != today
+             or str(c.get("start") or "9") > fetch_start(today, weeks))
     if stale and (runner is not None or shutil.which("gh")) and net.allowed():
         w = max(weeks, int(c.get("weeks") or 0), 17)
         got = fetch(today, w, runner)
         if got:
-            c = {"at": now, "today": today, "start": window_start(today, w), "weeks": w, "days": got}
+            c = {"at": now, "today": today, "start": fetch_start(today, w), "weeks": w, "days": got}
             _save(c)
     if not c.get("days"):
         return None
