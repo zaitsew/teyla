@@ -261,8 +261,64 @@ the file is under 3 days old: "3 questions wait for you — teyla asks". It scan
 The count is what the default listing shows, so muted asks are not in it.
 Reminders are not counted; they already reach the banner.
 
+## Telegram
+
+`teyla tg` puts the queue in a private chat with your own Telegram bot. One widget card shows the question
+in front: the product, the question (at most 200 characters), the recommended answer first and highlighted,
+up to two more answers, and Snooze 1d, Done already and Skip. The header counts what is left ("41 left").
+One tap answers. The bot's reply to the tap carries the next card, so the card advances in place.
+
+    teyla tg setup [--no-agent]     paste the bot token (read hidden), pair your account, start the agent
+    teyla tg check [--json]         token, bot, pairing, agent, last poll; prints OK when all hold
+    teyla tg send                   send the card again (the same as /asks in the chat)
+    teyla tg digest HH:MM|off       a morning line with the count of waiting questions; off by default
+    teyla tg off                    stop the agent; the token and the pairing stay
+
+**Set up.** In Telegram, open @BotFather, send `/newbot`, pick a name and a username, and copy the token.
+Run `teyla tg setup` and paste it. Setup prints a `t.me/<bot>?start=<code>` link: open it on your phone and
+tap Start. The code is new on every run, so only you can pair. The first card arrives within a minute.
+
+**The card.** The queue is the order of `teyla asks triage`: questions that need you first, muted ones left
+out. The answers are the options the session attached (a `wrap_up` puts its pick first). A question with no
+options offers triage's proposed answer, when there is one, else "Answer in text". When triage thinks a
+question is already answered, Done already is highlighted. A gate, a reminder and any question whose session
+cannot be reached from here show "Answer this one on the Mac" and only Snooze, Done already and Skip. Skip
+moves a question behind the others; it changes nothing in `teyla asks`.
+
+**A typed answer.** Widgets have no keyboard. Send a normal text message while a card is up: the bot sends a
+confirm card that shows exactly that text, with Send and Cancel. Only Send delivers it. The text must fit the
+card (about 300 characters).
+
+**Commands.** `/asks` sends the card again. `/help` says how it works.
+
+**When the laptop sleeps.** There is no server. The launchd agent `com.zaitsew.teyla.tg` long-polls the Bot
+API from the Mac and rewrites the card every 5 minutes. A card older than 15 minutes shows "Laptop offline
+since HH:MM". A tap that gets no answer in 15 seconds shows "No answer from the laptop. Tap again". The retry
+is safe: a card's nonce delivers once, and a second tap with it gets "Already handled".
+
+### What a tap can do
+
+A tap can make Teyla type into a coding session that runs with bypassed permissions. So the Telegram path does
+what `teyla answer`, `teyla asks done` and `teyla asks snooze 1` do, and nothing more.
+
+| Rule | How |
+|---|---|
+| One person | Only the Telegram user paired by `setup`, in its private chat with the bot, can act. Telegram authenticates `from`. Every other update is dropped and logged as `ignored`, without its content. |
+| No text from the widget | A tap sends `<op>.<nonce>`: one character from `012zdscx` and the card's 8-character nonce. The opcode picks an option stored on the Mac; the text sent to a session is that stored option. |
+| Once | The nonce is claimed before any work starts. The update offset is saved before an update is handled. A lock file lets one `serve` run at a time. A tap cut off by a crash shows "interrupted" on the next start and is never retried. |
+| Same delivery | `answer.answer(ask, text, clipboard=False)`, the call of `teyla answer` and the iPhone relay, with its transcript confirmation. A question that only copy-and-open could reach says "needs the Mac". Before delivery the question must still be open and unchanged since the card was drawn. |
+| A typed answer needs a tap | The confirm card shows the exact text. |
+| Rate limit | At most 20 answers an hour, and one every 5 seconds. |
+| The token | In the macOS Keychain (service `teyla-telegram`), written through `security -i` on stdin. Never printed, logged or written to a file. |
+| Your ids | In `~/.teyla/tg.json`, mode 600. Never in a repo. |
+
+The widget is one static HTML file (`src/teyla/tg_card.py`), 3 KB raw and 1.5 KB compressed against the
+32 KB and 4 KB limits; `tests/test_tg.py` measures it. It draws text with `textContent` only and uses
+`--tg-theme-*` colours only. What goes to Telegram is row 58 of [PRIVACY.md](PRIVACY.md).
+
 ## Privacy
 
 `teyla asks` output holds session text. It never goes into `monitor --share` or `feedback`;
+the Telegram card is the one exception you switch on yourself (see Telegram above);
 `tests/test_share_leaks.py` plants a waiting session and checks that. Override the desktop
 metadata root with `TEYLA_CLAUDE_SESSIONS` (tests do).

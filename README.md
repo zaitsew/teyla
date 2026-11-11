@@ -78,7 +78,7 @@ Subagents cost $390; Opus ran 64% of that.
 
 ## What's waiting on you
 
-`teyla today` is the daily screen: the questions agents left, your notes, this week's spend against last week's, and one next step. `teyla asks` lists every open question, oldest first, with a link that reopens the session.
+`teyla today` is the daily screen: the questions agents left, your notes, this week's spend against last week's, and one next step. `teyla asks` lists every open question, oldest first, with a link that reopens the session. `teyla tg setup` puts the same queue in a private Telegram chat: one card shows the current question, the recommended answer first, and one tap sends it to the session that asked. Reply with text to answer in your own words; you confirm it on the card first. The bot runs from your Mac, with no server, and answers only your Telegram account. [ASKS.md](docs/ASKS.md#telegram) has the details.
 
 A *product* is a repo, or a few, that you ship as one thing. `teyla product init` proposes the list from your repos. `teyla portfolio` gives each one a health word (off track, at risk, on track, parked), the reason, and one line per platform: version, build, live, in review or behind. `teyla note "try a dark icon"` keeps an idea under a product.
 
@@ -115,6 +115,7 @@ Teyla reads files on your Mac. It sends nothing about your sessions unless you r
 | `teyla spend`, `teyla reviews`, `teyla state` | when you run them | repo names, PR numbers, your login, through your own `gh` |
 | `teyla answer`, `teyla run`, `--model` flags | only when you ask | text, to your model provider under your own login |
 | `teyla relay on` | off by default | open questions and session titles, to your iCloud Drive |
+| `teyla tg setup` | off by default | the current open question and its options, to Telegram |
 
 `teyla web` listens on 127.0.0.1 only. Safe mode, `teyla config set safe.enabled=true`, closes most of these calls. Every call, with its host: [docs/PRIVACY.md](docs/PRIVACY.md).
 
