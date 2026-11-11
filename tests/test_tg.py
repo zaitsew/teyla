@@ -458,12 +458,32 @@ def test_running_agent_reads_the_digest_setting(setup_bot):
     assert not bot.digest_due(1e9)
 
 
-def test_pairing_again_drops_the_old_bot_state(monkeypatch):
-    tg._write_private(tg.state_path(), {"offset": 999999, "card": {"msg": 77}})
+def test_pairing_again_drops_the_old_bot_state_but_keeps_what_was_answered(monkeypatch):
+    tg._write_private(tg.state_path(), {"offset": 999999, "card": {"msg": 77}, "answered": {"a1": 5.0}})
     monkeypatch.setattr(tg, "store_token", lambda t: None)
     monkeypatch.setattr(tg, "secrets", type("S", (), {"token_hex": staticmethod(lambda n: "c0de")}))
     api = FakeAPI()
     api.batches = [[{"update_id": 3, "message": {"text": "/start c0de", "from": {"id": OWNER},
                                                   "chat": {"id": OWNER, "type": "private"}}}]]
     assert tg.setup(read_token=lambda: TOKEN, out=lambda s: None, no_agent=True, api_for=lambda t: api, wait_s=5) == 0
-    assert not tg.state_path().exists()
+    assert tg._read_json(tg.state_path()) == {"answered": {"a1": 5.0}}
+
+
+def test_an_answered_ask_hidden_for_a_while_does_not_come_back(setup_bot):
+    clock = [1000.0]
+    bot, api, world = setup_bot([_ask("a1", options=["Yes"]), _ask("a2")], clock=lambda: clock[0])
+    world.answer_result = {"ok": True, "via": "claude-bg", "detail": "started, not confirmed yet"}
+    real = world.answer
+    bot.answer_fn = lambda a, t, clipboard=True: (real(a, t, clipboard), setattr(a, "status", "open"))[0]
+    tap(bot, "0")
+    hidden = world.items.pop("a1")                  # parked: gone from the read
+    bot._queue = None
+    bot.heartbeat()
+    world.items["a1"] = hidden                      # woken, still open
+    bot._queue = None
+    bot.heartbeat()
+    assert bot.card["ask"] == "a2" and "a1" in bot.st["answered"]
+    hidden.status = "done"                          # the asks scan saw the reply
+    bot._queue = None
+    bot.heartbeat()
+    assert "a1" not in bot.st["answered"]

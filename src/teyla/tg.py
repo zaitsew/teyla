@@ -324,9 +324,10 @@ class Bot:
         ask open (the asks scan closes it once the reply shows in the transcript); offering it again would let a
         second tap start a second run."""
         now = self.clock()
-        open_ids = {r["id"] for r in rows if r["id"] in items}
+        # Dropped only once the ask is known to be closed, or after ANSWERED_KEEP_S. An ask missing from this read
+        # (muted while its product is parked, out of the window) keeps its entry: it may come back still open.
         self.st["answered"] = {k: v for k, v in self.st["answered"].items()
-                               if k in open_ids and now - v < ANSWERED_KEEP_S}
+                               if now - v < ANSWERED_KEEP_S and (k not in items or items[k].status == "open")}
         return [r for r in rows if r["id"] in items and r["id"] not in self.st["answered"]]
 
     def count(self, items: dict, rows: list) -> int:
@@ -825,7 +826,10 @@ def setup(read_token=None, out=print, no_agent: bool = False, api_for=None, wait
         c = read_cfg()
         c.update(who, bot=username, paired=_dt.datetime.now().isoformat(timespec="seconds"))
         write_cfg(c)
-        state_path().unlink(missing_ok=True)          # another bot or account: its offset and card ids mean nothing here
+        # Another bot or account: its offset and card ids mean nothing here. What was answered from Telegram stays,
+        # so a delivery that is not confirmed yet is never offered again.
+        old = _read_json(state_path())
+        _write_private(state_path(), {"answered": old.get("answered") if isinstance(old.get("answered"), dict) else {}})
         api("sendMessage", {"chat_id": who["chat_id"], "text": "Paired with Teyla on your Mac. Your open questions "
                             "arrive here as one card. /asks sends it again."})
     except TgError as e:
