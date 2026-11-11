@@ -36,6 +36,8 @@
   teyla relay connect [--json]                                     the whole setup: on, key, first sync, hand the key to Teyla for Mac
   teyla relay pair [--json] [--rotate]                             create the shared key, print the pairing string
   teyla relay sync [--quiet]                                       one pass: write the snapshot, deliver the signed outbox
+  teyla tg setup|check|send|off                                    your open questions as one card in a private Telegram chat
+  teyla tg digest HH:MM|off                                        a morning line in that chat with the count of waiting questions
   teyla say <ref> [--json] [--dry] -- <text>                       correct a running session (Codex: queued; else copy and open)
   teyla dispatch <product> [--harness codex|claude] [--model M] [--json] [--dry] -- <text>   start new work in a fresh worktree
   teyla spend [--days N] [--by-day] [--alert] [--json]           what the AI work cost, which part bought nothing; --by-day: subagent cost by model family
@@ -626,6 +628,8 @@ def build_parser() -> argparse.ArgumentParser:
     answer_mod.register(sp)
     from . import relay as relay_mod
     relay_mod.register(sp)
+    from . import tg as tg_mod
+    tg_mod.register(sp)
     from . import review as review_mod
     review_mod.register(sp)
     from . import usage as usage_mod
