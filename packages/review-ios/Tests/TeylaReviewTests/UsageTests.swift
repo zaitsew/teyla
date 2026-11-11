@@ -314,6 +314,42 @@ final class UsageTests: XCTestCase {
         XCTAssertEqual(again?.events.map(\.t), [0, 1, 2])
     }
 
+    func testABatchThatCouldNotBeSavedIsNotUploadedThisRound() throws {
+        struct DiskFull: Error {}
+        final class Disk { var full = true }
+        let disk = Disk()
+        let url = Fixtures.tempDir().appendingPathComponent("usage.json")
+        let store = UsageStore(url: url, writer: { data, url in
+            if disk.full { throw DiskFull() }
+            try data.write(to: url, options: .atomic)
+        })
+        for n in 0..<3 { store.append(UsageEvent(t: n, k: .screen, id: "trip.timeline", r: nil, ms: nil, b: "1", d: nil)) }
+        XCTAssertNil(store.nextBatch(maxEvents: 10, maxBytes: 100_000, makeID: { "batch-one" }))
+        XCTAssertNil(store.nextBatch(maxEvents: 10, maxBytes: 100_000, makeID: { "batch-two" }))   // still failing: still not sent
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertEqual(store.pending?.id, "batch-one")                       // kept for the next attempt, not remade
+        disk.full = false
+        let batch = store.nextBatch(maxEvents: 10, maxBytes: 100_000, makeID: { "batch-three" })
+        XCTAssertEqual(batch?.id, "batch-one")
+        XCTAssertEqual(batch?.events.map(\.t), [0, 1, 2])
+        let relaunched = UsageStore(url: url)                                 // the id reached disk before the upload
+        XCTAssertEqual(relaunched.pending?.id, "batch-one")
+    }
+
+    func testTwoLongBundleIdsThatShareTheirFirst120CharactersGetDifferentFolders() {
+        let shared = "com.example." + String(repeating: "a", count: 120)
+        let one = shared + ".one", two = shared + ".two"
+        let a = UsageStore.folderName(for: one), b = UsageStore.folderName(for: two)
+        XCTAssertNotEqual(a, b)
+        XCTAssertLessThanOrEqual(a.count, 120)
+        XCTAssertLessThanOrEqual(b.count, 120)
+        XCTAssertEqual(a, UsageStore.folderName(for: one))                    // stable
+        XCTAssertNotEqual(UsageStore.defaultURL(bundleID: one), UsageStore.defaultURL(bundleID: two))
+        XCTAssertEqual(UsageStore.folderName(for: "com.example.alpha"), "com.example.alpha")   // short ids: no change
+        let atLimit = String(repeating: "b", count: 120)
+        XCTAssertEqual(UsageStore.folderName(for: atLimit), atLimit)
+    }
+
     func testTheDefaultStoragePathIsScopedByBundleId() {
         let a = UsageStore.defaultURL(bundleID: "com.example.alpha")
         let b = UsageStore.defaultURL(bundleID: "com.example.beta")
