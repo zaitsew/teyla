@@ -16,6 +16,7 @@ Nothing here leaves the machine.
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -118,9 +119,120 @@ def load_map(repo: pathlib.Path) -> list[dict]:
     return [dict(r) if isinstance(r, dict) else {"id": r} for r in rows]
 
 
+_MAP_KEYS = ("id", "title", "journey", "needs", "status")
+_DECISIONS = re.compile(r"^decisions:\s*(#.*)?$")
+_DASH = re.compile(r"^(\s*)-(\s+)\S")
+
+
+def _blocks(lines: list[str]) -> list[tuple[int, int, int, int]]:
+    """(first line, last content line + 1, key indent, dash indent) of every item under `decisions:`,
+    whichever key comes first in the item."""
+    top = next((n for n, ln in enumerate(lines) if _DECISIONS.match(ln.rstrip("\r\n"))), None)
+    if top is None:
+        return []
+    out: list[tuple[int, int, int, int]] = []
+    list_indent = None
+    i = top + 1
+    while i < len(lines):
+        t = lines[i].strip()
+        if not t or t.startswith("#"):
+            i += 1
+            continue
+        m = _DASH.match(lines[i])
+        if not m or (list_indent is not None and len(m.group(1)) != list_indent):
+            break
+        list_indent = len(m.group(1))
+        ki = list_indent + 1 + len(m.group(2))
+        end = i + 1
+        j = i + 1
+        while j < len(lines):
+            u = lines[j].strip()
+            if u and not u.startswith("#"):
+                if len(lines[j]) - len(lines[j].lstrip(" ")) < ki:
+                    break
+                end = j + 1
+            j += 1
+        out.append((i, end, ki, list_indent))
+        i = j
+    return out
+
+
+def _patch_map(text: str, rows: list[dict], where: str) -> str:
+    """`text` with only the changed scalar fields of `rows` edited in place: comments, blank lines, key
+    order, quoting and line endings stay as they are. A change that is not a scalar edit (a row added,
+    removed or reordered, a list changed, a key removed), or a block that cannot be located safely,
+    raises DesignError: the file is never rewritten whole."""
+    def refuse(why: str):
+        return DesignError(f"{where}: cannot update the map in place ({why}); edit the file by hand")
+    try:
+        old = taste.loads(text).get("decisions")
+    except ValueError as e:
+        raise refuse(str(e)) from e
+    if not isinstance(old, list) or not all(isinstance(o, dict) for o in old):
+        raise refuse("`decisions` must be a list of mappings")
+    lines = text.splitlines(keepends=True)
+    blocks = _blocks(lines)
+    if len(blocks) != len(old):
+        raise refuse(f"found {len(blocks)} items for {len(old)} decisions")
+    if [o.get("id") for o in old] != [r.get("id") for r in rows]:
+        raise refuse("decisions were added, removed or reordered")
+    nl = "\r\n" if "\r\n" in text else "\n"
+    replace: dict[int, str] = {}                          # line -> its new text
+    insert: dict[int, list[str]] = {}                     # line -> lines added after it
+    for (start, end, ki, di), o, r in zip(blocks, old, rows):
+        pad = " " * ki
+        for key in _MAP_KEYS:
+            if key not in r:
+                if key in o:
+                    raise refuse(f"the key {key!r} of {r.get('id')} cannot be removed")
+                continue
+            if key in o and o[key] == r[key]:
+                continue
+            if isinstance(r[key], (list, tuple, dict)) or isinstance(o.get(key), (list, tuple, dict)):
+                raise refuse(f"the list {key!r} of {r.get('id')} changed")
+            val = taste._scalar_out(r[key])
+            prefix = rf"^((?:{pad}|{' ' * di}-\s+){re.escape(key)}:\s*)"
+            hit = next((n for n in range(start, end) if re.match(prefix + r"(.*)$", lines[n].rstrip("\r\n"))), None)
+            if hit is None:
+                if key in o:
+                    raise refuse(f"cannot find the line of {key!r} in {r.get('id')}")
+                insert.setdefault(end - 1, []).append(f"{pad}{key}: {val}{nl}")
+                continue
+            body = lines[hit].rstrip("\r\n")
+            eol = lines[hit][len(body):]
+            m = re.match(prefix + r"(.*?)(\s+#.*)?$", body)
+            if not m:
+                raise refuse(f"cannot read the line of {key!r} in {r.get('id')}")
+            replace[hit] = f"{m.group(1)}{val}{m.group(3) or ''}{eol}"
+    out: list[str] = []
+    for n, line in enumerate(lines):
+        line = replace.get(n, line)
+        if n in insert and not line.endswith("\n"):
+            line += nl                                      # the map's last line had no newline
+        out.append(line)
+        out.extend(insert.get(n, []))
+    return "".join(out)
+
+
 def save_map(repo: pathlib.Path, rows: list[dict]) -> None:
-    ordered = [{k: r[k] for k in ("id", "title", "journey", "needs", "status") if k in r} for r in rows]
-    _write(map_path(repo), taste.dumps({"decisions": ordered}))
+    """Write the map. An existing file gets only its changed fields edited, so the owner's comments,
+    layout and line endings survive a pick; a map that does not exist yet is written whole."""
+    p = map_path(repo)
+    if p.is_file():
+        try:
+            text = p.read_bytes().decode("utf-8")           # bytes: no newline translation
+        except (OSError, UnicodeDecodeError) as e:
+            raise DesignError(f"{_rel(repo, p)}: cannot read the map ({e})") from e
+        patched = _patch_map(text, rows, _rel(repo, p))
+        if patched != text:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            tmp = p.with_name(f".{p.name}.{os.getpid()}.tmp")
+            tmp.write_bytes(patched.encode("utf-8"))
+            os.replace(tmp, p)
+            _wrote(p)
+        return
+    ordered = [{k: r[k] for k in _MAP_KEYS if k in r} for r in rows]
+    _write(p, taste.dumps({"decisions": ordered}))
 
 
 def map_problems(rows: list[dict]) -> list[str]:
