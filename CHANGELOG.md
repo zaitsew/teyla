@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Usage capture: a batch is uploaded only after it is saved, and long bundle ids no longer share a folder.** `UsageStore.flush()` now reports whether the write succeeded. A new batch whose save failed (a full disk) is kept and not uploaded that round, so a termination after an accepted upload can no longer resend its events under a new batch id. A bundle id longer than 120 characters keeps a prefix and ends in 16 hex characters of its SHA-256, so two unsandboxed macOS apps with the same first 120 characters get different folders; shorter ids keep their folder name.
+
 ## 0.51.0 — 2026-11-11 — Open questions as a Telegram card
 
 - **`teyla tg`: your open questions as one card in a private Telegram chat.** `teyla tg setup` reads a bot token from @BotFather (hidden, stored in the Keychain as `teyla-telegram`), pairs your Telegram account through a one-time `t.me/<bot>?start=<code>` link, and starts the launchd agent `com.zaitsew.teyla.tg`, which long-polls the Bot API from the Mac (no server, no webhook). The card (a Bot API 10.4 widget, 3 KB) shows the product, the question, the recommended answer first, up to two more, and Snooze 1d / Done already / Skip, with a count of what is left. One tap answers through `answer.answer(clipboard=False)`, the call of `teyla answer` and the iPhone relay; the next card comes back in the reply. A typed answer goes through a confirm card that shows the exact text. `/asks` resends the card; `teyla tg digest HH:MM` adds a morning count (off by default); `teyla tg check` prints OK when token, pairing, agent and polling hold. Only the paired account can act; the widget sends only an opcode and a one-use nonce; an answer started but not confirmed is never offered again; 20 answers an hour at most. When the laptop sleeps the card says "Laptop offline since HH:MM". New PRIVACY row 58 (`api.telegram.org`). See docs/ASKS.md, "Telegram".

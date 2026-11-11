@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Usage events on the device: a ring buffer (the oldest are dropped first) with at most one batch in
@@ -23,10 +24,15 @@ final class UsageStore {
     private let lock = NSLock()
     private var state = State()
     private var unsaved = 0
+    /// False from the moment a pending batch is made until a save that holds it succeeds.
+    private var pendingSaved = true
+    private let writer: (Data, URL) throws -> Void
 
-    /// `url` nil keeps everything in memory (tests).
-    init(url: URL?, maxEvents: Int = defaultMaxEvents, maxBytes: Int = defaultMaxBytes) {
+    /// `url` nil keeps everything in memory (tests). `writer` is how the state reaches disk; tests pass one that fails.
+    init(url: URL?, maxEvents: Int = defaultMaxEvents, maxBytes: Int = defaultMaxBytes,
+         writer: @escaping (Data, URL) throws -> Void = { data, url in try data.write(to: url, options: .atomic) }) {
         self.url = url
+        self.writer = writer
         self.maxEvents = max(1, maxEvents)
         self.maxBytes = max(1_000, maxBytes)
         if let url, let data = try? Data(contentsOf: url), let saved = try? JSONDecoder().decode(State.self, from: data) {
@@ -40,9 +46,22 @@ final class UsageStore {
     static func defaultURL(bundleID: String? = Bundle.main.bundleIdentifier) -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        let safe = String((bundleID ?? "unknown-app").drop(while: { $0 == "." }).map { $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" ? $0 : "_" }.prefix(120))
+        let safe = folderName(for: bundleID)
         return base.appendingPathComponent("TeylaReview", isDirectory: true)
             .appendingPathComponent(safe, isDirectory: true).appendingPathComponent("usage.json")
+    }
+
+    static let maxFolderName = 120
+
+    /// The storage folder for a bundle id: the id with unsafe characters replaced. An id longer than the limit
+    /// keeps a prefix and ends in 16 hex characters of the SHA-256 of the whole id, so two long ids that share
+    /// their first characters never share a folder. A shorter id keeps the name it always had.
+    static func folderName(for bundleID: String?) -> String {
+        let id = bundleID ?? "unknown-app"
+        let clean = String(id.drop(while: { $0 == "." }).map { $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" ? $0 : "_" })
+        guard clean.count > maxFolderName else { return clean }
+        let hash = SHA256.hash(data: Data(id.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+        return String(clean.prefix(maxFolderName - 17)) + "-" + hash
     }
 
     var events: [UsageEvent] { lock.lock(); defer { lock.unlock() }; return state.events }
@@ -64,7 +83,14 @@ final class UsageStore {
     /// make the next launch send the same events under another id.
     func nextBatch(maxEvents: Int, maxBytes: Int, makeID: () -> String = { UUID().uuidString.lowercased() }) -> Batch? {
         lock.lock()
-        if let pending = state.pending, !pending.events.isEmpty { lock.unlock(); return pending }
+        if let pending = state.pending, !pending.events.isEmpty {
+            let saved = pendingSaved
+            lock.unlock()
+            // A batch that never reached disk is not sent: after a crash the next launch would send
+            // the same events again under another id.
+            if !saved && !flush() { return nil }
+            return self.pending
+        }
         state.pending = nil
         guard !state.events.isEmpty else { lock.unlock(); return nil }
         var take = 0, bytes = 0
@@ -78,9 +104,11 @@ final class UsageStore {
         let batch = Batch(id: makeID(), events: Array(state.events.prefix(take)))
         state.events.removeFirst(take)
         state.pending = batch
+        pendingSaved = false
         unsaved += 1
         lock.unlock()
-        flush()
+        // The id is on disk before the upload starts. When the save fails the batch waits for the next attempt.
+        guard flush(), pending?.id == batch.id else { return nil }
         return batch
     }
 
@@ -97,27 +125,36 @@ final class UsageStore {
     func purge() {
         lock.lock()
         state = State()
+        pendingSaved = true
         unsaved = 0
         lock.unlock()
         if let url { try? FileManager.default.removeItem(at: url) }
     }
 
-    func flush() {
+    /// Writes the state. True when it is on disk, or there is nothing to write; false when the write failed.
+    @discardableResult
+    func flush() -> Bool {
         lock.lock()
         defer { lock.unlock() }
         unsaved = 0
-        guard let url else { return }
+        guard let url else { return true }
         // Nothing recorded and nothing on disk: a build that records nothing leaves no file.
-        if state.events.isEmpty, state.pending == nil, !FileManager.default.fileExists(atPath: url.path) { return }
-        guard var data = try? JSONEncoder().encode(state) else { return }
+        if state.events.isEmpty, state.pending == nil, !FileManager.default.fileExists(atPath: url.path) { return true }
+        guard var data = try? JSONEncoder().encode(state) else { return false }
         // The byte cap: drop the oldest tenth until the file fits.
         while data.count > maxBytes, !(state.events.isEmpty && state.pending == nil) {
             if state.events.isEmpty { state.pending = nil } else { state.events.removeFirst(max(1, state.events.count / 10)) }
-            guard let again = try? JSONEncoder().encode(state) else { return }
+            guard let again = try? JSONEncoder().encode(state) else { return false }
             data = again
         }
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: url, options: .atomic)
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try writer(data, url)
+        } catch {
+            return false
+        }
+        pendingSaved = true
+        return true
     }
 
     /// Called with the lock held. Pending events count against the cap, and go last.
