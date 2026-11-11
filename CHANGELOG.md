@@ -4,6 +4,7 @@
 
 - **`teyla design` writes into the worktree you run it from.** When the current directory is inside a git worktree of the product's own repository, `map`, `dossier`, `options`, `pick` and `built` write there instead of the product's main checkout; from anywhere else, or from a worktree of another repository, nothing changes. Every command that writes prints `wrote: <path>` for each file.
 - **`teyla design` keeps the decision map as you wrote it.** A pick (and `dossier`, `options`, `built`) now edits only the changed field of that decision in `map.yaml`; comments, blank lines, key order, quoting and any extra keys stay, a missing field is added after the block's last key, and a save with no change leaves the file byte-identical. A map whose decisions were added, removed or reordered is still written whole. The design folder is found in the case it has on disk (`design/` or `Design/`).
+- **A decision card is held to 250 words.** `teyla design options` counts the words of the decision's `card.md` (or, without one, of the card rendered from `options.yaml`) and refuses a card over 250 with `card.md: 312 words, limit 250`, writing nothing; `teyla design status` marks an undecided decision with a longer card as FAIL and exits 1. `#`, `-` and `---` are not counted. The rule is in `templates/design/CYCLE.md`.
 
 ## 0.51.0 — 2026-11-11 — Open questions as a Telegram card
 
