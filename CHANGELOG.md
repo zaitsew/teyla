@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **`teyla tg activity`: a Telegram activity widget.** One widget message with two 26-week contribution grids, Growth (posts, comments, emails, meetings) and GitHub, each with today's number and the streak. `teyla tg activity` or `/activity` sends it; the launchd agent edits its data every 5 minutes when the numbers change; `teyla tg activity off` stops the edits. Nothing is sent until you ask for it. PRIVACY row 58 lists what the widget carries. See docs/ASKS.md, "Telegram".
 - **`teyla design` writes into the worktree you run it from.** When the current directory is inside a git worktree of the product's own repository, `map`, `dossier`, `options`, `pick` and `built` write there instead of the product's main checkout; from anywhere else, or from a worktree of another repository, nothing changes. Every command that writes prints `wrote: <path>` for each file.
 
 ## 0.51.0 — 2026-11-11 — Open questions as a Telegram card

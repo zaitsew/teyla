@@ -296,6 +296,16 @@ API from the Mac and rewrites the card every 5 minutes. A card older than 15 min
 since HH:MM". A tap that gets no answer in 15 seconds shows "No answer from the laptop. Tap again". The retry
 is safe: a card's nonce delivers once, and a second tap with it gets "Already handled".
 
+### Activity widget
+
+`teyla tg activity` (or `/activity` in the chat) sends a second widget: two contribution grids, "Growth" (your
+growth ledger: posts, comments, emails, meetings) and "GitHub" (your contribution calendar), 26 weeks each, with
+today's number and the streak next to each. The agent updates it every 5 minutes, and only when the numbers
+changed (at least every 15 minutes, so the offline note stays right). When `gh` is not signed in, the GitHub row
+says "not connected". Today's numbers show a dash when the data is from another day than your local today.
+`teyla tg activity off` forgets the message: no more edits, and the old message stays in the chat. Nobody gets the
+widget until you ask for it. The widget is `src/teyla/tg_activity.py`; `tests/test_tg_activity.py` measures it.
+
 ### What a tap can do
 
 A tap can make Teyla type into a coding session that runs with bypassed permissions. So the Telegram path does
