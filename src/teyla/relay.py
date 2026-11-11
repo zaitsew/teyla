@@ -66,7 +66,7 @@ import time
 from xml.sax.saxutils import escape as _xml
 
 from . import answer as answer_mod
-from . import asks, config
+from . import asks, config, github_activity
 from . import routine_install as ri
 from . import state as snapshot
 from .control import state as ctl
@@ -1027,11 +1027,28 @@ def _pull_taste(dirs: Dirs, key: bytes, now: float) -> list[dict]:
         return [{"id": "taste", "kind": "taste", "ok": False, "detail": f"taste drops: {_clip(str(exc), 120)}"}]
 
 
+def github_view(today: str, now: float, source=None) -> dict | None:
+    """GitHub's contribution calendar for the phone's widget (docs/PRIVACY.md row 59), the last ACTIVITY_WEEKS weeks: counts and
+    levels per day, nothing else. Served from the 10-minute cache in `~/.teyla/github-activity.json`; None when there is none."""
+    try:
+        g = (source or github_activity.activity)(today, ACTIVITY_WEEKS, now)
+    except Exception:  # noqa: BLE001
+        return None
+    if not g or not g.get("days"):
+        return None
+    return {"start": g["start"], "days": [{"day": d["day"], "count": d["count"], "level": d["level"]} for d in g["days"]],
+            "today_count": g["today_count"], "week_count": g["week_count"], "total": g["total"],
+            "streak": g["streak"], "longest": g["longest"], "at": g.get("at", 0)}
+
+
 def default_source(now: float):
     items = asks.collect(asks.DEFAULT_DAYS, now)
     snap = snapshot.build(now, items=items)
     act = activity_view()                       # additive: an older `teyla` has no `growth activity`, and the card is hidden
     if act is not None:
+        gh = github_view(act["today"], now)     # additive: the widget's second grid; absent without `gh` or a cache
+        if gh is not None:
+            act["github"] = gh
         snap["activity"] = act
     gtm = gtm_view()                            # additive: an older `teyla` has no `gtm`, and the Today card is hidden
     if gtm is not None:

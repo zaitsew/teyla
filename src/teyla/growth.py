@@ -650,10 +650,12 @@ def render_activity(a: dict) -> str:
                 months[c:c + 3] = list(label)
                 last_end = c + 3
         prev = m
-    L = [f"activity: {a['total']} in the last {a['weeks']} weeks \u00b7 today {a['today_count']} \u00b7 "
+    L = [f"{'github' if a.get('source') == 'github' else 'activity'}: {a['total']} in the last {a['weeks']} weeks \u00b7 today {a['today_count']} \u00b7 "
          f"streak {a['streak']} days (longest {a['longest']})", "    " + "".join(months).rstrip()]
     for i, name in enumerate(("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")):
         L.append(f"{name}  " + "".join(grid[i]).rstrip())
+    if a.get("source") == "github":
+        return "\n".join(L) + "\n"
     L.append("by kind: " + (", ".join(f"{k} {v}" for k, v in a["by_kind"].items()) or "nothing yet"))
     o = a["outcomes"]
     L.append(f"outcomes: meetings held {o['meetings']} \u00b7 responses {o['responses']}")
@@ -2435,8 +2437,14 @@ def cmd_log(args) -> int:
 def cmd_activity(args) -> int:
     if not 1 <= args.weeks <= 53:
         return _fail(GrowthError("--weeks must be between 1 and 53"))
-    store, _ = _store_cfg()
-    a = activity(store.ledger(), day_of(time.time()), args.weeks)
+    if getattr(args, "github", False):
+        from . import github_activity
+        a = github_activity.activity(day_of(time.time()), args.weeks)
+        if a is None:
+            return _fail(GrowthError("no GitHub contributions: needs `gh` signed in (gh auth status), and the network"))
+    else:
+        store, _ = _store_cfg()
+        a = activity(store.ledger(), day_of(time.time()), args.weeks)
     print(json.dumps(a, indent=2) if args.json else render_activity(a), end="\n" if args.json else "")
     return 0
 
@@ -2594,6 +2602,8 @@ def register(sp):
     a = g.add_parser("activity", help="the +1 graph: every post, comment, email, meeting; streaks and outcomes")
     a.set_defaults(fn=cmd_activity)
     a.add_argument("--weeks", type=int, default=53, metavar="N", help="weeks to show, 1..53 (default 53)")
+    a.add_argument("--github", action="store_true",
+                   help="GitHub's contribution calendar for your `gh` account instead of the growth ledger")
     a.add_argument("--json", action="store_true")
 
     a = g.add_parser("outreach", help="read-only: outreach counts from the products that track them; Teyla never sends")

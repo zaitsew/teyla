@@ -63,6 +63,7 @@ ALLOWED = {
     "genai.py": {27, 28},
     "relay.py": {21},
     "tg.py": {58},
+    "github_activity.py": {59},
     "web/server.py": {22},
     "copy_lane.py": {29, 30, 31},
     "mcp_probe.py": {33},
