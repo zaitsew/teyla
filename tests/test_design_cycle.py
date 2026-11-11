@@ -443,6 +443,36 @@ def test_the_confirm_hint_after_a_worktree_pick_targets_the_worktree(git_repo, m
     assert cli.main(["taste", "confirm", pid, "--repo", str(wt.resolve())]) == 0
 
 
+
+def test_the_confirm_hint_quotes_a_worktree_path_with_a_space(git_repo, monkeypatch, capsys):
+    import shlex
+    wt = git_repo.parent / "wt with space"
+    _g(git_repo, "worktree", "add", "-q", str(wt), "-b", "wt-space")
+    monkeypatch.chdir(wt)
+    rows = dc.load_map(wt)
+    rows[0]["status"] = "picked"
+    dc.save_map(wt, rows)
+    assert run(["options", str(git_repo), "bottom-bar"], capsys)[0] == 0
+    code, out, _ = run(["pick", str(git_repo), "bottom-bar", "none", "--sentence", SENTENCE], capsys)
+    assert code == 0, out
+    hint = next(ln for ln in out.splitlines() if "teyla taste confirm" in ln)
+    words = shlex.split(hint.split("`")[1])
+    assert words[words.index("--repo") + 1] == str(wt.resolve())
+
+
+def test_a_map_that_cannot_be_patched_refuses_before_pick_yaml_is_written(repo, capsys):
+    rows = dc.load_map(repo)
+    rows[0]["status"] = "picked"
+    dc.save_map(repo, rows)
+    assert run(["options", str(repo), "bottom-bar"], capsys)[0] == 0
+    mp = dc.map_path(repo)
+    mp.write_text(mp.read_text(encoding="utf-8").replace("decisions:", '"decisions":', 1), encoding="utf-8")
+    before = mp.read_bytes()
+    code, _, err = run(["pick", str(repo), "bottom-bar", "none", "--sentence", SENTENCE], capsys)
+    assert code == 1 and "cannot update the map in place" in err
+    assert not (repo / "design/decisions/bottom-bar/pick.yaml").exists()
+    assert mp.read_bytes() == before
+
 # --- the map keeps the owner's layout --------------------------------------------------------------
 
 COMMENTED_MAP = """# The redesign map. Order matters.
