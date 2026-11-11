@@ -596,6 +596,7 @@ def cmd_design(args) -> int:
         print(f"teyla design {action}: {e}", file=sys.stderr)
         return 2
     product = repo.name
+    main = repo
     repo = work_repo(repo)
     del WROTE[:]
     try:
@@ -628,9 +629,9 @@ def cmd_design(args) -> int:
     except DesignError as e:
         print(f"teyla design {action}: {e}", file=sys.stderr)
         return 1
-    if repo.name != product:        # hints name the product, not the worktree folder
-        lines = [ln.replace(f" {repo.name} ", f" {product} ").replace(f"--repo {repo.name}", f"--repo {product}")
-                 for ln in lines]
+    if repo != main:                # hints: the product's name for commands that follow the cwd,
+        lines = [ln.replace(f"--repo {repo.name}", f"--repo {repo}")      # the checkout's path where the file was written
+                 .replace(f" {repo.name} ", f" {product} ") for ln in lines]
     print("\n".join(lines))
     for w in dict.fromkeys(WROTE):
         print(f"wrote: {w}")

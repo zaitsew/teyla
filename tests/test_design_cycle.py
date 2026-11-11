@@ -425,3 +425,18 @@ def test_a_pick_from_a_worktree_prints_every_path_it_wrote(git_repo, monkeypatch
     assert any(ln.endswith("pick.yaml") for ln in wrote) and any(ln.endswith("map.yaml") for ln in wrote)
     assert all(str(wt.resolve()) in ln for ln in wrote if "design-cards" not in ln), wrote
     assert not (git_repo / "design/decisions/bottom-bar/pick.yaml").exists()
+
+
+def test_the_confirm_hint_after_a_worktree_pick_targets_the_worktree(git_repo, monkeypatch, capsys):
+    wt = _worktree(git_repo, "wt-hint")
+    monkeypatch.chdir(wt)
+    rows = dc.load_map(wt)
+    rows[0]["status"] = "picked"
+    dc.save_map(wt, rows)
+    assert run(["options", str(git_repo), "bottom-bar"], capsys)[0] == 0
+    code, out, _ = run(["pick", str(git_repo), "bottom-bar", "none", "--sentence", SENTENCE], capsys)
+    assert code == 0, out
+    hint = next(ln for ln in out.splitlines() if "teyla taste confirm" in ln)
+    assert f"--repo {wt.resolve()}" in hint
+    pid = hint.split("taste confirm ")[1].split(" ")[0]
+    assert cli.main(["taste", "confirm", pid, "--repo", str(wt.resolve())]) == 0
