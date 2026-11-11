@@ -350,3 +350,69 @@ def test_scope_all_keeps_its_reach_through_confirm(repo):
     res = taste.confirm(repo, prop["id"][:8])
     rule = taste.load_file(repo / res["rule_file"])
     assert rule["reach"] == "all-products"
+
+
+# --- the card's 250-word limit ---------------------------------------------------------------------
+
+def _rendered_words(repo, did="bottom-bar"):
+    rows = dc.valid_map(repo)
+    r = dc.row(rows, did)
+    return dc.count_words(dc.card_text(dc.card_for(repo, rows, r, dc.load_options(repo, did))))
+
+
+def _size_rendered_card(repo, words, did="bottom-bar"):
+    """Make the card Teyla renders for `did` exactly `words` words long, by padding the first summary."""
+    p = dc.folder(repo, did) / "options.yaml"
+    data = taste.load_file(p)
+    data["options"][0]["summary"] = "pad"
+    p.write_text(taste.dumps(data), encoding="utf-8")
+    extra = words - _rendered_words(repo, did)
+    assert extra >= 0
+    data["options"][0]["summary"] = " ".join(["pad"] * (1 + extra))
+    p.write_text(taste.dumps(data), encoding="utf-8")
+    assert _rendered_words(repo, did) == words
+
+
+def test_count_words_skips_syntax_only_tokens():
+    assert dc.count_words("# Title\n\n- one two\n---\n* three | four\n> five\n1. six") == 8
+
+
+@pytest.mark.parametrize("words,ok", [(250, True), (251, False)])
+def test_a_rendered_card_over_250_words_fails_options_and_status(repo, capsys, words, ok):
+    _size_rendered_card(repo, words)
+    code, out, err = run(["options", str(repo), "bottom-bar"], capsys)
+    if ok:
+        assert code == 0, err
+    else:
+        assert code == 1 and f"card: {words} words, limit 250" in err
+        assert dc.load_map(repo)[1]["status"] != "options"            # nothing was written
+    rows = dc.load_map(repo)
+    rows[1]["status"] = "options"
+    dc.save_map(repo, rows)
+    code, out, err = run(["status", str(repo)], capsys)
+    if ok:
+        assert code == 0 and "FAIL" not in out
+    else:
+        assert code == 1 and f"card: {words} words, limit 250" in out and f"card: {words} words, limit 250" in err
+
+
+@pytest.mark.parametrize("words,ok", [(250, True), (251, False)])
+def test_a_card_md_over_250_words_fails_options_and_status(repo, capsys, words, ok):
+    (dc.folder(repo, "bottom-bar") / "card.md").write_text("# Card\n\n- " + " ".join(["word"] * (words - 1)) + "\n", encoding="utf-8")
+    code, out, err = run(["options", str(repo), "bottom-bar"], capsys)
+    if ok:
+        assert code == 0, err
+    else:
+        assert code == 1 and f"card.md: {words} words, limit 250" in err
+    rows = dc.load_map(repo)
+    rows[1]["status"] = "options"
+    dc.save_map(repo, rows)
+    code, out, err = run(["status", str(repo)], capsys)
+    assert (code == 0) is ok
+    assert (f"card.md: {words} words, limit 250" in out) is (not ok)
+
+
+def test_card_md_wins_over_the_rendered_card(repo, capsys):
+    _size_rendered_card(repo, 300)
+    (dc.folder(repo, "bottom-bar") / "card.md").write_text("Short card.\n", encoding="utf-8")
+    assert run(["options", str(repo), "bottom-bar"], capsys)[0] == 0
