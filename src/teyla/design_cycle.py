@@ -31,6 +31,7 @@ DONE = ("picked", "built")
 SCOPES = ("screen", "product", "all")
 LABELS = ("guideline", "observation", "hypothesis")
 MAX_OPTIONS = 3
+CARD_WORD_LIMIT = 250
 MIN_OPTIONS = 2
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 OPTION_FIELDS = ("summary", "user_does", "removes_or_moves", "evidence", "cost")
@@ -403,6 +404,38 @@ def scaffold_dossier(repo: pathlib.Path, did: str) -> list[str]:
     return [f"wrote {_rel(repo, p)} with the five parts", f"then: teyla design options {repo.name} {did}"]
 
 
+# --- the card's length ----------------------------------------------------------------------------
+
+def count_words(text: str) -> int:
+    """Whitespace-separated tokens that hold a letter or a digit: `#`, `-`, `---`, `|` and the like are syntax."""
+    return sum(1 for t in text.split() if any(ch.isalnum() for ch in t))
+
+
+def card_words(repo: pathlib.Path, rows: list[dict], r: dict) -> tuple[str, int] | None:
+    """(source, words) of the decision's card: `card.md` when the folder holds one, else the card Teyla
+    renders from options.yaml. None when there is no card yet (no card.md, no readable options)."""
+    cm = folder(repo, r["id"]) / "card.md"
+    if cm.is_file():
+        try:
+            return "card.md", count_words(cm.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError) as e:
+            raise DesignError(f"{_rel(repo, cm)}: cannot read the card ({e})") from e
+    try:
+        data = load_options(repo, r["id"])
+    except DesignError:
+        return None
+    if options_problems(data):
+        return None
+    return "card", count_words(card_text(card_for(repo, rows, r, data)))
+
+
+def card_problem(repo: pathlib.Path, rows: list[dict], r: dict) -> str | None:
+    got = card_words(repo, rows, r)
+    if got is not None and got[1] > CARD_WORD_LIMIT:
+        return f"{got[0]}: {got[1]} words, limit {CARD_WORD_LIMIT}"
+    return None
+
+
 # --- the options ----------------------------------------------------------------------------------
 
 def options_problems(data: dict) -> list[str]:
@@ -486,11 +519,17 @@ def do_options(repo: pathlib.Path, did: str) -> list[str]:
         bad = dossier_problems(dp.read_text(encoding="utf-8"))
         if bad:
             raise DesignError(bad[0])
+        over = card_problem(repo, rows, r)             # a card.md that is too long, before anything is written
+        if over:
+            raise DesignError(f"{did}: {over}; shorten the card to {CARD_WORD_LIMIT} words or fewer")
         _write(p, taste.dumps(options_template(rows, r)))
         return [f"wrote {_rel(repo, p)}: fill it (two or three options, the recommended one first), then run this again"]
     data = check_options(repo, did)
     if (folder(repo, did) / "pick.yaml").exists() and r["status"] in DONE:
         return [f"{did} is already {r['status']}; options are closed (`teyla design pick --supersede` replaces the pick)"]
+    over = card_problem(repo, rows, r)
+    if over:
+        raise DesignError(f"{did}: {over}; shorten the card to {CARD_WORD_LIMIT} words or fewer")
     r["status"] = "options"
     save_map(repo, rows)
     register_card(repo, rows, r, data)
@@ -590,8 +629,20 @@ def render_status(repo: pathlib.Path, rows: list[dict]) -> str:
         pick = load_pick(repo, r["id"]) if r["status"] in DONE else None
         tail = f"  -> {pick.get('option')}" if pick else ""
         needs = f"  needs {', '.join(r.get('needs') or [])}" if r.get("needs") else ""
-        out.append(f"  {i:>2}. {mark}{r['id']:<20} {r['status']:<11}{tail}{needs}  {r['title']}")
+        bad = card_problem(repo, rows, r) if r["status"] not in DONE else None
+        fail = f"  FAIL {bad}" if bad else ""
+        out.append(f"  {i:>2}. {mark}{r['id']:<20} {r['status']:<11}{tail}{needs}  {r['title']}{fail}")
     return "\n".join(out)
+
+
+def status_failures(repo: pathlib.Path, rows: list[dict]) -> list[str]:
+    """One entry per undecided decision whose card is over the word limit."""
+    out = []
+    for r in rows:
+        bad = card_problem(repo, rows, r) if r["status"] not in DONE else None
+        if bad:
+            out.append(f"{r['id']}: {bad}")
+    return out
 
 
 # --- the card in `teyla asks` ---------------------------------------------------------------------
@@ -637,11 +688,15 @@ def open_cards() -> list[dict]:
             data = check_options(repo, r["id"])
         except (DesignError, KeyError, OSError):
             continue
-        locked = [x["id"] for x in rows if x["status"] in DONE]
-        out.append({"repo": repo, "product": repo.name, "decision": r["id"], "title": r["title"],
-                    "journey": r["journey"], "options": data["options"], "locked": locked,
-                    "waiting": needs_met(rows, r)})
+        out.append(card_for(repo, rows, r, data))
     return out
+
+
+def card_for(repo: pathlib.Path, rows: list[dict], r: dict, data: dict) -> dict:
+    locked = [x["id"] for x in rows if x["status"] in DONE]
+    return {"repo": repo, "product": repo.name, "decision": r["id"], "title": r["title"],
+            "journey": r["journey"], "options": data["options"], "locked": locked,
+            "waiting": needs_met(rows, r)}
 
 
 def card_text(c: dict) -> str:
@@ -711,11 +766,14 @@ def cmd_design(args) -> int:
     main = repo
     repo = work_repo(repo)
     del WROTE[:]
+    failing: list[str] = []
     try:
         if action == "map":
             lines = scaffold_map(repo)
         elif action == "status":
-            lines = [render_status(repo, valid_map(repo))]
+            rows = valid_map(repo)
+            lines = [render_status(repo, rows)]
+            failing = status_failures(repo, rows)
         elif action == "next":
             rows = valid_map(repo)
             n = next_decision(rows)
@@ -747,6 +805,9 @@ def cmd_design(args) -> int:
     print("\n".join(lines))
     for w in dict.fromkeys(WROTE):
         print(f"wrote: {w}")
+    if failing:
+        print(f"teyla design status: card over {CARD_WORD_LIMIT} words: " + "; ".join(failing), file=sys.stderr)
+        return 1
     return 0
 
 

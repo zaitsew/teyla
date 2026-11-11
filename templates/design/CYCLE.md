@@ -65,5 +65,9 @@ teyla design status <product>           the map with each decision's state
 ```
 
 `options` refuses without a full dossier, with a fourth option, or when the first is not recommended.
+The card is held to 250 words. A decision folder may hold `card.md`; without it the card is the text Teyla
+renders from `options.yaml`. Words are whitespace-separated tokens that hold a letter or a digit (`#`, `-`,
+`---` do not count). `options` refuses a longer card and prints `card.md: 312 words, limit 250`;
+`status` marks an undecided decision with a longer card as FAIL and exits 1.
 `teyla answer <card-id> <option> <his reason>` on the card writes the same `pick.yaml`.
 A picked decision is reopened only by the owner, or by measured evidence against it (`pick --supersede`).
