@@ -27,6 +27,7 @@ def repo(tmp_path):
 
 
 def write_map(repo, rows):
+    dc.map_path(repo).unlink(missing_ok=True)      # a fixture writes a whole map; save_map only patches one
     dc.save_map(repo, rows)
 
 
@@ -448,12 +449,49 @@ def test_a_field_that_is_not_in_the_block_goes_after_its_last_key(tmp_path):
         "      status: researching")
 
 
-def test_a_restructured_map_is_still_written_whole(tmp_path):
+def test_a_restructured_map_is_refused_not_rewritten(tmp_path):
     r = _commented_repo(tmp_path)
     rows = dc.load_map(r)
     rows.append({"id": "extra", "title": "T", "journey": "j", "needs": [], "status": "open"})
+    with pytest.raises(dc.DesignError, match="cannot update the map in place"):
+        dc.save_map(r, rows)
+    assert dc.map_path(r).read_text(encoding="utf-8") == COMMENTED_MAP
+
+
+def test_blocks_that_start_with_another_key_are_patched_in_place(tmp_path):
+    r = tmp_path / "planner"
+    text = ("decisions:\n"
+            "  - title: First   # kept\n"
+            "    journey: j\n"
+            "    status: open\n"
+            "    needs: []\n"
+            "    id: a\n"
+            "  - journey: j\n"
+            "    id: b\n"
+            "    title: Second\n"
+            "    needs:\n"
+            "      - a\n")
+    p = dc.map_path(r)
+    p.parent.mkdir(parents=True)
+    p.write_text(text, encoding="utf-8")
+    rows = dc.load_map(r)
+    rows[0]["status"] = "picked"
+    rows[1]["status"] = "open"
     dc.save_map(r, rows)
-    assert [x["id"] for x in dc.load_map(r)] == ["jobs", "bottom-bar", "extra"]
+    assert p.read_text(encoding="utf-8") == text.replace("status: open", "status: picked") + "    status: open\n"
+
+
+def test_a_crlf_map_keeps_its_line_endings(tmp_path):
+    r = _commented_repo(tmp_path)
+    crlf = COMMENTED_MAP.replace("\n", "\r\n")
+    dc.map_path(r).write_bytes(crlf.encode("utf-8"))
+    dc.save_map(r, dc.load_map(r))
+    assert dc.map_path(r).read_bytes() == crlf.encode("utf-8")
+    rows = dc.load_map(r)
+    rows[1]["status"] = "picked"
+    dc.save_map(r, rows)
+    want = crlf.replace("    status: options\r\n", "    status: picked\r\n")
+    assert dc.map_path(r).read_bytes() == want.encode("utf-8")
 
 
 def test_the_design_folder_is_found_in_the_case_it_has(tmp_path):
