@@ -156,11 +156,13 @@ struct ActivityGlimpse: Decodable, Equatable, Sendable {
     /// The year's total as the Mac counted it; the sum of the days when the Mac sent none.
     var total = 0
     var kinds: [String] = ActivityKind.all
+    /// GitHub's contribution calendar for the same weeks (the iPhone widget's second grid); nil from a Mac without `gh`.
+    var github: ActivitySeries?
 
     init() {}
 
     private enum Keys: String, CodingKey {
-        case today, start, days, streak, longest, total, kinds
+        case today, start, days, streak, longest, total, kinds, github
         case todayCount = "today_count", weekCount = "week_count"
     }
 
@@ -177,6 +179,7 @@ struct ActivityGlimpse: Decodable, Equatable, Sendable {
         longest = int(.longest)
         total = (try? c.decodeIfPresent(Int.self, forKey: .total)) ?? days.reduce(0) { $0 + $1.count }
         if let list = try? c.decodeIfPresent([String].self, forKey: .kinds), !list.isEmpty { kinds = list }
+        github = try? c.decodeIfPresent(ActivitySeries.self, forKey: .github)
     }
 
     /// The kinds the phone's picker offers: the Mac's list, narrowed to the kinds the relay accepts.
@@ -186,6 +189,40 @@ struct ActivityGlimpse: Decodable, Equatable, Sendable {
     }
 
     var spoken: String { ActivityLogic.spoken(today: todayCount, streak: streak, total: total) }
+}
+
+/// A second graph next to the growth one: GitHub's contribution calendar (`teyla growth activity --github`), counts and levels
+/// only. `at` is when the Mac last fetched it (epoch seconds), 0 when unknown.
+struct ActivitySeries: Decodable, Equatable, Sendable {
+    var start = ""
+    var days: [ActivityDay] = []
+    var todayCount = 0
+    var weekCount = 0
+    var streak = 0
+    var longest = 0
+    var total = 0
+    var at = 0
+
+    init() {}
+
+    private enum Keys: String, CodingKey {
+        case start, days, streak, longest, total, at
+        case todayCount = "today_count", weekCount = "week_count"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        func int(_ key: Keys) -> Int { (try? c.decodeIfPresent(Int.self, forKey: key)) ?? 0 }
+        let boxes = (try? c.decodeIfPresent([LossyBox<ActivityDay>].self, forKey: .days)) ?? []
+        days = boxes.compactMap(\.value)
+        start = (try? c.decodeIfPresent(String.self, forKey: .start)) ?? days.first?.day ?? ""
+        todayCount = int(.todayCount)
+        weekCount = int(.weekCount)
+        streak = int(.streak)
+        longest = int(.longest)
+        total = (try? c.decodeIfPresent(Int.self, forKey: .total)) ?? days.reduce(0) { $0 + $1.count }
+        at = int(.at)
+    }
 }
 
 /// Which of the two layouts the card uses; the owner picks one with

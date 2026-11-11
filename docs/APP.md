@@ -688,6 +688,26 @@ command, `teyla growth activity --json [--weeks N]` (version 1: `days[]` of `{da
   snapshot without `activity` (an older Mac) hides the card. The squares are decorative for VoiceOver; the card reads "Activity: N
   today, streak S days, T this year" as one element, and all text follows Dynamic Type.
 - **Not on Home.** Home already has five tiles; a sixth line would crowd it, so the page that owns the graph is Growth.
+
+### The activity widget (iPhone home screen and Lock Screen)
+
+Owner, verbatim (2026-11-12): "Develop the activity grid widget for me under Teyla - github commits and growth activities. And I
+want to see the number for today next to it."
+
+- **Data.** The Mac adds `github` inside `activity` (additive): `{start, days: [{day, count, level}], today_count, week_count, total,
+  streak, longest, at}` for the same 17 weeks. It is GitHub's contribution calendar for the `gh` account (commits, pull requests,
+  reviews, issues; private ones when the profile counts them), from `teyla growth activity --github` (PRIVACY row 59, cached 10
+  minutes in `~/.teyla/github-activity.json`). A Mac without `gh` sends no `github`, and the widget shows "Not connected" there.
+- **Flow.** Each time the app reads a signed snapshot it writes `activity-widget.json` into the App Group `group.com.zaitsew.teyla`
+  (levels per day, today's counts, streaks, the snapshot's day and time: nothing else) and asks WidgetKit to redraw when the file
+  changed. The widget extension `TeylaWidget` (`com.zaitsew.teyla.widget`) only reads that file: no key, no iCloud folder, no network.
+  The sample and fixtures never write it; Forget this Mac deletes it. The widget is as fresh as the app's last read, and says
+  "Updated HH:MM".
+- **Sizes.** Medium: two rows, GitHub then Growth, each a 17-week grid with today's number big at the right, "GitHub today" and the
+  streak under it. Small: the same two rows with 10 weeks. Lock Screen: a rectangle ("Today", GitHub N, Growth N) and an inline line.
+- **Today.** Today's number shows only while the snapshot is from the phone's own day; after midnight, until the app reads a new
+  snapshot, it shows "–" (unknown, not zero). The timeline redraws at midnight for that.
+- **VoiceOver** reads one element: "GitHub 128 today, streak 90 days. Growth 3 today, streak 2 days."
 - **Store build.** The sandboxed Mac build has no command to run, so it has no card; it reads the same snapshot field as the phone.
 
 ## Today (Mac admin build and iPhone)

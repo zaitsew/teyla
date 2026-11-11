@@ -410,6 +410,11 @@ JSON (`version` 1): `today`, `weeks`, `start`, `days` (every day from `start` to
 `by_kind` (non-zero kinds), `outcomes` (`meetings`, `responses`), `claimed`, and `kinds` (the list an app builds its +1
 menu from).
 
+`teyla growth activity --github [--weeks N] [--json]` draws GitHub's contribution calendar for your `gh` account in the same
+shape (`source: "github"`, levels are GitHub's own quartiles, `at` is when it was fetched). One `gh api graphql` call, cached 10
+minutes in `~/.teyla/github-activity.json`; in safe mode or offline the last cache serves (PRIVACY row 59). The iPhone widget
+and the Telegram widget show it beside the growth graph.
+
 ## Outreach
 
 `teyla growth outreach` is read-only. It shows counts from BaTrack (a count only; the job search never appears in

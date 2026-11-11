@@ -5,3 +5,5 @@ Teyla/Info.plist
 TeylaShare/Info.plist
 Teyla/Teyla.entitlements
 TeylaShare/TeylaShare.entitlements
+TeylaWidget/Info.plist
+TeylaWidget/TeylaWidget.entitlements
