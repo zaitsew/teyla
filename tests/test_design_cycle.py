@@ -350,3 +350,114 @@ def test_scope_all_keeps_its_reach_through_confirm(repo):
     res = taste.confirm(repo, prop["id"][:8])
     rule = taste.load_file(repo / res["rule_file"])
     assert rule["reach"] == "all-products"
+
+
+# --- the map keeps the owner's layout --------------------------------------------------------------
+
+COMMENTED_MAP = """# The redesign map. Order matters.
+decisions:
+  # first, what the product is for
+  - id: jobs
+    status: picked   # settled in week 1
+    title: "What the product is for"
+    journey: 'the first day of a new user'
+    needs: []
+
+  - id: bottom-bar
+    title: The bottom bar and the first screen
+    journey: an ordinary day
+    needs:
+      - jobs   # needs the jobs first
+    status: options
+
+# trailing note kept
+"""
+
+
+def _commented_repo(tmp_path, folder="design"):
+    r = tmp_path / "planner"
+    shutil.copytree(SAMPLES, r / folder / "decisions")
+    (r / folder / "decisions" / "jobs" / "pick.yaml").unlink(missing_ok=True)
+    (r / folder / "decisions" / "map.yaml").write_text(COMMENTED_MAP, encoding="utf-8")
+    return r
+
+
+@pytest.mark.parametrize("folder", ["design", "Design"])
+def test_a_pick_changes_only_the_status_line_of_its_decision(tmp_path, capsys, folder):
+    r = _commented_repo(tmp_path, folder)
+    assert dc.root(r).parent.name == folder
+    before = dc.map_path(r).read_text(encoding="utf-8")
+    code, out, err = run(["pick", str(r), "bottom-bar", "three-tabs", "--sentence", SENTENCE], capsys)
+    assert code == 0, err
+    after = dc.map_path(r).read_text(encoding="utf-8")
+    assert after == before.replace("    status: options\n", "    status: picked\n")
+    assert (r / folder / "decisions" / "bottom-bar" / "pick.yaml").is_file()
+
+
+def test_the_status_edit_keeps_a_trailing_comment(tmp_path):
+    r = _commented_repo(tmp_path)
+    rows = dc.load_map(r)
+    rows[0]["status"] = "built"
+    dc.save_map(r, rows)
+    assert dc.map_path(r).read_text(encoding="utf-8") == COMMENTED_MAP.replace(
+        "status: picked   # settled in week 1", "status: built   # settled in week 1")
+
+
+def test_a_load_and_save_with_no_change_is_byte_identical(tmp_path):
+    r = _commented_repo(tmp_path)
+    dc.save_map(r, dc.load_map(r))
+    assert dc.map_path(r).read_text(encoding="utf-8") == COMMENTED_MAP
+
+
+def test_a_field_that_is_not_in_the_block_goes_after_its_last_key(tmp_path):
+    r = tmp_path / "planner"
+    text = ("decisions:\n"
+            "    - id: a\n"
+            "      title: A\n"
+            "      journey: j\n"
+            "      needs:\n"
+            "        - b\n"
+            "      # note about a\n"
+            "\n"
+            "    - id: b\n"
+            "      title: B\n"
+            "      journey: j\n"
+            "      needs: []\n"
+            "      status: open")                       # no newline at the end of the file
+    p = dc.map_path(r)
+    p.parent.mkdir(parents=True)
+    p.write_text(text, encoding="utf-8")
+    rows = [dict(x) for x in taste.load_file(p)["decisions"]]
+    rows[0]["status"] = "open"
+    rows[1]["status"] = "researching"
+    dc.save_map(r, rows)
+    assert p.read_text(encoding="utf-8") == (
+        "decisions:\n"
+        "    - id: a\n"
+        "      title: A\n"
+        "      journey: j\n"
+        "      needs:\n"
+        "        - b\n"
+        "      status: open\n"
+        "      # note about a\n"
+        "\n"
+        "    - id: b\n"
+        "      title: B\n"
+        "      journey: j\n"
+        "      needs: []\n"
+        "      status: researching")
+
+
+def test_a_restructured_map_is_still_written_whole(tmp_path):
+    r = _commented_repo(tmp_path)
+    rows = dc.load_map(r)
+    rows.append({"id": "extra", "title": "T", "journey": "j", "needs": [], "status": "open"})
+    dc.save_map(r, rows)
+    assert [x["id"] for x in dc.load_map(r)] == ["jobs", "bottom-bar", "extra"]
+
+
+def test_the_design_folder_is_found_in_the_case_it_has(tmp_path):
+    r = tmp_path / "p"
+    (r / "Design" / "decisions").mkdir(parents=True)
+    assert dc.root(r).parts[-2:] == ("Design", "decisions")
+    assert taste.design_dir(tmp_path / "none").name == "design"

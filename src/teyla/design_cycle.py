@@ -80,9 +80,106 @@ def load_map(repo: pathlib.Path) -> list[dict]:
     return [dict(r) if isinstance(r, dict) else {"id": r} for r in rows]
 
 
+_MAP_KEYS = ("id", "title", "journey", "needs", "status")
+_ITEM_START = re.compile(r"^(\s*)-(\s+)id:")
+
+
+def _blocks(lines: list[str]) -> list[tuple[int, int, int]]:
+    """(first line, last content line + 1, key indent) of every `- id:` item in a map's text."""
+    out: list[tuple[int, int, int]] = []
+    i = 0
+    while i < len(lines):
+        m = _ITEM_START.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        ki = len(m.group(1)) + 1 + len(m.group(2))
+        end = i + 1
+        j = i + 1
+        while j < len(lines):
+            t = lines[j].strip()
+            if t and not t.startswith("#"):
+                if len(lines[j]) - len(lines[j].lstrip(" ")) < ki:
+                    break
+                end = j + 1
+            j += 1
+        out.append((i, end, ki))
+        i = j
+    return out
+
+
+def _patch_map(text: str, rows: list[dict]) -> str | None:
+    """`text` with only the changed scalar fields of `rows` edited in place: comments, blank lines, key
+    order and quoting stay as they are. None when the change is not a scalar edit (a row added, removed
+    or reordered, a list changed, a key removed): the caller then rewrites the file."""
+    try:
+        old = taste.loads(text).get("decisions")
+    except ValueError:
+        return None
+    if not isinstance(old, list) or len(old) != len(rows) or not all(isinstance(o, dict) for o in old):
+        return None
+    lines = text.splitlines(keepends=True)
+    blocks = _blocks(lines)
+    if len(blocks) != len(rows) or [o.get("id") for o in old] != [r.get("id") for r in rows]:
+        return None
+    replace: dict[int, str] = {}                          # line -> its new text
+    insert: dict[int, list[str]] = {}                     # line -> lines added after it
+    for (start, end, ki), o, r in zip(blocks, old, rows):
+        pad = " " * ki
+        for key in _MAP_KEYS:
+            if key not in r:
+                if key in o:
+                    return None
+                continue
+            if key in o and o[key] == r[key]:
+                continue
+            if isinstance(r[key], (list, tuple, dict)):
+                return None
+            val = taste._scalar_out(r[key])
+            hit = next((n for n in range(start, end)
+                        if re.match(rf"^{pad}{re.escape(key)}:(\s|$)", lines[n])
+                        or (n == start and key == "id")), None)
+            if hit is None:
+                if key in o:
+                    return None
+                eol = "\r\n" if lines[end - 1].endswith("\r\n") else "\n"
+                insert.setdefault(end - 1, []).append(f"{pad}{key}: {val}{eol}")
+                continue
+            line = lines[hit]
+            body = line.rstrip("\r\n")
+            eol = line[len(body):]
+            m = re.match(rf"^(.*?{re.escape(key)}:\s*)(.*?)(\s+#.*)?$", body)
+            if not m or isinstance(o.get(key), (list, dict)):
+                return None
+            replace[hit] = f"{m.group(1)}{val}{m.group(3) or ''}{eol}"
+    if not replace and not insert:
+        return text
+    out: list[str] = []
+    for n, line in enumerate(lines):
+        line = replace.get(n, line)
+        if n in insert and not line.endswith("\n"):
+            line += "\n"                                    # the map's last line had no newline
+        out.append(line)
+        out.extend(insert.get(n, []))
+    return "".join(out)
+
+
 def save_map(repo: pathlib.Path, rows: list[dict]) -> None:
-    ordered = [{k: r[k] for k in ("id", "title", "journey", "needs", "status") if k in r} for r in rows]
-    taste._write_atomic(map_path(repo), taste.dumps({"decisions": ordered}))
+    """Write the map. An existing file gets only its changed fields edited, so the owner's comments and
+    layout survive a pick; a new or restructured map is written whole."""
+    p = map_path(repo)
+    if p.is_file():
+        try:
+            text = p.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            text = ""
+        patched = _patch_map(text, rows) if text else None
+        if patched is not None:
+            if patched != text:
+                taste._write_atomic(p, patched)
+            return
+    ordered = [{k: r[k] for k in _MAP_KEYS if k in r} for r in rows]
+    taste._write_atomic(p, taste.dumps({"decisions": ordered}))
 
 
 def map_problems(rows: list[dict]) -> list[str]:

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **`teyla design` keeps the decision map as you wrote it.** A pick (and `dossier`, `options`, `built`) now edits only the changed field of that decision in `map.yaml`; comments, blank lines, key order, quoting and any extra keys stay, a missing field is added after the block's last key, and a save with no change leaves the file byte-identical. A map whose decisions were added, removed or reordered is still written whole. The design folder is found in the case it has on disk (`design/` or `Design/`).
+
 ## 0.50.1 — 2026-11-10 — Usage capture for a product with its own backend
 
 - **Usage import skips batches past the 180-day retention.** A batch whose newest event is older than the window is read and reported (so the product can delete its copy) but not stored, in `--vouched-folder` and the channel pull alike; before, `prune` deleted it and the next pull filed it again. Every `--vouched-folder` pull also prunes first, as the channel pull does.
