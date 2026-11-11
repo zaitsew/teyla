@@ -64,7 +64,7 @@ grid(m,String(a[2]||''),S.s);var s=el('div','s',null,r);
 el('div','b',live?String(a[0]):'—',s);el('div','k','today',s);el('div','k','streak '+a[1],s)}
 function draw(){document.body.textContent='';
 if(!S||S.v!==1){el('div','z','Waiting for the laptop.');return}
-var live=S.d===today();row('Growth',S.g,live);row('GitHub',S.c,live);
+var live=S.d===today();row('GitHub',S.c,live);row('Growth',S.g,live);
 if(S.t&&Date.now()/1e3-S.t>OFFLINE)el('div','e','Laptop offline since '+S.h);
 else el('div','f','Updated '+S.h)}
 W.onEvent('chatDataChanged',function(){load();draw()});
