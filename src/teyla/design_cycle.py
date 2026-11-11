@@ -19,6 +19,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import uuid
@@ -597,8 +598,14 @@ def do_pick(repo: pathlib.Path, did: str, choice: str, sentence: str, scope: str
     rec: dict = {"option": choice, "sentence": sentence, "date": on, "scope": scope}
     if old is not None:
         rec["supersedes"] = {"option": old.get("option"), "date": old.get("date")}
-    _write(folder(repo, did) / "pick.yaml", taste.dumps(rec))
     r["status"] = "picked"
+    mp = map_path(repo)
+    if mp.is_file():                # a map that cannot be patched in place refuses before pick.yaml is written
+        try:
+            _patch_map(mp.read_bytes().decode("utf-8"), rows, _rel(repo, mp))
+        except (OSError, UnicodeDecodeError) as e:
+            raise DesignError(f"{_rel(repo, mp)}: cannot read the map ({e})") from e
+    _write(folder(repo, did) / "pick.yaml", taste.dumps(rec))
     save_map(repo, rows)
     drop_card(repo, did)
     proposal = open_proposal(repo, r, by.get(choice), scope, sentence, on)
@@ -800,7 +807,7 @@ def cmd_design(args) -> int:
         print(f"teyla design {action}: {e}", file=sys.stderr)
         return 1
     if repo != main:                # hints: the product's name for commands that follow the cwd,
-        lines = [ln.replace(f"--repo {repo.name}", f"--repo {repo}")      # the checkout's path where the file was written
+        lines = [ln.replace(f"--repo {repo.name}", f"--repo {shlex.quote(str(repo))}")      # the checkout's path where the file was written
                  .replace(f" {repo.name} ", f" {product} ") for ln in lines]
     print("\n".join(lines))
     for w in dict.fromkeys(WROTE):
