@@ -315,6 +315,7 @@ def test_offset_is_saved_before_an_update_is_handled(setup_bot):
 def test_heartbeat_moves_past_an_ask_closed_elsewhere(setup_bot):
     bot, api, world = setup_bot([_ask("a1"), _ask("a2")])
     world.items["a1"].status = "done"
+    bot._queue = None                      # the heartbeat rescans at most every HEARTBEAT_QUEUE_S
     bot.heartbeat()
     assert bot.card["ask"] == "a2" and "closed elsewhere" in bot.card["view"]["r"]
 

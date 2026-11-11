@@ -71,6 +71,7 @@ TAP_WAIT_S = 9.0               # answer a tap with the next card when the work i
 DELIVERY_GAP_S = 5
 DELIVERY_PER_HOUR = 20
 QUEUE_TTL_S = 60
+HEARTBEAT_QUEUE_S = 900        # the heartbeat rescans the queue at most this often; it only refreshes the time otherwise
 USED_KEEP = 64
 FREE_MAX_BYTES = 600           # a typed answer must fit the confirm card whole: it is shown, never cut
 PAIR_WAIT_S = 300
@@ -309,9 +310,9 @@ class Bot:
     def card(self) -> dict:
         return self.st.get("card") or {}
 
-    def queue(self, fresh: bool = False) -> tuple[dict, list]:
+    def queue(self, fresh: bool = False, max_age: float = QUEUE_TTL_S) -> tuple[dict, list]:
         now = self.clock()
-        if fresh or self._queue is None or now - self._queue[0] > QUEUE_TTL_S:
+        if fresh or self._queue is None or now - self._queue[0] > max_age:
             items, rows = self.queue_fn(now)
             self._queue = (now, items, rows)
         return self._queue[1], self._queue[2]
@@ -610,7 +611,7 @@ class Bot:
             card = self.card
             if card.get("busy") or not card.get("msg"):
                 return
-            items, rows = self.queue(fresh=True)
+            items, rows = self.queue(max_age=HEARTBEAT_QUEUE_S)
             n = len([r for r in rows if r["id"] in items])
             a = items.get(card.get("ask", ""))
             if card.get("ask") and (a is None or a.status != "open" or question_hash(a) != card.get("qh")):
