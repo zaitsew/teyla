@@ -208,3 +208,9 @@ def test_cli_off_forgets_the_message(home, monkeypatch, capsys):
     assert tg.cmd_tg(args) == 0
     assert "activity_msg" not in tg.read_cfg()
     assert "no more edits" in capsys.readouterr().out
+
+
+def test_the_forced_refresh_lands_before_the_widget_calls_the_laptop_offline():
+    from teyla import tg_activity
+    # A heartbeat runs every HEARTBEAT_S, late by up to one long poll; the forced edit must still land before OFFLINE_S.
+    assert tg.ACTIVITY_REFRESH_S + tg.HEARTBEAT_S + tg.POLL_TIMEOUT_S < tg_activity.OFFLINE_S

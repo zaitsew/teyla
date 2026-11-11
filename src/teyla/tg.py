@@ -71,7 +71,7 @@ API = "https://api.telegram.org/bot{token}/{method}"
 
 POLL_TIMEOUT_S = 20            # long poll; also how long `teyla tg send` may wait for the agent to pick it up
 HEARTBEAT_S = 300              # rewrite the card this often, so the widget can tell the laptop is offline
-ACTIVITY_REFRESH_S = 900       # the activity widget is rewritten at least this often, so its offline note stays right
+ACTIVITY_REFRESH_S = 540       # rewritten at least this often; + HEARTBEAT_S + POLL_TIMEOUT_S stays under tg_activity.OFFLINE_S
 POLL_FRESH_S = 120             # `check`: the agent polled within this window
 TAP_WAIT_S = 9.0               # answer a tap with the next card when the work is done within this; else "working"
 DELIVERY_GAP_S = 5
