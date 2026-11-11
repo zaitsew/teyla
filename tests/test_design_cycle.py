@@ -416,3 +416,16 @@ def test_card_md_wins_over_the_rendered_card(repo, capsys):
     _size_rendered_card(repo, 300)
     (dc.folder(repo, "bottom-bar") / "card.md").write_text("Short card.\n", encoding="utf-8")
     assert run(["options", str(repo), "bottom-bar"], capsys)[0] == 0
+
+
+def test_a_long_card_md_stops_options_before_it_scaffolds_options_yaml(repo, capsys):
+    d = dc.folder(repo, "jobs")
+    d.mkdir(parents=True, exist_ok=True)
+    shutil.copy(dc.folder(repo, "bottom-bar") / "dossier.md", d / "dossier.md")
+    (d / "card.md").write_text(" ".join(["word"] * 251) + "\n", encoding="utf-8")
+    code, out, err = run(["options", str(repo), "jobs"], capsys)
+    assert code == 1 and "card.md: 251 words, limit 250" in err
+    assert not (d / "options.yaml").exists()
+    (d / "card.md").write_text(" ".join(["word"] * 250) + "\n", encoding="utf-8")
+    assert run(["options", str(repo), "jobs"], capsys)[0] == 0
+    assert (d / "options.yaml").is_file()

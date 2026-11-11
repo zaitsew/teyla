@@ -369,6 +369,9 @@ def do_options(repo: pathlib.Path, did: str) -> list[str]:
         bad = dossier_problems(dp.read_text(encoding="utf-8"))
         if bad:
             raise DesignError(bad[0])
+        over = card_problem(repo, rows, r)             # a card.md that is too long, before anything is written
+        if over:
+            raise DesignError(f"{did}: {over}; shorten the card to {CARD_WORD_LIMIT} words or fewer")
         taste._write_atomic(p, taste.dumps(options_template(rows, r)))
         return [f"wrote {_rel(repo, p)}: fill it (two or three options, the recommended one first), then run this again"]
     data = check_options(repo, did)
