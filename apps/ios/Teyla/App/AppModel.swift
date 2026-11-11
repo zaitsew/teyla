@@ -197,6 +197,7 @@ final class AppModel {
             // Whatever was read with the old key is not the new Mac's.
             snapshot = nil
             connection = .reading
+            clearWidget()
         }
     }
 
@@ -264,8 +265,7 @@ final class AppModel {
 
     /// The widget's copy goes with the Mac it came from.
     private func clearWidget() {
-        guard let url = ActivityWidgetStore.url() else { return }
-        try? FileManager.default.removeItem(at: url)
+        guard let url = ActivityWidgetStore.url(), (try? FileManager.default.removeItem(at: url)) != nil else { return }
         #if canImport(WidgetKit)
         WidgetCenter.shared.reloadTimelines(ofKind: ActivityWidgetStore.kind)
         #endif
@@ -278,6 +278,7 @@ final class AppModel {
         setupFinished = false
         snapshot = nil
         connection = .reading
+        clearWidget()
     }
 
     private func openFolder(_ url: URL?) {
@@ -380,7 +381,9 @@ final class AppModel {
     /// The home-screen widget's copy (counts and levels only) goes to the App Group, and WidgetKit redraws when it changed.
     /// Only a signed snapshot from the paired Mac gets here: the sample and fixtures never write it.
     private func publishWidget(_ snapshot: Snapshot) {
-        guard let data = WidgetBridge.data(from: snapshot), ActivityWidgetStore.write(data) else { return }
+        // A snapshot without activity (a Mac that sends none, or another Mac) must not leave older numbers on the widget.
+        guard let data = WidgetBridge.data(from: snapshot) else { return clearWidget() }
+        guard ActivityWidgetStore.write(data) else { return }
         #if canImport(WidgetKit)
         WidgetCenter.shared.reloadTimelines(ofKind: ActivityWidgetStore.kind)
         #endif
