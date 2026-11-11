@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import pathlib
 import re
+import subprocess
 import sys
 import uuid
 
@@ -52,6 +53,43 @@ class DesignError(Exception):
 
 # --- paths ----------------------------------------------------------------------------------------
 
+WROTE: list[pathlib.Path] = []     # every file a command wrote, in order; `cmd_design` prints it
+
+
+def _wrote(path: pathlib.Path) -> None:
+    WROTE.append(path)
+
+
+def _write(path: pathlib.Path, text: str) -> None:
+    taste._write_atomic(path, text)
+    _wrote(path)
+
+
+def _git_out(cwd: pathlib.Path, *args: str) -> str | None:
+    try:
+        r = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
+
+
+def _common_dir(path: pathlib.Path) -> pathlib.Path | None:
+    out = _git_out(path, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    return pathlib.Path(out).resolve() if out else None
+
+
+def work_repo(product: pathlib.Path, cwd: pathlib.Path | None = None) -> pathlib.Path:
+    """The checkout a design command writes into. When `cwd` is inside a git worktree of the product's
+    own repository (same git common dir), that worktree; otherwise the product's checkout."""
+    cwd = pathlib.Path.cwd() if cwd is None else cwd
+    top = _git_out(cwd, "rev-parse", "--show-toplevel")
+    if not top:
+        return product
+    mine, theirs = _common_dir(pathlib.Path(top)), _common_dir(product)
+    if mine is None or theirs is None or mine != theirs:
+        return product
+    return pathlib.Path(top).resolve()
+
 def root(repo: pathlib.Path) -> pathlib.Path:
     return taste.design_dir(repo) / "decisions"
 
@@ -82,7 +120,7 @@ def load_map(repo: pathlib.Path) -> list[dict]:
 
 def save_map(repo: pathlib.Path, rows: list[dict]) -> None:
     ordered = [{k: r[k] for k in ("id", "title", "journey", "needs", "status") if k in r} for r in rows]
-    taste._write_atomic(map_path(repo), taste.dumps({"decisions": ordered}))
+    _write(map_path(repo), taste.dumps({"decisions": ordered}))
 
 
 def map_problems(rows: list[dict]) -> list[str]:
@@ -163,7 +201,7 @@ def scaffold_map(repo: pathlib.Path) -> list[str]:
     if p.exists():
         rows = valid_map(repo)
         return [f"{_rel(repo, p)}: valid, {len(rows)} decision(s)"]
-    taste._write_atomic(p, taste.dumps({"decisions": [{
+    _write(p, taste.dumps({"decisions": [{
         "id": "jobs", "title": "What the product is for", "journey": "the first day of a new user",
         "needs": [], "status": "open"}]}))
     return [f"wrote {_rel(repo, p)}: edit it to the product's decisions, in dependency order",
@@ -245,7 +283,7 @@ def scaffold_dossier(repo: pathlib.Path, did: str) -> list[str]:
     if p.exists():
         bad = dossier_problems(p.read_text(encoding="utf-8"))
         return [f"{_rel(repo, p)}: " + ("complete" if not bad else bad[0] + (f" (+{len(bad) - 1} more)" if len(bad) > 1 else ""))]
-    taste._write_atomic(p, DOSSIER_TEMPLATE.format(
+    _write(p, DOSSIER_TEMPLATE.format(
         title=r["title"], journey=r["journey"], p1=PARTS[0], p2=PARTS[1], p3=PARTS[2], p4=PARTS[3], p5=PARTS[4]))
     if r["status"] == "open":
         r["status"] = "researching"
@@ -336,7 +374,7 @@ def do_options(repo: pathlib.Path, did: str) -> list[str]:
         bad = dossier_problems(dp.read_text(encoding="utf-8"))
         if bad:
             raise DesignError(bad[0])
-        taste._write_atomic(p, taste.dumps(options_template(rows, r)))
+        _write(p, taste.dumps(options_template(rows, r)))
         return [f"wrote {_rel(repo, p)}: fill it (two or three options, the recommended one first), then run this again"]
     data = check_options(repo, did)
     if (folder(repo, did) / "pick.yaml").exists() and r["status"] in DONE:
@@ -375,6 +413,7 @@ def open_proposal(repo: pathlib.Path, r: dict, option: dict | None, scope: str, 
            "source": "design-cycle"}
     if scope == "all":
         rec["reach"] = "all-products"
+    _wrote(taste.decision_path(repo, did))
     taste.write_json(taste.decision_path(repo, did), rec)
     return did
 
@@ -407,7 +446,7 @@ def do_pick(repo: pathlib.Path, did: str, choice: str, sentence: str, scope: str
     rec: dict = {"option": choice, "sentence": sentence, "date": on, "scope": scope}
     if old is not None:
         rec["supersedes"] = {"option": old.get("option"), "date": old.get("date")}
-    taste._write_atomic(folder(repo, did) / "pick.yaml", taste.dumps(rec))
+    _write(folder(repo, did) / "pick.yaml", taste.dumps(rec))
     r["status"] = "picked"
     save_map(repo, rows)
     drop_card(repo, did)
@@ -458,7 +497,7 @@ def _read_cards() -> dict:
 
 
 def _write_cards(cards: dict) -> None:
-    taste._write_atomic(cards_path(), json.dumps(cards, indent=1, sort_keys=True) + "\n")
+    _write(cards_path(), json.dumps(cards, indent=1, sort_keys=True) + "\n")
 
 
 def register_card(repo: pathlib.Path, rows: list[dict], r: dict, data: dict) -> None:
@@ -556,6 +595,10 @@ def cmd_design(args) -> int:
     except FileNotFoundError as e:
         print(f"teyla design {action}: {e}", file=sys.stderr)
         return 2
+    product = repo.name
+    main = repo
+    repo = work_repo(repo)
+    del WROTE[:]
     try:
         if action == "map":
             lines = scaffold_map(repo)
@@ -586,7 +629,12 @@ def cmd_design(args) -> int:
     except DesignError as e:
         print(f"teyla design {action}: {e}", file=sys.stderr)
         return 1
+    if repo != main:                # hints: the product's name for commands that follow the cwd,
+        lines = [ln.replace(f"--repo {repo.name}", f"--repo {repo}")      # the checkout's path where the file was written
+                 .replace(f" {repo.name} ", f" {product} ") for ln in lines]
     print("\n".join(lines))
+    for w in dict.fromkeys(WROTE):
+        print(f"wrote: {w}")
     return 0
 
 

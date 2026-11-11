@@ -350,3 +350,93 @@ def test_scope_all_keeps_its_reach_through_confirm(repo):
     res = taste.confirm(repo, prop["id"][:8])
     rule = taste.load_file(repo / res["rule_file"])
     assert rule["reach"] == "all-products"
+
+
+# --- which checkout a command writes into ----------------------------------------------------------
+
+def _g(cwd, *args):
+    import subprocess
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.test", "-C", str(cwd), *args],
+                   check=True, capture_output=True)
+
+
+@pytest.fixture
+def git_repo(repo):
+    _g(repo, "init", "-q", "-b", "main")
+    _g(repo, "add", "-A")
+    _g(repo, "commit", "-q", "-m", "init")
+    return repo
+
+
+def _worktree(repo, name):
+    wt = repo.parent / name
+    _g(repo, "worktree", "add", "-q", str(wt), "-b", name)
+    return wt
+
+
+def test_a_command_from_inside_a_worktree_writes_there(git_repo, monkeypatch, capsys):
+    wt = _worktree(git_repo, "wt-one")
+    monkeypatch.chdir(wt)
+    code, out, _ = run(["dossier", str(git_repo), "jobs"], capsys)
+    assert code == 0
+    assert (wt / "design/decisions/jobs/dossier.md").is_file()
+    assert not (git_repo / "design/decisions/jobs/dossier.md").exists()
+    assert f"wrote: {(wt / 'design/decisions/jobs/dossier.md').resolve()}" in out
+    assert f"wrote: {(wt / 'design/decisions/map.yaml').resolve()}" in out      # status went open -> researching
+    assert "then: teyla design options planner jobs" in out                     # hints name the product
+
+
+def test_a_command_from_an_unrelated_directory_writes_in_the_main_checkout(git_repo, tmp_path, monkeypatch, capsys):
+    _worktree(git_repo, "wt-two")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    code, out, _ = run(["dossier", str(git_repo), "jobs"], capsys)
+    assert code == 0
+    assert (git_repo / "design/decisions/jobs/dossier.md").is_file()
+    assert f"wrote: {(git_repo / 'design/decisions/jobs/dossier.md').resolve()}" in out
+
+
+def test_a_worktree_of_another_repository_does_not_redirect(git_repo, tmp_path, monkeypatch, capsys):
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "a.txt").write_text("x")
+    _g(other, "init", "-q", "-b", "main")
+    _g(other, "add", "-A")
+    _g(other, "commit", "-q", "-m", "init")
+    owt = _worktree(other, "wt-other")
+    monkeypatch.chdir(owt)
+    code, _, _ = run(["dossier", str(git_repo), "jobs"], capsys)
+    assert code == 0
+    assert (git_repo / "design/decisions/jobs/dossier.md").is_file()
+    assert not (owt / "design").exists()
+
+
+def test_a_pick_from_a_worktree_prints_every_path_it_wrote(git_repo, monkeypatch, capsys):
+    wt = _worktree(git_repo, "wt-pick")
+    monkeypatch.chdir(wt)
+    rows = dc.load_map(wt)
+    rows[0]["status"] = "picked"
+    dc.save_map(wt, rows)
+    assert run(["options", str(git_repo), "bottom-bar"], capsys)[0] == 0
+    code, out, _ = run(["pick", str(git_repo), "bottom-bar", "none", "--sentence", SENTENCE], capsys)
+    assert code == 0, out
+    wrote = [ln for ln in out.splitlines() if ln.startswith("wrote: ")]
+    assert any(ln.endswith("pick.yaml") for ln in wrote) and any(ln.endswith("map.yaml") for ln in wrote)
+    assert all(str(wt.resolve()) in ln for ln in wrote if "design-cards" not in ln), wrote
+    assert not (git_repo / "design/decisions/bottom-bar/pick.yaml").exists()
+
+
+def test_the_confirm_hint_after_a_worktree_pick_targets_the_worktree(git_repo, monkeypatch, capsys):
+    wt = _worktree(git_repo, "wt-hint")
+    monkeypatch.chdir(wt)
+    rows = dc.load_map(wt)
+    rows[0]["status"] = "picked"
+    dc.save_map(wt, rows)
+    assert run(["options", str(git_repo), "bottom-bar"], capsys)[0] == 0
+    code, out, _ = run(["pick", str(git_repo), "bottom-bar", "none", "--sentence", SENTENCE], capsys)
+    assert code == 0, out
+    hint = next(ln for ln in out.splitlines() if "teyla taste confirm" in ln)
+    assert f"--repo {wt.resolve()}" in hint
+    pid = hint.split("taste confirm ")[1].split(" ")[0]
+    assert cli.main(["taste", "confirm", pid, "--repo", str(wt.resolve())]) == 0
