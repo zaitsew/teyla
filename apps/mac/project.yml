@@ -25,7 +25,7 @@ targets:
         # "Teyla Admin", so Finder, Spotlight and the Dock tell it apart from the store build named Teyla.
         CFBundleName: Teyla Admin
         CFBundleDisplayName: Teyla Admin
-        CFBundleShortVersionString: "0.51.0"
+        CFBundleShortVersionString: "0.52.0"
         CFBundleVersion: "1"
         LSApplicationCategoryType: public.app-category.developer-tools
         LSUIElement: false
@@ -74,7 +74,7 @@ targets:
       properties:
         CFBundleName: Teyla
         CFBundleDisplayName: Teyla
-        CFBundleShortVersionString: "0.51.0"
+        CFBundleShortVersionString: "0.52.0"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSApplicationCategoryType: public.app-category.developer-tools
         LSUIElement: false
