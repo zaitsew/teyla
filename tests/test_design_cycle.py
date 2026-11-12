@@ -27,6 +27,7 @@ def repo(tmp_path):
 
 
 def write_map(repo, rows):
+    dc.map_path(repo).unlink(missing_ok=True)      # a fixture writes a whole map; save_map only patches one
     dc.save_map(repo, rows)
 
 
@@ -440,3 +441,260 @@ def test_the_confirm_hint_after_a_worktree_pick_targets_the_worktree(git_repo, m
     assert f"--repo {wt.resolve()}" in hint
     pid = hint.split("taste confirm ")[1].split(" ")[0]
     assert cli.main(["taste", "confirm", pid, "--repo", str(wt.resolve())]) == 0
+
+
+
+def test_the_confirm_hint_quotes_a_worktree_path_with_a_space(git_repo, monkeypatch, capsys):
+    import shlex
+    wt = git_repo.parent / "wt with space"
+    _g(git_repo, "worktree", "add", "-q", str(wt), "-b", "wt-space")
+    monkeypatch.chdir(wt)
+    rows = dc.load_map(wt)
+    rows[0]["status"] = "picked"
+    dc.save_map(wt, rows)
+    assert run(["options", str(git_repo), "bottom-bar"], capsys)[0] == 0
+    code, out, _ = run(["pick", str(git_repo), "bottom-bar", "none", "--sentence", SENTENCE], capsys)
+    assert code == 0, out
+    hint = next(ln for ln in out.splitlines() if "teyla taste confirm" in ln)
+    words = shlex.split(hint.split("`")[1])
+    assert words[words.index("--repo") + 1] == str(wt.resolve())
+
+
+def test_a_map_that_cannot_be_patched_refuses_before_pick_yaml_is_written(repo, capsys):
+    rows = dc.load_map(repo)
+    rows[0]["status"] = "picked"
+    dc.save_map(repo, rows)
+    assert run(["options", str(repo), "bottom-bar"], capsys)[0] == 0
+    mp = dc.map_path(repo)
+    mp.write_text(mp.read_text(encoding="utf-8").replace("decisions:", '"decisions":', 1), encoding="utf-8")
+    before = mp.read_bytes()
+    code, _, err = run(["pick", str(repo), "bottom-bar", "none", "--sentence", SENTENCE], capsys)
+    assert code == 1 and "cannot update the map in place" in err
+    assert not (repo / "design/decisions/bottom-bar/pick.yaml").exists()
+    assert mp.read_bytes() == before
+
+# --- the map keeps the owner's layout --------------------------------------------------------------
+
+COMMENTED_MAP = """# The redesign map. Order matters.
+decisions:
+  # first, what the product is for
+  - id: jobs
+    status: picked   # settled in week 1
+    title: "What the product is for"
+    journey: 'the first day of a new user'
+    needs: []
+
+  - id: bottom-bar
+    title: The bottom bar and the first screen
+    journey: an ordinary day
+    needs:
+      - jobs   # needs the jobs first
+    status: options
+
+# trailing note kept
+"""
+
+
+def _commented_repo(tmp_path, folder="design"):
+    r = tmp_path / "planner"
+    shutil.copytree(SAMPLES, r / folder / "decisions")
+    (r / folder / "decisions" / "jobs" / "pick.yaml").unlink(missing_ok=True)
+    (r / folder / "decisions" / "map.yaml").write_text(COMMENTED_MAP, encoding="utf-8")
+    return r
+
+
+@pytest.mark.parametrize("folder", ["design", "Design"])
+def test_a_pick_changes_only_the_status_line_of_its_decision(tmp_path, capsys, folder):
+    r = _commented_repo(tmp_path, folder)
+    assert dc.root(r).parent.name == folder
+    before = dc.map_path(r).read_text(encoding="utf-8")
+    code, out, err = run(["pick", str(r), "bottom-bar", "three-tabs", "--sentence", SENTENCE], capsys)
+    assert code == 0, err
+    after = dc.map_path(r).read_text(encoding="utf-8")
+    assert after == before.replace("    status: options\n", "    status: picked\n")
+    assert (r / folder / "decisions" / "bottom-bar" / "pick.yaml").is_file()
+
+
+def test_the_status_edit_keeps_a_trailing_comment(tmp_path):
+    r = _commented_repo(tmp_path)
+    rows = dc.load_map(r)
+    rows[0]["status"] = "built"
+    dc.save_map(r, rows)
+    assert dc.map_path(r).read_text(encoding="utf-8") == COMMENTED_MAP.replace(
+        "status: picked   # settled in week 1", "status: built   # settled in week 1")
+
+
+def test_a_load_and_save_with_no_change_is_byte_identical(tmp_path):
+    r = _commented_repo(tmp_path)
+    dc.save_map(r, dc.load_map(r))
+    assert dc.map_path(r).read_text(encoding="utf-8") == COMMENTED_MAP
+
+
+def test_a_field_that_is_not_in_the_block_goes_after_its_last_key(tmp_path):
+    r = tmp_path / "planner"
+    text = ("decisions:\n"
+            "    - id: a\n"
+            "      title: A\n"
+            "      journey: j\n"
+            "      needs:\n"
+            "        - b\n"
+            "      # note about a\n"
+            "\n"
+            "    - id: b\n"
+            "      title: B\n"
+            "      journey: j\n"
+            "      needs: []\n"
+            "      status: open")                       # no newline at the end of the file
+    p = dc.map_path(r)
+    p.parent.mkdir(parents=True)
+    p.write_text(text, encoding="utf-8")
+    rows = [dict(x) for x in taste.load_file(p)["decisions"]]
+    rows[0]["status"] = "open"
+    rows[1]["status"] = "researching"
+    dc.save_map(r, rows)
+    assert p.read_text(encoding="utf-8") == (
+        "decisions:\n"
+        "    - id: a\n"
+        "      title: A\n"
+        "      journey: j\n"
+        "      needs:\n"
+        "        - b\n"
+        "      status: open\n"
+        "      # note about a\n"
+        "\n"
+        "    - id: b\n"
+        "      title: B\n"
+        "      journey: j\n"
+        "      needs: []\n"
+        "      status: researching")
+
+
+def test_a_restructured_map_is_refused_not_rewritten(tmp_path):
+    r = _commented_repo(tmp_path)
+    rows = dc.load_map(r)
+    rows.append({"id": "extra", "title": "T", "journey": "j", "needs": [], "status": "open"})
+    with pytest.raises(dc.DesignError, match="cannot update the map in place"):
+        dc.save_map(r, rows)
+    assert dc.map_path(r).read_text(encoding="utf-8") == COMMENTED_MAP
+
+
+def test_blocks_that_start_with_another_key_are_patched_in_place(tmp_path):
+    r = tmp_path / "planner"
+    text = ("decisions:\n"
+            "  - title: First   # kept\n"
+            "    journey: j\n"
+            "    status: open\n"
+            "    needs: []\n"
+            "    id: a\n"
+            "  - journey: j\n"
+            "    id: b\n"
+            "    title: Second\n"
+            "    needs:\n"
+            "      - a\n")
+    p = dc.map_path(r)
+    p.parent.mkdir(parents=True)
+    p.write_text(text, encoding="utf-8")
+    rows = dc.load_map(r)
+    rows[0]["status"] = "picked"
+    rows[1]["status"] = "open"
+    dc.save_map(r, rows)
+    assert p.read_text(encoding="utf-8") == text.replace("status: open", "status: picked") + "    status: open\n"
+
+
+def test_a_crlf_map_keeps_its_line_endings(tmp_path):
+    r = _commented_repo(tmp_path)
+    crlf = COMMENTED_MAP.replace("\n", "\r\n")
+    dc.map_path(r).write_bytes(crlf.encode("utf-8"))
+    dc.save_map(r, dc.load_map(r))
+    assert dc.map_path(r).read_bytes() == crlf.encode("utf-8")
+    rows = dc.load_map(r)
+    rows[1]["status"] = "picked"
+    dc.save_map(r, rows)
+    want = crlf.replace("    status: options\r\n", "    status: picked\r\n")
+    assert dc.map_path(r).read_bytes() == want.encode("utf-8")
+
+
+def test_the_design_folder_is_found_in_the_case_it_has(tmp_path):
+    r = tmp_path / "p"
+    (r / "Design" / "decisions").mkdir(parents=True)
+    assert dc.root(r).parts[-2:] == ("Design", "decisions")
+    assert taste.design_dir(tmp_path / "none").name == "design"
+
+
+# --- the card's 250-word limit ---------------------------------------------------------------------
+
+def _rendered_words(repo, did="bottom-bar"):
+    rows = dc.valid_map(repo)
+    r = dc.row(rows, did)
+    return dc.count_words(dc.card_text(dc.card_for(repo, rows, r, dc.load_options(repo, did))))
+
+
+def _size_rendered_card(repo, words, did="bottom-bar"):
+    """Make the card Teyla renders for `did` exactly `words` words long, by padding the first summary."""
+    p = dc.folder(repo, did) / "options.yaml"
+    data = taste.load_file(p)
+    data["options"][0]["summary"] = "pad"
+    p.write_text(taste.dumps(data), encoding="utf-8")
+    extra = words - _rendered_words(repo, did)
+    assert extra >= 0
+    data["options"][0]["summary"] = " ".join(["pad"] * (1 + extra))
+    p.write_text(taste.dumps(data), encoding="utf-8")
+    assert _rendered_words(repo, did) == words
+
+
+def test_count_words_skips_syntax_only_tokens():
+    assert dc.count_words("# Title\n\n- one two\n---\n* three | four\n> five\n1. six") == 8
+
+
+@pytest.mark.parametrize("words,ok", [(250, True), (251, False)])
+def test_a_rendered_card_over_250_words_fails_options_and_status(repo, capsys, words, ok):
+    _size_rendered_card(repo, words)
+    code, out, err = run(["options", str(repo), "bottom-bar"], capsys)
+    if ok:
+        assert code == 0, err
+    else:
+        assert code == 1 and f"card: {words} words, limit 250" in err
+        assert dc.load_map(repo)[1]["status"] != "options"            # nothing was written
+    rows = dc.load_map(repo)
+    rows[1]["status"] = "options"
+    dc.save_map(repo, rows)
+    code, out, err = run(["status", str(repo)], capsys)
+    if ok:
+        assert code == 0 and "FAIL" not in out
+    else:
+        assert code == 1 and f"card: {words} words, limit 250" in out and f"card: {words} words, limit 250" in err
+
+
+@pytest.mark.parametrize("words,ok", [(250, True), (251, False)])
+def test_a_card_md_over_250_words_fails_options_and_status(repo, capsys, words, ok):
+    (dc.folder(repo, "bottom-bar") / "card.md").write_text("# Card\n\n- " + " ".join(["word"] * (words - 1)) + "\n", encoding="utf-8")
+    code, out, err = run(["options", str(repo), "bottom-bar"], capsys)
+    if ok:
+        assert code == 0, err
+    else:
+        assert code == 1 and f"card.md: {words} words, limit 250" in err
+    rows = dc.load_map(repo)
+    rows[1]["status"] = "options"
+    dc.save_map(repo, rows)
+    code, out, err = run(["status", str(repo)], capsys)
+    assert (code == 0) is ok
+    assert (f"card.md: {words} words, limit 250" in out) is (not ok)
+
+
+def test_card_md_wins_over_the_rendered_card(repo, capsys):
+    _size_rendered_card(repo, 300)
+    (dc.folder(repo, "bottom-bar") / "card.md").write_text("Short card.\n", encoding="utf-8")
+    assert run(["options", str(repo), "bottom-bar"], capsys)[0] == 0
+
+
+def test_a_long_card_md_stops_options_before_it_scaffolds_options_yaml(repo, capsys):
+    d = dc.folder(repo, "jobs")
+    d.mkdir(parents=True, exist_ok=True)
+    shutil.copy(dc.folder(repo, "bottom-bar") / "dossier.md", d / "dossier.md")
+    (d / "card.md").write_text(" ".join(["word"] * 251) + "\n", encoding="utf-8")
+    code, out, err = run(["options", str(repo), "jobs"], capsys)
+    assert code == 1 and "card.md: 251 words, limit 250" in err
+    assert not (d / "options.yaml").exists()
+    (d / "card.md").write_text(" ".join(["word"] * 250) + "\n", encoding="utf-8")
+    assert run(["options", str(repo), "jobs"], capsys)[0] == 0
+    assert (d / "options.yaml").is_file()
