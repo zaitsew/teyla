@@ -31,9 +31,12 @@ while read -r _lref lsha _rref rsha; do
   fi
   "$py" scripts/leak_check.py --commits "$range" </dev/null || fail=1
   # Does the pushed range touch code the tests cover? ($range is shas and --not only.)
+  # -m --first-parent makes a merge commit list the files it changes against its first parent:
+  # plain `git log --name-only` prints none for a merge, so main merged into a feature branch
+  # (the merge being the only new commit) used to skip the tests.
   # shellcheck disable=SC2086
-  if [ -n "$(git log --name-only --pretty=format: $range -- src tests apps scripts packages \
-      pyproject.toml check.sh .githooks 2>/dev/null)" ]; then touched=1; fi
+  if [ -n "$(git log -m --first-parent --name-only --pretty=format: $range -- src tests apps \
+      scripts packages pyproject.toml check.sh .githooks 2>/dev/null)" ]; then touched=1; fi
 done
 if [ "$fail" -ne 0 ]; then
   echo "pre-push: leak check failed; fix the findings above (private terms: CONTRIBUTING.md)" >&2
