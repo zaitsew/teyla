@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
 import Observation
 import UIKit
 
@@ -194,6 +197,7 @@ final class AppModel {
             // Whatever was read with the old key is not the new Mac's.
             snapshot = nil
             connection = .reading
+            clearWidget()
         }
     }
 
@@ -256,6 +260,15 @@ final class AppModel {
         snapshot = nil
         connection = .reading
         setPending([])
+        clearWidget()
+    }
+
+    /// The widget's copy goes with the Mac it came from.
+    private func clearWidget() {
+        guard let url = ActivityWidgetStore.url(), (try? FileManager.default.removeItem(at: url)) != nil else { return }
+        #if canImport(WidgetKit)
+        WidgetCenter.shared.reloadTimelines(ofKind: ActivityWidgetStore.kind)
+        #endif
     }
 
     func restartPairing() {
@@ -265,6 +278,7 @@ final class AppModel {
         setupFinished = false
         snapshot = nil
         connection = .reading
+        clearWidget()
     }
 
     private func openFolder(_ url: URL?) {
@@ -318,6 +332,7 @@ final class AppModel {
                     snapshot = decoded
                     startupBlocks = (decoded.generated, PhoneStartupIndex.decode(json))
                     connection = .live
+                    publishWidget(decoded)
                 } else {
                     snapshot = nil
                     connection = .waiting
@@ -361,6 +376,17 @@ final class AppModel {
             return n
         }.value
         tasteDelivered += delivered
+    }
+
+    /// The home-screen widget's copy (counts and levels only) goes to the App Group, and WidgetKit redraws when it changed.
+    /// Only a signed snapshot from the paired Mac gets here: the sample and fixtures never write it.
+    private func publishWidget(_ snapshot: Snapshot) {
+        // A snapshot without activity (a Mac that sends none, or another Mac) must not leave older numbers on the widget.
+        guard let data = WidgetBridge.data(from: snapshot) else { return clearWidget() }
+        guard ActivityWidgetStore.write(data) else { return }
+        #if canImport(WidgetKit)
+        WidgetCenter.shared.reloadTimelines(ofKind: ActivityWidgetStore.kind)
+        #endif
     }
 
     private func loadSample() {

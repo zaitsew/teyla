@@ -64,6 +64,11 @@ Requires iOS 18 and Xcode. Scanning needs a real device; on a simulator, paste t
   (`Core/TasteDelivery.swift`); the Mac imports it ([`docs/TASTE.md`](../../docs/TASTE.md#from-the-phone)). The extension
   holds no key. The App Group must be registered for both bundle ids, and `CURRENT_PROJECT_VERSION` is set on both targets.
 
+- **The activity widget.** `TeylaWidget` shows GitHub contributions and growth activity as two grids with today's number
+  (home screen small and medium, Lock Screen). The app writes `activity-widget.json` (counts and levels only) into the App Group
+  after each signed snapshot (`Core/WidgetBridge.swift`, `Shared/ActivityWidgetData.swift`); the widget reads nothing else. The
+  bundle id `com.zaitsew.teyla.widget` needs the App Group too. See [`docs/APP.md`](../../docs/APP.md#the-activity-widget-iphone-home-screen-and-lock-screen).
+
 ## Development
 
 ```sh

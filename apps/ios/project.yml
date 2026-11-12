@@ -21,6 +21,9 @@ targets:
       # The Share extension's queue: compiled into the extension too, and depends on nothing else.
       - path: Shared/TasteQueue.swift
         group: Shared
+      # What the activity widget draws: the app writes it into the App Group, the widget reads it.
+      - path: Shared/ActivityWidgetData.swift
+        group: Shared
       # The snapshot models and text helpers are shared with the Mac app, not copied.
       - path: ../mac/Teyla/Core/Models.swift
         group: Shared
@@ -70,6 +73,8 @@ targets:
     # The Share extension (docs/TASTE.md, "From the phone"). It is embedded in the app.
     dependencies:
       - target: TeylaShare
+      # The home-screen and Lock Screen activity widget (docs/APP.md, "The activity widget").
+      - target: TeylaWidget
     # The App Group is the queue the extension writes and the app empties. The relay key stays in the app's Keychain.
     entitlements:
       path: Teyla/Teyla.entitlements
@@ -149,6 +154,39 @@ targets:
         SWIFT_VERSION: "5.0"
         SKIP_INSTALL: YES
         APPLICATION_EXTENSION_API_ONLY: YES
+  TeylaWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - TeylaWidget
+      # Compiled into the app too; it depends on nothing else, so the widget never holds the relay key.
+      - path: Shared/ActivityWidgetData.swift
+        group: Shared
+    entitlements:
+      path: TeylaWidget/TeylaWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.zaitsew.teyla
+    info:
+      path: TeylaWidget/Info.plist
+      properties:
+        CFBundleName: Teyla
+        CFBundleDisplayName: Teyla
+        CFBundleShortVersionString: "0.51.0"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_NAME: TeylaWidget
+        PRODUCT_BUNDLE_IDENTIFIER: com.zaitsew.teyla.widget
+        TARGETED_DEVICE_FAMILY: "1"
+        CURRENT_PROJECT_VERSION: 10
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: TeylaWidget/Info.plist
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
   TeylaTests:
     type: bundle.unit-test
     platform: iOS
@@ -158,6 +196,8 @@ targets:
       - Teyla/Core
       - Teyla/App/AppModel.swift
       - path: Shared/TasteQueue.swift
+        group: Shared
+      - path: Shared/ActivityWidgetData.swift
         group: Shared
       - path: ../mac/Teyla/Core/Models.swift
         group: Shared
