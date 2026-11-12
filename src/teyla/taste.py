@@ -255,6 +255,16 @@ def today() -> str:
 
 
 def design_dir(repo: pathlib.Path) -> pathlib.Path:
+    """The product's design folder in the case it has on disk: `design/`, or `Design/` in one product."""
+    try:
+        names = {c.name: c for c in repo.iterdir() if c.is_dir()}
+    except OSError:
+        names = {}
+    if "design" in names:
+        return names["design"]
+    for n, c in sorted(names.items()):
+        if n.lower() == "design":
+            return c
     return repo / "design"
 
 

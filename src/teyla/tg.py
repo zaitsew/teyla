@@ -3,6 +3,7 @@
     teyla tg setup [--no-agent]     paste the bot token (read hidden), pair your Telegram account, start the agent
     teyla tg check [--json]         token, pairing, agent, last poll: prints OK when all four hold
     teyla tg send                   send the current card again (the same as /asks in the chat)
+    teyla tg activity [off]         send the activity widget (the same as /activity); `off` stops its updates
     teyla tg digest HH:MM|off       one morning line with the count of waiting questions (off by default)
     teyla tg serve                  the long-poll loop the launchd agent runs
     teyla tg off                    stop the agent; the token and the pairing stay
@@ -10,6 +11,10 @@
 There is no server and no webhook. The launchd agent `com.zaitsew.teyla.tg` long-polls `getUpdates` from the
 laptop. When the laptop sleeps nothing answers, and the card shows "Laptop offline since HH:MM" from the time of
 its last edit (the agent rewrites the card every HEARTBEAT_S seconds).
+
+The activity widget (`tg_activity.py`) is a second, read-only widget message: two contribution grids with today's
+numbers. It exists only after `teyla tg activity` or `/activity`; its message id is `activity_msg` in `tg.json`, and
+the heartbeat edits its `chat_data` when the numbers change (and at least every ACTIVITY_REFRESH_S seconds).
 
 A tap here can make Teyla type into a coding session that runs with bypassed permissions, so this path does
 exactly what `teyla answer`, `teyla asks done` and `teyla asks snooze` do, and nothing more:
@@ -57,7 +62,7 @@ import urllib.request
 
 from . import asks, config, net
 from . import routine_install as ri
-from . import tg_card
+from . import tg_activity, tg_card
 
 LABEL = "com.zaitsew.teyla.tg"
 KEYCHAIN_SERVICE = "teyla-telegram"
@@ -66,6 +71,7 @@ API = "https://api.telegram.org/bot{token}/{method}"
 
 POLL_TIMEOUT_S = 20            # long poll; also how long `teyla tg send` may wait for the agent to pick it up
 HEARTBEAT_S = 300              # rewrite the card this often, so the widget can tell the laptop is offline
+ACTIVITY_REFRESH_S = 540       # rewritten at least this often; + HEARTBEAT_S + POLL_TIMEOUT_S stays under tg_activity.OFFLINE_S
 POLL_FRESH_S = 120             # `check`: the agent polled within this window
 TAP_WAIT_S = 9.0               # answer a tap with the next card when the work is done within this; else "working"
 DELIVERY_GAP_S = 5
@@ -279,7 +285,7 @@ class Bot:
     `answer_fn`, `done_fn` and `snooze_fn` are the CLI's own functions (tests pass fakes)."""
 
     def __init__(self, tok: str, cfg: dict, *, api=None, queue_fn=None, answer_fn=None, done_fn=None,
-                 snooze_fn=None, clock=None):
+                 snooze_fn=None, clock=None, activity_fn=None):
         self.tok, self.cfg = tok, cfg
         self.owner = int(cfg["owner_id"])
         self.chat = int(cfg["chat_id"])
@@ -292,6 +298,7 @@ class Bot:
         self.done_fn = done_fn or (lambda ask_id: asks.mark_done([ask_id], note="done in Telegram"))
         self.snooze_fn = snooze_fn or (lambda ask_id: asks.snooze(ask_id, 1))
         self.clock = clock or _now
+        self.activity_fn = activity_fn or tg_activity.collect
         self.lock = threading.RLock()
         self.st = _read_json(state_path())
         self.st.setdefault("offset", 0)
@@ -420,6 +427,55 @@ class Bot:
             self.save()
         log("card_sent", ask=self.card.get("ask", ""))
         return msg
+
+    def activity_state(self) -> str:
+        growth, github = self.activity_fn(self.clock())
+        return tg_activity.state(growth, github, self.clock())
+
+    def send_activity(self) -> int | None:
+        """Send the activity widget as a new message and remember its id (`activity_msg` in tg.json)."""
+        data = self.activity_state()
+        res = self.api("sendWidget", {"chat_id": self.chat, "html": tg_activity.build_html(), "height": 0,
+                                      "chat_data": data, "protect_content": True})
+        msg = res.get("message_id") if isinstance(res, dict) else None
+        c = read_cfg()
+        c.update(activity_msg=msg, activity_hash=tg_activity.key(data), activity_at=int(self.clock()))
+        write_cfg(c)
+        log("activity_sent")
+        return msg
+
+    def push_activity(self) -> None:
+        """Edit the activity widget's data when the numbers changed, or ACTIVITY_REFRESH_S passed. Does nothing
+        until `teyla tg activity` or /activity has sent the widget."""
+        c = read_cfg()
+        msg = c.get("activity_msg")
+        if type(msg) is not int:
+            return
+        try:
+            data = self.activity_state()
+        except Exception as e:                       # noqa: BLE001 — never stop the heartbeat for a read error
+            log("activity_failed", detail=type(e).__name__)
+            return
+        k = tg_activity.key(data)
+        if k == c.get("activity_hash") and self.clock() - float(c.get("activity_at") or 0) < ACTIVITY_REFRESH_S:
+            return
+        try:
+            self.api("editMessageWidgetData", {"chat_id": self.chat, "message_id": msg, "chat_data": data})
+        except TgError as e:
+            desc = str(e).lower()
+            if "not modified" not in desc:
+                if "not found" in desc or "message_id_invalid" in desc or "can't be edited" in desc:
+                    c = read_cfg()
+                    for f in ("activity_msg", "activity_hash", "activity_at"):
+                        c.pop(f, None)
+                    write_cfg(c)
+                    log("activity_gone")
+                else:
+                    log("activity_edit_failed", detail=str(e)[:120])
+                return
+        c = read_cfg()
+        c.update(activity_hash=k, activity_at=int(self.clock()))
+        write_cfg(c)
 
     def say(self, text: str) -> None:
         try:
@@ -589,11 +645,18 @@ class Bot:
                 self.save()
             self.send_card()
             return
+        if cmd == "/activity":
+            try:
+                self.send_activity()
+            except TgError as e:
+                log("activity_failed", detail=str(e)[:120])
+                self.say("Could not send the activity widget; try again in a moment.")
+            return
         if cmd == "/help":
             return self.say("Tap an answer on the card, or reply with text to answer in your own words (you confirm "
-                            "it first). /asks sends the current card again.")
+                            "it first). /asks sends the current card again; /activity sends the activity widget.")
         if cmd:
-            return self.say("Unknown command. /asks sends the current card; /help says how this works.")
+            return self.say("Unknown command. /asks sends the current card, /activity the activity widget; /help says how this works.")
         self.free_text(text)
 
     def free_text(self, text: str) -> None:
@@ -628,7 +691,12 @@ class Bot:
             self.push_view()
 
     def heartbeat(self) -> None:
-        """Rewrite the card: a new time, a new count, and the next ask when this one was closed elsewhere."""
+        """Rewrite the card: a new time, a new count, and the next ask when this one was closed elsewhere. Then the
+        activity widget, when there is one."""
+        try:
+            self.push_activity()
+        except Exception as e:                       # noqa: BLE001 — the card heartbeat must run regardless
+            log("activity_failed", detail=type(e).__name__)
         with self.lock:
             card = self.card
             if card.get("busy") or not card.get("msg"):
@@ -929,6 +997,25 @@ def cmd_tg(args) -> int:
         print(f"teyla tg: {err}", file=sys.stderr)
         return 1
     lock = _Lock()
+    if act == "activity":
+        if (args.value or "") == "off":
+            c = read_cfg()
+            had = c.pop("activity_msg", None) is not None
+            for f in ("activity_hash", "activity_at"):
+                c.pop(f, None)
+            write_cfg(c)
+            print("activity widget forgotten: no more edits" if had else "no activity widget was set")
+            return 0
+        if args.value:
+            print("usage: teyla tg activity [off]", file=sys.stderr)
+            return 64
+        try:
+            bot.send_activity()
+        except TgError as e:
+            print(f"teyla tg activity: {e}", file=sys.stderr)
+            return 1
+        print("activity widget sent; the agent keeps it current every 5 minutes")
+        return 0
     if act == "send":
         if not lock.acquire():
             resend_flag().parent.mkdir(parents=True, exist_ok=True)
@@ -958,8 +1045,8 @@ def cmd_tg(args) -> int:
 def register(sp):
     q = sp.add_parser("tg", help="your open questions as a card in a private Telegram chat")
     q.set_defaults(fn=cmd_tg)
-    q.add_argument("action", choices=["setup", "check", "send", "digest", "serve", "off"])
-    q.add_argument("value", nargs="?", help="digest: HH:MM or off")
+    q.add_argument("action", choices=["setup", "check", "send", "activity", "digest", "serve", "off"])
+    q.add_argument("value", nargs="?", help="digest: HH:MM or off; activity: off")
     q.add_argument("--json", action="store_true", help="check: print JSON")
     q.add_argument("--no-agent", action="store_true", help="setup: pair only, do not install the launchd agent")
     return q
