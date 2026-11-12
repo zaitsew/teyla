@@ -96,6 +96,41 @@ def test_every_code_directory_triggers_the_gate(box, path):
     assert "check" in box.marked()
 
 
+def merged_main_into_feature(box, main_files: dict[str, str]) -> str:
+    """Main gains `main_files` and is pushed; a feature branch (docs only, already pushed) then merges
+    main. The merge commit is the only commit the destination lacks."""
+    git(box.repo, "checkout", "-q", "-b", "feature")
+    commit(box.repo, {"docs/NOTE.md": "a note\n"}, "docs on feature")
+    git(box.repo, "push", "-q", "--no-verify", str(box.dest), "feature:refs/heads/feature")
+    git(box.repo, "checkout", "-q", "main")
+    main_sha = commit(box.repo, main_files, "main moves")
+    git(box.repo, "push", "-q", "--no-verify", str(box.dest), f"{main_sha}:refs/heads/main")
+    git(box.repo, "checkout", "-q", "feature")
+    git(box.repo, "merge", "-q", "--no-ff", "-m", "merge main", "main")
+    assert len(git(box.repo, "rev-list", "--parents", "-n", "1", "HEAD").split()) == 3   # a real merge
+    return git(box.repo, "rev-parse", "HEAD")
+
+
+def test_merge_commit_that_brings_code_runs_the_tests(box):
+    sha = merged_main_into_feature(box, {"src/mod.py": "x = 1\n"})
+    p = box.push(sha)
+    assert p.returncode == 0, p.stderr
+    assert box.marked() == ["teyla load --wait --kind build", "check"]
+
+
+def test_merge_commit_that_brings_only_docs_skips_the_tests(box):
+    sha = merged_main_into_feature(box, {"docs/OTHER.md": "other\n"})
+    assert box.push(sha).returncode == 0
+    assert box.marked() == []
+
+
+def test_merge_commit_with_code_still_honours_the_escape_hatch(box):
+    sha = merged_main_into_feature(box, {"src/mod.py": "x = 1\n"})
+    p = box.push(sha, TEYLA_PREPUSH_TESTS="0")
+    assert p.returncode == 0 and box.marked() == []
+    assert len((box.home / "prepush-skips.log").read_text().splitlines()) == 1
+
+
 def test_docs_only_push_skips_the_tests(box):
     sha = commit(box.repo, {"docs/NOTE.md": "a note\n"}, "docs")
     assert box.push(sha).returncode == 0
