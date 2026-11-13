@@ -107,6 +107,7 @@
   teyla routines [path...] [--json]                               routines + manual checks from every repo's teyla.toml
   teyla check <product> <check> ok|broken [--note TEXT]            confirm a manual check: status + today's date in its teyla.toml
   teyla digest [--write] [--no-notify]                            the weekly digest: the top three actions, each with its command
+  teyla digest director [--out FILE] [--json] [--stdout] [--quiet] the weekly director brief: one file, reads only
   teyla routine install|status|catch-up [--if-stale] [--dry]     Teyla's own daily (update+doctor) and weekly launchd routines; catch-up runs what launchd skipped
   teyla grok-cost [--last|--session ID] [--cwd PATH] [--days N] [--by project|session] [--json]   Grok CLI cost at list price
   teyla mcp [--list-tools]                                       Teyla as an MCP server on stdio: asks, answer, intent, load, routines, monitor
