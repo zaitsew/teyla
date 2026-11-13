@@ -42,7 +42,8 @@
   teyla tg digest HH:MM|off                                        a morning line in that chat with the count of waiting questions
   teyla say <ref> [--json] [--dry] -- <text>                       correct a running session (Codex: queued; else copy and open)
   teyla dispatch <product> [--harness codex|claude] [--model M] [--json] [--dry] -- <text>   start new work in a fresh worktree
-  teyla spend [--days N] [--by-day] [--alert] [--json]           what the AI work cost, which part bought nothing; --by-day: subagent cost by model family
+  teyla brief slots [--json]                                      the sprint slots: open contracts, what each waits at, a WARN at a third (refuses nothing)
+  teyla spend [--days N] [--by-day][--alert] [--json]           what the AI work cost, which part bought nothing; --by-day: subagent cost by model family
   teyla lanes [--days N] [--project SUBSTR] [--json]             subagent lanes by type and model: cost, turns, peak context, review P1s
   teyla prose [--days N] [--project SUBSTR] [--json]             final reply length, long sentences, ban-list hits and preambles
   teyla voice check <file|-> --chart <dir|file> [--lang L] [--format F] [--model] [--json]   a draft against a voice chart
@@ -106,6 +107,7 @@
   teyla routines [path...] [--json]                               routines + manual checks from every repo's teyla.toml
   teyla check <product> <check> ok|broken [--note TEXT]            confirm a manual check: status + today's date in its teyla.toml
   teyla digest [--write] [--no-notify]                            the weekly digest: the top three actions, each with its command
+  teyla digest director [--out FILE] [--json] [--stdout] [--quiet] the weekly director brief: one file, reads only
   teyla routine install|status|catch-up [--if-stale] [--dry]     Teyla's own daily (update+doctor) and weekly launchd routines; catch-up runs what launchd skipped
   teyla grok-cost [--last|--session ID] [--cwd PATH] [--days N] [--by project|session] [--json]   Grok CLI cost at list price
   teyla mcp [--list-tools]                                       Teyla as an MCP server on stdio: asks, answer, intent, load, routines, monitor

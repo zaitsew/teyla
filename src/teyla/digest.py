@@ -28,6 +28,8 @@ per ISO week are kept in `~/.teyla/digest-history.json`). The session-start hook
 headline once, at the first session after it was written; `teyla digest` prints the file. On
 macOS a notification is posted when it is written (`teyla config set digest.notify=false`
 turns that off).
+
+`teyla digest director` writes the weekly director brief (src/teyla/director.py, docs/OPERATING.md).
 """
 from __future__ import annotations
 
@@ -480,6 +482,9 @@ def write(findings: list[dict] | None = None, doctor_checks: list[dict] | None =
 
 
 def cmd_digest(args) -> int:
+    if args.what == "director":
+        from . import director
+        return director.cmd_director(args)
     if args.write:
         try:
             from . import spend
@@ -503,4 +508,10 @@ def register(sp):
     q.set_defaults(fn=cmd_digest)
     q.add_argument("--write", action="store_true", help="build ~/.teyla/digest.md now (the weekly routine does this)")
     q.add_argument("--no-notify", action="store_true", help="--write: no macOS notification")
+    q.add_argument("what", nargs="?", choices=["director"],
+                   help="director: the weekly director brief, one file (reads only; docs/OPERATING.md)")
+    q.add_argument("--out", metavar="FILE", help="director: write the brief here instead of ~/.teyla/director/<week>.md")
+    q.add_argument("--stdout", action="store_true", help="director: print the brief, write nothing")
+    q.add_argument("--json", action="store_true", help="director: print the facts as JSON, write nothing")
+    q.add_argument("--quiet", action="store_true", help="director: write the file, print nothing")
     return q
