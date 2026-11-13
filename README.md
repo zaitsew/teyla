@@ -4,11 +4,16 @@
 </picture></h1>
 
 <p align="center"><b>The control room for working with AI agents on one Mac.</b><br>
-Tick the packs you need. Teyla turns on only those, and names another one when its problem shows up.</p>
+What your agent sessions cost, what waits on you, and where each product stands.</p>
 
 Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's waiting on you, and fixes the waste. Nothing about your sessions leaves your Mac unless you turn it on.
 
-![The Start page of teyla web: what 30 days of sessions cost, and the first changes that would save money](docs/img/web-start.png)
+It is a command-line tool with a Mac and an iPhone app, for a person who builds products with AI agents. It also reads Grok, Cursor and Hermes sessions, keeps every question an agent left for you on one screen, and keeps one line per product on where it stands.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/mac/today-dark.png">
+  <img alt="Today in Teyla for Mac, on sample data: each goal as a row of circles that fill with real outcomes, the next step for the first goal, and a year of activity as a grid" src="docs/img/mac/today-light.png" width="820">
+</picture>
 
 <p align="center"><a href="https://teyla.dev">teyla.dev</a> · <a href="#set-it-up-with-your-agent">Set up</a> · <a href="#pick-your-packs">Packs</a> · <a href="docs/GUIDE.md">Guide</a> · <a href="docs/COMMANDS.md">Commands</a> · <a href="docs/PRIVACY.md">Privacy</a> · <a href="CHANGELOG.md">Changelog</a> · <a href="CONTRIBUTING.md">Contributing</a> · <a href="LICENSE">Apache-2.0</a></p>
 
@@ -52,7 +57,7 @@ Teyla is a kit. `teyla start` opens with this checklist, and only the ticked pac
 | 🔐 | **Security** `security` | A secret ends up in a commit or a public repo | Refuses a publish that carries a secret; audits repos and dependencies |
 | 🎨 | **UX and UI** `design` | Screens ship with noise and weak hierarchy | Checks UI code against one standard; judges two screens |
 | 🚀 | **Ship and test** `ship` | A build is uploaded, but no tester can install it | Tracks each platform, unreviewed merges, comments from the real app |
-| ✍️ | **Writing** `writing` | Replies and READMEs are long, padded and out of date | Measures filler, checks drafts against a voice chart |
+| ✍️ | **Writing** `writing` | Replies and READMEs are long, padded and out of date | Measures filler, checks drafts against a voice chart, flags a README that fell behind |
 
 The first six are automatic: they change a setting, a hook or a launchd job. The last four add commands you run on a repo and install nothing. `teyla features` shows which are on; `teyla features on disk` turns one on later. [FEATURES.md](docs/FEATURES.md) lists every switch.
 
@@ -74,28 +79,50 @@ Subagents cost $390; Opus ran 64% of that.
   O2 Run subagents on Sonnet unless they say otherwise: about $60-$140 a month
 ```
 
-*List price* is what the tokens would cost through the API; a subscription bills differently. *Context* is everything a session has read so far, re-read on every turn. A *subagent* is a helper agent a session starts for one side task. `teyla spend --days 7` and `teyla web` show the same numbers later; `teyla spend --session <id>` breaks one session down by model and by day. `teyla brief` puts a dollar and hour budget on a build session and stops new subagents at 80% (see docs/COMMANDS.md). `teyla brief slots` shows the open sprint contracts, what each one waits at, and warns at a third ([OPERATING.md](docs/OPERATING.md#sprint-slots)).
+*List price* is what the tokens would cost through the API; a subscription bills differently. *Context* is everything a session has read so far, re-read on every turn. A *subagent* is a helper agent a session starts for one side task.
 
-## What's waiting on you
+- `teyla spend --days 7` shows the same numbers later; `teyla spend --session <id>` breaks one session down by model and by day.
+- `teyla brief` puts a dollar and hour budget on a build session and stops new subagents at 80% ([COMMANDS.md](docs/COMMANDS.md)).
+- `teyla brief slots` shows the open sprint contracts, what each one waits at, and warns at a third ([OPERATING.md](docs/OPERATING.md#sprint-slots)).
+- `teyla web` opens the same diagnosis in your browser, on 127.0.0.1 only:
 
-`teyla today` is the daily screen: the questions agents left, your notes, this week's spend against last week's, and one next step. `teyla today score` is the outcome scoreboard: posts, conversations, first value on your focus products, open decisions and builds to try ([OPERATING.md](docs/OPERATING.md#outcome-scoreboard)). `teyla asks` lists every open question, oldest first, with a link that reopens the session. `teyla asks expire` is a dry run that shows which questions older than 14 days would take their default or be dropped; `--apply` closes them. `teyla tg setup` puts the same queue in a private Telegram chat: one card shows the current question, the recommended answer first, and one tap sends it to the session that asked. Reply with text to answer in your own words; you confirm it on the card first. The bot runs from your Mac, with no server, and answers only your Telegram account. [ASKS.md](docs/ASKS.md#telegram) has the details.
+![The Start page of teyla web: what 30 days of sessions cost, and the first changes that would save money](docs/img/web-start.png)
 
-A *product* is a repo, or a few, that you ship as one thing. `teyla product init` proposes the list from your repos. `teyla portfolio` gives each one a health word (off track, at risk, on track, parked), the reason, and one line per platform: version, build, live, in review or behind. `teyla note "try a dark icon"` keeps an idea under a product.
+## What waits on you
 
-`teyla taste add https://example.com "great neutral design"` keeps a design or text you like or dislike as evidence (screenshots, styles, your sentence), so agents can learn your taste. [TASTE.md](docs/TASTE.md) has the corpus. A redesign runs as a *design cycle*: a map of decisions in dependency order, one decision at a time. For each, agents write a dossier (your words, usage, guidelines, how other products solve it, what practitioners report) before any option exists. `teyla design options <product> <id>` accepts two or three options, the recommended one first, and puts a card in `teyla asks`. Answer it with `teyla answer <id> <option> <your reason>`: the pick is stored with your words and opens a taste rule proposal for you to confirm. `teyla design status <product>` shows the map. [CYCLE.md](templates/design/CYCLE.md) has the steps and file formats. `teyla usage <product>` reports what testers use in a test build, only with their consent; a product with its own backend sends batches itself ([REVIEW.md](docs/REVIEW.md)).
+- `teyla today` is the daily screen: the questions agents left, your notes, this week's spend against last week's, and one next step.
+- `teyla today score` is the outcome scoreboard: posts, conversations, first value on your focus products, open decisions and builds to try ([OPERATING.md](docs/OPERATING.md#outcome-scoreboard)).
+- `teyla asks` lists every open question, oldest first, with a link that reopens the session. `teyla answer` sends your answer into the session that asked. `teyla asks expire` is a dry run that shows which questions older than 14 days would take their default or be dropped; `--apply` closes them.
+- `teyla tg setup` puts the queue in a private Telegram chat. One card shows the current question, the recommended answer first; one tap sends it. The bot runs from your Mac, with no server, and answers only your account. `teyla tg activity` adds a card with your GitHub and growth activity. [ASKS.md](docs/ASKS.md#telegram) has the details.
+- `teyla note "try a dark icon"` keeps an idea under a product.
 
-Go-to-market has its own daily screen. `teyla gtm` is the cockpit for getting users, customers and conversations: what waits for your approval, what waits to be sent, replies to answer, today's posts and approaches against your target, and this week's outcomes against each goal's target, with the days left to its deadline. `teyla gtm week` is the weekly review: the funnel per goal, conversion per stage, stalled items and next week's targets. Goals live in `~/.teyla/gtm/goals.toml` (`teyla gtm init` writes an example). Products feed it with a small JSON file; Teyla never sends anything. [GTM.md](docs/GTM.md) has the contract.
+## Your products
+
+A *product* is a repo, or a few, that you ship as one thing. `teyla product init` proposes the list from your repos.
+
+| Question | Command |
+|---|---|
+| Where does each product stand? | `teyla portfolio`: a health word (off track, at risk, on track, parked), the reason, and one line per platform |
+| What fact is each one missing? | `teyla startup`: the next missing fact per product; `teyla startup yc` is a 15-box application sheet |
+| Did the build reach a person? | `teyla testflight` and `teyla play` |
+| What do testers say and do? | `teyla review` pulls comments made in the real app; `teyla usage <product>` reports what testers use, only with their consent ([REVIEW.md](docs/REVIEW.md)) |
+| Do the README and the store page still match the product? | `teyla freshness`; `teyla whats-new` drafts store notes from merged PRs |
+| Was every merge reviewed? | `teyla reviews` |
+
+## Design and taste
+
+`teyla taste add https://example.com "great neutral design"` keeps a design or text you like or dislike as evidence, so agents can learn your taste ([TASTE.md](docs/TASTE.md)). A redesign runs as a *design cycle*: a map of decisions, taken one at a time. Agents write a dossier before any option exists; `teyla design options <product> <id>` puts two or three options in `teyla asks`; `teyla answer <id> <option> <your reason>` stores the pick with your words. `teyla design status <product>` shows the map. [CYCLE.md](templates/design/CYCLE.md) has the steps.
+
+## Go-to-market
+
+- `teyla gtm` is the cockpit for getting users, customers and conversations: what waits for your approval, replies to answer, today's posts and approaches against your target, and this week's outcomes per goal. `teyla gtm week` is the weekly review. Goals live in `~/.teyla/gtm/goals.toml` (`teyla gtm init` writes an example). [GTM.md](docs/GTM.md) has the contract.
+- `teyla growth` is the content factory. It finds ideas in what you shipped, plans a slot per network per day, and drafts posts for you to approve. `teyla growth publish` posts an approved item to a network you connected; nothing is posted without your approval. `teyla growth activity` is the graph of every post, comment, email and meeting. [GROWTH.md](docs/GROWTH.md) has the detail.
 
 ## One policy for every agent
 
-`teyla policy sync` hands one `POLICY.md` to Claude Code, Codex, Grok, Cursor and Hermes. `teyla harness sync` adds *hooks* to them: small scripts an agent runs at set moments, such as session start. `teyla routine install` schedules the daily and weekly checks. [GUIDE](docs/GUIDE.md) has the detail.
+`teyla policy sync` hands one `POLICY.md` to Claude Code, Codex, Grok, Cursor and Hermes. `teyla harness sync` adds *hooks* to them: small scripts an agent runs at set moments, such as session start. `teyla routine install` schedules the daily and weekly checks. `teyla mcp` serves six tools (open questions, answer, your own words for a product, machine load, routines, usage) to any MCP client. [GUIDE](docs/GUIDE.md) has the detail.
 
 ## The Mac and iPhone apps
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/mac/today-dark.png">
-  <img alt="Teyla for Mac, Today: each goal as a row of circles that fill with real outcomes, the next step for the leading goal, and the activity graph" src="docs/img/mac/today-light.png" width="720">
-</picture>
 
 Teyla for Mac is a window and a menu-bar icon: Today (your goals and the next step that moves them), Home, the decisions waiting on you, your products, and Growth, Money, Operations and Playbook. It runs the `teyla` command, so install that first, then build the app (macOS 15, Xcode):
 
@@ -103,7 +130,7 @@ Teyla for Mac is a window and a menu-bar icon: Today (your goals and the next st
 brew install xcodegen && git clone https://github.com/zaitsew/teyla && cd teyla/apps/mac && ./install.sh
 ```
 
-The iPhone app reads a signed folder in your own iCloud Drive that `teyla relay on` keeps current. Share a link or a picture to Teyla from the iOS share sheet to add a like or dislike to your [taste corpus](docs/TASTE.md#from-the-phone). There is no Teyla server and no account. [APP.md](docs/APP.md) has the contract.
+The iPhone app shows what the Mac shows, and you answer a question by text or voice. It reads a signed folder in your own iCloud Drive that `teyla relay on` keeps current. A home-screen and Lock Screen widget draws your GitHub and growth activity. Share a link or a picture to Teyla from the iOS share sheet to add it to your [taste corpus](docs/TASTE.md#from-the-phone). Build it from [apps/ios](apps/ios/README.md); neither app is in the App Store. There is no Teyla server and no account. [APP.md](docs/APP.md) has the contract.
 
 ## Privacy
 
@@ -116,6 +143,7 @@ Teyla reads files on your Mac. It sends nothing about your sessions unless you r
 | `teyla answer`, `teyla run`, `--model` flags | only when you ask | text, to your model provider under your own login |
 | `teyla relay on` | off by default | open questions and session titles, to your iCloud Drive |
 | `teyla tg setup` | off by default | the current open question and its options, to Telegram |
+| `teyla growth publish` | only after `teyla growth connect` and your approval of the post | the approved post, to that network |
 
 `teyla web` listens on 127.0.0.1 only. Safe mode, `teyla config set safe.enabled=true`, closes most of these calls. Every call, with its host: [docs/PRIVACY.md](docs/PRIVACY.md).
 
@@ -128,3 +156,5 @@ teyla features off load    # a pack's switches off, its O1 to O4 changes undone
 teyla uninstall --dry      # list what Teyla would remove: links, hooks, jobs
 teyla uninstall && uv tool uninstall teyla
 ```
+
+<!-- teyla:reviewed 2026-11-13 -->
