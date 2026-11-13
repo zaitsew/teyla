@@ -82,6 +82,7 @@
   teyla productize [path...] [--json] [--owner-steps]            what stands between each product and its second user
   teyla testflight [path...] [--json] [--quiet] [--china] [--allow-network]    did the build reach a person: newest upload vs newest build your tester can install; --china: is any app still available in China mainland
   teyla freshness [path...] [--json] [--quiet] [--fetch]             do the README, README images, store text and screenshots still match the product (offline; --fetch updates refs first)
+  teyla freshness --reviewed [path]                                  mark README.md as read in full against the product today (a one-line patch does not make a README current)
   teyla play [path...] [--json] [--quiet] [--allow-network]          did the Android build reach a person: internal track status, closed-test age on Google Play
   teyla schedules [--json] [--quiet] [--all] [--allow-network]    every scheduled task (Claude desktop, launchd, cloud routines, GitHub, teyla.toml): did it run, what vanished
   teyla schedules forget KEY [KEY...]                              acknowledge VANISHED tasks removed on purpose (clears the banner)
