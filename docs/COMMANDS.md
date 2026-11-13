@@ -192,7 +192,7 @@ Every `teyla` command with its flags; `teyla help --all` prints the same list in
 | command | what you get |
 |---|---|
 | `teyla doctor [--json] [--refresh] [--no-repos]` | everything that must be true on this machine, each FIX/WARN with its fix |
-| `teyla update [--check] [--force] [--wire]` | install a newer published release by its commit sha, then re-wire the policy, plugin and routines; `--check` only reports |
+| `teyla update [--check] [--force] [--wire]` | install a newer published release by its commit sha, then re-wire the policy, plugin and routines; `--check` only reports. A corrupt uv cache is cleaned once; when `uv cache clean` cannot get the cache lock within 60 s, the retry (and any restore) runs with `--no-cache` |
 | `teyla plugin install <src>\|uninstall <name>\|refresh [--force]` | install the Claude Code plugin by editing its registry (no `claude` CLI needed); `refresh` brings the loaded copy to this version |
 | `teyla plugins [name\|path] [--json]` | the installed Claude Code plugins: version loaded vs working copy, and a skill / rule / fact quality pass over each |
 | `teyla connectors [--days N] [--json] [--project]` | per MCP connector: calls, read/write split, empty and error rate, round-trips between human turns, rediscovery calls; advice C1–C4 |
