@@ -184,7 +184,7 @@ def render(d: dict) -> str:
     L.append("Closing them needs an explicit yes; this brief changes nothing.")
     # next two sprints
     L += ["", "## Next two sprints", "", "1. …", "2. …", "",
-          "Name each with its gate; open it with `teyla brief <product> --goal \"...\" --gate \"...\"`."]
+          "Name each with its gate; open it with `teyla brief <product> --goal \"...\" --gate \"...\" --usd N --hours N`."]
     return "\n".join(L) + "\n"
 
 

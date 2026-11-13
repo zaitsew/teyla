@@ -89,7 +89,7 @@ def test_every_section_in_order_and_short(capsys):
     assert "alpha iOS build 7" in text
     assert "3 open: 1 default, 1 drop, 1 keep" in text and "- q1, alpha, 30d, default, default: Use option A (stated)" in text
     assert "Closing them needs an explicit yes; this brief changes nothing." in text
-    assert "1. …" in text and "2. …" in text and "teyla brief <product> --goal" in text
+    assert "1. …" in text and "2. …" in text and "teyla brief <product> --goal" in text and "--usd N --hours N" in text
     assert len(text.splitlines()) < 120
 
 

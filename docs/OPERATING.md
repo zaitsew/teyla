@@ -126,7 +126,7 @@ teyla digest director --quiet        # write the file, print nothing (the routin
 The file is about 100 lines, in this order: the title with the week; hard dates (`[dates]`); the outcome table;
 the sprint slots; open decisions with design picks; builds to try; questions past 14 days (counts by outcome
 and up to 10 rows); and two empty lines for the next two sprints, each to open with `teyla brief <product>
---goal ... --gate ...`.
+--goal ... --gate ... --usd N --hours N`.
 
 It reuses the views above: the scoreboard's `snapshot` and `hard_dates`, the slots' `snapshot` and the inbox
 expiry's dry run. It never calls `teyla asks expire --apply`: closing questions needs an explicit yes. An input
