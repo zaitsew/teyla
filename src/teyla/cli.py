@@ -2,6 +2,7 @@
 
   teyla                                                          the welcome: your numbers and the next three commands (never an error)
   teyla today [--json] [--fresh]                                 the daily screen: waiting questions by product, the Inbox, the week's spend, one next step
+  teyla today score [--json] [--refresh]                          the outcome scoreboard: posts, conversations, first value, open decisions, builds to try
   teyla help [--all | COMMAND]                                   the commands in six groups; --all lists every one
   teyla monitor [--days N] [--json] [--samples] [--share] [--out FILE]   adoption report from local harness logs
   teyla advise  [--days N]                                       just the findings
