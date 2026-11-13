@@ -407,9 +407,28 @@ def _offline_record(repo: str, cfg: dict, now) -> dict:
     return rec
 
 
-def _run(cmd: list[str], cwd: pathlib.Path | None = None) -> tuple[int, str]:
-    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+def _run(cmd: list[str], cwd: pathlib.Path | None = None, timeout: float | None = None) -> tuple[int, str]:
+    """rc and output. With `timeout`, a command still running after it is killed and returns 124."""
+    try:
+        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return 124, f"timed out after {timeout:g} s"
     return r.returncode, (r.stdout + r.stderr).strip()
+
+
+# `uv cache clean` takes the cache's exclusive lock and waits for it with no limit. Any long-lived
+# `uv run` (an MCP server started by a session) holds that lock, so the clean can wait forever, and
+# by then `uv tool install --force` has already removed the old tool: no `teyla` on the machine.
+CACHE_CLEAN_TIMEOUT = 60
+
+
+def _without_cache(cmd: list[str]) -> list[str]:
+    """The uv install `cmd` with `--no-cache`: a fresh temporary cache, so neither the corrupt
+    checkout nor the cache lock is touched."""
+    if "--no-cache" in cmd or "install" not in cmd:
+        return cmd
+    i = cmd.index("install") + 1
+    return cmd[:i] + ["--no-cache"] + cmd[i:]
 
 
 def _uv_cache_corrupt(out: str) -> bool:
@@ -492,7 +511,7 @@ def installed_commit(method: str) -> str | None:
     return _as_sha(out.strip().splitlines()[-1]) if rc == 0 and out.strip() else None
 
 
-def restore(repo: str, method: str, spec: str, before: str | None = None) -> list[str]:
+def restore(repo: str, method: str, spec: str, before: str | None = None, no_cache: bool = False) -> list[str]:
     """Put the version that was running back: by the commit it was installed from when
     `teyla update` recorded one, else by its release tag. After an install, pass `before`
     (installed_sha() read *before* the installer ran): by then direct_url.json describes the
@@ -501,6 +520,8 @@ def restore(repo: str, method: str, spec: str, before: str | None = None) -> lis
     cmd = _installer(method, spec, install_source(repo, ref))
     if cmd is None:
         return [f"FAIL: could not restore {__version__}: no installer for {method}"]
+    if no_cache and method == "uv-tool":
+        cmd = _without_cache(cmd)
     rc, out = _run(cmd)
     return [f"restored {__version__} ({ref})" if rc == 0 else f"FAIL: could not restore {__version__} ({ref}): {out[-300:]}"]
 
@@ -531,13 +552,18 @@ def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | No
     if cmd is None:
         return [f"FAIL: installed with {method} but `{'uv' if method == 'uv-tool' else method}` is not on PATH"]
     lines = []
+    no_cache = False
     rc, out = _run(cmd)
     if rc != 0 and method == "uv-tool" and _uv_cache_corrupt(out):
         # uv's git checkout of the repo lost objects ("unable to read sha1 file"); seen
-        # on a version update. Clearing the cache entry and retrying
-        # once is the fix; nothing else is.
+        # on a version update. Clear the cache entry and retry once. When the clean cannot
+        # get the cache lock in time, retry without the cache instead of waiting for it.
         lines.append("uv's cached checkout of teyla is corrupt — `uv cache clean teyla`, then retrying")
-        _run([cmd[0], "cache", "clean", "teyla"])
+        crc, cout = _run([cmd[0], "cache", "clean", "teyla"], timeout=CACHE_CLEAN_TIMEOUT)
+        if crc != 0:
+            no_cache = True
+            lines.append(f"`uv cache clean teyla` did not finish ({cout[-200:] or f'exit {crc}'}) — retrying with --no-cache")
+            cmd = _without_cache(cmd)
         rc, out = _run(cmd)
     if rc != 0:
         lines.append(f"FAIL: upgrade via {method}: {out[-800:]}")
@@ -545,7 +571,7 @@ def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | No
             # `uv tool install --force` removes the old tool before the new build; a failed
             # build therefore leaves no `teyla` at all — the daily wrapper, the session-start
             # hook and doctor all go quiet. Put the installed version back first.
-            lines += restore(repo, method, spec, before)
+            lines += restore(repo, method, spec, before, no_cache=no_cache)
         return lines
     got = installed_version(method)
     if (got != tag.lstrip("v")) if tag else not got:
@@ -554,7 +580,7 @@ def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | No
         # Keep the version that was known to work.
         want = f", expected {tag.lstrip('v')}" if tag else ""
         lines.append(f"FAIL: installed {sha[:12]} reports version {got or '(none)'}{want} — restoring")
-        lines += restore(repo, method, spec, before)
+        lines += restore(repo, method, spec, before, no_cache=no_cache)
         return lines
     landed = installed_commit(method)
     if landed is None:
@@ -562,13 +588,13 @@ def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | No
         # probe that failed, no commit recorded). An install nobody verified is not accepted: it
         # would be recorded as the pin met (caught in review, P2). Keep the version known to work.
         lines.append(f"FAIL: installed {sha[:12]} but could not verify which commit is on disk — restoring")
-        lines += restore(repo, method, spec, before)
+        lines += restore(repo, method, spec, before, no_cache=no_cache)
         return lines
     if not same_commit(landed, sha):
         # The installer kept another build of the same version; recording `sha` would make the
         # pin look met forever (caught in review, P1).
         lines.append(f"FAIL: asked for {sha[:12]} but the installed build is {landed[:12]} — restoring")
-        lines += restore(repo, method, spec, before)
+        lines += restore(repo, method, spec, before, no_cache=no_cache)
         return lines
     _record_installed(got, tag, landed)
     on = f" on python {spec}" if method in ("uv-tool", "pipx") else ""
