@@ -249,7 +249,7 @@ def render(snap: dict, st: Style | None = None) -> str:
             L.append(f"  {r['product']}  last active {r['last_active'][:16].replace('T', ' ')}Z")
         L.append(st.quiet('  Count one in a slot: teyla brief <product> --goal "..." --gate "..." --usd N --hours N'))
         if snap["in_flight"] + len(snap["no_contract"]) > lim:
-            L.append(st.quiet(f"  Note: {snap['in_flight']} contracts and {len(snap['no_contract'])} sessions without "
+            L.append(st.quiet(f"  Note: {snap['in_flight']} contracts and {len(snap['no_contract'])} products active without "
                               "one. Bug-fix sessions may run outside the limit."))
     return "\n".join(L).rstrip()
 

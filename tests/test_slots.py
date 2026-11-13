@@ -128,7 +128,7 @@ def test_no_contract_list_and_note(machine):
     assert [r["product"] for r in s["no_contract"]] == ["fixer"] and s["over_limit"] is False
     text = slots.render(s, PLAIN)
     assert "Also active, no contract" in text and 'teyla brief <product> --goal "..." --gate "..."' in text
-    assert "Note: 2 contracts and 1 sessions without one" in text and "WARN" not in text
+    assert "Note: 2 contracts and 1 products active without one" in text and "WARN" not in text
 
 
 def test_no_note_within_limit(machine):
