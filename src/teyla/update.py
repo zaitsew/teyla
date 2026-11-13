@@ -580,7 +580,7 @@ def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | No
         # Keep the version that was known to work.
         want = f", expected {tag.lstrip('v')}" if tag else ""
         lines.append(f"FAIL: installed {sha[:12]} reports version {got or '(none)'}{want} — restoring")
-        lines += restore(repo, method, spec, before)
+        lines += restore(repo, method, spec, before, no_cache=no_cache)
         return lines
     landed = installed_commit(method)
     if landed is None:
@@ -588,13 +588,13 @@ def upgrade(tag: str | None, repo: str, method: str, checkout: pathlib.Path | No
         # probe that failed, no commit recorded). An install nobody verified is not accepted: it
         # would be recorded as the pin met (caught in review, P2). Keep the version known to work.
         lines.append(f"FAIL: installed {sha[:12]} but could not verify which commit is on disk — restoring")
-        lines += restore(repo, method, spec, before)
+        lines += restore(repo, method, spec, before, no_cache=no_cache)
         return lines
     if not same_commit(landed, sha):
         # The installer kept another build of the same version; recording `sha` would make the
         # pin look met forever (caught in review, P1).
         lines.append(f"FAIL: asked for {sha[:12]} but the installed build is {landed[:12]} — restoring")
-        lines += restore(repo, method, spec, before)
+        lines += restore(repo, method, spec, before, no_cache=no_cache)
         return lines
     _record_installed(got, tag, landed)
     on = f" on python {spec}" if method in ("uv-tool", "pipx") else ""
