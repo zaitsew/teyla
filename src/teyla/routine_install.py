@@ -152,6 +152,10 @@ teyla play --quiet || true
 # Questions AI sessions left waiting on you: refreshes ~/.teyla/asks.count, the line the session-start
 # hook prints. Local files only, so safe mode runs it too.
 teyla asks --quiet || true
+# Do the README, its screenshots and the store text still match each product? One `git fetch` per product
+# repo; safe mode skips the fetch. Daily, not only weekly: a weekly-only check first ran up to seven days
+# after it shipped, and a fast product gets a README fifty changes behind inside a week.
+teyla freshness --fetch --quiet || true
 # Exit 1 from doctor means "something needs you": the banner shows it; the run did not fail.
 teyla doctor --quiet || true
 # Refresh ~/.teyla/routines/<product>.line, the one-liners the session-start hook shows.
@@ -346,7 +350,8 @@ def _quiet_checks_after_doctor(text: str) -> bool:
     if doctor < 0:
         return False
     return any(0 <= text.find(step) and text.find(step) > doctor
-               for step in ("schedules --quiet", "testflight --quiet", "teyla play --quiet"))
+               for step in ("schedules --quiet", "testflight --quiet", "teyla play --quiet",
+                            "freshness --fetch --quiet"))
 
 
 def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | None = None) -> bool:
@@ -375,6 +380,9 @@ def _wrapper_stale(path: pathlib.Path, teyla_bin: str, env: dict[str, str] | Non
         return True
     if path == DAILY_WRAPPER_PATH and "teyla play --quiet" not in text:
         # Written before `teyla play`: the daily would never ask whether an Android build reached a person.
+        return True
+    if path == DAILY_WRAPPER_PATH and "freshness --fetch --quiet" not in text:
+        # Written when only the weekly ran `teyla freshness`: a stale README reached the banner up to a week late.
         return True
     if path == DAILY_WRAPPER_PATH and "asks --quiet" not in text:
         # Written before `teyla asks`: the daily would never refresh the count the session-start hook shows.

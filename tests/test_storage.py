@@ -397,7 +397,12 @@ def test_wrapper_stale_flags_wrapper_missing_storage_clean(tmp_path, monkeypatch
     wrapper_path.write_text(no_exit)
     assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is True  # exit status was the last step's
 
-    fresh_text = no_exit + 'exit "$_rc"\n'
+    no_freshness = no_exit + 'exit "$_rc"\n'
+    wrapper_path.write_text(no_freshness)
+    assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is True  # written before the daily `teyla freshness`
+
+    fresh_text = no_freshness.replace("teyla doctor --quiet\n",
+                                      "teyla freshness --fetch --quiet || true\nteyla doctor --quiet\n")
     wrapper_path.write_text(fresh_text)
     assert routine_install._wrapper_stale(wrapper_path, teyla_bin) is False
 

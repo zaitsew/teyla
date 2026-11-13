@@ -4,6 +4,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import pathlib
 import subprocess
 
 import pytest
@@ -94,7 +95,7 @@ def test_a_readme_is_stale_by_count_and_age(tmp_path):
     assert row["verdict"] == "stale" and c["verdict"] == "stale" and c["changes"] == 12
     assert c["since"] == OLD[:10] and len(c["examples"]) == 2 and c["path"] == "README.md"
     assert c["text"].startswith(f"app README: 12 user-facing changes since {OLD[:10]} (e.g. \"")
-    assert c["text"].endswith("Update it to what ships today.") and "#" in c["text"]
+    assert c["text"].endswith("then run `teyla freshness --reviewed` and commit.") and "#" in c["text"]
     assert freshness.exit_code([row]) == 1
     text = freshness.render_text([row])
     assert text.startswith("app: 1 stale (readme)\n  app README: 12 user-facing")
@@ -135,7 +136,7 @@ def test_the_oldest_readme_image_is_chosen_and_http_images_are_ignored(tmp_path)
     commit(r, {"docs/new.png": "n", "assets/dark.svg": "<svg/>"}, "new image", RECENT)
     write(r, "README.md", "# App\n![o](docs/old.png)\n<img src=\"docs/new.png\" width=\"10\">\n"
           "<picture><source srcset=\"assets/dark.svg 1x\"></picture>\n"
-          "![remote](https://example.com/shot.png)\n![gone](docs/missing.png)\n")
+          "![remote](https://example.com/shot.png)\n![gone](docs/missing.png)\n" + BODY)
     git(r, "add", ".")
     git(r, "commit", "-q", "-m", "readme", when=RECENT)
     features(r, 11, when=RECENT)
@@ -144,7 +145,7 @@ def test_the_oldest_readme_image_is_chosen_and_http_images_are_ignored(tmp_path)
     c = checks(freshness.run()[0])["readme-images"]
     assert c["verdict"] == "stale" and c["path"] == "docs/old.png"
     assert "README image docs/old.png" in c["text"]
-    assert checks(freshness.run()[0])["readme"]["verdict"] == "ok"   # README itself was just touched
+    assert checks(freshness.run()[0])["readme"]["verdict"] == "ok"   # README itself just had a real edit
 
 
 def test_only_http_images_means_the_check_is_skipped(tmp_path):
@@ -279,7 +280,7 @@ def test_quiet_writes_and_removes_the_problems_file(tmp_path, capsys):
     assert capsys.readouterr().out == ""
     lines = p.read_text().splitlines()
     assert len(lines) == 1 and lines[0].startswith("freshness|app|readme\tapp README: 11 user-facing")
-    commit(r, {"README.md": "# App, updated\n"}, "readme", RECENT)
+    commit(r, {"README.md": "# App, updated\n" + BODY}, "readme", RECENT)   # a real edit, not a one-line patch
     assert main(["freshness", "--quiet"]) == 0
     assert not p.exists()
 
@@ -491,3 +492,178 @@ def test_safe_mode_refuses_the_fetch(tmp_path, monkeypatch, capsys):
     main(["freshness", "--fetch"])
     assert "safe mode is on" in capsys.readouterr().err
     assert calls == []
+
+
+# --- a touch is not an edit; the review mark; burst; surfaces ---------------------------
+
+BODY = "".join(f"line {i}\n" for i in range(30))
+
+
+def test_a_one_line_patch_does_not_make_the_readme_current(tmp_path):
+    r = product(tmp_path)
+    commit(r, {"README.md": "# App\n" + BODY}, "the README, written once", OLD)
+    features(r, 12)
+    commit(r, {"README.md": "# App\n" + BODY + "one more line\n"}, "name the new flag", RECENT)
+    commit(r, {"README.md": "# App\n" + BODY + "one more line\nand another\n"}, "and its default", RECENT)
+    c = checks(freshness.run()[0])["readme"]
+    assert c["verdict"] == "stale" and c["since"] == OLD[:10] and c["changes"] == 12
+    assert "its last real edit (2 later commits changed under 10 lines)" in c["text"]
+
+
+def test_a_real_edit_resets_the_readme_date(tmp_path):
+    r = product(tmp_path)
+    features(r, 12)
+    commit(r, {"README.md": "# App, as it is today\n" + BODY}, "rewrite the README", RECENT)
+    c = checks(freshness.run()[0])["readme"]
+    assert c["verdict"] == "ok" and c["since"] == RECENT[:10] and c["changes"] == 0
+
+
+def test_a_pr_of_small_commits_is_one_edit(tmp_path):
+    r = product(tmp_path)
+    features(r, 12)
+    git(r, "checkout", "-q", "-b", "docs")
+    text = "# App\n"
+    for i in range(3):
+        text += "".join(f"part {i} line {j}\n" for j in range(4))
+        commit(r, {"README.md": text}, f"README part {i}", RECENT)
+    git(r, "checkout", "-q", "main")
+    git(r, "merge", "-q", "--no-ff", "docs", "-m", "Merge pull request #90 from owner/docs", "-m", "docs: README",
+        when=RECENT)
+    c = checks(freshness.run()[0])["readme"]
+    assert c["verdict"] == "ok" and c["since"] == RECENT[:10]
+
+
+def test_the_review_mark_resets_the_readme_date_and_the_command_writes_it(tmp_path, capsys):
+    r = product(tmp_path)
+    features(r, 12)
+    assert checks(freshness.run()[0])["readme"]["verdict"] == "stale"
+    assert main(["freshness", "--reviewed", str(r)]) == 0
+    assert "teyla:reviewed" in capsys.readouterr().out
+    today = dt.date.today().isoformat()
+    assert (r / "README.md").read_text() == f"# App\n\n<!-- teyla:reviewed {today} -->\n"
+    git(r, "add", ".")
+    git(r, "commit", "-q", "-m", "README reviewed: nothing to change", when=RECENT)
+    c = checks(freshness.run()[0])["readme"]
+    assert c["verdict"] == "ok" and c["since"] == RECENT[:10]
+    # a second run replaces the mark, it does not stack them
+    (r / "README.md").write_text("# App\n\n<!-- teyla:reviewed 2026-01-01 -->\n")
+    assert freshness.mark_reviewed(r, dt.date(2026, 2, 2)) == "<!-- teyla:reviewed 2026-02-02 -->"
+    assert (r / "README.md").read_text() == "# App\n\n<!-- teyla:reviewed 2026-02-02 -->\n"
+
+
+def test_deleting_the_review_mark_does_not_count_as_a_review(tmp_path):
+    r = product(tmp_path)
+    commit(r, {"README.md": "# App\n" + BODY + "\n<!-- teyla:reviewed 2026-01-01 -->\n"}, "the README, reviewed", OLD)
+    features(r, 12)
+    commit(r, {"README.md": "# App\n" + BODY}, "drop the comment at the end", RECENT)
+    c = checks(freshness.run()[0])["readme"]
+    assert c["verdict"] == "stale" and c["since"] == OLD[:10] and c["changes"] == 12
+
+
+def test_a_long_run_of_small_patches_still_reaches_the_real_edit(tmp_path):
+    r = product(tmp_path)
+    commit(r, {"README.md": "# App\n" + BODY}, "the README, written once", OLD)
+    features(r, 12)
+    # One `git fast-import` instead of 405 `git commit` runs: under a loaded machine the commits took minutes.
+    at = int((NOW - dt.timedelta(days=2)).timestamp())
+    stream = []
+    for i in range(405):
+        msg, text = f"docs: wording {i}", "# App\n" + BODY + f"patch {i}\n"
+        stream.append(f"commit refs/heads/main\ncommitter T <t@example.invalid> {at} +0000\n"
+                      f"data {len(msg)}\n{msg}\n" + ("from refs/heads/main^0\n" if i == 0 else "")
+                      + f"M 100644 inline README.md\ndata {len(text)}\n{text}\n")
+    subprocess.run(["git", "-C", str(r), "fast-import", "--quiet"], input="".join(stream).encode(), check=True,
+                   capture_output=True)
+    git(r, "reset", "-q", "--hard")
+    c = checks(freshness.run()[0])["readme"]
+    assert c["verdict"] == "stale" and c["since"] == OLD[:10] and c["changes"] == 12
+
+
+def test_reviewed_takes_one_repo_and_needs_a_readme(tmp_path, capsys):
+    a, b = product(tmp_path, name="a"), product(tmp_path, name="b")
+    assert main(["freshness", "--reviewed", str(a), str(b)]) == 2
+    (a / "README.md").unlink()
+    assert main(["freshness", "--reviewed", str(a)]) == 2
+    assert "no README.md" in capsys.readouterr().err
+
+
+def test_a_burst_of_changes_makes_a_young_readme_stale(tmp_path):
+    r = product(tmp_path, first_when=RECENT)
+    features(r, 50)
+    c = checks(freshness.run()[0])["readme"]
+    assert c["verdict"] == "stale" and c["changes"] == 50
+    (r / "teyla.toml").write_text('[product]\nname = "app"\n[freshness]\nburst = 0\n')
+    assert checks(freshness.run()[0])["readme"]["verdict"] == "ok"
+
+
+def test_the_burst_rule_leaves_the_store_checks_alone(tmp_path):
+    r = product(tmp_path, first_when=RECENT, files={"fastlane/screenshots/a.png": "a"})
+    features(r, 50)
+    assert checks(freshness.run()[0])["screenshots"]["verdict"] == "ok"
+
+
+SURFACE = '[freshness.surfaces]\n"docs/shots/*.png" = ["app/ui/**"]\n'
+
+
+def test_an_image_with_a_surface_counts_only_the_changes_to_it(tmp_path):
+    r = product(tmp_path, SURFACE, files={"docs/shots/home.png": "h"})
+    commit(r, {"README.md": "# App\n![home](docs/shots/home.png)\n"}, "readme", OLD)
+    features(r, 12)                                        # twelve changes elsewhere in the repo
+    c = checks(freshness.run()[0])["readme-images"]
+    assert c["verdict"] == "ok" and c["changes"] == 0
+    for i in range(20, 25):
+        _merge_files(r, i, f"Home screen change {i}", [f"app/ui/Home{i}.swift"])
+    c = checks(freshness.run()[0])["readme-images"]
+    assert c["verdict"] == "stale" and c["changes"] == 5 and c["path"] == "docs/shots/home.png"
+    assert "5 user-facing changes to app/ui/** since" in c["text"] and c["text"].endswith("from the current build.")
+
+
+def test_a_surface_image_goes_stale_at_any_age_and_the_count_is_configurable(tmp_path):
+    r = product(tmp_path, SURFACE + "[freshness]\nsurface_changes = 2\n", first_when=RECENT,
+                files={"docs/shots/home.png": "h"})
+    commit(r, {"README.md": "# App\n![home](docs/shots/home.png)\n"}, "readme", RECENT)
+    _merge_files(r, 1, "Home screen change 1", ["app/ui/A.swift"])
+    assert checks(freshness.run()[0])["readme-images"]["verdict"] == "ok"
+    _merge_files(r, 2, "Home screen change 2", ["app/ui/B.swift"])
+    assert checks(freshness.run()[0])["readme-images"]["verdict"] == "stale"
+
+
+def test_every_stale_image_is_named(tmp_path):
+    r = product(tmp_path, files={"docs/a.png": "a", "docs/b.png": "b"})
+    commit(r, {"README.md": "# App\n![a](docs/a.png)\n![b](docs/b.png)\n"}, "readme", OLD)
+    features(r, 12)
+    c = checks(freshness.run()[0])["readme-images"]
+    assert c["verdict"] == "stale" and c["path"] in ("docs/a.png", "docs/b.png")
+    assert "Also stale: docs/" in c["text"]
+
+
+def test_release_and_build_number_titles_are_not_user_facing(tmp_path):
+    r = product(tmp_path)
+    for i, title in enumerate(["release 0.52.0", "Release v1.2", "iPhone build 11 (first upload)", "Build 4",
+                               "macOS build 7"] * 3, 1):
+        merge(r, i, title, RECENT)
+    c = checks(freshness.run()[0])["readme"]
+    assert c["verdict"] == "ok" and c["changes"] == 0
+    merge(r, 99, "Build the importer for bank files", RECENT)
+    assert checks(freshness.run()[0])["readme"]["changes"] == 1
+
+
+def test_the_daily_routine_runs_it_before_doctor_builds_the_banner():
+    t = routine_install.DAILY_WRAPPER_TEMPLATE
+    assert t.index("teyla freshness --fetch --quiet") < t.index("teyla doctor --quiet")
+    assert routine_install._quiet_checks_after_doctor("teyla doctor --quiet\nteyla freshness --fetch --quiet\n")
+
+
+def test_session_start_names_this_repo_s_stale_items_and_no_other_repo_s(tmp_path):
+    home = tmp_path / "home"
+    (home / ".teyla" / "freshness.problems").write_text(
+        "freshness|app|readme\tapp README: 60 user-facing changes since 2026-10-01. Read the whole README.\n"
+        "freshness|other|readme\tother README: 12 user-facing changes since 2026-10-01. Read it.\n")
+    cwd = tmp_path / "work"
+    cwd.mkdir()
+    (cwd / "teyla.toml").write_text('[product]\nname = "app"\n')
+    hook = pathlib.Path(__file__).resolve().parents[1] / "plugin" / "hooks" / "session-start.sh"
+    out = subprocess.run(["sh", str(hook)], input="", capture_output=True, text=True, timeout=10, cwd=cwd,
+                         env={"HOME": str(home), "PATH": "/usr/bin:/bin"}).stdout
+    assert "teyla: stale, fix it in this session: app README: 60 user-facing changes" in out
+    assert "other README" not in out

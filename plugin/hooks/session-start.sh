@@ -26,6 +26,9 @@
 #   summary for it (~/.teyla/routines/<product>.line), print that line: "did it run?"
 #   is then answered before the question is asked, and `teyla routines .` is named
 #   for the fresh table.
+# - If `teyla freshness` found that repo's README, a README image or its store text stale
+#   (~/.teyla/freshness.problems, refreshed daily), print each finding, at most three, in every
+#   session until it is fixed: the session working in the repo is the one that can fix it.
 # - If ~/.teyla/intent/<product>.md exists for the session's cwd (`teyla intent`: the owner's
 #   own long prompts, kept word for word), print one line with its path, entry count and latest
 #   date, and tell the session to read it before planning. The product is worked out here in sh
@@ -152,6 +155,13 @@ orientation() {
     product=$(sed -n 's/^name *= *"\([^"]*\)".*/\1/p' teyla.toml 2>/dev/null | head -n 1)
     if [ -n "$product" ] && [ -s "$HOME/.teyla/routines/$product.line" ]; then
       echo "teyla: $(head -n 1 "$HOME/.teyla/routines/$product.line")"
+    fi
+    # This repo's stale README, README image or store text (`teyla freshness`, refreshed daily). Shown in
+    # every session until it is fixed: the session working in the repo is the one that can fix it.
+    fresh="$HOME/.teyla/freshness.problems"
+    if [ -n "$product" ] && [ -s "$fresh" ]; then
+      awk -F '\t' -v p="freshness|$product|" 'index($1, p) == 1 { print "teyla: stale, fix it in this session: " $2 }' \
+        "$fresh" 2>/dev/null | head -n 3
     fi
   fi
   intent_line
