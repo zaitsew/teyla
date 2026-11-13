@@ -33,6 +33,9 @@ the digest read), and removes the file when every platform is current. A newer b
 counted as behind: it was withdrawn, so nobody waits for it. The daily routine runs it; in
 safe mode it does nothing and exits 0.
 
+Every run that reads rows (text, `--json` and `--quiet`, not `--china`) also writes them, without the text
+lines, to `~/.teyla/testflight.json`. `teyla today score` reads that file instead of asking Apple.
+
 China mainland (POLICY §15, store review). Generative AI in the China storefront needs a Chinese permit
 that none of our model providers has, and any app there needs an ICP filing, so territory `CHN` is excluded
 from the first submission. `teyla testflight --china` is the read-only check: for each in-scope product
@@ -552,6 +555,46 @@ def write_problems(rows: list[dict], path: pathlib.Path | None = None,
     return None
 
 
+def cache_path() -> pathlib.Path:
+    from . import config
+    return config.TEYLA_DIR / "testflight.json"
+
+
+def write_cache(rows: list[dict], path: pathlib.Path | None = None, now: float | None = None) -> pathlib.Path | None:
+    """Keep the last answer for readers that must not ask App Store Connect (`teyla today score`): the rows
+    without their text lines, and when they were read. Atomic; a cache that cannot be written is skipped."""
+    import time
+    if not rows:
+        return None
+    p = path or cache_path()
+    doc = {"version": 1, "generated": dt.datetime.fromtimestamp(time.time() if now is None else now, dt.timezone.utc)
+           .strftime("%Y-%m-%dT%H:%M:%SZ"),
+           "rows": [{k: v for k, v in r.items() if k != "lines"} for r in rows]}
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(json.dumps(doc, indent=1))
+        os.replace(tmp, p)
+        return p
+    except (OSError, TypeError, ValueError):
+        return None
+
+
+def load_cache(path: pathlib.Path | None = None, now: float | None = None) -> tuple[list | None, float | None]:
+    """(rows, age in seconds) from the cache, or (None, None) when there is none or it is unreadable."""
+    import time
+    p = path or cache_path()
+    try:
+        doc = json.loads(p.read_text())
+        rows = doc["rows"]
+        at = dt.datetime.strptime(doc["generated"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc).timestamp()
+    except (OSError, ValueError, KeyError, TypeError):
+        return None, None
+    if not isinstance(rows, list):
+        return None, None
+    return rows, max(0.0, (time.time() if now is None else now) - at)
+
+
 def cmd_testflight(args):
     quiet = getattr(args, "quiet", False)
     if not net.gate("`teyla testflight` (your release tool asks App Store Connect)", quiet=quiet):
@@ -571,6 +614,7 @@ def cmd_testflight(args):
             print("".join(f"{line}\n" for r in china for line in r["lines"]), end="")
         return 1 if china else 0
     rows = run(args.paths or None)
+    write_cache(rows)
     if quiet:
         china = run_china(args.paths or None)
         write_problems(rows, china_rows=china)
