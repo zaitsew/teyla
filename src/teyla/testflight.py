@@ -33,8 +33,8 @@ the digest read), and removes the file when every platform is current. A newer b
 counted as behind: it was withdrawn, so nobody waits for it. The daily routine runs it; in
 safe mode it does nothing and exits 0.
 
-Every run that reads rows (text, `--json` and `--quiet`, not `--china`) also writes them, without the text
-lines, to `~/.teyla/testflight.json`. `teyla today score` reads that file instead of asking Apple.
+Every run over all products that reads rows (text, `--json` and `--quiet`; not `--china`, not one with paths)
+also writes them, without the text lines, to `~/.teyla/testflight.json`. `teyla today score` reads that file instead of asking Apple.
 
 China mainland (POLICY §15, store review). Generative AI in the China storefront needs a Chinese permit
 that none of our model providers has, and any app there needs an ICP filing, so territory `CHN` is excluded
@@ -614,7 +614,8 @@ def cmd_testflight(args):
             print("".join(f"{line}\n" for r in china for line in r["lines"]), end="")
         return 1 if china else 0
     rows = run(args.paths or None)
-    write_cache(rows)
+    if not args.paths:
+        write_cache(rows)      # a run scoped to some repos would drop the others' builds (review P2)
     if quiet:
         china = run_china(args.paths or None)
         write_problems(rows, china_rows=china)

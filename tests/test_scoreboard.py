@@ -11,7 +11,7 @@ import pathlib
 
 import pytest
 
-from teyla import asks, cli, config, design_cycle, net, registry, scoreboard, testflight, today, usage
+from teyla import asks, cli, config, design_cycle, net, productize, registry, scoreboard, testflight, today, usage
 from teyla.ui import Style
 
 NOW = dt.datetime(2026, 11, 11, 12, 0).timestamp()       # local time, so the local week is the same everywhere
@@ -73,7 +73,7 @@ def metrics():
 
 
 def tf_args(**flags):
-    return argparse.Namespace(paths=[], **{"json": False, "quiet": False, "china": False, **flags})
+    return argparse.Namespace(**{"paths": [], "json": False, "quiet": False, "china": False, **flags})
 
 
 # --- ledger metrics ---------------------------------------------------------------------------------
@@ -320,3 +320,26 @@ def test_plain_today_is_unchanged_and_rejects_other_views(capsys):
     today.register(p.add_subparsers())
     ns = p.parse_args(["today"])
     assert ns.view is None and ns.fn is today.cmd_today and ns.json is False and ns.fresh is False
+
+
+def test_a_run_scoped_to_paths_leaves_the_cache_alone(monkeypatch, capsys):
+    monkeypatch.setattr(net, "gate", lambda *a, **k: True)
+    monkeypatch.setattr(productize, "find_manifests", lambda paths=None: ["/x/teyla.toml"])
+    testflight.write_cache([tf_row("atlas"), tf_row("lens")], now=NOW - 3600)
+    monkeypatch.setattr(testflight, "run", lambda paths=None: [{**tf_row("lens"), "lines": ["lens  iOS"]}])
+    testflight.cmd_testflight(tf_args(paths=["/x"]))
+    capsys.readouterr()
+    rows, _ = testflight.load_cache()
+    assert {r["product"] for r in rows} == {"atlas", "lens"}
+
+
+def test_a_cache_of_only_errors_is_not_measured():
+    testflight.write_cache([{**tf_row("atlas"), "verdict": "error", "payload": None}], now=NOW - 3600)
+    b = metrics()["builds_to_try"]
+    assert b["value"] == "not_measured" and "every row was an error" in b["reason"]
+
+
+def test_an_error_row_is_counted_as_unread():
+    testflight.write_cache([tf_row("atlas"), {**tf_row("lens"), "verdict": "error", "payload": None}], now=NOW - 3600)
+    b = metrics()["builds_to_try"]
+    assert b["value"] == 1 and b["unread_products"] == 1

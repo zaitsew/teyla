@@ -104,7 +104,8 @@ def _first_value_row(pid: str, p: dict) -> dict:
             if isinstance(e, dict) and e.get("k") == "task" and e.get("id") == task and e.get("r") == "success":
                 installs.add(b["install"])
     return {"product": pid, "task": task, "value": len(installs),
-            "source": f"usage capture, task {task}: installs (a device), not people; a batch carries an install id, no tester id"}
+            "source": f"usage capture, task {task}, to date (not this week): installs (a device), not people; "
+                      "a batch carries an install id, no tester id"}
 
 
 def first_value_metric() -> dict:
@@ -119,7 +120,7 @@ def first_value_metric() -> dict:
         more = f" (+{len(reasons) - 2} more)" if len(reasons) > 2 else ""
         return _missing("; ".join(reasons[:2]) + more, "usage capture", products=rows)
     return _measured(sum(r["value"] for r in done),
-                     "usage capture: installs (a device) that finished the first-value task, not people",
+                     "usage capture, to date (not this week): installs (a device) that finished the first-value task, not people",
                      measured_products=len(done), focus_products=len(rows), products=rows)
 
 
@@ -172,9 +173,15 @@ def builds_metric(now: float) -> dict:
     if rows is None:
         return _missing("run `teyla testflight` once (it asks App Store Connect)", "teyla testflight cache")
     cutoff = _dt.datetime.fromtimestamp(now, _dt.timezone.utc) - _dt.timedelta(days=BUILD_DAYS)
+    readable = [r for r in rows if isinstance(r, dict) and r.get("verdict") != "error"]
+    if not readable:
+        # Every product failed (auth, connection): zero would claim a fact nobody read (review P2).
+        return _missing("the last `teyla testflight` run read no product (every row was an error)",
+                        "teyla testflight cache", cache_age_s=int(age or 0))
+    unread = len(rows) - len(readable)
     out = []
-    for r in rows:
-        plats = ((r.get("payload") or {}).get("platforms") or []) if isinstance(r, dict) else []
+    for r in readable:
+        plats = (r.get("payload") or {}).get("platforms") or []
         for p in plats:
             if not isinstance(p, dict):
                 continue
@@ -188,7 +195,7 @@ def builds_metric(now: float) -> dict:
     stale = age is not None and age > CACHE_STALE_S
     return _measured(len(out), f"teyla testflight cache, {asks.fmt_age(age or 0)} old; build uploaded in the last "
                                f"{BUILD_DAYS} days and installable; Teyla records no verdict",
-                     builds=out, cache_age_s=int(age or 0), stale=stale)
+                     builds=out, cache_age_s=int(age or 0), stale=stale, unread_products=unread)
 
 
 # --- the dates -----------------------------------------------------------------------------------
