@@ -50,6 +50,8 @@ launch = "2027-03-01"
 race = "2027-04-18"
 ```
 
+Or set one at a time: `teyla config set dates.launch=2027-03-01` (a value that is not a date is refused).
+
 ## Sprint slots
 
 `teyla brief slots` shows the two sprint slots and what holds them. It warns at a third sprint. It refuses

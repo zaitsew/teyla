@@ -155,6 +155,7 @@ from __future__ import annotations
 
 import re
 import copy
+from datetime import date as _dt_date
 import json
 import os
 import pathlib
@@ -219,6 +220,8 @@ DEFAULTS = {
                                       "com.spotify.", "com.dropbox.", "org.mozilla.", "homebrew.mxcl."]},
     # `teyla digest --write` (the weekly routine) posts a macOS notification with its headline.
     "digest": {"notify": True, "director": False},
+    # Goal dates for `teyla today score`: name = "YYYY-MM-DD". Empty by default: nothing personal is hard-coded.
+    "dates": {},
     # `teyla tidy`: size budget for a rule or memory file, and how old a dated "for now" may get.
     "tidy": {"max_kb": 24, "stale_days": 120},
     # `teyla reviews`: the ledger the review script appends to, and the size below which a PR is exempt.
@@ -428,7 +431,7 @@ def write(code_root: str = "~/repos", ops_root: str = "~/ops", repo: str = "zait
         # [storage], [corrections], [digest], [spend] and [hooks] are kept: they are exactly the local adaptation a rewrite must not erase
         # (a work laptop that loses `safe.enabled` here would self-update the next morning).
         old = _read(p)
-        for table in ("env", "safe", "products", "storage", "corrections", "intent", "digest", "hooks", "spend"):
+        for table in ("env", "safe", "products", "storage", "corrections", "intent", "digest", "hooks", "spend", "dates"):
             if isinstance(old.get(table), dict) and old[table]:
                 data[table] = old[table]
         if old.get("runs_root"):
@@ -509,6 +512,12 @@ def set_value(dotted: str, value: str | None, path: pathlib.Path | None = None) 
                 default = DEFAULTS[table].get(key)
                 if default is None and table == "spend" and key.startswith("budget."):
                     default = 0.0  # a per-project budget is a dollar amount
+                if table == "dates" and value is not None:
+                    try:
+                        _dt_date.fromisoformat(value.strip())
+                    except ValueError:
+                        raise InvalidValue(f"{value!r} is not a date: YYYY-MM-DD") from None
+                    value = value.strip()
                 value = _coerce(default, value)
             except InvalidValue as e:
                 return f"invalid {dotted}: {e}; nothing written"

@@ -343,3 +343,14 @@ def test_an_error_row_is_counted_as_unread():
     testflight.write_cache([tf_row("atlas"), {**tf_row("lens"), "verdict": "error", "payload": None}], now=NOW - 3600)
     b = metrics()["builds_to_try"]
     assert b["value"] == 1 and b["unread_products"] == 1
+
+
+def test_config_set_writes_a_goal_date_and_refuses_a_bad_one(tmp_path):
+    from teyla import config
+    p = tmp_path / "config.toml"
+    p.write_text("")
+    assert config.set_value("dates.launch", "2027-03-01", p).startswith("set dates.launch")
+    assert 'launch = "2027-03-01"' in p.read_text()
+    assert "is not a date" in config.set_value("dates.race", "next spring", p)
+    assert "race" not in p.read_text()
+    assert config.set_value("dates.launch", None, p).startswith("unset")
