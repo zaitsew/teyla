@@ -109,3 +109,34 @@ expired: it is listed as `keep`.
 that. Undo with `teyla asks undo <id>...`.
 
 `--json` prints `{version, older_than_days, dry_run, items, counts}`.
+
+## Weekly director brief
+
+`teyla digest director` assembles what the weekly director hour reads into one markdown file. It decides
+nothing and changes nothing. The brief is the only file it writes. It makes no network call.
+
+```
+teyla digest director                # write ~/.teyla/director/<ISO week>.md, e.g. 2026-W46.md
+teyla digest director --out FILE     # write that file instead
+teyla digest director --stdout       # print the brief, write nothing
+teyla digest director --json         # the facts as JSON, write nothing
+teyla digest director --quiet        # write the file, print nothing (the routine)
+```
+
+The file is about 100 lines, in this order: the title with the week; hard dates (`[dates]`); the outcome table;
+the sprint slots; open decisions with design picks; builds to try; questions past 14 days (counts by outcome
+and up to 10 rows); and two empty lines for the next two sprints, each to open with `teyla brief <product>
+--goal ... --gate ...`.
+
+It reuses the views above: the scoreboard's `snapshot` and `hard_dates`, the slots' `snapshot` and the inbox
+expiry's dry run. It never calls `teyla asks expire --apply`: closing questions needs an explicit yes. An input
+that fails renders as `not_measured: <ExceptionName>`, and the other sections still render. `--json` keys:
+`version`, `generated`, `week`, `start`, `end`, `hard_dates`, `outcomes`, `slots`, `expiry`, `errors`. The
+open-decisions list shows the scoreboard's three oldest.
+
+### Monday routine
+
+The routine is off. Set `[digest] director = true` (`teyla config set digest.director=true`) and run `teyla
+routine install`: it writes the agent `com.zaitsew.teyla.director`, which runs `teyla digest director --quiet`
+on Mondays at 07:30 local time. Switch the flag off and run `teyla routine install` again to remove it.
+

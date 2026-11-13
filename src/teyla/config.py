@@ -61,6 +61,8 @@
                                    com.spotify. com.dropbox. org.mozilla. homebrew.mxcl.
     [digest]
     notify = true                  the weekly digest posts a macOS notification when written
+    director = false               `teyla routine install` writes an agent: digest director --quiet, Mondays 07:30 (local
+                                   files only; writes ~/.teyla/director/<week>.md)
     [review]                       `teyla reviews`: merged PRs against the review ledger
     ledger    = "~/.cache/review-ledger.tsv"   one TSV line per review, appended by the review script
     min_lines = 7                  PRs with fewer changed lines, or docs-only (*.md, docs/), need no review
@@ -216,7 +218,7 @@ DEFAULTS = {
     "schedules": {"ignore_prefixes": ["com.openai.", "com.google.", "com.microsoft.", "com.adobe.", "us.zoom.",
                                       "com.spotify.", "com.dropbox.", "org.mozilla.", "homebrew.mxcl."]},
     # `teyla digest --write` (the weekly routine) posts a macOS notification with its headline.
-    "digest": {"notify": True},
+    "digest": {"notify": True, "director": False},
     # `teyla tidy`: size budget for a rule or memory file, and how old a dated "for now" may get.
     "tidy": {"max_kb": 24, "stale_days": 120},
     # `teyla reviews`: the ledger the review script appends to, and the size below which a PR is exempt.

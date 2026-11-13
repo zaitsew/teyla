@@ -48,7 +48,8 @@ SWEEP_LABEL = "com.zaitsew.teyla.sweep"
 LOAD_LABEL = "com.zaitsew.teyla.load"
 GROWTH_LABEL = "com.zaitsew.teyla.growth"
 CRASHFEED_LABEL = "com.zaitsew.teyla.crashfeed"
-OPTIONAL_LABELS = (SIMS_LABEL, SWEEP_LABEL, LOAD_LABEL, GROWTH_LABEL, CRASHFEED_LABEL)
+DIRECTOR_LABEL = "com.zaitsew.teyla.director"
+OPTIONAL_LABELS = (SIMS_LABEL, SWEEP_LABEL, LOAD_LABEL, GROWTH_LABEL, CRASHFEED_LABEL, DIRECTOR_LABEL)
 # label -> the config flag that switches it on (`[table] key`), seconds between runs, `teyla` arguments,
 # wrapper, log and stamp names, what it does; `suggest`: doctor mentions it (INFO) while it is off.
 OPTIONAL = {
@@ -73,7 +74,13 @@ OPTIONAL = {
     CRASHFEED_LABEL: dict(table="crash", key="feed_agent", interval=3600, args="crash --pull --quiet",
                           wrapper="crashfeed.sh", log="teyla-crashfeed.log", stamp="crashfeed.last",
                           what="pulls TestFlight crashes and screenshot feedback into teyla crash and teyla review"),
+    # The weekly director brief (src/teyla/director.py, docs/OPERATING.md). `calendar` is (hour, minute) every day, or
+    # (hour, minute, launchd weekday) once a week: Monday 07:30 here. Reads local files only. Off unless `[digest] director = true`.
+    DIRECTOR_LABEL: dict(table="digest", key="director", interval=7 * 86400, calendar=(7, 30, 1), args="digest director --quiet",
+                         wrapper="director.sh", log="teyla-director.log", stamp="director.last",
+                         what="writes the weekly director brief (reads only)"),
 }
+WEEKDAYS = ("Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays")
 # The weekly wrapper's extra line when storage.sweep_agent is on.
 SWEEP_LINE = '"$TEYLA" storage sweep --quiet'
 # The sims agent's extra line when storage.orphan_kill is on.
@@ -199,7 +206,7 @@ CALENDAR_PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
     </array>
     <key>StartCalendarInterval</key>
     <dict>
-        <key>Hour</key>
+{weekday_xml}        <key>Hour</key>
         <integer>{hour}</integer>
         <key>Minute</key>
         <integer>{minute}</integer>
@@ -496,7 +503,8 @@ def every(label: str) -> str:
     """When an optional agent runs, as a phrase: "every 10 min" or "daily at 06:30"."""
     o = OPTIONAL[label]
     if o.get("calendar"):
-        return "daily at %02d:%02d" % o["calendar"]
+        h, m, *day = o["calendar"]
+        return ("%s at %02d:%02d" % (WEEKDAYS[day[0]], h, m)) if day else "daily at %02d:%02d" % (h, m)
     return f"every {o['interval'] // 60} min"
 
 
@@ -619,7 +627,9 @@ def _write_optional(label: str, teyla_bin: str, env_plist: str, env_sh: str) -> 
     p["plist"].parent.mkdir(parents=True, exist_ok=True)
     if o.get("calendar"):
         _write(p["plist"], CALENDAR_PLIST_TEMPLATE.format(label=label, wrapper=p["wrapper"], hour=o["calendar"][0],
-                                                             minute=o["calendar"][1], log=p["log"], env_plist=env_plist))
+                                                             minute=o["calendar"][1], log=p["log"], env_plist=env_plist,
+                                                             weekday_xml=("        <key>Weekday</key>\n        <integer>%d</integer>\n" % o["calendar"][2])
+                                                             if len(o["calendar"]) > 2 else ""))
     else:
         _write(p["plist"], INTERVAL_PLIST_TEMPLATE.format(label=label, wrapper=p["wrapper"], interval=o["interval"],
                                                              log=p["log"], env_plist=env_plist))
