@@ -58,10 +58,10 @@ def test_triage_default_wins_over_everything(machine, capsys):
     assert (i["outcome"], i["default"], i["default_source"]) == ("default", "Use three retries.", "triage")
 
 
-def test_triage_rule_permission_default(machine, capsys):
+def test_a_triage_rule_default_is_generic_and_does_not_count(machine, capsys):
     machine["asks"] = [ask("aaaa0001", question="Want me to add the missing unit test for the export?")]
     i = by_id(machine, capsys)["aaaa0001"]
-    assert (i["default"], i["default_source"]) == ("Yes, go ahead.", "triage")
+    assert (i["outcome"], i["default"], i["default_source"]) == ("drop", "", "none")
 
 
 def test_recommended_option_marker_is_stripped(machine, capsys):
@@ -226,3 +226,18 @@ def test_unknown_words_still_error(machine, capsys):
 def test_zero_days_is_refused(machine, capsys):
     code, _, err = run(capsys, "--older-than", "0")
     assert code == 64 and "above 0" in err
+
+
+def test_the_apply_line_keeps_the_filters():
+    assert expiry.apply_line(14) == "teyla asks expire --apply"
+    assert expiry.apply_line(30, "app-a") == "teyla asks expire --apply --older-than 30 --product app-a"
+
+
+def test_the_dry_run_passes_its_own_store_so_settle_saves_nothing(monkeypatch):
+    seen = {}
+    def fake(*a, **k):
+        seen.update(k)
+        return []
+    monkeypatch.setattr(asks, "collect", fake)
+    expiry.candidates(14)
+    assert isinstance(seen.get("st"), dict)

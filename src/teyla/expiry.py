@@ -5,7 +5,8 @@ each candidate and the outcome it would get, and changes nothing. `--apply` clos
 same way `teyla asks done` does. It sends no answer into any session (`teyla answer` does that).
 
 The default of an ask is never guessed. First match wins, and the rule is recorded as `default_source`:
-  triage       the cached triage default (`~/.teyla/state-triage.json`, read only, no model call)
+  triage       the cached model triage default (`~/.teyla/state-triage.json`, read only, no model call); the
+               generic defaults the triage rules write ("Yes, go ahead") do not count
   recommended  an option marked "(Recommended)"
   stated       a sentence in the question or context that states a default
   design       the first option of a design card (recommended first by contract)
@@ -56,7 +57,8 @@ def find_default(a: asks.Ask, now: float, cache: dict, known: frozenset, undone)
     """(default text, source). Source is `none` and the text empty when no rule matches."""
     from . import triage
     t = triage.decide(a.to_dict(now), cache, known, undone, use_model=True)
-    if t and str(t.get("default") or "").strip():
+    # Only a cached model answer read from this ask's words: a rule's default is generic (review P2).
+    if t and t.get("source") == "model" and str(t.get("default") or "").strip():
         return _clip(t["default"], CLIP_DEFAULT), "triage"
     options = [_option_text(o) for o in a.options or []]
     for o in options:
@@ -75,7 +77,8 @@ def candidates(days: float, product: str = "", now: float | None = None) -> list
     from . import registry, triage
     now = asks._now() if now is None else now
     cutoff = now - days * 86400
-    old = [a for a in asks.collect(max(asks.DEFAULT_DAYS, 365, int(days) + 365), now)
+    # `st` given: `settle` then owns nothing and saves nothing, so a dry run writes no auto-closure (review P1).
+    old = [a for a in asks.collect(max(asks.DEFAULT_DAYS, 365, int(days) + 365), now, st=asks.load_state())
            if a.status == "open" and a.kind != "reminder" and a.when < cutoff
            and (not product or a.product == product)]
     old.sort(key=lambda a: a.when)
@@ -107,7 +110,17 @@ def render_json(items: list[dict], days: float) -> str:
                       indent=1)
 
 
-def render_text(items: list[dict], days: float) -> str:
+def apply_line(days: float, product: str = "") -> str:
+    """The command that applies exactly what the dry run showed: same age, same product (review P2)."""
+    bits = ["teyla asks expire --apply"]
+    if days != DEFAULT_OLDER_THAN:
+        bits.append(f"--older-than {days:g}")
+    if product:
+        bits.append(f"--product {product}")
+    return " ".join(bits)
+
+
+def render_text(items: list[dict], days: float, product: str = "") -> str:
     n = len(items)
     out = [f"{n} question{'' if n == 1 else 's'} {'is' if n == 1 else 'are'} older than {days:g} days. "
            "Dry run: nothing changed."]
@@ -126,7 +139,7 @@ def render_text(items: list[dict], days: float) -> str:
             elif o == "keep":
                 out.append(f"      {i['reason']}")
     if n:
-        out += ["", "Apply: teyla asks expire --apply   (closes default and drop only; sends no answer to any session)",
+        out += ["", f"Apply: {apply_line(days, product)}   (closes default and drop only; sends no answer to any session)",
                 "Undo:  teyla asks undo <id>...   (reopens)"]
     return "\n".join(out)
 
@@ -166,5 +179,5 @@ def cmd_expire(args, words: list[str], now: float) -> int:
     if getattr(args, "apply", False):
         print("\n".join(apply(items, args.note or "", now)))
         return 0
-    print(render_json(items, days) if args.json else render_text(items, days))
+    print(render_json(items, days) if args.json else render_text(items, days, args.product or ""))
     return 0
