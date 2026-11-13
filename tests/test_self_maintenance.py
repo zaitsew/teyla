@@ -414,7 +414,7 @@ def test_install_marks_first_install_once(_home, monkeypatch):
 
 def test_upgrade_retries_after_a_corrupt_uv_cache_and_restores_the_old_version(monkeypatch):
     calls = []
-    def fake_run(cmd, cwd=None):
+    def fake_run(cmd, cwd=None, timeout=None):
         calls.append(cmd)
         if cmd[1:3] == ["cache", "clean"]:
             return 0, ""
@@ -432,7 +432,7 @@ def test_upgrade_retries_after_a_corrupt_uv_cache_and_restores_the_old_version(m
     assert [c[1:3] for c in calls] == [["tool", "install"], ["cache", "clean"], ["tool", "install"], ["--version"]]
     # a build that fails for another reason, with the binary gone, puts the installed version back
     calls.clear()
-    def fail_run(cmd, cwd=None):
+    def fail_run(cmd, cwd=None, timeout=None):
         calls.append(cmd)
         return (0, "ok") if f"@v{update.__version__}" in cmd[-1] else (1, "error: some other build failure")
     monkeypatch.setattr(update, "_run", fail_run)
@@ -441,6 +441,44 @@ def test_upgrade_retries_after_a_corrupt_uv_cache_and_restores_the_old_version(m
     lines = update.upgrade("v9.9.9", "zaitsew/teyla", "uv-tool", python="3.13", sha=SHA)
     assert lines[0].startswith("FAIL: upgrade via uv-tool") and lines[-1].startswith("restored ")
     assert calls[-1][-1].endswith(f"@v{update.__version__}")
+
+
+def test_a_blocked_cache_clean_times_out_and_the_retry_skips_the_cache(monkeypatch):
+    # A long-lived `uv run` holds the cache lock: `uv cache clean` must not hang the update
+    # with no tool installed. It times out, the install is retried with --no-cache, and a
+    # failed retry restores the old version with --no-cache too.
+    SHA = "c" * 40
+    calls = []
+    def blocked_run(cmd, cwd=None, timeout=None):
+        calls.append((cmd, timeout))
+        if cmd[1:3] == ["cache", "clean"]:
+            return 124, f"timed out after {timeout:g} s"
+        if "--no-cache" not in cmd:
+            return 1, "Git operation failed\nerror: unable to read sha1 file of src/teyla/cli.py"
+        if f"@v{update.__version__}" in cmd[-1]:
+            return 0, "Installed 1 executable: teyla"
+        return 1, "error: some other build failure"
+    monkeypatch.setattr(update, "_run", blocked_run)
+    monkeypatch.setattr(update.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None)
+    monkeypatch.setattr(update.pathlib.Path, "home", classmethod(lambda cls: pathlib.Path("/nonexistent")))
+    lines = update.upgrade("v9.9.9", "zaitsew/teyla", "uv-tool", python="3.13", sha=SHA)
+    clean = [t for c, t in calls if c[1:3] == ["cache", "clean"]]
+    assert clean == [update.CACHE_CLEAN_TIMEOUT]
+    assert any("retrying with --no-cache" in l for l in lines)
+    installs = [c for c, _ in calls if c[1:3] == ["tool", "install"]]
+    assert "--no-cache" not in installs[0] and "--no-cache" in installs[1] and "--no-cache" in installs[2]
+    assert installs[2][-1].endswith(f"@v{update.__version__}") and lines[-1].startswith("restored ")
+
+
+def test_run_kills_a_command_past_its_timeout():
+    rc, out = update._run(["sleep", "5"], timeout=0.2)
+    assert rc == 124 and "timed out" in out
+
+
+def test_without_cache_adds_the_flag_once_after_install():
+    cmd = ["/usr/bin/uv", "tool", "install", "--force", "src"]
+    assert update._without_cache(cmd) == ["/usr/bin/uv", "tool", "install", "--no-cache", "--force", "src"]
+    assert update._without_cache(update._without_cache(cmd)).count("--no-cache") == 1
 
 
 def test_catch_up_never_reruns_the_wrapper_that_called_it(_home, monkeypatch):
