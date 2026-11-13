@@ -10,6 +10,7 @@ struct TodayScreen: View {
     @Binding var showNewTask: Bool
     @AppStorage(MorningCardLogic.labKey) private var morningCardOn = false
     @State private var posted = MorningCardLogic.load().posted != nil
+    @Environment(\.scenePhase) private var scenePhase
 
     private var owner: [Ask] { model.ownerAsks }
     private var builds: [TodayBuild] { PhoneToday.builds(model.snapshot?.today) }
@@ -47,6 +48,10 @@ struct TodayScreen: View {
                 }
             }
             .onAppear { posted = MorningCardLogic.load().posted != nil }
+            // A new day can start while the app sits in the background on this tab.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { posted = MorningCardLogic.load().posted != nil }
+            }
         }
     }
 }
@@ -216,10 +221,15 @@ private struct TodayStackB: View {
             }
             if !heroContent {
                 group("Content") {
-                    Text(contentOn ? "Posted today. Add the link tomorrow."
-                                   : "No post card. Turn on Morning post card in More, under Settings, Lab.")
-                        .font(Typo.body).foregroundStyle(Palette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if contentDue {
+                        // A blocked decision took the large card; the post is still due, so the card stays usable here.
+                        MorningCard()
+                    } else {
+                        Text(contentOn ? "Posted today. Add the link tomorrow."
+                                       : "No post card. Turn on Morning post card in More, under Settings, Lab.")
+                            .font(Typo.body).foregroundStyle(Palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
             group("Builds to try") {
