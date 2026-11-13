@@ -174,3 +174,16 @@ def test_writes_nothing(capsys, machine, tmp_path):
     run(capsys); run(capsys, "--json")
     after = {p: p.read_bytes() for p in (tmp_path / "teyla").rglob("*") if p.is_file()}
     assert before == after
+
+
+def test_cli_sessions_reads_recent_transcripts_only(tmp_path):
+    import os
+    d = tmp_path / "proj-a"
+    d.mkdir()
+    fresh, old = d / "s1.jsonl", d / "s2.jsonl"
+    fresh.write_text('{"type": "summary"}\n{"cwd": "/work/app-a", "type": "user"}\n')
+    old.write_text('{"cwd": "/work/app-b"}\n')
+    now = 2_000_000_000.0
+    os.utime(fresh, (now - 3600, now - 3600))
+    os.utime(old, (now - 3 * 86400, now - 3 * 86400))
+    assert slots.cli_sessions(now, str(tmp_path)) == [("/work/app-a", "s1", now - 3600)]

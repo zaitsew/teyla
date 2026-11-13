@@ -145,6 +145,33 @@ def slot_row(c: dict, cards, items, builds, now: float) -> dict:
 
 # --- sessions with no contract -------------------------------------------------------------------
 
+def cli_sessions(now: float, root: str | None = None) -> list[tuple[str, str, float]]:
+    """(cwd, session id, last write) of Claude Code transcripts written in the window: the sessions the desktop
+    and dispatch stores do not list. Reads the first lines of each recent file only."""
+    import glob
+    import os
+    from .adapters import claude_code
+    root = claude_code.DEFAULT_ROOT if root is None else root
+    out = []
+    for f in glob.glob(os.path.join(root, "*", "*.jsonl")):
+        try:
+            last = os.path.getmtime(f)
+            if now - last > ACTIVE_WINDOW_S:
+                continue
+            with open(f, encoding="utf-8", errors="replace") as fh:
+                for _, line in zip(range(20), fh):
+                    try:
+                        cwd = json.loads(line).get("cwd")
+                    except (ValueError, AttributeError):
+                        continue
+                    if cwd:
+                        out.append((str(cwd), os.path.basename(f)[:-6], last))
+                        break
+        except OSError:
+            continue
+    return out
+
+
 def recent_products(now: float) -> list[dict]:
     """Products with a session active in the last 24 hours: {product, last_active (epoch)}. Local files only.
     `state.running` keeps a 10-minute window, so this reads the same session stores with a 24-hour one."""
@@ -165,6 +192,8 @@ def recent_products(now: float) -> list[dict]:
         add(registry.resolve(s["cwd"], session=s["sid"]), s["_last"])
     for s in state.claude_dispatch_sessions(now, None, runs):
         add(registry.resolve(s["cwd"], session=s["id"]), s["_last"])
+    for cwd, sid, last in cli_sessions(now):       # plain `claude` in a terminal (review P2)
+        add(registry.resolve(cwd, session=sid), last)
     return [{"product": p, "last_active": t} for p, t in sorted(found.items(), key=lambda x: -x[1])]
 
 
