@@ -31,6 +31,13 @@ paths = [
   ":(exclude)apps/mac/Teyla/UI/NotFoundView.swift",
 ]
 
+# `teyla freshness`: each README screenshot is judged by the sources that draw that screen, not by every
+# change in the repo. An image goes stale after 5 user-facing changes to its surface.
+[freshness.surfaces]
+"docs/img/mac/**" = ["apps/mac/Teyla/**"]
+"docs/img/ios/**" = ["apps/ios/Teyla/**", "apps/ios/TeylaWidget/**", "apps/ios/Shared/**"]
+"docs/img/web-*.png" = ["src/teyla/web/**", "src/teyla/start.py"]
+
 # AI directory listings, shown as platforms by `teyla portfolio` (docs/APP.md). Copied from the portals by hand:
 # update `state` and `as_of` whenever a portal changes. docs/DIRECTORY.md holds the submission history.
 [directories.claude]
