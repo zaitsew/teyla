@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("dictationLanguage") private var languageID = DictationLanguage.english.rawValue
     @AppStorage(MorningCardLogic.labKey) private var morningCardOn = false
+    @AppStorage(TodayVariant.storageKey) private var todayVariant = TodayVariant.off.rawValue
     @State private var confirmForget = false
     @State private var showFolderPicker = false
 
@@ -86,11 +87,22 @@ struct SettingsView: View {
     private var labBlock: some View {
         VStack(alignment: .leading, spacing: Space.m) {
             SectionHeader(title: "Lab",
-                          note: "One question each morning, one post in your words. Drafts stay on this iPhone.")
+                          note: "One question each morning, one post in your words. Drafts stay on this iPhone. The Today screen replaces Home.")
             RowGroup {
                 Toggle("Morning post card", isOn: $morningCardOn)
                     .font(Typo.body.weight(.semibold))
                     .padding(.vertical, Space.s)
+                VStack(alignment: .leading, spacing: Space.xxs) {
+                    Text("Today screen").font(Typo.body.weight(.semibold))
+                    Picker("Today screen", selection: $todayVariant) {
+                        ForEach(TodayVariant.allCases) { Text($0.title).tag($0.rawValue) }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.vertical, Space.s)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }

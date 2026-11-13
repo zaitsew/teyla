@@ -130,7 +130,7 @@ Teyla for Mac is a window and a menu-bar icon: Today (your goals and the next st
 brew install xcodegen && git clone https://github.com/zaitsew/teyla && cd teyla/apps/mac && ./install.sh
 ```
 
-The iPhone app shows what the Mac shows, and you answer a question by text or voice. It reads a signed folder in your own iCloud Drive that `teyla relay on` keeps current. A home-screen and Lock Screen widget draws your GitHub and growth activity. Share a link or a picture to Teyla from the iOS share sheet to add it to your [taste corpus](docs/TASTE.md#from-the-phone). Build it from [apps/ios](apps/ios/README.md); neither app is in the App Store. There is no Teyla server and no account. [APP.md](docs/APP.md) has the contract.
+The iPhone app shows what the Mac shows, and you answer a question by text or voice. It reads a signed folder in your own iCloud Drive that `teyla relay on` keeps current. A home-screen and Lock Screen widget draws your GitHub and growth activity. Share a link or a picture to Teyla from the iOS share sheet to add it to your [taste corpus](docs/TASTE.md#from-the-phone). Settings > Lab > Today screen swaps Home for decisions, the post card and builds to try ([OPERATING.md](docs/OPERATING.md#today-on-the-iphone-lab)). Build it from [apps/ios](apps/ios/README.md); neither app is in the App Store. There is no Teyla server and no account. [APP.md](docs/APP.md) has the contract.
 
 ## Privacy
 

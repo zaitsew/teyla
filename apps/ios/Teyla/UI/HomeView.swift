@@ -7,8 +7,19 @@ struct HomeView: View {
     @Environment(AppModel.self) private var model
     @Binding var tab: AppTab
     @Binding var showNewTask: Bool
+    /// Lab: "a" or "b" shows the Today screen on this tab; "off" keeps this Home.
+    @AppStorage(TodayVariant.storageKey) private var storedToday = TodayVariant.off.rawValue
 
     var body: some View {
+        let variant = TodayVariant.from(stored: storedToday)
+        if variant == .off {
+            home
+        } else {
+            TodayScreen(variant: variant, tab: $tab, showNewTask: $showNewTask)
+        }
+    }
+
+    private var home: some View {
         NavigationStack {
             ScrollView {
                 // Lazy: a long Home builds the rows that scroll into view, not all 40 products at once.

@@ -220,6 +220,9 @@ new ones, and a version 2 client treats a missing field as empty.
 - `notes`: `{inbox, by_product}` — how many open text notes (`teyla note`, `docs/NOTES.md`) wait with no
   product yet, and how many per registered product. Dropped notes are not counted; without a notes file it
   is `{inbox: 0, by_product: {}}`. An additive field, so the version stays 2.
+- `today`: `{builds_to_try: {value, builds[], cache_age_s, stale} | {value: "not_measured", reason}}`, sent in the relay
+  snapshot only. `builds[]` rows are `{product, platform, build, uploaded}`. The iPhone Today screen (Lab) reads it;
+  an older Mac sends no `today`.
 
 Notes on the CLI as built (version 2):
 

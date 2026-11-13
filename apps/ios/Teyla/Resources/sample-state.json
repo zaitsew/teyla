@@ -17,7 +17,7 @@
   "asks": [
     {
       "id": "a0000001",
-      "kind": "question",
+      "kind": "blocked",
       "product": "sample-app",
       "title": "Renew the developer program membership?",
       "question": "Renew the developer program membership?",
@@ -3463,5 +3463,17 @@
       {"kind": "follow_up", "count": 1},
       {"kind": "distribute", "count": 7}
     ]
+  },
+  "today": {
+    "builds_to_try": {
+      "value": 3,
+      "builds": [
+        {"product": "sample-app", "platform": "iOS", "build": "42", "uploaded": "2026-11-12"},
+        {"product": "sample-watch", "platform": "watchOS", "build": "7", "uploaded": "2026-11-11"},
+        {"product": "sample-tool", "platform": "macOS", "build": "118", "uploaded": "2026-11-09"}
+      ],
+      "cache_age_s": 600,
+      "stale": false
+    }
   }
 }

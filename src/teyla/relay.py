@@ -1041,6 +1041,24 @@ def github_view(today: str, now: float, source=None) -> dict | None:
             "streak": g["streak"], "longest": g["longest"], "at": g.get("at", 0)}
 
 
+def today_view(now: float) -> dict | None:
+    """The iPhone Today screen's extra data: the builds to try, read from the TestFlight cache (`scoreboard.builds_metric`).
+    No network call and no write. `value` is a count, or `not_measured` with a `reason`. None when the scoreboard cannot run."""
+    try:
+        from . import scoreboard
+        m = scoreboard.builds_metric(now)
+    except Exception:  # noqa: BLE001 - an upgrade for the phone; an older Mac simply sends no `today`
+        return None
+    if not isinstance(m, dict):
+        return None
+    if m.get("value") == scoreboard.NOT_MEASURED:
+        return {"builds_to_try": {"value": scoreboard.NOT_MEASURED, "reason": str(m.get("reason") or "")}}
+    rows = [{k: str(b.get(k) or "") for k in ("product", "platform", "build", "uploaded")}
+            for b in (m.get("builds") or []) if isinstance(b, dict)]
+    return {"builds_to_try": {"value": len(rows), "builds": rows, "cache_age_s": int(m.get("cache_age_s") or 0),
+                              "stale": bool(m.get("stale"))}}
+
+
 def default_source(now: float):
     items = asks.collect(asks.DEFAULT_DAYS, now)
     snap = snapshot.build(now, items=items)
@@ -1053,6 +1071,9 @@ def default_source(now: float):
     gtm = gtm_view()                            # additive: an older `teyla` has no `gtm`, and the Today card is hidden
     if gtm is not None:
         snap["gtm"] = gtm
+    today = today_view(now)                     # additive: the Today screen (Lab); an older phone ignores the key
+    if today is not None:
+        snap["today"] = today
     return snap, items
 
 
