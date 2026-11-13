@@ -271,17 +271,22 @@ def readme_change(repo: pathlib.Path, ref: str, min_lines: int) -> tuple[dict | 
     commits that only patched it. (None, 0) when git cannot say."""
     sep = "\x1f"
     try:
-        r = subprocess.run(["git", "-C", str(repo), "log", "--first-parent", "-m", "--numstat", "-n", "400",
+        # No -n cap: a cap would turn the oldest patch it returned into a "real edit" and hide older changes.
+        r = subprocess.run(["git", "-C", str(repo), "log", "--first-parent", "-m", "--numstat",
                             f"--format=\x1e%cI{sep}%h{sep}%s{sep}", ref, "--", ":(literal)README.md"],
                            capture_output=True, text=True, timeout=30)
         g = subprocess.run(["git", "-C", str(repo), "log", "--first-parent", "-m", "-1", "-G", "teyla:reviewed",
                             "--format=%h", ref, "--", ":(literal)README.md"],
                            capture_output=True, text=True, timeout=30)
+        now = subprocess.run(["git", "-C", str(repo), "show", f"{ref}:README.md"],
+                             capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None, 0
     if r.returncode != 0:
         return None, 0
-    marked = g.stdout.strip() if g.returncode == 0 else ""
+    # -G also matches the commit that deleted a mark. The mark counts only while the README still carries one.
+    has_mark = now.returncode == 0 and REVIEW_MARK.search(now.stdout) is not None
+    marked = g.stdout.strip() if g.returncode == 0 and has_mark else ""
     last, touches = None, 0
     for rec in r.stdout.split("\x1e"):
         if not rec.strip():

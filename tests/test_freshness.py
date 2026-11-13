@@ -551,6 +551,26 @@ def test_the_review_mark_resets_the_readme_date_and_the_command_writes_it(tmp_pa
     assert (r / "README.md").read_text() == "# App\n\n<!-- teyla:reviewed 2026-02-02 -->\n"
 
 
+def test_deleting_the_review_mark_does_not_count_as_a_review(tmp_path):
+    r = product(tmp_path)
+    commit(r, {"README.md": "# App\n" + BODY + "\n<!-- teyla:reviewed 2026-01-01 -->\n"}, "the README, reviewed", OLD)
+    features(r, 12)
+    commit(r, {"README.md": "# App\n" + BODY}, "drop the comment at the end", RECENT)
+    c = checks(freshness.run()[0])["readme"]
+    assert c["verdict"] == "stale" and c["since"] == OLD[:10] and c["changes"] == 12
+
+
+def test_a_long_run_of_small_patches_still_reaches_the_real_edit(tmp_path):
+    r = product(tmp_path)
+    commit(r, {"README.md": "# App\n" + BODY}, "the README, written once", OLD)
+    features(r, 12)
+    for i in range(405):
+        write(r, "README.md", "# App\n" + BODY + f"patch {i}\n")
+        git(r, "commit", "-q", "-am", f"docs: wording {i}", when=RECENT)
+    c = checks(freshness.run()[0])["readme"]
+    assert c["verdict"] == "stale" and c["since"] == OLD[:10] and c["changes"] == 12
+
+
 def test_reviewed_takes_one_repo_and_needs_a_readme(tmp_path, capsys):
     a, b = product(tmp_path, name="a"), product(tmp_path, name="b")
     assert main(["freshness", "--reviewed", str(a), str(b)]) == 2
