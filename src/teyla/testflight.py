@@ -472,6 +472,8 @@ def check_product(manifest: dict, cfg: dict) -> dict:
         if p.get("_no_build"):
             if frozen:
                 lines.append(frozen_line(name, target))
+                out.append({"platform": p.get("platform"), "verdict": "current", "behind": 0,
+                            "frozen": frozen_note(target)})
             if not lag:
                 continue   # a platform with no build and no source change to ship is not a finding
             v = "stale"

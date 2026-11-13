@@ -710,6 +710,17 @@ def test_a_frozen_target_is_in_the_json_and_not_a_problem(tmp_path, monkeypatch,
     assert "lag" not in mac_entry and testflight.problem_lines(rows) == []
 
 
+def test_a_frozen_target_with_no_upload_stays_in_the_json(tmp_path, monkeypatch):
+    platform_toml(tmp_path)
+    d = store_repo(tmp_path, target=STORE_TARGET + 'frozen = "2026-10-04: nobody opened the Mac app"\n')
+    commit(d, "apps/mac/App/Home.swift", "2026-11-02T10:00:00Z")
+    lag_tool(monkeypatch, payload(plat()))                                 # the tool lists iOS only
+    rows = testflight.run([str(d)])
+    mac_entry = [p for p in rows[0]["platforms"] if p["platform"] == "MAC_OS"]
+    assert mac_entry and mac_entry[0]["frozen"]["since"] == "2026-10-04"
+    assert rows[0]["verdict"] == "current"
+
+
 def test_frozen_now_needs_frozen_and_a_bool(tmp_path):
     base = {"platform": "macos", "scheme": "S", "project": "apps/mac/S.xcodeproj"}
     _, err = testflight.store_targets({"release": {"store_target": [{**base, "frozen_now": True}]}})
