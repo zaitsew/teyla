@@ -1,13 +1,14 @@
 """`teyla freshness` -- do the README, the README images, the store text and the store screenshots still match the product.
 
     teyla freshness [path...] [--json] [--quiet] [--fetch]
+    teyla freshness --reviewed [path]
 
 A README that shows a screen from 16 releases ago, or a store "What's New" that says "Bug fixes and
 improvements" on every version, is wrong in a way no test sees. For each product this command asks git how many
 user-facing changes landed on the default branch since the newest commit that touched each of
 
-    readme          README.md
-    readme-images   the oldest local image README.md shows
+    readme          README.md, dated by its last real edit (see below), not its last touch
+    readme-images   each local image README.md shows
     whats-new       the store What's New files (docs/whats-new/, **/release_notes.txt, **/whats_new.txt,
                     **/whats-new*.txt, `[freshness] whats_new`); none yet is a skip; a generic note is stale
     listing         the store listing text
@@ -16,15 +17,29 @@ user-facing changes landed on the default branch since the newest commit that to
 A change is user-facing when its title is not internal (the split `teyla whats-new` uses) and it touched at
 least one path that is not maintenance (docs, tests, hooks, `*.md`, `teyla.toml`, locks, brand, the store files).
 A check is stale when at least `changes` user-facing changes (default 10) landed since that commit AND the
-commit is older than `days` (default 14). A product tunes it in its teyla.toml:
+commit is older than `days` (default 14). Two rules keep a fast product honest:
+
+- The README and its images are also stale at `burst` user-facing changes (default 50), whatever their age.
+- A one-line patch does not make a README current. Its date is the newest commit that changed at least
+  `readme_lines` lines of it (default 10), or that set the review mark `<!-- teyla:reviewed YYYY-MM-DD -->`.
+  `teyla freshness --reviewed [path]` writes the mark after the whole README was read against the product.
+
+An image with a declared surface counts only the changes that touched that surface, and is stale after
+`surface_changes` of them (default 5) at any age. A product tunes all of it in its teyla.toml:
 
     [freshness]
     changes = 10
     days = 14
+    burst = 50                                  # 0 turns the rule off
+    readme_lines = 10
+    surface_changes = 5
     skip = ["readme-images"]
     whats_new = ["store/notes/*.txt"]
     listing = ["apps/store/listing/**"]        # default: the usual places that exist
     screenshots = ["docs/screenshots/**/*.png"]
+
+    [freshness.surfaces]                        # README image glob -> the sources that draw that screen
+    "docs/img/mac/**" = ["apps/mac/Teyla/**"]
 
 Offline by default: local git only, no network, no model call, so it reads the remote-tracking refs as they
 are. `--fetch` first runs `git fetch --quiet origin` in each product repo (30 s limit; a failure is noted on
@@ -50,6 +65,10 @@ from . import cloud, net, productize, testflight, whats_new
 
 DEFAULT_CHANGES = 10
 DEFAULT_DAYS = 14
+DEFAULT_BURST = 50
+DEFAULT_README_LINES = 10
+DEFAULT_SURFACE_CHANGES = 5
+REVIEW_MARK = re.compile(r"<!--\s*teyla:reviewed\s+(\d{4}-\d{2}-\d{2})\s*-->")
 FETCH_TIMEOUT = 30
 CHECKS = ("readme", "readme-images", "whats-new", "listing", "screenshots")
 DEFAULT_LISTING = ("apps/store/listing/**", "docs/store/listing*.json", "content/store/**/*.txt",
@@ -92,7 +111,16 @@ def settings(repo: pathlib.Path) -> dict:
         v = t.get(key)
         return [x for x in v if isinstance(x, str) and x.strip()] if isinstance(v, list) else []
 
+    raw = t.get("surfaces") if isinstance(t.get("surfaces"), dict) else {}
+    surfaces = []
+    for image_glob, sources in raw.items():
+        srcs = [sources] if isinstance(sources, str) else sources if isinstance(sources, list) else []
+        srcs = [x for x in srcs if isinstance(x, str) and x.strip()]
+        if srcs:
+            surfaces.append((image_glob, srcs))
     return {"changes": num("changes", DEFAULT_CHANGES), "days": num("days", DEFAULT_DAYS),
+            "burst": num("burst", DEFAULT_BURST), "readme_lines": num("readme_lines", DEFAULT_README_LINES),
+            "surface_changes": num("surface_changes", DEFAULT_SURFACE_CHANGES), "surfaces": surfaces,
             "skip": set(strs("skip")), "listing": strs("listing"), "screenshots": strs("screenshots"),
             "whats_new": strs("whats_new")}
 
@@ -229,6 +257,69 @@ def _user_changes(repo: pathlib.Path, sha: str, cache: dict) -> list[dict]:
     return cache[sha]
 
 
+def _parse_change(when: str, sha: str, subject: str) -> dict | None:
+    try:
+        return {"when": dt.datetime.fromisoformat(when), "sha": sha, "subject": subject[:80]}
+    except ValueError:
+        return None
+
+
+def readme_change(repo: pathlib.Path, ref: str, min_lines: int) -> tuple[dict | None, int]:
+    """(change, touches). `change` is the newest mainline commit that really edited README.md: it changed at
+    least `min_lines` lines of it (a merge is measured against its first parent, so a PR counts as one edit),
+    or it set the review mark. With neither, the commit that created the file. `touches` counts the newer
+    commits that only patched it. (None, 0) when git cannot say."""
+    sep = "\x1f"
+    try:
+        # No -n cap: a cap would turn the oldest patch it returned into a "real edit" and hide older changes.
+        r = subprocess.run(["git", "-C", str(repo), "log", "--first-parent", "-m", "--numstat",
+                            f"--format=\x1e%cI{sep}%h{sep}%s{sep}", ref, "--", ":(literal)README.md"],
+                           capture_output=True, text=True, timeout=30)
+        g = subprocess.run(["git", "-C", str(repo), "log", "--first-parent", "-m", "-1", "-G", "teyla:reviewed",
+                            "--format=%h", ref, "--", ":(literal)README.md"],
+                           capture_output=True, text=True, timeout=30)
+        now = subprocess.run(["git", "-C", str(repo), "show", f"{ref}:README.md"],
+                             capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None, 0
+    if r.returncode != 0:
+        return None, 0
+    # -G also matches the commit that deleted a mark. The mark counts only while the README still carries one.
+    has_mark = now.returncode == 0 and REVIEW_MARK.search(now.stdout) is not None
+    marked = g.stdout.strip() if g.returncode == 0 and has_mark else ""
+    last, touches = None, 0
+    for rec in r.stdout.split("\x1e"):
+        if not rec.strip():
+            continue
+        when, sha, subject, stat = (rec.split(sep, 3) + [""] * 4)[:4]
+        ch = _parse_change(when.strip(), sha, subject)
+        if ch is None:
+            continue
+        lines = 0
+        for ln in stat.splitlines():
+            parts = ln.split("\t")
+            if len(parts) >= 3:
+                lines += sum(int(x) for x in parts[:2] if x.isdigit())
+        if lines >= min_lines or (marked and sha == marked):
+            return ch, touches
+        last, touches = ch, touches + 1
+    return (last, max(touches - 1, 0)) if last else (None, 0)
+
+
+def mark_reviewed(repo: pathlib.Path, today: dt.date | None = None) -> str | None:
+    """Write or replace the review mark as the last line of the work tree's README.md. Returns the mark, or
+    None when there is no README. Commits nothing."""
+    p = repo / "README.md"
+    try:
+        text = p.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    mark = f"<!-- teyla:reviewed {(today or dt.date.today()).isoformat()} -->"
+    body = "\n".join(ln for ln in text.splitlines() if not REVIEW_MARK.fullmatch(ln.strip())).rstrip("\n")
+    p.write_text(f"{body}\n\n{mark}\n", encoding="utf-8")
+    return mark
+
+
 def readme_images(repo: pathlib.Path, tree: Tree | None = None) -> list[str]:
     """Repo-relative paths of the files README.md shows (read from the default branch), in order of
     appearance, each once."""
@@ -253,6 +344,8 @@ def readme_images(repo: pathlib.Path, tree: Tree | None = None) -> list[str]:
 
 
 BRAND_WORDS = ("logo", "icon", "lockup", "badge", "mark")
+README_ADVICE = ("Read the whole README against what ships today, fix it, then run "
+                 "`teyla freshness --reviewed` and commit.")
 
 
 def is_brand_image(rel: str) -> bool:
@@ -270,20 +363,31 @@ def _item(check: str, verdict: str, **kw) -> dict:
     return base
 
 
-def _evaluate(repo, product, check, label, advice, change, cfg, cache, path=None, now=None) -> dict:
-    """Stale when enough user-facing changes landed since `change` and it is old enough."""
+def _evaluate(repo, product, check, label, advice, change, cfg, cache, path=None, now=None, burst=False,
+              surface=None, note="") -> dict:
+    """Stale when enough user-facing changes landed since `change` and it is old enough. With `burst`, also at
+    `cfg["burst"]` changes whatever the age. With `surface` (source globs), only the changes that touched the
+    surface count, and `cfg["surface_changes"]` of them are enough at any age."""
     now = now or _now()
     if change is None:
         return _item(check, "skip", path=path)
     user = _user_changes(repo, change["sha"], cache)
     age = (now - change["when"]).days
     since = change["when"].date().isoformat()
-    stale = len(user) >= cfg["changes"] and age >= cfg["days"]
+    what = "user-facing changes"
+    if surface:
+        res = [_glob_re(g) for g in surface]
+        user = [u for u in user if any(r.match(f) for f in u["files"] for r in res)]
+        stale = len(user) >= cfg["surface_changes"]
+        what = f"user-facing changes to {', '.join(surface)}"
+    else:
+        stale = (len(user) >= cfg["changes"] and age >= cfg["days"]) or \
+            bool(burst and cfg["burst"] and len(user) >= cfg["burst"])
     examples = [f"\"{u['title']}\"" + (f" #{u['pr']}" if u["pr"] else "") for u in user[:2]]
     text = ""
     if stale:
         eg = f" (e.g. {', '.join(examples)})" if examples else ""
-        text = f"{product} {label}: {len(user)} user-facing changes since {since}{eg}. {advice}"
+        text = f"{product} {label}: {len(user)} {what} since {since}{note}{eg}. {advice}"
     return _item(check, "stale" if stale else "ok", since=since, changes=len(user), path=path,
                  examples=examples, text=text)
 
@@ -333,20 +437,33 @@ def check_product(manifest: dict, now: dt.datetime | None = None) -> dict:
     def readme():
         if not tree.has("README.md"):
             return _item("readme", "stale", path="README.md", text=f"{product} README: no README.md")
-        return _evaluate(repo, product, "readme", "README", "Update it to what ships today.",
-                         testflight.newest_change(repo, [":(literal)README.md"]), cfg, cache, "README.md", now)
+        change, touches = readme_change(repo, tree.ref, cfg["readme_lines"])
+        note = ""
+        if touches:
+            note = (f", its last real edit ({touches} later commit{'s' if touches != 1 else ''} changed under "
+                    f"{cfg['readme_lines']} lines)")
+        return _evaluate(repo, product, "readme", "README", README_ADVICE, change, cfg, cache, "README.md", now,
+                         burst=True, note=note)
 
     def images():
+        surfaces = [(_glob_re(g), srcs) for g, srcs in cfg["surfaces"]]
         found = []
         for rel in (r for r in readme_images(repo, tree) if not is_brand_image(r)):
             ch = testflight.newest_change(repo, [f":(literal){rel}"])
             if ch:
-                found.append((ch["when"], rel, ch))
+                surface = next((srcs for rx, srcs in surfaces if rx.match(rel)), None)
+                found.append(_evaluate(repo, product, "readme-images", f"README image {rel}",
+                                       "Re-capture it from the current build.", ch, cfg, cache, rel, now,
+                                       burst=True, surface=surface))
         if not found:
             return _item("readme-images", "skip")
-        _, rel, ch = min(found, key=lambda x: x[0])
-        return _evaluate(repo, product, "readme-images", f"README image {rel}",
-                         "Re-capture it from the current build.", ch, cfg, cache, rel, now)
+        stale = sorted((i for i in found if i["verdict"] == "stale"), key=lambda i: -i["changes"])
+        if not stale:
+            return min(found, key=lambda i: i["since"])      # the oldest image stands for the check
+        first = dict(stale[0])
+        if len(stale) > 1:
+            first["text"] += f" Also stale: {', '.join(i['path'] for i in stale[1:])}."
+        return first
 
     def notes():
         files = notes_files(tree, cfg["whats_new"])
@@ -490,7 +607,24 @@ def write_problems(rows: list[dict], path: pathlib.Path | None = None) -> pathli
     return None
 
 
+def cmd_reviewed(args) -> int:
+    """`teyla freshness --reviewed [path]`: one repo, the current folder by default; never the whole sweep."""
+    if len(args.paths) > 1:
+        print("teyla: --reviewed takes one repo", file=sys.stderr)
+        return 2
+    repo = pathlib.Path(args.paths[0] if args.paths else ".").resolve()
+    mark = mark_reviewed(repo)
+    if mark is None:
+        print(f"teyla: no README.md in {repo}", file=sys.stderr)
+        return 2
+    print(f"README.md ends with {mark}. Commit it with the README fixes: the mark says the whole README was "
+          "read against the product on that day.")
+    return 0
+
+
 def cmd_freshness(args):
+    if getattr(args, "reviewed", False):
+        return cmd_reviewed(args)
     quiet = getattr(args, "quiet", False)
     if args.paths and not productize.find_manifests(args.paths):
         print("teyla: no teyla.toml at " + ", ".join(args.paths), file=sys.stderr)
@@ -519,4 +653,7 @@ def register(sp):
                    help="git fetch origin in each product repo first (a failure is noted, not fatal)")
     q.add_argument("--quiet", action="store_true",
                    help="print nothing; write ~/.teyla/freshness.problems (removed when nothing is stale)")
+    q.add_argument("--reviewed", action="store_true",
+                   help="write today's review mark at the end of README.md (one repo, the current folder by "
+                        "default), after reading the whole README against the product")
     return q
