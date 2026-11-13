@@ -24,6 +24,8 @@ DEFAULT_LOCALES = ("en",)
 VERSION_TAG = re.compile(r"^(?:[A-Za-z][A-Za-z0-9_-]*?[-_/]?)?v?\d+(?:\.\d+)+(?:[-+.][0-9A-Za-z.]+)?$")
 INTERNAL = re.compile(
     r"^(?:docs?|test|tests|ci|chore|refactor|review|deps?|build|style|policy|release)\b\s*[:(]"
+    r"|^release\s+v?\d"                                       # "release 0.52.0"
+    r"|^(?:(?:iphone|ios|ipad|mac|macos|android|tv)\s+)?build\s+\d+\b"  # "iPhone build 11", "Build 4"
     r"|\b(?:bump|dependabot|dependencies|store listing|listing|screenshots?|policy|changelog|readme|lint|typo)\b",
     re.I)
 MERGE_RE = re.compile(r"^Merge pull request #(\d+) from (\S+)")

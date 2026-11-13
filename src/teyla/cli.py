@@ -25,6 +25,7 @@
   teyla asks done <id-prefix>... [--note TEXT] | undo <id-prefix>... | snooze <id-prefix> <days>   close one, reopen one, or hide one
   teyla asks triage [--product P] [--json]                         the questions sorted into need you, agents can act, look closable
   teyla asks accept-close [<id-prefix>...] [--json]                close the "look closable" ones together; prints the undo line
+  teyla asks expire [--older-than DAYS] [--product P] [--json] [--apply] [--note TEXT]   old questions and what each would get; dry run unless --apply
   teyla product [list] [--json] | show <id> [--json] [--quick] | init [--write] | add <id> [--repo P] | set <id> k=v... | park|wake <id>   the product registry (~/.teyla/products.toml)
   teyla product assign <ask-id-prefix|session-id> <id> [--ask-only]   file a session's asks under another product
   teyla note "text" [--product P] [--json] | link <id> <product> | drop|undrop <id>   keep a text idea, linked to a product (~/.teyla/notes/)
@@ -82,6 +83,7 @@
   teyla productize [path...] [--json] [--owner-steps]            what stands between each product and its second user
   teyla testflight [path...] [--json] [--quiet] [--china] [--allow-network]    did the build reach a person: newest upload vs newest build your tester can install; --china: is any app still available in China mainland
   teyla freshness [path...] [--json] [--quiet] [--fetch]             do the README, README images, store text and screenshots still match the product (offline; --fetch updates refs first)
+  teyla freshness --reviewed [path]                                  mark README.md as read in full against the product today (a one-line patch does not make a README current)
   teyla play [path...] [--json] [--quiet] [--allow-network]          did the Android build reach a person: internal track status, closed-test age on Google Play
   teyla schedules [--json] [--quiet] [--all] [--allow-network]    every scheduled task (Claude desktop, launchd, cloud routines, GitHub, teyla.toml): did it run, what vanished
   teyla schedules forget KEY [KEY...]                              acknowledge VANISHED tasks removed on purpose (clears the banner)

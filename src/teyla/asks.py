@@ -1693,6 +1693,9 @@ def cmd_asks(args) -> int:
     if words and words[0] == "accept-close":
         from . import triage
         return triage.cmd_accept_close(args, words[1:], now)
+    if words and words[0] == "expire":
+        from . import expiry
+        return expiry.cmd_expire(args, words[1:], now)
     if words and words[0] == "snooze":
         try:
             if len(words) != 3:
@@ -1705,7 +1708,7 @@ def cmd_asks(args) -> int:
         print(line, file=sys.stderr if code else sys.stdout)
         return code
     if words:
-        print(f"unknown action {words[0]!r}: expected done, undo, snooze, triage or accept-close", file=sys.stderr)
+        print(f"unknown action {words[0]!r}: expected done, undo, snooze, triage, accept-close or expire", file=sys.stderr)
         return 64
     days = args.days or DEFAULT_DAYS
     everything = collect(days, now, fetch=True)
@@ -1738,7 +1741,7 @@ def cmd_asks(args) -> int:
 def register(sp):
     q = sp.add_parser("asks", help="every question an AI session left waiting on you, in one list")
     q.set_defaults(fn=cmd_asks)
-    q.add_argument("words", nargs="*", help="done <id-prefix>... | undo <id-prefix>... | snooze <id-prefix> <days> | triage | accept-close [<id-prefix>...]; none lists")
+    q.add_argument("words", nargs="*", help="done <id-prefix>... | undo <id-prefix>... | snooze <id-prefix> <days> | triage | accept-close [<id-prefix>...] | expire [--apply]; none lists")
     q.add_argument("--days", type=int, help=f"look back this far (default {DEFAULT_DAYS})")
     q.add_argument("--product", help="one product (registry id); a parked product shows its muted asks")
     q.add_argument("--all", action="store_true", help="include done and snoozed items, and the asks of parked products")
@@ -1748,8 +1751,9 @@ def register(sp):
     q.add_argument("-o", "--out", help="--html: write here instead")
     q.add_argument("--open", action="store_true", help="--html: open the page")
     q.add_argument("--why", metavar="ID", help="print which rule put one ask under its product, and what it matched")
-    q.add_argument("--note", help="done: why")
+    q.add_argument("--note", help="done, expire --apply: why")
     q.add_argument("--older-than", type=float, metavar="DAYS",
-                   help="done: close every open question older than this (with --product, one product)")
+                   help="done: close every open question older than this (with --product, one product); expire: the age to list (default 14)")
+    q.add_argument("--apply", action="store_true", help="expire: close the candidates (default is a dry run; sends no answer)")
     q.add_argument("--quiet", action="store_true", help="only refresh ~/.teyla/asks.count (the session-start line)")
     return q
