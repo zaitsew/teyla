@@ -49,3 +49,36 @@ With no table, the block is left out.
 launch = "2027-03-01"
 race = "2027-04-18"
 ```
+
+## Sprint slots
+
+`teyla brief slots` shows the two sprint slots and what holds them. It warns at a third sprint. It refuses
+nothing: no hook, and the exit code is 0.
+
+```
+teyla brief slots               # the screen
+teyla brief slots --json        # version, generated, limit, in_flight, over_limit, slots, no_contract
+```
+
+A sprint holds its slot from its contract (`teyla brief <product> --goal ... --usd N --hours N`) until you
+close it. A build waiting for your verdict still holds the slot. A contract past its hours stays counted and
+shows `overdue`, with the hours elapsed against the budget.
+
+Each slot lists what it waits at, first match first, every match shown:
+
+| waits at | source |
+|---|---|
+| `gate` | the contract's `--gate` list |
+| `decision` | open design cards for the product, with their age |
+| `question` | open asks for the product, not muted: count, oldest age and title |
+| `build` | builds to try for the product, from `~/.teyla/testflight.json` |
+| agents working | none of the above |
+
+With three or more open contracts the screen prints a `WARN` line and `over_limit` is true. The limit is two.
+Set another with `[slots] limit = N` in `~/.teyla/config.toml`.
+
+"Also active, no contract" lists products with a session in the last 24 hours and no open contract. Bug-fix
+sessions may run outside the limit, so they never trigger the warning. The list carries the command that opens
+a contract so the slot is counted.
+
+The command reads local files only. It writes nothing and makes no network call.

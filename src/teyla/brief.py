@@ -355,6 +355,11 @@ def cmd_brief(args) -> int:
         if err:
             sys.stderr.write(err)
         return code
+    if args.product == "slots":
+        # `teyla brief slots` is the subcommand. No product is named "slots"; if the registry ever has one,
+        # `teyla brief --repo <path>` still resolves the product from the directory.
+        from . import slots
+        return slots.cmd_slots(args)
     cwd = os.path.abspath(args.repo or ".")
     product = args.product or product_of(cwd)
     as_json = bool(getattr(args, "json", False))
@@ -436,7 +441,7 @@ def cmd_brief(args) -> int:
 def register(sp):
     q = sp.add_parser("brief", help="the sprint contract: a goal, a slice and a budget, enforced at the Agent call")
     q.set_defaults(fn=cmd_brief)
-    q.add_argument("product", nargs="?", help="product name (default: from --repo / the current directory)")
+    q.add_argument("product", nargs="?", help="product name (default: from --repo / the current directory); `slots` shows the sprint slots")
     q.add_argument("--goal"); q.add_argument("--slice"); q.add_argument("--platform")
     q.add_argument("--usd", type=float, help="budget in dollars at list price")
     q.add_argument("--hours", type=float, help="time budget in hours")
