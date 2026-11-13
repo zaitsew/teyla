@@ -6,7 +6,9 @@
 <p align="center"><b>The control room for working with AI agents on one Mac.</b><br>
 What your agent sessions cost, what waits on you, and where each product stands.</p>
 
-Teyla is a command-line tool with a Mac and an iPhone app, for a person who builds products with Claude Code, Codex, Grok, Cursor or Hermes. It reads the sessions already on your Mac, prices them, and fixes the waste one change at a time. It keeps every question an agent left for you on one screen, and one line per product on where it stands. Nothing about your sessions leaves your Mac unless you turn it on.
+Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's waiting on you, and fixes the waste. Nothing about your sessions leaves your Mac unless you turn it on.
+
+It is a command-line tool with a Mac and an iPhone app, for a person who builds products with AI agents. It also reads Grok, Cursor and Hermes sessions, keeps every question an agent left for you on one screen, and keeps one line per product on where it stands.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/mac/today-dark.png">
