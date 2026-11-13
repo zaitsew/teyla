@@ -88,6 +88,7 @@ Subagents cost $390; Opus ran 64% of that.
 ## What waits on you
 
 - `teyla today` is the daily screen: the questions agents left, your notes, this week's spend against last week's, and one next step.
+- `teyla today score` is the outcome scoreboard: posts, conversations, first value on your focus products, open decisions and builds to try ([OPERATING.md](docs/OPERATING.md#outcome-scoreboard)).
 - `teyla asks` lists every open question, oldest first, with a link that reopens the session. `teyla answer` sends your answer into the session that asked.
 - `teyla tg setup` puts the queue in a private Telegram chat. One card shows the current question, the recommended answer first; one tap sends it. The bot runs from your Mac, with no server, and answers only your account. `teyla tg activity` adds a card with your GitHub and growth activity. [ASKS.md](docs/ASKS.md#telegram) has the details.
 - `teyla note "try a dark icon"` keeps an idea under a product.

@@ -33,6 +33,9 @@ the digest read), and removes the file when every platform is current. A newer b
 counted as behind: it was withdrawn, so nobody waits for it. The daily routine runs it; in
 safe mode it does nothing and exits 0.
 
+Every run over all products that reads rows (text, `--json` and `--quiet`; not `--china`, not one with paths)
+also writes them, without the text lines, to `~/.teyla/testflight.json`. `teyla today score` reads that file instead of asking Apple.
+
 China mainland (POLICY §15, store review). Generative AI in the China storefront needs a Chinese permit
 that none of our model providers has, and any app there needs an ICP filing, so territory `CHN` is excluded
 from the first submission. `teyla testflight --china` is the read-only check: for each in-scope product
@@ -75,6 +78,10 @@ at all and a source change warns the same way.
 
 POLICY §14: a secondary nobody opened in 30 days is frozen and gets no parity train. `frozen = "<date>: why"`
 says nobody has opened it since that date; once that date is 30 days back, the lag is not reported.
+`frozen_now = true` freezes the target from that date itself: use it when the owner decided to stop using the
+build, which is a decision, not idle time. A frozen target is never silent: each run prints one line with the
+date and the reason (`app-a  macOS store build frozen since 2026-11-07: why; lag not checked`), and the JSON
+entry carries `frozen: {since, reason}`, so a frozen target is not mistaken for a forgotten one.
 """
 from __future__ import annotations
 
@@ -316,19 +323,38 @@ def store_targets(manifest: dict) -> tuple[list[dict], str | None]:
         grace = t.get("grace_days", GRACE_DAYS)
         if isinstance(grace, bool) or not isinstance(grace, int) or grace < 0:
             return [], "`grace_days` in `[[release.store_target]]` must be a whole number of days"
+        frozen = str(t.get("frozen") or "").strip()
+        now = t.get("frozen_now", False)
+        if not isinstance(now, bool):
+            return [], "`frozen_now` in `[[release.store_target]]` must be true or false"
+        if now and not frozen:
+            return [], "`frozen_now = true` needs `frozen = \"<date>: why\"` in the same `[[release.store_target]]`"
         out.append({"platform": plat, "asc": TARGET_PLATFORM[plat], "scheme": scheme, "project": project,
-                    "paths": paths, "grace_days": grace, "frozen": str(t.get("frozen") or "").strip()})
+                    "paths": paths, "grace_days": grace, "frozen": frozen, "frozen_now": now})
     return out, None
 
 
 def is_frozen(target: dict, today: dt.date) -> bool:
     """POLICY §14: nobody has opened the platform since the date `frozen` starts with, and that was
-    FROZEN_DAYS ago or more. An unreadable date does not freeze anything."""
+    FROZEN_DAYS ago or more; with `frozen_now`, the freeze starts on that date. An unreadable date
+    does not freeze anything."""
     try:
         since = dt.date.fromisoformat(target["frozen"][:10])
     except ValueError:
         return False
-    return (today - since).days >= FROZEN_DAYS
+    return (today - since).days >= (0 if target.get("frozen_now") else FROZEN_DAYS)
+
+
+def frozen_note(target: dict) -> dict:
+    """{since, reason} from `frozen = "<date>: why"`: what the frozen line and the JSON show."""
+    raw = target["frozen"]
+    return {"since": raw[:10], "reason": raw[10:].lstrip(" :-\u2014").strip()}
+
+
+def frozen_line(product: str, target: dict) -> str:
+    note = frozen_note(target)
+    why = f": {note['reason']}" if note["reason"] else ""
+    return f"{product}  {_label(target['asc'])} store build frozen since {note['since']}{why}; lag not checked"
 
 
 def newest_change(repo: pathlib.Path, paths: list[str]) -> dict | None:
@@ -442,9 +468,15 @@ def check_product(manifest: dict, cfg: dict) -> dict:
     for p in plats:
         v = platform_verdict(p)
         lag = None
-        if p.get("platform") in by_asc:
-            lag = store_lag(manifest, by_asc[p["platform"]], p, tool_raw, bundle_id)
+        target = by_asc.get(p.get("platform"))
+        frozen = target is not None and is_frozen(target, _today())
+        if target is not None and not frozen:
+            lag = store_lag(manifest, target, p, tool_raw, bundle_id)
         if p.get("_no_build"):
+            if frozen:
+                lines.append(frozen_line(name, target))
+                out.append({"platform": p.get("platform"), "verdict": "current", "behind": 0,
+                            "frozen": frozen_note(target)})
             if not lag:
                 continue   # a platform with no build and no source change to ship is not a finding
             v = "stale"
@@ -453,9 +485,13 @@ def check_product(manifest: dict, cfg: dict) -> dict:
         entry = {"platform": p.get("platform"), "verdict": v, "behind": _behind(p)}
         if lag:
             entry["lag"] = lag
+        if frozen:
+            entry["frozen"] = frozen_note(target)
         out.append(entry)
         if not p.get("_no_build"):
             lines.append(platform_line(name, p, "current" if v == "stale" else v))
+            if frozen:
+                lines.append(frozen_line(name, target))
         if lag:
             lines.append(lag_line(name, lag))
     row = _row(manifest, _worst([x["verdict"] for x in out]), line="", bundle_id=bundle_id,
@@ -552,6 +588,46 @@ def write_problems(rows: list[dict], path: pathlib.Path | None = None,
     return None
 
 
+def cache_path() -> pathlib.Path:
+    from . import config
+    return config.TEYLA_DIR / "testflight.json"
+
+
+def write_cache(rows: list[dict], path: pathlib.Path | None = None, now: float | None = None) -> pathlib.Path | None:
+    """Keep the last answer for readers that must not ask App Store Connect (`teyla today score`): the rows
+    without their text lines, and when they were read. Atomic; a cache that cannot be written is skipped."""
+    import time
+    if not rows:
+        return None
+    p = path or cache_path()
+    doc = {"version": 1, "generated": dt.datetime.fromtimestamp(time.time() if now is None else now, dt.timezone.utc)
+           .strftime("%Y-%m-%dT%H:%M:%SZ"),
+           "rows": [{k: v for k, v in r.items() if k != "lines"} for r in rows]}
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(json.dumps(doc, indent=1))
+        os.replace(tmp, p)
+        return p
+    except (OSError, TypeError, ValueError):
+        return None
+
+
+def load_cache(path: pathlib.Path | None = None, now: float | None = None) -> tuple[list | None, float | None]:
+    """(rows, age in seconds) from the cache, or (None, None) when there is none or it is unreadable."""
+    import time
+    p = path or cache_path()
+    try:
+        doc = json.loads(p.read_text())
+        rows = doc["rows"]
+        at = dt.datetime.strptime(doc["generated"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc).timestamp()
+    except (OSError, ValueError, KeyError, TypeError):
+        return None, None
+    if not isinstance(rows, list):
+        return None, None
+    return rows, max(0.0, (time.time() if now is None else now) - at)
+
+
 def cmd_testflight(args):
     quiet = getattr(args, "quiet", False)
     if not net.gate("`teyla testflight` (your release tool asks App Store Connect)", quiet=quiet):
@@ -571,6 +647,8 @@ def cmd_testflight(args):
             print("".join(f"{line}\n" for r in china for line in r["lines"]), end="")
         return 1 if china else 0
     rows = run(args.paths or None)
+    if not args.paths:
+        write_cache(rows)      # a run scoped to some repos would drop the others' builds (review P2)
     if quiet:
         china = run_china(args.paths or None)
         write_problems(rows, china_rows=china)

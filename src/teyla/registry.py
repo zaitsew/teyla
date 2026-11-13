@@ -48,7 +48,7 @@ _BARE_KEY_RE = re.compile(r"[A-Za-z0-9_-]+$")
 _CLAUDE_WT_RE = re.compile(r"^(?P<root>.+?)/\.claude/worktrees(?:/|$)")
 _HOME_WT_RE = re.compile(r"/\.worktrees/(?P<name>[^/]+)(?:/|$)")
 # Written in this order; any other key a product carries (stage_before_park) follows.
-_FIELDS = ("name", "repos", "paths", "aliases", "stage", "type", "primary", "focus", "summary", "stage_before_park")
+_FIELDS = ("name", "repos", "paths", "aliases", "stage", "type", "primary", "focus", "summary", "first_value", "stage_before_park")
 
 
 class RegistryError(Exception):
@@ -83,6 +83,8 @@ def _normalise(raw: dict) -> dict:
             row[k] = str(row.get(k) or "")
         if "summary" in row:                       # optional: written back only when the owner set it
             row["summary"] = str(row["summary"] or "")
+        if "first_value" in row:                   # optional: the usage `task` that counts as first value
+            row["first_value"] = str(row["first_value"] or "")
         if "type" in row:                          # optional: the owner's choice, never inferred
             row["type"] = str(row["type"] or "")
         reg["product"][str(pid)] = row
@@ -393,6 +395,13 @@ def set_field(reg: dict, pid: str, key: str, value: str) -> str:
             return park(reg, pid)
         p["stage"] = value
         p.pop("stage_before_park", None)
+    elif key == "first-value":
+        if value:
+            p["first_value"] = value
+        else:
+            p.pop("first_value", None)
+            return f"{pid}: first_value cleared"
+        key = "first_value"
     elif key == "type":
         if value and value not in TYPES:
             raise ValueError(f"type must be one of {', '.join(TYPES)}, or empty to clear it")
@@ -415,7 +424,7 @@ def set_field(reg: dict, pid: str, key: str, value: str) -> str:
         if v not in p[slot]:
             p[slot].append(v)
     else:
-        raise ValueError(f"unknown key {key!r}: name, stage, type, primary, focus, summary, aliases, add-repo, add-path")
+        raise ValueError(f"unknown key {key!r}: name, stage, type, primary, focus, summary, first_value, aliases, add-repo, add-path")
     return f"{pid}: {key} = {value}"
 
 

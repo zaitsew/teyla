@@ -3,6 +3,7 @@
     teyla today                 about 25 lines of text
     teyla today --json          the same facts for the Mac app and the web page
     teyla today --fresh         count the spend again now instead of reading the cache
+    teyla today score [--json] [--refresh]   the outcome scoreboard (scoreboard.py, docs/OPERATING.md)
 
 Four blocks, in this order:
 
@@ -224,6 +225,9 @@ def render(snap: dict, st: Style | None = None) -> str:
 # --- the command --------------------------------------------------------------------------------
 
 def cmd_today(args) -> int:
+    if getattr(args, "view", None) == "score":
+        from . import scoreboard
+        return scoreboard.cmd_score(args)
     if args.refresh_cache:                      # the background job `figures.spawn_refresh` starts
         try:
             figures.refresh()
@@ -243,6 +247,8 @@ def cmd_today(args) -> int:
 def register(sp):
     q = sp.add_parser("today", help="the daily screen: what waits on you, the Inbox, the week's spend, one suggested action")
     q.set_defaults(fn=cmd_today)
+    q.add_argument("view", nargs="?", choices=["score"], help="`score`: the outcome scoreboard (posts, conversations, first value, open decisions, builds to try)")
+    q.add_argument("--refresh", action="store_true", help="with `score`: run the live `teyla testflight` check first (network)")
     q.add_argument("--json", action="store_true", help="the same facts as JSON, for the Mac app and the web page")
     q.add_argument("--fresh", action="store_true", help="count the spend again now instead of reading the cache")
     q.add_argument("--refresh-cache", action="store_true", help=argparse.SUPPRESS)

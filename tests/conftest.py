@@ -22,6 +22,15 @@ from teyla.adapters import claude_code, codex, cursor, grok, hermes
 
 
 @pytest.fixture(autouse=True)
+def _testflight_cache_in_tmp(tmp_path_factory, monkeypatch):
+    # `teyla testflight` writes ~/.teyla/testflight.json from `config.TEYLA_DIR`, which TEYLA_HOME does not move:
+    # without this, every testflight test overwrote this Mac's cache with fixture rows.
+    from teyla import testflight
+    path = tmp_path_factory.mktemp("testflight-cache") / "testflight.json"
+    monkeypatch.setattr(testflight, "cache_path", lambda: path)
+
+
+@pytest.fixture(autouse=True)
 def _teyla_home_in_tmp(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("TEYLA_HOME", str(tmp_path_factory.mktemp("teyla-home")))
     # corrections.grok_headless reads Grok's session store; never this Mac's ~/.grok.
