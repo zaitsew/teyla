@@ -60,6 +60,41 @@ launch = "2027-03-01"
 race = "2027-04-18"
 ```
 
+Or set one at a time: `teyla config set dates.launch=2027-03-01` (a value that is not a date is refused).
+
+## Sprint slots
+
+`teyla brief slots` shows the two sprint slots and what holds them. It warns at a third sprint. It refuses
+nothing: no hook, and the exit code is 0.
+
+```
+teyla brief slots               # the screen
+teyla brief slots --json        # version, generated, limit, in_flight, over_limit, slots, no_contract
+```
+
+A sprint holds its slot from its contract (`teyla brief <product> --goal ... --usd N --hours N`) until you
+close it. A build waiting for your verdict still holds the slot. A contract past its hours stays counted and
+shows `overdue`, with the hours elapsed against the budget.
+
+Each slot lists what it waits at, first match first, every match shown:
+
+| waits at | source |
+|---|---|
+| `gate` | the contract's `--gate` list |
+| `decision` | open design cards for the product, with their age |
+| `question` | open asks for the product, not muted: count, oldest age and title |
+| `build` | builds to try for the product, from `~/.teyla/testflight.json` |
+| agents working | none of the above |
+
+With three or more open contracts the screen prints a `WARN` line and `over_limit` is true. The limit is two.
+Set another with `[slots] limit = N` in `~/.teyla/config.toml`.
+
+"Also active, no contract" lists products with a session in the last 24 hours and no open contract. Bug-fix
+sessions may run outside the limit, so they never trigger the warning. The list carries the command that opens
+a contract so the slot is counted.
+
+The command reads local files only. It writes nothing and makes no network call.
+
 ## Inbox expiry
 
 `teyla asks expire [--older-than DAYS] [--product P] [--json] [--apply] [--note TEXT]`
@@ -86,3 +121,34 @@ expired: it is listed as `keep`.
 that. Undo with `teyla asks undo <id>...`.
 
 `--json` prints `{version, older_than_days, dry_run, items, counts}`.
+
+## Weekly director brief
+
+`teyla digest director` assembles what the weekly director hour reads into one markdown file. It decides
+nothing and changes nothing. The brief is the only file it writes. It makes no network call.
+
+```
+teyla digest director                # write ~/.teyla/director/<ISO week>.md, e.g. 2026-W46.md
+teyla digest director --out FILE     # write that file instead
+teyla digest director --stdout       # print the brief, write nothing
+teyla digest director --json         # the facts as JSON, write nothing
+teyla digest director --quiet        # write the file, print nothing (the routine)
+```
+
+The file is about 100 lines, in this order: the title with the week; hard dates (`[dates]`); the outcome table;
+the sprint slots; open decisions with design picks; builds to try; questions past 14 days (counts by outcome
+and up to 10 rows); and two empty lines for the next two sprints, each to open with `teyla brief <product>
+--goal ... --gate ... --usd N --hours N`.
+
+It reuses the views above: the scoreboard's `snapshot` and `hard_dates`, the slots' `snapshot` and the inbox
+expiry's dry run. It never calls `teyla asks expire --apply`: closing questions needs an explicit yes. An input
+that fails renders as `not_measured: <ExceptionName>`, and the other sections still render. `--json` keys:
+`version`, `generated`, `week`, `start`, `end`, `hard_dates`, `outcomes`, `slots`, `expiry`, `errors`. The
+open-decisions list shows the scoreboard's three oldest.
+
+### Monday routine
+
+The routine is off. Set `[digest] director = true` (`teyla config set digest.director=true`) and run `teyla
+routine install`: it writes the agent `com.zaitsew.teyla.director`, which runs `teyla digest director --quiet`
+on Mondays at 07:30 local time. Switch the flag off and run `teyla routine install` again to remove it.
+
