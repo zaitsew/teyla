@@ -564,9 +564,17 @@ def test_a_long_run_of_small_patches_still_reaches_the_real_edit(tmp_path):
     r = product(tmp_path)
     commit(r, {"README.md": "# App\n" + BODY}, "the README, written once", OLD)
     features(r, 12)
+    # One `git fast-import` instead of 405 `git commit` runs: under a loaded machine the commits took minutes.
+    at = int((NOW - dt.timedelta(days=2)).timestamp())
+    stream = []
     for i in range(405):
-        write(r, "README.md", "# App\n" + BODY + f"patch {i}\n")
-        git(r, "commit", "-q", "-am", f"docs: wording {i}", when=RECENT)
+        msg, text = f"docs: wording {i}", "# App\n" + BODY + f"patch {i}\n"
+        stream.append(f"commit refs/heads/main\ncommitter T <t@example.invalid> {at} +0000\n"
+                      f"data {len(msg)}\n{msg}\n" + ("from refs/heads/main^0\n" if i == 0 else "")
+                      + f"M 100644 inline README.md\ndata {len(text)}\n{text}\n")
+    subprocess.run(["git", "-C", str(r), "fast-import", "--quiet"], input="".join(stream).encode(), check=True,
+                   capture_output=True)
+    git(r, "reset", "-q", "--hard")
     c = checks(freshness.run()[0])["readme"]
     assert c["verdict"] == "stale" and c["since"] == OLD[:10] and c["changes"] == 12
 
