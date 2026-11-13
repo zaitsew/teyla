@@ -1023,3 +1023,24 @@ def test_the_gtm_card_runs_gtm_today_json():
     relay.gtm_view(lambda cmd, t: (seen.append(cmd), (1, "", ""))[1], ["teyla"])
     assert seen == [["teyla", "gtm", "today", "--json"]]
 
+
+
+# --- today: builds to try for the iPhone Today screen ----------------------------------------
+
+def test_today_view_carries_builds_and_never_a_zero_without_a_source(monkeypatch):
+    from teyla import scoreboard
+    rows = [{"product": "alpha", "platform": "iOS", "build": "12", "uploaded": "2026-11-12", "extra": "x"}]
+    monkeypatch.setattr(scoreboard, "builds_metric", lambda now: {"value": 1, "builds": rows, "cache_age_s": 90, "stale": False})
+    assert relay.today_view(0.0) == {"builds_to_try": {"value": 1, "builds": [
+        {"product": "alpha", "platform": "iOS", "build": "12", "uploaded": "2026-11-12"}], "cache_age_s": 90, "stale": False}}
+    monkeypatch.setattr(scoreboard, "builds_metric", lambda now: {"value": "not_measured", "reason": "run `teyla testflight` once"})
+    assert relay.today_view(0.0) == {"builds_to_try": {"value": "not_measured", "reason": "run `teyla testflight` once"}}
+
+
+def test_today_view_is_none_when_the_scoreboard_fails(monkeypatch):
+    from teyla import scoreboard
+
+    def boom(now):
+        raise OSError("no cache")
+    monkeypatch.setattr(scoreboard, "builds_metric", boom)
+    assert relay.today_view(0.0) is None

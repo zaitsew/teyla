@@ -55,6 +55,9 @@ Requires iOS 18 and Xcode. Scanning needs a real device; on a simulator, paste t
   typing or by holding the microphone (on-device speech, 60 s at most), and Draft makes a LinkedIn and an X version
   on this iPhone. "Copy + open" hands the text to LinkedIn or X; Teyla never posts. The answer, the drafts and the
   link of yesterday's post stay on the phone (UserDefaults) and are never sent to the Mac or the relay.
+- **Lab: Today screen.** Settings > Lab > Today screen ("Off", "Stack", "One next thing") replaces the Home tab with decisions,
+  the post card and builds to try (`UI/TodayScreen.swift`, `Core/PhoneToday.swift`). Builds come from `today.builds_to_try`
+  in the snapshot; an older Mac sends none and the screen says so. See [`docs/OPERATING.md`](../../docs/OPERATING.md#today-on-the-iphone-lab).
 - **Shared code.** `Models.swift`, `Format.swift` and `HomeLogic.swift` come from `apps/mac/Teyla/Core`, so both
   apps decode the snapshot and word Home the same way. Everything else here is iPhone-only.
 

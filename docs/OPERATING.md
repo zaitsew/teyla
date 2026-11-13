@@ -39,6 +39,16 @@ Notes:
 - `teyla testflight` (also `--json` and `--quiet`, the daily routine's form) writes the cache. Older than 48 hours,
   it is still shown and marked stale.
 
+### Today on the iPhone (Lab)
+
+Settings > Lab > Today screen replaces the Home tab with three things: the top 3 decisions, the post card and builds to try.
+Off keeps Home. "Stack" lists the three groups. "One next thing" puts one large card first (the oldest blocked decision,
+else the post card when a post is due, else the newest build, else the top decision) and the rest below it, small.
+The Mac adds `today.builds_to_try` to the relay snapshot from the same cache as the scoreboard row above: it reads
+`~/.teyla/testflight.json`, makes no network call and writes nothing. A count you cannot measure arrives as
+`not_measured` with a reason, and the phone prints the reason instead of a zero. An older Mac sends no `today`; the
+phone says so in one line. Builds have no tap: Teyla holds no link that opens TestFlight on one build.
+
 ### Dates
 
 Optional goals with a deadline go in `~/.teyla/config.toml`. The scoreboard prints the days left for each.

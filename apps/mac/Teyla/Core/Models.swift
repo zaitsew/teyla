@@ -47,16 +47,19 @@ struct Snapshot: Decodable, Equatable, Sendable {
     var activity: ActivityGlimpse?
     /// The GTM Today card in counts only (docs/GTM.md); nil from a Mac that does not send it, and the phone then hides the card.
     var gtm: GtmGlimpse?
+    /// The iPhone Today screen's extra data (builds to try); nil from a Mac that does not send it.
+    var today: TodayData?
 
     enum CodingKeys: String, CodingKey {
-        case version, generated, brief, totals, asks, products, running, tasks, done, relay, portfolio, console, activity, gtm
+        case version, generated, brief, totals, asks, products, running, tasks, done, relay, portfolio, console, activity, gtm, today
         case autoClosed = "auto_closed"
     }
 
     init(version: Int = 1, generated: String = "", brief: Brief? = nil, totals: Totals = Totals(),
          asks: [Ask] = [], products: [Product] = [], running: [RunningSession] = [],
          tasks: [OwnerTask] = [], done: [DoneItem] = [], relay: Relay? = nil, portfolio: Portfolio? = nil,
-         autoClosed: AutoClosed? = nil, console: Console? = nil, activity: ActivityGlimpse? = nil, gtm: GtmGlimpse? = nil) {
+         autoClosed: AutoClosed? = nil, console: Console? = nil, activity: ActivityGlimpse? = nil, gtm: GtmGlimpse? = nil,
+         today: TodayData? = nil) {
         self.version = version
         self.generated = generated
         self.brief = brief
@@ -72,6 +75,7 @@ struct Snapshot: Decodable, Equatable, Sendable {
         self.console = console
         self.activity = activity
         self.gtm = gtm
+        self.today = today
     }
 
     init(from decoder: Decoder) throws {
@@ -79,6 +83,7 @@ struct Snapshot: Decodable, Equatable, Sendable {
         console = c.optional(.console)
         activity = c.optional(.activity)
         gtm = c.optional(.gtm)
+        today = c.optional(.today)
         version = c.lenient(.version, 1)
         generated = c.lenient(.generated, "")
         brief = c.optional(.brief)
@@ -100,6 +105,72 @@ struct Snapshot: Decodable, Equatable, Sendable {
     }
 
     var generatedDate: Date? { ISODate.parse(generated) }
+}
+
+/// The iPhone Today screen's data from the Mac (`today` in the snapshot): the builds waiting to be tried.
+struct TodayData: Decodable, Equatable, Sendable {
+    var buildsToTry: BuildsToTry?
+
+    enum CodingKeys: String, CodingKey { case buildsToTry = "builds_to_try" }
+
+    init(buildsToTry: BuildsToTry? = nil) { self.buildsToTry = buildsToTry }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        buildsToTry = c.optional(.buildsToTry)
+    }
+}
+
+/// `value` is a count or the word `not_measured`; then `reason` says what is missing and `count` is nil.
+struct BuildsToTry: Decodable, Equatable, Sendable {
+    var count: Int?
+    var reason: String
+    var builds: [TodayBuild]
+    var stale: Bool
+
+    enum CodingKeys: String, CodingKey { case value, reason, builds, stale }
+
+    init(count: Int? = nil, reason: String = "", builds: [TodayBuild] = [], stale: Bool = false) {
+        self.count = count
+        self.reason = reason
+        self.builds = builds
+        self.stale = stale
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        count = c.optional(.value)
+        reason = c.lenient(.reason, "")
+        let rows: [LossyBox<TodayBuild>] = c.lenient(.builds, [])
+        builds = rows.compactMap(\.value)
+        stale = c.lenient(.stale, false)
+    }
+}
+
+struct TodayBuild: Decodable, Equatable, Identifiable, Sendable {
+    var product: String
+    var platform: String
+    var build: String
+    /// A date, `2026-11-12`.
+    var uploaded: String
+    var id: String { "\(product)|\(platform)|\(build)" }
+
+    enum CodingKeys: String, CodingKey { case product, platform, build, uploaded }
+
+    init(product: String, platform: String, build: String, uploaded: String) {
+        self.product = product
+        self.platform = platform
+        self.build = build
+        self.uploaded = uploaded
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        product = c.lenient(.product, "")
+        platform = c.lenient(.platform, "")
+        build = c.lenient(.build, "")
+        uploaded = c.lenient(.uploaded, "")
+    }
 }
 
 struct Brief: Decodable, Equatable, Sendable {
