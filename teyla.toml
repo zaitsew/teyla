@@ -17,6 +17,7 @@ platform = "macos"
 scheme = "TeylaStore"
 project = "apps/mac/Teyla.xcodeproj"
 frozen = "2026-11-07: the owner uses Teyla Admin, not the store build"
+frozen_now = true     # a decision, not idle time: silent from that date, and each `teyla testflight` run says so
 # The TeylaStore sources in apps/mac/project.yml: the app folder minus the command-running files,
 # plus the relay client shared with the iPhone app.
 paths = [

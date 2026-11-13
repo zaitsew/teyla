@@ -75,6 +75,10 @@ at all and a source change warns the same way.
 
 POLICY §14: a secondary nobody opened in 30 days is frozen and gets no parity train. `frozen = "<date>: why"`
 says nobody has opened it since that date; once that date is 30 days back, the lag is not reported.
+`frozen_now = true` freezes the target from that date itself: use it when the owner decided to stop using the
+build, which is a decision, not idle time. A frozen target is never silent: each run prints one line with the
+date and the reason (`app-a  macOS store build frozen since 2026-11-07: why; lag not checked`), and the JSON
+entry carries `frozen: {since, reason}`, so a frozen target is not mistaken for a forgotten one.
 """
 from __future__ import annotations
 
@@ -316,19 +320,38 @@ def store_targets(manifest: dict) -> tuple[list[dict], str | None]:
         grace = t.get("grace_days", GRACE_DAYS)
         if isinstance(grace, bool) or not isinstance(grace, int) or grace < 0:
             return [], "`grace_days` in `[[release.store_target]]` must be a whole number of days"
+        frozen = str(t.get("frozen") or "").strip()
+        now = t.get("frozen_now", False)
+        if not isinstance(now, bool):
+            return [], "`frozen_now` in `[[release.store_target]]` must be true or false"
+        if now and not frozen:
+            return [], "`frozen_now = true` needs `frozen = \"<date>: why\"` in the same `[[release.store_target]]`"
         out.append({"platform": plat, "asc": TARGET_PLATFORM[plat], "scheme": scheme, "project": project,
-                    "paths": paths, "grace_days": grace, "frozen": str(t.get("frozen") or "").strip()})
+                    "paths": paths, "grace_days": grace, "frozen": frozen, "frozen_now": now})
     return out, None
 
 
 def is_frozen(target: dict, today: dt.date) -> bool:
     """POLICY §14: nobody has opened the platform since the date `frozen` starts with, and that was
-    FROZEN_DAYS ago or more. An unreadable date does not freeze anything."""
+    FROZEN_DAYS ago or more; with `frozen_now`, the freeze starts on that date. An unreadable date
+    does not freeze anything."""
     try:
         since = dt.date.fromisoformat(target["frozen"][:10])
     except ValueError:
         return False
-    return (today - since).days >= FROZEN_DAYS
+    return (today - since).days >= (0 if target.get("frozen_now") else FROZEN_DAYS)
+
+
+def frozen_note(target: dict) -> dict:
+    """{since, reason} from `frozen = "<date>: why"`: what the frozen line and the JSON show."""
+    raw = target["frozen"]
+    return {"since": raw[:10], "reason": raw[10:].lstrip(" :-\u2014").strip()}
+
+
+def frozen_line(product: str, target: dict) -> str:
+    note = frozen_note(target)
+    why = f": {note['reason']}" if note["reason"] else ""
+    return f"{product}  {_label(target['asc'])} store build frozen since {note['since']}{why}; lag not checked"
 
 
 def newest_change(repo: pathlib.Path, paths: list[str]) -> dict | None:
@@ -442,9 +465,13 @@ def check_product(manifest: dict, cfg: dict) -> dict:
     for p in plats:
         v = platform_verdict(p)
         lag = None
-        if p.get("platform") in by_asc:
-            lag = store_lag(manifest, by_asc[p["platform"]], p, tool_raw, bundle_id)
+        target = by_asc.get(p.get("platform"))
+        frozen = target is not None and is_frozen(target, _today())
+        if target is not None and not frozen:
+            lag = store_lag(manifest, target, p, tool_raw, bundle_id)
         if p.get("_no_build"):
+            if frozen:
+                lines.append(frozen_line(name, target))
             if not lag:
                 continue   # a platform with no build and no source change to ship is not a finding
             v = "stale"
@@ -453,9 +480,13 @@ def check_product(manifest: dict, cfg: dict) -> dict:
         entry = {"platform": p.get("platform"), "verdict": v, "behind": _behind(p)}
         if lag:
             entry["lag"] = lag
+        if frozen:
+            entry["frozen"] = frozen_note(target)
         out.append(entry)
         if not p.get("_no_build"):
             lines.append(platform_line(name, p, "current" if v == "stale" else v))
+            if frozen:
+                lines.append(frozen_line(name, target))
         if lag:
             lines.append(lag_line(name, lag))
     row = _row(manifest, _worst([x["verdict"] for x in out]), line="", bundle_id=bundle_id,
