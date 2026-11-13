@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.54.0 — 2026-11-13 — The weekly brief, sprint slots and Today on the iPhone
+
+- **`teyla brief slots`: work in progress against a limit.** It shows the open sprint contracts, what each one waits at, and the products active in the last 24 hours without one. The limit is 2 (`[slots] limit`); a third prints a warning. It refuses nothing and writes nothing. See docs/OPERATING.md.
+- **`teyla digest director`: the weekly director brief.** One markdown file per ISO week in `~/.teyla/director/`: goal dates, the outcome scoreboard, the sprint slots, the questions older than 14 days with their defaults, and two empty lines for the next two sprints. It changes nothing. A Monday 07:30 routine ships switched off; `teyla config set digest.director=true` turns it on.
+- **`teyla config set dates.launch=2027-03-01` writes a goal date.** `[dates]` is a known config table now, and a value that is not a date is refused. Before, `config set` refused the table.
+- **The iPhone app has a Today screen in Lab.** Settings > Lab > Today screen swaps Home for decisions, the post card and builds to try, in two variants: a stack, or one large next thing with the rest below. The relay snapshot carries `today.builds_to_try` from the `teyla testflight` cache.
+- **A blocked uv cache no longer leaves the Mac without `teyla`.** When `teyla update` meets a corrupt uv cache, `uv cache clean teyla` gets 60 seconds. Past that, the install and any restore run with `--no-cache`. Before, the clean waited forever on a lock held by long-lived `uv run` processes, after the old tool was already removed.
+
 ## 0.53.0 — 2026-11-13 — A README is judged by its last real edit
 
 - **A one-line patch no longer makes a README current.** `teyla freshness` dated a README by the newest commit that touched it, so a README that gets one line in most feature PRs always looked fresh while the product moved on. It is now dated by its last real edit: the newest mainline commit that changed at least 10 lines of it (`readme_lines`; a PR counts as one edit), or that set the review mark `<!-- teyla:reviewed YYYY-MM-DD -->`. `teyla freshness --reviewed [path]` writes the mark after the whole README was read against the product. The stale line names the date and how many later commits only patched it.
