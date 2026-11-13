@@ -42,7 +42,8 @@
   teyla tg digest HH:MM|off                                        a morning line in that chat with the count of waiting questions
   teyla say <ref> [--json] [--dry] -- <text>                       correct a running session (Codex: queued; else copy and open)
   teyla dispatch <product> [--harness codex|claude] [--model M] [--json] [--dry] -- <text>   start new work in a fresh worktree
-  teyla spend [--days N] [--by-day] [--alert] [--json]           what the AI work cost, which part bought nothing; --by-day: subagent cost by model family
+  teyla brief slots [--json]                                      the sprint slots: open contracts, what each waits at, a WARN at a third (refuses nothing)
+  teyla spend [--days N] [--by-day][--alert] [--json]           what the AI work cost, which part bought nothing; --by-day: subagent cost by model family
   teyla lanes [--days N] [--project SUBSTR] [--json]             subagent lanes by type and model: cost, turns, peak context, review P1s
   teyla prose [--days N] [--project SUBSTR] [--json]             final reply length, long sentences, ban-list hits and preambles
   teyla voice check <file|-> --chart <dir|file> [--lang L] [--format F] [--model] [--json]   a draft against a voice chart

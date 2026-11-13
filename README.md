@@ -83,6 +83,7 @@ Subagents cost $390; Opus ran 64% of that.
 
 - `teyla spend --days 7` shows the same numbers later; `teyla spend --session <id>` breaks one session down by model and by day.
 - `teyla brief` puts a dollar and hour budget on a build session and stops new subagents at 80% ([COMMANDS.md](docs/COMMANDS.md)).
+- `teyla brief slots` shows the open sprint contracts, what each one waits at, and warns at a third ([OPERATING.md](docs/OPERATING.md#sprint-slots)).
 - `teyla web` opens the same diagnosis in your browser, on 127.0.0.1 only:
 
 ![The Start page of teyla web: what 30 days of sessions cost, and the first changes that would save money](docs/img/web-start.png)
