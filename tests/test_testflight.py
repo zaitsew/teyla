@@ -680,6 +680,55 @@ def test_frozen_for_less_than_thirty_days_still_warns(tmp_path, monkeypatch, cap
     assert rc == 1 and "WARN" in cap.out
 
 
+def test_frozen_now_is_silent_from_its_date_and_says_so(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    d = store_repo(tmp_path, target=STORE_TARGET + 'frozen = "2026-10-30: the owner stopped using it"\nfrozen_now = true\n')
+    commit(d, "apps/mac/App/Home.swift", "2026-11-02T10:00:00Z")
+    lag_tool(monkeypatch, payload(mac()))
+    rc, cap = go(capsys)                                                   # 4 days, no 30-day wait
+    assert rc == 0 and "WARN" not in cap.out
+    assert "app-a  macOS store build frozen since 2026-10-30: the owner stopped using it; lag not checked" in cap.out
+
+
+def test_frozen_now_before_its_date_still_warns(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    d = store_repo(tmp_path, target=STORE_TARGET + 'frozen = "2026-12-01: planned"\nfrozen_now = true\n')
+    commit(d, "apps/mac/App/Home.swift", "2026-11-02T10:00:00Z")
+    lag_tool(monkeypatch, payload(mac()))
+    rc, cap = go(capsys)
+    assert rc == 1 and "WARN" in cap.out and "frozen since" not in cap.out
+
+
+def test_a_frozen_target_is_in_the_json_and_not_a_problem(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    d = store_repo(tmp_path, target=STORE_TARGET + 'frozen = "2026-10-04: nobody opened the Mac app"\n')
+    commit(d, "apps/mac/App/Home.swift", "2026-11-02T10:00:00Z")
+    lag_tool(monkeypatch, payload(mac()))
+    rows = testflight.run([str(d)])
+    mac_entry = [p for p in rows[0]["platforms"] if p["platform"] == "MAC_OS"][0]
+    assert mac_entry["frozen"] == {"since": "2026-10-04", "reason": "nobody opened the Mac app"}
+    assert "lag" not in mac_entry and testflight.problem_lines(rows) == []
+
+
+def test_a_frozen_target_with_no_upload_stays_in_the_json(tmp_path, monkeypatch):
+    platform_toml(tmp_path)
+    d = store_repo(tmp_path, target=STORE_TARGET + 'frozen = "2026-10-04: nobody opened the Mac app"\n')
+    commit(d, "apps/mac/App/Home.swift", "2026-11-02T10:00:00Z")
+    lag_tool(monkeypatch, payload(plat()))                                 # the tool lists iOS only
+    rows = testflight.run([str(d)])
+    mac_entry = [p for p in rows[0]["platforms"] if p["platform"] == "MAC_OS"]
+    assert mac_entry and mac_entry[0]["frozen"]["since"] == "2026-10-04"
+    assert rows[0]["verdict"] == "current"
+
+
+def test_frozen_now_needs_frozen_and_a_bool(tmp_path):
+    base = {"platform": "macos", "scheme": "S", "project": "apps/mac/S.xcodeproj"}
+    _, err = testflight.store_targets({"release": {"store_target": [{**base, "frozen_now": True}]}})
+    assert err and "needs `frozen" in err
+    _, err = testflight.store_targets({"release": {"store_target": [{**base, "frozen": "2026-11-01: x", "frozen_now": "yes"}]}})
+    assert err and "true or false" in err
+
+
 def test_no_upload_on_the_platform_warns(tmp_path, monkeypatch, capsys):
     platform_toml(tmp_path)
     d = store_repo(tmp_path)
