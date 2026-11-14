@@ -13,6 +13,7 @@ cat "$(teyla intent path <product>)"    # the words themselves
 teyla intent cover docs/ROADMAP.md      # which of your sentences does this plan leave out?
 teyla intent clean --dry                # entries you did not type, under today's rules; writes nothing
 teyla intent audit <product> --open     # what you asked for that is still owed, oldest first
+teyla experiments                       # lab builds and variants with features still waiting for a verdict
 ```
 
 The `UserPromptSubmit` hook `plugin/hooks/capture-intent.sh` keeps new prompts. `teyla harness sync`
@@ -151,6 +152,30 @@ skill `intent-audit` is the workflow: read the entries as JSON, quote each reque
 code, record the status, close each entry with `split`, report what is owed. The reading is volume work for
 a cheaper model; the orchestrating session checks the result.
 
+## Experiments: a verdict per feature
+
+A lab build, a design variant or a parallel test app carries features. When it is retired with no verdict
+per feature, the features that worked are lost with it. `teyla experiments` keeps one record per
+experiment, and refuses to retire it until every feature has a verdict:
+
+```sh
+teyla experiments add <product> lab-2 --kind lab|variant|app [--title T] [--where W] [--since YYYY-MM-DD]
+teyla experiments feature <product> lab-2 "week strip on the home screen" [--request 4f2a9c1e.1]
+teyla experiments verdict <product> lab-2 f1 promoted --pr https://github.com/<owner>/<repo>/pull/7
+teyla experiments verdict <product> lab-2 f2 parked --trigger "after the voice provider decision"
+teyla experiments verdict <product> lab-2 f3 dropped --reason "the owner prefers the month view"
+teyla experiments retire <product> lab-2       # exit 1 and the list of features without a verdict
+teyla experiments [--all] [--json]             # open experiments: age, features, verdicts
+teyla experiments show <product> lab-2         # every feature and its verdict
+teyla experiments parked                       # parked features and their triggers, retired experiments too
+```
+
+`promoted` takes the PR URL (or `owner/repo#N`) that brought the feature to the main line, `parked` the
+trigger that brings it back, `dropped` the reason. An experiment with no feature written down cannot be
+retired either. `--request` links a feature to one of your requests; a verdict never changes the request's
+status. The gate holds this command only: deleting a branch or a TestFlight group elsewhere is not stopped,
+so retire here first, then delete. Records live in `~/.teyla/experiments/<product>.json` (0600).
+
 ## In a session
 
 `session-start.sh` prints one line when the file exists for the session's repo: the path, the entry
@@ -161,7 +186,8 @@ audited product owes nothing. The shipped policy adds the rule: before a plan or
 quote the source sentences each part of the plan serves, and never replace them with a summary.
 
 `teyla you` opens with "Owed to you", computed live: each audited product that still owes requests or
-audits, and how many products with your words were never audited.
+audits, how many products with your words were never audited, and every open experiment older than 14
+days with a feature that has no verdict, or none written down.
 
 One `flock` covers read index, append, write index. A hook that cannot get the lock in a second skips
 the prompt, and the next `backfill` finds it. The hook prints nothing and always exits 0.

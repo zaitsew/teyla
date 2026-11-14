@@ -1,6 +1,6 @@
 ---
 name: intent-audit
-description: Audit the owner's own words for one product against what shipped, and record a status per request with `teyla intent mark` or `teyla intent load`. Use when asked to "audit my prompts", "what did I ask for that was not done", "what was missed", or when a session-start line says entries are not audited. Needs the `teyla` CLI.
+description: Audit the owner's own words for one product against what shipped, and record a status per request with `teyla intent mark` or `teyla intent load`. Use when asked to "audit my prompts", "what did I ask for that was not done", "what was missed", or when a session-start line says entries are not audited. Also use to register a lab build, a design variant or a test app with its features before it is retired. Needs the `teyla` CLI.
 argument-hint: "<product>"
 ---
 
@@ -43,7 +43,7 @@ For each entry not audited:
 2. Quote each request: a run of his exact words, at most 600 characters. Case and punctuation must match;
    line breaks and runs of spaces count as one space. The CLI refuses a quote that is not in the entry.
 3. Find the evidence, newest first: merged PRs (`gh pr list --state merged --search "<words>" --limit 20`
-   in the product's repo), the README's feature list, the code, the release notes.
+   in the product's repo), the README's feature list, the code, the release notes, `teyla experiments show`.
 4. Give a status:
    - `done`: the request shipped as asked. `--evidence` is the PR URL, a file, or a README anchor.
    - `partial`: some of it shipped. `--evidence` plus `--note` saying what is still missing.
@@ -83,7 +83,23 @@ duplicates them:
 teyla intent load <product> audit.json --dry && teyla intent load <product> audit.json
 ```
 
-## 5. Report
+## 5. Experiments
+
+A lab build, a design variant or a parallel test app carries features. Register it when it starts, and
+give each feature a verdict before anyone deletes it:
+
+```sh
+teyla experiments add <product> lab-2 --kind lab --title "<one line>" --where "<branch or scheme>"
+teyla experiments feature <product> lab-2 "<feature>" --request 4f2a9c1e.2
+teyla experiments verdict <product> lab-2 f1 promoted --pr <PR URL>
+teyla experiments verdict <product> lab-2 f2 parked --trigger "<what brings it back>"
+teyla experiments verdict <product> lab-2 f3 dropped --reason "<why>"
+teyla experiments retire <product> lab-2       # refused while any feature has no verdict
+```
+
+A verdict never changes a request's status. Mark the request separately.
+
+## 6. Report
 
 Print the summary line `teyla intent audit <product>` starts with, then the open and partial requests,
 oldest first, with their quotes. Say which entries you could not judge and why.

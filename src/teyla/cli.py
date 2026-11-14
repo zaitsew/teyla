@@ -13,6 +13,7 @@
   teyla intent cover <plan.md> [--product P] [--since DATE] [--last N] [--model] [--json]   which of his sentences the plan neither serves nor sets aside; exit 1 if any
   teyla intent audit <product> [--open] [--json]                 which of his requests were delivered, with evidence and age; what is owed
   teyla intent mark <id> <status> [--quote T] [--evidence E] [--note N] | load <product> <file.json> [--dry]   record a status: open, partial, done, superseded, not-a-request, split
+  teyla experiments [--all] | add|feature|verdict|retire|show <product> <id> ...   lab builds and variants: a verdict per feature before retiring
   teyla start [--days N] [--agent|--json] [--yes]                 diagnose your agent spend, then offer one-keystroke fixes (--agent: JSON for an AI to relay, writes nothing)
   teyla web [--no-open] [--port N]                                 the dashboard in your browser: diagnosis, today, products, notes, spend (127.0.0.1 only)
   teyla apply OFFER... [--yes] [--dry] [--owner NAME] | undo CHANGE_OR_OFFER... [--force] | changes [--json]   make, revert and list the changes `start` offers
@@ -579,6 +580,8 @@ def build_parser() -> argparse.ArgumentParser:
     reviews_mod.register(sp)
     from . import intent as intent_mod
     intent_mod.register(sp)
+    from . import experiments as experiments_mod
+    experiments_mod.register(sp)
     from . import schedules as schedules_mod
     schedules_mod.register(sp)
     from . import spend as spend_mod
