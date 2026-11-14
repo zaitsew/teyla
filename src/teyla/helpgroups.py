@@ -66,6 +66,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
         ("copy", "UI copy from a brief: write per language, judge, apply to the catalogs"),
         ("whats-new", "Store What's New: draft from merged PRs, check every locale"),
         ("intent", "Your long prompts, verbatim, per product"),
+        ("experiments", "Lab builds and variants: a verdict per feature before retiring"),
         ("you", "Quotes, insights and chores to hand off, from your own sessions"),
         ("scaffold", "Start a new repo with the standard files"),
         ("probe-sql", "One read-only Supabase query for a usage probe"),

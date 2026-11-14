@@ -17,7 +17,8 @@ the open and closed questions of `teyla asks`, the rule files, and git. The resu
   when git cannot confirm anything.
 - delegation: manual chores found in your asks and corrections, with the honest path to hand each off (`chores.py`).
 - owed: computed live, never cached: per audited product, the owner's requests still open or partial and the entries not
-  yet audited (`teyla intent audit`), and how many products were never audited.
+  yet audited (`teyla intent audit`), how many products were never audited, and the experiments older than 14 days with a
+  feature that has no verdict (`teyla experiments`).
 - contradictions: rules that were broken again after they were written. Conflicting rules are not checked: the
   text of two rules cannot be compared reliably, so the count is repeats after a rule, and it says so.
 """
@@ -524,14 +525,18 @@ def console_part(now: float) -> dict:
 
 
 def owed(today: _dt.date | None = None) -> dict:
-    """What is still owed to the owner: the requests in his words. Read live from `~/.teyla/intent/*.status.json`;
-    a broken store is a line, never a crash."""
-    from . import intent_status
+    """What is still owed to the owner: requests from his words, verdicts from experiments. Read live from
+    `~/.teyla/intent/*.status.json` and `~/.teyla/experiments/`; a broken store is a line, never a crash."""
+    from . import experiments, intent_status
     try:
         words = intent_status.owed_summary(today)
     except Exception as e:  # noqa: BLE001
         words = {"products": [{"product": "?", "line": f"intent status unreadable: {e}", "owed": 0}], "never_audited": []}
-    return {"requests": words["products"], "never_audited": words["never_audited"]}
+    try:
+        stale = [dict(r, line=experiments.stale_line(r)) for r in experiments.stale(today)]
+    except Exception as e:  # noqa: BLE001
+        stale = [{"line": f"experiments unreadable: {e}"}]
+    return {"requests": words["products"], "never_audited": words["never_audited"], "experiments": stale}
 
 
 def render_owed(o: dict) -> list[str]:
@@ -542,8 +547,10 @@ def render_owed(o: dict) -> list[str]:
         n = len(o["never_audited"])
         L.append(f"  {n} product{'' if n == 1 else 's'} with your words never audited: {', '.join(o['never_audited'][:6])}"
                  + (" ..." if n > 6 else "") + "  (skill intent-audit)")
+    for r in o["experiments"]:
+        L.append(f"  experiment {r['line']}")
     if len(L) == 1:
-        L.append("  nothing: every audited request is delivered")
+        L.append("  nothing: every audited request is delivered and every experiment has its verdicts")
     return L
 
 

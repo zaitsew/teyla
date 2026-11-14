@@ -15,8 +15,8 @@ of open chores. Nothing in this command is sent anywhere, except the optional ra
 ## What it shows
 
 **Owed to you.** Computed live on every run, never cached: per audited product, your requests still open or
-partial and the entries not audited yet (`teyla intent audit`), and the products whose words were never
-audited. See
+partial and the entries not audited yet (`teyla intent audit`), the products whose words were never audited,
+and the open experiments older than 14 days with a feature that has no verdict (`teyla experiments`). See
 [INTENT.md](INTENT.md#what-was-delivered-teyla-intent-audit).
 
 **Quote of the day.** A verbatim line of 30 to 140 characters from your long prompts (`teyla intent`) or your
