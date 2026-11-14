@@ -23,7 +23,9 @@ workflow is to retire here first, then delete.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as _dt
+import functools
 import json
 import os
 import pathlib
@@ -107,6 +109,47 @@ def unjudged(e: dict) -> list[str]:
 
 # --- writes -------------------------------------------------------------------------------------
 
+LOCK_WAIT_S = 10.0
+
+
+@contextlib.contextmanager
+def _lock(wait_s: float = LOCK_WAIT_S):
+    """One flock on `~/.teyla/experiments/.lock` around read, change, write: two sessions adding
+    features at once must not each save the snapshot they read and drop the other's."""
+    from . import config
+    try:
+        import fcntl
+    except ImportError:  # pragma: no cover - POSIX only
+        yield
+        return
+    import time
+    config.private_dir(corrections.teyla_home())
+    config.private_dir(home())
+    fd = os.open(home() / ".lock", os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        deadline = time.monotonic() + wait_s
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise ExperimentError("the experiments ledger is locked by another command; try again")
+                time.sleep(0.02)
+        yield
+    finally:
+        os.close(fd)                    # closing the descriptor releases the lock
+
+
+def _writes(fn):
+    @functools.wraps(fn)
+    def run(*a, **k):
+        with _lock():
+            return fn(*a, **k)
+    return run
+
+
+@_writes
 def add(product: str, eid: str, kind: str, title: str = "", where: str = "", since: str | None = None) -> dict:
     if not ID_RE.match(eid or ""):
         raise ExperimentError(f"{eid!r}: an id is lowercase letters, digits, '.', '_' or '-', at most 40")
@@ -125,6 +168,7 @@ def add(product: str, eid: str, kind: str, title: str = "", where: str = "", sin
     return ex[eid]
 
 
+@_writes
 def feature(product: str, eid: str, text: str, request: str = "") -> str:
     text = " ".join((text or "").split())
     if not text:
@@ -148,6 +192,7 @@ def feature(product: str, eid: str, text: str, request: str = "") -> str:
     return fid
 
 
+@_writes
 def verdict(product: str, eid: str, fid: str, what: str, because: str) -> dict:
     if what not in VERDICTS:
         raise ExperimentError(f"verdict {what!r}; one of {', '.join(VERDICTS)}")
@@ -166,6 +211,7 @@ def verdict(product: str, eid: str, fid: str, what: str, because: str) -> dict:
     return f
 
 
+@_writes
 def retire(product: str, eid: str) -> dict:
     ex = load(product)
     e = _get(ex, product, eid)

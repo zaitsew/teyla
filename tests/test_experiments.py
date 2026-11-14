@@ -123,3 +123,21 @@ def test_store_is_private():
     lab()
     assert oct(ex.path("demo").stat().st_mode & 0o777) == "0o600"
     assert oct(ex.home().stat().st_mode & 0o777) == "0o700"
+
+
+def test_concurrent_feature_writes_keep_every_feature():
+    import threading
+    ex.add("demo", "lab1", "lab")
+    real_save = ex.save
+    def slow_save(product, data):
+        import time
+        time.sleep(0.05)              # widen the read-modify-write window
+        real_save(product, data)
+    ex.save = slow_save
+    try:
+        ts = [threading.Thread(target=ex.feature, args=("demo", "lab1", f"feature number {i}")) for i in range(6)]
+        [t.start() for t in ts]
+        [t.join() for t in ts]
+    finally:
+        ex.save = real_save
+    assert len(ex.load("demo")["lab1"]["features"]) == 6
