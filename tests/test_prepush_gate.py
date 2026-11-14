@@ -1,4 +1,5 @@
-""".githooks/pre-push runs ./check.sh (POLICY section 10) when the pushed range touches code.
+""".githooks/pre-push runs ./check.sh (POLICY section 10) when the pushed range touches code, and
+`./check.sh docs` when it touches documents alone.
 
 Each test builds a throwaway repository with a stub check.sh and a stub `teyla` on PATH, so the
 real suite never runs from here."""
@@ -48,7 +49,7 @@ class Box:
         (self.repo / "scripts").mkdir()
         (self.repo / "scripts" / "leak_check.py").write_text(LEAK.read_text())
         check = self.repo / "check.sh"
-        check.write_text(f"#!/usr/bin/env bash\necho check >> '{self.marks}'\nexit {check_exit}\n")
+        check.write_text(f"#!/usr/bin/env bash\necho \"check${{1:+ $1}}\" >> '{self.marks}'\nexit {check_exit}\n")
         check.chmod(0o755)
         stub = self.bin / "teyla"
         stub.write_text(f"#!/usr/bin/env bash\necho \"teyla $*\" >> '{self.marks}'\n")
@@ -88,8 +89,10 @@ def test_code_push_queues_then_runs_check_sh(box):
     assert box.marked() == ["teyla load --wait --kind build", "check"]
 
 
-@pytest.mark.parametrize("path", ["tests/test_x.py", "apps/ios/App.swift", "scripts/tool.sh", "check.sh"])
-def test_every_code_directory_triggers_the_gate(box, path):
+@pytest.mark.parametrize("path", ["tests/test_x.py", "apps/ios/App.swift", "scripts/tool.sh", "check.sh",
+                                  "plugin/hooks/guard.sh", "templates/policy/POLICY.md", "uv.lock", "teyla.toml",
+                                  ".github/workflows/site.yml"])
+def test_everything_that_is_not_a_document_triggers_the_gate(box, path):
     body = (box.repo / path).read_text() + "# touched\n" if path == "check.sh" else "x = 1\n"
     sha = commit(box.repo, {path: body}, "code")
     assert box.push(sha).returncode == 0
@@ -118,10 +121,10 @@ def test_merge_commit_that_brings_code_runs_the_tests(box):
     assert box.marked() == ["teyla load --wait --kind build", "check"]
 
 
-def test_merge_commit_that_brings_only_docs_skips_the_tests(box):
+def test_merge_commit_that_brings_only_docs_runs_the_document_tests(box):
     sha = merged_main_into_feature(box, {"docs/OTHER.md": "other\n"})
     assert box.push(sha).returncode == 0
-    assert box.marked() == []
+    assert box.marked() == ["check docs"]
 
 
 def test_merge_commit_with_code_still_honours_the_escape_hatch(box):
@@ -131,9 +134,40 @@ def test_merge_commit_with_code_still_honours_the_escape_hatch(box):
     assert len((box.home / "prepush-skips.log").read_text().splitlines()) == 1
 
 
-def test_docs_only_push_skips_the_tests(box):
-    sha = commit(box.repo, {"docs/NOTE.md": "a note\n"}, "docs")
+@pytest.mark.parametrize("path", ["docs/NOTE.md", "README.md", "AGENTS.md", "docs/img/mac/today.png"])
+def test_a_push_of_documents_alone_runs_the_document_tests_and_takes_no_build_slot(box, path):
+    """A README edit used to run nothing, so a README that broke tests/test_readme.py reached the remote."""
+    sha = commit(box.repo, {path: "changed\n"}, "docs")
+    p = box.push(sha)
+    assert p.returncode == 0, p.stderr
+    assert box.marked() == ["check docs"]
+    assert "only documents changed" in p.stderr
+
+
+def test_documents_and_code_in_one_push_run_the_full_check_once(box):
+    commit(box.repo, {"README.md": "changed\n"}, "docs")
+    sha = commit(box.repo, {"src/mod.py": "x = 1\n"}, "code")
     assert box.push(sha).returncode == 0
+    assert box.marked() == ["teyla load --wait --kind build", "check"]
+
+
+def test_failing_document_tests_refuse_the_push(tmp_path):
+    box = Box(tmp_path, check_exit=1)
+    sha = commit(box.repo, {"README.md": "changed\n"}, "docs")
+    p = box.push(sha)
+    assert p.returncode == 1 and "check.sh docs failed" in p.stderr
+
+
+def test_escape_hatch_covers_a_push_of_documents_too(box):
+    sha = commit(box.repo, {"README.md": "changed\n"}, "docs")
+    p = box.push(sha, TEYLA_PREPUSH_TESTS="0")
+    assert p.returncode == 0 and box.marked() == []
+    assert len((box.home / "prepush-skips.log").read_text().splitlines()) == 1
+
+
+def test_a_push_that_changes_no_file_runs_nothing(box):
+    git(box.repo, "commit", "-q", "--allow-empty", "-m", "empty")
+    assert box.push(git(box.repo, "rev-parse", "HEAD")).returncode == 0
     assert box.marked() == []
 
 
@@ -175,4 +209,29 @@ def test_ref_deletion_runs_nothing(box):
 def test_this_repos_hook_names_check_sh():
     text = HOOK.read_text()
     assert "./check.sh" in text and "teyla load --wait --kind build" in text
+    assert "./check.sh docs" in text
     assert "TEYLA_PREPUSH_TESTS" in text
+
+
+def test_check_sh_docs_runs_the_marked_modules_after_the_leak_check():
+    text = (ROOT / "check.sh").read_text()
+    leak, docs, full = text.index("scripts/leak_check.py"), text.index("pytest -q -m docs"), text.rindex("pytest -q")
+    assert leak < docs < full
+
+
+def test_every_document_test_module_exists():
+    import conftest
+    missing = sorted(m for m in conftest.DOCS_MODULES if not (ROOT / "tests" / m).is_file())
+    assert not missing
+
+
+def test_a_module_outside_the_list_cannot_read_a_tracked_document(tmp_path, request):
+    """This module is not in DOCS_MODULES, so its own read of the README is refused and names the list."""
+    assert request.node.get_closest_marker("docs") is None
+    for doc in (ROOT / "README.md", ROOT / "docs" / "GUIDE.md"):
+        with pytest.raises(AssertionError, match="DOCS_MODULES"):
+            doc.read_text()
+    scratch = tmp_path / "README.md"                       # a scratch file of the same name is nobody's document
+    scratch.write_text("hello\n")
+    assert scratch.read_text() == "hello\n"
+    assert (ROOT / "check.sh").read_text()                 # code is not a document
