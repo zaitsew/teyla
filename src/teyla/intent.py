@@ -600,7 +600,7 @@ def pending_ask(path: str) -> tuple[str, list[str]] | None:
             a = _ask_of(o)
             if a:
                 ask = a
-            elif _human_turn(o):
+            elif _bare(_raw_turn(o)):
                 ask = None
     except (OSError, ValueError):
         return None
@@ -815,6 +815,8 @@ def clean(dry: bool = False, now: _dt.datetime | None = None) -> list[dict]:
 
 # --- rebuild ------------------------------------------------------------------------------
 
+SCAN_MARGIN = _dt.timedelta(minutes=5)
+
 def rebuild(product: str, days: int | None = None, dry: bool = False, now: _dt.datetime | None = None,
             cfg: dict | None = None, roots: dict | None = None) -> dict:
     """One product's file made again from the Claude Code and Codex transcripts under today's
@@ -830,7 +832,9 @@ def rebuild(product: str, days: int | None = None, dry: bool = False, now: _dt.d
     from .adapters import claude_code, codex, since_epoch
     now = now or _dt.datetime.now(_dt.timezone.utc)
     _, min_chars = settings(cfg)
-    scanned = _dt.datetime.now(_dt.timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M")   # before the first transcript is read
+    # An entry the hook wrote just before or during the scan may be missing from what was read of its
+    # transcript; anything from SCAN_MARGIN before the scan on is judged by the text rules alone.
+    scanned = (_dt.datetime.now(_dt.timezone.utc) - SCAN_MARGIN).astimezone().strftime("%Y-%m-%d %H:%M")
     cutoff = now - _dt.timedelta(days=days) if days else None
     floor = cutoff.astimezone().strftime("%Y-%m-%d %H:%M") if cutoff else ""
     sessions = []
@@ -839,7 +843,7 @@ def rebuild(product: str, days: int | None = None, dry: bool = False, now: _dt.d
             sessions += mod.load(since=since_epoch(days), **(roots or {}).get(mod.NAME, {}))
         except FileNotFoundError:
             continue
-    seen = {_word(s.sid)[:8] for s in sessions}           # batch sessions too: their entries were never the owner's
+    seen = {(_HARNESS_LABEL[s.harness], _word(s.sid)[:8]) for s in sessions}   # batch sessions too: never the owner's
     fresh: list[tuple[str, str, str]] = []                 # (date, key, entry text)
     for s in sessions:
         if s.batch or s.sidechain:
@@ -894,7 +898,8 @@ def _merge(product: str, raw: str, fresh: list[tuple[str, str, str]], seen: set[
         old_keys.add(key_of(e["text"]))
         why = None
         if e["date"] >= floor:
-            why = "not in its transcript" if e["session"] in seen and e["date"] < scanned else not_owners(e)
+            why = ("not in its transcript" if (e["harness"], e["session"]) in seen and e["date"] < scanned
+                   else not_owners(e))
         if why:
             dropped.append(dict(e, product=product, why=why))
         else:

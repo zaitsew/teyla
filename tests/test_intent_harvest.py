@@ -178,7 +178,8 @@ def test_a_button_that_reads_like_a_retry_is_still_an_answer(tmp_path):
 def test_rebuild_keeps_an_entry_written_after_the_scan_began(tmp_path):
     r = str(repo(tmp_path, "alpha"))
     roots = roots_with(tmp_path, [claude_user(recent(30), r, prose(500, "new"))], sid="abcd1234-0000")
-    seed_file([("2999-01-01 00:00", "abcd1234", prose(450, "captured during the scan"))])
+    soon = (dt.datetime.now() - dt.timedelta(minutes=2)).strftime("%Y-%m-%d %H:%M")
+    seed_file([(soon, "abcd1234", prose(450, "captured just before the scan"))])
     res = intent.rebuild("alpha", roots=roots)
     assert res["dropped"] == [] and res["after"] == 2
 
@@ -189,3 +190,19 @@ def test_rebuild_over_an_emptied_file(tmp_path):
     seed_file([])
     res = intent.rebuild("alpha", roots=roots)
     assert res["after"] == 1 and res["backup"]
+
+
+def test_a_label_after_an_answered_retry_button_is_not_an_answer_again(tmp_path):
+    r = repo(tmp_path, "alpha")
+    tp = tmp_path / "t.jsonl"
+    jl(tp, [wrap_up(recent(5), labels=("Continue", "Stop here")), claude_user(recent(4), str(r), "Continue")])
+    assert intent.pending_ask(str(tp)) is None
+
+
+def test_another_harness_with_a_matching_session_id_is_judged_by_text(tmp_path):
+    r = str(repo(tmp_path, "alpha"))
+    roots = roots_with(tmp_path, [claude_user(recent(30), r, prose(500, "new"))], sid="abcd1234-0000")
+    d = intent.intent_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "alpha.md").write_text(f"## 2026-01-02 10:00 · grok · session abcd1234\n{prose(450, 'grok typed')}\n\n")
+    assert intent.rebuild("alpha", roots=roots)["dropped"] == []
