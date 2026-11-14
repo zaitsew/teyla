@@ -480,8 +480,10 @@ def capture(data: dict, now: _dt.datetime | None = None, cfg: dict | None = None
     if not isinstance(prompt, str) or corrections.headless(data):
         return False
     text = typed(prompt)
-    if text and len(text) <= ANSWER_MAX and data.get("transcript_path"):
-        text = _as_answer(text, pending_ask(str(data["transcript_path"])))
+    raw = _bare(prompt)
+    if raw and len(raw) <= ANSWER_MAX and data.get("transcript_path"):
+        # a button label such as "Continue" reads as a retry to `typed`; match it before that test
+        text = _as_answer(raw, pending_ask(str(data["transcript_path"])), text)
     if not text or not long_enough(text, min_chars):
         return False
     cwd = data.get("cwd") or data.get("workspaceRoot") or data.get("workspace_root") or os.getcwd()
@@ -534,16 +536,22 @@ def _label_key(s: str) -> str:
     return " ".join(s.split()).strip(" .!").casefold()
 
 
-def _as_answer(text: str, ask: tuple[str, list[str]] | None) -> str:
-    """`text` as an answer to `ask` when it is one of its button labels, else `text`."""
-    if ask and _label_key(text) in {_label_key(l) for l in ask[1]}:
-        return answer_text([(ask[0], text)]) or text
-    return text
+def _bare(text) -> str:
+    """A user turn without its system reminders and images, before any other test."""
+    from .adapters import strip_reminders
+    return strip_reminders(_IMAGE_TAG_RE.sub("", text if isinstance(text, str) else "")).strip()
 
 
-def _human_turn(o: dict) -> str | None:
-    """The text of a user record a person typed (a prompt, or a prompt queued while the agent
-    worked), or None. Tool results, meta turns, compaction summaries and sidechains are not."""
+def _as_answer(raw: str, ask: tuple[str, list[str]] | None, otherwise: str | None) -> str | None:
+    """`raw` as an answer to `ask` when it is one of its button labels, else `otherwise`."""
+    if ask and raw and _label_key(raw) in {_label_key(l) for l in ask[1]}:
+        return answer_text([(ask[0], raw)]) or otherwise
+    return otherwise
+
+
+def _raw_turn(o: dict) -> str | None:
+    """The raw text of a user record a person could have typed (a prompt, or a prompt queued while
+    the agent worked), or None. Tool results, meta turns, compaction summaries and sidechains are not."""
     from .adapters import text_of
     if o.get("isSidechain"):
         return None
@@ -552,13 +560,19 @@ def _human_turn(o: dict) -> str | None:
         origin = a.get("origin") if isinstance(a.get("origin"), dict) else {}
         if a.get("type") != "queued_command" or a.get("commandMode") != "prompt" or origin.get("kind", "human") != "human":
             return None
-        return typed(text_of(a.get("prompt")).strip())
+        return text_of(a.get("prompt"))
     if o.get("type") != "user" or o.get("isMeta") or o.get("isCompactSummary"):
         return None
     c = (o.get("message") or {}).get("content")
     if isinstance(c, list) and any(isinstance(b, dict) and b.get("type") == "tool_result" for b in c):
         return None
-    return typed(text_of(c).strip())
+    return text_of(c)
+
+
+def _human_turn(o: dict) -> str | None:
+    """What a person typed in a record, under the text rules, or None."""
+    raw = _raw_turn(o)
+    return typed(raw.strip()) if raw else None
 
 
 def _question_answers(o: dict) -> str | None:
@@ -607,11 +621,15 @@ def _claude_prompts(path: str):
         if t:
             yield o.get("timestamp"), o.get("cwd"), t
             continue
-        t = _human_turn(o)
+        raw = _raw_turn(o)
+        if not raw:
+            continue
+        t = typed(raw.strip())
+        bare = _bare(raw)
+        if ask and bare and len(bare) <= ANSWER_MAX:
+            t = _as_answer(bare, ask, t)
         if not t:
             continue
-        if len(t) <= ANSWER_MAX:
-            t = _as_answer(t, ask)
         ask = None
         ts = (o.get("attachment") or {}).get("timestamp") if o.get("type") == "attachment" else None
         yield ts or o.get("timestamp"), o.get("cwd"), t
@@ -812,6 +830,7 @@ def rebuild(product: str, days: int | None = None, dry: bool = False, now: _dt.d
     from .adapters import claude_code, codex, since_epoch
     now = now or _dt.datetime.now(_dt.timezone.utc)
     _, min_chars = settings(cfg)
+    scanned = _dt.datetime.now(_dt.timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M")   # before the first transcript is read
     cutoff = now - _dt.timedelta(days=days) if days else None
     floor = cutoff.astimezone().strftime("%Y-%m-%d %H:%M") if cutoff else ""
     sessions = []
@@ -842,10 +861,10 @@ def rebuild(product: str, days: int | None = None, dry: bool = False, now: _dt.d
             raw = f.read_bytes().decode("utf-8", "surrogateescape")
         except FileNotFoundError:
             raw = ""
-        out, new = _merge(product, raw, fresh, seen, floor)
+        out, new = _merge(product, raw, fresh, seen, floor, scanned)
         if dry or (not out["added"] and not out["dropped"]):
             return out
-        if raw:
+        if f.exists():
             out["backup"] = str(_replace(f, raw, new, stamp))
         else:
             _write_new(f, new.encode("utf-8", "surrogateescape"))
@@ -859,8 +878,11 @@ def rebuild(product: str, days: int | None = None, dry: bool = False, now: _dt.d
     return out
 
 
-def _merge(product: str, raw: str, fresh: list[tuple[str, str, str]], seen: set[str], floor: str) -> tuple[dict, str]:
-    """`rebuild`'s decision for one file: (report, the new file text)."""
+def _merge(product: str, raw: str, fresh: list[tuple[str, str, str]], seen: set[str], floor: str,
+           scanned: str = "9999") -> tuple[dict, str]:
+    """`rebuild`'s decision for one file: (report, the new file text). An entry written in or
+    after the minute the scan began (`scanned`) may postdate what was read of its transcript, so
+    only the text rules judge it."""
     def key_of(text: str) -> str:
         return f"{product}:{digest(kept_text(text)[0])}"
     lead, kept, dropped, old_keys, before = [], [], [], set(), 0
@@ -872,7 +894,7 @@ def _merge(product: str, raw: str, fresh: list[tuple[str, str, str]], seen: set[
         old_keys.add(key_of(e["text"]))
         why = None
         if e["date"] >= floor:
-            why = "not in its transcript" if e["session"] in seen else not_owners(e)
+            why = "not in its transcript" if e["session"] in seen and e["date"] < scanned else not_owners(e)
         if why:
             dropped.append(dict(e, product=product, why=why))
         else:

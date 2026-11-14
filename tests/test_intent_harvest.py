@@ -163,3 +163,29 @@ def test_rebuild_command(tmp_path, capsys, monkeypatch):
     out = capsys.readouterr().out
     assert out.splitlines()[-1] == "alpha: 1 entries -> 2: would drop 0, would add 1; nothing written"
     assert cli.main(["intent", "rebuild"]) == 64
+
+
+def test_a_button_that_reads_like_a_retry_is_still_an_answer(tmp_path):
+    r = repo(tmp_path, "alpha")
+    tp = tmp_path / "t.jsonl"
+    jl(tp, [wrap_up(recent(5), labels=("Continue", "Stop here"))])
+    assert intent.capture(hook_payload("Continue", r, transcript_path=str(tp)), now=NOW) is True
+    assert texts()[-1] == f"Asked: {ASK}\nAnswered: Continue"
+    roots = roots_with(tmp_path, [wrap_up(recent(5), labels=("Continue", "Stop here")), claude_user(recent(4), str(r), "Continue")])
+    assert intent.rebuild("alpha", roots=roots)["after"] == 1
+
+
+def test_rebuild_keeps_an_entry_written_after_the_scan_began(tmp_path):
+    r = str(repo(tmp_path, "alpha"))
+    roots = roots_with(tmp_path, [claude_user(recent(30), r, prose(500, "new"))], sid="abcd1234-0000")
+    seed_file([("2999-01-01 00:00", "abcd1234", prose(450, "captured during the scan"))])
+    res = intent.rebuild("alpha", roots=roots)
+    assert res["dropped"] == [] and res["after"] == 2
+
+
+def test_rebuild_over_an_emptied_file(tmp_path):
+    r = str(repo(tmp_path, "alpha"))
+    roots = roots_with(tmp_path, [claude_user(recent(30), r, prose(500, "new"))])
+    seed_file([])
+    res = intent.rebuild("alpha", roots=roots)
+    assert res["after"] == 1 and res["backup"]
