@@ -24,6 +24,11 @@ If the CLI is found only at `~/.local/bin/teyla` (not on PATH), use that full pa
 
 ## 2. See what is owed
 
+On a product's first audit, repair its file first: an entry id is a hash of the entry, so the ids
+should come from the right words. `teyla intent rebuild <product> --dry` lists what it would drop
+(agent messages stored as the owner's) and add (button answers with their question, queued prompts);
+run it without `--dry` when the list looks right. It backs the old file up.
+
 ```sh
 teyla intent audit <product> --open      # open and partial requests, then entries not audited or partly audited
 teyla intent <product> --json            # every entry with its id, date and full text
