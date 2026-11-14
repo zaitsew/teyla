@@ -14,6 +14,11 @@ of open chores. Nothing in this command is sent anywhere, except the optional ra
 
 ## What it shows
 
+**Owed to you.** Computed live on every run, never cached: per audited product, your requests still open or
+partial and the entries not audited yet (`teyla intent audit`), and the products whose words were never
+audited. See
+[INTENT.md](INTENT.md#what-was-delivered-teyla-intent-audit).
+
 **Quote of the day.** A verbatim line of 30 to 140 characters from your long prompts (`teyla intent`) or your
 corrections. The pick is by rules: lines with decision verbs (want, never, stop, ship, fix) and a length of 50 to
 110 characters score higher, questions score lower. Ties break on a hash of the text, and the quote is stable

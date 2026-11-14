@@ -16,6 +16,8 @@ the open and closed questions of `teyla asks`, the rule files, and git. The resu
 - postcard: an old line of yours about a product, and what git shows since: commits and tags. A weekly pick; skipped
   when git cannot confirm anything.
 - delegation: manual chores found in your asks and corrections, with the honest path to hand each off (`chores.py`).
+- owed: computed live, never cached: per audited product, the owner's requests still open or partial and the entries not
+  yet audited (`teyla intent audit`), and how many products were never audited.
 - contradictions: rules that were broken again after they were written. Conflicting rules are not checked: the
   text of two rules cannot be compared reliably, so the count is repeats after a rule, and it says so.
 """
@@ -521,8 +523,34 @@ def console_part(now: float) -> dict:
                                     "counts", "notes")} | {"local_only": True}
 
 
+def owed(today: _dt.date | None = None) -> dict:
+    """What is still owed to the owner: the requests in his words. Read live from `~/.teyla/intent/*.status.json`;
+    a broken store is a line, never a crash."""
+    from . import intent_status
+    try:
+        words = intent_status.owed_summary(today)
+    except Exception as e:  # noqa: BLE001
+        words = {"products": [{"product": "?", "line": f"intent status unreadable: {e}", "owed": 0}], "never_audited": []}
+    return {"requests": words["products"], "never_audited": words["never_audited"]}
+
+
+def render_owed(o: dict) -> list[str]:
+    L = ["Owed to you"]
+    for r in o["requests"]:
+        L.append(f"  {r['line']}  (teyla intent audit {r['product']})")
+    if o["never_audited"]:
+        n = len(o["never_audited"])
+        L.append(f"  {n} product{'' if n == 1 else 's'} with your words never audited: {', '.join(o['never_audited'][:6])}"
+                 + (" ..." if n > 6 else "") + "  (skill intent-audit)")
+    if len(L) == 1:
+        L.append("  nothing: every audited request is delivered")
+    return L
+
+
 def render(rep: dict) -> str:
     L = [f"teyla you - {rep['day']} (local: ~/.teyla/you.json, off the relay unless [you] relay = true)", ""]
+    if rep.get("owed"):
+        L += render_owed(rep["owed"]) + [""]
     q = rep.get("quote_of_the_day")
     L.append("Quote of the day" + (" (ranked by a model)" if q and q.get("ranked") else ""))
     L.append(f'  "{q["text"]}"  ({q["day"]}, {q["product"]})' if q else "  none: no screened line of 30-140 characters yet")
@@ -564,7 +592,7 @@ def cmd_you(args) -> int:
     if words:
         print("teyla you: the only subcommand is `chore`")
         return 2
-    rep = get(refresh=args.refresh)
+    rep = dict(get(refresh=args.refresh), owed=owed())
     print(json.dumps(rep, indent=2, ensure_ascii=False) if args.json else render(rep), end="" if not args.json else "\n")
     return 0
 

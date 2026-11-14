@@ -15,6 +15,9 @@ after `corrections.scrub` has replaced secrets, and a planning session is pointe
                                          which of the owner's sentences a plan neither serves nor sets aside
     teyla intent backfill [--days 30] [--dry]   the same capture from Claude Code and Codex transcripts
     teyla intent clean [--dry]           drop stored entries the owner did not type, under today's rules
+    teyla intent audit <product> [--open] [--json]   which requests were delivered, what is still owed
+    teyla intent mark <id> <status> [--quote TEXT] [--evidence E] [--note N]   record one (intent_status.py)
+    teyla intent load <product> <file.json> [--dry]  many records at once, all or nothing
     teyla intent rebuild <product> [--days N] [--dry]   make a product's file again from the transcripts
     teyla intent capture                 what plugin/hooks/capture-intent.sh runs (JSON on stdin)
 
@@ -929,7 +932,8 @@ def _line(e: dict, product: bool = False) -> str:
 
 
 def _list_entries(args, names: list[str]) -> list[dict]:
-    es = [e for n in names for e in entries(n)]
+    from .intent_status import entry_id
+    es = [dict(e, id=entry_id(e)) for n in names for e in entries(n)]
     if args.days:
         floor = (_dt.date.today() - _dt.timedelta(days=args.days)).isoformat()
         es = [e for e in es if e["date"][:10] >= floor]
@@ -941,7 +945,10 @@ def _list_entries(args, names: list[str]) -> list[dict]:
 
 def cmd_intent(args) -> int:
     words = list(args.words or [])
-    sub = words[0] if words and words[0] in ("capture", "backfill", "path", "cover", "clean", "rebuild") else None
+    sub = words[0] if words and words[0] in ("capture", "backfill", "path", "cover", "clean", "rebuild", "audit", "mark", "load") else None
+    if sub in ("audit", "mark", "load"):
+        from . import intent_status
+        return intent_status.cmd(args, words)
     if sub == "cover":
         from . import intent_cover
         return intent_cover.cmd_cover(args, words)
@@ -997,7 +1004,8 @@ def cmd_intent(args) -> int:
         print(intent_dir() / f"{name}.md")
         return 0
     if len(words) > 1:
-        print("usage: teyla intent [product] [--days N] [--grep TEXT] [--json] | path <product> | cover <plan.md> | backfill | clean | rebuild <product> | capture",
+        print("usage: teyla intent [product] [--days N] [--grep TEXT] [--json] | path <product> | cover <plan.md> | audit <product>"
+              " | mark <id> <status> | load <product> <file.json> | backfill | clean | rebuild <product> | capture",
               file=sys.stderr)
         return 64
     if words:
@@ -1061,14 +1069,20 @@ def _cmd_rebuild(args, words: list[str]) -> int:
 
 
 def register(sp):
-    q = sp.add_parser("intent", help="the owner's long prompts, verbatim, per product: list, path, backfill")
+    q = sp.add_parser("intent", help="the owner's long prompts, verbatim, per product: list, path, audit, backfill")
     q.set_defaults(fn=cmd_intent)
-    q.add_argument("words", nargs="*", metavar="[product|path <product>|cover <plan.md>|backfill|clean|rebuild <product>|capture]")
+    q.add_argument("words", nargs="*",
+                   metavar="[product|path <product>|cover <plan.md>|audit <product>|mark <id> <status>|load <product> <file>|backfill|clean|rebuild <product>|capture]")
     q.add_argument("--days", type=int, help="list: only the last N days; backfill: the window (default 30); rebuild: only the last N days")
     q.add_argument("--grep", help="list: only entries containing TEXT (case-insensitive)")
     q.add_argument("--json", action="store_true", help="list: JSON, the full text of each entry")
-    q.add_argument("--dry", action="store_true", help="backfill, clean, rebuild: report, write nothing")
-    q.add_argument("--product", help="cover: the product whose words the plan is checked against (default: the plan's repo)")
+    q.add_argument("--dry", action="store_true", help="backfill, clean, rebuild, mark, load: report, write nothing")
+    q.add_argument("--product", help="cover: the product whose words the plan is checked against (default: the plan's repo); "
+                                     "mark: the product, when the entry id is not enough")
+    q.add_argument("--open", action="store_true", help="audit: only what is owed (open, partial, not audited)")
+    q.add_argument("--quote", help="mark <entry>: a new request, a verbatim run of the entry's text")
+    q.add_argument("--evidence", default="", help="mark: a PR URL, a file or a feature anchor (done and partial need one)")
+    q.add_argument("--note", default="", help="mark: one line, e.g. what superseded the request")
     q.add_argument("--since", metavar="YYYY-MM-DD", help="cover: only entries from this date on")
     q.add_argument("--last", type=int, metavar="N", help="cover: only the last N entries")
     q.add_argument("--model", action="store_true", help="cover: one Claude Haiku call for what words cannot settle")

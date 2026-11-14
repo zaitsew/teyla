@@ -191,7 +191,33 @@ intent_line() {
   [ -n "$heads" ] || return 0
   n=$(printf '%s\n' "$heads" | wc -l | tr -d ' ')
   latest=$(printf '%s\n' "$heads" | sed -n 's/^## \([0-9-]\{10\}\) .*/\1/p' | sort | tail -n 1)
-  echo "Owner's own words for $name: $file ($n entries, latest $latest). Read them before planning; quote the sentences a plan serves."
+  echo "Owner's own words for $name: $file ($n entries, latest $latest). Read them before planning; quote the sentences a plan serves.$(owed_clause "$name" "$n")"
+}
+
+# What is still owed on those words, as a clause on the same line (a second line on every start
+# stops being read): from the table `teyla intent audit|mark|load` rewrites (product, audited
+# entries, open, partial, epoch of the oldest owed entry). No row: never audited. Nothing owed: nothing.
+owed_clause() {
+  cov="${TEYLA_HOME:-$HOME/.teyla}/intent/.coverage.tsv"
+  row=""
+  [ -s "$cov" ] && row=$(awk -F '\t' -v p="$1" '$1 == p { print; exit }' "$cov" 2>/dev/null)
+  if [ -z "$row" ]; then
+    printf ' None audited for delivery yet: `teyla intent audit %s`.' "$1"
+    return 0
+  fi
+  audited=$(printf '%s' "$row" | cut -f2); open=$(printf '%s' "$row" | cut -f3)
+  partial=$(printf '%s' "$row" | cut -f4); since=$(printf '%s' "$row" | cut -f5)
+  case "$audited$open$partial$since" in *[!0-9]*) return 0 ;; esac
+  left=$(( $2 - audited )); [ "$left" -ge 0 ] || left=0
+  [ $(( open + partial + left )) -gt 0 ] || return 0
+  msg=" Owed requests: $open open"
+  [ "$partial" -gt 0 ] && msg="$msg, $partial partial"
+  if [ "$since" -gt 0 ]; then
+    days=$(( ( $(date +%s) - since ) / 86400 ))
+    msg="$msg, oldest $days days"
+  fi
+  [ "$left" -gt 0 ] && msg="$msg; entries not audited: $left"
+  printf '%s (`teyla intent audit %s --open`).' "$msg" "$1"
 }
 
 # Claude Code's project-memory directory for the session's repo: the main checkout for a

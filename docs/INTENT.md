@@ -13,6 +13,7 @@ cat "$(teyla intent path <product>)"    # the words themselves
 teyla intent cover docs/ROADMAP.md      # which of your sentences does this plan leave out?
 teyla intent clean --dry                # entries you did not type, under today's rules; writes nothing
 teyla intent rebuild <product> --dry    # the product's file made again from the transcripts; writes nothing
+teyla intent audit <product> --open     # what you asked for that is still owed, oldest first
 ```
 
 The `UserPromptSubmit` hook `plugin/hooks/capture-intent.sh` keeps new prompts. `teyla harness sync`
@@ -137,12 +138,66 @@ plan, no entries, or no intent for the product. A hook or a reviewer can gate on
 sentence the plan does not mention. It cannot tell whether a mention does the sentence justice: read what
 it reports as served by words once.
 
+## What was delivered: `teyla intent audit`
+
+Keeping your words is not delivering them. A request typed once and never picked up looks the same as one
+that shipped. `audit` keeps the record of which is which:
+
+```sh
+teyla intent audit <product> [--open] [--json]   # requests by status, evidence, age; entries not audited
+teyla intent mark 4f2a9c1e open --quote "add a dark theme to the settings"   # a new request, <entry>.<n>
+teyla intent mark 4f2a9c1e.1 done --evidence https://github.com/<owner>/<repo>/pull/12
+teyla intent mark 4f2a9c1e split                 # every request in this entry is recorded
+teyla intent load <product> audit.json [--dry]   # many records, all or nothing
+```
+
+The first line of `audit` is the count: `demo: 23 requests open, 4 partial, oldest 41 days; 12 entries not
+audited`. Owed requests come first, oldest first; then entries that were never looked at.
+
+**Ids.** An entry's id is the first 8 characters of the hash the store already dedupes by
+(`teyla intent <product> --json` prints it), so nothing in the entry file changes. A request is
+`<entry>.<n>`, numbered by the CLI and never renumbered. Each request carries a quote of your own words:
+the CLI refuses a quote that is not in the entry (runs of spaces and line breaks count as one space; case
+and punctuation must match). The quote proves the request is yours. It does not prove every request in the
+entry was found, so an entry counts as audited only when its bare id has a record: `split` (every request
+in it is recorded) or a status for the whole entry, such as `not-a-request`. An entry with quoted requests
+and no such record is "partly audited".
+
+**Statuses.**
+
+| Status | Means | Needs |
+|---|---|---|
+| `open` | nothing shipped | |
+| `partial` | some of it shipped | `--evidence` and `--note` saying what is missing |
+| `done` | shipped as asked | `--evidence`: a PR URL, a file, a feature anchor |
+| `superseded` | a later request or decision replaced it | `--evidence` or `--note`, ideally the other request's id |
+| `not-a-request` | the entry asks for nothing | the bare entry id |
+| `split` | every request in the entry is recorded | the bare entry id |
+
+A change keeps the old status, evidence and note in the record's history. A record never moves a request
+by itself: an agent decides, and the CLI checks the shape. `load` replays safely: the same quote updates the
+same request.
+
+**Where.** `~/.teyla/intent/<product>.status.json` (0600) beside the product file, and
+`~/.teyla/intent/.coverage.tsv`, one line per audited product for the shell hook. Never in a repository.
+Nothing leaves the machine.
+
+**Who fills it.** Splitting a prompt into requests and judging the evidence is an agent's work. The plugin
+skill `intent-audit` is the workflow: read the entries as JSON, quote each request, check merged PRs and the
+code, record the status, close each entry with `split`, report what is owed. The reading is volume work for
+a cheaper model; the orchestrating session checks the result.
+
 ## In a session
 
 `session-start.sh` prints one line when the file exists for the session's repo: the path, the entry
-count, the latest date, and "Read them before planning; quote the sentences a plan serves." The shipped
-policy adds the rule: before a plan or a spec, read the file, quote the source sentences each part of
-the plan serves, and never replace them with a summary.
+count, the latest date, and "Read them before planning; quote the sentences a plan serves." The same line
+ends with what is owed, from `.coverage.tsv`: "Owed requests: 23 open, 4 partial, oldest 41 days; entries
+not audited: 12", or "None audited for delivery yet" for a product never audited, or nothing when an
+audited product owes nothing. The shipped policy adds the rule: before a plan or a spec, read the file,
+quote the source sentences each part of the plan serves, and never replace them with a summary.
+
+`teyla you` opens with "Owed to you", computed live: each audited product that still owes requests or
+audits, and how many products with your words were never audited.
 
 One `flock` covers read index, append, write index. A hook that cannot get the lock in a second skips
 the prompt, and the next `backfill` finds it. The hook prints nothing and always exits 0.

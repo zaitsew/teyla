@@ -26,7 +26,7 @@ TEXT = [p for p in SHIPPED if p != ICON]  # the icon is the one binary file the 
 SKILLS = sorted(PLUGIN.glob("skills/*/SKILL.md"))
 COMMANDS = sorted(PLUGIN.glob("commands/*.md"))
 # Components that run the separately installed CLI, and the ones that must not need it.
-NEEDS_CLI = {"adoption-review", "tidy", "wiki-pass", "harvest", "correct", "taste"}
+NEEDS_CLI = {"adoption-review", "tidy", "wiki-pass", "harvest", "correct", "taste", "intent-audit"}
 NO_CLI = {"review", "rule"}
 
 
@@ -320,7 +320,8 @@ def test_a_set_up_machine_still_gets_the_daily_chain(tmp_path):
 
 # --- the privacy section is true -----------------------------------------------------------------
 
-NETWORK = re.compile(r"\b(curl|wget|socket|urllib|requests|http\.client|nc|netcat|telnet|ftp|scp|rsync|ssh)\b")
+# `requests` the library (an import or a call), not the English word a skill about the owner's requests uses.
+NETWORK = re.compile(r"\b(curl|wget|socket|urllib|import requests|requests\.\w|http\.client|nc|netcat|telnet|ftp|scp|rsync|ssh)\b")
 
 
 def test_no_plugin_script_or_skill_makes_a_network_call():
