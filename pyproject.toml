@@ -49,3 +49,4 @@ packages = ["src/teyla"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["docs: the module reads a tracked document; ./check.sh docs runs these (tests/conftest.py)"]

@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 # The gate (POLICY §10): what CI used to run, on this laptop. scripts/release.sh runs it;
-# run it before pushing.
+# run it before pushing. `./check.sh docs` runs only the tests that read a tracked document.
 set -euo pipefail
 cd "$(dirname "$0")"
 [ -x .venv/bin/python ] || { uv venv -q && uv pip install -q -e '.[reel]' pytest; }
 # Private data and non-English text must never reach this public repo: see CONTRIBUTING.md.
 PYTHONPATH=src .venv/bin/python scripts/leak_check.py
+# `./check.sh docs` stops here with a part of the suite: the test modules that read a tracked document
+# (README.md, AGENTS.md, docs/). tests/conftest.py marks them `docs`. The pre-push hook runs this for a push
+# that changes documents and nothing else, so a README edit costs seconds and still cannot break what they pin.
+if [ "${1:-}" = docs ]; then
+  PYTHONPATH=src exec .venv/bin/python -m pytest -q -m docs
+fi
 # The web review package (packages/review-web): type check and unit tests. The pytest run below builds
 # its fixture with Vite, so the dependencies must be installed; a Mac without node skips both.
 if command -v npm >/dev/null 2>&1; then

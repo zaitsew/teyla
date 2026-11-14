@@ -184,3 +184,8 @@ def test_the_guide_pins_the_install_line_and_lists_the_documents():
         if doc.name in {"GUIDE.md", "DIRECTORY.md", "DISPATCH.md", "HANDOVER.md", "reel.md"}:
             continue          # linked from the install section or from a command row, not from the list
         assert doc.name in GUIDE, f"docs/{doc.name} is not linked from the guide"
+
+
+def test_this_module_runs_in_the_document_gate(request):
+    """`./check.sh docs` is `pytest -m docs`; a push of the README alone must run this module."""
+    assert request.node.get_closest_marker("docs") is not None

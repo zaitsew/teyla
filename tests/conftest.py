@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import pathlib
 import subprocess
+import sys
 
 import pytest
 
@@ -310,3 +311,66 @@ def _no_real_keychain_or_network_for_growth(monkeypatch):
     monkeypatch.setattr(growth_engage, "run_grok", no_grok)
     monkeypatch.setattr(growth_engage, "fetch_feed", no_feed)
     yield vault
+
+
+# --- The document tests ---------------------------------------------------------------------------------------------
+# `./check.sh docs` is `pytest -m docs`: what the pre-push hook runs when a push changes documents and nothing else.
+# It runs the modules below, the ones that read a tracked document of this repository: a top-level Markdown file or
+# a file under docs/. The list enforces itself. A test in any other module that opens such a file fails and names
+# this list, so a new reader cannot stay outside the document gate. A read made by a child process is not seen.
+DOCS_MODULES = frozenset({
+    "test_agents_md.py", "test_copy_lane.py", "test_docs_check.py", "test_growth.py", "test_growth_media.py",
+    "test_growth_story_video.py", "test_growth_video.py", "test_hosts.py", "test_mac_first_run.py",
+    "test_plugin_directory.py", "test_privacy_calls.py", "test_productize.py", "test_prose.py", "test_readme.py",
+    "test_review_capture.py", "test_self_maintenance.py", "test_shield.py", "test_site.py", "test_ux_atlas.py",
+    "test_ux_shots.py",
+})
+_REPO = str(pathlib.Path(__file__).resolve().parents[1])
+_TESTS = os.path.join(_REPO, "tests") + os.sep
+
+
+def tracked_document(path) -> str | None:
+    """The repo-relative name when `path` is a top-level Markdown file or a file under docs/ of this repository."""
+    try:
+        full = os.path.abspath(os.fsdecode(path))
+    except (TypeError, ValueError):
+        return None
+    if not full.startswith(_REPO + os.sep):
+        return None
+    rel = full[len(_REPO) + 1:]
+    if rel.startswith("docs" + os.sep) or (os.sep not in rel and rel.endswith(".md")):
+        return rel
+    return None
+
+
+def _reading_test_module() -> str | None:
+    """The innermost tests/test_*.py on the stack: the module whose test (or import) is opening the file."""
+    frame = sys._getframe(2)
+    while frame is not None:
+        name = frame.f_code.co_filename
+        if name.startswith(_TESTS) and os.path.basename(name).startswith("test_"):
+            return os.path.basename(name)
+        frame = frame.f_back
+    return None
+
+
+def _document_gate(event, args):
+    if event != "open" or not args or not isinstance(args[0], (str, bytes, os.PathLike)):
+        return
+    rel = tracked_document(args[0])
+    if rel is None:
+        return
+    module = _reading_test_module()
+    if module is not None and module not in DOCS_MODULES:
+        raise AssertionError(
+            f"tests/{module} reads {rel}, a tracked document. Add {module} to DOCS_MODULES in tests/conftest.py, "
+            "so `./check.sh docs` runs it when a push changes documents alone.")
+
+
+sys.addaudithook(_document_gate)
+
+
+def pytest_collection_modifyitems(items):
+    for item in items:
+        if os.path.basename(str(item.fspath)) in DOCS_MODULES:
+            item.add_marker(pytest.mark.docs)
