@@ -211,3 +211,11 @@ def test_a_broken_status_file_is_reported_not_overwritten():
         st.mark("demo", {"ref": a, "status": "not-a-request"})
     assert st.status_path("demo").read_text() == "{not json"
     assert "unreadable" in you.owed(TODAY)["requests"][0]["line"]
+
+
+def test_owed_rows_are_oldest_first_whatever_their_status():
+    a, b = seed(bodies=(("2026-08-01 10:00", ONE), ("2026-11-13 09:00", "Ship the export button today, please, it is overdue.")))
+    st.load("demo", [{"entry": a, "quote": "add a dark theme to the settings", "status": "partial",
+                      "evidence": "https://x/pull/4", "note": "light mode only"},
+                     {"entry": b, "status": "open"}])
+    assert [r["id"] for r in st.audit("demo", TODAY)["requests"]] == [f"{a}.1", b]

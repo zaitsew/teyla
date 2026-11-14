@@ -217,7 +217,9 @@ def audit(product: str, today: _dt.date | None = None) -> dict:
         rows.append({"id": rid, "entry": r["entry"], "date": e["date"][:10], "age_days": _age(e["date"], today),
                      "status": r.get("status", ""), "quote": r.get("quote", ""), "evidence": r.get("evidence", ""),
                      "note": r.get("note", ""), "updated": r.get("updated", ""), "history": r.get("history", [])})
-    rows.sort(key=lambda x: (_ORDER.get(x["status"], 9), -x["age_days"], x["id"]))
+    # what is owed comes first, oldest first whatever its status; then the rest by status and age
+    rows.sort(key=lambda x: (0 if x["status"] in OWED else 1, 0 if x["status"] in OWED else _ORDER.get(x["status"], 9),
+                             -x["age_days"], x["id"]))
     def _brief(eid, e):
         return {"entry": eid, "date": e["date"][:10], "age_days": _age(e["date"], today),
                 "first": " ".join(e["text"].split())[:100]}
@@ -323,8 +325,7 @@ def load(product: str, records: list[dict], dry: bool = False) -> list[tuple[str
             raise StatusError("\n".join(errors) + "\nnothing was written")
         if not dry:
             _save(product, recs)
-    if not dry:
-        write_coverage()
+            write_coverage()        # under the same lock, so overlapping marks cannot publish a stale table
     return out
 
 
@@ -370,7 +371,11 @@ def cmd(args, words: list[str]) -> int:
                 print(f"teyla: no intent recorded for {words[1]}", file=sys.stderr)
                 return 2
             a = audit(name)
-            write_coverage()
+            try:
+                with intent.Store(wait_s=2.0):
+                    write_coverage()
+            except TimeoutError:
+                pass                # the next write rebuilds it
             if args.json:
                 print(json.dumps(a, ensure_ascii=False, indent=2))
             else:
