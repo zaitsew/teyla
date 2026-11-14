@@ -10,6 +10,7 @@
   teyla corrections [--days N] [--project SUBSTR] [--recorded]   correction-shaped human turns, clustered; --recorded: the stored ones
   teyla intent [product] [--days N] [--grep TEXT] [--json]       the owner's long prompts, verbatim, per product (~/.teyla/intent/); none: one line per product
   teyla intent path <product> | backfill [--days 30] [--dry]     the file to read before planning; fill it from Claude Code and Codex transcripts
+  teyla intent rebuild <product> [--days N] [--dry]               make a product's file again from the transcripts (old file backed up)
   teyla intent cover <plan.md> [--product P] [--since DATE] [--last N] [--model] [--json]   which of his sentences the plan neither serves nor sets aside; exit 1 if any
   teyla start [--days N] [--agent|--json] [--yes]                 diagnose your agent spend, then offer one-keystroke fixes (--agent: JSON for an AI to relay, writes nothing)
   teyla web [--no-open] [--port N]                                 the dashboard in your browser: diagnosis, today, products, notes, spend (127.0.0.1 only)

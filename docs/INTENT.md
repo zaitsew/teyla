@@ -12,6 +12,7 @@ teyla intent [product] [--grep TEXT]    # no product: one line each; else one li
 cat "$(teyla intent path <product>)"    # the words themselves
 teyla intent cover docs/ROADMAP.md      # which of your sentences does this plan leave out?
 teyla intent clean --dry                # entries you did not type, under today's rules; writes nothing
+teyla intent rebuild <product> --dry    # the product's file made again from the transcripts; writes nothing
 ```
 
 The `UserPromptSubmit` hook `plugin/hooks/capture-intent.sh` keeps new prompts. `teyla harness sync`
@@ -20,6 +21,20 @@ wires the same script into Codex, Grok, Cursor and Hermes. Codex asks you to tru
 ## What is kept
 
 - A prompt of 400 characters or more (`[intent] min_chars`). `[intent] enabled = false` turns it off.
+- A button you press, whatever its length, with the question it answered:
+
+  ```
+  Asked: Which fix first?
+  Answered: Yes, fix 1
+  ```
+
+  That covers the Claude desktop app's next-step buttons (the label you click comes back as your next
+  prompt; the hook finds the open question at the end of the transcript), AskUserQuestion answers and
+  the note typed with one (backfill and rebuild only: they reach no prompt hook), and the answer to a
+  question Codex asked.
+- A prompt you queue while the agent works. Claude Code files it as a `queued_command` attachment, not
+  as a user turn; backfill and rebuild read it. A prompt after a compaction is kept like any other.
+- From a Codex prompt that came with files or a browser page, only the text under "## My request".
 - It goes to `~/.teyla/intent/<product>.md`, outside every repo, mode 0600, append-only.
 - The product is the repo name of the prompt's cwd. A worktree maps to its repo. A cwd outside a repo
   goes to `general`.
@@ -39,6 +54,9 @@ wires the same script into Codex, Grok, Cursor and Hermes. Codex asks you to tru
 
 - Prompts a script or another agent wrote: `claude -p`, `codex exec`, `grok -p`, review and subagent
   briefs, injected AGENTS.md text, scheduled-task prompts.
+- Messages from other agents: a session messaging another (`<cross-session-message>`), the brief a
+  side session starts with ("Task (from the session…"), a voice agent's delegation, a Codex
+  automation's heartbeat, a request the Codex app writes itself.
 - Turns the harness injects (system reminders, task notifications, slash commands) and images. That
   includes a subagent's final report, which the Claude desktop app files as a user turn: it is wrapped
   in `<agent-message from="...">` and opens with `[Subagent hand-back]`.
@@ -66,6 +84,24 @@ It copies each file it changes to `<product>.md.bak-<UTC time>` (mode 0600) firs
 file and `.index.json` atomically under the store lock. Entries it keeps are not rewritten: they stay
 byte for byte as they were. To undo a clean, copy the backup over the product file and delete `.index.json`
 (it is rebuilt from the files).
+
+## Rebuilding a product's file: `teyla intent rebuild`
+
+`clean` can only judge an entry by its text. `rebuild` reads the transcripts again, so it also adds
+what an older rule missed (an answer, a queued prompt) and drops what only the transcript shows was
+not typed (a turn the harness marked as meta, a `claude -p` session).
+
+```sh
+teyla intent rebuild <product> --dry        # "-" lines it would drop (with why), "+" lines it would add
+teyla intent rebuild <product> [--days N]   # do it; with --days, only the last N days are touched
+```
+
+An entry whose session still has a Claude Code or Codex transcript is replaced by what that transcript
+yields today. An entry with no transcript (deleted, or from Grok, Cursor or Hermes) stays if the text
+rules keep it. Unchanged entries keep their place and their id. The old file goes to
+`<product>.md.bak-<UTC time>` first; file and index are replaced under the store lock. Without
+`--days` it reads every transcript on the machine, which takes minutes. Run it before
+`teyla intent audit`, since an audit's ids are hashes of the entries.
 
 ## Check a plan against your words
 
