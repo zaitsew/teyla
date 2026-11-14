@@ -4,7 +4,8 @@
 # the source, not against a summary of it.
 #
 # All of the logic is `teyla.intent.hook_main`: the length threshold (`[intent] min_chars`,
-# default 400), the off switch (`[intent] enabled`), the filters for prompts a script or
+# default 400; a button answer, kept with its question, skips it), the off switch
+# (`[intent] enabled`), the filters for prompts a script or
 # another agent wrote, `teyla.corrections.scrub` for secrets, and the dedupe. This script
 # only finds a Python that can run it without harm, in the same order and for the same
 # reasons as capture-correction.sh (read its header): $TEYLA_PYTHON, the interpreter of the

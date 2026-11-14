@@ -15,6 +15,7 @@ after `corrections.scrub` has replaced secrets, and a planning session is pointe
                                          which of the owner's sentences a plan neither serves nor sets aside
     teyla intent backfill [--days 30] [--dry]   the same capture from Claude Code and Codex transcripts
     teyla intent clean [--dry]           drop stored entries the owner did not type, under today's rules
+    teyla intent rebuild <product> [--days N] [--dry]   make a product's file again from the transcripts
     teyla intent capture                 what plugin/hooks/capture-intent.sh runs (JSON on stdin)
 
 An entry:
@@ -94,9 +95,23 @@ _AUTOMATED_PREFIXES = (
     "<side-sessions-event",
     "<ci-monitor-event",
     "<agent-message",                                        # a subagent's report, filed by the Claude desktop app as a user turn
+    "<cross-session-message",                                # one agent session messaging another; the live hook sees it as a prompt
+    "Task (from the session",                                # the brief a side session is started with
+    "<realtime_delegation",                                  # a voice agent handing work to Codex
+    "<heartbeat",                                            # a Codex automation's scheduled run
+    "This is an app-generated",                              # a request the Codex app writes itself
 )
 _AUTOMATED_HEAD_RE = re.compile(r"One-pass code review")
 _IMAGE_TAG_RE = re.compile(r"</?image\b[^>]*>")
+# Codex wraps a prompt that comes with files or a browser page: the files and page first, then
+# "## My request" and what the person typed. Only that last part is theirs.
+_CODEX_ENVELOPE_HEADS = ("# Files mentioned by the user", "<in-app-browser-context")
+_MY_REQUEST_RE = re.compile(r"^## My request[ \t]*$", re.M)
+_BROWSER_CTX_RE = re.compile(r"\A\s*<in-app-browser-context\b[^>]*>.*?</in-app-browser-context>\s*", re.S)
+# Codex files the answer to a question it asked (`request_user_input`) as a user turn: JSON with
+# the question and the option picked or typed.
+_QUESTION_REPLY_RE = re.compile(r"\A\s*<send_user_message_question_reply>(.*)</send_user_message_question_reply>\s*\Z", re.S)
+ASKED, ANSWERED = "Asked: ", "Answered: "
 
 
 # --- where --------------------------------------------------------------------------------
@@ -142,15 +157,53 @@ def automated(text: str) -> bool:
             or t.startswith(HANDBACK_MARKER))
 
 
+def answer_text(pairs) -> str | None:
+    """A button answer, kept with the question it answered: an `Asked:` line and an `Answered:`
+    line per pair. A short "Yes, build it" means nothing without its question."""
+    lines = []
+    for q, a in pairs:
+        a = str(a or "").strip()
+        if not a:
+            continue
+        q = " ".join(str(q or "").split())
+        lines += ([ASKED + q] if q else []) + [ANSWERED + a]
+    return "\n".join(lines) or None
+
+
+def _unwrap(t: str) -> str:
+    """The owner's part of a prompt a harness wrapped: a Codex question reply becomes its
+    question and answer; a Codex files-or-page envelope becomes the text after "## My request"."""
+    m = _QUESTION_REPLY_RE.match(t)
+    if m:
+        try:
+            items = json.loads(m.group(1))
+        except ValueError:
+            return ""
+        items = items if isinstance(items, list) else [items]
+        return answer_text((i.get("question"), i.get("answer")) for i in items if isinstance(i, dict)) or ""
+    if t.lstrip().startswith(_CODEX_ENVELOPE_HEADS):
+        m = _MY_REQUEST_RE.search(t)
+        if m:
+            return t[m.end():].strip()
+        return _BROWSER_CTX_RE.sub("", t, count=1).strip()
+    return t
+
+
 def typed(text: str | None) -> str | None:
     """What the owner typed in a user turn, or None: nothing left after the harness's own
     injections, an automated prompt, a retry."""
     from .adapters import human_text
-    t = _IMAGE_TAG_RE.sub("", text or "").strip()
+    t = _unwrap(_IMAGE_TAG_RE.sub("", text or "").strip())
     t = human_text(t) if t else None
     if not t or automated(t):
         return None
     return t
+
+
+def long_enough(text: str, min_chars: int) -> bool:
+    """A prompt is kept from `min_chars` on; an answer to a question is kept whatever its length,
+    because it comes with the question."""
+    return len(text) >= min_chars or text.startswith((ASKED, ANSWERED))
 
 
 def settings(cfg: dict | None = None) -> tuple[bool, int]:
@@ -318,23 +371,29 @@ class Store:
     def add(self, product: str, text: str, harness: str, session: str, when: _dt.datetime) -> bool:
         """Append one entry unless this product already has the same text. `text` is stored
         scrubbed. True when it was (or, in a dry store, would be) written."""
-        text = corrections.scrub(text.strip())
-        key = f"{product}:{digest(text)}"
+        key, entry, row = render(product, text, harness, session, when)
         if key in self.index or key in self._planned:
             return False
         if self.dry:
             self._planned.add(key)
             return True
-        body = text
-        if len(body) > MAX_CHARS:
-            body = body[:MAX_CHARS] + f"\n[{len(text) - MAX_CHARS} more characters not kept]"
-        when = when.astimezone() if when.tzinfo else when
-        head = f"## {when.strftime('%Y-%m-%d %H:%M')} · {_word(harness)} · session {_word(session)[:8]}"
-        corrections._append_line(self.dir / f"{product}.md", f"{head}\n{_escape(body)}\n\n")
-        self.index[key] = {"product": product, "date": when.strftime("%Y-%m-%d"), "session": _word(session)[:8],
-                           "harness": _word(harness), "chars": len(text)}
+        corrections._append_line(self.dir / f"{product}.md", entry)
+        self.index[key] = row
         self._dirty = True
         return True
+
+
+def render(product: str, text: str, harness: str, session: str, when: _dt.datetime) -> tuple[str, str, dict]:
+    """(dedupe key, the entry as written to the file, its index row) for one prompt, scrubbed."""
+    text = corrections.scrub(text.strip())
+    body = text
+    if len(body) > MAX_CHARS:
+        body = body[:MAX_CHARS] + f"\n[{len(text) - MAX_CHARS} more characters not kept]"
+    when = when.astimezone() if when.tzinfo else when
+    head = f"## {when.strftime('%Y-%m-%d %H:%M')} · {_word(harness)} · session {_word(session)[:8]}"
+    row = {"product": product, "date": when.strftime("%Y-%m-%d"), "session": _word(session)[:8],
+           "harness": _word(harness), "chars": len(text)}
+    return f"{product}:{digest(text)}", f"{head}\n{_escape(body)}\n\n", row
 
 
 def _word(s) -> str:
@@ -421,7 +480,9 @@ def capture(data: dict, now: _dt.datetime | None = None, cfg: dict | None = None
     if not isinstance(prompt, str) or corrections.headless(data):
         return False
     text = typed(prompt)
-    if not text or len(text) < min_chars:
+    if text and len(text) <= ANSWER_MAX and data.get("transcript_path"):
+        text = _as_answer(text, pending_ask(str(data["transcript_path"])))
+    if not text or not long_enough(text, min_chars):
         return False
     cwd = data.get("cwd") or data.get("workspaceRoot") or data.get("workspace_root") or os.getcwd()
     now = now or _dt.datetime.now(_dt.timezone.utc)
@@ -443,18 +504,117 @@ def hook_main(stream=None, harness: str | None = None) -> None:
 _HARNESS_LABEL = {"claude-code": "claude", "codex": "codex"}
 
 
-def _claude_prompts(path: str):
-    """(ts, cwd, text) for each human turn of a Claude Code transcript, full length."""
+ANSWER_MAX = 200          # a reply longer than this is a prompt of its own, not a button press
+ASK_TAIL_BYTES = 512_000  # how much of a transcript's end the live hook reads to find the open question
+
+
+def _ask_of(o: dict) -> tuple[str, list[str]] | None:
+    """(question, button labels) when an assistant record opens a next-step box: the desktop
+    app's `wrap_up` call with an `ask` and buttons. The label of the button pressed comes back
+    as the next user turn."""
+    if o.get("type") != "assistant":
+        return None
+    for b in (o.get("message") or {}).get("content") or []:
+        if not (isinstance(b, dict) and b.get("type") == "tool_use" and str(b.get("name", "")).endswith("wrap_up")):
+            continue
+        inp = b.get("input") if isinstance(b.get("input"), dict) else {}
+        acts = inp.get("actions")
+        if isinstance(acts, str):
+            try:
+                acts = json.loads(acts)
+            except ValueError:
+                acts = []
+        labels = [a["label"] for a in acts or [] if isinstance(a, dict) and isinstance(a.get("label"), str)]
+        if isinstance(inp.get("ask"), str) and inp["ask"].strip() and labels:
+            return inp["ask"].strip(), labels
+    return None
+
+
+def _label_key(s: str) -> str:
+    return " ".join(s.split()).strip(" .!").casefold()
+
+
+def _as_answer(text: str, ask: tuple[str, list[str]] | None) -> str:
+    """`text` as an answer to `ask` when it is one of its button labels, else `text`."""
+    if ask and _label_key(text) in {_label_key(l) for l in ask[1]}:
+        return answer_text([(ask[0], text)]) or text
+    return text
+
+
+def _human_turn(o: dict) -> str | None:
+    """The text of a user record a person typed (a prompt, or a prompt queued while the agent
+    worked), or None. Tool results, meta turns, compaction summaries and sidechains are not."""
     from .adapters import text_of
+    if o.get("isSidechain"):
+        return None
+    if o.get("type") == "attachment":
+        a = o.get("attachment") or {}
+        origin = a.get("origin") if isinstance(a.get("origin"), dict) else {}
+        if a.get("type") != "queued_command" or a.get("commandMode") != "prompt" or origin.get("kind", "human") != "human":
+            return None
+        return typed(text_of(a.get("prompt")).strip())
+    if o.get("type") != "user" or o.get("isMeta") or o.get("isCompactSummary"):
+        return None
+    c = (o.get("message") or {}).get("content")
+    if isinstance(c, list) and any(isinstance(b, dict) and b.get("type") == "tool_result" for b in c):
+        return None
+    return typed(text_of(c).strip())
+
+
+def _question_answers(o: dict) -> str | None:
+    """The answers to an AskUserQuestion call, each with its question and any note typed with it."""
+    r = o.get("toolUseResult")
+    if o.get("type") != "user" or o.get("isSidechain") or not isinstance(r, dict) or not isinstance(r.get("answers"), dict):
+        return None
+    notes = r.get("annotations") if isinstance(r.get("annotations"), dict) else {}
+    pairs = []
+    for q, a in r["answers"].items():
+        n = notes.get(q, {}).get("notes") if isinstance(notes.get(q), dict) else None
+        pairs.append((q, f"{a}\n{n.strip()}" if isinstance(n, str) and n.strip() else a))
+    return answer_text(pairs)
+
+
+def pending_ask(path: str) -> tuple[str, list[str]] | None:
+    """The question of the last next-step box in a Claude Code transcript, if nobody has typed
+    since. The live hook runs before the prompt it sees is written to the transcript."""
+    from .adapters import iter_jsonl
+    ask = None
+    try:
+        for o in iter_jsonl(path, tail_bytes=ASK_TAIL_BYTES):
+            if not isinstance(o, dict):
+                continue
+            a = _ask_of(o)
+            if a:
+                ask = a
+            elif _human_turn(o):
+                ask = None
+    except (OSError, ValueError):
+        return None
+    return ask
+
+
+def _claude_prompts(path: str):
+    """(ts, cwd, text) for each thing a person said in a Claude Code transcript, full length: a
+    prompt, a prompt queued while the agent worked, a button pressed or an AskUserQuestion
+    answered (each with its question). A prompt after a compaction is a prompt like any other."""
+    ask = None
     for o in _jsonl(path):
-        if o.get("type") != "user" or o.get("isMeta") or o.get("isSidechain") or o.get("isCompactSummary"):
+        a = _ask_of(o)
+        if a:
+            ask = a
             continue
-        c = (o.get("message") or {}).get("content")
-        if isinstance(c, list) and any(isinstance(b, dict) and b.get("type") == "tool_result" for b in c):
-            continue
-        t = typed(text_of(c).strip())
+        t = _question_answers(o)
         if t:
             yield o.get("timestamp"), o.get("cwd"), t
+            continue
+        t = _human_turn(o)
+        if not t:
+            continue
+        if len(t) <= ANSWER_MAX:
+            t = _as_answer(t, ask)
+        ask = None
+        ts = (o.get("attachment") or {}).get("timestamp") if o.get("type") == "attachment" else None
+        yield ts or o.get("timestamp"), o.get("cwd"), t
 
 
 def _codex_prompts(path: str):
@@ -513,7 +673,7 @@ def backfill(days: int = 30, dry: bool = False, cfg: dict | None = None, roots: 
         gen = _claude_prompts(s.path) if s.harness == "claude-code" else _codex_prompts(s.path)
         for ts, cwd, text in gen:
             when = _when(ts)
-            if when is None or when < cutoff or len(text) < min_chars:
+            if when is None or when < cutoff or not long_enough(text, min_chars):
                 continue
             where = cwd or s.cwd
             found.append((when, product_for(where) if where else "misc", _HARNESS_LABEL[s.harness], s.sid, text))
@@ -577,6 +737,27 @@ def _write_new(path: pathlib.Path, data: bytes) -> None:
         os.close(fd)
 
 
+def _replace(f: pathlib.Path, raw: str, new: str, stamp: str) -> pathlib.Path:
+    """Copy `f` (whose text is `raw`) to `<file>.bak-<stamp>`, then replace it with `new`
+    atomically. The caller holds the store lock. The backup's path."""
+    bak, n = f.with_name(f"{f.name}.bak-{stamp}"), 1
+    while True:
+        try:
+            _write_new(bak, raw.encode("utf-8", "surrogateescape"))
+            break
+        except FileExistsError:
+            n += 1
+            bak = f.with_name(f"{f.name}.bak-{stamp}-{n}")
+    tmp = f.with_name(f"{f.name}.{os.getpid()}.tmp")
+    try:
+        _write_new(tmp, new.encode("utf-8", "surrogateescape"))
+        os.replace(tmp, f)
+    finally:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+    return bak
+
+
 def clean(dry: bool = False, now: _dt.datetime | None = None) -> list[dict]:
     """Remove the stored entries `not_owners` names. [{product, date, harness, session, text,
     why}] for what was removed (or, with `dry`, would be). Each changed file is first copied to
@@ -606,27 +787,110 @@ def clean(dry: bool = False, now: _dt.datetime | None = None) -> list[dict]:
                             "text": e["text"], "why": why})
             if dry:
                 continue
-            data = raw.encode("utf-8", "surrogateescape")
-            bak, n = st.dir / f"{f.name}.bak-{stamp}", 1
-            while True:
-                try:
-                    _write_new(bak, data)
-                    break
-                except FileExistsError:
-                    n += 1
-                    bak = st.dir / f"{f.name}.bak-{stamp}-{n}"
-            tmp = st.dir / f"{f.name}.{os.getpid()}.tmp"
-            try:
-                _write_new(tmp, "".join(keep).encode("utf-8", "surrogateescape"))
-                os.replace(tmp, f)
-            finally:
-                with contextlib.suppress(OSError):
-                    tmp.unlink()
+            _replace(f, raw, "".join(keep), stamp)
             for e, _ in dropped:
                 kept, _cut = kept_text(e["text"])
                 st.index.pop(f"{f.stem}:{digest(kept)}", None)
             st._dirty = True
     return out
+
+
+# --- rebuild ------------------------------------------------------------------------------
+
+def rebuild(product: str, days: int | None = None, dry: bool = False, now: _dt.datetime | None = None,
+            cfg: dict | None = None, roots: dict | None = None) -> dict:
+    """One product's file made again from the Claude Code and Codex transcripts under today's
+    rules, for entries stored under older ones (an agent's message kept as the owner's words, an
+    answer kept without its question, a queued prompt missed).
+
+    An entry whose session has a transcript is replaced by what that transcript yields now. An
+    entry with no transcript (a deleted one, another harness) stays if today's text rules keep it.
+    With `days`, only sessions and entries of the last `days` days are touched; older entries stay
+    as they are. The old file is copied to `<file>.bak-<UTC time>` first.
+
+    {"product", "before", "after", "added": [entry], "dropped": [entry + why], "backup"}."""
+    from .adapters import claude_code, codex, since_epoch
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    _, min_chars = settings(cfg)
+    cutoff = now - _dt.timedelta(days=days) if days else None
+    floor = cutoff.astimezone().strftime("%Y-%m-%d %H:%M") if cutoff else ""
+    sessions = []
+    for mod in (claude_code, codex):
+        try:
+            sessions += mod.load(since=since_epoch(days), **(roots or {}).get(mod.NAME, {}))
+        except FileNotFoundError:
+            continue
+    seen = {_word(s.sid)[:8] for s in sessions}           # batch sessions too: their entries were never the owner's
+    fresh: list[tuple[str, str, str]] = []                 # (date, key, entry text)
+    for s in sessions:
+        if s.batch or s.sidechain:
+            continue
+        gen = _claude_prompts(s.path) if s.harness == "claude-code" else _codex_prompts(s.path)
+        for ts, cwd, text in gen:
+            when = _when(ts)
+            where = cwd or s.cwd
+            if when is None or (cutoff and when < cutoff) or not long_enough(text, min_chars):
+                continue
+            if (product_for(where) if where else "misc") != product:
+                continue
+            key, entry, _row = render(product, text, _HARNESS_LABEL[s.harness], s.sid, when)
+            fresh.append((entry[3:19], key, entry))
+    f = intent_dir() / f"{_clean_name(product)}.md"
+    stamp = now.astimezone(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    with Store(wait_s=30.0, dry=dry) as st:              # read, merge and write under one lock
+        try:
+            raw = f.read_bytes().decode("utf-8", "surrogateescape")
+        except FileNotFoundError:
+            raw = ""
+        out, new = _merge(product, raw, fresh, seen, floor)
+        if dry or (not out["added"] and not out["dropped"]):
+            return out
+        if raw:
+            out["backup"] = str(_replace(f, raw, new, stamp))
+        else:
+            _write_new(f, new.encode("utf-8", "surrogateescape"))
+        for k in [k for k in st.index if k.startswith(f"{product}:")]:
+            del st.index[k]
+        for e in parse(new):
+            kept_t, cut = kept_text(e["text"])
+            st.index[f"{product}:{digest(kept_t)}"] = {"product": product, "date": e["date"][:10], "session": e["session"],
+                                                       "harness": e["harness"], "chars": len(kept_t) + cut}
+        st._dirty = True
+    return out
+
+
+def _merge(product: str, raw: str, fresh: list[tuple[str, str, str]], seen: set[str], floor: str) -> tuple[dict, str]:
+    """`rebuild`'s decision for one file: (report, the new file text)."""
+    def key_of(text: str) -> str:
+        return f"{product}:{digest(kept_text(text)[0])}"
+    lead, kept, dropped, old_keys, before = [], [], [], set(), 0
+    for e, text in _segments(raw):
+        if e is None:
+            lead.append(text)
+            continue
+        before += 1
+        old_keys.add(key_of(e["text"]))
+        why = None
+        if e["date"] >= floor:
+            why = "not in its transcript" if e["session"] in seen else not_owners(e)
+        if why:
+            dropped.append(dict(e, product=product, why=why))
+        else:
+            kept.append((e["date"], key_of(e["text"]), text if text.endswith("\n") else text + "\n"))
+    have = {k for _, k, _ in kept}
+    added = []
+    for date, key, entry in sorted(fresh, key=lambda r: r[0]):
+        if key in have:
+            continue
+        have.add(key)
+        kept.append((date, key, entry))
+        if key not in old_keys:
+            e = parse(entry)[0]
+            added.append(dict(e, product=product))
+    dropped = [d for d in dropped if key_of(d["text"]) not in have]   # the same words read again are not a change
+    kept.sort(key=lambda r: r[0])
+    return ({"product": product, "before": before, "after": len(kept), "added": added, "dropped": dropped, "backup": None},
+            "".join(lead) + "".join(t for _, _, t in kept))
 
 
 # --- commands -----------------------------------------------------------------------------
@@ -650,7 +914,7 @@ def _list_entries(args, names: list[str]) -> list[dict]:
 
 def cmd_intent(args) -> int:
     words = list(args.words or [])
-    sub = words[0] if words and words[0] in ("capture", "backfill", "path", "cover", "clean") else None
+    sub = words[0] if words and words[0] in ("capture", "backfill", "path", "cover", "clean", "rebuild") else None
     if sub == "cover":
         from . import intent_cover
         return intent_cover.cmd_cover(args, words)
@@ -691,6 +955,8 @@ def cmd_intent(args) -> int:
         print(f"{verb} {len(gone)} entr{'y' if len(gone) == 1 else 'ies'} in {n} product(s)"
               + ("; nothing written" if args.dry else "; each changed file was copied to <file>.bak-<time> first"))
         return 0
+    if sub == "rebuild":
+        return _cmd_rebuild(args, words)
     if sub == "path":
         if len(words) != 2:
             print("usage: teyla intent path <product>", file=sys.stderr)
@@ -704,7 +970,7 @@ def cmd_intent(args) -> int:
         print(intent_dir() / f"{name}.md")
         return 0
     if len(words) > 1:
-        print("usage: teyla intent [product] [--days N] [--grep TEXT] [--json] | path <product> | cover <plan.md> | backfill | clean | capture",
+        print("usage: teyla intent [product] [--days N] [--grep TEXT] [--json] | path <product> | cover <plan.md> | backfill | clean | rebuild <product> | capture",
               file=sys.stderr)
         return 64
     if words:
@@ -743,14 +1009,38 @@ def cmd_intent(args) -> int:
     return 0
 
 
+def _cmd_rebuild(args, words: list[str]) -> int:
+    if len(words) != 2:
+        print("usage: teyla intent rebuild <product> [--days N] [--dry] [--json]", file=sys.stderr)
+        return 64
+    name = resolve(words[1]) or _clean_name(words[1])
+    try:
+        r = rebuild(name, days=args.days, dry=args.dry)
+    except TimeoutError:
+        print("teyla: the intent store is locked; try again in a moment", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(r, ensure_ascii=False, indent=2))
+        return 0
+    for e in r["dropped"]:
+        print(f"- {e['date'][:10]}  {e['harness']:7} {e['session']:8}  {e['why']:22} {' '.join(e['text'].split())[:60]}")
+    for e in r["added"]:
+        print(f"+ {e['date'][:10]}  {e['harness']:7} {e['session']:8}  {'':22} {' '.join(e['text'].split())[:60]}")
+    window = f", last {args.days} days" if args.days else ""
+    verb = ("would drop", "would add") if args.dry else ("dropped", "added")
+    tail = ("; nothing written" if args.dry else f"; the old file is {r['backup']}" if r["backup"] else "; nothing to change")
+    print(f"{name}: {r['before']} entries -> {r['after']}: {verb[0]} {len(r['dropped'])}, {verb[1]} {len(r['added'])}{window}{tail}")
+    return 0
+
+
 def register(sp):
     q = sp.add_parser("intent", help="the owner's long prompts, verbatim, per product: list, path, backfill")
     q.set_defaults(fn=cmd_intent)
-    q.add_argument("words", nargs="*", metavar="[product|path <product>|cover <plan.md>|backfill|clean|capture]")
-    q.add_argument("--days", type=int, help="list: only the last N days; backfill: the window (default 30)")
+    q.add_argument("words", nargs="*", metavar="[product|path <product>|cover <plan.md>|backfill|clean|rebuild <product>|capture]")
+    q.add_argument("--days", type=int, help="list: only the last N days; backfill: the window (default 30); rebuild: only the last N days")
     q.add_argument("--grep", help="list: only entries containing TEXT (case-insensitive)")
     q.add_argument("--json", action="store_true", help="list: JSON, the full text of each entry")
-    q.add_argument("--dry", action="store_true", help="backfill, clean: report, write nothing")
+    q.add_argument("--dry", action="store_true", help="backfill, clean, rebuild: report, write nothing")
     q.add_argument("--product", help="cover: the product whose words the plan is checked against (default: the plan's repo)")
     q.add_argument("--since", metavar="YYYY-MM-DD", help="cover: only entries from this date on")
     q.add_argument("--last", type=int, metavar="N", help="cover: only the last N entries")
