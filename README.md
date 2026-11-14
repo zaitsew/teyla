@@ -51,7 +51,7 @@ Teyla is a kit. `teyla start` opens with this checklist, and only the ticked pac
 | 💸 | **Token cost** `cost` | Long sessions re-read their whole context every turn | Compacts earlier, runs subagents on Sonnet, reading on Haiku |
 | 🛡️ | **Machine guard** `load` | Parallel agents swap the Mac until it hangs or panics | Admits one heavy build or simulator at a time; holds new ones under memory pressure |
 | 🧹 | **Disk cleanup** `disk` | DerivedData, worktrees and simulators fill the disk | Shuts down idle simulators, sweeps temp build output every hour |
-| 📥 | **Questions and ideas** `inbox` | A session ends on a question and nobody reads it | Keeps every open question and your long prompts on one screen |
+| 📥 | **Questions and ideas** `inbox` | A session ends on a question and nobody reads it | Keeps every open question and your long prompts on one screen, and which of your requests shipped |
 | 📜 | **One policy** `policy` | A correction made in Claude Code is unknown to Codex | One `POLICY.md`, linked into every agent |
 | ☀️ | **Morning check** `daily` | A broken hook goes unseen for weeks | A daily check and a six-line weekly digest |
 | 🔐 | **Security** `security` | A secret ends up in a commit or a public repo | Refuses a publish that carries a secret; audits repos and dependencies |

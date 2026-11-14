@@ -12,7 +12,7 @@ every session. Everything is a local file. There is no server, no account and no
 ```
 
 That is all you need for `/teyla:rule`, the `review` skill and the hooks. The `harvest`,
-`tidy`, `wiki-pass`, `taste` and `adoption-review` skills and `/teyla:correct` call the separate
+`tidy`, `wiki-pass`, `taste`, `intent-audit` and `adoption-review` skills and `/teyla:correct` call the separate
 Teyla CLI. Install it once (Python 3.11 or newer):
 
 ```sh
@@ -38,6 +38,7 @@ reverses it.
 | `review` | One review pass on the branch diff, P1/P2 only, at most two rounds. Uses a second-provider review script when one is on PATH, otherwise one fresh sub-agent that sees only the diff. | No |
 | `tidy` | Proposes edits that shorten `CLAUDE.md`, `AGENTS.md`, `.claude/rules` and memory files: dated anecdotes become rules, near-duplicates merge. Shows a diff and writes only what you approve. | Yes |
 | `taste` | Saves a design or text you like or dislike (a link with a comment) into the taste corpus with `teyla taste add`, and shows the inbox line. Never accepts an entry for you. | Yes |
+| `intent-audit` | Splits the owner's kept prompts for a product into verbatim requests, checks each against merged PRs and the code, and records `open`, `partial`, `done`, `superseded` or `not-a-request` with `teyla intent mark`/`load`. | Yes |
 | `wiki-pass` | Files this session's facts into a markdown wiki, marked agent-drafted until a person confirms them. | Yes |
 | `adoption-review` | Runs `teyla monitor` over the last 30 days and turns the top three findings into a rule, a `model:` override or a session split. | Yes |
 

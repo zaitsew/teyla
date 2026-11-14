@@ -644,7 +644,8 @@ def test_session_start_points_at_the_owners_words(tmp_path):
     r = repo(tmp_path, "alpha")
     f = seed_intent(tmp_path, "alpha", 2)
     want = (f"Owner's own words for alpha: {f} (2 entries, latest 2026-10-11). "
-            "Read them before planning; quote the sentences a plan serves.\n")
+            "Read them before planning; quote the sentences a plan serves. "
+            "None audited for delivery yet: `teyla intent audit alpha`.\n")
     assert start(tmp_path, r).stdout == want
     sub = r / "src"
     sub.mkdir()
