@@ -497,3 +497,30 @@ def test_catalogue_prefers_a_fresher_fetched_copy(tmp_path, monkeypatch):
     assert models.load_models_dev_catalogue(refresh=False)[0] == {"new": {}}
     os.utime(fallback, (0, 0))
     assert models.load_models_dev_catalogue(refresh=False)[0] == {"old": {}}
+
+
+# --- product-only providers (Google) --------------------------------------------------------------
+
+def _with_google(env, mods: dict):
+    cat = json.loads(env.cache.read_text())
+    cat.setdefault("google", {"id": "google", "models": {}})["models"].update(mods)
+    env.cache.write_text(json.dumps(cat))
+
+
+def test_google_is_watched_without_a_ladder_row(env, capsys):
+    _with_google(env, {"gemini-3.8-flash": _model("gemini-flash", "2026-08-01", "Gemini 3.8 Flash", 0.75, 3.75)})
+    run(["models", "watch"], capsys)
+    assert json.loads(env.known.read_text())["known"]["google"] == ["gemini-3.8-flash"]
+    _with_google(env, {"gemini-4-hydrogen": _model("gemini-flash", "2026-11-12", "Gemini 4 Hydrogen", 1.5, 7.5)})
+    code, out = run(["models", "watch"], capsys)
+    assert code == 1 and "google:gemini-4-hydrogen" in out and "$1.5/$7.5 per 1M" in out
+    run(["models", "watch", "--ack", "google:gemini-4-hydrogen"], capsys)
+    assert "gemini-4-hydrogen" in json.loads(env.known.read_text())["known"]["google"]
+
+
+def test_google_joins_an_existing_known_list_seeded_not_reported(env, capsys):
+    run(["models", "watch"], capsys)
+    assert "google" not in json.loads(env.known.read_text())["known"]
+    _with_google(env, {"gemini-4-argon": _model("gemini-pro", "2026-10-13", "Gemini 4 Argon", 2, 10)})
+    code, out = run(["models", "watch"], capsys)
+    assert "seeded the new watched provider(s): google" in out and "google:gemini-4-argon" not in out

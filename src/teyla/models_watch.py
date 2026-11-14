@@ -120,6 +120,18 @@ def _is_text(info: dict) -> bool:
     return "text" in out
 
 
+# Providers the products call that the harness ladder does not name. POLICY §1, "Models inside
+# products": Gemini serves Google Search and Maps grounding (the accounts hub routes to it). They
+# are watched for new models; with no ladder tier, a new one is reported as a new family.
+PRODUCT_PROVIDERS = ("google",)
+
+
+def watched_providers(ladder: dict, models_dev: dict) -> list[str]:
+    """The ladder's providers, then each product-only provider the catalogue knows."""
+    out = ladder_providers(ladder, models_dev)
+    return out + [p for p in PRODUCT_PROVIDERS if p not in out and models.provider_catalogue(models_dev, p)]
+
+
 def ladder_providers(ladder: dict, models_dev: dict) -> list[str]:
     """The providers the ladder names that the catalogue knows; every known provider if no ladder."""
     named = [p for p in ladder if models.provider_catalogue(models_dev, p)]
@@ -374,7 +386,7 @@ def watch(refresh: bool = False, root: pathlib.Path | None = None, today: _dt.da
     today = today or _dt.date.today()
     models_dev, source = models.load_models_dev_catalogue(refresh=refresh)
     ladder_rows = models.parse_ladder(_policy_text())
-    providers = ladder_providers(ladder_rows, models_dev)
+    providers = watched_providers(ladder_rows, models_dev)
     notes: list[str] = []
     state = load_known()
     seeded = False
@@ -395,11 +407,11 @@ def watch(refresh: bool = False, root: pathlib.Path | None = None, today: _dt.da
                      f"({', '.join(providers) or 'no providers'}); nothing is new today")
     else:
         added = [p for p in providers if p not in state["known"]]
-        if added:  # a provider joined the ladder since the list was written
+        if added:  # a provider joined the watch since the list was written
             for p in added:
                 state["known"][p] = sorted(models.provider_catalogue(models_dev, p))
             save_known(state["known"], today)
-            notes.append(f"seeded the new ladder provider(s): {', '.join(added)}")
+            notes.append(f"seeded the new watched provider(s): {', '.join(added)}")
 
     cli_ids = _cli_ids()
     lm = ladder_models(ladder_rows, models_dev, cli_ids)
