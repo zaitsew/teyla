@@ -309,6 +309,15 @@ def test_a_mounted_volume_is_not_entered_by_the_temp_build_walk(tmp_path):
     assert res.items == 0 and res.bytes == 0 and (mounted / "Build").exists()
 
 
+def test_an_idle_upload_scripts_mkdtemp_goes_and_a_lookalike_stays(tmp_path):
+    root = tmp_path / "tmp"
+    left = verify_dir(root, "testflight-8kmkm7_w")
+    smoke = verify_dir(root, "testflight-smoke-58q98p6h")
+    mine = verify_dir(root, "testflight-notes")
+    res = sw.temp_dirs(make_ctx(tmp_path, runner=lsof_tools()))
+    assert not left.exists() and not smoke.exists() and mine.exists() and res.items == 2
+
+
 def test_tmp_dirs_with_key_files_or_a_checkout_stay(tmp_path):
     root = tmp_path / "tmp"
     keys = swift_tmp(root, "tmp.HasKeyFile01")
