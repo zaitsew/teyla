@@ -740,9 +740,15 @@ def _worsening(trend: "Trend | None", snap: Snapshot, conf: dict | None) -> list
     free = snap.disk_free_bytes
     if (trend.disk_free_30m_gb is not None and free is not None and free >= crit_gb * GIB
             and trend.disk_free_30m_gb < crit_gb and trend.disk_recent_gb is not None and trend.disk_recent_gb > RECENT_GROWTH_GB):
-        out.append(f"disk {gb(free)} free and falling: {trend.disk_free_30m_gb:.1f} GB in 30 min, under the"
-                   f" {crit_gb:g} GB critical line")
+        out.append(f"disk {gb(free)} free and falling: on this trend {_disk_ahead(trend.disk_free_30m_gb)} in 30 min,"
+                   f" under the {crit_gb:g} GB critical line")
     return out
+
+
+def _disk_ahead(projected_gb: float) -> str:
+    """The projected free disk as words. The slope runs past zero (2026-11-15: "-3.8 GB in 30 min" read
+    as a 3.8 GB drop); a disk cannot hold less than nothing, so below zero it is full."""
+    return "full" if projected_gb <= 0 else f"{projected_gb:.1f} GB free"
 
 
 def _swap_active(trend: "Trend | None") -> bool:
@@ -1661,7 +1667,7 @@ def trend_lines(trend: Trend | None, conf: dict | None = None) -> list[str]:
     if trend.swap_gb_30m is not None:
         bits.append(f"swap {trend.swap_gb_30m:+.1f} GB per 30 min")
     if trend.disk_free_30m_gb is not None:
-        bits.append(f"disk {trend.disk_free_30m_gb:.1f} GB free in 30 min")
+        bits.append(f"disk {_disk_ahead(trend.disk_free_30m_gb)} in 30 min")
     if trend.swapout_mb_s is not None:
         bits.append(f"swap-out {trend.swapout_mb_s:.1f} MB/s")
     out = []

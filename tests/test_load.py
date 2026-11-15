@@ -1048,6 +1048,8 @@ def test_worsening_trips_on_each_signal_alone_and_not_on_a_flat_history():
     s3 = now_snap(15, disk_gb=17.5)
     v3 = load.assess(s3, {}, load.compute_trend(fall, s3, {}))
     assert v3.level == "WORSENING" and "disk 17.5 GB free and falling" in v3.reasons[0] and "under the 10 GB critical line" in v3.reasons[0]
+    assert "on this trend full in 30 min" in v3.reasons[0]                              # the slope runs past zero: full, not "-27.5 GB"
+    assert load._disk_ahead(6.04) == "6.0 GB free" and load._disk_ahead(-3.8) == "full" and load._disk_ahead(0.0) == "full"
     out = load.compute_trend([hist_row(14, swapout=0)], now_snap(swapout=30 * 1024 ** 2 * 60), {})
     assert load.assess(now_snap(), {}, out).reasons == ["swap-out 30 MB/s over the last 3 min (worsening ≥ 20 MB/s)"]
     assert load.assess(now_snap(), {"swapout_mb_s": 0}, out).level == "OK"             # 0 = off
