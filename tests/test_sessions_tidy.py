@@ -354,3 +354,15 @@ def test_mode_shows_and_sets(env, capsys):
     assert st.cmd_mode(ns(words=["bogus"]), NOW) == 64
     st.cmd_mode(ns(words=["dry"]), NOW)
     assert st.load_cfg()["dry_until"] == "2026-10-23"
+
+
+def test_a_duplicate_ask_does_not_keep_its_session_but_an_open_one_does(env):
+    env.add("c1", needs="Pick the colour.")
+    [item] = asks.collect(30, NOW, desktop=str(env.desktop), projects=str(env.projects), codex_root=str(env.codex),
+                          codex_archive=str(env.archive))
+    item.status = "duplicate"
+    assert st.waiting_keys([item]) == set()
+    item.status = "open"
+    assert "local_c1" in st.waiting_keys([item])
+    item.status = "done"
+    assert st.waiting_keys([item]) == set()

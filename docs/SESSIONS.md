@@ -19,8 +19,9 @@ is the inverse rule: it archives only the sessions where nothing is needed from 
 A session is archived only when all of this holds:
 
 1. It is not archived, and its last activity is at least `--idle-hours` ago (24).
-2. `teyla asks` has no ask for it that is not done. Open, snoozed, muted (parked product) and duplicate asks
-   all keep it. The asks are collected and settled by the same code as `teyla asks`.
+2. `teyla asks` has no ask for it that is not done. Open, snoozed and muted (parked product) asks keep it. A done ask, an ask
+   `settle` closed (PR merged, report, task off, TestFlight current) and a duplicate (folded into a newer
+   ask, which keeps its own session) do not. The asks are collected and settled by the same code as `teyla asks`.
 3. It has no open PR. Every PR the session names needs a known state (the `teyla asks` PR check and
    its cache); an unknown state keeps the session. No new network call is made.
 4. Its worktree, if it still exists, is clean (`git status --porcelain` is empty) and its HEAD is on a remote

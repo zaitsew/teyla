@@ -16,7 +16,7 @@ module reuses its collectors and settle rules instead of re-reading questions it
 A session is archived only when ALL of this holds (`docs/SESSIONS.md`):
 
 1. it is not archived and has been idle for `--idle-hours`;
-2. `teyla asks` has no ask for it that is not done: open, snoozed, muted and duplicate asks keep it;
+2. `teyla asks` has no ask for it that is not done: open, snoozed and muted asks keep it;
 3. it has no open PR, and every PR it names has a known state (unknown keeps it);
 4. its worktree, if it still exists, is clean and its HEAD is on a remote branch (the app removes the
    worktree on archive);
@@ -175,7 +175,7 @@ def waiting_keys(items: list) -> set[str]:
     """Session ids that `teyla asks` still lists: desktop sessionId and cliSessionId / Codex uuid."""
     keys: set[str] = set()
     for a in items:
-        if a.status == "done":
+        if a.status in ("done", "duplicate"):        # a duplicate is folded into a newer ask, which keeps its own session
             continue
         if a.session:
             keys.add(a.session)
