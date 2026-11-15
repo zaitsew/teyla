@@ -294,7 +294,7 @@ def cmd_advise(args):
 
 
 def cmd_sessions(args):
-    if args.words:
+    if getattr(args, "words", None):
         from . import sessions_tidy
         return sessions_tidy.cmd_sessions(args)
     ss = sorted(_sessions(args), key=lambda s: s.first or "")
