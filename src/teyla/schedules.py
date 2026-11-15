@@ -855,6 +855,17 @@ _ROUTINE_VERDICTS = {"ok": "OK", "STALE": "STALE", "FAILING": "FAILING", "NOT LO
                      "unknown": "UNKNOWN", routines.PAUSED: "DISABLED", routines.PAUSED_LOADED: "PAUSED BUT LOADED"}
 
 
+def _installed_at(row: dict) -> dt.datetime | None:
+    """When a launchd routine's plist was last written: the job cannot have run before it existed."""
+    if row.get("kind") != "launchd" or not row.get("label"):
+        return None
+    try:
+        mtime = (_home() / "Library" / "LaunchAgents" / f"{row['label']}.plist").stat().st_mtime
+    except OSError:
+        return None
+    return dt.datetime.fromtimestamp(mtime, dt.timezone.utc)
+
+
 def read_routines(reports: list[dict] | None = None, now: dt.datetime | None = None) -> list[dict]:
     reports = routines.evaluate_all() if reports is None else reports
     out = []
@@ -879,7 +890,12 @@ def read_routines(reports: list[dict] | None = None, now: dt.datetime | None = N
             last = _parse_ts(row.get("last_run")) if row.get("last_run") not in (None, "?") else None
             if raw == "ok" and last is None and row.get("loaded") != routines.ON_DEMAND:
                 # Loaded, but nothing says it ever ran: "ok" with no run time is a guess.
-                if row.get("log"):
+                installed = _installed_at(row)
+                if row.get("log") and installed and expected and (now or _now()) - installed <= expected + STALE_SLACK:
+                    # 2026-11-15: two jobs installed at 10:11 for 08:00 showed NEVER RAN the same day.
+                    verdict, note = "OK", (f"loaded {installed.astimezone():%Y-%m-%d %H:%M}; its first run is not due yet"
+                                           f" (every {every}), so no log yet")
+                elif row.get("log"):
                     verdict, note = "NEVER RAN", f"loaded, but its log {row['log']} does not exist"
                 else:
                     verdict, note = "UNKNOWN", "loaded, but it declares no log, so there is no run time to judge"

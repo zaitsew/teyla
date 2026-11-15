@@ -660,6 +660,22 @@ def test_safe_mode_gate_decides_network(env, monkeypatch):
 
 # --- teyla.toml routines -----------------------------------------------------------------------
 
+def test_a_routine_installed_before_its_first_due_time_is_not_never_ran(env, monkeypatch):
+    """2026-11-15: two jobs installed at 10:11 for a daily 08:00 run showed NEVER RAN the same day."""
+    repo = env.parent / "repos" / "app-a"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "teyla.toml").write_text(
+        '[product]\nname = "app-a"\n'
+        f'[[routine]]\nname = "fresh"\nkind = "launchd"\nlabel = "com.example.fresh"\nevery = "1d"\nlog = "{env}/fresh.log"\n'
+        f'[[routine]]\nname = "old"\nkind = "launchd"\nlabel = "com.example.old"\nevery = "1d"\nlog = "{env}/old.log"\n')
+    plist(env, "com.example.fresh", calendar={"Hour": 8}, log=env / "fresh.log", mtime=NOW - 3 * H)
+    plist(env, "com.example.old", calendar={"Hour": 8}, log=env / "old.log", mtime=NOW - 3 * D)
+    monkeypatch.setattr(routines, "_launchctl_list", lambda: listing(("-", 0, "com.example.fresh"), ("-", 0, "com.example.old")))
+    got, _ = collect(env)
+    assert got["routines:app-a:fresh"]["verdict"] == "OK" and "first run is not due yet" in got["routines:app-a:fresh"]["note"]
+    assert got["routines:app-a:old"]["verdict"] == "NEVER RAN"
+
+
 def test_routines_are_reused_and_not_listed_twice(env, monkeypatch):
     repo = env.parent / "repos" / "app-a"
     (repo / ".git").mkdir(parents=True)
