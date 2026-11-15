@@ -752,6 +752,20 @@ def test_an_idle_docker_desktop_update_download_goes(tmp_path):
     assert res.items == 1 and not d.exists()
 
 
+
+def test_under_urgent_free_an_update_download_idle_one_day_goes(tmp_path):
+    u = user_dir(tmp_path)
+    d = u / "T" / "DockerDesktopUpdates"
+    d.mkdir()
+    (d / "Docker.dmg").write_bytes(b"0" * 400)
+    age(d, 3 * DAY)
+    roots = [u / "T"]
+    assert sw.app_caches(make_ctx(tmp_path, tmp_roots=roots, free=50 * GIB)).items == 0 and d.exists()
+    age(d, 20 * H)
+    assert sw.app_caches(make_ctx(tmp_path, tmp_roots=roots, free=15 * GIB)).items == 0 and d.exists()
+    age(d, 3 * DAY)
+    assert sw.app_caches(make_ctx(tmp_path, tmp_roots=roots, free=15 * GIB)).items == 1 and not d.exists()
+
 # --- docker ------------------------------------------------------------------------------------------
 
 def image_line(iid, created, tagged, size, *tags):

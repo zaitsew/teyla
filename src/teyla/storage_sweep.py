@@ -26,7 +26,8 @@ covers idle simulators. This sweeps the rest, each category with its own age and
 - codex runtimes   ~/.cache/codex-runtimes/codex-runtime-install-* an update left, >= sweep_codex_days (2)
 - app caches       in ~/Library/Caches: Playwright browser revisions older than the newest of the same
                    browser that no installed Playwright pins (`.links`), and app-updater downloads (`*.ShipIt/update.*`, `*-updater`,
-                   $TMPDIR/DockerDesktopUpdates), each idle >= sweep_app_cache_days (7) and named by no process.
+                   $TMPDIR/DockerDesktopUpdates), each idle >= sweep_app_cache_days (7) and named by no process;
+                   under sweep_urgent_free_gb free, idle 1 day is enough (the app downloads its update again).
                    Also Chrome's code-sign clones ($TMPDIR/../X) idle 1 h while Chrome is not running, and,
                    under sweep_urgent_free_gb, the clang module cache ($TMPDIR/../C/clang/ModuleCache) idle
                    2 h while no compiler runs
@@ -682,6 +683,7 @@ def codex_runtimes(ctx: Ctx) -> Result:
 
 PLAYWRIGHT_REV = re.compile(r"(.+)-(\d+)")   # chromium-1243, chromium_headless_shell-1243, ffmpeg-1011
 UPDATER_GLOBS = ("*.ShipIt/update.*", "*-updater")   # Squirrel.Mac and electron-updater downloads
+URGENT_APP_CACHE_MIN = 1440                           # idle minutes enough for them under sweep_urgent_free_gb
 
 
 def _playwright_pinned(pw: pathlib.Path) -> set[str] | None:
@@ -770,6 +772,10 @@ def _tool_leftovers(ctx: Ctx) -> list[tuple[str, pathlib.Path]]:
 def app_caches(ctx: Ctx) -> Result:
     r = Result("app caches")
     days = ctx.cfg["app_cache_days"] * 1440
+    if ctx.free < ctx.cfg["urgent_free_gb"] * GIB:
+        # 2026-11-15: 16 GB free, and pending updates downloaded 2-5 days earlier held 1.1 GB the
+        # 7-day rule kept. An update the app fetches again beats a guard that refuses builds for disk.
+        days = min(days, URGENT_APP_CACHE_MIN)
     for label, d, minutes in [(*x, days) for x in _app_cache_dirs(ctx)] + _tool_leftovers(ctx):
         if not idle(ctx, d, minutes) or ctx.mount_point(d):
             continue
