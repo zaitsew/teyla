@@ -30,6 +30,8 @@
   teyla asks triage [--product P] [--json]                         the questions sorted into need you, agents can act, look closable
   teyla asks accept-close [<id-prefix>...] [--json]                close the "look closable" ones together; prints the undo line
   teyla asks expire [--older-than DAYS] [--product P] [--json] [--apply] [--note TEXT]   old questions and what each would get; dry run unless --apply
+  teyla sessions tidy [--idle-hours N] [--apply] [--json]          archive the sessions where nothing is needed from you (dry week first)
+  teyla sessions record <session-id>... | undo [--last|<id-prefix>...] | log [--days N] | report | mode [dry|on|off]   the archive log, its undo and its verdict
   teyla product [list] [--json] | show <id> [--json] [--quick] | init [--write] | add <id> [--repo P] | set <id> k=v... | park|wake <id>   the product registry (~/.teyla/products.toml)
   teyla product assign <ask-id-prefix|session-id> <id> [--ask-only]   file a session's asks under another product
   teyla note "text" [--product P] [--json] | link <id> <product> | drop|undrop <id>   keep a text idea, linked to a product (~/.teyla/notes/)
@@ -292,6 +294,9 @@ def cmd_advise(args):
 
 
 def cmd_sessions(args):
+    if args.words:
+        from . import sessions_tidy
+        return sessions_tidy.cmd_sessions(args)
     ss = sorted(_sessions(args), key=lambda s: s.first or "")
     if args.days:
         import datetime as dt
@@ -540,6 +545,9 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "corrections":
             q.add_argument("--cluster", action="store_true")
             q.add_argument("--recorded", action="store_true", help="the stored corrections (teyla correct, capture hook), not transcript turns")
+        if name == "sessions":
+            from . import sessions_tidy
+            sessions_tidy.add_args(q)
     q = sp.add_parser("policy"); q.set_defaults(fn=cmd_policy)
     q.add_argument("action", choices=["init", "status", "sync", "sync-repo", "ack", "refresh", "inbox"]); q.add_argument("paths", nargs="*")
     q.add_argument("--resolved", action="store_true", help="refresh: the merge conflict is resolved in POLICY.md; move the base forward")
