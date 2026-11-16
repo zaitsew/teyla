@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **`teyla sessions tidy`: archive only the sessions where nothing is needed from you.** The Claude desktop app archives any session after 7 idle days, including one that ends on a question to you: 27 of the 40 open questions in `teyla asks` sat in the archive. `tidy` reuses the `teyla asks` collectors and settle rules and archives a session only when it is idle, has no ask that is not done, has no open PR (an unknown PR state keeps it), and has a clean worktree whose HEAD is on a remote branch. Codex sessions are archived with `codex archive`; for Claude desktop, the daily agent reads `--json` and calls the app's `archive_session`, then `teyla sessions record`. The mode starts as `dry` for a week: every candidate is logged once as `would_archive`, `--apply` is refused, and `teyla sessions report` counts the sessions that got a later prompt as mistakes. `undo`, `log` and `mode` complete it. See docs/SESSIONS.md.
+
 ## 0.54.0 — 2026-11-13 — The weekly brief, sprint slots and Today on the iPhone
 
 - **`teyla brief slots`: work in progress against a limit.** It shows the open sprint contracts, what each one waits at, and the products active in the last 24 hours without one. The limit is 2 (`[slots] limit`); a third prints a warning. It refuses nothing and writes nothing. See docs/OPERATING.md.
