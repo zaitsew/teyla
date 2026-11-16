@@ -63,6 +63,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import xml.parsers.expat
 
 from . import config, net, routines
 
@@ -865,7 +866,9 @@ def _first_due(row: dict) -> dt.datetime | None:
     try:
         written = dt.datetime.fromtimestamp(path.stat().st_mtime).astimezone()
         body = plistlib.loads(path.read_bytes())
-    except (OSError, ValueError, plistlib.InvalidFileException):
+    except (OSError, ValueError, plistlib.InvalidFileException, xml.parsers.expat.ExpatError):
+        return None   # 2026-11-16: four plists with `--` in a comment (launchd reads them, expat does not) crashed `teyla schedules`
+    if not isinstance(body, dict):
         return None
     interval, cal = body.get("StartInterval"), body.get("StartCalendarInterval")
     if isinstance(interval, int) and interval > 0:

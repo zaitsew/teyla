@@ -685,6 +685,21 @@ def test_a_routine_installed_before_its_first_due_time_is_not_never_ran(env, mon
     assert got["routines:app-a:old"]["verdict"] == "NEVER RAN"
 
 
+def test_a_plist_python_cannot_parse_does_not_crash_the_table(env, monkeypatch):
+    """2026-11-16: four plists with `--` inside an XML comment crashed `teyla schedules`. launchd reads them;
+    Python's expat refuses them. Such a routine falls back to the plain verdict."""
+    repo = env.parent / "repos" / "app-a"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "teyla.toml").write_text('[product]\nname = "app-a"\n[[routine]]\nname = "gate"\nkind = "launchd"\n'
+                                     f'label = "com.example.gate"\nevery = "1d"\nlog = "{env}/gate.log"\n')
+    p = plist(env, "com.example.gate", calendar={"Hour": 8}, log=env / "gate.log", mtime=NOW - 3 * D)
+    p.write_bytes(p.read_bytes().replace(b"<dict>", b"<!-- run it with --poll first --><dict>", 1))
+    set_mtime(p, NOW - 3 * D)
+    monkeypatch.setattr(routines, "_launchctl_list", lambda: listing(("-", 0, "com.example.gate")))
+    got, _ = collect(env)
+    assert got["routines:app-a:gate"]["verdict"] == "NEVER RAN"
+
+
 def test_routines_are_reused_and_not_listed_twice(env, monkeypatch):
     repo = env.parent / "repos" / "app-a"
     (repo / ".git").mkdir(parents=True)
