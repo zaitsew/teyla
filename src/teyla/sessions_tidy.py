@@ -308,6 +308,9 @@ def plan(now: float | None = None, idle_hours: float = DEFAULT_IDLE_HOURS, *, fe
     oldest = min((asks._epoch(d.get("lastActivityAt") or d.get("createdAt")) or now
                   for d in sessions if not d.get("isArchived")), default=now)
     days = max(asks.DEFAULT_DAYS, int((now - oldest) / 86400) + 2)
+    croot = codex.DEFAULT_ROOT if codex_root is None else codex_root
+    if croot and os.path.isdir(croot):
+        days = max(days, CODEX_MAX_DAYS + 1)    # asks must see every Codex session tidy may archive
     items = asks.collect(days, now, desktop=desktop, codex_root=codex_root, fetch=fetch, runner=runner)
     waiting = waiting_keys(items)
     reg = registry.load()
