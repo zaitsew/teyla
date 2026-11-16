@@ -855,6 +855,44 @@ _ROUTINE_VERDICTS = {"ok": "OK", "STALE": "STALE", "FAILING": "FAILING", "NOT LO
                      "unknown": "UNKNOWN", routines.PAUSED: "DISABLED", routines.PAUSED_LOADED: "PAUSED BUT LOADED"}
 
 
+def _first_due(row: dict) -> dt.datetime | None:
+    """The first time launchd should start a routine's job after its plist was written: the job cannot
+    have run before it existed. A StartInterval job is due one interval after; a StartCalendarInterval
+    job at its next matching minute (local time, as launchd reads it). None when that cannot be told."""
+    if row.get("kind") != "launchd" or not row.get("label"):
+        return None
+    path = _home() / "Library" / "LaunchAgents" / f"{row['label']}.plist"
+    try:
+        written = dt.datetime.fromtimestamp(path.stat().st_mtime).astimezone()
+        body = plistlib.loads(path.read_bytes())
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        return None
+    interval, cal = body.get("StartInterval"), body.get("StartCalendarInterval")
+    if isinstance(interval, int) and interval > 0:
+        return written + dt.timedelta(seconds=interval)
+    cals = [cal] if isinstance(cal, dict) else cal if isinstance(cal, list) else []
+    best = None
+    for c in cals:
+        if not isinstance(c, dict):
+            continue
+        hours = [c["Hour"]] if isinstance(c.get("Hour"), int) else range(24)
+        minutes = [c["Minute"]] if isinstance(c.get("Minute"), int) else range(60)
+        for offset in range(62):
+            day = written.date() + dt.timedelta(days=offset)
+            if isinstance(c.get("Day"), int) and day.day != c["Day"]:
+                continue
+            if isinstance(c.get("Month"), int) and day.month != c["Month"]:
+                continue
+            if isinstance(c.get("Weekday"), int) and (day.isoweekday() % 7) != c["Weekday"] % 7:   # launchd: 0 and 7 are Sunday
+                continue
+            hit = next((t for h in hours for m in minutes
+                        if (t := dt.datetime.combine(day, dt.time(h, m), written.tzinfo)) > written), None)
+            if hit:
+                best = hit if best is None else min(best, hit)
+                break
+    return best
+
+
 def read_routines(reports: list[dict] | None = None, now: dt.datetime | None = None) -> list[dict]:
     reports = routines.evaluate_all() if reports is None else reports
     out = []
@@ -879,7 +917,12 @@ def read_routines(reports: list[dict] | None = None, now: dt.datetime | None = N
             last = _parse_ts(row.get("last_run")) if row.get("last_run") not in (None, "?") else None
             if raw == "ok" and last is None and row.get("loaded") != routines.ON_DEMAND:
                 # Loaded, but nothing says it ever ran: "ok" with no run time is a guess.
-                if row.get("log"):
+                due = _first_due(row)
+                if row.get("log") and due and (now or _now()) <= due + STALE_SLACK:
+                    # 2026-11-15: two jobs installed at 10:11 for 08:00 showed NEVER RAN the same day.
+                    verdict, note = "OK", (f"its first run is not due yet (due {due.astimezone():%Y-%m-%d %H:%M}),"
+                                           " so no log yet")
+                elif row.get("log"):
                     verdict, note = "NEVER RAN", f"loaded, but its log {row['log']} does not exist"
                 else:
                     verdict, note = "UNKNOWN", "loaded, but it declares no log, so there is no run time to judge"

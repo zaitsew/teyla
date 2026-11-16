@@ -660,6 +660,31 @@ def test_safe_mode_gate_decides_network(env, monkeypatch):
 
 # --- teyla.toml routines -----------------------------------------------------------------------
 
+def test_a_routine_installed_before_its_first_due_time_is_not_never_ran(env, monkeypatch):
+    """2026-11-15: two jobs installed at 10:11 for a daily 08:00 run showed NEVER RAN the same day.
+    The grace ends at the first calendar fire after install, not a whole cadence later."""
+    repo = env.parent / "repos" / "app-a"
+    (repo / ".git").mkdir(parents=True)
+    names = ("fresh", "missed", "old", "interval")
+    (repo / "teyla.toml").write_text('[product]\nname = "app-a"\n' + "".join(
+        f'[[routine]]\nname = "{n}"\nkind = "launchd"\nlabel = "com.example.{n}"\nevery = "1d"\nlog = "{env}/{n}.log"\n'
+        for n in names))
+    local = lambda t: t.astimezone()   # launchd reads the calendar in local time
+    # written 3 h ago for the hour before: the first fire is tomorrow
+    plist(env, "com.example.fresh", calendar={"Hour": local(NOW - 4 * H).hour, "Minute": 0}, log=env / "fresh.log", mtime=NOW - 3 * H)
+    # written 13 h ago for an hour later: due 12 h ago, never ran
+    plist(env, "com.example.missed", calendar={"Hour": local(NOW - 12 * H).hour, "Minute": 30}, log=env / "missed.log",
+          mtime=NOW - 13 * H)
+    plist(env, "com.example.old", calendar={"Hour": 8}, log=env / "old.log", mtime=NOW - 3 * D)
+    plist(env, "com.example.interval", interval=86400, log=env / "interval.log", mtime=NOW - 20 * H)
+    monkeypatch.setattr(routines, "_launchctl_list", lambda: listing(*(("-", 0, f"com.example.{n}") for n in names)))
+    got, _ = collect(env)
+    assert got["routines:app-a:fresh"]["verdict"] == "OK" and "first run is not due yet" in got["routines:app-a:fresh"]["note"]
+    assert got["routines:app-a:interval"]["verdict"] == "OK"
+    assert got["routines:app-a:missed"]["verdict"] == "NEVER RAN"
+    assert got["routines:app-a:old"]["verdict"] == "NEVER RAN"
+
+
 def test_routines_are_reused_and_not_listed_twice(env, monkeypatch):
     repo = env.parent / "repos" / "app-a"
     (repo / ".git").mkdir(parents=True)
