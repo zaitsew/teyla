@@ -12,7 +12,8 @@ covers idle simulators. This sweeps the rest, each category with its own age and
                    inside a git checkout, and no mount point is entered. Under sweep_urgent_free_gb (20)
                    free, 2 hours is enough. SwiftPM's own clones (SourcePackages/checkouts, repositories)
                    do not count as a checkout or as key files once git says every checkout is clean.
-- temp dirs        `tmp.XXXXXXXXXX` (mktemp -d) and `*-verify*` folders, with their sibling `<name>.log`, directly
+- temp dirs        `tmp.XXXXXXXXXX` (mktemp -d), `*-verify*` and `testflight-XXXXXXXX` (an upload script's
+                   mkdtemp) folders, with their sibling `<name>.log`, directly
                    in /tmp and $TMPDIR, and pytest runs (`pytest-of-<user>/pytest-<N>`) but the newest 3;
                    same idle rule as temp builds, plus no open file (`lsof +D`). Never a mount point (or a
                    folder holding one), a git checkout (a pytest run may hold test repos), an edited Swift
@@ -26,7 +27,8 @@ covers idle simulators. This sweeps the rest, each category with its own age and
 - codex runtimes   ~/.cache/codex-runtimes/codex-runtime-install-* an update left, >= sweep_codex_days (2)
 - app caches       in ~/Library/Caches: Playwright browser revisions older than the newest of the same
                    browser that no installed Playwright pins (`.links`), and app-updater downloads (`*.ShipIt/update.*`, `*-updater`,
-                   $TMPDIR/DockerDesktopUpdates), each idle >= sweep_app_cache_days (7) and named by no process.
+                   $TMPDIR/DockerDesktopUpdates), each idle >= sweep_app_cache_days (7) and named by no process;
+                   under sweep_urgent_free_gb free, idle 1 day is enough (the app downloads its update again).
                    Also Chrome's code-sign clones ($TMPDIR/../X) idle 1 h while Chrome is not running, and,
                    under sweep_urgent_free_gb, the clang module cache ($TMPDIR/../C/clang/ModuleCache) idle
                    2 h while no compiler runs
@@ -84,6 +86,9 @@ RESULT_BUNDLE_INSIDE = {"Info.plist", "Data"}
 DD_SIBLINGS = ("Logs", "info.plist", "Index.noindex", "CompilationCache.noindex", "ModuleCache.noindex")
 TMP_DIR_NAME = re.compile(r"tmp\.[A-Za-z0-9]{6,12}")   # mktemp -d
 VERIFY_GLOB = "*-verify*"
+# tempfile.mkdtemp(prefix="testflight-") of a release script that exits before its cleanup
+# (2026-11-15: 34 such folders, 450 MB, none newer than a day).
+UPLOAD_TMP_NAME = re.compile(r"testflight-(smoke-)?[a-z0-9_]{8}")
 SECRET_SUFFIXES = (".pem", ".key", ".p8", ".p12")
 LSOF_TIMEOUT_S = 120
 SPM_CLONES = ("checkouts", "repositories")
@@ -484,7 +489,8 @@ def _temp_dir_candidates(ctx: Ctx) -> list[pathlib.Path]:
         except OSError:
             continue
         for d in entries:
-            if not (TMP_DIR_NAME.fullmatch(d.name) or fnmatch.fnmatchcase(d.name, VERIFY_GLOB)):
+            if not (TMP_DIR_NAME.fullmatch(d.name) or fnmatch.fnmatchcase(d.name, VERIFY_GLOB)
+                    or UPLOAD_TMP_NAME.fullmatch(d.name)):
                 continue
             try:
                 mine = os.lstat(d).st_uid == ctx.uid
@@ -682,6 +688,7 @@ def codex_runtimes(ctx: Ctx) -> Result:
 
 PLAYWRIGHT_REV = re.compile(r"(.+)-(\d+)")   # chromium-1243, chromium_headless_shell-1243, ffmpeg-1011
 UPDATER_GLOBS = ("*.ShipIt/update.*", "*-updater")   # Squirrel.Mac and electron-updater downloads
+URGENT_APP_CACHE_MIN = 1440                           # idle minutes enough for them under sweep_urgent_free_gb
 
 
 def _playwright_pinned(pw: pathlib.Path) -> set[str] | None:
@@ -770,6 +777,10 @@ def _tool_leftovers(ctx: Ctx) -> list[tuple[str, pathlib.Path]]:
 def app_caches(ctx: Ctx) -> Result:
     r = Result("app caches")
     days = ctx.cfg["app_cache_days"] * 1440
+    if ctx.free < ctx.cfg["urgent_free_gb"] * GIB:
+        # 2026-11-15: 16 GB free, and pending updates downloaded 2-5 days earlier held 1.1 GB the
+        # 7-day rule kept. An update the app fetches again beats a guard that refuses builds for disk.
+        days = min(days, URGENT_APP_CACHE_MIN)
     for label, d, minutes in [(*x, days) for x in _app_cache_dirs(ctx)] + _tool_leftovers(ctx):
         if not idle(ctx, d, minutes) or ctx.mount_point(d):
             continue
