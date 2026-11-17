@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **The guard refuses about half as many builds and simulators.** A burst of parallel builds used to read as a disk filling up: the disk slope is now projected `guard.disk_trend_min` (15) minutes ahead, not 30. The hold after a bad sample is 3 minutes (was 5), and the disk critical line is 8 GB (was 10). Replayed over the last 7 days: 1526 refused minutes became 711, and waits past the 15-minute timeout went from 18 to 3.
 - **`teyla sessions tidy`: archive only the sessions where nothing is needed from you.** The Claude desktop app archives any session after 7 idle days, including one that ends on a question to you: 27 of the 40 open questions in `teyla asks` sat in the archive. `tidy` reuses the `teyla asks` collectors and settle rules and archives a session only when it is idle, has no ask that is not done, has no open PR (an unknown PR state keeps it), and has a clean worktree whose HEAD is on a remote branch. Codex sessions are archived with `codex archive`; for Claude desktop, the daily agent reads `--json` and calls the app's `archive_session`, then `teyla sessions record`. The mode starts as `dry` for a week: every candidate is logged once as `would_archive`, `--apply` is refused, and `teyla sessions report` counts the sessions that got a later prompt as mistakes. `undo`, `log` and `mode` complete it. See docs/SESSIONS.md.
 
 ## 0.54.0 — 2026-11-13 — The weekly brief, sprint slots and Today on the iPhone
