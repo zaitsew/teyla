@@ -229,7 +229,7 @@ DEFAULTS = {
     # `teyla load`: thresholds of the machine guard. Percentages are of physical RAM; load is per core.
     "guard": {"enabled": True, "max_sims": 2, "max_builds": 2, "max_lanes": 0,
               "swap_crit_pct": 40, "swapout_mb_s": 20, "swap_grow_gb_30m": 4,
-              "trend_window_min": 15, "hold_min": 5, "compressor_warn_pct": 30, "compressor_crit_pct": 45,
+              "trend_window_min": 15, "hold_min": 3, "compressor_warn_pct": 30, "compressor_crit_pct": 45,
               "load_warn_per_core": 4.0, "load_crit_per_core": 10.0, "wait_timeout_s": 900,
               # a sim or build let in blocks the next one for this long, until its processes show in the counts
               "settle_s": 180,
@@ -238,7 +238,9 @@ DEFAULTS = {
               # Free disk on the home volume. APFS swap shares the container: a full disk leaves swap no
               # room, and the Mac hangs under memory pressure without writing a panic (2026-10-11).
               # disk_sweep: under [storage] sweep_urgent_free_gb, `guard tick` runs the sweep itself (full every 6 h).
-              "disk_warn_gb": 25, "disk_crit_gb": 10, "disk_sweep": True,
+              # disk_trend_min: WORSENING when the disk slope, projected this far ahead, crosses disk_crit_gb.
+              # 30 min read normal build bursts (10-20 GB that come back) as a disk filling up (2026-11-17).
+              "disk_warn_gb": 25, "disk_crit_gb": 8, "disk_trend_min": 15, "disk_sweep": True,
               # `storage apps`: quit listed apps nobody used for hours while memory is tight. off | dry | on.
               # Never turned on by a feature pack; the list is names, .app folder names or bundle ids.
               "apps_quit": "off", "apps_quit_list": [], "apps_quit_idle_h": 4, "apps_quit_every_min": 5},
