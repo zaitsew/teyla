@@ -21,7 +21,7 @@ def snap(free_gb: float | None) -> load.Snapshot:
                          disk_free_bytes=None if free_gb is None else int(free_gb * GIB))
 
 
-@pytest.mark.parametrize("free_gb,level", [(None, load.OK), (100, load.OK), (24, load.BUSY), (9.5, load.CRITICAL)])
+@pytest.mark.parametrize("free_gb,level", [(None, load.OK), (100, load.OK), (24, load.BUSY), (9.5, load.BUSY), (7.5, load.CRITICAL)])
 def test_free_disk_sets_the_verdict(free_gb, level):
     v = load.assess(snap(free_gb), conf())
     assert v.level == level
@@ -81,17 +81,17 @@ def tick_at(monkeypatch, clock, free_gb, dry=False, **kw):
 
 def test_under_the_urgent_threshold_the_tick_sweeps_in_full_every_6_hours_and_temp_every_15_minutes(sweeps, monkeypatch):
     clock = Clock()
-    res = tick_at(monkeypatch, clock, 8)
+    res = tick_at(monkeypatch, clock, 7)
     assert sweeps == [False] and any("full sweep removed 3.0 GB" in l for l in res["lines"])
     assert res["verdict"].level == load.CRITICAL
     clock.advance(5)
-    tick_at(monkeypatch, clock, 8)
+    tick_at(monkeypatch, clock, 7)
     assert sweeps == [False], "a second sweep within 15 minutes"
     clock.advance(11)
-    res = tick_at(monkeypatch, clock, 8)
+    res = tick_at(monkeypatch, clock, 7)
     assert sweeps == [False, True] and any("temp sweep removed" in l for l in res["lines"])
     clock.advance(6 * 60)
-    tick_at(monkeypatch, clock, 8)
+    tick_at(monkeypatch, clock, 7)
     assert sweeps == [False, True, False], "the full sweep is due again after 6 hours"
 
 

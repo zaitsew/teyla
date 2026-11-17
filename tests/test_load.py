@@ -1114,9 +1114,9 @@ def test_the_hold_keeps_refusing_for_three_minutes_after_the_last_bad_sample():
 def test_a_hook_that_saw_the_spike_between_two_ticks_leaves_a_mark_in_the_hold():
     calm = now_snap(15, swap_gb=4.0)
     rows = [hist_row(m, swap_gb=4.0, level="BUSY") for m in range(0, 15)]
-    seen = [{"ts": at(12).timestamp(), "verdict": "CRITICAL"}, {"ts": at(13).timestamp(), "verdict": "BUSY"}]
+    seen = [{"ts": at(13).timestamp(), "verdict": "CRITICAL"}, {"ts": at(14).timestamp(), "verdict": "BUSY"}]
     t = load.compute_trend(rows, calm, {}, seen)
-    assert t.held_level == "CRITICAL" and t.held_ago_s == pytest.approx(180)
+    assert t.held_level == "CRITICAL" and t.held_ago_s == pytest.approx(120)
     assert not load.decide("sim", calm, {}, t).allowed
     assert load.compute_trend(rows, calm, {}, seen[1:]).held_level is None
 
@@ -1169,7 +1169,7 @@ def test_a_rate_across_a_long_gap_or_a_reboot_is_not_recorded():
 def test_wait_blocks_through_the_hold_and_goes_on_when_it_has_passed():
     clock, out, err = Clock(), Sink(), Sink()
     calm = now_snap(15)
-    held = load.compute_trend([hist_row(m, level="BUSY") for m in range(0, 15)] + [{**hist_row(12), "level": "CRITICAL"}], calm, {})
+    held = load.compute_trend([hist_row(m, level="BUSY") for m in range(0, 15)] + [{**hist_row(13), "level": "CRITICAL"}], calm, {})
     free = load.compute_trend([hist_row(m, level="BUSY") for m in range(0, 15)], calm, {})
     seq = iter([held, held, free])
     code = load.wait("sim", {}, 900, poll_s=15, clock=clock.now, sleeper=clock.sleep, snap_fn=lambda: calm, out=out, err=err,
@@ -1204,10 +1204,10 @@ def test_the_text_report_shows_the_trend_and_the_hold_and_json_carries_them(caps
     for m in range(15, 0, -1):
         s = snap(time=(now - dt.timedelta(minutes=m)).isoformat(timespec="seconds"), swap_used_bytes=int((4 + 0.01 * (15 - m)) * GIB),
                  disk_free_bytes=40 * GIB)
-        load.record(s, load.Verdict("CRITICAL" if m == 3 else "BUSY"))
+        load.record(s, load.Verdict("CRITICAL" if m == 2 else "BUSY"))
     assert load.cmd_load(args(), run=quiet.run) in (0, 1)
     out = capsys.readouterr().out
-    assert "trend (15 min, " in out and "swap +" in out and "hold: CRITICAL 3 min ago" in out
+    assert "trend (15 min, " in out and "swap +" in out and "hold: CRITICAL 2 min ago" in out
     assert load.cmd_load(args(json=True), run=quiet.run) == 0
     d = json.loads(capsys.readouterr().out)
     assert d["trend"]["held_level"] == "CRITICAL" and d["trend"]["points"] >= 10
@@ -1219,9 +1219,9 @@ def test_admit_through_the_command_refuses_during_the_hold_and_logs_the_verdict_
     now = dt.datetime.now().astimezone()
     for m in range(8, 0, -1):
         s = snap(time=(now - dt.timedelta(minutes=m)).isoformat(timespec="seconds"), disk_free_bytes=40 * GIB)
-        load.record(s, load.Verdict("WORSENING" if m == 3 else "BUSY"))
+        load.record(s, load.Verdict("WORSENING" if m == 2 else "BUSY"))
     assert load.cmd_load(args(admit="sim"), run=quiet.run) == 2
-    assert "held after WORSENING 3 min ago" in capsys.readouterr().out
+    assert "held after WORSENING 2 min ago" in capsys.readouterr().out
     assert load.cmd_load(args(admit="lane"), run=quiet.run) == 0
     row = [r for r in decisions() if r["kind"] == "sim"][0]
     assert row["decision"] == "refused" and row["reason"].startswith("held after WORSENING")
