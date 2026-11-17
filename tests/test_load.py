@@ -440,10 +440,10 @@ def test_lane_cap_is_off_by_default_and_counts_headless_lanes():
 def test_guard_defaults():
     g = config.DEFAULTS["guard"]
     assert g == {"enabled": True, "max_sims": 2, "max_builds": 2, "max_lanes": 0, "swap_crit_pct": 40,
-                 "swapout_mb_s": 20, "swap_grow_gb_30m": 4, "trend_window_min": 15, "hold_min": 5,
+                 "swapout_mb_s": 20, "swap_grow_gb_30m": 4, "trend_window_min": 15, "hold_min": 3,
                  "compressor_warn_pct": 30, "compressor_crit_pct": 45, "load_warn_per_core": 4.0, "load_crit_per_core": 10.0,
                  "wait_timeout_s": 900, "settle_s": 180, "agent": False, "gradle_idle_min": 30, "alert": True,
-                 "disk_warn_gb": 25, "disk_crit_gb": 10, "disk_sweep": True,
+                 "disk_warn_gb": 25, "disk_crit_gb": 8, "disk_trend_min": 15, "disk_sweep": True,
                  "apps_quit": "off", "apps_quit_list": [], "apps_quit_idle_h": 4, "apps_quit_every_min": 5}
     assert load.guard_conf({"guard": {"max_sims": 5}})["max_sims"] == 5
     assert load.guard_conf({})["max_sims"] == 2
@@ -1014,17 +1014,17 @@ def test_a_dead_vm_stat_only_leaves_its_fields_none():
 
 def test_a_short_history_says_nothing_but_the_swap_out_rate_needs_only_thirty_seconds():
     t = load.compute_trend([hist_row(14, swapout=0)], now_snap(swap_gb=9, swapout=40 * 1024 ** 2 * 60), {})
-    assert t.swap_gb_30m is None and t.disk_free_30m_gb is None
+    assert t.swap_gb_30m is None and t.disk_free_ahead_gb is None
     assert t.swapout_mb_s == pytest.approx(40.0)                                      # 40 MB/s over 60 s
     assert load.compute_trend([], now_snap(), {}).swapout_mb_s is None
     assert load.compute_trend([hist_row(14.9, swapout=0)], now_snap(swapout=10), {}).swapout_mb_s is None    # under 30 s apart
     assert load.compute_trend([hist_row(14, swapout=10 ** 9)], now_snap(swapout=5), {}).swapout_mb_s is None  # a reboot
 
 
-def test_slopes_are_fitted_over_the_window_and_projected_to_thirty_minutes():
+def test_slopes_are_fitted_over_the_window_and_projected_ahead():
     rows = [hist_row(m, swap_gb=4 + 0.2 * m, disk_gb=50 - 0.5 * m) for m in range(0, 15)]
     t = load.compute_trend(rows, now_snap(15, swap_gb=7.0, disk_gb=42.5), {})
-    assert t.swap_gb_30m == pytest.approx(6.0, abs=0.05) and t.disk_free_30m_gb == pytest.approx(42.5 - 15, abs=0.1)
+    assert t.swap_gb_30m == pytest.approx(6.0, abs=0.05) and t.disk_free_ahead_gb == pytest.approx(42.5 - 7.5, abs=0.1)  # disk: 15 min ahead
     assert t.swap_recent_gb == pytest.approx(1.0, abs=0.05) and t.disk_recent_gb == pytest.approx(2.5, abs=0.05)
     assert t.points == 16
     old = [hist_row(m - 40, swap_gb=1.0) for m in range(0, 10)]
@@ -1047,8 +1047,8 @@ def test_worsening_trips_on_each_signal_alone_and_not_on_a_flat_history():
     fall = [hist_row(m, disk_gb=40 - 1.5 * m) for m in range(0, 15)]
     s3 = now_snap(15, disk_gb=17.5)
     v3 = load.assess(s3, {}, load.compute_trend(fall, s3, {}))
-    assert v3.level == "WORSENING" and "disk 17.5 GB free and falling" in v3.reasons[0] and "under the 10 GB critical line" in v3.reasons[0]
-    assert "on this trend full in 30 min" in v3.reasons[0]                              # the slope runs past zero: full, not "-27.5 GB"
+    assert v3.level == "WORSENING" and "disk 17.5 GB free and falling" in v3.reasons[0] and "under the 8 GB critical line" in v3.reasons[0]
+    assert "on this trend full in 15 min" in v3.reasons[0]                              # the slope runs past zero: full, not "-27.5 GB"
     assert load._disk_ahead(6.04) == "6.0 GB free" and load._disk_ahead(-3.8) == "full" and load._disk_ahead(0.0) == "full"
     out = load.compute_trend([hist_row(14, swapout=0)], now_snap(swapout=30 * 1024 ** 2 * 60), {})
     assert load.assess(now_snap(), {}, out).reasons == ["swap-out 30 MB/s over the last 3 min (worsening ≥ 20 MB/s)"]
@@ -1098,15 +1098,15 @@ def test_a_worsening_machine_refuses_new_sims_and_builds_whatever_the_count_but_
     assert load.decide("sim", s, {}, None).allowed                                       # no trend, as before
 
 
-def test_the_hold_keeps_refusing_for_five_minutes_after_the_last_bad_sample():
+def test_the_hold_keeps_refusing_for_three_minutes_after_the_last_bad_sample():
     calm = now_snap(15, swap_gb=4.0)
     rows = [hist_row(m, swap_gb=4.0, level="BUSY") for m in range(0, 15)]
-    assert load.decide("sim", calm, {}, load.compute_trend(rows + [{**hist_row(12), "level": "CRITICAL"}], calm, {})).allowed is False
-    t = load.compute_trend(rows + [{**hist_row(12), "level": "CRITICAL"}], calm, {})
+    assert load.decide("sim", calm, {}, load.compute_trend(rows + [{**hist_row(13), "level": "CRITICAL"}], calm, {})).allowed is False
+    t = load.compute_trend(rows + [{**hist_row(13), "level": "CRITICAL"}], calm, {})
     d = load.decide("build", calm, {}, t)
-    assert d.level == "OK" and d.reason.startswith("held after CRITICAL 3 min ago") and "(2 min left)" in d.message
+    assert d.level == "OK" and d.reason.startswith("held after CRITICAL 2 min ago") and "(1 min left)" in d.message
     assert load.decide("lane", calm, {}, t).allowed
-    assert load.decide("sim", calm, {}, load.compute_trend(rows + [{**hist_row(9), "level": "WORSENING"}], calm, {})).allowed   # 6 min ago
+    assert load.decide("sim", calm, {}, load.compute_trend(rows + [{**hist_row(11), "level": "WORSENING"}], calm, {})).allowed  # 4 min ago
     assert load.decide("sim", calm, {"hold_min": 0}, t).allowed                          # no hold configured
     assert load.decide("sim", calm, {"hold_min": 30}, load.compute_trend(rows + [{**hist_row(4), "level": "WORSENING"}], calm, {"hold_min": 30})).allowed is False
 

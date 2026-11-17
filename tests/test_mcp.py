@@ -455,7 +455,7 @@ def test_the_modules_behind_the_tools_state_facts_in_what_they_return(monkeypatc
                           disk_free_bytes=gib, procs=load.Procs(
                               sims=9, sim_udids=["u"], drivers=[load.Driver(i, "xcodebuild", 0, 60) for i in range(9)]))
     texts += load.assess(worst, {}).reasons + load.assess(worst, {}, load.Trend(
-        swap_gb_30m=9.0, swap_recent_gb=2.0, disk_free_30m_gb=1.0, disk_recent_gb=2.0, swapout_mb_s=500.0)).reasons
+        swap_gb_30m=9.0, swap_recent_gb=2.0, disk_free_ahead_gb=1.0, disk_recent_gb=2.0, swapout_mb_s=500.0)).reasons
     texts += [load.OK, load.BUSY, load.CRITICAL, load.WORSENING]
     texts += [routines.failing_detail({"streak": 2, "since": None, "streak_open": True, "error": "boom"}), routines.PAUSED,
               routines.PAUSED_LOADED, "ok", "STALE", "FAILING", "NOT LOADED", "unknown", "BROKEN", "UNTESTED", "RE-TEST"]

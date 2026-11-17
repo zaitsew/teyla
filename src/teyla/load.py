@@ -738,9 +738,9 @@ def _worsening(trend: "Trend | None", snap: Snapshot, conf: dict | None) -> list
                    f" worsening > {grow_at:g} GB)")
     crit_gb = _num(conf, "disk_crit_gb")
     free = snap.disk_free_bytes
-    if (trend.disk_free_30m_gb is not None and free is not None and free >= crit_gb * GIB
-            and trend.disk_free_30m_gb < crit_gb and trend.disk_recent_gb is not None and trend.disk_recent_gb > RECENT_GROWTH_GB):
-        out.append(f"disk {gb(free)} free and falling: on this trend {_disk_ahead(trend.disk_free_30m_gb)} in 30 min,"
+    if (trend.disk_free_ahead_gb is not None and free is not None and free >= crit_gb * GIB
+            and trend.disk_free_ahead_gb < crit_gb and trend.disk_recent_gb is not None and trend.disk_recent_gb > RECENT_GROWTH_GB):
+        out.append(f"disk {gb(free)} free and falling: on this trend {_disk_ahead(trend.disk_free_ahead_gb)} in {trend.disk_ahead_min:g} min,"
                    f" under the {crit_gb:g} GB critical line")
     return out
 
@@ -826,7 +826,8 @@ class Trend:
     """What the last minutes say. A field is None when its history is too short to say anything."""
     swap_gb_30m: float | None = None          # swap growth projected to 30 min, from the last `trend_window_min`
     swap_recent_gb: float | None = None       # swap growth in the last 5 min
-    disk_free_30m_gb: float | None = None     # free disk projected 30 min ahead
+    disk_free_ahead_gb: float | None = None     # free disk projected `disk_ahead_min` ahead
+    disk_ahead_min: float = 15                # guard.disk_trend_min: how far ahead the disk slope is projected
     disk_recent_gb: float | None = None       # disk used up in the last 5 min (positive = falling)
     swapout_mb_s: float | None = None         # swap-out rate over the last 3 min
     points: int = 0
@@ -882,7 +883,7 @@ def compute_trend(history: list[dict], snap: Snapshot, conf: dict | None = None,
     now = cur["ts"]
     window = _num(conf, "trend_window_min") * 60
     pts = sorted((h for h in history if now - window <= h["ts"] < now), key=lambda h: h["ts"]) + [cur]
-    t = Trend(points=len(pts), span_s=now - pts[0]["ts"])
+    t = Trend(points=len(pts), span_s=now - pts[0]["ts"], disk_ahead_min=_num(conf, "disk_trend_min"))
 
     def series(key):
         return [(h["ts"] - now, h[key]) for h in pts if h.get(key) is not None]
@@ -903,7 +904,7 @@ def compute_trend(history: list[dict], snap: Snapshot, conf: dict | None = None,
     if enough and len(disk) >= MIN_POINTS and cur["disk_free_bytes"] is not None:
         slope = _slope(disk)
         if slope is not None:
-            t.disk_free_30m_gb = (cur["disk_free_bytes"] + slope * 1800) / GIB
+            t.disk_free_ahead_gb = (cur["disk_free_bytes"] + slope * t.disk_ahead_min * 60) / GIB
         base = recent_base("disk_free_bytes")
         if base:
             t.disk_recent_gb = (base["disk_free_bytes"] - cur["disk_free_bytes"]) / GIB
@@ -1666,8 +1667,8 @@ def trend_lines(trend: Trend | None, conf: dict | None = None) -> list[str]:
     bits = []
     if trend.swap_gb_30m is not None:
         bits.append(f"swap {trend.swap_gb_30m:+.1f} GB per 30 min")
-    if trend.disk_free_30m_gb is not None:
-        bits.append(f"disk {_disk_ahead(trend.disk_free_30m_gb)} in 30 min")
+    if trend.disk_free_ahead_gb is not None:
+        bits.append(f"disk {_disk_ahead(trend.disk_free_ahead_gb)} in {trend.disk_ahead_min:g} min")
     if trend.swapout_mb_s is not None:
         bits.append(f"swap-out {trend.swapout_mb_s:.1f} MB/s")
     out = []
