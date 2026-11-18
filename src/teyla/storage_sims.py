@@ -292,6 +292,12 @@ def reap(cfg: dict | None = None, dry: bool = False, now: float | None = None, d
     describing what was (or, with dry, would be) done, and the pruned devices."""
     s = settings(cfg)
     now = time.time() if now is None else now
+    from . import volumes
+    bad = volumes.broken(cfg, "sim")
+    if bad:   # simctl must not see a dangling Devices link: nothing may recreate the folder on the internal disk
+        msg = (f"{bad[0].volume} is not attached: the simulators are not touched "
+               f"(do not recreate {bad[0].path.replace(str(pathlib.Path.home()), '~', 1)} on the internal disk)")
+        return {"status": {"booted": [], "error": msg}, "lines": [msg], "shutdown": [], "pruned": []}
     devs = devices() if devs is _FETCH else devs
     procs = storage.process_commands() if procs is _FETCH else procs
     st = status(now, devs, procs, record=True)

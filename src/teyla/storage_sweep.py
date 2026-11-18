@@ -182,6 +182,7 @@ class Ctx:
     dev: Callable = _dev   # st_dev of a path: a different one than its parent's is a mount point
     uid: int = dataclasses.field(default_factory=os.getuid)
     claimed: list = dataclasses.field(default_factory=list)   # folders `temp dirs` took whole
+    raw_cfg: dict | None = None   # the user's config, for [storage] volumes
 
     def named(self, path) -> bool:
         """A live process names `path` on its command line (as /tmp/x or /private/tmp/x). Unknown
@@ -205,7 +206,8 @@ class Ctx:
 
 def make_ctx(cfg: dict | None = None, dry: bool = False, now: float | None = None) -> Ctx:
     return Ctx(cfg=settings(cfg), now=time.time() if now is None else now, home=pathlib.Path.home(), dry=dry,
-               free=storage.disk()["free"], tmp_roots=default_tmp_roots(), procs=storage.process_commands())
+               free=storage.disk()["free"], tmp_roots=default_tmp_roots(), procs=storage.process_commands(),
+               raw_cfg=cfg)
 
 
 @dataclasses.dataclass
@@ -591,8 +593,22 @@ def release_leftovers(ctx: Ctx) -> Result:
 
 # --- simulators -----------------------------------------------------------------------------
 
+def _volume_gone(ctx: Ctx, kind: str) -> str:
+    """Why a category stays out of work: a path it needs is a link into an external volume that is not
+    attached (or was replaced by a real folder). "" when all is well or no volume is configured."""
+    from . import volumes
+    bad = volumes.broken(ctx.raw_cfg, kind, root=ctx.home)
+    if not bad:
+        return ""
+    return f"{', '.join(sorted({l.volume for l in bad}))} is not attached; nothing is touched under {bad[0].name}"
+
+
 def simulators(ctx: Ctx) -> Result:
     r = Result("simulators")
+    gone = _volume_gone(ctx, "sim")
+    if gone:
+        r.skipped = gone
+        return r
     if not ctx.cfg["sim_pattern"]:
         r.skipped = "storage.sim_prune_pattern is empty: no device is ever deleted"
         return r
@@ -640,6 +656,9 @@ def _edited_checkouts(ctx: Ctx, d: pathlib.Path, strict: bool = False) -> bool:
 def derived_data(ctx: Ctx) -> Result:
     r = Result("DerivedData")
     root = ctx.home / "Library" / "Developer" / "Xcode" / "DerivedData"
+    if os.path.islink(root) and not root.is_dir():
+        r.skipped = _volume_gone(ctx, "build") or "the DerivedData link is dangling"
+        return r
     if not root.is_dir():
         return r
     for d in sorted(root.iterdir()):

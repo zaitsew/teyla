@@ -786,12 +786,20 @@ def _caches() -> list[tuple[str, str, str, str]]:
     ]
 
 
-def caches(sizes: bool = True) -> list[dict]:
+def caches(sizes: bool = True, cfg: dict | None = None) -> list[dict]:
+    """The cache rows. A path that is a symlink into a configured external volume (`[storage] volumes`)
+    is measured at its target and reported as `external_bytes`: `bytes` stays None, so nothing that
+    adds `bytes` up counts it as internal usage. A dangling link has no row: `volumes` reports it."""
+    from . import volumes
     rows = []
     for name, path, verdict, how in _caches():
         if os.path.exists(path):
-            rows.append({"kind": "cache", "name": name, "path": path, "verdict": verdict, "reason": how,
-                         "bytes": du(path) if sizes else None})
+            row = {"kind": "cache", "name": name, "path": path, "verdict": verdict, "reason": how,
+                   "bytes": du(path) if sizes else None}
+            vol = volumes.external(path, cfg)
+            if vol:
+                row.update(volume=vol, bytes=None, external_bytes=du(os.path.realpath(path)) if sizes else None)
+            rows.append(row)
     return rows
 
 
@@ -844,8 +852,10 @@ def scan(root: pathlib.Path | None = None, sizes: bool = True, cfg: dict | None 
     for repo in repos(root, extra):
         wt += worktrees(repo, cwds, s["idle_days"], sizes=sizes, now=now, agent_idle_days=s["agent_idle_days"], deep=deep)
         art += artifacts(repo, cwds, s["build_idle_days"], sizes=sizes, now=now, launched=launched)
+    from . import volumes
     return {"root": str(root), "settings": s, "disk": disk(), "worktrees": wt, "artifacts": art,
-            "derived": derived_data(derived_root or derived_data_root(), sizes=sizes, now=now)}
+            "derived": derived_data(derived_root or derived_data_root(), sizes=sizes, now=now),
+            "volumes": volumes.volume_rows(cfg)}
 
 
 def _rows(rep: dict) -> list[dict]:
@@ -862,9 +872,15 @@ def render(rep: dict, cache_rows: list[dict], sims: list[str], mem: list[tuple[s
     home = str(pathlib.Path.home())
     short = lambda p: p.replace(home, "~", 1)
     L = [f"disk    {human(d['free'])} free of {human(d['total'])} ({d['free_fraction']:.0%})"]
+    if rep.get("volumes"):
+        from . import volumes
+        L = L[:1] + [l for l in volumes.render(rep["volumes"]) if l.startswith("disk")]
     safe = [r for r in _rows(rep) if r["verdict"] == "SAFE"]
     L.append(f"safe    {human(reclaimable(rep))} in {len(safe)} item(s) — `teyla storage clean --apply` removes them"
              + ("" if s["auto_clean"] else "; `teyla config set storage.auto_clean=true` makes the daily routine do it"))
+    if rep.get("volumes"):
+        from . import volumes
+        L += [l for l in volumes.render(rep["volumes"]) if not l.startswith("disk")]
     L.append("")
     L.append(f"worktrees ({len(rep['worktrees'])}; SAFE = clean, on the remote, not in use, idle ≥ "
              f"{s['agent_idle_days']}d for agent-*, ≥ {s['idle_days']}d otherwise)")
@@ -890,6 +906,10 @@ def render(rep: dict, cache_rows: list[dict], sims: list[str], mem: list[tuple[s
         L.append("")
         L.append("caches and stores (Teyla never deletes these; the command clears them)")
         for r in sorted(cache_rows, key=lambda r: -(r.get("bytes") or 0)):
+            if r.get("volume"):   # the data is on the drive: its size is shown there, never as internal
+                L.append(f"  {r['verdict']:6} {'ext':>6}  {r['name']:24} on {r['volume']}"
+                         + (f" ({human(r['external_bytes'])})" if r.get("external_bytes") is not None else ""))
+                continue
             L.append(f"  {r['verdict']:6} {human(r.get('bytes')):>6}  {r['name']:24} {r['reason']}")
     if sweep:
         L.append("")
@@ -1032,6 +1052,9 @@ def doctor_checks(cfg: dict | None = None) -> list[dict]:
     else:
         out.append({"level": "OK", "name": "storage:disk", "detail": f"{human(d['free'])} free ({d['free_fraction']:.0%})", "fix": None,
                     "free": d["free"]})
+    from . import volumes
+    out += volumes.problems(cfg)
+    volumes.write_hook_file(cfg)
     s = settings(cfg)
     rep = scan(sizes=False, cfg=cfg, deep=False)
     n = sum(1 for r in rep["worktrees"] if r["verdict"] == "SAFE")
@@ -1084,7 +1107,9 @@ def cmd_storage(args):
         return 0
     sizes = not args.no_sizes
     rep = scan(sizes=sizes, cfg=cfg)
-    cache_rows = caches(sizes=sizes)
+    from . import volumes
+    volumes.write_hook_file(cfg)
+    cache_rows = caches(sizes=sizes, cfg=cfg)
     sims, mem = booted_simulators(), memory_by_app()
     from . import storage_sims, storage_sweep
     sim_status = storage_sims.status(record=False) if sims else {"booted": [], "error": None}

@@ -13,6 +13,9 @@
 #   optional load agent, keeps it while the machine is CRITICAL), print its first line FIRST:
 #   "teyla: machine CRITICAL since 20:21 — swap …. Do not start builds or boot simulators; run
 #   teyla load." An older file is ignored: a dead agent must not cry wolf.
+# - If a volume in `[storage] volumes` is not attached and `teyla doctor` found paths pointing into it
+#   (~/.teyla/volumes.list), print one line, first: which volume, how many paths, and "do not recreate
+#   these paths on the internal disk".
 # - If ~/.teyla/spend.alert exists (the daily `teyla spend --alert` writes the current spend
 #   alerts there and removes the file when there are none), print its first line and how many
 #   more: "teyla: spend alert — …". One extra line at most.
@@ -105,6 +108,7 @@ if [ "$mode" = "--codex" ]; then
 fi
 
 orientation() {
+  volumes_line
   load_alert="$HOME/.teyla/load.alert"
   if [ -s "$load_alert" ] && [ -n "$(find "$load_alert" -mmin -5 2>/dev/null)" ]; then
     line=$(head -n 1 "$load_alert" 2>/dev/null)
@@ -165,6 +169,29 @@ orientation() {
     fi
   fi
   intent_line
+}
+
+# An external volume from `[storage] volumes` that is not attached while paths point into it. `teyla doctor`
+# (and `teyla storage`) write ~/.teyla/volumes.list, one `<volume><TAB><paths pointing into it>` per line;
+# whether the volume is there is tested here, live, so a stale file never reports a drive that is back. Nothing
+# is printed when the drive is attached or no path points into it. Under /Volumes a folder only counts as the
+# drive when it is mounted: an agent that recreates a path through a dangling link leaves an empty stub there.
+volumes_line() {
+  list="${TEYLA_HOME:-$HOME/.teyla}/volumes.list"
+  [ -s "$list" ] || return 0
+  tab=$(printf '\t')
+  while IFS="$tab" read -r vol n; do
+    [ -n "$vol" ] || continue
+    case "$n" in ""|*[!0-9]*) continue ;; esac
+    [ "$n" -gt 0 ] || continue
+    here=""
+    case "$vol" in
+      /Volumes/*) mount 2>/dev/null | grep -qF " on $vol (" && here=1 ;;
+      *) [ -d "$vol" ] && here=1 ;;
+    esac
+    [ -n "$here" ] && continue
+    echo "teyla: $vol is not attached; $n path(s) point into it (simulators, DerivedData, Android SDK, Gradle caches). Do not recreate these paths on the internal disk; attach the drive, then run teyla doctor."
+  done < "$list"
 }
 
 # The owner's own words for the session's product, when `teyla intent` kept any.

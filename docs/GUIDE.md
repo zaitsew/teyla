@@ -103,6 +103,7 @@ teyla load                                          # OK / BUSY / CRITICAL: RAM,
 teyla load --wait --kind build && xcodebuild ...    # wait for a free slot instead of piling on
 teyla config set guard.agent=true && teyla routine install   # the every-minute guard: alerts, load records, idle Gradle daemons stopped
 teyla storage                                       # worktrees, build output, caches and simulators holding disk and RAM
+teyla config set storage.volumes=/Volumes/Drive    # heavy folders moved to an external drive: report it, flag a missing drive (docs/COMMANDS.md)
 teyla crash                                         # after a panic: what the machine looked like in the 30 minutes before
 ```
 

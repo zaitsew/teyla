@@ -1732,6 +1732,23 @@ def _guard_cwd(arg: str | None) -> str | None:
     return os.path.realpath(os.path.expanduser(arg))
 
 
+def volume_refusal(kind: str, cfg: dict | None = None) -> str:
+    """The refusal text when a path `kind` needs is a link into an external volume that is not attached
+    (`[storage] volumes`), else "". It is not a load verdict and it does not clear with time, so `--wait`
+    does not poll on it. The refusal is logged like any other decision. Never raises: a failure here lets the
+    work through, as a failed snapshot does."""
+    if kind not in ("sim", "build"):
+        return ""
+    try:
+        from . import volumes
+        msg = volumes.refusal(kind, cfg)
+    except Exception:
+        return ""
+    if msg:
+        log_decision(kind, "volume", False, msg.splitlines()[0].removeprefix("teyla guard: "))
+    return msg
+
+
 def cmd_load(args, run: Runner = run_command) -> int:
     conf = guard_conf()
     if args.replay:
@@ -1749,6 +1766,11 @@ def cmd_load(args, run: Runner = run_command) -> int:
         since = time.time() - args.days * 86400
         print(render_replay(replay(read_records(since=since), conf)))
         return 0
+    if args.admit or args.wait:
+        refused = volume_refusal(args.admit or args.kind)
+        if refused:
+            print(refused)
+            return 2
     if args.admit:
         if not enabled(conf):
             return 0
