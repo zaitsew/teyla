@@ -47,9 +47,12 @@
     orphan_kill     = false        the sims agent also runs `storage procs --kill --quiet` (needs sims_agent)
     sims_agent      = false        `teyla routine install` also writes an agent: storage sims --reap every 10 min
     sweep_agent     = false        ... and one for storage sweep --temp hourly; the weekly runs storage sweep
-    volumes         = []           external drives that hold simulators, DerivedData, the Android SDK or Gradle
-                                   caches through symlinks, e.g. ["/Volumes/<name>"]. `storage`, `doctor`, the
-                                   session-start hook and `load --admit` report one that is absent; empty = off
+    volumes         = []           drives to show in `teyla storage` even when no heavy path points into them, e.g.
+                                   ["/Volumes/External"]. A heavy path (simulators, DerivedData, Android SDK, Gradle
+                                   caches) that is a symlink is found without this: a dangling one is reported on any
+                                   machine, one on another device as "on <mount point>"
+    volumes_required = []          drives that never leave the desk: their absence FAILs `teyla doctor` (by default an
+                                   absent drive is a note and exit 0; only `load --admit sim|build` refuses)
     [growth]                       `teyla growth`: the content factory (docs/GROWTH.md)
     daily           = false        `teyla routine install` writes an agent: growth daily at 06:30 (harvest, plan,
                                    draft; publishes nothing). Off unless you ask for it.
@@ -182,7 +185,7 @@ DEFAULTS = {
                 "sweep_temp_hours": 24, "sweep_release_days": 3, "sweep_urgent_free_gb": 20,
                 "sweep_sim_days": 7, "sweep_derived_days": 14, "sweep_codex_days": 2, "sweep_grok_days": 14,
                 "sweep_log_days": 14, "sweep_docker_days": 7, "sweep_log_max_mb": 50,
-                "sweep_log_glob": "*.log", "docker_superseded_repos": [], "volumes": [],
+                "sweep_log_glob": "*.log", "docker_superseded_repos": [], "volumes": [], "volumes_required": [],
                 "sweep_critical_free_gb": 10, "sweep_app_cache_days": 7,
                 # Optional launchd agents, written by `teyla routine install`.
                 "sims_agent": False, "sweep_agent": False},

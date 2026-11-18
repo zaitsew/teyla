@@ -1053,7 +1053,7 @@ def doctor_checks(cfg: dict | None = None) -> list[dict]:
         out.append({"level": "OK", "name": "storage:disk", "detail": f"{human(d['free'])} free ({d['free_fraction']:.0%})", "fix": None,
                     "free": d["free"]})
     from . import volumes
-    out += volumes.problems(cfg)
+    out += volumes.problems(cfg, with_advice=True)
     volumes.write_hook_file(cfg)
     s = settings(cfg)
     rep = scan(sizes=False, cfg=cfg, deep=False)

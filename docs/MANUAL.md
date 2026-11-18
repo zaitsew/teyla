@@ -408,11 +408,12 @@ pid that still has the same start time and did not exit since the check. `teyla 
 `teyla config set storage.orphan_kill=true` lets the optional `storage.sims_agent` do it every 10 minutes.
 
 Heavy folders on an external drive. When the simulators, DerivedData, the Android SDK or the Gradle caches are
-symlinks into a drive, list the drive in `~/.teyla/config.toml` (`teyla config set storage.volumes=/Volumes/Drive`).
-If the drive is then absent, the links dangle, and a tool that sees "No such file" may recreate the folder on the
-internal disk, which fills up unseen. With the drive listed, `teyla storage` and `teyla doctor` say which paths dangle,
-the session-start hook tells the agent not to recreate them, and `teyla load --admit sim|build` refuses to start
-work that needs them. Nothing is deleted or created for you. See docs/COMMANDS.md.
+symlinks to another drive, Teyla sees it without any setting. If the drive is absent, the links dangle, and a tool
+that sees "No such file" may recreate the folder on the internal disk, which fills up unseen. `teyla storage` and
+`teyla doctor` say which paths dangle (an absent drive is a note, not a failure: doctor exits 0), the session-start
+hook tells the agent not to recreate them, and `teyla load --admit sim|build` refuses to start work that needs them.
+`teyla config set storage.volumes_required=/Volumes/External` makes the absence a doctor failure. Nothing is deleted
+or created for you. See docs/LOW-ON-DISK.md and docs/COMMANDS.md.
 
 Apps you leave open for days hold memory too. `teyla storage apps` lists the running foreground apps with
 their memory and the hours since each was last in front. Name the ones that may go, and let the guard quit

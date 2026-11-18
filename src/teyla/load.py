@@ -130,6 +130,7 @@ OK, BUSY, WORSENING, CRITICAL = "OK", "BUSY", "WORSENING", "CRITICAL"
 EXIT = {OK: 0, BUSY: 1, WORSENING: 1, CRITICAL: 2}
 BAD = (WORSENING, CRITICAL)                    # the levels that start a hold
 EXIT_TIMEOUT = 3
+EXIT_REFUSED = 2
 KINDS = ("build", "sim", "lane")
 
 VM_STAT = ["vm_stat"]
@@ -1203,6 +1204,10 @@ def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, po
     last_progress: float | None = None
     last_bad: tuple[str, float] | None = None      # (level, time) of the last bad verdict this wait logged
     while True:
+        refused = volume_refusal(kind)      # the drive can leave while the wait goes on
+        if refused:
+            print(refused, file=out)
+            return EXIT_REFUSED
         snap = snap_fn()
         if snap is None:
             log_decision(kind, "unknown", True, "snapshot failed: let through", via="wait")
@@ -1766,11 +1771,11 @@ def cmd_load(args, run: Runner = run_command) -> int:
         since = time.time() - args.days * 86400
         print(render_replay(replay(read_records(since=since), conf)))
         return 0
-    if args.admit or args.wait:
-        refused = volume_refusal(args.admit or args.kind)
+    if args.admit:
+        refused = volume_refusal(args.admit)
         if refused:
             print(refused)
-            return 2
+            return EXIT_REFUSED
     if args.admit:
         if not enabled(conf):
             return 0
