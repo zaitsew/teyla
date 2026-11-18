@@ -163,9 +163,12 @@ def test_a_folder_where_a_link_was_is_replaced_while_the_drive_is_away(world):
     assert (l.status, l.target, l.absent) == ("replaced", "", True)
     (row,) = volumes.problems(cfg)
     assert row["level"] == "WARN" and "fills the internal disk" in row["detail"]
-    assert volumes.refusal("sim", cfg) and not volumes.refusal("build", cfg)
-    p.rmdir()                                                        # still replaced when it is gone altogether
+    assert "stop watching" in row["fix"]
+    # a real folder where the link was is also what retiring the drive looks like: a warning, never a block
+    assert volumes.refusal("sim", cfg) == ""
+    p.rmdir()                                                        # still replaced when it is gone altogether,
     assert volumes.links(cfg, remember=True)[0].status == "replaced"
+    assert volumes.refusal("sim", cfg) and not volumes.refusal("build", cfg)   # and now a tool would recreate it
 
 
 def test_a_replaced_path_is_forgotten_once_the_drive_is_back(world):
@@ -209,6 +212,12 @@ def test_a_required_drive_fails_doctor_once_per_path(world):
     rows = volumes.problems(world.configure(required=[world.gone]))
     assert [(r["level"], r["name"]) for r in rows] == [("FIX", "storage:link")] * 2
     assert "required and not attached" in rows[0]["detail"] and "do not recreate" in rows[0]["fix"].lower()
+
+
+def test_a_required_drive_that_nothing_points_into_yet_still_fails_doctor(world):
+    (row,) = volumes.problems(world.configure(required=[world.gone]))
+    assert (row["level"], row["name"]) == ("FIX", "storage:volume") and "do not recreate" in row["fix"].lower()
+    assert [r["level"] for r in volumes.problems(world.configure([world.gone]))] == ["INFO"]   # listed only: a note
 
 
 def test_an_attached_drive_is_ok_and_a_missing_target_on_it_warns(world):

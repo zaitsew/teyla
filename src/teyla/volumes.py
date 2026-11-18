@@ -227,8 +227,12 @@ def links(cfg: dict | None = None, root: pathlib.Path | None = None, remember: b
 
 
 def broken(cfg: dict | None = None, kind: str | None = None, root: pathlib.Path | None = None) -> list[Link]:
-    """The links that are not ok; with `kind`, only those a `teyla load --kind <kind>` needs."""
-    return [l for l in links(cfg, root=root, remember=True) if l.status != OK and (kind is None or kind in l.kinds)]
+    """The links whose tool would refill the internal disk, and so block work: dangling ones, and remembered
+    ones with nothing at the path any more. A real folder where a link was is a warning, never a block: it is
+    also what retiring the drive looks like. With `kind`, only those a `teyla load --kind <kind>` needs."""
+    return [l for l in links(cfg, root=root, remember=True)
+            if (l.status == DANGLING or (l.status == REPLACED and not os.path.lexists(l.path)))
+            and (kind is None or kind in l.kinds)]
 
 
 def volume_rows(cfg: dict | None = None, root: pathlib.Path | None = None) -> list[dict]:
@@ -348,7 +352,8 @@ def problems(cfg: dict | None = None, root: pathlib.Path | None = None, with_adv
                 out.append({"level": "FIX" if l.required else "WARN", "name": "storage:link",
                             "detail": f"{_short(l.path)} was a link into {l.volume} and is now a folder or missing: it fills the "
                                       "internal disk",
-                            "fix": f"attach {l.volume}, move the data back and restore the link"})
+                            "fix": f"attach {l.volume}, move the data back and restore the link; if you no longer use the "
+                                   f"drive, delete {_short(str(storage.state_dir() / 'volumes.json'))} to stop watching"})
             elif not l.absent:
                 out.append({"level": "FIX" if l.required else "WARN", "name": "storage:link",
                             "detail": f"{_short(l.path)} -> {l.target} dangles: {l.volume} is attached but the target is missing",
@@ -358,13 +363,18 @@ def problems(cfg: dict | None = None, root: pathlib.Path | None = None, with_adv
                             "detail": f"{_short(l.path)} -> {l.target} dangles: {l.volume} is required and not attached",
                             "fix": f"attach {l.volume}; {DO_NOT.lower()}: {_short(l.path)}"})
         loose = [l for l in bad if l.absent and l.status == DANGLING and not l.required]
-        if loose or (not r["attached"] and not r["links"]):
+        is_required = r["volume"] in required(cfg)
+        if loose or (not r["attached"] and not r["links"] and not is_required):
             out.append({"level": "INFO", "name": "storage:volume",
                         "detail": f"{r['volume']} is not attached"
                                   + (f"; {_plural(len(loose))} point into it. {DO_NOT}" if loose else ""),
                         "fix": (f"attach {r['volume']} when you are at the desk; builds that need these paths are refused until then"
                                 if loose else None)})
-        if r["attached"] and r["links"] and not bad:
+        if not r["attached"] and not r["links"] and is_required:
+            out.append({"level": "FIX", "name": "storage:volume",
+                        "detail": f"{r['volume']} is required and not attached",
+                        "fix": f"attach {r['volume']}; {DO_NOT.lower()}"})
+        elif r["attached"] and r["links"] and not bad:
             out.append({"level": "OK", "name": "storage:volume",
                         "detail": f"{r['volume']} attached, {_plural(len(ls))} point into it", "fix": None})
         if with_advice and r["attached"] and r["links"]:
