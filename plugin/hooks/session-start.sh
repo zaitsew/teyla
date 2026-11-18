@@ -13,6 +13,9 @@
 #   optional load agent, keeps it while the machine is CRITICAL), print its first line FIRST:
 #   "teyla: machine CRITICAL since 20:21 — swap …. Do not start builds or boot simulators; run
 #   teyla load." An older file is ignored: a dead agent must not cry wolf.
+# - If a drive that heavy paths link into is not attached (~/.teyla/volumes.list, written by `teyla doctor`),
+#   print one informational line, first: which drive, how many paths, and "do not recreate these paths on the
+#   internal disk". No file, no line.
 # - If ~/.teyla/spend.alert exists (the daily `teyla spend --alert` writes the current spend
 #   alerts there and removes the file when there are none), print its first line and how many
 #   more: "teyla: spend alert — …". One extra line at most.
@@ -105,6 +108,7 @@ if [ "$mode" = "--codex" ]; then
 fi
 
 orientation() {
+  volumes_line
   load_alert="$HOME/.teyla/load.alert"
   if [ -s "$load_alert" ] && [ -n "$(find "$load_alert" -mmin -5 2>/dev/null)" ]; then
     line=$(head -n 1 "$load_alert" 2>/dev/null)
@@ -165,6 +169,25 @@ orientation() {
     fi
   fi
   intent_line
+}
+
+# A drive a heavy path (simulators, DerivedData, Android SDK, Gradle caches) is a symlink into, when it is not
+# attached. `teyla doctor` and `teyla storage` write ~/.teyla/volumes.list, one `<volume><TAB><path><TAB>dangling|
+# replaced` line per such path; whether the path is reachable is tested here, live, so a stale file never reports a
+# drive that is back. Nothing is printed when no file exists (a machine with no drive) or the drive is attached. An
+# absent drive is a normal state for a laptop that leaves the desk: the line informs, it does not stop anything.
+volumes_line() {
+  list="${TEYLA_HOME:-$HOME/.teyla}/volumes.list"
+  [ -s "$list" ] || return 0
+  tab=$(printf '\t')
+  missing=$(while IFS="$tab" read -r vol path state; do
+    [ -n "$vol" ] && [ -n "$path" ] || continue
+    if [ "$state" = replaced ]; then [ -d "$vol" ] || printf '%s\n' "$vol"; else [ -e "$path" ] || printf '%s\n' "$vol"; fi
+  done < "$list" 2>/dev/null)
+  [ -n "$missing" ] || return 0
+  printf '%s\n' "$missing" | sort | uniq -c | while read -r n vol; do
+    echo "teyla: $vol is not attached; $n path(s) point into it (simulators, DerivedData, Android SDK or Gradle caches). Do not recreate these paths on the internal disk; builds that need them are refused until the drive is back."
+  done
 }
 
 # The owner's own words for the session's product, when `teyla intent` kept any.

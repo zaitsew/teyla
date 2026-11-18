@@ -59,7 +59,7 @@ Hooks run in Claude Code and Cowork. Claude chat on the web ignores them. All ar
 
 | Event | Script | What it does | Default |
 |---|---|---|---|
-| `SessionStart` | `session-start.sh` | Prints how many `.claude/rules/*.md` files the repo has. With the CLI, adds its one-line notices (see Privacy). | on |
+| `SessionStart` | `session-start.sh` | Prints how many `.claude/rules/*.md` files the repo has. With the CLI, adds its one-line notices (see Privacy), among them one first line when an external drive that heavy folders point into is not attached. | on |
 | `UserPromptSubmit` | `capture-correction.sh` | Records prompts that look like a correction, scrubbed, in `~/.teyla/corrections/`. Writes nothing without the CLI. | on, CLI only |
 | `UserPromptSubmit` | `capture-intent.sh` | Keeps a prompt of 400 characters or more, scrubbed, in `~/.teyla/intent/<repo>.md`. Writes nothing without the CLI. | on, CLI only |
 | `PreToolUse` | `pre-tool-use.sh` | The kill switch. It denies every tool call while `~/.teyla/KILL` exists, and it enforces capability grants only for a run you started with `teyla run`. Without those files it allows the call. | on |

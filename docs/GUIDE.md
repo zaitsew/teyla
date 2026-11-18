@@ -102,7 +102,7 @@ Every agent on a laptop shares one CPU, one RAM and one swap file, and none of t
 teyla load                                          # OK / BUSY / CRITICAL: RAM, swap, compressor, load, disk, sims, builds, agents
 teyla load --wait --kind build && xcodebuild ...    # wait for a free slot instead of piling on
 teyla config set guard.agent=true && teyla routine install   # the every-minute guard: alerts, load records, idle Gradle daemons stopped
-teyla storage                                       # worktrees, build output, caches and simulators holding disk and RAM
+teyla storage                                       # worktrees, build output, caches, simulators; heavy folders on an external drive, or a drive that is not attached (docs/LOW-ON-DISK.md)
 teyla crash                                         # after a panic: what the machine looked like in the 30 minutes before
 ```
 

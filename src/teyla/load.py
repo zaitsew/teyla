@@ -130,6 +130,7 @@ OK, BUSY, WORSENING, CRITICAL = "OK", "BUSY", "WORSENING", "CRITICAL"
 EXIT = {OK: 0, BUSY: 1, WORSENING: 1, CRITICAL: 2}
 BAD = (WORSENING, CRITICAL)                    # the levels that start a hold
 EXIT_TIMEOUT = 3
+EXIT_REFUSED = 2
 KINDS = ("build", "sim", "lane")
 
 VM_STAT = ["vm_stat"]
@@ -1203,6 +1204,10 @@ def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, po
     last_progress: float | None = None
     last_bad: tuple[str, float] | None = None      # (level, time) of the last bad verdict this wait logged
     while True:
+        refused = volume_refusal(kind)      # the drive can leave while the wait goes on
+        if refused:
+            print(refused, file=out)
+            return EXIT_REFUSED
         snap = snap_fn()
         if snap is None:
             log_decision(kind, "unknown", True, "snapshot failed: let through", via="wait")
@@ -1732,6 +1737,23 @@ def _guard_cwd(arg: str | None) -> str | None:
     return os.path.realpath(os.path.expanduser(arg))
 
 
+def volume_refusal(kind: str, cfg: dict | None = None) -> str:
+    """The refusal text when a path `kind` needs is a link into an external volume that is not attached
+    (`[storage] volumes`), else "". It is not a load verdict and it does not clear with time, so `--wait`
+    does not poll on it. The refusal is logged like any other decision. Never raises: a failure here lets the
+    work through, as a failed snapshot does."""
+    if kind not in ("sim", "build"):
+        return ""
+    try:
+        from . import volumes
+        msg = volumes.refusal(kind, cfg)
+    except Exception:
+        return ""
+    if msg:
+        log_decision(kind, "volume", False, msg.splitlines()[0].removeprefix("teyla guard: "))
+    return msg
+
+
 def cmd_load(args, run: Runner = run_command) -> int:
     conf = guard_conf()
     if args.replay:
@@ -1749,6 +1771,11 @@ def cmd_load(args, run: Runner = run_command) -> int:
         since = time.time() - args.days * 86400
         print(render_replay(replay(read_records(since=since), conf)))
         return 0
+    if args.admit:
+        refused = volume_refusal(args.admit)
+        if refused:
+            print(refused)
+            return EXIT_REFUSED
     if args.admit:
         if not enabled(conf):
             return 0
