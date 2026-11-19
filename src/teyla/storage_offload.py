@@ -656,6 +656,7 @@ def recover(say=print) -> int:
             rest.append(e)
             say(f"kept the original of {_tag(e['path'])} as {_tag(e['aside'])} (--keep); `--finalize` deletes it")
             continue
+        e.pop("stuck", None)                    # a flag from an earlier run is stale: this run decides again
         for line in _recover_entry(e):
             say(line)
         if e.get("stuck"):                      # nothing was resolved: keep the entry so doctor keeps naming it
