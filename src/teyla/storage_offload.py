@@ -417,6 +417,24 @@ def _link_works(path: str, dest: str) -> bool:
         return False
 
 
+def _missing_on_drive(aside: str, dest: str) -> str:
+    """The first path of the kept original that the drive copy no longer has ("" when all are there). New files
+    and changed contents are fine: the copy has been in use."""
+    stack = [""]
+    try:
+        while stack:
+            rel = stack.pop()
+            for ent in os.scandir(os.path.join(aside, rel)):
+                r = os.path.join(rel, ent.name)
+                if not os.path.lexists(os.path.join(dest, r)):
+                    return r
+                if ent.is_dir(follow_symlinks=False):
+                    stack.append(r)
+    except OSError as err:
+        return f"(cannot read: {err.strerror or err})"
+    return ""
+
+
 def _dest_intact(e: dict) -> bool:
     """The drive copy still has the manifest the original had when it was copied."""
     try:
@@ -452,16 +470,22 @@ def _recover_entry(e: dict) -> list[str]:
     elif state in ("copied",):
         _rm(dest)
         out.append(f"removed the copy of {_tag(path)}; the original was never touched")
-    elif state in ("asiding", "asided", "linked") or (state == "smoked" and not _dest_intact(e)):
+    elif state in ("asiding", "asided", "linked") or (state == "smoked" and os.path.lexists(aside) and not _dest_intact(e)):
         if os.path.islink(path):
             os.unlink(path)
         if not os.path.lexists(path) and os.path.exists(aside):
             os.rename(aside, path)
-        _rm(dest)
-        out.append(f"restored {_tag(path)} from its original and removed the copy on the drive")
+        if os.path.lexists(path) and not os.path.islink(path):
+            _rm(dest)                                   # the original is back: the copy is not needed
+            out.append(f"restored {_tag(path)} from its original and removed the copy on the drive")
+        else:
+            out.append(f"could not restore {_tag(path)}: no original found; the copy on the drive was left in place")
     elif state == "smoked":
-        _rm(aside)
-        out.append(f"deleted the original of {_tag(path)} (the drive copy matches it)")
+        if os.path.lexists(aside):
+            _rm(aside)
+            out.append(f"deleted the original of {_tag(path)} (the drive copy matches it)")
+        else:
+            out.append(f"the original of {_tag(path)} was already deleted; the copy on the drive is the only one")
     return out
 
 
@@ -570,7 +594,7 @@ def undo(path: str, *, delete_drive_copy: bool = False, say=print) -> int:
         _save(entries)
         say(f"  copying {storage.human(before.bytes)} back …")
         _copy(src, stage)
-        if scan_tree(src) != before or scan_tree(stage) != before:
+        if not scan_tree(src).unchanged_since(before) or scan_tree(stage) != before:
             raise Failed("the copy differs from the original, or the drive copy changed")
         entry["state"] = "undoing"
         _save(entries)
@@ -586,8 +610,15 @@ def undo(path: str, *, delete_drive_copy: bool = False, say=print) -> int:
     _save(_forget(entries, entry))
     say(f"moved {_tag(path)} back to the internal disk; the copy on the drive is {src}")
     if delete_drive_copy:
-        _rm(src)
-        say(f"deleted {src}")
+        try:
+            changed = not scan_tree(src).unchanged_since(before)
+        except Refused:
+            changed = True
+        if changed:
+            say(f"kept {src}: it changed after it was copied")
+        else:
+            _rm(src)
+            say(f"deleted {src}")
     return 0
 
 
@@ -622,7 +653,10 @@ def finalize(say=print) -> int:
     for e in kept:
         path = e["path"]
         why = "" if _link_works(path, e["dest"]) else "the link is gone or the drive copy is not there"
-        if not why and e["key"] not in ("sim", "avd"):
+        if not why and e["key"] in ("sim", "avd"):
+            gone = _missing_on_drive(e["aside"], e["dest"])
+            why = f"the drive copy lacks {gone} that the original has" if gone else ""
+        elif not why:
             why = smoke(e["key"], path, None)
         if why:
             say(f"kept {_tag(e['aside'])}: {why}; run `teyla storage offload --undo {_tag(path)}` or restore it by hand")

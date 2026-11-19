@@ -611,3 +611,47 @@ def test_an_unreadable_simulator_list_counts_as_in_use(world, monkeypatch):
     assert "a simulator is booted" in so.busy("sim")
     monkeypatch.setattr(volumes, "_bounded", lambda *a, **k: '{"devices": {}}')
     assert so.busy("sim") == ""
+
+
+# --- round two ----------------------------------------------------------------------------------------------------
+
+def test_recovery_never_deletes_the_drive_copy_when_the_original_is_already_gone(world, capsys):
+    p = world.home / DERIVED
+    e = entry(world, "smoked")                                # the aside was deleted, the journal line was not cleared
+    tree(pathlib.Path(e["dest"]), {"a": "1"})
+    e["tree"] = list(so.scan_tree(e["dest"]).key())
+    (pathlib.Path(e["dest"]) / "a").write_text("used since, longer")
+    so._save([e])
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.symlink_to(e["dest"])
+    rc, out = run(world, capsys, recover=True)
+    assert (pathlib.Path(e["dest"]) / "a").exists() and p.is_symlink() and "already deleted" in out and not so.journal()
+
+
+def test_finalize_of_app_data_needs_every_original_file_on_the_drive(world, capsys):
+    p = world.home / DERIVED
+    e = entry(world, "kept", key="sim")
+    tree(pathlib.Path(e["aside"]), {"dev1/data/a": "1", "dev2/b": "2"})
+    tree(pathlib.Path(e["dest"]), {"dev1/data/a": "1"})       # dev2 vanished from the drive; the folder still lists
+    p.symlink_to(e["dest"])
+    rc, out = run(world, capsys, finalize=True)
+    assert "lacks dev2" in out and os.path.exists(e["aside"]) and so.journal()
+    tree(pathlib.Path(e["dest"]), {"dev2/b": "2 changed", "dev3/new": "n"})
+    rc, out = run(world, capsys, finalize=True)
+    assert not os.path.exists(e["aside"]) and not so.journal()
+
+
+def test_undo_catches_an_equal_length_rewrite_of_the_drive_copy(world, monkeypatch, capsys):
+    src = derived(world)
+    run(world, capsys, apply=True, only="xcode-derived-data")
+    drive_copy = world.drive / "teyla" / "xcode-derived-data"
+    real = so._copy
+
+    def rewrite(a, b):
+        real(a, b)
+        f = drive_copy / "App-abc" / "info.plist"
+        f.write_text("PLIST")
+        os.utime(f, ns=(1, 1))
+    monkeypatch.setattr(so, "_copy", rewrite)
+    rc, out = run(world, capsys, undo=str(src), delete_drive_copy=True)
+    assert rc == 1 and src.is_symlink() and drive_copy.exists() and "nothing changed" in out
