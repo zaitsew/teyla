@@ -1054,6 +1054,8 @@ def doctor_checks(cfg: dict | None = None) -> list[dict]:
                     "free": d["free"]})
     from . import volumes
     out += volumes.problems(cfg, with_advice=True)
+    from . import storage_offload
+    out += storage_offload.problems()
     volumes.write_hook_file(cfg)
     s = settings(cfg)
     rep = scan(sizes=False, cfg=cfg, deep=False)
@@ -1094,6 +1096,9 @@ def cmd_storage(args):
     if args.action == "sweep":
         from . import storage_sweep
         return storage_sweep.cmd_sweep(args, cfg)
+    if args.action == "offload":
+        from . import storage_offload
+        return storage_offload.cmd_offload(args, cfg)
     if args.action == "clean":
         if args.auto and not settings(cfg)["auto_clean"]:
             return 0
@@ -1131,7 +1136,7 @@ def cmd_storage(args):
 def register(sp):
     q = sp.add_parser("storage", help="what agent work holds on disk and in RAM, and removing the part that is safe to")
     q.set_defaults(fn=cmd_storage)
-    q.add_argument("action", nargs="?", choices=["report", "clean", "sims", "sweep", "procs", "apps"], default="report")
+    q.add_argument("action", nargs="?", choices=["report", "clean", "sims", "sweep", "procs", "apps", "offload"], default="report")
     q.add_argument("--json", action="store_true")
     q.add_argument("--no-sizes", action="store_true", help="report: skip `du` (fast; verdicts only)")
     q.add_argument("--apply", action="store_true", help="clean: remove the SAFE rows (default: dry run)")
@@ -1140,6 +1145,14 @@ def register(sp):
     q.add_argument("--reap", action="store_true", help="sims: shut down idle simulators and delete old ones matching storage.sim_prune_pattern")
     q.add_argument("--dry", action="store_true", help="sims --reap / sweep / procs --kill / apps --quit: say what would be done, do nothing")
     q.add_argument("--kill", action="store_true", help="procs: end the orphan processes (SIGTERM, then SIGKILL after 10 s); default: list them")
+    q.add_argument("--to", help="offload: the mount point of the external drive (dry run unless --apply)")
+    q.add_argument("--only", help="offload: one candidate only (its name, e.g. gradle-caches)")
+    q.add_argument("--with-app-data", action="store_true", help="offload: also move simulators and virtual devices, which can hold data that exists nowhere else")
+    q.add_argument("--keep", action="store_true", help="offload --apply: keep each original until --finalize")
+    q.add_argument("--undo", metavar="PATH", help="offload: copy a moved path back to the internal disk and remove its link")
+    q.add_argument("--delete-drive-copy", action="store_true", help="offload --undo: also delete the copy on the drive")
+    q.add_argument("--recover", action="store_true", help="offload: finish or roll back an offload a crash left half done")
+    q.add_argument("--finalize", action="store_true", help="offload: delete the originals --keep kept")
     q.add_argument("--temp", action="store_true", help="sweep: only the temp build output (the hourly agent)")
     q.add_argument("--quit", action="store_true", help="apps: quit every eligible listed app now, whatever the memory (default: list the apps)")
     q.add_argument("--report", action="store_true", help="apps: per app, from the journal, how many quits and how much memory freed")
