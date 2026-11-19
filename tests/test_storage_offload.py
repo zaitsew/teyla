@@ -658,6 +658,28 @@ def test_recovery_keeps_both_when_a_half_deleted_original_meets_a_changed_drive_
     assert (pathlib.Path(e["aside"]) / "a").exists() and so.journal()
 
 
+def test_a_repaired_stuck_entry_is_cleared_by_the_next_recover(world, capsys):
+    p = world.home / DERIVED
+    e = entry(world, "smoked")
+    tree(pathlib.Path(e["dest"]), {"a": "1", "b": "2"})
+    e["tree"] = list(so.scan_tree(e["dest"]).key())
+    tree(pathlib.Path(e["aside"]), {"a": "1"})                # half-deleted original
+    extra = pathlib.Path(e["dest"]) / "c"
+    extra.write_text("new file on the drive")                 # the drive copy no longer matches either
+    so._save([e])
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.symlink_to(e["dest"])
+    rc, out = run(world, capsys, recover=True)
+    assert "neither" in out and so.journal()[0]["stuck"]      # the blocked state
+    rc, out = run(world, capsys, apply=True)
+    assert "earlier offload stopped" in out                   # ...and it blocks every later offload
+    extra.unlink()                                            # the owner repairs the drive copy
+    rc, out = run(world, capsys, recover=True)
+    assert "deleted the original" in out and not so.journal() and not os.path.exists(e["aside"])
+    rc, out = run(world, capsys, apply=True)
+    assert "earlier offload stopped" not in out
+
+
 def test_finalize_of_app_data_refuses_a_dangling_link_in_place_of_a_file(world, capsys):
     p = world.home / DERIVED
     e = entry(world, "kept", key="avd")
