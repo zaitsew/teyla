@@ -528,7 +528,7 @@ def test_a_dead_drive_after_the_smoke_check_restores_the_original(world, capsys)
     p = world.home / DERIVED
     e = entry(world, "smoked")
     tree(pathlib.Path(e["aside"]), {"a": "1"})
-    e["tree"] = [1, 1, 0, 1, 0]
+    e["tree"] = list(so.scan_tree(e["aside"]).key())
     so._save([e])
     p.symlink_to(e["dest"])                                   # the drive is gone: the link dangles
     run(world, capsys, recover=True)
@@ -639,6 +639,34 @@ def test_finalize_of_app_data_needs_every_original_file_on_the_drive(world, caps
     tree(pathlib.Path(e["dest"]), {"dev2/b": "2 changed", "dev3/new": "n"})
     rc, out = run(world, capsys, finalize=True)
     assert not os.path.exists(e["aside"]) and not so.journal()
+
+
+# --- round three --------------------------------------------------------------------------------------------------
+
+def test_recovery_keeps_both_when_a_half_deleted_original_meets_a_changed_drive_copy(world, capsys):
+    p = world.home / DERIVED
+    e = entry(world, "smoked")
+    tree(pathlib.Path(e["dest"]), {"a": "1", "b": "2"})
+    e["tree"] = list(so.scan_tree(e["dest"]).key())
+    tree(pathlib.Path(e["aside"]), {"a": "1"})                # a crash in the middle of deleting the original
+    (pathlib.Path(e["dest"]) / "c").write_text("new file on the drive")
+    so._save([e])
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.symlink_to(e["dest"])
+    rc, out = run(world, capsys, recover=True)
+    assert "neither" in out and p.is_symlink() and (pathlib.Path(e["dest"]) / "b").exists()
+    assert (pathlib.Path(e["aside"]) / "a").exists() and so.journal()
+
+
+def test_finalize_of_app_data_refuses_a_dangling_link_in_place_of_a_file(world, capsys):
+    p = world.home / DERIVED
+    e = entry(world, "kept", key="avd")
+    tree(pathlib.Path(e["aside"]), {"x.avd/userdata.img": "disk image"})
+    tree(pathlib.Path(e["dest"]), {"x.avd/other": "1"})
+    os.symlink("/nonexistent/userdata.img", pathlib.Path(e["dest"]) / "x.avd" / "userdata.img")
+    p.symlink_to(e["dest"])
+    rc, out = run(world, capsys, finalize=True)
+    assert "lacks x.avd/userdata.img" in out and os.path.exists(e["aside"]) and so.journal()
 
 
 def test_undo_catches_an_equal_length_rewrite_of_the_drive_copy(world, monkeypatch, capsys):

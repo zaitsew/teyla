@@ -426,10 +426,17 @@ def _missing_on_drive(aside: str, dest: str) -> str:
             rel = stack.pop()
             for ent in os.scandir(os.path.join(aside, rel)):
                 r = os.path.join(rel, ent.name)
-                if not os.path.lexists(os.path.join(dest, r)):
+                d = os.path.join(dest, r)
+                if ent.is_symlink():
+                    ok = os.path.islink(d)
+                elif ent.is_dir(follow_symlinks=False):
+                    ok = os.path.isdir(d) and not os.path.islink(d)
+                    if ok:
+                        stack.append(r)
+                else:                                   # a dangling link is not a file with data
+                    ok = os.path.isfile(d) and not os.path.islink(d)
+                if not ok:
                     return r
-                if ent.is_dir(follow_symlinks=False):
-                    stack.append(r)
     except OSError as err:
         return f"(cannot read: {err.strerror or err})"
     return ""
@@ -440,6 +447,14 @@ def _dest_intact(e: dict) -> bool:
     try:
         return _link_works(e["path"], e["dest"]) and list(scan_tree(e["dest"]).key()) == list(e["tree"])
     except (Refused, KeyError, TypeError):
+        return False
+
+
+def _tree_is_whole(p: str, e: dict) -> bool:
+    """`p` still has the manifest the original had when it was copied (a half-deleted original does not)."""
+    try:
+        return list(scan_tree(p).key()) == list(e["tree"])
+    except (Refused, OSError, KeyError, TypeError):
         return False
 
 
@@ -470,6 +485,10 @@ def _recover_entry(e: dict) -> list[str]:
     elif state in ("copied",):
         _rm(dest)
         out.append(f"removed the copy of {_tag(path)}; the original was never touched")
+    elif state == "smoked" and os.path.lexists(aside) and not _dest_intact(e) and not _tree_is_whole(aside, e):
+        e["stuck"] = True
+        out.append(f"{_tag(path)}: neither the original ({_tag(aside)}) nor the drive copy is whole; "
+                   "nothing was deleted. Keep both and sort it out by hand")
     elif state in ("asiding", "asided", "linked") or (state == "smoked" and os.path.lexists(aside) and not _dest_intact(e)):
         if os.path.islink(path):
             os.unlink(path)
@@ -639,6 +658,8 @@ def recover(say=print) -> int:
             continue
         for line in _recover_entry(e):
             say(line)
+        if e.get("stuck"):                      # nothing was resolved: keep the entry so doctor keeps naming it
+            rest.append(e)
     _save(rest)
     return 0
 
