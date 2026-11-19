@@ -38,6 +38,29 @@ A Mac with a small disk can keep the heavy, regenerable folders on an external d
 5. **Keep only regenerable data on it.** Every tool can download or build it again, so the drive needs no backup.
 6. **Put nothing with secrets on it.** An unencrypted drive can be read by anyone who holds it: no signing keys, no `gradle.properties` with passwords, no `.env` files.
 
+### Move the folders: `teyla storage offload`
+
+```bash
+teyla storage offload --to /Volumes/External            # dry run: each folder, its size, "move" or why not
+teyla storage offload --to /Volumes/External --apply    # move them, one at a time
+teyla storage offload --undo ~/.gradle/caches           # copy one back and remove its link
+```
+
+`--to` is the mount point of the drive. The dry run changes nothing. The candidates are fixed: DerivedData, the Android SDK, the Gradle caches and wrapper, and (only with `--with-app-data`) the simulators and the virtual devices, because those can hold app data that exists nowhere else. You cannot name another path.
+
+Each folder goes through the same steps, and the original is deleted last:
+
+1. **Refuse** if anything uses it (a booted simulator, `xcodebuild`, a Gradle daemon, an emulator; a process list that cannot be read counts as "in use"), if it sits in or holds a git repository, holds a file that may be a secret (Gradle properties, keystores, ADB keys, `.env` files) or a mount point, if the drive is not writable, has ownership disabled, is on the same device, or has too little room, or if the destination exists already.
+2. **Copy** to `<drive>/teyla/<name>.partial` (`ditto` on macOS, `cp -a` elsewhere).
+3. **Verify** the copy: the same files, folders, links and bytes, and the same digest of every path, type, size and link target. The source is scanned again: a writer that started during the copy fails the move. File contents are not hashed, which would read 100 GB twice; the manifest catches a missing, extra, renamed or resized file.
+4. **Switch**: rename the copy into place, rename the original aside (`<path>.teyla-offload-<time>`), make the symlink.
+5. **Smoke check** that kind through the link (`simctl` lists the same devices, `adb version` runs, a Gradle folder takes a write, and so on).
+6. **Delete** the original. `--keep` keeps it until `teyla storage offload --finalize`, for a week of trust.
+
+Any failure before step 6 puts everything back: the link goes, the original is renamed back, the copy is deleted. Each step is written to `~/.teyla/state/offload.json` first, so a crash (or a pulled cable) leaves a state that `teyla storage offload --recover` reads and rolls back. `teyla doctor` names an unfinished offload. One offload runs at a time.
+
+A moved folder is not backed up anywhere else: if the drive dies, rebuild the folder. Only data a tool can download or build again belongs there.
+
 ### What Teyla does with a drive
 
 No setting is needed. Teyla looks at the heavy paths on every run, and a symlink that points to another drive shows up:
