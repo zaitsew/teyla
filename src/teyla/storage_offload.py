@@ -79,6 +79,8 @@ class Tree:
     def __init__(self):
         self.files = self.dirs = self.links = self.bytes = 0
         self.digest = 0
+        self.tdigest = 0                  # file mtimes: only comparable between two scans of the same tree
+        self.escapes: list[str] = []
         self.secrets: list[str] = []
         self.git: list[str] = []
         self.mounts: list[str] = []
@@ -88,6 +90,14 @@ class Tree:
 
     def __eq__(self, other):
         return isinstance(other, Tree) and self.key() == other.key()
+
+    def unchanged_since(self, other: "Tree") -> bool:
+        """Same manifest and the same modification times: nothing was written in between."""
+        return self == other and self.tdigest == other.tdigest
+
+    def add_time(self, rel: str, mtime_ns: int):
+        h = hashlib.sha1(f"{rel}\0{mtime_ns}".encode("utf-8", "surrogateescape")).digest()
+        self.tdigest = (self.tdigest + int.from_bytes(h[:16], "big")) % MOD
 
     def add(self, rel: str, kind: str, size: int, link: str = ""):
         h = hashlib.sha1(f"{rel}\0{kind}\0{size}\0{link}".encode("utf-8", "surrogateescape")).digest()
@@ -118,7 +128,12 @@ def scan_tree(root: str) -> Tree:
                 t.secrets.append(r)
             if e.is_symlink():
                 t.links += 1
-                t.add(r, "l", 0, os.readlink(e.path))
+                target = os.readlink(e.path)
+                t.add(r, "l", 0, target)
+                if not os.path.isabs(target) and len(t.escapes) < 3:
+                    inside = os.path.normpath(os.path.join(d, target))
+                    if os.path.commonpath([inside, root]) != os.path.normpath(root):
+                        t.escapes.append(r)
             elif e.is_dir(follow_symlinks=False):
                 if st.st_dev != dev and len(t.mounts) < 3:
                     t.mounts.append(r)
@@ -131,6 +146,7 @@ def scan_tree(root: str) -> Tree:
                 t.files += 1
                 t.bytes += st.st_size
                 t.add(r, "f", st.st_size)
+                t.add_time(r, st.st_mtime_ns)
                 if e.name == ".git" and len(t.git) < 3:
                     t.git.append(r)
     return t
@@ -184,14 +200,31 @@ def _procs() -> list[str] | None:
     return storage.process_commands()
 
 
+def _booted_sims() -> list[str] | None:
+    """Names of booted simulators; None when simctl did not answer (storage.booted_simulators() turns that into "none")."""
+    if not shutil.which("xcrun"):
+        return []
+    out = volumes._bounded(["xcrun", "simctl", "list", "devices", "booted", "-j"], SMOKE_TIMEOUT_S)
+    if out is None:
+        return None
+    try:
+        devs = json.loads(out).get("devices") or {}
+    except ValueError:
+        return None
+    return [d.get("name", "?") for v in devs.values() for d in v if d.get("state") == "Booted"]
+
+
 def busy(key: str) -> str:
     """Why the path is in use, "" when nothing is; a process list that cannot be read answers "unknown"."""
     if key == "sim":
         try:
-            if storage.booted_simulators():
-                return "a simulator is booted"
+            booted = _booted_sims()
         except Exception:
+            booted = None
+        if booted is None:
             return "could not list the booted simulators (unknown counts as in use)"
+        if booted:
+            return "a simulator is booted"
     procs = _procs()
     if procs is None:
         return "could not list the processes (unknown counts as in use)"
@@ -290,6 +323,7 @@ def plan(to: str, *, with_app_data: bool = False, only: str = "", root: pathlib.
         why = (("inside a git repository" if _in_git(r.path) else "")
                or (f"contains a git repository ({r.tree.git[0]})" if r.tree.git else "")
                or (f"holds a file that may be a secret ({r.tree.secrets[0]})" if r.tree.secrets else "")
+               or (f"holds a relative symlink that leaves the folder ({r.tree.escapes[0]}); it would break on the drive" if r.tree.escapes else "")
                or (f"holds a mount point ({r.tree.mounts[0]})" if r.tree.mounts else "")
                or ("is on the same device as the drive" if volumes._same_device(r.path, to) else "")
                or check_target(to, r.tree.bytes)
@@ -374,18 +408,51 @@ def _rm(p: str) -> None:
         os.unlink(p)
 
 
+def _link_works(path: str, dest: str) -> bool:
+    """The link at `path` points at `dest`, which is there and readable (a pulled drive makes this False)."""
+    try:
+        return os.path.islink(path) and os.path.realpath(path) == os.path.realpath(dest) and os.path.isdir(dest) \
+            and bool(_listing(dest) is not None)
+    except OSError:
+        return False
+
+
+def _dest_intact(e: dict) -> bool:
+    """The drive copy still has the manifest the original had when it was copied."""
+    try:
+        return _link_works(e["path"], e["dest"]) and list(scan_tree(e["dest"]).key()) == list(e["tree"])
+    except (Refused, KeyError, TypeError):
+        return False
+
+
 def _recover_entry(e: dict) -> list[str]:
     """Return the path to a working state from wherever the journal says it stopped. The original is only
-    ever removed when the smoke check had passed."""
+    ever removed when the drive copy is proven intact."""
     path, aside, dest, state = e["path"], e["aside"], e["dest"], e["state"]
     out = []
-    if state in ("copying",):
+    if state == "undoing":
+        stage = e["stage"]
+        if os.path.islink(path):
+            _rm(stage)
+            out.append(f"{_tag(path)} is still linked to the drive; removed the half-made copy")
+        elif not os.path.lexists(path) and os.path.isdir(stage):
+            os.rename(stage, path)
+            out.append(f"finished moving {_tag(path)} back to the internal disk (the copy had been verified)")
+        elif not os.path.lexists(path):
+            os.symlink(dest, path)
+            out.append(f"restored the link {_tag(path)} -> the drive")
+        else:
+            out.append(f"{_tag(path)} is back on the internal disk")
+    elif state == "copying-back":
+        _rm(e["stage"])
+        out.append(f"removed the half-made copy of {_tag(path)}; it is still linked to the drive")
+    elif state in ("copying",):
         _rm(dest + ".partial")
         out.append(f"removed the unfinished copy of {_tag(path)}; the original was never touched")
     elif state in ("copied",):
         _rm(dest)
         out.append(f"removed the copy of {_tag(path)}; the original was never touched")
-    elif state in ("asided", "linked"):
+    elif state in ("asiding", "asided", "linked") or (state == "smoked" and not _dest_intact(e)):
         if os.path.islink(path):
             os.unlink(path)
         if not os.path.lexists(path) and os.path.exists(aside):
@@ -394,7 +461,7 @@ def _recover_entry(e: dict) -> list[str]:
         out.append(f"restored {_tag(path)} from its original and removed the copy on the drive")
     elif state == "smoked":
         _rm(aside)
-        out.append(f"deleted the original of {_tag(path)} (the smoke check had passed)")
+        out.append(f"deleted the original of {_tag(path)} (the drive copy matches it)")
     return out
 
 
@@ -408,6 +475,16 @@ def move_one(row: Row, to: str, *, keep: bool = False, say=print) -> None:
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     e = {"id": f"{row.slug}-{stamp}", "path": path, "key": row.key, "dest": dest, "aside": f"{path}{ASIDE}{stamp}",
          "state": "copying", "keep": keep}
+    # Checks that must not leave a journal entry: a rollback only removes what this run made.
+    try:
+        before = scan_tree(path)
+    except Refused as err:
+        raise Failed(str(err))
+    if before.escapes:
+        raise Failed(f"it holds a relative symlink that leaves the folder ({before.escapes[0]})")
+    if os.path.lexists(dest) or os.path.lexists(dest + ".partial"):
+        raise Failed("the destination exists already")
+    e["tree"] = list(before.key())
     entries = journal() + [e]
     _save(entries)
 
@@ -415,14 +492,11 @@ def move_one(row: Row, to: str, *, keep: bool = False, say=print) -> None:
         e["state"] = state
         _save(entries)
     try:
-        before = scan_tree(path)
         base = baseline(row.key, path)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
-        if os.path.lexists(dest) or os.path.lexists(dest + ".partial"):
-            raise Failed("the destination exists already")
         say(f"  copying {storage.human(before.bytes)} …")
         _copy(path, dest + ".partial")
-        if scan_tree(path) != before:
+        if not scan_tree(path).unchanged_since(before):
             raise Failed("the source changed while it was copied: something is writing to it")
         if scan_tree(dest + ".partial") != before:
             raise Failed("the copy differs from the original (files, bytes or names)")
@@ -434,8 +508,11 @@ def move_one(row: Row, to: str, *, keep: bool = False, say=print) -> None:
         why = busy(row.key)
         if why:
             raise Failed(f"in use at the moment of the switch: {why}")
+        step("asiding")
         os.rename(path, e["aside"])
         step("asided")
+        if not scan_tree(e["aside"]).unchanged_since(before):
+            raise Failed("the source changed while it was copied: something is writing to it")
         os.symlink(dest, path)
         step("linked")
         why = smoke(row.key, path, base)
@@ -486,19 +563,27 @@ def undo(path: str, *, delete_drive_copy: bool = False, say=print) -> int:
     if os.path.lexists(stage):
         say(f"refused: {_tag(stage)} exists already: remove it, it is a copy a crash left")
         return 2
+    entry = {"id": f"undo-{os.path.basename(path)}", "path": path, "key": "", "dest": src, "aside": "", "stage": stage,
+             "state": "copying-back", "keep": False}
+    entries = journal() + [entry]
     try:
+        _save(entries)
         say(f"  copying {storage.human(before.bytes)} back …")
         _copy(src, stage)
         if scan_tree(src) != before or scan_tree(stage) != before:
             raise Failed("the copy differs from the original, or the drive copy changed")
+        entry["state"] = "undoing"
+        _save(entries)
         os.unlink(path)
         os.rename(stage, path)
     except (Failed, Refused, OSError) as e:
         _rm(stage)
         if not os.path.lexists(path):
             os.symlink(src, path)
+        _save(_forget(entries, entry))
         say(f"failed, nothing changed: {e}")
         return 1
+    _save(_forget(entries, entry))
     say(f"moved {_tag(path)} back to the internal disk; the copy on the drive is {src}")
     if delete_drive_copy:
         _rm(src)
@@ -516,6 +601,11 @@ def recover(say=print) -> int:
         if e["state"] == "kept":
             rest.append(e)
             continue
+        if e["state"] == "smoked" and e.get("keep") and _dest_intact(e):
+            e["state"] = "kept"
+            rest.append(e)
+            say(f"kept the original of {_tag(e['path'])} as {_tag(e['aside'])} (--keep); `--finalize` deletes it")
+            continue
         for line in _recover_entry(e):
             say(line)
     _save(rest)
@@ -531,9 +621,9 @@ def finalize(say=print) -> int:
     rest = [e for e in entries if e["state"] != "kept"]
     for e in kept:
         path = e["path"]
-        why = "" if os.path.islink(path) else "the link is gone"
-        if not why:
-            why = smoke(e["key"], path, None) if e["key"] not in ("sim", "avd") else ""
+        why = "" if _link_works(path, e["dest"]) else "the link is gone or the drive copy is not there"
+        if not why and e["key"] not in ("sim", "avd"):
+            why = smoke(e["key"], path, None)
         if why:
             say(f"kept {_tag(e['aside'])}: {why}; run `teyla storage offload --undo {_tag(path)}` or restore it by hand")
             rest.append(e)

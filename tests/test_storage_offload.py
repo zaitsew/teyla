@@ -322,7 +322,7 @@ def test_the_process_check_names_what_it_found_and_unknown_counts_as_in_use(monk
     monkeypatch.setattr(storage, "process_commands", lambda: None)
     assert "unknown" in so.busy("derived")
     monkeypatch.setattr(storage, "process_commands", lambda: [])
-    monkeypatch.setattr(storage, "booted_simulators", lambda: ["AAAA"])
+    monkeypatch.setattr(so, "_booted_sims", lambda: ["AAAA"])
     assert "simulator is booted" in so.busy("sim") and so.busy("derived") == ""
 
 
@@ -445,6 +445,8 @@ def test_recover_after_a_crash_at_each_step(world, capsys):
     e = entry(world, "smoked")
     tree(pathlib.Path(e["aside"]), {"a": "1"})
     tree(pathlib.Path(e["dest"]), {"a": "1"})
+    e["tree"] = list(so.scan_tree(e["dest"]).key())
+    so._save([e])
     p.symlink_to(e["dest"])
     run(world, capsys, recover=True)
     assert p.is_symlink() and not os.path.exists(e["aside"]) and os.path.exists(e["dest"])
@@ -500,3 +502,112 @@ def test_the_command_is_registered():
     ns = parser.parse_args(["offload", "--to", "/Volumes/External", "--apply", "--keep", "--with-app-data", "--only", "gradle-caches"])
     assert (ns.action, ns.to, ns.apply, ns.keep, ns.with_app_data, ns.only) == ("offload", "/Volumes/External", True, True, True, "gradle-caches")
     assert parser.parse_args(["offload", "--undo", "~/x"]).undo == "~/x" and parser.parse_args(["offload", "--recover"]).recover
+
+
+# --- the review's cases ------------------------------------------------------------------------------------------
+
+def test_a_crash_between_the_rename_aside_and_its_journal_line_is_recovered(world, capsys):
+    p = world.home / DERIVED
+    e = entry(world, "asiding")
+    tree(pathlib.Path(e["aside"]), {"a": "orig"})            # the rename happened, the "asided" line did not
+    tree(pathlib.Path(e["dest"]), {"a": "orig"})
+    run(world, capsys, recover=True)
+    assert (p / "a").read_text() == "orig" and not os.path.exists(e["aside"]) and not os.path.exists(e["dest"])
+
+
+def test_an_existing_partial_copy_is_refused_and_never_deleted(world, capsys):
+    src = derived(world)
+    dest = world.drive / "teyla" / "xcode-derived-data"
+    tree(pathlib.Path(str(dest) + ".partial"), {"keep": "me"})
+    rc, out = run(world, capsys, apply=True, only="xcode-derived-data")
+    assert rc == 1 and not src.is_symlink()
+    assert (pathlib.Path(str(dest) + ".partial") / "keep").read_text() == "me" and not so.journal()
+
+
+def test_a_dead_drive_after_the_smoke_check_restores_the_original(world, capsys):
+    p = world.home / DERIVED
+    e = entry(world, "smoked")
+    tree(pathlib.Path(e["aside"]), {"a": "1"})
+    e["tree"] = [1, 1, 0, 1, 0]
+    so._save([e])
+    p.symlink_to(e["dest"])                                   # the drive is gone: the link dangles
+    run(world, capsys, recover=True)
+    assert not p.is_symlink() and (p / "a").read_text() == "1" and not os.path.exists(e["aside"])
+
+
+def test_a_drive_copy_that_changed_after_the_smoke_check_restores_the_original(world, capsys):
+    p = world.home / DERIVED
+    e = entry(world, "smoked")
+    tree(pathlib.Path(e["aside"]), {"a": "1"})
+    tree(pathlib.Path(e["dest"]), {"a": "1"})
+    e["tree"] = list(so.scan_tree(e["dest"]).key())
+    (pathlib.Path(e["dest"]) / "a").write_text("a different length")
+    so._save([e])
+    p.symlink_to(e["dest"])
+    run(world, capsys, recover=True)
+    assert not p.is_symlink() and (p / "a").read_text() == "1"
+
+
+def test_recovery_honours_keep_after_a_crash_at_smoked(world, capsys):
+    p = world.home / DERIVED
+    e = entry(world, "smoked", keep=True)
+    tree(pathlib.Path(e["aside"]), {"a": "1"})
+    tree(pathlib.Path(e["dest"]), {"a": "1"})
+    e["tree"] = list(so.scan_tree(e["dest"]).key())
+    so._save([e])
+    p.symlink_to(e["dest"])
+    run(world, capsys, recover=True)
+    assert os.path.exists(e["aside"]) and so.journal()[0]["state"] == "kept" and p.is_symlink()
+
+
+def test_finalize_refuses_when_the_drive_copy_is_gone_even_for_simulators(world, capsys):
+    p = world.home / DERIVED
+    e = entry(world, "kept", key="sim")
+    tree(pathlib.Path(e["aside"]), {"a": "1"})
+    p.symlink_to(e["dest"])                                   # dangling
+    rc, out = run(world, capsys, finalize=True)
+    assert "not there" in out and os.path.exists(e["aside"]) and so.journal()
+
+
+def test_an_equal_length_rewrite_during_the_copy_is_caught(world, monkeypatch, capsys):
+    src = derived(world)
+    real = so._copy
+
+    def rewrite(a, b):
+        real(a, b)
+        f = pathlib.Path(a) / "App-abc" / "info.plist"
+        f.write_text("PLIST")                                 # same length as "plist"
+        os.utime(f, ns=(1, 1))
+    monkeypatch.setattr(so, "_copy", rewrite)
+    rc, out = run(world, capsys, apply=True, only="xcode-derived-data")
+    assert rc == 1 and "something is writing to it" in out and not src.is_symlink()
+
+
+def test_a_relative_symlink_that_leaves_the_folder_is_refused(world, capsys):
+    src = derived(world)
+    (src / "shared").symlink_to("../elsewhere")
+    (src / "inside").symlink_to("ModuleCache/m")
+    rc, out = run(world, capsys)
+    assert "relative symlink that leaves the folder (shared)" in out
+    rc, out = run(world, capsys, apply=True, only="xcode-derived-data")
+    assert not src.is_symlink() and "nothing to move" in out
+
+
+def test_a_crash_while_switching_back_finishes_or_restores(world, capsys):
+    p = world.home / DERIVED
+    e = entry(world, "undoing", stage=str(p) + ".teyla-undo.partial")
+    tree(pathlib.Path(e["stage"]), {"a": "1"})                # verified copy, link already removed
+    run(world, capsys, recover=True)
+    assert not p.is_symlink() and (p / "a").read_text() == "1" and not os.path.exists(e["stage"])
+
+
+def test_an_unreadable_simulator_list_counts_as_in_use(world, monkeypatch):
+    monkeypatch.undo()
+    monkeypatch.setattr(storage, "process_commands", lambda: [])
+    monkeypatch.setattr(so.shutil, "which", lambda n: "/usr/bin/xcrun")
+    monkeypatch.setattr(volumes, "_bounded", lambda *a, **k: None)
+    assert "unknown counts as in use" in so.busy("sim")
+    monkeypatch.setattr(volumes, "_bounded", lambda *a, **k: '{"devices": {"x": [{"name": "A", "state": "Booted"}]}}')
+    assert "a simulator is booted" in so.busy("sim")
+    monkeypatch.setattr(volumes, "_bounded", lambda *a, **k: '{"devices": {}}')
+    assert so.busy("sim") == ""
