@@ -1,0 +1,161 @@
+{
+  "id": "iphone.onboarding-folder",
+  "title": "Onboarding · choose the folder",
+  "area": "iphone",
+  "presentation": "cover",
+  "source": [
+    "apps/ios/Teyla/UI/OnboardingView.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "tab": null,
+      "gap": 24,
+      "kids": [
+        {
+          "t": "v",
+          "name": "Welcome",
+          "w": "fill",
+          "gap": 8,
+          "align": "center",
+          "pad": [
+            24,
+            0,
+            0,
+            0
+          ],
+          "kids": [
+            {
+              "t": "h",
+              "w": 72,
+              "h": 72,
+              "r": 18,
+              "fill": "primary",
+              "justify": "center",
+              "align": "center",
+              "kids": [
+                {
+                  "t": "text",
+                  "v": "T",
+                  "s": "ios-large-title",
+                  "c": "#FFFFFF",
+                  "weight": 700
+                }
+              ]
+            },
+            {
+              "t": "text",
+              "v": "Teyla",
+              "s": "ios-large-title",
+              "c": "ios-label",
+              "align": "center",
+              "w": "fill"
+            },
+            {
+              "t": "text",
+              "v": "Your Mac's coordinator, on your iPhone.",
+              "s": "ios-body",
+              "c": "ios-label-2",
+              "align": "center",
+              "w": "fill"
+            }
+          ]
+        },
+        {
+          "t": "h",
+          "gap": 8,
+          "justify": "center",
+          "w": "fill",
+          "kids": [
+            {
+              "t": "v",
+              "w": 8,
+              "h": 8,
+              "r": 4,
+              "fill": "primary",
+              "kids": []
+            },
+            {
+              "t": "v",
+              "w": 8,
+              "h": 8,
+              "r": 4,
+              "fill": "ios-fill",
+              "kids": []
+            },
+            {
+              "t": "v",
+              "w": 8,
+              "h": 8,
+              "r": 4,
+              "fill": "ios-fill",
+              "kids": []
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "text",
+              "v": "Choose the Teyla folder",
+              "s": "ios-section",
+              "c": "ios-label",
+              "w": "fill"
+            },
+            {
+              "t": "text",
+              "v": "Pick the folder where your Mac keeps Teyla's shared files. Run `teyla relay connect` on the Mac to create it.",
+              "s": "ios-body",
+              "c": "ios-label-2",
+              "w": "fill"
+            },
+            {
+              "t": "use",
+              "c": "iosButton",
+              "p": {
+                "label": "Choose folder",
+                "kind": "prominent",
+                "size": "large",
+                "fill": true,
+                "link": "iphone.onboarding-pair"
+              }
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 4,
+          "align": "center",
+          "pad": [
+            16,
+            0,
+            0,
+            0
+          ],
+          "kids": [
+            {
+              "t": "text",
+              "v": "No Mac yet?",
+              "s": "ios-body",
+              "c": "ios-label-2"
+            },
+            {
+              "t": "use",
+              "c": "iosButton",
+              "p": {
+                "label": "See a sample",
+                "kind": "text",
+                "link": "iphone.home-sample"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

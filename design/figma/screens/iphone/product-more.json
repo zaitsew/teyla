@@ -1,0 +1,220 @@
+{
+  "id": "iphone.product-more",
+  "title": "Product page · the rest",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/ProductDetailView.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "Atlas",
+      "large": false,
+      "back": "All products",
+      "tab": "products",
+      "gap": 20,
+      "kids": [
+        {
+          "t": "v",
+          "name": "Pull requests",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Pull requests"
+              }
+            },
+            {
+              "t": "h",
+              "w": "fill",
+              "gap": 12,
+              "kids": [
+                {
+                  "t": "use",
+                  "c": "iosNumber",
+                  "p": {
+                    "value": 4,
+                    "label": "open"
+                  }
+                },
+                {
+                  "t": "use",
+                  "c": "iosNumber",
+                  "p": {
+                    "value": 2,
+                    "label": "wait on you",
+                    "highlight": true
+                  }
+                },
+                {
+                  "t": "use",
+                  "c": "iosNumber",
+                  "p": {
+                    "value": 11,
+                    "label": "merged, 7 days"
+                  }
+                },
+                {
+                  "t": "use",
+                  "c": "iosNumber",
+                  "p": {
+                    "value": 0,
+                    "label": "merged unreviewed"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "name": "Activity",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Activity"
+              }
+            },
+            {
+              "t": "h",
+              "w": "fill",
+              "gap": 12,
+              "align": "end",
+              "kids": [
+                {
+                  "t": "v",
+                  "w": "fill",
+                  "gap": 2,
+                  "kids": [
+                    {
+                      "t": "text",
+                      "v": "27 commits this week",
+                      "s": "ios-body",
+                      "c": "ios-label",
+                      "weight": 600
+                    },
+                    {
+                      "t": "text",
+                      "v": "$18 spent, 4.1M tokens",
+                      "s": "ios-caption",
+                      "c": "ios-label-2"
+                    }
+                  ]
+                },
+                {
+                  "t": "use",
+                  "c": "iosSpark",
+                  "p": {
+                    "h": 36,
+                    "bar": 8
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "name": "Stage ladder",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Stage ladder"
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosGroup",
+              "p": {
+                "kids": [
+                  {
+                    "t": "use",
+                    "c": "iosRung",
+                    "p": {
+                      "title": "Idea written down",
+                      "status": "met",
+                      "word": "Met",
+                      "detail": "Brief on file since 2 Nov"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosRung",
+                    "p": {
+                      "title": "First user",
+                      "status": "met",
+                      "word": "Met",
+                      "detail": "Seen on 9 Nov"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosRung",
+                    "p": {
+                      "title": "Paid user",
+                      "status": "met",
+                      "word": "Met",
+                      "detail": "9 paying"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosRung",
+                    "p": {
+                      "title": "Support page",
+                      "status": "stale",
+                      "word": "Stale",
+                      "detail": "Checked 41 days ago"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosRung",
+                    "p": {
+                      "title": "Privacy policy",
+                      "status": "missing",
+                      "word": "Missing",
+                      "detail": null
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosRung",
+                    "p": {
+                      "title": "Store listing",
+                      "status": "not_applicable",
+                      "word": "Not applicable",
+                      "detail": "Web only"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

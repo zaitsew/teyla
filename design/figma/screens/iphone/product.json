@@ -1,0 +1,191 @@
+{
+  "id": "iphone.product",
+  "title": "Product page",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/ProductDetailView.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "Atlas",
+      "large": false,
+      "back": "All products",
+      "tab": "products",
+      "gap": 20,
+      "kids": [
+        {
+          "t": "h",
+          "w": "fill",
+          "gap": 10,
+          "align": "center",
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosProductIcon",
+              "p": {
+                "letter": "A",
+                "size": 48
+              }
+            },
+            {
+              "t": "v",
+              "w": "fill",
+              "gap": 4,
+              "kids": [
+                {
+                  "t": "text",
+                  "v": "Atlas",
+                  "s": "ios-large-title",
+                  "c": "ios-label",
+                  "size": 28
+                },
+                {
+                  "t": "use",
+                  "c": "iosHealth",
+                  "p": {
+                    "health": "on track"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "t": "text",
+          "v": "Beta · earned: beta · selling: 9 paying",
+          "s": "ios-body",
+          "c": "ios-label-2",
+          "w": "fill"
+        },
+        {
+          "t": "use",
+          "c": "iosCard",
+          "p": {
+            "kids": [
+              {
+                "t": "text",
+                "v": "Atlas turns errors into tasks for an agent, so nobody is paged at night. 412 people used it this week.",
+                "s": "ios-body",
+                "c": "ios-label",
+                "w": "fill"
+              }
+            ]
+          }
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 4,
+          "kids": [
+            {
+              "t": "text",
+              "v": "Why this health",
+              "s": "ios-caption",
+              "c": "ios-label-2",
+              "weight": 600
+            },
+            {
+              "t": "text",
+              "v": "Nothing is blocked. Two questions wait on you, both under 3 days.",
+              "s": "ios-body",
+              "c": "ios-label",
+              "w": "fill"
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 4,
+          "kids": [
+            {
+              "t": "text",
+              "v": "Milestone",
+              "s": "ios-caption",
+              "c": "ios-label-2",
+              "weight": 600
+            },
+            {
+              "t": "text",
+              "v": "Team plan launch on 24 Nov",
+              "s": "ios-body",
+              "c": "ios-label",
+              "w": "fill"
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 4,
+          "kids": [
+            {
+              "t": "text",
+              "v": "Next step",
+              "s": "ios-caption",
+              "c": "ios-label-2",
+              "weight": 600
+            },
+            {
+              "t": "text",
+              "v": "Answer the trial question, then merge pull request 98.",
+              "s": "ios-body",
+              "c": "ios-label",
+              "w": "fill"
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "name": "Platforms",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Platforms"
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosPlatformCard",
+              "p": {
+                "icon": "iphone",
+                "name": "iPhone",
+                "primary": true,
+                "line": "On TestFlight, build 32",
+                "detail": "Waiting for the Team plan paywall.",
+                "checked": "Checked 3 h ago"
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosPlatformCard",
+              "p": {
+                "icon": "globe",
+                "name": "Web",
+                "line": "Live",
+                "checked": "Checked 5 min ago",
+                "link": "Open site"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
