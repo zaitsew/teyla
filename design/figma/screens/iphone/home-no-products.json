@@ -1,0 +1,91 @@
+{
+  "id": "iphone.home-no-products",
+  "title": "Home · no products",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/HomeProducts.swift:113"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "tab": "home",
+      "title": "Home",
+      "trailing": "New task",
+      "gap": 16,
+      "kids": [
+        {
+          "t": "use",
+          "c": "iosPulse",
+          "p": {
+            "tiles": [
+              {
+                "label": "Decisions",
+                "value": "6",
+                "detail": "2 since yesterday",
+                "tone": "needs-you",
+                "link": null
+              },
+              {
+                "label": "Running",
+                "value": "3",
+                "detail": "agents now",
+                "link": null
+              },
+              {
+                "label": "Posts today",
+                "value": "1 of 2",
+                "detail": "one to go",
+                "link": null
+              },
+              {
+                "label": "Cash per month",
+                "value": "$412",
+                "detail": "$38 above plan",
+                "tone": "needs-you",
+                "link": null
+              },
+              {
+                "label": "Disk free",
+                "value": "118 GB",
+                "detail": "of 460 GB",
+                "link": null
+              }
+            ]
+          }
+        },
+        {
+          "t": "use",
+          "c": "iosNext",
+          "p": {
+            "done": "Nothing waits on you."
+          }
+        },
+        {
+          "t": "use",
+          "c": "iosSync",
+          "p": {}
+        },
+        {
+          "t": "use",
+          "c": "iosEmpty",
+          "p": {
+            "icon": "shippingbox",
+            "title": "No products yet.",
+            "detail": "Register a product on your Mac and it shows here."
+          }
+        }
+      ]
+    }
+  }
+}

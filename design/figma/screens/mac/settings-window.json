@@ -1,0 +1,290 @@
+{
+  "id": "mac.settings-window",
+  "title": "Settings window",
+  "area": "mac",
+  "presentation": "overlay",
+  "device": {
+    "w": 460,
+    "h": 560
+  },
+  "source": [
+    "apps/mac/Teyla/UI/SettingsView.swift:4"
+  ],
+  "root": {
+    "t": "v",
+    "name": "Settings window",
+    "w": "fill",
+    "gap": 16,
+    "pad": 20,
+    "fill": "background",
+    "kids": [
+      {
+        "t": "h",
+        "w": "fill",
+        "align": "center",
+        "kids": [
+          {
+            "t": "text",
+            "v": "Settings",
+            "s": "mac-card-title",
+            "c": "text",
+            "w": "fill",
+            "align": "center"
+          }
+        ]
+      },
+      {
+        "t": "v",
+        "w": "fill",
+        "gap": 6,
+        "kids": [
+          {
+            "t": "text",
+            "v": "Voice",
+            "s": "mac-caption",
+            "c": "text-secondary",
+            "weight": 600
+          },
+          {
+            "t": "v",
+            "w": "fill",
+            "pad": [
+              6,
+              12
+            ],
+            "r": "card",
+            "fill": "surface",
+            "stroke": "border",
+            "kids": [
+              {
+                "t": "h",
+                "w": "fill",
+                "pad": [
+                  6,
+                  0
+                ],
+                "gap": 12,
+                "align": "center",
+                "kids": [
+                  {
+                    "t": "text",
+                    "v": "Language",
+                    "s": "mac-body",
+                    "c": "text",
+                    "w": "fill"
+                  },
+                  {
+                    "t": "h",
+                    "gap": 4,
+                    "pad": [
+                      3,
+                      8
+                    ],
+                    "r": "mac-control",
+                    "fill": "track",
+                    "align": "center",
+                    "kids": [
+                      {
+                        "t": "text",
+                        "v": "English (US)",
+                        "s": "mac-body",
+                        "c": "text"
+                      },
+                      {
+                        "t": "icon",
+                        "n": "chevron.up.chevron.down",
+                        "size": 10,
+                        "c": "text-secondary"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "t": "text",
+                "v": "Speech is recognised on this Mac. No audio leaves it.",
+                "s": "mac-caption",
+                "c": "text-secondary",
+                "w": "fill"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "t": "v",
+        "w": "fill",
+        "gap": 6,
+        "kids": [
+          {
+            "t": "text",
+            "v": "Quick note",
+            "s": "mac-caption",
+            "c": "text-secondary",
+            "weight": 600
+          },
+          {
+            "t": "v",
+            "w": "fill",
+            "pad": [
+              6,
+              12
+            ],
+            "r": "card",
+            "fill": "surface",
+            "stroke": "border",
+            "kids": [
+              {
+                "t": "h",
+                "w": "fill",
+                "pad": [
+                  6,
+                  0
+                ],
+                "gap": 12,
+                "align": "center",
+                "kids": [
+                  {
+                    "t": "text",
+                    "v": "Shortcut",
+                    "s": "mac-body",
+                    "c": "text",
+                    "w": "fill"
+                  },
+                  {
+                    "t": "h",
+                    "pad": [
+                      3,
+                      10
+                    ],
+                    "r": "mac-control",
+                    "fill": "track",
+                    "kids": [
+                      {
+                        "t": "text",
+                        "v": "⌥Space",
+                        "s": "mac-body",
+                        "c": "text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "t": "text",
+                "v": "A note is kept as typed, filed under a product, and passed on as your own words.",
+                "s": "mac-caption",
+                "c": "text-secondary",
+                "w": "fill"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "t": "v",
+        "w": "fill",
+        "gap": 6,
+        "kids": [
+          {
+            "t": "text",
+            "v": "iPhone",
+            "s": "mac-caption",
+            "c": "text-secondary",
+            "weight": 600
+          },
+          {
+            "t": "v",
+            "w": "fill",
+            "pad": [
+              6,
+              12
+            ],
+            "r": "card",
+            "fill": "surface",
+            "stroke": "border",
+            "kids": [
+              {
+                "t": "h",
+                "w": "fill",
+                "pad": [
+                  6,
+                  0
+                ],
+                "gap": 12,
+                "align": "center",
+                "kids": [
+                  {
+                    "t": "text",
+                    "v": "iPhone relay",
+                    "s": "mac-body",
+                    "c": "text",
+                    "w": "fill"
+                  },
+                  {
+                    "t": "h",
+                    "w": 38,
+                    "h": 22,
+                    "r": 11,
+                    "fill": "saving",
+                    "pad": 2,
+                    "justify": "end",
+                    "align": "center",
+                    "kids": [
+                      {
+                        "t": "v",
+                        "w": 18,
+                        "h": 18,
+                        "r": 9,
+                        "fill": "#FFFFFF"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "t": "h",
+                "w": "fill",
+                "pad": [
+                  6,
+                  0
+                ],
+                "gap": 12,
+                "align": "center",
+                "kids": [
+                  {
+                    "t": "text",
+                    "v": "Status",
+                    "s": "mac-body",
+                    "c": "text",
+                    "w": "fill"
+                  },
+                  {
+                    "t": "text",
+                    "v": "Synced 12 s ago",
+                    "s": "mac-body",
+                    "c": "text-secondary"
+                  }
+                ]
+              },
+              {
+                "t": "use",
+                "c": "macBtn",
+                "p": {
+                  "text": "Connect iPhone…"
+                }
+              },
+              {
+                "t": "text",
+                "v": "Shows a code your iPhone's camera reads.",
+                "s": "mac-caption",
+                "c": "text-secondary",
+                "w": "fill"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

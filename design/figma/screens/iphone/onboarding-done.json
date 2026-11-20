@@ -1,0 +1,144 @@
+{
+  "id": "iphone.onboarding-done",
+  "title": "Onboarding · you are set",
+  "area": "iphone",
+  "presentation": "cover",
+  "source": [
+    "apps/ios/Teyla/UI/OnboardingView.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "tab": null,
+      "gap": 24,
+      "kids": [
+        {
+          "t": "v",
+          "name": "Welcome",
+          "w": "fill",
+          "gap": 8,
+          "align": "center",
+          "pad": [
+            24,
+            0,
+            0,
+            0
+          ],
+          "kids": [
+            {
+              "t": "h",
+              "w": 72,
+              "h": 72,
+              "r": 18,
+              "fill": "primary",
+              "justify": "center",
+              "align": "center",
+              "kids": [
+                {
+                  "t": "text",
+                  "v": "T",
+                  "s": "ios-large-title",
+                  "c": "#FFFFFF",
+                  "weight": 700
+                }
+              ]
+            },
+            {
+              "t": "text",
+              "v": "Teyla",
+              "s": "ios-large-title",
+              "c": "ios-label",
+              "align": "center",
+              "w": "fill"
+            },
+            {
+              "t": "text",
+              "v": "Your Mac's coordinator, on your iPhone.",
+              "s": "ios-body",
+              "c": "ios-label-2",
+              "align": "center",
+              "w": "fill"
+            }
+          ]
+        },
+        {
+          "t": "h",
+          "gap": 8,
+          "justify": "center",
+          "w": "fill",
+          "kids": [
+            {
+              "t": "v",
+              "w": 8,
+              "h": 8,
+              "r": 4,
+              "fill": "ios-fill",
+              "kids": []
+            },
+            {
+              "t": "v",
+              "w": 8,
+              "h": 8,
+              "r": 4,
+              "fill": "ios-fill",
+              "kids": []
+            },
+            {
+              "t": "v",
+              "w": 8,
+              "h": 8,
+              "r": 4,
+              "fill": "primary",
+              "kids": []
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "text",
+              "v": "You are set",
+              "s": "ios-section",
+              "c": "ios-label",
+              "w": "fill"
+            },
+            {
+              "t": "use",
+              "c": "iosNote",
+              "p": {
+                "icon": "checkmark.circle.fill",
+                "tone": "saving",
+                "text": "Paired with your Mac"
+              }
+            },
+            {
+              "t": "text",
+              "v": "Decisions, products and your day show up here as your Mac sends them.",
+              "s": "ios-body",
+              "c": "ios-label-2",
+              "w": "fill"
+            },
+            {
+              "t": "use",
+              "c": "iosButton",
+              "p": {
+                "label": "Open Teyla",
+                "kind": "prominent",
+                "size": "large",
+                "fill": true,
+                "link": {
+                  "to": "iphone.home",
+                  "as": "tab"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

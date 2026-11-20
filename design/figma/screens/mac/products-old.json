@@ -1,0 +1,50 @@
+{
+  "id": "mac.products-old",
+  "title": "Products, old command",
+  "area": "mac",
+  "presentation": "tab",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/PortfolioViews.swift:119"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "products",
+      "badges": {
+        "today": 4,
+        "decisions": 4,
+        "operations": 1
+      },
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "kids": [
+        {
+          "t": "use",
+          "c": "macPageHeader",
+          "p": {
+            "title": "All products"
+          }
+        },
+        {
+          "t": "use",
+          "c": "macEmpty",
+          "p": {
+            "symbol": "arrow.down.circle",
+            "title": "Update the teyla command to see products (needs 0.32).",
+            "detail": "This screen reads the products from `teyla state`."
+          }
+        }
+      ]
+    }
+  }
+}

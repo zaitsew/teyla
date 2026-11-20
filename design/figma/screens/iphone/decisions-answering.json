@@ -1,0 +1,90 @@
+{
+  "id": "iphone.decisions-answering",
+  "title": "Decisions · answering",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/Cards.swift:5",
+    "apps/ios/Teyla/UI/Cards.swift:66",
+    "apps/ios/Teyla/UI/Components.swift:180"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "Decisions",
+      "large": false,
+      "tab": "decisions",
+      "kids": [
+        {
+          "t": "v",
+          "name": "Decide",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Decide",
+                "count": 3
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosQuestionCard",
+              "p": {
+                "product": "Atlas",
+                "age": "2d",
+                "unblocks": "the trial change",
+                "question": "Should the trial end on the Team plan or the Solo plan?",
+                "context": "Today a trial ends on Solo, and 31% of trials that invited a teammate lose that seat. Team keeps every invited seat for 14 days.",
+                "proposed": "Team plan, so a trial keeps every seat it invited.",
+                "why": "Seats lost at trial end: 31% in the last 30 days.",
+                "options": [
+                  "Team plan",
+                  "Solo plan"
+                ],
+                "selected": "Team plan",
+                "draft": "Team plan",
+                "links": {
+                  "use": "iphone.decisions-sent",
+                  "send": "iphone.decisions-sent",
+                  "chip": "iphone.decisions-answering"
+                }
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosQuestionCard",
+              "p": {
+                "product": "Pebble",
+                "age": "1d",
+                "question": "Which name goes on the store listing?",
+                "context": "The listing needs a name by Friday. Both options fit in 30 characters.",
+                "proposed": "Pebble: Notes that stay",
+                "why": "It names the product and the promise in one line.",
+                "options": [
+                  "Pebble: Notes that stay",
+                  "Pebble"
+                ],
+                "links": {
+                  "chip": "iphone.decisions-answering"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

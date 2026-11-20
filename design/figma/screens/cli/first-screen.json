@@ -1,0 +1,117 @@
+{
+  "id": "cli.first-screen",
+  "title": "First screen, `teyla`",
+  "area": "cli",
+  "presentation": "tab",
+  "device": {
+    "w": 860,
+    "h": 334
+  },
+  "source": [
+    "src/teyla/welcome.py:23",
+    "src/teyla/ui.py:21"
+  ],
+  "root": {
+    "t": "use",
+    "c": "terminal",
+    "p": {
+      "title": "teyla — zsh — 100×30",
+      "lines": [
+        {
+          "cmd": "teyla"
+        },
+        [
+          {
+            "mark": true
+          },
+          " ",
+          {
+            "v": "Teyla",
+            "bold": true
+          },
+          " 0.58.1"
+        ],
+        "Teyla reads your Claude Code and Codex sessions on your Mac, shows what they",
+        "cost and what's waiting on you, and fixes the waste. Nothing about your sessions",
+        "leaves your Mac unless you turn it on.",
+        "",
+        [
+          "  ",
+          "$184      ",
+          "spent in the last 7 days       ",
+          {
+            "v": "teyla spend",
+            "role": "primary"
+          }
+        ],
+        [
+          "  ",
+          {
+            "v": "3         ",
+            "role": "needs-you"
+          },
+          "questions waiting on you       ",
+          {
+            "v": "teyla asks",
+            "role": "primary"
+          }
+        ],
+        [
+          "  ",
+          {
+            "v": "2         ",
+            "role": "needs-you"
+          },
+          "notes in your Inbox            ",
+          {
+            "v": "teyla notes --inbox",
+            "role": "primary"
+          }
+        ],
+        [
+          "  ",
+          {
+            "v": "2 changes could save about $25-$49 a month",
+            "role": "saving"
+          },
+          "  ",
+          {
+            "v": "teyla apply O1",
+            "role": "primary"
+          }
+        ],
+        "",
+        [
+          {
+            "v": "Next",
+            "bold": true
+          }
+        ],
+        [
+          "  ",
+          {
+            "v": "teyla today  ",
+            "role": "primary"
+          },
+          "What waits on you, the Inbox and the week's spend"
+        ],
+        [
+          "  ",
+          {
+            "v": "teyla spend  ",
+            "role": "primary"
+          },
+          "What the last 7 days cost, and which part bought nothing"
+        ],
+        [
+          "  ",
+          {
+            "v": "teyla help   ",
+            "role": "primary"
+          },
+          "Every command, in groups"
+        ]
+      ]
+    }
+  }
+}

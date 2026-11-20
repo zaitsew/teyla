@@ -1,0 +1,49 @@
+{
+  "id": "mac.quick-note-failed",
+  "title": "Quick note, failed",
+  "area": "mac",
+  "presentation": "overlay",
+  "device": {
+    "w": 580,
+    "h": 244
+  },
+  "source": [
+    "apps/mac/Teyla/UI/QuickNoteView.swift:103"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macQuickNote",
+    "p": {
+      "chips": [
+        {
+          "label": "Inbox",
+          "key": "0"
+        },
+        {
+          "label": "Atlas",
+          "key": "1",
+          "on": true
+        },
+        {
+          "label": "Pebble",
+          "key": "2"
+        },
+        {
+          "label": "Quill",
+          "key": "3"
+        },
+        {
+          "label": "Fern",
+          "key": "4"
+        },
+        {
+          "label": "More…"
+        }
+      ],
+      "how": "Atlas · picked from your last note",
+      "draft": "Offer the free plan to the three teams who asked for a demo.",
+      "state": "failed",
+      "text": "The note was not saved. The teyla command did not answer; the text is still here."
+    }
+  }
+}
