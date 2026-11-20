@@ -153,4 +153,5 @@ def _detail(tool_name: str, tool_input: dict) -> str:
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised through the sh wrapper
-    sys.exit(main())
+    # `--probe` only proves the package imports: the wrapper asks it of a bare python3 before trusting it.
+    sys.exit(0 if sys.argv[1:] == ["--probe"] else main())
