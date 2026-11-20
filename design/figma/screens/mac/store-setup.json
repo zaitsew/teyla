@@ -1,0 +1,145 @@
+{
+  "id": "mac.store-setup",
+  "title": "Connect Teyla on this Mac (Store)",
+  "area": "mac",
+  "presentation": "cover",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/Store/StoreViews.swift:62"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macBare",
+    "p": {
+      "kids": [
+        {
+          "t": "h",
+          "gap": 12,
+          "align": "center",
+          "kids": [
+            {
+              "t": "use",
+              "c": "brandMark",
+              "p": {
+                "size": 44
+              }
+            },
+            {
+              "t": "text",
+              "v": "Teyla",
+              "s": "mac-page-title",
+              "c": "text",
+              "size": 34
+            }
+          ]
+        },
+        {
+          "t": "text",
+          "v": "Connect Teyla on this Mac",
+          "s": "mac-page-title",
+          "c": "text"
+        },
+        {
+          "t": "text",
+          "v": "Teyla shows what needs you across your AI coding sessions. It reads what the teyla command writes into iCloud Drive, so nothing goes through a server.",
+          "s": "mac-body",
+          "c": "text-secondary",
+          "w": 560,
+          "align": "center"
+        },
+        {
+          "t": "h",
+          "w": 560,
+          "h": 40,
+          "r": "mac-control",
+          "fill": "primary",
+          "align": "center",
+          "justify": "center",
+          "gap": 8,
+          "kids": [
+            {
+              "t": "icon",
+              "n": "terminal",
+              "size": 15,
+              "c": "on-primary"
+            },
+            {
+              "t": "text",
+              "v": "Copy command and open Terminal",
+              "s": "mac-body",
+              "c": "on-primary",
+              "weight": 500
+            }
+          ]
+        },
+        {
+          "t": "text",
+          "v": "Paste it in Terminal and press Return. This page moves on when the Mac is paired.",
+          "s": "mac-caption",
+          "c": "text-secondary",
+          "w": 560,
+          "align": "center"
+        },
+        {
+          "t": "h",
+          "w": 560,
+          "h": 40,
+          "r": "mac-control",
+          "fill": "track",
+          "align": "center",
+          "justify": "center",
+          "gap": 8,
+          "kids": [
+            {
+              "t": "icon",
+              "n": "text.bubble",
+              "size": 15,
+              "c": "text"
+            },
+            {
+              "t": "text",
+              "v": "Let your coding agent do it",
+              "s": "mac-body",
+              "c": "text",
+              "weight": 500
+            }
+          ]
+        },
+        {
+          "t": "text",
+          "v": "Copies one sentence for an agent that has a terminal on this Mac.",
+          "s": "mac-caption",
+          "c": "text-secondary",
+          "w": 560,
+          "align": "center"
+        },
+        {
+          "t": "h",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macBtn",
+              "p": {
+                "text": "See a sample",
+                "kind": "link",
+                "icon": "play.rectangle"
+              }
+            },
+            {
+              "t": "use",
+              "c": "macBtn",
+              "p": {
+                "text": "Connect by hand",
+                "kind": "link"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

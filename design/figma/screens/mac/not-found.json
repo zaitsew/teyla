@@ -1,0 +1,115 @@
+{
+  "id": "mac.not-found",
+  "title": "Install the teyla command",
+  "area": "mac",
+  "presentation": "cover",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/NotFoundView.swift:5"
+  ],
+  "capture": "docs/img/mac/not-found-light.png",
+  "root": {
+    "t": "use",
+    "c": "macBare",
+    "p": {
+      "kids": [
+        {
+          "t": "text",
+          "v": "Install the teyla command",
+          "s": "mac-page-title",
+          "c": "text"
+        },
+        {
+          "t": "text",
+          "v": "Teyla for Mac shows what the teyla command reads from your sessions. It is not on this Mac yet. Paste this line in Terminal:",
+          "s": "mac-body",
+          "c": "text-secondary",
+          "w": 560,
+          "align": "center"
+        },
+        {
+          "t": "h",
+          "w": 560,
+          "gap": 12,
+          "pad": [
+            10,
+            14
+          ],
+          "r": "card",
+          "fill": "surface",
+          "stroke": "border",
+          "align": "center",
+          "kids": [
+            {
+              "t": "text",
+              "v": "uv tool install --python 3.12 git+https://github.com/zaitsew/teyla",
+              "s": "mac-code",
+              "c": "text",
+              "w": "fill"
+            },
+            {
+              "t": "use",
+              "c": "macBtn",
+              "p": {
+                "text": "Copy",
+                "kind": "borderless",
+                "icon": "doc.on.doc"
+              }
+            }
+          ]
+        },
+        {
+          "t": "h",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macBtn",
+              "p": {
+                "text": "Check again",
+                "kind": "prominent"
+              }
+            },
+            {
+              "t": "use",
+              "c": "macBtn",
+              "p": {
+                "text": "Choose…"
+              }
+            }
+          ]
+        },
+        {
+          "t": "h",
+          "gap": 6,
+          "align": "center",
+          "kids": [
+            {
+              "t": "icon",
+              "n": "exclamationmark.triangle.fill",
+              "size": 14,
+              "c": "needs-you"
+            },
+            {
+              "t": "text",
+              "v": "Still not found.",
+              "s": "mac-body",
+              "c": "needs-you"
+            }
+          ]
+        },
+        {
+          "t": "text",
+          "v": "Needs uv (astral.sh/uv). The app looks in the PATH of your login shell, then ~/.local/bin, /opt/homebrew/bin and /usr/local/bin.",
+          "s": "mac-caption",
+          "c": "text-secondary",
+          "w": 560,
+          "align": "center"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "id": "mac.popover-empty",
+  "title": "Menu bar popover, nothing waits",
+  "area": "mac",
+  "presentation": "overlay",
+  "device": {
+    "w": 320,
+    "h": 160
+  },
+  "source": [
+    "apps/mac/Teyla/UI/MenuBar.swift:25"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macPopover",
+    "p": {
+      "brief": "Nothing needs you right now."
+    }
+  }
+}

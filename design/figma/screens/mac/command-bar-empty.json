@@ -1,0 +1,21 @@
+{
+  "id": "mac.command-bar-empty",
+  "title": "Command bar, nothing matches",
+  "area": "mac",
+  "presentation": "overlay",
+  "device": {
+    "w": 560,
+    "h": 150
+  },
+  "source": [
+    "apps/mac/Teyla/UI/CommandBarView.swift:19"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macCommandBar",
+    "p": {
+      "query": "zebra",
+      "empty": true
+    }
+  }
+}
