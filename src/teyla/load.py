@@ -117,6 +117,7 @@ import os
 import pathlib
 import re
 import shutil
+import signal
 import sys
 import time
 from typing import Callable
@@ -1186,13 +1187,143 @@ def admit(kind: str, snap: Snapshot, conf: dict | None = None) -> tuple[bool, st
     return d.allowed, d.message
 
 
+# --- the wait queue: first come, first served ---------------------------------------------------------------
+
+QUEUE_DIR = "guard-queue"
+
+
+def queue_dir(kind: str) -> pathlib.Path:
+    return _home() / QUEUE_DIR / kind
+
+
+def _pid_alive(pid: int) -> bool:
+    """Signal 0 only checks that the process exists; nothing is sent."""
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True                                  # exists, but not ours (EPERM)
+    return True
+
+
+def take_ticket(kind: str, timeout_s: float, priority: bool = False, pid: int | None = None,
+                now: float | None = None, base: pathlib.Path | None = None) -> pathlib.Path | None:
+    """Join the line for `kind`: one small JSON file, created atomically (temp file + rename). None when the
+    file cannot be written: the waiter then races as it did before the queue."""
+    pid = os.getpid() if pid is None else pid
+    now = time.time() if now is None else now
+    d = pathlib.Path(base) if base else queue_dir(kind)
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        name = f"{int(now * 1000):015d}-{pid}-{os.urandom(3).hex()}.json"
+        tmp = d / f".{name}.tmp"
+        tmp.write_text(json.dumps({"pid": pid, "kind": kind, "ts": now, "priority": bool(priority),
+                                   "deadline": now + max(0.0, timeout_s)}))
+        os.replace(tmp, d / name)
+        return d / name
+    except OSError:
+        return None
+
+
+def drop_ticket(path: pathlib.Path | None) -> None:
+    if path is None:
+        return
+    try:
+        pathlib.Path(path).unlink()
+    except OSError:
+        pass
+
+
+def live_tickets(kind: str, now: float | None = None, alive: Callable[[int], bool] | None = None,
+                 base: pathlib.Path | None = None, max_age_s: float = 86400.0) -> list[tuple[pathlib.Path, dict]]:
+    """The tickets that count, in admission order: priority first, then arrival. A ticket whose process is dead,
+    whose own deadline has passed, or that is unreadable and old is ignored and removed."""
+    now = time.time() if now is None else now
+    alive = alive or _pid_alive
+    d = pathlib.Path(base) if base else queue_dir(kind)
+    out: list[tuple[pathlib.Path, dict]] = []
+    try:
+        names = sorted(n for n in os.listdir(d) if n.endswith(".json") and not n.startswith("."))
+    except OSError:
+        return out
+    for n in names:
+        p = d / n
+        try:
+            rec = json.loads(p.read_text())
+            pid, ts = int(rec["pid"]), float(rec["ts"])
+            deadline = float(rec.get("deadline", ts + max_age_s))
+        except (OSError, ValueError, KeyError, TypeError):
+            try:
+                if now - p.stat().st_mtime > 60:
+                    drop_ticket(p)
+            except OSError:
+                pass
+            continue
+        if now > deadline or not alive(pid):
+            drop_ticket(p)
+            continue
+        out.append((p, rec))
+    out.sort(key=lambda t: (0 if t[1].get("priority") else 1, float(t[1]["ts"]), t[0].name))
+    return out
+
+
+def queue_position(kind: str, ticket: pathlib.Path | None, now: float | None = None,
+                   alive: Callable[[int], bool] | None = None, base: pathlib.Path | None = None) -> int:
+    """How many live tickets are ahead; 0 = next in line (also with no ticket: a waiter that could not join,
+    or whose ticket was swept, is never held back)."""
+    if ticket is None:
+        return 0
+    for i, (p, _rec) in enumerate(live_tickets(kind, now, alive, base)):
+        if p == ticket:
+            return i
+    return 0
+
+
+def _ordinal(n: int) -> str:
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
+def position_text(kind: str, ahead: int) -> str:
+    return f"waiting for a {kind} slot: {_ordinal(ahead + 1)} in line ({ahead} ahead)"
+
+
+def queue_lengths(now: float | None = None, alive: Callable[[int], bool] | None = None) -> dict[str, int]:
+    return {k: n for k in KINDS if (n := len(live_tickets(k, now, alive)))}
+
+
+@contextlib.contextmanager
+def _term_as_exit():
+    """SIGTERM ends the wait through SystemExit, so the ticket is removed by `finally`."""
+    old = None
+    try:
+        old = signal.signal(signal.SIGTERM, lambda _s, _f: sys.exit(143))
+    except (ValueError, OSError):                    # not the main thread
+        pass
+    try:
+        yield
+    finally:
+        if old is not None:
+            try:
+                signal.signal(signal.SIGTERM, old)
+            except (ValueError, OSError):
+                pass
+
+
 def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, poll_s: float = 15,
          clock: Callable[[], float] | None = None, sleeper: Callable[[float], None] | None = None,
          snap_fn: Callable[[], Snapshot | None] | None = None, out=None, err=None,
-         trend_fn: Callable[[Snapshot], Trend | None] | None = None, cwd: str | None = None) -> int:
+         trend_fn: Callable[[Snapshot], Trend | None] | None = None, cwd: str | None = None,
+         priority: bool = False, wall: Callable[[], float] | None = None,
+         alive: Callable[[int], bool] | None = None, queue: bool = True) -> int:
     """Poll `snap_fn` + `admit` until allowed (0) or `timeout_s` (default `guard.wait_timeout_s`) runs
     out (3, the last refusal printed to `out`). One progress line per minute at most, to `err`.
-    A snapshot that fails lets the work through (0)."""
+    A snapshot that fails lets the work through (0).
+
+    Waiters take a ticket (`~/.teyla/guard-queue/<kind>/`) and only the oldest live ticket is admitted: priority
+    tickets first, then arrival order. A waiter from an older Teyla takes no ticket and still races."""
     out = out or sys.stdout
     err = err or sys.stderr
     clock = clock or time.monotonic
@@ -1200,6 +1331,17 @@ def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, po
     snap_fn = snap_fn or safe_snapshot
     trend_fn = trend_fn or (lambda s: current_trend(s, conf))
     timeout = _num(conf, "wait_timeout_s") if timeout_s is None else timeout_s
+    wall = wall or time.time
+    ticket = take_ticket(kind, timeout, priority, now=wall()) if queue else None
+    try:
+        with _term_as_exit():
+            return _wait_loop(kind, conf, timeout, poll_s, clock, sleeper, snap_fn, out, err, trend_fn, cwd,
+                              ticket, wall, alive)
+    finally:
+        drop_ticket(ticket)
+
+
+def _wait_loop(kind, conf, timeout, poll_s, clock, sleeper, snap_fn, out, err, trend_fn, cwd, ticket, wall, alive) -> int:
     start = clock()
     last_progress: float | None = None
     last_bad: tuple[str, float] | None = None      # (level, time) of the last bad verdict this wait logged
@@ -1212,7 +1354,14 @@ def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, po
         if snap is None:
             log_decision(kind, "unknown", True, "snapshot failed: let through", via="wait")
             return 0
-        d = decide_leased(kind, snap, conf, trend_fn(snap), cwd=cwd)
+        ahead = queue_position(kind, ticket, wall(), alive)
+        if ahead == 0:
+            d = decide_leased(kind, snap, conf, trend_fn(snap), cwd=cwd)
+        else:                                        # an older waiter goes first: report, never admit
+            d = decide(kind, snap, conf, trend_fn(snap))
+            if d.allowed:
+                d = Decision(False, f"teyla guard: {ahead} older waiter(s) for a {kind} slot go first", d.level,
+                             f"{ahead} ahead in the queue")
         now = clock()
         elapsed = now - start
         if d.allowed:
@@ -1230,7 +1379,8 @@ def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, po
         if last_progress is None or now - last_progress >= PROGRESS_EVERY_S:
             last_progress = now
             first = d.message.splitlines()[0].removeprefix("teyla guard: ")
-            print(f"teyla load: waiting ({int(elapsed)}s of {int(timeout)}s) — {first}", file=err)
+            where = f"{position_text(kind, ahead)} " if ticket is not None else "waiting "
+            print(f"teyla load: {where}({int(elapsed)}s of {int(timeout)}s) — {first}", file=err)
         sleeper(max(0.0, min(poll_s, timeout - elapsed)))
 
 
@@ -1792,7 +1942,7 @@ def cmd_load(args, run: Runner = run_command) -> int:
     if args.wait:
         if not enabled(conf):
             return 0
-        return wait(args.kind, conf, args.timeout, cwd=_guard_cwd(args.cwd))
+        return wait(args.kind, conf, args.timeout, cwd=_guard_cwd(args.cwd), priority=getattr(args, "priority", False))
     snap = safe_snapshot(run)
     if snap is None:
         print("teyla load: could not read the process table (ps failed); load unknown", file=sys.stderr)
@@ -1815,6 +1965,9 @@ def cmd_load(args, run: Runner = run_command) -> int:
     recent = decision_summary()
     if recent:
         print(recent)
+    waiting = queue_lengths()
+    if waiting:
+        print("queue: " + ", ".join(f"{k} {n} waiting" for k, n in waiting.items()))
     return verdict.exit_code
 
 
@@ -1828,6 +1981,7 @@ def register(sp):
     q.add_argument("--admit", choices=KINDS, metavar="KIND", help="build|sim|lane: silent exit 0 when allowed; the refusal and exit 2 when not")
     q.add_argument("--wait", action="store_true", help="poll until --kind is allowed (exit 0) or the timeout (exit 3)")
     q.add_argument("--kind", choices=KINDS, default="build", help="what --wait waits to start (default build)")
+    q.add_argument("--priority", action="store_true", help="--wait: go ahead of normal waiters (a release upload or archive); among priority waiters, arrival order")
     q.add_argument("--replay", action="store_true", help="run the verdict and admission over ~/.teyla/load.tsv: per day, the OK/BUSY/CRITICAL counts and how many samples would admit a sim or a build")
     q.add_argument("--days", type=float, default=7, metavar="N", help="--replay: how many days back (default 7)")
     q.add_argument("--day", metavar="YYYY-MM-DD", help="--replay: one line per change of state on that day, instead of the table")
