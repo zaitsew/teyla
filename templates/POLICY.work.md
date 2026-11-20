@@ -31,7 +31,7 @@ row below only when it is.
 Before committing to a non-trivial design, and before landing anything that touches
 money, credentials, or another person's data, get a second opinion from a fresh session
 of the same harness: only the diff and the question, no prior context, labelled a
-same-provider review. One pass, P1/P2 findings, then move on. Do not loop reviews. A
+same-provider review. One pass, P1/P2 findings, then move on. At most two rounds: a second only when a P1 was fixed, and only on that fix; no third. A
 review covers only the diff it saw: a commit after the review means review again, or
 merge what was reviewed and put the rest in its own PR.
 

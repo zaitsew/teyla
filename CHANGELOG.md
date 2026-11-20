@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **`teyla prose FILE...` measures a draft; `teyla intent list` works.** `teyla prose README.md` said "unrecognized arguments": the command read only sessions. It now takes file paths (`-` is stdin), prints words, long-sentence share and ban-list hits per file, and exits 1 when one is over a limit. `teyla intent list`, which the help names, answered "no intent recorded for list"; it now prints the per-product list. A test fails when a command or subcommand is missing from `docs/COMMANDS.md` (`prose`, `tg` and seven subcommands were).
+
 - **`teyla testflight` with no path checks products in parallel.** The sweep asked your release tool about each product one after the other, about 9 s each, so 15 products took over 2 minutes and a 90 s caller timed out with no output. It now checks 4 products at once (`[apple] testflight_workers` in `~/.teyla/platform.toml`, clamped to 1..8), about 4x faster; the `--china` check uses the same pool. Rows keep manifest order and shape, and a product whose check fails becomes an error row without stopping the others. On a terminal, a sweep of several products prints one progress line to stderr (never with `--json` or `--quiet`). `--help` now says what `paths` and `--json` mean.
 
 - **`teyla storage offload --recover` no longer keeps a resolved entry.** An offload that stopped with both the original and the drive copy incomplete stayed in the journal after you repaired it, and blocked every later offload. A repeat `--recover` now decides again and clears it.

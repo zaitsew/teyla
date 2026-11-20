@@ -945,6 +945,8 @@ def _list_entries(args, names: list[str]) -> list[dict]:
 
 def cmd_intent(args) -> int:
     words = list(args.words or [])
+    if words and words[0] == "list" and resolve("list") is None:
+        words = words[1:]  # `teyla intent list` is the bare listing the help names (a product called "list" wins)
     sub = words[0] if words and words[0] in ("capture", "backfill", "path", "cover", "clean", "rebuild", "audit", "mark", "load") else None
     if sub in ("audit", "mark", "load"):
         from . import intent_status

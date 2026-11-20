@@ -110,7 +110,7 @@ owner's requests say why a platform exists), so it shows up as an agent step. Se
 platforms catch up in parity trains, not feature by feature. `[productize.paths]` maps each platform to
 glob patterns (`ios = ["apps/ios/**"]`); with it, `teyla platform check` (run by the pre-push hook of
 `teyla leak install`) fails a push that touches a platform without its dated trigger. A file that matches no
-pattern is shared. A security, data-loss or backend-break fix passes with `--label`, and the use is logged. POLICY §11 has the rule and
+pattern is shared. A security, data-loss or backend-break fix passes with `--label`, and the use is logged. POLICY §14 has the rule and
 the release cadence that goes with it.
 
 **Config out of code.** Every host, key name and identifier in `.env.example` and in

@@ -67,7 +67,7 @@ PRODUCTIZE_BLOCK = """
 users = "owner"                         # owner | family | testers | public
 target = "family"                       # what you want next
 platforms = ["web"]                     # ios | macos | web | android | watch | extension | cli
-primary = "web"                         # the one platform features land on first (POLICY §11);
+primary = "web"                         # the one platform features land on first (POLICY §14);
                                         # every other entry in `platforms` needs a dated
                                         # line in [productize.triggers] below (R10)
 identity = "none"                       # none | shared-key | invite-key | supabase-auth |

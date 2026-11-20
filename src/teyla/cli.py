@@ -7,7 +7,7 @@
   teyla monitor [--days N] [--json] [--samples] [--share] [--out FILE]   adoption report from local harness logs
   teyla advise  [--days N]                                       just the findings
   teyla sessions [--days N] [--project SUBSTR]                   one line per session
-  teyla corrections [--days N] [--project SUBSTR] [--recorded]   correction-shaped human turns, clustered; --recorded: the stored ones
+  teyla corrections [--days N] [--project SUBSTR] [--cluster] [--recorded]   correction-shaped human turns; --cluster: grouped into rule candidates; --recorded: the stored ones
   teyla intent [product] [--days N] [--grep TEXT] [--json]       the owner's long prompts, verbatim, per product (~/.teyla/intent/); none: one line per product
   teyla intent path <product> | backfill [--days 30] [--dry]     the file to read before planning; fill it from Claude Code and Codex transcripts
   teyla intent rebuild <product> [--days N] [--dry]               make a product's file again from the transcripts (old file backed up)
@@ -46,12 +46,13 @@
   teyla relay sync [--quiet]                                       one pass: write the snapshot, deliver the signed outbox
   teyla tg setup|check|send|off                                    your open questions as one card in a private Telegram chat
   teyla tg digest HH:MM|off                                        a morning line in that chat with the count of waiting questions
+  teyla tg activity [off] | serve                                  the activity widget (off stops its updates); the long-poll loop the agent runs
   teyla say <ref> [--json] [--dry] -- <text>                       correct a running session (Codex: queued; else copy and open)
   teyla dispatch <product> [--harness codex|claude] [--model M] [--json] [--dry] -- <text>   start new work in a fresh worktree
   teyla brief slots [--json]                                      the sprint slots: open contracts, what each waits at, a WARN at a third (refuses nothing)
-  teyla spend [--days N] [--by-day][--alert] [--json]           what the AI work cost, which part bought nothing; --by-day: subagent cost by model family
+  teyla spend [--days N] [--by-day] [--alert] [--session ID] [--json]           what the AI work cost, which part bought nothing; --by-day: subagent cost by model family
   teyla lanes [--days N] [--project SUBSTR] [--json]             subagent lanes by type and model: cost, turns, peak context, review P1s
-  teyla prose [--days N] [--project SUBSTR] [--json]             final reply length, long sentences, ban-list hits and preambles
+  teyla prose [--days N] [--project SUBSTR] [--json] | FILE... | -   final reply length, long sentences, ban-list hits and preambles; FILE: measure a draft
   teyla voice check <file|-> --chart <dir|file> [--lang L] [--format F] [--model] [--json]   a draft against a voice chart
   teyla voice chart <repo> [--lang L] [--out DIR] [--force] [--json]   scaffold a product's voice chart (en, es, ru); a chart is complete at 10 accepted and 5 rejected lines
   teyla copy brief|write|judge|apply ...                         UI copy from a brief: one call per language, a judge, then the catalogs (xcstrings, strings.xml, i18n)
@@ -75,13 +76,17 @@
   teyla doctor [--quiet] [--json] [--refresh]                    what must be true here, and the fix for each thing that is not
   teyla remind add "<what>" <YYYY-MM-DD> [--how "..."]            file a dated to-do; doctor WARNs within 30d, FIXes once overdue
   teyla remind list | done <n>                                    everything pending; clear the n-th
-  teyla load [--json] [--record] [--quiet] [--admit KIND] [--wait --kind KIND] [--timeout S] [--cwd DIR]   machine load: snapshot, verdict (exit 0 OK, 1 BUSY, 2 CRITICAL), admission, wait for a slot
+  teyla load [--json] [--record] [--quiet] [--admit KIND] [--wait --kind KIND] [--timeout S] [--cwd DIR] [--replay [--days N | --day D]]   machine load: snapshot, verdict (exit 0 OK, 1 BUSY, 2 CRITICAL), admission, wait for a slot
   teyla guard tick [--quiet] [--dry] | status                    the guard by itself: record, alert file, stop idle Gradle/Kotlin daemons (the load agent runs tick every minute)
   teyla crash [--days N] [--json] [--ack] [--device] [--pull [--quiet]]   after a crash: the panic, the machine's load before it, what to change; --device/--pull: TestFlight device crashes
   teyla storage [--json] [--no-sizes]                             disk and RAM held by agent work: worktrees, build output, caches
   teyla storage clean [--apply] [--auto]                          remove finished worktrees and idle build output (dry run by default)
   teyla storage sims [--reap] [--dry] [--json]                    booted simulators: in use or idle; --reap shuts down the idle ones
   teyla storage sweep [--temp] [--dry] [--json]                   temp build output, old DerivedData, caches and logs agents leave behind
+  teyla storage procs [--kill] [--dry] [--json]                   dev processes an agent left behind; --kill ends them
+  teyla storage apps [--quit] [--dry] [--report [--days N]]       apps you listed, quit when memory is tight; --report: quits and memory freed
+  teyla storage offload --to MOUNT [--only NAME] [--apply] [--undo PATH] [--recover] [--finalize]   move heavy folders to an external drive
+  teyla storage report [--json] [--no-sizes]                      the default: disk and RAM held by agent work
   teyla config show | set KEY=VALUE                               ~/.teyla/config.toml, incl. [env] for launchd/hook runs
   teyla config set safe.enabled=true                              work mode: no network (--allow-network per command), no self-update
   teyla update [--check] [--force] [--wire] [--quiet]            newer release → install, then policy sync/refresh, plugin refresh, routines

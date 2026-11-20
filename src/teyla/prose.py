@@ -17,6 +17,7 @@ the preamble list are English only. One advice line per finding above a threshol
 a group with at least `MIN_REPLIES` replies.
 
     teyla prose [--days 7] [--project SUBSTR] [--json]
+    teyla prose FILE... | -        measure those files (or stdin) as drafts, one row each; exit 1 if one is over a limit
 """
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ import datetime as _dt
 import json
 import re
 import statistics
+import sys
 from collections import Counter
 
 # The policy's ban list (templates/POLICY.md, "Writing and reporting"). English only; matched case-insensitively on
@@ -237,7 +239,47 @@ def digest_candidates(days: int = 7) -> list[dict]:
                  step="teyla prose", cmd=True)]
 
 
+def measure_files(paths: list[str], stdin=None) -> list[dict]:
+    """One row per file (`-` is stdin): name, words, long-sentence share, ban-list hits, preamble, and the findings."""
+    rows = []
+    for path in paths:
+        text = (stdin or sys.stdin).read() if path == "-" else open(path, encoding="utf-8", errors="replace").read()
+        m = measure(text)
+        sents = m["sentences"]
+        long_share = round(sum(w > SENTENCE_WORDS_MAX for w in sents) / len(sents), 3) if sents else 0.0
+        findings = []
+        if m["words"] > REPLY_WORDS_TARGET:
+            findings.append(f"{m['words']} words (reply target {REPLY_WORDS_TARGET})")
+        if long_share > LONG_SENTENCE_SHARE_MAX:
+            findings.append(f"{long_share:.0%} of sentences over {SENTENCE_WORDS_MAX} words")
+        if m["bans"]:
+            findings.append("ban-list: " + ", ".join(f'"{p}" x{n}' for p, n in m["bans"].most_common(5)))
+        if m["preamble"]:
+            findings.append("opens with a preamble")
+        rows.append(dict(file="stdin" if path == "-" else path, words=m["words"], long_sentences=long_share,
+                         bans=dict(m["bans"]), preamble=m["preamble"], findings=findings))
+    return rows
+
+
+def _cmd_prose_files(args) -> int:
+    try:
+        rows = measure_files(args.paths)
+    except OSError as e:
+        print(f"teyla prose: {e}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(rows, indent=1))
+    else:
+        for r in rows:
+            print(f"{r['file']}: {r['words']} words, {r['long_sentences']:.0%} long sentences, {sum(r['bans'].values())} ban-list hits")
+            for f in r["findings"]:
+                print(f"  - {f}")
+    return 1 if any(r["findings"] for r in rows) else 0
+
+
 def cmd_prose(args) -> int:
+    if getattr(args, "paths", None):
+        return _cmd_prose_files(args)
     rep = report(args.days, args.project)
     if args.json:
         rep = dict(rep, harnesses={h: dict(s, top_bans=dict(s["top_bans"])) for h, s in rep["harnesses"].items()},
@@ -251,6 +293,7 @@ def cmd_prose(args) -> int:
 def register(sp):
     q = sp.add_parser("prose", help="how long and how padded the agent's final replies are: words, long sentences, ban-list hits, preambles")
     q.set_defaults(fn=cmd_prose)
+    q.add_argument("paths", nargs="*", metavar="FILE", help="measure these files (`-` is stdin) as drafts instead of reading sessions; exit 1 if one has a finding")
     q.add_argument("--days", type=int, default=7, help="window by message time (default 7)")
     q.add_argument("--project", metavar="SUBSTR", help="only projects whose name contains SUBSTR")
     q.add_argument("--json", action="store_true")

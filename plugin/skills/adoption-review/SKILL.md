@@ -1,6 +1,6 @@
 ---
 name: adoption-review
-description: Review how AI coding sessions were used over the last 30 days with the Teyla CLI (`teyla monitor`), then turn the top three findings into concrete changes (a rule in .claude/rules, a model override, a session split). Needs the `teyla` CLI. Use when asked for an "adoption review", "how am I using AI", "token report" or "teyla report".
+description: Review how AI coding sessions were used over the last 30 days with the Teyla CLI (`teyla monitor`), then turn the top three findings into concrete changes (a rule in .claude/rules, a model override, a session split). Needs the `teyla` CLI. Use when asked for an "adoption review", "how am I using AI", "token report" or "teyla monitor".
 argument-hint: (none) — reviews the last 30 days by default
 ---
 

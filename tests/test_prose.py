@@ -275,3 +275,33 @@ def test_a_sentence_wrapped_over_two_lines_counts_as_one():
     m = measure(line1 + "\n" + line2 + "\n\n- a bullet.\n- another bullet.")
     assert m["sentences"][0] == 40
     assert m["sentences"][1:] == [2, 2]
+
+
+# --- files and stdin ---------------------------------------------------------------------------
+
+def test_prose_measures_a_file_and_exits_1_on_a_finding(tmp_path, capsys):
+    from teyla import cli
+    clean = tmp_path / "clean.md"
+    clean.write_text("Fixed the cache key. The tests pass.\n")
+    padded = tmp_path / "padded.md"
+    padded.write_text("Let me leverage a robust and seamless approach here.\n")
+    assert cli.main(["prose", str(clean)]) == 0
+    assert "clean.md: " in capsys.readouterr().out
+    assert cli.main(["prose", str(padded)]) == 1
+    out = capsys.readouterr().out
+    assert "padded.md" in out and "ban-list" in out and "preamble" in out
+
+
+def test_prose_reads_stdin_and_json(monkeypatch, capsys):
+    import io
+    from teyla import cli
+    monkeypatch.setattr("sys.stdin", io.StringIO("Great question. " + _words(5)))
+    assert cli.main(["prose", "-", "--json"]) == 1
+    rows = json.loads(capsys.readouterr().out)
+    assert rows[0]["file"] == "stdin" and rows[0]["preamble"] is True
+
+
+def test_prose_missing_file_is_exit_2(tmp_path, capsys):
+    from teyla import cli
+    assert cli.main(["prose", str(tmp_path / "nope.md")]) == 2
+    assert "teyla prose:" in capsys.readouterr().err
