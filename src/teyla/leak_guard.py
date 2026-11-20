@@ -571,7 +571,7 @@ class Pub:
         self.stdin = False
         self.refusals: list[str] = []       # why the guard cannot tell what this command publishes
         self.sub_text = False               # a text argument holds a $( ) or backtick substitution
-        self.outgoing: str | None = None    # a push that skips the pre-push gate: the remote whose outgoing commits are scanned
+        self.push: tuple[str | None, list[str], bool] | None = None   # a push that skips the pre-push gate: (remote as typed, source refs, all refs)
 
 
 class Analysis:
@@ -985,21 +985,24 @@ def _hooks_path_config(value: str) -> bool:
     return value.partition("=")[0].strip().lower() == "core.hookspath"
 
 
-# `git push` options that take their value as the next word (so it is not mistaken for the remote name).
-PUSH_VALUE_FLAGS = {"--repo", "-o", "--push-option", "--receive-pack", "--exec", "--signed"}
+# `git push` options that take their value as the next word (so it is not mistaken for the remote name). The
+# optional-value ones (`--signed`, `--force-with-lease`, `--force-if-includes`) carry a value only as `--x=v`.
+PUSH_VALUE_FLAGS = {"--repo", "-o", "--push-option", "--receive-pack", "--exec", "--recurse-submodules"}
 
 
-def _push_skips_the_gate(rest: list[str], hooks_path: bool) -> str | None:
-    """The remote whose outgoing commits to scan when this `git push` skips the pre-push hook
+def _push_skips_the_gate(rest: list[str], hooks_path: bool) -> tuple[str | None, list[str], bool] | None:
+    """(remote as typed or None, source refs, every ref) when this `git push` skips the pre-push hook
     (`--no-verify`, any unambiguous prefix of it, or `-c core.hooksPath=...`), else None. A dry run sends
-    nothing and is not a publication."""
-    no_verify = dry = False
+    nothing and is not a publication. A refspec `+src:dst` names `src`; `:dst` deletes and sends nothing."""
+    no_verify = dry = every = False
     remote = None
+    refs: list[str] = []
+    pos: list[str] = []
     i = 0
     while i < len(rest):
         a = rest[i]
         if a == "--":
-            remote = remote or (rest[i + 1] if i + 1 < len(rest) else None)
+            pos += rest[i + 1:]
             break
         if a.startswith("--"):
             name = a[2:].partition("=")[0]
@@ -1007,23 +1010,68 @@ def _push_skips_the_gate(rest: list[str], hooks_path: bool) -> str | None:
                 no_verify = True
             elif len(name) >= 3 and "dry-run".startswith(name):
                 dry = True
-            elif name == "repo" and "=" in a:
-                remote = remote or a.partition("=")[2]
-            if a in PUSH_VALUE_FLAGS:
-                if a == "--repo" and i + 1 < len(rest):
-                    remote = remote or rest[i + 1]
+            elif name in ("all", "mirror", "tags"):
+                every = True
+            elif name == "repo":
+                if "=" in a:
+                    remote = a.partition("=")[2]
+                elif i + 1 < len(rest):
+                    remote = rest[i + 1]
+            if "=" not in a and a in PUSH_VALUE_FLAGS:
                 i += 1
         elif a.startswith("-") and len(a) > 1:
             if "n" in a[1:] and "o" not in a[1:]:
                 dry = True
             if a == "-o":
                 i += 1
-        elif remote is None:
-            remote = a
+        else:
+            pos.append(a)
         i += 1
     if dry or not (no_verify or hooks_path):
         return None
-    return remote if remote and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", remote) else "origin"
+    if remote is None and pos:
+        remote, pos = pos[0], pos[1:]
+    elif remote is not None and pos:
+        pass                                           # --repo names the destination: every positional is a refspec
+    for spec in pos:
+        src = spec.lstrip("+").partition(":")[0]
+        if not src and ":" in spec:
+            continue                                   # `:dst` deletes a ref
+        if not src:
+            continue
+        if re.search(r"[*?\[]", src):
+            every = True
+        elif not src.startswith("-"):
+            refs.append(src)
+    return remote, refs, every
+
+
+def _git_out(cwd: str | None, env: Env, *args: str) -> str:
+    try:
+        p = subprocess.run(["git", *args], capture_output=True, text=True, timeout=10, cwd=cwd if cwd and os.path.isdir(cwd) else None,
+                           env=dict(env.environ))
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return p.stdout.strip() if p.returncode == 0 else ""
+
+
+def _push_range(push: tuple[str | None, list[str], bool], cwd: str | None, env: Env) -> str:
+    """The revision range a gate-skipping push publishes: every source ref it names (HEAD when it names none,
+    all refs for --all, --mirror, --tags or a glob), minus what the destination already has. The destination is
+    a configured remote (its tracking refs) or, for a URL or a name git does not know, nothing: what another
+    remote already has says nothing about a new destination, so the full history of the pushed refs is scanned. An omitted remote follows git: branch.<b>.pushRemote,
+    remote.pushDefault, branch.<b>.remote, else origin."""
+    remote, refs, every = push
+    if remote is None:
+        branch = _git_out(cwd, env, "symbolic-ref", "--short", "-q", "HEAD")
+        for key in ((f"branch.{branch}.pushremote",) if branch else ()) + ("remote.pushdefault",) + ((f"branch.{branch}.remote",) if branch else ()):
+            remote = _git_out(cwd, env, "config", "--get", key) or None
+            if remote:
+                break
+        remote = remote or "origin"
+    known = bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", remote)) and bool(_git_out(cwd, env, "config", "--get", f"remote.{remote}.url"))
+    srcs = "--all" if every else " ".join(shlex.quote(r) for r in dict.fromkeys(refs)) or "HEAD"
+    return f"{srcs} --not --remotes={remote}" if known else srcs      # a destination git does not know has nothing yet
 
 
 def _git(args: list[str], off: int, cmd: Cmd, an: Analysis) -> None:
@@ -1055,10 +1103,10 @@ def _git(args: list[str], off: int, cmd: Cmd, an: Analysis) -> None:
             continue
         break
     if i < len(args) and args[i] == "push":
-        remote = _push_skips_the_gate(args[i + 1:], hooks_path)
-        if remote is not None:
+        push = _push_skips_the_gate(args[i + 1:], hooks_path)
+        if push is not None:
             pub = Pub("git push (pre-push gate skipped)", cmd)
-            pub.outgoing = remote
+            pub.push = push
             an.pubs.append(pub)
         return
     if i >= len(args) or args[i] not in GIT_TEXT_VERBS:
@@ -1348,10 +1396,10 @@ def decide_bash(command: str, env: Env) -> list[str] | None:
     text = "\n".join(p for p in pieces if p)
     scans: list[tuple[str, str, tuple[str, ...], str | None]] = []       # (names, stdin, scanner args, directory)
     if text.strip():
-        scans.append((", ".join(dict.fromkeys(p.name for p in active if p.outgoing is None)), text, ("--text", "-"), None))
+        scans.append((", ".join(dict.fromkeys(p.name for p in active if p.push is None)), text, ("--text", "-"), None))
     for pub in active:
-        if pub.outgoing is not None:
-            scans.append((pub.name, "", ("--outgoing", pub.outgoing), pub.cmd.cwd))
+        if pub.push is not None:
+            scans.append((pub.name, "", ("--commits", _push_range(pub.push, pub.cmd.cwd, env)), pub.cmd.cwd))
     for names, stdin, sargs, where in scans:
         out = _scan_one(names, stdin, sargs, where, env)
         if out is not None:
@@ -1360,7 +1408,7 @@ def decide_bash(command: str, env: Env) -> list[str] | None:
 
 
 def _scan_one(names: str, text: str, sargs: tuple[str, ...], where: str | None, env: Env) -> list[str] | None:
-    outgoing = sargs[0] == "--outgoing"
+    outgoing = sargs[0] == "--commits"
     try:
         code, lines = run_scanner(text, env, sargs, where)
     except subprocess.TimeoutExpired:
@@ -1374,7 +1422,7 @@ def _scan_one(names: str, text: str, sargs: tuple[str, ...], where: str | None, 
         if outgoing:
             return [f"teyla leak-guard: refused — {names}: the commits it sends have a finding, and the pre-push gate that would catch it is skipped:",
                     *["  " + l for l in lines],
-                    f"  Fix: amend or rewrite the commit so the value is gone (`teyla leak {' '.join(sargs)}` shows it), then push without",
+                    f"  Fix: amend or rewrite the commit so the value is gone (`teyla leak --commits '{sargs[1]}'` shows it), then push without",
                     "  --no-verify or a core.hooksPath override, so the pre-push gate runs as usual."]
         return [f"teyla leak-guard: refused — the text {names} publishes has a finding:", *["  " + l for l in lines],
                 "  Fix: remove the value from the text; reference where it lives instead (a path, a Keychain item name)."]

@@ -103,7 +103,7 @@ match_tokens() {
                 # A push is the pre-push hook's to scan. One that skips the hook (`--no-verify` or an unambiguous
                 # prefix of it, `-c core.hooksPath=...`) is a publication of its own.
                 if has2 git push; then
-                    case "$w" in *" --no-v"*|*[hH]ooks[pP]ath*) tok=1 ;; esac
+                    case "$w" in *" --no-v"*|*[hH][oO][oO][kK][sS][pP][aA][tT][hH]*) tok=1 ;; esac
                 fi ;;
         esac
     fi

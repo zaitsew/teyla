@@ -1013,13 +1013,13 @@ def test_a_push_that_skips_the_pre_push_gate_has_its_commits_scanned(box, comman
     repo = _repo(box, f"note on {TERM}")
     r = box.run(command.format(repo=repo), cwd_override=str(repo))
     refused(r, "git push (pre-push gate skipped)", "pre-push gate", "--no-verify")
-    assert any(c.startswith("leak --outgoing origin") for c in box.scanner_calls()), box.scanner_calls()
+    assert any(c.startswith("leak --commits") for c in box.scanner_calls()), box.scanner_calls()
 
 
 def test_a_clean_push_that_skips_the_gate_passes_after_the_outgoing_scan(box):               # HK-8
     repo = _repo(box, "an ordinary change")
     allowed(box.run("git push --no-verify origin main", cwd_override=str(repo)))
-    assert any(c.startswith("leak --outgoing origin") for c in box.scanner_calls())
+    assert any(c.startswith("leak --commits") for c in box.scanner_calls())
 
 
 @pytest.mark.parametrize("command", ["git push --dry-run --no-verify origin main", "git push -n --no-verify",
@@ -1076,3 +1076,99 @@ def test_a_merge_message_read_from_a_file_is_scanned(box):                      
                                      "gh pr merge 7 --merge", "gh pr view 7 --json mergeable"])
 def test_reads_and_a_merge_with_nothing_to_scan_pass(box, command):                          # HK-2
     allowed(box.run(command))
+
+
+# --- review round: refspecs, destinations, case, optional-value flags -----------------------------------------
+
+def _g(repo, *argv):
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
+    return subprocess.run(["git", "-C", str(repo), *argv], check=True, capture_output=True, text=True, env=env).stdout.strip()
+
+
+def _two_branch_repo(box, topic_message: str) -> pathlib.Path:
+    """main is clean and checked out; `topic` carries the leaking commit."""
+    repo = box.tmp / "repo2"
+    repo.mkdir()
+    _g(repo, "init", "-q", "-b", "main")
+    _g(repo, "config", "user.name", "Dev")
+    _g(repo, "config", "user.email", "dev@users.noreply.github.com")
+    _g(repo, "remote", "add", "origin", "https://example.invalid/o/r.git")
+    _g(repo, "commit", "-q", "--allow-empty", "-m", "clean start")
+    _g(repo, "update-ref", "refs/remotes/origin/main", "HEAD")          # origin already has main
+    _g(repo, "checkout", "-q", "-b", "topic")
+    _g(repo, "commit", "-q", "--allow-empty", "-m", topic_message)
+    _g(repo, "checkout", "-q", "main")
+    return repo
+
+
+@pytest.mark.parametrize("command", ["git push --no-verify origin topic", "git push --no-verify origin +topic:topic",
+                                     "git push --no-verify origin topic:refs/heads/other", "git push --no-verify origin --all",
+                                     "git push --no-verify --mirror origin", "git push --no-verify origin 'refs/heads/*:refs/heads/*'",
+                                     "git push --no-verify origin main topic"])
+def test_every_source_ref_a_push_names_is_scanned_not_only_head(box, command):               # review P1
+    repo = _two_branch_repo(box, f"note on {TERM}")
+    refused(box.run(command, cwd_override=str(repo)), "pre-push gate")
+
+
+def test_a_push_of_a_clean_ref_and_a_deletion_pass(box):
+    repo = _two_branch_repo(box, f"note on {TERM}")
+    allowed(box.run("git push --no-verify origin main", cwd_override=str(repo)))
+    allowed(box.run("git push --no-verify origin :topic", cwd_override=str(repo)))
+
+
+def test_a_url_or_unknown_destination_is_not_compared_with_origin(box):     # review P1
+    repo = _two_branch_repo(box, "clean too")
+    _g(repo, "commit", "-q", "--allow-empty", "-m", f"note on {TERM}")    # a leaking commit on main
+    _g(repo, "update-ref", "refs/remotes/origin/main", "HEAD")             # origin has it already
+    allowed(box.run("git push --no-verify origin main", cwd_override=str(repo)))
+    for dest in ("https://example.invalid/new.git", "newremote", "git@example.invalid:o/new.git"):
+        refused(box.run(f"git push --no-verify {dest} main", cwd_override=str(repo)), "pre-push gate")
+
+
+def test_a_url_push_with_no_remote_at_all_scans_the_full_history(box):                       # review P1
+    repo = box.tmp / "repo3"
+    repo.mkdir()
+    _g(repo, "init", "-q", "-b", "main")
+    _g(repo, "config", "user.name", "Dev")
+    _g(repo, "config", "user.email", "dev@users.noreply.github.com")
+    _g(repo, "commit", "-q", "--allow-empty", "-m", f"old note on {TERM}")
+    _g(repo, "commit", "-q", "--allow-empty", "-m", "newer clean change")
+    refused(box.run("git push --no-verify https://example.invalid/new.git main", cwd_override=str(repo)), "pre-push gate")
+
+
+def test_an_omitted_remote_follows_gits_push_remote_rules(box):                              # review P1
+    repo = _two_branch_repo(box, "clean too")
+    _g(repo, "commit", "-q", "--allow-empty", "-m", f"note on {TERM}")
+    _g(repo, "update-ref", "refs/remotes/origin/main", "HEAD")           # origin has HEAD: scanning origin finds nothing
+    _g(repo, "remote", "add", "backup", "https://example.invalid/b/r.git")
+    allowed(box.run("git push --no-verify", cwd_override=str(repo)))      # nothing else configured for main: origin
+    _g(repo, "config", "branch.main.remote", "backup")
+    refused(box.run("git push --no-verify", cwd_override=str(repo)), "pre-push gate")
+    _g(repo, "config", "--unset", "branch.main.remote")
+    _g(repo, "config", "remote.pushDefault", "backup")
+    refused(box.run("git push --no-verify", cwd_override=str(repo)), "pre-push gate")
+    _g(repo, "config", "branch.main.pushRemote", "origin")                # pushRemote beats pushDefault
+    allowed(box.run("git push --no-verify", cwd_override=str(repo)))
+
+
+@pytest.mark.parametrize("command", ["git -c CORE.HOOKSPATH=/dev/null push origin main", "git -c Core.HooksPath=/dev/null push",
+                                     "git --config-env=CORE.HOOKSPATH=H push origin main"])
+def test_the_hooks_path_key_is_case_insensitive(box, command):                               # review P1
+    repo = _repo(box, f"note on {TERM}")
+    refused(box.run(command, cwd_override=str(repo)), "pre-push gate")
+
+
+def test_the_hooks_path_key_is_case_insensitive_without_teyla(no_teyla_box):                  # review P1
+    r = no_teyla_box.run("git -c CORE.HOOKSPATH=/dev/null push origin main", **no_teyla_box.kw)
+    assert r.returncode == 2 and "cannot be scanned" in r.stderr, r.stderr
+
+
+def test_optional_value_push_flags_do_not_swallow_the_remote():                               # review P2
+    sys.path.insert(0, str(SRC))
+    from teyla import leak_guard
+    for flags in ("--signed", "--force-with-lease", "--force-if-includes", "--signed=if-asked", "--force-with-lease=main:abc"):
+        got = leak_guard._push_skips_the_gate(["--no-verify", *flags.split(), "backup", "main"], False)
+        assert got == ("backup", ["main"], False), (flags, got)
+    got = leak_guard._push_skips_the_gate(["--no-verify", "--recurse-submodules", "check", "-o", "ci.skip", "backup", "topic"], False)
+    assert got == ("backup", ["topic"], False), got
+    assert leak_guard._push_skips_the_gate(["--no-verify", "--tags", "origin"], False) == ("origin", [], True)
