@@ -1,0 +1,122 @@
+{
+  "id": "iphone.products-more",
+  "title": "Products · the rest of the list",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/PortfolioView.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "All products",
+      "large": false,
+      "trailing": "New task",
+      "tab": "products",
+      "kids": [
+        {
+          "t": "use",
+          "c": "iosGroup",
+          "p": {
+            "kids": [
+              {
+                "t": "use",
+                "c": "iosProductRow",
+                "p": {
+                  "name": "Orbit",
+                  "subtitle": "Beta date is open. No commits for 6 days.",
+                  "stageLine": "Earned: prototype",
+                  "health": "off track",
+                  "platforms": [
+                    {
+                      "icon": "iphone",
+                      "tone": "danger"
+                    }
+                  ],
+                  "bars": [
+                    0.4,
+                    0.3,
+                    0.1,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "prs": 0,
+                  "waiting": 1,
+                  "spend": "$0",
+                  "link": "iphone.product"
+                }
+              },
+              {
+                "t": "use",
+                "c": "iosProductRow",
+                "p": {
+                  "name": "Fern",
+                  "subtitle": "Waiting on a tester reply and a digest decision.",
+                  "stageLine": "Earned: beta",
+                  "health": "at risk",
+                  "platforms": [
+                    {
+                      "icon": "iphone"
+                    }
+                  ],
+                  "bars": [
+                    0.1,
+                    0.2,
+                    0.1,
+                    0.3,
+                    0.2,
+                    0.1,
+                    0.2
+                  ],
+                  "prs": 1,
+                  "waiting": 2,
+                  "spend": "$2",
+                  "link": "iphone.product"
+                }
+              },
+              {
+                "t": "use",
+                "c": "iosProductRow",
+                "p": {
+                  "name": "Moss",
+                  "subtitle": "Parked until the spring.",
+                  "health": "parked",
+                  "platforms": [
+                    {
+                      "icon": "iphone"
+                    }
+                  ],
+                  "bars": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "prs": 0,
+                  "waiting": 0,
+                  "spend": "$0",
+                  "link": "iphone.product"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

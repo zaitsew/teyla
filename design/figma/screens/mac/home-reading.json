@@ -1,0 +1,58 @@
+{
+  "id": "mac.home-reading",
+  "title": "Home, reading",
+  "area": "mac",
+  "presentation": "tab",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/HomeView.swift:197"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "home",
+      "badges": {},
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "live": "updating",
+      "kids": [
+        {
+          "t": "use",
+          "c": "macPageHeader",
+          "p": {
+            "title": "Home",
+            "context": "Friday, 20 November 2026"
+          }
+        },
+        {
+          "t": "h",
+          "gap": 8,
+          "align": "center",
+          "kids": [
+            {
+              "t": "icon",
+              "n": "progress.indicator",
+              "size": 12,
+              "c": "text-secondary"
+            },
+            {
+              "t": "text",
+              "v": "Reading your sessions…",
+              "s": "mac-body",
+              "c": "text-secondary"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

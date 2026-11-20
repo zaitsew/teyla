@@ -1,0 +1,53 @@
+{
+  "id": "iphone.decisions-close",
+  "title": "Decisions · suggests closing",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/DecisionsView.swift:124",
+    "apps/ios/Teyla/Core/PhoneDecisions.swift:85"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "Decisions",
+      "large": false,
+      "tab": "decisions",
+      "kids": [
+        {
+          "t": "use",
+          "c": "iosCloseFold",
+          "p": {
+            "count": 3,
+            "open": true,
+            "items": [
+              {
+                "question": "Is the Orbit landing page copy final?",
+                "detail": "Orbit · The page shipped 6 days ago and nobody has edited it."
+              },
+              {
+                "question": "Should Fern get a dark icon?",
+                "detail": "Fern · The question is older than the redesign it asks about."
+              },
+              {
+                "question": "Rename the Quill sync folder?",
+                "detail": "Quill · The sync folder was removed in build 30."
+              }
+            ],
+            "state": "idle"
+          }
+        }
+      ]
+    }
+  }
+}

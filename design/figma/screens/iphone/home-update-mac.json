@@ -1,0 +1,100 @@
+{
+  "id": "iphone.home-update-mac",
+  "title": "Home · update Teyla on your Mac",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/HomeProducts.swift:150"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "tab": "home",
+      "title": "Home",
+      "trailing": "New task",
+      "gap": 16,
+      "kids": [
+        {
+          "t": "use",
+          "c": "iosPulse",
+          "p": {
+            "tiles": [
+              {
+                "label": "Decisions",
+                "value": "6",
+                "detail": "2 since yesterday",
+                "tone": "needs-you",
+                "link": "iphone.decisions"
+              },
+              {
+                "label": "Running",
+                "value": "3",
+                "detail": "agents now"
+              },
+              {
+                "label": "Posts today",
+                "value": "1 of 2",
+                "detail": "one to go"
+              },
+              {
+                "label": "Cash per month",
+                "value": "$412",
+                "detail": "$38 above plan",
+                "tone": "needs-you"
+              },
+              {
+                "label": "Disk free",
+                "value": "118 GB",
+                "detail": "of 460 GB"
+              }
+            ]
+          }
+        },
+        {
+          "t": "use",
+          "c": "iosNext",
+          "p": {
+            "text": "Answer Atlas: which plan the trial ends on",
+            "link": "iphone.decisions"
+          }
+        },
+        {
+          "t": "use",
+          "c": "iosSync",
+          "p": {}
+        },
+        {
+          "t": "use",
+          "c": "iosCard",
+          "p": {
+            "kids": [
+              {
+                "t": "text",
+                "v": "Update Teyla on your Mac",
+                "s": "ios-card-title",
+                "c": "ios-label"
+              },
+              {
+                "t": "text",
+                "v": "Home needs a newer Teyla on your Mac to show your products by users and activity. The rest of the app keeps working.",
+                "s": "ios-body",
+                "c": "ios-label-2",
+                "w": "fill"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

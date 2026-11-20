@@ -1,0 +1,170 @@
+{
+  "id": "iphone.products-attention",
+  "title": "Products · needs attention",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/PortfolioView.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "All products",
+      "trailing": "New task",
+      "tab": "products",
+      "gap": 16,
+      "kids": [
+        {
+          "t": "v",
+          "name": "Headline",
+          "w": "fill",
+          "gap": 4,
+          "kids": [
+            {
+              "t": "text",
+              "v": "1 off track · 2 at risk · 3 on track",
+              "s": "ios-body",
+              "c": "ios-label",
+              "weight": 600,
+              "w": "fill"
+            },
+            {
+              "t": "text",
+              "v": "Stores checked 3 h ago · GitHub checked 5 min ago",
+              "s": "ios-caption",
+              "c": "ios-label-2",
+              "w": "fill"
+            }
+          ]
+        },
+        {
+          "t": "use",
+          "c": "iosNote",
+          "p": {
+            "icon": "megaphone",
+            "text": "3 products have not been tried to sell yet.",
+            "caption": true
+          }
+        },
+        {
+          "t": "use",
+          "c": "iosSegment",
+          "p": {
+            "options": [
+              "All",
+              "Needs attention"
+            ],
+            "selected": "Needs attention"
+          }
+        },
+        {
+          "t": "use",
+          "c": "iosGroup",
+          "p": {
+            "kids": [
+              {
+                "t": "use",
+                "c": "iosProductRow",
+                "p": {
+                  "name": "Orbit",
+                  "subtitle": "Beta date is open. No commits for 6 days.",
+                  "stageLine": "Earned: prototype",
+                  "health": "off track",
+                  "platforms": [
+                    {
+                      "icon": "iphone",
+                      "tone": "danger"
+                    }
+                  ],
+                  "bars": [
+                    0.4,
+                    0.3,
+                    0.1,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "prs": 0,
+                  "waiting": 1,
+                  "spend": "$0",
+                  "link": "iphone.product"
+                }
+              },
+              {
+                "t": "use",
+                "c": "iosProductRow",
+                "p": {
+                  "name": "Pebble",
+                  "subtitle": "Launched. Store listing waits on a name.",
+                  "stageLine": "Earned: launched",
+                  "health": "at risk",
+                  "platforms": [
+                    {
+                      "icon": "iphone"
+                    },
+                    {
+                      "icon": "applewatch",
+                      "tone": "needs-you"
+                    }
+                  ],
+                  "bars": [
+                    0.2,
+                    0.2,
+                    0.5,
+                    0.3,
+                    0.4,
+                    0.6,
+                    0.5
+                  ],
+                  "prs": 2,
+                  "waiting": 1,
+                  "spend": "$6",
+                  "link": "iphone.product"
+                }
+              },
+              {
+                "t": "use",
+                "c": "iosProductRow",
+                "p": {
+                  "name": "Fern",
+                  "subtitle": "Waiting on a tester reply and a digest decision.",
+                  "stageLine": "Earned: beta",
+                  "health": "at risk",
+                  "platforms": [
+                    {
+                      "icon": "iphone"
+                    }
+                  ],
+                  "bars": [
+                    0.1,
+                    0.2,
+                    0.1,
+                    0.3,
+                    0.2,
+                    0.1,
+                    0.2
+                  ],
+                  "prs": 1,
+                  "waiting": 2,
+                  "spend": "$2",
+                  "link": "iphone.product"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

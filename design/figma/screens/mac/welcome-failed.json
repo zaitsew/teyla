@@ -1,0 +1,93 @@
+{
+  "id": "mac.welcome-failed",
+  "title": "Welcome, diagnosis stopped",
+  "area": "mac",
+  "presentation": "cover",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/DiagnosisViews.swift:17"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macBare",
+    "p": {
+      "kids": [
+        {
+          "t": "h",
+          "gap": 12,
+          "align": "center",
+          "kids": [
+            {
+              "t": "use",
+              "c": "brandMark",
+              "p": {
+                "size": 44
+              }
+            },
+            {
+              "t": "text",
+              "v": "Teyla",
+              "s": "mac-page-title",
+              "c": "text",
+              "size": 34
+            }
+          ]
+        },
+        {
+          "t": "text",
+          "v": "Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's waiting on you, and fixes the waste. Nothing about your sessions leaves your Mac unless you turn it on.",
+          "s": "mac-card-title",
+          "c": "text",
+          "w": 560,
+          "align": "center"
+        },
+        {
+          "t": "v",
+          "gap": 12,
+          "align": "center",
+          "kids": [
+            {
+              "t": "h",
+              "gap": 6,
+              "align": "center",
+              "kids": [
+                {
+                  "t": "icon",
+                  "n": "exclamationmark.triangle.fill",
+                  "size": 14,
+                  "c": "danger"
+                },
+                {
+                  "t": "text",
+                  "v": "The diagnosis stopped",
+                  "s": "mac-card-title",
+                  "c": "danger"
+                }
+              ]
+            },
+            {
+              "t": "text",
+              "v": "The teyla command exited with code 2.",
+              "s": "mac-body",
+              "c": "text-secondary",
+              "w": 560,
+              "align": "center"
+            },
+            {
+              "t": "use",
+              "c": "macBtn",
+              "p": {
+                "text": "Try again",
+                "kind": "prominent",
+                "big": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
