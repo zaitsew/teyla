@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Commands that read your sessions reuse what they already parsed.** `teyla spend`, `monitor`, `lanes`, `advise`, `sessions`, `corrections` and `prose` re-parsed every transcript on every run (`teyla spend`: 90.8 s, 619 transcripts, 78.7 s of it in the Claude Code parser, 33 s of that in subagent files), so they timed out at 60 s. A parsed session is now stored per transcript in `~/.teyla/cache/sessions/` (mode 0600) and reused until the transcript, one of its subagent files, the repo list or the parser version changes. A transcript that grew while it was read is never stored. Measured on 2026-11-20: cold run 95.6 s wall (24.2 s CPU) against 76.5 s (22.9 s CPU) with `TEYLA_NO_CACHE=1`, the wall times differing mostly by machine load; warm run 8.8 s. `TEYLA_NO_CACHE=1` turns the cache off. Subagent files skip the JSON parse for lines that cannot be assistant records. `teyla uninstall --keep-data` now removes the cache too.
+
 - **`teyla storage offload --recover` no longer keeps a resolved entry.** An offload that stopped with both the original and the drive copy incomplete stayed in the journal after you repaired it, and blocked every later offload. A repeat `--recover` now decides again and clears it.
 
 - `teyla storage offload --to <mount point>`: move the heavy folders (DerivedData, the Android SDK, the Gradle caches, and with `--with-app-data` the simulators and virtual devices) to an external drive. Dry run by default. Each folder is copied, checked against a manifest digest, switched to a symlink, smoke-tested, and only then is the original deleted; any failure restores it. `--undo PATH`, `--keep` with `--finalize`, and `--recover` after a crash. `teyla doctor` names an unfinished offload.

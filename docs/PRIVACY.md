@@ -4,6 +4,8 @@ Teyla reads your session logs, your repos and your config on your Mac. It has no
 no telemetry and no analytics SDK. It never uploads a transcript. Nothing about your sessions leaves your Mac unless you turn on a feature that says so; today
 that is one row (14, the model brief and ask triage), off by default.
 
+Parsed sessions are cached on your Mac in `~/.teyla/cache/sessions/` (mode 0600, directory 0700; it holds what a parsed session holds, including your turn text), never sent anywhere, and removed by `teyla uninstall`; `TEYLA_NO_CACHE=1` turns it off.
+
 It does make the calls below. Each row names the command that triggers it, the host, what is sent,
 and whether it runs without you asking. "Default on" means it runs with a stock install and no flag.
 
