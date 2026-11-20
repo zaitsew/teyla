@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **`teyla freshness` respects a store hold and counts only app changes for the store.** The session-start banner told every Teyla session to write a What's New and listing text although the owner's policy holds every resubmission: 174 and 113 "user-facing changes", of which most were CLI-only (264 merges since 2026-10-26, 67 touch `apps/ios` or `apps/mac`). `[[freshness.hold]]` (`items`, `since`, `reason`, optional `until`) silences the store items and prints `held since <date>: <reason>` instead; `store_paths` (default `apps/**` when the repo has one) limits the store checks to the shipped app. `teyla whats-new draft` now starts at the same baseline as freshness (the last What's New edit, not the newest version tag) and uses the same filter, so both give one count.
+
 - **`teyla storage offload --recover` no longer keeps a resolved entry.** An offload that stopped with both the original and the drive copy incomplete stayed in the journal after you repaired it, and blocked every later offload. A repeat `--recover` now decides again and clears it.
 
 - `teyla storage offload --to <mount point>`: move the heavy folders (DerivedData, the Android SDK, the Gradle caches, and with `--with-app-data` the simulators and virtual devices) to an external drive. Dry run by default. Each folder is copied, checked against a manifest digest, switched to a symlink, smoke-tested, and only then is the original deleted; any failure restores it. `--undo PATH`, `--keep` with `--finalize`, and `--recover` after a crash. `teyla doctor` names an unfinished offload.
