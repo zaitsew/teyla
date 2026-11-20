@@ -1,0 +1,94 @@
+{
+  "id": "mac.store-paired",
+  "title": "Connect, one more step (Store)",
+  "area": "mac",
+  "presentation": "cover",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/Store/StoreViews.swift:116"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macBare",
+    "p": {
+      "kids": [
+        {
+          "t": "h",
+          "gap": 12,
+          "align": "center",
+          "kids": [
+            {
+              "t": "use",
+              "c": "brandMark",
+              "p": {
+                "size": 44
+              }
+            },
+            {
+              "t": "text",
+              "v": "Teyla",
+              "s": "mac-page-title",
+              "c": "text",
+              "size": 34
+            }
+          ]
+        },
+        {
+          "t": "h",
+          "gap": 6,
+          "align": "center",
+          "kids": [
+            {
+              "t": "icon",
+              "n": "checkmark.circle.fill",
+              "size": 16,
+              "c": "saving"
+            },
+            {
+              "t": "text",
+              "v": "The Mac is paired. One more step.",
+              "s": "mac-section",
+              "c": "text"
+            }
+          ]
+        },
+        {
+          "t": "text",
+          "v": "Choose the Teyla folder in iCloud Drive. The panel opens on it.",
+          "s": "mac-body",
+          "c": "text-secondary",
+          "w": 560,
+          "align": "center"
+        },
+        {
+          "t": "h",
+          "w": 560,
+          "h": 40,
+          "r": "mac-control",
+          "fill": "primary",
+          "align": "center",
+          "justify": "center",
+          "gap": 8,
+          "kids": [
+            {
+              "t": "icon",
+              "n": "folder",
+              "size": 15,
+              "c": "on-primary"
+            },
+            {
+              "t": "text",
+              "v": "Choose folder…",
+              "s": "mac-body",
+              "c": "on-primary",
+              "weight": 500
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

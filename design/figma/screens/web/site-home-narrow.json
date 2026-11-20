@@ -1,0 +1,22 @@
+{
+  "area": "web",
+  "presentation": "push",
+  "id": "web.site-home-narrow",
+  "title": "teyla.dev home, under 704 px",
+  "device": {
+    "w": 390,
+    "h": 4500
+  },
+  "source": [
+    "site/public/index.html:1",
+    "site/public/assets/site.css:1",
+    "site/public/assets/tokens.css:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "siteHome",
+    "p": {
+      "w": 390
+    }
+  }
+}

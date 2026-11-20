@@ -476,9 +476,9 @@ def _teyla_dir(home: pathlib.Path, keep_data: bool) -> list[Step]:
     if not keep_data:
         return steps + [Step("remove", d, "Teyla's state: config, caches, doctor, reminders, intent files (~/.teyla/intent), hooks, wrappers, control plane",
                              lambda: _rm(d))]
-    for p in (d / "hooks", d / "daily.sh", d / "weekly.sh", d / "sims.sh", d / "sweep.sh", d / "load.sh"):
+    for p in (d / "hooks", d / "daily.sh", d / "weekly.sh", d / "sims.sh", d / "sweep.sh", d / "load.sh", d / "cache" / "sessions"):
         if p.exists():
-            steps.append(Step("remove", p, "code, not data (--keep-data keeps the rest)", lambda p=p: _rm(p)))
+            steps.append(Step("remove", p, "a regenerable cache of your session text (--keep-data keeps the rest)" if p.name == "sessions" else "code, not data (--keep-data keeps the rest)", lambda p=p: _rm(p)))
     steps.append(Step("", d, "--keep-data" + (" (including ~/.teyla/intent, your own prompts)" if (d / "intent").is_dir() else "")))
     return steps
 

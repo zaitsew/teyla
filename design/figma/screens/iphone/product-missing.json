@@ -1,0 +1,38 @@
+{
+  "id": "iphone.product-missing",
+  "title": "Product page · no longer in the portfolio",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/ProductDetailView.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "Product",
+      "large": false,
+      "back": "All products",
+      "tab": "products",
+      "kids": [
+        {
+          "t": "use",
+          "c": "iosEmpty",
+          "p": {
+            "icon": "questionmark.folder",
+            "title": "This product is no longer in the portfolio."
+          }
+        }
+      ]
+    }
+  }
+}

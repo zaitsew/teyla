@@ -1,0 +1,21 @@
+{
+  "id": "review-form.ios-point",
+  "title": "Review form, iPhone: Pick a spot",
+  "area": "review-form",
+  "presentation": "push",
+  "source": [
+    "packages/review-ios/Sources/TeylaReview/UI/ReviewOverlay.swift:103",
+    "packages/review-ios/Sources/TeylaReview/Core/ReviewStrings.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "reviewIos",
+    "p": {
+      "step": "point",
+      "mark": "none",
+      "links": {
+        "next": "review-form.ios-comment"
+      }
+    }
+  }
+}
