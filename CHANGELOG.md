@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **`teyla products` and `teyla reviews` answer in about a sixth of the time, and the slow reads now say so.** Both walked every repo one after another (a `./check.sh usage` or a `gh` call each). They now run six at a time, print the rows in the same order, bound each gh call at 30 s, and write a progress line to stderr on a terminal. `teyla products` 41.8 s to 5.9 s and `teyla reviews` 56.6 s to 12.2 s, on this Mac at load 60 to 115, identical output. `teyla start --agent` (now prints a stderr note) and a full `teyla product show <id>` spend that time reading 30 days of sessions (profile: 79 of 93 s in the session adapters, which another change speeds up), so they now print a note on stderr instead of nothing; `product show --quick` skips the read and is documented in the help and `docs/COMMANDS.md`.
+
 - **`teyla storage offload --recover` no longer keeps a resolved entry.** An offload that stopped with both the original and the drive copy incomplete stayed in the journal after you repaired it, and blocked every later offload. A repeat `--recover` now decides again and clears it.
 
 - `teyla storage offload --to <mount point>`: move the heavy folders (DerivedData, the Android SDK, the Gradle caches, and with `--with-app-data` the simulators and virtual devices) to an external drive. Dry run by default. Each folder is copied, checked against a manifest digest, switched to a symlink, smoke-tested, and only then is the original deleted; any failure restores it. `--undo PATH`, `--keep` with `--finalize`, and `--recover` after a crash. `teyla doctor` names an unfinished offload.
