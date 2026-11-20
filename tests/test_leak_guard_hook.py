@@ -74,14 +74,15 @@ class Box:
         p.chmod(0o755)
         return mark
 
-    def payload(self, command=None, tool="Bash", path=None) -> str:
+    def payload(self, command=None, tool="Bash", path=None, cwd=None) -> str:
         ti = {"command": command, "description": "d"} if path is None else {"file_path": str(path)}
-        return json.dumps({"session_id": "s", "cwd": str(self.work), "hook_event_name": "PreToolUse",
+        return json.dumps({"session_id": "s", "cwd": cwd or str(self.work), "hook_event_name": "PreToolUse",
                            "tool_name": tool, "tool_input": ti})
 
-    def run(self, command=None, *, tool="Bash", path=None, args=(), script=HOOK, payload=None, path_dirs=None, **env):
+    def run(self, command=None, *, tool="Bash", path=None, args=(), script=HOOK, payload=None, path_dirs=None,
+            cwd_override=None, **env):
         if payload is None:
-            payload = self.payload(command, tool, path)
+            payload = self.payload(command, tool, path, cwd_override)
         e = {k: v for k, v in os.environ.items()
              if not k.startswith(("TEYLA_", "FAKE_")) and k not in ("PYTHONPATH", "CLAUDE_PLUGIN_ROOT")}
         e.update(HOME=str(self.home), TEYLA_HOME=str(self.home / ".teyla"), TEYLA_PRIVATE_TERMS=str(self.terms),
@@ -983,3 +984,95 @@ def test_an_escaped_backslash_before_t_is_not_a_tab(no_teyla_box):
     assert r.returncode == 2, r.stderr
     r = no_teyla_box.run("cat ~/.aws/creden\\tials", **no_teyla_box.kw)
     assert r.returncode == 2, r.stderr
+
+
+# --- HK-8 and HK-2: a push that skips the pre-push gate, and the merge forms -------------------------------
+
+def _repo(box, message: str) -> pathlib.Path:
+    """A real repo (one remote name, no tracking refs: every commit counts as outgoing) with one commit."""
+    repo = box.tmp / "repo"
+    repo.mkdir()
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
+    for argv in (["init", "-q"], ["config", "user.name", "Dev"], ["config", "user.email", "dev@users.noreply.github.com"],
+                 ["remote", "add", "origin", "https://example.invalid/o/r.git"],
+                 ["commit", "-q", "--allow-empty", "-m", message]):
+        subprocess.run(["git", "-C", str(repo), *argv], check=True, capture_output=True, env=env)
+    return repo
+
+
+BYPASS_PUSHES = [
+    "git push --no-verify origin main", "git push origin main --no-verify", "git push --no-ver origin main",
+    "git push -u --no-verify", "git -c core.hooksPath=/dev/null push origin main",
+    "git -c core.hookspath=/dev/null push", "git --config-env=core.hooksPath=HOOKS push origin main",
+    "git push\t--no-verify\torigin", "git push --no-verif''y origin", "git -C {repo} push --no-verify origin main",
+]
+
+
+@pytest.mark.parametrize("command", BYPASS_PUSHES)
+def test_a_push_that_skips_the_pre_push_gate_has_its_commits_scanned(box, command):          # HK-8
+    repo = _repo(box, f"note on {TERM}")
+    r = box.run(command.format(repo=repo), cwd_override=str(repo))
+    refused(r, "git push (pre-push gate skipped)", "pre-push gate", "--no-verify")
+    assert any(c.startswith("leak --outgoing origin") for c in box.scanner_calls()), box.scanner_calls()
+
+
+def test_a_clean_push_that_skips_the_gate_passes_after_the_outgoing_scan(box):               # HK-8
+    repo = _repo(box, "an ordinary change")
+    allowed(box.run("git push --no-verify origin main", cwd_override=str(repo)))
+    assert any(c.startswith("leak --outgoing origin") for c in box.scanner_calls())
+
+
+@pytest.mark.parametrize("command", ["git push --dry-run --no-verify origin main", "git push -n --no-verify",
+                                     "git push --dry origin main", "git push origin main", "git push -u origin topic",
+                                     "git push --force-with-lease origin topic", "git -c user.name=x push origin main"])
+def test_a_dry_run_and_an_ordinary_push_stay_the_pre_push_hooks_job(box, command):        # HK-8
+    repo = _repo(box, f"note on {TERM}")
+    allowed(box.run(command, cwd_override=str(repo)))
+    assert box.scanner_calls() == []
+
+
+def test_a_gate_skipping_push_is_refused_without_teyla_too(no_teyla_box):                   # HK-8
+    for command in ("git push --no-verify origin main", "git -c core.hooksPath=/dev/null push"):
+        r = no_teyla_box.run(command, **no_teyla_box.kw)
+        assert r.returncode == 2 and "cannot be scanned" in r.stderr, (command, r.stderr)
+    allowed(no_teyla_box.run("git push origin main", **no_teyla_box.kw))
+    allowed(no_teyla_box.run("git push --dry-run origin main", **no_teyla_box.kw))
+
+
+def test_the_skip_prefix_lifts_the_push_scan_and_is_logged(box):                            # HK-8
+    repo = _repo(box, f"note on {TERM}")
+    allowed(box.run("TEYLA_LEAK_GUARD=0 git push --no-verify origin main", cwd_override=str(repo)))
+    assert len(box.skips()) == 1 and box.scanner_calls() == []
+
+
+MERGES = [
+    "gh api -X PUT repos/o/r/pulls/7/merge -f commit_message='{x}'",
+    "gh api --method PUT repos/o/r/pulls/7/merge -F commit_title='{x}'",
+    "gh api repos/o/r/merges -f base=main -f head=topic -f commit_message='{x}'",
+    "gh api repos/o/r/pulls/7/merge --method=PUT --field commit_message='{x}'",
+    "gh\tapi -X PUT repos/o/r/pulls/7/merge -f commit_message='{x}'",
+    "gh pr merge 7 --merge --subject '{x}'",
+    "gh pr merge 7 --body '{x}'",
+    "gh pr merge 7 -b '{x}'",
+    "gh ap''i -X PUT repos/o/r/pulls/7/merge -f commit_message='{x}'",
+]
+
+
+@pytest.mark.parametrize("command", MERGES)
+def test_a_merge_publishes_its_title_and_message_and_they_are_scanned(box, command):        # HK-2
+    refused(box.run(command.format(x=TERM)), "teyla leak-guard")
+    allowed(box.run(command.format(x="merge the topic")))
+
+
+def test_a_merge_message_read_from_a_file_is_scanned(box):                                   # HK-2
+    (box.work / "msg.txt").write_text(f"about {TERM}\n")
+    refused(box.run("gh api -X PUT repos/o/r/pulls/7/merge -F commit_message=@msg.txt"), "gh api")
+    (box.work / "body.json").write_text(json.dumps({"commit_message": f"about {TERM}"}))
+    refused(box.run("gh api -X PUT repos/o/r/pulls/7/merge --input body.json"), "gh api")
+
+
+@pytest.mark.parametrize("command", ["gh api repos/o/r/pulls/7", "gh api repos/o/r/pulls/7/merge",
+                                     "gh api repos/o/r/pulls/7/commits --paginate", "gh api -X PUT repos/o/r/pulls/7/merge",
+                                     "gh pr merge 7 --merge", "gh pr view 7 --json mergeable"])
+def test_reads_and_a_merge_with_nothing_to_scan_pass(box, command):                          # HK-2
+    allowed(box.run(command))

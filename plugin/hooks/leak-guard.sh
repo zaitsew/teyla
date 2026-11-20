@@ -21,6 +21,7 @@
 #
 # The tokens (substring matches over the text after "tool_input" in the JSON payload):
 #   publication  gh .. pr|issue|release|gist|repo|api    git .. commit|tag|merge
+#                git .. push with --no-verify (or a prefix of it) or core.hooksPath: the pre-push gate is skipped
 #   keychain     security .. -password   security .. dump-keychain
 #   visibility   --visibility   visibility=   private=
 #   credentials  .ssh/id_  .aws/credentials  private-terms  PRIVATE_TERMS  .appstoreconnect  .grok/config.toml
@@ -95,10 +96,15 @@ match_tokens() {
         # A text without these substrings cannot hold the words: skip the process.
         # (a coarse substring pre-check first, so `git status` and `ls` start nothing)
         case "$1" in
-            *gh*pr*|*gh*issue*|*gh*release*|*gh*gist*|*gh*repo*|*gh*api*|*git*commit*|*git*tag*|*git*merge*)
+            *gh*pr*|*gh*issue*|*gh*release*|*gh*gist*|*gh*repo*|*gh*api*|*git*commit*|*git*tag*|*git*merge*|*git*push*)
                 w=$(words_of "$1") || { tok=1; w=""; }        # no tr: take it as a token
                 has2 gh pr || has2 gh issue || has2 gh release || has2 gh gist || has2 gh repo || has2 gh api && tok=1
-                has2 git commit || has2 git tag || has2 git merge && tok=1 ;;
+                has2 git commit || has2 git tag || has2 git merge && tok=1
+                # A push is the pre-push hook's to scan. One that skips the hook (`--no-verify` or an unambiguous
+                # prefix of it, `-c core.hooksPath=...`) is a publication of its own.
+                if has2 git push; then
+                    case "$w" in *" --no-v"*|*[hH]ooks[pP]ath*) tok=1 ;; esac
+                fi ;;
         esac
     fi
     if [ "$tok" = 0 ] && [ -n "${TEYLA_PRIVATE_TERMS:-}" ]; then

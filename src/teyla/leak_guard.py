@@ -55,7 +55,8 @@ GH_TEXT_VERBS = {
 GIT_TEXT_VERBS = {"commit", "tag", "merge"}
 GH_TEXT_LONG = {"title", "body", "notes", "message", "comment", "description", "desc", "subject"}
 GH_FILE_LONG = {"body-file", "notes-file", "add"}       # `gh gist edit --add FILE` publishes FILE
-API_TEXT_KEYS = {"body", "title", "message", "description", "text", "note", "content"}
+API_TEXT_KEYS = {"body", "title", "message", "description", "text", "note", "content",
+                 "commit_title", "commit_message"}      # the title and message of a merge (`pulls/N/merge`, `repos/O/R/merges`)
 
 # Credential paths. A pattern must start a path segment. HOME ones count unless the path is inside the repo
 # (a repo's own `.codex/config.toml` is a fixture, not a credential); the private-terms list counts anywhere.
@@ -570,6 +571,7 @@ class Pub:
         self.stdin = False
         self.refusals: list[str] = []       # why the guard cannot tell what this command publishes
         self.sub_text = False               # a text argument holds a $( ) or backtick substitution
+        self.outgoing: str | None = None    # a push that skips the pre-push gate: the remote whose outgoing commits are scanned
 
 
 class Analysis:
@@ -979,8 +981,54 @@ def _gh_api(args: list[str], base: int, cmd: Cmd, an: Analysis) -> None:
         an.pubs.append(pub)
 
 
+def _hooks_path_config(value: str) -> bool:
+    return value.partition("=")[0].strip().lower() == "core.hookspath"
+
+
+# `git push` options that take their value as the next word (so it is not mistaken for the remote name).
+PUSH_VALUE_FLAGS = {"--repo", "-o", "--push-option", "--receive-pack", "--exec", "--signed"}
+
+
+def _push_skips_the_gate(rest: list[str], hooks_path: bool) -> str | None:
+    """The remote whose outgoing commits to scan when this `git push` skips the pre-push hook
+    (`--no-verify`, any unambiguous prefix of it, or `-c core.hooksPath=...`), else None. A dry run sends
+    nothing and is not a publication."""
+    no_verify = dry = False
+    remote = None
+    i = 0
+    while i < len(rest):
+        a = rest[i]
+        if a == "--":
+            remote = remote or (rest[i + 1] if i + 1 < len(rest) else None)
+            break
+        if a.startswith("--"):
+            name = a[2:].partition("=")[0]
+            if len(name) >= 4 and "no-verify".startswith(name) and name.startswith("no-v"):
+                no_verify = True
+            elif len(name) >= 3 and "dry-run".startswith(name):
+                dry = True
+            elif name == "repo" and "=" in a:
+                remote = remote or a.partition("=")[2]
+            if a in PUSH_VALUE_FLAGS:
+                if a == "--repo" and i + 1 < len(rest):
+                    remote = remote or rest[i + 1]
+                i += 1
+        elif a.startswith("-") and len(a) > 1:
+            if "n" in a[1:] and "o" not in a[1:]:
+                dry = True
+            if a == "-o":
+                i += 1
+        elif remote is None:
+            remote = a
+        i += 1
+    if dry or not (no_verify or hooks_path):
+        return None
+    return remote if remote and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", remote) else "origin"
+
+
 def _git(args: list[str], off: int, cmd: Cmd, an: Analysis) -> None:
     i = 0
+    hooks_path = False
     while i < len(args):
         a = args[i]
         if a in ("-C", "--git-dir", "--work-tree"):
@@ -996,12 +1044,23 @@ def _git(args: list[str], off: int, cmd: Cmd, an: Analysis) -> None:
             i += 1
             continue
         if a in ("-c", "--namespace", "--exec-path"):
+            if a == "-c" and i + 1 < len(args) and _hooks_path_config(args[i + 1]):
+                hooks_path = True
             i += 2
             continue
+        if a.startswith("--config-env=") and _hooks_path_config(a.partition("=")[2]):
+            hooks_path = True
         if a.startswith("-"):
             i += 1
             continue
         break
+    if i < len(args) and args[i] == "push":
+        remote = _push_skips_the_gate(args[i + 1:], hooks_path)
+        if remote is not None:
+            pub = Pub("git push (pre-push gate skipped)", cmd)
+            pub.outgoing = remote
+            an.pubs.append(pub)
+        return
     if i >= len(args) or args[i] not in GIT_TEXT_VERBS:
         return
     verb = args[i]
@@ -1220,12 +1279,12 @@ def collect_text(pub: Pub, env: Env) -> list[str]:
 
 # --- the scanner ------------------------------------------------------------------------------------------
 
-def run_scanner(text: str, env: Env) -> tuple[int, list[str]]:
+def run_scanner(text: str, env: Env, args: tuple[str, ...] = ("--text", "-"), cwd: str | None = None) -> tuple[int, list[str]]:
     exe = shutil.which("teyla", path=env.environ.get("PATH"))
     if not exe and os.access(os.path.join(env.home, ".local", "bin", "teyla"), os.X_OK):
         exe = os.path.join(env.home, ".local", "bin", "teyla")        # a uv tool install is not on a GUI app's PATH
-    argv = [exe, "leak", "--text", "-"] if exe else [sys.executable, "-I", "-m", "teyla.leak", "--text", "-"]
-    cwd = env.cwd if os.path.isdir(env.cwd) else None
+    argv = [exe, "leak", *args] if exe else [sys.executable, "-I", "-m", "teyla.leak", *args]
+    cwd = cwd if cwd and os.path.isdir(cwd) else env.cwd if os.path.isdir(env.cwd) else None
     try:
         timeout = int(env.environ.get("TEYLA_LEAK_GUARD_TIMEOUT") or SCAN_TIMEOUT)
     except ValueError:
@@ -1287,11 +1346,23 @@ def decide_bash(command: str, env: Env) -> list[str] | None:
     except Refuse as r:
         return r.lines
     text = "\n".join(p for p in pieces if p)
-    if not text.strip():
-        return None
-    names = ", ".join(dict.fromkeys(p.name for p in active))
+    scans: list[tuple[str, str, tuple[str, ...], str | None]] = []       # (names, stdin, scanner args, directory)
+    if text.strip():
+        scans.append((", ".join(dict.fromkeys(p.name for p in active if p.outgoing is None)), text, ("--text", "-"), None))
+    for pub in active:
+        if pub.outgoing is not None:
+            scans.append((pub.name, "", ("--outgoing", pub.outgoing), pub.cmd.cwd))
+    for names, stdin, sargs, where in scans:
+        out = _scan_one(names, stdin, sargs, where, env)
+        if out is not None:
+            return out
+    return None
+
+
+def _scan_one(names: str, text: str, sargs: tuple[str, ...], where: str | None, env: Env) -> list[str] | None:
+    outgoing = sargs[0] == "--outgoing"
     try:
-        code, lines = run_scanner(text, env)
+        code, lines = run_scanner(text, env, sargs, where)
     except subprocess.TimeoutExpired:
         return [f"teyla leak-guard: refused — the scanner did not answer in time, so {names} is not waved through.", skip_hint(env)]
     except OSError as e:
@@ -1300,6 +1371,11 @@ def decide_bash(command: str, env: Env) -> list[str] | None:
     if code == 0:
         return None
     if code == 1:
+        if outgoing:
+            return [f"teyla leak-guard: refused — {names}: the commits it sends have a finding, and the pre-push gate that would catch it is skipped:",
+                    *["  " + l for l in lines],
+                    f"  Fix: amend or rewrite the commit so the value is gone (`teyla leak {' '.join(sargs)}` shows it), then push without",
+                    "  --no-verify or a core.hooksPath override, so the pre-push gate runs as usual."]
         return [f"teyla leak-guard: refused — the text {names} publishes has a finding:", *["  " + l for l in lines],
                 "  Fix: remove the value from the text; reference where it lives instead (a path, a Keychain item name)."]
     if code == 2:
