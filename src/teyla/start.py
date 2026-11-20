@@ -217,6 +217,15 @@ def _checklist(pl: dict) -> list | None:
 
 
 def cmd_start(args) -> int:
+    from teyla.adapters import cache
+    cache.set_read_only()                   # start changes nothing until the person accepts
+    try:
+        return _cmd_start(args)
+    finally:
+        cache.set_read_only(False)
+
+
+def _cmd_start(args) -> int:
     # stdout stays the card (or the JSON); the wait is announced on stderr. `--json` is read by the apps, so it
     # stays silent there unless stderr is a terminal; `--agent` printed nothing for a minute and now says so.
     if args.agent or not args.json or sys.stderr.isatty():
