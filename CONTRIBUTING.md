@@ -6,6 +6,13 @@
 - New advice rules: one function block in `advise.py` with an id, a severity, an evidence line built from numbers in the metrics dict, and one imperative action. If you cannot point at a number, it is not a rule.
 - Nothing in this repo sends data anywhere. Keep it that way.
 
+## Releasing
+
+- Write the notes first: each change adds a bullet at the top of "## Unreleased" in `CHANGELOG.md`.
+- `scripts/release.sh <version>` does the rest. It runs from a temporary clean worktree at `origin/main`, so a dirty or non-`main` checkout neither blocks it nor leaks into it, and it removes the worktree at the end.
+- It moves "## Unreleased" into a new `## <version> — <date>` heading and leaves an empty "## Unreleased" above it. An empty section is refused.
+- It then bumps the version strings, merges the bump PR (merge, never squash), tags and creates the GitHub release.
+
 ## Keeping the public repo clean
 
 Everything here is public and English. `scripts/leak_check.py` (run by `./check.sh` and the pre-push hook) fails on private terms, real-looking e-mail addresses and home paths, secret-shaped strings, and Cyrillic outside the files listed in `.leak-allow`.

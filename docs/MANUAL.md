@@ -540,9 +540,12 @@ Different machines, different scope: absent harnesses and absent CLIs are INFO l
 failures. A managed laptop with only the Claude Code desktop app and no `gh`, `codex` or
 `grok` is a valid install; doctor says what the second-opinion fallback is there.
 
-Releasing: `scripts/release.sh 0.7.1` runs `./check.sh`, bumps the version strings (package, `__init__`,
-plugin, listing, apps), merges the bump PR, tags, and creates the GitHub release from the laptop
-(no Actions). Every machine's `teyla update` sees it; the script ends by running `teyla update` on
+Releasing: `scripts/release.sh 0.7.1` runs in a temporary clean worktree at `origin/main` (your own
+checkout may be dirty or on any branch; it is not touched, and the worktree is removed at the end).
+It runs `./check.sh`, moves everything under "## Unreleased" in `CHANGELOG.md` into a dated
+`## 0.7.1 — <date>` heading (it refuses when that section is empty), bumps the version strings
+(package, `__init__`, plugin, listing, apps), merges the bump PR, tags, and creates the GitHub release
+from the laptop (no Actions). Every machine's `teyla update` sees it; the script ends by running `teyla update` on
 this Mac. Install a release only with `teyla update`, never a bare `uv tool install --force git+...`:
 that drops the installed extras (`work`, `reel`) and leaves `~/.teyla/installed.json` stale.
 
