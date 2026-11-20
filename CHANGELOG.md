@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **The leak check catches disguised e-mails, home paths and bot tokens.** An address with a zero-width character or a fullwidth `@` passed when no private-terms file was loaded: every line is now read after NFKC normalization with zero-width characters removed. A home path at the end of a line and a Windows one (`C:\Users\<name>`) are caught, and a Telegram bot token is a `secret`. `leak_check.py --text` and `teyla leak --text` now run the same rules, including `secret-generic`. docs/LEAK.md lists what is still not caught (IBANs, phone and card numbers, split or encoded secrets).
+
 - **`teyla storage offload --recover` no longer keeps a resolved entry.** An offload that stopped with both the original and the drive copy incomplete stayed in the journal after you repaired it, and blocked every later offload. A repeat `--recover` now decides again and clears it.
 
 - `teyla storage offload --to <mount point>`: move the heavy folders (DerivedData, the Android SDK, the Gradle caches, and with `--with-app-data` the simulators and virtual devices) to an external drive. Dry run by default. Each folder is copied, checked against a manifest digest, switched to a symlink, smoke-tested, and only then is the original deleted; any failure restores it. `--undo PATH`, `--keep` with `--finalize`, and `--recover` after a crash. `teyla doctor` names an unfinished offload.

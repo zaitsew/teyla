@@ -50,12 +50,17 @@ Beyond text, it reads these structures. Screenshot pixels are never read.
 |---|---|---|
 | `term` | a private term (whole word; `-name-` counts); a `[teyla]` term only inside Teyla's repo | blocker |
 | `email` | an address except `example.*`, noreply and `git@host` | blocker |
-| `home` | `/Users/<x>/` or `/home/<x>/` for a real-looking `<x>` | blocker |
-| `secret` | a key with a known shape (GitHub, Anthropic, AWS, Slack, JWT, PEM, and more) | blocker |
+| `home` | `/Users/<x>`, `/home/<x>` or `C:\Users\<x>`, with or without a trailing separator, for a real-looking `<x>` | blocker |
+| `secret` | a key with a known shape (GitHub, Anthropic, AWS, Slack, Telegram bot token, JWT, PEM, and more) | blocker |
 | `secret-generic` | a `key`, `token` or `password` assignment with a long, high-entropy value and no known prefix | triage |
 | `harness-config`, `image-metadata` | see above | blocker |
 | `gitleaks:<RuleID>` | gitleaks' default rules, when `gitleaks` is on the PATH | blocker |
 | `cyrillic` | any character in U+0400 to U+04FF | lang |
+
+Every line is read after NFKC normalization with the zero-width characters (U+200B to U+200D, U+2060, U+FEFF)
+removed, so an address with a hidden character or a fullwidth `@` is read as the plain address. Line numbers do
+not change. A text (a PR body, a commit message) gets the `secret-generic` rule in both `teyla leak --text` and
+`scripts/leak_check.py --text`: they run the same code.
 
 A **blocker** gives exit 1. **Triage** is listed and never blocks: the aim is that nobody learns to type an
 override. **Lang** is the language policy (`teyla lang` is its home) and never blocks.
@@ -393,6 +398,10 @@ a release asset and the Grep tool are outside it. Wiring for Codex and Grok is i
 hook and `check.sh` need no Teyla install.
 
 ## What it does not do
+
+- It does not catch IBANs, phone numbers or payment card numbers: there is no rule for them.
+- It does not catch a secret split over two lines, or one that is base64-encoded, hex-encoded or otherwise
+  transformed. Only the characters in the normalization above are undone.
 
 - It does not rewrite history and does not rotate a key. A historical finding says to rotate first; removing it
   from history is a separate, deliberate step.
