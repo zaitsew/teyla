@@ -1,0 +1,79 @@
+{
+  "id": "iphone.home",
+  "title": "Home",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": ["apps/ios/Teyla/UI/HomeView.swift:22", "apps/ios/Teyla/UI/HomeProducts.swift:113", "apps/ios/Teyla/App/TeylaApp.swift:83"],
+  "root": { "t": "use", "c": "iosScreen", "p": {
+    "title": "Home",
+    "trailing": "New task",
+    "tab": "home",
+    "badges": { "decisions": 6 },
+    "kids": [
+      { "t": "h", "name": "Stat strip", "w": "fill", "gap": 10, "kids": [
+        { "t": "use", "c": "tile", "p": { "platform": "ios", "label": "Decisions", "value": "6", "detail": "2 since yesterday", "tone": "needs-you" } },
+        { "t": "use", "c": "tile", "p": { "platform": "ios", "label": "Running", "value": "3", "detail": "agents now" } },
+        { "t": "use", "c": "tile", "p": { "platform": "ios", "label": "Posts today", "value": "1 of 2", "detail": "one to go" } }
+      ]},
+      { "t": "h", "name": "Next", "w": "fill", "gap": 10, "pad": [14, 16], "r": "ios-card", "fill": "ios-card", "align": "center", "kids": [
+        { "t": "icon", "n": "arrow.forward.circle.fill", "size": 22, "c": "primary" },
+        { "t": "v", "w": "fill", "gap": 2, "kids": [
+          { "t": "text", "v": "Next", "s": "ios-caption", "c": "ios-label-2" },
+          { "t": "text", "v": "Answer Atlas: which plan the trial ends on", "s": "ios-body", "w": "fill", "weight": 600 }
+        ]},
+        { "t": "icon", "n": "chevron.right", "size": 13, "c": "ios-label-2", "weight": "semibold" }
+      ]},
+      { "t": "text", "v": "Updated from your Mac 2 minutes ago", "s": "ios-caption", "c": "ios-label-2" },
+      { "t": "h", "name": "Period", "w": "fill", "pad": 2, "r": "ios-control", "fill": "ios-fill", "kids": [
+        { "t": "h", "w": "fill", "pad": [6, 0], "r": 7, "fill": "#FFFFFF", "justify": "center", "kids": [{ "t": "text", "v": "Week", "s": "ios-caption", "weight": 600 }] },
+        { "t": "h", "w": "fill", "pad": [6, 0], "justify": "center", "kids": [{ "t": "text", "v": "Month", "s": "ios-caption" }] },
+        { "t": "h", "w": "fill", "pad": [6, 0], "justify": "center", "kids": [{ "t": "text", "v": "Year", "s": "ios-caption" }] }
+      ]},
+      { "t": "v", "name": "People use these", "w": "fill", "gap": 10, "kids": [
+        { "t": "text", "v": "People use these", "s": "ios-section" },
+        { "t": "use", "c": "card", "p": { "platform": "ios", "gap": 0, "pad": [4, 16], "kids": [
+          { "t": "h", "w": "fill", "gap": 12, "pad": [10, 0], "align": "center", "kids": [
+            { "t": "h", "w": 34, "h": 34, "r": 8, "fill": "primary-tint", "justify": "center", "align": "center", "kids": [{ "t": "text", "v": "A", "s": "ios-card-title", "c": "primary" }] },
+            { "t": "v", "w": "fill", "gap": 1, "kids": [
+              { "t": "text", "v": "Atlas", "s": "ios-card-title" },
+              { "t": "text", "v": "412 weekly users · 9 paying", "s": "ios-caption", "c": "ios-label-2" }
+            ]},
+            { "t": "use", "c": "pill", "p": { "text": "Needs you", "tone": "needs-you" } }
+          ]},
+          { "t": "v", "w": "fill", "h": 1, "fill": "ios-separator" },
+          { "t": "h", "w": "fill", "gap": 12, "pad": [10, 0], "align": "center", "kids": [
+            { "t": "h", "w": 34, "h": 34, "r": 8, "fill": "primary-tint", "justify": "center", "align": "center", "kids": [{ "t": "text", "v": "P", "s": "ios-card-title", "c": "primary" }] },
+            { "t": "v", "w": "fill", "gap": 1, "kids": [
+              { "t": "text", "v": "Pebble", "s": "ios-card-title" },
+              { "t": "text", "v": "86 weekly users · in beta", "s": "ios-caption", "c": "ios-label-2" }
+            ]},
+            { "t": "use", "c": "pill", "p": { "text": "Healthy", "tone": "saving" } }
+          ]}
+        ]}}
+      ]},
+      { "t": "v", "name": "Decisions", "w": "fill", "gap": 10, "kids": [
+        { "t": "h", "w": "fill", "align": "baseline", "kids": [
+          { "t": "text", "v": "Decisions", "s": "ios-section" },
+          { "t": "spacer" },
+          { "t": "text", "v": "See all 6", "s": "ios-body", "c": "primary" }
+        ]},
+        { "t": "use", "c": "card", "p": { "platform": "ios", "gap": 6, "kids": [
+          { "t": "text", "v": "ATLAS · DECIDE · 2 DAYS", "s": "ios-caption", "c": "ios-label-2" },
+          { "t": "text", "v": "Should the trial end on the Team plan or the Solo plan?", "s": "ios-card-title", "w": "fill" },
+          { "t": "text", "v": "Proposed: Team plan, so a trial keeps every seat it invited.", "s": "ios-body", "c": "ios-label-2", "w": "fill" }
+        ]}},
+        { "t": "use", "c": "card", "p": { "platform": "ios", "gap": 6, "kids": [
+          { "t": "text", "v": "QUILL · DO · TODAY", "s": "ios-caption", "c": "ios-label-2" },
+          { "t": "text", "v": "Merge the reading-list import once you have tried it", "s": "ios-card-title", "w": "fill" }
+        ]}}
+      ]},
+      { "t": "v", "name": "Being built", "w": "fill", "gap": 10, "kids": [
+        { "t": "text", "v": "Being built", "s": "ios-section" },
+        { "t": "use", "c": "card", "p": { "platform": "ios", "gap": 2, "kids": [
+          { "t": "text", "v": "Quill", "s": "ios-card-title" },
+          { "t": "text", "v": "14 commits this week · TestFlight build 31", "s": "ios-caption", "c": "ios-label-2" }
+        ]}}
+      ]}
+    ]
+  }}
+}
