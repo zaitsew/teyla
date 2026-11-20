@@ -1262,3 +1262,31 @@ def test_all_pushes_branches_only_so_an_unrelated_tag_does_not_block_it(box):
     _g(repo, "commit", "-q", "--allow-empty", "-m", "a clean follow-up")
     allowed(_leak_cmd(box, "git push --no-verify --all origin", repo))
 
+
+
+# --- third review round -----------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("flag", ["--no-dry-run", "--no-porcelain", "--no-dry", "--dry-run --no-dry-run"])
+def test_a_flag_that_undoes_the_probe_cannot_hide_the_push(box, flag):
+    repo = _repo(box, f"note on {TERM}")
+    refused(_leak_cmd(box, f"git push --no-verify {flag} origin main", repo), "pre-push gate")
+
+
+def test_a_user_dry_run_that_the_probe_overrides_is_still_a_dry_run(box):
+    repo = _repo(box, f"note on {TERM}")
+    allowed(box.run("git push --no-verify --dry-run origin main", cwd_override=str(repo)))
+
+
+def test_each_push_url_of_a_remote_has_its_own_history(box):
+    repo = _repo(box, f"note on {TERM}", push_first=True)
+    _g(repo, "config", "--add", "remote.origin.pushurl", f"file://{box.tmp}/repo-origin.git")      # A: has it
+    _g(repo, "config", "--add", "remote.origin.pushurl", _bare(box, "empty-b"))                    # B: empty
+    refused(_leak_cmd(box, "git push --no-verify origin main", repo), "pre-push gate")
+
+
+@pytest.mark.parametrize("command", ["git push --no-verify origin refs/tags/v1:refs/releases/v1",
+                                     "git push --no-verify origin v1:notes/v1"])
+def test_a_tag_message_is_scanned_whatever_name_it_is_pushed_under(box, command):
+    repo = _repo(box, "clean", push_first=True)
+    _g(repo, "tag", "-a", "v1", "-m", f"release note on {TERM}")
+    refused(_leak_cmd(box, command, repo), "annotated tags")

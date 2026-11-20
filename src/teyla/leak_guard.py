@@ -1012,6 +1012,8 @@ def _push_bypass_args(rest: list[str], hooks_path: bool) -> list[str] | None:
                 continue
             if len(name) >= 3 and "dry-run".startswith(name):
                 dry = True
+            elif len(name) >= 4 and name.startswith("no-d") and "no-dry-run".startswith(name):
+                dry = False                            # the last of `--dry-run` and `--no-dry-run` wins
             if name == "quiet":
                 i += 1
                 continue
@@ -1050,7 +1052,7 @@ class PushPlan:
     """What a gate-skipping push would send, as git itself reports it (`git push --dry-run --porcelain`)."""
 
     def __init__(self):
-        self.range = ""                 # a revision range for `teyla leak --commits`; empty when no commit is sent
+        self.ranges: list[str] = []     # one revision range per destination, for `teyla leak --commits`
         self.tags: list[str] = []       # annotated tag objects the push sends (tagger and message)
         self.refusal: list[str] | None = None
 
@@ -1063,7 +1065,9 @@ def _push_plan(pub: Pub, env: Env, skip_hint_text: str) -> PushPlan:
     gopts, pargs = pub.push
     plan = PushPlan()
     cwd = pub.cmd.cwd
-    argv = ["git", *gopts, "push", "--dry-run", "--porcelain", "--no-verify", *pargs]
+    # Our flags come last (before any `--`), so a user's `--no-dry-run` or `--no-porcelain` cannot undo them.
+    cut = pargs.index("--") if "--" in pargs else len(pargs)
+    argv = ["git", *gopts, "push", *pargs[:cut], "--dry-run", "--porcelain", "--no-verify", *pargs[cut:]]
     run_env = dict(env.environ)
     run_env["GIT_TERMINAL_PROMPT"] = "0"
     try:
@@ -1079,37 +1083,44 @@ def _push_plan(pub: Pub, env: Env, skip_hint_text: str) -> PushPlan:
                         skip_hint_text]
         return plan
     lines = p.stdout.split("\n")
-    entries = [m.groups() for m in (PORCELAIN.match(l) for l in lines) if m]
-    if p.returncode != 0 and not any(e[0] == "!" for e in entries):
+    if p.returncode != 0 and not any(PORCELAIN.match(l) and l[0] == "!" for l in lines):
         first = next((l.strip()[:160] for l in p.stderr.splitlines() if l.strip()), f"exit {p.returncode}")
         plan.refusal = [f"teyla leak-guard: refused — `git push --dry-run` failed ({first}), so the guard cannot tell what {pub.name} sends.",
                         "  A push that skips the pre-push gate is not waved through unread. Fix the remote or the refspec, or push without --no-verify.",
                         skip_hint_text]
         return plan
-    url = next((l[3:].strip() for l in lines if l.startswith("To ")), "")
-    include: list[str] = []
-    exclude: list[str] = []
-    fresh = False
-    for flag, src, dst, summary in entries:
-        if flag in ("-", "=", "!"):                    # a deletion, an up-to-date ref and a rejected one send nothing
-            continue
-        sha = _git_out(cwd, env, "rev-parse", "-q", "--verify", f"{src}^{{commit}}")
-        if sha:
-            include.append(sha)
-            m = UPDATE.match(summary)
-            old = _git_out(cwd, env, "rev-parse", "-q", "--verify", f"{m.group(1)}^{{commit}}") if m else ""
-            if old:
-                exclude.append(old)                    # the destination has everything up to `old`
-            else:
-                fresh = True
-        if dst.startswith("refs/tags/") and _git_out(cwd, env, "cat-file", "-t", src) == "tag":
-            plan.tags.append(_git_out(cwd, env, "cat-file", "tag", src))
-    remote = _same_remote(url, gopts, cwd, env) if fresh else ""
-    if include:
-        plan.range = " ".join(dict.fromkeys(include))
-        excl = list(dict.fromkeys(exclude)) + ([f"--remotes={remote}"] if remote else [])
-        if excl:
-            plan.range += " --not " + " ".join(excl)
+    # One block per destination (a remote can have several push URLs, each with its own history).
+    blocks: list[tuple[str, list[tuple[str, str, str, str]]]] = []
+    for l in lines:
+        if l.startswith("To "):
+            blocks.append((l[3:].strip(), []))
+        elif (m := PORCELAIN.match(l)) and blocks:
+            blocks[-1][1].append(m.groups())
+    tags: list[str] = []
+    for url, entries in blocks:
+        include: list[str] = []
+        exclude: list[str] = []
+        fresh = False
+        for flag, src, dst, summary in entries:
+            if flag in ("-", "=", "!"):                # a deletion, an up-to-date ref and a rejected one send nothing
+                continue
+            sha = _git_out(cwd, env, "rev-parse", "-q", "--verify", f"{src}^{{commit}}")
+            if sha:
+                include.append(sha)
+                m = UPDATE.match(summary)
+                old = _git_out(cwd, env, "rev-parse", "-q", "--verify", f"{m.group(1)}^{{commit}}") if m else ""
+                if old:
+                    exclude.append(old)                # the destination has everything up to `old`
+                else:
+                    fresh = True
+            if _git_out(cwd, env, "cat-file", "-t", src) == "tag":      # whatever name it is pushed under
+                tags.append(_git_out(cwd, env, "cat-file", "tag", src))
+        remote = _same_remote(url, gopts, cwd, env) if fresh else ""
+        if include:
+            rng = " ".join(dict.fromkeys(include))
+            excl = list(dict.fromkeys(exclude)) + ([f"--remotes={remote}"] if remote else [])
+            plan.ranges.append(rng + (" --not " + " ".join(excl) if excl else ""))
+    plan.tags = list(dict.fromkeys(t for t in tags if t))
     return plan
 
 
@@ -1460,8 +1471,8 @@ def decide_bash(command: str, env: Env) -> list[str] | None:
             plan = _push_plan(pub, env, skip_hint(env))
             if plan.refusal:
                 return plan.refusal
-            if plan.range:
-                scans.append((pub.name, "", ("--commits", plan.range), pub.cmd.cwd))
+            for rng in dict.fromkeys(plan.ranges):
+                scans.append((pub.name, "", ("--commits", rng), pub.cmd.cwd))
             if plan.tags:
                 scans.append(("git push (annotated tags)", "\n".join(plan.tags), ("--text", "-"), None))
     for names, stdin, sargs, where in scans:
