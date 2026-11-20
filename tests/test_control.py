@@ -13,6 +13,8 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
+import time
 
 import pytest
 
@@ -1877,3 +1879,102 @@ def test_safe_mode_flipped_before_the_act_does_not_use_up_the_approval(product, 
     monkeypatch.setattr(H, "safe_refusal", real)  # the mode allows it again: the same approve works
     assert cli("inbox", "approve", run_id) == 0
     assert (product / "acted.txt").exists()
+
+
+# --- HK-3 / HK-11: the hook must work when the `python3` on PATH has no teyla ----------------------
+
+def _bare_env(tmp_path, home, *, with_teyla):
+    """PATH holds a `python3` that cannot import teyla (isolated, no site, no PYTHONPATH), as a Homebrew
+    python3 on a machine where teyla is a uv tool. With `with_teyla`, a `teyla` console script on PATH names
+    the interpreter that has it, the way a uv tool does."""
+    bin_dir = tmp_path / "bin"; bin_dir.mkdir(exist_ok=True)
+    (bin_dir / "python3").write_text(f'#!/bin/sh\nexec "{sys.executable}" -I -S "$@"\n')
+    (bin_dir / "python3").chmod(0o755)
+    real = tmp_path / "tool-python"
+    real.write_text(f'#!/bin/sh\nPYTHONPATH="{SRC}" exec "{sys.executable}" "$@"\n')
+    real.chmod(0o755)
+    if with_teyla:
+        (bin_dir / "teyla").write_text(f"#!{real}\n")
+        (bin_dir / "teyla").chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("TEYLA_") and k != "PYTHONPATH"}
+    env.update(TEYLA_HOME=str(home), HOME=str(tmp_path / "nohome"), PATH=f"{bin_dir}:/usr/bin:/bin",
+               TEYLA_PYTHON_ROOTS=str(tmp_path))
+    (tmp_path / "nohome").mkdir(exist_ok=True)
+    return env
+
+
+def _run_hook(env, tool_payload):
+    return subprocess.run(["/bin/sh", str(HOOK)], input=json.dumps(tool_payload), text=True,
+                          capture_output=True, env=env, timeout=30)
+
+
+def test_hk3_a_run_marker_is_enforced_with_teylas_own_python_not_the_path_python3(tmp_path):
+    home = tmp_path / "home"; (home / "active-runs").mkdir(parents=True)
+    (home / "active-runs" / "20260910T070000-abc").write_text(f"{os.getpid()}\n")
+    env = _bare_env(tmp_path, home, with_teyla=True)
+    r = _run_hook(env, payload("Bash", {"command": "ls"}))
+    assert r.returncode == 2
+    assert "a run is active but this session has no grants" in r.stderr, r.stderr
+    assert "No module named" not in r.stderr
+
+
+def test_hk3_stale_markers_are_pruned_by_the_same_route(tmp_path):
+    home = tmp_path / "home"; (home / "active-runs").mkdir(parents=True)
+    stale = home / "active-runs" / "20260101T000000-dead"
+    stale.write_text("999999\n")
+    r = _run_hook(_bare_env(tmp_path, home, with_teyla=True), payload("Read", {"file_path": "/tmp/x"}))
+    assert r.returncode == 0 and not stale.exists(), r.stderr
+
+
+def test_hk3_no_teyla_anywhere_fails_open_with_one_line_and_never_crashes(tmp_path):
+    home = tmp_path / "home"; (home / "active-runs").mkdir(parents=True)
+    (home / "active-runs" / "20260910T070000-abc").write_text(f"{os.getpid()}\n")
+    env = _bare_env(tmp_path, home, with_teyla=False)
+    r = _run_hook(env, payload("Bash", {"command": "ls"}))
+    assert r.returncode == 0, r.stderr
+    assert r.stderr.count("\n") == 1 and "no python with the teyla package" in r.stderr
+    assert "Traceback" not in r.stderr and "No module named" not in r.stderr
+
+
+def test_hk3_the_kill_switch_still_denies_with_no_python_at_all(tmp_path):
+    home = tmp_path / "home"; home.mkdir()
+    (home / "KILL").write_text("stop\n")
+    env = _bare_env(tmp_path, home, with_teyla=False)
+    env["PATH"] = "/usr/bin:/bin"
+    r = _run_hook(env, payload("Bash", {"command": "ls"}))
+    assert r.returncode == 2 and "KILL SWITCH" in r.stderr
+
+
+def test_hk3_an_enforcement_crash_is_still_a_refusal(tmp_path):
+    home = tmp_path / "home"; (home / "active-runs").mkdir(parents=True)
+    (home / "active-runs" / "x").write_text(f"{os.getpid()}\n")
+    env = _bare_env(tmp_path, home, with_teyla=False)
+    broken = tmp_path / "broken-python"
+    broken.write_text("#!/bin/sh\nexit 1\n"); broken.chmod(0o755)
+    env["TEYLA_PYTHON"] = str(broken)
+    r = _run_hook(env, payload("Bash", {"command": "ls"}))
+    assert r.returncode == 2 and "enforcement crashed" in r.stderr
+
+
+# --- HK-4: an unparseable marker ---------------------------------------------------------------------
+
+def test_hk4_a_fresh_unparseable_marker_counts_an_old_one_is_removed(tmp_path, monkeypatch):
+    monkeypatch.setenv("TEYLA_HOME", str(tmp_path))
+    d = tmp_path / "active-runs"; d.mkdir()
+    empty = d / "empty"; empty.write_text("")
+    junk = d / "junk"; junk.write_text("not a pid\n")
+    assert S.active_runs() == ["empty", "junk"], "a marker younger than ten minutes may be a run starting up"
+    old = time.time() - 11 * 60
+    os.utime(empty, (old, old)); os.utime(junk, (old, old))
+    assert S.active_runs() == []
+    assert not empty.exists() and not junk.exists()
+
+
+def test_hk4_the_refusal_names_the_marker_file_and_how_to_clear_it(tmp_path):
+    home = tmp_path / "home"; (home / "active-runs").mkdir(parents=True)
+    marker = home / "active-runs" / "20260910T070000-abc"
+    marker.write_text("")
+    r = hook(payload("Bash", {"command": "ls"}), home=home)
+    assert r.returncode == 2
+    assert str(marker) in r.stderr and f"rm {marker}" in r.stderr
+    assert "unset TEYLA_GRANTS" not in r.stderr

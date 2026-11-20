@@ -370,12 +370,24 @@ started. One with quoting is parsed word by word, so `g''h p''r` and `cred''enti
   path (an `echo`, a commit message, a heredoc) is not a read.
 - **Keychain and visibility.** `security find-generic-password|find-internet-password` with `-w` or `-g`,
   `security dump-keychain` and `gh repo edit --visibility public` are refused. `gh repo create --public` is not.
-- **Failure.** A command with no token passes even when the hook errors (one warning line). A command with a
-  token is refused when python3, the `teyla` package or the scanner is missing, crashes or times out, and when
-  the text cannot be read (a `$VAR` or an unreadable `$( )` body, a pipe from an unknown program, a body
-  file that does not exist yet, a `cd` into a variable, a program name that comes from an expansion, `$( )` or
-  `${` in text fed through stdin). Files resolve in the directory the command runs in
-  (`cd`, `git -C`, `env -C`); a link that ends at a credential is a credential.
+- **Failure.** A command with no token passes even when the hook errors (one warning line). The `gh` and
+  `git` tokens are whole words of the command, not substrings: `git log --grep=commit` is not a commit and
+  starts nothing. A command with a token is refused when python3, the `teyla` package or the scanner is
+  missing, crashes or times out, and when the text cannot be read (a `$VAR` or an unreadable `$( )` body, a
+  pipe from an unknown program, a body file that does not exist yet, a `cd` into a variable, a program name
+  that comes from an expansion, `$( )` or `${` in text fed through stdin). Files resolve in the directory
+  the command runs in (`cd`, `git -C`, `env -C`); a link that ends at a credential is a credential.
+  The hook looks for the python that has teyla (`TEYLA_PYTHON`, then the `teyla` executable's shebang,
+  then `python3` if it can import the package). When none is found, a command that only reads
+  (`gh pr|issue view|list|diff|checks|status`, a `gh api` call with no `-X`/`-f`/`-F`/`--input`, `git log`,
+  `show`, `diff`, `status`) goes on with one warning line. A publication (`git push`, `commit`, `tag`,
+  `merge`, `gh pr create|merge|comment`, `gh release`, `gh api -X POST|PUT|PATCH|DELETE`) and any credential
+  read stay refused.
+- **Why an unreadable program name stays refused.** `$PY hi` is refused even with no publication word in
+  sight. The guard's job is to read the text an agent publishes, and a variable can spell `gh` or `git`
+  (`G=git; $G push`) with its subcommand set in another variable, so no match on words can tell the two
+  apart. A command that is not a publication loses one retry: write the program's name out. `$(( ... ))`
+  arithmetic is not an executable and is read as one word; a `$( )` inside it is a command of its own.
 - **Skip once.** Put `TEYLA_LEAK_GUARD=0` first in the command, as an assignment word before the executable
   (or in the hook's environment). Each skipped publication is appended to `$TEYLA_HOME/leak-skips.log`
   (time and kind, never the text). It lifts only the publication scan, never a credential, Keychain or

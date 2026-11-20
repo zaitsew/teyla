@@ -275,6 +275,10 @@ class Lex:
                         if s[self.i + 1] != "\n":
                             part(s[self.i + 1], True)
                         self.i += 2
+                    elif s.startswith("$((", self.i) and self.depth < 8 and self._is_arith(self.i):
+                        start = self.i
+                        self._arith(cur)
+                        part(s[start:self.i])
                     elif d == "$" and s[self.i + 1:self.i + 2] == "(" and self.depth < 8:
                         start = self.i
                         self.i += 2
@@ -289,6 +293,11 @@ class Lex:
                         part(d)
                         self.i += 1
                 self.i += 1
+                continue
+            if s.startswith("$((", self.i) and self.depth < 8 and self._is_arith(self.i):
+                start = self.i
+                self._arith(cur)
+                part(s[start:self.i])
                 continue
             if c == "$" and s[self.i + 1:self.i + 2] == "(" and self.depth < 8:
                 start = self.i
@@ -397,6 +406,50 @@ class Lex:
             part(c)
             self.i += 1
         flush()
+
+    def _is_arith(self, i: int) -> bool:
+        """`$((` opens an arithmetic expansion when the first `)` that closes the inner parentheses is
+        directly followed by another `)`; otherwise it is a command substitution that starts with a
+        subshell, `$( (cmd) )`."""
+        s, depth = self.s, 0
+        for j in range(i + 3, len(s)):
+            if s[j] == "(":
+                depth += 1
+            elif s[j] == ")":
+                if depth == 0:
+                    return s[j + 1:j + 2] == ")"
+                depth -= 1
+        return False
+
+    def _arith(self, cur: Cmd) -> None:
+        """Lex `$(( ... ))` as one word. A `$( )` or backtick inside it is a command of its own and is
+        analysed like any other; the arithmetic itself runs nothing."""
+        s, n = self.s, len(self.s)
+        self.i += 3
+        depth = 0
+        while self.i < n:
+            d = s[self.i]
+            if s.startswith("$((", self.i) and self._is_arith(self.i):
+                self._arith(cur)
+                continue
+            if d == "$" and s[self.i + 1:self.i + 2] == "(":
+                self.i += 2
+                self._sub(cur, ")")
+                continue
+            if d == "`":
+                j = self._backtick_end(self.i)
+                self._backtick(cur, self.i, j)
+                self.i = j + 1
+                continue
+            if d == "(":
+                depth += 1
+            elif d == ")":
+                if depth > 0:
+                    depth -= 1
+                else:
+                    self.i += 2 if s[self.i + 1:self.i + 2] == ")" else 1
+                    return
+            self.i += 1
 
     def _backtick_end(self, start: int) -> int:
         j = start + 1
