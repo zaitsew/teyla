@@ -375,7 +375,11 @@ started. One with quoting is parsed word by word, so `g''h p''r` and `cred''enti
   destination already has. A configured remote is compared with its own tracking refs. A URL, or a name git
   does not know, has nothing yet, so the full history of the pushed refs is scanned. An omitted remote follows
   git: `branch.<b>.pushRemote`, `remote.pushDefault`, `branch.<b>.remote`, else `origin`. `--dry-run` and `-n`
-  send nothing and pass. With no teyla to scan with, the bypass is refused like
+  send nothing and pass. A push with no refspec sends what `remote.<name>.push` names (else `HEAD`). The
+  command's own `-c remote.pushDefault=...` counts like repository config. A remote with a `pushurl` or a
+  `url.*.insteadOf` rewrite is treated as unknown (full history), and the tagger and message of each annotated
+  tag the push sends are scanned even when its commit is already on the remote. With no teyla to scan with,
+  the bypass is refused like
   any publication. `TEYLA_LEAK_GUARD=0` skips it once, on the record.
 - **Credential paths.** `~/.ssh/id_*` (not `.pub`), `~/.aws/credentials`, the private-terms list (and the file
   `$TEYLA_PRIVATE_TERMS` names), `~/.appstoreconnect/`, `~/.grok/config.toml`, `~/.codex/auth.json` and

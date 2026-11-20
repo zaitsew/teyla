@@ -1172,3 +1172,49 @@ def test_optional_value_push_flags_do_not_swallow_the_remote():                 
     got = leak_guard._push_skips_the_gate(["--no-verify", "--recurse-submodules", "check", "-o", "ci.skip", "backup", "topic"], False)
     assert got == ("backup", ["topic"], False), got
     assert leak_guard._push_skips_the_gate(["--no-verify", "--tags", "origin"], False) == ("origin", [], True)
+
+
+# --- second review round: configured push refspecs, command-local config, push URLs, annotated tags ------------
+
+def test_an_argument_less_push_sends_what_remote_push_names(box):                            # review 2 P1
+    repo = _two_branch_repo(box, f"note on {TERM}")
+    allowed(box.run("git push --no-verify origin", cwd_override=str(repo)))
+    _g(repo, "config", "remote.origin.push", "topic")
+    refused(box.run("git push --no-verify origin", cwd_override=str(repo)), "pre-push gate")
+    refused(box.run("git push --no-verify", cwd_override=str(repo)), "pre-push gate")
+    _g(repo, "config", "remote.origin.push", "refs/heads/*:refs/heads/*")
+    refused(box.run("git push --no-verify", cwd_override=str(repo)), "pre-push gate")
+
+
+def test_command_local_config_selects_the_destination(box):                                  # review 2 P1
+    repo = _two_branch_repo(box, "clean too")
+    _g(repo, "commit", "-q", "--allow-empty", "-m", f"note on {TERM}")
+    _g(repo, "update-ref", "refs/remotes/origin/main", "HEAD")           # origin has HEAD
+    _g(repo, "remote", "add", "backup", "https://example.invalid/b/r.git")
+    allowed(box.run("git push --no-verify", cwd_override=str(repo)))
+    refused(box.run("git -c remote.pushDefault=backup push --no-verify", cwd_override=str(repo)), "pre-push gate")
+    refused(box.run("git -c branch.main.pushRemote=backup push --no-verify", cwd_override=str(repo)), "pre-push gate")
+
+
+def test_a_push_url_or_a_url_rewrite_means_the_tracking_refs_say_nothing(box):               # review 2 P1
+    repo = _two_branch_repo(box, "clean too")
+    _g(repo, "commit", "-q", "--allow-empty", "-m", f"note on {TERM}")
+    _g(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    allowed(box.run("git push --no-verify origin main", cwd_override=str(repo)))
+    _g(repo, "config", "remote.origin.pushurl", "https://example.invalid/public/new.git")
+    refused(box.run("git push --no-verify origin main", cwd_override=str(repo)), "pre-push gate")
+    _g(repo, "config", "--unset", "remote.origin.pushurl")
+    allowed(box.run("git push --no-verify origin main", cwd_override=str(repo)))
+    refused(box.run("git -c url.https://example.invalid/new/.insteadOf=https://example.invalid/o/ push --no-verify origin main",
+                    cwd_override=str(repo)), "pre-push gate")
+    _g(repo, "config", "url.https://example.invalid/new/.insteadOf", "https://example.invalid/o/")
+    refused(box.run("git push --no-verify origin main", cwd_override=str(repo)), "pre-push gate")
+
+
+@pytest.mark.parametrize("command", ["git push --no-verify --tags origin", "git push --no-verify origin v1",
+                                     "git push --no-verify origin refs/tags/v1", "git push --no-verify --mirror origin"])
+def test_an_annotated_tag_message_is_scanned_even_when_its_commit_is_clean(box, command):    # review 2 P1
+    repo = _two_branch_repo(box, "clean too")
+    _g(repo, "tag", "-a", "v1", "-m", f"release note on {TERM}")
+    refused(box.run(command, cwd_override=str(repo)), "annotated tags")
+    allowed(box.run("git push --no-verify origin main", cwd_override=str(repo)))
