@@ -42,9 +42,16 @@ git commit -q -m "release $v"
 git push -q -u origin "release-$v"
 # One PR per logical unit, merged not squashed — a release bump is a unit like any other.
 gh pr create --title "release $v" --body "Version bump only. The tag on the merge commit is released from the laptop by scripts/release.sh." >/dev/null
-gh pr merge --merge --delete-branch
+# No --delete-branch: gh would then switch this worktree to local main, which git refuses when main is
+# checked out in another worktree. The PR would merge and the script would stop before the tag.
+if ! gh pr merge --merge; then
+  state=$(gh pr view "release-$v" --json state --jq .state 2>/dev/null || true)
+  [ "$state" = "MERGED" ] || { echo "the release PR was not merged (state: ${state:-unknown})"; exit 1; }
+fi
+# The remote branch is deleted explicitly; a failure here only leaves a stale branch behind.
+git push -q origin --delete "release-$v" || echo "note: could not delete origin/release-$v"
 git fetch -q origin main && git checkout -q --detach origin/main
-git branch -d "release-$v" >/dev/null 2>&1 || true
+git branch -D "release-$v" >/dev/null 2>&1 || true
 git tag -a "v$v" -m "$v"
 git push origin "v$v"
 [ "$(PYTHONPATH=src python3 -m teyla --version)" = "$v" ] || { echo "package version is not $v"; exit 1; }

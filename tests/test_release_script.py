@@ -140,3 +140,15 @@ def test_release_script_text_keeps_its_steps_and_drops_the_clean_main_checks():
     assert "git add CHANGELOG.md" in code
     for step in ("./check.sh", "gh pr create", "gh pr merge --merge", 'git tag -a "v$v"', "gh release create", "teyla update"):
         assert step in code, step
+
+
+def test_release_merge_does_not_switch_branches_and_deletes_the_remote_branch_itself():
+    # `gh pr merge --delete-branch` checks out local main; git refuses that when main is checked out in
+    # another worktree, so the PR merged and the script died before tagging.
+    lines = (SCRIPTS / "release.sh").read_text().splitlines()
+    merges = [ln for ln in lines if "gh pr merge" in ln and not ln.lstrip().startswith("#")]
+    assert merges and all("--delete-branch" not in ln for ln in merges)
+    text = "\n".join(lines)
+    assert 'git push -q origin --delete "release-$v"' in text
+    # a merge that succeeded but reported an error still proceeds to the tag
+    assert "MERGED" in text
