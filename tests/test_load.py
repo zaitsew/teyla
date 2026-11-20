@@ -1050,6 +1050,13 @@ def test_worsening_trips_on_each_signal_alone_and_not_on_a_flat_history():
     assert v3.level == "WORSENING" and "disk 17.5 GB free and falling" in v3.reasons[0] and "under the 8 GB critical line" in v3.reasons[0]
     assert "on this trend full in 15 min" in v3.reasons[0]                              # the slope runs past zero: full, not "-27.5 GB"
     assert load._disk_ahead(6.04) == "6.0 GB free" and load._disk_ahead(-3.8) == "full" and load._disk_ahead(0.0) == "full"
+    lines = load.trend_lines(load.compute_trend(fall, s3, {}), {})
+    assert any("disk forecast: full in 15 min at the current rate" in ln for ln in lines)   # a forecast, not a reading
+    text = load.render(s3, v3, load.compute_trend(fall, s3, {}), {})
+    assert "disk: 17.5 GB free now" in text
+    s4 = now_snap(15, swap_gb=7.0, swap_total_bytes=9 * GIB)
+    mem = load.render(s4, load.assess(s4, {}), None, {}).split("memory: ")[1].splitlines()[0]
+    assert "swap 7.0 GB (" in mem and "% of RAM)" in mem and "of 9.0 GB" not in mem      # one swap format: used, then % of RAM
     out = load.compute_trend([hist_row(14, swapout=0)], now_snap(swapout=30 * 1024 ** 2 * 60), {})
     assert load.assess(now_snap(), {}, out).reasons == ["swap-out 30 MB/s over the last 3 min (worsening ≥ 20 MB/s)"]
     assert load.assess(now_snap(), {"swapout_mb_s": 0}, out).level == "OK"             # 0 = off
