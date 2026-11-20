@@ -46,3 +46,19 @@ def test_a_harmless_command_still_runs():
 def test_the_marker_opts_out():
     assert "_real_kill_guard" not in os.kill.__qualname__
     os.kill(os.getpid(), 0)
+
+
+def test_a_test_may_signal_its_own_child_and_a_timeout_cleans_up():
+    # subprocess.run kills the child on timeout and then waits for it; the guard used to raise in
+    # Popen.kill and the cleanup then hung.
+    import sys
+    with pytest.raises(subprocess.TimeoutExpired):
+        subprocess.run([sys.executable, "-c", "import time; time.sleep(30)"], timeout=0.5)
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    child.kill()
+    assert child.wait(timeout=10) != 0
+
+
+def test_a_pid_the_test_did_not_start_is_still_refused():
+    with pytest.raises(AssertionError, match="real os.kill"):
+        os.kill(os.getppid(), 15)           # the parent of the test run is foreign

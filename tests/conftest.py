@@ -143,9 +143,11 @@ def _refused_call(what):
     return refuse
 
 
-def _real_kill_guard(real_kill):
+def _real_kill_guard(real_kill, spawned=()):
+    """`spawned` holds the pids of the processes this test started: signalling its own child (a subprocess
+    timeout kills it, then waits) is allowed; a pid it did not start is not."""
     def kill(pid, sig):
-        if sig == 0:                    # a liveness probe signals nothing
+        if sig == 0 or pid in spawned:  # a liveness probe signals nothing; a child of the test is the test's own
             return real_kill(pid, sig)
         raise AssertionError(f"a test sent signal {sig} to pid {pid} with the real os.kill: inject a fake `kill` "
                              "(mark the test @pytest.mark.real_process_calls only if it signals its own child)")
@@ -167,7 +169,8 @@ def _no_real_kill_quit_or_notify(request, monkeypatch):
     from teyla import guard, storage_apps, storage_procs
     real_kill, real_quit = os.kill, storage_apps.quit_bundle
     quit_refused = _refused_call("app quit (storage_apps.quit_bundle)")
-    kill_guard = _real_kill_guard(real_kill)
+    spawned: set[int] = set()
+    kill_guard = _real_kill_guard(real_kill, spawned)
     monkeypatch.setattr(os, "kill", kill_guard)
     monkeypatch.setattr(storage_apps, "quit_bundle", quit_refused)
     # The dataclass __init__ of Ctx and Env holds the real callables as default arguments: replace those too.
@@ -185,6 +188,7 @@ def _no_real_kill_quit_or_notify(request, monkeypatch):
                                           and len(argv) > 1 and str(argv[1]) in _LAUNCHCTL_WRITES):
                 raise AssertionError(f"a test reached the real {tool}: {' '.join(map(str, argv))}")
             super().__init__(cmd, *a, **k)
+            spawned.add(self.pid)
     monkeypatch.setattr(subprocess, "Popen", Popen)
 
 
