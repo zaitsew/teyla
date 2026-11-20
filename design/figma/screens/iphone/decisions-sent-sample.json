@@ -1,0 +1,78 @@
+{
+  "id": "iphone.decisions-sent-sample",
+  "title": "Decisions · sample",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/Components.swift:109",
+    "apps/ios/Teyla/App/TeylaApp.swift:107"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosSampleScreen",
+    "p": {
+      "title": "Decisions",
+      "large": false,
+      "tab": "decisions",
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "kids": [
+        {
+          "t": "v",
+          "name": "Decide",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Decide",
+                "count": 3
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosQuestionCard",
+              "p": {
+                "product": "Atlas",
+                "age": "2d",
+                "unblocks": "the trial change",
+                "question": "Should the trial end on the Team plan or the Solo plan?",
+                "context": "Today a trial ends on Solo, and 31% of trials that invited a teammate lose that seat. Team keeps every invited seat for 14 days.",
+                "proposed": "Team plan, so a trial keeps every seat it invited.",
+                "why": "Seats lost at trial end: 31% in the last 30 days.",
+                "options": [
+                  "Team plan",
+                  "Solo plan"
+                ],
+                "state": "sample",
+                "sentText": "Team plan, so a trial keeps every seat it invited."
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosQuestionCard",
+              "p": {
+                "product": "Pebble",
+                "age": "1d",
+                "question": "Which name goes on the store listing?",
+                "context": "The listing needs a name by Friday. Both options fit in 30 characters.",
+                "proposed": "Pebble: Notes that stay",
+                "why": "It names the product and the promise in one line.",
+                "options": [
+                  "Pebble: Notes that stay",
+                  "Pebble"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

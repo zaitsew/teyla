@@ -1,0 +1,69 @@
+{
+  "id": "iphone.decisions-older",
+  "title": "Decisions · Older",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/DecisionsView.swift:84"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "Decisions",
+      "large": false,
+      "tab": "decisions",
+      "kids": [
+        {
+          "t": "use",
+          "c": "iosFold",
+          "p": {
+            "title": "Older · 2",
+            "open": true,
+            "kids": [
+              {
+                "t": "use",
+                "c": "iosQuestionCard",
+                "p": {
+                  "product": "Fern",
+                  "age": "9d",
+                  "question": "Keep the weekly digest email or drop it?",
+                  "context": "Nobody opened the last three digests.",
+                  "proposed": "Drop it for now.",
+                  "options": [
+                    "Keep",
+                    "Drop"
+                  ]
+                }
+              },
+              {
+                "t": "use",
+                "c": "iosQuestionCard",
+                "p": {
+                  "product": "Orbit",
+                  "age": "12d",
+                  "question": "Which launch date for the Orbit beta?",
+                  "context": "Two dates are open: 3 Dec and 10 Dec.",
+                  "options": [
+                    "3 Dec",
+                    "10 Dec"
+                  ]
+                }
+              }
+            ],
+            "detail": "waiting more than 7 days"
+          }
+        }
+      ]
+    }
+  }
+}

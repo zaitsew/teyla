@@ -34,6 +34,18 @@ paths = [
 
 # `teyla freshness`: each README screenshot is judged by the sources that draw that screen, not by every
 # change in the repo. An image goes stale after 5 user-facing changes to its surface.
+# The store checks (What's New, listing text, store screenshots) count only changes to the shipped apps; a
+# CLI-only merge does not make them stale.
+[freshness]
+store_paths = ["apps/ios/**", "apps/mac/**"]
+
+# The owner's policy holds every Teyla resubmission until he says otherwise (docs/APP-STORE.md). Remove this
+# table, or set `until`, when the hold ends.
+[[freshness.hold]]
+items = ["whats-new", "listing"]
+since = 2026-10-27
+reason = "seller-account submission hold (owner's policy): no Teyla resubmission without the owner's word"
+
 [freshness.surfaces]
 "docs/img/mac/**" = ["apps/mac/Teyla/**"]
 "docs/img/ios/**" = ["apps/ios/Teyla/**", "apps/ios/TeylaWidget/**", "apps/ios/Shared/**"]

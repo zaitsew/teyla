@@ -1,0 +1,31 @@
+{
+  "area": "web",
+  "presentation": "push",
+  "id": "web.start-refreshing",
+  "title": "Start, refreshing",
+  "device": {
+    "w": 1440,
+    "h": 1150
+  },
+  "source": [
+    "src/teyla/web/app.js:151",
+    "src/teyla/web/app.css:1",
+    "src/teyla/web/index.html:14"
+  ],
+  "root": {
+    "t": "use",
+    "c": "browser",
+    "p": {
+      "url": "127.0.0.1:8421/#start",
+      "kids": [
+        {
+          "t": "use",
+          "c": "webStart",
+          "p": {
+            "state": "refreshing"
+          }
+        }
+      ]
+    }
+  }
+}

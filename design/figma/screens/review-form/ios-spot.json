@@ -1,0 +1,22 @@
+{
+  "id": "review-form.ios-spot",
+  "title": "Review form, iPhone: Spot chosen",
+  "area": "review-form",
+  "presentation": "overlay",
+  "source": [
+    "packages/review-ios/Sources/TeylaReview/UI/ReviewOverlay.swift:103",
+    "packages/review-ios/Sources/TeylaReview/Core/ReviewStrings.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "reviewIos",
+    "p": {
+      "step": "point",
+      "mark": "spot",
+      "links": {
+        "next": "review-form.ios-comment",
+        "exit": "close"
+      }
+    }
+  }
+}

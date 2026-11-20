@@ -1,6 +1,6 @@
 """`teyla load` — how loaded this machine is right now, a verdict, a recorder and a wait-for-a-slot.
 
-    teyla load [--json] [--record] [--quiet]     snapshot + verdict; exit 0 OK, 1 BUSY, 2 CRITICAL
+    teyla load [--json] [--record] [--quiet]     snapshot + verdict; exit 0 OK, 1 BUSY or HOLD, 2 CRITICAL
     teyla load --admit build|sim|lane            silent exit 0 when allowed; the refusal and exit 2 when not
     teyla load --wait --kind build|sim|lane      poll until a slot is free (exit 0) or the timeout (exit 3)
     teyla load --replay [--days N] [--day D]     the verdict and the admissions over the recorded days
@@ -127,6 +127,7 @@ from .storage_procs import parse_etime, run_command
 GIB = 1024 ** 3
 KIB = 1024
 OK, BUSY, WORSENING, CRITICAL = "OK", "BUSY", "WORSENING", "CRITICAL"
+HOLD = "HOLD"                                   # shown only: the machine reads OK or BUSY, a hold after a bad sample still runs
 EXIT = {OK: 0, BUSY: 1, WORSENING: 1, CRITICAL: 2}
 BAD = (WORSENING, CRITICAL)                    # the levels that start a hold
 EXIT_TIMEOUT = 3
@@ -245,13 +246,27 @@ class Verdict:
 
     @property
     def exit_code(self) -> int:
-        return EXIT[self.level]
+        return EXIT.get(self.level, 1)      # HOLD (shown only) exits 1, like BUSY
 
     def line(self) -> str:
         return f"load: {self.level}" + (" — " + "; ".join(self.reasons) if self.reasons else "")
 
     def to_json(self) -> dict:
         return {"level": self.level, "reasons": list(self.reasons)}
+
+
+def with_hold(verdict: Verdict, trend: "Trend | None") -> Verdict:
+    """The verdict as shown to a person while a hold runs. After a CRITICAL or WORSENING sample the guard
+    refuses new simulators and builds for `hold_min` minutes even when the machine reads OK or BUSY now;
+    a first line of "load: OK" next to "hold: ... wait 3 more min" said two things. The level becomes
+    HOLD (exit 1, like BUSY), the reasons name the wait, and the machine's own reasons follow. A verdict
+    that is already CRITICAL or WORSENING is returned as it is. Never recorded: `load.tsv` keeps the
+    machine's level, which the hold itself reads."""
+    left = trend.hold_left_s() if trend is not None else None
+    if left is None or verdict.level in BAD:
+        return verdict
+    wait = f"builds and simulators wait {math.ceil(left / 60)} min (after {trend.held_level} {int(trend.held_ago_s // 60)} min ago)"
+    return Verdict(HOLD, [wait] + list(verdict.reasons), 0, list(verdict.worsening))
 
 
 # --- configuration -----------------------------------------------------------------------------
@@ -1804,22 +1819,26 @@ def cmd_load(args, run: Runner = run_command) -> int:
         except OSError as e:
             print(f"teyla load: could not record: {e}", file=sys.stderr)
     bypassed, _ = report_bypassed(snap, verdict.level, log=False)
+    shown = with_hold(verdict, trend)
     if args.json:
-        print(json.dumps({"snapshot": snap.to_json(), "verdict": verdict.to_json(),
+        vj = verdict.to_json()      # `level` stays the machine's own level; `hold` says whether admission is held
+        left = trend.hold_left_s() if trend is not None else None
+        vj["hold"] = None if left is None else {"level": trend.held_level, "left_min": math.ceil(left / 60)}
+        print(json.dumps({"snapshot": snap.to_json(), "verdict": vj,
                           "trend": trend.to_json() if trend else None, "bypassed": bypassed}, indent=1))
         return 0
     if args.quiet:
         return 0
-    print(render(snap, verdict, trend, conf, bypassed))
+    print(render(snap, shown, trend, conf, bypassed))
     recent = decision_summary()
     if recent:
         print(recent)
-    return verdict.exit_code
+    return shown.exit_code
 
 
 def register(sp):
     q = sp.add_parser("load", help="machine load: snapshot, verdict, recorder, admission check and wait-for-a-slot",
-                      description=__doc__.split("\n\n")[0] + "\n\nExit codes: 0 OK, 1 BUSY, 2 CRITICAL (--admit: 2 refused; --wait: 3 timeout).")
+                      description=__doc__.split("\n\n")[0] + "\n\nExit codes: 0 OK, 1 BUSY, WORSENING or HOLD (a hold after a bad sample is still running), 2 CRITICAL (--admit: 2 refused; --wait: 3 timeout).")
     q.set_defaults(fn=cmd_load)
     q.add_argument("--json", action="store_true", help="the snapshot and the verdict as JSON (exit 0)")
     q.add_argument("--record", action="store_true", help="append one line to ~/.teyla/load.tsv")

@@ -16,6 +16,7 @@ the tool named in `~/.teyla/platform.toml` and reads the JSON it prints.
     [apple]
     release_tool = "/path/to/your-release-script"
     tester = "you@example.com"          # the email the TestFlight app is signed in with
+    testflight_workers = 4              # optional: products checked at once, 1 to 8
 
     # <repo>/teyla.toml
     [release]
@@ -227,22 +228,59 @@ def check_china(manifest: dict, cfg: dict) -> dict | None:
                 line=f"{name}  still available in China mainland (CHN), against POLICY §15: {CHINA_FIX}")
 
 
-def run_china(paths: list[str] | None = None) -> list[dict]:
+DEFAULT_WORKERS = 4
+MAX_WORKERS = 8
+
+
+def _workers(cfg: dict) -> int:
+    """`[apple] testflight_workers` from platform.toml, clamped to 1..8; 4 when unset or not a number."""
+    raw = (cfg.get("apple") or {}).get("testflight_workers", DEFAULT_WORKERS)
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return DEFAULT_WORKERS
+    return max(1, min(MAX_WORKERS, raw))
+
+
+def _progress(count: int, quiet: bool = False) -> None:
+    """One line on stderr for a sweep of several products, only on a terminal (never with --json/--quiet)."""
+    if count > 1 and not quiet and sys.stderr.isatty():
+        print(f"checking {count} products in App Store Connect\u2026", file=sys.stderr, flush=True)
+
+
+def _check_many(items: list, check, cfg: dict, workers: int) -> list[dict]:
+    """Run `check(manifest, cfg)` for each item, `workers` at a time. An item that is already a row (a
+    dict with a `verdict`) passes through. Rows come back in input order; a check that raises becomes an
+    error row for that product and never stops the rest."""
+    def one(item):
+        if "verdict" in item:
+            return item
+        try:
+            return check(item, cfg)
+        except Exception as e:  # noqa: BLE001 - one product must not take the sweep down
+            return _error(item, f"check failed: {e}")
+    todo = [i for i in items if "verdict" not in i]
+    if len(todo) <= 1 or workers <= 1:
+        return [one(i) for i in items]
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(workers, len(todo))) as pool:
+        return list(pool.map(one, items))
+
+
+def run_china(paths: list[str] | None = None, quiet: bool = False) -> list[dict]:
     from . import platform as platform_mod
     cfg = platform_mod.load()
-    rows = []
+    items = []
     for mp in productize.find_manifests(paths):
         m = productize.parse(mp)
         if "error" in m:
             if paths:
-                rows.append(_error(m, f"teyla.toml does not parse: {m['error']}"))
+                items.append(_error(m, f"teyla.toml does not parse: {m['error']}"))
             continue
         if not in_scope(m):
             continue
-        row = check_china(m, cfg)
-        if row is not None:
-            rows.append(row)
-    return rows
+        items.append(m)
+    _progress(len(items), quiet)
+    rows = _check_many(items, check_china, cfg, _workers(cfg))
+    return [r for r in rows if r is not None]
 
 
 def china_problem_lines(rows: list[dict]) -> list[tuple[str, str]]:
@@ -505,10 +543,10 @@ def _platform_path() -> str:
     return str(platform_mod.PLATFORM_PATH).replace(str(pathlib.Path.home()), "~")
 
 
-def run(paths: list[str] | None = None) -> list[dict]:
+def run(paths: list[str] | None = None, quiet: bool = False) -> list[dict]:
     from . import platform as platform_mod
     cfg = platform_mod.load()
-    rows = []
+    items = []
     for mp in productize.find_manifests(paths):
         m = productize.parse(mp)
         if "error" in m:
@@ -516,12 +554,13 @@ def run(paths: list[str] | None = None) -> list[dict]:
             # command line, it is an error row, never a silent pass (caught in review, P2);
             # in the sweep over every repo, `teyla productize` already reports it.
             if paths:
-                rows.append(_error(m, f"teyla.toml does not parse: {m['error']}"))
+                items.append(_error(m, f"teyla.toml does not parse: {m['error']}"))
             continue
         if not in_scope(m):
             continue
-        rows.append(check_product(m, cfg))
-    return rows
+        items.append(m)
+    _progress(len(items), quiet)
+    return _check_many(items, check_product, cfg, _workers(cfg))
 
 
 def exit_code(rows: list[dict]) -> int:
@@ -640,17 +679,17 @@ def cmd_testflight(args):
         print("teyla: no teyla.toml at " + ", ".join(args.paths), file=sys.stderr)
         return 2
     if getattr(args, "china", False) and not quiet:   # --quiet always includes the check
-        china = run_china(args.paths or None)
+        china = run_china(args.paths or None, quiet=getattr(args, "json", False))
         if getattr(args, "json", False):
             print(json.dumps([{k: v for k, v in r.items() if k != "lines"} for r in china], indent=2))
         else:
             print("".join(f"{line}\n" for r in china for line in r["lines"]), end="")
         return 1 if china else 0
-    rows = run(args.paths or None)
+    rows = run(args.paths or None, quiet=quiet or getattr(args, "json", False))
     if not args.paths:
         write_cache(rows)      # a run scoped to some repos would drop the others' builds (review P2)
     if quiet:
-        china = run_china(args.paths or None)
+        china = run_china(args.paths or None, quiet=True)
         write_problems(rows, china_rows=china)
         return exit_code(rows) or (1 if china else 0)
     if getattr(args, "json", False):
@@ -663,8 +702,8 @@ def cmd_testflight(args):
 def register(sp):
     q = sp.add_parser("testflight", help="did the build reach a person: newest upload vs newest build your tester can install")
     q.set_defaults(fn=cmd_testflight)
-    q.add_argument("paths", nargs="*")
-    q.add_argument("--json", action="store_true")
+    q.add_argument("paths", nargs="*", help="repos to check (default: every product in your repos root)")
+    q.add_argument("--json", action="store_true", help="print the rows as JSON (same shape as before; progress notes go to stderr only on a terminal)")
     q.add_argument("--quiet", action="store_true", help="print nothing; write ~/.teyla/testflight.problems (removed when every platform is current)")
     q.add_argument("--china", action="store_true", help="only check that no product is still available in China mainland (CHN), POLICY \u00a715; silent when none is")
     q.add_argument("--allow-network", action="store_true", help="safe mode: let the release tool reach App Store Connect this once")

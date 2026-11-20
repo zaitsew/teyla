@@ -1,0 +1,27 @@
+{
+  "id": "review-form.mac-saved",
+  "title": "Review form, Mac: Saved, not sent",
+  "area": "review-form",
+  "presentation": "overlay",
+  "device": {
+    "w": 1000,
+    "h": 660
+  },
+  "source": [
+    "packages/review-ios/Sources/TeylaReview/UI/ReviewOverlay.swift:74",
+    "packages/review-ios/Sources/TeylaReview/UI/ReviewPlatform.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "reviewMac",
+    "p": {
+      "step": "done",
+      "mark": "spot",
+      "text": "The Quill export button does nothing when I tap it twice.",
+      "outcome": "saved",
+      "links": {
+        "done": "close"
+      }
+    }
+  }
+}
