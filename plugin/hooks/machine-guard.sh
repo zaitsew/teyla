@@ -144,6 +144,33 @@ kinds=$(printf '%s' "$payload" | awk '
     }
     return o
   }
+  # The script of `eval A B C`: every argument, unquoted one by one and joined with spaces, as eval joins
+  # them. (`eval "echo ready;" "xcodebuild test"` runs the second string too.)
+  function all_args(r,    o, rest, q, i, len, ch, nx, arg, n) {
+    o = ""; rest = r
+    while (1) {
+      sub(/^[ \t]+/, "", rest)
+      if (rest == "") break
+      q = substr(rest, 1, 1); len = length(rest); arg = ""
+      if (q == "\"" || q == "\047") {
+        for (i = 2; i <= len; i++) {
+          ch = substr(rest, i, 1)
+          if (q == "\"" && ch == "\\") {
+            nx = substr(rest, i + 1, 1)
+            if (nx == "\"" || nx == "\\" || nx == "$") { arg = arg nx; i++; continue }
+            arg = arg ch; continue
+          }
+          if (ch == q) break
+          arg = arg ch
+        }
+        rest = substr(rest, i + 1)
+      } else {
+        match(rest, /^[^ \t]+/); arg = substr(rest, 1, RLENGTH); rest = substr(rest, RLENGTH + 1)
+      }
+      o = o (o == "" ? "" : " ") arg
+    }
+    return o
+  }
   # Where the heavy command runs: the last `cd`/`pushd` before it, joined to the session cwd. A
   # target the hook cannot know ($VAR, a backtick, `cd -`) is UNK, printed as an empty dir.
   function chdir(t) {
@@ -266,12 +293,12 @@ kinds=$(printf '%s' "$payload" | awk '
         lit = lit ch; continue
       }
       if (ch == "\"" || ch == "\047") {
-        if (cmd != "" && gap ~ /[^ \t\n,]/) { classify(cmd, depth + 1); cmd = "" }
+        if (cmd != "" && gap ~ /[^ \t\n,]/) { run(cmd, depth + 1); cmd = "" }
         q = ch; lit = ""; continue
       }
       gap = gap ch
     }
-    if (cmd != "") classify(cmd, depth + 1)
+    if (cmd != "") run(cmd, depth + 1)
   }
   function run(script, depth,    segs, n, i) {
     n = qsplit(strip_heredocs(script), segs)
@@ -321,7 +348,7 @@ kinds=$(printf '%s' "$payload" | awk '
       rest = ""
       for (i = p + 1; i <= m; i++) rest = rest (rest == "" ? "" : " ") tok[i]
       saved = curdir
-      if (depth < 4) run(script_of(rest), depth + 1)
+      if (depth < 4) run(all_args(rest), depth + 1)
       curdir = saved
       return
     }
