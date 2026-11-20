@@ -1,0 +1,158 @@
+{
+  "id": "iphone.home-sample",
+  "title": "Home · sample",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/HomeView.swift:173",
+    "apps/ios/Teyla/Core/Sample.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosSampleScreen",
+    "p": {
+      "title": "Home",
+      "trailing": "New task",
+      "tab": "home",
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "gap": 16,
+      "kids": [
+        {
+          "t": "use",
+          "c": "iosPulse",
+          "p": {
+            "tiles": [
+              {
+                "label": "Decisions",
+                "value": "6",
+                "detail": "2 since yesterday",
+                "tone": "needs-you",
+                "link": "iphone.decisions"
+              },
+              {
+                "label": "Running",
+                "value": "3",
+                "detail": "agents now"
+              },
+              {
+                "label": "Posts today",
+                "value": "1 of 2",
+                "detail": "one to go"
+              },
+              {
+                "label": "Cash per month",
+                "value": "$412",
+                "detail": "$38 above plan",
+                "tone": "needs-you"
+              },
+              {
+                "label": "Disk free",
+                "value": "118 GB",
+                "detail": "of 460 GB"
+              }
+            ]
+          }
+        },
+        {
+          "t": "use",
+          "c": "iosNext",
+          "p": {
+            "text": "Answer Atlas: which plan the trial ends on",
+            "link": "iphone.decisions"
+          }
+        },
+        {
+          "t": "use",
+          "c": "iosSync",
+          "p": {
+            "state": "preview"
+          }
+        },
+        {
+          "t": "use",
+          "c": "iosSegment",
+          "p": {
+            "options": [
+              "Week",
+              "Month",
+              "Year"
+            ],
+            "selected": "Week"
+          }
+        },
+        {
+          "t": "v",
+          "name": "People use these",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "People use these",
+                "note": "Active or new users in the last 7 days, most active first",
+                "count": 2
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosHeroCard",
+              "p": {
+                "name": "Atlas",
+                "stage": "beta",
+                "summary": "Error tracking that pages an agent, not a person.",
+                "active": "412",
+                "new": "38",
+                "total": "1,904",
+                "commits": "27 commits",
+                "spend": "$18 spent, 4.1M tokens",
+                "money": "$310 MRR · 9 paying",
+                "bars": [
+                  0.3,
+                  0.5,
+                  0.4,
+                  0.8,
+                  0.6,
+                  0.9,
+                  1
+                ],
+                "link": "iphone.product"
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosHeroCard",
+              "p": {
+                "name": "Pebble",
+                "stage": "launched",
+                "summary": "Notes that stay on your phone and sync when you ask.",
+                "active": "96",
+                "new": "11",
+                "total": "640",
+                "commits": "12 commits",
+                "spend": "$6 spent, 1.2M tokens",
+                "money": "No revenue yet",
+                "bars": [
+                  0.2,
+                  0.2,
+                  0.5,
+                  0.3,
+                  0.4,
+                  0.6,
+                  0.5
+                ],
+                "link": "iphone.product"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

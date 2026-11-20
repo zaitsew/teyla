@@ -1,0 +1,123 @@
+{
+  "id": "iphone.product-needs-you",
+  "title": "Product page · needs you",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/ProductDetailView.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "Atlas",
+      "large": false,
+      "back": "All products",
+      "tab": "products",
+      "gap": 20,
+      "kids": [
+        {
+          "t": "v",
+          "name": "Needs you",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Needs you"
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosCard",
+              "p": {
+                "kids": [
+                  {
+                    "t": "text",
+                    "v": "Atlas · 2d · Pay",
+                    "s": "ios-caption",
+                    "c": "ios-label-2"
+                  },
+                  {
+                    "t": "text",
+                    "v": "Renew the error-tracking plan for Atlas at $29 a month?",
+                    "s": "ios-card-title",
+                    "c": "ios-label",
+                    "w": "fill"
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosButton",
+                    "p": {
+                      "label": "Answer in Decisions",
+                      "kind": "bordered",
+                      "link": "iphone.decisions"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "name": "Metrics",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Metrics"
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosGroup",
+              "p": {
+                "kids": [
+                  {
+                    "t": "use",
+                    "c": "iosRow",
+                    "p": {
+                      "title": "Weekly users",
+                      "value": "412"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosRow",
+                    "p": {
+                      "title": "Paying",
+                      "value": "9"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosRow",
+                    "p": {
+                      "title": "Monthly revenue",
+                      "value": "$310"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
