@@ -67,11 +67,41 @@ enum ReviewScrub {
             let d = digits(whole)
             return (13...19).contains(d.count) && luhn(d) ? "[card]" : whole
         }
-        return replace(phone, in: out) { whole, _ in
-            let n = digits(whole).count
-            let low = whole.hasPrefix("+") ? 8 : 9
-            return (low...15).contains(n) ? "[phone]" : whole
+        return replace(phone, in: out) { whole, _ in phoneOrSplit(whole) }
+    }
+
+    /// One number, or several separated by spaces: the longest run of space-separated groups that fits in
+    /// 15 digits is one number, repeatedly; a short tail joins the last run.
+    private static func phoneOrSplit(_ m: String) -> String {
+        let n = digits(m).count
+        let low = m.hasPrefix("+") ? 8 : 9
+        if (low...15).contains(n) { return "[phone]" }
+        if n <= 15 { return m }
+        let tokens = m.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+        var out: [String] = []
+        var i = 0
+        while i < tokens.count {
+            let floor = tokens[i].hasPrefix("+") ? 8 : 9
+            var best = -1
+            var total = 0
+            var j = i
+            while j < tokens.count {
+                total += digits(tokens[j]).count
+                if total > 15 { break }
+                if total >= floor { best = j }
+                j += 1
+            }
+            if best >= 0 {
+                out.append("[phone]")
+                i = best + 1
+            } else if out.last == "[phone]" {
+                i += 1
+            } else {
+                out.append(tokens[i])
+                i += 1
+            }
         }
+        return out.joined(separator: " ")
     }
 
     /// An accessibility label: scrubbed first, then at most 200 characters.

@@ -89,7 +89,33 @@ def _phone(m: "re.Match[str]") -> str:
     text = m.group(0)
     n = len(_digits(text))
     low = 8 if text.startswith("+") else 9
-    return "[phone]" if low <= n <= 15 else text
+    if low <= n <= 15:
+        return "[phone]"
+    if n <= 15:
+        return text
+    # Too long for one number: several numbers separated by spaces. Take the longest run of
+    # space-separated groups that fits in 15 digits, repeatedly; a short tail joins the last run.
+    tokens = text.split(" ")
+    out: "list[str]" = []
+    i = 0
+    while i < len(tokens):
+        floor = 8 if tokens[i].startswith("+") else 9
+        best, total = -1, 0
+        for j in range(i, len(tokens)):
+            total += len(_digits(tokens[j]))
+            if total > 15:
+                break
+            if total >= floor:
+                best = j
+        if best >= 0:
+            out.append("[phone]")
+            i = best + 1
+        elif out and out[-1] == "[phone]":
+            i += 1
+        else:
+            out.append(tokens[i])
+            i += 1
+    return " ".join(out)
 
 
 def scrub(text: str) -> str:

@@ -48,11 +48,39 @@ internal fun scrub(text: String): String {
         val d = digitsOf(it.value)
         if (d.length in 13..19 && luhn(d)) "[card]" else it.value
     }
-    return PHONE.replace(out) {
-        val n = digitsOf(it.value).length
-        val low = if (it.value.startsWith("+")) 8 else 9
-        if (n in low..15) "[phone]" else it.value
+    return PHONE.replace(out) { phoneOrSplit(it.value) }
+}
+
+/** One number, or several separated by spaces: the longest run of space-separated groups that fits in
+ *  15 digits is one number, repeatedly; a short tail joins the last run. */
+private fun phoneOrSplit(m: String): String {
+    val n = digitsOf(m).length
+    val low = if (m.startsWith("+")) 8 else 9
+    if (n in low..15) return "[phone]"
+    if (n <= 15) return m
+    val tokens = m.split(" ")
+    val out = ArrayList<String>()
+    var i = 0
+    while (i < tokens.size) {
+        val floor = if (tokens[i].startsWith("+")) 8 else 9
+        var best = -1
+        var total = 0
+        for (j in i until tokens.size) {
+            total += digitsOf(tokens[j]).length
+            if (total > 15) break
+            if (total >= floor) best = j
+        }
+        if (best >= 0) {
+            out.add("[phone]")
+            i = best + 1
+        } else if (out.isNotEmpty() && out.last() == "[phone]") {
+            i += 1
+        } else {
+            out.add(tokens[i])
+            i += 1
+        }
     }
+    return out.joinToString(" ")
 }
 
 /** An accessibility label: scrubbed first, then at most 200 characters. */

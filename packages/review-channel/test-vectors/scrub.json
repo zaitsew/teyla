@@ -58,6 +58,21 @@
    "expected": "tel [phone]"
   },
   {
+   "name": "two phones side by side are two phones",
+   "input": "600123456 600123457",
+   "expected": "[phone] [phone]"
+  },
+  {
+   "name": "two e164 phones side by side",
+   "input": "+34 600 123 456 +34 600 123 457",
+   "expected": "[phone] [phone]"
+  },
+  {
+   "name": "two grouped phones leave no digits behind",
+   "input": "600 123 456 600 123 457",
+   "expected": "[phone]"
+  },
+  {
    "name": "eight digits are not a phone",
    "input": "ticket 12345678 is open",
    "expected": "ticket 12345678 is open"

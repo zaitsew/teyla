@@ -45,11 +45,39 @@ export function scrub(text: string): string {
     const d = digitsOf(m);
     return d.length >= 13 && d.length <= 19 && luhn(d) ? "[card]" : m;
   });
-  return out.replace(PHONE, (m) => {
-    const n = digitsOf(m).length;
-    const low = m.startsWith("+") ? 8 : 9;
-    return n >= low && n <= 15 ? "[phone]" : m;
-  });
+  return out.replace(PHONE, phoneOrSplit);
+}
+
+/** One number, or several separated by spaces: the longest run of space-separated groups that fits in
+ *  15 digits is one number, repeatedly; a short tail joins the last run. */
+function phoneOrSplit(m: string): string {
+  const n = digitsOf(m).length;
+  const low = m.startsWith("+") ? 8 : 9;
+  if (n >= low && n <= 15) return "[phone]";
+  if (n <= 15) return m;
+  const tokens = m.split(" ");
+  const out: string[] = [];
+  let i = 0;
+  while (i < tokens.length) {
+    const floor = tokens[i].startsWith("+") ? 8 : 9;
+    let best = -1;
+    let total = 0;
+    for (let j = i; j < tokens.length; j++) {
+      total += digitsOf(tokens[j]).length;
+      if (total > 15) break;
+      if (total >= floor) best = j;
+    }
+    if (best >= 0) {
+      out.push("[phone]");
+      i = best + 1;
+    } else if (out.length > 0 && out[out.length - 1] === "[phone]") {
+      i += 1;
+    } else {
+      out.push(tokens[i]);
+      i += 1;
+    }
+  }
+  return out.join(" ");
 }
 
 /** An accessibility label: scrubbed first, then at most 200 characters. */
