@@ -97,6 +97,17 @@ def test_a_policy_file_that_exists_but_is_not_wired_is_still_a_fix(home, monkeyp
     assert by["policy:codex"]["level"] == "FIX"
 
 
+def test_a_wired_harness_with_no_policy_file_is_a_fix_even_when_the_pack_was_never_chosen(home, monkeypatch):
+    # Codex review P2: `policy init` / `policy sync` wire the harnesses without touching features.chosen, so a
+    # POLICY.md deleted afterwards was hidden as "off".
+    (home / ".claude").mkdir()
+    (home / ".claude" / "CLAUDE.md").write_text(policy.IMPORT_LINE + "\n")
+    assert not policy.POLICY.exists()
+    by = _by_name(doctor.checks(scan_repos=False))
+    assert by["policy:file"]["level"] == "FIX" and "missing" in by["policy:file"]["detail"]
+    assert by["policy:claude-code"]["level"] == "OK"
+
+
 # --- INS-4: no ~/ops or ~/repos on a stranger's Mac -------------------------------------------------
 
 def test_doctor_does_not_present_default_folders_as_facts(home):
@@ -176,6 +187,15 @@ def _empty_report():
 
 def test_spend_without_sessions_is_one_line():
     assert spend.render(_empty_report()) == "No sessions yet in the window."
+
+
+def test_spend_with_a_window_total_but_no_sessions_is_not_called_empty():
+    # Codex review P2: positive local-day spend (a session that started before the window) hid behind the
+    # "No sessions yet" line, because the empty check ignored the total.
+    rep = _empty_report()
+    rep["total_usd"] = 3.25
+    text = spend.render(rep)
+    assert text != spend.NO_SESSIONS and "window total $3.25" in text
 
 
 def test_spend_json_keeps_its_shape_with_zeros(home, monkeypatch, capsys):

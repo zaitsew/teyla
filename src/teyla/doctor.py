@@ -280,7 +280,10 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     # --- policy wiring ----------------------------------------------------------
     st = policy.status()
     # No POLICY.md and the policy pack never chosen: the person has not set it up, so nothing is broken.
-    policy_off = not st.get("policy-file") and not _chosen(cfg, "policy")
+    # A synced copy in a harness is wiring too: someone ran `policy init` or `policy sync`, so a missing
+    # POLICY.md is then a fault, whatever features.chosen says.
+    wired = any(v for k, v in st.items() if k != "policy-file")
+    policy_off = not st.get("policy-file") and not _chosen(cfg, "policy") and not wired
     if policy_off:
         out.append(_check("INFO", "policy:file", _off("policy", f"; {policy.POLICY} not written yet"), POLICY_INIT_FIX))
     elif not st.get("policy-file"):

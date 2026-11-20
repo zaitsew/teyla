@@ -512,7 +512,8 @@ def _coverage_line(c: str) -> str:
 
 
 def render(rep: dict) -> str:
-    if not rep.get("sessions") and not rep.get("providers") and not rep.get("findings"):
+    if (not rep.get("sessions") and not rep.get("providers") and not rep.get("findings")
+            and not rep.get("total_usd")):
         return NO_SESSIONS
     L = [f"teyla spend — last {rep['days']} days, API list price (a subscription bills differently)", "",
          f"window total {_money(rep['total_usd'])} ({rep['window']['first']} to {rep['window']['last']}, local days, "
