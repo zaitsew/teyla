@@ -1,32 +1,147 @@
 {
   "id": "cli.today",
-  "title": "teyla today",
+  "title": "`teyla today`",
   "area": "cli",
   "presentation": "push",
-  "device": { "w": 860, "h": 560 },
-  "source": ["src/teyla/today.py:168"],
-  "root": { "t": "use", "c": "terminal", "p": {
-    "title": "teyla — zsh — 96×30",
-    "lines": [
-      { "cmd": "teyla today" },
-      [{ "v": "Today", "bold": true }, "  ", { "v": "Fri 20 Nov", "role": "text-secondary" }],
-      "",
-      ["Waiting on you: ", { "v": "7 questions", "role": "needs-you" }, " in 3 products"],
-      ["  ", { "v": "Atlas", "bold": true }, "  ", { "v": "3 waiting", "role": "needs-you" }, "  ", { "v": "[live]", "role": "text-secondary" }],
-      ["    ", { "v": "4f1a9c02", "role": "text-secondary" }, "   2d ", { "v": "critical", "role": "danger" }, "  which plan the trial ends on: Team or Solo"],
-      ["    ", { "v": "b83e11d7", "role": "text-secondary" }, "   1d  approve the pricing page copy"],
-      ["    ", { "v": "+1 more", "role": "text-secondary" }],
-      ["  ", { "v": "Pebble", "bold": true }, "  ", { "v": "3 waiting", "role": "needs-you" }, "  ", { "v": "[beta]", "role": "text-secondary" }],
-      ["    ", { "v": "0c9d4e5a", "role": "text-secondary" }, "   5d ", { "v": "critical", "role": "danger" }, "  pick the onboarding flow: A or B"],
-      ["    ", { "v": "+2 more", "role": "text-secondary" }],
-      ["  ", { "v": "Quill", "bold": true }, "  ", { "v": "1 waiting", "role": "needs-you" }, "  ", { "v": "[building]", "role": "text-secondary" }],
-      ["    ", { "v": "e27f6b90", "role": "text-secondary" }, "   0m  try the reading-list import, then merge"],
-      "",
-      ["Inbox: 2 notes with no product yet  ", { "v": "teyla notes --inbox", "role": "primary" }],
-      ["Spend: ", { "v": "$184", "bold": true }, " in the last 7 days, $231 in the 7 before (", { "v": "-20%", "role": "saving" }, "). API list price."],
-      "",
-      ["Next: Answer the oldest critical question: Pebble, 5d old."],
-      ["      ", { "v": "teyla asks --product pebble", "role": "primary" }]
-    ]
-  }}
+  "device": {
+    "w": 860,
+    "h": 460
+  },
+  "source": [
+    "src/teyla/today.py:168",
+    "src/teyla/today.py:193"
+  ],
+  "root": {
+    "t": "use",
+    "c": "terminal",
+    "p": {
+      "title": "teyla — zsh — 100×30",
+      "lines": [
+        {
+          "cmd": "teyla today"
+        },
+        [
+          {
+            "v": "Today",
+            "bold": true
+          },
+          "  ",
+          {
+            "v": "Fri 20 Nov",
+            "role": "text-secondary"
+          }
+        ],
+        "",
+        [
+          {
+            "v": "Waiting on you",
+            "bold": true
+          },
+          ": ",
+          {
+            "v": "7 questions",
+            "role": "needs-you"
+          },
+          " in 3 products"
+        ],
+        [
+          {
+            "v": "  Atlas  3 waiting  [live]",
+            "bold": true
+          }
+        ],
+        [
+          "    4f1a9c02   2d",
+          {
+            "v": " critical",
+            "role": "needs-you"
+          },
+          "  which plan the trial ends on: Team or Solo"
+        ],
+        [
+          "    b83e11d7   1d  approve the pricing page copy"
+        ],
+        [
+          "    c05a77e1   1d  rename the export button to Send to Quill"
+        ],
+        [
+          "  Pebble  3 waiting  [beta]"
+        ],
+        [
+          "    0c9d4e5a   5d",
+          {
+            "v": " critical",
+            "role": "needs-you"
+          },
+          "  pick the onboarding flow: A or B"
+        ],
+        [
+          "    a9120bd4   3d  check the offline banner on the small phone"
+        ],
+        [
+          {
+            "v": "    +1 more",
+            "role": "text-secondary"
+          }
+        ],
+        [
+          "  Quill  1 waiting  [building]"
+        ],
+        [
+          "    e27f6b90   0m  try the reading-list import, then merge"
+        ],
+        "",
+        [
+          {
+            "v": "Inbox",
+            "bold": true
+          },
+          ": ",
+          {
+            "v": "2 notes",
+            "role": "needs-you"
+          },
+          " with no product yet  ",
+          {
+            "v": "teyla notes --inbox",
+            "role": "primary"
+          }
+        ],
+        [
+          "    nst2aeh   4d  Fern and Orbit share one onboarding: one design, two copies?"
+        ],
+        [
+          "    nst9c41d   1d  write the changelog for Pebble in plain words"
+        ],
+        [
+          {
+            "v": "Spend",
+            "bold": true
+          },
+          ": ",
+          "$184 in the last 7 days, $231 in the 7 before (",
+          {
+            "v": "-20%",
+            "role": "saving"
+          },
+          "). API list price."
+        ],
+        "",
+        [
+          {
+            "v": "Next",
+            "bold": true
+          },
+          ": Answer the oldest critical question: Pebble, 5d old."
+        ],
+        [
+          "      ",
+          {
+            "v": "teyla asks --product pebble",
+            "role": "primary"
+          }
+        ]
+      ]
+    }
+  }
 }
