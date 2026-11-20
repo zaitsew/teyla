@@ -1,0 +1,23 @@
+{
+  "id": "review-form.ios-sent",
+  "title": "Review form, iPhone: Sent",
+  "area": "review-form",
+  "presentation": "overlay",
+  "source": [
+    "packages/review-ios/Sources/TeylaReview/UI/ReviewOverlay.swift:103",
+    "packages/review-ios/Sources/TeylaReview/Core/ReviewStrings.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "reviewIos",
+    "p": {
+      "step": "done",
+      "mark": "spot",
+      "text": "The Quill export button does nothing when I tap it twice.",
+      "outcome": "sent",
+      "links": {
+        "done": "close"
+      }
+    }
+  }
+}
