@@ -53,7 +53,23 @@ credtok=0
 # `git -C dir commit` and `gh -R a/b pr create` are. Sets $tok to 1 when the text holds a token, and $credtok
 # to 1 when it is a credential or visibility token (those never get the read-only exemption below).
 words_of() {
-    printf ' %s ' "$1" | tr -c 'A-Za-z0-9_.=:%@+,-' ' '
+    unescape "$1"
+    printf ' %s ' "$dec" | tr -c 'A-Za-z0-9_.=:%@+,-' ' '
+}
+
+# The command arrives as JSON text, so a tab, a newline or a control character is a two- or six-character
+# escape (`gh\tpr\tcreate`). Shell words are split on whitespace, so each such escape becomes one space before
+# any word matching. Sets $dec. Builtins only: no process starts, and the test box has no sed.
+unescape() {
+    dec=""
+    rest=$1
+    while :; do
+        case "$rest" in
+            *\\[tnrfb]*)   dec="$dec${rest%%\\[tnrfb]*} "; rest=${rest#*\\[tnrfb]} ;;
+            *\\u00[0-2][0-9a-fA-F]*) dec="$dec${rest%%\\u00[0-2][0-9a-fA-F]*} "; rest=${rest#*\\u00[0-2][0-9a-fA-F]} ;;
+            *) dec="$dec$rest"; break ;;
+        esac
+    done
 }
 
 # has2 A B: in $w, the word A is followed, at any distance, by the word B.
@@ -89,6 +105,22 @@ match_tokens() {
 # credential or visibility token is never read-only. Anything unsure is not read-only, so it is refused.
 readonly_shape() {
     [ "$credtok" = 0 ] || return 1
+    # Chaining, redirection, a substitution or a newline can append a second command to a read: no exemption.
+    # (`gh pr view 12; cat ~/.aws/cred''entials`). The check runs on the raw text, before any decoding.
+    case "$after" in
+        *\;*|*\&*|*\|*|*\<*|*\>*|*\`*|*\$*|*'\n'*|*'\r'*|*'\u'*) return 1 ;;
+    esac
+    chk=${after%"
+"}                                  # the payload ends in the newline the reader added
+    case "$chk" in *"
+"*) return 1 ;; esac
+    # Quoting can hide a credential path from the substring tokens: look again with the quoting stripped.
+    unescape "$after"
+    stripped=$(printf '%s' "$dec" | tr -d "\\\\\"'\`\$") || return 1
+    save=$tok; tok=0; credtok=0
+    match_tokens "$stripped"
+    hidden=$credtok; tok=$save; credtok=0
+    [ "$hidden" = 0 ] || { credtok=1; return 1; }
     w=$(words_of "$after") || return 1
     case "$w" in
         *\ push\ *|*\ commit\ *|*\ tag\ *|*\ merge\ *|*\ create\ *|*\ edit\ *|*\ comment\ *|*\ close\ *|*\ reopen\ *|*\ ready\ *) return 1 ;;
@@ -116,7 +148,8 @@ refuse_failed() {
 # A command whose quoting hides a token (`g''h p''r`, `cred''entials`) is only found once the quotes are gone.
 # That check costs a process, so it runs only when the guard itself could not (no python, a crash).
 unquoted_match() {
-    stripped=$(printf '%s' "$after" | tr -d "\\\\\"'\`\$") || return 1
+    unescape "$after"
+    stripped=$(printf '%s' "$dec" | tr -d "\\\\\"'\`\$") || return 1
     tok=0
     match_tokens "$stripped"
     [ "$tok" = 1 ]

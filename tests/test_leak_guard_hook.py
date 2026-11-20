@@ -949,3 +949,29 @@ def test_the_read_only_exemption_needs_a_fully_read_only_command(no_teyla_box):
 def test_git_reads_carry_no_token_so_they_never_need_teyla(no_teyla_box):                 # HK-6
     for cmd in ("git log --stat", "git show HEAD", "git diff --cached", "git log --grep=commit"):
         allowed(no_teyla_box.run(cmd, **no_teyla_box.kw))
+
+
+# --- review round: JSON escapes are whitespace; the read-only exemption sees through quoting and chains ------
+
+@pytest.mark.parametrize("command", ["gh\tpr\tcreate -t T -b B", "gh\npr\ncreate -t T -b B", "git\tcommit\t-m\tx",
+                                     "gh\rpr\rcreate -t T -b B"])
+def test_escaped_whitespace_between_the_words_is_still_a_publication(box, command):
+    box.run(command)
+    assert box.python_calls(), command          # the token path ran: it was not waved through as plain
+
+
+@pytest.mark.parametrize("command", ["gh\tpr\tcreate -t T -b B", "gh\npr\ncreate -t T -b B", "git\tcommit\t-m\tx"])
+def test_escaped_whitespace_is_refused_without_teyla_too(no_teyla_box, command):
+    r = no_teyla_box.run(command, **no_teyla_box.kw)
+    assert r.returncode == 2, (command, r.stderr)
+    assert "cannot be scanned" in r.stderr
+
+
+@pytest.mark.parametrize("command", ["gh pr view 12; cat ~/.aws/cred''entials",
+                                     "gh pr view 12 && cat ~/.aws/credentials",
+                                     "gh pr view 12\ncat ~/.aws/cred''entials",
+                                     "gh pr view 12 | tee x", "gh pr view 12 > ~/.ssh/authorized_keys",
+                                     "gh pr view 12; cat ~/.ssh/i\"\"d_ed25519"])
+def test_a_read_only_command_that_chains_or_hides_a_credential_is_refused_without_teyla(no_teyla_box, command):
+    r = no_teyla_box.run(command, **no_teyla_box.kw)
+    assert r.returncode == 2, (command, r.stderr)
