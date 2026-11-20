@@ -106,18 +106,34 @@ enum ChannelDelivery {
         return AppProbe.isSlug(product)
     }
 
+    /// The JSON with `app.product` filled in from `app.bundle_id` when it has none (a capture saved before the field
+    /// existed, or by a product that set none). The same JSON when it has one. Nil when there is no product and no
+    /// bundle id to take it from, or the JSON cannot be read.
+    static func withProduct(_ json: Data) -> Data? {
+        if hasProduct(json) { return json }
+        guard var object = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any],
+              var app = object["app"] as? [String: Any],
+              let bundle = app["bundle_id"] as? String,
+              let product = AppProbe.productFromBundleID(bundle) else { return nil }
+        app["product"] = product
+        object["app"] = app
+        return try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+    }
+
     /// The closure the package uses when the product set none. True only after both files answer
     /// 200. A refusal is reported to `markRefused`, and `isRefused` stops the next attempt: the state
     /// belongs to this route, so a `deliver` closure set later is not affected by it. A capture
-    /// without `app.product` waits locally, unsent and unmarked.
+    /// without `app.product` is sent with the product taken from its bundle id; one with no usable bundle id waits
+    /// locally, unsent and unmarked.
     static func deliver(
         config: ChannelConfig, session: URLSession = .channel,
         isRefused: @escaping @Sendable (String) -> Bool = { _ in false },
         markRefused: @escaping @Sendable (String) -> Void
     ) -> ReviewDeliver {
         { upload in
-            guard !isRefused(upload.id), hasProduct(upload.json) else { return false }
-            switch await send(upload, config: config, session: session) {
+            guard !isRefused(upload.id), let json = withProduct(upload.json) else { return false }
+            let ready = json == upload.json ? upload : ReviewUpload(id: upload.id, json: json, png: upload.png)
+            switch await send(ready, config: config, session: session) {
             case .delivered: return true
             case .retryLater: return false
             case .refused: markRefused(upload.id); return false

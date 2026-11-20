@@ -18,14 +18,14 @@ enum DeviceProbe {
     }
 
     /// The frozen picture: the key window as it is, at its own scale, with every `.reviewPrivate()`
-    /// view painted black. The overlay shows this same picture and it is the one that is saved and sent.
+    /// view and every secure, password, one-time-code or card field (`SensitiveFields`) painted black. The overlay shows this same picture and it is the one that is saved and sent.
     /// `privateFrames` are the painted rectangles in window points: the capture's metadata is kept
     /// away from them too (`ReviewRedaction`).
     static func screenshot(of window: UIWindow) -> (png: Data, pixelWidth: Int, pixelHeight: Int, scale: Double, privateFrames: [CGRect])? {
         let format = UIGraphicsImageRendererFormat.preferred()
         format.opaque = true
         let renderer = UIGraphicsImageRenderer(bounds: window.bounds, format: format)
-        let masks = ReviewMasking.rects(for: PrivateRegistry.shared.snapshot(), in: window.bounds, scale: format.scale)
+        let masks = ReviewMasking.rects(for: PrivateRegistry.shared.snapshot() + SensitiveFields.frames(in: window), in: window.bounds, scale: format.scale)
         let image = renderer.image { context in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
             UIColor.black.setFill()

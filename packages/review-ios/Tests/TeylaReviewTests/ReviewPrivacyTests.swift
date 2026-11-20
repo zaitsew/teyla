@@ -59,6 +59,12 @@ final class ReviewPrivacyTests: XCTestCase {
         XCTAssertNil(AppProbe.product(configured: "1abc", plist: nil))
     }
 
+    func testTheAppRecordFallsBackToTheBundleIdWhenNoProductIsSet() {
+        let withNone = AppProbe.current(bundle: .main, channel: .local, configuredProduct: nil)
+        XCTAssertEqual(withNone.product, AppProbe.productFromBundleID(Bundle.main.bundleIdentifier ?? ""))
+        XCTAssertEqual(AppProbe.current(bundle: .main, channel: .local, configuredProduct: "chosen-one").product, "chosen-one")
+    }
+
     func testTheProductIsInTheJSONOnlyWhenSet() throws {
         var app = Fixtures.app
         var json = String(decoding: try CaptureCoding.encoder().encode(app), as: UTF8.self)

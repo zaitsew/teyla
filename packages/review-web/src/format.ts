@@ -1,6 +1,8 @@
 /** capture.json, format v1 (docs/REVIEW.md, templates/review/capture.schema.json). The fields are the
  *  iOS package's, in the same order. A key that is unknown is absent; `null` is never written. */
 
+import { scrub } from "./scrub.ts";
+
 export const FORMAT_VERSION = 1;
 export const PNG_NAME = "capture.png";
 export const JSON_NAME = "capture.json";
@@ -102,11 +104,14 @@ export interface BuildInput {
   scale: number;
 }
 
+/** Scrubbed first, then cut: a cut must not leave half a secret behind. */
+const clip = (s: string): string => scrub(s).slice(0, 200);
+
 function cleanAnchor(a: Anchor): Anchor {
-  const out: Anchor = { id: a.id.slice(0, 200), role: a.role, bounds: roundRect(a.bounds) };
-  if (a.screen) out.screen = a.screen.slice(0, 200);
-  if (a.parent) out.parent = a.parent.slice(0, 200);
-  if (a.strings && a.strings.length > 0) out.strings = a.strings.slice(0, 20).map((s) => s.slice(0, 200));
+  const out: Anchor = { id: clip(a.id), role: a.role, bounds: roundRect(a.bounds) };
+  if (a.screen) out.screen = clip(a.screen);
+  if (a.parent) out.parent = clip(a.parent);
+  if (a.strings && a.strings.length > 0) out.strings = a.strings.slice(0, 20).map(clip);
   if (a.source) out.source = a.source;
   return out;
 }
@@ -129,26 +134,26 @@ export function buildCapture(i: BuildInput): CaptureRecord {
     },
     environment: i.environment,
     anchors: i.anchors.slice(0, MAX_ANCHORS).map(cleanAnchor),
-    comment: { text: i.text.slice(0, MAX_COMMENT), input: i.input },
+    comment: { text: scrub(i.text).slice(0, MAX_COMMENT), input: i.input },
     screenshot: { file: PNG_NAME, width: i.pixelWidth, height: i.pixelHeight, scale: round2(Math.max(1, i.scale)), sha256: i.sha256 },
     microphone: { host_audio_in_use: false },
   };
   if (i.language) {
     rec.comment.language = i.language;
   }
-  if (i.screen) rec.screen = i.screen;
+  if (i.screen) rec.screen = scrub(i.screen);
   if (i.tap) rec.tap = { x: round2(i.tap.x), y: round2(i.tap.y) };
   if (i.region) rec.region = roundRect(i.region);
   if (i.element) {
     const e = i.element;
     if ("bounds" in e) {
-      rec.element = { id: e.id.slice(0, 200), matched_by: "anchor", role: e.role, bounds: roundRect(e.bounds) };
-      if (e.screen) rec.element.screen = e.screen;
-      if (e.parent) rec.element.parent = e.parent;
-      if (e.strings && e.strings.length > 0) rec.element.strings = e.strings.slice(0, 20);
+      rec.element = { id: clip(e.id), matched_by: "anchor", role: e.role, bounds: roundRect(e.bounds) };
+      if (e.screen) rec.element.screen = scrub(e.screen);
+      if (e.parent) rec.element.parent = scrub(e.parent);
+      if (e.strings && e.strings.length > 0) rec.element.strings = e.strings.slice(0, 20).map(clip);
       if (e.source) rec.element.source = e.source;
     } else {
-      rec.element = { id: e.id.slice(0, 200), matched_by: "accessibility_identifier" };
+      rec.element = { id: clip(e.id), matched_by: "accessibility_identifier" };
     }
   }
   // Re-order the keys the way the iOS package writes them, so a diff of two captures reads the same.

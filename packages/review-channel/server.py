@@ -47,6 +47,113 @@ DRAIN_MAX = MIB          # a refused request this small has its body read and dr
 BIG_BODY = MIB           # a body above this takes a big-body slot, so the sum stays under the container's memory limit
 
 
+# --- the scrub rules -----------------------------------------------------------------------------------
+# The same rules run in the iOS, Mac, web and Android packages before a capture leaves the device. This is
+# the backstop for a build that is old, patched or wrong. `test-vectors/scrub.json` is shared by all five
+# test suites. Placeholders are never matched by a rule, so scrubbing twice gives the same text.
+LABEL_CAP = 200
+_URL_PARAM = re.compile(r"([?&;][A-Za-z0-9_.\-]*(?:token|key|secret|password|passwd|pwd|auth|code|sig)[A-Za-z0-9_.\-]*=)[^&#\s]+", re.I)
+_JWT = re.compile(r"(?<![A-Za-z0-9_\-])eyJ[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]*")
+_BEARER = re.compile(r"(?<![A-Za-z0-9])Bearer[ \t]+[A-Za-z0-9._~+/=\-]{12,}", re.I)
+_API_KEY = re.compile(
+    r"(?<![A-Za-z0-9_\-])(?:(?:sk|pk|rk)[_\-][A-Za-z0-9_\-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}"
+    r"|xox[abprs]-[A-Za-z0-9\-]{10,}|AKIA[0-9A-Z]{16}|AIza[A-Za-z0-9_\-]{30,})")
+_EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)+")
+_IBAN = re.compile(r"(?<![A-Za-z0-9])[A-Z]{2}[0-9]{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?(?![A-Za-z0-9])")
+_CARD = re.compile(r"(?<![0-9])[0-9](?:[ \-]?[0-9]){12,18}(?![0-9])")
+_PHONE = re.compile(r"(?<![A-Za-z0-9+])(?![0-9]{4}-[0-9]{2}-[0-9]{2})\+?[0-9(][0-9 .()\-]{6,}[0-9](?![A-Za-z0-9])")
+
+
+def _luhn(digits: str) -> bool:
+    total = 0
+    for i, ch in enumerate(reversed(digits)):
+        n = ord(ch) - 48
+        if i % 2 == 1:
+            n *= 2
+            if n > 9:
+                n -= 9
+        total += n
+    return total % 10 == 0
+
+
+def _digits(text: str) -> str:
+    return "".join(c for c in text if "0" <= c <= "9")
+
+
+def _card(m: "re.Match[str]") -> str:
+    d = _digits(m.group(0))
+    return "[card]" if 13 <= len(d) <= 19 and _luhn(d) else m.group(0)
+
+
+def _phone(m: "re.Match[str]") -> str:
+    text = m.group(0)
+    n = len(_digits(text))
+    low = 8 if text.startswith("+") else 9
+    return "[phone]" if low <= n <= 15 else text
+
+
+def scrub(text: str) -> str:
+    """Replace e-mail addresses, phone numbers, card numbers, IBANs, tokens, API keys, JWTs and secret URL
+    parameters with a placeholder. Idempotent."""
+    text = _URL_PARAM.sub(lambda m: m.group(1) + "[token]", text)
+    text = _JWT.sub("[token]", text)
+    text = _BEARER.sub("Bearer [token]", text)
+    text = _API_KEY.sub("[token]", text)
+    text = _EMAIL.sub("[email]", text)
+    text = _IBAN.sub("[iban]", text)
+    text = _CARD.sub(_card, text)
+    return _PHONE.sub(_phone, text)
+
+
+def scrub_label(text: str) -> str:
+    """An accessibility label: scrubbed first, then at most 200 characters."""
+    return scrub(text)[:LABEL_CAP]
+
+
+def _scrub_list(items: object) -> object:
+    return [scrub(x) if isinstance(x, str) else x for x in items] if isinstance(items, list) else items
+
+
+def _scrub_anchor(a: object) -> None:
+    if isinstance(a, dict):
+        for k in ("id", "screen", "parent"):
+            if isinstance(a.get(k), str):
+                a[k] = scrub(a[k])
+        if "strings" in a:
+            a["strings"] = _scrub_list(a["strings"])
+
+
+def scrub_capture(obj: dict) -> dict:
+    """Scrub every text field of a parsed capture.json in place: the comment, the tapped element's identifier
+    and label (cut to 200 characters), the screen, the element and the anchors. Returns `obj`."""
+    comment = obj.get("comment")
+    if isinstance(comment, dict) and isinstance(comment.get("text"), str):
+        comment["text"] = scrub(comment["text"])
+    tap = obj.get("tap")
+    if isinstance(tap, dict):
+        if isinstance(tap.get("accessibility_identifier"), str):
+            tap["accessibility_identifier"] = scrub(tap["accessibility_identifier"])
+        if isinstance(tap.get("accessibility_label"), str):
+            tap["accessibility_label"] = scrub_label(tap["accessibility_label"])
+    if isinstance(obj.get("screen"), str):
+        obj["screen"] = scrub(obj["screen"])
+    _scrub_anchor(obj.get("element"))
+    anchors = obj.get("anchors")
+    if isinstance(anchors, list):
+        for a in anchors:
+            _scrub_anchor(a)
+    return obj
+
+
+def _scrubbed_body(obj: dict, body: bytes) -> bytes:
+    """The capture as it is stored: scrubbed. Bytes the rules leave alone are kept as they came."""
+    before = json.dumps(obj, sort_keys=True)
+    scrub_capture(obj)
+    if json.dumps(obj, sort_keys=True) == before:
+        return body
+    return json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
 @dataclass
 class Config:
     data: str
@@ -486,6 +593,8 @@ class Handler(BaseHTTPRequestHandler):
             shot = obj.get("screenshot")
             if not isinstance(shot, dict) or not isinstance(shot.get("sha256"), str) or not SHA_FIELD.match(shot["sha256"]):
                 return 400, "screenshot.sha256 missing"
+        if name == "capture.json":
+            body = _scrubbed_body(obj, body)
         try:
             result = self.server.store.put(product, cid, name, body)
         except OSError:

@@ -1,0 +1,243 @@
+{
+ "version": 1,
+ "about": "Shared scrub rules. Every platform's test suite reads this file: text goes through scrub(), labels through scrubLabel() (scrub, then at most 200 characters). Generic fake data only.",
+ "rules": [
+  "url parameter",
+  "jwt",
+  "bearer",
+  "api key",
+  "email",
+  "iban",
+  "card (luhn)",
+  "phone (9+ digits, 8+ after a plus)"
+ ],
+ "text": [
+  {
+   "name": "email",
+   "input": "mail me at jane.doe+test@example.com please",
+   "expected": "mail me at [email] please"
+  },
+  {
+   "name": "two emails",
+   "input": "a@example.com and b.c@mail.example.org",
+   "expected": "[email] and [email]"
+  },
+  {
+   "name": "email in a url parameter",
+   "input": "https://example.com/p?email=jane@example.com&x=1",
+   "expected": "https://example.com/p?email=[email]&x=1"
+  },
+  {
+   "name": "phone e164 with spaces",
+   "input": "call +34 600 123 456 now",
+   "expected": "call [phone] now"
+  },
+  {
+   "name": "phone e164 compact",
+   "input": "+14155550100",
+   "expected": "[phone]"
+  },
+  {
+   "name": "phone us national",
+   "input": "ring (415) 555-0100 today",
+   "expected": "ring [phone] today"
+  },
+  {
+   "name": "phone nine digits",
+   "input": "600 123 456",
+   "expected": "[phone]"
+  },
+  {
+   "name": "phone with dots",
+   "input": "415.555.0100",
+   "expected": "[phone]"
+  },
+  {
+   "name": "phone double zero prefix",
+   "input": "tel 0034600123457",
+   "expected": "tel [phone]"
+  },
+  {
+   "name": "eight digits are not a phone",
+   "input": "ticket 12345678 is open",
+   "expected": "ticket 12345678 is open"
+  },
+  {
+   "name": "short plus number is not a phone",
+   "input": "press +34 600 twice",
+   "expected": "press +34 600 twice"
+  },
+  {
+   "name": "an iso date and time are not a phone",
+   "input": "build 212 on 2026-11-20 14:30 failed",
+   "expected": "build 212 on 2026-11-20 14:30 failed"
+  },
+  {
+   "name": "a version is not a phone",
+   "input": "version 1.2.3 (build 4567)",
+   "expected": "version 1.2.3 (build 4567)"
+  },
+  {
+   "name": "coordinates are not a phone",
+   "input": "tap at 331.5, 412.25 on a 1170 x 2532 screen",
+   "expected": "tap at 331.5, 412.25 on a 1170 x 2532 screen"
+  },
+  {
+   "name": "card compact",
+   "input": "4111111111111111",
+   "expected": "[card]"
+  },
+  {
+   "name": "card with spaces",
+   "input": "pay with 4111 1111 1111 1111 now",
+   "expected": "pay with [card] now"
+  },
+  {
+   "name": "card with hyphens",
+   "input": "4111-1111-1111-1111",
+   "expected": "[card]"
+  },
+  {
+   "name": "card fifteen digits",
+   "input": "amex 378282246310005",
+   "expected": "amex [card]"
+  },
+  {
+   "name": "sixteen digits that fail the luhn check stay",
+   "input": "order 4111111111111112 shipped",
+   "expected": "order 4111111111111112 shipped"
+  },
+  {
+   "name": "iban with spaces",
+   "input": "iban GB82 WEST 1234 5698 7654 32 thanks",
+   "expected": "iban [iban] thanks"
+  },
+  {
+   "name": "iban compact",
+   "input": "GB82WEST12345698765432",
+   "expected": "[iban]"
+  },
+  {
+   "name": "iban german",
+   "input": "DE89 3704 0044 0532 0130 00",
+   "expected": "[iban]"
+  },
+  {
+   "name": "bearer header",
+   "input": "Authorization: Bearer abcdef0123456789abcdef",
+   "expected": "Authorization: Bearer [token]"
+  },
+  {
+   "name": "bearer lower case",
+   "input": "bearer abcdef0123456789abcdef",
+   "expected": "Bearer [token]"
+  },
+  {
+   "name": "bearer in prose stays",
+   "input": "the bearer of this note",
+   "expected": "the bearer of this note"
+  },
+  {
+   "name": "secret key live",
+   "input": "key sk_live_abcdefghijklmnop1234 end",
+   "expected": "key [token] end"
+  },
+  {
+   "name": "secret key with dashes",
+   "input": "sk-proj-abcdefghijklmnopqrstuv",
+   "expected": "[token]"
+  },
+  {
+   "name": "github token",
+   "input": "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "[token]"
+  },
+  {
+   "name": "aws key id",
+   "input": "AKIAABCDEFGHIJKLMNOP",
+   "expected": "[token]"
+  },
+  {
+   "name": "jwt",
+   "input": "token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.c2lnbmF0dXJlZmFrZQ ok",
+   "expected": "token [token] ok"
+  },
+  {
+   "name": "jwt after bearer",
+   "input": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.c2lnbmF0dXJlZmFrZQ",
+   "expected": "Bearer [token]"
+  },
+  {
+   "name": "url code parameter",
+   "input": "https://example.com/cb?code=123456&state=abc",
+   "expected": "https://example.com/cb?code=[token]&state=abc"
+  },
+  {
+   "name": "url key parameter",
+   "input": "https://example.com/x?user=1&api_key=abc123&z=2",
+   "expected": "https://example.com/x?user=1&api_key=[token]&z=2"
+  },
+  {
+   "name": "url password parameter ends at the fragment",
+   "input": "https://example.com/x?a=1&Password=hunter2#top",
+   "expected": "https://example.com/x?a=1&Password=[token]#top"
+  },
+  {
+   "name": "url sig and auth parameters",
+   "input": "https://example.com/f?sig=aGVsbG8&auth=xyz",
+   "expected": "https://example.com/f?sig=[token]&auth=[token]"
+  },
+  {
+   "name": "harmless url parameters stay",
+   "input": "https://example.com/page?id=7&sort=asc&page=2",
+   "expected": "https://example.com/page?id=7&sort=asc&page=2"
+  },
+  {
+   "name": "words that contain sk- stay",
+   "input": "task-force-leader-of-the-year and risk_management_report_final",
+   "expected": "task-force-leader-of-the-year and risk_management_report_final"
+  },
+  {
+   "name": "plain feedback stays",
+   "input": "The button is too small and the title is cut off on the second line.",
+   "expected": "The button is too small and the title is cut off on the second line."
+  },
+  {
+   "name": "non ascii text stays",
+   "input": "café ☕ 100% sure ✓ 日本語",
+   "expected": "café ☕ 100% sure ✓ 日本語"
+  },
+  {
+   "name": "empty",
+   "input": "",
+   "expected": ""
+  },
+  {
+   "name": "everything at once",
+   "input": "I am jane@example.com, +34 600 123 456, card 4111 1111 1111 1111, GB82 WEST 1234 5698 7654 32, Bearer abcdef0123456789abcdef, https://example.com/x?token=abc",
+   "expected": "I am [email], [phone], card [card], [iban], Bearer [token], https://example.com/x?token=[token]"
+  }
+ ],
+ "label": [
+  {
+   "name": "a short label is untouched",
+   "input": "Save button",
+   "expected": "Save button"
+  },
+  {
+   "name": "a long label is cut to 200 characters",
+   "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  {
+   "name": "a label is scrubbed",
+   "input": "Contact jane@example.com",
+   "expected": "Contact [email]"
+  },
+  {
+   "name": "a label is scrubbed before it is cut",
+   "input": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 4111111111111111",
+   "expected": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb [car"
+  }
+ ]
+}

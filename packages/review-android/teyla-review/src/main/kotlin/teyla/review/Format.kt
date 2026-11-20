@@ -102,12 +102,15 @@ internal object Json {
 private fun frame(f: Frame): String =
     Json.obj("x" to Json.num(f.x), "y" to Json.num(f.y), "width" to Json.num(f.width), "height" to Json.num(f.height))
 
+/** Scrubbed first, then cut: a cut must not leave half a secret behind. */
+private fun clip(s: String): String = scrub(s).take(200)
+
 private fun strings(list: List<String>): String? =
-    list.filter { it.isNotEmpty() }.take(20).map { Json.quote(it.take(200)) }.takeIf { it.isNotEmpty() }?.let { Json.arr(it) }
+    list.filter { it.isNotEmpty() }.take(20).map { Json.quote(clip(it)) }.takeIf { it.isNotEmpty() }?.let { Json.arr(it) }
 
 private fun anchor(a: Anchor): String = Json.obj(
-    "id" to Json.quote(a.id.take(200)),
-    "screen" to a.screen?.takeIf { it.isNotEmpty() }?.let { Json.quote(it.take(200)) },
+    "id" to Json.quote(clip(a.id)),
+    "screen" to a.screen?.takeIf { it.isNotEmpty() }?.let { Json.quote(clip(it)) },
     "role" to Json.quote(a.role.wire),
     "bounds" to frame(a.bounds),
     "strings" to strings(a.strings),
@@ -162,16 +165,16 @@ internal fun encodeCapture(i: BuildInput): String {
     val el = i.element
     val element = el?.let {
         Json.obj(
-            "id" to Json.quote(it.id.take(200)),
+            "id" to Json.quote(clip(it.id)),
             "matched_by" to Json.quote("anchor"),
-            "screen" to it.screen?.takeIf { s -> s.isNotEmpty() }?.let { s -> Json.quote(s.take(200)) },
+            "screen" to it.screen?.takeIf { s -> s.isNotEmpty() }?.let { s -> Json.quote(clip(s)) },
             "role" to Json.quote(it.role.wire),
             "bounds" to frame(it.bounds),
             "strings" to strings(it.strings),
         )
     }
     val comment = Json.obj(
-        "text" to Json.quote(i.text.take(MAX_COMMENT)),
+        "text" to Json.quote(scrub(i.text).take(MAX_COMMENT)),
         "input" to Json.quote(i.input),
         "language" to e.language?.takeIf { it.length >= 2 }?.let { Json.quote(it.take(16)) },
     )
@@ -182,7 +185,7 @@ internal fun encodeCapture(i: BuildInput): String {
         "device" to Json.quote("Android"),
         "app" to app,
         "environment" to env,
-        "screen" to i.screen?.takeIf { it.isNotEmpty() }?.let { Json.quote(it.take(200)) },
+        "screen" to i.screen?.takeIf { it.isNotEmpty() }?.let { Json.quote(clip(it)) },
         "tap" to i.tap?.let { Json.obj("x" to Json.num(it.x), "y" to Json.num(it.y)) },
         "region" to i.region?.let { frame(it) },
         "element" to element,
