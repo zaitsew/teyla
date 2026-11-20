@@ -144,7 +144,22 @@ def _wrapper_stamp(plist: dict) -> pathlib.Path | None:
     except OSError:
         return None
     m = _STAMP_RE.search(text)
-    return pathlib.Path(m.group(1)).expanduser() if m else None
+    if not m:
+        return None
+    raw = m.group(1).replace("${HOME}", "~").replace("$HOME", "~")   # `date > "$HOME/.teyla/x.last"`
+    return pathlib.Path(raw).expanduser()
+
+
+def _job_stamp(label: str) -> dt.datetime | None:
+    """The mtime of the `~/.teyla/<job>.last` stamp a Teyla job's wrapper writes at every start. Teyla's own jobs
+    are judged by it even when the wrapper cannot be read (moved, or rewritten by hand): a sweep that ran
+    minutes ago was reported STALE because only its quiet log was looked at."""
+    from . import routine_install as ri
+    names = {lbl: o["stamp"] for lbl, o in ri.OPTIONAL.items()}
+    names[ri.DAILY_LABEL] = "daily.last"
+    names[ri.LABEL] = "weekly.last"
+    name = names.get(label)
+    return _mtime(_home() / ".teyla" / name) if name else None
 
 
 def _state_stamp(label: str) -> dt.datetime | None:
@@ -579,7 +594,10 @@ def read_launchd(agents_dir: pathlib.Path | None = None, *, listing: str | None 
         own = _state_stamp(str(plist.get("Label") or ""))
         if own is not None:
             logs.append(own)
-        has_log_path = stamp is not None or own is not None or any(
+        kept = _job_stamp(str(plist.get("Label") or label))
+        if kept is not None:
+            logs.append(kept)
+        has_log_path = stamp is not None or own is not None or kept is not None or any(
             isinstance(plist.get(k), str) and plist.get(k) for k in ("StandardOutPath", "StandardErrorPath"))
         pid, status = loaded.get(label, (None, None))
         e = entry("launchd", label, label, cadence=cadence, expected_every=expected,

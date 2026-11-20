@@ -1172,3 +1172,57 @@ def test_a_paused_routine_that_is_loaded_is_a_problem_reported_once(env, monkeyp
     assert schedules.is_problem(full[0])
     assert "paused in teyla.toml but loaded" in full[0]["note"]
     assert schedules.problem_lines(full) == []   # `teyla routines` carries it in its own banner file
+
+
+# --- the real record: stamps, template placeholders -----------------------------------------------
+
+def _sweep_plist(env, stamp_age):
+    from teyla import routine_install as ri
+    stamp = env / ".teyla" / "sweep.last"
+    stamp.write_text("2026-10-14T10:00:00Z\n")
+    set_mtime(stamp, NOW - stamp_age)
+    # the wrapper is not where the plist says, so only the known stamp name can tell
+    plist(env, ri.SWEEP_LABEL, interval=3600, log=log_file(env, "teyla-sweep.log", NOW - 6 * H),
+          extra={"ProgramArguments": ["/bin/bash", str(env / ".teyla" / "gone.sh")]})
+
+
+@pytest.mark.parametrize("age,verdict", [(dt.timedelta(minutes=5), "OK"), (dt.timedelta(hours=6), "STALE")])
+def test_teyla_agent_is_judged_by_its_stamp_mtime(env, monkeypatch, age, verdict):
+    from teyla import routine_install as ri
+    _sweep_plist(env, age)
+    monkeypatch.setattr(routines, "_launchctl_list", lambda: listing(("-", 0, ri.SWEEP_LABEL)))
+    got, _ = collect(env)
+    assert got[f"launchd:{ri.SWEEP_LABEL}"]["verdict"] == verdict
+
+
+def test_wrapper_stamp_expands_home(env, monkeypatch):
+    monkeypatch.setenv("HOME", str(env))
+    w = env / ".teyla" / "w.sh"
+    w.write_text('#!/bin/bash\ndate -u +%FT%TZ > "$HOME/.teyla/w.last"\n')
+    assert schedules._wrapper_stamp({"ProgramArguments": ["/bin/bash", str(w)]}) == env / ".teyla" / "w.last"
+
+
+PLACEHOLDER_TOML = ('[product]\nname = "accounts"\n[[routine]]\nname = "example"\ngate = "A"\n'
+                    'step = {{ kind = "command", run = "{run}" }}\n')
+
+
+def test_template_placeholder_routine_is_ignored_everywhere(env):
+    repo = env.parent / "repos" / "accounts"
+    (repo / ".git").mkdir(parents=True)
+    toml = repo / "teyla.toml"
+    toml.write_text(PLACEHOLDER_TOML.format(run="echo 'replace me: the draft'"))
+    full, _ = schedules.run(now=NOW - D, allow_network=False)
+    assert verdicts(full) == {}
+    toml.write_text('[product]\nname = "accounts"\n')
+    full, _ = schedules.run(now=NOW, allow_network=False)
+    assert verdicts(full) == {}                       # not VANISHED either
+    toml.write_text(PLACEHOLDER_TOML.format(run="echo 'replace me: the draft'"))
+    text = routines.render_text(routines.evaluate_all([str(repo)]))
+    assert text.count("example (template placeholder, ignored)") == 1
+
+
+def test_edited_example_routine_is_a_real_routine(env):
+    repo = env.parent / "repos" / "accounts"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "teyla.toml").write_text(PLACEHOLDER_TOML.format(run="./bin/digest"))
+    assert [r["name"] for r in routines.parse_manifest(repo / "teyla.toml")["routines"]] == ["example"]

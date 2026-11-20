@@ -1877,3 +1877,34 @@ def test_safe_mode_flipped_before_the_act_does_not_use_up_the_approval(product, 
     monkeypatch.setattr(H, "safe_refusal", real)  # the mode allows it again: the same approve works
     assert cli("inbox", "approve", run_id) == 0
     assert (product / "acted.txt").exists()
+
+
+# --- a plain routine is not a control-plane routine ----------------------------------------------
+
+
+def test_plain_routine_refusal_says_what_a_control_plane_routine_is(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repos" / "plain"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "teyla.toml").write_text(
+        '[product]\nname = "plain"\n'
+        '[[routine]]\nname = "nightly"\nkind = "launchd"\nlabel = "com.example.nightly"\nevery = "1d"\n'
+        '[[routine]]\nname = "digest"\ngate = "A"\nstep = { kind = "command", run = "echo hi" }\n')
+    monkeypatch.setenv("TEYLA_HOME", str(tmp_path / "h"))
+    monkeypatch.setenv("TEYLA_REPO_ROOTS", str(tmp_path / "repos"))
+    for argv in (("run", "plain:nightly"), ("promote", "plain:nightly", "--gate", "B"),
+                 ("receipts", "plain:nightly")):
+        assert cli(*argv) == 1
+        err = capsys.readouterr().err
+        assert "plain routine" in err and "control-plane routine is a `[[routine]]` in teyla.toml with a `step`" in err
+        assert "step = {" in err and "Control-plane routines in 'plain': digest" in err
+        assert "Declared:" not in err
+    assert cli("run", "plain:missing") == 1
+    assert "has no control-plane routine 'missing'" in capsys.readouterr().err
+
+
+def test_run_help_defines_a_control_plane_routine():
+    p = argparse.ArgumentParser(prog="teyla")
+    sp = p.add_subparsers(dest="cmd", required=True)
+    control.register(sp)
+    for name in ("run", "promote", "receipts"):
+        assert "[[routine]]` with a `step`" in sp.choices[name].format_help().replace("\n", " ").replace("  ", " ")

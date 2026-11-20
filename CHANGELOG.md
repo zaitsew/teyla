@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **`teyla schedules`, `attention` and `run` read the real record.** The `example` routine the repo template writes (its step still says "replace me") is no longer reported UNREGISTERED or VANISHED: `teyla routines` lists it once as "template placeholder, ignored", and it counts as a real routine once the step is edited. Teyla's own agents (sweep, sims, load, daily, weekly) are judged by the mtime of their `~/.teyla/<job>.last` stamp even when the wrapper script cannot be read, and a `$HOME` path in the wrapper is expanded. `teyla run`, `promote` and `receipts` on a plain routine now say in one sentence what a control-plane routine is, the `step` key that makes one, and which routines the product has, where they printed "Declared: (none)". `teyla attention` no longer prints a failing job's reason twice ("Last exit 1. Last exit 1.").
+
 - **`teyla storage offload --recover` no longer keeps a resolved entry.** An offload that stopped with both the original and the drive copy incomplete stayed in the journal after you repaired it, and blocked every later offload. A repeat `--recover` now decides again and clears it.
 
 - `teyla storage offload --to <mount point>`: move the heavy folders (DerivedData, the Android SDK, the Gradle caches, and with `--with-app-data` the simulators and virtual devices) to an external drive. Dry run by default. Each folder is copied, checked against a manifest digest, switched to a symlink, smoke-tested, and only then is the original deleted; any failure restores it. `--undo PATH`, `--keep` with `--finalize`, and `--recover` after a crash. `teyla doctor` names an unfinished offload.
