@@ -126,6 +126,16 @@ def du(path) -> int:
         return 0
 
 
+def du_within(path, seconds: float | None) -> int | None:
+    """Like `du`, but None when the walk did not finish in `seconds` (None = the usual limit)."""
+    try:
+        r = subprocess.run(["du", "-sk", str(path)], capture_output=True, text=True,
+                           timeout=600 if seconds is None else max(0.1, min(600, seconds)))
+        return int(r.stdout.split()[0]) * 1024 if r.stdout else 0
+    except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
+        return None
+
+
 def human(n: int | None) -> str:
     if n is None:
         return "-"
@@ -763,19 +773,33 @@ def _derived_orphan(d: pathlib.Path, now: float | None = None) -> tuple[str, str
     return ws, ""
 
 
-def derived_data(root: pathlib.Path, sizes: bool = True, now: float | None = None) -> list[dict]:
+def derived_data(root: pathlib.Path, sizes: bool = True, now: float | None = None,
+                 budget: float | None = None, skipped: list | None = None) -> list[dict]:
     """The SAFE rows under `root`: folders whose workspace is gone. Anything else there stays
-    in the one `caches()` row for the whole directory."""
+    in the one `caches()` row for the whole directory. `budget` is the seconds all the `du` walks
+    together may take; a folder not measured in time keeps its row with no size, and its name goes
+    into `skipped`."""
     if not root.is_dir():
         return []
+    deadline = None if budget is None else time.monotonic() + budget
     home = str(pathlib.Path.home())
     rows = []
     for d in sorted(root.iterdir()):
         ws, _ = _derived_orphan(d, now)
         if ws:
+            size = None
+            if sizes:
+                left = None if deadline is None else deadline - time.monotonic()
+                if left is not None and left <= 0:
+                    if skipped is not None:
+                        skipped.append(d.name)
+                else:
+                    size = du_within(d, left)
+                    if size is None and skipped is not None:
+                        skipped.append(d.name)
             rows.append({"kind": "derived", "name": d.name, "path": str(d), "root": str(root), "workspace": ws,
                          "verdict": "SAFE", "reason": f"its workspace is gone: {ws.replace(home, '~', 1)}",
-                         "action": "rm", "bytes": du(d) if sizes else None})
+                         "action": "rm", "bytes": size})
     return rows
 
 
@@ -896,9 +920,15 @@ def scan(root: pathlib.Path | None = None, sizes: bool = True, cfg: dict | None 
         wt += out.value[0]
         art += out.value[1]
     from . import volumes
+    # The orphan folders are measured one after another: they share one budget, the probe limit.
+    unsized: list[str] = []
     rep = {"root": str(root), "settings": s, "disk": disk(), "worktrees": wt, "artifacts": art,
-           "derived": derived_data(derived_root or derived_data_root(), sizes=sizes, now=now),
+           "derived": derived_data(derived_root or derived_data_root(), sizes=sizes, now=now,
+                                   budget=repo_timeout, skipped=unsized),
            "volumes": volumes.volume_rows(cfg)}
+    if unsized:
+        unanswered.append(f"DerivedData sizes skipped after {repo_timeout:g} s ({len(unsized)} folder(s) not measured: "
+                          f"{', '.join(unsized[:3])}{', ...' if len(unsized) > 3 else ''})")
     if unanswered:
         rep["unanswered"] = unanswered
     return rep
