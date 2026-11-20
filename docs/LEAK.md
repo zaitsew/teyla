@@ -59,8 +59,9 @@ Beyond text, it reads these structures. Screenshot pixels are never read.
 
 Every line is read after NFKC normalization with the zero-width characters (U+200B to U+200D, U+2060, U+FEFF)
 removed, so an address with a hidden character or a fullwidth `@` is read as the plain address. Line numbers do
-not change. A text (a PR body, a commit message) gets the `secret-generic` rule in both `teyla leak --text` and
-`scripts/leak_check.py --text`: they run the same code.
+not change. Private terms are normalized the same way. A text (a PR body, a commit message) gets the
+`secret-generic` rule in both `teyla leak --text` and `scripts/leak_check.py --text`; it is triage, so it is listed
+and neither exits 1 for it.
 
 A **blocker** gives exit 1. **Triage** is listed and never blocks: the aim is that nobody learns to type an
 override. **Lang** is the language policy (`teyla lang` is its home) and never blocks.

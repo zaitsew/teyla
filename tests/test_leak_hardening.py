@@ -76,7 +76,7 @@ def test_line_numbers_survive_normalization(tmp_path):
 
 def test_generic_token_in_text_is_listed_by_both_doors(tmp_path):
     code, found = check(tmp_path, GENERIC)
-    assert code == 1 and found == ["secret-generic"]
+    assert code == 0 and found == ["secret-generic"]          # listed, never blocking: as `teyla leak --text`
     assert [f.rule for f in leak.scan_text(GENERIC)] == ["secret-generic"]
 
 
@@ -89,3 +89,17 @@ def test_both_doors_agree(text):
     mine = sorted({f.rule for f in eng.scan_text("t", text, eng.Config())})
     theirs = sorted({f.rule for f in leak.scan_text(text)})
     assert mine == theirs
+
+
+def test_a_generic_finding_does_not_hide_a_blocker(tmp_path):
+    code, found = check(tmp_path, GENERIC + "\njane" + AT + "corp.net")
+    assert code == 1 and sorted(found) == ["email", "secret-generic"]
+
+
+def test_a_private_term_is_normalized_like_the_text(tmp_path, monkeypatch):
+    terms = tmp_path / "terms.txt"
+    terms.write_text("Zo" + ZW + "rbak\n\uff2dorvane\n", encoding="utf-8")     # zero-width char, fullwidth letter
+    monkeypatch.setenv("TEYLA_PRIVATE_TERMS", str(terms))
+    for text in ("about Zorbak here", "about Mo" + ZW + "rvane here", "about Morvane here"):
+        code, found = check(tmp_path, text)
+        assert code == 1 and "term" in found, text

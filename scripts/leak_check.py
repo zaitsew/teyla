@@ -203,10 +203,11 @@ def load_terms(cfg: Config) -> None:
     cfg.terms_status = "ok"
     for no, kind, section, payload in terms_lines(raw):
         if kind == "allow":
-            cfg.term_allow.append((payload[0].strip().lower(), payload[1]))
+            cfg.term_allow.append((normalize(payload[0].strip()).lower(), payload[1]))
         elif kind == "badheader":
             cfg.errors.append(f"terms file line {no}: unknown section header; use [everywhere] or [teyla]")
     for term, section in distinct_terms(raw):
+        term = normalize(term)           # the lines are read normalized: a term must be too, or it never matches
         cfg.terms.append((term, re.compile(r"(?<![A-Za-z0-9])" + re.escape(term) + r"(?![A-Za-z0-9])", re.I)))
         cfg.term_sections.append(section)
 
@@ -694,7 +695,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{f.path}:{f.line}: {f.rule}: {f.excerpt}")
         if findings:
             print(summarize(findings), file=sys.stderr)
-    return 1 if findings else 0
+    # Triage findings (secret-generic) are listed and never block, as in `teyla leak --text`.
+    return 1 if any(SEVERITY.get(f.rule, "blocker") != "triage" for f in findings) else 0
 
 
 if __name__ == "__main__":
