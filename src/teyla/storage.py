@@ -58,6 +58,7 @@ import plistlib
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from xml.parsers.expat import ExpatError
 
@@ -408,6 +409,8 @@ def _patch_ids(path: str, args: list[str], stdin: str | None = None) -> set[str]
 # scan and the re-check right before removal is a miss, never a stale answer. A result computed
 # from an earlier `since` covers a later one.
 _REMOTE_PATCH_IDS: dict[tuple[str, str], tuple[int, set[str]]] = {}
+_REMOTE_LOCKS: dict[tuple[str, str], threading.Lock] = {}   # one computation per repo when its worktrees run together
+_REMOTE_LOCKS_GUARD = threading.Lock()
 
 
 def _remote_patch_ids(path: str, plain: list[str], since: int) -> set[str] | None:
@@ -415,13 +418,16 @@ def _remote_patch_ids(path: str, plain: list[str], since: int) -> set[str] | Non
     rc2, tips = _git(path, "for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes")
     key = ((os.path.realpath(os.path.join(path, common.strip())), tips)
            if rc == 0 and rc2 == 0 and common.strip() else None)
-    hit = _REMOTE_PATCH_IDS.get(key) if key else None
-    if hit and hit[0] <= since:
-        return hit[1]
-    ids = _patch_ids(path, ["log", "-p", *plain, "--no-merges", "--remotes", f"--since={since}"])
-    if ids is not None and key:
-        _REMOTE_PATCH_IDS[key] = (since, ids)
-    return ids
+    with _REMOTE_LOCKS_GUARD:
+        lock = _REMOTE_LOCKS.setdefault(key, threading.Lock()) if key else threading.Lock()
+    with lock:
+        hit = _REMOTE_PATCH_IDS.get(key) if key else None
+        if hit and hit[0] <= since:
+            return hit[1]
+        ids = _patch_ids(path, ["log", "-p", *plain, "--no-merges", "--remotes", f"--since={since}"])
+        if ids is not None and key:
+            _REMOTE_PATCH_IDS[key] = (since, ids)
+        return ids
 
 
 def _automatic_merge(path: str, sha: str) -> bool:
@@ -509,8 +515,7 @@ def assess(path: str, cwds: list[str] | None, limit: int, others: list[str] = ()
         why.append(f"{dirty} uncommitted change(s)")
     if not pushed:
         why.append("HEAD is on no remote branch")
-    if deep and reflog_only_commits(path):
-        why.append("its reflog holds commits nothing else contains")
+    reflog_at = len(why)   # where the reflog reason goes: the order of the reasons is stable
     if nested:
         why.append(f"{len(nested)} other worktree(s) inside it")
     if work:
@@ -522,6 +527,11 @@ def assess(path: str, cwds: list[str] | None, limit: int, others: list[str] = ()
     recent = idle < limit
     if recent:
         why.append(f"touched {idle:.1f}d ago (< {limit}d)")
+    # The reflog comparison reads history and is the slowest check by far (78 of 109 s on 81
+    # worktrees). It can only change a verdict that is still SAFE, or SAFE-once-idle: a tree
+    # that is already kept for another reason keeps that reason, and is not read twice.
+    if deep and (not why or (recent and len(why) == 1)) and reflog_only_commits(path):
+        why.insert(reflog_at, "its reflog holds commits nothing else contains")
     return {"idle_days": round(idle, 1), "dirty": dirty, "pushed": pushed, "rescue": rescue, "why": why,
             "only_recent": recent and len(why) == 1}
 
@@ -547,28 +557,39 @@ def worktrees(repo: pathlib.Path, cwds: list[str] | None, idle_days: int, sizes:
         return []
     listed = _parse_worktrees(out)
     paths = [w["worktree"] for w in listed if w.get("worktree")]
-    rows = []
+    rows, checks = [], {}
     for w in listed[1:]:
         path = w.get("worktree")
         if not path:
             continue
         row = {"kind": "worktree", "repo": repo.name, "main": str(repo), "path": path,
                "branch": str(w.get("branch", "")).removeprefix("refs/heads/") or "(detached)"}
+        rows.append(row)
         if w.get("prunable") or not os.path.isdir(path):
             # An unmounted volume or a path launchd may not read looks the same: report only.
             row.update(verdict="REVIEW", reason="directory missing; if it is really gone: git -C "
                        f"{repo} worktree prune", action="none", bytes=0, only_recent=False)
-            rows.append(row)
             continue
         limit = agent_idle_days if agent_idle_days is not None and is_agent_worktree(path) else idle_days
-        a = assess(path, cwds, limit, others=[p for p in paths if p != path], locked=bool(w.get("locked")), now=now, deep=deep)
+        checks[path] = (lambda path=path, limit=limit, w=w: assess(
+            path, cwds, limit, others=[p for p in paths if p != path], locked=bool(w.get("locked")), now=now, deep=deep))
+        row["limit"] = limit
+    # A repo may hold dozens of worktrees, and each verdict is a handful of git calls: judge them together.
+    from . import bounded
+    done = bounded.run(checks, None, workers=WORKTREE_WORKERS)
+    for row in rows:
+        if row["path"] not in done:
+            continue
+        out = done[row["path"]]
+        if out.error:
+            raise out.error
+        a, w = out.value, next(w for w in listed[1:] if w.get("worktree") == row["path"])
         row.update({k: a[k] for k in ("idle_days", "dirty", "pushed", "rescue", "only_recent")},
-                   limit=limit, locked=bool(w.get("locked")),
+                   locked=bool(w.get("locked")),
                    verdict="KEEP" if a["why"] else "SAFE",
                    reason="; ".join(a["why"]) or (f"clean, on the remote, idle {a['idle_days']:.0f}d"
                                                   + (f"; {RESCUE} is kept in the correction store" if a["rescue"] else "")),
-                   action="git worktree remove", bytes=du(path) if sizes else None)
-        rows.append(row)
+                   action="git worktree remove", bytes=du(row["path"]) if sizes else None)
     return rows
 
 
@@ -840,22 +861,47 @@ def disk(path: pathlib.Path | None = None) -> dict:
     return {"total": u.total, "used": u.used, "free": u.free, "free_fraction": u.free / u.total if u.total else 0}
 
 
+SCAN_WORKERS = 6
+WORKTREE_WORKERS = 4   # per repo
+# Seconds a probe of the report may take (a repo, `ps`, `simctl`); the size walk gets far more.
+REPORT_TIMEOUT = 20
+SIZES_TIMEOUT = 300
+
+
 def scan(root: pathlib.Path | None = None, sizes: bool = True, cfg: dict | None = None,
          cwds: list[str] | None = None, now: float | None = None, deep: bool = True,
-         derived_root: pathlib.Path | None = None) -> dict:
+         derived_root: pathlib.Path | None = None, repo_timeout: float | None = None) -> dict:
+    """The report's data. Repos are scanned side by side. With `repo_timeout`, a repo that has not
+    answered by then adds no rows (so nothing in it can be removed) and is named in `unanswered`."""
+    from . import bounded
     s = settings(cfg)
     extra = [] if root else [config.ops_root(cfg)]
     root = root or config.code_root(cfg)
     cwds = process_cwds() if cwds is None else cwds
     launched = launch_references()
-    wt, art = [], []
-    for repo in repos(root, extra):
-        wt += worktrees(repo, cwds, s["idle_days"], sizes=sizes, now=now, agent_idle_days=s["agent_idle_days"], deep=deep)
-        art += artifacts(repo, cwds, s["build_idle_days"], sizes=sizes, now=now, launched=launched)
+    wt, art, unanswered = [], [], []
+
+    def scan_repo(repo):
+        return (worktrees(repo, cwds, s["idle_days"], sizes=sizes, now=now, agent_idle_days=s["agent_idle_days"], deep=deep),
+                artifacts(repo, cwds, s["build_idle_days"], sizes=sizes, now=now, launched=launched))
+    found = repos(root, extra)
+    done = bounded.run({str(r): (lambda r=r: scan_repo(r)) for r in found}, repo_timeout, workers=SCAN_WORKERS)
+    for repo in found:
+        out = done[str(repo)]
+        if out.error:
+            raise out.error
+        if out.timed_out:
+            unanswered.append(bounded.unanswered(f"repo {repo.name}", repo_timeout))
+            continue
+        wt += out.value[0]
+        art += out.value[1]
     from . import volumes
-    return {"root": str(root), "settings": s, "disk": disk(), "worktrees": wt, "artifacts": art,
-            "derived": derived_data(derived_root or derived_data_root(), sizes=sizes, now=now),
-            "volumes": volumes.volume_rows(cfg)}
+    rep = {"root": str(root), "settings": s, "disk": disk(), "worktrees": wt, "artifacts": art,
+           "derived": derived_data(derived_root or derived_data_root(), sizes=sizes, now=now),
+           "volumes": volumes.volume_rows(cfg)}
+    if unanswered:
+        rep["unanswered"] = unanswered
+    return rep
 
 
 def _rows(rep: dict) -> list[dict]:
@@ -1102,34 +1148,63 @@ def cmd_storage(args):
     if args.action == "clean":
         if args.auto and not settings(cfg)["auto_clean"]:
             return 0
-        rep = scan(sizes=False, cfg=cfg)
-        lines = clean(rep, apply=args.apply or args.auto)
+        applying = args.apply or args.auto
+        # A dry run is bounded; a removal waits for every repo, since a repo that is not read is not cleaned.
+        rep = scan(sizes=False, cfg=cfg, repo_timeout=None if applying else REPORT_TIMEOUT)
+        lines = clean(rep, apply=applying)
         if not (args.quiet and not lines):
             for line in lines or ["nothing is safe to remove"]:
                 print(line)
-            if not (args.apply or args.auto) and lines:
+            if not applying and lines:
                 print(f"dry run: {human(reclaimable(rep))} — `teyla storage clean --apply` removes these")
+            for line in rep.get("unanswered", []):
+                print(line)
         return 0
     sizes = not args.no_sizes
-    rep = scan(sizes=sizes, cfg=cfg)
-    from . import volumes
+    from . import bounded, storage_procs, storage_sims, storage_sweep, volumes
+    limit = SIZES_TIMEOUT if sizes else REPORT_TIMEOUT
+
+    def sim_report():
+        booted = booted_simulators()
+        return booted, (storage_sims.status(record=False) if booted else {"booted": [], "error": None})
+    # The probes do not depend on each other: run them side by side, each with its own limit. The scan
+    # bounds each repo itself, so it has no limit of its own and always returns a report.
+    parts = bounded.run({
+        "worktrees and build output": lambda: scan(sizes=sizes, cfg=cfg, repo_timeout=limit),
+        "caches": lambda: caches(sizes=sizes, cfg=cfg),
+        "simulators": sim_report,
+        "memory": memory_by_app,
+        "sweepable": lambda: storage_sweep.sweepable(cfg) if sizes else None,
+        "orphan processes": lambda: storage_procs.find(cfg)["orphans"],
+    }, limit, limits={"worktrees and build output": None})
+    unanswered = []
+    for name, out in parts.items():
+        if out.error:
+            raise out.error
+        if out.timed_out:
+            unanswered.append(bounded.unanswered(name, limit))
+    got = lambda name, default: default if parts[name].timed_out else parts[name].value
+    rep = parts["worktrees and build output"].value
+    unanswered = rep.pop("unanswered", []) + unanswered
     volumes.write_hook_file(cfg)
-    cache_rows = caches(sizes=sizes, cfg=cfg)
-    sims, mem = booted_simulators(), memory_by_app()
-    from . import storage_sims, storage_sweep
-    sim_status = storage_sims.status(record=False) if sims else {"booted": [], "error": None}
-    sweep = storage_sweep.sweepable(cfg) if sizes else None
-    from . import storage_procs
-    orphans = storage_procs.find(cfg)["orphans"]
+    cache_rows = got("caches", [])
+    sims, sim_status = got("simulators", ([], {"booted": [], "error": None}))
+    mem = got("memory", [])
+    sweep = got("sweepable", None)
+    orphans = got("orphan processes", [])
     if args.json:
         rep["caches"] = cache_rows; rep["simulators_booted"] = sims
         rep["simulators"] = sim_status["booted"]; rep["sweepable"] = sweep or []
         rep["orphan_processes"] = orphans
         rep["memory"] = [{"name": n, "rss": b, "count": c} for n, b, c in mem]
         rep["reclaimable"] = reclaimable(rep)
+        if unanswered:
+            rep["unanswered"] = unanswered
         print(json.dumps(rep, indent=2))
     else:
         print(render(rep, cache_rows, sims, mem, sim_status, sweep, orphans))
+        for line in unanswered:
+            print(line)
     return 0
 
 

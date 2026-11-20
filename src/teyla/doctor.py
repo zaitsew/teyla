@@ -30,6 +30,8 @@ from . import __version__, config
 
 DOCTOR_JSON = config.TEYLA_DIR / "doctor.json"
 DOCTOR_SUMMARY = config.TEYLA_DIR / "doctor.summary"
+# Seconds one slow probe (a transcript parse, the worktree scan) may take before doctor reports it as unanswered.
+DOCTOR_PROBE_TIMEOUT = 15
 # The same form AGENTS.md gives an agent: the starter policy carries the owner's name, and the login name
 # is rarely it. An empty `git config user.name` is the person's to answer.
 POLICY_INIT_FIX = 'teyla policy init --owner "$(git config user.name)" && teyla policy sync'
@@ -92,6 +94,41 @@ def _store_checks() -> list[dict]:
         else:
             out.append(_check("WARN", f"stores:{tool}", f"{store} could not be read in the last refresh: {err}",
                               "teyla portfolio --refresh"))
+    return out
+
+
+def _repo_checks(cfg: dict) -> list[dict]:
+    """The rows about the repos under code_root: AGENTS.md / CLAUDE.md, rule budget, cloud readiness."""
+    from . import policy
+    out = []
+    root = config.code_root(cfg)
+    rs = policy.repos_status(root)
+    missing = [n for s_, n in rs if s_ == "missing"]
+    differ = [n for s_, n in rs if s_ == "differ"]
+    if not rs:
+        out.append(_check("INFO", "repos", f"no git repos under {root}"))
+    else:
+        if missing:
+            out.append(_check("WARN", "repos:agents-md", f"{len(missing)} repo(s) have only one of AGENTS.md/CLAUDE.md: {', '.join(missing[:8])}",
+                              "teyla policy sync-repo " + " ".join(str(root / n) for n in missing[:8])))
+        if differ:
+            out.append(_check("WARN", "repos:agents-md", f"{len(differ)} repo(s) have AGENTS.md and CLAUDE.md that differ: {', '.join(differ[:8])}",
+                              "merge by hand, or teyla policy sync-repo <path> --prefer agents|claude"))
+        if not missing and not differ:
+            out.append(_check("OK", "repos:agents-md", f"{len(rs)} repo(s) under {root}: AGENTS.md ⇄ CLAUDE.md consistent"))
+        # Per file, not per repo: each instruction file loads whole (rules_lifecycle.budget).
+        from . import rules_lifecycle
+        b = rules_lifecycle.doctor_check(root)
+        if b:
+            out.append(_check(b["level"], b["name"], b["detail"], b["fix"]))
+        # INFO, not WARN: an unprepared repo is a fact about where cloud work can finish, not
+        # a broken install — and a WARN here would sit in every session-start line for weeks.
+        try:
+            from . import cloud
+            c = cloud.doctor_check(cfg)
+            out.append(_check(c["level"], c["name"], c["detail"], c["fix"]))
+        except Exception as e:  # noqa: BLE001 — a readiness line must never take doctor down
+            out.append(_check("INFO", "cloud", f"readiness not computed: {e}"))
     return out
 
 
@@ -217,32 +254,56 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
                           f"({', '.join(config.HARNESS_NAMES)})",
                           "teyla config set harness.disabled=" + ",".join(off)))
 
-    # --- harness stores --------------------------------------------------------
-    loaded = {}
-    from . import harness as _harness
+    # --- the slow probes start together, each with its own limit -------------------
+    # Parsing a week of transcripts, scanning every worktree and reading every repo's git state
+    # are unrelated: run in turn they added up to 40-90 s. One that does not answer in time is a
+    # row saying so; the rest of the report still prints.
+    from . import bounded, harness as _harness
+    since = time.time() - 7 * 86400
+    cutoff = _dt.datetime.fromtimestamp(since, _dt.timezone.utc).isoformat()
+
+    def _recent(mod):
+        # The last week only: "used this week" is the fact a reader of this line wants. Adapters
+        # that cannot skip files by date still return everything; count by `last`.
+        return [x for x in mod.load(since=since) if (x.last or x.first or "") >= cutoff[:19]]
+    mods = []
     for mod in (claude_code, codex, grok, hermes, cursor):
         if mod.NAME in off:
             continue
         root = getattr(mod, "DEFAULT_ROOT", None)
         # Absent means both tests fail: the session store, and the home directory `harness sync`
         # and `harness status` go by. A harness doctor calls absent never gets a FIX line below.
-        ok = (bool(root) and os.path.exists(os.path.expanduser(root))) or _harness.installed(mod.NAME)
-        if not ok:
+        mods.append((mod, root, (bool(root) and os.path.exists(os.path.expanduser(root))) or _harness.installed(mod.NAME)))
+    jobs = {f"harness:{m.NAME}": (lambda m=m: _recent(m)) for m, _, present in mods if present}
+    if scan_repos:
+        from . import storage
+        jobs["storage"] = lambda: storage.doctor_checks(cfg)
+        jobs["repos"] = lambda: _repo_checks(cfg)
+    # The load snapshot comes first: taken beside the probes, it would measure doctor's own work.
+    done = bounded.run({"machine": lambda: [_load_check(cfg), _crash_check(), _device_feed_check()]} if scan_repos else {},
+                       DOCTOR_PROBE_TIMEOUT)
+    done.update(bounded.run(jobs, DOCTOR_PROBE_TIMEOUT, workers=8))
+
+    def _late(name):
+        return _check("WARN", name, bounded.unanswered(name, DOCTOR_PROBE_TIMEOUT))
+
+    # --- harness stores --------------------------------------------------------
+    loaded = {}
+    for mod, root, present in mods:
+        if not present:
             out.append(_check("INFO", f"harness:{mod.NAME}", "absent on this machine"))
             continue
-        try:
-            # The last week only: parsing every transcript ever written cost 30 s here, and
-            # "used this week" is the fact a reader of this line wants.
-            since = time.time() - 7 * 86400
-            cutoff = _dt.datetime.fromtimestamp(since, _dt.timezone.utc).isoformat()
-            # Adapters that cannot skip files by date still return everything; count by `last`.
-            recent = [x for x in mod.load(since=since) if (x.last or x.first or "") >= cutoff[:19]]
+        res = done[f"harness:{mod.NAME}"]
+        if res.timed_out:
+            out.append(_late(f"harness:{mod.NAME}"))
+        elif res.error:
+            out.append(_check("WARN", f"harness:{mod.NAME}", f"{root}: adapter error: {res.error}"))
+        else:
+            recent = res.value
             loaded[mod.NAME] = recent
             nb = sum(1 for x in recent if x.batch)
             out.append(_check("OK", f"harness:{mod.NAME}", f"{root}: {len(recent)} session(s) in the last 7 days"
                               + (f" ({len(recent) - nb} interactive, {nb} batch)" if recent else "")))
-        except Exception as e:  # noqa: BLE001
-            out.append(_check("WARN", f"harness:{mod.NAME}", f"{root}: adapter error: {e}"))
 
     # --- can each harness do work right now? -------------------------------------
     # "wired" is not "working": a Grok that answers 402 on every call, or a Hermes that
@@ -467,17 +528,22 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
 
     # --- storage: free space, and worktrees agents finished with ---------------------
     if scan_repos:
-        from . import storage
-        for row in storage.doctor_checks(cfg):
-            out.append(_check(row["level"], row["name"], row["detail"], row["fix"], **({"free": row["free"]} if "free" in row else {})))
+        if done["storage"].timed_out:
+            out.append(_late("storage"))
+        elif done["storage"].error:
+            raise done["storage"].error
+        else:
+            for row in done["storage"].value:
+                out.append(_check(row["level"], row["name"], row["detail"], row["fix"], **({"free": row["free"]} if "free" in row else {})))
 
     # --- machine load: one snapshot, a verdict (WARN at CRITICAL, never FIX) ---------------
     if scan_repos:
-        out.append(_load_check(cfg))
-        out.append(_crash_check())
-        feed = _device_feed_check()
-        if feed:
-            out.append(feed)
+        if done["machine"].timed_out:
+            out.append(_late("machine"))
+        elif done["machine"].error:
+            raise done["machine"].error
+        else:
+            out += [c for c in done["machine"].value if c]
 
     # --- policy detectors: the rules in POLICY.md that files can prove broken --------------
     from . import detect
@@ -491,34 +557,12 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
 
     # --- repos under code_root ----------------------------------------------------
     if scan_repos:
-        root = config.code_root(cfg)
-        rs = policy.repos_status(root)
-        missing = [n for s_, n in rs if s_ == "missing"]
-        differ = [n for s_, n in rs if s_ == "differ"]
-        if not rs:
-            out.append(_check("INFO", "repos", f"no git repos under {root}"))
+        if done["repos"].timed_out:
+            out.append(_late("repos"))
+        elif done["repos"].error:
+            raise done["repos"].error
         else:
-            if missing:
-                out.append(_check("WARN", "repos:agents-md", f"{len(missing)} repo(s) have only one of AGENTS.md/CLAUDE.md: {', '.join(missing[:8])}",
-                                  "teyla policy sync-repo " + " ".join(str(root / n) for n in missing[:8])))
-            if differ:
-                out.append(_check("WARN", "repos:agents-md", f"{len(differ)} repo(s) have AGENTS.md and CLAUDE.md that differ: {', '.join(differ[:8])}",
-                                  "merge by hand, or teyla policy sync-repo <path> --prefer agents|claude"))
-            if not missing and not differ:
-                out.append(_check("OK", "repos:agents-md", f"{len(rs)} repo(s) under {root}: AGENTS.md ⇄ CLAUDE.md consistent"))
-            # Per file, not per repo: each instruction file loads whole (rules_lifecycle.budget).
-            from . import rules_lifecycle
-            b = rules_lifecycle.doctor_check(root)
-            if b:
-                out.append(_check(b["level"], b["name"], b["detail"], b["fix"]))
-            # INFO, not WARN: an unprepared repo is a fact about where cloud work can finish, not
-            # a broken install — and a WARN here would sit in every session-start line for weeks.
-            try:
-                from . import cloud
-                c = cloud.doctor_check(cfg)
-                out.append(_check(c["level"], c["name"], c["detail"], c["fix"]))
-            except Exception as e:  # noqa: BLE001 — a readiness line must never take doctor down
-                out.append(_check("INFO", "cloud", f"readiness not computed: {e}"))
+            out += done["repos"].value
 
     # --- store reads ----------------------------------------------------------------------
     try:
