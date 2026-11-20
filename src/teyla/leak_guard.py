@@ -571,7 +571,7 @@ class Pub:
         self.stdin = False
         self.refusals: list[str] = []       # why the guard cannot tell what this command publishes
         self.sub_text = False               # a text argument holds a $( ) or backtick substitution
-        self.push: tuple[str | None, list[str], bool, dict[str, str]] | None = None   # a push that skips the pre-push gate: (remote as typed, source refs, all refs)
+        self.push: tuple[list[str], list[str]] | None = None   # a push that skips the pre-push gate: (global -c options, push arguments)
 
 
 class Analysis:
@@ -985,77 +985,56 @@ def _hooks_path_config(value: str) -> bool:
     return value.partition("=")[0].strip().lower() == "core.hookspath"
 
 
-# `git push` options that take their value as the next word (so it is not mistaken for the remote name). The
+# `git push` options that take their value as the next word (so the value is not read as a flag). The
 # optional-value ones (`--signed`, `--force-with-lease`, `--force-if-includes`) carry a value only as `--x=v`.
 PUSH_VALUE_FLAGS = {"--repo", "-o", "--push-option", "--receive-pack", "--exec", "--recurse-submodules"}
+PUSH_TIMEOUT = 30            # seconds for the `git push --dry-run` that asks git what a push would send
 
 
-def _push_skips_the_gate(rest: list[str], hooks_path: bool) -> tuple[str | None, list[str], bool] | None:
-    """(remote as typed or None, source refs, every ref) when this `git push` skips the pre-push hook
-    (`--no-verify`, any unambiguous prefix of it, or `-c core.hooksPath=...`), else None. A dry run sends
-    nothing and is not a publication. A refspec `+src:dst` names `src`; `:dst` deletes and sends nothing."""
-    no_verify = dry = every = False
-    remote = None
-    refs: list[str] = []
-    pos: list[str] = []
+def _push_bypass_args(rest: list[str], hooks_path: bool) -> list[str] | None:
+    """The arguments to give `git push --dry-run` when this push skips the pre-push hook (`--no-verify`, any
+    unambiguous prefix of it, or `-c core.hooksPath=...`), else None. The bypass flags and `-q` are dropped,
+    everything else is kept: git itself works out the remote, the refspecs and the rules of its configuration.
+    A push the user already made a dry run sends nothing and is not a publication."""
+    no_verify = dry = False
+    keep: list[str] = []
     i = 0
     while i < len(rest):
         a = rest[i]
         if a == "--":
-            pos += rest[i + 1:]
+            keep += rest[i:]
             break
         if a.startswith("--"):
             name = a[2:].partition("=")[0]
-            if len(name) >= 4 and "no-verify".startswith(name) and name.startswith("no-v"):
+            if len(name) >= 4 and name.startswith("no-v") and "no-verify".startswith(name):
                 no_verify = True
-            elif len(name) >= 3 and "dry-run".startswith(name):
-                dry = True
-            elif name in ("all", "mirror", "tags"):
-                every = True
-            elif name == "repo":
-                if "=" in a:
-                    remote = a.partition("=")[2]
-                elif i + 1 < len(rest):
-                    remote = rest[i + 1]
-            if "=" not in a and a in PUSH_VALUE_FLAGS:
                 i += 1
+                continue
+            if len(name) >= 3 and "dry-run".startswith(name):
+                dry = True
+            if name == "quiet":
+                i += 1
+                continue
+            keep.append(a)
+            if "=" not in a and a in PUSH_VALUE_FLAGS and i + 1 < len(rest):
+                i += 1
+                keep.append(rest[i])
         elif a.startswith("-") and len(a) > 1:
             if "n" in a[1:] and "o" not in a[1:]:
                 dry = True
-            if a == "-o":
+            if a == "-q":
                 i += 1
+                continue
+            keep.append(a)
+            if a == "-o" and i + 1 < len(rest):
+                i += 1
+                keep.append(rest[i])
         else:
-            pos.append(a)
+            keep.append(a)
         i += 1
     if dry or not (no_verify or hooks_path):
         return None
-    if remote is None and pos:
-        remote, pos = pos[0], pos[1:]
-    elif remote is not None and pos:
-        pass                                           # --repo names the destination: every positional is a refspec
-    refs, glob = _spec_refs(pos)
-    return remote, refs, every or glob
-
-
-def _spec_refs(specs: list[str]) -> tuple[list[str], bool]:
-    """The source refs of refspecs, and whether one is a glob (so every ref counts). `:dst` deletes and sends nothing."""
-    refs: list[str] = []
-    glob = False
-    for spec in specs:
-        src = spec.lstrip("+").partition(":")[0]
-        if not src:
-            continue
-        if re.search(r"[*?\[]", src):
-            glob = True
-        elif not src.startswith("-"):
-            refs.append(src)
-    return refs, glob
-
-
-def _cfg(cwd: str | None, env: Env, local: dict[str, str], key: str) -> str:
-    """A git config value: the command's own `-c key=value` first, then the repository's."""
-    key = key.lower()
-    return local[key] if key in local else _git_out(cwd, env, "config", "--get", key)
+    return keep
 
 
 def _git_out(cwd: str | None, env: Env, *args: str) -> str:
@@ -1067,38 +1046,91 @@ def _git_out(cwd: str | None, env: Env, *args: str) -> str:
     return p.stdout.strip() if p.returncode == 0 else ""
 
 
-def _push_range(push: tuple[str | None, list[str], bool, dict[str, str]], cwd: str | None, env: Env) -> str:
-    """The revision range a gate-skipping push publishes: every source ref it names (HEAD when it names none,
-    all refs for --all, --mirror, --tags or a glob), minus what the destination already has. The destination is
-    a configured remote (its tracking refs) or, for a URL or a name git does not know, nothing: what another
-    remote already has says nothing about a new destination, so the full history of the pushed refs is scanned. An omitted remote follows git: branch.<b>.pushRemote,
-    remote.pushDefault, branch.<b>.remote, else origin."""
-    remote, refs, every, local = push
-    if remote is None:
-        branch = _git_out(cwd, env, "symbolic-ref", "--short", "-q", "HEAD")
-        for key in ((f"branch.{branch}.pushremote",) if branch else ()) + ("remote.pushdefault",) + ((f"branch.{branch}.remote",) if branch else ()):
-            remote = _cfg(cwd, env, local, key) or None
-            if remote:
-                break
-        remote = remote or "origin"
-    known = bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", remote)) and bool(_cfg(cwd, env, local, f"remote.{remote}.url"))
-    # A push URL, or a URL rewrite, can send to a place the tracking refs say nothing about.
-    if known and (_cfg(cwd, env, local, f"remote.{remote}.pushurl") or any(k.startswith("url.") for k in local)
-                  or _git_out(cwd, env, "config", "--get-regexp", r"^url\..*\.(insteadof|pushinsteadof)$")):
-        known = False
-    if not refs and not every and known:                  # remote.<name>.push names what an argument-less push sends
-        specs = [local[f"remote.{remote}.push"]] if f"remote.{remote}.push" in local else \
-            _git_out(cwd, env, "config", "--get-all", f"remote.{remote}.push").splitlines()
-        refs, glob = _spec_refs([x for x in specs if x])
-        every = every or glob
-    srcs = "--all" if every else " ".join(shlex.quote(r) for r in dict.fromkeys(refs)) or "HEAD"
-    return f"{srcs} --not --remotes={remote}" if known else srcs      # a destination git does not know has nothing yet
+class PushPlan:
+    """What a gate-skipping push would send, as git itself reports it (`git push --dry-run --porcelain`)."""
+
+    def __init__(self):
+        self.range = ""                 # a revision range for `teyla leak --commits`; empty when no commit is sent
+        self.tags: list[str] = []       # annotated tag objects the push sends (tagger and message)
+        self.refusal: list[str] | None = None
+
+
+PORCELAIN = re.compile(r"^(.)\t([^\t:]*):([^\t]*)\t(.*)$")
+UPDATE = re.compile(r"^([0-9a-f]{4,64})\.\.\.?([0-9a-f]{4,64})")
+
+
+def _push_plan(pub: Pub, env: Env, skip_hint_text: str) -> PushPlan:
+    gopts, pargs = pub.push
+    plan = PushPlan()
+    cwd = pub.cmd.cwd
+    argv = ["git", *gopts, "push", "--dry-run", "--porcelain", "--no-verify", *pargs]
+    run_env = dict(env.environ)
+    run_env["GIT_TERMINAL_PROMPT"] = "0"
+    try:
+        timeout = int(env.environ.get("TEYLA_LEAK_GUARD_PUSH_TIMEOUT") or PUSH_TIMEOUT)
+    except ValueError:
+        timeout = PUSH_TIMEOUT
+    try:
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, cwd=cwd, env=run_env)
+    except (subprocess.TimeoutExpired, OSError) as e:
+        why = "timed out" if isinstance(e, subprocess.TimeoutExpired) else f"did not start ({e.strerror or type(e).__name__})"
+        plan.refusal = [f"teyla leak-guard: refused — `git push --dry-run` {why}, so the guard cannot tell what {pub.name} sends.",
+                        "  A push that skips the pre-push gate is not waved through unread. Make the remote reachable, or push without --no-verify.",
+                        skip_hint_text]
+        return plan
+    lines = p.stdout.split("\n")
+    entries = [m.groups() for m in (PORCELAIN.match(l) for l in lines) if m]
+    if p.returncode != 0 and not any(e[0] == "!" for e in entries):
+        first = next((l.strip()[:160] for l in p.stderr.splitlines() if l.strip()), f"exit {p.returncode}")
+        plan.refusal = [f"teyla leak-guard: refused — `git push --dry-run` failed ({first}), so the guard cannot tell what {pub.name} sends.",
+                        "  A push that skips the pre-push gate is not waved through unread. Fix the remote or the refspec, or push without --no-verify.",
+                        skip_hint_text]
+        return plan
+    url = next((l[3:].strip() for l in lines if l.startswith("To ")), "")
+    include: list[str] = []
+    exclude: list[str] = []
+    fresh = False
+    for flag, src, dst, summary in entries:
+        if flag in ("-", "=", "!"):                    # a deletion, an up-to-date ref and a rejected one send nothing
+            continue
+        sha = _git_out(cwd, env, "rev-parse", "-q", "--verify", f"{src}^{{commit}}")
+        if sha:
+            include.append(sha)
+            m = UPDATE.match(summary)
+            old = _git_out(cwd, env, "rev-parse", "-q", "--verify", f"{m.group(1)}^{{commit}}") if m else ""
+            if old:
+                exclude.append(old)                    # the destination has everything up to `old`
+            else:
+                fresh = True
+        if dst.startswith("refs/tags/") and _git_out(cwd, env, "cat-file", "-t", src) == "tag":
+            plan.tags.append(_git_out(cwd, env, "cat-file", "tag", src))
+    remote = _same_remote(url, gopts, cwd, env) if fresh else ""
+    if include:
+        plan.range = " ".join(dict.fromkeys(include))
+        excl = list(dict.fromkeys(exclude)) + ([f"--remotes={remote}"] if remote else [])
+        if excl:
+            plan.range += " --not " + " ".join(excl)
+    return plan
+
+
+def _same_remote(url: str, gopts: list[str], cwd: str | None, env: Env) -> str:
+    """The configured remote that is exactly this destination, when its tracking refs can be trusted to say what
+    the destination has: its fetch and push URL are the one URL git reports, and no `-c` option rewrites a URL.
+    Anything else (a URL, a push URL, a rewrite) has nothing known: the full history is scanned."""
+    if not url or any(re.search(r"(?i)\burl\b|\.url|insteadof", g) for g in gopts if g != "-c"):
+        return ""
+    if _git_out(cwd, env, "config", "--get-regexp", r"^url\..*\.(insteadof|pushinsteadof)$"):
+        return ""                                      # a rewrite may have moved the URL since the refs were fetched
+    for name in _git_out(cwd, env, "remote").split():
+        if _git_out(cwd, env, "remote", "get-url", "--push", name) == url and _git_out(cwd, env, "remote", "get-url", name) == url:
+            return name
+    return ""
 
 
 def _git(args: list[str], off: int, cmd: Cmd, an: Analysis) -> None:
     i = 0
     hooks_path = False
-    local: dict[str, str] = {}                           # the command's own `-c key=value` settings
+    gopts: list[str] = []                                # the command's own `-c key=value` settings, given to the dry run
     while i < len(args):
         a = args[i]
         if a in ("-C", "--git-dir", "--work-tree"):
@@ -1115,14 +1147,13 @@ def _git(args: list[str], off: int, cmd: Cmd, an: Analysis) -> None:
             continue
         if a in ("-c", "--namespace", "--exec-path"):
             if a == "-c" and i + 1 < len(args):
-                k, _, v = args[i + 1].partition("=")
-                local[k.strip().lower()] = v
+                gopts += ["-c", args[i + 1]]
                 if _hooks_path_config(args[i + 1]):
                     hooks_path = True
             i += 2
             continue
         if a.startswith("--config-env="):
-            local[a.partition("=")[2].partition("=")[0].strip().lower()] = ""      # the value is in an environment variable
+            gopts.append(a)
             if _hooks_path_config(a.partition("=")[2]):
                 hooks_path = True
         if a.startswith("-"):
@@ -1130,10 +1161,10 @@ def _git(args: list[str], off: int, cmd: Cmd, an: Analysis) -> None:
             continue
         break
     if i < len(args) and args[i] == "push":
-        push = _push_skips_the_gate(args[i + 1:], hooks_path)
-        if push is not None:
+        pargs = _push_bypass_args(args[i + 1:], hooks_path)
+        if pargs is not None:
             pub = Pub("git push (pre-push gate skipped)", cmd)
-            pub.push = (*push, local)
+            pub.push = (gopts, pargs)
             an.pubs.append(pub)
         return
     if i >= len(args) or args[i] not in GIT_TEXT_VERBS:
@@ -1426,29 +1457,18 @@ def decide_bash(command: str, env: Env) -> list[str] | None:
         scans.append((", ".join(dict.fromkeys(p.name for p in active if p.push is None)), text, ("--text", "-"), None))
     for pub in active:
         if pub.push is not None:
-            scans.append((pub.name, "", ("--commits", _push_range(pub.push, pub.cmd.cwd, env)), pub.cmd.cwd))
-    for pub in active:
-        if pub.push is not None:
-            tags = _push_tag_text(pub.push, pub.cmd.cwd, env)
-            if tags:
-                scans.append(("git push (annotated tags)", tags, ("--text", "-"), None))
+            plan = _push_plan(pub, env, skip_hint(env))
+            if plan.refusal:
+                return plan.refusal
+            if plan.range:
+                scans.append((pub.name, "", ("--commits", plan.range), pub.cmd.cwd))
+            if plan.tags:
+                scans.append(("git push (annotated tags)", "\n".join(plan.tags), ("--text", "-"), None))
     for names, stdin, sargs, where in scans:
         out = _scan_one(names, stdin, sargs, where, env)
         if out is not None:
             return out
     return None
-
-
-def _push_tag_text(push, cwd: str | None, env: Env) -> str:
-    """The tagger and message of each annotated tag a gate-skipping push sends: every tag for --all, --mirror and
-    --tags, else the tags its refspecs name. A tag whose commit the destination has is still published."""
-    _, refs, every, _ = push
-    names = _git_out(cwd, env, "for-each-ref", "--format=%(objecttype) %(refname:short)", "refs/tags").splitlines()
-    tags = [n.partition(" ")[2] for n in names if n.startswith("tag ")]
-    if not every:
-        wanted = {r.removeprefix("refs/tags/") for r in refs}
-        tags = [t for t in tags if t in wanted]
-    return "\n".join(_git_out(cwd, env, "cat-file", "tag", t) for t in tags)
 
 
 def _scan_one(names: str, text: str, sargs: tuple[str, ...], where: str | None, env: Env) -> list[str] | None:
