@@ -975,3 +975,11 @@ def test_escaped_whitespace_is_refused_without_teyla_too(no_teyla_box, command):
 def test_a_read_only_command_that_chains_or_hides_a_credential_is_refused_without_teyla(no_teyla_box, command):
     r = no_teyla_box.run(command, **no_teyla_box.kw)
     assert r.returncode == 2, (command, r.stderr)
+
+
+def test_an_escaped_backslash_before_t_is_not_a_tab(no_teyla_box):
+    # JSON `creden\\tials` is the shell text `creden\tials`, which the shell reads as `credentials`
+    r = no_teyla_box.run("gh pr view 12 && cat ~/.aws/creden\\tials", **no_teyla_box.kw)
+    assert r.returncode == 2, r.stderr
+    r = no_teyla_box.run("cat ~/.aws/creden\\tials", **no_teyla_box.kw)
+    assert r.returncode == 2, r.stderr

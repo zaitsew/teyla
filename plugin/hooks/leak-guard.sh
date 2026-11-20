@@ -65,9 +65,16 @@ unescape() {
     rest=$1
     while :; do
         case "$rest" in
-            *\\[tnrfb]*)   dec="$dec${rest%%\\[tnrfb]*} "; rest=${rest#*\\[tnrfb]} ;;
-            *\\u00[0-2][0-9a-fA-F]*) dec="$dec${rest%%\\u00[0-2][0-9a-fA-F]*} "; rest=${rest#*\\u00[0-2][0-9a-fA-F]} ;;
+            *\\*) ;;
             *) dec="$dec$rest"; break ;;
+        esac
+        dec="$dec${rest%%\\*}"
+        rest=${rest#*\\}                       # what follows the first backslash
+        case "$rest" in
+            \\*) dec="$dec\\"; rest=${rest#?} ;;           # an escaped backslash: one literal backslash, not an escape lead
+            [tnrfb]*) dec="$dec "; rest=${rest#?} ;;
+            u00[0-2][0-9a-fA-F]*) dec="$dec "; rest=${rest#?????} ;;
+            *) dec="$dec\\" ;;
         esac
     done
 }
