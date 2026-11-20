@@ -1,0 +1,102 @@
+{
+  "id": "mac.product-reading",
+  "title": "Product page, reading",
+  "area": "mac",
+  "presentation": "push",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/ProductPageView.swift:16"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "products",
+      "badges": {
+        "today": 4,
+        "decisions": 4,
+        "operations": 1
+      },
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "live": "updating",
+      "gap": 16,
+      "kids": [
+        {
+          "t": "text",
+          "v": "Atlas",
+          "s": "mac-page-title",
+          "c": "text"
+        },
+        {
+          "t": "v",
+          "gap": 8,
+          "kids": [
+            {
+              "t": "h",
+              "gap": 8,
+              "align": "center",
+              "kids": [
+                {
+                  "t": "use",
+                  "c": "macChip",
+                  "p": {
+                    "text": "On track",
+                    "tone": "primary",
+                    "icon": "checkmark.circle"
+                  }
+                }
+              ]
+            },
+            {
+              "t": "h",
+              "gap": 8,
+              "align": "center",
+              "kids": [
+                {
+                  "t": "icon",
+                  "n": "circle.fill",
+                  "size": 5,
+                  "c": "text-secondary"
+                },
+                {
+                  "t": "text",
+                  "v": "Two decisions wait on you.",
+                  "s": "mac-body",
+                  "c": "text-secondary"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "t": "h",
+          "gap": 4,
+          "align": "center",
+          "kids": [
+            {
+              "t": "icon",
+              "n": "progress.indicator",
+              "size": 10,
+              "c": "text-secondary"
+            },
+            {
+              "t": "text",
+              "v": "Reading Atlas…",
+              "s": "mac-caption",
+              "c": "text-secondary"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

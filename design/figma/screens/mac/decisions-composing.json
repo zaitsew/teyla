@@ -1,0 +1,130 @@
+{
+  "id": "mac.decisions-composing",
+  "title": "Decisions, writing an answer",
+  "area": "mac",
+  "presentation": "tab",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/AskCard.swift:164"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "decisions",
+      "badges": {
+        "today": 4,
+        "decisions": 4,
+        "operations": 1
+      },
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "kids": [
+        {
+          "t": "v",
+          "w": 720,
+          "gap": 24,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macPageHeader",
+              "p": {
+                "title": "Decisions",
+                "context": "4 decisions wait on you, best first."
+              }
+            },
+            {
+              "t": "v",
+              "w": "fill",
+              "gap": 12,
+              "kids": [
+                {
+                  "t": "use",
+                  "c": "macSection",
+                  "p": {
+                    "title": "Pay",
+                    "count": 1
+                  }
+                },
+                {
+                  "t": "use",
+                  "c": "macAsk",
+                  "p": {
+                    "product": "Atlas",
+                    "age": "3 h",
+                    "unblocks": "the paid plan launch",
+                    "question": "Renew the Atlas domain for another year?",
+                    "context": "The domain expires on 2 December. Renewing for one year costs $14.",
+                    "proposal": "Renew for one year, from the card on file.",
+                    "why": "A lapse would take the Atlas site offline the week of the launch.",
+                    "options": [],
+                    "canUseProposal": false
+                  }
+                }
+              ]
+            },
+            {
+              "t": "v",
+              "w": "fill",
+              "gap": 12,
+              "kids": [
+                {
+                  "t": "use",
+                  "c": "macSection",
+                  "p": {
+                    "title": "Decide",
+                    "count": 2
+                  }
+                },
+                {
+                  "t": "use",
+                  "c": "macAsk",
+                  "p": {
+                    "product": "Pebble",
+                    "age": "1 day",
+                    "unblocks": "build 14",
+                    "question": "Ship Pebble 1.4 to testers today, or wait for the sync fix?",
+                    "context": "The sync fix is merged but not reviewed. Testers on 1.3 still see duplicate entries.",
+                    "proposal": "Wait one day for the review, then ship both together.",
+                    "why": "The fix is small, and a second build costs the testers another update.",
+                    "options": [
+                      "Ship today",
+                      "Wait a day"
+                    ],
+                    "state": "composing",
+                    "draft": "Wait for the review, then ship Monday with the fix."
+                  }
+                },
+                {
+                  "t": "use",
+                  "c": "macAsk",
+                  "p": {
+                    "product": "Quill",
+                    "age": "2 days",
+                    "question": "Which name for the free plan?",
+                    "context": "The pricing page needs a final name before Friday's post.",
+                    "proposal": "Starter",
+                    "why": "It is the word the three testers who commented already used.",
+                    "options": [
+                      "Starter",
+                      "Free",
+                      "Lite"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

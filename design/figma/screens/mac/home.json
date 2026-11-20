@@ -1,0 +1,266 @@
+{
+  "id": "mac.home",
+  "title": "Home",
+  "area": "mac",
+  "presentation": "tab",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/HomeView.swift:6",
+    "apps/mac/Teyla/UI/HomeProducts.swift:78"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "home",
+      "badges": {
+        "today": 4,
+        "decisions": 4,
+        "operations": 1
+      },
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "kids": [
+        {
+          "t": "use",
+          "c": "macPageHeader",
+          "p": {
+            "title": "Home",
+            "context": "Friday, 20 November 2026"
+          }
+        },
+        {
+          "t": "h",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "tile",
+              "p": {
+                "label": "Decisions",
+                "value": "4",
+                "detail": "1 to pay",
+                "tone": "needs-you",
+                "link": "mac.decisions"
+              }
+            },
+            {
+              "t": "use",
+              "c": "tile",
+              "p": {
+                "label": "Running",
+                "value": "3",
+                "detail": "agent sessions"
+              }
+            },
+            {
+              "t": "use",
+              "c": "tile",
+              "p": {
+                "label": "Posts today",
+                "value": "2",
+                "detail": "2 of 3 channels posted"
+              }
+            },
+            {
+              "t": "use",
+              "c": "tile",
+              "p": {
+                "label": "Cash per month",
+                "value": "$412",
+                "detail": "$96 list price this week"
+              }
+            },
+            {
+              "t": "use",
+              "c": "tile",
+              "p": {
+                "label": "Disk free",
+                "value": "184 GB",
+                "detail": "Machine ok"
+              }
+            }
+          ]
+        },
+        {
+          "t": "h",
+          "gap": 8,
+          "align": "center",
+          "kids": [
+            {
+              "t": "text",
+              "v": "Next",
+              "s": "mac-body",
+              "c": "primary",
+              "weight": 600
+            },
+            {
+              "t": "text",
+              "v": "Renew the Atlas domain for another year?",
+              "s": "mac-body",
+              "c": "text"
+            },
+            {
+              "t": "icon",
+              "n": "arrow.right",
+              "size": 12,
+              "c": "text-secondary"
+            }
+          ]
+        },
+        {
+          "t": "use",
+          "c": "macSegment",
+          "p": {
+            "options": [
+              "Week",
+              "Month",
+              "Year"
+            ],
+            "selected": "Week"
+          }
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macSection",
+              "p": {
+                "title": "People use these",
+                "note": "Active or new users in the last 7 days, most active first"
+              }
+            },
+            {
+              "t": "h",
+              "w": "fill",
+              "gap": 16,
+              "align": "start",
+              "kids": [
+                {
+                  "t": "use",
+                  "c": "macHero",
+                  "p": {
+                    "name": "Atlas",
+                    "letter": "A",
+                    "stage": "Beta",
+                    "summary": "Agents that fix the next failing build for small teams.",
+                    "numbers": [
+                      [
+                        "128",
+                        "active users"
+                      ],
+                      [
+                        "+31",
+                        "new users"
+                      ],
+                      [
+                        "1,204",
+                        "users in total"
+                      ]
+                    ],
+                    "commits": "42 commits",
+                    "spend": "$18.40 list price · 7 days",
+                    "spark": [
+                      0.3,
+                      0.5,
+                      0.4,
+                      0.7,
+                      0.6,
+                      0.9,
+                      1
+                    ],
+                    "link": "mac.product"
+                  }
+                },
+                {
+                  "t": "use",
+                  "c": "macHero",
+                  "p": {
+                    "name": "Pebble",
+                    "letter": "P",
+                    "stage": "Beta",
+                    "summary": "A pocket journal that syncs between phone and watch.",
+                    "numbers": [
+                      [
+                        "36",
+                        "active users"
+                      ],
+                      [
+                        "+9",
+                        "new users"
+                      ],
+                      [
+                        "212",
+                        "users in total"
+                      ]
+                    ],
+                    "commits": "27 commits",
+                    "spend": "$9.10 list price · 7 days",
+                    "spark": [
+                      0.6,
+                      0.4,
+                      0.5,
+                      0.3,
+                      0.8,
+                      0.7,
+                      0.5
+                    ],
+                    "link": "mac.product"
+                  }
+                },
+                {
+                  "t": "use",
+                  "c": "macHero",
+                  "p": {
+                    "name": "Quill",
+                    "letter": "Q",
+                    "stage": "Live",
+                    "summary": "Draft and publish posts from a single note.",
+                    "numbers": [
+                      [
+                        "14",
+                        "active users"
+                      ],
+                      [
+                        "+2",
+                        "new users"
+                      ],
+                      [
+                        "96",
+                        "users in total"
+                      ]
+                    ],
+                    "commits": "9 commits",
+                    "spend": "$3.20 list price · 7 days",
+                    "spark": [
+                      0.2,
+                      0.2,
+                      0.4,
+                      0.3,
+                      0.5,
+                      0.3,
+                      0.4
+                    ],
+                    "link": "mac.product"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
