@@ -94,7 +94,8 @@ class Machine:
     def env(self, platform="darwin"):
         ctx = storage_procs.Ctx(run=self.run, kill=self.kill, sleep=lambda s: self.clock.advance(s / 60), watch=lambda pid: None,
                                 uid=UID, self_pid=os.getpid())
-        return guard.Env(run=self.run, notify_run=self.notify_run, ctx=ctx, now=self.clock, platform=platform)
+        return guard.Env(run=self.run, notify_run=self.notify_run, quit_app=lambda bundle_id, pid: "not-running",
+                         ctx=ctx, now=self.clock, platform=platform)
 
 
 @pytest.fixture

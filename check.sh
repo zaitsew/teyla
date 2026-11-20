@@ -3,7 +3,11 @@
 # run it before pushing. `./check.sh docs` runs only the tests that read a tracked document.
 set -euo pipefail
 cd "$(dirname "$0")"
-[ -x .venv/bin/python ] || { uv venv -q && uv pip install -q -e '.[reel]' pytest; }
+# Reinstall when pyproject.toml or uv.lock is newer than the stamp, so a new dependency reaches an old .venv.
+stamp=.venv/.teyla-install-stamp
+if [ ! -x .venv/bin/python ] || [ ! -f "$stamp" ] || [ pyproject.toml -nt "$stamp" ] || { [ -f uv.lock ] && [ uv.lock -nt "$stamp" ]; }; then
+  { [ -x .venv/bin/python ] || uv venv -q; } && uv pip install -q -e '.[reel]' pytest && touch "$stamp"
+fi
 # Private data and non-English text must never reach this public repo: see CONTRIBUTING.md.
 PYTHONPATH=src .venv/bin/python scripts/leak_check.py
 # `./check.sh docs` stops here with a part of the suite: the test modules that read a tracked document

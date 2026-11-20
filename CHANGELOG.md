@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **The suite can no longer kill a process, quit an app or call `osascript`, `killall`, `pkill` or `launchctl` by accident.** An autouse fixture makes the real `os.kill` (signals other than 0), `storage_apps.quit_bundle` and a spawn of those tools raise, including the real defaults of `storage_procs.Ctx.kill` and `guard.Env.quit_app` that `tests/test_guard.py` left in place; `@pytest.mark.real_process_calls` opts a test out. A hung test dumps all stacks after 120 s (`faulthandler_timeout`), `--strict-markers` is on, `tests/test_cli_help.py` runs `--help` for every command and subcommand in-process, the Android fixture test no longer runs `./gradlew --stop`, and `./check.sh` reinstalls when `pyproject.toml` or `uv.lock` is newer than a stamp in `.venv`.
+
 - **`teyla storage offload --recover` no longer keeps a resolved entry.** An offload that stopped with both the original and the drive copy incomplete stayed in the journal after you repaired it, and blocked every later offload. A repeat `--recover` now decides again and clears it.
 
 - `teyla storage offload --to <mount point>`: move the heavy folders (DerivedData, the Android SDK, the Gradle caches, and with `--with-app-data` the simulators and virtual devices) to an external drive. Dry run by default. Each folder is copied, checked against a manifest digest, switched to a symlink, smoke-tested, and only then is the original deleted; any failure restores it. `--undo PATH`, `--keep` with `--finalize`, and `--recover` after a crash. `teyla doctor` names an unfinished offload.
